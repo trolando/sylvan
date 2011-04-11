@@ -11,3 +11,6 @@ configure
 libtool
 stamp-h1
 tools/
+.project
+.autotools
+.cproject

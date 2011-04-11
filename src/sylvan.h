@@ -143,6 +143,13 @@ extern BDD sylvan_makenode(BDDLEVEL level, BDD low, BDD high);
  */
 extern void sylvan_print(BDD bdd);
 
+/**
+ * Calculate number of satisfying variable assignments.
+ * <variables> must be an ordered list of length n!
+ * <bdd> must only have variables in <variables>
+ */
+extern double sylvan_satcount(BDD bdd, const BDDLEVEL *variables, size_t n);
+
 
 #ifdef __cplusplus
 }

@@ -1290,6 +1290,32 @@ static void *sylvan_thread(void *data) {
 }
 
 
+double sylvan_satcount(BDD bdd, const BDDLEVEL *variables, size_t n)
+{
+	return sylvan_satcount_do(bdd, variables, n, 0);
+}
+
+double sylvan_satcount_do(BDD bdd, const BDDLEVEL *variables, size_t n, int index)
+{
+	if (bdd == sylvan_false) return 0;
+	if (bdd == sylvan_true) {
+		if (index < n) return pow(2.0, (n-index));
+		else return 1;
+	}
+
+	BDDLEVEL level = sylvan_var(bdd);
+	if (level == variables[index]) {
+		// take high, take low
+		double high = sylvan_satcount_do(sylvan_high(bdd), variables, n, index+1);
+		double low = sylvan_satcount_do(sylvan_low(bdd), variables, n, index+1);
+		return high+low;
+	} else {
+		return 2 * sylvan_satcount_do(bdd, variables, n, index+1);
+	}
+}
+
+
+
 
 static inline void sylvan_printbdd(const char *s, BDD bdd) {
     if (bdd==sylvan_invalid || bdd==bddhandled) {

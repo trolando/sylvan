@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
+#include <math.h> // for POW()
 
 /**
  * Exported BDD constants

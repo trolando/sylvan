@@ -7,6 +7,10 @@
 #include "llsched.h"
 #include "runtime.h"
 
+#ifndef SCHED_MINSIZE
+#define SCHED_MINSIZE 256
+#endif
+
 #define SCHED_FLAG_RUNNING 0
 #define SCHED_FLAG_WAITING 1
 #define SCHED_FLAG_END 2
@@ -24,14 +28,25 @@ struct vector {
 
 typedef struct vector* vector_t;
 
+struct comm {
+    int32_t waitcount;
+    uint8_t flags[]; // 32 or 64 (pointer)
+};
+
+typedef struct comm* comm_t;
+
 llsched_t llsched_create(int threads, size_t datasize)
 {
     llsched_t s = rt_align(CACHE_LINE_SIZE, sizeof(struct llsched) + sizeof(void*) * threads * 2);
     s->threads = threads;
-    s->waitcount = 0;
     s->datasize = datasize;
-    s->flags = rt_align(CACHE_LINE_SIZE, threads * sizeof(uint8_t));
-    memset(s->flags, SCHED_FLAG_RUNNING, threads * sizeof(uint8_t));
+
+    comm_t comm = rt_align(CACHE_LINE_SIZE, threads * sizeof(uint8_t) + sizeof(struct comm));
+    s->comm = comm;
+
+    comm->waitcount = 0;
+    memset(&comm->flags[0], SCHED_FLAG_RUNNING, threads * sizeof(uint8_t));
+
     for (int i=0;i<threads;i++) {
         s->data[i] = (uint8_t*)rt_align(CACHE_LINE_SIZE, datasize + 1);
         *(uint8_t*)(s->data[i]) = SCHED_DATA_EMPTY;
@@ -39,7 +54,7 @@ llsched_t llsched_create(int threads, size_t datasize)
         vector_t v = (vector_t)rt_align(CACHE_LINE_SIZE, sizeof(struct vector));
         v->head = 0;
         v->tail = 0;
-        v->size = 32;
+        v->size = SCHED_MINSIZE;
         v->data = rt_align(CACHE_LINE_SIZE, v->size * datasize);
         s->data[threads+i] = v;
     }
@@ -57,28 +72,30 @@ void llsched_free(llsched_t s)
         free(v);
     }
     for (int i=0;i<s->threads;i++) free(s->data[i]);
-    free(s->flags);
+    free(s->comm);
     free(s);
 }
 
 void llsched_setupwait(llsched_t s)
 {
-    while (atomic8_read(&s->waitcount) != s->threads - 1) {}
+    comm_t comm = (comm_t)s->comm;
+    while (atomic8_read(&comm->waitcount) != (s->threads - 1)) {}
 }
 
-static inline void llsched_check_waiting(llsched_t s, int t, vector_t v)
+void llsched_check_waiting(llsched_t s, int t)
 {
-    // This method is only used internally.
-    // Do not check if t is valid
-    // Do not check if v is the correct vector
-    // Do not check: if (v->head == v->tail) return;
+    vector_t v = (vector_t)s->data[s->threads+t];
 
-    if (atomic32_read(&s->waitcount) == 0) return;
+    if (v->head == v->tail) return;
+
+    comm_t comm = (comm_t)s->comm;
+
+    if (atomic32_read(&comm->waitcount) == 0) return;
 
     for (int i=0;i<s->threads;i++) {
-        if (atomic8_read(&s->flags[i]) == SCHED_FLAG_WAITING) {
-            if (cas(&s->flags[i], SCHED_FLAG_WAITING, SCHED_FLAG_RUNNING)) {
-                __sync_fetch_and_sub(&s->waitcount, 1);
+        if (atomic8_read(&comm->flags[i]) == SCHED_FLAG_WAITING) {
+            if (cas(&comm->flags[i], SCHED_FLAG_WAITING, SCHED_FLAG_RUNNING)) {
+                __sync_fetch_and_sub(&comm->waitcount, 1);
                 memcpy(s->data[i]+1, v->data + s->datasize * v->head, s->datasize);
                 atomic8_write(s->data[i], SCHED_DATA_FILLED);
                 v->head++;
@@ -93,19 +110,27 @@ static inline int llsched_wait(llsched_t s, const int t, void* value)
     // Current state is Running
     // First, set our own state...
     atomic8_write(s->data[t], SCHED_DATA_EMPTY);
-    cas(&s->flags[t], SCHED_FLAG_RUNNING, SCHED_FLAG_WAITING);
 
-    if (__sync_add_and_fetch(&s->waitcount, 1) == s->threads) {
+    comm_t comm = (comm_t)s->comm;
+
+    //__sync_bool_compare_and_swap(&comm->flags[t], SCHED_FLAG_RUNNING, SCHED_FLAG_WAITING);
+    comm->flags[t] = SCHED_FLAG_WAITING;
+
+    if (__sync_add_and_fetch(&comm->waitcount, 1) == s->threads) {
         // We know for certain that we are the only one detecting END.
 
         // Modify state (safe to do with just volatile instructions
-        atomic32_write(&s->waitcount, 0);
-        for (int i=0; i<s->threads; i++) if (t!=i) atomic8_write(&s->flags[i], SCHED_FLAG_END);
+        atomic32_write(&comm->waitcount, 0);
+        for (int i=0; i<s->threads; i++)
+        	if (t!=i)
+        		atomic8_write(&comm->flags[i], SCHED_FLAG_END);
 
         // Release threads
-        for (int i=0; i<s->threads; i++) if (t!=i) atomic8_write(s->data[i], SCHED_DATA_END);
+        for (int i=0; i<s->threads; i++)
+        	if (t!=i)
+        		atomic8_write(s->data[i], SCHED_DATA_END);
 
-        atomic8_write(&s->flags[t], SCHED_FLAG_RUNNING);
+        atomic8_write(&comm->flags[t], SCHED_FLAG_RUNNING);
         return 0; // END!
     }
 
@@ -114,7 +139,7 @@ static inline int llsched_wait(llsched_t s, const int t, void* value)
     while (atomic8_read(s->data[t]) == SCHED_DATA_EMPTY) {}
 
     if (atomic8_read(s->data[t]) == SCHED_DATA_END) {
-        atomic8_write(&s->flags[t], SCHED_FLAG_RUNNING);
+        atomic8_write(&comm->flags[t], SCHED_FLAG_RUNNING);
         atomic8_write(s->data[t], SCHED_DATA_EMPTY);
         return 0; // END!
     }
@@ -131,13 +156,14 @@ void llsched_push(llsched_t s, int t, void* value)
 
     memcpy(v->data + v->tail * s->datasize, value, s->datasize);
     v->tail++;
+
     if (v->tail == (signed)v->size) {
-        v->size <<= 1;
+    	v->size += (v->size >> 1); // increase by 50%
         v->data = realloc(v->data, v->size * s->datasize);
     }
 
     // there is at least one entry
-    llsched_check_waiting(s, t, v);
+    llsched_check_waiting(s, t);
 }
 
 int llsched_pop(llsched_t s, int t, void* value)
@@ -153,7 +179,16 @@ int llsched_pop(llsched_t s, int t, void* value)
     memcpy(value, v->data + (v->tail-1) * s->datasize, s->datasize);
     v->tail--;
 
-    size_t count = v->tail - v->head;
+    if (v->tail == v->head) {
+    	v->head = v->tail = 0;
+    } else {
+    	llsched_check_waiting(s, t);
+    }
+
+    return 1;
+
+    //size_t count = v->tail - v->head;
+    /*
     if (v->size > 32 && count < (v->size>>2)) {
         if (v->head > 0) {
             memmove(v->data, v->data + v->head * s->datasize, count * s->datasize);
@@ -163,11 +198,12 @@ int llsched_pop(llsched_t s, int t, void* value)
         v->size >>= 1;
         v->data = realloc(v->data, v->size * s->datasize);
     }
+    */
 
     // only execute if count > 0
-    if (count > 0) llsched_check_waiting(s, t, v);
+    //if (count > 0) llsched_check_waiting(s, t, v);
 
-    return 1;
+    //return 1;
 }
 
 

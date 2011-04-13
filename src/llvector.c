@@ -5,11 +5,16 @@
 #include <stdint.h>
 #include <string.h>
 
-llvector_t llvector_create(size_t length)
+struct block {
+	void *next; // next block
+	uint8_t ref; // reference counter (gbc)
+} __attribute__ ((aligned(8))); // align on 64-bits
+
+llvector_t llvector_create(size_t datalength)
 {
     llvector_t v = (llvector_t)rt_align(CACHE_LINE_SIZE, sizeof(struct llvector));
 
-    llvector_init(v, length);
+    llvector_init(v, datalength);
 
     return v;
 }
@@ -22,6 +27,10 @@ void llvector_init(llvector_t v, size_t length)
     v->lock = 0;
     v->data = 0;
     v->size = 0;
+
+    int m = 4;
+    v->blockSize = (sizeof(struct block) + length * m + CACHE_LINE_SIZE-1) / CACHE_LINE_SIZE;
+    v->blockElements = (v->blockSize - sizeof(struct block)) / length;
 }
 
 void llvector_deinit(llvector_t v)

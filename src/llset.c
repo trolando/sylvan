@@ -25,11 +25,11 @@ static const size_t CACHE_LINE_INT32 = (1 << CACHE_LINE) / sizeof (uint32_t);
 // MASK for determining our current cache line...
 // e.g. for 64 bytes cache on 4 byte uint32_t we get 16 per cache line, mask = 0xfffffff0
 static const size_t CACHE_LINE_INT32_MASK = -((1 << CACHE_LINE) / sizeof (uint32_t));
+static const size_t CACHE_LINE_INT32_MASK_R = ~CACHE_LINE_INT32_MASK
 
 static inline int next(size_t line, size_t *cur, size_t last) 
 {
-    *cur = ((*cur)+1) & (~CACHE_LINE_INT32_MASK);
-    *cur |= line;
+    *cur = (((*cur)+1) & (CACHE_LINE_INT32_MASK_R)) | line;
     return *cur != last;
 }
 
@@ -55,12 +55,9 @@ void *llset_lookup_hash(const llset_t dbs, const void* data, int* created, uint3
     {
         uint32_t idx = hash_rehash & dbs->mask;
         size_t line = idx & CACHE_LINE_INT32_MASK;
-        size_t cur = idx & ~CACHE_LINE_INT32_MASK;
         size_t last = idx;
         do
         {
-            idx = line | cur;
-
             // DO NOT ALLOW VALUES BELOW 2 -- RESERVED BDDFALSE AND BDDTRUE
             // This is a very ugly hack
             if (idx<2) continue;
@@ -72,8 +69,8 @@ void *llset_lookup_hash(const llset_t dbs, const void* data, int* created, uint3
                     memcpy(&dbs->data[tomb_idx * l], data, b);
                     atomic32_write(tomb_bucket, DONE);
 
-                    if (index != NULL) *index = tomb_idx;
-                    if (created != NULL) *created = 1;
+                    *index = tomb_idx;
+                    *created = 1;
                     return &dbs->data[tomb_idx * l];
                 }
                 if (cas(bucket, EMPTY, WAIT))
@@ -81,8 +78,8 @@ void *llset_lookup_hash(const llset_t dbs, const void* data, int* created, uint3
                     memcpy(&dbs->data[idx * l], data, b);
                     atomic32_write(bucket, DONE);
 
-                    if (index != NULL) *index = idx;
-                    if (created != NULL) *created = 1;
+                    *index = idx;
+                    *created = 1;
                     return &dbs->data[idx * l];
                 }
             }
@@ -109,13 +106,13 @@ void *llset_lookup_hash(const llset_t dbs, const void* data, int* created, uint3
                             atomic32_write(tomb_bucket, TOMBSTONE);
                         }
 
-                        if (index != NULL) *index = idx;
-                        if (created != NULL) *created = 0;
+                        *index = idx;
+                        *created = 0;
                         return &dbs->data[idx * l];
                     }
                 }
             }
-        } while (next(line, &cur, last));
+        } while (next(line, &idx, last));
         hash_rehash = dbs->hash32(data, b, hash_rehash + (seed++));
     }
     // cough.
@@ -123,8 +120,8 @@ void *llset_lookup_hash(const llset_t dbs, const void* data, int* created, uint3
         memcpy(&dbs->data[tomb_idx * l], data, b);
         atomic32_write(tomb_bucket, DONE);
 
-        if (index != NULL) *index = tomb_idx;
-        if (created != NULL) *created = 1;
+        *index = tomb_idx;
+        *created = 1;
         return &dbs->data[tomb_idx * l];
 
     }
@@ -149,7 +146,12 @@ uint32_t llset_ptr_to_index(const llset_t dbs, void *ptr)
 
 inline void *llset_get_or_create(const llset_t dbs, const void *data, int *created, uint32_t *index)
 {
-    return llset_lookup_hash(dbs, data, created, index, NULL);
+	int _created;
+	uint32_t _index;
+    void *result = llset_lookup_hash(dbs, data, &_created, &_index, NULL);
+    if (created) *created=_created;
+    if (index) *index=_index;
+    return result;
 }
 
 llset_t llset_create(size_t length, size_t size, hash32_f hash32, equals_f equals)

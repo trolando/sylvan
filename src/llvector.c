@@ -117,12 +117,12 @@ void llvector_delete(llvector_t v, int item)
     if (item != (signed)v->count) {
         memcpy(v->data + item * v->length, v->data + v->count * v->length, v->length);
     }
-
+/*
     if (v->count < (v->size>>2) && v->size>8) {
         v->size>>=1;
         v->data = realloc(v->data, v->size * v->length);
     }
-
+*/
     atomic8_write(&v->lock, 0);
 }
 

@@ -25,7 +25,7 @@ static const size_t CACHE_LINE_INT32 = (1 << CACHE_LINE) / sizeof (uint32_t);
 // MASK for determining our current cache line...
 // e.g. for 64 bytes cache on 4 byte uint32_t we get 16 per cache line, mask = 0xfffffff0
 static const size_t CACHE_LINE_INT32_MASK = -((1 << CACHE_LINE) / sizeof (uint32_t));
-static const size_t CACHE_LINE_INT32_MASK_R = ~CACHE_LINE_INT32_MASK
+static const size_t CACHE_LINE_INT32_MASK_R = ~(-((1 << CACHE_LINE) / sizeof (uint32_t)));
 
 static inline int next(size_t line, size_t *cur, size_t last) 
 {

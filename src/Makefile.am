@@ -1,3 +1,5 @@
+ACLOCAL_AMFLAGS = -I m4
+
 AM_CPPFLAGS = -I$(top_builddir) -std=c99
 
 include_HEADERS = sylvan.h 

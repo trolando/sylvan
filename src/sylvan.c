@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
+#include <math.h> 
 
 /**
  * Exported BDD constants
@@ -47,7 +48,8 @@ const uint8_t bddcommand_ite = 3;
 #define BDD_TOGGLEMARK(s) (s<2?1-s:s^bddmark)
 #define BDD_STRIPMARK(s) (s&~bddmark)
 #define BDD_NORMALIZE(s) (s<2?1:s&~bddmark)
-#define BDD_TRANSFERMARK(from, to) (to<2 ? (from & bddmark ? 1-to : to) : (to ^ (from & bddmark)))
+//#define BDD_TRANSFERMARK(from, to) (to<2 ? (from & bddmark ? 1-to : to) : (to ^ (from & bddmark)))
+#define BDD_TRANSFERMARK(from, to) (from & bddmark ? BDD_TOGGLEMARK(to) : to)
 
 struct bddnode
 {
@@ -218,12 +220,17 @@ inline BDD sylvan_makenode(BDD level, BDD low, BDD high) {
     struct bddnode n;
     n.level = level;
 
+    // Normalization
+    // low will have no mark and will not be "true"
+
     if (low == sylvan_true) {
+        // ITE(a,b,true) == not ITE(a,not b,false)
         n.low = sylvan_false;
         n.high = BDD_TOGGLEMARK(high);
         llset_get_or_create(_bdd.data, &n, NULL, &result);
         return result | bddmark;
     } else if (BDD_HASMARK(low)) {
+        // ITE(a,b,not c) == not ITE(a,not b, c)
         n.low = BDD_STRIPMARK(low);
         n.high = BDD_TOGGLEMARK(high);
         llset_get_or_create(_bdd.data, &n, NULL, &result);
@@ -322,13 +329,29 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
     if (a & bddinternal) assert(0);
     if (b & bddinternal) assert(0);
     if (c & bddinternal) assert(0);
+/*
+    printf("MakeIte(%s%d,%s%d,%s%d) =", a&bddmark?"~":"",BDD_STRIPMARK(a),
+                                        b&bddmark?"~":"",BDD_STRIPMARK(b),
+                                        c&bddmark?"~":"",BDD_STRIPMARK(c));
+*/     
+    // TERMINAL CASE (attempt 1)
+
+    // ITE(T,B,C) = B
+    // ITE(F,B,C) = C
+    if (a < 2) {
+        BDD result = (a == sylvan_true ? b : c);
+        if (created!=0) *created = 0;
+        if (cached!=0) *cached = 1;
+        //printf(" %d\n",result);
+        return result;
+    }
 
     // Normalization to standard triples
-
+/*
     // ITE(A,A,C) = ITE(A,T,C)
     // ITE(A,~A,C) = ITE(A,F,C)
     if (BDD_STRIPMARK(a) == BDD_STRIPMARK(b)) {
-        // we can ignore constants, so use faster STRIPMARK
+        // faster STRIPMARK means we don't detect constants
         if (a == b) b = sylvan_true;
         else b = sylvan_false;
     }
@@ -336,7 +359,7 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
     // ITE(A,B,A) = ITE(A,B,T)
     // ITE(A,B,~A) = ITE(A,B,F)
     if (BDD_STRIPMARK(a) == BDD_STRIPMARK(c)) {
-        // we can ignore constants, so use faster STRIPMARK
+        // faster STRIPMARK means we don't detect constants
         if (a != c) c = sylvan_true;
         else c = sylvan_false;
     }
@@ -384,15 +407,16 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
             a = BDD_TOGGLEMARK(b);
             b = BDD_TOGGLEMARK(t);
         }
-    }
+    }*/
 
     // Now, if b == constant then a<c (a may be constant)
     //      if c == constant then a<b (a may be constant)
     //      if both constant then a will be constant
-
+/*
     if (BDD_NORMALIZE(b) == BDD_NORMALIZE(c)) {
+        // NORMALIZE: like STRIPMARK but also turns "false" into "true"
         if (b == c) {
-            // trivially equal to b
+            // trivially equal to b (=c)
             BDD result = b;
             if (created!=0) *created = 0;
             if (cached!=0) *cached = 1;
@@ -400,31 +424,36 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
         } else {
             // Trivial case: they are constants
             if (b<2) {
+                assert(a<2);
                 // if they are different, then either
                 // true then true else false === true
                 // true then false else true === false
                 // false then true else false === false
                 // false then false else true === true
-                BDD result;
-                if (a == b) result = sylvan_true;
-                else result = sylvan_false;
+                BDD result = (a == sylvan_true?b:c);
+                //if (a == b) result = sylvan_true;
+                //else result = sylvan_false;
 
                 if (created!=0) *created = 0;
                 if (cached!=0) *cached = 1;
                 return result;
             }
 
-            // not constants...
-            // if A then B else not-B
+            // b and c not constants...
+            // 1. if A then B else not-B
+            // 2. if A then not-B else B
             if (BDD_STRIPMARK(a) > BDD_STRIPMARK(b)) {
                 // a > b, exchange:
-                // if B then A else not-A
+                // 1. if B then A else not-A
+                // 2. if not-B then A else not-A
                 b = a;
                 a = BDD_TOGGLEMARK(c);
                 c = BDD_TOGGLEMARK(b);
             }
         }
     }
+*/
+    // TERMINAL CASE
 
     // ITE(T,B,C) = B
     // ITE(F,B,C) = C
@@ -432,9 +461,10 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
         BDD result = (a == sylvan_true ? b : c);
         if (created!=0) *created = 0;
         if (cached!=0) *cached = 1;
+        //printf(" %d\n",result);
         return result;
     }
-
+/*
     // ITE(~A,B,C) = ITE(A,C,B)
     if (BDD_HASMARK(a)) {
         a = BDD_STRIPMARK(a);
@@ -442,7 +472,7 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
         c = b;
         b = t;
     }
-
+*/
     BDD mark = 0;
 
     /**
@@ -456,7 +486,9 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
      *              = ~((A and ~B) or (~A and ~C))
      *              = ~ITE(A,~B,~C)
      */
-    if (BDD_HASMARK(b)) {
+
+    if (BDD_HASMARK(b) || b == sylvan_false) {
+        //printf(" (%d) ",sylvan_var(a));
         // a then -b else c
         // (A and -B) or (-A and C)
         // (-A or -B) and (A or C)
@@ -466,6 +498,7 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
         mark = bddmark;
         b = BDD_TOGGLEMARK(b);
         c = BDD_TOGGLEMARK(c);
+        //printf(" not if %d then %d else %d\n", a,b,c);
     }
 
     template_apply_node[thread]->a = a;
@@ -482,10 +515,13 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
     bddcache_t ptr = llset_get_or_create(_bdd.cache, template_apply_node[thread], &_created, &result);
 
     if (!_created && BDD_STRIPMARK(ptr->result) != sylvan_invalid) {
+        //printf(" %d\n",result);
         if (created!=0) *created = 0;
         if (cached!=0) *cached = 1;
         return BDD_TRANSFERMARK(mark, ptr->result);
     }
+  
+    //printf(" (%d) ITE\n",sylvan_var(a));
 
     if (created!=0) *created = _created;
     if (cached!=0) *cached = 0;
@@ -495,7 +531,8 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
 /**
  * <to> takes over the parents of <from>
  * This means that the cache_low and cache_high values will be updated with to_cs
- * Marks on the cache_low and cache_high will be transferred.
+ * This method is ONLY for parents of ITE* nodes
+ * ITE* nodes have no mark
  */
 static inline void sylvan_move_parents(bddcache_t from, BDD to_c)
 {
@@ -506,12 +543,14 @@ static inline void sylvan_move_parents(bddcache_t from, BDD to_c)
     while (llvector_count(&from->parents) > 0) {
         if (!llvector_pop(&from->parents, &parent)) assert(0);
 
-        if (BDD_STRIPMARK(parent->cache_low) == from_c) {
-            parent->cache_low = BDD_TRANSFERMARK(parent->cache_low, to_c);
+        assert(parent->cache_low & bddmark == 0);
+
+        if (parent->cache_low == from_c) {
+            parent->cache_low = to_c;
         }
 
-        if (BDD_STRIPMARK(parent->cache_high) == from_c) {
-            parent->cache_high = BDD_TRANSFERMARK(parent->cache_high, to_c);
+        if (parent->cache_high == from_c) {
+            parent->cache_low = to_c;
         }
 
         llvector_add(&to->parents, &parent);
@@ -575,6 +614,7 @@ static inline int sylvan_process_ite_ex(int thread, bddcache_t node, int queue_n
         llvector_add(&GETCACHE(result)->parents, &node);
     } else {
         // it is not the root node, replace and delete it
+        // This function is only valid on ITE* nodes.
         sylvan_move_parents(node, result);
         llset_delete(_bdd.cache, node_c);
     }
@@ -605,6 +645,8 @@ static inline void sylvan_handle_ite_parents(const int thread, bddcache_t node, 
 {
     // Multiple threads may be working here at once!
     BDD q = node->result;
+
+    //printf("Handle result %s%d\n", q&bddmark?"~":"", q);
 
     bddcache_t parent;
     while (llvector_pop(&node->parents, &parent)) {
@@ -642,14 +684,11 @@ static inline void sylvan_handle_ite_parents(const int thread, bddcache_t node, 
         if ((parent->a & bddinternal) == 0) {
             // The parent is a normal ITE node
             if (parent->low == parent->high) {
-                parent->result = q; // this is for the cache
-
-                // Take over parents and continue
-                sylvan_move_parents(parent, node_c);
-                continue;
+                parent->result = parent->low;
+            } else {
+                parent->result = sylvan_makenode(parent->root, parent->low, parent->high);
             }
 
-            parent->result = sylvan_makenode(parent->root, parent->low, parent->high);
             llsched_push(_bdd.sched, thread, &parent_c);
             continue;
         }
@@ -677,9 +716,9 @@ static inline void sylvan_prepare_ite(const int thread, bddcache_t node, BDD nod
     // Step 1: figure out what our head level is
 
     BDD level = 0xffffffff;
-    if (a && level>a->level) level = a->level;
-    if (b && level>b->level) level = b->level;
-    if (c && level>c->level) level = c->level;
+    if (a && level > a->level) level = a->level;
+    if (b && level > b->level) level = b->level;
+    if (c && level > c->level) level = c->level;
 
     node->root = level;
 
@@ -753,6 +792,8 @@ static inline void sylvan_prepare_ite(const int thread, bddcache_t node, BDD nod
     // if (n!=2) __sync_synchronize();
 
     // Perhaps the result just got set?
+    // In that case, assist with parents just in case!
+
     if (low_node && atomicsylvan_read(&low_node->result) != sylvan_invalid) {
         while (atomicsylvan_read(&low_node->result) == bddhandled) {}
         sylvan_handle_ite_parents(thread, low_node, BDD_STRIPMARK(low));
@@ -779,178 +820,17 @@ static void sylvan_execute_ite(const int thread) {
         node_c = BDD_STRIPMARK(node_c);
         node = GETCACHE(node_c);
 
+        // Results are calculated in sylvan_prepare_ite 
+        // and sylvan_handle_ite_parents
+
         if (node->result != sylvan_invalid) {
             sylvan_handle_ite_parents(thread, node, node_c);
         } else {
-            assert(node->result != bddhandled);
-
             sylvan_prepare_ite(thread, node, node_c);
         }
     }
 }
 
-
-
-/*
-static void sylvan_execute_ite(const int thread) {
-    // Phase 1: create dependency tree and leafs
-    BDD node_c;
-    while (llsched_pop(_bdd.sched, thread, &node_c) == 1) {
-        node_c = BDD_STRIPMARK(node_c);
-        bddcache_t node = GETCACHE(node_c);
-
-        bddnode_t restrict a = node->a < 2 ? 0 : GETNODE(node->a);
-        bddnode_t restrict b = node->b < 2 ? 0 : GETNODE(node->b);
-        bddnode_t restrict c = node->c < 2 ? 0 : GETNODE(node->c);
-
-        BDD level = 0xffffffff;
-        if (a && level>a->level) level = a->level;
-        if (b && level>b->level) level = b->level;
-        if (c && level>c->level) level = c->level;
-
-        BDD aLow, aHigh, bLow, bHigh, cLow, cHigh;
-
-        if (a && level == a->level) {
-            aLow = BDD_TRANSFERMARK(node->a, a->low);
-            aHigh = BDD_TRANSFERMARK(node->a, a->high);
-        } else {
-            aLow = node->a;
-            aHigh = node->a;
-        }
-
-        if (b && level == b->level) {
-            bLow = BDD_TRANSFERMARK(node->b, b->low);
-            bHigh = BDD_TRANSFERMARK(node->b, b->high);
-        } else {
-            bLow = node->b;
-            bHigh = node->b;
-        }
-
-        if (c && level == c->level) {
-            cLow = BDD_TRANSFERMARK(node->c, c->low);
-            cHigh = BDD_TRANSFERMARK(node->c, c->high);
-        } else {
-            cLow = node->c;
-            cHigh = node->c;
-        }
-
-        node->root = level;
-
-        int created, cached;
-        int n=0;
-
-        BDD low = sylvan_makeite(thread, aLow, bLow, cLow, &created, &cached);
-        if (created) llsched_push(_bdd.sched, thread, &low);
-
-        if (cached) {
-            node->low = low;
-            node->cache_low = 0;
-            ++n;
-        } else {
-            node->low = sylvan_invalid;
-            node->cache_low = low;
-            llvector_add(&GETCACHE(low)->parents, &node);
-        }
-
-        BDD high = sylvan_makeite(thread, aHigh, bHigh, cHigh, &created, &cached);
-        if (created) llsched_push(_bdd.sched, thread, &high);
-
-        if (cached) {
-            node->high = high;
-            node->cache_high = 0;
-            ++n;
-        } else {
-            node->high = sylvan_invalid;
-            node->cache_high = high;
-            llvector_add(&GETCACHE(high)->parents, &node);
-        }
-
-        if (n==2) {
-            // low and high are cached, so this is a leaf in the operation
-            if (node->low == node->high) node->result = node->low;
-            else node->result = sylvan_makenode(node->root, node->low, node->high);
-            llvector_add(&_bdd.leaves, &node_c);
-        }
-    }
-
-    // PART 2
-    if (thread == 0) {
-        llsched_setupwait(_bdd.sched);
-        while (llvector_count(&_bdd.leaves)>0) {
-            if (!llvector_pop(&_bdd.leaves, &node_c)) assert(0);
-            llsched_push(_bdd.sched, 0, &node_c);
-        }
-    }
-
-    while (llsched_pop(_bdd.sched, thread, &node_c) == 1) {
-        // strip mark
-        node_c = BDD_STRIPMARK(node_c);
-
-        bddcache_t node = GETCACHE(node_c);
-        BDD q = node->result;
-
-        assert (q!=sylvan_invalid &&  q!=bddhandled);
-
-        while (llvector_count(&node->parents) > 0) {
-            bddcache_t parent;
-            if (!llvector_pop(&node->parents, &parent)) assert(0);
-
-            BDD parent_c = GETCACHEBDD(parent);
-
-            if (parent->cache_low == parent->cache_high) {
-                // For example, the ITE* root node has this property
-                parent->low = BDD_TRANSFERMARK(parent->cache_low, q);
-                parent->high = BDD_TRANSFERMARK(parent->cache_high, q);
-                parent->cache_low = 0;
-                parent->cache_high = 0;
-            } else {
-                if (BDD_STRIPMARK(parent->cache_low) == node_c) {
-                    parent->low = BDD_TRANSFERMARK(parent->cache_low, q);
-                    parent->cache_low = 0;
-                }
-
-                if (BDD_STRIPMARK(parent->cache_high) == node_c) {
-                    parent->high = BDD_TRANSFERMARK(parent->cache_high, q);
-                    parent->cache_high = 0;
-                }
-
-                // Memory barrier
-                // it turns out lfence, sfence, mfence are all about as fast for now
-                __sync_synchronize();
-
-                if (parent->low == sylvan_invalid || parent->high == sylvan_invalid) continue;
-                if (!cas(&parent->result, sylvan_invalid, bddhandled)) continue;
-            }
-
-            // We're here, the parent has both dependencies resolved
-            if ((parent->a & bddinternal) == 0) {
-                // The parent is a normal ITE node
-                if (parent->low == parent->high) {
-                    parent->result = q; // this is for the cache
-
-                    // Take over parents
-                    sylvan_move_parents(parent, node_c);
-                    continue;
-                }
-
-                parent->result = sylvan_makenode(parent->root, parent->low, parent->high);
-                llsched_push(_bdd.sched, thread, &parent_c);
-                continue;
-            }
-
-            if (sylvan_process_ite_ex(thread, parent, 0)) {
-                llsched_push(_bdd.sched, thread, &parent_c);
-            }
-        }
-
-        // free empty vector
-        llvector_deinit(&node->parents);
-
-        // if ITE* node, delete it
-        if (node->a & bddinternal) llset_delete(_bdd.cache, node_c);
-    }
-}
-*/
 BDD sylvan_ite(BDD a, BDD b, BDD c) {
     assert(a != sylvan_invalid);
     assert(b != sylvan_invalid);
@@ -1175,8 +1055,6 @@ BDD sylvan_restructure(BDD a, BDD b, BDD c, BDD* pairs, size_t n)
     uint32_t idx;
 
     bddcache_t ptr = llset_get_or_create(_bdd.cache, template_apply_node[0], NULL, &idx);
-
-    //printf("START\n");
 
     for (int i=1; i<_bdd.threadCount; i++) {
         atomic8_write(&_bdd.flags[i], bddcommand_ite_down);

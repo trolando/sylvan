@@ -14,57 +14,23 @@ static const uint32_t   WRITE_BIT = 1 << 31;
 static const uint32_t   WRITE_BIT_R = ~(1 << 31);
 static const uint32_t   TOMBSTONE = 0x7fffffff;
 
-int default_equals(const void *a, const void *b, size_t length)
+static int default_equals(const void *a, const void *b, size_t length)
 {
     return memcmp(a, b, length) == 0;
 }
-
-size_t inc (size_t x)
-{
-    return x + 1;
-}
-
-size_t dec (size_t x)
-{
-    return x - 1;
-}
-int lt (size_t x, size_t y)
-{
-    return x < y;
-}
-
-int gte (size_t x, size_t y)
-{
-    return x >= y;
-}
-
-typedef size_t  (*op_f)   (size_t x);
-typedef int     (*comp_f) (size_t x, size_t y);
 
 // Number to add to table index to get next cache line
 static const size_t CACHE_LINE_INT32 = (1 << CACHE_LINE) / sizeof (uint32_t);
 
 // MASK for determining our current cache line...
+// e.g. for 64 bytes cache on 4 byte uint32_t we get 16 per cache line, mask = 0xfffffff0
 static const size_t CACHE_LINE_INT32_MASK = -((1 << CACHE_LINE) / sizeof (uint32_t));
 
-/**
- * Returns operators to walk up or down a cache line, depending on the starting location.
- */
-static inline size_t setup_walk_the_line (size_t idx, op_f* op, comp_f* comp)
+static inline int next(size_t line, size_t *cur, size_t last) 
 {
-    size_t line = (idx & CACHE_LINE_INT32_MASK);
-    if (idx - line < (CACHE_LINE_INT32 >> 1))
-    {
-        *op = inc;
-        *comp = lt;
-        line += CACHE_LINE_INT32;
-    }
-    else
-    {
-        *op = dec;
-        *comp = gte;
-    }
-    return line;
+    *cur = ((*cur)+1) & (~CACHE_LINE_INT32_MASK);
+    *cur |= line;
+    return *cur != last;
 }
 
 void *llset_lookup_hash(const llset_t dbs, const void* data, int* created, uint32_t* index, uint32_t* hash)
@@ -82,18 +48,19 @@ void *llset_lookup_hash(const llset_t dbs, const void* data, int* created, uint3
     uint32_t            WAIT = hash_memo & WRITE_BIT_R;
     uint32_t            DONE = hash_memo | WRITE_BIT;
 
-    op_f                op;
-    comp_f              comp;
-
     uint32_t           *tomb_bucket = 0;
     uint32_t            tomb_idx = 0;
 
     while (seed < dbs->threshold)
     {
         uint32_t idx = hash_rehash & dbs->mask;
-        size_t line = setup_walk_the_line (idx, &op, &comp);
-        for (; comp (idx, line); idx = op (idx))
+        size_t line = idx & CACHE_LINE_INT32_MASK;
+        size_t cur = idx & ~CACHE_LINE_INT32_MASK;
+        size_t last = idx;
+        do
         {
+            idx = line | cur;
+
             // DO NOT ALLOW VALUES BELOW 2 -- RESERVED BDDFALSE AND BDDTRUE
             // This is a very ugly hack
             if (idx<2) continue;
@@ -148,10 +115,9 @@ void *llset_lookup_hash(const llset_t dbs, const void* data, int* created, uint3
                     }
                 }
             }
-        }
+        } while (next(line, &cur, last));
         hash_rehash = dbs->hash32(data, b, hash_rehash + (seed++));
     }
-
     // cough.
     if (tomb_bucket != 0) {
         memcpy(&dbs->data[tomb_idx * l], data, b);

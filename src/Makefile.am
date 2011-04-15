@@ -2,9 +2,12 @@ ACLOCAL_AMFLAGS = -I m4
 
 AM_CPPFLAGS = -I$(top_builddir) -std=c99
 
+bin_PROGRAMS = test
+
 include_HEADERS = sylvan.h 
 
 lib_LTLIBRARIES = libsylvan.la
+
 libsylvan_la_SOURCES = \
  sylvan.c \
  llsched.c \
@@ -26,3 +29,7 @@ libsylvan_la_LIBADD = -lm
 #check_PROGRAMS = bddtest
 #bddtest_SOURCES = bddtest.cxx
 #bddtest_LDADD = ./libbdd.la
+
+test_SOURCES = main.c
+test_LDADD = ./libsylvan.la
+test_LDADD += -lpthread -lrt

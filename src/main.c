@@ -109,6 +109,26 @@ void *test_set_thread(void* data)
     return NULL;
 }
 
+int testEqual(BDD a, BDD b)
+{
+	if (a == b) return 1;
+
+	if (a == sylvan_invalid) {
+		printf("a is invalid!\n");
+		return 0;
+	}
+
+	if (b == sylvan_invalid) {
+		printf("b is invalid!\n");
+		return 0;
+	}
+
+	sylvan_print(a);
+	sylvan_print(b);
+	return 0;
+
+}
+
 void test_sylvan_apply()
 {
     BDD a,b,c,d,e,f,g;
@@ -134,7 +154,7 @@ void test_sylvan_apply()
 
     // (a xor b) and (c or d)
     BDD test = sylvan_makenode(1, sylvan_makenode(2, sylvan_false, cord), sylvan_makenode(2, cord, sylvan_false));
-    assert(test == sylvan_apply(axorb, cord, operator_and));
+    assert(testEqual(test, sylvan_apply(axorb, cord, operator_and)));
     assert(test == sylvan_apply(cord, axorb, operator_and));
 
     // not (A and B)  == not A or not B

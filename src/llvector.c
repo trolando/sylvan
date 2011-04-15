@@ -5,11 +5,6 @@
 #include <stdint.h>
 #include <string.h>
 
-struct block {
-	void *next; // next block
-	uint8_t ref; // reference counter (gbc)
-} __attribute__ ((aligned(8))); // align on 64-bits
-
 llvector_t llvector_create(size_t datalength)
 {
     llvector_t v = (llvector_t)rt_align(CACHE_LINE_SIZE, sizeof(struct llvector));
@@ -29,8 +24,6 @@ void llvector_init(llvector_t v, size_t length)
     v->size = 0;
 
     int m = 4;
-    v->blockSize = (sizeof(struct block) + length * m + CACHE_LINE_SIZE-1) / CACHE_LINE_SIZE;
-    v->blockElements = (v->blockSize - sizeof(struct block)) / length;
 }
 
 void llvector_deinit(llvector_t v)
@@ -75,12 +68,17 @@ void llvector_get(llvector_t v, int item, void *data)
     atomic8_write(&v->lock, 0);
 }
 
+int llvector_empty(llvector_t v)
+{
+	return v->count == 0;
+}
+
 size_t llvector_count(llvector_t v)
 {
     return v->count;
 }
 
-void llvector_add(llvector_t v, void *data)
+void llvector_push(llvector_t v, void *data)
 {
     // get lock
     while (1) {

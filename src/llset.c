@@ -25,7 +25,8 @@ static const size_t CACHE_LINE_INT32 = (1 << CACHE_LINE) / sizeof (uint32_t);
 // MASK for determining our current cache line...
 // e.g. for 64 bytes cache on 4 byte uint32_t we get 16 per cache line, mask = 0xfffffff0
 static const size_t CACHE_LINE_INT32_MASK = -((1 << CACHE_LINE) / sizeof (uint32_t));
-static const size_t CACHE_LINE_INT32_MASK_R = ~(-((1 << CACHE_LINE) / sizeof (uint32_t)));
+//static const size_t CACHE_LINE_INT32_MASK_R = ~(-((1 << CACHE_LINE) / sizeof (uint32_t)));
+static const size_t CACHE_LINE_INT32_MASK_R = (1 << CACHE_LINE) / sizeof(uint32_t) - 1;
 
 static inline int next(size_t line, size_t *cur, size_t last) 
 {
@@ -115,7 +116,8 @@ void *llset_lookup_hash(const llset_t dbs, const void* data, int* created, uint3
         } while (next(line, &idx, last));
         hash_rehash = dbs->hash32(data, b, hash_rehash + (seed++));
     }
-    // cough.
+
+    // If we are here, then we are certain no entries exist!
     if (tomb_bucket != 0) {
         memcpy(&dbs->data[tomb_idx * l], data, b);
         atomic32_write(tomb_bucket, DONE);
@@ -127,6 +129,7 @@ void *llset_lookup_hash(const llset_t dbs, const void* data, int* created, uint3
     }
 
     rt_report_and_exit(1, "Hash table full\n");
+
     return 0;
 }
 

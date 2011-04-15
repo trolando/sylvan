@@ -8,8 +8,6 @@ struct llvector
     int32_t length;
     int32_t size;
     int32_t count;
-    int32_t blockSize;
-    int32_t blockElements;
     void* data;
     uint8_t lock;
 };
@@ -21,7 +19,7 @@ void llvector_init(llvector_t v, size_t length);
 void llvector_deinit(llvector_t v);
 void llvector_free(llvector_t v);
 
-void llvector_get(llvector_t v, int item, void *data);
+//void llvector_get(llvector_t v, int item, void *data);
 
 /**
  * Copies an item from the vector to <data> and remove it.
@@ -29,9 +27,12 @@ void llvector_get(llvector_t v, int item, void *data);
  */
 int llvector_pop(llvector_t v, void *data);
 
+void llvector_push(llvector_t v, void *data);
+
+int llvector_empty(llvector_t v);
+
 size_t llvector_count(llvector_t v);
 
-void llvector_add(llvector_t v, void *data);
 
 void llvector_delete(llvector_t v, int item);
 

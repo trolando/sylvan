@@ -98,7 +98,9 @@ struct bddcache {
     BDD low; // new else
     BDD cache_low; // index to bddcache else
     BDD cache_high; // index to bddcache then
-    struct llvector parents; // parents in the current operation
+    BDD first_parent; // index to first parent
+    BDD next_low_parent; // index to next parent of low child
+    BDD next_high_parent; // index to next parent of high child
     /// The cache of calculated BDD values
     BDD result; // sylvan_invalid after creation, bddhandled when added to the job queue
 };
@@ -190,7 +192,6 @@ void sylvan_init(int threads, size_t datasize, size_t cachesize) {
         template_apply_node[i] = malloc(sizeof(struct bddcache));
         memset(template_apply_node[i], 0, sizeof(struct bddcache));
         template_apply_node[i]->result = sylvan_invalid;
-        llvector_init(&template_apply_node[i]->parents, sizeof(bddcache_t)); // this does not call malloc!
     }
 
     /// Start threads
@@ -330,6 +331,46 @@ BDD sylvan_apply_ex(BDD a, BDD b, sylvan_operator op, const BDD* pairs, size_t n
         assert(0);
     }
 }
+
+static inline void sylvan_parent_add_low(bddcache_t child, bddcache_t parent, BDD parent_c)
+{
+	printf("Add parent %u to child %d\n", parent_c, GETCACHEBDD(child));
+    while (1) {
+       BDD fp = child->first_parent;
+       parent->next_low_parent = fp;
+       if (__sync_bool_compare_and_swap(&child->first_parent, fp, parent_c)) return;
+    }
+}
+
+static inline void sylvan_parent_add_high(bddcache_t child, bddcache_t parent, BDD parent_c)
+{
+	printf("Add parent %u to child %d\n", parent_c, GETCACHEBDD(child));
+    while (1) {
+       BDD fp = child->first_parent;
+       parent->next_high_parent = fp;
+       if (__sync_bool_compare_and_swap(&child->first_parent, fp, parent_c)) return;
+    }
+}
+
+static inline BDD sylvan_parent_pop(bddcache_t child)
+{
+	BDD child_c = GETCACHEBDD(child);
+	while (1) {
+		BDD fp = child->first_parent;
+		if (fp == 0) return 0;
+
+		bddcache_t p = GETCACHE(fp);
+		BDD next;
+		if (BDD_STRIPMARK(p->cache_low) == child_c) {
+			next = p->next_low_parent;
+		} else {
+			next = p->next_high_parent;
+		}
+		printf("prnt from %d to %d\n", fp, next);
+		if (__sync_bool_compare_and_swap(&child->first_parent, fp, next)) return fp;
+	}
+}
+
 
 static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *cached)
 {
@@ -544,27 +585,24 @@ static inline void sylvan_move_parents(bddcache_t from, BDD to_c)
     BDD from_c = GETCACHEBDD(from);
     bddcache_t to = GETCACHE(to_c);
 
-	printf("Moving parents from %d to %s%d\n", from_c,
-			to_c&bddmark?"~":"",to_c&~bddmark);
+    BDD parent_c;
+    while ((parent_c = sylvan_parent_pop(from)) != 0) {
+    	bddcache_t parent = GETCACHE(parent_c);
 
-    bddcache_t parent;
-    while (llvector_pop(&from->parents, &parent)) {
-        // Check that the parent is also ITE* node
+    	// Check that the parent is also ITE* node
         assert(parent->a & bddinternal);
 
         if (parent->cache_low == from_c) {
+            if (parent->cache_high == from_c)
+            	parent->cache_high = to_c;
+
             parent->cache_low = to_c;
-        }
-
-        if (parent->cache_high == from_c) {
+            sylvan_parent_add_low(to, parent, parent_c);
+        } else if (parent->cache_high == from_c) {
             parent->cache_high = to_c;
-        }
-
-        llvector_push(&to->parents, &parent);
+            sylvan_parent_add_high(to, parent, parent_c);
+        } else assert(0);
     }
-
-    // free empty vector
-    llvector_deinit(&from->parents);
 }
 
 /**
@@ -609,7 +647,7 @@ static inline int sylvan_process_ite_ex(int thread, bddcache_t node, int queue_n
         result = sylvan_makeite(thread, node->root, node->high, node->low, &created, &cached);
     }
 
-    int is_not_root_node = (llvector_count(&node->parents) > 0)?1:0;
+    int is_not_root_node = node->first_parent != 0?1:0;
 
     // if it is cached... store result and return
     if (cached) {
@@ -626,7 +664,7 @@ static inline int sylvan_process_ite_ex(int thread, bddcache_t node, int queue_n
         // it is the root node
         node->root = sylvan_last;
         node->cache_low = node->cache_high = result;
-        llvector_push(&GETCACHE(result)->parents, &node);
+        sylvan_parent_add_low(GETCACHE(result), node, node_c);
     } else {
         // it is not the root node, replace and delete it
         // This function is only valid on ITE* nodes.
@@ -701,9 +739,9 @@ static inline void sylvan_handle_ite_parents(const int thread, bddcache_t node, 
     // Multiple threads may be working here at once!
     BDD q = node->result;
 
-    bddcache_t parent;
-    while (llvector_pop(&node->parents, &parent)) {
-        BDD parent_c = GETCACHEBDD(parent);
+    BDD parent_c;
+    while ((parent_c = sylvan_parent_pop(node)) != 0) {
+        bddcache_t parent = GETCACHE(parent_c);
 
 		if (BDD_STRIPMARK(parent->cache_low) == node_c) {
 			parent->low = BDD_TRANSFERMARK(parent->cache_low, q);
@@ -725,9 +763,6 @@ static inline void sylvan_handle_ite_parents(const int thread, bddcache_t node, 
 		}
 
     }
-
-    // free empty vector
-    llvector_deinit(&node->parents);
 
     // if ITE* node, delete it
     if (node->a & bddinternal) llset_delete(_bdd.cache, node_c);
@@ -795,7 +830,7 @@ static inline void sylvan_prepare_ite(const int thread, bddcache_t node, BDD nod
 
         node->low = sylvan_invalid;
         node->cache_low = low;
-        llvector_push(&low_node->parents, &node);
+        sylvan_parent_add_low(low_node, node, node_c);
 
         if (created) llsched_push(_bdd.sched, thread, &low);
 
@@ -822,7 +857,9 @@ static inline void sylvan_prepare_ite(const int thread, bddcache_t node, BDD nod
 
         node->high = sylvan_invalid;
         node->cache_high = high;
-        llvector_push(&high_node->parents, &node);
+        if (BDD_STRIPMARK(node->cache_high) != BDD_STRIPMARK(node->cache_low)) {
+            sylvan_parent_add_high(high_node, node, node_c);
+        }
 
         if (created) llsched_push(_bdd.sched, thread, &high);
         else {
@@ -975,7 +1012,7 @@ static void sylvan_execute_ite_down(const int thread) {
 
             node->cache_low = idx;
             node->low = sylvan_invalid;
-            llvector_push(&ptr->parents, &node);
+            sylvan_parent_add_low(ptr, node, node_c);
 
             template_apply_node[thread]->a = aHigh | bddinternal;
             template_apply_node[thread]->b = bHigh;
@@ -989,8 +1026,9 @@ static void sylvan_execute_ite_down(const int thread) {
 
             node->cache_high = idx;
             node->high = sylvan_invalid;
-            llvector_push(&ptr->parents, &node);
-
+            if (BDD_STRIPMARK(node->cache_high) != BDD_STRIPMARK(node->cache_low)) {
+                sylvan_parent_add_high(ptr, node, node_c);
+            }
         } else {
             // we need a child ITE nodes
             int created, cached;
@@ -1008,15 +1046,13 @@ static void sylvan_execute_ite_down(const int thread) {
                 }
                 node->cache_low = result;
                 node->low = sylvan_invalid;
-                llvector_push(&GETCACHE(result)->parents, &node);
+                sylvan_parent_add_low(GETCACHE(result), node, node_c);
             }
 
             result = sylvan_makeite(thread, aHigh, bHigh, cHigh, &created, &cached);
             if (cached) {
                 node->cache_high = 0;
                 node->high = result;
-                printf("Set %d high to cached %s%d\n", node_c,
-                		bddmark&node->high?"~":"", node->high&~bddmark);
                 ++n;
             } else {
                 if (created) {
@@ -1025,7 +1061,9 @@ static void sylvan_execute_ite_down(const int thread) {
                 }
                 node->cache_high = result;
                 node->high = sylvan_invalid;
-                llvector_push(&GETCACHE(result)->parents, &node);
+                if (BDD_STRIPMARK(node->cache_low) != BDD_STRIPMARK(node->cache_high)) {
+                    sylvan_parent_add_high(GETCACHE(result), node, node_c);
+                }
             }
         }
 
@@ -1066,9 +1104,9 @@ static void sylvan_execute_ite_down(const int thread) {
 
         BDD q = node->result;
 
-        bddcache_t parent;
-        while (llvector_pop(&node->parents, &parent)) {
-            BDD parent_c = GETCACHEBDD(parent);
+        BDD parent_c;
+        while ((parent_c = sylvan_parent_pop(node)) != 0) {
+            bddcache_t parent = GETCACHE(parent_c);
 
             // Verify that it is a ITE* node
             assert(parent->a & bddinternal);
@@ -1107,7 +1145,6 @@ static void sylvan_execute_ite_down(const int thread) {
         }
 
         // free parents data and delete node
-        llvector_deinit(&node->parents);
         llset_delete(_bdd.cache, node_c);
     }
 }
@@ -1333,6 +1370,8 @@ void sylvan_print(BDD bdd) {
 }
 
 void sylvan_print_cache_node(bddcache_t node) {
+	BDD node_c = GETCACHEBDD(node);
+
     printf("%u: a=", GETCACHEBDD(node));
     sylvan_printbdd("%u", node->a);
     printf(", b=");
@@ -1348,11 +1387,19 @@ void sylvan_print_cache_node(bddcache_t node) {
     printf(" ha=");
     sylvan_printbdd("%u", node->cache_high);
     printf(" parents={");
-    for (uint32_t i=0;i<llvector_count(&node->parents);i++) {
-        if (i>0) printf(",");
-        bddcache_t n;
-        llvector_get(&node->parents, i, &n);
-        printf("%u", (uint32_t)GETCACHEBDD(n));
+
+    int i=0;
+    BDD prnt = node->first_parent;
+    while (prnt != 0) {
+    	if (i>0) printf(",");
+    	printf("%u", prnt);
+
+    	if (BDD_STRIPMARK(GETCACHE(prnt)->cache_low) == node_c)
+    		prnt = GETCACHE(prnt)->next_low_parent;
+    	else
+    		prnt = GETCACHE(prnt)->next_high_parent;
+
+    	i++;
     }
     printf("}, r=%x\n", node->result);
 }

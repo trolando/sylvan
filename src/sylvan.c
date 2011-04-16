@@ -1175,43 +1175,22 @@ BDD sylvan_restructure(BDD a, BDD b, BDD c, BDD* pairs, size_t n)
     sylvan_execute_ite_down(0);
     sylvan_wait_for_threads();
 
-    printf("After ITE*-down:\n");
-    sylvan_print_cache(idx);
+	for (int i=1; i<_bdd.threadCount; i++) {
+		atomic8_write(&_bdd.flags[i], bddcommand_ite);
+	}
 
-    //struct llvector v;
-    //llvector_init(&v, sizeof(BDD));
+	llsched_setupwait(_bdd.sched);
 
-    //while (llvector_count(&_bdd.leaves2)>0) {
-        //llvector_move(&_bdd.leaves2, &v);
+	BDD node_c;
+	while (llvector_pop(&_bdd.leaves2, &node_c)) {
+		llsched_push(_bdd.sched, 0, &node_c);
+	}
 
-        for (int i=1; i<_bdd.threadCount; i++) {
-            atomic8_write(&_bdd.flags[i], bddcommand_ite);
-        }
-
-        llsched_setupwait(_bdd.sched);
-/*
-        while (llvector_count(&v)>0) {
-            BDD node_c;
-            llvector_pop(&v, &node_c);
-            llsched_push(_bdd.sched, 0, &node_c);
-        }*/
-
-        while (llvector_count(&_bdd.leaves2)>0) {
-            BDD node_c;
-            llvector_pop(&_bdd.leaves2, &node_c);
-            llsched_push(_bdd.sched, 0, &node_c);
-        }
-
-        //llvector_deinit(&v);
-
-        sylvan_execute_ite(0);
-        sylvan_wait_for_threads();
-    //}
+	sylvan_execute_ite(0);
+	sylvan_wait_for_threads();
 
     BDD result = ptr->result;
-
     if (result == sylvan_invalid) sylvan_print_cache(GETCACHEBDD(ptr));
-
     assert(result != sylvan_invalid);
 
     llset_delete(_bdd.cache, idx);
@@ -1343,9 +1322,7 @@ void sylvan_print(BDD bdd) {
     llvector_push(v, &bdd);
     llset_get_or_create(s, &bdd, &created, NULL);
 
-    while (llvector_count(v) > 0) {
-        llvector_pop(v, &bdd);
-
+    while (llvector_pop(v, &bdd)) {
         sylvan_printbdd("% 10d", bdd);
         printf(": %u low=", sylvan_var(bdd));
         sylvan_printbdd("%u", sylvan_low(bdd));
@@ -1415,9 +1392,7 @@ void sylvan_print_cache(BDD root) {
     llvector_push(v, &root);
     llset_get_or_create(s, &root, &created, NULL);
 
-    while (llvector_count(v) > 0) {
-        llvector_pop(v, &root);
-
+    while (llvector_pop(v, &root)) {
         sylvan_print_cache_node(GETCACHE(root));
 
         BDD low = GETCACHE(root)->cache_low;

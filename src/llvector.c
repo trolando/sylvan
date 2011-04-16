@@ -101,29 +101,6 @@ void llvector_push(llvector_t v, void *data)
     atomic8_write(&v->lock, 0);
 }
 
-void llvector_delete(llvector_t v, int item)
-{
-    // get lock
-    while (1) {
-        while (atomic8_read(&v->lock) != 0) {}
-        if (cas(&v->lock, 0, 1)) break;
-    }
-
-    assert (item >= 0 && item < (signed)v->count);
-
-    v->count--;
-    if (item != (signed)v->count) {
-        memcpy(v->data + item * v->length, v->data + v->count * v->length, v->length);
-    }
-/*
-    if (v->count < (v->size>>2) && v->size>8) {
-        v->size>>=1;
-        v->data = realloc(v->data, v->size * v->length);
-    }
-*/
-    atomic8_write(&v->lock, 0);
-}
-
 int llvector_pop(llvector_t v, void *data)
 {
     // get lock
@@ -139,11 +116,12 @@ int llvector_pop(llvector_t v, void *data)
 
         v->count--;
         memcpy(data, v->data + v->count * v->length, v->length);
-
+/*
         if (v->count < (v->size>>2) && v->size>32) {
             v->size>>=1;
             v->data = realloc(v->data, v->size * v->length);
         }
+        */
     }
 
     atomic8_write(&v->lock, 0);

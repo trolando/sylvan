@@ -459,7 +459,7 @@ void test_sylvan_replace()
 
 }
 
-void runtests(int threads)
+void runtests(int threads, int iterations)
 {
     /*
     for (int i=0;i<1000;i++) test_sched();
@@ -474,13 +474,13 @@ void runtests(int threads)
     struct timespec begin, end;
     clock_gettime(CLOCK_MONOTONIC, &begin);
 
-    for (int j=0;j<5000;j++){
+    for (int j=0;j<iterations;j++){
         sylvan_init(threads, 16, 16);
         for (int i=0;i<3;i++) test_sylvan_apply();
         for (int i=0;i<3;i++) test_sylvan_ite();
-        for (int i=0;i<2;i++) test_sylvan_ite_ex();
-        for (int i=0;i<2;i++) test_sylvan_replace();
-        for (int i=0;i<2;i++) test_sylvan_quantify();
+        for (int i=0;i<3;i++) test_sylvan_ite_ex();
+        for (int i=0;i<3;i++) test_sylvan_replace();
+        for (int i=0;i<3;i++) test_sylvan_quantify();
         sylvan_quit();
     }
 
@@ -508,9 +508,11 @@ int main(int argc, char **argv)
     exit(0);
 */
     int threads = 2;
+    int iterations = 5000;
     if (argc > 1) sscanf(argv[1], "%d", &threads);
+    if (argc > 2) sscanf(argv[2], "%d", &iterations);
 
-    runtests(threads);
+    runtests(threads, iterations);
     exit(0);
 
 /*

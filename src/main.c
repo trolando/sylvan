@@ -208,7 +208,8 @@ void test_sylvan_ite()
     BDD test = sylvan_ite(etheng, sylvan_true, b);
     assert(sylvan_ite(b, sylvan_false, etheng) == sylvan_apply(test, sylvan_not(b), operator_and));
 
-    printf("BDD ite test succesful!\n");
+    static int cn=1;
+    printf("BDD ite test %d successful!\n", cn++);
 }
 
 BDD knownresult;
@@ -231,7 +232,7 @@ void test_sylvan_ite_ex()
 
     BDD aorc = sylvan_apply(a, c, operator_or);
     BDD dorc = sylvan_ite_ex(aorc, sylvan_true, sylvan_false, (BDDLEVEL[]){1,4}, 1);
-    assert (dorc == sylvan_apply(d, c, operator_or));
+    assert(testEqual(dorc, sylvan_apply(d, c, operator_or)));
 
     BDD not_candd = sylvan_not(sylvan_apply(c, d, operator_and));
     BDD note_or_notf = sylvan_apply(sylvan_not(e), sylvan_not(f), operator_or);
@@ -240,10 +241,10 @@ void test_sylvan_ite_ex()
     BDD axorc = sylvan_apply(a, c, operator_xor);
     BDD dxorc = sylvan_ite_ex(axorc, sylvan_true, sylvan_false, (BDDLEVEL[]){1,4}, 1);
 
-    sylvan_print(axorc);
-    sylvan_print(dxorc);
+    //sylvan_print(axorc);
+    //sylvan_print(dxorc);
 
-    assert( dxorc == sylvan_apply(d, c, operator_xor));
+    assert(testEqual(dxorc, sylvan_apply(d, c, operator_xor)));
 
     // more complex test
     // e imp g then (if a then (b and not d) else (c and d)) else f
@@ -387,13 +388,20 @@ void test_sylvan_quantify()
     BDD dthenf = sylvan_apply(d, f, operator_imp);
     BDD cxorg = sylvan_apply(c, g, operator_xor);
 
-    assert(sylvan_quantify(sylvan_ite(dthenf, axorb, cxorg), (BDDLEVEL[]){4, quant_exists}, 1) ==
-           sylvan_ite_ex(dthenf, axorb, cxorg, (BDDLEVEL[]){4, quant_exists}, 1));
+    assert(testEqual(
+           sylvan_quantify(sylvan_ite(dthenf, axorb, cxorg),
+                           (BDDLEVEL[]){4, quant_exists}, 1),
+           sylvan_ite_ex(dthenf, axorb, cxorg,
+                         (BDDLEVEL[]){4, quant_exists}, 1)));
 
-    assert(sylvan_quantify(sylvan_ite(dthenf, axorb, cxorg), (BDDLEVEL[]){4, quant_forall}, 1) ==
-           sylvan_ite_ex(dthenf, axorb, cxorg, (BDDLEVEL[]){4, quant_forall}, 1));
+    assert(testEqual(
+               sylvan_quantify(sylvan_ite(dthenf, axorb, cxorg),
+                               (BDDLEVEL[]){4, quant_forall}, 1),
+               sylvan_ite_ex(dthenf, axorb, cxorg, (BDDLEVEL[]){4, quant_forall}, 1)));
 
     //sylvan_quantify
+    static int cn=1;
+    printf("BDD quantify test %d successful!\n", cn++);
 
 }
 
@@ -443,7 +451,6 @@ void test_sylvan_replace()
         sylvan_print(cmp);
         sylvan_print(result);
         exit(1);
-
     }
 
     static int cn=1;
@@ -452,7 +459,7 @@ void test_sylvan_replace()
 
 }
 
-void runtests()
+void runtests(int threads)
 {
     /*
     for (int i=0;i<1000;i++) test_sched();
@@ -468,7 +475,7 @@ void runtests()
     clock_gettime(CLOCK_MONOTONIC, &begin);
 
     for (int j=0;j<5000;j++){
-        sylvan_init(2, 16, 16);
+        sylvan_init(threads, 16, 16);
         for (int i=0;i<3;i++) test_sylvan_apply();
         for (int i=0;i<3;i++) test_sylvan_ite();
         for (int i=0;i<2;i++) test_sylvan_ite_ex();
@@ -500,8 +507,10 @@ int main(int argc, char **argv)
     sylvan_quit();
     exit(0);
 */
+    int threads = 2;
+    if (argc > 1) sscanf(argv[1], "%d", &threads);
 
-    runtests();
+    runtests(threads);
     exit(0);
 
 /*

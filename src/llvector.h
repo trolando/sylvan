@@ -19,7 +19,7 @@ void llvector_init(llvector_t v, size_t length);
 void llvector_deinit(llvector_t v);
 void llvector_free(llvector_t v);
 
-//void llvector_get(llvector_t v, int item, void *data);
+void llvector_get(llvector_t v, int item, void *data);
 
 /**
  * Copies an item from the vector to <data> and remove it.

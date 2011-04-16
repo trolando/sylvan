@@ -52,7 +52,7 @@ const uint8_t bddcommand_ite = 3;
 #define BDD_TRANSFERMARK(from, to) (from & bddmark ? BDD_TOGGLEMARK(to) : to)
 
 // DEBUG MACROS
-#if 1
+#if 0
 #define REPORT_RESULT(a,b,c) printf("Set result of " #a " %d to %s%d\n", b, c&bddmark?"~":"", c&~bddmark);
 #else
 #define REPORT_RESULT(a,b,c)
@@ -215,6 +215,7 @@ void sylvan_quit()
     free(template_apply_node);
 
     llvector_deinit(&_bdd.leaves);
+    llvector_deinit(&_bdd.leaves2);
     free(_bdd.flags);
     free(_bdd.threads);
     llsched_free(_bdd.sched);
@@ -334,7 +335,6 @@ BDD sylvan_apply_ex(BDD a, BDD b, sylvan_operator op, const BDD* pairs, size_t n
 
 static inline void sylvan_parent_add_low(bddcache_t child, bddcache_t parent, BDD parent_c)
 {
-	printf("Add parent %u to child %d\n", parent_c, GETCACHEBDD(child));
     while (1) {
        BDD fp = child->first_parent;
        parent->next_low_parent = fp;
@@ -344,7 +344,6 @@ static inline void sylvan_parent_add_low(bddcache_t child, bddcache_t parent, BD
 
 static inline void sylvan_parent_add_high(bddcache_t child, bddcache_t parent, BDD parent_c)
 {
-	printf("Add parent %u to child %d\n", parent_c, GETCACHEBDD(child));
     while (1) {
        BDD fp = child->first_parent;
        parent->next_high_parent = fp;
@@ -366,7 +365,6 @@ static inline BDD sylvan_parent_pop(bddcache_t child)
 		} else {
 			next = p->next_high_parent;
 		}
-		printf("prnt from %d to %d\n", fp, next);
 		if (__sync_bool_compare_and_swap(&child->first_parent, fp, next)) return fp;
 	}
 }
@@ -377,11 +375,7 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
     if (a & bddinternal) assert(0);
     if (b & bddinternal) assert(0);
     if (c & bddinternal) assert(0);
-/*
-    printf("MakeIte(%s%d,%s%d,%s%d) =", a&bddmark?"~":"",BDD_STRIPMARK(a),
-                                        b&bddmark?"~":"",BDD_STRIPMARK(b),
-                                        c&bddmark?"~":"",BDD_STRIPMARK(c));
-*/     
+
     // TERMINAL CASE (attempt 1)
 
     // ITE(T,B,C) = B
@@ -390,7 +384,6 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
         BDD result = (a == sylvan_true ? b : c);
         if (created!=0) *created = 0;
         if (cached!=0) *cached = 1;
-        //printf(" %d\n",result);
         return result;
     }
 
@@ -509,7 +502,6 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
         BDD result = (a == sylvan_true ? b : c);
         if (created!=0) *created = 0;
         if (cached!=0) *cached = 1;
-        //printf(" %d\n",result);
         return result;
     }
 
@@ -536,7 +528,6 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
      */
 
     if (BDD_HASMARK(b) || b == sylvan_false) {
-        //printf(" (%d) ",sylvan_var(a));
         // a then -b else c
         // (A and -B) or (-A and C)
         // (-A or -B) and (A or C)
@@ -546,7 +537,6 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
         mark = bddmark;
         b = BDD_TOGGLEMARK(b);
         c = BDD_TOGGLEMARK(c);
-        //printf(" not if %d then %d else %d\n", a,b,c);
     }
 
     template_apply_node[thread]->a = a;
@@ -963,7 +953,7 @@ static void sylvan_execute_ite_down(const int thread) {
         if (c && level>c->level) level = c->level;
 
         // Set root level to replacement
-        node->root = _bdd.replaceBy[level];
+        node->root = level <= _bdd.replaceLast?_bdd.replaceBy[level]:level;
 
         // Determine {a,b,c}-low and {a,b,c}-high
         BDD aLow, aHigh, bLow, bHigh, cLow, cHigh;

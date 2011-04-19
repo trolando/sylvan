@@ -1,10 +1,8 @@
 ACLOCAL_AMFLAGS = -I m4
 
-AM_CPPFLAGS = -I$(top_builddir) -std=c99
+AM_CPPFLAGS = -I$(top_builddir) -I$(top_builddir)/src -std=c99
 
 bin_PROGRAMS = test
-
-include_HEADERS = sylvan.h 
 
 #check_PROGRAMS = bddtest
 #bddtest_SOURCES = bddtest.cxx

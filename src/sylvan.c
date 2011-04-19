@@ -88,20 +88,21 @@ static struct {
 } _bdd;
 
 struct bddcache {
-    /// Following variables are the KEY for the unique table
+    // Following variables are the KEY for the unique table
     BDD a; // if
     BDD b; // then (set to sylvan_invalid for replace nodes)
     BDD c; // else (set to sylvan_invalid for replace nodes)
-    /// Stuff
+    // Data
     BDD root; // new if
     BDD high; // new then
     BDD low; // new else
     BDD cache_low; // index to bddcache else
     BDD cache_high; // index to bddcache then
+    // Parents Linked-List
     BDD first_parent; // index to first parent
     BDD next_low_parent; // index to next parent of low child
     BDD next_high_parent; // index to next parent of high child
-    /// The cache of calculated BDD values
+    // The cache of calculated BDD value
     BDD result; // sylvan_invalid after creation, bddhandled when added to the job queue
 };
 

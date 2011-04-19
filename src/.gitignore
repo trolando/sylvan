@@ -2,4 +2,7 @@
 *.o
 *.lo
 *.la
+*.a
 test
+CMakeFiles
+cmake_install.cmake

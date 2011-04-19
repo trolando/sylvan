@@ -14,3 +14,6 @@ tools/
 .project
 .autotools
 .cproject
+CMakeCache.txt
+CMakeFiles
+cmake_install.cmake

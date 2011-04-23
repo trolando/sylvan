@@ -92,18 +92,18 @@ struct bddcache {
     BDD a; // if
     BDD b; // then (set to sylvan_invalid for replace nodes)
     BDD c; // else (set to sylvan_invalid for replace nodes)
-    // Data
+    // Results
     BDD root; // new if
     BDD high; // new then
     BDD low; // new else
+    BDD result; // sylvan_invalid after creation, bddhandled when added to the job queue
+    // Children
     BDD cache_low; // index to bddcache else
     BDD cache_high; // index to bddcache then
     // Parents Linked-List
-    BDD first_parent; // index to first parent
-    BDD next_low_parent; // index to next parent of low child
-    BDD next_high_parent; // index to next parent of high child
-    // The cache of calculated BDD value
-    BDD result; // sylvan_invalid after creation, bddhandled when added to the job queue
+    BDD first_parent; // index to first bddcache parent
+    BDD next_low_parent; // index to next bddcache parent of low child
+    BDD next_high_parent; // index to next bddcache parent of high child
 };
 
 typedef struct bddcache* bddcache_t;
@@ -334,6 +334,10 @@ BDD sylvan_apply_ex(BDD a, BDD b, sylvan_operator op, const BDD* pairs, size_t n
     }
 }
 
+/**
+ * Add a parent link on the low child.
+ * Thread-safe.
+ */
 static inline void sylvan_parent_add_low(bddcache_t child, bddcache_t parent, BDD parent_c)
 {
     while (1) {
@@ -343,6 +347,10 @@ static inline void sylvan_parent_add_low(bddcache_t child, bddcache_t parent, BD
     }
 }
 
+/**
+ * Add a parent link on the high child.
+ * Thread-safe.
+ */
 static inline void sylvan_parent_add_high(bddcache_t child, bddcache_t parent, BDD parent_c)
 {
     while (1) {
@@ -352,6 +360,10 @@ static inline void sylvan_parent_add_high(bddcache_t child, bddcache_t parent, B
     }
 }
 
+/**
+ * Pop the first parent.
+ * Thread-safe.
+ */
 static inline BDD sylvan_parent_pop(bddcache_t child)
 {
 	BDD child_c = GETCACHEBDD(child);
@@ -370,14 +382,23 @@ static inline BDD sylvan_parent_pop(bddcache_t child)
 	}
 }
 
-
+/**
+ * This creates an ITE node.
+ * Uses standard triples.
+ * Thread-safe.
+ * If *cached == true, then the result is a BDD node and *created is false .
+ * If *cached == false, then the result is an ITE node and *created may be true.
+ * There is a guarantee that only one thread will get *created as true.
+ */
 static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *cached)
 {
+	// Make sure a,b,c are all actual BDD nodes, and not ITE/ITE* nodes
     if (a & bddinternal) assert(0);
     if (b & bddinternal) assert(0);
     if (c & bddinternal) assert(0);
 
     // TERMINAL CASE (attempt 1)
+    // This is just for increased performance
 
     // ITE(T,B,C) = B
     // ITE(F,B,C) = C
@@ -466,6 +487,7 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
         } else {
             // Trivial case: they are constants
             if (b<2) {
+            	// Make sure our assumption is indeed correct (b/c constant => a constant)
                 assert(a<2);
                 // if they are different, then either
                 // true then true else false === true
@@ -489,7 +511,7 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
                 // 1. if B then A else not-A
                 // 2. if not-B then A else not-A
                 b = a;
-                a = BDD_TOGGLEMARK(c);
+                a = BDD_TOGGLEMARK(cor);
                 c = BDD_TOGGLEMARK(b);
             }
         }
@@ -529,12 +551,6 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
      */
 
     if (BDD_HASMARK(b) || b == sylvan_false) {
-        // a then -b else c
-        // (A and -B) or (-A and C)
-        // (-A or -B) and (A or C)
-        // -(A and B) and -(-A and -C)
-        // - ( (A and B) or (-A and -C) )
-        // not ( a then b else not-c )
         mark = bddmark;
         b = BDD_TOGGLEMARK(b);
         c = BDD_TOGGLEMARK(c);
@@ -545,14 +561,17 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
     template_apply_node[thread]->c = c;
 
     /**
-     * "if" is not a constant and is not complemented
-     * "then" is not complemented
+     * Now, we know the following:
+     * "if" is not true or false and is not complemented
+     * "then" is not complemented and is not false
+     * "else" may be complemented or true or false
      */
 
     int _created;
     BDD result;
     bddcache_t ptr = llset_get_or_create(_bdd.cache, template_apply_node[thread], &_created, &result);
 
+    // Check if it is an existing and cached ITE node...
     if (!_created && BDD_STRIPMARK(ptr->result) != sylvan_invalid) {
         if (created!=0) *created = 0;
         if (cached!=0) *cached = 1;
@@ -566,10 +585,10 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
 
 /**
  * <to> takes over the parents of <from>
- * This means that the cache_low and cache_high values will be updated with to_cs
- * This method is ONLY for parents of ITE* nodes
- * ITE* nodes have no mark
- * Moves from ITE* to ITE node
+ * Both the parents and the children are
+ * The to node may be and is usually an ITE node.
+ * Note: ITE* nodes have no mark.
+ * Thread-safe.
  */
 static inline void sylvan_move_parents(bddcache_t from, BDD to_c)
 {
@@ -1266,6 +1285,12 @@ double sylvan_satcount_do(BDD bdd, const BDDLEVEL *variables, size_t n, int inde
 		if (index < n) return pow(2.0, (n-index));
 		else return 1;
 	}
+
+  if (index >= n) {
+    printf("ERROR REACHED: index=%d n=%d", index, n);
+    sylvan_print(bdd);
+    return 0;
+  }
 
 	BDDLEVEL level = sylvan_var(bdd);
 	if (level == variables[index]) {

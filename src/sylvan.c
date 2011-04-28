@@ -1280,16 +1280,16 @@ static void *sylvan_thread(void *data) {
 
 double sylvan_satcount_do(BDD bdd, const BDDLEVEL *variables, size_t n, int index)
 {
-	if (bdd == sylvan_false) return 0;
+	if (bdd == sylvan_false) return 0.0;
 	if (bdd == sylvan_true) {
 		if (index < n) return pow(2.0, (n-index));
-		else return 1;
+		else return 1.0;
 	}
 
   if (index >= n) {
     printf("ERROR REACHED: index=%d n=%d", index, n);
     sylvan_print(bdd);
-    return 0;
+    return 0.0;
   }
 
 	BDDLEVEL level = sylvan_var(bdd);
@@ -1299,7 +1299,7 @@ double sylvan_satcount_do(BDD bdd, const BDDLEVEL *variables, size_t n, int inde
 		double low = sylvan_satcount_do(sylvan_low(bdd), variables, n, index+1);
 		return high+low;
 	} else {
-		return 2 * sylvan_satcount_do(bdd, variables, n, index+1);
+		return 2.0 * sylvan_satcount_do(bdd, variables, n, index+1);
 	}
 }
 

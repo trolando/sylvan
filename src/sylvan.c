@@ -26,7 +26,8 @@ const BDD sylvan_last = -4;       // 0xfffffffc
 /**
  * Internal BDD constants
  */
-const BDD bddmark = 0x80000000;
+#define bddmark 0x80000000
+//const BDD bddmark = 0x80000000;
 const BDD bddhandled = 0xffffffff; // being handled by operation
 const BDD bddinternal = 0x40000000; // ITE* node marker (on "a")
 
@@ -63,6 +64,7 @@ struct bddnode
     BDDLEVEL level;
     BDD low;
     BDD high;
+    //uint32_t filler;
 };
 
 typedef struct bddnode* bddnode_t;
@@ -104,6 +106,10 @@ struct bddcache {
     BDD first_parent; // index to first bddcache parent
     BDD next_low_parent; // index to next bddcache parent of low child
     BDD next_high_parent; // index to next bddcache parent of high child
+    uint32_t q1; // 52
+    uint32_t q2; // 56
+    uint32_t q3; // 60
+    uint32_t q4; // 64
 };
 
 typedef struct bddcache* bddcache_t;
@@ -152,13 +158,11 @@ int sylvan_cache_equals(const void *a, const void *b, size_t length __attribute_
 
 void sylvan_init(int threads, size_t datasize, size_t cachesize) {
     if (datasize >= 30) {
-        printf("BDD_init error: datasize must be < 30!");
-        exit(1);
+        rt_report_and_exit(1, "BDD_init error: datasize must be < 30!");
     }
 
     if (cachesize >= 30) {
-        printf("BDD_init error: cachesize must be < 30!");
-        exit(1);
+        rt_report_and_exit(1, "BDD_init error: cachesize must be < 30!");
     }
 
     size_t datal = sizeof(struct bddnode);
@@ -237,18 +241,24 @@ inline BDD sylvan_makenode(BDD level, BDD low, BDD high) {
         // ITE(a,b,true) == not ITE(a,not b,false)
         n.low = sylvan_false;
         n.high = BDD_TOGGLEMARK(high);
-        llset_get_or_create(_bdd.data, &n, NULL, &result);
+        if (llset_get_or_create(_bdd.data, &n, NULL, &result) == 0) {
+            rt_report_and_exit(1, "BDD Unique table full!");
+        }
         return result | bddmark;
     } else if (BDD_HASMARK(low)) {
         // ITE(a,b,not c) == not ITE(a,not b, c)
         n.low = BDD_STRIPMARK(low);
         n.high = BDD_TOGGLEMARK(high);
-        llset_get_or_create(_bdd.data, &n, NULL, &result);
+        if (llset_get_or_create(_bdd.data, &n, NULL, &result) == 0) {
+            rt_report_and_exit(1, "BDD Unique table full!");
+        }
         return result | bddmark;
     } else {
         n.low = low;
         n.high = high;
-        llset_get_or_create(_bdd.data, &n, NULL, &result);
+        if(llset_get_or_create(_bdd.data, &n, NULL, &result) == 0) {
+            rt_report_and_exit(1, "BDD Unique table full!");
+        }
         return result;
     }
 }
@@ -364,9 +374,8 @@ static inline void sylvan_parent_add_high(bddcache_t child, bddcache_t parent, B
  * Pop the first parent.
  * Thread-safe.
  */
-static inline BDD sylvan_parent_pop(bddcache_t child)
+static inline BDD sylvan_parent_pop(bddcache_t child, BDD child_c)
 {
-	BDD child_c = GETCACHEBDD(child);
 	while (1) {
 		BDD fp = child->first_parent;
 		if (fp == 0) return 0;
@@ -511,7 +520,7 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
                 // 1. if B then A else not-A
                 // 2. if not-B then A else not-A
                 b = a;
-                a = BDD_TOGGLEMARK(cor);
+                a = BDD_TOGGLEMARK(c);
                 c = BDD_TOGGLEMARK(b);
             }
         }
@@ -570,6 +579,9 @@ static BDD sylvan_makeite(int thread, BDD a, BDD b, BDD c, int *created, int *ca
     int _created;
     BDD result;
     bddcache_t ptr = llset_get_or_create(_bdd.cache, template_apply_node[thread], &_created, &result);
+    if (ptr == 0) {
+        rt_report_and_exit(1, "ITE cache full!");
+    }
 
     // Check if it is an existing and cached ITE node...
     if (!_created && BDD_STRIPMARK(ptr->result) != sylvan_invalid) {
@@ -596,7 +608,7 @@ static inline void sylvan_move_parents(bddcache_t from, BDD to_c)
     bddcache_t to = GETCACHE(to_c);
 
     BDD parent_c;
-    while ((parent_c = sylvan_parent_pop(from)) != 0) {
+    while ((parent_c = sylvan_parent_pop(from, from_c)) != 0) {
     	bddcache_t parent = GETCACHE(parent_c);
 
     	// Check that the parent is also ITE* node
@@ -750,7 +762,7 @@ static inline void sylvan_handle_ite_parents(const int thread, bddcache_t node, 
     BDD q = node->result;
 
     BDD parent_c;
-    while ((parent_c = sylvan_parent_pop(node)) != 0) {
+    while ((parent_c = sylvan_parent_pop(node, node_c)) != 0) {
         bddcache_t parent = GETCACHE(parent_c);
 
 		if (BDD_STRIPMARK(parent->cache_low) == node_c) {
@@ -925,6 +937,9 @@ BDD sylvan_ite(BDD a, BDD b, BDD c) {
     // Check if it is cached
     if (cached) return ptr;
 
+    // TEMP
+    // llset_clear(_bdd.cache);
+
     // Start other threads
     for (int i=1; i<_bdd.threadCount; i++) {
         atomic8_write(&_bdd.flags[i], bddcommand_ite);
@@ -1015,6 +1030,9 @@ static void sylvan_execute_ite_down(const int thread) {
             template_apply_node[thread]->c = cLow;
 
             ptr = llset_get_or_create(_bdd.cache, template_apply_node[thread], &created, &idx);
+            if (ptr == 0) {
+                rt_report_and_exit(1, "ITE cache full!");
+            }
             if (created) {
                 // Add new ITE* nodes to queue
                 llsched_push(_bdd.sched, thread, &idx);
@@ -1029,6 +1047,9 @@ static void sylvan_execute_ite_down(const int thread) {
             template_apply_node[thread]->c = cHigh;
 
             ptr = llset_get_or_create(_bdd.cache, template_apply_node[thread], &created, &idx);
+            if (ptr == 0) {
+                rt_report_and_exit(1, "ITE cache full!"); 
+            }
             if (created) {
                 // Add new ITE* nodes to queue
                 llsched_push(_bdd.sched, thread, &idx);
@@ -1115,7 +1136,7 @@ static void sylvan_execute_ite_down(const int thread) {
         BDD q = node->result;
 
         BDD parent_c;
-        while ((parent_c = sylvan_parent_pop(node)) != 0) {
+        while ((parent_c = sylvan_parent_pop(node, node_c)) != 0) {
             bddcache_t parent = GETCACHE(parent_c);
 
             // Verify that it is a ITE* node
@@ -1167,12 +1188,18 @@ BDD sylvan_restructure(BDD a, BDD b, BDD c, BDD* pairs, size_t n)
     // wait until all threads are ready
     sylvan_wait_for_threads();
 
+    // TEMPORARY
+    // llset_clear(_bdd.cache);
+
     template_apply_node[0]->a = a | bddinternal;
     template_apply_node[0]->b = b;
     template_apply_node[0]->c = c;
 
     uint32_t idx;
     bddcache_t ptr = llset_get_or_create(_bdd.cache, template_apply_node[0], NULL, &idx);
+    if (ptr==0) {
+        rt_report_and_exit(1, "ITE cache full!");
+    }
 
     // Send "ite-down" command to all threads
     for (int i=1; i<_bdd.threadCount; i++) {
@@ -1332,11 +1359,13 @@ void sylvan_print(BDD bdd) {
     if (bdd < 2) return;
 
     llvector_t v = llvector_create(sizeof(BDD));
-    llset_t s = llset_create(sizeof(BDD), 12, NULL, NULL);
+    llset_t s = llset_create(sizeof(BDD), 17, NULL, NULL);
     int created;
 
     llvector_push(v, &bdd);
-    llset_get_or_create(s, &bdd, &created, NULL);
+    if (llset_get_or_create(s, &bdd, &created, NULL) == 0) {
+        rt_report_and_exit(1, "Temp hash table full!");
+    }
 
     while (llvector_pop(v, &bdd)) {
         sylvan_printbdd("% 10d", bdd);
@@ -1349,11 +1378,15 @@ void sylvan_print(BDD bdd) {
         BDD low = BDD_STRIPMARK(sylvan_low(bdd));
         BDD high = BDD_STRIPMARK(sylvan_high(bdd));
         if (low >= 2) {
-            llset_get_or_create(s, &low, &created, NULL);
+            if (llset_get_or_create(s, &low, &created, NULL) == 0) {
+                rt_report_and_exit(1, "Temp hash table full!");
+            }
             if (created) llvector_push(v, &low);
         }
         if (high >= 2) {
-            llset_get_or_create(s, &high, &created, NULL);
+            if (llset_get_or_create(s, &high, &created, NULL) == 0) {
+                rt_report_and_exit(1, "Temp hash table full!");
+            }
             if (created) llvector_push(v, &high);
         }
     }
@@ -1406,7 +1439,9 @@ void sylvan_print_cache(BDD root) {
     sylvan_printbdd("%u\n", root);
 
     llvector_push(v, &root);
-    llset_get_or_create(s, &root, &created, NULL);
+    if (llset_get_or_create(s, &root, &created, NULL) == 0) {
+        rt_report_and_exit(1, "Temp hash table full!");
+    }
 
     while (llvector_pop(v, &root)) {
         sylvan_print_cache_node(GETCACHE(root));
@@ -1414,11 +1449,15 @@ void sylvan_print_cache(BDD root) {
         BDD low = GETCACHE(root)->cache_low;
         BDD high = GETCACHE(root)->cache_high;
         if (low) {
-            llset_get_or_create(s, &low, &created, NULL);
+            if (llset_get_or_create(s, &low, &created, NULL) == 0) {
+                rt_report_and_exit(1, "Temp hash table full!");
+            }
             if (created) llvector_push(v, &low);
         }
         if (high) {
-            llset_get_or_create(s, &high, &created, NULL);
+            if (llset_get_or_create(s, &high, &created, NULL) == 0) {
+                rt_report_and_exit(1, "Temp hash table full!");
+            }
             if (created) llvector_push(v, &high);
         }
     }

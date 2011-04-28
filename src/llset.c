@@ -128,11 +128,10 @@ void *llset_lookup_hash(const llset_t dbs, const void* data, int* created, uint3
 
     }
 
-    rt_report_and_exit(1, "Hash table full\n");
-
     return 0;
 }
 
+/*
 inline void *llset_index_to_ptr(const llset_t dbs, uint32_t index)
 {
     assert (index >= 2 && index < dbs->size);
@@ -146,7 +145,7 @@ uint32_t llset_ptr_to_index(const llset_t dbs, void *ptr)
     assert (result >= 2 && result < dbs->size);
     return result;
 }
-
+*/
 inline void *llset_get_or_create(const llset_t dbs, const void *data, int *created, uint32_t *index)
 {
 	int _created;

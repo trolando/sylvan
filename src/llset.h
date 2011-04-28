@@ -20,13 +20,16 @@ struct llset
 
 typedef struct llset* llset_t;
 
+#define llset_index_to_ptr(dbs, index) ((void*)&dbs->data[index*dbs->length])
+#define llset_ptr_to_index(dbs, ptr) ((size_t)(((size_t)ptr-(size_t)dbs->data)/dbs->length))
+
 void *llset_get_or_create(const llset_t dbs, const void* data, int *created, uint32_t* index);
 
 llset_t llset_create(size_t length, size_t size, hash32_f hash32, equals_f equals);
 
-void *llset_index_to_ptr(const llset_t dbs, uint32_t index);
+//void *llset_index_to_ptr(const llset_t dbs, uint32_t index);
 
-uint32_t llset_ptr_to_index(const llset_t dbs, void *ptr);
+//uint32_t llset_ptr_to_index(const llset_t dbs, void *ptr);
 
 void llset_clear(llset_t dbs);
 

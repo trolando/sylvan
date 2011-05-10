@@ -61,10 +61,10 @@ const uint8_t bddcommand_ite = 3;
 
 struct bddnode
 {
-  BDDLEVEL level;
-  BDD low;
+  BDD low; 
   BDD high;
-  //uint32_t filler;
+  BDDLEVEL level; 
+  uint32_t filler;
 };
 
 typedef struct bddnode* bddnode_t;
@@ -138,6 +138,18 @@ void sylvan_print_cache(BDD root);
 static inline void sylvan_printbdd(const char *s, BDD bdd);
 
 /**
+ * Hash() and Equals() for the BDD cache
+ */
+uint32_t sylvan_bdd_hash(const void *data_, int len __attribute__((unused)), uint32_t hash) {
+  return SuperFastHash(data_, 12, hash);
+}
+
+int sylvan_bdd_equals(const void *a, const void *b, size_t length __attribute__((unused))) {
+  return memcmp(a, b, 12) == 0;
+}
+
+
+/**
  * Hash() and Equals() for the ITE cache
  */
 uint32_t sylvan_cache_hash(const void *data_, int len __attribute__((unused)), uint32_t hash) {
@@ -173,7 +185,8 @@ void sylvan_init(int threads, size_t datasize, size_t cachesize) {
     printf("Cache: %d times %d bytes = %d KB\n\n", 1<<cachesize, acl, (1<<(cachesize-10)) * acl);
   }
 
-  _bdd.data = llset_create(sizeof(struct bddnode), datasize, NULL, NULL);
+  //_bdd.data = llset_create(sizeof(struct bddnode), datasize, NULL, NULL);
+  _bdd.data = llset_create(sizeof(struct bddnode), datasize, sylvan_bdd_hash, sylvan_bdd_equals);
   _bdd.cache = llset_create(sizeof(struct bddcache), cachesize, sylvan_cache_hash, sylvan_cache_equals);
 
   _bdd.sched = llsched_create(threads, sizeof(BDD));

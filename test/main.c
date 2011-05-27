@@ -227,8 +227,9 @@ void test_sylvan_ite_ex()
     g = sylvan_ithvar(7);
     h = sylvan_ithvar(8);
 
-    assert(b == sylvan_ite_ex(a, sylvan_true, sylvan_false, (BDDLEVEL[]){1, 2}, 1));
-    assert(sylvan_not(b) == sylvan_ite_ex(sylvan_not(a), sylvan_true, sylvan_false, (BDDLEVEL[]){1, 2}, 1));
+    assert(testEqual(b, sylvan_ite_ex(a, sylvan_true, sylvan_false, (BDDLEVEL[]){1, 2}, 1)));
+    printf("Going to test... b=%d\n", b);
+    assert(testEqual(sylvan_not(b), sylvan_ite_ex(sylvan_not(a), sylvan_true, sylvan_false, (BDDLEVEL[]){1, 2}, 1)));
 
     BDD aorc = sylvan_apply(a, c, operator_or);
     BDD dorc = sylvan_ite_ex(aorc, sylvan_true, sylvan_false, (BDDLEVEL[]){1,4}, 1);
@@ -236,7 +237,7 @@ void test_sylvan_ite_ex()
 
     BDD not_candd = sylvan_not(sylvan_apply(c, d, operator_and));
     BDD note_or_notf = sylvan_apply(sylvan_not(e), sylvan_not(f), operator_or);
-    assert(note_or_notf == sylvan_ite_ex(not_candd, sylvan_true, sylvan_false, (BDDLEVEL[]){3,6,4,5}, 2));
+    assert(testEqual(note_or_notf, sylvan_ite_ex(not_candd, sylvan_true, sylvan_false, (BDDLEVEL[]){3,6,4,5}, 2)));
 
     BDD axorc = sylvan_apply(a, c, operator_xor);
     BDD dxorc = sylvan_ite_ex(axorc, sylvan_true, sylvan_false, (BDDLEVEL[]){1,4}, 1);

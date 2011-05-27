@@ -122,17 +122,22 @@ extern BDD sylvan_ite_st(BDD a, BDD b, BDD c);
 extern BDD sylvan_apply_ex(BDD a, BDD b, sylvan_operator op, const BDDLEVEL* pairs, size_t n);
 extern BDD sylvan_ite_ex(BDD a, BDD b, BDD c, const BDDLEVEL* pairs, size_t n);
 
+extern BDD sylvan_apply_ex_st(BDD a, BDD b, sylvan_operator op, const BDDLEVEL* pairs, size_t n);
+extern BDD sylvan_ite_ex_st(BDD a, BDD b, BDD c, const BDDLEVEL* pairs, size_t n);
+
 /**
  * Replace variables in bdd
  * Calls sylvan_ite_ex(a, bddtrue, bddfalse, pairs, n)
  */
 extern BDD sylvan_replace(BDD a, const BDDLEVEL *pairs, size_t n);
+extern BDD sylvan_replace_st(BDD a, const BDDLEVEL *pairs, size_t n);
 
 /**
  * Quantify variables in bdd
  * Calls sylvan_ite_ex(a, bddtrue, bddfalse, pairs, n)
  */
 extern BDD sylvan_quantify(BDD a, const BDDLEVEL *pairs, size_t n);
+extern BDD sylvan_quantify_st(BDD a, const BDDLEVEL *pairs, size_t n);
 
 /**
  * Dangerous creation primitive.

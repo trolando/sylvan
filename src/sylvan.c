@@ -363,6 +363,34 @@ BDD sylvan_apply_st(BDD a, BDD b, sylvan_operator op) {
   }
 }
 
+BDD sylvan_apply_ex_st(BDD a, BDD b, sylvan_operator op, const BDD* pairs, size_t n)
+{
+  switch (op) {
+    case operator_and:
+      return sylvan_ite_ex_st(a, b, sylvan_false, pairs, n);
+    case operator_xor:
+      return sylvan_ite_ex_st(a, sylvan_not(b), b, pairs, n);
+    case operator_or:
+      return sylvan_ite_ex_st(a, sylvan_true, b, pairs, n);
+    case operator_nand:
+      return sylvan_ite_ex_st(a, sylvan_not(b), sylvan_true, pairs, n);
+    case operator_nor:
+      return sylvan_ite_ex_st(a, sylvan_false, sylvan_not(b), pairs, n);
+    case operator_imp:
+      return sylvan_ite_ex_st(a, b, sylvan_true, pairs, n);
+    case operator_biimp:
+      return sylvan_ite_ex_st(a, b, sylvan_not(b), pairs, n);
+    case operator_diff:
+      return sylvan_ite_ex_st(a, sylvan_not(b), sylvan_false, pairs, n);
+    case operator_less:
+      return sylvan_ite_ex_st(a, sylvan_false, b, pairs, n);
+    case operator_invimp:
+      return sylvan_ite_ex_st(a, sylvan_true, sylvan_not(b), pairs, n);
+    default:
+      assert(0);
+  }
+}
+
 BDD sylvan_apply_ex(BDD a, BDD b, sylvan_operator op, const BDD* pairs, size_t n)
 {
   switch (op) {
@@ -1005,12 +1033,7 @@ BDD sylvan_ite(BDD a, BDD b, BDD c) {
 }
 
 BDD sylvan_ite_st(BDD a, BDD b, BDD c) {
-  /*
-  printf("Calculate IfThenElse(%s%d, %s%d, %s%d) = ",
-    a&bddmark?"~":"",a&~bddmark,
-    b&bddmark?"~":"",b&~bddmark,
-    c&bddmark?"~":"",c&~bddmark);
-  */
+  //printf("Calculate IfThenElse(%s%d, %s%d, %s%d) = ", a&bddmark?"~":"",a&~bddmark, b&bddmark?"~":"",b&~bddmark, c&bddmark?"~":"",c&~bddmark);
 
   BDD r = sylvan_prepare(&a, &b, &c);
 
@@ -1065,10 +1088,10 @@ BDD sylvan_ite_st(BDD a, BDD b, BDD c) {
   BDD low = sylvan_ite_st(aLow, bLow, cLow);
   BDD high = sylvan_ite_st(aHigh, bHigh, cHigh);
 
-  if (low == high) ptr->result = BDD_TRANSFERMARK(r, low);
-  else ptr->result = BDD_TRANSFERMARK(r, sylvan_makenode(level, low, high));
+  if (low == high) ptr->result = low;
+  else ptr->result = sylvan_makenode(level, low, high);
   
-  return ptr->result;
+  return BDD_TRANSFERMARK(r, ptr->result);
 }
 
 static void sylvan_execute_ite_ex(const int thread) {
@@ -1312,9 +1335,9 @@ BDD sylvan_restructure(BDD a, BDD b, BDD c, BDD* pairs, size_t n)
 
 BDD sylvan_restructure_st_rec(BDD a, BDD b, BDD c, BDD* pairs, size_t n) 
 {
-  bddnode_t restrict na = a < 2 ? 0 : GETNODE(a);
-  bddnode_t restrict nb = b < 2 ? 0 : GETNODE(b);
-  bddnode_t restrict nc = c < 2 ? 0 : GETNODE(c);
+  bddnode_t na = a < 2 ? 0 : GETNODE(a);
+  bddnode_t nb = b < 2 ? 0 : GETNODE(b);
+  bddnode_t nc = c < 2 ? 0 : GETNODE(c);
 
   BDD level = 0xffffffff;
   if (na && level > na->level) level = na->level;
@@ -1324,6 +1347,10 @@ BDD sylvan_restructure_st_rec(BDD a, BDD b, BDD c, BDD* pairs, size_t n)
   if (level > n) return sylvan_ite(a, b, c);
 
   BDD r = sylvan_prepare(&a, &b, &c);
+  
+  if (r < 2) {
+    return r;
+  }
 
   if ((r & ~bddmark) != sylvan_invalid) {
     a = r;
@@ -1335,7 +1362,12 @@ BDD sylvan_restructure_st_rec(BDD a, BDD b, BDD c, BDD* pairs, size_t n)
   if (r & bddmark) {
     b = BDD_TOGGLEMARK(b);
     c = BDD_TOGGLEMARK(c);
+    r = sylvan_invalid;
   }
+
+  na = a < 2 ? 0 : GETNODE(a);
+  nb = b < 2 ? 0 : GETNODE(b);
+  nc = c < 2 ? 0 : GETNODE(c);
 
   template_apply_node[0]->a = a | bddinternal;
   template_apply_node[0]->b = b;
@@ -1348,7 +1380,9 @@ BDD sylvan_restructure_st_rec(BDD a, BDD b, BDD c, BDD* pairs, size_t n)
     rt_report_and_exit(1, "ITE cache full!");
   }
 
-  if (ptr->result != sylvan_invalid) return BDD_TRANSFERMARK(r, ptr->result);
+  if (ptr->result != sylvan_invalid) {
+    return ptr->result;
+  }
 
   BDD aLow = a, aHigh = a;
   BDD bLow = b, bHigh = b;
@@ -1368,7 +1402,7 @@ BDD sylvan_restructure_st_rec(BDD a, BDD b, BDD c, BDD* pairs, size_t n)
     cLow = BDD_TRANSFERMARK(c, nc->low);
     cHigh = BDD_TRANSFERMARK(c, nc->high);
   }
-
+  
   BDD low = sylvan_restructure_st_rec(aLow, bLow, cLow, pairs, n);
   BDD high = sylvan_restructure_st_rec(aHigh, bHigh, cHigh, pairs, n);
 
@@ -1378,11 +1412,11 @@ BDD sylvan_restructure_st_rec(BDD a, BDD b, BDD c, BDD* pairs, size_t n)
   } else if (newLevel == quant_exists) {
     ptr->result = sylvan_ite_st(low, sylvan_true, high);
   } else if (newLevel == quant_unique) {
-    ptr->result = sylvan_ite_st(low, BDD_TOGGLEMARK(high), BDD_TOGGLEMARK(high));
+    ptr->result = sylvan_ite_st(low, BDD_TOGGLEMARK(high), high);
   } else if (low == high) {
     ptr->result = low;
   } else {
-    ptr->result = sylvan_ite(newLevel, high, low);
+    ptr->result = sylvan_ite_st(newLevel, high, low);
   }
 
   return ptr->result;
@@ -1395,8 +1429,6 @@ BDD sylvan_restructure_st(BDD a, BDD b, BDD c, BDD* pairs, size_t n)
 }
 
 BDD sylvan_ite_ex(BDD a, BDD b, BDD c, const BDD* restrict pairs, size_t n) {
-  //printf("begin\n");
-
   assert(a != sylvan_invalid);
   assert(b != sylvan_invalid);
   assert(c != sylvan_invalid);
@@ -1425,12 +1457,49 @@ BDD sylvan_ite_ex(BDD a, BDD b, BDD c, const BDD* restrict pairs, size_t n) {
   return result;
 }
 
+BDD sylvan_ite_ex_st(BDD a, BDD b, BDD c, const BDD* restrict pairs, size_t n) {
+  assert(a != sylvan_invalid);
+  assert(b != sylvan_invalid);
+  assert(c != sylvan_invalid);
+
+  // Prepare struct
+  BDD last = 0;
+  for (BDD i=0;i<n;i++) if (pairs[2*i] > last) last = pairs[2*i];
+
+  BDD *newPairs = _bdd.replaceBy = malloc(sizeof(BDD)*(last+1));
+  for (BDD i=0;i<=last;i++) newPairs[i] = sylvan_ithvar(i);
+  for (BDD i=0;i<n;i++) {
+    BDD p = pairs[2*i+1];
+    if (p & 0x40000000) { // forall, exists, unique
+      newPairs[pairs[2*i]] = p;
+    } else {
+      if (p & bddmark) newPairs[pairs[2*i]] = sylvan_nithvar(p & ~bddmark);
+      else newPairs[pairs[2*i]] = sylvan_ithvar(p);
+    }
+  }
+
+  BDD result = sylvan_restructure_st(a, b, c, newPairs, last + 1);
+
+  free(newPairs);
+  _bdd.replaceBy = 0;
+
+  return result;
+}
+
 BDD sylvan_replace(BDD a, const BDD* restrict pairs, size_t n) {
   return sylvan_ite_ex(a, sylvan_true, sylvan_false, pairs, n);
 }
 
 BDD sylvan_quantify(BDD a, const BDD* restrict pairs, size_t n) {
   return sylvan_ite_ex(a, sylvan_true, sylvan_false, pairs, n); // same as replace...
+}
+
+BDD sylvan_replace_st(BDD a, const BDD* restrict pairs, size_t n) {
+  return sylvan_ite_ex_st(a, sylvan_true, sylvan_false, pairs, n);
+}
+
+BDD sylvan_quantify_st(BDD a, const BDD* restrict pairs, size_t n) {
+  return sylvan_ite_ex_st(a, sylvan_true, sylvan_false, pairs, n); // same as replace...
 }
 
 void sylvan_wait_for_threads()

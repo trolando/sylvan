@@ -575,7 +575,7 @@ static BDD sylvan_preprocess_ex(BDD *_a, BDD *_b, BDD *_c)
 /**
  * Calculate standard triples. Find trivial cases.
  */
-static BDD sylvan_preprocess(BDD *_a, BDD *_b, BDD *_c) 
+static BDD sylvan_prepare(BDD *_a, BDD *_b, BDD *_c) 
 {
   BDD a=*_a, b=*_b, c=*_c;
 
@@ -601,6 +601,13 @@ static BDD sylvan_preprocess(BDD *_a, BDD *_b, BDD *_c)
     // faster STRIPMARK means we don't detect constants
     if (a != c) c = sylvan_true;
     else c = sylvan_false;
+  }
+
+  if (b == c) return b;
+
+  if (b < 2 && c < 2) {
+    if (b == sylvan_true) return a;
+    else return BDD_TOGGLEMARK(a);
   }
 
   if (b < 2 && BDD_STRIPMARK(c) < BDD_STRIPMARK(a)) {
@@ -648,34 +655,20 @@ static BDD sylvan_preprocess(BDD *_a, BDD *_b, BDD *_c)
     }
   }
 
-  // Now, if b == constant then a<c (a may be constant)
-  //      if c == constant then a<b (a may be constant)
-  //      if both constant then a will be constant
+  if (a < 2)  {
+    assert(0); 
+    return (a == sylvan_true ? b : c);
+  }
 
-  if (BDD_NORMALIZE(b) == BDD_NORMALIZE(c)) {
-    // NORMALIZE: like STRIPMARK but also turns "false" into "true"
-    if (b == c) {
-      // trivially equal to b (=c)
-      return b;
-   } else {
-      // Trivial case: they are constants
-      if (b<2) {
-        // Then a is a constant too!
-        assert(a<2);
-        return (a == sylvan_true?b:c);
-      }
-
-      // b and c not constants...
-      // 1. if A then B else not-B
-      // 2. if A then not-B else B
-      if (BDD_STRIPMARK(a) > BDD_STRIPMARK(b)) {
-        // a > b, exchange:
-        // 1. if B then A else not-A
-        // 2. if not-B then A else not-A
-        b = a;
-        a = BDD_TOGGLEMARK(c);
-        c = BDD_TOGGLEMARK(b);
-      }
+  if (BDD_STRIPMARK(b) == BDD_STRIPMARK(c)) {
+    // b and c not constants...
+    // 1. if A then B else not-B = if B then A else not-A
+    // 2. if A then not-B else B = if not-B then A else not-A
+    if (BDD_STRIPMARK(a) > BDD_STRIPMARK(b)) {
+      // a > b, exchange:
+      b = a;
+      a = BDD_TOGGLEMARK(c);
+      c = BDD_TOGGLEMARK(b); // (old a)
     }
   }
 
@@ -683,7 +676,10 @@ static BDD sylvan_preprocess(BDD *_a, BDD *_b, BDD *_c)
 
   // ITE(T,B,C) = B
   // ITE(F,B,C) = C
-  if (a < 2) return (a == sylvan_true ? b : c);
+  if (a < 2) { 
+    assert(0);
+    return (a == sylvan_true ? b : c);
+  }
 
   // ITE(~A,B,C) = ITE(A,C,B)
   if (BDD_HASMARK(a)) {
@@ -731,7 +727,9 @@ static BDD sylvan_makeite_ex(int thread, BDD a, BDD b, BDD c, int *created, int 
     b&bddmark?"~":"", b&~bddmark, 
     c&bddmark?"~":"", c&~bddmark);
 */
-  BDD result = is_ex?sylvan_preprocess_ex(&a,&b,&c):sylvan_preprocess(&a, &b, &c);
+  //BDD result = is_ex?sylvan_preprocess_ex(&a,&b,&c):sylvan_prepare(&a, &b, &c);
+  BDD result = sylvan_prepare(&a, &b, &c);
+
 /*
   if (BDD_STRIPMARK(result) == sylvan_invalid) {
     printf(" = %s(%s%d, %s%d, %s%d)%s\n", result&bddmark?"~":"", 
@@ -750,16 +748,23 @@ static BDD sylvan_makeite_ex(int thread, BDD a, BDD b, BDD c, int *created, int 
       return result;
     } else {
       a = result;
-      result &= ~bddmark;
       b = sylvan_true;
       c = sylvan_false;
+      result = sylvan_invalid;
     }
+  }
+
+  if (is_ex && result & bddmark) {
+    // Remove mark.
+    result &= ~bddmark;
+    b = BDD_TOGGLEMARK(b);
+    c = BDD_TOGGLEMARK(c);
   }
  
   BDD mark = result & bddmark;
 
   template_apply_node[thread]->a = a;
-  if (is_ex!=0) template_apply_node[thread]->a |= bddinternal;
+  if (is_ex) template_apply_node[thread]->a |= bddinternal;
   template_apply_node[thread]->b = b;
   template_apply_node[thread]->c = c;
 /*

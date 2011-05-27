@@ -336,6 +336,33 @@ BDD sylvan_apply(BDD a, BDD b, sylvan_operator op) {
   }
 }
 
+BDD sylvan_apply_st(BDD a, BDD b, sylvan_operator op) {
+  switch (op) {
+    case operator_and:
+      return sylvan_ite_st(a, b, sylvan_false);
+    case operator_xor:
+      return sylvan_ite_st(a, sylvan_not(b), b);
+    case operator_or:
+      return sylvan_ite_st(a, sylvan_true, b);
+    case operator_nand:
+      return sylvan_ite_st(a, sylvan_not(b), sylvan_true);
+    case operator_nor:
+      return sylvan_ite_st(a, sylvan_false, sylvan_not(b));
+    case operator_imp:
+      return sylvan_ite_st(a, b, sylvan_true);
+    case operator_biimp:
+      return sylvan_ite_st(a, b, sylvan_not(b));
+    case operator_diff:
+      return sylvan_ite_st(a, sylvan_not(b), sylvan_false);
+    case operator_less:
+      return sylvan_ite_st(a, sylvan_false, b);
+    case operator_invimp:
+      return sylvan_ite_st(a, sylvan_true, sylvan_not(b));
+    default:
+      assert(0);
+  }
+}
+
 BDD sylvan_apply_ex(BDD a, BDD b, sylvan_operator op, const BDD* pairs, size_t n)
 {
   switch (op) {
@@ -409,167 +436,6 @@ static inline BDD sylvan_parent_pop(bddcache_t child, BDD child_c)
     }
     if (__sync_bool_compare_and_swap(&child->first_parent, fp, next)) return fp;
   }
-}
-
-/**
- * Calculate standard triples. Find trivial cases.
- * Version for ITE*. Rules: no marks on result...?
- */
-static BDD sylvan_preprocess_ex(BDD *_a, BDD *_b, BDD *_c) 
-{
-  BDD a=*_a, b=*_b, c=*_c;
-
-  // TERMINAL CASE (attempt 1)
-
-  // ITE(T,B,C) = B
-  // ITE(F,B,C) = C
-  if (a < 2) return (a == sylvan_true ? b : c);
-
-  // Normalization to standard triples
-
-  // ITE(A,A,C) = ITE(A,T,C)
-  // ITE(A,~A,C) = ITE(A,F,C)
-  if (BDD_STRIPMARK(a) == BDD_STRIPMARK(b)) {
-    // faster STRIPMARK means we don't detect constants
-    if (a == b) b = sylvan_true;
-    else b = sylvan_false;
-  }
-
-  // ITE(A,B,A) = ITE(A,B,T)
-  // ITE(A,B,~A) = ITE(A,B,F)
-  if (BDD_STRIPMARK(a) == BDD_STRIPMARK(c)) {
-    // faster STRIPMARK means we don't detect constants
-    if (a != c) c = sylvan_true;
-    else c = sylvan_false;
-  }
-
-  if (b < 2 && BDD_STRIPMARK(c) < BDD_STRIPMARK(a)) {
-    if (b == sylvan_false) {
-      // ITE(A,F,C) = ITE(~C,F,~A)
-      //            = (A and F) or (~A and C)
-      //            = F or (~A and C)
-      //            = (~C and F) or (C and ~A)
-      //            = ITE(~C,F,~A)
-      BDD t = a;
-      a = BDD_TOGGLEMARK(c);
-      c = BDD_TOGGLEMARK(t);
-    } else {
-      // ITE(A,T,C) = ITE(C,T,A)
-      //            = (A and T) or (~A and C)
-      //            = A or (~A and C)
-      //            = C or (~C and A)
-      //            = (C and T) or (~C and A)
-      //            = ITE(C,T,A)
-      BDD t = a;
-      a = c;
-      c = t;
-    }
-  }
-
-  if (c < 2 && BDD_STRIPMARK(b) < BDD_STRIPMARK(a)) {
-    if (c == sylvan_false) {
-      // ITE(A,B,F) = ITE(B,A,F)
-      //            = (A and B) or (~A and F)
-      //            = (A and B) or F
-      //            = (B and A) or (~B and F)
-      BDD t = a;
-      a = b;
-      b = t;
-    } else {
-      // ITE(A,B,T) = ITE(~B,~A,T)
-      //            = (A and B) or (~A and T)
-      //            = (A and B) or ~A
-      //            = (~B and ~A) or B
-      //            = (~B and ~A) or (B and T)
-      //            = ITE(~B,~A,T)
-      BDD t = a;
-      a = BDD_TOGGLEMARK(b);
-      b = BDD_TOGGLEMARK(t);
-    }
-  }
-
-  // Now, if b == constant then a<c (a may be constant)
-  //      if c == constant then a<b (a may be constant)
-  //      if both constant then a will be constant
-
-  if (BDD_NORMALIZE(b) == BDD_NORMALIZE(c)) {
-    // NORMALIZE: like STRIPMARK but also turns "false" into "true"
-    if (b == c) {
-      // trivially equal to b (=c)
-      return b;
-   } else {
-      // Trivial case: they are constants
-      if (b<2) {
-        // Then a is a constant too!
-        assert(a<2);
-        return (a == sylvan_true?b:c);
-      }
-
-      // b and c not constants...
-      // 1. if A then B else not-B
-      // 2. if A then not-B else B
-      if (BDD_STRIPMARK(a) > BDD_STRIPMARK(b)) {
-        // a > b, exchange:
-        // 1. if B then A else not-A
-        // 2. if not-B then A else not-A
-        b = a;
-        a = BDD_TOGGLEMARK(c);
-        c = BDD_TOGGLEMARK(b);
-      }
-    }
-  }
-
-  // TERMINAL CASE
-
-  // ITE(T,B,C) = B
-  // ITE(F,B,C) = C
-  if (a < 2) return (a == sylvan_true ? b : c);
-
-  // ITE(A,B,C) = ITE(.. , .., ~C)
-  /* (A and B) or (~A and C)
-                  ~(~A or ~C)
-           
-
-   A -> B/C === C -> ~A / A and B
-    DeMorgan: ITE(A,B,C) = ~ITE(A,~B,~C) is one way to get rid of both
-    But how do we make it so B and C both have mark or both have no mark??
-    e.g. A -> B | ~C ==> ? ?A -> B | C
-
-    So l
-    
-    
-   */
-
-  // ITE(~A,B,C) = ITE(A,C,B)
-  if (BDD_HASMARK(a)) {
-    a = BDD_STRIPMARK(a);
-    BDD t = c;
-    c = b;
-    b = t;
-  }
-
-  /**
-   * Apply De Morgan: ITE(A,B,C) = ~ITE(A,~B,~C)
-   *
-   * Proof:
-   *   ITE(A,B,C) = (A and B) or (~A and C)
-   *              = (A or C) and (~A or B)
-   *              = ~(~(A or C) or ~(~A or B))
-   *              = ~((~A and ~C) or (A and ~B))
-   *              = ~((A and ~B) or (~A and ~C))
-   *              = ~ITE(A,~B,~C)
-   */
-  /* 
-  if (BDD_HASMARK(b) || b == sylvan_false) {
-    b = BDD_TOGGLEMARK(b);
-    c = BDD_TOGGLEMARK(c);
-
-    *_a=a; *_b=b; *_c=c;
-    return sylvan_invalid | bddmark;
-  }
-  */
-  *_a=a; *_b=b; *_c=c;
-  return sylvan_invalid;
 }
 
 /**
@@ -869,7 +735,7 @@ static inline void sylvan_calculate_result(int thread, bddcache_t node, BDD node
     result = sylvan_makeite(thread, node->low, sylvan_true, node->high, &created, &cached);
   } else if (node->root == quant_unique) {
     // Unique: ITE(low, sylvan_not(high), high)
-    result = sylvan_makeite(thread, node->low, BDD_TOGGLEMARK(node->low), node->high, &created, &cached);
+    result = sylvan_makeite(thread, node->low, BDD_TOGGLEMARK(node->high), node->high, &created, &cached);
   } else if (node->low == node->high) {
     // Trivial: low == high
     result = node->low;
@@ -1138,6 +1004,73 @@ BDD sylvan_ite(BDD a, BDD b, BDD c) {
   return BDD_TRANSFERMARK(ptr, result);
 }
 
+BDD sylvan_ite_st(BDD a, BDD b, BDD c) {
+  /*
+  printf("Calculate IfThenElse(%s%d, %s%d, %s%d) = ",
+    a&bddmark?"~":"",a&~bddmark,
+    b&bddmark?"~":"",b&~bddmark,
+    c&bddmark?"~":"",c&~bddmark);
+  */
+
+  BDD r = sylvan_prepare(&a, &b, &c);
+
+  if ((r & ~bddmark) != sylvan_invalid) {
+    //printf("%s%d\n", r&bddmark?"~":"", r&~bddmark);
+    return r;
+  }
+
+  //printf("%s(%s%d, %s%d, %s%d)\n", r&bddmark?"~":"", a&bddmark?"~":"",a&~bddmark, b&bddmark?"~":"",b&~bddmark, c&bddmark?"~":"",c&~bddmark);
+
+  template_apply_node[0]->a = a;
+  template_apply_node[0]->b = b;
+  template_apply_node[0]->c = c;
+
+  int _created;
+  BDD index;
+  bddcache_t ptr = llset_get_or_create(_bdd.cache, template_apply_node[0], 0, 0);
+  if (ptr == 0) {
+    rt_report_and_exit(1, "ITE cache full!");
+  }
+
+  if (ptr->result != sylvan_invalid) return BDD_TRANSFERMARK(r, ptr->result);
+
+  bddnode_t restrict na = a < 2 ? 0 : GETNODE(a);
+  bddnode_t restrict nb = b < 2 ? 0 : GETNODE(b);
+  bddnode_t restrict nc = c < 2 ? 0 : GETNODE(c);
+
+  BDD level = 0xffffffff;
+  if (na && level > na->level) level = na->level;
+  if (nb && level > nb->level) level = nb->level;
+  if (nc && level > nc->level) level = nc->level;
+
+  BDD aLow = a, aHigh = a;
+  BDD bLow = b, bHigh = b;
+  BDD cLow = c, cHigh = c;
+
+  if (na && level == na->level) {
+    aLow = BDD_TRANSFERMARK(a, na->low);
+    aHigh = BDD_TRANSFERMARK(a, na->high);
+  }
+
+  if (nb && level == nb->level) {
+    bLow = BDD_TRANSFERMARK(b, nb->low);
+    bHigh = BDD_TRANSFERMARK(b, nb->high);
+  }
+
+  if (nc && level == nc->level) {
+    cLow = BDD_TRANSFERMARK(c, nc->low);
+    cHigh = BDD_TRANSFERMARK(c, nc->high);
+  }
+
+  BDD low = sylvan_ite_st(aLow, bLow, cLow);
+  BDD high = sylvan_ite_st(aHigh, bHigh, cHigh);
+
+  if (low == high) ptr->result = BDD_TRANSFERMARK(r, low);
+  else ptr->result = BDD_TRANSFERMARK(r, sylvan_makenode(level, low, high));
+  
+  return ptr->result;
+}
+
 static void sylvan_execute_ite_ex(const int thread) {
   // Phase 1: create calculation tree (ITE* nodes, ITE leafs)
   BDD node_c;
@@ -1377,6 +1310,89 @@ BDD sylvan_restructure(BDD a, BDD b, BDD c, BDD* pairs, size_t n)
   return BDD_TRANSFERMARK(ptr, result);
 }
 
+BDD sylvan_restructure_st_rec(BDD a, BDD b, BDD c, BDD* pairs, size_t n) 
+{
+  bddnode_t restrict na = a < 2 ? 0 : GETNODE(a);
+  bddnode_t restrict nb = b < 2 ? 0 : GETNODE(b);
+  bddnode_t restrict nc = c < 2 ? 0 : GETNODE(c);
+
+  BDD level = 0xffffffff;
+  if (na && level > na->level) level = na->level;
+  if (nb && level > nb->level) level = nb->level;
+  if (nc && level > nc->level) level = nc->level;
+
+  if (level > n) return sylvan_ite(a, b, c);
+
+  BDD r = sylvan_prepare(&a, &b, &c);
+
+  if ((r & ~bddmark) != sylvan_invalid) {
+    a = r;
+    b = sylvan_true;
+    c = sylvan_false;
+    r = sylvan_invalid;
+  }
+
+  if (r & bddmark) {
+    b = BDD_TOGGLEMARK(b);
+    c = BDD_TOGGLEMARK(c);
+  }
+
+  template_apply_node[0]->a = a | bddinternal;
+  template_apply_node[0]->b = b;
+  template_apply_node[0]->c = c;
+
+  int _created;
+  BDD index;
+  bddcache_t ptr = llset_get_or_create(_bdd.cache, template_apply_node[0], 0, 0);
+  if (ptr == 0) {
+    rt_report_and_exit(1, "ITE cache full!");
+  }
+
+  if (ptr->result != sylvan_invalid) return BDD_TRANSFERMARK(r, ptr->result);
+
+  BDD aLow = a, aHigh = a;
+  BDD bLow = b, bHigh = b;
+  BDD cLow = c, cHigh = c;
+
+  if (na && level == na->level) {
+    aLow = BDD_TRANSFERMARK(a, na->low);
+    aHigh = BDD_TRANSFERMARK(a, na->high);
+  }
+
+  if (nb && level == nb->level) {
+    bLow = BDD_TRANSFERMARK(b, nb->low);
+    bHigh = BDD_TRANSFERMARK(b, nb->high);
+  }
+
+  if (nc && level == nc->level) {
+    cLow = BDD_TRANSFERMARK(c, nc->low);
+    cHigh = BDD_TRANSFERMARK(c, nc->high);
+  }
+
+  BDD low = sylvan_restructure_st_rec(aLow, bLow, cLow, pairs, n);
+  BDD high = sylvan_restructure_st_rec(aHigh, bHigh, cHigh, pairs, n);
+
+  BDD newLevel = pairs[level];
+  if (newLevel == quant_forall) {
+    ptr->result = sylvan_ite_st(low, high, sylvan_false);
+  } else if (newLevel == quant_exists) {
+    ptr->result = sylvan_ite_st(low, sylvan_true, high);
+  } else if (newLevel == quant_unique) {
+    ptr->result = sylvan_ite_st(low, BDD_TOGGLEMARK(high), BDD_TOGGLEMARK(high));
+  } else if (low == high) {
+    ptr->result = low;
+  } else {
+    ptr->result = sylvan_ite(newLevel, high, low);
+  }
+
+  return ptr->result;
+}
+
+BDD sylvan_restructure_st(BDD a, BDD b, BDD c, BDD* pairs, size_t n) 
+{
+  llset_clear(_bdd.cache);
+  sylvan_restructure_st_rec(a, b, c, pairs, n);
+}
 
 BDD sylvan_ite_ex(BDD a, BDD b, BDD c, const BDD* restrict pairs, size_t n) {
   //printf("begin\n");

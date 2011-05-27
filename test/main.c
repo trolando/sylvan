@@ -179,6 +179,56 @@ void test_sylvan_apply()
 
 }
 
+void test_sylvan_apply_st()
+{
+    BDD a,b,c,d,e,f,g;
+
+    a = sylvan_ithvar(1);
+    b = sylvan_ithvar(2);
+    c = sylvan_ithvar(3);
+    d = sylvan_ithvar(4);
+    e = sylvan_ithvar(5);
+    f = sylvan_ithvar(6);
+    g = sylvan_ithvar(7);
+
+    // a xor b
+    BDD axorb = sylvan_makenode(1, b, sylvan_not(b));
+    assert(testEqual(axorb, sylvan_apply_st(a, b, operator_xor)));
+
+    // c or d
+    BDD cord = sylvan_makenode(3, d, sylvan_true);
+    assert(cord == sylvan_apply_st(c, d, operator_or));
+
+    BDD t = sylvan_makenode(1, sylvan_false, cord);
+    assert(t == sylvan_apply_st(a, cord, operator_and));
+
+    // (a xor b) and (c or d)
+    BDD test = sylvan_makenode(1, sylvan_makenode(2, sylvan_false, cord), sylvan_makenode(2, cord, sylvan_false));
+    assert(testEqual(test, sylvan_apply_st(axorb, cord, operator_and)));
+    assert(test == sylvan_apply_st(cord, axorb, operator_and));
+
+    // not (A and B)  == not A or not B
+    test = sylvan_apply(sylvan_not(axorb), sylvan_not(cord), operator_or);
+    assert(test == sylvan_not(sylvan_apply_st(axorb, cord, operator_and)));
+
+    // A and not A == false
+    assert(sylvan_false == sylvan_apply_st(axorb, sylvan_not(axorb), operator_and));
+
+    // A or not A = true
+    assert(sylvan_true == sylvan_apply_st(axorb, sylvan_not(axorb), operator_or));
+
+
+    //sylvan_print(sylvan_apply(sylvan_not(axorb), sylvan_not(cord), operator_or));
+    //sylvan_print(sylvan_not(sylvan_apply(axorb, cord, operator_and)));
+
+
+
+    static int cn=1;
+    printf("BDD apply single-threaded test %d successful!\n", cn++);
+
+
+}
+
 void test_sylvan_ite()
 {
     BDD a,b,c,d,e,f,g;
@@ -478,6 +528,7 @@ void runtests(int threads, int iterations)
     for (int j=0;j<iterations;j++){
         sylvan_init(threads, 16, 16);
         for (int i=0;i<3;i++) test_sylvan_apply();
+        for (int i=0;i<3;i++) test_sylvan_apply_st();
         for (int i=0;i<3;i++) test_sylvan_ite();
         for (int i=0;i<3;i++) test_sylvan_ite_ex();
         for (int i=0;i<3;i++) test_sylvan_replace();

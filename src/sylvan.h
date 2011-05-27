@@ -94,16 +94,19 @@ extern BDD sylvan_not(BDD bdd);
  * - bddtrue/bddfalse
  */
 extern BDD sylvan_restructure(BDD a, BDD b, BDD c, BDD* replace, size_t n);
+extern BDD sylvan_restructure_st(BDD a, BDD b, BDD c, BDD* replace, size_t n);
 
 /**
  * Apply operator (calls sylvan_restructure)
  */
 extern BDD sylvan_apply(BDD a, BDD b, sylvan_operator op);
+extern BDD sylvan_apply_st(BDD a, BDD b, sylvan_operator op);
 
 /**
  * Calculate simple if <a> then <b> else <c> (calls sylvan_restructure)
  */
 extern BDD sylvan_ite(BDD a, BDD b, BDD c);
+extern BDD sylvan_ite_st(BDD a, BDD b, BDD c);
 
 /**
  * Extended versions of sylvan_apply and sylvan_ite

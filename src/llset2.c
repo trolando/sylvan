@@ -138,6 +138,21 @@ void *llset_lookup_hash(const llset_t dbs, const void* data, int* created, uint3
     return 0;
 }
 
+/*
+inline void *llset_index_to_ptr(const llset_t dbs, uint32_t index)
+{
+    assert (index >= 2 && index < dbs->size);
+    return &dbs->data[index * dbs->length];
+}
+
+uint32_t llset_ptr_to_index(const llset_t dbs, void *ptr)
+{
+    size_t result = ((size_t)ptr - (size_t)dbs->data);
+    result /= dbs->length;
+    assert (result >= 2 && result < dbs->size);
+    return result;
+}
+*/
 inline void *llset_get_or_create(const llset_t dbs, const void *data, int *created, uint32_t *index)
 {
 	int _created;
@@ -148,10 +163,21 @@ inline void *llset_get_or_create(const llset_t dbs, const void *data, int *creat
     return result;
 }
 
+static __attribute__((noinline)) unsigned next_pow2(unsigned x)
+{
+	x -= 1;
+	x |= (x >> 1);
+	x |= (x >> 2);
+	x |= (x >> 4);
+	x |= (x >> 8);
+	x |= (x >> 16);
+	
+	return x + 1;
+}
+
 llset_t llset_create(size_t length, size_t size, hash32_f hash32, equals_f equals)
 {
     llset_t dbs = rt_align(CACHE_LINE_SIZE, sizeof(struct llset));
-	dbs->length = length;
     dbs->hash32 = hash32 != NULL ? hash32 : hash_128_swapc; // default hash function is hash_128_swapc
     dbs->equals = equals != NULL ? equals : default_equals;
     dbs->bytes = length;
@@ -169,7 +195,6 @@ void llset_delete(const llset_t dbs, uint32_t index)
 {
 	//  note that this may be quite unsafe...
 	//  we need some sort of reference counting to do this properly...
-	//  for now, it is sufficient if there is a guarantee that there is no mixing of deleting and adding
     dbs->table[index] = TOMBSTONE;
 }
 

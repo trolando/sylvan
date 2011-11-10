@@ -4,7 +4,8 @@
 #define SYLVAN_H
 
 typedef uint32_t BDD;
-typedef uint32_t BDDLEVEL;
+typedef uint16_t BDDVAR;
+typedef uint32_t BDDOP; // bdd operation
 
 extern const BDD sylvan_true;
 extern const BDD sylvan_false;
@@ -15,22 +16,17 @@ extern const BDD sylvan_invalid;
 // Quantifiers
 extern const BDD quant_exists;
 extern const BDD quant_forall;
-extern const BDD quant_unique;
 
-enum sylvan_operators {
-    operator_and = 0,
-    operator_xor,
-    operator_or,
-    operator_nand,
-    operator_nor,
-    operator_imp,
-    operator_biimp,
-    operator_diff,
-    operator_less,
-    operator_invimp
-};
-
-typedef enum sylvan_operators sylvan_operator;
+#define sylvan_and(a, b)    sylvan_ite((a), (b), sylvan_false)
+#define sylvan_xor(a, b)    sylvan_ite((a), sylvan_not(b), (b))
+#define sylvan_or(a, b)     sylvan_ite((a), sylvan_true, (b))
+#define sylvan_nand(a, b)   sylvan_ite((a), sylvan_not(b), sylvan_true)
+#define sylvan_nor(a, b)    sylvan_ite((a), sylvan_false, sylvan_not(b))
+#define sylvan_imp(a, b)    sylvan_ite((a), (b), sylvan_true)
+#define sylvan_biimp(a, b)  sylvan_ite((a), (b), sylvan_not(b))
+#define sylvan_diff(a, b)   sylvan_ite((a), sylvan_not(b), sylvan_false)
+#define sylvan_less(a, b)   sylvan_ite((a), sylvan_false, (b))
+#define sylvan_invimp(a, b) sylvan_ite((a), sylvan_true, sylvan_not(b))
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,17 +48,17 @@ extern void sylvan_quit();
 /**
  * Create a BDD representing <level>
  */
-extern BDD sylvan_ithvar(BDDLEVEL level);
+extern BDD sylvan_ithvar(BDDVAR level);
 
 /**
  * Create a BDD representing ~<level>
  */
-extern BDD sylvan_nithvar(BDDLEVEL level);
+extern BDD sylvan_nithvar(BDDVAR level);
 
 /**
  * Get the <level> of the root node of <bdd>
  */
-extern BDDLEVEL sylvan_var(BDD bdd);
+extern BDDVAR sylvan_var(BDD bdd);
 
 /**
  * Get the <low> child of <bdd>
@@ -93,20 +89,17 @@ extern BDD sylvan_not(BDD bdd);
  * - sylvan_unique
  * - bddtrue/bddfalse
  */
-extern BDD sylvan_restructure(BDD a, BDD b, BDD c, BDD* replace, size_t n);
-extern BDD sylvan_restructure_st(BDD a, BDD b, BDD c, BDD* replace, size_t n);
-
-/**
- * Apply operator (calls sylvan_restructure)
- */
-extern BDD sylvan_apply(BDD a, BDD b, sylvan_operator op);
-extern BDD sylvan_apply_st(BDD a, BDD b, sylvan_operator op);
+//extern BDD sylvan_restructure(BDD a, BDD b, BDD c, BDD* replace, size_t n);
+//extern BDD sylvan_restructure_st(BDD a, BDD b, BDD c, BDD* replace, size_t n);
 
 /**
  * Calculate simple if <a> then <b> else <c> (calls sylvan_restructure)
  */
 extern BDD sylvan_ite(BDD a, BDD b, BDD c);
-extern BDD sylvan_ite_st(BDD a, BDD b, BDD c);
+//extern BDD sylvan_ite_st(BDD a, BDD b, BDD c);
+
+
+extern BDD sylvan_relprods(BDD a, BDD b);
 
 /**
  * Extended versions of sylvan_apply and sylvan_ite
@@ -119,32 +112,30 @@ extern BDD sylvan_ite_st(BDD a, BDD b, BDD c);
  * - sylvan_exists
  * - sylvan_forall
  */
-extern BDD sylvan_apply_ex(BDD a, BDD b, sylvan_operator op, const BDDLEVEL* pairs, size_t n);
-extern BDD sylvan_ite_ex(BDD a, BDD b, BDD c, const BDDLEVEL* pairs, size_t n);
+//extern BDD sylvan_ite_ex(BDD a, BDD b, BDD c, const BDDVAR* pairs, size_t n);
 
-extern BDD sylvan_apply_ex_st(BDD a, BDD b, sylvan_operator op, const BDDLEVEL* pairs, size_t n);
-extern BDD sylvan_ite_ex_st(BDD a, BDD b, BDD c, const BDDLEVEL* pairs, size_t n);
+//extern BDD sylvan_ite_ex_st(BDD a, BDD b, BDD c, const BDDVAR* pairs, size_t n);
 
 /**
  * Replace variables in bdd
  * Calls sylvan_ite_ex(a, bddtrue, bddfalse, pairs, n)
  */
-extern BDD sylvan_replace(BDD a, const BDDLEVEL *pairs, size_t n);
-extern BDD sylvan_replace_st(BDD a, const BDDLEVEL *pairs, size_t n);
+//extern BDD sylvan_replace(BDD a, const BDDVAR *pairs, size_t n);
+//extern BDD sylvan_replace_st(BDD a, const BDDVAR *pairs, size_t n);
 
 /**
  * Quantify variables in bdd
  * Calls sylvan_ite_ex(a, bddtrue, bddfalse, pairs, n)
  */
-extern BDD sylvan_quantify(BDD a, const BDDLEVEL *pairs, size_t n);
-extern BDD sylvan_quantify_st(BDD a, const BDDLEVEL *pairs, size_t n);
+//extern BDD sylvan_quantify(BDD a, const BDDVAR *pairs, size_t n);
+//extern BDD sylvan_quantify_st(BDD a, const BDDVAR *pairs, size_t n);
 
 /**
  * Dangerous creation primitive.
  * May cause bad ordering.
  * Do not use except for debugging purposes!
  */
-extern BDD sylvan_makenode(BDDLEVEL level, BDD low, BDD high);
+extern BDD sylvan_makenode(BDDVAR level, BDD low, BDD high);
 
 /**
  * Send a dump of the BDD to stdout
@@ -156,7 +147,7 @@ extern void sylvan_print(BDD bdd);
  * <variables> must be an ordered list of length n!
  * <bdd> must only have variables in <variables>
  */
-extern double sylvan_satcount(BDD bdd, const BDDLEVEL *variables, size_t n);
+extern double sylvan_satcount(BDD bdd, const BDDVAR *variables, size_t n);
 
 
 #ifdef __cplusplus

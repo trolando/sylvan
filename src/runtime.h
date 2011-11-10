@@ -48,10 +48,6 @@ static const size_t CACHE_LINE_SIZE = (1 << CACHE_LINE);
 /* Pause instruction to prevent excess processor bus usage */ 
 #define cpu_relax() __asm__ __volatile__("pause\n": : :"memory")
 
-static inline void test() {
-	LFENCE;
-}
-
 /* Test and set a bit */
 static inline char atomic_bitsetandtest(void *ptr, int x)
 {
@@ -68,7 +64,7 @@ static inline char atomic_bitsetandtest(void *ptr, int x)
 void rt_report_and_exit(int result, char *format, ...);
 
 void *rt_align(size_t align, size_t size);
-
+/*
 typedef union ticketlock ticketlock;
 
 union ticketlock
@@ -112,5 +108,23 @@ static int ticket_lockable(ticketlock *t)
 	barrier();
 	return (u.s.ticket == u.s.users);
 }
+*/
+
+static __attribute__((noinline)) unsigned next_pow2(unsigned x)
+{
+	x -= 1;
+	x |= (x >> 1);
+	x |= (x >> 2);
+	x |= (x >> 4);
+	x |= (x >> 8);
+	x |= (x >> 16);
+	
+	return x + 1;
+}
+
+
+
+
+
 
 #endif

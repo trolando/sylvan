@@ -5,8 +5,60 @@
 #undef get16bits
 #define get16bits(d) (*((const uint16_t *) (d)))
 
+/* C hash, http://www.eetbeetee.org/h.c */
+
+unsigned int hash_128_swapc(const void *p, unsigned int len, unsigned int hash )
+{
+	register unsigned long long r8  = 0x1591aefa5e7e5a17ULL,
+	                            r9  = 0x2bb6863566c4e761ULL,
+	                            rax = len ^ r8,
+	                            rcx = r9,
+	                            rdx;
+	rax = rax ^ hash;
+	
+#define bswap( r ) \
+	__asm__ __volatile__ ( "bswapq %0" : "+r" (r) : : )
+#define mul128( a, d, r ) \
+	__asm__ __volatile__ ( "mulq %2" : "+a" (a), "=d" (d) : "r" (r) : )
+	
+	while ( len >= 16 ) {
+		rax = ( rax ^ ((unsigned long long *) p)[ 0 ] ) * r8;
+		rcx = ( rcx ^ ((unsigned long long *) p)[ 1 ] ) * r9;
+		bswap( rax );
+		bswap( rcx );
+		p    = &((unsigned long long *) p)[ 2 ];
+		len -= 16;
+	}
+	if ( len != 0 ) {
+		if ( ( len & 8 ) != 0 ) {
+			rdx  = 0;
+			rax ^= ((unsigned long long *) p)[ 0 ];
+			p    = &((unsigned long long *) p)[ 1 ];
+		}
+		if ( ( len & 4 ) != 0 ) {
+			rdx = ((unsigned int *) p)[ 0 ];
+			p   = &((unsigned int *) p)[ 1 ];
+		}
+		if ( ( len & 2 ) != 0 ) {
+			rdx = ( rdx << 16 ) | ((unsigned short *) p)[ 0 ];
+			p   = &((unsigned short *) p)[ 1 ];
+		}
+		if ( ( len & 1 ) != 0 ) {
+			rdx = ( rdx << 8 ) | ((unsigned char *) p)[ 0 ];
+		}
+		rcx ^= rdx;
+	}
+	mul128( rax, rdx, r8 );
+	rcx = ( rcx * r9 ) + rdx;
+	rax ^= rcx;
+	mul128( rax, rdx, r8 );
+	rcx = ( rcx * r9 ) + rdx;
+	rax ^= rcx;
+	return ( rax >> 32 ) ^ rax;
+}
+
 uint32_t
-SuperFastHash (const void *data_, int len, uint32_t hash)
+SuperFastHash (const void *data_, unsigned int len, uint32_t hash)
 {
     const unsigned char *data = data_;
     uint32_t tmp;
@@ -58,7 +110,7 @@ SuperFastHash (const void *data_, int len, uint32_t hash)
  * One-at-a-Time hash
  */
 uint32_t
-oat_hash (const void *data_, int len, uint32_t seed)
+oat_hash (const void *data_, unsigned int len, uint32_t seed)
 {
     const unsigned char *data = data_;
     unsigned             h = seed;

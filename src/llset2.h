@@ -4,7 +4,6 @@
 #define LLSET_H
 
 typedef int (*equals_f)(const void *a, const void *b, size_t length);
-//typedef void (*delete_f)(const struct llset* dbs, uint32_t index)
 
 struct llset
 {
@@ -31,6 +30,8 @@ llset_t llset_create(size_t length, size_t size, hash32_f hash32, equals_f equal
 void llset_clear(llset_t dbs);
 
 void llset_free(llset_t dbs);
+
+void llset_deref(const llset_t dbs, uint32_t index);
 
 void llset_delete(const llset_t dbs, uint32_t index);
 

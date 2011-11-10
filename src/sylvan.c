@@ -568,7 +568,7 @@ BDD sylvan_forall(BDD a, BDDVAR* variables, int size)
 }
 
 /**
- * Very specialized RelProdS.
+ * Very specialized RelProdS. Calculates ( \exists X (A /\ B) ) [X'/X]
  * Assumptions on variables: 
  * - every variable 0, 2, 4 etc is in X
  * - every variable 1, 3, 5 etc is in X'
@@ -620,6 +620,7 @@ BDD sylvan_relprods(BDD a, BDD b)
     BDD low = sylvan_relprods(aLow, bLow);
     
     if (0==(level&1)) {
+        // variable in X: quantify
         if (low == sylvan_true) return sylvan_true;
         BDD high = sylvan_relprods(aHigh, bHigh);
         if (high == sylvan_true) return sylvan_true;
@@ -627,8 +628,80 @@ BDD sylvan_relprods(BDD a, BDD b)
         return sylvan_ite(low, sylvan_true, high);
     }
     
+    // variable in X': substitute
     BDD high = sylvan_relprods(aHigh, bHigh);
     ptr->result = sylvan_makenode(level-1, low, high);
+    
+    return ptr->result;
+}
+
+/**
+ * Very specialized RelProdS. Calculates \exists X' (A[X/X'] /\ B)
+ * Assumptions:
+ * - A is only defined on variables in X
+ * - every variable 0, 2, 4 etc is in X
+ * - every variable 1, 3, 5 etc is in X'
+ * - the substitution X/X' substitutes 0 by 1, 2 by 3, etc.
+ */
+BDD sylvan_relprods_reversed(BDD a, BDD b) 
+{
+    struct bddcache template_cache_node;
+
+    // Trivial case
+    if (a == sylvan_true && b == sylvan_true) return sylvan_true;
+    if (a == sylvan_false || b == sylvan_false) return sylvan_false;
+    
+    // Check cache
+    template_cache_node.operation = 2; // to be done
+    template_cache_node.parameters = 2;
+    template_cache_node.params[0] = a;
+    template_cache_node.params[1] = b;
+    template_cache_node.result = sylvan_invalid;
+    
+    bddcache_t ptr = llset_get_or_create(_bdd.cache, &template_cache_node, 0, 0);
+    if (ptr == 0) rt_report_and_exit(1, "Operations cache full!");
+    
+    // Did cache return result?
+    if (ptr->result != sylvan_invalid) return ptr->result;
+    
+    // No result, so we need to calculate...
+    bddnode_t restrict na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
+    bddnode_t restrict nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
+    
+    // Replace level in a.
+    
+    // Get lowest level
+    BDDVAR level = 0xffff;
+    if (na && level > (na->level+1)) level = (na->level+1);
+    if (nb && level > nb->level) level = nb->level;
+    
+    // Get cofactors
+    BDD aLow = a, aHigh = a;
+    BDD bLow = b, bHigh = b;
+    if (na && level == (na->level+1)) {
+        aLow = BDD_TRANSFERMARK(a, na->low);
+        aHigh = BDD_TRANSFERMARK(a, na->high);
+    }
+    if (nb && level == nb->level) {
+        bLow = BDD_TRANSFERMARK(b, nb->low);
+        bHigh = BDD_TRANSFERMARK(b, nb->high);
+    }
+    
+    // Recursive computation
+    BDD low = sylvan_relprods_reversed(aLow, bLow);
+    
+    if (1==(level&1)) {
+        // variable in X': quantify
+        if (low == sylvan_true) return sylvan_true;
+        BDD high = sylvan_relprods_reversed(aHigh, bHigh);
+        if (high == sylvan_true) return sylvan_true;
+        if (low == sylvan_false && high == sylvan_false) return sylvan_false;
+        return sylvan_or(low, high);
+    }
+    
+    // variable in X
+    BDD high = sylvan_relprods_reversed(aHigh, bHigh);
+    ptr->result = sylvan_makenode(level, low, high);
     
     return ptr->result;
 }

@@ -172,14 +172,9 @@ void test_modelcheck()
     do {
         printf("Visited: \n");
         sylvan_print(visited);
-        // tm_test(visited);
 
         prev = visited;
-        // this is: NEXT := (x'/x) exists(relprod(visited, r), x)
-        //          operator AND, quantification and renaming in one operation
-        //          possible because quantified and renamed variables don't overlap
         next = sylvan_relprods(visited, r);
-        // this is: VISITED := VISITED or NEXT
         visited = sylvan_or(visited, next);
     } while (visited != prev);
 

@@ -503,6 +503,70 @@ BDD sylvan_ite(BDD a, BDD b, BDD c)
     return BDD_TRANSFERMARK(r, ptr->result);
 }
 
+BDD sylvan_exists(BDD a, BDDVAR* variables, int size)
+{
+    // Trivial case
+    if (BDD_ISCONSTANT(a)) return a;
+    
+    bddnode_t restrict na = GETNODE(a);
+        
+    // Get lowest level
+    BDDVAR level = na->level;
+    
+    // Get cofactors
+    BDD aLow = BDD_TRANSFERMARK(a, na->low);
+    BDD aHigh = BDD_TRANSFERMARK(a, na->high);
+    
+    int i;
+    for (i=0;i<size;i++) {
+        if (level == variables[i]) {
+            BDD low = sylvan_exists(aLow, variables, size);
+            if (low == sylvan_true) return sylvan_true;
+            BDD high = sylvan_exists(aHigh, variables, size);
+            if (high == sylvan_true) return sylvan_true;
+            if (low == sylvan_false && high == sylvan_false) return sylvan_false;
+            return sylvan_or(low, high);
+        }
+    }
+    
+    // Recursive computation
+    BDD low = sylvan_exists(aLow, variables, size);
+    BDD high = sylvan_exists(aHigh, variables, size);
+    return sylvan_makenode(level, low, high);
+}
+
+BDD sylvan_forall(BDD a, BDDVAR* variables, int size)
+{
+    // Trivial case
+    if (BDD_ISCONSTANT(a)) return a;
+    
+    bddnode_t restrict na = GETNODE(a);
+        
+    // Get lowest level
+    BDDVAR level = na->level;
+    
+    // Get cofactors
+    BDD aLow = BDD_TRANSFERMARK(a, na->low);
+    BDD aHigh = BDD_TRANSFERMARK(a, na->high);
+    
+    int i;
+    for (i=0;i<size;i++) {
+        if (level == variables[i]) {
+            BDD low = sylvan_forall(aLow, variables, size);
+            if (low == sylvan_false) return sylvan_false;
+            BDD high = sylvan_forall(aHigh, variables, size);
+            if (high == sylvan_false) return sylvan_false;
+            if (low == sylvan_true && high == sylvan_true) return sylvan_true;
+            return sylvan_and(low, high);
+        }
+    }
+    
+    // Recursive computation
+    BDD low = sylvan_forall(aLow, variables, size);
+    BDD high = sylvan_forall(aHigh, variables, size);
+    return sylvan_makenode(level, low, high);
+}
+
 /**
  * Very specialized RelProdS.
  * Assumptions on variables: 

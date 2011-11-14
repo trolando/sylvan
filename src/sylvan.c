@@ -51,7 +51,8 @@ struct bddnode {
     BDD low;
     BDD high;
     BDDVAR level;
-    char pad1[PAD(sizeof(BDD)*2+sizeof(BDDVAR), 16)];
+    uint8_t flags; // temporary 
+    char pad1[PAD(sizeof(BDD)*2+sizeof(BDDVAR)+sizeof(uint8_t), 16)];
 }; // 16 bytes
 
 typedef struct bddnode* bddnode_t;
@@ -105,6 +106,13 @@ static struct {
 // max number of parameters (set to: 5, 13, 29 to get bddcache node size 32, 64, 128)
 #define MAXPARAM 5
 
+/*
+ * Temporary "operations"
+ * 0 = ite
+ * 1 = relprods
+ * 2 = relprods_reversed
+ * 3 = count
+ */
 __attribute__ ((packed))
 struct bddcache {
     BDDOP operation;
@@ -265,6 +273,7 @@ inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high)
     struct bddnode n;
     if (low == high) return low;
     n.level = level;
+    n.flags = 0;
     // Normalization to keep canonicity
     // low will have no mark
     if (BDD_HASMARK(low)) {
@@ -704,6 +713,36 @@ BDD sylvan_relprods_reversed(BDD a, BDD b)
     ptr->result = sylvan_makenode(level, low, high);
     
     return ptr->result;
+}
+
+uint32_t sylvan_nodecount_do_1(BDD a) 
+{
+    uint32_t result = 0;
+    if (BDD_ISCONSTANT(a)) return 0;
+    bddnode_t restrict na = GETNODE(a);
+    if (na->flags & 1) return 0;
+    na->flags |= 1; // mark
+    result = 1;
+    result += sylvan_nodecount_do_1(na->low);
+    result += sylvan_nodecount_do_1(na->high);
+    return result;
+}
+
+void sylvan_nodecount_do_2(BDD a) 
+{
+    if (BDD_ISCONSTANT(a)) return;
+    bddnode_t restrict na = GETNODE(a);
+    if (!(na->flags & 1)) return;
+    na->flags &= ~1; // unmark
+    sylvan_nodecount_do_2(na->low);
+    sylvan_nodecount_do_2(na->high);
+}
+
+uint32_t sylvan_nodecount(BDD a) 
+{
+    uint32_t result = sylvan_nodecount_do_1(a);
+    sylvan_nodecount_do_2(a);
+    return result;
 }
 
 double sylvan_satcount_do(BDD bdd, const BDDVAR *variables, size_t n, unsigned long index)

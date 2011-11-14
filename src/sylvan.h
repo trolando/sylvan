@@ -151,6 +151,8 @@ extern void sylvan_print(BDD bdd);
  * <bdd> must only have variables in <variables>
  */
 extern double sylvan_satcount(BDD bdd, const BDDVAR *variables, size_t n);
+extern uint32_t sylvan_nodecount(BDD a);
+
 
 
 #ifdef __cplusplus

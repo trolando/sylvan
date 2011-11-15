@@ -616,7 +616,7 @@ BDD sylvan_forall(BDD a, BDDVAR* variables, int size)
     return sylvan_makenode(level, low, high);
 }
 
-extern BDD sylvan_relprods(BDD a, BDD b) 
+BDD sylvan_relprods(BDD a, BDD b) 
 {
     return sylvan_relprods_partial(a, b, sylvan_false);
 }
@@ -639,9 +639,10 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
     
     // Check cache
     template_cache_node.operation = 1; // to be done
-    template_cache_node.parameters = 2;
+    template_cache_node.parameters = 3;
     template_cache_node.params[0] = a;
     template_cache_node.params[1] = b;
+    template_cache_node.params[2] = excluded_variables;
     template_cache_node.result = sylvan_invalid;
     
     bddcache_t ptr = llset_get_or_create(_bdd.cache, &template_cache_node, 0, 0);
@@ -679,11 +680,11 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
             is_excluded = 1;
             break;
         }
-        if (var > level) {
+        else if (var > level) {
             break;
         }
         // var < level
-        excluded_variables = sylvan_low(excluded_variables);
+        else excluded_variables = sylvan_low(excluded_variables);
     }
     
     // Recursive computation
@@ -702,8 +703,9 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
 
     // variable in X': substitute
     if (is_excluded == 0) ptr->result = sylvan_makenode(level-1, low, high);
+
     // variable not in X or X': normal behavior
-    ptr->result = sylvan_makenode(level, low, high);
+    else ptr->result = sylvan_makenode(level, low, high);
     
     return ptr->result;
 }
@@ -815,7 +817,7 @@ long double sylvan_satcount_do(BDD bdd, BDD variables)
     if (variables == sylvan_false) {
         if (bdd == sylvan_true) return 1.0;
         // bdd != sylvan_false
-        fprintf(stderr, "ERROR in sylvan_satcount: 'bdd' contains variables not in 'variables'!\n");
+        fprintf(stderr, "ERROR in sylvan_satcount: 'bdd' contains variable %d not in 'variables'!\n", sylvan_var(bdd));
         exit(0); 
     }
     if (variables == sylvan_true) {

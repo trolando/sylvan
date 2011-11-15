@@ -512,6 +512,46 @@ BDD sylvan_ite(BDD a, BDD b, BDD c)
     return BDD_TRANSFERMARK(r, ptr->result);
 }
 
+BDD sylvan_exists(BDD a, BDD variables)
+{
+    // Trivial cases
+    if (BDD_ISCONSTANT(a)) return a;
+
+    // a != constant    
+    bddnode_t restrict na = GETNODE(a);
+        
+    // Get lowest level
+    BDDVAR level = na->level;
+    
+    // Get cofactors
+    BDD aLow = BDD_TRANSFERMARK(a, na->low);
+    BDD aHigh = BDD_TRANSFERMARK(a, na->high);
+    
+    // Skip variables not in a
+    while (variables != sylvan_false && sylvan_var(variables) < level) {
+        variables = sylvan_low(variables);
+    }
+
+    if (variables == sylvan_false) return a;
+    // variables != sylvan_true (always)
+    // variables != sylvan_false
+    
+    if (sylvan_var(variables) == level) {
+        // quantify
+        BDD low = sylvan_exists(aLow, sylvan_low(variables));
+        if (low == sylvan_true) return sylvan_true;
+        BDD high = sylvan_exists(aHigh, sylvan_low(variables));
+        if (high == sylvan_true) return sylvan_true;
+        if (low == sylvan_false && high == sylvan_false) return sylvan_false;
+        return sylvan_or(low, high);
+    } else {
+        // no quantify
+        BDD low = sylvan_exists(aLow, variables);
+        BDD high = sylvan_exists(aHigh, variables);
+        return sylvan_makenode(level, low, high);
+    }
+}
+/*
 BDD sylvan_exists(BDD a, BDDVAR* variables, int size)
 {
     // Trivial case
@@ -543,7 +583,7 @@ BDD sylvan_exists(BDD a, BDDVAR* variables, int size)
     BDD high = sylvan_exists(aHigh, variables, size);
     return sylvan_makenode(level, low, high);
 }
-
+*/
 BDD sylvan_forall(BDD a, BDDVAR* variables, int size)
 {
     // Trivial case

@@ -27,8 +27,8 @@ int testEqual(BDD a, BDD b)
 		return 0;
 	}
 
-	sylvan_print(a);
-	sylvan_print(b);
+	//sylvan_print(a);
+	//sylvan_print(b);
 	return 0;
 
 }
@@ -113,7 +113,7 @@ void test_ite()
     assert(sylvan_ite(b, sylvan_false, etheng) == sylvan_and(test, sylvan_not(b)));
 
     static int cn=1;
-    printf("BDD ite test %d successful!\n", cn++);
+    printf("BDD ite test %d successful (%d nodes)!\n", cn++, sylvan_nodecount(test));
 }
 
 BDD knownresult;
@@ -320,10 +320,10 @@ void runtests(int threads, int iterations)
 int main(int argc, char **argv)
 {
 
-    sylvan_init(2, 16, 16);
+    /*sylvan_init(2, 16, 16);
     test_modelcheck();
     sylvan_quit();
-    exit(0);
+    exit(0);*/
 
     int threads = 2;
     int iterations = 5000;

@@ -745,32 +745,39 @@ uint32_t sylvan_nodecount(BDD a)
     return result;
 }
 
-double sylvan_satcount_do(BDD bdd, const BDDVAR *variables, size_t n, unsigned long index)
+long double sylvan_satcount_do(BDD bdd, BDD variables)
 {
     if (bdd == sylvan_false) return 0.0;
+    if (variables == sylvan_false) {
+        if (bdd == sylvan_true) return 1.0;
+        // bdd != sylvan_false
+        fprintf(stderr, "ERROR in sylvan_satcount: 'bdd' contains variables not in 'variables'!\n");
+        exit(0); 
+    }
+    if (variables == sylvan_true) {
+        fprintf(stderr, "ERROR in sylvan_satcount: invalid 'variables'!\n");
+        exit(0);
+    }
+    // bdd != false
+    // variables != constant
     if (bdd == sylvan_true) {
-        if (index < n) return pow(2.0, (n-index));
-        else return 1.0;
+        // TODO: just run a loop on variables...
+        return 2.0L * sylvan_satcount_do(bdd, sylvan_low(variables));
     }
-    if (index >= n) {
-        printf("ERROR REACHED: index=%ld n=%ld", index, n);
-        sylvan_print(bdd);
-        return 0.0;
-    }
-    BDDVAR level = sylvan_var(bdd);
-    if (level == variables[index]) {
-        // take high, take low
-        double high = sylvan_satcount_do(sylvan_high(bdd), variables, n, index+1);
-        double low = sylvan_satcount_do(sylvan_low(bdd), variables, n, index+1);
-        return high+low;
+    // bdd != constant
+    // variables != constant
+    if (sylvan_var(bdd) > sylvan_var(variables)) {
+        return 2.0L * sylvan_satcount_do(bdd, sylvan_low(variables));
     } else {
-        return 2.0 * sylvan_satcount_do(bdd, variables, n, index+1);
+        long double high = sylvan_satcount_do(sylvan_high(bdd), sylvan_low(variables));
+        long double low = sylvan_satcount_do(sylvan_low(bdd), sylvan_low(variables));
+        return high+low;
     }
 }
 
-double sylvan_satcount(BDD bdd, const BDDVAR *variables, size_t n)
+long double sylvan_satcount(BDD bdd, BDD variables)
 {
-    return sylvan_satcount_do(bdd, variables, n, 0);
+    return sylvan_satcount_do(bdd, variables);
 }
 
 static inline void sylvan_printbdd(const char *s, BDD bdd)

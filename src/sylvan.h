@@ -147,10 +147,11 @@ extern void sylvan_print(BDD bdd);
 
 /**
  * Calculate number of satisfying variable assignments.
- * <variables> must be an ordered list of length n!
  * <bdd> must only have variables in <variables>
+ * <variables> is a BDD with every variable 'high' set to 'true'
  */
-extern double sylvan_satcount(BDD bdd, const BDDVAR *variables, size_t n);
+extern long double sylvan_satcount(BDD bdd, BDD variables);
+
 extern uint32_t sylvan_nodecount(BDD a);
 
 

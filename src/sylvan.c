@@ -690,11 +690,12 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
  * Very specialized RelProdS. Calculates \exists X' (A[X/X'] /\ B)
  * Assumptions:
  * - A is only defined on variables in X
- * - every variable 0, 2, 4 etc is in X
- * - every variable 1, 3, 5 etc is in X'
+ * - every variable 0, 2, 4 etc is in X (exclude)
+ * - every variable 1, 3, 5 etc is in X' (exclude)
+ * - variables in exclude_variables are not in X or X'
  * - the substitution X/X' substitutes 0 by 1, 2 by 3, etc.
  */
-BDD sylvan_relprods_reversed(BDD a, BDD b) 
+BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables) 
 {
     struct bddcache template_cache_node;
 
@@ -704,9 +705,10 @@ BDD sylvan_relprods_reversed(BDD a, BDD b)
     
     // Check cache
     template_cache_node.operation = 2; // to be done
-    template_cache_node.parameters = 2;
+    template_cache_node.parameters = 3;
     template_cache_node.params[0] = a;
     template_cache_node.params[1] = b;
+    template_cache_node.params[2] = excluded_variables;
     template_cache_node.result = sylvan_invalid;
     
     bddcache_t ptr = llset_get_or_create(_bdd.cache, &template_cache_node, 0, 0);
@@ -719,42 +721,84 @@ BDD sylvan_relprods_reversed(BDD a, BDD b)
     bddnode_t restrict na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
     bddnode_t restrict nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
     
-    // Replace level in a.
+    // Replace level in a, but only if not excluded!
     
     // Get lowest level
     BDDVAR level = 0xffff;
-    if (na && level > (na->level+1)) level = (na->level+1);
+    if (na && level > na->level) level = na->level;
     if (nb && level > nb->level) level = nb->level;
+    
+    // Check if excluded variable
+    int is_excluded = 0;
+    while (excluded_variables != sylvan_false) {
+        BDDVAR var = sylvan_var(excluded_variables);
+        if (var == level) {
+            is_excluded = 1;
+            break;
+        }
+        else if (var > level) {
+            break;
+        }
+        // var < level
+        else excluded_variables = sylvan_low(excluded_variables);
+    }
+    
+    // raise_a means: we are at a's level and it will be raised. 
+    int raise_a = (!is_excluded && na && level == na->level) ? 1 : 0;
+    // ignore_a means: we raise A but B is at the same level as A.
+    int ignore_a = (raise_a && nb && level == nb->level) ? 1 : 0;
     
     // Get cofactors
     BDD aLow = a, aHigh = a;
     BDD bLow = b, bHigh = b;
-    if (na && level == (na->level+1)) {
+    if (!ignore_a && na && level == na->level) {
         aLow = BDD_TRANSFERMARK(a, na->low);
         aHigh = BDD_TRANSFERMARK(a, na->high);
     }
+    
+    // if raise_a and not ignore_a then A[X/X'] == {level+1, aLow, aHigh} and B == {y>level, ..., ...}
+    // so, increase level, and we get A[X/X'] == {level, aLow, aHigh} and B == {y>=level, ..., ...}
+    // note that all variables in A are by definition in X,
+    //   so aLow and aHigh would never contain odd variables.
+    if (raise_a && !ignore_a) level++;
+    
+    // it is now possible/likely that A[X/X'] and B are at the same level
     if (nb && level == nb->level) {
         bLow = BDD_TRANSFERMARK(b, nb->low);
         bHigh = BDD_TRANSFERMARK(b, nb->high);
     }
     
-    // Recursive computation
-    BDD low = sylvan_relprods_reversed(aLow, bLow);
+    // there are three cases: either ignore_a, or raise_a, or nothing
+    // in all three cases, we must have aLow = A[X/X'](x=0) and aHigh = A[X/X'](x=1)
+    //                              and bLow = B(x=0)       and bHigh = B(x=1)
+   
+    // if ignore_a: then A[X/X'](x=v) = A[X/X'] and bLow and bHigh are set to the low/high edges
+    // else if raise_a, then bLow/bHigh is either set to low/high edges or set to b; a is correct.
+    // else then no substitution occurred...
     
-    if (1==(level&1)) {
+    // Recursive computation
+    BDD low = sylvan_relprods_reversed_partial(aLow, bLow, excluded_variables);
+    
+    if (1==(level&1) && is_excluded == 0) {
+        // note that variables in X' should not be excluded!!
         // variable in X': quantify
         if (low == sylvan_true) return sylvan_true;
-        BDD high = sylvan_relprods_reversed(aHigh, bHigh);
+        BDD high = sylvan_relprods_reversed_partial(aHigh, bHigh, excluded_variables);
         if (high == sylvan_true) return sylvan_true;
         if (low == sylvan_false && high == sylvan_false) return sylvan_false;
         return sylvan_or(low, high);
     }
     
-    // variable in X
-    BDD high = sylvan_relprods_reversed(aHigh, bHigh);
+    // variable not in X'
+    BDD high = sylvan_relprods_reversed_partial(aHigh, bHigh, excluded_variables);
     ptr->result = sylvan_makenode(level, low, high);
     
     return ptr->result;
+}
+
+BDD sylvan_relprods_reversed(BDD a, BDD b) 
+{
+    return sylvan_relprods_reversed_partial(a, b, sylvan_false);
 }
 
 uint32_t sylvan_nodecount_do_1(BDD a) 

@@ -98,7 +98,8 @@ extern BDD sylvan_not(BDD bdd);
 extern BDD sylvan_ite(BDD a, BDD b, BDD c);
 //extern BDD sylvan_ite_st(BDD a, BDD b, BDD c);
 
-extern BDD sylvan_relprods_partial(BDD a, BDD b, BDD variables);
+extern BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables);
+extern BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables);
 
 extern BDD sylvan_relprods(BDD a, BDD b);
 extern BDD sylvan_relprods_reversed(BDD a, BDD b);

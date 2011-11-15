@@ -103,7 +103,7 @@ extern BDD sylvan_relprods_partial(BDD a, BDD b, BDD variables);
 extern BDD sylvan_relprods(BDD a, BDD b);
 extern BDD sylvan_relprods_reversed(BDD a, BDD b);
 extern BDD sylvan_exists(BDD a, BDD variables);
-extern BDD sylvan_forall(BDD a, BDDVAR* variables, int size);
+extern BDD sylvan_forall(BDD a, BDD variables);
 
 /**
  * Extended versions of sylvan_apply and sylvan_ite

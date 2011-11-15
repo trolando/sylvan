@@ -551,12 +551,13 @@ BDD sylvan_exists(BDD a, BDD variables)
         return sylvan_makenode(level, low, high);
     }
 }
-/*
-BDD sylvan_exists(BDD a, BDDVAR* variables, int size)
+
+BDD sylvan_forall(BDD a, BDD variables)
 {
     // Trivial case
     if (BDD_ISCONSTANT(a)) return a;
     
+    // a != constant
     bddnode_t restrict na = GETNODE(a);
         
     // Get lowest level
@@ -566,54 +567,29 @@ BDD sylvan_exists(BDD a, BDDVAR* variables, int size)
     BDD aLow = BDD_TRANSFERMARK(a, na->low);
     BDD aHigh = BDD_TRANSFERMARK(a, na->high);
     
-    int i;
-    for (i=0;i<size;i++) {
-        if (level == variables[i]) {
-            BDD low = sylvan_exists(aLow, variables, size);
-            if (low == sylvan_true) return sylvan_true;
-            BDD high = sylvan_exists(aHigh, variables, size);
-            if (high == sylvan_true) return sylvan_true;
-            if (low == sylvan_false && high == sylvan_false) return sylvan_false;
-            return sylvan_or(low, high);
-        }
+    // Skip variables not in a
+    while (variables != sylvan_false && sylvan_var(variables) < level) {
+        variables = sylvan_low(variables);
     }
-    
-    // Recursive computation
-    BDD low = sylvan_exists(aLow, variables, size);
-    BDD high = sylvan_exists(aHigh, variables, size);
-    return sylvan_makenode(level, low, high);
-}
-*/
-BDD sylvan_forall(BDD a, BDDVAR* variables, int size)
-{
-    // Trivial case
-    if (BDD_ISCONSTANT(a)) return a;
-    
-    bddnode_t restrict na = GETNODE(a);
-        
-    // Get lowest level
-    BDDVAR level = na->level;
-    
-    // Get cofactors
-    BDD aLow = BDD_TRANSFERMARK(a, na->low);
-    BDD aHigh = BDD_TRANSFERMARK(a, na->high);
-    
-    int i;
-    for (i=0;i<size;i++) {
-        if (level == variables[i]) {
-            BDD low = sylvan_forall(aLow, variables, size);
-            if (low == sylvan_false) return sylvan_false;
-            BDD high = sylvan_forall(aHigh, variables, size);
-            if (high == sylvan_false) return sylvan_false;
-            if (low == sylvan_true && high == sylvan_true) return sylvan_true;
-            return sylvan_and(low, high);
-        }
-    }
-    
-    // Recursive computation
-    BDD low = sylvan_forall(aLow, variables, size);
-    BDD high = sylvan_forall(aHigh, variables, size);
-    return sylvan_makenode(level, low, high);
+
+    if (variables == sylvan_false) return a;
+    // variables != sylvan_true (always)
+    // variables != sylvan_false
+
+    if (level == sylvan_var(variables)) {
+        // quantify
+        BDD low = sylvan_forall(aLow, sylvan_low(variables));
+        if (low == sylvan_false) return sylvan_false;
+        BDD high = sylvan_forall(aHigh, sylvan_low(variables));
+        if (high == sylvan_false) return sylvan_false;
+        if (low == sylvan_true && high == sylvan_true) return sylvan_true;
+        return sylvan_and(low, high);
+    } else {
+        // no quantify
+        BDD low = sylvan_forall(aLow, variables);
+        BDD high = sylvan_forall(aHigh, variables);
+        return sylvan_makenode(level, low, high);
+    }    
 }
 
 BDD sylvan_relprods(BDD a, BDD b) 
@@ -626,7 +602,7 @@ BDD sylvan_relprods(BDD a, BDD b)
  * Assumptions on variables: 
  * - every variable 0, 2, 4 etc is in X except if in excluded_variables
  * - every variable 1, 3, 5 etc is in X' (except if in excluded_variables)
- * - excluded_variables should really only contain variables from X...
+ * - (excluded_variables should really only contain variables from X...)
  * - the substitution X'/X substitutes 1 by 0, 3 by 2, etc.
  */
 BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)

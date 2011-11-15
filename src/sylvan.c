@@ -616,14 +616,20 @@ BDD sylvan_forall(BDD a, BDDVAR* variables, int size)
     return sylvan_makenode(level, low, high);
 }
 
+extern BDD sylvan_relprods(BDD a, BDD b) 
+{
+    return sylvan_relprods_partial(a, b, sylvan_false);
+}
+
 /**
  * Very specialized RelProdS. Calculates ( \exists X (A /\ B) ) [X'/X]
  * Assumptions on variables: 
- * - every variable 0, 2, 4 etc is in X
- * - every variable 1, 3, 5 etc is in X'
+ * - every variable 0, 2, 4 etc is in X except if in excluded_variables
+ * - every variable 1, 3, 5 etc is in X' (except if in excluded_variables)
+ * - excluded_variables should really only contain variables from X...
  * - the substitution X'/X substitutes 1 by 0, 3 by 2, etc.
  */
-BDD sylvan_relprods(BDD a, BDD b)
+BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
 {
     struct bddcache template_cache_node;
 
@@ -665,21 +671,39 @@ BDD sylvan_relprods(BDD a, BDD b)
         bHigh = BDD_TRANSFERMARK(b, nb->high);
     }
     
-    // Recursive computation
-    BDD low = sylvan_relprods(aLow, bLow);
+    // Check if excluded variable
+    int is_excluded = 0;
+    while (excluded_variables != sylvan_false) {
+        BDDVAR var = sylvan_var(excluded_variables);
+        if (var == level) {
+            is_excluded = 1;
+            break;
+        }
+        if (var > level) {
+            break;
+        }
+        // var < level
+        excluded_variables = sylvan_low(excluded_variables);
+    }
     
-    if (0==(level&1)) {
+    // Recursive computation
+    BDD low = sylvan_relprods_partial(aLow, bLow, excluded_variables);
+    
+    if (0==(level&1) && is_excluded == 0) {
         // variable in X: quantify
         if (low == sylvan_true) return sylvan_true;
-        BDD high = sylvan_relprods(aHigh, bHigh);
+        BDD high = sylvan_relprods_partial(aHigh, bHigh, excluded_variables);
         if (high == sylvan_true) return sylvan_true;
         if (low == sylvan_false && high == sylvan_false) return sylvan_false;
         return sylvan_ite(low, sylvan_true, high);
     }
     
+    BDD high = sylvan_relprods_partial(aHigh, bHigh, excluded_variables);
+
     // variable in X': substitute
-    BDD high = sylvan_relprods(aHigh, bHigh);
-    ptr->result = sylvan_makenode(level-1, low, high);
+    if (is_excluded == 0) ptr->result = sylvan_makenode(level-1, low, high);
+    // variable not in X or X': normal behavior
+    ptr->result = sylvan_makenode(level, low, high);
     
     return ptr->result;
 }

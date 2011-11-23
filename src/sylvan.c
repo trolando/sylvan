@@ -157,7 +157,15 @@ uint32_t sylvan_bdd_hash(const void *data_, unsigned int len __attribute__((unus
 
 int sylvan_bdd_equals(const void *a, const void *b, size_t length __attribute__((unused)))
 {
-    return memcmp(a, b, 10) == 0;
+    // Compare 10 bytes
+    register uint64_t ra = *(uint64_t*)a;
+    register uint64_t rb = *(uint64_t*)b;
+    if (ra != rb) return 0;
+    register uint16_t rc = *(uint8_t*)(a+8);
+    register uint16_t rd = *(uint8_t*)(b+8);
+    if (rc != rd) return 0;
+    return 1;
+    //return memcmp(a, b, 10) == 0;
 }
 
 /**

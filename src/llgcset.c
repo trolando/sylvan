@@ -8,9 +8,6 @@
 #include "llgcset.h"
 #include "runtime.h"
 
-// Employ 8 cache lines per GCLIST block.
-#define GCLIST_CACHELINES 8
-
 /**
  * LL-set with GC using Reference Counting. Note that this implementation is not cycle-safe.
  * 
@@ -84,8 +81,8 @@ void *llgcset_lookup_hash(const llgcset_t dbs, const void* data, int* created, u
 
     /* hash_memo will be the key as stored in the table
      * WRITE_BITS: 0x80000000
-     * HASH_BITS: 0x7ffff0000
-     * RC_BITS: 0x0000ffff */  
+     * HASH_BITS:  0x7fff0000
+     * RC_BITS:    0x0000ffff */  
 
     register uint32_t   hash_memo = hash_rehash & 0x7fff0000; 
     // avoid collision of hash with reserved values 
@@ -132,7 +129,7 @@ void *llgcset_lookup_hash(const llgcset_t dbs, const void* data, int* created, u
                     return &dbs->data[idx * l];
                 }
             }
-			LFENCE;///////////////////////////////////////////////////
+			LFENCE; ///////////////////////////////////////////////////
             if (TOMBSTONE == atomic32_read(bucket)) {
                 // we may want to use this slot!
                 if (tomb_bucket == 0) {
@@ -213,18 +210,26 @@ inline void *llgcset_get_or_create(const llgcset_t dbs, const void *data, int *c
 	int _created;
 	uint32_t _index;
     void *result = llgcset_lookup_hash(dbs, data, &_created, &_index, NULL);
+    if (result == 0) {
+        // Table full
+        llgcset_gc(dbs);
+        result = llgcset_lookup_hash(dbs, data, &_created, &_index, NULL);
+    }
     if (created) *created=_created;
     if (index) *index=_index;
     return result;
 }
 
-llgcset_t llgcset_create(size_t length, size_t size, hash32_f hash32, equals_f equals, delete_f cb_delete)
+llgcset_t llgcset_create(size_t length, size_t size, hash32_f hash32, equals_f equals, delete_f cb_delete, onfull_f on_full)
 {
     llgcset_t dbs = rt_align(CACHE_LINE_SIZE, sizeof(struct llgcset));
     dbs->hash32 = hash32 != NULL ? hash32 : hash_128_swapc; // default hash function is hash_128_swapc
     dbs->equals = equals != NULL ? equals : default_equals;
     dbs->cb_delete = cb_delete; // can be NULL
-    dbs->bytes = length;
+    dbs->on_full = on_full; // can be NULL
+    
+    dbs->bytes = length; 
+    dbs->length = length;
     dbs->size = 1 << size;
     dbs->threshold = dbs->size / 100;
     dbs->mask = dbs->size - 1;
@@ -233,7 +238,7 @@ llgcset_t llgcset_create(size_t length, size_t size, hash32_f hash32, equals_f e
     memset(dbs->table, 0, sizeof(uint32_t) * dbs->size);
     
     /* Initialize gclist */
-    dbs->gc_size = 1024 * 1024;
+    dbs->gc_size = 1024 * 1024; // maybe this value could be tweaked.
     dbs->gc_list = rt_align(CACHE_LINE_SIZE, dbs->gc_size * sizeof(uint32_t));
     llgclist_init(dbs->gc_list, dbs->gc_size, &dbs->gc_head, &dbs->gc_tail, &dbs->gc_lock);
     
@@ -241,6 +246,9 @@ llgcset_t llgcset_create(size_t length, size_t size, hash32_f hash32, equals_f e
     return dbs;
 }
 
+/**
+ * Increase reference counter
+ */
 int llgcset_ref(const llgcset_t dbs, uint32_t index)
 {
     // We cannot use atomic fetch_and_add, because we need
@@ -249,15 +257,18 @@ int llgcset_ref(const llgcset_t dbs, uint32_t index)
         register uint32_t hash = *(volatile uint32_t *)&dbs->table[index];
         register uint32_t c = hash & 0xffff;
         if (c == 0x0000fffe) return 1; // saturated
-        if (c == 0x0000ffff) return 0; // error: already deleted!
+        if (c == 0x0000ffff) return 0; // error: already being deleted!
         c += 1;
         // c&=0xffff; not necessary because c != 0x0000ffff
         c |= (hash&0xffff0000);
         if (cas(&dbs->table[index], hash, c)) return 1; 
-        // if we're here, someone else modified the value before us
+        // if we're here, someone else modified the value before us, so try again
     }
 }
 
+/**
+ * Decrease reference counter
+ */
 int llgcset_deref(const llgcset_t dbs, uint32_t index)
 {
     register int should_delete = 0;
@@ -266,7 +277,7 @@ int llgcset_deref(const llgcset_t dbs, uint32_t index)
     while (1) {
         register uint32_t hash = *(volatile uint32_t *)&dbs->table[index];
         register uint32_t c = hash & 0xffff;
-        if (c == 0x0000fffe) break; // saturated
+        if (c == 0x0000fffe) return 1; // saturated
         if (c == 0x0000ffff) return 0; // error: already deleted!
         if (c == 0x00000000) return 0; // error: already zero!
         c -= 1;
@@ -279,7 +290,7 @@ int llgcset_deref(const llgcset_t dbs, uint32_t index)
     }
     if (should_delete) {
         while (!llgclist_put_tail(dbs->gc_list, dbs->gc_size, &dbs->gc_head, &dbs->gc_tail, &dbs->gc_lock, index)) {
-            // FULL
+            // GC LIST FULL - forced gc.
             llgcset_gc(dbs);
         }
     }
@@ -298,21 +309,29 @@ void llgcset_free(llgcset_t dbs)
     free(dbs);
 }
 
+/**
+ * Execute garbage collection
+ */
 void llgcset_gc(const llgcset_t dbs)
 {
+    // Call dbs->on_full first
+    if (dbs->on_full != NULL) dbs->on_full(dbs);
+    
     uint32_t idx;
     while (llgclist_pop_head(dbs->gc_list, dbs->gc_size, &dbs->gc_head, &dbs->gc_tail, &dbs->gc_lock, &idx)) {
         register uint32_t hash = *(volatile uint32_t *)&dbs->table[idx];
         register uint32_t c = hash & 0xffff;
+        ////DEBUG printf("table[%d] == 0x%08X\n", idx, hash);
         if (c == 0x0000ffff) continue; // error: already being deleted!
         if (c != 0x00000000) continue; // error: not zero!
         c = hash | 0x0000ffff;
         if (!cas(&dbs->table[idx], hash, c)) continue; // error: it's changed by someone else!
-        
+
         // if we're here, we can do our job!
         
-        dbs->cb_delete(dbs, &dbs->data[idx * dbs->length]);
+        if (dbs->cb_delete != NULL) dbs->cb_delete(dbs, &dbs->data[idx * dbs->length]);
         dbs->table[idx] = TOMBSTONE;
+        ////DEBUG printf("table[%d] == 0x%08X\n", idx, dbs->table[idx]);
     }
 }
 
@@ -343,6 +362,10 @@ static int llgclist_put_head(uint32_t *list, uint32_t size, uint32_t *head, uint
     }
     
     list[*head] = value;
+    if (*tail == *head) {
+        if (*tail == (size-1)) *tail = 0; 
+        else *tail = (*tail)+1;        
+    }
     if (*head == 0) *head = size-1; 
     else *head = (*head)-1;
     
@@ -368,6 +391,10 @@ static int llgclist_put_tail(uint32_t *list, uint32_t size, uint32_t *head, uint
     }
     
     list[*tail] = value;
+    if (*tail == *head) { 
+        if (*head == 0) *head = size-1; 
+        else *head = (*head)-1;        
+    }
     if (*tail == (size-1)) *tail = 0; 
     else *tail = (*tail)+1;
     
@@ -396,6 +423,10 @@ static int llgclist_pop_head(uint32_t *list, uint32_t size, uint32_t *head, uint
     else *head = (*head) + 1;
     *value = list[*head];
     
+    // Process case where last entry was removed
+    if (*head + 1 == *tail) *tail = *tail - 1;
+    else if ((*head == size-1) && (*tail == 0)) *head = 0;
+    
     // SFENCE; // needed in future x86 processors
     
     *lock = 0;
@@ -421,6 +452,10 @@ static int llgclist_pop_tail(uint32_t *list, uint32_t size, uint32_t *head, uint
     else *tail = (*tail) - 1;
     *value = list[*tail];
     
+    // Process case where last entry was removed
+    if (*head + 1 == *tail) *tail = *tail - 1;
+    else if ((*head == size-1) && (*tail == 0)) *head = 0;
+
     // SFENCE; // needed in future x86 processors
     
     *lock = 0;

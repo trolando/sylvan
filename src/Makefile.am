@@ -10,6 +10,7 @@ libsylvan_la_SOURCES = \
  sylvan.c \
  llsched.c \
  llset.c \
+ llgcset.c \
  llvector.c \
  runtime.c \
  fast_hash.c \

@@ -195,7 +195,7 @@ void sylvan_cache_delete(const llgcset_t dbs, const void *a)
  * Initialize sylvan
  * - datasize / cachesize : number of bits ...
  */
-void sylvan_init(int threads, size_t datasize, size_t cachesize)
+void sylvan_init(int threads, size_t datasize, size_t cachesize, size_t data_gc_size, size_t cache_gc_size)
 {
     if (datasize >= 30) {
         rt_report_and_exit(1, "BDD_init error: datasize must be < 30!");
@@ -232,8 +232,8 @@ void sylvan_init(int threads, size_t datasize, size_t cachesize)
         //fprintf(stderr, "Cache: %d slots, %d bytes per node, %d MB total\n", 1<<cachesize, sizeof(struct bddcache), (1<<(cachesize-10)) * sizeof(struct bddcache));
     }
     
-    _bdd.data = llgcset_create(sizeof(struct bddnode), datasize, sylvan_bdd_hash, sylvan_bdd_equals, sylvan_bdd_delete, sylvan_bdd_on_full);
-    _bdd.cache = llgcset_create(sizeof(struct bddcache), cachesize, sylvan_cache_hash, sylvan_cache_equals, sylvan_cache_delete, NULL);
+    _bdd.data = llgcset_create(sizeof(struct bddnode), datasize, data_gc_size, sylvan_bdd_hash, sylvan_bdd_equals, sylvan_bdd_delete, sylvan_bdd_on_full);
+    _bdd.cache = llgcset_create(sizeof(struct bddcache), cachesize, cache_gc_size, sylvan_cache_hash, sylvan_cache_equals, sylvan_cache_delete, NULL);
 }
 
 void sylvan_quit()
@@ -1209,7 +1209,7 @@ void sylvan_print(BDD bdd)
     bdd = BDD_STRIPMARK(bdd);
     if (bdd < 2) return;
     llvector_t v = llvector_create(sizeof(BDD));
-    llgcset_t s = llgcset_create(sizeof(BDD), 17, NULL, NULL, NULL, NULL);
+    llgcset_t s = llgcset_create(sizeof(BDD), 17, 10, NULL, NULL, NULL, NULL);
     int created;
     llvector_push(v, &bdd);
     sylvan_ref(bdd);

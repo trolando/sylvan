@@ -39,7 +39,7 @@ extern "C" {
  * datasize in number of nodes will be 1<<datasize
  * cachesize in number of nodes will be 1<<cachesize
  */
-extern void sylvan_init(int threads, size_t datasize, size_t cachesize);
+extern void sylvan_init(int threads, size_t datasize, size_t cachesize, size_t data_gc_size, size_t cache_gc_size);
 
 /**
  * Stop threads and free data

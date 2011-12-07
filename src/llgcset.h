@@ -50,7 +50,7 @@ struct llgcset
 
 void *llgcset_get_or_create(const llgcset_t dbs, const void* data, int *created, uint32_t* index);
 
-llgcset_t llgcset_create(size_t length, size_t size, hash32_f hash32, equals_f equals, delete_f cb_delete, onfull_f on_full);
+llgcset_t llgcset_create(size_t key_size, size_t table_size, size_t gc_size, hash32_f hash32, equals_f equals, delete_f cb_delete, onfull_f on_full);
 
 void llgcset_clear(llgcset_t dbs);
 

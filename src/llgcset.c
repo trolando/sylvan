@@ -220,7 +220,7 @@ inline void *llgcset_get_or_create(const llgcset_t dbs, const void *data, int *c
     return result;
 }
 
-llgcset_t llgcset_create(size_t length, size_t size, hash32_f hash32, equals_f equals, delete_f cb_delete, onfull_f on_full)
+llgcset_t llgcset_create(size_t key_size, size_t table_size, size_t gc_size, hash32_f hash32, equals_f equals, delete_f cb_delete, onfull_f on_full)
 {
     llgcset_t dbs = rt_align(CACHE_LINE_SIZE, sizeof(struct llgcset));
     dbs->hash32 = hash32 != NULL ? hash32 : hash_128_swapc; // default hash function is hash_128_swapc
@@ -228,17 +228,17 @@ llgcset_t llgcset_create(size_t length, size_t size, hash32_f hash32, equals_f e
     dbs->cb_delete = cb_delete; // can be NULL
     dbs->on_full = on_full; // can be NULL
     
-    dbs->bytes = length; 
-    dbs->length = length;
-    dbs->size = 1 << size;
+    dbs->bytes = key_size; 
+    dbs->length = key_size;
+    dbs->size = 1 << table_size;
     dbs->threshold = dbs->size / 100;
     dbs->mask = dbs->size - 1;
     dbs->table = rt_align(CACHE_LINE_SIZE, sizeof(uint32_t) * dbs->size);
-    dbs->data = rt_align(CACHE_LINE_SIZE, dbs->size * length);
+    dbs->data = rt_align(CACHE_LINE_SIZE, dbs->size * key_size);
     memset(dbs->table, 0, sizeof(uint32_t) * dbs->size);
     
     /* Initialize gclist */
-    dbs->gc_size = 1024 * 1024; // maybe this value could be tweaked.
+    dbs->gc_size = 1<<gc_size; // maybe this value could be tweaked.
     dbs->gc_list = rt_align(CACHE_LINE_SIZE, dbs->gc_size * sizeof(uint32_t));
     llgclist_init(dbs->gc_list, dbs->gc_size, &dbs->gc_head, &dbs->gc_tail, &dbs->gc_lock);
     

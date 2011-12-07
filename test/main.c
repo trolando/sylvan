@@ -49,7 +49,7 @@ int test_llgcset()
     
     int index[16], index2[16], created;
     
-    llgcset_t set = llgcset_create(sizeof(uint32_t), 8, NULL, NULL, NULL, NULL); // size: 256
+    llgcset_t set = llgcset_create(sizeof(uint32_t), 8, 10, NULL, NULL, NULL, NULL); // size: 256
 
     for (int i=0;i<16;i++) {
         llgcset_get_or_create(set, &entry[i], &created, &index[i]);
@@ -616,7 +616,7 @@ void runtests(int threads)
     printf(NC "Running single-threaded test 'Xor'... ");
     fflush(stdout);
     for (int j=0;j<16;j++) {
-        sylvan_init(1, 16, 16);
+        sylvan_init(1, 16, 16, 5, 5);
         
         test_xor();
         // verify gc
@@ -635,7 +635,7 @@ void runtests(int threads)
     printf(NC "Running single-threaded test 'Apply'... ");
     fflush(stdout);
     for (int j=0;j<16;j++) {
-        sylvan_init(1, 16, 16);
+        sylvan_init(1, 16, 16, 5, 5);
         test_apply();
         // verify gc
         sylvan_gc();
@@ -653,7 +653,7 @@ void runtests(int threads)
     printf(NC "Running single-threaded test 'ITE'... ");
     fflush(stdout);
     for (int j=0;j<16;j++) {
-        sylvan_init(1, 16, 16);
+        sylvan_init(1, 16, 16, 5, 5);
         for (int i=0;i<3;i++) test_ite();
         // verify gc
         sylvan_gc();
@@ -665,7 +665,7 @@ void runtests(int threads)
     printf(NC "Running single-threaded test 'ModelCheck'... ");
     fflush(stdout);
     for (int j=0;j<16;j++) {
-        sylvan_init(1, 16, 16);
+        sylvan_init(1, 16, 16, 5, 5);
         for (int i=0;i<3;i++) test_modelcheck();
         // verify gc
         sylvan_gc();
@@ -677,7 +677,7 @@ void runtests(int threads)
     printf(NC "Running single-threaded test 'Mixed'... ");
     fflush(stdout);
     for (int j=0;j<16;j++) {
-        sylvan_init(1, 16, 16);
+        sylvan_init(1, 16, 16, 5, 5);
         for (int i=0;i<3;i++) test_apply();
         for (int i=0;i<3;i++) test_ite();
         for (int i=0;i<3;i++) test_modelcheck();
@@ -695,7 +695,7 @@ void runtests(int threads)
     clock_gettime(CLOCK_MONOTONIC, &begin);
 
     for (int j=0;j<10000;j++){
-        sylvan_init(2, 16, 16);
+        sylvan_init(2, 16, 16, 10, 10);
         for (int i=0;i<3;i++) test_apply();
         for (int i=0;i<3;i++) test_ite();
         for (int i=0;i<3;i++) test_modelcheck();

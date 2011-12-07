@@ -855,11 +855,13 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
         }
         BDD high = sylvan_relprods_partial(aHigh, bHigh, excluded_variables);
         if (high == sylvan_true) {
+            ptr->result = sylvan_true;
             sylvan_deref(low);
             llgcset_deref(_bdd.cache, idx);
             return sylvan_true;
         }
         if (low == sylvan_false && high == sylvan_false) {
+            ptr->result = sylvan_false;
             llgcset_deref(_bdd.cache, idx);
             return sylvan_false;
         }

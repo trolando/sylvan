@@ -185,6 +185,7 @@ void sylvan_cache_delete(const llgcset_t dbs, const void *a)
     for (i=0;i<cache->parameters;i++) {
         sylvan_deref(cache->params[i]);
     }
+    assert (cache->result != sylvan_invalid);
     sylvan_deref(cache->result);
 }
 

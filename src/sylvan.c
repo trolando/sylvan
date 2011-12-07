@@ -99,6 +99,8 @@ static struct {
  * 1 = relprods
  * 2 = relprods_reversed
  * 3 = count
+ * 4 = exists
+ * 5 = forall
  */
 __attribute__ ((packed))
 struct bddcache {
@@ -659,8 +661,34 @@ BDD sylvan_ite(BDD a, BDD b, BDD c)
  */
 BDD sylvan_exists(BDD a, BDD variables)
 {
+    struct bddcache template_cache_node;
+
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
+
+    // Check cache
+    template_cache_node.operation = 4; // to be done
+    template_cache_node.parameters = 2;
+    template_cache_node.params[0] = a;
+    template_cache_node.params[1] = variables;
+    template_cache_node.result = sylvan_invalid;
+    
+    int created;
+    uint32_t idx;
+    bddcache_t ptr = llgcset_get_or_create(_bdd.cache, &template_cache_node, &created, &idx);
+    if (ptr == 0) rt_report_and_exit(1, "Operations cache full!");
+    
+    if (created) {
+        sylvan_ref(a);
+        sylvan_ref(variables);
+    }
+    
+    // Did cache return result?
+    if (ptr->result != sylvan_invalid) {
+        BDD result = sylvan_ref(ptr->result);
+        llgcset_deref(_bdd.cache, idx);
+        return result;
+    }
 
     // a != constant    
     bddnode_t restrict na = GETNODE(a);
@@ -679,7 +707,9 @@ BDD sylvan_exists(BDD a, BDD variables)
     }
 
     if (variables == sylvan_false) {
+        ptr->result = a;
         sylvan_ref(a);
+        llgcset_deref(_bdd.cache, idx);
         return a;
     }
     // variables != sylvan_true (always)
@@ -688,14 +718,26 @@ BDD sylvan_exists(BDD a, BDD variables)
     if (sylvan_var(variables) == level) {
         // quantify
         BDD low = sylvan_exists(aLow, sylvan_low(variables));
-        if (low == sylvan_true) return sylvan_true;
+        if (low == sylvan_true) {
+            ptr->result = sylvan_true;
+            llgcset_deref(_bdd.cache, idx);
+            return sylvan_true;
+        }
         BDD high = sylvan_exists(aHigh, sylvan_low(variables));
         if (high == sylvan_true) {
+            ptr->result = sylvan_true;
+            llgcset_deref(_bdd.cache, idx);
             sylvan_deref(low);
             return sylvan_true;
         }
-        if (low == sylvan_false && high == sylvan_false) return sylvan_false;
-        BDD result = sylvan_or(low, high);
+        if (low == sylvan_false && high == sylvan_false) {
+            ptr->result = sylvan_false;
+            llgcset_deref(_bdd.cache, idx);
+            return sylvan_false;
+        }
+        ptr->result = sylvan_or(low, high);
+        BDD result = sylvan_ref(ptr->result);
+        llgcset_deref(_bdd.cache, idx);
         sylvan_deref(low);
         sylvan_deref(high);
         return result;
@@ -703,7 +745,10 @@ BDD sylvan_exists(BDD a, BDD variables)
         // no quantify
         BDD low = sylvan_exists(aLow, variables);
         BDD high = sylvan_exists(aHigh, variables);
-        return sylvan_makenode(level, low, high);
+        ptr->result = sylvan_makenode(level, low, high);
+        BDD res = sylvan_ref(ptr->result);
+        llgcset_deref(_bdd.cache, idx);
+        return res;
     }
 }
 

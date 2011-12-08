@@ -152,7 +152,7 @@ llset_t llset_create(size_t length, size_t size, hash32_f hash32, equals_f equal
 {
     llset_t dbs = rt_align(CACHE_LINE_SIZE, sizeof(struct llset));
 	dbs->length = length;
-    dbs->hash32 = hash32 != NULL ? hash32 : hash_128_swapc; // default hash function is hash_128_swapc
+    dbs->hash32 = hash32 != NULL ? hash32 : SuperFastHash; // default hash function is hash_128_swapc
     dbs->equals = equals != NULL ? equals : default_equals;
     dbs->bytes = length;
     dbs->size = 1 << size;

@@ -125,7 +125,7 @@ typedef struct bddcache* bddcache_t;
  */
 uint32_t sylvan_bdd_hash(const void *data_, unsigned int len __attribute__((unused)), uint32_t hash)
 {
-    return hash_128_swapc(data_, 10, hash);
+    return SuperFastHash(data_, 10, hash);
     //return SuperFastHash(data_, len, hash);
 }
 
@@ -167,7 +167,7 @@ void sylvan_bdd_on_full(const llgcset_t dbs)
 uint32_t sylvan_cache_hash(const void *data_, unsigned int len __attribute__((unused)), uint32_t hash)
 {
     register unsigned int size = ((bddcache_t)data_)->parameters * 4 + 4;
-    return hash_128_swapc(data_, size, hash);
+    return SuperFastHash(data_, size, hash);
 }
 
 int sylvan_cache_equals(const void *a, const void *b, size_t length __attribute__((unused)))

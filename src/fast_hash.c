@@ -6,7 +6,7 @@
 #define get16bits(d) (*((const uint16_t *) (d)))
 
 /* C hash, http://www.eetbeetee.org/h.c */
-
+/*
 unsigned int hash_128_swapc(const void *p, unsigned int len, unsigned int hash )
 {
 	register unsigned long long r8  = 0x1591aefa5e7e5a17ULL,
@@ -56,7 +56,7 @@ unsigned int hash_128_swapc(const void *p, unsigned int len, unsigned int hash )
 	rax ^= rcx;
 	return ( rax >> 32 ) ^ rax;
 }
-
+*/
 uint32_t
 SuperFastHash (const void *data_, unsigned int len, uint32_t hash)
 {

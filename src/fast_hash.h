@@ -5,9 +5,9 @@
 
 typedef uint32_t (*hash32_f)(const void *key, unsigned int len, uint32_t seed);
 //typedef uint64_t (*hash64_f)(const void *key, int len, uint64_t seed);
-
+/*
 extern uint32_t hash_128_swapc(const void *p, unsigned int len, uint32_t hash);
-
+*/
 
 
 extern uint32_t SuperFastHash (const void *data, unsigned int len, uint32_t hash);

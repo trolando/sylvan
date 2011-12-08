@@ -223,7 +223,7 @@ inline void *llgcset_get_or_create(const llgcset_t dbs, const void *data, int *c
 llgcset_t llgcset_create(size_t key_size, size_t table_size, size_t gc_size, hash32_f hash32, equals_f equals, delete_f cb_delete, onfull_f on_full)
 {
     llgcset_t dbs = rt_align(CACHE_LINE_SIZE, sizeof(struct llgcset));
-    dbs->hash32 = hash32 != NULL ? hash32 : hash_128_swapc; // default hash function is hash_128_swapc
+    dbs->hash32 = hash32 != NULL ? hash32 : SuperFastHash; // default hash function is hash_128_swapc
     dbs->equals = equals != NULL ? equals : default_equals;
     dbs->cb_delete = cb_delete; // can be NULL
     dbs->on_full = on_full; // can be NULL

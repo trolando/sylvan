@@ -244,16 +244,13 @@ void sylvan_quit()
 
 BDD sylvan_ref(BDD a) 
 {
-    if (BDD_ISCONSTANT(a)) return a;
-    // fprintf(stderr, "REF %d\n", BDD_STRIPMARK(a));
-    llgcset_ref(_bdd.data, BDD_STRIPMARK(a));
+    if (!BDD_ISCONSTANT(a)) llgcset_ref(_bdd.data, BDD_STRIPMARK(a));
     return a;
 }
 
 void sylvan_deref(BDD a)
 {
     if (BDD_ISCONSTANT(a)) return;
-    // fprintf(stderr, "DEREF %d\n", BDD_STRIPMARK(a));
     assert(llgcset_deref(_bdd.data, BDD_STRIPMARK(a)));
 }
 
@@ -266,7 +263,7 @@ void sylvan_gc()
  * MAKENODE (level, low, high)
  * Requires ref on low, high.
  * Ensures ref on result node.
- * This will ref the result node. IT WILL NOT REF LOW AND HIGH!
+ * This will ref the result node. Refs on low and high disappear.
  */
 inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high)
 {
@@ -329,7 +326,8 @@ inline BDD sylvan_nithvar(BDDVAR level)
 
 inline BDDVAR sylvan_var(BDD bdd)
 {
-    if (BDD_ISCONSTANT(bdd)) return sylvan_invalid;
+    assert(!BDD_ISCONSTANT(bdd));
+    //if (BDD_ISCONSTANT(bdd)) return sylvan_invalid;
     return GETNODE(bdd)->level;
 }
 
@@ -345,6 +343,9 @@ inline BDD sylvan_low(BDD bdd)
     return BDD_TRANSFERMARK(bdd, low);
 }
 
+// Macro for internal use (no ref)
+#define LOW(a) ((BDD_ISCONSTANT(a))?a:BDD_TRANSFERMARK(a, GETNODE(a)->low))
+
 /**
  * Get the n=1 child.
  * This will ref the result node.
@@ -356,6 +357,9 @@ inline BDD sylvan_high(BDD bdd)
     sylvan_ref(high);
     return BDD_TRANSFERMARK(bdd, high);
 }
+
+// Macro for internal use (no ref)
+#define HIGH(a) ((BDD_ISCONSTANT(a))?a:BDD_TRANSFERMARK(a, GETNODE(a)->high))
 
 /**
  * Get the complement of the BDD.
@@ -369,8 +373,7 @@ inline BDD sylvan_not(BDD bdd)
 
 BDD sylvan_and(BDD a, BDD b)
 {
-    BDD result = sylvan_ite(a, b, sylvan_false);
-    return result;
+    return sylvan_ite(a, b, sylvan_false);
 }
 
 BDD sylvan_xor(BDD a, BDD b)
@@ -383,8 +386,7 @@ BDD sylvan_xor(BDD a, BDD b)
 
 BDD sylvan_or(BDD a, BDD b) 
 {
-    BDD result = sylvan_ite(a, sylvan_true, b);
-    return result;
+    return sylvan_ite(a, sylvan_true, b);
 }
 
 BDD sylvan_nand(BDD a, BDD b)
@@ -648,8 +650,7 @@ BDD sylvan_ite(BDD a, BDD b, BDD c)
      * Ref it again for the result.
      */
     
-    BDD res = ptr->result;
-    sylvan_ref(res);
+    BDD res = sylvan_ref(ptr->result);
     llgcset_deref(_bdd.cache, idx);
     return BDD_TRANSFERMARK(r, res);
 }
@@ -716,17 +717,18 @@ BDD sylvan_exists(BDD a, BDD variables)
     
     if (sylvan_var(variables) == level) {
         // quantify
-        BDD low = sylvan_exists(aLow, sylvan_low(variables));
+        BDD low = sylvan_exists(aLow, LOW(variables));
         if (low == sylvan_true) {
             ptr->result = sylvan_true;
             llgcset_deref(_bdd.cache, idx);
             return sylvan_true;
         }
-        BDD high = sylvan_exists(aHigh, sylvan_low(variables));
+        BDD high = sylvan_exists(aHigh, LOW(variables));
         if (high == sylvan_true) {
+            sylvan_deref(low);
+
             ptr->result = sylvan_true;
             llgcset_deref(_bdd.cache, idx);
-            sylvan_deref(low);
             return sylvan_true;
         }
         if (low == sylvan_false && high == sylvan_false) {
@@ -735,10 +737,11 @@ BDD sylvan_exists(BDD a, BDD variables)
             return sylvan_false;
         }
         ptr->result = sylvan_or(low, high);
-        BDD result = sylvan_ref(ptr->result);
-        llgcset_deref(_bdd.cache, idx);
         sylvan_deref(low);
         sylvan_deref(high);
+
+        BDD result = sylvan_ref(ptr->result);
+        llgcset_deref(_bdd.cache, idx);
         return result;
     } else {
         // no quantify
@@ -813,17 +816,18 @@ BDD sylvan_forall(BDD a, BDD variables)
 
     if (level == sylvan_var(variables)) {
         // quantify
-        BDD low = sylvan_forall(aLow, sylvan_low(variables));
+        BDD low = sylvan_forall(aLow, LOW(variables));
         if (low == sylvan_false) {
             ptr->result = sylvan_false;
             llgcset_deref(_bdd.cache, idx);
             return sylvan_false;        
         }
-        BDD high = sylvan_forall(aHigh, sylvan_low(variables));
+        BDD high = sylvan_forall(aHigh, LOW(variables));
         if (high == sylvan_false) {
+            sylvan_deref(low);
+
             ptr->result = sylvan_false;
             llgcset_deref(_bdd.cache, idx);
-            sylvan_deref(low);
             return sylvan_false;
         }
         if (low == sylvan_true && high == sylvan_true) {
@@ -832,10 +836,11 @@ BDD sylvan_forall(BDD a, BDD variables)
             return sylvan_true;        
         }
         ptr->result = sylvan_and(low, high);
-        BDD result = sylvan_ref(ptr->result);
-        llgcset_deref(_bdd.cache, idx);
         sylvan_deref(low);
         sylvan_deref(high);
+
+        BDD result = sylvan_ref(ptr->result);
+        llgcset_deref(_bdd.cache, idx);
         return result;
     } else {
         // no quantify
@@ -944,8 +949,9 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
         }
         BDD high = sylvan_relprods_partial(aHigh, bHigh, excluded_variables);
         if (high == sylvan_true) {
-            ptr->result = sylvan_true;
             sylvan_deref(low);
+
+            ptr->result = sylvan_true;
             llgcset_deref(_bdd.cache, idx);
             return sylvan_true;
         }
@@ -954,9 +960,10 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
             llgcset_deref(_bdd.cache, idx);
             return sylvan_false;
         }
-        ptr->result = sylvan_ite(low, sylvan_true, high);
+        ptr->result = sylvan_or(low, high);
         sylvan_deref(low);
         sylvan_deref(high);
+
         BDD res = sylvan_ref(ptr->result);
         llgcset_deref(_bdd.cache, idx);
         return res;
@@ -1091,6 +1098,8 @@ BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables)
         }
         BDD high = sylvan_relprods_reversed_partial(aHigh, bHigh, excluded_variables);
         if (high == sylvan_true) {
+            sylvan_deref(low);
+            
             ptr->result = sylvan_true;
             llgcset_deref(_bdd.cache, idx);
             return sylvan_true;
@@ -1170,15 +1179,15 @@ long double sylvan_satcount_do(BDD bdd, BDD variables)
     // variables != constant
     if (bdd == sylvan_true) {
         // TODO: just run a loop on variables...
-        return 2.0L * sylvan_satcount_do(bdd, sylvan_low(variables));
+        return 2.0L * sylvan_satcount_do(bdd, LOW(variables));
     }
     // bdd != constant
     // variables != constant
     if (sylvan_var(bdd) > sylvan_var(variables)) {
-        return 2.0L * sylvan_satcount_do(bdd, sylvan_low(variables));
+        return 2.0L * sylvan_satcount_do(bdd, LOW(variables));
     } else {
-        long double high = sylvan_satcount_do(sylvan_high(bdd), sylvan_low(variables));
-        long double low = sylvan_satcount_do(sylvan_low(bdd), sylvan_low(variables));
+        long double high = sylvan_satcount_do(HIGH(bdd), LOW(variables));
+        long double low = sylvan_satcount_do(LOW(bdd), LOW(variables));
         return high+low;
     }
 }
@@ -1210,36 +1219,30 @@ void sylvan_print(BDD bdd)
     llgcset_t s = llgcset_create(sizeof(BDD), 17, 10, NULL, NULL, NULL, NULL);
     int created;
     llvector_push(v, &bdd);
-    sylvan_ref(bdd);
     if (llgcset_get_or_create(s, &bdd, &created, NULL) == 0) {
         rt_report_and_exit(1, "Temp hash table full!");
     }
     while (llvector_pop(v, &bdd)) {
         sylvan_printbdd("% 10d", bdd);
         printf(": %u low=", sylvan_var(bdd));
-        sylvan_printbdd("%u", sylvan_low(bdd));
+        sylvan_printbdd("%u", LOW(bdd));
         printf(" high=");
-        sylvan_printbdd("%u", sylvan_high(bdd));
+        sylvan_printbdd("%u", HIGH(bdd));
         printf("\n");
-        BDD low = BDD_STRIPMARK(sylvan_low(bdd));
-        BDD high = BDD_STRIPMARK(sylvan_high(bdd));
-        sylvan_deref(low); // cancel from print
-        sylvan_deref(high); // cancel from print
+        BDD low = BDD_STRIPMARK(LOW(bdd));
+        BDD high = BDD_STRIPMARK(HIGH(bdd));
         if (low >= 2) {
             if (llgcset_get_or_create(s, &low, &created, NULL) == 0) {
                 rt_report_and_exit(1, "Temp hash table full!");
             }
             if (created) llvector_push(v, &low);
-            else sylvan_deref(low);
         }
         if (high >= 2) {
             if (llgcset_get_or_create(s, &high, &created, NULL) == 0) {
                 rt_report_and_exit(1, "Temp hash table full!");
             }
             if (created) llvector_push(v, &high);
-            else sylvan_deref(low);
         }
-        sylvan_deref(bdd);
     }
     llvector_free(v);
     llgcset_free(s);

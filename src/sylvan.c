@@ -254,7 +254,7 @@ void sylvan_deref(BDD a)
 {
     if (BDD_ISCONSTANT(a)) return;
     // fprintf(stderr, "DEREF %d\n", BDD_STRIPMARK(a));
-    llgcset_deref(_bdd.data, BDD_STRIPMARK(a));
+    assert(llgcset_deref(_bdd.data, BDD_STRIPMARK(a)));
 }
 
 void sylvan_gc()

@@ -277,6 +277,14 @@ void test_apply()
     sylvan_deref(cord);
     
     sylvan_deref(axorb);
+    
+    assert((tmp = sylvan_and(a, sylvan_true)) == a);
+    sylvan_deref(tmp);
+    
+    assert((tmp = sylvan_or(a, sylvan_true)) == sylvan_true);
+    assert((tmp = sylvan_and(a, sylvan_false)) == sylvan_false);
+    
+    assert (sylvan_or(sylvan_true, sylvan_false) == sylvan_true);
 
     sylvan_deref(a);
     sylvan_deref(b);

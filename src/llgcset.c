@@ -231,7 +231,7 @@ llgcset_t llgcset_create(size_t key_size, size_t table_size, size_t gc_size, has
     dbs->bytes = key_size; 
     dbs->length = key_size;
     dbs->size = 1 << table_size;
-    dbs->threshold = dbs->size / 100;
+    dbs->threshold = 2*table_size; // e.g. 40 cache lines in a 1<<20 table
     dbs->mask = dbs->size - 1;
     dbs->table = rt_align(CACHE_LINE_SIZE, sizeof(uint32_t) * dbs->size);
     dbs->data = rt_align(CACHE_LINE_SIZE, dbs->size * key_size);

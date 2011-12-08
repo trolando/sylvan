@@ -50,7 +50,7 @@ typedef struct bddnode* bddnode_t;
 #define op_exists 3
 #define op_forall 4
 #define op_param 5
-
+/*
 typedef unsigned char bdd_ops;
 
 __attribute__ ((packed))
@@ -83,7 +83,7 @@ struct bddop {
 };
 
 typedef struct bddop* bddop_t;
-
+*/
 static struct {
     llgcset_t data;
     //llset_t operations; // all operations...
@@ -209,10 +209,11 @@ void sylvan_init(int threads, size_t datasize, size_t cachesize, size_t data_gc_
         fprintf(stderr, "Invalid size of bdd nodes: %ld\n", sizeof(struct bddnode));
         exit(1);
     }
+    /*
     if (sizeof(struct bddop) != 16) {
         fprintf(stderr, "Invalid size of bdd operation nodes: %ld\n", sizeof(struct bddop));
         exit(1);
-    }
+    }*/
     if (sizeof(struct bddcache) != next_pow2(sizeof(struct bddcache))) {
         fprintf(stderr, "Invalid size of bdd operation cache: %ld\n", sizeof(struct bddcache));
         exit(1);

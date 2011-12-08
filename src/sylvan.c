@@ -707,10 +707,9 @@ BDD sylvan_exists(BDD a, BDD variables)
     }
 
     if (variables == sylvan_false) {
-        ptr->result = a;
-        sylvan_ref(a);
+        ptr->result = sylvan_ref(a);
         llgcset_deref(_bdd.cache, idx);
-        return a;
+        return sylvan_ref(a);
     }
     // variables != sylvan_true (always)
     // variables != sylvan_false
@@ -805,10 +804,9 @@ BDD sylvan_forall(BDD a, BDD variables)
     }
 
     if (variables == sylvan_false) {
-        ptr->result = a;
-        sylvan_ref(a);
+        ptr->result = sylvan_ref(a);
         llgcset_deref(_bdd.cache, idx);
-        return a;
+        return sylvan_ref(a);
     }
     // variables != sylvan_true (always)
     // variables != sylvan_false

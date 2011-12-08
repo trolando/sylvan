@@ -454,9 +454,11 @@ void test_modelcheck()
     sylvan_deref(prev);
     sylvan_deref(r);
 }
-/*
-void test_CALL_QUANTIFY()
+
+void test_exists_forall()
 {
+    REFSTACK(32)
+
     BDD a,b,c,d,e,f,g,h;
 
     a = sylvan_ithvar(1);
@@ -468,35 +470,32 @@ void test_CALL_QUANTIFY()
     g = sylvan_ithvar(7);
     h = sylvan_ithvar(8);
 
-    BDD test = CALL_ITE(a, CALL_APPLY(b, d, operator_and), CALL_APPLY(sylvan_not(b), sylvan_not(c), operator_or));
+    BDD test = sylvan_ite(a, REF(sylvan_and(b, d)), REF(sylvan_or(REF(sylvan_not(b)), REF(sylvan_not(c)))));
 
-    //sylvan_print(test);
-    //sylvan_print(CALL_APPLY(CALL_APPLY(b, d, operator_and), CALL_APPLY(sylvan_not(b), sylvan_not(c), operator_or), operator_and));
-    //sylvan_print(CALL_QUANTIFY(test, (BDDLEVEL[]){1, sylvan_forall}, 1));
-    //sylvan_print(CALL_APPLY(CALL_APPLY(b, d, operator_and), CALL_APPLY(sylvan_not(b), sylvan_not(c), operator_or), operator_or));
-    //sylvan_print(CALL_QUANTIFY(test, (BDDLEVEL[]){1, sylvan_exists}, 1));
+    BDD axorb = sylvan_xor(a, b);
+    BDD dthenf = sylvan_imp(d, f);
+    BDD cxorg = sylvan_xor(c, g);
 
-    BDD axorb = CALL_APPLY(a, b, operator_xor);
-    BDD dthenf = CALL_APPLY(d, f, operator_imp);
-    BDD cxorg = CALL_APPLY(c, g, operator_xor);
+    REF(sylvan_exists(REF(sylvan_ite(dthenf, axorb, cxorg)), d));
+    REF(sylvan_forall(REF(sylvan_ite(dthenf, axorb, cxorg)), d));
 
-    assert(testEqual(
-           CALL_QUANTIFY(CALL_ITE(dthenf, axorb, cxorg),
-                           (BDDLEVEL[]){4, quant_exists}, 1),
-           CALL_ITE_EX(dthenf, axorb, cxorg,
-                         (BDDLEVEL[]){4, quant_exists}, 1)));
-
-    assert(testEqual(
-               CALL_QUANTIFY(CALL_ITE(dthenf, axorb, cxorg),
-                               (BDDLEVEL[]){4, quant_forall}, 1),
-               CALL_ITE_EX(dthenf, axorb, cxorg, (BDDLEVEL[]){4, quant_forall}, 1)));
-
-    //sylvan_quantify
-    static int cn=1;
-    printf("BDD quantify test %d successful!\n", cn++);
-
+    UNREF
+    
+    sylvan_deref(axorb);
+    sylvan_deref(test);
+    sylvan_deref(dthenf);
+    sylvan_deref(cxorg);
+    
+    sylvan_deref(a);
+    sylvan_deref(b);
+    sylvan_deref(c);
+    sylvan_deref(d);
+    sylvan_deref(e);
+    sylvan_deref(f);
+    sylvan_deref(g);
+    sylvan_deref(h);
 }
-
+/*
 void test_CALL_REPLACE()
 {
     BDD a,b,c,d,e,f,g,h;
@@ -655,6 +654,18 @@ void runtests(int threads)
     for (int j=0;j<16;j++) {
         sylvan_init(1, 16, 16, 5, 5);
         for (int i=0;i<3;i++) test_ite();
+        // verify gc
+        sylvan_gc();
+        __is_sylvan_clean();
+        sylvan_quit();
+    }
+    printf(LGREEN "success" NC "!\n");
+
+    printf(NC "Running single-threaded test 'ExistsForall'... ");
+    fflush(stdout);
+    for (int j=0;j<16;j++) {
+        sylvan_init(1, 16, 16, 5, 5);
+        for (int i=0;i<3;i++) test_exists_forall();
         // verify gc
         sylvan_gc();
         __is_sylvan_clean();

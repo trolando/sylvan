@@ -10,7 +10,6 @@
 
 #include <assert.h>
 
-#include "llset.h"
 #include "llgcset.h"
 #include "sylvan.h"
 

@@ -5,7 +5,7 @@
 #include <stdio.h>
 
 #include "llsched.h"
-#include "runtime.h"
+#include "sylvan_runtime.h"
 
 #ifndef SCHED_MINSIZE
 #define SCHED_MINSIZE 256

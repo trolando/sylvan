@@ -1,4 +1,4 @@
-#include "runtime.h"
+#include "sylvan_runtime.h"
 #include "sylvan.h"
 #include "llvector.h"
 #include "llsched.h"

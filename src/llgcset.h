@@ -1,5 +1,5 @@
 #include "fast_hash.h"
-#include "runtime.h"
+#include "sylvan_runtime.h"
 
 #ifndef LLGCSET_H
 #define LLGCSET_H

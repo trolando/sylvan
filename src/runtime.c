@@ -1,4 +1,4 @@
-#include "runtime.h"
+#include "sylvan_runtime.h"
 
 #include <pthread.h>
 #include <errno.h>

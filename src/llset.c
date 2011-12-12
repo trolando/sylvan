@@ -6,7 +6,7 @@
 #include <assert.h>
 
 #include "llset.h"
-#include "runtime.h"
+#include "sylvan_runtime.h"
 
 static const int        TABLE_SIZE = 24; // 1<<24 entries by default
 static const uint32_t   EMPTY = 0;

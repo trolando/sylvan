@@ -6,7 +6,7 @@
 #include <assert.h>
 
 #include "llgcset.h"
-#include "runtime.h"
+#include "sylvan_runtime.h"
 
 // Employ 8 cache lines per GCLIST block.
 #define GCLIST_CACHELINES 8

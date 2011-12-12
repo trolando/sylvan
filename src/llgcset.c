@@ -6,7 +6,7 @@
 #include <assert.h>
 
 #include "llgcset.h"
-#include "runtime.h"
+#include "sylvan_runtime.h"
 
 /**
  * LL-set with GC using Reference Counting. Note that this implementation is not cycle-safe.

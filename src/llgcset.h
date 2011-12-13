@@ -28,7 +28,7 @@ struct llgcset
     onfull_f  on_full;      // function called when full...
     uint32_t  mask;         // size-1
     // PAD
-    char      pad[PAD(sizeof(size_t)*4+
+    char      pad[SYLVAN_PAD(sizeof(size_t)*4+
                       sizeof(uint32_t*)+
                       sizeof(uint8_t*)+
                       sizeof(hash32_f)+

@@ -26,7 +26,7 @@ struct llgcset
     equals_f  equals;       // equals function
     delete_f  cb_delete;    // delete function (callback pre-delete)
     // PAD
-    char      pad[PAD(sizeof(size_t)*4+
+    char      pad[SYLVAN_PAD(sizeof(size_t)*4+
                       sizeof(uint32_t)+
                       sizeof(uint32_t*)+
                       sizeof(uint8_t*)+
@@ -37,7 +37,7 @@ struct llgcset
     llgcset_gclist_t gclist_head; // list of gc candidates (head)
     llgcset_gclist_t gclist_tail; // list of gc candidates (tail)
     // PAD2
-    char      pad2[PAD(sizeof(llgcset_gclist_t)*2, LINE_SIZE)];
+    char      pad2[SYLVAN_PAD(sizeof(llgcset_gclist_t)*2, LINE_SIZE)];
     // BEGIN CL 3
     uint32_t  gclist_state; // number of writers
 };

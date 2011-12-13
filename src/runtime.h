@@ -11,8 +11,8 @@
 static const size_t CACHE_LINE_SIZE = (1 << CACHE_LINE);
 
 #define LINE_SIZE 64 /* common value for modern processors */
-#define PAD(x,b) ( (b) - ( (x) & ((b)-1) ) ) /* b must be power of 2 */
-#define PAD_CL(x) (PAD(x, LINE_SIZE))
+#define SYLVAN_PAD(x,b) ( (b) - ( (x) & ((b)-1) ) ) /* b must be power of 2 */
+#define SYLVAN_PAD_CL(x) (SYLVAN_PAD(x, LINE_SIZE))
 
 #define atomic8_read(v)      (*(volatile uint8_t *)v)
 #define atomic8_write(v,a)   ((*(volatile uint8_t *)v) = (a))

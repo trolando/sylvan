@@ -39,7 +39,7 @@ struct bddnode {
     BDD high;
     BDDVAR level;
     uint8_t flags; // for marking, e.g. in node_count 
-    char pad1[PAD(sizeof(BDD)*2+sizeof(BDDVAR)+sizeof(uint8_t), 16)];
+    char pad1[SYLVAN_PAD(sizeof(BDD)*2+sizeof(BDDVAR)+sizeof(uint8_t), 16)];
 }; // 16 bytes
 
 typedef struct bddnode* bddnode_t;

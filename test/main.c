@@ -16,7 +16,7 @@
 #define BLACK "\33[22;30m"
 #define GRAY "\33[01;30m"
 #define RED "\33[22;31m"
-#define LRED "\33[01;21m"
+#define LRED "\33[01;31m"
 #define GREEN "\33[22;32m"
 #define LGREEN "\33[01;32m"
 #define BLUE "\33[22;34m"
@@ -208,8 +208,8 @@ void test_xor()
     BDD b = sylvan_ithvar(2);
     BDD test = sylvan_xor(a, b);
     sylvan_xor(a, b); // same as test...
-    sylvan_makenode(1, sylvan_ref(b), sylvan_not(b)); // same as test...
     sylvan_deref(test);
+    sylvan_makenode(1, sylvan_ref(b), sylvan_not(b)); // same as test...
     sylvan_deref(test);
     sylvan_deref(test);
     sylvan_deref(a);
@@ -562,17 +562,20 @@ void test_CALL_REPLACE()
 void __is_sylvan_clean() 
 {
     int n=0;
+    int failure=0;
     
     llgcset_t cache = __sylvan_get_internal_cache();
     for (int k=0;k<cache->size;k++) {
         if (cache->table[k] == 0) continue;
         if (cache->table[k] == 0x7fffffff) continue;
         // if ((cache->table[k] & 0x0000ffff) == 0x0000fffe) continue; // !
-        printf("Still being referenced: %08X\n", cache->table[k]);
+        if (!failure) printf(LRED "\nFailure!\n");
+        failure++;
+        printf(NC "Cache entry still being referenced: %08X\n", cache->table[k]);
         n++;
     }
     if (n>0) {
-        printf(RED "%d ref'd cache entries" NC "!\n", n);
+        printf(LRED "%d ref'd cache entries" NC "!\n", n);
         fflush(stdout);
         assert(0);
     }
@@ -588,13 +591,15 @@ void __is_sylvan_clean()
         if (set->table[k] == 0) continue;
         if (set->table[k] == 0x7fffffff) continue;
         //if ((set->table[k] & 0x0000ffff) == 0x0000fffe) continue; // If we allow this, we need to modify more!
+        if (!failure) printf(LRED "\nFailure!\n" NC "Cache is clean, but BDD table is still in use!\n");
+        failure++;
         printf("BDD key being referenced: %08X\n", set->table[k]);
         sylvan_print(k);
         n++;
     }
     
     if (n>0) {
-        printf(RED "%d dangling ref's" NC "!\n", n);
+        printf(LRED "%d dangling ref's" NC "!\n", n);
         fflush(stdout);
         assert(0);
     }

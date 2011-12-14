@@ -1,4 +1,3 @@
-//#include "sylvan_runtime.h"
 #include <pthread.h>
 #include <string.h>
 #include <stdio.h>
@@ -13,6 +12,8 @@
 #include "atomics.h"
 #include "llgcset.h"
 #include "llcache.h"
+#include "wool.h"
+#include "tls.h"
 
 #ifdef HAVE_NUMA_H 
 #include <numa.h>
@@ -275,15 +276,125 @@ void sylvan_disable_stats() {
 /* 
  * GARBAGE COLLECTION 
  */
+typedef struct local_gc_info {
+    int gc;
+} *local_gc_info_t;
+
+typedef struct gc_bdd_list {
+    BDD bdd;
+    struct gc_bdd_list *next;
+} *gc_bdd_list_t;
+
+local_gc_info_t *remote_gc_info;
+
+DECLARE_THREAD_LOCAL(gc_info, local_gc_info_t);
+
+__attribute__ ((constructor)) void sylvan_gc_init() {
+    INIT_THREAD_LOCAL(gc_info);
+    SET_THREAD_LOCAL(gc_info, 0);
+}
+
+local_gc_info_t sylvan_gc_alloc()
+{       
+    // allocate memory (on node)
+    local_gc_info_t info;
+/*#ifdef HAVE_NUMA_H 
+    if (numa_available() != -1) {
+        struct bitmask *node_mask = numa_allocate_nodemask();
+        numa_get_run_node_mask(node_mask)
+        info = (local_gc_info_t)numa_alloc_interleaved_subset(sizeof(struct local_gc_info), node_mask);
+        numa_free_nodemask();
+    } else {
+#endif*/
+        info = (local_gc_info_t)calloc(sizeof(struct local_gc_info), 1);
+/*#ifdef HAVE_NUMA_H
+    }
+#endif*/
+    remote_gc_info[get_thread_id()] = info;
+    return info;
+}
+
+static inline void sylvan_gc_participate()
+{
+    LOCALIZE_THREAD_LOCAL(gc_info, local_gc_info_t);
+    if (gc_info == 0) SET_THREAD_LOCAL(gc_info, sylvan_gc_alloc());
+
+    // TODO: mark BDDs
+
+    gc_info->gc=1; // ready to start!
+    while (ACCESS_ONCE(_bdd.gc) != 2) cpu_relax(); 
+
+    // _bdd.gc == 2
+    
+    // TODO: participate
+
+    gc_info->gc=0; // done!
+    while (ACCESS_ONCE(_bdd.gc) != 0) cpu_relax(); 
+
+    // _bdd.gc == 0
+}
+
+static inline void sylvan_gc_run()
+{
+    LOCALIZE_THREAD_LOCAL(gc_info, local_gc_info_t);
+    if (gc_info == 0) SET_THREAD_LOCAL(gc_info, sylvan_gc_alloc());
+
+    int i=0;
+    for (i=0;i<_bdd.workers;i++) {
+        while (ACCESS_ONCE(remote_gc_info[i])==0) cpu_relax();
+    }
+
+    // TODO: mark BDDs
+
+    // Sync with rest
+    gc_info->gc = 1;
+    for (i=0;i<_bdd.workers;i++) {
+        while (ACCESS_ONCE(remote_gc_info[i]->gc)!=1) cpu_relax();
+    }
+
+    // Todo: distribute
+
+    _bdd.gc = 2; // go
+
+    llcache_clear_unsafe(_bdd.cache);
+    llgcset_gc(_bdd.data);
+
+    // Sync with rest
+    gc_info->gc = 0;
+    for (i=0;i<_bdd.workers;i++) {
+        while (ACCESS_ONCE(remote_gc_info[i]->gc)!=0) cpu_relax();
+    }
+
+    _bdd.gc = 0; // done
+}
+
+VOID_TASK_0(sylvan_gc_task)
+{
+    while (ACCESS_ONCE(_bdd.gc)) {
+        SPAWN(sylvan_gc_task);
+        sylvan_gc_participate();
+        SYNC(sylvan_gc_task);
+    }
+}
+
+VOID_TASK_0(sylvan_gc_root_task)
+{
+    SPAWN(sylvan_gc_task);
+    sylvan_gc_run();
+    SYNC(sylvan_gc_task);
+}
 
 static inline void sylvan_gc_go() 
 {
-    llcache_clear_unsafe(_bdd.cache);
-    llgcset_gc(_bdd.data);
+    if (cas(&_bdd.gc, 0, 1)) ROOT_CALL(sylvan_gc_root_task);
+    else ROOT_CALL(sylvan_gc_task);
 }
 
 static inline void sylvan_gc_test()
 {
+    while (ACCESS_ONCE(_bdd.gc)) {
+        sylvan_gc_participate();
+    }
 }
 
 
@@ -305,12 +416,20 @@ unsigned long get_random()
     return rng_hash_128(seed);
 }
 
-void sylvan_package_init()
+void sylvan_package_init(int workers, int dq_size)
 {
+    wool_init2(workers, dq_size, dq_size); // allow all jobs to be stolen
+    
+    remote_gc_info = (local_gc_info_t *)calloc(sizeof(local_gc_info_t**), workers);
+    
+    _bdd.workers = workers;
 }
 
 void sylvan_package_exit()
 {
+    wool_fini();
+
+    free(remote_gc_info);
 }
 
 
@@ -701,7 +820,7 @@ static BDD sylvan_triples(BDD *_a, BDD *_b, BDD *_c)
  * At entry, all BDDs should be ref'd by caller.
  * At exit, they still are ref'd by caller, and the result it ref'd, and any items in the OC are ref'd.
  */
-BDD sylvan_ite_do(BDD a, BDD b, BDD c, BDDVAR prev_level)
+TASK_4(BDD, sylvan_ite_do, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 {
     // Standard triples
     BDD r = sylvan_triples(&a, &b, &c);
@@ -764,8 +883,9 @@ BDD sylvan_ite_do(BDD a, BDD b, BDD c, BDDVAR prev_level)
     }
     
     // Recursive computation
-    BDD low = sylvan_ite_do(aLow, bLow, cLow, level);
-    BDD high = sylvan_ite_do(aHigh, bHigh, cHigh, level);
+    SPAWN(sylvan_ite_do, aLow, bLow, cLow, level);
+    BDD high = CALL(sylvan_ite_do, aHigh, bHigh, cHigh, level);
+    BDD low = SYNC(sylvan_ite_do);
     BDD result = sylvan_makenode(level, low, high);
     
     /*
@@ -797,15 +917,15 @@ BDD sylvan_ite_do(BDD a, BDD b, BDD c, BDDVAR prev_level)
 
 BDD sylvan_ite(BDD a, BDD b, BDD c)
 {
-    return sylvan_ite_do(a, b, c, 0);
-}
-
+    return ROOT_CALL(sylvan_ite_do, a, b, c, 0);
+} 
+ 
 /**
  * Calculates \exists variables . a
  * Requires caller has ref on a, variables
  * Ensures caller as ref on a, variables and on result
  */
-BDD sylvan_exists_do(BDD a, BDD variables, BDDVAR prev_level)
+TASK_3(BDD, sylvan_exists_do, BDD, a, BDD, variables, BDDVAR, prev_level)
 {
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
@@ -859,11 +979,11 @@ BDD sylvan_exists_do(BDD a, BDD variables, BDDVAR prev_level)
     // variables != sylvan_false
     if (in_x) { 
         // quantify
-        BDD low = sylvan_exists_do(aLow, LOW(variables), level);
+        BDD low = CALL(sylvan_exists_do, aLow, LOW(variables), level);
         if (low == sylvan_true) {
             result = sylvan_true;
         } else {
-            BDD high = sylvan_exists_do(aHigh, LOW(variables), level);
+            BDD high = CALL(sylvan_exists_do, aHigh, LOW(variables), level);
             if (high == sylvan_true) {
                 sylvan_deref(low);
                 result = sylvan_true;
@@ -872,7 +992,7 @@ BDD sylvan_exists_do(BDD a, BDD variables, BDDVAR prev_level)
                 result = sylvan_false;
             }
             else {
-                result = sylvan_ite(low, sylvan_true, high); // or 
+                result = CALL(sylvan_ite_do, low, sylvan_true, high, 0); // or 
                 sylvan_deref(low);
                 sylvan_deref(high);
             }
@@ -880,8 +1000,9 @@ BDD sylvan_exists_do(BDD a, BDD variables, BDDVAR prev_level)
     } else {
         // no quantify
         BDD low, high;
-        high = sylvan_exists_do(aHigh, variables, level);
-        low = sylvan_exists_do(aLow, variables, level);
+        SPAWN(sylvan_exists_do, aLow, variables, level);
+        high = CALL(sylvan_exists_do, aHigh, variables, level);
+        low = SYNC(sylvan_exists_do);
         result = sylvan_makenode(level, low, high);
     }
 
@@ -909,7 +1030,7 @@ BDD sylvan_exists_do(BDD a, BDD variables, BDDVAR prev_level)
 
 BDD sylvan_exists(BDD a, BDD variables)
 {
-    return sylvan_exists_do(a, variables, 0);
+    return ROOT_CALL(sylvan_exists_do, a, variables, 0);
 }
 
 /**
@@ -917,7 +1038,7 @@ BDD sylvan_exists(BDD a, BDD variables)
  * Requires ref on a, variables
  * Ensures ref on a, variables, result
  */
-BDD sylvan_forall_do(BDD a, BDD variables, BDDVAR prev_level)
+TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
 {
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
@@ -973,12 +1094,11 @@ BDD sylvan_forall_do(BDD a, BDD variables, BDDVAR prev_level)
     
     if (in_x) {
         // quantify
-        BDD low = sylvan_forall_do(aLow, LOW(variables), level);
+        BDD low = CALL(sylvan_forall_do, aLow, LOW(variables), level);
         if (low == sylvan_false) {
             result = sylvan_false;
         } else {
-            BDD high = sylvan_forall_do(aHigh, LOW(variables), level);
-            // calculate low /\ high 
+            BDD high = CALL(sylvan_forall_do, aHigh, LOW(variables), level);
             if (high == sylvan_false) {
                 sylvan_deref(low);
                 result = sylvan_false;
@@ -987,7 +1107,7 @@ BDD sylvan_forall_do(BDD a, BDD variables, BDDVAR prev_level)
                 result = sylvan_true;
             }
             else {
-                result = sylvan_ite(low, high, sylvan_false); // and operation
+                result = CALL(sylvan_ite_do, low, high, sylvan_false, 0); // and
                 sylvan_deref(low);
                 sylvan_deref(high);
             }
@@ -995,8 +1115,9 @@ BDD sylvan_forall_do(BDD a, BDD variables, BDDVAR prev_level)
     } else {
         // no quantify
         BDD low, high;
-        high = sylvan_forall_do(aHigh, variables, level);
-        low = sylvan_forall_do(aLow, variables, level);
+        SPAWN(sylvan_forall_do, aLow, variables, level);
+        high = CALL(sylvan_forall_do, aHigh, variables, level);
+        low = SYNC(sylvan_forall_do);
         result = sylvan_makenode(level, low, high);
     }
 
@@ -1024,14 +1145,14 @@ BDD sylvan_forall_do(BDD a, BDD variables, BDDVAR prev_level)
 
 BDD sylvan_forall(BDD a, BDD variables)
 {
-    return sylvan_forall_do(a, variables, 0);
+    return ROOT_CALL(sylvan_forall_do, a, variables, 0);
 }
 
 /**
  * RelProd. Calculates \exists X (A/\B)
  * NOTE: only for variables in x that are even...
  */
-BDD sylvan_relprod_do(BDD a, BDD b, BDD x, BDDVAR prev_level)
+TASK_4(BDD, sylvan_relprod_do, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
 {
     /* 
      * Normalization and trivial cases
@@ -1124,12 +1245,12 @@ BDD sylvan_relprod_do(BDD a, BDD b, BDD x, BDDVAR prev_level)
     BDD low, high, result;
     
     if (in_x) {
-        low = sylvan_relprod_do(aLow, bLow, x, level);
+        low = CALL(sylvan_relprod_do, aLow, bLow, x, level);
         // variable in X: quantify
         if (low == sylvan_true) {
             result = sylvan_true;
         } else {
-            high = sylvan_relprod_do(aHigh, bHigh, x, level);
+            high = CALL(sylvan_relprod_do, aHigh, bHigh, x, level);
             // Calculate low \/ high
             if (high == sylvan_true) {
                 sylvan_deref(low);
@@ -1139,14 +1260,15 @@ BDD sylvan_relprod_do(BDD a, BDD b, BDD x, BDDVAR prev_level)
                 result = sylvan_false;
             }
             else {
-                result = sylvan_ite(low, sylvan_true, high); // or
+                result = CALL(sylvan_ite_do, low, sylvan_true, high, 0); // or
                 sylvan_deref(low);
                 sylvan_deref(high);
             }
         }
     } else {
-        high = sylvan_relprod_do(aHigh, bHigh, x, level);
-        low = sylvan_relprod_do(aLow, bLow, x, level);
+        SPAWN(sylvan_relprod_do, aHigh, bHigh, x, level);
+        low = CALL(sylvan_relprod_do, aLow, bLow, x, level);
+        high = SYNC(sylvan_relprod_do);
         result = sylvan_makenode(level, low, high);
     }
     
@@ -1174,14 +1296,14 @@ BDD sylvan_relprod_do(BDD a, BDD b, BDD x, BDDVAR prev_level)
 
 BDD sylvan_relprod(BDD a, BDD b, BDD x) 
 {
-    return sylvan_relprod_do(a, b, x, 0);
+    return ROOT_CALL(sylvan_relprod_do, a, b, x, 0);
 }
 
 
 /**
  * Specialized substitute, substitutes variables 'x' \in vars by 'x-1'
  */
-BDD sylvan_substitute_do(BDD a, BDD vars, BDDVAR prev_level)
+TASK_3(BDD, sylvan_substitute_do, BDD, a, BDD, vars, BDDVAR, prev_level)
 {
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
@@ -1226,8 +1348,9 @@ BDD sylvan_substitute_do(BDD a, BDD vars, BDDVAR prev_level)
 #endif
    
     // Recursive computation
-    BDD low = sylvan_substitute_do(aLow, vars, level);
-    BDD high = sylvan_substitute_do(aHigh, vars, level);
+    SPAWN(sylvan_substitute_do, aHigh, vars, level);
+    BDD low = CALL(sylvan_substitute_do, aLow, vars, level);
+    BDD high = SYNC(sylvan_substitute_do);
     BDD result;
     
     if (in_vars) {
@@ -1265,7 +1388,7 @@ BDD sylvan_substitute_do(BDD a, BDD vars, BDDVAR prev_level)
 
 BDD sylvan_substitute(BDD a, BDD vars)
 {
-    return sylvan_substitute_do(a, vars, 0);
+    return ROOT_CALL(sylvan_substitute_do, a, vars, 0);
 }
 
 /**
@@ -1278,7 +1401,7 @@ BDD sylvan_substitute(BDD a, BDD vars)
  * - the substitution X/X' substitutes 0 by 1, 2 by 3, etc.
  */
 
-BDD sylvan_relprods_do(BDD a, BDD b, BDD vars, BDDVAR prev_level)
+TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
 {
     /* 
      * Normalization and trivial cases
@@ -1371,13 +1494,13 @@ BDD sylvan_relprods_do(BDD a, BDD b, BDD vars, BDDVAR prev_level)
     BDD low, high, result;
     
     if (in_vars && 0==(level&1)) {
-        low = sylvan_relprods_do(aLow, bLow, vars, level);
+        low = CALL(sylvan_relprods_do, aLow, bLow, vars, level);
         // variable in X: quantify
         if (low == sylvan_true) {
             result = sylvan_true;
         }
         else {
-            high = sylvan_relprods_do(aHigh, bHigh, vars, level);
+            high = CALL(sylvan_relprods_do, aHigh, bHigh, vars, level);
             if (high == sylvan_true) {
                 sylvan_deref(low);
                 result = sylvan_true;
@@ -1386,15 +1509,16 @@ BDD sylvan_relprods_do(BDD a, BDD b, BDD vars, BDDVAR prev_level)
                 result = sylvan_false;
             }
             else {
-                result = sylvan_ite(low, sylvan_true, high);
+                result = CALL(sylvan_ite_do, low, sylvan_true, high, 0);
                 sylvan_deref(low);
                 sylvan_deref(high);
             }
         }
     } 
     else {
-        high = sylvan_relprods_do(aHigh, bHigh, vars, level);
-        low = sylvan_relprods_do(aLow, bLow, vars, level);
+        SPAWN(sylvan_relprods_do, aHigh, bHigh, vars, level);
+        low = CALL(sylvan_relprods_do, aLow, bLow, vars, level);
+        high = SYNC(sylvan_relprods_do);
 
         // variable in X': substitute
         if (in_vars == 1) result = sylvan_makenode(level-1, low, high);
@@ -1427,7 +1551,7 @@ BDD sylvan_relprods_do(BDD a, BDD b, BDD vars, BDDVAR prev_level)
 
 BDD sylvan_relprods(BDD a, BDD b, BDD vars) 
 {
-    return sylvan_relprods_do(a, b, vars, 0);
+    return ROOT_CALL(sylvan_relprods_do, a, b, vars, 0);
 }
 
 /**
@@ -1439,7 +1563,7 @@ BDD sylvan_relprods(BDD a, BDD b, BDD vars)
  * - variables in X' are odd (1, 3, 5)
  * - the substitution X/X' substitutes 0 by 1, 2 by 3, etc.
  */
-BDD sylvan_relprods_reversed_do(BDD a, BDD b, BDD vars, BDDVAR prev_level) 
+TASK_4(BDD, sylvan_relprods_reversed_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level) 
 {
     /* 
      * Normalization and trivial cases
@@ -1529,19 +1653,19 @@ BDD sylvan_relprods_reversed_do(BDD a, BDD b, BDD vars, BDDVAR prev_level)
 
     // if x \in X'
     if ((x&1) == 1 && in_vars) {
-        low = sylvan_relprods_reversed_do(aLow, bLow, vars, x);
+        low = CALL(sylvan_relprods_reversed_do, aLow, bLow, vars, x);
         // variable in X': quantify
         if (low == sylvan_true) {
             result = sylvan_true;
         } else {
-            high = sylvan_relprods_reversed_do(aHigh, bHigh, vars, x);
+            high = CALL(sylvan_relprods_reversed_do, aHigh, bHigh, vars, x);
             if (high == sylvan_true) {
                 sylvan_deref(low);
                 result = sylvan_true;
             } else if (low == sylvan_false && high == sylvan_false) {
                 result = sylvan_false;
             } else {
-                result = sylvan_ite(low, sylvan_true, high);
+                result = CALL(sylvan_ite_do, low, sylvan_true, high, 0);
                 sylvan_deref(low);
                 sylvan_deref(high);
             }
@@ -1549,8 +1673,9 @@ BDD sylvan_relprods_reversed_do(BDD a, BDD b, BDD vars, BDDVAR prev_level)
     } 
     // if x \in X OR if excluded (works in either case)
     else {
-        low = sylvan_relprods_reversed_do(aLow, bLow, vars, x);
-        high = sylvan_relprods_reversed_do(aHigh, bHigh, vars, x);
+        SPAWN(sylvan_relprods_reversed_do, aHigh, bHigh, vars, x);
+        low = CALL(sylvan_relprods_reversed_do, aLow, bLow, vars, x);
+        high = SYNC(sylvan_relprods_reversed_do);
         result = sylvan_makenode(x, low, high);
     }
 
@@ -1578,7 +1703,7 @@ BDD sylvan_relprods_reversed_do(BDD a, BDD b, BDD vars, BDDVAR prev_level)
 
 BDD sylvan_relprods_reversed(BDD a, BDD b, BDD vars) 
 {
-    return sylvan_relprods_reversed_do(a, b, vars, 0);
+    return ROOT_CALL(sylvan_relprods_reversed_do, a, b, vars, 0);
 }
 
 void sylvan_nodecount_levels_do_1(BDD bdd, uint32_t *variables)

@@ -39,6 +39,7 @@ set(sylvan_sources
   src/llcache.c
   src/llsimplecache.c
   src/rng_hash_128.s
+  src/wool.c
 )
 
 set(test_sources

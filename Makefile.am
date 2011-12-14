@@ -14,7 +14,8 @@ libsylvan_la_SOURCES = \
  src/rehash_mul.s \
  src/llcache.c \
  src/llsimplecache.c \
- src/sylvan.h 
+ src/sylvan.h \
+ src/wool.c
 
 libsylvan_la_LDFLAGS = -version-info 0:0:0
 libsylvan_la_LIBADD = -lm 

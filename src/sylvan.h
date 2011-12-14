@@ -41,7 +41,7 @@ extern "C" {
 /**
  * Initialize package (program level)
  */
-extern void sylvan_package_init();
+extern void sylvan_package_init(int threads, int dq_size);
 
 extern void sylvan_package_exit();
 

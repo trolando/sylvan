@@ -47,7 +47,8 @@ llsched_t llsched_create(int threads, size_t datasize)
     comm->waitcount = 0;
     memset(&comm->flags[0], SCHED_FLAG_RUNNING, threads * sizeof(uint8_t));
 
-    for (int i=0;i<threads;i++) {
+    int i;
+    for (i=0;i<threads;i++) {
         s->data[i] = (uint8_t*)rt_align(CACHE_LINE_SIZE, datasize + 1);
         *(uint8_t*)(s->data[i]) = SCHED_DATA_EMPTY;
 
@@ -63,7 +64,8 @@ llsched_t llsched_create(int threads, size_t datasize)
 
 void llsched_free(llsched_t s)
 {
-    for (int i=0;i<s->threads;i++) {
+    int i;
+    for (i=0;i<s->threads;i++) {
         vector_t v = (vector_t)s->data[s->threads+i];
         if (v->data != 0) {
             free(v->data);
@@ -71,7 +73,7 @@ void llsched_free(llsched_t s)
         }
         free(v);
     }
-    for (int i=0;i<s->threads;i++) free(s->data[i]);
+    for (i=0;i<s->threads;i++) free(s->data[i]);
     free(s->comm);
     free(s);
 }
@@ -92,7 +94,8 @@ void llsched_check_waiting(llsched_t s, int t)
 
     if (atomic32_read(&comm->waitcount) == 0) return;
 
-    for (int i=0;i<s->threads;i++) {
+    int i;
+    for (i=0;i<s->threads;i++) {
         if (atomic8_read(&comm->flags[i]) == SCHED_FLAG_WAITING) {
             if (cas(&comm->flags[i], SCHED_FLAG_WAITING, SCHED_FLAG_RUNNING)) {
                 __sync_fetch_and_sub(&comm->waitcount, 1);
@@ -121,12 +124,13 @@ static inline int llsched_wait(llsched_t s, const int t, void* value)
 
         // Modify state (safe to do with just volatile instructions
         atomic32_write(&comm->waitcount, 0);
-        for (int i=0; i<s->threads; i++)
+        int i;
+        for (i=0; i<s->threads; i++)
         	if (t!=i)
         		atomic8_write(&comm->flags[i], SCHED_FLAG_END);
 
         // Release threads
-        for (int i=0; i<s->threads; i++)
+        for (i=0; i<s->threads; i++)
         	if (t!=i)
         		atomic8_write(s->data[i], SCHED_DATA_END);
 

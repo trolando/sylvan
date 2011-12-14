@@ -613,9 +613,9 @@ BDD sylvan_ite(BDD a, BDD b, BDD c)
     }
     
     // No result, so we need to calculate...
-    bddnode_t restrict na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
-    bddnode_t restrict nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
-    bddnode_t restrict nc = BDD_ISCONSTANT(c) ? 0 : GETNODE(c);
+    bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
+    bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
+    bddnode_t nc = BDD_ISCONSTANT(c) ? 0 : GETNODE(c);
         
     // Get lowest level
     BDDVAR level = 0xffff;
@@ -693,7 +693,7 @@ BDD sylvan_exists(BDD a, BDD variables)
     }
 
     // a != constant    
-    bddnode_t restrict na = GETNODE(a);
+    bddnode_t na = GETNODE(a);
         
     // Get lowest level
     BDDVAR level = na->level;
@@ -792,7 +792,7 @@ BDD sylvan_forall(BDD a, BDD variables)
     }
 
     // a != constant
-    bddnode_t restrict na = GETNODE(a);
+    bddnode_t na = GETNODE(a);
         
     // Get lowest level
     BDDVAR level = na->level;
@@ -902,8 +902,8 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
     }
     
     // No result, so we need to calculate...
-    bddnode_t restrict na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
-    bddnode_t restrict nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
+    bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
+    bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
         
     // Get lowest level
     BDDVAR level = 0xffff;
@@ -1027,8 +1027,8 @@ BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables)
     }
     
     // No result, so we need to calculate...
-    bddnode_t restrict na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
-    bddnode_t restrict nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
+    bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
+    bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
     
     // Replace level in a, but only if not excluded!
     
@@ -1137,7 +1137,7 @@ uint32_t sylvan_nodecount_do_1(BDD a)
 {
     uint32_t result = 0;
     if (BDD_ISCONSTANT(a)) return 0;
-    bddnode_t restrict na = GETNODE(a);
+    bddnode_t na = GETNODE(a);
     if (na->flags & 1) return 0;
     na->flags |= 1; // mark
     result = 1;
@@ -1149,7 +1149,7 @@ uint32_t sylvan_nodecount_do_1(BDD a)
 void sylvan_nodecount_do_2(BDD a) 
 {
     if (BDD_ISCONSTANT(a)) return;
-    bddnode_t restrict na = GETNODE(a);
+    bddnode_t na = GETNODE(a);
     if (!(na->flags & 1)) return;
     na->flags &= ~1; // unmark
     sylvan_nodecount_do_2(na->low);

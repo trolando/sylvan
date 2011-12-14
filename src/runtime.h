@@ -28,9 +28,12 @@ static const size_t CACHE_LINE_SIZE = (1 << CACHE_LINE);
 
 #define cas(a,b,c)        __sync_bool_compare_and_swap((a),(b),(c))
 
-#define LFENCE __asm__ __volatile__( "lfence" ::: "memory" )
+/*#define LFENCE __asm__ __volatile__( "lfence" ::: "memory" )
 #define SFENCE __asm__ __volatile__( "sfence" ::: "memory" )
-#define MFENCE __asm__ __volatile__( "mfence" ::: "memory" )
+#define MFENCE __asm__ __volatile__( "mfence" ::: "memory" )*/
+#define LFENCE asm volatile( "lfence" ::: "memory" )
+#define SFENCE asm volatile( "sfence" ::: "memory" )
+#define MFENCE asm volatile( "mfence" ::: "memory" )
 
 /* Several primitives from http://locklessinc.com/articles/locks/ */
 
@@ -43,10 +46,12 @@ static const size_t CACHE_LINE_SIZE = (1 << CACHE_LINE);
 #define atomic_clear_bit(P, V) __sync_and_and_fetch((P), ~(1<<(V)))
 
 /* Compile read-write barrier */
-#define barrier() __asm__ __volatile__("": : :"memory")
+//#define barrier() __asm__ __volatile__("": : :"memory")
+#define barrier() asm volatile("": : :"memory")
 
 /* Pause instruction to prevent excess processor bus usage */ 
-#define cpu_relax() __asm__ __volatile__("pause\n": : :"memory")
+//#define cpu_relax() __asm__ __volatile__("pause\n": : :"memory")
+#define cpu_relax() asm volatile("pause\n": : :"memory")
 
 /* Test and set a bit */
 static inline char atomic_bitsetandtest(void *ptr, int x)

@@ -36,8 +36,9 @@
 
 
 extern llgcset_t __sylvan_get_internal_data();
+#ifdef CACHE
 extern llgcset_t __sylvan_get_internal_cache();
-
+#endif
 
 int test_llgcset() 
 {
@@ -50,13 +51,14 @@ int test_llgcset()
     
     llgcset_t set = llgcset_create(sizeof(uint32_t), 8, 10, NULL, NULL, NULL, NULL); // size: 256
 
-    for (int i=0;i<16;i++) {
+    int i;
+    for (i=0;i<16;i++) {
         llgcset_get_or_create(set, &entry[i], &created, &index[i]);
         //printf("Position: %d\n", index[i]);
         assert(created);
     }
     
-    for (int i=0;i<16;i++) {
+    for (i=0;i<16;i++) {
         llgcset_get_or_create(set, &entry[i], &created, &index2[i]);
         assert(created == 0);
         assert(index[i] == index2[i]);
@@ -65,7 +67,7 @@ int test_llgcset()
     int n=0;
 
     // check all have ref 2
-    for (int i=0;i<set->size;i++) {
+    for (i=0;i<set->size;i++) {
         uint32_t key = set->table[i];
         if (key != 0) {
             n++;
@@ -76,14 +78,14 @@ int test_llgcset()
     assert(n == 16);
     
     // deref all twice
-    for (int i=0;i<16;i++) {
+    for (i=0;i<16;i++) {
         llgcset_deref(set, index[i]);
         llgcset_deref(set, index[i]);
     }
     
     // check all have ref 0
     n=0;
-    for (int i=0;i<set->size;i++) {
+    for (i=0;i<set->size;i++) {
         uint32_t key = set->table[i];
         if (key != 0) {
             n++;
@@ -95,11 +97,11 @@ int test_llgcset()
     // check gc list
     assert(set->gc_head == set->gc_size-1);
     assert(set->gc_tail == 16);
-    for (int i=0;i<16;i++) {
+    for (i=0;i<16;i++) {
         assert(set->gc_list[i] == index[i]);
     }
     
-    for (int i=0;i<16;i++) {
+    for (i=0;i<16;i++) {
         llgcset_get_or_create(set, &entry[i], &created, &index2[i]);
         assert(created == 0);
         assert(index[i] == index2[i]);
@@ -107,7 +109,7 @@ int test_llgcset()
 
     // check all have ref 1
     n=0;
-    for (int i=0;i<set->size;i++) {
+    for (i=0;i<set->size;i++) {
         uint32_t key = set->table[i];
         if (key != 0) {
             n++;
@@ -123,7 +125,7 @@ int test_llgcset()
     
     // check all have ref 1
     n=0;
-    for (int i=0;i<set->size;i++) {
+    for (i=0;i<set->size;i++) {
         uint32_t key = set->table[i];
         if (key != 0) {
             n++;
@@ -135,13 +137,13 @@ int test_llgcset()
     assert(set->gc_head == set->gc_tail);
 
     // deref all 
-    for (int i=0;i<16;i++) {
+    for (i=0;i<16;i++) {
         llgcset_deref(set, index[i]);
     }
     
     assert((set->gc_tail-set->gc_head == 16+1));
 
-    for (int i=0;i<16;i++) {
+    for (i=0;i<16;i++) {
         assert(set->gc_list[set->gc_head+1+i] == index[i]);
     }
     
@@ -153,7 +155,7 @@ int test_llgcset()
     
     // check 16 tombstones
     n=0;
-    for (int i=0;i<set->size;i++) {
+    for (i=0;i<set->size;i++) {
         uint32_t key = set->table[i];
         if (key != 0) {
             assert(key == 0x7fffffff);
@@ -162,14 +164,14 @@ int test_llgcset()
     }
     assert(n == 16);
 
-    for (int i=0;i<16;i++) {
+    for (i=0;i<16;i++) {
         llgcset_get_or_create(set, &entry[i], &created, &index[i]);
         assert(created);
     }
     
     // check all have ref 1
     n=0;
-    for (int i=0;i<set->size;i++) {
+    for (i=0;i<set->size;i++) {
         uint32_t key = set->table[i];
         if (key != 0) {
             n++;
@@ -563,9 +565,10 @@ void __is_sylvan_clean()
 {
     int n=0;
     int failure=0;
-    
+    int k;
+#if CACHE    
     llgcset_t cache = __sylvan_get_internal_cache();
-    for (int k=0;k<cache->size;k++) {
+    for (k=0;k<cache->size;k++) {
         if (cache->table[k] == 0) continue;
         if (cache->table[k] == 0x7fffffff) continue;
         // if ((cache->table[k] & 0x0000ffff) == 0x0000fffe) continue; // !
@@ -581,13 +584,13 @@ void __is_sylvan_clean()
     }
     
     n=0; // superfluous
-    
+#endif    
     llgcset_t set = __sylvan_get_internal_data();
 
     // check empty gc queue
     assert(set->gc_head == set->gc_tail);
     
-    for (int k=0;k<set->size;k++) {
+    for (k=0;k<set->size;k++) {
         if (set->table[k] == 0) continue;
         if (set->table[k] == 0x7fffffff) continue;
         //if ((set->table[k] & 0x0000ffff) == 0x0000fffe) continue; // If we allow this, we need to modify more!
@@ -608,9 +611,9 @@ void __is_sylvan_clean()
 void runtests(int threads)
 {
     /*
-    for (int i=0;i<1000;i++) test_sched();
+    for (i=0;i<1000;i++) test_sched();
     printf("test sched done");
-    for (int i=0;i<1000;i++) {
+    for (i=0;i<1000;i++) {
         test_set();
         printf("test set done\n");
     }
@@ -626,15 +629,17 @@ void runtests(int threads)
     
     printf(NC "Running single-threaded test 'Xor'... ");
     fflush(stdout);
-    for (int j=0;j<16;j++) {
+    int j;
+    for (j=0;j<16;j++) {
         sylvan_init(1, 16, 16, 5, 5);
         
         test_xor();
         // verify gc
         sylvan_gc();
         __is_sylvan_clean();
-        
-        for (int i=0;i<3;i++) test_xor();
+       
+        int i; 
+        for (i=0;i<3;i++) test_xor();
         // verify gc
         sylvan_gc();
         __is_sylvan_clean();
@@ -645,14 +650,15 @@ void runtests(int threads)
 
     printf(NC "Running single-threaded test 'Apply'... ");
     fflush(stdout);
-    for (int j=0;j<16;j++) {
+    for (j=0;j<16;j++) {
         sylvan_init(1, 16, 16, 5, 5);
         test_apply();
         // verify gc
         sylvan_gc();
         __is_sylvan_clean();
         
-        for (int i=0;i<3;i++) test_apply();
+        int i;
+        for (i=0;i<3;i++) test_apply();
         // verify gc
         sylvan_gc();
         __is_sylvan_clean();
@@ -663,9 +669,10 @@ void runtests(int threads)
 
     printf(NC "Running single-threaded test 'ITE'... ");
     fflush(stdout);
-    for (int j=0;j<16;j++) {
+    for (j=0;j<16;j++) {
         sylvan_init(1, 16, 16, 5, 5);
-        for (int i=0;i<3;i++) test_ite();
+        int i;
+        for (i=0;i<3;i++) test_ite();
         // verify gc
         sylvan_gc();
         __is_sylvan_clean();
@@ -675,9 +682,10 @@ void runtests(int threads)
 
     printf(NC "Running single-threaded test 'ExistsForall'... ");
     fflush(stdout);
-    for (int j=0;j<16;j++) {
+    for (j=0;j<16;j++) {
         sylvan_init(1, 16, 16, 5, 5);
-        for (int i=0;i<3;i++) test_exists_forall();
+        int i;
+        for (i=0;i<3;i++) test_exists_forall();
         // verify gc
         sylvan_gc();
         __is_sylvan_clean();
@@ -687,9 +695,10 @@ void runtests(int threads)
 
     printf(NC "Running single-threaded test 'ModelCheck'... ");
     fflush(stdout);
-    for (int j=0;j<16;j++) {
+    for (j=0;j<16;j++) {
         sylvan_init(1, 16, 16, 5, 5);
-        for (int i=0;i<3;i++) test_modelcheck();
+        int i;
+        for (i=0;i<3;i++) test_modelcheck();
         // verify gc
         sylvan_gc();
         __is_sylvan_clean();
@@ -699,11 +708,12 @@ void runtests(int threads)
 
     printf(NC "Running single-threaded test 'Mixed'... ");
     fflush(stdout);
-    for (int j=0;j<16;j++) {
+    for (j=0;j<16;j++) {
         sylvan_init(1, 16, 16, 5, 5);
-        for (int i=0;i<3;i++) test_apply();
-        for (int i=0;i<3;i++) test_ite();
-        for (int i=0;i<3;i++) test_modelcheck();
+        int i;
+        for (i=0;i<3;i++) test_apply();
+        for (i=0;i<3;i++) test_ite();
+        for (i=0;i<3;i++) test_modelcheck();
         // verify gc
         sylvan_gc();
         __is_sylvan_clean();
@@ -717,14 +727,15 @@ void runtests(int threads)
     struct timespec begin, end;
     clock_gettime(CLOCK_MONOTONIC, &begin);
 
-    for (int j=0;j<10000;j++){
+    for (j=0;j<10000;j++){
         sylvan_init(2, 16, 16, 10, 10);
-        for (int i=0;i<3;i++) test_apply();
-        for (int i=0;i<3;i++) test_ite();
-        for (int i=0;i<3;i++) test_modelcheck();
-        for (int i=0;i<3;i++) test_apply();
-        for (int i=0;i<3;i++) test_ite();
-        for (int i=0;i<3;i++) test_modelcheck();
+        int i;
+        for (i=0;i<3;i++) test_apply();
+        for (i=0;i<3;i++) test_ite();
+        for (i=0;i<3;i++) test_modelcheck();
+        for (i=0;i<3;i++) test_apply();
+        for (i=0;i<3;i++) test_ite();
+        for (i=0;i<3;i++) test_modelcheck();
         sylvan_quit();
     }
 
@@ -827,7 +838,7 @@ int main(int argc, char **argv)
 
     llvector_delete(v, 1);
 
-    for (int i=0; i<llvector_count(v); i++) {
+    for (i=0; i<llvector_count(v); i++) {
         char buf[9];
         buf[8] = 0;
         llvector_get(v, i, buf);

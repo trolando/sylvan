@@ -3,6 +3,10 @@
 #ifndef SYLVAN_H
 #define SYLVAN_H
 
+#ifndef CACHE
+#define CACHE 1
+#endif
+
 typedef uint32_t BDD;
 typedef uint16_t BDDVAR;
 typedef uint32_t BDDOP; // bdd operation

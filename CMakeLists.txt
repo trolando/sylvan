@@ -3,8 +3,15 @@ project(sylvan C)
 
 enable_testing()
 
-option(SYLVAN_SHARED "Build shared lib" ON)
-option(SYLVAN_STATIC "Build static lib" ON)
+if (DEFINED SYLVAN_NO_CACHE)
+  option(SYLVAN_NO_CACHE "No Operations Cache" ${SYLVAN_NO_CACHE})
+else()
+  option(SYLVAN_NO_CACHE "No Operations Cache" OFF)
+endif()
+
+if(SYLVAN_NO_CACHE)
+  add_definitions(-DCACHE=0)
+endif()
 
 set(sylvan_hdrs
   src/sylvan.h
@@ -16,6 +23,7 @@ set(sylvan_sources
   src/sylvan.c
   src/fast_hash.c
   src/llgcset.c
+  src/llvector.c
   src/runtime.c
 )
 
@@ -31,7 +39,9 @@ target_link_libraries(sylvan m)
 add_library(sylvan_static ${sylvan_sources})
 target_link_libraries(sylvan_static m)
 
-add_executable(test ${test_sources})
-target_link_libraries(test sylvan)
-#add_test(test ./test)
+include_directories(src)
+
+add_executable(sylvan_test ${test_sources})
+target_link_libraries(sylvan_test sylvan_static rt gcov)
+add_test(test ./sylvan_test)
  

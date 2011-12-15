@@ -9,8 +9,19 @@ else()
   option(SYLVAN_NO_CACHE "No Operations Cache" OFF)
 endif()
 
+if (DEFINED SYLVAN_COVERAGE)
+  option(SYLVAN_COVERAGE "Coverage" ${SYLVAN_COVERAGE})
+else()
+  option(SYLVAN_COVERAGE "Coverage" OFF)
+endif()
+
 if(SYLVAN_NO_CACHE)
   add_definitions(-DCACHE=0)
+endif()
+
+if(SYLVAN_COVERAGE)
+  add_definitions(--coverage)
+  target_link_libraries(sylvan_test gcov)
 endif()
 
 set(sylvan_hdrs
@@ -31,8 +42,6 @@ set(test_sources
   test/main.c
 )
 
-add_definitions(--coverage)
-
 add_library(sylvan SHARED ${sylvan_sources})
 target_link_libraries(sylvan m)
 
@@ -42,6 +51,6 @@ target_link_libraries(sylvan_static m)
 include_directories(src)
 
 add_executable(sylvan_test ${test_sources})
-target_link_libraries(sylvan_test sylvan_static rt gcov)
+target_link_libraries(sylvan_test sylvan_static rt)
 add_test(test ./sylvan_test)
  

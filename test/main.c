@@ -487,6 +487,12 @@ void test_exists_forall()
 
     REF(sylvan_exists(REF(sylvan_ite(dthenf, axorb, cxorg)), d));
     REF(sylvan_forall(REF(sylvan_ite(dthenf, axorb, cxorg)), d));
+    REF(sylvan_exists(axorb, sylvan_false));
+    REF(sylvan_exists(axorb, sylvan_false));
+    REF(sylvan_exists(dthenf, a));
+    REF(sylvan_exists(dthenf, d));
+    REF(sylvan_exists(dthenf, f));
+    REF(sylvan_exists(sylvan_true, sylvan_false));
 
     UNREF
     

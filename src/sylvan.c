@@ -1315,7 +1315,7 @@ long long sylvan_count_refs()
         if (!BDD_ISCONSTANT(n->low)) result--; // dont include internals
         if (!BDD_ISCONSTANT(n->high)) result--; // dont include internals
     }
-    
+#if CACHE    
     for (i=0;i<_bdd.cache->size;i++) {
         uint32_t c = _bdd.cache->table[i];
         if (c == 0) continue;
@@ -1336,7 +1336,8 @@ long long sylvan_count_refs()
         
         if (n->result != sylvan_invalid && (!BDD_ISCONSTANT(n->result))) result--;
     }
-    
+#endif    
+
     return result;
 }
 

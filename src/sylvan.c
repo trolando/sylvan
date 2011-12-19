@@ -338,7 +338,6 @@ inline BDD sylvan_nithvar(BDDVAR level)
 inline BDDVAR sylvan_var(BDD bdd)
 {
     assert(!BDD_ISCONSTANT(bdd));
-    //if (BDD_ISCONSTANT(bdd)) return sylvan_invalid;
     return GETNODE(bdd)->level;
 }
 
@@ -354,9 +353,6 @@ inline BDD sylvan_low(BDD bdd)
     return BDD_TRANSFERMARK(bdd, low);
 }
 
-// Macro for internal use (no ref)
-#define LOW(a) ((BDD_ISCONSTANT(a))?a:BDD_TRANSFERMARK(a, GETNODE(a)->low))
-
 /**
  * Get the n=1 child.
  * This will ref the result node.
@@ -369,7 +365,8 @@ inline BDD sylvan_high(BDD bdd)
     return BDD_TRANSFERMARK(bdd, high);
 }
 
-// Macro for internal use (no ref)
+// Macros for internal use (no ref)
+#define LOW(a) ((BDD_ISCONSTANT(a))?a:BDD_TRANSFERMARK(a, GETNODE(a)->low))
 #define HIGH(a) ((BDD_ISCONSTANT(a))?a:BDD_TRANSFERMARK(a, GETNODE(a)->high))
 
 /**
@@ -389,10 +386,7 @@ BDD sylvan_and(BDD a, BDD b)
 
 BDD sylvan_xor(BDD a, BDD b)
 {
-    BDD not_b = sylvan_not(b);
-    BDD result = sylvan_ite(a, not_b, b);
-    sylvan_deref(not_b);
-    return result;
+    return sylvan_ite(a, BDD_TOGGLEMARK(b), b);
 }
 
 BDD sylvan_or(BDD a, BDD b) 
@@ -402,18 +396,12 @@ BDD sylvan_or(BDD a, BDD b)
 
 BDD sylvan_nand(BDD a, BDD b)
 {
-    BDD not_b = sylvan_not(b);
-    BDD result = sylvan_ite(a, not_b, sylvan_true);
-    sylvan_deref(not_b);
-    return result;
+    return sylvan_ite(a, BDD_TOGGLEMARK(b), sylvan_true);
 }
 
 BDD sylvan_nor(BDD a, BDD b)
 {
-    BDD not_b = sylvan_not(b);
-    BDD result = sylvan_ite(a, sylvan_false, not_b);
-    sylvan_deref(not_b);
-    return result;
+    return sylvan_ite(a, sylvan_false, BDD_TOGGLEMARK(b));
 }
 
 BDD sylvan_imp(BDD a, BDD b)
@@ -423,18 +411,12 @@ BDD sylvan_imp(BDD a, BDD b)
 
 BDD sylvan_biimp(BDD a, BDD b)
 {
-    BDD not_b = sylvan_not(b);
-    BDD result = sylvan_ite(a, b, not_b);
-    sylvan_deref(not_b);
-    return result;
+    return sylvan_ite(a, b, BDD_TOGGLEMARK(b));
 }
 
 BDD sylvan_diff(BDD a, BDD b) 
 {
-    BDD not_b = sylvan_not(b);
-    BDD result = sylvan_ite(a, not_b, sylvan_false);
-    sylvan_deref(not_b);
-    return result;
+    return sylvan_ite(a, BDD_TOGGLEMARK(b), sylvan_false);
 }
 
 BDD sylvan_less(BDD a, BDD b)
@@ -444,10 +426,7 @@ BDD sylvan_less(BDD a, BDD b)
 
 BDD sylvan_invimp(BDD a, BDD b) 
 {
-    BDD not_b = sylvan_not(b);
-    BDD result = sylvan_ite(a, sylvan_false, b);
-    sylvan_deref(not_b);
-    return result;
+    return sylvan_ite(a, sylvan_false, BDD_TOGGLEMARK(b));
 }
 
 /**
@@ -592,6 +571,7 @@ BDD sylvan_ite(BDD a, BDD b, BDD c)
     }
     
     // The value of a,b,c may be changed, but the reference counters are not changed at this point.
+    
 #if CACHE 
     // Check cache
     struct bddcache template_cache_node;
@@ -678,6 +658,7 @@ BDD sylvan_exists(BDD a, BDD variables)
 {
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
+    
 #if CACHE
     // Check cache
     struct bddcache template_cache_node;
@@ -704,6 +685,7 @@ BDD sylvan_exists(BDD a, BDD variables)
         return result;
     }
 #endif
+
     // a != constant    
     bddnode_t na = GETNODE(a);
         
@@ -933,6 +915,7 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
         return result;
     }
 #endif    
+
     // No result, so we need to calculate...
     bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
     bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
@@ -1038,6 +1021,7 @@ BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables)
     // Trivial case
     if (a == sylvan_true && b == sylvan_true) return sylvan_true;
     if (a == sylvan_false || b == sylvan_false) return sylvan_false;
+    
 #if CACHE    
     // Check cache
     struct bddcache template_cache_node;
@@ -1065,7 +1049,8 @@ BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables)
         llgcset_deref(_bdd.cache, idx);
         return res;
     }
-#endif    
+#endif
+
     // No result, so we need to calculate...
     bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
     bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
@@ -1182,12 +1167,11 @@ BDD sylvan_relprods_reversed(BDD a, BDD b)
 
 uint32_t sylvan_nodecount_do_1(BDD a) 
 {
-    uint32_t result = 0;
     if (BDD_ISCONSTANT(a)) return 0;
     bddnode_t na = GETNODE(a);
     if (na->flags & 1) return 0;
     na->flags |= 1; // mark
-    result = 1;
+    uint32_t result = 1;
     result += sylvan_nodecount_do_1(na->low);
     result += sylvan_nodecount_do_1(na->high);
     return result;

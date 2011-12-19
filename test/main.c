@@ -815,8 +815,8 @@ void runtests(int threads)
     struct timespec begin, end;
     clock_gettime(CLOCK_MONOTONIC, &begin);
 
+    sylvan_init(2, 16, 16, 10, 10);
     for (j=0;j<10000;j++){
-        sylvan_init(2, 16, 16, 10, 10);
         int i;
         for (i=0;i<3;i++) test_apply();
         for (i=0;i<3;i++) test_ite();
@@ -824,8 +824,8 @@ void runtests(int threads)
         for (i=0;i<3;i++) test_apply();
         for (i=0;i<3;i++) test_ite();
         for (i=0;i<3;i++) test_modelcheck();
-        sylvan_quit();
     }
+    sylvan_quit();
 
     clock_gettime(CLOCK_MONOTONIC, &end);
     printf(LGREEN "success" NC);

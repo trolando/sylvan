@@ -1307,6 +1307,34 @@ llgcset_t __sylvan_get_internal_cache()
 }
 #endif
 
+long long sylvan_count_refs()
+{
+    long long result = 0;
+    
+    int i;
+    for (i=0;i<_bdd.data->size;i++) {
+        uint32_t c = _bdd.data->table[i];
+        if (c == 0) continue; // not in use
+        c &= 0x0000ffff;
+        if (c >= 0 && c < 0x0000fffe) result += c;
+        else continue; // not in use
+        
+        bddnode_t n = GETNODE(i);
+        if (!BDD_ISCONSTANT(n->low)) c--;
+        if (!BDD_ISCONSTANT(n->high)) c--;
+    }
+    /*
+    for (i=0;i<_bdd.cache->size;i++) {
+        uint32_t c = _bdd.cache->table[i];
+        if (c == 0) continue;
+        if (c == 0x7fffffff) continue;
+        
+        bddcache_t n = GETCACHE(i);
+    }
+    */
+    
+    return result;
+}
 
 /*
 void sylvan_print_cache_node(bddcache_t node) {

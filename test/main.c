@@ -218,6 +218,18 @@ void test_xor()
     sylvan_deref(b);
 }
 
+void test_diff()
+{
+    BDD a = sylvan_ithvar(1);
+    BDD b = sylvan_ithvar(2);
+    BDD test = sylvan_diff(a, b);
+    sylvan_diff(a, b); // same as test...
+    sylvan_deref(test);
+    sylvan_deref(test);
+    sylvan_deref(a);
+    sylvan_deref(b);
+}
+
 void test_apply()
 {
     BDD a,b,c,d,e,f,g;
@@ -630,7 +642,6 @@ void runtests(int threads)
     test_llgcset();
     printf(LGREEN "success" NC "!\n");
     
-    
     printf(BOLD "Testing Sylvan\n");
     
     printf(NC "Running single-threaded test 'Xor'... ");
@@ -646,6 +657,26 @@ void runtests(int threads)
        
         int i; 
         for (i=0;i<3;i++) test_xor();
+        // verify gc
+        sylvan_gc();
+        __is_sylvan_clean();
+
+        sylvan_quit();
+    }
+    printf(LGREEN "success" NC "!\n");
+
+    printf(NC "Running single-threaded test 'Diff'... ");
+    fflush(stdout);
+    for (j=0;j<16;j++) {
+        sylvan_init(1, 12, 12, 4, 4);
+        
+        test_diff();
+        // verify gc
+        sylvan_gc();
+        __is_sylvan_clean();
+       
+        int i; 
+        for (i=0;i<3;i++) test_diff();
         // verify gc
         sylvan_gc();
         __is_sylvan_clean();

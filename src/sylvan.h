@@ -109,6 +109,8 @@ extern BDD sylvan_makenode(BDDVAR level, BDD low, BDD high);
  */
 extern void sylvan_print(BDD bdd);
 
+extern long long sylvan_count_refs();
+
 /**
  * Calculate number of satisfying variable assignments.
  * <bdd> must only have variables in <variables>

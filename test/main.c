@@ -230,6 +230,37 @@ void test_diff()
     sylvan_deref(b);
 }
 
+void test_or()
+{
+    BDD test = sylvan_false;
+    
+    int values[16] = {0,1,1,0,1,0,0,1,1,0,1,0,1,1,1,0};
+    
+    BDD t1, t2;
+    
+    int i;
+    for (i=0;i<16;i++) {
+        if (i>0) assert (sylvan_count_refs()==1);
+        else assert(sylvan_count_refs()==0);
+        t1 = test;
+        t2 = sylvan_ithvar(i);
+        if (i>0) assert (sylvan_count_refs()==2);
+        else assert(sylvan_count_refs()==1);
+        test = sylvan_or(t1, t2);
+        if (i>0) assert (sylvan_count_refs()==3);
+        else assert(sylvan_count_refs()==2);
+        sylvan_deref(t1);
+        if (i>0) assert (sylvan_count_refs()==2);
+        else assert(sylvan_count_refs()==2);
+        sylvan_deref(t2);
+        if (i>0) assert (sylvan_count_refs()==1);
+        else assert(sylvan_count_refs()==1);
+    }
+    
+    sylvan_deref(test);
+    assert(sylvan_count_refs()==0);
+}
+
 void test_apply()
 {
     BDD a,b,c,d,e,f,g;
@@ -677,6 +708,26 @@ void runtests(int threads)
        
         int i; 
         for (i=0;i<3;i++) test_diff();
+        // verify gc
+        sylvan_gc();
+        __is_sylvan_clean();
+
+        sylvan_quit();
+    }
+    printf(LGREEN "success" NC "!\n");
+
+    printf(NC "Running single-threaded test 'Or'... ");
+    fflush(stdout);
+    for (j=0;j<16;j++) {
+        sylvan_init(1, 11, 11, 4, 4);
+        
+        test_or();
+        // verify gc
+        sylvan_gc();
+        __is_sylvan_clean();
+       
+        int i; 
+        for (i=0;i<3;i++) test_or();
         // verify gc
         sylvan_gc();
         __is_sylvan_clean();

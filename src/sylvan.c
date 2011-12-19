@@ -1314,24 +1314,44 @@ long long sylvan_count_refs()
     int i;
     for (i=0;i<_bdd.data->size;i++) {
         uint32_t c = _bdd.data->table[i];
-        if (c == 0) continue; // not in use
+        if (c == 0) continue; // not in use (never used)
+        if (c == 0x7fffffff) continue; // not in use (tombstone)
+        
         c &= 0x0000ffff;
-        if (c >= 0 && c < 0x0000fffe) result += c;
-        else continue; // not in use
+        assert (c!=0x0000ffff); // "about to be deleted" should not be visible here
+        
+        assert (c!=0x0000fffe); // If this fails, implement behavior for saturated nodes
+        
+        result += c; // for now, ignore saturated...
         
         bddnode_t n = GETNODE(i);
-        if (!BDD_ISCONSTANT(n->low)) c--;
-        if (!BDD_ISCONSTANT(n->high)) c--;
+
+        //fprintf(stderr, "Node %08X var=%d low=%08X high=%08X rc=%d\n", i, n->level, n->low, n->high, c);
+        
+        if (!BDD_ISCONSTANT(n->low)) result--; // dont include internals
+        if (!BDD_ISCONSTANT(n->high)) result--; // dont include internals
     }
-    /*
+    
     for (i=0;i<_bdd.cache->size;i++) {
         uint32_t c = _bdd.cache->table[i];
         if (c == 0) continue;
         if (c == 0x7fffffff) continue;
         
         bddcache_t n = GETCACHE(i);
+        
+        //fprintf(stderr, "Cache %08X ", i);
+        
+        int j;
+        for (j=0; j<n->parameters; j++) {
+            //fprintf(stderr, "%d=%08X ", j, n->params[j]);
+            if (BDD_ISCONSTANT(n->params[j])) continue;
+            result--;
+        }
+                
+        //fprintf(stderr, "res=%08X\n", n->result);
+        
+        if (n->result != sylvan_invalid && (!BDD_ISCONSTANT(n->result))) result--;
     }
-    */
     
     return result;
 }

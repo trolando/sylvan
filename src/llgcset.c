@@ -146,8 +146,8 @@ void *llgcset_lookup_hash(const llgcset_t dbs, const void* data, int* created, u
                 while (WAIT == atomic32_read(bucket)) cpu_relax();
                 uint32_t v;
                 if (((v=atomic32_read(bucket)) & 0xffff0000) == DONE) {
-                    // first increase reference
                     while (1) {
+                        // first increase reference
                         if ((v & 0x0000ffff) == 0x0000ffff) {
                             // about to be deleted!
                             break;
@@ -177,7 +177,7 @@ void *llgcset_lookup_hash(const llgcset_t dbs, const void* data, int* created, u
                             register uint32_t c = v & 0x0000ffff;
                             if (c == 0x0000ffff) break; // about to be deleted
                             if (c == 0x0000fffe) break; // saturated
-                            if (c == 0x00000000) break; // ERROR STATE
+                            if (c == 0x00000000) assert(0); // ERROR STATE
                             if (cas(bucket, v, v-1)) break;
                         }
                         break;

@@ -26,7 +26,7 @@ endif()
 
 set(sylvan_hdrs
   src/sylvan.h
-  src/runtime.h
+  src/sylvan_runtime.h
 )
 
 set(sylvan_sources
@@ -34,7 +34,6 @@ set(sylvan_sources
   src/sylvan.c
   src/fast_hash.c
   src/llgcset.c
-  src/llvector.c
   src/runtime.c
 )
 

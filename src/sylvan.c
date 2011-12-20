@@ -1,7 +1,5 @@
 #include "sylvan_runtime.h"
 #include "sylvan.h"
-#include "llvector.h"
-#include "llsched.h"
 #include "llgcset.h"
 #include <pthread.h>
 #include <string.h>
@@ -1229,55 +1227,51 @@ long double sylvan_satcount(BDD bdd, BDD variables)
     return sylvan_satcount_do(bdd, variables);
 }
 
-static inline void sylvan_printbdd(const char *s, BDD bdd)
+static inline void sylvan_printbdd(FILE *out, BDD bdd)
 {
-    if (bdd==sylvan_invalid/* || bdd==bddhandled*/) {
-        printf("-1");
-        return;
+    bddnode_t n = GETNODE(bdd);
+    fprintf(out, "%08X: (%u, low=%s%08X, high=%s%08X) %s\n", 
+        bdd, n->level, 
+        BDD_HASMARK(n->low)?"~":"", BDD_STRIPMARK(n->low),
+        BDD_HASMARK(n->high)?"~":"", BDD_STRIPMARK(n->high),
+        n->flags & 0x1?"*":"");
+}
+
+static void sylvan_fprint_1(FILE *out, BDD bdd)
+{
+    if (bdd==sylvan_invalid) return;
+    if (BDD_ISCONSTANT(bdd)) return;
+    bddnode_t n = GETNODE(bdd);
+    if (n->flags & 0x2) return;
+    n->flags |= 0x2;
+    sylvan_printbdd(out, bdd);
+    sylvan_fprint_1(out, BDD_STRIPMARK(n->low));
+    sylvan_fprint_1(out, BDD_STRIPMARK(n->high));
+}
+
+static void sylvan_print_2(BDD bdd)
+{
+    if (bdd==sylvan_invalid) return;
+    if (BDD_ISCONSTANT(bdd)) return;
+    bddnode_t n = GETNODE(bdd);
+    if (n->flags & 0x2) {
+        n->flags &= ~0x2;
+        sylvan_print_2(n->low);
+        sylvan_print_2(n->high);
     }
-    printf("%s%s%u", /*bdd&bddinternal?"!":*/"", BDD_HASMARK(bdd)?"~":"",
-           bdd&~(/*bddinternal|*/complementmark));
 }
 
 void sylvan_print(BDD bdd)
 {
+    sylvan_fprint(stdout, bdd);
+}
+
+void sylvan_fprint(FILE *out, BDD bdd)
+{
     if (bdd == sylvan_invalid) return;
-    printf("Dump of ");
-    sylvan_printbdd("%u", bdd);
-    printf("\n");
-    bdd = BDD_STRIPMARK(bdd);
-    if (bdd < 2) return;
-    llvector_t v = llvector_create(sizeof(BDD));
-    llgcset_t s = llgcset_create(sizeof(BDD), 17, 10, NULL, NULL, NULL, NULL);
-    int created;
-    llvector_push(v, &bdd);
-    if (llgcset_get_or_create(s, &bdd, &created, NULL) == 0) {
-        rt_report_and_exit(1, "Temp hash table full!");
-    }
-    while (llvector_pop(v, &bdd)) {
-        sylvan_printbdd("% 10d", bdd);
-        printf(": %u low=", sylvan_var(bdd));
-        sylvan_printbdd("%u", LOW(bdd));
-        printf(" high=");
-        sylvan_printbdd("%u", HIGH(bdd));
-        printf("\n");
-        BDD low = BDD_STRIPMARK(LOW(bdd));
-        BDD high = BDD_STRIPMARK(HIGH(bdd));
-        if (low >= 2) {
-            if (llgcset_get_or_create(s, &low, &created, NULL) == 0) {
-                rt_report_and_exit(1, "Temp hash table full!");
-            }
-            if (created) llvector_push(v, &low);
-        }
-        if (high >= 2) {
-            if (llgcset_get_or_create(s, &high, &created, NULL) == 0) {
-                rt_report_and_exit(1, "Temp hash table full!");
-            }
-            if (created) llvector_push(v, &high);
-        }
-    }
-    llvector_free(v);
-    llgcset_free(s);
+    fprintf(out, "Dump of %08X:\n", bdd);
+    sylvan_fprint_1(out, bdd);
+    sylvan_print_2(bdd);
 }
 
 llgcset_t __sylvan_get_internal_data() 

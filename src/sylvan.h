@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdio.h> // for FILE
 
 #ifndef SYLVAN_H
 #define SYLVAN_H
@@ -108,6 +109,7 @@ extern BDD sylvan_makenode(BDDVAR level, BDD low, BDD high);
  * Send a dump of the BDD to stdout
  */
 extern void sylvan_print(BDD bdd);
+extern void sylvan_fprint(FILE *out, BDD bdd);
 
 extern long long sylvan_count_refs();
 

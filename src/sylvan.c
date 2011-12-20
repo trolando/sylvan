@@ -84,7 +84,6 @@ typedef struct bddop* bddop_t;
 */
 static struct {
     llgcset_t data;
-    //llset_t operations; // all operations...
 #if CACHE
     llgcset_t cache; // operations cache
 #endif
@@ -1227,16 +1226,6 @@ long double sylvan_satcount(BDD bdd, BDD variables)
     return sylvan_satcount_do(bdd, variables);
 }
 
-static inline void sylvan_printbdd(FILE *out, BDD bdd)
-{
-    bddnode_t n = GETNODE(bdd);
-    fprintf(out, "%08X: (%u, low=%s%08X, high=%s%08X) %s\n", 
-        bdd, n->level, 
-        BDD_HASMARK(n->low)?"~":"", BDD_STRIPMARK(n->low),
-        BDD_HASMARK(n->high)?"~":"", BDD_STRIPMARK(n->high),
-        n->flags & 0x1?"*":"");
-}
-
 static void sylvan_fprint_1(FILE *out, BDD bdd)
 {
     if (bdd==sylvan_invalid) return;
@@ -1244,7 +1233,13 @@ static void sylvan_fprint_1(FILE *out, BDD bdd)
     bddnode_t n = GETNODE(bdd);
     if (n->flags & 0x2) return;
     n->flags |= 0x2;
-    sylvan_printbdd(out, bdd);
+    
+    fprintf(out, "%08X: (%u, low=%s%08X, high=%s%08X) %s\n", 
+        bdd, n->level, 
+        BDD_HASMARK(n->low)?"~":"", BDD_STRIPMARK(n->low),
+        BDD_HASMARK(n->high)?"~":"", BDD_STRIPMARK(n->high),
+        n->flags & 0x1?"*":"");
+        
     sylvan_fprint_1(out, BDD_STRIPMARK(n->low));
     sylvan_fprint_1(out, BDD_STRIPMARK(n->high));
 }
@@ -1278,6 +1273,7 @@ llgcset_t __sylvan_get_internal_data()
 {
     return _bdd.data;
 }
+
 #if CACHE
 llgcset_t __sylvan_get_internal_cache() 
 {
@@ -1309,6 +1305,7 @@ long long sylvan_count_refs()
         if (!BDD_ISCONSTANT(n->low)) result--; // dont include internals
         if (!BDD_ISCONSTANT(n->high)) result--; // dont include internals
     }
+    
 #if CACHE    
     for (i=0;i<_bdd.cache->size;i++) {
         uint32_t c = _bdd.cache->table[i];
@@ -1334,67 +1331,3 @@ long long sylvan_count_refs()
 
     return result;
 }
-
-/*
-void sylvan_print_cache_node(bddcache_t node) {
-  BDD node_c = GETCACHEBDD(node);
-  printf("%u: a=", GETCACHEBDD(node));
-  sylvan_printbdd("%u", node->a);
-  printf(", b=");
-  sylvan_printbdd("%u", node->b);
-  printf(", c=");
-  sylvan_printbdd("%u", node->c);
-  printf(", r=%u low=", node->root);
-  sylvan_printbdd("%u", node->low);
-  printf(" high=");
-  sylvan_printbdd("%u", node->high);
-  printf(" la=");
-  sylvan_printbdd("%u", node->cache_low);
-  printf(" ha=");
-  sylvan_printbdd("%u", node->cache_high);
-  printf(" parents={");
-  int i=0;
-  BDD prnt = node->first_parent;
-  while (prnt != 0) {
-    if (i>0) printf(",");
-    printf("%u", prnt);
-    if (BDD_STRIPMARK(GETCACHE(prnt)->cache_low) == node_c)
-      prnt = GETCACHE(prnt)->next_low_parent;
-    else
-      prnt = GETCACHE(prnt)->next_high_parent;
-    i++;
-  }
-  printf("}, r=%x\n", node->result);
-}
-void sylvan_print_cache(BDD root) {
-  llvector_t v = llvector_create(sizeof(BDD));
-  llset_t s = llset_create(sizeof(BDD), 13, NULL, NULL);
-  int created;
-  printf("Dump of cache ");
-  sylvan_printbdd("%x\n", root);
-  llvector_push(v, &root);
-  if (llset_get_or_create(s, &root, &created, NULL) == 0) {
-    rt_report_and_exit(1, "Temp hash table full!");
-  }
-  while (llvector_pop(v, &root)) {
-    sylvan_print_cache_node(GETCACHE(root));
-    BDD low = GETCACHE(root)->cache_low;
-    BDD high = GETCACHE(root)->cache_high;
-    if (low) {
-      if (llset_get_or_create(s, &low, &created, NULL) == 0) {
-        rt_report_and_exit(1, "Temp hash table full!");
-      }
-      if (created) llvector_push(v, &low);
-    }
-    if (high) {
-      if (llset_get_or_create(s, &high, &created, NULL) == 0) {
-        rt_report_and_exit(1, "Temp hash table full!");
-      }
-      if (created) llvector_push(v, &high);
-    }
-  }
-  llvector_free(v);
-  llset_free(s);
-}
-*/
-

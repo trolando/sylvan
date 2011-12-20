@@ -198,10 +198,7 @@ int testEqual(BDD a, BDD b)
 		return 0;
 	}
 
-	//sylvan_print(a);
-	//sylvan_print(b);
 	return 0;
-
 }
 
 void test_xor()

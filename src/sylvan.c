@@ -204,11 +204,20 @@ unsigned long get_random()
     return rng_hash_128(seed);
 }
 
+void sylvan_package_init()
+{
+}
+
+void sylvan_package_exit()
+{
+}
+
+
 /**
  * Initialize sylvan
  * - datasize / cachesize : number of bits ...
  */
-void sylvan_init(int threads, size_t datasize, size_t cachesize, size_t data_gc_size, size_t cache_gc_size)
+void sylvan_init(size_t datasize, size_t cachesize, size_t data_gc_size, size_t cache_gc_size)
 {
     
     // Sanity check

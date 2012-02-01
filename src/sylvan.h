@@ -39,12 +39,18 @@ extern "C" {
 #endif
 
 /**
- * Initialize BDD package
- * This will also create spinlocking threads!
+ * Initialize package (program level)
+ */
+extern void sylvan_package_init();
+
+extern void sylvan_package_exit();
+
+/**
+ * Initialize BDD subsystem of package
  * datasize in number of nodes will be 1<<datasize
  * cachesize in number of nodes will be 1<<cachesize
  */
-extern void sylvan_init(int threads, size_t datasize, size_t cachesize, size_t data_gc_size, size_t cache_gc_size);
+extern void sylvan_init(size_t datasize, size_t cachesize, size_t data_gc_size, size_t cache_gc_size);
 
 /**
  * Stop threads and free data

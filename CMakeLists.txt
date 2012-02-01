@@ -25,6 +25,8 @@ if(SYLVAN_COVERAGE)
   target_link_libraries(sylvan_test gcov)
 endif()
 
+add_definitions(-g)
+
 set(sylvan_hdrs
   src/sylvan.h
   src/sylvan_runtime.h

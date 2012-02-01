@@ -121,7 +121,7 @@ int test_llgcset()
     assert(set->gc_head == set->gc_size-1);
     assert(set->gc_tail == 16);
     
-    llgcset_gc(set);
+    llgcset_gc(set, gc_user);
     
     // check all have ref 1
     n=0;
@@ -147,7 +147,7 @@ int test_llgcset()
         assert(set->gc_list[set->gc_head+1+i] == index[i]);
     }
     
-    llgcset_gc(set);
+    llgcset_gc(set, gc_user);
     
     assert(set->gc_head == set->gc_tail);
 
@@ -672,11 +672,11 @@ void runtests(int threads)
     
     printf(BOLD "Testing Sylvan\n");
     
-    printf(NC "Running single-threaded test 'Xor'... ");
+    printf(NC "Running test 'Xor'... ");
     fflush(stdout);
     int j;
     for (j=0;j<16;j++) {
-        sylvan_init(1, 16, 16, 5, 5);
+        sylvan_init(6, 6, 2, 2);
         
         test_xor();
         // verify gc
@@ -693,10 +693,10 @@ void runtests(int threads)
     }
     printf(LGREEN "success" NC "!\n");
 
-    printf(NC "Running single-threaded test 'Diff'... ");
+    printf(NC "Running test 'Diff'... ");
     fflush(stdout);
     for (j=0;j<16;j++) {
-        sylvan_init(1, 12, 12, 4, 4);
+        sylvan_init(12, 12, 4, 4);
         
         test_diff();
         // verify gc
@@ -713,10 +713,10 @@ void runtests(int threads)
     }
     printf(LGREEN "success" NC "!\n");
 
-    printf(NC "Running single-threaded test 'Or'... ");
+    printf(NC "Running test 'Or'... ");
     fflush(stdout);
     for (j=0;j<16;j++) {
-        sylvan_init(1, 11, 11, 4, 4);
+        sylvan_init(9, 9, 2, 2);
         
         test_or();
         // verify gc
@@ -733,10 +733,10 @@ void runtests(int threads)
     }
     printf(LGREEN "success" NC "!\n");
 
-    printf(NC "Running single-threaded test 'Apply'... ");
+    printf(NC "Running test 'Apply'... ");
     fflush(stdout);
     for (j=0;j<16;j++) {
-        sylvan_init(1, 16, 16, 5, 5);
+        sylvan_init(6, 6, 2, 2);
         test_apply();
         // verify gc
         sylvan_gc();
@@ -752,10 +752,10 @@ void runtests(int threads)
     }
     printf(LGREEN "success" NC "!\n");
 
-    printf(NC "Running single-threaded test 'ITE'... ");
+    printf(NC "Running test 'ITE'... ");
     fflush(stdout);
     for (j=0;j<16;j++) {
-        sylvan_init(1, 16, 16, 5, 5);
+        sylvan_init(5, 5, 2, 2);
         int i;
         for (i=0;i<3;i++) test_ite();
         // verify gc
@@ -765,10 +765,10 @@ void runtests(int threads)
     }
     printf(LGREEN "success" NC "!\n");
 
-    printf(NC "Running single-threaded test 'ExistsForall'... ");
+    printf(NC "Running test 'ExistsForall'... ");
     fflush(stdout);
     for (j=0;j<16;j++) {
-        sylvan_init(1, 16, 16, 5, 5);
+        sylvan_init(16, 16, 5, 5);
         int i;
         for (i=0;i<3;i++) test_exists_forall();
         // verify gc
@@ -778,10 +778,10 @@ void runtests(int threads)
     }
     printf(LGREEN "success" NC "!\n");
 
-    printf(NC "Running single-threaded test 'ModelCheck'... ");
+    printf(NC "Running test 'ModelCheck'... ");
     fflush(stdout);
     for (j=0;j<16;j++) {
-        sylvan_init(1, 16, 16, 5, 5);
+        sylvan_init(7, 10, 8, 8); // 7, 4, 2, 2 but slow on 2
         int i;
         for (i=0;i<3;i++) test_modelcheck();
         // verify gc
@@ -791,10 +791,10 @@ void runtests(int threads)
     }
     printf(LGREEN "success" NC "!\n");
 
-    printf(NC "Running single-threaded test 'Mixed'... ");
+    printf(NC "Running test 'Mixed'... ");
     fflush(stdout);
     for (j=0;j<16;j++) {
-        sylvan_init(1, 16, 16, 5, 5);
+        sylvan_init(7, 10, 8, 8);
         int i;
         for (i=0;i<3;i++) test_apply();
         for (i=0;i<3;i++) test_ite();
@@ -812,7 +812,7 @@ void runtests(int threads)
     struct timespec begin, end;
     clock_gettime(CLOCK_MONOTONIC, &begin);
 
-    sylvan_init(2, 16, 16, 10, 10);
+    sylvan_init(16, 16, 10, 10); // minumum: X, 7, 4, 4 ??
     for (j=0;j<10000;j++){
         int i;
         for (i=0;i<3;i++) test_apply();
@@ -845,7 +845,10 @@ int main(int argc, char **argv)
     int threads = 2;
     if (argc > 1) sscanf(argv[1], "%d", &threads);
 
+    sylvan_package_init();
     runtests(threads);
+    sylvan_report_stats();
+    sylvan_package_exit();
     printf(NC);
     exit(0);
 

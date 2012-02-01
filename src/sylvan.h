@@ -8,6 +8,14 @@
 #define CACHE 1
 #endif
 
+#ifndef STATS
+#define STATS 1
+#endif
+
+#ifndef COLORSTATS
+#define COLORSTATS 1
+#endif
+
 typedef uint32_t BDD;
 typedef uint16_t BDDVAR;
 typedef uint32_t BDDOP; // bdd operation
@@ -44,6 +52,8 @@ extern "C" {
 extern void sylvan_package_init();
 
 extern void sylvan_package_exit();
+
+extern void sylvan_report_stats();
 
 /**
  * Initialize BDD subsystem of package

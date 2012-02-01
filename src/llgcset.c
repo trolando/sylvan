@@ -129,7 +129,7 @@ void *llgcset_lookup_hash(const llgcset_t dbs, const void* data, int* created, u
                     return &dbs->data[idx * l];
                 }
             }
-			LFENCE; ///////////////////////////////////////////////////
+            LFENCE; ///////////////////////////////////////////////////
             if (TOMBSTONE == atomic32_read(bucket)) {
                 // we may want to use this slot!
                 if (tomb_bucket == 0) {
@@ -137,7 +137,9 @@ void *llgcset_lookup_hash(const llgcset_t dbs, const void* data, int* created, u
                     {
                         tomb_bucket = bucket;
                         tomb_idx = idx;
-                    }
+                    } 
+                    // if the cas fails, then someone just updated TOMBSTONE...
+                    MFENCE; // just in case... (is this necessary?)
                 }
             }
             if (bucket != tomb_bucket && hash_memo == (atomic32_read(bucket) & 0x7fff0000))
@@ -149,7 +151,7 @@ void *llgcset_lookup_hash(const llgcset_t dbs, const void* data, int* created, u
                     while (1) {
                         // first increase reference
                         if ((v & 0x0000ffff) == 0x0000ffff) {
-                            // about to be deleted!
+                            // about to be deleted! find another one!
                             break;
                         }
                         else if ((v & 0x0000ffff) != 0x0000fffe) {
@@ -212,7 +214,7 @@ inline void *llgcset_get_or_create(const llgcset_t dbs, const void *data, int *c
     void *result = llgcset_lookup_hash(dbs, data, &_created, &_index, NULL);
     if (result == 0) {
         // Table full
-        llgcset_gc(dbs);
+        llgcset_gc(dbs, gc_hashtable_full);
         result = llgcset_lookup_hash(dbs, data, &_created, &_index, NULL);
     }
     if (created) *created=_created;
@@ -220,13 +222,16 @@ inline void *llgcset_get_or_create(const llgcset_t dbs, const void *data, int *c
     return result;
 }
 
-llgcset_t llgcset_create(size_t key_size, size_t table_size, size_t gc_size, hash32_f hash32, equals_f equals, delete_f cb_delete, onfull_f on_full)
+llgcset_t llgcset_create(size_t key_size, size_t table_size, size_t gc_size, hash32_f hash32, equals_f equals, delete_f cb_delete, pre_gc_f pre_gc)
 {
     llgcset_t dbs = rt_align(CACHE_LINE_SIZE, sizeof(struct llgcset));
     dbs->hash32 = hash32 != NULL ? hash32 : SuperFastHash; // default hash function is hash_128_swapc
     dbs->equals = equals != NULL ? equals : default_equals;
     dbs->cb_delete = cb_delete; // can be NULL
-    dbs->on_full = on_full; // can be NULL
+    dbs->pre_gc = pre_gc; // can be NULL
+
+    // MINIMUM TABLE SIZE
+    if (table_size < 4) table_size = 4;
     
     dbs->bytes = key_size; 
     dbs->length = key_size;
@@ -257,7 +262,7 @@ int llgcset_ref(const llgcset_t dbs, uint32_t index)
         register uint32_t hash = *(volatile uint32_t *)&dbs->table[index];
         register uint32_t c = hash & 0xffff;
         if (c == 0x0000fffe) return 1; // saturated
-        if (c == 0x0000ffff) return 0; // error: already being deleted!
+        if (c == 0x0000ffff) assert(0); // error: already being deleted!
         c += 1;
         // c&=0xffff; not necessary because c != 0x0000ffff
         c |= (hash&0xffff0000);
@@ -278,8 +283,8 @@ int llgcset_deref(const llgcset_t dbs, uint32_t index)
         register uint32_t hash = *(volatile uint32_t *)&dbs->table[index];
         register uint32_t c = hash & 0xffff;
         if (c == 0x0000fffe) return 1; // saturated
-        if (c == 0x0000ffff) return 0; // error: already deleted!
-        if (c == 0x00000000) return 0; // error: already zero!
+        if (c == 0x0000ffff) assert(0); // error: already deleted!
+        if (c == 0x00000000) assert(0); // error: already zero!
         c -= 1;
         if (c == 0) should_delete = 1;
         else should_delete = 0;
@@ -291,7 +296,7 @@ int llgcset_deref(const llgcset_t dbs, uint32_t index)
     if (should_delete) {
         while (!llgclist_put_tail(dbs->gc_list, dbs->gc_size, &dbs->gc_head, &dbs->gc_tail, &dbs->gc_lock, index)) {
             // GC LIST FULL - forced gc.
-            llgcset_gc(dbs);
+            llgcset_gc(dbs, gc_deadlist_full);
         }
     }
     return 1;
@@ -312,10 +317,10 @@ void llgcset_free(llgcset_t dbs)
 /**
  * Execute garbage collection
  */
-void llgcset_gc(const llgcset_t dbs)
+void llgcset_gc(const llgcset_t dbs, gc_reason reason)
 {
     // Call dbs->on_full first
-    if (dbs->on_full != NULL) dbs->on_full(dbs);
+    if (dbs->pre_gc != NULL) dbs->pre_gc(dbs, reason);
     
     uint32_t idx;
     while (llgclist_pop_head(dbs->gc_list, dbs->gc_size, &dbs->gc_head, &dbs->gc_tail, &dbs->gc_lock, &idx)) {

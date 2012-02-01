@@ -10,9 +10,15 @@ typedef struct llgcset* llgcset_t;
 struct llgcset_gclist;
 typedef struct llgcset_gclist* llgcset_gclist_t;
 
+typedef enum {
+  gc_user,
+  gc_hashtable_full,
+  gc_deadlist_full
+} gc_reason;
+
 typedef int (*equals_f)(const void *a, const void *b, size_t length);
 typedef void (*delete_f)(const llgcset_t set, const void* data);
-typedef void (*onfull_f)(const llgcset_t set);
+typedef void (*pre_gc_f)(const llgcset_t set, gc_reason reason);
 
 struct llgcset
 {
@@ -25,7 +31,7 @@ struct llgcset
     hash32_f  hash32;       // hash function
     equals_f  equals;       // equals function
     delete_f  cb_delete;    // delete function (callback pre-delete)
-    onfull_f  on_full;      // function called when full...
+    pre_gc_f  pre_gc;       // function called when full...
     uint32_t  mask;         // size-1
     // PAD
     char      pad[SYLVAN_PAD(sizeof(size_t)*4+
@@ -34,7 +40,7 @@ struct llgcset
                       sizeof(hash32_f)+
                       sizeof(equals_f)+
                       sizeof(delete_f)+
-                      sizeof(onfull_f)+
+                      sizeof(pre_gc_f)+
                       sizeof(uint32_t)+
                       0, LINE_SIZE)];
     // BEGIN CL 2
@@ -50,7 +56,7 @@ struct llgcset
 
 void *llgcset_get_or_create(const llgcset_t dbs, const void* data, int *created, uint32_t* index);
 
-llgcset_t llgcset_create(size_t key_size, size_t table_size, size_t gc_size, hash32_f hash32, equals_f equals, delete_f cb_delete, onfull_f on_full);
+llgcset_t llgcset_create(size_t key_size, size_t table_size, size_t gc_size, hash32_f hash32, equals_f equals, delete_f cb_delete, pre_gc_f pre_gc);
 
 void llgcset_clear(llgcset_t dbs);
 
@@ -60,7 +66,7 @@ int llgcset_ref(const llgcset_t dbs, uint32_t index);
 
 int llgcset_deref(const llgcset_t dbs, uint32_t index);
 
-void llgcset_gc(const llgcset_t dbs);
+void llgcset_gc(const llgcset_t dbs, gc_reason reason);
 
 
 #endif

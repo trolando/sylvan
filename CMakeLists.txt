@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 2.6)
 project(sylvan C)
+enable_language(ASM)
 
 enable_testing()
 
@@ -35,6 +36,7 @@ set(sylvan_sources
   src/fast_hash.c
   src/llgcset.c
   src/runtime.c
+  src/rng_hash_128.s
 )
 
 set(test_sources

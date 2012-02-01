@@ -11,8 +11,9 @@ libsylvan_la_SOURCES = \
  src/llgcset.c \
  src/runtime.c \
  src/fast_hash.c \
+ src/rng_hash_128.s \
  src/sylvan.h \
- src/sylvan_runtime.h
+ src/sylvan_runtime.h 
 
 libsylvan_la_LDFLAGS = -version-info 0:0:0
 libsylvan_la_LIBADD = -lm

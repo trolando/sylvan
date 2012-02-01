@@ -194,6 +194,16 @@ void sylvan_cache_delete(const llgcset_t dbs, const void *a)
     sylvan_deref(cache->result);
 }
 #endif
+
+/** Random number generator */
+unsigned long rng_hash_128(unsigned long long seed[]);
+
+unsigned long get_random() 
+{
+    static unsigned long long seed[2]; // 256 bits
+    return rng_hash_128(seed);
+}
+
 /**
  * Initialize sylvan
  * - datasize / cachesize : number of bits ...

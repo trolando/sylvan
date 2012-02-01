@@ -4,6 +4,8 @@
 #ifndef SYLVAN_H
 #define SYLVAN_H
 
+#define STATS 1
+
 #ifndef CACHE
 #define CACHE 1
 #endif

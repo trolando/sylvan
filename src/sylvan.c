@@ -126,6 +126,12 @@ typedef enum {
 
 int __sylvan_count[C_MAX];
 
+#define N_CNT_THREAD 16
+struct {
+  unsigned int thread_id;
+  int count;
+} __cnt_threads[N_CNT_THREAD];
+
 #if COLORSTATS
 #define BLACK "\33[22;30m"
 #define GRAY "\33[01;30m"
@@ -155,6 +161,18 @@ int __sylvan_count[C_MAX];
 #define RED
 #endif
 
+void sylvan_reset_counters()
+{
+    int i;
+    for (i=0;i<C_MAX;i++) {
+        __sylvan_count[i] = 0;
+    }
+    for (i=0;i<N_CNT_THREAD;i++) {
+        __cnt_threads[i].thread_id = 0;
+        __cnt_threads[i].count = 0;
+    }
+}
+
 void sylvan_report_stats()
 {
     printf(LRED  "****************\n");
@@ -170,13 +188,35 @@ void sylvan_report_stats()
     printf("GC user-request:    %u\n", __sylvan_count[C_gc_user]);
     printf("GC full table:      %u\n", __sylvan_count[C_gc_hashtable_full]);
     printf("GC full dead-list:  %u\n", __sylvan_count[C_gc_deadlist_full]);
+    printf(NC ULINE "Thread counters\n" NC BLUE);
+    int i;
+    for (i=0;i<N_CNT_THREAD;i++) {
+        if (__cnt_threads[i].thread_id != 0) 
+    printf("Thread %02d:          %u\n", i, __cnt_threads[i].count);
+    }
 }
 
 #if STATS
 #define SV_CNT(s) __sync_fetch_and_add(&__sylvan_count[s], 1);
+#define SV_TCNT inc_thread_counter();
 #else
 #define SV_CNT(s) /* Empty */
+#define SV_TCNT /* Empty */
 #endif
+
+inline void inc_thread_counter() {
+    unsigned int id = pthread_self();
+    int i=0;
+    for (;i<N_CNT_THREAD;i++) {
+        if (__cnt_threads[i].thread_id == 0) {
+            if (cas(&__cnt_threads[i].thread_id, 0, id)) {
+                __cnt_threads[i].count++; return;
+            }
+        } else if (__cnt_threads[i].thread_id == id) {
+            __cnt_threads[i].count++; return;
+        }
+    }
+}
 
 /**
  * Macro's to convert BDD indices to nodes and vice versa
@@ -649,6 +689,8 @@ static BDD sylvan_triples(BDD *_a, BDD *_b, BDD *_c)
  */
 BDD sylvan_ite(BDD a, BDD b, BDD c)
 {
+    SV_TCNT;
+
     // Standard triples
     BDD r = sylvan_triples(&a, &b, &c);
     if (BDD_STRIPMARK(r) != sylvan_invalid) {
@@ -747,6 +789,8 @@ BDD sylvan_ite(BDD a, BDD b, BDD c)
  */
 BDD sylvan_exists(BDD a, BDD variables)
 {
+    SV_TCNT;
+
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
     
@@ -849,6 +893,8 @@ BDD sylvan_exists(BDD a, BDD variables)
  */
 BDD sylvan_forall(BDD a, BDD variables)
 {
+    SV_TCNT;
+
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
 #if CACHE
@@ -965,6 +1011,8 @@ BDD sylvan_relprods(BDD a, BDD b)
  */
 BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
 {
+    SV_TCNT;
+
     // Trivial case
     if (a == sylvan_true && b == sylvan_true) return sylvan_true;
     if (a == sylvan_false || b == sylvan_false) return sylvan_false;
@@ -1095,6 +1143,8 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
  */
 BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables) 
 {
+    SV_TCNT;
+
     // Trivial case
     if (a == sylvan_true && b == sylvan_true) return sylvan_true;
     if (a == sylvan_false || b == sylvan_false) return sylvan_false;

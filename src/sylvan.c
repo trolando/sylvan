@@ -172,8 +172,7 @@ void sylvan_report_stats()
     printf("GC full dead-list:  %u\n", __sylvan_count[C_gc_deadlist_full]);
 }
 
-#define SYLVAN_COUNT 1
-#if SYLVAN_COUNT
+#if STATS
 #define SV_CNT(s) __sync_fetch_and_add(&__sylvan_count[s], 1);
 #else
 #define SV_CNT(s) /* Empty */

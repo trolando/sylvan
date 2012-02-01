@@ -9,7 +9,7 @@
 #endif
 
 #ifndef STATS
-#define STATS 1
+#define STATS 0
 #endif
 
 #ifndef COLORSTATS

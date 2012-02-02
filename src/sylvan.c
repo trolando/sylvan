@@ -733,6 +733,7 @@ BDD sylvan_ite(BDD a, BDD b, BDD c)
         sylvan_ref(result);
     }
     else SV_CNT(C_cache_exists)
+    SFENCE;
     llgcset_deref(_bdd.cache, idx);
 #endif
 
@@ -835,6 +836,7 @@ BDD sylvan_exists(BDD a, BDD variables)
         sylvan_ref(result);
     }
     else SV_CNT(C_cache_exists)
+    SFENCE;
     llgcset_deref(_bdd.cache, idx);
 #endif
     return result;
@@ -1076,6 +1078,7 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
         sylvan_ref(result);
     }
     else SV_CNT(C_cache_exists)
+    SFENCE;
     llgcset_deref(_bdd.cache, idx);
 #endif
     return result;

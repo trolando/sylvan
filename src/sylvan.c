@@ -387,7 +387,7 @@ BDD sylvan_ref(BDD a)
 void sylvan_deref(BDD a)
 {
     if (BDD_ISCONSTANT(a)) return;
-    assert(llgcset_deref(_bdd.data, BDD_STRIPMARK(a)));
+    llgcset_deref(_bdd.data, BDD_STRIPMARK(a));
 }
 
 void sylvan_gc()

@@ -7,15 +7,17 @@
 struct llgcset;
 typedef struct llgcset* llgcset_t;
 
-struct llgcset_gclist;
-typedef struct llgcset_gclist* llgcset_gclist_t;
+//struct llgcset_gclist;
+//typedef struct llgcset_gclist* llgcset_gclist_t;
 
+// Reasons for calling gc
 typedef enum {
   gc_user,
   gc_hashtable_full,
   gc_deadlist_full
 } gc_reason;
 
+// Callbacks
 typedef int (*equals_f)(const void *a, const void *b, size_t length);
 typedef void (*delete_f)(const llgcset_t set, const void* data);
 typedef void (*pre_gc_f)(const llgcset_t set, gc_reason reason);
@@ -43,12 +45,12 @@ struct llgcset
                       sizeof(pre_gc_f)+
                       sizeof(uint32_t)+
                       0, LINE_SIZE)];
-    // BEGIN CL 2
-    uint32_t *gc_list;
-    uint32_t gc_size;
-    uint32_t gc_head; 
-    uint32_t gc_tail;
-    uint8_t gc_lock;
+    // Cache Line 2
+    uint32_t *gc_list; // the deadlist
+    uint32_t gc_size;  // size of the deadlist
+    uint32_t gc_head;  // HEAD 
+    uint32_t gc_tail;  // TAIL
+    uint8_t gc_lock;   // mutex (using atomics)
 };
 
 #define llgcset_index_to_ptr(dbs, index) ((void*)&dbs->data[index*dbs->length])
@@ -62,11 +64,10 @@ void llgcset_clear(llgcset_t dbs);
 
 void llgcset_free(llgcset_t dbs);
 
-int llgcset_ref(const llgcset_t dbs, uint32_t index);
+void llgcset_ref(const llgcset_t dbs, uint32_t index);
 
-int llgcset_deref(const llgcset_t dbs, uint32_t index);
+void llgcset_deref(const llgcset_t dbs, uint32_t index);
 
 void llgcset_gc(const llgcset_t dbs, gc_reason reason);
-
 
 #endif

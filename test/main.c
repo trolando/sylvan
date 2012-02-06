@@ -40,6 +40,105 @@ extern llgcset_t __sylvan_get_internal_data();
 extern llgcset_t __sylvan_get_internal_cache();
 #endif
 
+llgcset_t set_under_test;
+int set2_test_good=0;
+
+void *llgcset_test_worker(void* arg) {
+    uint32_t i=0, j=0, k=0, l;
+    int index;
+    int a;
+    #define N_TEST_LL 1000
+    int other[N_TEST_LL];
+    for(a=0;a<8;a++) {
+        printf("%d,", a);
+        fflush(stdout);
+        for (i=(long)arg;i<50000;i++) {
+            //if ((i & 63) == 0) printf("[%d]", i);
+            for (l=i;l<i+N_TEST_LL;l++) {
+              assert(llgcset_get_or_create(set_under_test, &l, NULL, &other[l-i]));
+            }
+            for (j<0;j<5;j++) {
+                assert(llgcset_get_or_create(set_under_test, &i, NULL, &index));
+                assert (i == *(uint32_t*)llgcset_index_to_ptr(set_under_test, index));
+                for (k=0;k<7;k++) { 
+                    llgcset_ref(set_under_test, index);
+                    int i2;
+                    assert(llgcset_get_or_create(set_under_test, &i, NULL, &i2));
+                    assert(i2==index);
+                    llgcset_deref(set_under_test, index);
+                    llgcset_deref(set_under_test, index);
+                    llgcset_ref(set_under_test, index);
+                    llgcset_deref(set_under_test, index);
+                }
+                llgcset_deref(set_under_test, index);
+            }
+            for (l=i;l<i+N_TEST_LL;l++) {
+              assert(llgcset_get_or_create(set_under_test, &l, NULL, &index));
+              assert(llgcset_get_or_create(set_under_test, &l, NULL, &index));
+              if (index != other[l-i]) {
+                   if ((index & ~15) == (other[l-i] & ~15)) printf(LMAGENTA "\n*** SAME CACHE LINE ***\n" NC);
+                   printf("\nIndex %u: %x = %d, Other %u: %x = %d\n", 
+                       index, set_under_test->table[index], *(uint32_t*)llgcset_index_to_ptr(set_under_test, index),
+                       other[l-i], set_under_test->table[other[l-i]], *(uint32_t*)llgcset_index_to_ptr(set_under_test, other[l-i]));
+              }
+              assert(index == other[l-i]);
+              llgcset_deref(set_under_test, index);
+              llgcset_ref(set_under_test, index);
+              llgcset_deref(set_under_test, index);
+              llgcset_deref(set_under_test, other[l-i]);
+              llgcset_deref(set_under_test, other[l-i]);
+            }
+        }
+    }
+    __sync_fetch_and_add(&set2_test_good, 1);
+}
+
+/**
+ * Called pre-gc : first, gc the cache to free nodes
+ */
+void test_pre_gc(const llgcset_t dbs, gc_reason reason) 
+{
+    if (reason == gc_user) { printf("U"); }
+    else if (reason == gc_hashtable_full) { printf("H"); }
+    else if (reason == gc_deadlist_full) { printf("D"); }
+    fflush(stdout);
+}
+
+int test_llgcset2()
+{
+    //set_under_test = llgcset_create(sizeof(uint32_t), 20, 10, NULL, NULL, NULL, &test_pre_gc);
+    set_under_test = llgcset_create(sizeof(uint32_t), 20, 4, NULL, NULL, NULL, NULL);
+
+    int i;
+    pthread_t t[4];
+    pthread_create(&t[0], NULL, &llgcset_test_worker, (void*)12);
+    pthread_create(&t[1], NULL, &llgcset_test_worker, (void*)89);
+    pthread_create(&t[2], NULL, &llgcset_test_worker, (void*)1055);
+    pthread_create(&t[3], NULL, &llgcset_test_worker, (void*)5035);
+    void *ret;
+    pthread_join(t[0], NULL);
+    pthread_join(t[1], NULL);
+    pthread_join(t[2], NULL);
+    pthread_join(t[3], NULL);
+
+    llgcset_gc(set_under_test, gc_user);
+
+    int n=0;
+    for (i=0;i<set_under_test->size;i++) {
+        uint32_t key = set_under_test->table[i];
+        if (key != 0) {
+            if (key != 0x7fffffff) {
+                printf("Key=%X\n", key);
+            //assert(key == 0x7fffffff);
+                n++;
+            }
+        }
+    }
+    printf("N=%d", n);
+    
+    return set2_test_good == 4;
+}
+
 int test_llgcset() 
 {
     uint32_t entry[] = { 90570123,  43201432,   31007798,  256346587, 
@@ -206,9 +305,15 @@ void test_xor()
     BDD a = sylvan_ithvar(1);
     BDD b = sylvan_ithvar(2);
     BDD test = sylvan_xor(a, b);
-    sylvan_xor(a, b); // same as test...
+    BDD test2 = sylvan_xor(a, b); // same as test...
+    BDD test3 = sylvan_makenode(1, sylvan_ref(b), sylvan_not(b)); // same as test...
+    if (test != test2 || test != test3) {
+        sylvan_print(a); sylvan_print(b);
+        sylvan_print(test); sylvan_print(test2); sylvan_print(test3);
+    }
+    assert(test == test2);
+    assert(test2 == test3);
     sylvan_deref(test);
-    sylvan_makenode(1, sylvan_ref(b), sylvan_not(b)); // same as test...
     sylvan_deref(test);
     sylvan_deref(test);
     sylvan_deref(a);
@@ -620,7 +725,9 @@ void __is_sylvan_clean()
         // if ((cache->table[k] & 0x0000ffff) == 0x0000fffe) continue; // !
         if (!failure) printf(LRED "\nFailure!\n");
         failure++;
-        printf(NC "Cache entry still being referenced: %08X\n", cache->table[k]);
+        // Find value...
+        BDDOP op = *(BDDOP *)(&cache->data[k*32]);
+        printf(NC "Cache entry still being referenced: %08X (%u) (%d)\n", cache->table[k], k, op);
         n++;
     }
     if (n>0) {
@@ -656,20 +763,25 @@ void __is_sylvan_clean()
 
 void runtests(int threads)
 {
-    /*
-    for (i=0;i<1000;i++) test_sched();
-    printf("test sched done");
-    for (i=0;i<1000;i++) {
-        test_set();
-        printf("test set done\n");
-    }
-    */
-    
     printf(BOLD "Testing LL GC Set\n" NC);
+    printf("Running singlethreaded test... ");
     fflush(stdout);
     test_llgcset();
     printf(LGREEN "success" NC "!\n");
+    printf("Running multithreaded test... ");
+    fflush(stdout);
+    if (1/*skip*/) {
+        printf("... " LMAGENTA "skipped" NC ".\n");
+    }
+    else if (test_llgcset2()) {
+        printf("... " LGREEN "success" NC "!\n");
+    } else {
+        printf(LRED "error" NC "!\n");
+        exit(1);
+    }
     
+    sylvan_package_init(threads, 100000);
+
     printf(BOLD "Testing Sylvan\n");
     
     printf(NC "Running test 'Xor'... ");
@@ -778,6 +890,7 @@ void runtests(int threads)
     }
     printf(LGREEN "success" NC "!\n");
 
+
     printf(NC "Running test 'ModelCheck'... ");
     fflush(stdout);
     for (j=0;j<16;j++) {
@@ -838,6 +951,9 @@ void runtests(int threads)
     long ms = end.tv_sec * 1000 + end.tv_nsec / 1000000;
     long us = (end.tv_nsec % 1000000) / 1000;
     printf(NC " (%ld.%03ld ms)!\n", ms, us);
+
+    sylvan_report_stats();
+    sylvan_package_exit();
 }
 
 int main(int argc, char **argv)
@@ -845,10 +961,7 @@ int main(int argc, char **argv)
     int threads = 2;
     if (argc > 1) sscanf(argv[1], "%d", &threads);
 
-    sylvan_package_init();
     runtests(threads);
-    sylvan_report_stats();
-    sylvan_package_exit();
     printf(NC);
     exit(0);
 

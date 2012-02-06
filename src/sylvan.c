@@ -200,8 +200,8 @@ void sylvan_report_stats()
 #define SV_CNT(s) __sync_fetch_and_add(&__sylvan_count[s], 1);
 #define SV_TCNT inc_thread_counter();
 #else
-#define SV_CNT(s) /* Empty */
-#define SV_TCNT /* Empty */
+#define SV_CNT(s) ; /* Empty */
+#define SV_TCNT ; /* Empty */
 #endif
 
 inline void inc_thread_counter() {
@@ -238,15 +238,12 @@ uint32_t sylvan_bdd_hash(const void *data_, unsigned int len __attribute__((unus
 
 int sylvan_bdd_equals(const void *a, const void *b, size_t length __attribute__((unused)))
 {
-    // Compare 10 bytes
-    register uint64_t ra = *(uint64_t*)a;
-    register uint64_t rb = *(uint64_t*)b;
-    if (ra != rb) return 0;
-    register uint16_t rc = *(uint8_t*)(a+8);
-    register uint16_t rd = *(uint8_t*)(b+8);
-    if (rc != rd) return 0;
+    register const bddnode_t ba = (bddnode_t)a;
+    register const bddnode_t bb = (bddnode_t)b;
+    if (ba->low != bb->low) return 0;
+    if (ba->high != bb->high) return 0;
+    if (ba->level != bb->level) return 0;
     return 1;
-    //return memcmp(a, b, 10) == 0;
 }
 
 /**
@@ -278,13 +275,13 @@ void sylvan_bdd_pre_gc(const llgcset_t dbs, gc_reason reason)
  */
 uint32_t sylvan_cache_hash(const void *data_, unsigned int len __attribute__((unused)), uint32_t hash)
 {
-    register unsigned int size = ((bddcache_t)data_)->parameters * 4 + 4;
+    register unsigned int size = ((bddcache_t)data_)->parameters * sizeof(BDD) + sizeof(BDDOP);
     return SuperFastHash(data_, size, hash);
 }
 
 int sylvan_cache_equals(const void *a, const void *b, size_t length __attribute__((unused)))
 {
-    register unsigned int size = ((bddcache_t)a)->parameters * 4 + 4;
+    register unsigned int size = ((bddcache_t)a)->parameters * sizeof(BDD) + sizeof(BDDOP);
     if (((bddcache_t)b)->parameters != ((bddcache_t)a)->parameters) return 0;
     return memcmp(a, b, size) == 0;
 }
@@ -334,11 +331,6 @@ void sylvan_init(size_t datasize, size_t cachesize, size_t data_gc_size, size_t 
         fprintf(stderr, "Invalid size of bdd nodes: %ld\n", sizeof(struct bddnode));
         exit(1);
     }
-    /*
-    if (sizeof(struct bddop) != 16) {
-        fprintf(stderr, "Invalid size of bdd operation nodes: %ld\n", sizeof(struct bddop));
-        exit(1);
-    }*/
 #if CACHE
     if (sizeof(struct bddcache) != next_pow2(sizeof(struct bddcache))) {
         fprintf(stderr, "Invalid size of bdd operation cache: %ld\n", sizeof(struct bddcache));
@@ -350,20 +342,10 @@ void sylvan_init(size_t datasize, size_t cachesize, size_t data_gc_size, size_t 
     if (datasize >= 30) {
         rt_report_and_exit(1, "BDD_init error: datasize must be < 30!");
     }
-    if (datasize > 20) {
-        //fprintf(stderr, "Data: %d slots, %d bytes per node, %d MB total\n", 1<<datasize, sizeof(struct bddnode), (1<<(datasize-20)) * sizeof(struct bddnode));
-    } else {
-        //fprintf(stderr, "Data: %d slots, %d bytes per node, %d KB total\n", 1<<datasize, sizeof(struct bddnode), (1<<(datasize-10)) * sizeof(struct bddnode));
-    }
     _bdd.data = llgcset_create(sizeof(struct bddnode), datasize, data_gc_size, sylvan_bdd_hash, sylvan_bdd_equals, sylvan_bdd_delete, sylvan_bdd_pre_gc);
 #if CACHE    
     if (cachesize >= 30) {
         rt_report_and_exit(1, "BDD_init error: cachesize must be < 30!");
-    }
-    if (cachesize > 20) {
-        //fprintf(stderr, "Cache: %d slots, %d bytes per node, %d MB total\n", 1<<cachesize, sizeof(struct bddcache), (1<<(cachesize-20)) * sizeof(struct bddcache));
-    } else {
-        //fprintf(stderr, "Cache: %d slots, %d bytes per node, %d MB total\n", 1<<cachesize, sizeof(struct bddcache), (1<<(cachesize-10)) * sizeof(struct bddcache));
     }
     
     _bdd.cache = llgcset_create(sizeof(struct bddcache), cachesize, cache_gc_size, sylvan_cache_hash, sylvan_cache_equals, sylvan_cache_delete, NULL);
@@ -380,12 +362,14 @@ void sylvan_quit()
 
 BDD sylvan_ref(BDD a) 
 {
+    assert(a != sylvan_invalid);
     if (!BDD_ISCONSTANT(a)) llgcset_ref(_bdd.data, BDD_STRIPMARK(a));
     return a;
 }
 
 void sylvan_deref(BDD a)
 {
+    assert(a != sylvan_invalid);
     if (BDD_ISCONSTANT(a)) return;
     llgcset_deref(_bdd.data, BDD_STRIPMARK(a));
 }
@@ -689,14 +673,14 @@ static BDD sylvan_triples(BDD *_a, BDD *_b, BDD *_c)
  */
 BDD sylvan_ite(BDD a, BDD b, BDD c)
 {
-    SV_TCNT;
-
     // Standard triples
     BDD r = sylvan_triples(&a, &b, &c);
     if (BDD_STRIPMARK(r) != sylvan_invalid) {
         return sylvan_ref(r);
     }
     
+    SV_TCNT;
+
     // The value of a,b,c may be changed, but the reference counters are not changed at this point.
     
 #if CACHE 
@@ -771,10 +755,13 @@ BDD sylvan_ite(BDD a, BDD b, BDD c)
 
 #if CACHE
     if (cas(&ptr->result, sylvan_invalid, result)) {
-        SV_CNT(C_cache_new)
+        SV_CNT(C_cache_new);
         sylvan_ref(result);
     }
-    else SV_CNT(C_cache_exists)
+    else {
+        assert(ptr->result == result);
+        SV_CNT(C_cache_exists);
+    }
     SFENCE;
     llgcset_deref(_bdd.cache, idx);
 #endif
@@ -789,11 +776,11 @@ BDD sylvan_ite(BDD a, BDD b, BDD c)
  */
 BDD sylvan_exists(BDD a, BDD variables)
 {
-    SV_TCNT;
-
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
     
+    SV_TCNT;
+
 #if CACHE
     // Check cache
     struct bddcache template_cache_node;
@@ -815,7 +802,7 @@ BDD sylvan_exists(BDD a, BDD variables)
     
     // Did cache return result?
     if (ptr->result != sylvan_invalid) {
-        SV_CNT(C_cache_reuse)
+        SV_CNT(C_cache_reuse);
         BDD result = sylvan_ref(ptr->result);
         llgcset_deref(_bdd.cache, idx);
         return result;
@@ -876,10 +863,13 @@ BDD sylvan_exists(BDD a, BDD variables)
 
 #if CACHE
     if (cas(&ptr->result, sylvan_invalid, result)) {
-        SV_CNT(C_cache_new)
+        SV_CNT(C_cache_new);
         sylvan_ref(result);
     }
-    else SV_CNT(C_cache_exists)
+    else { 
+         assert(ptr->result == result); 
+         SV_CNT(C_cache_exists); 
+     }
     SFENCE;
     llgcset_deref(_bdd.cache, idx);
 #endif
@@ -893,10 +883,11 @@ BDD sylvan_exists(BDD a, BDD variables)
  */
 BDD sylvan_forall(BDD a, BDD variables)
 {
-    SV_TCNT;
-
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
+
+    SV_TCNT;
+
 #if CACHE
     // Check cache
     struct bddcache template_cache_node;
@@ -941,7 +932,7 @@ BDD sylvan_forall(BDD a, BDD variables)
 
     if (variables == sylvan_false) {
 #if CACHE
-        ptr->result = sylvan_ref(a);
+        if (cas(&ptr->result, sylvan_invalid, a)) sylvan_ref(a);
         llgcset_deref(_bdd.cache, idx);
 #endif
         return sylvan_ref(a);
@@ -979,7 +970,7 @@ BDD sylvan_forall(BDD a, BDD variables)
         sylvan_deref(low);
         sylvan_deref(high);
 #if CACHE
-        ptr->result = sylvan_ref(result);
+        if (cas(&ptr->result, sylvan_invalid, result)) sylvan_ref(result);
         llgcset_deref(_bdd.cache, idx);
 #endif
         return result;
@@ -989,7 +980,7 @@ BDD sylvan_forall(BDD a, BDD variables)
         BDD high = sylvan_forall(aHigh, variables);
         BDD result = sylvan_makenode(level, low, high);
 #if CACHE
-        ptr->result = sylvan_ref(result);
+        if (cas(&ptr->result, sylvan_invalid, result)) sylvan_ref(result);
         llgcset_deref(_bdd.cache, idx);
 #endif
         return result;
@@ -1011,11 +1002,11 @@ BDD sylvan_relprods(BDD a, BDD b)
  */
 BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
 {
-    SV_TCNT;
-
     // Trivial case
     if (a == sylvan_true && b == sylvan_true) return sylvan_true;
     if (a == sylvan_false || b == sylvan_false) return sylvan_false;
+
+    SV_TCNT;
 
 #if CACHE    
     // Check cache
@@ -1122,11 +1113,14 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
     
 #if CACHE
     if (cas(&ptr->result, sylvan_invalid, result)) {
-        SV_CNT(C_cache_new)
+        SV_CNT(C_cache_new);
         sylvan_ref(result);
     }
-    else SV_CNT(C_cache_exists)
-    SFENCE;
+    else { 
+        assert(ptr->result == result); 
+        SV_CNT(C_cache_exists); 
+    }
+    // SFENCE; not needed, cas
     llgcset_deref(_bdd.cache, idx);
 #endif
     return result;
@@ -1143,12 +1137,12 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
  */
 BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables) 
 {
-    SV_TCNT;
-
     // Trivial case
     if (a == sylvan_true && b == sylvan_true) return sylvan_true;
     if (a == sylvan_false || b == sylvan_false) return sylvan_false;
     
+    SV_TCNT;
+
 #if CACHE    
     // Check cache
     struct bddcache template_cache_node;
@@ -1287,7 +1281,10 @@ BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables)
     if (cas(&ptr->result, sylvan_invalid, result)) {
         SV_CNT(C_cache_new);
         sylvan_ref(result);
-    } else SV_CNT(C_cache_exists);
+    } else {
+        assert(ptr->result == result);
+        SV_CNT(C_cache_exists);
+    }
     llgcset_deref(_bdd.cache, idx);
 #endif
     return result;

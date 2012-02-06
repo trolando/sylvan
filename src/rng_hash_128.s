@@ -15,7 +15,7 @@ rng_hash_128:
 
 #   Option 3)
 #   Threaded, use the address of the seed as a nonce.
-#   xor    %rdi, %rax  
+        xor    %rdi, %rax  
 	
 	mov    (%rdi), %rsi
 	mul    %rcx
@@ -29,5 +29,5 @@ rng_hash_128:
 	add    %rsi, %rax
 	add    %rdx, %rax
 	
-	ret
+	retq
 .size	rng_hash_128, .-rng_hash_128

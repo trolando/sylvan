@@ -82,6 +82,8 @@ struct bddop {
 
 typedef struct bddop* bddop_t;
 */
+int initialized = 0;
+
 static struct {
     llgcset_t data;
 #if CACHE
@@ -163,6 +165,8 @@ struct {
 
 void sylvan_reset_counters()
 {
+    if (initialized == 0) return;
+
     int i;
     for (i=0;i<C_MAX;i++) {
         __sylvan_count[i] = 0;
@@ -175,6 +179,8 @@ void sylvan_reset_counters()
 
 void sylvan_report_stats()
 {
+    if (initialized == 0) return;
+
     printf(LRED  "****************\n");
     printf(     "* ");
     printf(NC BOLD"SYLVAN STATS"); 
@@ -325,6 +331,8 @@ void sylvan_package_exit()
  */
 void sylvan_init(size_t datasize, size_t cachesize, size_t data_gc_size, size_t cache_gc_size)
 {
+    if (initialized != 0) return;
+    initialized = 1;
     
     // Sanity check
     if (sizeof(struct bddnode) != 16) {
@@ -354,6 +362,9 @@ void sylvan_init(size_t datasize, size_t cachesize, size_t data_gc_size, size_t 
 
 void sylvan_quit()
 {
+    if (initialized == 0) return;
+    initialized = 0;
+
 #if CACHE
     llgcset_free(_bdd.cache);
 #endif
@@ -376,6 +387,7 @@ void sylvan_deref(BDD a)
 
 void sylvan_gc()
 {
+    if (initialized == 0) return;
     llgcset_gc(_bdd.data, gc_user);
 }
 

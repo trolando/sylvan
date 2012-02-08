@@ -37,6 +37,8 @@ set(sylvan_sources
   src/sylvan.c
   src/fast_hash.c
   src/llgcset.c
+  src/hash_mul.s
+  src/llcache.c
   src/runtime.c
   src/rng_hash_128.s
 )

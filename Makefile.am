@@ -12,6 +12,8 @@ libsylvan_la_SOURCES = \
  src/runtime.c \
  src/fast_hash.c \
  src/rng_hash_128.s \
+ src/hash_mul.s \
+ src/llcache.c
  src/sylvan.h \
  src/sylvan_runtime.h 
 

@@ -37,24 +37,6 @@ static const uint32_t   SATURATED = 0x0000fffe;
 
 #define RC_PART(s) (((uint32_t)s)&((uint32_t)0x0000ffff))
 
-/**
- * Initialize gc list... 
- */
-static int llgclist_init(uint32_t *list, uint32_t size, uint32_t *head, uint32_t *tail, uint8_t *lock);
-
-/**
- * Add uint32_t value to list, and return 1.
- * If this returns 0, it is likely an out-of-memory error.
- */
-static int llgclist_put_head(uint32_t *list, uint32_t size, uint32_t *head, uint32_t *tail, uint8_t *lock, uint32_t value);
-static int llgclist_put_tail(uint32_t *list, uint32_t size, uint32_t *head, uint32_t *tail, uint8_t *lock, uint32_t value);
-/**
- * Pop a value from the list, and return 1.
- * If this returns 0, there was no value to pop.
- */
-static int llgclist_pop_head(uint32_t *list, uint32_t size, uint32_t *head, uint32_t *tail, uint8_t *lock, uint32_t *value);
-static int llgclist_pop_tail(uint32_t *list, uint32_t size, uint32_t *head, uint32_t *tail, uint8_t *lock, uint32_t *value);
-
 static int default_equals(const void *a, const void *b, size_t length)
 {
     return memcmp(a, b, length) == 0;
@@ -69,11 +51,12 @@ static const size_t CACHE_LINE_INT32_MASK_R = ((LINE_SIZE) / sizeof (uint32_t)) 
 
 enum {
     REF_SUCCESS,
-//    REF_LOCK,
     REF_DELETING,
     REF_NOCAS,
     REF_NOWZERO
 };
+
+void llgcset_deadlist_ondelete(const llgcset_t dbs, const uint32_t *index);
 
 /* 
  * Try to increase ref 
@@ -84,12 +67,10 @@ static inline int try_ref(volatile uint32_t *hashptr)
     register uint32_t hash = *hashptr;
     //if (hash & LOCK) return REF_LOCK;
     register uint32_t rc = RC_PART(hash);
-//    printf("%u Try inc %x ...\n", (unsigned int)pthread_self(), hash);
     if (rc == SATURATED) return REF_SUCCESS; // saturated, do not ref
     if (rc == DELETING) return REF_DELETING;
     /* check */ assert( (rc + 1) == RC_PART(hash+1));
     if (!cas(hashptr, hash, hash+1)) return REF_NOCAS;
-//    printf("%u Success inc %x\n", (unsigned int)pthread_self(), hash);
     return REF_SUCCESS;
 }
 
@@ -102,13 +83,11 @@ static inline int try_deref(volatile uint32_t *hashptr)
     register uint32_t hash = *hashptr;
     //if (hash & LOCK) return REF_LOCK;
     register uint32_t rc = RC_PART(hash);
-//    printf("%u Try dec %x ...\n", (unsigned int)pthread_self(), hash);
     if (rc == SATURATED) return REF_SUCCESS; // saturated, do not deref
     assert(rc != DELETING);
     assert(rc != 0);
     /* check */ assert( (rc - 1) == RC_PART(hash-1));
     if (!cas(hashptr, hash, hash-1)) return REF_NOCAS;
-//    printf("%u Success dec %x\n", (unsigned int)pthread_self(), hash);
     if (rc == 1) return REF_NOWZERO; // we just decreased to zero
     return REF_SUCCESS;
 }
@@ -362,12 +341,14 @@ llgcset_t llgcset_create(size_t key_size, size_t table_size, size_t gc_size, has
     dbs->data = rt_align(CACHE_LINE_SIZE, dbs->size * key_size);
     memset(dbs->table, 0, sizeof(uint32_t) * dbs->size);
     
-    /* Initialize gclist */
-    dbs->gc_size = 1<<gc_size; // maybe this value could be tweaked.
-    dbs->gc_list = rt_align(CACHE_LINE_SIZE, dbs->gc_size * sizeof(uint32_t));
-    llgclist_init(dbs->gc_list, dbs->gc_size, &dbs->gc_head, &dbs->gc_tail, &dbs->gc_lock);
-    
     // dont care about what is in "data" table
+ 
+    int cache_size = table_size - 4;
+    if (cache_size<4) cache_size=4;
+    dbs->deadlist = llcache_create(4, 4, 1<<cache_size, (llcache_delete_f)&llgcset_deadlist_ondelete, dbs);
+
+    dbs->clearing = 0;
+ 
     return dbs;
 }
 
@@ -376,8 +357,10 @@ llgcset_t llgcset_create(size_t key_size, size_t table_size, size_t gc_size, has
  */
 void llgcset_ref(const llgcset_t dbs, uint32_t index)
 {
-    int ref_res;
     assert(index < dbs->size);
+    assert(index != 0);
+
+    int ref_res;
     register volatile uint32_t *hashptr = &dbs->table[index];
     do {
         ref_res = try_ref(hashptr);
@@ -386,13 +369,38 @@ void llgcset_ref(const llgcset_t dbs, uint32_t index)
     } while (ref_res != REF_SUCCESS);
 }
 
+void try_delete_item(const llgcset_t dbs, uint32_t index)
+{
+    register volatile uint32_t *hashptr = &dbs->table[index];
+    register uint32_t hash = *hashptr;
+
+    // Check if still 0 and then try to claim it...
+    while (RC_PART(hash) == 0) {
+        if (cas(hashptr, hash, hash | DELETING)) {
+            // if we're here, we can safely delete it!
+            if (dbs->cb_delete != NULL) dbs->cb_delete(dbs, &dbs->data[index * dbs->length]);
+
+            // We do not want to interfere with locks...
+            while (!cas(hashptr, hash, hash | TOMBSTONE)) {
+                hash = *hashptr;
+                cpu_relax();
+            }
+            break;
+        }
+        hash = *hashptr;
+        cpu_relax();
+    }   
+}
+
 /**
  * Decrease reference counter
  */
 void llgcset_deref(const llgcset_t dbs, uint32_t index)
 {
-    int ref_res;
     assert(index < dbs->size);
+    assert(index != 0);
+
+    int ref_res;
     register volatile uint32_t *hashptr = &dbs->table[index];
     do { 
         ref_res = try_deref(hashptr);
@@ -401,36 +409,23 @@ void llgcset_deref(const llgcset_t dbs, uint32_t index)
 
     if (ref_res == REF_NOWZERO) {
         // Add it to the deadlist, then return.
-        if (!llgclist_put_tail(dbs->gc_list, dbs->gc_size, &dbs->gc_head, &dbs->gc_tail, &dbs->gc_lock, index)) {
-            // Deadlist full, so manually garbage collect this item
-            register volatile uint32_t *hashptr = &dbs->table[index];
-            register uint32_t hash = *hashptr;
-            // Check if still 0 and then try to claim it...
-            while (RC_PART(hash) == 0) {
-                if (cas(hashptr, hash, hash | DELETING)) {
-                    // if we're here, we can safely delete it!
-                    if (dbs->cb_delete != NULL) dbs->cb_delete(dbs, &dbs->data[index * dbs->length]);
-                    // We do not want to interfere with locks...
-                    while (!cas(hashptr, hash, hash | TOMBSTONE)) {
-                        hash = *hashptr;
-                    }
-                    break;
-                }
-                hash = *hashptr;
-            }            
-            // GC LIST FULL - forced gc.
-            llgcset_gc(dbs, gc_deadlist_full);
+        if (dbs->clearing != 0) try_delete_item(dbs, index);
+        else if(llcache_put(dbs->deadlist, &index) == 2) {
+            try_delete_item(dbs, index);
         }
     } 
 }
 
 inline void llgcset_clear(llgcset_t dbs)
 {
+    // TODO MODIFY so the callback is properly called and all???
+    // Or is that simply a matter of gc()...
     memset(dbs->table, 0, sizeof(uint32_t) * dbs->size);
 }
 
 void llgcset_free(llgcset_t dbs)
 {
+    llcache_free(dbs->deadlist);
     free(dbs->data);
     free(dbs->table);
     free(dbs);
@@ -443,164 +438,13 @@ void llgcset_gc(const llgcset_t dbs, gc_reason reason)
 {
     // Call dbs->pre_gc first
     if (dbs->pre_gc != NULL) dbs->pre_gc(dbs, reason);
-    
-    uint32_t idx;
-    while (llgclist_pop_head(dbs->gc_list, dbs->gc_size, &dbs->gc_head, &dbs->gc_tail, &dbs->gc_lock, &idx)) {
-        register volatile uint32_t *hashptr = &dbs->table[idx];
-        register uint32_t hash = *hashptr;
-        // Check if still 0 and then try to claim it...
-        while (RC_PART(hash) == 0) {
-            if (cas(hashptr, hash, hash | DELETING)) {
-                // if we're here, we can safely delete it!
-                if (dbs->cb_delete != NULL) dbs->cb_delete(dbs, &dbs->data[idx * dbs->length]);
-                // We do not want to interfere with locks...
-                while (!cas(hashptr, hash, hash | TOMBSTONE)) {
-                    hash = *hashptr;
-                }
-                break;
-            }
-            hash = *hashptr;
-        }            
-    }
+
+    atomic_inc(&dbs->clearing);
+    llcache_clear(dbs->deadlist);
+    atomic_dec(&dbs->clearing);
 }
 
-/*******************************************
- * IMPLEMENTATION OF GCLIST                *
- ******************************************/
- 
-// This is just a fixed array with a lock.
-
-/*
- * if head == tail then filled = 0
- * if tail > head then filled = tail - head - 1 
- * if head > tail then filled = size + tail - head - 1
- */
-
-static int llgclist_init(uint32_t *list, uint32_t size, uint32_t *head, uint32_t *tail, uint8_t *lock)
+void llgcset_deadlist_ondelete(const llgcset_t dbs, const uint32_t *index)
 {
-    *head = 0; // head points to UNFILLED VALUE
-    *tail = 0; // tail points to UNFILLED VALUE
-    *lock = 0;
+    try_delete_item(dbs, *index);
 }
-
-static int llgclist_put_head(uint32_t *list, uint32_t size, uint32_t *head, uint32_t *tail, uint8_t *lock, uint32_t value)
-{
-    // lock
-    while (1) {
-        if (cas(lock, 0, 1)) break;
-        while (*((volatile uint8_t*)lock)>0) cpu_relax();
-    }
-    
-    // no LFENCE needed, because of CAS lock.
-    
-    if ((*tail+1) == *head || (*tail == (size-1) && *head == 0)) {
-        *lock = 0;
-        return 0; // full
-    }
-    
-    list[*head] = value;
-    if (*tail == *head) {
-        // this was an empty list, increase tail as well
-        if (*tail == (size-1)) *tail = 0; 
-        else *tail = (*tail)+1;        
-    }
-    // decrease head
-    if (*head == 0) *head = size-1; 
-    else *head = (*head)-1;
-    
-    // SFENCE; // needed in future x86 processors
-    
-    *lock = 0;
-    return 1;
-}
-
-static int llgclist_put_tail(uint32_t *list, uint32_t size, uint32_t *head, uint32_t *tail, uint8_t *lock, uint32_t value)
-{
-    // lock
-    while (1) {
-        if (cas(lock, 0, 1)) break;
-        while (*((volatile uint8_t*)lock)>0) cpu_relax();
-    }
-    
-    // no LFENCE needed, because of CAS lock.
-    
-    if ((*tail+1) == *head || (*tail == (size-1) && *head == 0)) {
-        *lock = 0;
-        return 0; // full
-    }
-    
-    list[*tail] = value;
-    if (*tail == *head) { 
-        // this was an empty list, decrease head as well
-        if (*head == 0) *head = size-1; 
-        else *head = (*head)-1;        
-    }
-    if (*tail == (size-1)) *tail = 0; 
-    else *tail = (*tail)+1;
-    
-    // SFENCE; // needed in future x86 processors
-    
-    *lock = 0;
-    return 1;
-}
-
-static int llgclist_pop_head(uint32_t *list, uint32_t size, uint32_t *head, uint32_t *tail, uint8_t *lock, uint32_t *value)
-{
-    // lock
-    while (1) {
-        if (cas(lock, 0, 1)) break;
-        while (*((volatile uint8_t*)lock)>0) cpu_relax();
-    }
-    
-    // no LFENCE needed, because of CAS lock.
-    
-    if (*head == *tail) {
-        *lock = 0;
-        return 0; // empty
-    }
-
-    // increase head    
-    if (*head == (size-1)) *head = 0;
-    else *head = (*head) + 1;
-    *value = list[*head];
-    
-    // Process case where last entry was removed
-    if (*head + 1 == *tail) *tail = *tail - 1;
-    else if ((*head == size-1) && (*tail == 0)) *head = 0;
-    
-    // SFENCE; // needed in future x86 processors
-    
-    *lock = 0;
-    return 1;
-}
-
-static int llgclist_pop_tail(uint32_t *list, uint32_t size, uint32_t *head, uint32_t *tail, uint8_t *lock, uint32_t *value)
-{
-    // lock
-    while (1) {
-        if (cas(lock, 0, 1)) break;
-        while (*((volatile uint8_t*)lock)>0) cpu_relax();
-    }
-    
-    // no LFENCE needed, because of CAS lock.
-    
-    if (*head == *tail) {
-        *lock = 0;
-        return 0; // empty
-    }
-    
-    // decrease tail
-    if (*tail == 0) *tail = size - 1;
-    else *tail = (*tail) - 1;
-    *value = list[*tail];
-    
-    // Process case where last entry was removed
-    if (*head + 1 == *tail) *tail = *tail - 1;
-    else if ((*head == size-1) && (*tail == 0)) *head = 0;
-
-    // SFENCE; // needed in future x86 processors
-    
-    *lock = 0;
-    return 1;
-}
- 

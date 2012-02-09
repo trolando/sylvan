@@ -1,10 +1,10 @@
 #include "fast_hash.h"
 #include "sylvan_runtime.h"
+#include "llcache.h"
 
 #ifndef LLGCSET_H
 #define LLGCSET_H
 
-struct llgcset;
 typedef struct llgcset* llgcset_t;
 
 //struct llgcset_gclist;
@@ -35,22 +35,8 @@ struct llgcset
     delete_f  cb_delete;    // delete function (callback pre-delete)
     pre_gc_f  pre_gc;       // function called when full...
     uint32_t  mask;         // size-1
-    // PAD
-    char      pad[SYLVAN_PAD(sizeof(size_t)*4+
-                      sizeof(uint32_t*)+
-                      sizeof(uint8_t*)+
-                      sizeof(hash32_f)+
-                      sizeof(equals_f)+
-                      sizeof(delete_f)+
-                      sizeof(pre_gc_f)+
-                      sizeof(uint32_t)+
-                      0, LINE_SIZE)];
-    // Cache Line 2
-    uint32_t *gc_list; // the deadlist
-    uint32_t gc_size;  // size of the deadlist
-    uint32_t gc_head;  // HEAD 
-    uint32_t gc_tail;  // TAIL
-    uint8_t gc_lock;   // mutex (using atomics)
+    llcache_t deadlist;
+    int       clearing;     // bit
 };
 
 #define llgcset_index_to_ptr(dbs, index) ((void*)&dbs->data[index*dbs->length])

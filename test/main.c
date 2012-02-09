@@ -46,8 +46,6 @@ struct llcache
     uint32_t  mask;         // size-1
 };
 
-
-
 void test_llcache() 
 {
     llcache_t c = llcache_create(4, 8, 1<<5, NULL, NULL);
@@ -60,7 +58,6 @@ void test_llcache()
 
     struct tt n, m;
   
-
     n.a = 5;
     n.b = 6;
     m.a = 5;
@@ -94,7 +91,7 @@ void test_llcache()
 
 extern llgcset_t __sylvan_get_internal_data();
 #ifdef CACHE
-extern llgcset_t __sylvan_get_internal_cache();
+extern llcache_t __sylvan_get_internal_cache();
 #endif
 
 llgcset_t set_under_test;
@@ -157,7 +154,6 @@ void test_pre_gc(const llgcset_t dbs, gc_reason reason)
 {
     if (reason == gc_user) { printf("U"); }
     else if (reason == gc_hashtable_full) { printf("H"); }
-    else if (reason == gc_deadlist_full) { printf("D"); }
     fflush(stdout);
 }
 
@@ -775,7 +771,7 @@ void __is_sylvan_clean()
     int n=0;
     int failure=0;
     int k;
-#if CACHE    
+/*#if CACHE    
     llgcset_t cache = __sylvan_get_internal_cache();
     for (k=0;k<cache->size;k++) {
         if (cache->table[k] == 0) continue;
@@ -795,7 +791,7 @@ void __is_sylvan_clean()
     }
     
     n=0; // superfluous
-#endif    
+#endif    */
     llgcset_t set = __sylvan_get_internal_data();
 
     // check empty gc queue

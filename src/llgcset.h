@@ -13,8 +13,7 @@ typedef struct llgcset* llgcset_t;
 // Reasons for calling gc
 typedef enum {
   gc_user,
-  gc_hashtable_full,
-  gc_deadlist_full
+  gc_hashtable_full
 } gc_reason;
 
 // Callbacks

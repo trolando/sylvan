@@ -138,6 +138,23 @@ extern long double sylvan_satcount(BDD bdd, BDD variables);
 
 extern uint32_t sylvan_nodecount(BDD a);
 
+/**
+ * very low level file write/read functions...
+ *
+ * sylvan_write_init() to reset all...
+ * for every BDD to store, call sylvan_write_bdd_rec and remember the BDD
+ * use the result from sylvan_write_count to store the number of entries
+ * 
+ * call sylvan_read with a preallocated array of entries*sizeof(BDD) and then
+ * use sylvan_read_get to translate results of sylvan_write_bdd_rec back...
+ */
+
+extern void sylvan_write_init();
+extern uint32_t sylvan_write_bdd_rec(FILE* f, BDD bdd);
+extern uint32_t sylvan_write_count();
+extern void sylvan_read(FILE *f, BDD *arr, uint32_t entries);
+extern BDD sylvan_read_get(BDD *arr, uint32_t bdd);
+
 #ifdef __cplusplus
 }
 #endif

@@ -38,7 +38,8 @@ struct bddnode {
     BDD high;
     BDDVAR level;
     uint8_t flags; // for marking, e.g. in node_count 
-    char pad1[SYLVAN_PAD(sizeof(BDD)*2+sizeof(BDDVAR)+sizeof(uint8_t), 16)];
+    char pad[SYLVAN_PAD(sizeof(BDD)*2+sizeof(BDDVAR)+sizeof(uint8_t), 16)];
+    // 4,4,2,1,5 (pad). 
 }; // 16 bytes
 
 typedef struct bddnode* bddnode_t;
@@ -90,6 +91,7 @@ static struct {
 #if CACHE
     llcache_t cache; // operations cache
 #endif
+    int serialize_counter;
 } _bdd;
 
 // max number of parameters (set to: 5, 13, 29 to get bddcache node size 32, 64, 128)
@@ -342,6 +344,8 @@ void sylvan_init(size_t datasize, size_t cachesize, size_t data_gc_size, size_t 
     
     _bdd.cache = llcache_create(cache_key_length, cache_data_length, 1<<cachesize, (llcache_delete_f)&sylvan_cache_delete, NULL);
 #endif
+
+    _bdd.serialize_counter = 1;
 }
 
 void sylvan_quit()
@@ -385,6 +389,7 @@ inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high)
 {
     BDD result;
     struct bddnode n;
+    memset(&n, 0, sizeof(struct bddnode));
 
     if (low == high) {
         sylvan_deref(high);
@@ -1487,4 +1492,62 @@ long long sylvan_count_refs()
 #endif    
 
     return result;
+}
+
+void sylvan_write_init() 
+{
+    _bdd.serialize_counter = 1;
+    int i;
+    // This is a VERY expensive loop.
+    for (i=0;i<_bdd.data->size;i++) {
+        bddnode_t n = GETNODE(i);
+        *(uint32_t*)&n->pad = 0;        
+    }
+}
+
+uint32_t sylvan_write_bdd_rec(FILE* f, BDD bdd) 
+{
+    if (BDD_ISCONSTANT(bdd)) return bdd;
+
+    bddnode_t n = GETNODE(bdd);
+    uint32_t *pnum = (uint32_t*)&n->pad;
+
+    if (*pnum == 0) {
+        uint32_t low = sylvan_write_bdd_rec(f, n->low);
+        uint32_t high = sylvan_write_bdd_rec(f, n->high);
+        fwrite(&low, 4, 1, f);
+        fwrite(&high, 4, 1, f);
+        fwrite(&n->level, sizeof(BDDVAR), 1, f);
+        *pnum = _bdd.serialize_counter++;
+    }
+
+    return BDD_TRANSFERMARK(bdd, *pnum);
+}
+
+uint32_t sylvan_write_count() 
+{
+    return _bdd.serialize_counter - 1;
+}
+
+void sylvan_read(FILE *f, BDD *arr, uint32_t entries) 
+{
+    uint32_t i=1;
+    for (;i<=entries;i++) {
+        uint32_t low, high;
+        BDDVAR var;
+        fread(&low, 4, 1, f);
+        fread(&high, 4, 1, f);
+        fread(&var, sizeof(BDDVAR), 1, f);
+        assert (BDD_STRIPMARK(low) < i);
+        assert (BDD_STRIPMARK(high) < i);
+        BDD _low = BDD_ISCONSTANT(low) ? low : BDD_TRANSFERMARK(low, arr[BDD_STRIPMARK(low)-1]);
+        BDD _high = BDD_ISCONSTANT(high) ? high : BDD_TRANSFERMARK(high, arr[BDD_STRIPMARK(high)-1]);
+        arr[i-1] = sylvan_makenode(var, _low, _high);
+    }
+}
+
+BDD sylvan_read_get(BDD *arr, uint32_t bdd) 
+{
+    if (BDD_ISCONSTANT(bdd)) return bdd;
+    return BDD_TRANSFERMARK(bdd, arr[BDD_STRIPMARK(bdd)-1]);
 }

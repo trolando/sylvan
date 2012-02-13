@@ -236,31 +236,10 @@ inline void inc_thread_counter() {
 #define GETNODE(bdd)        ((bddnode_t)llgcset_index_to_ptr(_bdd.data, BDD_STRIPMARK(bdd)))
 
 /**
- * Hash() and Equals() for the BDD hashtable
- * BDD nodes are 10 bytes in our implementation = 2 * sizeof(BDD) + sizeof(BDDVAR)
- */
-uint32_t sylvan_bdd_hash(const void *data_, unsigned int len __attribute__((unused)), uint32_t hash)
-{
-    return SuperFastHash(data_, 10, hash);
-    //return SuperFastHash(data_, len, hash);
-}
-
-int sylvan_bdd_equals(const void *a, const void *b, size_t length __attribute__((unused)))
-{
-    register const bddnode_t ba = (bddnode_t)a;
-    register const bddnode_t bb = (bddnode_t)b;
-    if (ba->low != bb->low) return 0;
-    if (ba->high != bb->high) return 0;
-    if (ba->level != bb->level) return 0;
-    return 1;
-}
-
-/**
  * When a bdd node is deleted, unref the children
  */
-void sylvan_bdd_delete(const llgcset_t dbs, const void *a)
+void sylvan_bdd_delete(const void* data, bddnode_t node)
 {
-    bddnode_t node = (bddnode_t)a;
     sylvan_deref(node->low);
     sylvan_deref(node->high);
 }
@@ -268,7 +247,7 @@ void sylvan_bdd_delete(const llgcset_t dbs, const void *a)
 /**
  * Called pre-gc : first, gc the cache to free nodes
  */
-void sylvan_bdd_pre_gc(const llgcset_t dbs, gc_reason reason) 
+void sylvan_bdd_pregc(const void* data, gc_reason reason) 
 {
     if (reason == gc_user) { SV_CNT(C_gc_user); }
     else if (reason == gc_hashtable_full) { SV_CNT(C_gc_hashtable_full); }
@@ -336,7 +315,7 @@ void sylvan_init(size_t datasize, size_t cachesize, size_t data_gc_size, size_t 
     if (datasize >= 30) {
         rt_report_and_exit(1, "BDD_init error: datasize must be < 30!");
     }
-    _bdd.data = llgcset_create(sizeof(struct bddnode), datasize, data_gc_size, sylvan_bdd_hash, sylvan_bdd_equals, sylvan_bdd_delete, sylvan_bdd_pre_gc);
+    _bdd.data = llgcset_create(10, sizeof(struct bddnode), 1<<datasize, (llgcset_delete_f)&sylvan_bdd_delete, sylvan_bdd_pregc, NULL);
 #if CACHE    
     if (cachesize >= 30) {
         rt_report_and_exit(1, "BDD_init error: cachesize must be < 30!");
@@ -1448,7 +1427,7 @@ long long sylvan_count_refs()
     long long result = 0;
     
     int i;
-    for (i=0;i<_bdd.data->size;i++) {
+    for (i=0;i<_bdd.data->table_size;i++) {
         uint32_t c = _bdd.data->table[i];
         if (c == 0) continue; // not in use (never used)
         if (c == 0x7fffffff) continue; // not in use (tombstone)
@@ -1499,7 +1478,7 @@ void sylvan_write_init()
     _bdd.serialize_counter = 1;
     int i;
     // This is a VERY expensive loop.
-    for (i=0;i<_bdd.data->size;i++) {
+    for (i=0;i<_bdd.data->table_size;i++) {
         bddnode_t n = GETNODE(i);
         *(uint32_t*)&n->pad = 0;        
     }

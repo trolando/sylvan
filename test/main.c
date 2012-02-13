@@ -160,7 +160,7 @@ void test_pre_gc(const llgcset_t dbs, gc_reason reason)
 int test_llgcset2()
 {
     //set_under_test = llgcset_create(sizeof(uint32_t), 20, 10, NULL, NULL, NULL, &test_pre_gc);
-    set_under_test = llgcset_create(sizeof(uint32_t), 20, 4, NULL, NULL, NULL, NULL);
+    set_under_test = llgcset_create(sizeof(uint32_t), sizeof(uint32_t), 1<<20, NULL, NULL, NULL);
 
     int i;
     pthread_t t[4];
@@ -177,7 +177,7 @@ int test_llgcset2()
     llgcset_gc(set_under_test, gc_user);
 
     int n=0;
-    for (i=0;i<set_under_test->size;i++) {
+    for (i=0;i<set_under_test->table_size;i++) {
         uint32_t key = set_under_test->table[i];
         if (key != 0) {
             if (key != 0x7fffffff) {
@@ -201,7 +201,7 @@ int test_llgcset()
     
     int index[16], index2[16], created;
     
-    llgcset_t set = llgcset_create(sizeof(uint32_t), 8, 10, NULL, NULL, NULL, NULL); // size: 256
+    llgcset_t set = llgcset_create(sizeof(uint32_t), sizeof(uint32_t), 1<<8, NULL, NULL, NULL); // size: 256
 
     int i;
     for (i=0;i<16;i++) {
@@ -219,7 +219,7 @@ int test_llgcset()
     int n=0;
 
     // check all have ref 2
-    for (i=0;i<set->size;i++) {
+    for (i=0;i<set->table_size;i++) {
         uint32_t key = set->table[i];
         if (key != 0) {
             n++;
@@ -237,7 +237,7 @@ int test_llgcset()
     
     // check all have ref 0
     n=0;
-    for (i=0;i<set->size;i++) {
+    for (i=0;i<set->table_size;i++) {
         uint32_t key = set->table[i];
         if (key != 0) {
             n++;
@@ -262,7 +262,7 @@ printf("KEY: %X\n", key);
 
     // check all have ref 1
     n=0;
-    for (i=0;i<set->size;i++) {
+    for (i=0;i<set->table_size;i++) {
         uint32_t key = set->table[i];
         if (key != 0) {
             n++;
@@ -278,7 +278,7 @@ printf("KEY: %X\n", key);
     
     // check all have ref 1
     n=0;
-    for (i=0;i<set->size;i++) {
+    for (i=0;i<set->table_size;i++) {
         uint32_t key = set->table[i];
         if (key != 0) {
             n++;
@@ -308,7 +308,7 @@ printf("KEY: %X\n", key);
     
     // check 16 tombstones
     n=0;
-    for (i=0;i<set->size;i++) {
+    for (i=0;i<set->table_size;i++) {
         uint32_t key = set->table[i];
         if (key != 0) {
             assert(key == 0x7fffffff);
@@ -324,7 +324,7 @@ printf("KEY: %X\n", key);
     
     // check all have ref 1
     n=0;
-    for (i=0;i<set->size;i++) {
+    for (i=0;i<set->table_size;i++) {
         uint32_t key = set->table[i];
         if (key != 0) {
             n++;
@@ -797,7 +797,7 @@ void __is_sylvan_clean()
     // check empty gc queue
     // assert(set->gc_head == set->gc_tail);
     
-    for (k=0;k<set->size;k++) {
+    for (k=0;k<set->table_size;k++) {
         if (set->table[k] == 0) continue;
         if (set->table[k] == 0x7fffffff) continue;
         //if ((set->table[k] & 0x0000ffff) == 0x0000fffe) continue; // If we allow this, we need to modify more!
@@ -831,7 +831,7 @@ void runtests(int threads)
     printf(LGREEN "success" NC "!\n");
     printf("Running multithreaded test... ");
     fflush(stdout);
-    if (1/*skip*/) {
+    if (0/*skip*/) {
         printf("... " LMAGENTA "skipped" NC ".\n");
     }
     else if (test_llgcset2()) {

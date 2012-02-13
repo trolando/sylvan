@@ -5,7 +5,21 @@
 #include <assert.h> // for assert
 
 #include "llgcset.h"
-#include "sylvan_runtime.h"
+
+#define DEBUG_LLGCSET 0 // set to 1 to enable logic assertions
+
+#ifndef LINE_SIZE
+    #define LINE_SIZE 64 // default cache line
+#endif
+
+#define cpu_relax  asm volatile("pause\n": : :"memory")
+#define cas(a,b,c) __sync_bool_compare_and_swap((a),(b),(c))
+#define atomic_inc(P) __sync_add_and_fetch((P), 1)
+#define atomic_dec(P) __sync_add_and_fetch((P), -1) 
+
+// 64-bit hashing function, http://www.locklessinc.com (hash_mul.s)
+unsigned long long hash_mul(const void* data, unsigned long long len);
+unsigned long long rehash_mul(const void* data, unsigned long long len, unsigned long long seed);
 
 /**
  * LL-set with GC using Reference Counting. Note that this implementation is not cycle-safe.
@@ -27,27 +41,25 @@
  * GC-list implemented as fixed block.
  */
 
-static const int        TABLE_SIZE = 24; // 1<<24 entries by default
-static const uint32_t   EMPTY = 0x00000000;
-static const uint32_t   LOCK = 0x80000000;
-static const uint32_t   TOMBSTONE = 0x7fffffff;
+static const uint32_t   EMPTY      = 0x00000000;
+static const uint32_t   LOCK       = 0x80000000;
+static const uint32_t   TOMBSTONE  = 0x7fffffff;
 
-static const uint32_t   DELETING = 0x0000ffff;
-static const uint32_t   SATURATED = 0x0000fffe;
+static const uint32_t   RC_MASK    = 0x0000ffff;
+static const uint32_t   HL_MASK    = 0xffff0000;
+static const uint32_t   HASH_MASK  = 0x7fff0000;
+static const uint32_t   DELETING   = 0x0000ffff;
+static const uint32_t   SATURATED  = 0x0000fffe;
 
-#define RC_PART(s) (((uint32_t)s)&((uint32_t)0x0000ffff))
+static const int      HASH_PER_CL = ((LINE_SIZE) / 4);
+static const uint32_t CL_MASK     = ~(((LINE_SIZE) / 4) - 1);
+static const uint32_t CL_MASK_R   = ((LINE_SIZE) / 4) - 1;
 
-static int default_equals(const void *a, const void *b, size_t length)
-{
-    return memcmp(a, b, length) == 0;
-}
-
-// Number to of int32's per cache line (64/4 = 16)
-static const size_t CACHE_LINE_INT32 = ((LINE_SIZE) / sizeof (uint32_t));
-// Mask to determine our current cache line in an aligned int32 world (mask = 0xfffffff0)
-static const size_t CACHE_LINE_INT32_MASK = -((LINE_SIZE) / sizeof (uint32_t));
-// Reverse of CACHE_LINE_INT32_MASK, i.e. mask = 0x0000000f
-static const size_t CACHE_LINE_INT32_MASK_R = ((LINE_SIZE) / sizeof (uint32_t)) - 1;
+/* Example values with a LINE_SIZE of 64
+ * HASH_PER_CL = 16
+ * CL_MASK     = 0xFFFFFFF0
+ * CL_MASK_R   = 0x0000000F
+ */
 
 enum {
     REF_SUCCESS,
@@ -58,6 +70,7 @@ enum {
 
 void llgcset_deadlist_ondelete(const llgcset_t dbs, const uint32_t *index);
 
+
 /* 
  * Try to increase ref 
  * returns REF_SUCCESS, REF_DELETING, REF_NOCAS, REF_LOCK.
@@ -66,10 +79,12 @@ static inline int try_ref(volatile uint32_t *hashptr)
 {
     register uint32_t hash = *hashptr;
     //if (hash & LOCK) return REF_LOCK;
-    register uint32_t rc = RC_PART(hash);
+    register uint32_t rc = hash & RC_MASK;
     if (rc == SATURATED) return REF_SUCCESS; // saturated, do not ref
     if (rc == DELETING) return REF_DELETING;
-    /* check */ assert( (rc + 1) == RC_PART(hash+1));
+#if DEBUG_LLGCSET
+    /* check */ assert( (rc + 1) == ((hash+1) & RC_MASK));
+#endif
     if (!cas(hashptr, hash, hash+1)) return REF_NOCAS;
     return REF_SUCCESS;
 }
@@ -82,11 +97,13 @@ static inline int try_deref(volatile uint32_t *hashptr)
 {
     register uint32_t hash = *hashptr;
     //if (hash & LOCK) return REF_LOCK;
-    register uint32_t rc = RC_PART(hash);
+    register uint32_t rc = hash & RC_MASK;
     if (rc == SATURATED) return REF_SUCCESS; // saturated, do not deref
-    assert(rc != DELETING);
-    assert(rc != 0);
-    /* check */ assert( (rc - 1) == RC_PART(hash-1));
+    assert(rc != DELETING); // external logic check 
+    assert(rc != 0);        // external logic check 
+#if DEBUG_LLGCSET
+    /* check */ assert( (rc - 1) == ((hash-1) & RC_MASK));
+#endif
     if (!cas(hashptr, hash, hash-1)) return REF_NOCAS;
     if (rc == 1) return REF_NOWZERO; // we just decreased to zero
     return REF_SUCCESS;
@@ -97,7 +114,7 @@ static inline void lock(volatile uint32_t *bucket)
     while (1) {
         register uint32_t hash = *bucket;
         if (!(hash & LOCK)) { if (cas(bucket, hash, hash | LOCK)) { break; } }
-        cpu_relax();
+        cpu_relax;
     }
 }
 
@@ -106,15 +123,14 @@ static inline void unlock(volatile uint32_t *bucket)
     while (1) {
         register uint32_t hash = *bucket;
         if (cas(bucket, hash, hash & (~LOCK))) break;
-        cpu_relax();
+        cpu_relax;
     }
 }
 
 // Calculate next index on a cache line walk
-static inline int next(uint32_t line, uint32_t *cur, uint32_t last) 
+static inline int next(uint32_t *cur, uint32_t last) 
 {
-    *cur = (((*cur)+1) & (CACHE_LINE_INT32_MASK_R)) | line;
-    return *cur != last;
+    return (*cur = (*cur & CL_MASK) | ((*cur + 1) & CL_MASK_R)) != last;
 }
 
 /**
@@ -137,22 +153,19 @@ static inline int next(uint32_t line, uint32_t *cur, uint32_t last)
  * - If we released tombstone before (in WAIT step), fully restart.
  * - If TOMBSTONE and we have no claim yet: Try to claim TOMBSTONE.
  */
-void *llgcset_lookup_hash(const llgcset_t dbs, const void* data, int* created, uint32_t* index, uint32_t* hash)
+void *llgcset_lookup_hash(const llgcset_t dbs, const void* data, int* created, uint32_t* index)
 {
-    const size_t        l = dbs->length;
-    const size_t        b = dbs->bytes;
-
-    size_t              seed;
+    size_t              rehash_count;
 full_restart:
-    seed = 0;
+    rehash_count = 0;
 
-    uint32_t            hash_rehash = hash ? *hash : dbs->hash32(data, b, 0);
+    uint64_t            hash_rehash = hash_mul(data, dbs->key_length);
 
     /* hash_memo will be the key as stored in the table */
-    register uint32_t   hash_memo = hash_rehash & 0x7fff0000; 
+    register uint32_t   hash_memo = hash_rehash & HASH_MASK; 
     // avoid collision of hash with reserved values 
-    while (EMPTY == hash_memo || 0x7fff0000 == hash_memo)
-        hash_memo = dbs->hash32((char *)data, b, ++seed) & 0x7fff0000;
+    while (EMPTY == hash_memo || (TOMBSTONE & HASH_MASK) == hash_memo) 
+        hash_memo = (hash_rehash = rehash_mul(data, dbs->key_length, hash_rehash)) & HASH_MASK;
 
     volatile uint32_t   *bucket = 0;
     volatile uint32_t   *tomb_bucket = 0;
@@ -167,10 +180,9 @@ full_restart:
 
     // First bucket is ours, we can do our job!
 
-    while (seed < dbs->threshold)
+    while (rehash_count < dbs->threshold)
     {
         idx = hash_rehash & dbs->mask;
-        size_t line = idx & CACHE_LINE_INT32_MASK;
         size_t last = idx; // if next() sees idx again, stop.
         do
         {
@@ -200,53 +212,56 @@ full_restart:
 
 restart_bucket:
             // If the bucket is still empty, then our value is not yet in the table!
-            if (EMPTY == (*bucket & 0x7fff0000))
+            if (EMPTY == (*bucket & HASH_MASK))
             {
                 if (tomb_bucket != 0) {
+                    const size_t data_idx = tomb_idx * dbs->padded_data_length;
                     // We claimed a tombstone (using cas) earlier.
-                    memcpy(&dbs->data[tomb_idx * l], data, b);
+                    memcpy(&dbs->data[data_idx], data, dbs->data_length);
                     // SFENCE; // future x86 without strong store ordering
                     *tomb_bucket = hash_memo + 1; // also set RC to 1
                     if (tomb_bucket != first_bucket) unlock(first_bucket);
 
                     *index = tomb_idx;
                     *created = 1;
-                    return &dbs->data[tomb_idx * l];
+                    return &dbs->data[data_idx];
                 }
 
                 if (bucket == first_bucket) {
+                    const size_t data_idx = idx * dbs->padded_data_length;
                     // The empty bucket is also the first bucket.
-                    memcpy(&dbs->data[idx * l], data, b);
+                    memcpy(&dbs->data[data_idx], data, dbs->data_length);
                     // SFENCE; // future x86 without strong store ordering
                     *bucket = hash_memo + 1;
 
                     *index = idx;
                     *created = 1;
-                    return &dbs->data[idx * l];
+                    return &dbs->data[data_idx];
                 }
 
                 // No claimed tombstone, so claim end of chain
                 if (cas(bucket, EMPTY, LOCK)) {
-                    memcpy(&dbs->data[idx * l], data, b);
+                    const size_t data_idx = idx * dbs->padded_data_length;
+                    memcpy(&dbs->data[data_idx], data, dbs->data_length);
                     // SFENCE; // future x86 without strong store ordering
                     *bucket = hash_memo + 1; // also set RC to 1
                     unlock(first_bucket);
 
                     *index = idx;
                     *created = 1;
-                    return &dbs->data[idx * l];
+                    return &dbs->data[data_idx];
                 }
                 
                 // End of chain claim failed! We have to wait and restart!
                 // Release all existing claims first...
                 // tomb_bucket == 0
                 unlock(first_bucket);
-                while (*bucket & LOCK) cpu_relax();
+                while (*bucket & LOCK) cpu_relax;
                 goto full_restart;
             }
 
             // Test if this bucket matches
-            if (hash_memo == (*bucket & 0x7fff0000)) {
+            if (hash_memo == (*bucket & HASH_MASK)) {
                 // It matches: increase ref counter
                 int ref_res = try_ref(bucket);
                 if (ref_res != REF_SUCCESS) {
@@ -256,7 +271,7 @@ restart_bucket:
                     goto restart_bucket;
                 }
                 // Compare data
-                if (dbs->equals(&dbs->data[idx * l], data, b))
+                if (memcmp(&dbs->data[idx * dbs->padded_data_length], data, dbs->key_length) == 0)
                 {
                     // Found existing!
                     if (tomb_bucket != 0) *tomb_bucket = TOMBSTONE;
@@ -264,13 +279,13 @@ restart_bucket:
 
                     *index = idx;
                     *created = 0;
-                    return &dbs->data[idx * l];
+                    return &dbs->data[idx * dbs->padded_data_length];
                 }
                 // It was different, decrease counter again
                 llgcset_deref(dbs, idx);
             }
 
-            if (tomb_bucket == 0 && TOMBSTONE == (*bucket & 0x7fffffff)) {
+            if (tomb_bucket == 0 && TOMBSTONE == (*bucket & ~LOCK)) {
                 if (bucket == first_bucket) {
                     tomb_bucket = first_bucket;
                     tomb_idx = first_idx;
@@ -282,23 +297,25 @@ restart_bucket:
                 }
                 // If it fails, no problem!
             }  
-        } while (next(line, &idx, last));
+        } while (next(&idx, last));
 
         // Rehash, next cache line!
-        hash_rehash = dbs->hash32(data, b, hash_rehash + (++seed));
+        hash_rehash = rehash_mul(data, dbs->key_length, hash_rehash);
+        rehash_count++;
     }
 
     // If we are here, then we are certain no entries exist!
     // if we have a tombstone, then the table is not full
     if (tomb_bucket != 0) {
-        memcpy(&dbs->data[tomb_idx * l], data, b);
+        const size_t data_idx = tomb_idx * dbs->padded_data_length;
+        memcpy(&dbs->data[data_idx], data, dbs->data_length);
         // SFENCE; // future x86 without strong store ordering
         *tomb_bucket = hash_memo + 1;
         if (tomb_bucket != first_bucket) unlock(first_bucket);
 
         *index = tomb_idx;
         *created = 1;
-        return &dbs->data[tomb_idx * l];
+        return &dbs->data[data_idx];
     }
 
     // table is full
@@ -311,45 +328,62 @@ inline void *llgcset_get_or_create(const llgcset_t dbs, const void *data, int *c
 {
     int _created;
     uint32_t _index;
-    void *result = llgcset_lookup_hash(dbs, data, &_created, &_index, NULL);
+    void *result = llgcset_lookup_hash(dbs, data, &_created, &_index);
     if (result == 0) {
         // Table full - gc then try again...
         llgcset_gc(dbs, gc_hashtable_full);
-        result = llgcset_lookup_hash(dbs, data, &_created, &_index, NULL);
+        result = llgcset_lookup_hash(dbs, data, &_created, &_index);
     }
     if (created) *created=_created;
     if (index) *index=_index;
     return result;
 }
 
-llgcset_t llgcset_create(size_t key_size, size_t table_size, size_t gc_size, hash32_f hash32, equals_f equals, delete_f cb_delete, pre_gc_f pre_gc)
+static inline unsigned next_pow2(unsigned x)
 {
-    llgcset_t dbs = rt_align(CACHE_LINE_SIZE, sizeof(struct llgcset));
-    dbs->hash32 = hash32 != NULL ? hash32 : SuperFastHash;
-    dbs->equals = equals != NULL ? equals : default_equals;
-    dbs->cb_delete = cb_delete; // can be NULL
-    dbs->pre_gc = pre_gc; // can be NULL
+    if (x <= 2) return x;
+    return (1ULL << 32) >> __builtin_clz(x - 1);
+}
 
-    // MINIMUM TABLE SIZE
-    if (table_size < 4) table_size = 4;
-    
-    dbs->bytes = key_size; 
-    dbs->length = key_size;
-    dbs->size = 1 << table_size;
-    dbs->threshold = 2*table_size; // e.g. 40 cache lines in a 1<<20 table
-    dbs->mask = dbs->size - 1;
-    dbs->table = rt_align(CACHE_LINE_SIZE, sizeof(uint32_t) * dbs->size);
-    dbs->data = rt_align(CACHE_LINE_SIZE, dbs->size * key_size);
-    memset(dbs->table, 0, sizeof(uint32_t) * dbs->size);
+llgcset_t llgcset_create(size_t key_length, size_t data_length, size_t table_size, llgcset_delete_f cb_delete, llgcset_pregc_f cb_pregc, void *cb_data)
+{
+    llgcset_t dbs;
+    posix_memalign((void**)&dbs, LINE_SIZE, sizeof(struct llgcset));
+
+    assert(key_length <= data_length);  
+
+    dbs->key_length = key_length;
+    dbs->data_length = data_length;
+
+    // For padded data length, we will just round up to 16 bytes.
+    if (data_length == 1 || data_length == 2) dbs->padded_data_length = data_length;
+    else if (data_length == 3 || data_length == 4) dbs->padded_data_length = 4;
+    else if (data_length <= 8) dbs->padded_data_length = (data_length + 7) & ~7;
+    else dbs->padded_data_length = (data_length + 15) & ~15;
+
+    if (table_size < HASH_PER_CL) table_size = HASH_PER_CL;
+    assert(next_pow2(table_size) == table_size);
+    dbs->table_size = table_size;
+    dbs->mask = dbs->table_size - 1;
+
+    dbs->threshold = (64 - __builtin_clzl(table_size)) + 4; // doubling table_size increases threshold by 1
+
+    posix_memalign((void**)&dbs->table, LINE_SIZE, dbs->table_size * sizeof(uint32_t));
+    posix_memalign((void**)&dbs->data, LINE_SIZE, dbs->table_size * dbs->padded_data_length);
+
+    memset(dbs->table, 0, sizeof(uint32_t) * dbs->table_size);
     
     // dont care about what is in "data" table
  
-    int cache_size = table_size - 4;
-    if (cache_size<4) cache_size=4;
-    dbs->deadlist = llcache_create(4, 4, 1<<cache_size, (llcache_delete_f)&llgcset_deadlist_ondelete, dbs);
+    size_t cache_size = table_size >> 4; // table_size / 16
+    dbs->deadlist = llcache_create(4, 4, cache_size, (llcache_delete_f)&llgcset_deadlist_ondelete, dbs);
 
     dbs->clearing = 0;
  
+    dbs->cb_delete = cb_delete; // can be NULL
+    dbs->cb_pregc  = cb_pregc; // can be NULL
+    dbs->cb_data   = cb_data;
+
     return dbs;
 }
 
@@ -358,14 +392,15 @@ llgcset_t llgcset_create(size_t key_size, size_t table_size, size_t gc_size, has
  */
 void llgcset_ref(const llgcset_t dbs, uint32_t index)
 {
-    assert(index < dbs->size);
-    assert(index != 0);
+    assert(index != 0 && index < dbs->table_size);
 
     int ref_res;
     register volatile uint32_t *hashptr = &dbs->table[index];
     do {
         ref_res = try_ref(hashptr);
+#if DEBUG_LLGCSET
         assert(ref_res != REF_DELETING);
+#endif
         // ref_res is REF_LOCK or REF_NOCAS or REF_SUCCESS
     } while (ref_res != REF_SUCCESS);
 }
@@ -376,20 +411,20 @@ void try_delete_item(const llgcset_t dbs, uint32_t index)
     register uint32_t hash = *hashptr;
 
     // Check if still 0 and then try to claim it...
-    while (RC_PART(hash) == 0) {
+    while ((hash & RC_MASK) == 0) {
         if (cas(hashptr, hash, hash | DELETING)) {
             // if we're here, we can safely delete it!
-            if (dbs->cb_delete != NULL) dbs->cb_delete(dbs, &dbs->data[index * dbs->length]);
+            if (dbs->cb_delete != NULL) dbs->cb_delete(dbs->cb_data, &dbs->data[index * dbs->padded_data_length]);
 
             // We do not want to interfere with locks...
             while (!cas(hashptr, hash, hash | TOMBSTONE)) {
                 hash = *hashptr;
-                cpu_relax();
+                cpu_relax;
             }
             break;
         }
         hash = *hashptr;
-        cpu_relax();
+        cpu_relax;
     }   
 }
 
@@ -398,8 +433,7 @@ void try_delete_item(const llgcset_t dbs, uint32_t index)
  */
 void llgcset_deref(const llgcset_t dbs, uint32_t index)
 {
-    assert(index < dbs->size);
-    assert(index != 0);
+    assert(index != 0 && index < dbs->table_size);
 
     int ref_res;
     register volatile uint32_t *hashptr = &dbs->table[index];
@@ -421,7 +455,7 @@ inline void llgcset_clear(llgcset_t dbs)
 {
     // TODO MODIFY so the callback is properly called and all???
     // Or is that simply a matter of gc()...
-    memset(dbs->table, 0, sizeof(uint32_t) * dbs->size);
+    memset(dbs->table, 0, sizeof(uint32_t) * dbs->table_size);
 }
 
 void llgcset_free(llgcset_t dbs)
@@ -438,7 +472,7 @@ void llgcset_free(llgcset_t dbs)
 void llgcset_gc(const llgcset_t dbs, gc_reason reason)
 {
     // Call dbs->pre_gc first
-    if (dbs->pre_gc != NULL) dbs->pre_gc(dbs, reason);
+    if (dbs->cb_pregc != NULL) dbs->cb_pregc(dbs->cb_data, reason);
 
     atomic_inc(&dbs->clearing);
     llcache_clear(dbs->deadlist);

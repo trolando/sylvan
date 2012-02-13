@@ -10,6 +10,7 @@
     #define LINE_SIZE 64 // default cache line
 #endif
 
+#define barrier    asm volatile("": : :"memory")
 #define cpu_relax  asm volatile("pause\n": : :"memory")
 #define cas(a,b,c) __sync_bool_compare_and_swap((a),(b),(c))
 
@@ -46,9 +47,7 @@ static const uint32_t  CL_MASK_R   = ((LINE_SIZE) / 4) - 1;
 // Calculate next index on a cache line walk
 static inline int next(uint32_t *cur, uint32_t last) 
 {
-    register uint32_t next = (*cur & CL_MASK) | ((*cur + 1) & CL_MASK_R);
-    *cur = next;
-    return next != last;
+    return (*cur = (*cur & CL_MASK) | ((*cur + 1) & CL_MASK_R)) != last;
 }
 
 inline void llcache_release(const llcache_t dbs, uint32_t index)
@@ -211,7 +210,7 @@ restart_bucket:
     goto restart_full;
 }
 
-static __attribute__((noinline)) unsigned next_pow2(unsigned x)
+static inline unsigned next_pow2(unsigned x)
 {
     if (x <= 2) return x;
     return (1ULL << 32) >> __builtin_clz(x - 1);
@@ -238,15 +237,15 @@ llcache_t llcache_create(size_t key_length, size_t data_length, size_t cache_siz
     dbs->cache_size = cache_size;
     dbs->mask = dbs->cache_size - 1;
 
-    posix_memalign((void**)&dbs->table, LINE_SIZE, sizeof(uint32_t) * dbs->cache_size);
-    posix_memalign((void**)&dbs->data, LINE_SIZE, dbs->cache_size * dbs->padded_data_length);
-    
-    dbs->cb_delete = cb_delete; // can be NULL
-    dbs->cb_data   = cb_data;
+    posix_memalign((void**)&dbs->table, LINE_SIZE, dbs->cache_size * sizeof(uint32_t));
+    posix_memalign((void**)&dbs->data, LINE_SIZE, dbs->cache_size * dbs->padded_data_length);    
 
     memset(dbs->table, 0, sizeof(uint32_t) * dbs->cache_size);
 
     // dont care about what is in "data" table - no need to clear it
+
+    dbs->cb_delete = cb_delete; // can be NULL
+    dbs->cb_data   = cb_data;
 
     return dbs;
 }

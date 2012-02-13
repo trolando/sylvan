@@ -207,7 +207,7 @@ restart_bucket:
                     memcpy(&dbs->data[tomb_idx * l], data, b);
                     // SFENCE; // future x86 without strong store ordering
                     *tomb_bucket = hash_memo + 1; // also set RC to 1
-                    unlock(first_bucket);
+                    if (tomb_bucket != first_bucket) unlock(first_bucket);
 
                     *index = tomb_idx;
                     *created = 1;
@@ -239,8 +239,8 @@ restart_bucket:
                 
                 // End of chain claim failed! We have to wait and restart!
                 // Release all existing claims first...
-                if (tomb_bucket != first_bucket) unlock(first_bucket);
-                if (tomb_bucket != 0) *tomb_bucket = TOMBSTONE;
+                // tomb_bucket == 0
+                unlock(first_bucket);
                 while (*bucket & LOCK) cpu_relax();
                 goto full_restart;
             }
@@ -294,7 +294,7 @@ restart_bucket:
         memcpy(&dbs->data[tomb_idx * l], data, b);
         // SFENCE; // future x86 without strong store ordering
         *tomb_bucket = hash_memo + 1;
-        unlock(first_bucket);
+        if (tomb_bucket != first_bucket) unlock(first_bucket);
 
         *index = tomb_idx;
         *created = 1;
@@ -302,6 +302,7 @@ restart_bucket:
     }
 
     // table is full
+    unlock(first_bucket);
     return 0;
 }
 

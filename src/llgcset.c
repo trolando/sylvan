@@ -68,7 +68,7 @@ enum {
     REF_NOWZERO
 };
 
-void llgcset_deadlist_ondelete(const llgcset_t dbs, const uint32_t *index);
+void llgcset_deadlist_ondelete(const llgcset_t dbs, const uint32_t index);
 
 
 /* 
@@ -376,7 +376,7 @@ llgcset_t llgcset_create(size_t key_length, size_t data_length, size_t table_siz
     // dont care about what is in "data" table
  
     size_t cache_size = table_size >> 4; // table_size / 16
-    dbs->deadlist = llcache_create(4, 4, cache_size, (llcache_delete_f)&llgcset_deadlist_ondelete, dbs);
+    dbs->deadlist = llsimplecache_create(cache_size, (llsimplecache_delete_f)&llgcset_deadlist_ondelete, dbs);
 
     dbs->clearing = 0;
  
@@ -445,7 +445,7 @@ void llgcset_deref(const llgcset_t dbs, uint32_t index)
     if (ref_res == REF_NOWZERO) {
         // Add it to the deadlist, then return.
         if (dbs->clearing != 0) try_delete_item(dbs, index);
-        else if(llcache_put(dbs->deadlist, &index) == 2) {
+        else if(llsimplecache_put(dbs->deadlist, &index) == 2) {
             try_delete_item(dbs, index);
         }
     } 
@@ -460,7 +460,7 @@ inline void llgcset_clear(llgcset_t dbs)
 
 void llgcset_free(llgcset_t dbs)
 {
-    llcache_free(dbs->deadlist);
+    llsimplecache_free(dbs->deadlist);
     free(dbs->data);
     free(dbs->table);
     free(dbs);
@@ -475,13 +475,13 @@ void llgcset_gc(const llgcset_t dbs, gc_reason reason)
     if (dbs->cb_pregc != NULL) dbs->cb_pregc(dbs->cb_data, reason);
 
     atomic_inc(&dbs->clearing);
-    llcache_clear(dbs->deadlist);
+    llsimplecache_clear(dbs->deadlist);
     atomic_dec(&dbs->clearing);
 }
 
-void llgcset_deadlist_ondelete(const llgcset_t dbs, const uint32_t *index)
+void llgcset_deadlist_ondelete(const llgcset_t dbs, const uint32_t index)
 {
-    try_delete_item(dbs, *index);
+    try_delete_item(dbs, index);
 }
 
 void llgcset_print_size(llgcset_t dbs, FILE *f)
@@ -490,6 +490,6 @@ void llgcset_print_size(llgcset_t dbs, FILE *f)
         dbs->table_size, dbs->table_size * 4, dbs->table_size, 
         dbs->padded_data_length, dbs->table_size * dbs->padded_data_length);
     fprintf(f, "(Deadlist: ");
-    llcache_print_size(dbs->deadlist, f);
+    llsimplecache_print_size(dbs->deadlist, f);
     fprintf(f, ")");
 }

@@ -40,6 +40,7 @@ set(sylvan_sources
   src/hash_mul.s
   src/rehash_mul.s
   src/llcache.c
+  src/llsimplecache.c
   src/runtime.c
   src/rng_hash_128.s
 )

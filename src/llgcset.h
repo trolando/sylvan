@@ -1,4 +1,4 @@
-#include "llcache.h"
+#include "llsimplecache.h"
 
 #ifndef LLGCSET_H
 #define LLGCSET_H
@@ -28,7 +28,7 @@ struct llgcset
     llgcset_delete_f  cb_delete;    // delete function (callback pre-delete)
     llgcset_pregc_f   cb_pregc;     // function called when full...
     void              *cb_data;
-    llcache_t         deadlist;
+    llsimplecache_t   deadlist;
     int               clearing;     // bit
 };
 

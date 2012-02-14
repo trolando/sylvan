@@ -67,4 +67,6 @@ int llcache_put_and_hold(const llcache_t dbs, void *data, uint32_t *index);
  */
 void llcache_release(const llcache_t dbs, uint32_t index);
 
+void llcache_print_size(llcache_t dbs, FILE *f);
+
 #endif

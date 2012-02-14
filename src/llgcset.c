@@ -483,3 +483,13 @@ void llgcset_deadlist_ondelete(const llgcset_t dbs, const uint32_t *index)
 {
     try_delete_item(dbs, *index);
 }
+
+void llgcset_print_size(llgcset_t dbs, FILE *f)
+{
+    fprintf(f, "Hash: %ld * 4 = %ld bytes; Data: %ld * %ld = %ld bytes ",
+        dbs->table_size, dbs->table_size * 4, dbs->table_size, 
+        dbs->padded_data_length, dbs->table_size * dbs->padded_data_length);
+    fprintf(f, "(Deadlist: ");
+    llcache_print_size(dbs->deadlist, f);
+    fprintf(f, ")");
+}

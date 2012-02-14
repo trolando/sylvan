@@ -49,4 +49,6 @@ void llgcset_deref(const llgcset_t dbs, uint32_t index);
 
 void llgcset_gc(const llgcset_t dbs, gc_reason reason);
 
+void llgcset_print_size(llgcset_t dbs, FILE *f);
+
 #endif

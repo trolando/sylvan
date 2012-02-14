@@ -192,6 +192,13 @@ void sylvan_report_stats()
     printf(NC BOLD"SYLVAN STATS"); 
     printf(NC LRED             " *\n");
     printf(     "****************\n");
+    printf(NC ULINE "Memory usage\n" NC BLUE);
+    printf("BDD table:          ");
+    llgcset_print_size(_bdd.data, stdout);
+    printf("\n");
+    printf("Cache:              ");
+    llcache_print_size(_bdd.cache, stdout);
+    printf("\n");
     printf(NC ULINE "Cache\n" NC BLUE);
     printf("New results:        %u\n", __sylvan_count[C_cache_new]);
     printf("Existing results:   %u\n", __sylvan_count[C_cache_exists]);
@@ -316,12 +323,15 @@ void sylvan_init(size_t datasize, size_t cachesize, size_t data_gc_size, size_t 
         rt_report_and_exit(1, "BDD_init error: datasize must be < 30!");
     }
     _bdd.data = llgcset_create(10, sizeof(struct bddnode), 1<<datasize, (llgcset_delete_f)&sylvan_bdd_delete, sylvan_bdd_pregc, NULL);
+
+
 #if CACHE    
     if (cachesize >= 30) {
         rt_report_and_exit(1, "BDD_init error: cachesize must be < 30!");
     }
     
     _bdd.cache = llcache_create(cache_key_length, cache_data_length, 1<<cachesize, (llcache_delete_f)&sylvan_cache_delete, NULL);
+
 #endif
 
     _bdd.serialize_counter = 1;

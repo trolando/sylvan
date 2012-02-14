@@ -78,7 +78,12 @@ int llcache_get_and_hold(const llcache_t dbs, void *data, uint32_t *index)
     if (hash == 0) hash++; // blah. Just avoid 0, that's all.
 
     uint32_t f_idx = hash & dbs->mask;
-    uint32_t idx = f_idx;
+    uint32_t idx;
+
+    int only_check_first = 0;
+
+restart_full:
+    idx = f_idx;
 
     do {
         // do not use bucket 0
@@ -112,9 +117,17 @@ restart_bucket:
                 goto restart_bucket;
             }
         }
+
+        if (only_check_first) break;
     } while (next(&idx, f_idx));
   
     // If we are here, it is not in the cache line
+    // BUT: perhaps it has been written in the first bucket!
+    if (only_check_first == 0) {
+        only_check_first = 1;
+        goto restart_full;
+    }
+
     return 0;
 }
 
@@ -291,3 +304,9 @@ void llcache_free(llcache_t dbs)
     free(dbs);
 }
 
+void llcache_print_size(llcache_t dbs, FILE *f)
+{
+    fprintf(f, "Hash: %ld * 4 = %ld bytes; Data: %ld * %ld = %ld bytes",
+        dbs->cache_size, dbs->cache_size * 4, dbs->cache_size, 
+        dbs->padded_data_length, dbs->cache_size * dbs->padded_data_length);
+}

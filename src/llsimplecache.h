@@ -48,7 +48,7 @@ void llsimplecache_free(llsimplecache_t dbs);
  * Returns 1 when successful.
  * Returns 0 when an existing entry exists. In that case, data will contain the original data.
  */
-int llsimplecache_put(const llsimplecache_t dbs, uint32_t *data);
+int llsimplecache_put(const llsimplecache_t dbs, uint32_t *data, uint32_t hash);
 
 void llsimplecache_print_size(llsimplecache_t dbs, FILE *f);
 

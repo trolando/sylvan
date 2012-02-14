@@ -445,7 +445,7 @@ void llgcset_deref(const llgcset_t dbs, uint32_t index)
     if (ref_res == REF_NOWZERO) {
         // Add it to the deadlist, then return.
         if (dbs->clearing != 0) try_delete_item(dbs, index);
-        else if(llsimplecache_put(dbs->deadlist, &index) == 2) {
+        else if(llsimplecache_put(dbs->deadlist, &index, index) == 2) {
             try_delete_item(dbs, index);
         }
     } 

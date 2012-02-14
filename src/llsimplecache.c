@@ -44,9 +44,9 @@ static inline int next(uint32_t *cur, uint32_t last)
     return (*cur = (*cur & CL_MASK) | ((*cur + 1) & CL_MASK_R)) != last;
 }
 
-int llsimplecache_put(const llsimplecache_t dbs, uint32_t *data) 
+int llsimplecache_put(const llsimplecache_t dbs, uint32_t *data, uint32_t hash) 
 {
-    uint32_t hash = (uint32_t)hash_mul(data, 4);
+    if (hash == 0) hash = (uint32_t)hash_mul(data, 4);
     if (hash == 0) hash++; // blah. Just avoid 0, that's all.
 
     uint32_t f_idx = hash & dbs->mask;

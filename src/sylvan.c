@@ -1610,7 +1610,7 @@ void sylvan_load(FILE *f)
     ser_arr = (BDD*)malloc(sizeof(BDD) * ser_count);
 
     unsigned long i;
-    for (i=0;i<ser_count;i++) {
+    for (i=1;i<=ser_count;i++) {
         uint32_t low, high;
         BDDVAR var;
         fread(&low, 4, 1, f);
@@ -1622,7 +1622,7 @@ void sylvan_load(FILE *f)
 
         BDD _low = BDD_ISCONSTANT(low) ? low : BDD_TRANSFERMARK(low, ser_arr[BDD_STRIPMARK(low)-1]);
         BDD _high = BDD_ISCONSTANT(high) ? high : BDD_TRANSFERMARK(high, ser_arr[BDD_STRIPMARK(high)-1]);
-        ser_arr[i] = sylvan_makenode(var, _low, _high);
+        ser_arr[i-1] = sylvan_makenode(var, _low, _high);
     }
 }
 

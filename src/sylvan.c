@@ -164,7 +164,7 @@ static int get_thread_id() {
 struct {
     uint32_t count[C_MAX];
     char pad[SYLVAN_PAD(sizeof(long)*C_MAX, 64)];
-} stats[N_CNT_THREAD];
+} sylvan_stats[N_CNT_THREAD];
 
 #if COLORSTATS
 #define BLACK "\33[22;30m"
@@ -203,7 +203,7 @@ void sylvan_reset_counters()
     for (i=0;i<N_CNT_THREAD;i++) {
         thread_to_id_map[i].thread_id = 0;
         for (j=0;j<C_MAX;j++) {
-            stats[i].count[j] = 0;
+            sylvan_stats[i].count[j] = 0;
         }
     }
 }
@@ -231,29 +231,30 @@ void sylvan_report_stats()
     uint32_t totals[C_MAX];
     for (i=0;i<C_MAX;i++) totals[i] = 0;
     for (i=0;i<N_CNT_THREAD;i++) {
-        for (j=0;j<C_MAX;j++) totals[j] += stats[i].count[j];
+        for (j=0;j<C_MAX;j++) totals[j] += sylvan_stats[i].count[j];
     }
 
-    printf("New results:         %u\n", totals[C_cache_new]);
-    printf("Existing results:    %u\n", totals[C_cache_exists]);
-    printf("Reused results:      %u\n", totals[C_cache_reuse]);
-    printf("Overwritten results: %u\n", totals[C_cache_overwritten]);
+    uint32_t total_cache = totals[C_cache_new] + totals[C_cache_exists] + totals[C_cache_reuse];
+    printf("New results:         %u of %u\n", totals[C_cache_new], total_cache);
+    printf("Existing results:    %u of %u\n", totals[C_cache_exists], total_cache);
+    printf("Reused results:      %u of %u\n", totals[C_cache_reuse], total_cache);
+    printf("Overwritten results: %u of %u\n", totals[C_cache_overwritten], total_cache);
     printf(NC ULINE "GC\n" NC BLUE);
-    printf("GC user-request:    %u\n", totals[C_gc_user]);
-    printf("GC full table:      %u\n", totals[C_gc_hashtable_full]);
-    printf("GC full dead-list:  %u\n", totals[C_gc_deadlist_full]);
+    printf("GC user-request:     %u\n", totals[C_gc_user]);
+    printf("GC full table:       %u\n", totals[C_gc_hashtable_full]);
+    printf("GC full dead-list:   %u\n", totals[C_gc_deadlist_full]);
     printf(NC ULINE "Call counters (ITE, exists, forall, relprods, reversed relprods)\n" NC BLUE);
     for (i=0;i<N_CNT_THREAD;i++) {
         if (thread_to_id_map[i].thread_id != 0) 
-            printf("Thread %02d:          %d, %d, %d, %d, %d\n", i, 
-                stats[i].count[C_ite], stats[i].count[C_exists], stats[i].count[C_forall],
-                stats[i].count[C_relprods], stats[i].count[C_relprods_reversed]);
+            printf("Thread %02d:           %d, %d, %d, %d, %d\n", i, 
+                sylvan_stats[i].count[C_ite], sylvan_stats[i].count[C_exists], sylvan_stats[i].count[C_forall],
+                sylvan_stats[i].count[C_relprods], sylvan_stats[i].count[C_relprods_reversed]);
     }
-    printf(NC " \r");
+    printf(LRED  "****************" NC " \n");
 }
 
 #if STATS
-#define SV_CNT(s) (stats[get_thread_id()].count[s]+=1);
+#define SV_CNT(s) (sylvan_stats[get_thread_id()].count[s]+=1);
 #else
 #define SV_CNT(s) ; /* Empty */
 #endif

@@ -95,7 +95,7 @@ static struct {
 } _bdd;
 
 // max number of parameters (set to: 5, 13, 29 to get bddcache node size 32, 64, 128)
-#define MAXPARAM 5
+#define MAXPARAM 3
 
 #if CACHE
 /*
@@ -111,7 +111,7 @@ __attribute__ ((packed))
 struct bddcache {
     BDDOP operation;
     BDD params[MAXPARAM];
-    uint32_t parameters; // so we don't have to read <<operation>>
+//  uint32_t parameters; // so we don't have to read <<operation>>
     BDD result;
 };
 
@@ -272,7 +272,7 @@ void sylvan_cache_delete(const void *p, const bddcache_t cache)
     assert (cache->result != sylvan_invalid);
 
     int i;
-    for (i=0;i<cache->parameters;i++) {
+    for (i=0;i<MAXPARAM/*cache->parameters*/;i++) {
         sylvan_deref(cache->params[i]);
     }
     sylvan_deref(cache->result);
@@ -301,7 +301,7 @@ void sylvan_package_exit()
  * Initialize sylvan
  * - datasize / cachesize : number of bits ...
  */
-void sylvan_init(size_t datasize, size_t cachesize, size_t data_gc_size, size_t cache_gc_size)
+void sylvan_init(size_t tablesize, size_t cachesize)
 {
     if (initialized != 0) return;
     initialized = 1;
@@ -312,22 +312,24 @@ void sylvan_init(size_t datasize, size_t cachesize, size_t data_gc_size, size_t 
         exit(1);
     }
 #if CACHE
+/*
     if (sizeof(struct bddcache) != next_pow2(sizeof(struct bddcache))) {
         fprintf(stderr, "Invalid size of bdd operation cache: %ld\n", sizeof(struct bddcache));
         exit(1);
     }
+*/
 #endif
     //fprintf(stderr, "Sylvan\n");
     
-    if (datasize >= 30) {
-        rt_report_and_exit(1, "BDD_init error: datasize must be < 30!");
+    if (tablesize >= 30) {
+        rt_report_and_exit(1, "BDD_init error: tablesize must be < 30!");
     }
-    _bdd.data = llgcset_create(10, sizeof(struct bddnode), 1<<datasize, (llgcset_delete_f)&sylvan_bdd_delete, sylvan_bdd_pregc, NULL);
+    _bdd.data = llgcset_create(10, sizeof(struct bddnode), 1<<tablesize, (llgcset_delete_f)&sylvan_bdd_delete, sylvan_bdd_pregc, NULL);
 
 
 #if CACHE    
     if (cachesize >= 30) {
-        rt_report_and_exit(1, "BDD_init error: cachesize must be < 30!");
+        rt_report_and_exit(1, "BDD_init error: cachesize must be <= 30!");
     }
     
     _bdd.cache = llcache_create(cache_key_length, cache_data_length, 1<<cachesize, (llcache_delete_f)&sylvan_cache_delete, NULL);
@@ -678,7 +680,7 @@ BDD sylvan_ite(BDD a, BDD b, BDD c)
     struct bddcache template_cache_node;
     memset(&template_cache_node, 0, sizeof(struct bddcache));
     template_cache_node.operation = 0; // ITE operation
-    template_cache_node.parameters = 3;
+    //template_cache_node.parameters = 3;
     template_cache_node.params[0] = a;
     template_cache_node.params[1] = b;
     template_cache_node.params[2] = c;
@@ -780,7 +782,7 @@ BDD sylvan_exists(BDD a, BDD variables)
     struct bddcache template_cache_node;
     memset(&template_cache_node, 0, sizeof(struct bddcache));
     template_cache_node.operation = 4; // EXISTS operation
-    template_cache_node.parameters = 2;
+    //template_cache_node.parameters = 2;
     template_cache_node.params[0] = a;
     template_cache_node.params[1] = variables;
     template_cache_node.result = sylvan_invalid;
@@ -895,7 +897,7 @@ BDD sylvan_forall(BDD a, BDD variables)
     struct bddcache template_cache_node;
     memset(&template_cache_node, 0, sizeof(struct bddcache));
     template_cache_node.operation = 5; // FORALL operation
-    template_cache_node.parameters = 2;
+    //template_cache_node.parameters = 2;
     template_cache_node.params[0] = a;
     template_cache_node.params[1] = variables;
     template_cache_node.result = sylvan_invalid;
@@ -1020,7 +1022,7 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
     struct bddcache template_cache_node;
     memset(&template_cache_node, 0, sizeof(struct bddcache));
     template_cache_node.operation = 1; // RelProdS operation
-    template_cache_node.parameters = 3;
+    //template_cache_node.parameters = 3;
     template_cache_node.params[0] = a;
     template_cache_node.params[1] = b;
     template_cache_node.params[2] = excluded_variables;
@@ -1164,7 +1166,7 @@ BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables)
     struct bddcache template_cache_node;
     memset(&template_cache_node, 0, sizeof(struct bddcache));
     template_cache_node.operation = 2; // RelProdS operation
-    template_cache_node.parameters = 3;
+    //template_cache_node.parameters = 3;
     template_cache_node.params[0] = a;
     template_cache_node.params[1] = b;
     template_cache_node.params[2] = excluded_variables;
@@ -1468,7 +1470,7 @@ long long sylvan_count_refs()
         //fprintf(stderr, "Cache %08X ", i);
         
         int j;
-        for (j=0; j<n->parameters; j++) {
+        for (j=0; j<MAXPARAM/*n->parameters*/; j++) {
             //fprintf(stderr, "%d=%08X ", j, n->params[j]);
             if (BDD_ISCONSTANT(n->params[j])) continue;
             result--;

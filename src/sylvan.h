@@ -60,7 +60,7 @@ extern void sylvan_report_stats();
  * datasize in number of nodes will be 1<<datasize
  * cachesize in number of nodes will be 1<<cachesize
  */
-extern void sylvan_init(size_t datasize, size_t cachesize, size_t data_gc_size, size_t cache_gc_size);
+extern void sylvan_init(size_t datasize, size_t cachesize);
 
 /**
  * Stop threads and free data

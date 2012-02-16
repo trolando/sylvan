@@ -145,7 +145,7 @@ struct {
     unsigned int thread_id;
 } thread_to_id_map[N_CNT_THREAD];
 
-int get_thread_id() {
+static int get_thread_id() {
     unsigned int id = pthread_self();
     int i=0;
     for (;i<N_CNT_THREAD;i++) {
@@ -162,7 +162,7 @@ int get_thread_id() {
 }
 
 struct {
-    long count[C_MAX];
+    uint32_t count[C_MAX];
     char pad[SYLVAN_PAD(sizeof(long)*C_MAX, 64)];
 } stats[N_CNT_THREAD];
 
@@ -228,7 +228,7 @@ void sylvan_report_stats()
     printf("\n");
     printf(NC ULINE "Cache\n" NC BLUE);
 
-    long totals[C_MAX];
+    uint32_t totals[C_MAX];
     for (i=0;i<C_MAX;i++) totals[i] = 0;
     for (i=0;i<N_CNT_THREAD;i++) {
         for (j=0;j<C_MAX;j++) totals[j] += stats[i].count[j];
@@ -326,6 +326,8 @@ void sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
 {
     if (initialized != 0) return;
     initialized = 1;
+
+    sylvan_reset_counters();
 
     granularity = _granularity;
     

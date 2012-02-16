@@ -849,7 +849,7 @@ void runtests(int threads)
     fflush(stdout);
     int j;
     for (j=0;j<16;j++) {
-        sylvan_init(6, 6);
+        sylvan_init(6, 6, 1);
         
         test_xor();
         // verify gc
@@ -869,7 +869,7 @@ void runtests(int threads)
     printf(NC "Running test 'Diff'... ");
     fflush(stdout);
     for (j=0;j<16;j++) {
-        sylvan_init(12, 12);
+        sylvan_init(12, 12, 1);
         
         test_diff();
         // verify gc
@@ -889,7 +889,7 @@ void runtests(int threads)
     printf(NC "Running test 'Or'... ");
     fflush(stdout);
     for (j=0;j<16;j++) {
-        sylvan_init(9, 9);
+        sylvan_init(9, 9, 1);
         
         test_or();
         // verify gc
@@ -909,7 +909,7 @@ void runtests(int threads)
     printf(NC "Running test 'Apply'... ");
     fflush(stdout);
     for (j=0;j<16;j++) {
-        sylvan_init(6, 6);
+        sylvan_init(6, 6, 1);
         test_apply();
         // verify gc
         sylvan_gc();
@@ -928,7 +928,7 @@ void runtests(int threads)
     printf(NC "Running test 'ITE'... ");
     fflush(stdout);
     for (j=0;j<16;j++) {
-        sylvan_init(5, 5);
+        sylvan_init(5, 5, 1);
         int i;
         for (i=0;i<3;i++) test_ite();
         // verify gc
@@ -941,7 +941,7 @@ void runtests(int threads)
     printf(NC "Running test 'ExistsForall'... ");
     fflush(stdout);
     for (j=0;j<16;j++) {
-        sylvan_init(16, 16);
+        sylvan_init(16, 16, 1);
         int i;
         for (i=0;i<3;i++) test_exists_forall();
         // verify gc
@@ -955,7 +955,7 @@ void runtests(int threads)
     printf(NC "Running test 'ModelCheck'... ");
     fflush(stdout);
     for (j=0;j<16;j++) {
-        sylvan_init(7, 10); // 7, 4, 2, 2 but slow on 2
+        sylvan_init(7, 10, 3); // 7, 4, 2, 2 but slow on 2
         int i;
         for (i=0;i<3;i++) test_modelcheck();
         // verify gc
@@ -968,7 +968,7 @@ void runtests(int threads)
     printf(NC "Running test 'Mixed'... ");
     fflush(stdout);
     for (j=0;j<16;j++) {
-        sylvan_init(7, 10);
+        sylvan_init(7, 10, 3);
         int i;
         for (i=0;i<3;i++) test_apply();
         for (i=0;i<3;i++) test_ite();
@@ -986,7 +986,7 @@ void runtests(int threads)
     struct timespec begin, end;
     clock_gettime(CLOCK_MONOTONIC, &begin);
 
-    sylvan_init(16, 10); // minumum: X, 7, 4, 4 ??
+    sylvan_init(16, 10, 3); // minumum: X, 7, 4, 4 ??
     for (j=0;j<10000;j++){
         int i;
         for (i=0;i<3;i++) test_apply();

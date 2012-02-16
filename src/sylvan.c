@@ -91,8 +91,9 @@ static struct {
 #if CACHE
     llcache_t cache; // operations cache
 #endif
-    int serialize_counter;
 } _bdd;
+
+static int granularity = 1; // default
 
 // max number of parameters (set to: 5, 13, 29 to get bddcache node size 32, 64, 128)
 #define MAXPARAM 3
@@ -301,10 +302,12 @@ void sylvan_package_exit()
  * Initialize sylvan
  * - datasize / cachesize : number of bits ...
  */
-void sylvan_init(size_t tablesize, size_t cachesize)
+void sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
 {
     if (initialized != 0) return;
     initialized = 1;
+
+    granularity = _granularity;
     
     // Sanity check
     if (sizeof(struct bddnode) != 16) {
@@ -335,8 +338,6 @@ void sylvan_init(size_t tablesize, size_t cachesize)
     _bdd.cache = llcache_create(cache_key_length, cache_data_length, 1<<cachesize, (llcache_delete_f)&sylvan_cache_delete, NULL);
 
 #endif
-
-    _bdd.serialize_counter = 1;
 }
 
 void sylvan_quit()
@@ -663,7 +664,7 @@ static BDD sylvan_triples(BDD *_a, BDD *_b, BDD *_c)
  * At entry, all BDDs should be ref'd by caller.
  * At exit, they still are ref'd by caller, and the result it ref'd, and any items in the OC are ref'd.
  */
-BDD sylvan_ite(BDD a, BDD b, BDD c)
+BDD sylvan_ite_do(BDD a, BDD b, BDD c, BDDVAR caller_var, int cachenow)
 {
     // Standard triples
     BDD r = sylvan_triples(&a, &b, &c);
@@ -676,22 +677,24 @@ BDD sylvan_ite(BDD a, BDD b, BDD c)
     // The value of a,b,c may be changed, but the reference counters are not changed at this point.
     
 #if CACHE 
-    // Check cache
     struct bddcache template_cache_node;
-    memset(&template_cache_node, 0, sizeof(struct bddcache));
-    template_cache_node.operation = 0; // ITE operation
-    //template_cache_node.parameters = 3;
-    template_cache_node.params[0] = a;
-    template_cache_node.params[1] = b;
-    template_cache_node.params[2] = c;
-    template_cache_node.result = sylvan_invalid;
+    if (cachenow) {
+        // Check cache
+        memset(&template_cache_node, 0, sizeof(struct bddcache));
+        template_cache_node.operation = 0; // ITE operation
+        //template_cache_node.parameters = 3;
+        template_cache_node.params[0] = a;
+        template_cache_node.params[1] = b;
+        template_cache_node.params[2] = c;
+        template_cache_node.result = sylvan_invalid;
     
-    uint32_t cache_idx;
-    if (llcache_get_and_hold(_bdd.cache, &template_cache_node, &cache_idx)) {
-        BDD res = sylvan_ref(template_cache_node.result);
-        llcache_release(_bdd.cache, cache_idx);
-        SV_CNT(C_cache_reuse);
-        return BDD_TRANSFERMARK(r, res);
+        uint32_t cache_idx;
+        if (llcache_get_and_hold(_bdd.cache, &template_cache_node, &cache_idx)) {
+            BDD res = sylvan_ref(template_cache_node.result);
+            llcache_release(_bdd.cache, cache_idx);
+            SV_CNT(C_cache_reuse);
+            return BDD_TRANSFERMARK(r, res);
+        }
     }
 #endif
     
@@ -705,6 +708,9 @@ BDD sylvan_ite(BDD a, BDD b, BDD c)
     if (na && level > na->level) level = na->level;
     if (nb && level > nb->level) level = nb->level;
     if (nc && level > nc->level) level = nc->level;
+
+    // Calculate "cachenow" for child
+    int child_cachenow = granularity < 2 ? 1 : caller_var % granularity != level % granularity;
     
     // Get cofactors
     BDD aLow = a, aHigh = a;
@@ -724,8 +730,8 @@ BDD sylvan_ite(BDD a, BDD b, BDD c)
     }
     
     // Recursive computation
-    BDD low = sylvan_ite(aLow, bLow, cLow);
-    BDD high = sylvan_ite(aHigh, bHigh, cHigh);
+    BDD low = sylvan_ite_do(aLow, bLow, cLow, level, child_cachenow);
+    BDD high = sylvan_ite_do(aHigh, bHigh, cHigh, level, child_cachenow);
     BDD result = sylvan_makenode(level, low, high);
     
     /*
@@ -735,34 +741,42 @@ BDD sylvan_ite(BDD a, BDD b, BDD c)
      */
 
 #if CACHE
-    template_cache_node.result = result;
-    int cache_res = llcache_put_and_hold(_bdd.cache, &template_cache_node, &cache_idx);
-    if (cache_res == 0) {
-        llcache_release(_bdd.cache, cache_idx);
-        // It existed!
-        assert(result == template_cache_node.result);
-        SV_CNT(C_cache_exists);
-        // No need to ref
-    } else if (cache_res == 1) {
-        // Created new!
-        sylvan_ref(a);
-        sylvan_ref(b);
-        sylvan_ref(c);
-        sylvan_ref(result);
-        llcache_release(_bdd.cache, cache_idx);
-        SV_CNT(C_cache_new);
-    } else if (cache_res == 2) {
-        // Replaced existing!
-        sylvan_ref(a);
-        sylvan_ref(b);
-        sylvan_ref(c);
-        sylvan_ref(result);
-        llcache_release(_bdd.cache, cache_idx);
-        sylvan_cache_delete(NULL, &template_cache_node);
+    if (cachenow) {
+        template_cache_node.result = result;
+        uint32_t cache_idx;
+        int cache_res = llcache_put_and_hold(_bdd.cache, &template_cache_node, &cache_idx);
+        if (cache_res == 0) {
+            llcache_release(_bdd.cache, cache_idx);
+            // It existed!
+            assert(result == template_cache_node.result);
+            SV_CNT(C_cache_exists);
+            // No need to ref
+        } else if (cache_res == 1) {
+            // Created new!
+            sylvan_ref(a);
+            sylvan_ref(b);
+            sylvan_ref(c);
+            sylvan_ref(result);
+            llcache_release(_bdd.cache, cache_idx);
+            SV_CNT(C_cache_new);
+        } else if (cache_res == 2) {
+            // Replaced existing!
+            sylvan_ref(a);
+            sylvan_ref(b);
+            sylvan_ref(c);
+            sylvan_ref(result);
+           llcache_release(_bdd.cache, cache_idx);
+            sylvan_cache_delete(NULL, &template_cache_node);
+        }
     }
 #endif
 
     return BDD_TRANSFERMARK(r, result);
+}
+
+BDD sylvan_ite(BDD a, BDD b, BDD c)
+{
+    return sylvan_ite_do(a, b, c, 0, 1);
 }
 
 /**
@@ -770,7 +784,7 @@ BDD sylvan_ite(BDD a, BDD b, BDD c)
  * Requires caller has ref on a, variables
  * Ensures caller as ref on a, variables and on result
  */
-BDD sylvan_exists(BDD a, BDD variables)
+BDD sylvan_exists_do(BDD a, BDD variables, BDDVAR caller_var, int cachenow)
 {
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
@@ -778,24 +792,25 @@ BDD sylvan_exists(BDD a, BDD variables)
     SV_TCNT;
 
 #if CACHE
-    // Check cache
     struct bddcache template_cache_node;
-    memset(&template_cache_node, 0, sizeof(struct bddcache));
-    template_cache_node.operation = 4; // EXISTS operation
-    //template_cache_node.parameters = 2;
-    template_cache_node.params[0] = a;
-    template_cache_node.params[1] = variables;
-    template_cache_node.result = sylvan_invalid;
-
     // Save variables
-    BDD _variables = variables;
-    
-    uint32_t cache_idx;
-    if (llcache_get_and_hold(_bdd.cache, &template_cache_node, &cache_idx)) {
-        BDD result = sylvan_ref(template_cache_node.result);
-        llcache_release(_bdd.cache, cache_idx);
-        SV_CNT(C_cache_reuse);
-        return result;
+    const BDD _variables = variables;
+    if (cachenow) {
+        // Check cache
+        memset(&template_cache_node, 0, sizeof(struct bddcache));
+        template_cache_node.operation = 4; // EXISTS operation
+        //template_cache_node.parameters = 2;
+        template_cache_node.params[0] = a;
+        template_cache_node.params[1] = variables;
+        template_cache_node.result = sylvan_invalid;
+
+        uint32_t cache_idx;
+        if (llcache_get_and_hold(_bdd.cache, &template_cache_node, &cache_idx)) {
+            BDD result = sylvan_ref(template_cache_node.result);
+            llcache_release(_bdd.cache, cache_idx);
+            SV_CNT(C_cache_reuse);
+            return result;
+        }
     }
 #endif
  
@@ -809,6 +824,9 @@ BDD sylvan_exists(BDD a, BDD variables)
     BDD aLow = BDD_TRANSFERMARK(a, na->low);
     BDD aHigh = BDD_TRANSFERMARK(a, na->high);
     
+    // Calculate "cachenow" for child
+    int child_cachenow = granularity < 2 ? 1 : caller_var % granularity != level % granularity;
+
     // Skip variables not in a
     while (variables != sylvan_false && sylvan_var(variables) < level) {
         // Without increasing ref counter..
@@ -825,11 +843,11 @@ BDD sylvan_exists(BDD a, BDD variables)
     
     else if (sylvan_var(variables) == level) {
         // quantify
-        BDD low = sylvan_exists(aLow, LOW(variables));
+        BDD low = sylvan_exists_do(aLow, LOW(variables), level, child_cachenow);
         if (low == sylvan_true) {
             result = sylvan_true;
         } else {
-            BDD high = sylvan_exists(aHigh, LOW(variables));
+            BDD high = sylvan_exists_do(aHigh, LOW(variables), level, child_cachenow);
             if (high == sylvan_true) {
                 sylvan_deref(low);
                 result = sylvan_true;
@@ -846,38 +864,46 @@ BDD sylvan_exists(BDD a, BDD variables)
     } else {
         // no quantify
         BDD low, high;
-        high = sylvan_exists(aHigh, variables);
-        low = sylvan_exists(aLow, variables);
+        high = sylvan_exists_do(aHigh, variables, level, child_cachenow);
+        low = sylvan_exists_do(aLow, variables, level, child_cachenow);
         result = sylvan_makenode(level, low, high);
     }
 
 #if CACHE
-    template_cache_node.result = result;
-    int cache_res = llcache_put_and_hold(_bdd.cache, &template_cache_node, &cache_idx);
-    if (cache_res == 0) {
-        llcache_release(_bdd.cache, cache_idx);
-        // It existed!
-        assert(result == template_cache_node.result);
-        SV_CNT(C_cache_exists);
-        // No need to ref
-    } else if (cache_res == 1) {
-        // Created new!
-        sylvan_ref(a);
-        sylvan_ref(_variables);
-        sylvan_ref(result);
-        llcache_release(_bdd.cache, cache_idx);
-        SV_CNT(C_cache_new);
-    } else if (cache_res == 2) {
-        // Replaced existing!
-        sylvan_ref(a);
-        sylvan_ref(_variables);
-        sylvan_ref(result);
-        llcache_release(_bdd.cache, cache_idx);
-        sylvan_cache_delete(NULL, &template_cache_node);
+    if (cachenow) {
+        template_cache_node.result = result;
+        uint32_t cache_idx;
+        int cache_res = llcache_put_and_hold(_bdd.cache, &template_cache_node, &cache_idx);
+        if (cache_res == 0) {
+            llcache_release(_bdd.cache, cache_idx);
+            // It existed!
+            assert(result == template_cache_node.result);
+            SV_CNT(C_cache_exists);
+            // No need to ref
+        } else if (cache_res == 1) {
+            // Created new!
+            sylvan_ref(a);
+            sylvan_ref(_variables);
+            sylvan_ref(result);
+            llcache_release(_bdd.cache, cache_idx);
+            SV_CNT(C_cache_new);
+        } else if (cache_res == 2) {
+            // Replaced existing!
+            sylvan_ref(a);
+            sylvan_ref(_variables);
+            sylvan_ref(result);
+            llcache_release(_bdd.cache, cache_idx);
+            sylvan_cache_delete(NULL, &template_cache_node);
+        }
     }
 #endif
 
     return result;
+}
+
+BDD sylvan_exists(BDD a, BDD variables)
+{
+    return sylvan_exists_do(a, variables, 0, 1);
 }
 
 /**
@@ -885,7 +911,7 @@ BDD sylvan_exists(BDD a, BDD variables)
  * Requires ref on a, variables
  * Ensures ref on a, variables, result
  */
-BDD sylvan_forall(BDD a, BDD variables)
+BDD sylvan_forall_do(BDD a, BDD variables, BDDVAR caller_var, int cachenow)
 {
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
@@ -893,24 +919,25 @@ BDD sylvan_forall(BDD a, BDD variables)
     SV_TCNT;
 
 #if CACHE
-    // Check cache
     struct bddcache template_cache_node;
-    memset(&template_cache_node, 0, sizeof(struct bddcache));
-    template_cache_node.operation = 5; // FORALL operation
-    //template_cache_node.parameters = 2;
-    template_cache_node.params[0] = a;
-    template_cache_node.params[1] = variables;
-    template_cache_node.result = sylvan_invalid;
-    
     // Save variables
     BDD _variables = variables;
+    if (cachenow) {
+        // Check cache
+        memset(&template_cache_node, 0, sizeof(struct bddcache));
+        template_cache_node.operation = 5; // FORALL operation
+        //template_cache_node.parameters = 2;
+        template_cache_node.params[0] = a;
+        template_cache_node.params[1] = variables;
+        template_cache_node.result = sylvan_invalid;
 
-    uint32_t cache_idx;
-    if (llcache_get_and_hold(_bdd.cache, &template_cache_node, &cache_idx)) {
-        BDD result = sylvan_ref(template_cache_node.result);
-        llcache_release(_bdd.cache, cache_idx);
-        SV_CNT(C_cache_reuse);
-        return result;
+        uint32_t cache_idx;
+        if (llcache_get_and_hold(_bdd.cache, &template_cache_node, &cache_idx)) {
+            BDD result = sylvan_ref(template_cache_node.result);
+            llcache_release(_bdd.cache, cache_idx);
+            SV_CNT(C_cache_reuse);
+            return result;
+        }
     }
 #endif
  
@@ -920,6 +947,9 @@ BDD sylvan_forall(BDD a, BDD variables)
     // Get lowest level
     BDDVAR level = na->level;
     
+    // Calculate "cachenow" for child
+    int child_cachenow = granularity < 2 ? 1 : caller_var % granularity != level % granularity;
+
     // Get cofactors
     BDD aLow = BDD_TRANSFERMARK(a, na->low);
     BDD aHigh = BDD_TRANSFERMARK(a, na->high);
@@ -939,11 +969,11 @@ BDD sylvan_forall(BDD a, BDD variables)
     
     else if (sylvan_var(variables) == level) {
         // quantify
-        BDD low = sylvan_forall(aLow, LOW(variables));
+        BDD low = sylvan_forall_do(aLow, LOW(variables), level, child_cachenow);
         if (low == sylvan_false) {
             result = sylvan_false;
         } else {
-            BDD high = sylvan_forall(aHigh, LOW(variables));
+            BDD high = sylvan_forall_do(aHigh, LOW(variables), level, child_cachenow);
             if (high == sylvan_false) {
                 sylvan_deref(low);
                 result = sylvan_false;
@@ -960,45 +990,46 @@ BDD sylvan_forall(BDD a, BDD variables)
     } else {
         // no quantify
         BDD low, high;
-        high = sylvan_forall(aHigh, variables);
-        low = sylvan_forall(aLow, variables);
+        high = sylvan_forall_do(aHigh, variables, level, child_cachenow);
+        low = sylvan_forall_do(aLow, variables, level, child_cachenow);
         result = sylvan_makenode(level, low, high);
     }
 
 #if CACHE
-    template_cache_node.result = result;
-    int cache_res = llcache_put_and_hold(_bdd.cache, &template_cache_node, &cache_idx);
-    if (cache_res == 0) {
-        llcache_release(_bdd.cache, cache_idx);
-        // It existed!
-        assert(result == template_cache_node.result);
-        SV_CNT(C_cache_exists);
-        // No need to ref
-    } else if (cache_res == 1) {
-        // Created new!
-        sylvan_ref(a);
-        sylvan_ref(_variables);
-        sylvan_ref(result);
-        llcache_release(_bdd.cache, cache_idx);
-        SV_CNT(C_cache_new);
-    } else if (cache_res == 2) {
-        // Replaced existing!
-        sylvan_ref(a);
-        sylvan_ref(_variables);
-        sylvan_ref(result);
-        llcache_release(_bdd.cache, cache_idx);
-        sylvan_cache_delete(NULL, &template_cache_node);
+    if (cachenow) {
+        template_cache_node.result = result;
+        uint32_t cache_idx;
+        int cache_res = llcache_put_and_hold(_bdd.cache, &template_cache_node, &cache_idx);
+        if (cache_res == 0) {
+            llcache_release(_bdd.cache, cache_idx);
+            // It existed!
+            assert(result == template_cache_node.result);
+            SV_CNT(C_cache_exists);
+            // No need to ref
+        } else if (cache_res == 1) {
+            // Created new!
+            sylvan_ref(a);
+            sylvan_ref(_variables);
+            sylvan_ref(result);
+            llcache_release(_bdd.cache, cache_idx);
+            SV_CNT(C_cache_new);
+        } else if (cache_res == 2) {
+            // Replaced existing!
+            sylvan_ref(a);
+            sylvan_ref(_variables);
+            sylvan_ref(result);
+            llcache_release(_bdd.cache, cache_idx);
+            sylvan_cache_delete(NULL, &template_cache_node);
+        }
     }
 #endif
 
     return result;
-
-
 }
 
-BDD sylvan_relprods(BDD a, BDD b) 
+BDD sylvan_forall(BDD a, BDD variables)
 {
-    return sylvan_relprods_partial(a, b, sylvan_false);
+    return sylvan_forall_do(a, variables, 0, 1);
 }
 
 /**
@@ -1009,7 +1040,7 @@ BDD sylvan_relprods(BDD a, BDD b)
  * - (excluded_variables should really only contain variables from X...)
  * - the substitution X'/X substitutes 1 by 0, 3 by 2, etc.
  */
-BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
+BDD sylvan_relprods_partial_do(BDD a, BDD b, BDD excluded_variables, BDDVAR caller_var, int cachenow)
 {
     // Trivial case
     if (a == sylvan_true && b == sylvan_true) return sylvan_true;
@@ -1018,25 +1049,26 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
     SV_TCNT;
 
 #if CACHE
-    // Check cache
     struct bddcache template_cache_node;
-    memset(&template_cache_node, 0, sizeof(struct bddcache));
-    template_cache_node.operation = 1; // RelProdS operation
-    //template_cache_node.parameters = 3;
-    template_cache_node.params[0] = a;
-    template_cache_node.params[1] = b;
-    template_cache_node.params[2] = excluded_variables;
-    template_cache_node.result = sylvan_invalid;
-    
     // Save excluded variables
     const BDD _excluded_variables = excluded_variables;
-    
-    uint32_t cache_idx;
-    if (llcache_get_and_hold(_bdd.cache, &template_cache_node, &cache_idx)) {
-        BDD result = sylvan_ref(template_cache_node.result);
-        llcache_release(_bdd.cache, cache_idx);
-        SV_CNT(C_cache_reuse);
-        return result;
+    if (cachenow) {
+        // Check cache
+        memset(&template_cache_node, 0, sizeof(struct bddcache));
+        template_cache_node.operation = 1; // RelProdS operation
+        //template_cache_node.parameters = 3;
+        template_cache_node.params[0] = a;
+        template_cache_node.params[1] = b;
+        template_cache_node.params[2] = excluded_variables;
+        template_cache_node.result = sylvan_invalid;
+        
+        uint32_t cache_idx;
+        if (llcache_get_and_hold(_bdd.cache, &template_cache_node, &cache_idx)) {
+            BDD result = sylvan_ref(template_cache_node.result);
+            llcache_release(_bdd.cache, cache_idx);
+            SV_CNT(C_cache_reuse);
+            return result;
+        }
     }
 #endif
 
@@ -1049,6 +1081,9 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
     if (na && level > na->level) level = na->level;
     if (nb && level > nb->level) level = nb->level;
     
+    // Calculate "cachenow" for child
+    int child_cachenow = granularity < 2 ? 1 : caller_var % granularity != level % granularity;
+
     // Get cofactors
     BDD aLow = a, aHigh = a;
     BDD bLow = b, bHigh = b;
@@ -1081,13 +1116,13 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
     BDD low, high, result;
     
     if (0==(level&1) && is_excluded == 0) {
-        low = sylvan_relprods_partial(aLow, bLow, excluded_variables);
+        low = sylvan_relprods_partial_do(aLow, bLow, excluded_variables, level, child_cachenow);
         // variable in X: quantify
         if (low == sylvan_true) {
             result = sylvan_true;
         }
         else {
-            high = sylvan_relprods_partial(aHigh, bHigh, excluded_variables);
+            high = sylvan_relprods_partial_do(aHigh, bHigh, excluded_variables, level, child_cachenow);
             if (high == sylvan_true) {
                 sylvan_deref(low);
                 result = sylvan_true;
@@ -1103,8 +1138,8 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
         }
     } 
     else {
-        high = sylvan_relprods_partial(aHigh, bHigh, excluded_variables);
-        low = sylvan_relprods_partial(aLow, bLow, excluded_variables);
+        high = sylvan_relprods_partial_do(aHigh, bHigh, excluded_variables, level, child_cachenow);
+        low = sylvan_relprods_partial_do(aLow, bLow, excluded_variables, level, child_cachenow);
 
         // variable in X': substitute
         if (is_excluded == 0) result = sylvan_makenode(level-1, low, high);
@@ -1114,34 +1149,47 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
     }
     
 #if CACHE
-    template_cache_node.result = result;
-    int cache_res = llcache_put_and_hold(_bdd.cache, &template_cache_node, &cache_idx);
-    if (cache_res == 0) {
-        llcache_release(_bdd.cache, cache_idx);
-        // It existed!
-        assert(result == template_cache_node.result);
-        SV_CNT(C_cache_exists);
-        // No need to ref
-    } else if (cache_res == 1) {
-        // Created new!
-        sylvan_ref(a);
-        sylvan_ref(b);
-        sylvan_ref(_excluded_variables);
-        sylvan_ref(result);
-        llcache_release(_bdd.cache, cache_idx);
-        SV_CNT(C_cache_new);
-    } else if (cache_res == 2) {
-        // Replaced existing!
-        sylvan_ref(a);
-        sylvan_ref(b);
-        sylvan_ref(_excluded_variables);
-        sylvan_ref(result);
-        llcache_release(_bdd.cache, cache_idx);
-        sylvan_cache_delete(NULL, &template_cache_node);
+    if (cachenow) {
+        template_cache_node.result = result;
+        uint32_t cache_idx;
+        int cache_res = llcache_put_and_hold(_bdd.cache, &template_cache_node, &cache_idx);
+        if (cache_res == 0) {
+            llcache_release(_bdd.cache, cache_idx);
+            // It existed!
+            assert(result == template_cache_node.result);
+            SV_CNT(C_cache_exists);
+            // No need to ref
+        } else if (cache_res == 1) {
+            // Created new!
+            sylvan_ref(a);
+            sylvan_ref(b);
+            sylvan_ref(_excluded_variables);
+            sylvan_ref(result);
+            llcache_release(_bdd.cache, cache_idx);
+            SV_CNT(C_cache_new);
+        } else if (cache_res == 2) {
+            // Replaced existing!
+            sylvan_ref(a);
+            sylvan_ref(b);
+            sylvan_ref(_excluded_variables);
+            sylvan_ref(result);
+            llcache_release(_bdd.cache, cache_idx);
+            sylvan_cache_delete(NULL, &template_cache_node);
+        } 
     }
 #endif
 
     return result;
+}
+
+BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables) 
+{
+    return sylvan_relprods_partial_do(a, b, excluded_variables, 0, 1);
+}
+
+BDD sylvan_relprods(BDD a, BDD b) 
+{
+    return sylvan_relprods_partial(a, b, sylvan_false);
 }
 
 /**
@@ -1153,7 +1201,7 @@ BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables)
  * - variables in exclude_variables are not in X or X'
  * - the substitution X/X' substitutes 0 by 1, 2 by 3, etc.
  */
-BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables) 
+BDD sylvan_relprods_reversed_partial_do(BDD a, BDD b, BDD excluded_variables, BDDVAR caller_var, int cachenow) 
 {
     // Trivial case
     if (a == sylvan_true && b == sylvan_true) return sylvan_true;
@@ -1162,25 +1210,26 @@ BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables)
     SV_TCNT;
 
 #if CACHE
-    // Check cache
     struct bddcache template_cache_node;
-    memset(&template_cache_node, 0, sizeof(struct bddcache));
-    template_cache_node.operation = 2; // RelProdS operation
-    //template_cache_node.parameters = 3;
-    template_cache_node.params[0] = a;
-    template_cache_node.params[1] = b;
-    template_cache_node.params[2] = excluded_variables;
-    template_cache_node.result = sylvan_invalid;
-    
     // Save excluded variables
     const BDD _excluded_variables = excluded_variables;
+    if (cachenow) {
+        // Check cache
+        memset(&template_cache_node, 0, sizeof(struct bddcache));
+        template_cache_node.operation = 2; // RelProdS operation
+        //template_cache_node.parameters = 3;
+        template_cache_node.params[0] = a;
+        template_cache_node.params[1] = b;
+        template_cache_node.params[2] = excluded_variables;
+        template_cache_node.result = sylvan_invalid;
     
-    uint32_t cache_idx;
-    if (llcache_get_and_hold(_bdd.cache, &template_cache_node, &cache_idx)) {
-        BDD result = sylvan_ref(template_cache_node.result);
-        llcache_release(_bdd.cache, cache_idx);
-        SV_CNT(C_cache_reuse);
-        return result;
+        uint32_t cache_idx;
+        if (llcache_get_and_hold(_bdd.cache, &template_cache_node, &cache_idx)) {
+            BDD result = sylvan_ref(template_cache_node.result);
+            llcache_release(_bdd.cache, cache_idx);
+            SV_CNT(C_cache_reuse);
+            return result;
+        }
     }
 #endif
 
@@ -1222,6 +1271,9 @@ BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables)
     // OK , so now S_x_a = S(x_a) properly, and 
     // if S_x_a == x then x_a == S'(x)
 
+    // Calculate "cachenow" for child
+    int child_cachenow = granularity < 2 ? 1 : caller_var % granularity != x % granularity;
+
     // Get cofactors
     BDD aLow = a, aHigh = a;
     BDD bLow = b, bHigh = b;
@@ -1239,12 +1291,12 @@ BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables)
 
     // if x \in X'
     if ((x&1) == 1 && is_excluded == 0) {
-        low = sylvan_relprods_reversed_partial(aLow, bLow, excluded_variables);
+        low = sylvan_relprods_reversed_partial_do(aLow, bLow, excluded_variables, x, child_cachenow);
         // variable in X': quantify
         if (low == sylvan_true) {
             result = sylvan_true;
         } else {
-            high = sylvan_relprods_reversed_partial(aHigh, bHigh, excluded_variables);
+            high = sylvan_relprods_reversed_partial_do(aHigh, bHigh, excluded_variables, x, child_cachenow);
             if (high == sylvan_true) {
                 sylvan_deref(low);
                 result = sylvan_true;
@@ -1259,40 +1311,48 @@ BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables)
     } 
     // if x \in X OR if excluded (works in either case)
     else {
-        low = sylvan_relprods_reversed_partial(aLow, bLow, excluded_variables);
-        high = sylvan_relprods_reversed_partial(aHigh, bHigh, excluded_variables);
+        low = sylvan_relprods_reversed_partial_do(aLow, bLow, excluded_variables, x, child_cachenow);
+        high = sylvan_relprods_reversed_partial_do(aHigh, bHigh, excluded_variables, x, child_cachenow);
         result = sylvan_makenode(x, low, high);
     }
 
 #if CACHE
-    template_cache_node.result = result;
-    int cache_res = llcache_put_and_hold(_bdd.cache, &template_cache_node, &cache_idx);
-    if (cache_res == 0) {
-        llcache_release(_bdd.cache, cache_idx);
-        // It existed!
-        assert(result == template_cache_node.result);
-        SV_CNT(C_cache_exists);
-        // No need to ref
-    } else if (cache_res == 1) {
-        // Created new!
-        sylvan_ref(a);
-        sylvan_ref(b);
-        sylvan_ref(_excluded_variables);
-        sylvan_ref(result);
-        llcache_release(_bdd.cache, cache_idx);
-        SV_CNT(C_cache_new);
-    } else if (cache_res == 2) {
-        // Replaced existing!
-        sylvan_ref(a);
-        sylvan_ref(b);
-        sylvan_ref(_excluded_variables);
-        sylvan_ref(result);
-        llcache_release(_bdd.cache, cache_idx);
-        sylvan_cache_delete(NULL, &template_cache_node);
+    if (cachenow) {
+        template_cache_node.result = result;
+        uint32_t cache_idx;
+        int cache_res = llcache_put_and_hold(_bdd.cache, &template_cache_node, &cache_idx);
+        if (cache_res == 0) {
+            llcache_release(_bdd.cache, cache_idx);
+            // It existed!
+            assert(result == template_cache_node.result);
+            SV_CNT(C_cache_exists);
+            // No need to ref
+        } else if (cache_res == 1) {
+            // Created new!
+            sylvan_ref(a);
+            sylvan_ref(b);
+            sylvan_ref(_excluded_variables);
+            sylvan_ref(result);
+            llcache_release(_bdd.cache, cache_idx);
+            SV_CNT(C_cache_new);
+        } else if (cache_res == 2) {
+            // Replaced existing!
+            sylvan_ref(a);
+            sylvan_ref(b);
+            sylvan_ref(_excluded_variables);
+            sylvan_ref(result);
+            llcache_release(_bdd.cache, cache_idx);
+            sylvan_cache_delete(NULL, &template_cache_node);
+        }
     }
 #endif
 
     return result;
+}
+
+BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables) 
+{
+    return sylvan_relprods_reversed_partial_do(a, b, excluded_variables, 0, 1);
 }
 
 BDD sylvan_relprods_reversed(BDD a, BDD b) 

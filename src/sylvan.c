@@ -1483,9 +1483,14 @@ long long sylvan_count_refs()
     return result;
 }
 
-void sylvan_write_init() 
+// Some 
+static BDD *ser_arr; // serialize array
+static long ser_offset; // offset...
+static unsigned long ser_count = 0;
+
+void sylvan_save_reset() 
 {
-    _bdd.serialize_counter = 1;
+    ser_count = 0;
     int i;
     // This is a VERY expensive loop.
     for (i=0;i<_bdd.data->table_size;i++) {
@@ -1494,7 +1499,21 @@ void sylvan_write_init()
     }
 }
 
-uint32_t sylvan_write_bdd_rec(FILE* f, BDD bdd) 
+static void sylvan_save_dummy(FILE *f)
+{
+    ser_offset = ftell(f);
+    fwrite(&ser_count, sizeof(unsigned long), 1, f);
+}
+
+static void sylvan_save_update(FILE *f)
+{
+    long off = ftell(f);
+    fseek(f, ser_offset, SEEK_SET);
+    fwrite(&ser_count, sizeof(unsigned long), 1, f);
+    fseek(f, off, SEEK_SET);
+}
+
+uint32_t sylvan_save_bdd(FILE* f, BDD bdd) 
 {
     if (BDD_ISCONSTANT(bdd)) return bdd;
 
@@ -1502,41 +1521,56 @@ uint32_t sylvan_write_bdd_rec(FILE* f, BDD bdd)
     uint32_t *pnum = (uint32_t*)&n->pad;
 
     if (*pnum == 0) {
-        uint32_t low = sylvan_write_bdd_rec(f, n->low);
-        uint32_t high = sylvan_write_bdd_rec(f, n->high);
+        uint32_t low = sylvan_save_bdd(f, n->low);
+        uint32_t high = sylvan_save_bdd(f, n->high);
+    
+        if (ser_count == 0) sylvan_save_dummy(f);
+        ser_count++;
+        *pnum = ser_count;
+
         fwrite(&low, 4, 1, f);
         fwrite(&high, 4, 1, f);
         fwrite(&n->level, sizeof(BDDVAR), 1, f);
-        *pnum = _bdd.serialize_counter++;
     }
 
     return BDD_TRANSFERMARK(bdd, *pnum);
 }
 
-uint32_t sylvan_write_count() 
+void sylvan_save_done(FILE *f)
 {
-    return _bdd.serialize_counter - 1;
+    sylvan_save_update(f);
 }
 
-void sylvan_read(FILE *f, BDD *arr, uint32_t entries) 
+void sylvan_load(FILE *f) 
 {
-    uint32_t i=1;
-    for (;i<=entries;i++) {
+    fread(&ser_count, sizeof(unsigned long), 1, f);
+
+    ser_arr = (BDD*)malloc(sizeof(BDD) * ser_count);
+
+    unsigned long i;
+    for (i=0;i<ser_count;i++) {
         uint32_t low, high;
         BDDVAR var;
         fread(&low, 4, 1, f);
         fread(&high, 4, 1, f);
         fread(&var, sizeof(BDDVAR), 1, f);
+
         assert (BDD_STRIPMARK(low) < i);
         assert (BDD_STRIPMARK(high) < i);
-        BDD _low = BDD_ISCONSTANT(low) ? low : BDD_TRANSFERMARK(low, arr[BDD_STRIPMARK(low)-1]);
-        BDD _high = BDD_ISCONSTANT(high) ? high : BDD_TRANSFERMARK(high, arr[BDD_STRIPMARK(high)-1]);
-        arr[i-1] = sylvan_makenode(var, _low, _high);
+
+        BDD _low = BDD_ISCONSTANT(low) ? low : BDD_TRANSFERMARK(low, ser_arr[BDD_STRIPMARK(low)-1]);
+        BDD _high = BDD_ISCONSTANT(high) ? high : BDD_TRANSFERMARK(high, ser_arr[BDD_STRIPMARK(high)-1]);
+        ser_arr[i] = sylvan_makenode(var, _low, _high);
     }
 }
 
-BDD sylvan_read_get(BDD *arr, uint32_t bdd) 
+BDD sylvan_load_translate(uint32_t bdd) 
 {
     if (BDD_ISCONSTANT(bdd)) return bdd;
-    return BDD_TRANSFERMARK(bdd, arr[BDD_STRIPMARK(bdd)-1]);
+    return BDD_TRANSFERMARK(bdd, ser_arr[BDD_STRIPMARK(bdd)-1]);
+}
+
+void sylvan_load_done()
+{
+    free(ser_arr);
 }

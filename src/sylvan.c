@@ -1570,7 +1570,7 @@ long long sylvan_count_refs()
 // Some 
 static BDD *ser_arr; // serialize array
 static long ser_offset; // offset...
-static unsigned long ser_count = 0;
+static uint32_t ser_count = 0;
 
 void sylvan_save_reset() 
 {
@@ -1586,14 +1586,14 @@ void sylvan_save_reset()
 static void sylvan_save_dummy(FILE *f)
 {
     ser_offset = ftell(f);
-    fwrite(&ser_count, sizeof(unsigned long), 1, f);
+    fwrite(&ser_count, 4, 1, f);
 }
 
 static void sylvan_save_update(FILE *f)
 {
     long off = ftell(f);
     fseek(f, ser_offset, SEEK_SET);
-    fwrite(&ser_count, sizeof(unsigned long), 1, f);
+    fwrite(&ser_count, 4, 1, f);
     fseek(f, off, SEEK_SET);
 }
 
@@ -1627,7 +1627,7 @@ void sylvan_save_done(FILE *f)
 
 void sylvan_load(FILE *f) 
 {
-    fread(&ser_count, sizeof(unsigned long), 1, f);
+    fread(&ser_count, 4, 1, f);
 
     ser_arr = (BDD*)malloc(sizeof(BDD) * ser_count);
 

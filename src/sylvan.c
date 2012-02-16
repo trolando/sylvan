@@ -127,19 +127,44 @@ typedef enum {
   C_cache_new,
   C_cache_exists,
   C_cache_reuse,
+  C_cache_overwritten,
   C_gc_user,
   C_gc_hashtable_full,
   C_gc_deadlist_full,
+  C_ite,
+  C_exists,
+  C_forall,
+  C_relprods,
+  C_relprods_reversed,
   C_MAX
 } Counters;
 
-int __sylvan_count[C_MAX];
+#define N_CNT_THREAD 48
 
-#define N_CNT_THREAD 16
 struct {
-  unsigned int thread_id;
-  int count;
-} __cnt_threads[N_CNT_THREAD];
+    unsigned int thread_id;
+} thread_to_id_map[N_CNT_THREAD];
+
+int get_thread_id() {
+    unsigned int id = pthread_self();
+    int i=0;
+    for (;i<N_CNT_THREAD;i++) {
+        if (thread_to_id_map[i].thread_id == 0) {
+            if (cas(&thread_to_id_map[i].thread_id, 0, id)) {
+                return i;
+            }
+        } else if (thread_to_id_map[i].thread_id == id) {
+            return i;
+        }
+    }
+    assert(0); // NOT ENOUGH SPACE!!
+    return -1;
+}
+
+struct {
+    long count[C_MAX];
+    char pad[SYLVAN_PAD(sizeof(long)*C_MAX, 64)];
+} stats[N_CNT_THREAD];
 
 #if COLORSTATS
 #define BLACK "\33[22;30m"
@@ -174,19 +199,20 @@ void sylvan_reset_counters()
 {
     if (initialized == 0) return;
 
-    int i;
-    for (i=0;i<C_MAX;i++) {
-        __sylvan_count[i] = 0;
-    }
+    int i,j;
     for (i=0;i<N_CNT_THREAD;i++) {
-        __cnt_threads[i].thread_id = 0;
-        __cnt_threads[i].count = 0;
+        thread_to_id_map[i].thread_id = 0;
+        for (j=0;j<C_MAX;j++) {
+            stats[i].count[j] = 0;
+        }
     }
 }
 
 void sylvan_report_stats()
 {
     if (initialized == 0) return;
+
+    int i,j;
 
     printf(LRED  "****************\n");
     printf(     "* ");
@@ -201,42 +227,36 @@ void sylvan_report_stats()
     llcache_print_size(_bdd.cache, stdout);
     printf("\n");
     printf(NC ULINE "Cache\n" NC BLUE);
-    printf("New results:        %u\n", __sylvan_count[C_cache_new]);
-    printf("Existing results:   %u\n", __sylvan_count[C_cache_exists]);
-    printf("Reused results:     %u\n", __sylvan_count[C_cache_reuse]);
-    printf(NC ULINE "GC\n" NC BLUE);
-    printf("GC user-request:    %u\n", __sylvan_count[C_gc_user]);
-    printf("GC full table:      %u\n", __sylvan_count[C_gc_hashtable_full]);
-    printf("GC full dead-list:  %u\n", __sylvan_count[C_gc_deadlist_full]);
-    printf(NC ULINE "Thread counters\n" NC BLUE);
-    int i;
+
+    long totals[C_MAX];
+    for (i=0;i<C_MAX;i++) totals[i] = 0;
     for (i=0;i<N_CNT_THREAD;i++) {
-        if (__cnt_threads[i].thread_id != 0) 
-    printf("Thread %02d:          %u\n", i, __cnt_threads[i].count);
+        for (j=0;j<C_MAX;j++) totals[j] += stats[i].count[j];
     }
+
+    printf("New results:         %u\n", totals[C_cache_new]);
+    printf("Existing results:    %u\n", totals[C_cache_exists]);
+    printf("Reused results:      %u\n", totals[C_cache_reuse]);
+    printf("Overwritten results: %u\n", totals[C_cache_overwritten]);
+    printf(NC ULINE "GC\n" NC BLUE);
+    printf("GC user-request:    %u\n", totals[C_gc_user]);
+    printf("GC full table:      %u\n", totals[C_gc_hashtable_full]);
+    printf("GC full dead-list:  %u\n", totals[C_gc_deadlist_full]);
+    printf(NC ULINE "Call counters (ITE, exists, forall, relprods, reversed relprods)\n" NC BLUE);
+    for (i=0;i<N_CNT_THREAD;i++) {
+        if (thread_to_id_map[i].thread_id != 0) 
+            printf("Thread %02d:          %d, %d, %d, %d, %d\n", i, 
+                stats[i].count[C_ite], stats[i].count[C_exists], stats[i].count[C_forall],
+                stats[i].count[C_relprods], stats[i].count[C_relprods_reversed]);
+    }
+    printf(NC " \r");
 }
 
 #if STATS
-#define SV_CNT(s) __sync_fetch_and_add(&__sylvan_count[s], 1);
-#define SV_TCNT inc_thread_counter();
+#define SV_CNT(s) (stats[get_thread_id()].count[s]+=1);
 #else
 #define SV_CNT(s) ; /* Empty */
-#define SV_TCNT ; /* Empty */
 #endif
-
-inline void inc_thread_counter() {
-    unsigned int id = pthread_self();
-    int i=0;
-    for (;i<N_CNT_THREAD;i++) {
-        if (__cnt_threads[i].thread_id == 0) {
-            if (cas(&__cnt_threads[i].thread_id, 0, id)) {
-                __cnt_threads[i].count++; return;
-            }
-        } else if (__cnt_threads[i].thread_id == id) {
-            __cnt_threads[i].count++; return;
-        }
-    }
-}
 
 /**
  * Macro's to convert BDD indices to nodes and vice versa
@@ -672,7 +692,7 @@ BDD sylvan_ite_do(BDD a, BDD b, BDD c, BDDVAR caller_var, int cachenow)
         return sylvan_ref(r);
     }
     
-    SV_TCNT;
+    SV_CNT(C_ite);
 
     // The value of a,b,c may be changed, but the reference counters are not changed at this point.
     
@@ -710,7 +730,7 @@ BDD sylvan_ite_do(BDD a, BDD b, BDD c, BDDVAR caller_var, int cachenow)
     if (nc && level > nc->level) level = nc->level;
 
     // Calculate "cachenow" for child
-    int child_cachenow = granularity < 2 ? 1 : caller_var % granularity != level % granularity;
+    int child_cachenow = granularity < 2 ? 1 : caller_var / granularity != level / granularity;
     
     // Get cofactors
     BDD aLow = a, aHigh = a;
@@ -765,8 +785,10 @@ BDD sylvan_ite_do(BDD a, BDD b, BDD c, BDDVAR caller_var, int cachenow)
             sylvan_ref(b);
             sylvan_ref(c);
             sylvan_ref(result);
-           llcache_release(_bdd.cache, cache_idx);
+            llcache_release(_bdd.cache, cache_idx);
             sylvan_cache_delete(NULL, &template_cache_node);
+            SV_CNT(C_cache_new);
+            SV_CNT(C_cache_overwritten);
         }
     }
 #endif
@@ -789,7 +811,7 @@ BDD sylvan_exists_do(BDD a, BDD variables, BDDVAR caller_var, int cachenow)
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
     
-    SV_TCNT;
+    SV_CNT(C_exists);
 
 #if CACHE
     struct bddcache template_cache_node;
@@ -825,7 +847,7 @@ BDD sylvan_exists_do(BDD a, BDD variables, BDDVAR caller_var, int cachenow)
     BDD aHigh = BDD_TRANSFERMARK(a, na->high);
     
     // Calculate "cachenow" for child
-    int child_cachenow = granularity < 2 ? 1 : caller_var % granularity != level % granularity;
+    int child_cachenow = granularity < 2 ? 1 : caller_var / granularity != level / granularity;
 
     // Skip variables not in a
     while (variables != sylvan_false && sylvan_var(variables) < level) {
@@ -916,7 +938,7 @@ BDD sylvan_forall_do(BDD a, BDD variables, BDDVAR caller_var, int cachenow)
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
 
-    SV_TCNT;
+    SV_CNT(C_forall);
 
 #if CACHE
     struct bddcache template_cache_node;
@@ -948,7 +970,7 @@ BDD sylvan_forall_do(BDD a, BDD variables, BDDVAR caller_var, int cachenow)
     BDDVAR level = na->level;
     
     // Calculate "cachenow" for child
-    int child_cachenow = granularity < 2 ? 1 : caller_var % granularity != level % granularity;
+    int child_cachenow = granularity < 2 ? 1 : caller_var / granularity != level / granularity;
 
     // Get cofactors
     BDD aLow = BDD_TRANSFERMARK(a, na->low);
@@ -1046,7 +1068,7 @@ BDD sylvan_relprods_partial_do(BDD a, BDD b, BDD excluded_variables, BDDVAR call
     if (a == sylvan_true && b == sylvan_true) return sylvan_true;
     if (a == sylvan_false || b == sylvan_false) return sylvan_false;
 
-    SV_TCNT;
+    SV_CNT(C_relprods);
 
 #if CACHE
     struct bddcache template_cache_node;
@@ -1082,7 +1104,7 @@ BDD sylvan_relprods_partial_do(BDD a, BDD b, BDD excluded_variables, BDDVAR call
     if (nb && level > nb->level) level = nb->level;
     
     // Calculate "cachenow" for child
-    int child_cachenow = granularity < 2 ? 1 : caller_var % granularity != level % granularity;
+    int child_cachenow = granularity < 2 ? 1 : caller_var / granularity != level / granularity;
 
     // Get cofactors
     BDD aLow = a, aHigh = a;
@@ -1207,7 +1229,7 @@ BDD sylvan_relprods_reversed_partial_do(BDD a, BDD b, BDD excluded_variables, BD
     if (a == sylvan_true && b == sylvan_true) return sylvan_true;
     if (a == sylvan_false || b == sylvan_false) return sylvan_false;
     
-    SV_TCNT;
+    SV_CNT(C_relprods_reversed);
 
 #if CACHE
     struct bddcache template_cache_node;
@@ -1272,7 +1294,7 @@ BDD sylvan_relprods_reversed_partial_do(BDD a, BDD b, BDD excluded_variables, BD
     // if S_x_a == x then x_a == S'(x)
 
     // Calculate "cachenow" for child
-    int child_cachenow = granularity < 2 ? 1 : caller_var % granularity != x % granularity;
+    int child_cachenow = granularity < 2 ? 1 : caller_var / granularity != x / granularity;
 
     // Get cofactors
     BDD aLow = a, aHigh = a;

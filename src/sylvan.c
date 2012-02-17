@@ -162,8 +162,8 @@ static int get_thread_id() {
 }
 
 struct {
-    uint32_t count[C_MAX];
-    char pad[SYLVAN_PAD(sizeof(long)*C_MAX, 64)];
+    uint64_t count[C_MAX];
+    char pad[SYLVAN_PAD(sizeof(uint64_t)*C_MAX, 64)];
 } sylvan_stats[N_CNT_THREAD];
 
 #if COLORSTATS
@@ -228,25 +228,25 @@ void sylvan_report_stats()
     printf("\n");
     printf(NC ULINE "Cache\n" NC BLUE);
 
-    uint32_t totals[C_MAX];
+    uint64_t totals[C_MAX];
     for (i=0;i<C_MAX;i++) totals[i] = 0;
     for (i=0;i<N_CNT_THREAD;i++) {
         for (j=0;j<C_MAX;j++) totals[j] += sylvan_stats[i].count[j];
     }
 
-    uint32_t total_cache = totals[C_cache_new] + totals[C_cache_exists] + totals[C_cache_reuse];
-    printf("New results:         %u of %u\n", totals[C_cache_new], total_cache);
-    printf("Existing results:    %u of %u\n", totals[C_cache_exists], total_cache);
-    printf("Reused results:      %u of %u\n", totals[C_cache_reuse], total_cache);
-    printf("Overwritten results: %u of %u\n", totals[C_cache_overwritten], total_cache);
+    uint64_t total_cache = totals[C_cache_new] + totals[C_cache_exists] + totals[C_cache_reuse];
+    printf("New results:         %lu of %lu\n", totals[C_cache_new], total_cache);
+    printf("Existing results:    %lu of %lu\n", totals[C_cache_exists], total_cache);
+    printf("Reused results:      %lu of %lu\n", totals[C_cache_reuse], total_cache);
+    printf("Overwritten results: %lu of %lu\n", totals[C_cache_overwritten], total_cache);
     printf(NC ULINE "GC\n" NC BLUE);
-    printf("GC user-request:     %u\n", totals[C_gc_user]);
-    printf("GC full table:       %u\n", totals[C_gc_hashtable_full]);
-    printf("GC full dead-list:   %u\n", totals[C_gc_deadlist_full]);
+    printf("GC user-request:     %lu\n", totals[C_gc_user]);
+    printf("GC full table:       %lu\n", totals[C_gc_hashtable_full]);
+    printf("GC full dead-list:   %lu\n", totals[C_gc_deadlist_full]);
     printf(NC ULINE "Call counters (ITE, exists, forall, relprods, reversed relprods)\n" NC BLUE);
     for (i=0;i<N_CNT_THREAD;i++) {
         if (thread_to_id_map[i].thread_id != 0) 
-            printf("Thread %02d:           %d, %d, %d, %d, %d\n", i, 
+            printf("Thread %02d:           %ld, %ld, %ld, %ld, %ld\n", i, 
                 sylvan_stats[i].count[C_ite], sylvan_stats[i].count[C_exists], sylvan_stats[i].count[C_forall],
                 sylvan_stats[i].count[C_relprods], sylvan_stats[i].count[C_relprods_reversed]);
     }
@@ -734,6 +734,8 @@ BDD sylvan_ite_do(BDD a, BDD b, BDD c, BDDVAR caller_var, int cachenow)
 
     // Calculate "cachenow" for child
     int child_cachenow = granularity < 2 ? 1 : caller_var / granularity != level / granularity;
+
+    printf("Granularity %d, %d -> %d = %s\n", granularity, caller_var, level, child_cachenow?"yes":"no");
     
     // Get cofactors
     BDD aLow = a, aHigh = a;

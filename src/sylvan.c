@@ -735,8 +735,6 @@ BDD sylvan_ite_do(BDD a, BDD b, BDD c, BDDVAR caller_var, int cachenow)
     // Calculate "cachenow" for child
     int child_cachenow = granularity < 2 ? 1 : caller_var / granularity != level / granularity;
 
-    printf("Granularity %d, %d -> %d = %s\n", granularity, caller_var, level, child_cachenow?"yes":"no");
-    
     // Get cofactors
     BDD aLow = a, aHigh = a;
     BDD bLow = b, bHigh = b;

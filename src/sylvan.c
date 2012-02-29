@@ -1414,24 +1414,34 @@ uint32_t sylvan_nodecount(BDD a)
     return result;
 }
 
+long double sylvan_pathcount(BDD bdd)
+{
+    if (bdd == sylvan_false) return 0.0;
+    if (bdd == sylvan_true) return 1.0;
+    long double high = sylvan_pathcount(HIGH(bdd));
+    long double low = sylvan_pathcount(LOW(bdd));
+    return high+low;
+}
+
+
 long double sylvan_satcount_do(BDD bdd, BDD variables)
 {
     if (bdd == sylvan_false) return 0.0;
+    if (bdd == sylvan_true) {
+        long double result = 1.0L;
+        while (variables != sylvan_false) {
+            variables = LOW(variables);
+            result *= 2.0L;
+        }
+        return result;
+    }
     if (variables == sylvan_false) {
-        if (bdd == sylvan_true) return 1.0;
-        // bdd != sylvan_false
         fprintf(stderr, "ERROR in sylvan_satcount: 'bdd' contains variable %d not in 'variables'!\n", sylvan_var(bdd));
-        exit(0); 
+        assert(0); 
     }
     if (variables == sylvan_true) {
         fprintf(stderr, "ERROR in sylvan_satcount: invalid 'variables'!\n");
-        exit(0);
-    }
-    // bdd != false
-    // variables != constant
-    if (bdd == sylvan_true) {
-        // TODO: just run a loop on variables...
-        return 2.0L * sylvan_satcount_do(bdd, LOW(variables));
+        assert(0);
     }
     // bdd != constant
     // variables != constant

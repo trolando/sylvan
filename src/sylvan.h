@@ -138,6 +138,8 @@ extern long long sylvan_count_refs();
  */
 extern long double sylvan_satcount(BDD bdd, BDD variables);
 
+extern long double sylvan_pathcount(BDD bdd);
+
 extern uint32_t sylvan_nodecount(BDD a);
 
 /**

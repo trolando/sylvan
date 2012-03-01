@@ -139,14 +139,13 @@ extern long long sylvan_count_refs();
 extern long double sylvan_satcount(BDD bdd, BDD variables);
 
 extern long double sylvan_pathcount(BDD bdd);
-
 extern uint32_t sylvan_nodecount(BDD a);
+extern void sylvan_nodecount_levels(BDD bdd, uint32_t *variables);
 
 /**
  * very low level file write/read functions...
  * need to be able to seek through the file...
  */
-
 extern uint32_t sylvan_save_bdd(FILE* f, BDD bdd);
 extern void sylvan_save_done(FILE *f);
 

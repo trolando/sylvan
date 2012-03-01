@@ -1385,6 +1385,33 @@ BDD sylvan_relprods_reversed(BDD a, BDD b)
     return sylvan_relprods_reversed_partial(a, b, sylvan_false);
 }
 
+void sylvan_nodecount_levels_do_1(BDD bdd, uint32_t *variables)
+{
+    if (BDD_ISCONSTANT(bdd)) return;
+    bddnode_t na = GETNODE(bdd);
+    if (na->flags & 1) return;
+    variables[na->level]++;
+    na->flags |= 1; // mark
+    sylvan_nodecount_levels_do_1(na->low, variables);
+    sylvan_nodecount_levels_do_1(na->high, variables);
+}
+
+void sylvan_nodecount_levels_do_2(BDD bdd)
+{
+    if (BDD_ISCONSTANT(bdd)) return;
+    bddnode_t na = GETNODE(bdd);
+    if (!(na->flags & 1)) return;
+    na->flags &= ~1; // unmark
+    sylvan_nodecount_levels_do_2(na->low);
+    sylvan_nodecount_levels_do_2(na->high);
+}
+
+void sylvan_nodecount_levels(BDD bdd, uint32_t *variables)
+{
+    sylvan_nodecount_levels_do_1(bdd, variables);
+    sylvan_nodecount_levels_do_2(bdd);
+}
+
 uint32_t sylvan_nodecount_do_1(BDD a) 
 {
     if (BDD_ISCONSTANT(a)) return 0;
@@ -1458,6 +1485,9 @@ long double sylvan_satcount(BDD bdd, BDD variables)
 {
     return sylvan_satcount_do(bdd, variables);
 }
+
+
+
 
 static void sylvan_fprint_1(FILE *out, BDD bdd)
 {

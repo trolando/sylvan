@@ -4,6 +4,12 @@
 #include <string.h> // for memcopy
 #include <assert.h> // for assert
 
+#include "config.h"
+
+#ifdef HAVE_NUMA_H
+#include <numa.h>
+#endif
+
 #include "llcache.h"
 
 #ifndef LINE_SIZE
@@ -250,8 +256,17 @@ llcache_t llcache_create(size_t key_length, size_t data_length, size_t cache_siz
     dbs->cache_size = cache_size;
     dbs->mask = dbs->cache_size - 1;
 
+#ifdef HAVE_NUMA_H
+    if (numa_available() >= 0) {
+        dbs->table = (uint32_t*)numa_alloc_interleaved(dbs->cache_size * sizeof(uint32_t));
+        dbs->data = (uint8_t*)numa_alloc_interleaved(dbs->cache_size * dbs->padded_data_length);
+    } else {
+#endif
     posix_memalign((void**)&dbs->table, LINE_SIZE, dbs->cache_size * sizeof(uint32_t));
     posix_memalign((void**)&dbs->data, LINE_SIZE, dbs->cache_size * dbs->padded_data_length);    
+#ifdef HAVE_NUMA_H
+    }
+#endif
 
     memset(dbs->table, 0, sizeof(uint32_t) * dbs->cache_size);
 

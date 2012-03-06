@@ -20,4 +20,8 @@ libsylvan_la_SOURCES = \
  src/sylvan_runtime.h 
 
 libsylvan_la_LDFLAGS = -version-info 0:0:0
-libsylvan_la_LIBADD = -lm
+libsylvan_la_LIBADD = -lm 
+
+if HAVE_NUMA_H
+libsylvan_la_LIBADD += -lnuma
+endif

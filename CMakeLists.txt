@@ -4,26 +4,24 @@ enable_language(ASM)
 
 enable_testing()
 
-if (DEFINED SYLVAN_NO_CACHE)
-  option(SYLVAN_NO_CACHE "No Operations Cache" ${SYLVAN_NO_CACHE})
+option(SYLVAN_NO_CACHE "No Operations Cache" OFF)
+option(USE_NUMA "Use NUMA" OFF)
+option(USE_AFFINITY "Set affinity of workers" OFF)
+
+include(CheckIncludeFiles)
+if (USE_NUMA)
+  check_include_files(numa.h HAVE_NUMA_H)
+  if(HAVE_NUMA_H)
+    set (EXTRA_LIBS ${EXTRA_LIBS} numa)
+  endif()
 else()
-  option(SYLVAN_NO_CACHE "No Operations Cache" OFF)
+  set(HAVE_NUMA_H OFF)
 endif()
 
-if (DEFINED SYLVAN_COVERAGE)
-  option(SYLVAN_COVERAGE "Coverage" ${SYLVAN_COVERAGE})
-else()
-  option(SYLVAN_COVERAGE "Coverage" OFF)
-endif()
-
-if(SYLVAN_NO_CACHE)
-  add_definitions(-DCACHE=0)
-endif()
-
-if(SYLVAN_COVERAGE)
-  add_definitions(--coverage)
-  target_link_libraries(sylvan_test gcov)
-endif()
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/config.h.cmakein"
+  "${CMAKE_CURRENT_BINARY_DIR}/src/config.h"
+)
 
 add_definitions(-g)
 
@@ -50,7 +48,7 @@ set(test_sources
 )
 
 add_library(sylvan SHARED ${sylvan_sources})
-target_link_libraries(sylvan m)
+target_link_libraries(sylvan m ${EXTRA_LIBS})
 
 add_library(sylvan_static ${sylvan_sources})
 target_link_libraries(sylvan_static m)

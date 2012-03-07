@@ -314,8 +314,17 @@ inline void llcache_clear_partial(llcache_t dbs, size_t first, size_t count)
 
 void llcache_free(llcache_t dbs)
 {
+#ifdef HAVE_NUMA_H
+    if (numa_available() >= 0) {
+        numa_free(dbs->data, dbs->cache_size * dbs->padded_data_length);
+        numa_free(dbs->table, dbs->cache_size * sizeof(uint32_t));
+    } else {
+#endif
     free(dbs->data);
     free(dbs->table);
+#ifdef HAVE_NUMA_H
+    }
+#endif
     free(dbs);
 }
 

@@ -52,7 +52,7 @@ static inline int next(uint32_t *cur, uint32_t last)
 
 int llsimplecache_put(const llsimplecache_t dbs, uint32_t *data, uint32_t hash) 
 {
-    if (hash == 0) hash = (uint32_t)hash_mul(data, 4);
+    if (hash == 0) hash = (uint32_t)hash_mul(data, sizeof(uint32_t));
     if (hash == 0) hash++; // blah. Just avoid 0, that's all.
 
     uint32_t f_idx = hash & dbs->mask;
@@ -83,7 +83,8 @@ restart_bucket:
     // Claim first bucket
     while (1) {
         register volatile uint32_t *bucket = &dbs->table[f_idx];
-        const uint32_t v = *bucket;
+        register const uint32_t v = *bucket;
+        if (v == d) return 0;
         if (cas(bucket, v, d)) {
             *data = v;
             return 2;
@@ -113,12 +114,12 @@ llsimplecache_t llsimplecache_create(size_t cache_size, llsimplecache_delete_f c
         dbs->table = (uint32_t*)numa_alloc_interleaved(dbs->cache_size * sizeof(uint32_t));
     } else {
 #endif
-    posix_memalign((void**)&dbs->table, LINE_SIZE, dbs->cache_size * 4);
+    posix_memalign((void**)&dbs->table, LINE_SIZE, dbs->cache_size * sizeof(uint32_t));
 #ifdef HAVE_NUMA_H
     }
 #endif
 
-    memset(dbs->table, 0, 4 * dbs->cache_size);
+    memset(dbs->table, 0, sizeof(uint32_t) * dbs->cache_size);
 
     dbs->cb_delete = cb_delete; // can be NULL
     dbs->cb_data   = cb_data;
@@ -133,20 +134,15 @@ inline void llsimplecache_clear(llsimplecache_t dbs)
 
 inline void llsimplecache_clear_partial(llsimplecache_t dbs, size_t first, size_t count)
 {
-    // We don't need to bother with cache line locking etc.
+    register volatile uint32_t *bucket = &dbs->table[first];
+    register uint32_t *end = &dbs->table[first+count];
+
     if (dbs->cb_delete == NULL) {
-        size_t i;
-        register volatile uint32_t *bucket = &dbs->table[first];
-        for (i=0;i<count;i++) {
-            *bucket = 0;
-            bucket++; // next!
-        }
+        while (bucket < end) *bucket++ = 0;        
         return;
     }
 
-    size_t i;
-    register volatile uint32_t *bucket = &dbs->table[first];
-    for (i=0;i<count;i++) {
+    while (bucket < end) {
         while(1) {
             register uint32_t data = *bucket;
             if (data == 0) break;
@@ -161,11 +157,19 @@ inline void llsimplecache_clear_partial(llsimplecache_t dbs, size_t first, size_
 
 void llsimplecache_free(llsimplecache_t dbs)
 {
+#ifdef HAVE_NUMA_H
+    if (numa_available() >= 0) {
+        numa_free(dbs->table, dbs->cache_size * sizeof(uint32_t));
+    } else {
+#endif
     free(dbs->table);
+#ifdef HAVE_NUMA_H
+    }
+#endif
     free(dbs);
 }
 
 void llsimplecache_print_size(llsimplecache_t dbs, FILE *f)
 {
-    fprintf(f, "4 * %ld = %ld bytes", dbs->cache_size, dbs->cache_size * 4);
+    fprintf(f, "4 * %ld = %ld bytes", dbs->cache_size, dbs->cache_size * sizeof(uint32_t));
 }

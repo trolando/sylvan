@@ -1,15 +1,15 @@
 cmake_minimum_required(VERSION 2.6)
 project(sylvan C)
 enable_language(ASM)
-
 enable_testing()
 
-option(SYLVAN_NO_CACHE "No Operations Cache" OFF)
+option(SYLVAN_NOCACHE "No Operations Cache" OFF)
+option(SYLVAN_STATS "Create statistics" ON)
 option(USE_NUMA "Use NUMA" OFF)
-option(USE_AFFINITY "Set affinity of workers" OFF)
+option(SET_AFFINITY "Set affinity of workers" OFF)
 
 include(CheckIncludeFiles)
-if (USE_NUMA)
+if(USE_NUMA)
   check_include_files(numa.h HAVE_NUMA_H)
   if(HAVE_NUMA_H)
     set (EXTRA_LIBS ${EXTRA_LIBS} numa)
@@ -27,19 +27,16 @@ add_definitions(-g)
 
 set(sylvan_hdrs
   src/sylvan.h
-  src/sylvan_runtime.h
 )
 
 set(sylvan_sources
   ${sylvan_hdrs}
   src/sylvan.c
-  src/fast_hash.c
   src/llgcset.c
   src/hash_mul.s
   src/rehash_mul.s
   src/llcache.c
   src/llsimplecache.c
-  src/runtime.c
   src/rng_hash_128.s
 )
 
@@ -51,7 +48,7 @@ add_library(sylvan SHARED ${sylvan_sources})
 target_link_libraries(sylvan m ${EXTRA_LIBS})
 
 add_library(sylvan_static ${sylvan_sources})
-target_link_libraries(sylvan_static m)
+target_link_libraries(sylvan_static m ${EXTRA_LIBS})
 
 include_directories(src)
 

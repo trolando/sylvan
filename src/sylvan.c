@@ -1,12 +1,27 @@
-#include "sylvan_runtime.h"
-#include "sylvan.h"
-#include "llgcset.h"
-#include "llcache.h"
+//#include "sylvan_runtime.h"
 #include <pthread.h>
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
 #include <math.h>
+#include <stdlib.h>
+#include <stdint.h>
+
+#include "config.h"
+
+#include "sylvan.h"
+#include "llgcset.h"
+#include "llcache.h"
+
+#if SYLVAN_NOCACHE
+#define CACHE 0
+#else
+#define CACHE 1
+#endif
+
+#if SYLVAN_STATS
+#define STATS 1
+#endif
 
 #define complementmark 0x80000000
 
@@ -17,11 +32,9 @@ const BDD sylvan_true = 0 | complementmark;
 const BDD sylvan_false = 0;
 const BDD sylvan_invalid = 0x7fffffff; // uint32_t
 
-/**
- * "volatile" macros
- */
-#define atomicsylvan_read(s) atomic32_read(s)
-#define atomicsylvan_write(a, b) atomic32_write(a, b)
+#define SYLVAN_PAD(x,b) ( (b) - ( (x) & ((b)-1) ) ) /* b must be power of 2 */
+
+#define cas(a,b,c)        __sync_bool_compare_and_swap((a),(b),(c))
 
 /**
  * Mark handling macros
@@ -223,9 +236,13 @@ void sylvan_report_stats()
     printf("BDD table:          ");
     llgcset_print_size(_bdd.data, stdout);
     printf("\n");
+#if CACHE
     printf("Cache:              ");
     llcache_print_size(_bdd.cache, stdout);
     printf("\n");
+#endif
+
+#if CACHE
     printf(NC ULINE "Cache\n" NC BLUE);
 
     uint64_t totals[C_MAX];
@@ -239,6 +256,8 @@ void sylvan_report_stats()
     printf("Existing results:    %lu of %lu\n", totals[C_cache_exists], total_cache);
     printf("Reused results:      %lu of %lu\n", totals[C_cache_reuse], total_cache);
     printf("Overwritten results: %lu of %lu\n", totals[C_cache_overwritten], total_cache);
+#endif
+
     printf(NC ULINE "GC\n" NC BLUE);
     printf("GC user-request:     %lu\n", totals[C_gc_user]);
     printf("GC full table:       %lu\n", totals[C_gc_hashtable_full]);
@@ -250,6 +269,9 @@ void sylvan_report_stats()
                 sylvan_stats[i].count[C_ite], sylvan_stats[i].count[C_exists], sylvan_stats[i].count[C_forall],
                 sylvan_stats[i].count[C_relprods], sylvan_stats[i].count[C_relprods_reversed]);
     }
+    printf("Totals:              %lu, %lu, %lu, %lu, %lu\n",  
+        totals[C_ite], totals[C_exists], totals[C_forall],
+        totals[C_relprods], totals[C_relprods_reversed]);
     printf(LRED  "****************" NC " \n");
 }
 
@@ -348,14 +370,16 @@ void sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
     //fprintf(stderr, "Sylvan\n");
     
     if (tablesize >= 30) {
-        rt_report_and_exit(1, "BDD_init error: tablesize must be < 30!");
+        fprintf(stderr, "BDD_init error: tablesize must be < 30!\n");
+        exit(1);
     }
     _bdd.data = llgcset_create(10, sizeof(struct bddnode), 1<<tablesize, (llgcset_delete_f)&sylvan_bdd_delete, sylvan_bdd_pregc, NULL);
 
 
 #if CACHE    
     if (cachesize >= 30) {
-        rt_report_and_exit(1, "BDD_init error: cachesize must be <= 30!");
+        fprintf(stderr, "BDD_init error: cachesize must be <= 30!\n");
+        exit(1);
     }
     
     _bdd.cache = llcache_create(cache_key_length, cache_data_length, 1<<cachesize, (llcache_delete_f)&sylvan_cache_delete, NULL);
@@ -424,7 +448,8 @@ inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high)
         n.high = BDD_TOGGLEMARK(high);
 
         if (llgcset_get_or_create(_bdd.data, &n, &created, &result) == 0) {
-            rt_report_and_exit(1, "BDD Unique table full!");
+            fprintf(stderr, "BDD Unique table full!\n");
+            exit(1);
         }
         
         if (!created) {
@@ -438,7 +463,8 @@ inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high)
         n.high = high;
 
         if(llgcset_get_or_create(_bdd.data, &n, &created, &result) == 0) {
-            rt_report_and_exit(1, "BDD Unique table full!");
+            fprintf(stderr, "BDD Unique table full!\n");
+            exit(1);
         }
 
         if (!created) {
@@ -919,6 +945,8 @@ BDD sylvan_exists_do(BDD a, BDD variables, BDDVAR caller_var, int cachenow)
             sylvan_ref(result);
             llcache_release(_bdd.cache, cache_idx);
             sylvan_cache_delete(NULL, &template_cache_node);
+            SV_CNT(C_cache_new);
+            SV_CNT(C_cache_overwritten);
         }
     }
 #endif
@@ -1045,6 +1073,8 @@ BDD sylvan_forall_do(BDD a, BDD variables, BDDVAR caller_var, int cachenow)
             sylvan_ref(result);
             llcache_release(_bdd.cache, cache_idx);
             sylvan_cache_delete(NULL, &template_cache_node);
+            SV_CNT(C_cache_new);
+            SV_CNT(C_cache_overwritten);
         }
     }
 #endif
@@ -1200,6 +1230,8 @@ BDD sylvan_relprods_partial_do(BDD a, BDD b, BDD excluded_variables, BDDVAR call
             sylvan_ref(result);
             llcache_release(_bdd.cache, cache_idx);
             sylvan_cache_delete(NULL, &template_cache_node);
+            SV_CNT(C_cache_new);
+            SV_CNT(C_cache_overwritten);
         } 
     }
 #endif
@@ -1368,6 +1400,8 @@ BDD sylvan_relprods_reversed_partial_do(BDD a, BDD b, BDD excluded_variables, BD
             sylvan_ref(result);
             llcache_release(_bdd.cache, cache_idx);
             sylvan_cache_delete(NULL, &template_cache_node);
+            SV_CNT(C_cache_new);
+            SV_CNT(C_cache_overwritten);
         }
     }
 #endif

@@ -1,5 +1,3 @@
-#include "sylvan_runtime.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -558,7 +556,7 @@ void test_ite()
 BDD knownresult;
 
 #define REFSTACK(size) BDD refstack[size]; int refs=0;
-#define REF(a) (refstack[refs++] = (a))
+#define REF(a) ({register BDD res = (a);refstack[refs++] = res;res;})
 #define UNREF while (refs) { sylvan_deref(refstack[--refs]); }
 
 void test_modelcheck()
@@ -677,6 +675,8 @@ void test_exists_forall()
     f = sylvan_ithvar(6);
     g = sylvan_ithvar(7);
     h = sylvan_ithvar(8);
+
+    REF(sylvan_or(REF(sylvan_not(b)), REF(sylvan_not(c))));
 
     BDD test = sylvan_ite(a, REF(sylvan_and(b, d)), REF(sylvan_or(REF(sylvan_not(b)), REF(sylvan_not(c)))));
 

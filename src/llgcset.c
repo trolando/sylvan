@@ -76,7 +76,6 @@ enum {
 
 void llgcset_deadlist_ondelete(const llgcset_t dbs, const uint32_t index);
 
-
 /* 
  * Try to increase ref 
  * returns REF_SUCCESS, REF_DELETING, REF_NOCAS, REF_LOCK.
@@ -84,7 +83,6 @@ void llgcset_deadlist_ondelete(const llgcset_t dbs, const uint32_t index);
 static inline int try_ref(volatile uint32_t *hashptr)
 {
     register uint32_t hash = *hashptr;
-    //if (hash & LOCK) return REF_LOCK;
     register uint32_t rc = hash & RC_MASK;
     if (rc == SATURATED) return REF_SUCCESS; // saturated, do not ref
     if (rc == DELETING) return REF_DELETING;
@@ -102,7 +100,6 @@ static inline int try_ref(volatile uint32_t *hashptr)
 static inline int try_deref(volatile uint32_t *hashptr)
 {
     register uint32_t hash = *hashptr;
-    //if (hash & LOCK) return REF_LOCK;
     register uint32_t rc = hash & RC_MASK;
     if (rc == SATURATED) return REF_SUCCESS; // saturated, do not deref
     assert(rc != DELETING); // external logic check 
@@ -161,11 +158,10 @@ static inline int next(uint32_t *cur, uint32_t last)
  */
 void *llgcset_lookup_hash(const llgcset_t dbs, const void* data, int* created, uint32_t* index)
 {
-    size_t              rehash_count;
+    uint64_t            hash_rehash;
 full_restart:
-    rehash_count = 0;
 
-    uint64_t            hash_rehash = hash_mul(data, dbs->key_length);
+    hash_rehash = hash_mul(data, dbs->key_length);
 
     /* hash_memo will be the key as stored in the table */
     register uint32_t   hash_memo = hash_rehash & HASH_MASK; 
@@ -186,6 +182,7 @@ full_restart:
 
     // First bucket is ours, we can do our job!
 
+    size_t rehash_count = 0;
     while (rehash_count < dbs->threshold)
     {
         idx = hash_rehash & dbs->mask;
@@ -476,8 +473,17 @@ inline void llgcset_clear(llgcset_t dbs)
 void llgcset_free(llgcset_t dbs)
 {
     llsimplecache_free(dbs->deadlist);
+#ifdef HAVE_NUMA_H
+    if (numa_available() >= 0) {
+        numa_free(dbs->data, dbs->table_size * dbs->padded_data_length);
+        numa_free(dbs->table, dbs->table_size * sizeof(uint32_t));
+    } else {
+#endif
     free(dbs->data);
     free(dbs->table);
+#ifdef HAVE_NUMA_H
+    }
+#endif
     free(dbs);
 }
 

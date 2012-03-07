@@ -6,3 +6,7 @@
 test
 CMakeFiles
 cmake_install.cmake
+config.h
+config.h.in
+Makefile.in
+stamp-h1

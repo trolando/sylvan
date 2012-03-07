@@ -1,7 +1,7 @@
 AC_PREREQ([2.57])
 AC_INIT([sylvan], [1.0])
 AC_CONFIG_AUX_DIR([tools])
-AM_INIT_AUTOMAKE([foreign nostdinc no-define silent-rules 1.11])
+AM_INIT_AUTOMAKE([foreign no-define silent-rules 1.11])
 AC_CONFIG_MACRO_DIR([m4])
 AM_SILENT_RULES([yes])
 
@@ -17,15 +17,33 @@ AC_PROG_LIBTOOL
 AC_ARG_ENABLE(affinity, 
   AS_HELP_STRING([--enable-affinity], [Set affinity of workers]),
   [],
-  [enable_affinity=no])
+  [enable_affinity=yes])
 
 AC_ARG_WITH(numa, 
   AS_HELP_STRING([--with-numa], [Use NUMA allocators in Sylvan]),
   [],
   [with_numa=no])
 
+AC_ARG_ENABLE(nocache,
+  AS_HELP_STRING([--enable-nocache], [Enable no caching]),
+  [],
+  [enable_nocache=no])
+
+AC_ARG_ENABLE(stats,
+  AS_HELP_STRING([--enable-stats], [Enable statistics gathering]),
+  [],
+  [enable_stats=yes])
+
 if test "x$enable_affinity" != xno; then
-  AC_DEFINE([USE_AFFINITY], [1], [Define to 1 if you want to set affinity of workers])
+  AC_DEFINE([SET_AFFINITY], [1], [Define to 1 if you want to set affinity of workers])
+fi
+
+if test "x$enable_nocache" != xno; then
+  AC_DEFINE([SYLVAN_NOCACHE], [1], [Define to 1 if you want to disable operations cache in Sylvan])
+fi
+
+if test "x$enable_stats" != xno; then
+  AC_DEFINE([SYLVAN_STATS], [1], [Define to 1 to enable gathering statistics in Sylvan])
 fi
 
 if test "x$with_numa" != xno; then
@@ -33,8 +51,6 @@ if test "x$with_numa" != xno; then
 fi
 
 AM_CONDITIONAL([HAVE_NUMA_H], [test "$numa" = "yes"])
-
-#AC_DEFINE([SYLVAN_NO_CACHE], [0], [Define to 1 to disable operations cache in Sylvan])
 
 AC_CONFIG_HEADERS([src/config.h])
 

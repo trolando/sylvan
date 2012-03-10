@@ -213,9 +213,12 @@ full_restart:
              ** T cas> L -> F
              **/
 
+            register uint32_t v;
 restart_bucket:
+            v = *bucket;
+
             // If the bucket is still empty, then our value is not yet in the table!
-            if (EMPTY == (*bucket & HASH_MASK))
+            if (EMPTY == (v & HASH_MASK))
             {
                 if (tomb_bucket != 0) {
                     const size_t data_idx = tomb_idx * dbs->padded_data_length;
@@ -264,7 +267,7 @@ restart_bucket:
             }
 
             // Test if this bucket matches
-            if (hash_memo == (*bucket & HASH_MASK)) {
+            if (hash_memo == (v & HASH_MASK)) {
                 // It matches: increase ref counter
                 int ref_res = try_ref(bucket);
                 if (ref_res != REF_SUCCESS) {
@@ -288,7 +291,7 @@ restart_bucket:
                 llgcset_deref(dbs, idx);
             }
 
-            if (tomb_bucket == 0 && TOMBSTONE == (*bucket & ~LOCK)) {
+            if (tomb_bucket == 0 && TOMBSTONE == (v & ~LOCK)) {
                 if (bucket == first_bucket) {
                     tomb_bucket = first_bucket;
                     tomb_idx = first_idx;

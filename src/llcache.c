@@ -97,11 +97,17 @@ restart_full:
 
         volatile uint32_t *bucket = &dbs->table[idx];
 
-restart_bucket:
-        // Wait while locked...
-        while ((*bucket) & LOCK) cpu_relax;
+        register uint32_t v;
 
-        register uint32_t v = (*bucket) & MASK;
+restart_bucket:
+        v = *bucket;
+
+        // Wait while locked...
+        if (v & LOCK) {
+            while ((v=*bucket) & LOCK) cpu_relax;
+        }
+
+        v &= MASK;
 
         if (v == EMPTY) return 0;
 
@@ -161,11 +167,16 @@ restart_full:
 
         bucket = &dbs->table[idx];
 
+        register uint32_t v;
 restart_bucket:
-        // Wait while locked...
-        while (*bucket & LOCK) cpu_relax;
+        v = *bucket;
 
-        uint32_t v = (*bucket) & MASK;
+        // Wait while locked...
+        if (v & LOCK) {
+            while ((v=*bucket) & LOCK) cpu_relax;
+        }
+
+        v &= MASK;
 
         if (v == EMPTY) {
             // EMPTY bucket!

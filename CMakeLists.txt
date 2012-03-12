@@ -24,6 +24,7 @@ configure_file(
 )
 
 add_definitions(-g)
+add_definitions(-O2)
 
 set(sylvan_hdrs
   src/sylvan.h

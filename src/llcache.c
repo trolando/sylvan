@@ -11,6 +11,7 @@
 #endif
 
 #include "llcache.h"
+#include "memxchg.h"
 
 #ifndef LINE_SIZE
     #define LINE_SIZE 64 // default cache line
@@ -200,11 +201,8 @@ restart_bucket:
                 if (memcmp(&dbs->data[data_idx], data, dbs->key_length) == 0) {
                     // Found existing
                     register size_t b = dbs->data_length - dbs->key_length;
-                    register void *orig_rest  = alloca(b);
                     register void *dptr = &dbs->data[data_idx + dbs->key_length];
-                    memcpy(orig_rest, dptr, b);
-                    memcpy(dptr, &((uint8_t*)data)[dbs->key_length], b);                  
-                    memcpy(&((uint8_t*)data)[dbs->key_length], orig_rest, b);
+                    memxchg(dptr, &((uint8_t*)data)[dbs->key_length], b);
                     *index = idx;
                     return 0;                    
                 } else {
@@ -226,9 +224,7 @@ restart_bucket:
         register const size_t data_idx = f_idx * dbs->padded_data_length;
         register void *orig_data = alloca(dbs->data_length);
 
-        memcpy(orig_data, &dbs->data[data_idx], dbs->data_length);
-        memcpy(&dbs->data[data_idx], data, dbs->data_length);
-        memcpy(data, orig_data, dbs->data_length);
+        memxchg(&dbs->data[data_idx], data, dbs->data_length);
 
         *index = f_idx;
         *f_bucket = hash | LOCK;

@@ -10,18 +10,10 @@
 #include <numa.h>
 #endif
 
+#include "atomics.h"
 #include "llgcset.h"
 
 #define DEBUG_LLGCSET 0 // set to 1 to enable logic assertions
-
-#ifndef LINE_SIZE
-    #define LINE_SIZE 64 // default cache line
-#endif
-
-#define cpu_relax  asm volatile("pause\n": : :"memory")
-#define cas(a,b,c) __sync_bool_compare_and_swap((a),(b),(c))
-#define atomic_inc(P) __sync_add_and_fetch((P), 1)
-#define atomic_dec(P) __sync_add_and_fetch((P), -1) 
 
 // 64-bit hashing function, http://www.locklessinc.com (hash_mul.s)
 unsigned long long hash_mul(const void* data, unsigned long long len);
@@ -498,9 +490,9 @@ void llgcset_gc(const llgcset_t dbs, gc_reason reason)
     // Call dbs->pre_gc first
     if (dbs->cb_pregc != NULL) dbs->cb_pregc(dbs->cb_data, reason);
 
-    atomic_inc(&dbs->clearing);
+    xinc(&dbs->clearing);
     llsimplecache_clear(dbs->deadlist);
-    atomic_dec(&dbs->clearing);
+    xdec(&dbs->clearing);
 }
 
 void llgcset_deadlist_ondelete(const llgcset_t dbs, const uint32_t index)

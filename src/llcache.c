@@ -10,16 +10,9 @@
 #include <numa.h>
 #endif
 
+#include "atomics.h"
 #include "llcache.h"
 #include "memxchg.h"
-
-#ifndef LINE_SIZE
-    #define LINE_SIZE 64 // default cache line
-#endif
-
-#define barrier    asm volatile("": : :"memory")
-#define cpu_relax  asm volatile("pause\n": : :"memory")
-#define cas(a,b,c) __sync_bool_compare_and_swap((a),(b),(c))
 
 struct llcache
 {
@@ -105,7 +98,7 @@ restart_bucket:
 
         // Wait while locked...
         if (v & LOCK) {
-            while ((v=*bucket) & LOCK) cpu_relax;
+            while ((v=*bucket) & LOCK) cpu_relax();
         }
 
         v &= MASK;
@@ -174,7 +167,7 @@ restart_bucket:
 
         // Wait while locked...
         if (v & LOCK) {
-            while ((v=*bucket) & LOCK) cpu_relax;
+            while ((v=*bucket) & LOCK) cpu_relax();
         }
 
         v &= MASK;

@@ -10,6 +10,7 @@
 #include "config.h"
 
 #include "sylvan.h"
+#include "atomics.h"
 #include "llgcset.h"
 #include "llcache.h"
 
@@ -33,8 +34,6 @@ const BDD sylvan_false = 0;
 const BDD sylvan_invalid = 0x7fffffff; // uint32_t
 
 #define SYLVAN_PAD(x,b) ( (b) - ( (x) & ((b)-1) ) ) /* b must be power of 2 */
-
-#define cas(a,b,c)        __sync_bool_compare_and_swap((a),(b),(c))
 
 /**
  * Mark handling macros

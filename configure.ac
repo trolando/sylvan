@@ -15,24 +15,29 @@ AM_PROG_AS
 AC_PROG_LIBTOOL
 
 AC_ARG_ENABLE(affinity, 
-  AS_HELP_STRING([--enable-affinity], [Set affinity of workers]),
+  AS_HELP_STRING([--enable-affinity], [Set affinity of workers (default=no)]),
   [],
-  [enable_affinity=yes])
+  [enable_affinity=no])
 
 AC_ARG_WITH(numa, 
-  AS_HELP_STRING([--with-numa], [Use NUMA allocators in Sylvan]),
+  AS_HELP_STRING([--with-numa], [Use NUMA allocators in Sylvan (default=no)]),
   [],
   [with_numa=no])
 
 AC_ARG_ENABLE(nocache,
-  AS_HELP_STRING([--enable-nocache], [Enable no caching]),
+  AS_HELP_STRING([--enable-nocache], [Enable no caching (default=no)]),
   [],
   [enable_nocache=no])
 
 AC_ARG_ENABLE(stats,
-  AS_HELP_STRING([--enable-stats], [Enable statistics gathering]),
+  AS_HELP_STRING([--enable-stats], [Enable statistics gathering (default=yes)]),
   [],
   [enable_stats=yes])
+
+AC_ARG_ENABLE(shortcut,
+  AS_HELP_STRING([--enable-shortcut], [Enable short circuiting after done (default=yes)]),
+  [],
+  [enable_shortcut=yes])
 
 if test "x$enable_affinity" != xno; then
   AC_DEFINE([SET_AFFINITY], [1], [Define to 1 if you want to set affinity of workers])

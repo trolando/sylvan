@@ -672,7 +672,7 @@ static BDD sylvan_triples(BDD *_a, BDD *_b, BDD *_c)
  * At entry, all BDDs should be ref'd by caller.
  * At exit, they still are ref'd by caller, and the result it ref'd, and any items in the OC are ref'd.
  */
-BDD sylvan_ite_do(BDD a, BDD b, BDD c, BDDVAR caller_var, int cachenow)
+BDD sylvan_ite_do(BDD a, BDD b, BDD c, BDDVAR prev_level, int cachenow)
 {
     // Standard triples
     BDD r = sylvan_triples(&a, &b, &c);
@@ -717,7 +717,7 @@ BDD sylvan_ite_do(BDD a, BDD b, BDD c, BDDVAR caller_var, int cachenow)
     if (nc && level > nc->level) level = nc->level;
 
     // Calculate "cachenow" for child
-    int child_cachenow = granularity < 2 ? 1 : caller_var / granularity != level / granularity;
+    int child_cachenow = granularity < 2 ? 1 : prev_level / granularity != level / granularity;
 
     // Get cofactors
     BDD aLow = a, aHigh = a;
@@ -1007,7 +1007,7 @@ BDD sylvan_forall(BDD a, BDD variables)
 /**
  * RelProd. Calculates \exists X (A/\B)
  */
-BDD sylvan_relprod_do(BDD a, BDD b, BDD x)
+BDD sylvan_relprod_do(BDD a, BDD b, BDD x, BDDVAR prev_level)
 {
     // Trivial case
     if (a == sylvan_true && b == sylvan_true) return sylvan_true;
@@ -1018,30 +1018,37 @@ BDD sylvan_relprod_do(BDD a, BDD b, BDD x)
     bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
     bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
         
-    // Get lowest level
-    BDDVAR level = 0xffff;
-    if (na && level > na->level) level = na->level;
-    if (nb && level > nb->level) level = nb->level;
-
-    // Get cofactors
-    BDD aLow = a, aHigh = a;
-    BDD bLow = b, bHigh = b;
-    if (na && level == na->level) {
-        aLow = BDD_TRANSFERMARK(a, na->low);
-        aHigh = BDD_TRANSFERMARK(a, na->high);
-    }
-    if (nb && level == nb->level) {
+    // Get lowest level and cofactors
+    BDDVAR level;
+    BDD aLow=a, aHigh=a, bLow=b, bHigh=b;
+    if (na) {
+        if (nb && na->level > nb->level) {
+            level = nb->level;
+            bLow = BDD_TRANSFERMARK(b, nb->low);
+            bHigh = BDD_TRANSFERMARK(b, nb->high);
+        } else if (nb && na->level == nb->level) {
+            level = na->level;
+            aLow = BDD_TRANSFERMARK(a, na->low);
+            aHigh = BDD_TRANSFERMARK(a, na->high);
+            bLow = BDD_TRANSFERMARK(b, nb->low);
+            bHigh = BDD_TRANSFERMARK(b, nb->high);
+        } else {
+            level = na->level;
+            aLow = BDD_TRANSFERMARK(a, na->low);
+            aHigh = BDD_TRANSFERMARK(a, na->high);
+        }
+    } else {
+        level = nb->level;
         bLow = BDD_TRANSFERMARK(b, nb->low);
         bHigh = BDD_TRANSFERMARK(b, nb->high);
     }
- 
+
     // Skip earlier x and check if 'level' in x
     int in_x = 0;
     while (x != sylvan_false) {
         BDDVAR var = sylvan_var(x);
         if (var == level) {
             in_x = 1;
-            x = BDD_TRANSFERMARK(x, GETNODE(x)->low);
             break;
         }
         else if (var > level) {
@@ -1055,7 +1062,7 @@ BDD sylvan_relprod_do(BDD a, BDD b, BDD x)
  
 #if CACHE
     struct bddcache template_cache_node;
-    int cachenow = x / granularity != level / granularity;
+    int cachenow = prev_level / granularity != level / granularity;
     // Save excluded variables
     if (cachenow) {
         // Check cache
@@ -1077,22 +1084,20 @@ BDD sylvan_relprod_do(BDD a, BDD b, BDD x)
     // Recursive computation
     BDD low, high, result;
     
-    if (in_x) {
-        low = sylvan_relprod_do(aLow, bLow, x);
+    if (in_x && 0==(level&1)) {
+        low = sylvan_relprod_do(aLow, bLow, x, level);
         // variable in X: quantify
         if (low == sylvan_true) {
             result = sylvan_true;
-        }
-        else {
-            high = sylvan_relprod_do(aHigh, bHigh, x);
+        } else {
+            high = sylvan_relprod_do(aHigh, bHigh, x, level);
             result = sylvan_ite(low, sylvan_true, high);
             sylvan_deref(low);
             sylvan_deref(high);
         }
-    } 
-    else {
-        high = sylvan_relprod_do(aHigh, bHigh, x);
-        low = sylvan_relprod_do(aLow, bLow, x);
+    } else {
+        high = sylvan_relprod_do(aHigh, bHigh, x, level);
+        low = sylvan_relprod_do(aLow, bLow, x, level);
         result = sylvan_makenode(level, low, high);
     }
     
@@ -1120,14 +1125,14 @@ BDD sylvan_relprod_do(BDD a, BDD b, BDD x)
 
 BDD sylvan_relprod(BDD a, BDD b, BDD x) 
 {
-    return sylvan_relprod_do(a, b, x);
+    return sylvan_relprod_do(a, b, x, 0);
 }
 
 
 /**
  * Specialized substitute, substitutes variables 'x' \in X by 'x-1'
  */
-BDD sylvan_substitute_do(BDD a, BDD x)
+BDD sylvan_substitute_do(BDD a, BDD x, BDDVAR prev_level)
 {
     // Trivial case
     if (BDD_ISCONSTANT(a)) return a;
@@ -1146,7 +1151,6 @@ BDD sylvan_substitute_do(BDD a, BDD x)
         BDDVAR var = sylvan_var(x);
         if (var == level) {
             in_x = 1;
-            x = BDD_TRANSFERMARK(x, GETNODE(x)->low);
             break;
         }
         else if (var > level) {
@@ -1159,7 +1163,7 @@ BDD sylvan_substitute_do(BDD a, BDD x)
  
 #if CACHE
     struct bddcache template_cache_node;
-    int cachenow = x / granularity != level / granularity;
+    int cachenow = prev_level / granularity != level / granularity;
     // Save excluded variables
     if (cachenow) {
         // Check cache
@@ -1179,14 +1183,15 @@ BDD sylvan_substitute_do(BDD a, BDD x)
 #endif
    
     // Recursive computation
-    BDD low = sylvan_substitute_do(aLow, x);
-    BDD high = sylvan_substitute_do(aHigh, x);
+    BDD low = sylvan_substitute_do(aLow, x, level);
+    BDD high = sylvan_substitute_do(aHigh, x, level);
     BDD result;
     
-    if (in_x) {
+    if (in_x && 1==(level&1)) {
         result = sylvan_makenode(level-1, low, high);
     } else {
-        result = sylvan_makenode(level, low, high);
+        if (low == aLow && high == aHigh) result = a;
+        else result = sylvan_makenode(level, low, high);
     }
     
 #if CACHE
@@ -1213,7 +1218,7 @@ BDD sylvan_substitute_do(BDD a, BDD x)
 
 BDD sylvan_substitute(BDD a, BDD x)
 {
-    return sylvan_substitute_do(a, x);
+    return sylvan_substitute_do(a, x, 0);
 }
 
 
@@ -1227,6 +1232,142 @@ BDD sylvan_substitute(BDD a, BDD x)
  * - (excluded_variables should really only contain variables from X...)
  * - the substitution X'/X substitutes 1 by 0, 3 by 2, etc.
  */
+
+BDD sylvan_relprods_partial_do(BDD a, BDD b, BDD x, BDDVAR prev_level)
+{
+    // Trivial case
+    if (a == sylvan_true && b == sylvan_true) return sylvan_true;
+    if (a == sylvan_false || b == sylvan_false) return sylvan_false;
+
+    SV_CNT(C_relprods);
+
+    bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
+    bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
+        
+    // Get lowest level and cofactors
+    BDDVAR level;
+    BDD aLow=a, aHigh=a, bLow=b, bHigh=b;
+    if (na) {
+        if (nb && na->level > nb->level) {
+            level = nb->level;
+            bLow = BDD_TRANSFERMARK(b, nb->low);
+            bHigh = BDD_TRANSFERMARK(b, nb->high);
+        } else if (nb && na->level == nb->level) {
+            level = na->level;
+            aLow = BDD_TRANSFERMARK(a, na->low);
+            aHigh = BDD_TRANSFERMARK(a, na->high);
+            bLow = BDD_TRANSFERMARK(b, nb->low);
+            bHigh = BDD_TRANSFERMARK(b, nb->high);
+        } else {
+            level = na->level;
+            aLow = BDD_TRANSFERMARK(a, na->low);
+            aHigh = BDD_TRANSFERMARK(a, na->high);
+        }
+    } else {
+        level = nb->level;
+        bLow = BDD_TRANSFERMARK(b, nb->low);
+        bHigh = BDD_TRANSFERMARK(b, nb->high);
+    }
+
+    // Skip earlier x and check if 'level' in x
+    int in_x = 0;
+    while (x != sylvan_false) {
+        BDDVAR var = sylvan_var(x);
+        if (var == level) {
+            in_x = 1;
+            break;
+        }
+        else if (var > level) {
+            break;
+        }
+        // var < level
+        // do not mess with ref counts...
+        else x = BDD_TRANSFERMARK(x, GETNODE(x)->low);
+    }
+
+#if CACHE
+    struct bddcache template_cache_node;
+
+    int cachenow = prev_level == 0 || (prev_level / granularity != level / granularity);    
+
+    // Save excluded variables
+    if (cachenow) {
+        // Check cache
+        memset(&template_cache_node, 0, sizeof(struct bddcache));
+        template_cache_node.operation = 1; // RelProdS operation
+        template_cache_node.params[0] = a;
+        template_cache_node.params[1] = b;
+        template_cache_node.params[2] = x;
+        template_cache_node.result = sylvan_invalid;
+        
+        if (llcache_get_quicker(_bdd.cache, &template_cache_node)) {
+            BDD result = sylvan_ref(template_cache_node.result);
+            SV_CNT(C_cache_reuse);
+            return result;
+        }
+    }
+#endif
+
+    // Recursive computation
+    BDD low, high, result;
+    
+    if (in_x && 0==(level&1)) {
+        low = sylvan_relprods_partial_do(aLow, bLow, x, level);
+        // variable in X: quantify
+        if (low == sylvan_true) {
+            result = sylvan_true;
+        }
+        else {
+            high = sylvan_relprods_partial_do(aHigh, bHigh, x, level);
+            if (high == sylvan_true) {
+                sylvan_deref(low);
+                result = sylvan_true;
+            }
+            else if (low == sylvan_false && high == sylvan_false) {
+                result = sylvan_false;
+            }
+            else {
+                result = sylvan_ite(low, sylvan_true, high);
+                sylvan_deref(low);
+                sylvan_deref(high);
+            }
+        }
+    } 
+    else {
+        high = sylvan_relprods_partial_do(aHigh, bHigh, x, level);
+        low = sylvan_relprods_partial_do(aLow, bLow, x, level);
+
+        // variable in X': substitute
+        if (in_x == 1) result = sylvan_makenode(level-1, low, high);
+
+        // variable not in X or X': normal behavior
+        else result = sylvan_makenode(level, low, high);
+    }
+    
+#if CACHE
+    if (cachenow) {
+        template_cache_node.result = result;
+        int cache_res = llcache_put_quicker(_bdd.cache, &template_cache_node);
+        if (cache_res == 0) {
+            // It existed!
+            SV_CNT(C_cache_exists);
+            // No need to ref
+        } else if (cache_res == 1) {
+            // Created new!
+            SV_CNT(C_cache_new);
+        } else if (cache_res == 2) {
+            // Replaced existing!
+            SV_CNT(C_cache_new);
+            SV_CNT(C_cache_overwritten);
+        } 
+    }
+#endif
+
+    return result;
+}
+
+
+/*
 BDD sylvan_relprods_partial_do(BDD a, BDD b, BDD excluded_variables, BDDVAR caller_var, int cachenow)
 {
     // Trivial case
@@ -1354,10 +1495,10 @@ BDD sylvan_relprods_partial_do(BDD a, BDD b, BDD excluded_variables, BDDVAR call
 
     return result;
 }
-
-BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables) 
+*/
+BDD sylvan_relprods_partial(BDD a, BDD b, BDD x) 
 {
-    return sylvan_relprods_partial_do(a, b, excluded_variables, 0, 1);
+    return sylvan_relprods_partial_do(a, b, x, 0);
 }
 
 BDD sylvan_relprods(BDD a, BDD b) 
@@ -1419,7 +1560,28 @@ BDD sylvan_relprods_reversed_partial_do(BDD a, BDD b, BDD excluded_variables, BD
         x_b = nb->level;
         if (x > x_b) x = x_b;
     }
-   
+  
+
+    // Skip earlier x and check if 'level' in x
+    int in_x = 0;
+    while (x != sylvan_false) {
+        BDDVAR var = sylvan_var(x);
+        if (var == level) {
+            in_x = 1;
+            break;
+        }
+        else if (var > level) {
+            break;
+        }
+        // var < level
+        // do not mess with ref counts...
+        else x = BDD_TRANSFERMARK(x, GETNODE(x)->low);
+    }
+
+
+
+
+ 
     // Check if excluded variable
     int is_excluded = 0;
     while (excluded_variables != sylvan_false) {

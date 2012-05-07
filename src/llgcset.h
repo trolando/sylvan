@@ -1,4 +1,5 @@
 #include "llsimplecache.h"
+#include "ticketlock.h"
 
 #ifndef LLGCSET_H
 #define LLGCSET_H
@@ -32,6 +33,11 @@ struct llgcset
     void              *cb_data;
     llsimplecache_t   deadlist;
     int               clearing;     // bit
+    int               stack_lock;   // bitlock on
+    ticketlock_t      stacklock;    // lock to protect stack access
+    uint32_t          *stack;       // stack
+    uint32_t          stacksize;
+    uint32_t          stacktop;
 };
 
 #define llgcset_index_to_ptr(dbs, index) ((void*)&dbs->data[index*dbs->padded_data_length])

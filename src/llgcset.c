@@ -388,9 +388,14 @@ llgcset_t llgcset_create(size_t key_length, size_t data_length, size_t table_siz
     dbs->clearing = 0;
  
     dbs->cb_delete = cb_delete; // can be NULL
-    dbs->cb_pregc  = cb_pregc; // can be NULL
-    dbs->cb_postgc  = cb_postgc; // can be NULL
+    dbs->cb_pregc  = cb_pregc;  // can be NULL
+    dbs->cb_postgc = cb_postgc; // can be NULL
     dbs->cb_data   = cb_data;
+
+    dbs->stack = NULL;
+    dbs->stacklock.u = 0;
+    dbs->stacksize = 0;
+    dbs->stacktop = 0;
 
     return dbs;
 }
@@ -480,6 +485,7 @@ void llgcset_free(llgcset_t dbs)
 #ifdef HAVE_NUMA_H
     }
 #endif
+    realloc(dbs->stack, 0);
     free(dbs);
 }
 
@@ -491,16 +497,60 @@ void llgcset_gc(const llgcset_t dbs, gc_reason reason)
     // Call dbs->pre_gc first
     if (dbs->cb_pregc != NULL) dbs->cb_pregc(dbs->cb_data, reason);
 
+    // Increment clearing
     xinc(&dbs->clearing);
+ 
+    // Handle dead stack
+    ticketlock_lock(&dbs->stacklock);
+    while (dbs->stacktop > 0) { try_delete_item(dbs, dbs->stack[dbs->stacktop--]); }
+    ticketlock_unlock(&dbs->stacklock);
+
+    // Handle dead buffer
     llsimplecache_clear(dbs->deadlist);
+
+    // Decrement clearing
     xdec(&dbs->clearing);
 
     if (dbs->cb_postgc != NULL) dbs->cb_postgc(dbs->cb_data);
 }
 
+void llgcset_stack_push(const llgcset_t dbs, uint32_t index)
+{
+    ticketlock_lock(&dbs->stacklock);
+
+    if (dbs->stacktop == dbs->stacksize) {
+        uint32_t newsize = dbs->stacksize == 0 ? 1024 : dbs->stacksize*2;
+        void *result = realloc(dbs->stack, newsize*sizeof(uint32_t));
+        if (result != NULL) dbs->stack = (uint32_t*)result;
+        assert(dbs->stack != NULL);
+    }
+
+    dbs->stack[dbs->stacktop++] = index;
+
+    ticketlock_unlock(&dbs->stacklock);
+}
+
+/*
+int llgcset_stack_pull(const llgcset_t dbs, uint32_t *index)
+{
+    ticketlock_lock(&dbs->stacklock);
+
+    int result = 0;
+    if (dbs->stacktop != 0) {
+        *index = dbs->stack[dbs->stacktop--];
+        result = 1;
+    }
+
+    ticketlock_unlock(&dbs->stacklock);
+
+    return result;
+}
+*/
+
 void llgcset_deadlist_ondelete(const llgcset_t dbs, const uint32_t index)
 {
-    try_delete_item(dbs, index);
+    if (dbs->clearing) try_delete_item(dbs, index);
+    else llgcset_stack_push(dbs, index);
 }
 
 void llgcset_print_size(llgcset_t dbs, FILE *f)

@@ -35,6 +35,7 @@ llcache_t llcache_create(size_t key_size, size_t data_size, size_t table_size, l
  */
 void llcache_clear(llcache_t dbs);
 void llcache_clear_partial(llcache_t dbs, size_t first, size_t count);
+void llcache_clear_unsafe(llcache_t dbs);
 
 /**
  * Free all used memory.
@@ -47,6 +48,8 @@ void llcache_free(llcache_t dbs);
  * Returns 1 when successful, or 0 when it doesn't exist.
  */
 int llcache_get(const llcache_t dbs, void *data);
+int llcache_get_relaxed(const llcache_t dbs, void *data);
+int llcache_get_quicker(const llcache_t dbs, void *data);
 
 int llcache_get_and_hold(const llcache_t dbs, void *data, uint32_t *index);
 
@@ -58,6 +61,8 @@ int llcache_get_and_hold(const llcache_t dbs, void *data, uint32_t *index);
  * Returns 0 when an existing entry exists. In that case, data will contain the original data.
  */
 int llcache_put(const llcache_t dbs, void *data);
+int llcache_put_relaxed(const llcache_t dbs, void *data);
+int llcache_put_quicker(const llcache_t dbs, void *data);
 
 int llcache_put_and_hold(const llcache_t dbs, void *data, uint32_t *index);
 

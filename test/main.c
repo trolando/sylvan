@@ -158,7 +158,7 @@ void test_pre_gc(const llgcset_t dbs, gc_reason reason)
 int test_llgcset2()
 {
     //set_under_test = llgcset_create(sizeof(uint32_t), 20, 10, NULL, NULL, NULL, &test_pre_gc);
-    set_under_test = llgcset_create(sizeof(uint32_t), sizeof(uint32_t), 1<<20, NULL, NULL, NULL);
+    set_under_test = llgcset_create(sizeof(uint32_t), sizeof(uint32_t), 1<<20, NULL, NULL, NULL, NULL);
 
     int i;
     pthread_t t[4];
@@ -199,7 +199,7 @@ int test_llgcset()
     
     int index[16], index2[16], created;
     
-    llgcset_t set = llgcset_create(sizeof(uint32_t), sizeof(uint32_t), 1<<8, NULL, NULL, NULL); // size: 256
+    llgcset_t set = llgcset_create(sizeof(uint32_t), sizeof(uint32_t), 1<<8, NULL, NULL, NULL, NULL); // size: 256
 
     int i;
     for (i=0;i<16;i++) {

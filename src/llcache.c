@@ -71,6 +71,172 @@ inline int llcache_put(const llcache_t dbs, void *data)
     return result;
 }
 
+int llcache_get_quicker(const llcache_t dbs, void *data)
+{
+    uint32_t hash = (uint32_t)(hash_mul(data, dbs->key_length) & MASK);
+    if (hash == 0) hash++; // Do not use bucket 0.
+
+    uint32_t idx = hash & dbs->mask;
+
+    volatile uint32_t *bucket = &dbs->table[idx];
+    register uint32_t v = *bucket & MASK;
+
+    if (v != hash) return 0;
+
+    if (!cas(bucket, v, v|LOCK)) return 0;
+
+    // Lock acquired, compare
+    const size_t data_idx = idx * dbs->padded_data_length;
+    if (memcmp(&dbs->data[data_idx], data, dbs->key_length) == 0) {
+        // Found existing
+        memcpy(data, &dbs->data[data_idx], dbs->data_length);
+        *bucket = v;
+        return 1;                    
+    } else {
+        // Did not match, release bucket again
+        *bucket = v;
+        return 0;
+    }
+}
+
+int llcache_put_quicker(const llcache_t dbs, void *data)
+{
+    uint32_t hash = (uint32_t)(hash_mul(data, dbs->key_length) & MASK);
+    if (hash == 0) hash++; // Avoid 0.
+
+    uint32_t idx = hash & dbs->mask;
+
+    register volatile uint32_t *bucket = &dbs->table[idx];
+    register uint32_t v = *bucket & MASK;
+    register size_t data_idx = idx * dbs->padded_data_length;
+
+    if (v == EMPTY) {
+        if (cas(bucket, EMPTY, hash|LOCK)) {
+            memcpy(&dbs->data[data_idx], data, dbs->data_length);
+            *bucket = hash;
+            return 1;
+        }
+    }
+
+    if (v == hash) {
+        if (memcmp(&dbs->data[data_idx], data, dbs->key_length) == 0) {
+            // Probably exists. (No lock)
+            return 0;
+        }
+    }
+
+    if (cas(bucket, v, hash|LOCK)) {
+        memxchg(&dbs->data[data_idx], data, dbs->data_length);
+        *bucket = hash;
+        return 2;
+    }
+
+    // Claim failed, never mind
+    return 0;
+}
+
+int llcache_get_relaxed(const llcache_t dbs, void *data)
+{
+    uint32_t hash = (uint32_t)(hash_mul(data, dbs->key_length) & MASK);
+
+    if (hash == 0) hash++; // Do not use bucket 0.
+
+    uint32_t f_idx = hash & dbs->mask;
+    uint32_t idx;
+
+    idx = f_idx;
+
+    do {
+        // do not use bucket 0
+        if (idx == 0) continue;
+
+        volatile uint32_t *bucket = &dbs->table[idx];
+        register uint32_t v = *bucket & MASK;
+
+        if (v == EMPTY) return 0;
+
+        if (v == hash) {
+            if (cas(bucket, v, v|LOCK)) {
+                // Lock acquired, compare
+                const size_t data_idx = idx * dbs->padded_data_length;
+                if (memcmp(&dbs->data[data_idx], data, dbs->key_length) == 0) {
+                    // Found existing
+                    memcpy(data, &dbs->data[data_idx], dbs->data_length);
+                    *bucket = v;
+                    return 1;                    
+                } else {
+                    // Did not match, release bucket again
+                    *bucket = v;
+                }
+            } else {
+                // CAS failed, ignore 
+
+                // while (v & LOCK) v = *bucket;
+                // goto restart_bucket;
+            }
+        }
+    } while (next(&idx, f_idx));
+  
+    // If we are here, it is not in the cache line
+    return 0;
+}
+
+
+int llcache_put_relaxed(const llcache_t dbs, void *data)
+{
+    uint32_t hash = (uint32_t)(hash_mul(data, dbs->key_length) & MASK);
+    if (hash == 0) hash++; // Avoid 0.
+
+    uint32_t f_idx = hash & dbs->mask;
+    volatile uint32_t *f_bucket = &dbs->table[f_idx];
+
+    uint32_t idx = f_idx;
+
+    do {
+        // do not use bucket 0
+        if (idx == 0) continue;
+
+        register volatile uint32_t *bucket = &dbs->table[idx];
+        register uint32_t v = *bucket & MASK;
+
+        if (v == EMPTY) {
+            // EMPTY bucket!
+            if (cas(bucket, EMPTY, hash|LOCK)) {
+                register const size_t data_idx = idx * dbs->padded_data_length;
+                // Claim successful!
+                memcpy(&dbs->data[data_idx], data, dbs->data_length);
+                *bucket = hash;
+                return 1;
+            }
+        }
+
+        if (v == hash) {
+            register size_t data_idx = idx * dbs->padded_data_length;
+            if (memcmp(&dbs->data[data_idx], data, dbs->key_length) == 0) {
+                // Probably found existing... 
+                return 0;                    
+            }
+        }
+    } while (next(&idx, f_idx));
+
+    // If we are here, the cache line is full.
+    // Claim first bucket
+    const uint32_t v = (*f_bucket) & MASK;
+    if (cas(f_bucket, v, v|LOCK)) {
+        register const size_t data_idx = f_idx * dbs->padded_data_length;
+        register void *orig_data = alloca(dbs->data_length);
+
+        memxchg(&dbs->data[data_idx], data, dbs->data_length);
+
+        *f_bucket = hash | LOCK;
+        return 2;
+    }
+
+    // Claim failed, never mind
+    return 0;
+}
+
+
 int llcache_get_and_hold(const llcache_t dbs, void *data, uint32_t *index) 
 {
     uint32_t hash = (uint32_t)(hash_mul(data, dbs->key_length) & MASK);
@@ -310,6 +476,13 @@ inline void llcache_clear_partial(llcache_t dbs, size_t first, size_t count)
             *bucket = EMPTY;
         } 
     }
+}
+
+inline void llcache_clear_unsafe(llcache_t dbs)
+{
+    // Just memset 0 the whole thing
+    // No locking and no callbacks called...!
+    memset(dbs->table, 0, sizeof(uint32_t) * dbs->cache_size);
 }
 
 void llcache_free(llcache_t dbs)

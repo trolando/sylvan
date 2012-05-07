@@ -343,7 +343,7 @@ static inline unsigned next_pow2(unsigned x)
     return (1ULL << 32) >> __builtin_clz(x - 1);
 }
 
-llgcset_t llgcset_create(size_t key_length, size_t data_length, size_t table_size, llgcset_delete_f cb_delete, llgcset_pregc_f cb_pregc, void *cb_data)
+llgcset_t llgcset_create(size_t key_length, size_t data_length, size_t table_size, llgcset_delete_f cb_delete, llgcset_pregc_f cb_pregc, llgcset_postgc_f cb_postgc, void *cb_data)
 {
     llgcset_t dbs;
     posix_memalign((void**)&dbs, LINE_SIZE, sizeof(struct llgcset));
@@ -389,6 +389,7 @@ llgcset_t llgcset_create(size_t key_length, size_t data_length, size_t table_siz
  
     dbs->cb_delete = cb_delete; // can be NULL
     dbs->cb_pregc  = cb_pregc; // can be NULL
+    dbs->cb_postgc  = cb_postgc; // can be NULL
     dbs->cb_data   = cb_data;
 
     return dbs;
@@ -493,6 +494,8 @@ void llgcset_gc(const llgcset_t dbs, gc_reason reason)
     xinc(&dbs->clearing);
     llsimplecache_clear(dbs->deadlist);
     xdec(&dbs->clearing);
+
+    if (dbs->cb_postgc != NULL) dbs->cb_postgc(dbs->cb_data);
 }
 
 void llgcset_deadlist_ondelete(const llgcset_t dbs, const uint32_t index)

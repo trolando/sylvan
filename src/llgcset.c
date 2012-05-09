@@ -67,6 +67,7 @@ enum {
 };
 
 void llgcset_deadlist_ondelete(const llgcset_t dbs, const uint32_t index);
+void llgcset_stack_push(const llgcset_t dbs, uint32_t index);
 
 /* 
  * Try to increase ref 
@@ -430,6 +431,7 @@ void try_delete_item(const llgcset_t dbs, uint32_t index)
             if (dbs->cb_delete != NULL) dbs->cb_delete(dbs->cb_data, &dbs->data[index * dbs->padded_data_length]);
 
             // We do not want to interfere with locks...
+            hash = *hashptr;
             while (!cas(hashptr, hash, hash | TOMBSTONE)) {
                 hash = *hashptr;
                 cpu_relax;
@@ -459,7 +461,8 @@ void llgcset_deref(const llgcset_t dbs, uint32_t index)
         // Add it to the deadlist, then return.
         if (dbs->clearing != 0) try_delete_item(dbs, index);
         else if(llsimplecache_put(dbs->deadlist, &index, index) == 2) {
-            try_delete_item(dbs, index);
+            //try_delete_item(dbs, index);
+            llgcset_stack_push(dbs, index);
         }
     } 
 }
@@ -502,7 +505,7 @@ void llgcset_gc(const llgcset_t dbs, gc_reason reason)
  
     // Handle dead stack
     ticketlock_lock(&dbs->stacklock);
-    while (dbs->stacktop > 0) { try_delete_item(dbs, dbs->stack[dbs->stacktop--]); }
+    while (dbs->stacktop > 0) { try_delete_item(dbs, dbs->stack[--dbs->stacktop]); }
     ticketlock_unlock(&dbs->stacklock);
 
     // Handle dead buffer
@@ -518,11 +521,12 @@ void llgcset_stack_push(const llgcset_t dbs, uint32_t index)
 {
     ticketlock_lock(&dbs->stacklock);
 
-    if (dbs->stacktop == dbs->stacksize) {
+    if (dbs->stacktop >= dbs->stacksize) {
         uint32_t newsize = dbs->stacksize == 0 ? 1024 : dbs->stacksize*2;
         void *result = realloc(dbs->stack, newsize*sizeof(uint32_t));
         if (result != NULL) dbs->stack = (uint32_t*)result;
         assert(dbs->stack != NULL);
+        dbs->stacksize = newsize;
     }
 
     dbs->stack[dbs->stacktop++] = index;
@@ -561,4 +565,22 @@ void llgcset_print_size(llgcset_t dbs, FILE *f)
     fprintf(f, "(Deadlist: ");
     llsimplecache_print_size(dbs->deadlist, f);
     fprintf(f, ")");
+}
+
+size_t llgcset_get_filled(const llgcset_t dbs)
+{
+    size_t i=1; // skip 0
+    size_t count=0;
+
+    while (i < dbs->table_size) {
+        uint32_t hash = dbs->table[i++] & (~LOCK);
+        if (hash != TOMBSTONE && hash != EMPTY) count++;
+    }
+
+    return count;
+}
+
+size_t llgcset_get_size(const llgcset_t dbs)
+{
+    return dbs->table_size;
 }

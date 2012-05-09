@@ -94,15 +94,34 @@ extern BDD sylvan_not(BDD bdd);
  */
 extern BDD sylvan_ite(BDD a, BDD b, BDD c);
 
-extern BDD sylvan_relprods_partial(BDD a, BDD b, BDD excluded_variables);
-extern BDD sylvan_relprods_reversed_partial(BDD a, BDD b, BDD excluded_variables);
+/**
+ * Specialized RelProdS using paired variables (X even, X' odd)
+ */
+extern BDD sylvan_relprods(BDD a, BDD b, BDD vars);
 
-extern BDD sylvan_relprod(BDD a, BDD b, BDD x);
-extern BDD sylvan_substitute(BDD a, BDD x);
+/**
+ * Reversed RelProdS using paired variables (X even, X' odd)
+ */
+extern BDD sylvan_relprods_reversed(BDD a, BDD b, BDD vars);
 
-extern BDD sylvan_relprods(BDD a, BDD b);
-extern BDD sylvan_relprods_reversed(BDD a, BDD b);
+/**
+ * Calculate RelProd: \exists vars (a \and b)
+ */
+extern BDD sylvan_relprod(BDD a, BDD b, BDD vars);
+
+/**
+ * Calculate substitution from X to X' using paired variables (X even, X' odd)
+ */
+extern BDD sylvan_substitute(BDD a, BDD vars);
+
+/**
+ * Calculate \exists variables . a
+ */
 extern BDD sylvan_exists(BDD a, BDD variables);
+
+/**
+ * Calculate \forall variables . a
+ */
 extern BDD sylvan_forall(BDD a, BDD variables);
 
 extern BDD sylvan_ref(BDD a);

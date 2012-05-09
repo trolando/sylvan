@@ -59,4 +59,7 @@ void llgcset_gc(const llgcset_t dbs, gc_reason reason);
 
 void llgcset_print_size(llgcset_t dbs, FILE *f);
 
+size_t llgcset_get_filled(const llgcset_t dbs);
+
+size_t llgcset_get_size(const llgcset_t dbs);
 #endif

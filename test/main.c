@@ -404,11 +404,9 @@ void test_or()
         if (i>0) assert (sylvan_count_refs()==3);
         else assert(sylvan_count_refs()==2);
         sylvan_deref(t1);
-        if (i>0) assert (sylvan_count_refs()==2);
-        else assert(sylvan_count_refs()==2);
+        assert(sylvan_count_refs()==2);
         sylvan_deref(t2);
-        if (i>0) assert (sylvan_count_refs()==1);
-        else assert(sylvan_count_refs()==1);
+        assert (sylvan_count_refs()==1);
     }
     
     sylvan_deref(test);
@@ -575,6 +573,15 @@ void test_modelcheck()
     cc = sylvan_ithvar(5); // c'
     dd = sylvan_ithvar(7); // d'
 
+    BDD x = sylvan_or(a,
+                         REF(sylvan_or(b, 
+                         REF(sylvan_or(c, d)))));
+    BDD xx = sylvan_or(aa,
+                         REF(sylvan_or(bb, 
+                         REF(sylvan_or(cc, dd)))));
+
+    BDD universe = sylvan_or(x, xx);
+
     BDD a_same = sylvan_biimp(a, aa); // a = a'
     BDD b_same = sylvan_biimp(b, bb); // b = b'
     BDD c_same = sylvan_biimp(c, cc); // c = c'
@@ -642,19 +649,29 @@ void test_modelcheck()
 
     BDD visited = start, prev = sylvan_invalid;
 
+    /* Check if RelProdS gives the same result as RelProd and Substitute */
+    assert(REF(sylvan_relprods(visited, r, sylvan_true)) ==
+           REF(sylvan_substitute(REF(sylvan_relprod(visited, r, x)), xx)));
+    UNREF
+
+    /* Expected first: (0,0,0,0), (1,0,0,0), (0,1,0,0), (0,0,1,0), (0,0,0,0) */
+
     do {
         //printf("Visited: \n");
         //sylvan_print(visited);
         if (prev != sylvan_invalid) sylvan_deref(prev);
         prev = visited;
-        BDD next = sylvan_relprods(visited, r);
+        BDD next = sylvan_relprods(visited, r, sylvan_true);
         visited = sylvan_or(visited, next);
         // check that the "visited" set is a subset of all parents of next.
-        BDD check = sylvan_relprods_reversed(next, r);
+        BDD check = sylvan_relprods_reversed(next, r, sylvan_true);
         assert (sylvan_diff(prev, check) == sylvan_false); // prev \ check = 0
         sylvan_deref(check);
         sylvan_deref(next);
     } while (visited != prev);
+    sylvan_deref(x);
+    sylvan_deref(xx);
+    sylvan_deref(universe);
 
     sylvan_deref(visited);
     sylvan_deref(prev);

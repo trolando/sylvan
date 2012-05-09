@@ -1,5 +1,8 @@
 #include "atomics.h"
 
+#ifndef TICKETLOCK_H
+#define TICKETLOCK_H
+
 typedef union ticketlock
 {
     unsigned u;
@@ -34,3 +37,5 @@ static inline int ticketlock_trylock(ticketlock_t *t)
     
     return 1;
 }
+
+#endif

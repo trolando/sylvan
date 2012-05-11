@@ -116,11 +116,19 @@ static inline void lock(volatile uint32_t *bucket)
 
 static inline void unlock(volatile uint32_t *bucket)
 {
-    while (1) {
-        register uint32_t hash = *bucket;
-        if (cas(bucket, hash, hash & (~LOCK))) break;
-        cpu_relax;
-    }
+    // Careful. Lower bytes are reference counter (can be manipulated!)
+    register uint8_t *b8 = (uint8_t *)bucket;
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+    b8 += 3;
+#elif __BYTE_ORDER == __BIG_ENDIAN
+#else
+#error Unsupported system!
+#endif
+    *b8 &= 0x7f;
+    // Why is this safe? Because ref counters are manipulated with CAS.
+    // And since we have the lock...
+    // In other words, all other operations are manipulated using CAS and will fail!
+    // (This may be sensitive to ABA of course... so be careful)
 }
 
 // Calculate next index on a cache line walk
@@ -214,8 +222,8 @@ restart_bucket:
             if (EMPTY == (v & HASH_MASK))
             {
                 if (tomb_bucket != 0) {
-                    const size_t data_idx = tomb_idx * dbs->padded_data_length;
                     // We claimed a tombstone (using cas) earlier.
+                    const size_t data_idx = tomb_idx * dbs->padded_data_length;
                     memcpy(&dbs->data[data_idx], data, dbs->data_length);
                     // SFENCE; // future x86 without strong store ordering
                     *tomb_bucket = hash_memo + 1; // also set RC to 1
@@ -227,8 +235,8 @@ restart_bucket:
                 }
 
                 if (bucket == first_bucket) {
-                    const size_t data_idx = idx * dbs->padded_data_length;
                     // The empty bucket is also the first bucket.
+                    const size_t data_idx = idx * dbs->padded_data_length;
                     memcpy(&dbs->data[data_idx], data, dbs->data_length);
                     // SFENCE; // future x86 without strong store ordering
                     *bucket = hash_memo + 1;
@@ -239,7 +247,7 @@ restart_bucket:
                 }
 
                 // No claimed tombstone, so claim end of chain
-                if (cas(bucket, EMPTY, LOCK)) {
+                if (cas(bucket, EMPTY, hash_memo | LOCK)) {
                     const size_t data_idx = idx * dbs->padded_data_length;
                     memcpy(&dbs->data[data_idx], data, dbs->data_length);
                     // SFENCE; // future x86 without strong store ordering
@@ -284,7 +292,7 @@ restart_bucket:
                 llgcset_deref(dbs, idx);
             }
 
-            if (tomb_bucket == 0 && TOMBSTONE == (v & ~LOCK)) {
+            if (tomb_bucket == 0 && TOMBSTONE == v) {
                 if (bucket == first_bucket) {
                     tomb_bucket = first_bucket;
                     tomb_idx = first_idx;
@@ -412,9 +420,7 @@ void llgcset_ref(const llgcset_t dbs, uint32_t index)
     register volatile uint32_t *hashptr = &dbs->table[index];
     do {
         ref_res = try_ref(hashptr);
-#if DEBUG_LLGCSET
-        assert(ref_res != REF_DELETING);
-#endif
+        assert(ref_res != REF_DELETING); // external logic check
         // ref_res is REF_LOCK or REF_NOCAS or REF_SUCCESS
     } while (ref_res != REF_SUCCESS);
 }
@@ -459,9 +465,8 @@ void llgcset_deref(const llgcset_t dbs, uint32_t index)
 
     if (ref_res == REF_NOWZERO) {
         // Add it to the deadlist, then return.
-        if (dbs->clearing != 0) try_delete_item(dbs, index);
+        if (dbs->clearing != 0) try_delete_item(dbs, index); /* POTENTIALL UNSAFE */
         else if(llsimplecache_put(dbs->deadlist, &index, index) == 2) {
-            //try_delete_item(dbs, index);
             llgcset_stack_push(dbs, index);
         }
     } 
@@ -471,6 +476,7 @@ inline void llgcset_clear(llgcset_t dbs)
 {
     // TODO MODIFY so the callback is properly called and all???
     // Or is that simply a matter of gc()...
+    // In that case: do first call gc() and then use llgcset_clear() to get rid of stales...
     memset(dbs->table, 0, sizeof(uint32_t) * dbs->table_size);
 }
 
@@ -488,7 +494,7 @@ void llgcset_free(llgcset_t dbs)
 #ifdef HAVE_NUMA_H
     }
 #endif
-    realloc(dbs->stack, 0);
+    dbs->stack = realloc(dbs->stack, 0);
     free(dbs);
 }
 

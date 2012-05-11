@@ -21,8 +21,8 @@ struct llcache
     size_t             data_length;
     size_t             cache_size;  
     uint32_t           mask;         // size-1
-    uint32_t           *table;        // table with hashes
-    uint8_t            *data;         // table with data
+    uint32_t           *table;       // table with hashes
+    uint8_t            *data;        // table with data
     llcache_delete_f   cb_delete;    // delete function (callback pre-delete)
     void               *cb_data;
 };
@@ -44,7 +44,10 @@ static const uint32_t  CL_MASK_R   = ((LINE_SIZE) / 4) - 1;
  * CL_MASK_R   = 0x0000000F
  */
 
-// Calculate next index on a cache line walk
+/**
+ * Calculate next index on a cache line walk
+ * Returns 0 if the new index equals last
+ */
 static inline int next(uint32_t *cur, uint32_t last) 
 {
     return (*cur = (*cur & CL_MASK) | ((*cur + 1) & CL_MASK_R)) != last;
@@ -89,7 +92,7 @@ int llcache_get_quicker(const llcache_t dbs, void *data)
     const size_t data_idx = idx * dbs->padded_data_length;
     if (memcmp(&dbs->data[data_idx], data, dbs->key_length) == 0) {
         // Found existing
-        memcpy(data, &dbs->data[data_idx], dbs->data_length);
+        memcpy(&data[dbs->key_length], &dbs->data[data_idx+dbs->key_length], dbs->data_length-dbs->key_length);
         *bucket = v;
         return 1;                    
     } else {
@@ -135,6 +138,11 @@ int llcache_put_quicker(const llcache_t dbs, void *data)
     return 0;
 }
 
+/**
+ * This version uses the entire cacheline
+ * However: it ignores locked buckets and does not recheck first, so 
+ * false negatives are possible
+ */
 int llcache_get_relaxed(const llcache_t dbs, void *data)
 {
     uint32_t hash = (uint32_t)(hash_mul(data, dbs->key_length) & MASK);
@@ -151,7 +159,10 @@ int llcache_get_relaxed(const llcache_t dbs, void *data)
         if (idx == 0) continue;
 
         volatile uint32_t *bucket = &dbs->table[idx];
-        register uint32_t v = *bucket & MASK;
+        register uint32_t v = *bucket;
+
+        if (v & LOCK) continue; // skip locked (prevent expensive CAS)
+        v &= MASK;
 
         if (v == EMPTY) return 0;
 
@@ -168,12 +179,7 @@ int llcache_get_relaxed(const llcache_t dbs, void *data)
                     // Did not match, release bucket again
                     *bucket = v;
                 }
-            } else {
-                // CAS failed, ignore 
-
-                // while (v & LOCK) v = *bucket;
-                // goto restart_bucket;
-            }
+            } // else: CAS failed, ignore 
         }
     } while (next(&idx, f_idx));
   
@@ -181,7 +187,12 @@ int llcache_get_relaxed(const llcache_t dbs, void *data)
     return 0;
 }
 
-
+/**
+ * This version uses the entire cacheline
+ * However: it ignores locked buckets and does not lock before memcmp.
+ * False negatives are possible (resulting in duplicate insertion)
+ * and false positives are possible (resulting in no insertion)
+ */
 int llcache_put_relaxed(const llcache_t dbs, void *data)
 {
     uint32_t hash = (uint32_t)(hash_mul(data, dbs->key_length) & MASK);
@@ -212,8 +223,9 @@ int llcache_put_relaxed(const llcache_t dbs, void *data)
 
         if (v == hash) {
             register size_t data_idx = idx * dbs->padded_data_length;
-            if (memcmp(&dbs->data[data_idx], data, dbs->key_length) == 0) {
-                // Probably found existing... 
+            //if (memcmp(&dbs->data[data_idx], data, dbs->key_length) == 0) {
+            if (memcmp(&dbs->data[data_idx], data, dbs->data_length) == 0) {
+                // Probably found existing... (could be false positive)
                 return 0;                    
             }
         }
@@ -221,14 +233,11 @@ int llcache_put_relaxed(const llcache_t dbs, void *data)
 
     // If we are here, the cache line is full.
     // Claim first bucket
-    const uint32_t v = (*f_bucket) & MASK;
-    if (cas(f_bucket, v, v|LOCK)) {
+    const uint32_t v = *f_bucket;
+    if (cas(f_bucket, v & MASK, hash | LOCK)) {
         register const size_t data_idx = f_idx * dbs->padded_data_length;
-        register void *orig_data = alloca(dbs->data_length);
-
         memxchg(&dbs->data[data_idx], data, dbs->data_length);
-
-        *f_bucket = hash | LOCK;
+        *f_bucket = hash;
         return 2;
     }
 

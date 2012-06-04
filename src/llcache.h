@@ -50,6 +50,7 @@ void llcache_free(llcache_t dbs);
 int llcache_get(const llcache_t dbs, void *data);
 int llcache_get_relaxed(const llcache_t dbs, void *data);
 int llcache_get_quicker(const llcache_t dbs, void *data);
+int llcache_get_quicker_restart(const llcache_t dbs, void *data);
 
 int llcache_get_and_hold(const llcache_t dbs, void *data, uint32_t *index);
 

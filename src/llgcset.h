@@ -25,6 +25,8 @@ struct llgcset
     size_t            table_size;   // size of the hash table (number of slots) --> power of 2!
     size_t            threshold;    // number of iterations until TABLE_FULL error is thrown
     uint32_t          mask;         // size-1
+    uint32_t          *_table;      // table with hashes
+    uint8_t           *_data;       // table with values
     uint32_t          *table;       // table with hashes
     uint8_t           *data;        // table with values
     llgcset_delete_f  cb_delete;    // delete function (callback pre-delete)

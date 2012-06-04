@@ -11,6 +11,8 @@
   #define LINE_SIZE 64
 #endif 
 
+#define ALIGN(x) ((typeof(x))((((size_t)(x))+(LINE_SIZE-1))&(~((size_t)(LINE_SIZE-1)))))
+
 static __always_inline void barrier(void)
 {
   asm volatile("" ::: "memory");

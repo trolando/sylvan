@@ -6,10 +6,6 @@
 
 #include "config.h"
 
-#ifdef HAVE_NUMA_H
-#include <numa.h>
-#endif
-
 #include "atomics.h"
 #include "llsimplecache.h"
 
@@ -17,6 +13,7 @@ struct llsimplecache
 {
     size_t                 cache_size;  
     uint32_t               mask;         // size-1
+    uint32_t               *_table;       // table with data
     uint32_t               *table;       // table with data
     llsimplecache_delete_f cb_delete;    // delete function (callback pre-delete)
     void                   *cb_data;
@@ -102,15 +99,8 @@ llsimplecache_t llsimplecache_create(size_t cache_size, llsimplecache_delete_f c
     dbs->cache_size = cache_size;
     dbs->mask = dbs->cache_size - 1;
 
-#ifdef HAVE_NUMA_H
-    if (numa_available >= 0) {
-        dbs->table = (uint32_t*)numa_alloc_interleaved(dbs->cache_size * sizeof(uint32_t));
-    } else {
-#endif
-    posix_memalign((void**)&dbs->table, LINE_SIZE, dbs->cache_size * sizeof(uint32_t));
-#ifdef HAVE_NUMA_H
-    }
-#endif
+    dbs->_table = (uint32_t*)calloc(dbs->cache_size*sizeof(uint32_t)+LINE_SIZE, 1);
+    dbs->table = ALIGN(dbs->_table);
 
     memset(dbs->table, 0, sizeof(uint32_t) * dbs->cache_size);
 
@@ -150,15 +140,7 @@ inline void llsimplecache_clear_partial(llsimplecache_t dbs, size_t first, size_
 
 void llsimplecache_free(llsimplecache_t dbs)
 {
-#ifdef HAVE_NUMA_H
-    if (numa_available() >= 0) {
-        numa_free(dbs->table, dbs->cache_size * sizeof(uint32_t));
-    } else {
-#endif
     free(dbs->table);
-#ifdef HAVE_NUMA_H
-    }
-#endif
     free(dbs);
 }
 

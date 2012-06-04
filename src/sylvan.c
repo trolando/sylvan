@@ -14,6 +14,10 @@
 #include "llgcset.h"
 #include "llcache.h"
 
+#ifdef HAVE_NUMA_H 
+#include <numa.h>
+#endif
+
 #if SYLVAN_NOCACHE
 #define CACHE 0
 #else
@@ -240,10 +244,20 @@ void sylvan_report_stats()
         totals[C_relprods], totals[C_relprods_reversed],
         totals[C_relprod], totals[C_substitute]);
     printf(LRED  "****************" NC " \n");
+
+    // For bonus point, calculate LLGCSET size...
+    printf("BDD Unique table: %ld of %ld buckets filled.\n", llgcset_get_filled(_bdd.data), llgcset_get_size(_bdd.data));
 }
 
 #if STATS
-#define SV_CNT(s) (sylvan_stats[get_thread_id()].count[s]+=1);
+int enable_stats=1;
+void sylvan_enable_stats() {
+  enable_stats = 1;
+}
+void sylvan_disable_stats() {
+  enable_stats = 0;
+}
+#define SV_CNT(s) {if (enable_stats) {(sylvan_stats[get_thread_id()].count[s]+=1);}}
 #else
 #define SV_CNT(s) ; /* Empty */
 #endif
@@ -311,6 +325,12 @@ void sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
 {
     if (initialized != 0) return;
     initialized = 1;
+ 
+#ifdef HAVE_NUMA_H 
+    if (numa_available() != -1) {
+        numa_set_interleave_mask(numa_all_nodes_ptr);  
+    }
+#endif
 
     sylvan_reset_counters();
 

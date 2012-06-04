@@ -140,7 +140,7 @@ inline void llsimplecache_clear_partial(llsimplecache_t dbs, size_t first, size_
 
 void llsimplecache_free(llsimplecache_t dbs)
 {
-    free(dbs->table);
+    free(dbs->_table);
     free(dbs);
 }
 

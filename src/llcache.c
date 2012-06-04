@@ -517,7 +517,6 @@ inline void llcache_clear_unsafe(llcache_t dbs)
 {
     // Just memset 0 the whole thing
     // No locking and no callbacks called...!
-    printf("UNSAFE CLEARING LLCACHE\n");
     memset(dbs->table, 0, sizeof(uint32_t) * dbs->cache_size);
 }
 

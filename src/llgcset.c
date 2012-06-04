@@ -153,7 +153,7 @@ static inline int next(uint32_t *cur, uint32_t last)
  * - If we released tombstone before (in WAIT step), fully restart.
  * - If TOMBSTONE and we have no claim yet: Try to claim TOMBSTONE.
  */
-void *llgcset_lookup_hash(const llgcset_t dbs, const void* data, int* created, uint32_t* index)
+void *llgcset_lookup(const llgcset_t dbs, const void* data, int* created, uint32_t* index)
 {
     uint64_t            hash_rehash;
 full_restart:
@@ -225,8 +225,8 @@ restart_bucket:
                     *tomb_bucket = hash_memo + 1; // also set RC to 1
                     if (tomb_bucket != first_bucket) unlock(first_bucket);
 
-                    *index = tomb_idx;
-                    *created = 1;
+                    if (index) *index = tomb_idx;
+                    if (created) *created = 1;
                     return &dbs->data[data_idx];
                 }
 
@@ -237,8 +237,8 @@ restart_bucket:
                     // SFENCE; // future x86 without strong store ordering
                     *bucket = hash_memo + 1;
 
-                    *index = idx;
-                    *created = 1;
+                    if (index) *index = idx;
+                    if (created) *created = 1;
                     return &dbs->data[data_idx];
                 }
 
@@ -250,8 +250,8 @@ restart_bucket:
                     *bucket = hash_memo + 1; // also set RC to 1
                     unlock(first_bucket);
 
-                    *index = idx;
-                    *created = 1;
+                    if (index) *index = idx;
+                    if (created) *created = 1;
                     return &dbs->data[data_idx];
                 }
                 
@@ -280,8 +280,8 @@ restart_bucket:
                     if (tomb_bucket != 0) *tomb_bucket = TOMBSTONE;
                     if (tomb_bucket != first_bucket) unlock(first_bucket);
 
-                    *index = idx;
-                    *created = 0;
+                    if (index) *index = idx;
+                    if (created) *created = 0;
                     return &dbs->data[idx * dbs->padded_data_length];
                 }
                 // It was different, decrease counter again
@@ -316,8 +316,8 @@ restart_bucket:
         *tomb_bucket = hash_memo + 1;
         if (tomb_bucket != first_bucket) unlock(first_bucket);
 
-        *index = tomb_idx;
-        *created = 1;
+        if (index) *index = tomb_idx;
+        if (created) *created = 1;
         return &dbs->data[data_idx];
     }
 
@@ -326,29 +326,13 @@ restart_bucket:
     return 0;
 }
 
-// This is a wrapper function. It allows NULL created, NULL index and will GC when table full.
-inline void *llgcset_get_or_create(const llgcset_t dbs, const void *data, int *created, uint32_t *index)
-{
-    int _created;
-    uint32_t _index;
-    void *result = llgcset_lookup_hash(dbs, data, &_created, &_index);
-    if (result == 0) {
-        // Table full - gc then try again...
-        llgcset_gc(dbs, gc_hashtable_full);
-        result = llgcset_lookup_hash(dbs, data, &_created, &_index);
-    }
-    if (created) *created=_created;
-    if (index) *index=_index;
-    return result;
-}
-
 static inline unsigned next_pow2(unsigned x)
 {
     if (x <= 2) return x;
     return (1ULL << 32) >> __builtin_clz(x - 1);
 }
 
-llgcset_t llgcset_create(size_t key_length, size_t data_length, size_t table_size, llgcset_delete_f cb_delete, llgcset_pregc_f cb_pregc, llgcset_postgc_f cb_postgc, void *cb_data)
+llgcset_t llgcset_create(size_t key_length, size_t data_length, size_t table_size, llgcset_delete_f cb_delete, void *cb_data)
 {
     llgcset_t dbs;
     posix_memalign((void**)&dbs, LINE_SIZE, sizeof(struct llgcset));
@@ -384,8 +368,6 @@ llgcset_t llgcset_create(size_t key_length, size_t data_length, size_t table_siz
     dbs->clearing = 0;
  
     dbs->cb_delete = cb_delete; // can be NULL
-    dbs->cb_pregc  = cb_pregc;  // can be NULL
-    dbs->cb_postgc = cb_postgc; // can be NULL
     dbs->cb_data   = cb_data;
 
     dbs->stack = NULL;
@@ -480,11 +462,8 @@ void llgcset_free(llgcset_t dbs)
 /**
  * Execute garbage collection
  */
-void llgcset_gc(const llgcset_t dbs, gc_reason reason)
+void llgcset_gc(const llgcset_t dbs)
 {
-    // Call dbs->pre_gc first
-    if (dbs->cb_pregc != NULL) dbs->cb_pregc(dbs->cb_data, reason);
-
     // Increment clearing
     xinc(&dbs->clearing);
  
@@ -498,8 +477,6 @@ void llgcset_gc(const llgcset_t dbs, gc_reason reason)
 
     // Decrement clearing
     xdec(&dbs->clearing);
-
-    if (dbs->cb_postgc != NULL) dbs->cb_postgc(dbs->cb_data);
 }
 
 void llgcset_stack_push(const llgcset_t dbs, uint32_t index)

@@ -69,6 +69,7 @@ static struct {
 #if CACHE
     llcache_t cache; // operations cache
 #endif
+    int workers;
     int gc;
 } _bdd;
 
@@ -267,6 +268,25 @@ void sylvan_disable_stats() {
  */
 #define GETNODE(bdd)        ((bddnode_t)llgcset_index_to_ptr(_bdd.data, BDD_STRIPMARK(bdd)))
 
+
+
+
+
+/* 
+ * GARBAGE COLLECTION 
+ */
+
+static inline void sylvan_gc_go() 
+{
+    llcache_clear_unsafe(_bdd.cache);
+    llgcset_gc(_bdd.data);
+}
+
+static inline void sylvan_gc_test()
+{
+}
+
+
 /**
  * When a bdd node is deleted, unref the children
  */
@@ -274,29 +294,6 @@ void sylvan_bdd_delete(const void* data, bddnode_t node)
 {
     sylvan_deref(node->low);
     sylvan_deref(node->high);
-}
-
-/**
- * Called pre-gc : first, gc the cache to free nodes
- */
-void sylvan_bdd_pregc(const void* data, gc_reason reason) 
-{
-    if (reason == gc_user) { SV_CNT(C_gc_user); }
-    else if (reason == gc_hashtable_full) { SV_CNT(C_gc_hashtable_full); }
-
-    xinc(&_bdd.gc);
-
-#if CACHE
-    llcache_clear_unsafe(_bdd.cache);
-#endif
-}
-
-/**
- * Called post-gc ...
- */
-void sylvan_bdd_postgc(const void* data)
-{
-    xdec(&_bdd.gc);
 }
 
 /** Random number generator */
@@ -355,7 +352,7 @@ void sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
         fprintf(stderr, "BDD_init error: tablesize must be < 30!\n");
         exit(1);
     }
-    _bdd.data = llgcset_create(10, sizeof(struct bddnode), 1<<tablesize, (llgcset_delete_f)&sylvan_bdd_delete, sylvan_bdd_pregc, sylvan_bdd_postgc, NULL);
+    _bdd.data = llgcset_create(10, sizeof(struct bddnode), 1<<tablesize, (llgcset_delete_f)&sylvan_bdd_delete, NULL);
 
 
 #if CACHE    
@@ -367,6 +364,8 @@ void sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
     _bdd.cache = llcache_create(cache_key_length, cache_data_length, 1<<cachesize, NULL, NULL);
 
 #endif
+
+    _bdd.gc = 0;
 }
 
 void sylvan_quit()
@@ -397,7 +396,8 @@ void sylvan_deref(BDD a)
 void sylvan_gc()
 {
     if (initialized == 0) return;
-    llgcset_gc(_bdd.data, gc_user);
+    SV_CNT(C_gc_user);
+    sylvan_gc_go();
 }
 
 /**
@@ -428,10 +428,16 @@ inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high)
         // ITE(a,not b,c) == not ITE(a,b,not c)
         n.low = BDD_STRIPMARK(low);
         n.high = BDD_TOGGLEMARK(high);
+        
+        if (llgcset_lookup(_bdd.data, &n, &created, &result) == 0) {
+            SV_CNT(C_gc_hashtable_full);
 
-        if (llgcset_get_or_create(_bdd.data, &n, &created, &result) == 0) {
-            fprintf(stderr, "BDD Unique table full, %ld of %ld buckets filled!\n", llgcset_get_filled(_bdd.data), llgcset_get_size(_bdd.data));
-            exit(1);
+            sylvan_gc_go();
+
+            if (llgcset_lookup(_bdd.data, &n, &created, &result) == 0) {
+                fprintf(stderr, "BDD Unique table full, %ld of %ld buckets filled!\n", llgcset_get_filled(_bdd.data), llgcset_get_size(_bdd.data));
+                exit(1);
+            }
         }
         
         if (!created) {
@@ -444,11 +450,17 @@ inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high)
         n.low = low;
         n.high = high;
 
-        if(llgcset_get_or_create(_bdd.data, &n, &created, &result) == 0) {
-            fprintf(stderr, "BDD Unique table full!\n");
-            exit(1);
-        }
+        if (llgcset_lookup(_bdd.data, &n, &created, &result) == 0) {
+            SV_CNT(C_gc_hashtable_full);
 
+            sylvan_gc_go();
+
+            if (llgcset_lookup(_bdd.data, &n, &created, &result) == 0) {
+                fprintf(stderr, "BDD Unique table full, %ld of %ld buckets filled!\n", llgcset_get_filled(_bdd.data), llgcset_get_size(_bdd.data));
+                exit(1);
+            }
+        }
+ 
         if (!created) {
             sylvan_deref(low);
             sylvan_deref(high);
@@ -697,6 +709,8 @@ BDD sylvan_ite_do(BDD a, BDD b, BDD c, BDDVAR prev_level)
         return sylvan_ref(r);
     }
 
+    sylvan_gc_test();
+
     // The value of a,b,c may be changed, but the reference counters are not changed at this point.
     
     SV_CNT(C_ite);
@@ -725,11 +739,9 @@ BDD sylvan_ite_do(BDD a, BDD b, BDD c, BDDVAR prev_level)
         template_cache_node.result = sylvan_invalid;
     
         if (llcache_get_quicker(_bdd.cache, &template_cache_node)) {
-            if (ACCESS_ONCE(_bdd.gc) == 0) {
-                BDD res = sylvan_ref(template_cache_node.result);
-                SV_CNT(C_cache_reuse);
-                return BDD_TRANSFERMARK(r, res);
-            }
+            BDD res = sylvan_ref(template_cache_node.result);
+            SV_CNT(C_cache_reuse);
+            return BDD_TRANSFERMARK(r, res);
         }
     }
 #endif
@@ -799,6 +811,8 @@ BDD sylvan_exists_do(BDD a, BDD variables, BDDVAR prev_level)
     if (BDD_ISCONSTANT(a)) return a;
     if (variables == sylvan_false) return sylvan_ref(a);
     
+    sylvan_gc_test();
+    
     SV_CNT(C_exists);
  
     // a != constant    
@@ -832,11 +846,9 @@ BDD sylvan_exists_do(BDD a, BDD variables, BDDVAR prev_level)
         template_cache_node.result = sylvan_invalid;
 
         if (llcache_get_quicker(_bdd.cache, &template_cache_node)) {
-            if (ACCESS_ONCE(_bdd.gc) == 0) {
-                BDD result = sylvan_ref(template_cache_node.result);
-                SV_CNT(C_cache_reuse);
-                return result;
-            }
+            BDD result = sylvan_ref(template_cache_node.result);
+            SV_CNT(C_cache_reuse);
+            return result;
         }
     }
 #endif
@@ -910,6 +922,8 @@ BDD sylvan_forall_do(BDD a, BDD variables, BDDVAR prev_level)
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
     if (variables == sylvan_false) return sylvan_ref(a);
+
+    sylvan_gc_test();
 
     SV_CNT(C_forall);
  
@@ -1045,6 +1059,8 @@ BDD sylvan_relprod_do(BDD a, BDD b, BDD x, BDDVAR prev_level)
      * END of Normalization and trivial cases
      */
 
+    sylvan_gc_test();
+
     SV_CNT(C_relprod);
 
     bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
@@ -1173,6 +1189,8 @@ BDD sylvan_substitute_do(BDD a, BDD vars, BDDVAR prev_level)
 
     SV_CNT(C_substitute);
 
+    sylvan_gc_test();
+
     bddnode_t na = GETNODE(a);
     BDDVAR level = na->level;
     BDD aLow = BDD_TRANSFERMARK(a, na->low);
@@ -1287,6 +1305,8 @@ BDD sylvan_relprods_do(BDD a, BDD b, BDD vars, BDDVAR prev_level)
     /*
      * END of Normalization and trivial cases
      */
+
+    sylvan_gc_test();
 
     SV_CNT(C_relprods);
 
@@ -1431,6 +1451,8 @@ BDD sylvan_relprods_reversed_do(BDD a, BDD b, BDD vars, BDDVAR prev_level)
     /*
      * END of Normalization and trivial cases
      */
+
+    sylvan_gc_test();
 
     SV_CNT(C_relprods_reversed);
 
@@ -1715,21 +1737,6 @@ llcache_t __sylvan_get_internal_cache()
 }
 #endif
 
-/* EXPOSE LL CACHE */
-struct llcache
-{
-    size_t             padded_data_length;
-    size_t             key_length;
-    size_t             data_length;
-    size_t             cache_size;  
-    uint32_t           mask;         // size-1
-    uint32_t           *table;        // table with hashes
-    uint8_t            *data;         // table with data
-    llcache_delete_f   cb_delete;    // delete function (callback pre-delete)
-    void               *cb_data;
-};
-
-
 long long sylvan_count_refs()
 {
     long long result = 0;
@@ -1749,36 +1756,10 @@ long long sylvan_count_refs()
         
         bddnode_t n = GETNODE(i);
 
-        //fprintf(stderr, "Node %08X var=%d low=%08X high=%08X rc=%d\n", i, n->level, n->low, n->high, c);
-        
         if (!BDD_ISCONSTANT(n->low)) result--; // dont include internals
         if (!BDD_ISCONSTANT(n->high)) result--; // dont include internals
     }
     
-#if CACHE    
-/*
-    for (i=0;i<_bdd.cache->cache_size;i++) {
-        uint32_t c = _bdd.cache->table[i];
-        if (c == 0) continue;
-        if (c == 0x7fffffff) continue;
-        
-        bddcache_t n = (bddcache_t)&_bdd.cache->data[i * _bdd.cache->padded_data_length];
-        
-        //fprintf(stderr, "Cache %08X ", i);
-        
-        int j;
-        for (j=0; j<MAXPARAM; j++) {
-            //fprintf(stderr, "%d=%08X ", j, n->params[j]);
-            if (BDD_ISCONSTANT(n->params[j])) continue;
-            result--;
-        }
-                
-        //fprintf(stderr, "res=%08X\n", n->result);
-        
-        if (n->result != sylvan_invalid && (!BDD_ISCONSTANT(n->result))) result--;
-    }*/
-#endif    
-
     return result;
 }
 

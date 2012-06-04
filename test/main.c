@@ -107,15 +107,15 @@ void *llgcset_test_worker(void* arg) {
         for (i=(long)arg;i<50000;i++) {
             //if ((i & 63) == 0) printf("[%d]", i);
             for (l=i;l<i+N_TEST_LL;l++) {
-              assert(llgcset_get_or_create(set_under_test, &l, NULL, &other[l-i]));
+              assert(llgcset_lookup(set_under_test, &l, NULL, &other[l-i]));
             }
             for (j<0;j<5;j++) {
-                assert(llgcset_get_or_create(set_under_test, &i, NULL, &index));
+                assert(llgcset_lookup(set_under_test, &i, NULL, &index));
                 assert (i == *(uint32_t*)llgcset_index_to_ptr(set_under_test, index));
                 for (k=0;k<7;k++) { 
                     llgcset_ref(set_under_test, index);
                     int i2;
-                    assert(llgcset_get_or_create(set_under_test, &i, NULL, &i2));
+                    assert(llgcset_lookup(set_under_test, &i, NULL, &i2));
                     assert(i2==index);
                     llgcset_deref(set_under_test, index);
                     llgcset_deref(set_under_test, index);
@@ -125,8 +125,8 @@ void *llgcset_test_worker(void* arg) {
                 llgcset_deref(set_under_test, index);
             }
             for (l=i;l<i+N_TEST_LL;l++) {
-              assert(llgcset_get_or_create(set_under_test, &l, NULL, &index));
-              assert(llgcset_get_or_create(set_under_test, &l, NULL, &index));
+              assert(llgcset_lookup(set_under_test, &l, NULL, &index));
+              assert(llgcset_lookup(set_under_test, &l, NULL, &index));
               if (index != other[l-i]) {
                    if ((index & ~15) == (other[l-i] & ~15)) printf(LMAGENTA "\n*** SAME CACHE LINE ***\n" NC);
                    printf("\nIndex %u: %x = %d, Other %u: %x = %d\n", 
@@ -148,17 +148,15 @@ void *llgcset_test_worker(void* arg) {
 /**
  * Called pre-gc : first, gc the cache to free nodes
  */
-void test_pre_gc(const llgcset_t dbs, gc_reason reason) 
+void test_pre_gc(const llgcset_t dbs) 
 {
-    if (reason == gc_user) { printf("U"); }
-    else if (reason == gc_hashtable_full) { printf("H"); }
     fflush(stdout);
 }
 
 int test_llgcset2()
 {
     //set_under_test = llgcset_create(sizeof(uint32_t), 20, 10, NULL, NULL, NULL, &test_pre_gc);
-    set_under_test = llgcset_create(sizeof(uint32_t), sizeof(uint32_t), 1<<20, NULL, NULL, NULL, NULL);
+    set_under_test = llgcset_create(sizeof(uint32_t), sizeof(uint32_t), 1<<20, NULL, NULL);
 
     int i;
     pthread_t t[4];
@@ -172,7 +170,7 @@ int test_llgcset2()
     pthread_join(t[2], NULL);
     pthread_join(t[3], NULL);
 
-    llgcset_gc(set_under_test, gc_user);
+    llgcset_gc(set_under_test);
 
     int n=0;
     for (i=0;i<set_under_test->table_size;i++) {
@@ -199,17 +197,23 @@ int test_llgcset()
     
     int index[16], index2[16], created;
     
-    llgcset_t set = llgcset_create(sizeof(uint32_t), sizeof(uint32_t), 1<<8, NULL, NULL, NULL, NULL); // size: 256
+    llgcset_t set = llgcset_create(sizeof(uint32_t), sizeof(uint32_t), 1<<5, NULL, NULL); // size: 32
 
     int i;
     for (i=0;i<16;i++) {
-        llgcset_get_or_create(set, &entry[i], &created, &index[i]);
+        if (llgcset_lookup(set, &entry[i], &created, &index[i])==0) {
+            llgcset_gc(set);
+            assert(llgcset_lookup(set, &entry[i], &created, &index[i])!=0);
+        }
         //printf("Position: %d\n", index[i]);
         assert(created);
     }
     
     for (i=0;i<16;i++) {
-        llgcset_get_or_create(set, &entry[i], &created, &index2[i]);
+        if (llgcset_lookup(set, &entry[i], &created, &index2[i])==0) {
+            llgcset_gc(set);
+            assert(llgcset_lookup(set, &entry[i], &created, &index2[i])!=0);
+        }
         assert(created == 0);
         assert(index[i] == index2[i]);
     }
@@ -239,7 +243,6 @@ int test_llgcset()
         uint32_t key = set->table[i];
         if (key != 0) {
             n++;
-printf("KEY: %X\n", key);
             assert((key & 0x0000ffff) == 0);
         }
     }
@@ -253,7 +256,10 @@ printf("KEY: %X\n", key);
     }
 */    
     for (i=0;i<16;i++) {
-        llgcset_get_or_create(set, &entry[i], &created, &index2[i]);
+        if (llgcset_lookup(set, &entry[i], &created, &index2[i])==0) {
+            llgcset_gc(set);
+            assert(llgcset_lookup(set, &entry[i], &created, &index2[i])!=0);
+        }
         assert(created == 0);
         assert(index[i] == index2[i]);
     }    
@@ -272,7 +278,7 @@ printf("KEY: %X\n", key);
     assert(set->gc_head == set->gc_size-1);
     assert(set->gc_tail == 16);
  */   
-    llgcset_gc(set, gc_user);
+    llgcset_gc(set);
     
     // check all have ref 1
     n=0;
@@ -298,7 +304,7 @@ printf("KEY: %X\n", key);
 //        assert(set->gc_list[set->gc_head+1+i] == index[i]);
 //    }
     
-    llgcset_gc(set, gc_user);
+    llgcset_gc(set);
     
   //  assert(set->gc_head == set->gc_tail);
 
@@ -316,7 +322,10 @@ printf("KEY: %X\n", key);
     assert(n == 16);
 
     for (i=0;i<16;i++) {
-        llgcset_get_or_create(set, &entry[i], &created, &index[i]);
+        if (llgcset_lookup(set, &entry[i], &created, &index[i])==0) {
+            llgcset_gc(set);
+            assert(llgcset_lookup(set, &entry[i], &created, &index[i])!=0);
+        }
         assert(created);
     }
     
@@ -324,12 +333,31 @@ printf("KEY: %X\n", key);
     n=0;
     for (i=0;i<set->table_size;i++) {
         uint32_t key = set->table[i];
-        if (key != 0) {
+        if (key != 0 && key != 0x7fffffff) {
             n++;
             assert((key & 0x0000ffff) == 1);
         }
     }
     assert(n == 16);
+
+    // deref all twice
+    for (i=0;i<16;i++) {
+        llgcset_deref(set, index[i]);
+    }
+/*
+    int j;
+    for (j=0;j<set->table_size;j++) {
+        printf("[%d]=%x\n", j, set->table[j]);
+    }
+*/
+    // all now have ref 0
+    for (i=0;i<31;i++) {
+        if (llgcset_lookup(set, &i, &created, NULL)==0) {
+            llgcset_gc(set);
+            assert(llgcset_lookup(set, &i, &created, NULL)!=0);
+        }
+        assert(created);
+    }
 
     llgcset_free(set);    
 }
@@ -844,7 +872,7 @@ void runtests(int threads)
     printf(BOLD "Testing LL GC Set\n" NC);
     printf("Running singlethreaded test... ");
     fflush(stdout);
-    //test_llgcset();
+    test_llgcset();
     printf(LGREEN "success" NC "!\n");
     printf("Running multithreaded test... ");
     fflush(stdout);

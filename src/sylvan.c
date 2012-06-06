@@ -429,12 +429,12 @@ inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high)
         n.low = BDD_STRIPMARK(low);
         n.high = BDD_TOGGLEMARK(high);
         
-        if (llgcset_lookup(_bdd.data, &n, &created, &result) == 0) {
+        if (llgcset_lookup2(_bdd.data, &n, &created, &result) == 0) {
             SV_CNT(C_gc_hashtable_full);
 
             sylvan_gc_go();
 
-            if (llgcset_lookup(_bdd.data, &n, &created, &result) == 0) {
+            if (llgcset_lookup2(_bdd.data, &n, &created, &result) == 0) {
                 fprintf(stderr, "BDD Unique table full, %ld of %ld buckets filled!\n", llgcset_get_filled(_bdd.data), llgcset_get_size(_bdd.data));
                 exit(1);
             }
@@ -450,12 +450,12 @@ inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high)
         n.low = low;
         n.high = high;
 
-        if (llgcset_lookup(_bdd.data, &n, &created, &result) == 0) {
+        if (llgcset_lookup2(_bdd.data, &n, &created, &result) == 0) {
             SV_CNT(C_gc_hashtable_full);
 
             sylvan_gc_go();
 
-            if (llgcset_lookup(_bdd.data, &n, &created, &result) == 0) {
+            if (llgcset_lookup2(_bdd.data, &n, &created, &result) == 0) {
                 fprintf(stderr, "BDD Unique table full, %ld of %ld buckets filled!\n", llgcset_get_filled(_bdd.data), llgcset_get_size(_bdd.data));
                 exit(1);
             }

@@ -406,6 +406,83 @@ restart_loop:
     return 0;
 }
 
+
+
+void *llgcset_lookup2_seq(const llgcset_t dbs, const void* data, int* created, uint32_t* index)
+{
+    uint64_t hash_rehash = hash_mul(data, dbs->key_length);
+
+    // avoid collision of hash with reserved values 
+    uint32_t hash = hash_rehash & HASH_MASK; 
+    while (EMPTY == hash || (TOMBSTONE & HASH_MASK) == hash) 
+        hash = (hash_rehash = rehash_mul(data, dbs->key_length, hash_rehash)) & HASH_MASK;
+
+    uint32_t *ps_hashes = (uint32_t*)alloca(sizeof(uint32_t)*dbs->threshold);
+    ps_hashes[0] = hash_rehash;
+    int ps=1;
+
+    int insert_loop = 0;
+    int tomb_ps=-1;
+    int i=0;
+restart_loop:
+
+    for (;i<dbs->threshold;i++) {
+        // Only create a new hash when necessary
+        if (i == ps) ps_hashes[ps++] = hash_rehash = rehash_mul(data, dbs->key_length, hash_rehash);
+
+        register uint32_t idx = ps_hashes[i] & dbs->mask;
+        register uint32_t last = idx; // if next() sees idx again, stop.
+
+        do {
+            // do not use slot 0 (hack for sylvan)
+            if (idx == 0) continue;
+
+            register volatile uint32_t *bucket = &dbs->table[idx];
+            register uint32_t v = *bucket;
+
+            // If the bucket is still empty, then our value is not yet in the table!
+            if (insert_loop == 0) {
+                if (EMPTY == v) {
+                    if (tomb_ps >= 0) {
+                        insert_loop = 1;                
+                        i = tomb_ps;
+                        goto restart_loop;
+                    } else {
+                        insert_loop = 1;
+                        goto lookup_insert;
+                    }
+                }
+                if (TOMBSTONE == v) {
+                    if (tomb_ps < 0) {
+                        tomb_ps = i;
+                    }
+                }
+            } else if (EMPTY == v || TOMBSTONE == v) { 
+                lookup_insert: // insert_loop or (EMPTY and no tombstone)
+                register uint8_t *data_ptr = &dbs->data[idx * dbs->padded_data_length];
+                memcpy(data_ptr, data, dbs->data_length);
+                *bucket = hash+1;
+                if (index) *index = idx;
+                if (created) *created = 1;
+                return data_ptr;
+            }
+
+            if (hash == (v & HASH_MASK)) {
+                register uint8_t *data_ptr = &dbs->data[idx * dbs->padded_data_length];
+                if (memcmp(data_ptr, data, dbs->key_length) == 0) {
+                    while (try_ref(bucket) != REF_SUCCESS) {}
+                    if (index) *index = idx;
+                    if (created) *created = 0;
+                    return data_ptr;
+                }
+            }
+
+        } while (probe_sequence_next(idx, last));
+    }
+
+    return 0;
+}
+
 static inline unsigned next_pow2(unsigned x)
 {
     if (x <= 2) return x;

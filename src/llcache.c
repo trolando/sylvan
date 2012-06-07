@@ -134,6 +134,29 @@ int llcache_get_quicker_restart(const llcache_t dbs, void *data)
     }
 }
 
+// Sequential version
+int llcache_get_quicker_seq(const llcache_t dbs, void *data)
+{
+    uint32_t hash = (uint32_t)(hash_mul(data, dbs->key_length) & MASK);
+    if (hash == 0) hash++; // Do not use bucket 0.
+
+    register uint32_t idx = hash & dbs->mask;
+    volatile register uint32_t *bucket = &dbs->table[idx];
+
+    if (((*bucket) & MASK) != hash) return 0;
+
+    // Lock acquired, compare
+    register uint8_t *data_ptr = &dbs->data[idx * dbs->padded_data_length];
+    if (memcmp(data_ptr, data, dbs->key_length) == 0) {
+        memcpy(&data[dbs->key_length], data_ptr+dbs->key_length, dbs->data_length-dbs->key_length);
+        return 1;                    
+    } else {
+        return 0;
+    }
+}
+
+
+
 int llcache_put_quicker(const llcache_t dbs, void *data)
 {
     uint32_t hash = (uint32_t)(hash_mul(data, dbs->key_length) & MASK);
@@ -172,6 +195,34 @@ int llcache_put_quicker(const llcache_t dbs, void *data)
         return 0;
     }
 }
+
+
+
+// Sequential version
+int llcache_put_quicker_seq(const llcache_t dbs, void *data)
+{
+    uint32_t hash = (uint32_t)(hash_mul(data, dbs->key_length) & MASK);
+    if (hash == 0) hash++; // Do not use bucket 0.
+
+    register uint32_t idx = hash & dbs->mask;
+    volatile register uint32_t *bucket = &dbs->table[idx];
+    register uint32_t v = *bucket;
+    register uint8_t *data_ptr = &dbs->data[idx * dbs->padded_data_length];
+
+    if (v == EMPTY) {
+        memcpy(data_ptr, data, dbs->data_length);
+        *bucket = hash;
+        return 1; // Added
+    } else if (v == hash) {
+        if (memcmp(data_ptr, data, dbs->key_length) == 0) return 0;
+    }
+
+    memxchg(data_ptr, data, dbs->data_length);
+    *bucket = hash;
+    return 2; // Overwritten
+}
+
+
 
 /**
  * This version uses the entire cacheline

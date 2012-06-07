@@ -51,6 +51,7 @@ int llcache_get(const llcache_t dbs, void *data);
 int llcache_get_relaxed(const llcache_t dbs, void *data);
 int llcache_get_quicker(const llcache_t dbs, void *data);
 int llcache_get_quicker_restart(const llcache_t dbs, void *data);
+int llcache_get_quicker_seq(const llcache_t dbs, void *data);
 
 int llcache_get_and_hold(const llcache_t dbs, void *data, uint32_t *index);
 
@@ -64,6 +65,7 @@ int llcache_get_and_hold(const llcache_t dbs, void *data, uint32_t *index);
 int llcache_put(const llcache_t dbs, void *data);
 int llcache_put_relaxed(const llcache_t dbs, void *data);
 int llcache_put_quicker(const llcache_t dbs, void *data);
+int llcache_put_quicker_seq(const llcache_t dbs, void *data);
 
 int llcache_put_and_hold(const llcache_t dbs, void *data, uint32_t *index);
 

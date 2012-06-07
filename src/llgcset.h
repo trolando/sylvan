@@ -39,6 +39,7 @@ void *llgcset_lookup(const llgcset_t dbs, const void *data, int *created, uint32
 
 // Use lookup2 when GC is forbidden!
 void *llgcset_lookup2(const llgcset_t dbs, const void *data, int *created, uint32_t *index);
+void *llgcset_lookup2_seq(const llgcset_t dbs, const void *data, int *created, uint32_t *index);
 
 llgcset_t llgcset_create(size_t key_length, size_t data_length, size_t table_size, llgcset_delete_f cb_delete, void *cb_data);
 

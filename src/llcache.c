@@ -10,6 +10,9 @@
 #include "llcache.h"
 #include "memxchg.h"
 
+// 64-bit hashing function, http://www.locklessinc.com (hash_mul.s)
+unsigned long long hash_mul(const void* data, unsigned long long len);
+
 struct llcache
 {
     size_t             padded_data_length;
@@ -25,16 +28,13 @@ struct llcache
     void               *cb_data;
 };
 
-static const uint32_t  EMPTY = 0x00000000;
-static const uint32_t  LOCK  = 0x80000000;
-static const uint32_t  MASK  = 0x7FFFFFFF;
+#define EMPTY ((uint32_t) 0x00000000)
+#define LOCK  ((uint32_t) 0x80000000)
+#define MASK  ((uint32_t) 0x7FFFFFFF)
 
-// 64-bit hashing function, http://www.locklessinc.com (hash_mul.s)
-unsigned long long hash_mul(const void* data, unsigned long long len);
-
-static const int       HASH_PER_CL = ((LINE_SIZE) / 4);
-static const uint32_t  CL_MASK     = ~(((LINE_SIZE) / 4) - 1); 
-static const uint32_t  CL_MASK_R   = ((LINE_SIZE) / 4) - 1;
+#define HASH_PER_CL ((LINE_SIZE) / 4)
+#define CL_MASK     ((uint32_t)(~(((LINE_SIZE)/4)-1)))
+#define CL_MASK_R   ((uint32_t)(((LINE_SIZE)/4)-1))
 
 /* Example values with a LINE_SIZE of 64
  * HASH_PER_CL = 16

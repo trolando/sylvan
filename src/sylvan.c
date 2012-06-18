@@ -557,7 +557,16 @@ inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high)
         if (llgcset_lookup2(_bdd.data, &n, &created, &result) == 0) {
             SV_CNT(C_gc_hashtable_full);
 
+//#ifdef DEBUG
+            size_t before_gc = llgcset_get_filled(_bdd.data);
+//#endif           
+
             sylvan_gc_go();
+
+//#ifdef DEBUG
+            size_t after_gc = llgcset_get_filled(_bdd.data);
+            fprintf(stderr, "GC: %ld to %ld (freed %ld)\n", before_gc, after_gc, before_gc-after_gc);
+//#endif           
 
             if (llgcset_lookup2(_bdd.data, &n, &created, &result) == 0) {
                 fprintf(stderr, "BDD Unique table full, %ld of %ld buckets filled!\n", llgcset_get_filled(_bdd.data), llgcset_get_size(_bdd.data));

@@ -458,8 +458,9 @@ restart_loop:
                     }
                 }
             } else if (EMPTY == v || TOMBSTONE == v) { 
+                register uint8_t *data_ptr;
                 lookup_insert: // insert_loop or (EMPTY and no tombstone)
-                register uint8_t *data_ptr = &dbs->data[idx * dbs->padded_data_length];
+                data_ptr = &dbs->data[idx * dbs->padded_data_length];
                 memcpy(data_ptr, data, dbs->data_length);
                 *bucket = hash+1;
                 if (index) *index = idx;

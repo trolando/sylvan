@@ -2,6 +2,9 @@ ACLOCAL_AMFLAGS = -I m4
 
 AM_CPPFLAGS = -I$(top_builddir)
 
+AM_CFLAGS = -g -O3 -Wall
+AM_CCASFLAGS = -g
+
 include_HEADERS = src/sylvan.h
 
 lib_LTLIBRARIES = libsylvan.la

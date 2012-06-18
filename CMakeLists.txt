@@ -23,8 +23,8 @@ configure_file(
   "${CMAKE_CURRENT_BINARY_DIR}/src/config.h"
 )
 
-add_definitions(-g)
-add_definitions(-O2)
+set (CMAKE_ASM_FLAGS "-g")
+set (CMAKE_C_FLAGS "-g -O3 -Wall")
 
 set(sylvan_hdrs
   src/sylvan.h

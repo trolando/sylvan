@@ -36,13 +36,13 @@ set(sylvan_sources
   src/llgcset.c
   src/hash_mul.s
   src/rehash_mul.s
-  src/llcache.c
   src/llsimplecache.c
   src/rng_hash_128.s
   src/wool.c
 )
 
 set(test_sources
+  src/llcache.c
   test/main.c
 )
 

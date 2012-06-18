@@ -15,7 +15,6 @@ libsylvan_la_SOURCES = \
  src/rng_hash_128.s \
  src/hash_mul.s \
  src/rehash_mul.s \
- src/llcache.c \
  src/llsimplecache.c \
  src/sylvan.h \
  src/wool.c

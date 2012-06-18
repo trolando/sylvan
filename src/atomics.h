@@ -159,10 +159,10 @@ extern void __add_wrong_size(void)
     __ret;                                                      \
 })
 
-//#define cas(ptr, old, new)                                      \
-//({                                                              \
-//    register __typeof__(*(ptr)) __old = (old);                  \
-//    cmpxchg(ptr,__old,new) == __old ? 1 : 0;                    \
+//#define cas(ptr, old, new)                                      
+//({                                                              
+//    register __typeof__(*(ptr)) __old = (old);                  
+//    cmpxchg(ptr,__old,new) == __old ? 1 : 0;                    
 //})
 
 #define cas(ptr, old, new) __sync_bool_compare_and_swap((ptr),(old),(new))

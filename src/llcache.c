@@ -187,9 +187,9 @@ int llcache_put_quicker(const llcache_t dbs, void *data)
     }
 
     if (cas(bucket, v, hash|LOCK)) {
-        memxchg(&dbs->data[data_idx], data, dbs->data_length);
+        memcpy(&dbs->data[data_idx], data, dbs->data_length);
         *bucket = hash;
-        return 2; // Overwritten
+        return 1; // Added
     } else {
         // Claim failed, never mind
         return 0;
@@ -217,9 +217,9 @@ int llcache_put_quicker_seq(const llcache_t dbs, void *data)
         if (memcmp(data_ptr, data, dbs->key_length) == 0) return 0;
     }
 
-    memxchg(data_ptr, data, dbs->data_length);
+    memcpy(data_ptr, data, dbs->data_length);
     *bucket = hash;
-    return 2; // Overwritten
+    return 1; // Added
 }
 
 

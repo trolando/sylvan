@@ -5,15 +5,16 @@
 #include <math.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <inttypes.h>
 
 #include "config.h"
 
 #include "sylvan.h"
 #include "atomics.h"
 #include "llgcset.h"
-//#include "llci.h"
-#include "wool.h"
 #include "tls.h"
+
+#include "wool.h"
 
 #ifdef HAVE_NUMA_H 
 #include <numa.h>
@@ -133,11 +134,11 @@ typedef enum {
 #define N_CNT_THREAD 48
 
 struct {
-    unsigned int thread_id;
+    pthread_t thread_id;
 } thread_to_id_map[N_CNT_THREAD];
 
 static int get_thread_id() {
-    unsigned int id = pthread_self();
+    pthread_t id = pthread_self();
     int i=0;
     for (;i<N_CNT_THREAD;i++) {
         if (thread_to_id_map[i].thread_id == 0) {
@@ -230,32 +231,32 @@ void sylvan_report_stats()
     }
 
     uint64_t total_cache = totals[C_cache_new] + totals[C_cache_exists] + totals[C_cache_reuse];
-    printf("New results:         %lu of %lu\n", totals[C_cache_new], total_cache);
-    printf("Existing results:    %lu of %lu\n", totals[C_cache_exists], total_cache);
-    printf("Reused results:      %lu of %lu\n", totals[C_cache_reuse], total_cache);
-    printf("Overwritten results: %lu of %lu\n", totals[C_cache_overwritten], total_cache);
+    printf("New results:         %"PRIu64" of %"PRIu64"\n", totals[C_cache_new], total_cache);
+    printf("Existing results:    %"PRIu64" of %"PRIu64"\n", totals[C_cache_exists], total_cache);
+    printf("Reused results:      %"PRIu64" of %"PRIu64"\n", totals[C_cache_reuse], total_cache);
+    printf("Overwritten results: %"PRIu64" of %"PRIu64"\n", totals[C_cache_overwritten], total_cache);
 #endif
 
     printf(NC ULINE "GC\n" NC LBLUE);
-    printf("GC user-request:     %lu\n", totals[C_gc_user]);
-    printf("GC full table:       %lu\n", totals[C_gc_hashtable_full]);
-    printf("GC full dead-list:   %lu\n", totals[C_gc_deadlist_full]);
+    printf("GC user-request:     %"PRIu64"\n", totals[C_gc_user]);
+    printf("GC full table:       %"PRIu64"\n", totals[C_gc_hashtable_full]);
+    printf("GC full dead-list:   %"PRIu64"\n", totals[C_gc_deadlist_full]);
     printf(NC ULINE "Call counters (ITE, exists, forall, relprods, reversed relprods, relprod, substitute)\n" NC LBLUE);
     for (i=0;i<N_CNT_THREAD;i++) {
         if (thread_to_id_map[i].thread_id != 0) 
-            printf("Thread %02d:           %ld, %ld, %ld, %ld, %ld, %ld, %ld\n", i, 
+            printf("Thread %02d:           %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64"\n", i, 
                 sylvan_stats[i].count[C_ite], sylvan_stats[i].count[C_exists], sylvan_stats[i].count[C_forall],
                 sylvan_stats[i].count[C_relprods], sylvan_stats[i].count[C_relprods_reversed],
                 sylvan_stats[i].count[C_relprod], sylvan_stats[i].count[C_substitute]);
     }
-    printf("Totals:              %lu, %lu, %lu, %lu, %lu %lu %lu\n",  
+    printf("Totals:              %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64" %"PRIu64" %"PRIu64"\n",  
         totals[C_ite], totals[C_exists], totals[C_forall],
         totals[C_relprods], totals[C_relprods_reversed],
         totals[C_relprod], totals[C_substitute]);
     printf(LRED  "****************" NC " \n");
 
     // For bonus point, calculate LLGCSET size...
-    printf("BDD Unique table: %ld of %ld buckets filled.\n", llgcset_get_filled(_bdd.data), llgcset_get_size(_bdd.data));
+    printf("BDD Unique table: %zu of %zu buckets filled.\n", llgcset_get_filled(_bdd.data), llgcset_get_size(_bdd.data));
 }
 
 #if STATS
@@ -425,8 +426,8 @@ unsigned long get_random()
 
 void sylvan_package_init(int workers, int dq_size)
 {
-    wool_init2(workers, dq_size, dq_size); // allow all jobs to be stolen
-    
+    wool_init2(workers, dq_size, dq_size);
+
     remote_gc_info = (local_gc_info_t *)calloc(sizeof(local_gc_info_t**), workers);
     
     _bdd.workers = workers;
@@ -1228,7 +1229,7 @@ TASK_4(BDD, sylvan_relprod_do, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
     }
 
     register int in_x = ({   
-        register BDDVAR it_var;
+        register BDDVAR it_var = -1;
         while (x != sylvan_false && (it_var=(GETNODE(x)->level)) < level) {
             x = BDD_TRANSFERMARK(x, GETNODE(x)->low);
         }
@@ -1477,7 +1478,7 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
     }
 
     register int in_vars = vars == sylvan_true ? 1 : ({   
-        register BDDVAR it_var;
+        register BDDVAR it_var = -1;
         while (vars != sylvan_false && (it_var=(GETNODE(vars)->level)) < level) {
             vars = BDD_TRANSFERMARK(vars, GETNODE(vars)->low);
         }
@@ -1598,7 +1599,7 @@ TASK_4(BDD, sylvan_relprods_reversed_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev
     bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
     bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
         
-    BDDVAR x_a, x_b, S_x_a, x=0xFFFF;
+    BDDVAR x_a=-1, x_b=-1, S_x_a=-1, x=0xFFFF;
     if (na) {
         x_a = na->level;
         S_x_a = x_a;
@@ -1915,7 +1916,8 @@ void sylvan_save_reset()
     // This is a VERY expensive loop.
     for (i=0;i<_bdd.data->table_size;i++) {
         bddnode_t n = GETNODE(i);
-        *(uint32_t*)&n->pad = 0;        
+        uint32_t *pnum = (uint32_t*)&n->pad[0];
+        *pnum = 0;
     }
 }
 
@@ -1938,7 +1940,7 @@ uint32_t sylvan_save_bdd(FILE* f, BDD bdd)
     if (BDD_ISCONSTANT(bdd)) return bdd;
 
     bddnode_t n = GETNODE(bdd);
-    uint32_t *pnum = (uint32_t*)&n->pad;
+    uint32_t *pnum = (uint32_t*)&n->pad[0];
 
     if (*pnum == 0) {
         uint32_t low = sylvan_save_bdd(f, n->low);

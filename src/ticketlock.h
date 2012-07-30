@@ -13,14 +13,14 @@ typedef union ticketlock
     } s;
 } ticketlock_t;
 
-static __always_inline void ticketlock_lock(ticketlock_t *t)
+static inline __attribute__((always_inline)) void ticketlock_lock(ticketlock_t *t)
 {
     register unsigned short me = xadd(&t->s.users, 1);
     register volatile unsigned short *tick = &t->s.ticket;
     while (*tick != me) cpu_relax();
 }
 
-static __always_inline void ticketlock_unlock(ticketlock_t *t)
+static inline __attribute__((always_inline)) void ticketlock_unlock(ticketlock_t *t)
 {
     barrier();
     t->s.ticket++;

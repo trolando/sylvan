@@ -26,19 +26,15 @@ configure_file(
 set (CMAKE_ASM_FLAGS "-g")
 set (CMAKE_C_FLAGS "-g -O3 -Wall")
 
-set(sylvan_hdrs
-  src/sylvan.h
-)
-
 set(sylvan_sources
-  ${sylvan_hdrs}
+  src/sylvan.h
+  src/wool.c
   src/sylvan.c
   src/llgcset.c
-  src/hash_mul.s
-  src/rehash_mul.s
+  src/hash_mul.S
+  src/rehash_mul.S
+  src/rng_hash_128.S
   src/llsimplecache.c
-  src/rng_hash_128.s
-  src/wool.c
 )
 
 set(test_sources

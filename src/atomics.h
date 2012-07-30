@@ -13,17 +13,17 @@
 
 #define ALIGN(x) ((typeof(x))((((size_t)(x))+(LINE_SIZE-1))&(~((size_t)(LINE_SIZE-1)))))
 
-static __always_inline void mfence(void)
+static inline __attribute__((always_inline)) void mfence(void)
 {
     asm volatile("mfence" ::: "memory");
 }
 
-static __always_inline void barrier(void)
+static inline __attribute__((always_inline)) void barrier(void)
 {
     asm volatile("" ::: "memory");
 }
 
-static __always_inline void cpu_relax(void) 
+static inline __attribute__((always_inline)) void cpu_relax(void) 
 {
     asm volatile("rep; nop" ::: "memory");
 }

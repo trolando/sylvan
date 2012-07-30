@@ -1,15 +1,21 @@
+.text
+.p2align 4
+#ifdef __APPLE__
+.globl _hash_mul
+_hash_mul:
+#else
+.globl hash_mul
+.type  hash_mul,@function
+hash_mul:
+#endif
+
 # %rdi is unsigned long long length, %rsi is pointer to data
-# %rdx (3rd param) is unsigned long long previous...
-.globl rehash_mul
-.type  rehash_mul,@function
-rehash_mul:
     movabs  $0xac95a395a9ec535b, %r8
     mov     %rsi, %rax
     xor     %r8, %rax
-    xor     %rdx, %rax
     sub     $0x8, %rsi
     jb      2f
-.align 8, 0x90
+.p2align 3, 0x90
 1:  xor     (%rdi), %rax
     mul     %r8
     add     $0x8, %rdi
@@ -47,4 +53,6 @@ rehash_mul:
     mul     %r8
     xor     %rdx, %rax
     jmp 3b
-.size   rehash_mul, .-rehash_mul
+#ifndef __APPLE__
+.size   hash_mul, .-hash_mul
+#endif

@@ -29,7 +29,6 @@
 #include "wool.h"
 #include <stdlib.h>
 #include <stdio.h>
-#include <malloc.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -183,8 +182,9 @@ static void init_worker( int worker, char node )
     w->dq_base = (Task*)numa_alloc_onnode(dq_size * sizeof(Task), node);
   } else {
 #endif
-    workers[worker] = w = (Worker*)memalign(LINE_SIZE, sizeof(Worker));
-    w->dq_base = (Task*)memalign(LINE_SIZE, dq_size * sizeof(Task));
+    posix_memalign((void**)&w, LINE_SIZE, sizeof(Worker));
+    workers[worker] = w;
+    posix_memalign((void**)&w->dq_base, LINE_SIZE, dq_size * sizeof(Task));
 #ifdef HAVE_NUMA_H
   }
 #endif
@@ -374,7 +374,7 @@ static void start_workers( void )
     }
   }
 
-  workers = (Worker **) memalign(LINE_SIZE,n * sizeof(Worker*));
+  posix_memalign((void**)&workers, LINE_SIZE, n*sizeof(Worker*));
   ts      = (pthread_t *) malloc( (n-1) * sizeof(pthread_t) );
 
   pthread_attr_init( &worker_attr );

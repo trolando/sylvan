@@ -181,7 +181,6 @@ RTYPE SYNC_##NAME(Task *__dq_top)                                     \
   balarm_t a;                                                         \
                                                                       \
   if( ! q->stealable ) {                                              \
-    TD_##NAME *t = (TD_##NAME *) q; /* Used in TASK_GET_FROM_t */     \
     PR_INC( get_self( q ), CTR_inlined );                             \
     return CALL_##NAME( __dq_top );                                   \
   }                                                                   \
@@ -190,7 +189,6 @@ RTYPE SYNC_##NAME(Task *__dq_top)                                     \
   a = q->balarm;                                                      \
                                                                       \
   if( a == NOT_STOLEN || ( a = sync_get_balarm( q ) ) == NOT_STOLEN ) {\
-    TD_##NAME *t = (TD_##NAME *) q; /* Used in TASK_GET_FROM_t */     \
     /* Not stolen, nobody else might be using it */                   \
     PR_INC( get_self( q ), CTR_inlined );                             \
     return CALL_##NAME( __dq_top );                                   \
@@ -232,7 +230,6 @@ inline void SYNC_##NAME(Task *__dq_top)                               \
   balarm_t a;                                                         \
                                                                       \
   if( ! q->stealable ) {                                              \
-    TD_##NAME *t = (TD_##NAME *) q; /* Used in TASK_GET_FROM_t */     \
     PR_INC( get_self( q ), CTR_inlined );                             \
     return CALL_##NAME( __dq_top );                                   \
   }                                                                   \
@@ -241,7 +238,6 @@ inline void SYNC_##NAME(Task *__dq_top)                               \
   a = q->balarm;                                                      \
                                                                       \
   if( a == NOT_STOLEN || ( a = sync_get_balarm( q ) ) == NOT_STOLEN ) {\
-    TD_##NAME *t = (TD_##NAME *) q; /* Used in TASK_GET_FROM_t */     \
     /* Not stolen, nobody else might be using it */                   \
     PR_INC( get_self( q ), CTR_inlined );                             \
     return CALL_##NAME( __dq_top );                                   \

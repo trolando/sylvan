@@ -106,7 +106,7 @@ static inline void lock(volatile uint32_t *bucket)
     while (1) {
         register uint32_t hash = *bucket;
         if (!(hash & LOCK)) { if (cas(bucket, hash, hash | LOCK)) { break; } }
-        cpu_relax;
+        cpu_relax();
     }
 }
 
@@ -166,7 +166,7 @@ full_restart:
 
     volatile uint32_t   *bucket = 0;
     volatile uint32_t   *tomb_bucket = 0;
-    uint32_t            idx, tomb_idx;
+    uint32_t            idx, tomb_idx = -1;
 
     // Lock first bucket...
     uint32_t            first_idx = hash_rehash & dbs->mask;
@@ -257,7 +257,7 @@ restart_bucket:
                 // Release all existing claims first...
                 // tomb_bucket == 0
                 unlock(first_bucket);
-                while (*bucket & LOCK) cpu_relax;
+                while (*bucket & LOCK) cpu_relax();
                 goto full_restart;
             }
 
@@ -567,12 +567,12 @@ void try_delete_item(const llgcset_t dbs, uint32_t index)
             hash = *hashptr;
             while (!cas(hashptr, hash, hash | TOMBSTONE)) {
                 hash = *hashptr;
-                cpu_relax;
+                cpu_relax();
             }
             break;
         }
         hash = *hashptr;
-        cpu_relax;
+        cpu_relax();
     }   
 }
 

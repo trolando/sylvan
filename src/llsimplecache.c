@@ -47,7 +47,6 @@ int llsimplecache_put(const llsimplecache_t dbs, uint32_t *data, uint32_t hash)
 
     uint32_t f_idx = hash & dbs->mask;
     uint32_t idx = f_idx;
-    uint32_t v;
 
     register const uint32_t d = *data;
 
@@ -61,7 +60,7 @@ restart_bucket:
         // Check empty
         if (v == EMPTY) {
             if (cas(bucket, EMPTY, d)) return 1;
-            cpu_relax;
+            cpu_relax();
             goto restart_bucket;
         }
 
@@ -79,7 +78,7 @@ restart_bucket:
             *data = v;
             return 2;
         }
-        cpu_relax;
+        cpu_relax();
     }
 }
 

@@ -1,7 +1,14 @@
-.align 16
+.text
+.p2align 4
+#ifdef __APPLE__
+.globl _rng_hash_128
+_rng_hash_128:
+#else
 .globl rng_hash_128
 .type  rng_hash_128,@function
 rng_hash_128:
+#endif
+
 	mov    8(%rdi), %rax
 	
 	movabs $0x6595a395a1ec531b, %rcx
@@ -30,4 +37,6 @@ rng_hash_128:
 	add    %rdx, %rax
 	
 	retq
+#ifndef __APPLE__
 .size	rng_hash_128, .-rng_hash_128
+#endif

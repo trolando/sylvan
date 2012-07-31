@@ -20,12 +20,6 @@
 #include <numa.h>
 #endif
 
-#if SYLVAN_NOCACHE
-#define CACHE 0
-#else
-#define CACHE 1
-#endif
-
 #if SYLVAN_STATS
 #define STATS 1
 #endif
@@ -63,25 +57,14 @@ struct bddnode {
 }; // 16 bytes
 
 typedef struct bddnode* bddnode_t;
-typedef struct llci* llci_t;
 
 int initialized = 0;
-
-static struct {
-    llgcset_t data;
-#if CACHE
-    llci_t cache; // operations cache
-#endif
-    int workers;
-    int gc;
-} _bdd;
 
 static int granularity = 1; // default
 
 // max number of parameters (set to: 5, 13, 29 to get bddcache node size 32, 64, 128)
 #define MAXPARAM 3
 
-#if CACHE
 /*
  * Temporary "operations"
  * 0 = ite
@@ -109,8 +92,12 @@ static const int cache_data_length = sizeof(struct bddcache);
 #define LLCI_DATASIZE ((sizeof(struct bddcache)))
 #include "llci.h"
 
-
-#endif
+static struct {
+    llgcset_t data;
+    llci_t cache; // operations cache
+    int workers;
+    int gc;
+} _bdd;
 
 // Structures for statistics
 typedef enum {
@@ -215,13 +202,10 @@ void sylvan_report_stats()
     printf("BDD table:          ");
     llgcset_print_size(_bdd.data, stdout);
     printf("\n");
-#if CACHE
     printf("Cache:              ");
     llci_print_size(_bdd.cache, stdout);
     printf("\n");
-#endif
 
-#if CACHE
     printf(NC ULINE "Cache\n" NC LBLUE);
 
     uint64_t totals[C_MAX];
@@ -235,7 +219,6 @@ void sylvan_report_stats()
     printf("Existing results:    %"PRIu64" of %"PRIu64"\n", totals[C_cache_exists], total_cache);
     printf("Reused results:      %"PRIu64" of %"PRIu64"\n", totals[C_cache_reuse], total_cache);
     printf("Overwritten results: %"PRIu64" of %"PRIu64"\n", totals[C_cache_overwritten], total_cache);
-#endif
 
     printf(NC ULINE "GC\n" NC LBLUE);
     printf("GC user-request:     %"PRIu64"\n", totals[C_gc_user]);
@@ -465,14 +448,12 @@ void sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
         fprintf(stderr, "Invalid size of bdd nodes: %ld\n", sizeof(struct bddnode));
         exit(1);
     }
-#if CACHE
 /*
     if (sizeof(struct bddcache) != next_pow2(sizeof(struct bddcache))) {
         fprintf(stderr, "Invalid size of bdd operation cache: %ld\n", sizeof(struct bddcache));
         exit(1);
     }
 */
-#endif
     //fprintf(stderr, "Sylvan\n");
     
     if (tablesize >= 30) {
@@ -482,14 +463,12 @@ void sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
     _bdd.data = llgcset_create(10, sizeof(struct bddnode), 1<<tablesize, (llgcset_delete_f)&sylvan_bdd_delete, NULL);
 
 
-#if CACHE    
     if (cachesize >= 30) {
         fprintf(stderr, "BDD_init error: cachesize must be <= 30!\n");
         exit(1);
     }
     
     _bdd.cache = llci_create(1<<cachesize);
-#endif
 
     _bdd.gc = 0;
 }
@@ -499,9 +478,7 @@ void sylvan_quit()
     if (initialized == 0) return;
     initialized = 0;
 
-#if CACHE
     llci_free(_bdd.cache);
-#endif
     llgcset_free(_bdd.data);
 }
 
@@ -860,7 +837,6 @@ TASK_4(BDD, sylvan_ite_do, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     if (nb && level > nb->level) level = nb->level;
     if (nc && level > nc->level) level = nc->level;
 
-#if CACHE 
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
 
     struct bddcache template_cache_node;
@@ -879,7 +855,6 @@ TASK_4(BDD, sylvan_ite_do, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
             return BDD_TRANSFERMARK(r, res);
         }
     }
-#endif
     
     // Get cofactors
     BDD aLow = a, aHigh = a;
@@ -910,7 +885,6 @@ TASK_4(BDD, sylvan_ite_do, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
      * Ref it again for the result.
      */
 
-#if CACHE
     if (cachenow) {
         template_cache_node.result = result;
         int cache_res = llci_put(_bdd.cache, &template_cache_node);
@@ -926,7 +900,6 @@ TASK_4(BDD, sylvan_ite_do, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
             SV_CNT(C_cache_overwritten);
         }
     }
-#endif
 
     return BDD_TRANSFERMARK(r, result);
 }
@@ -969,7 +942,6 @@ TASK_3(BDD, sylvan_exists_do, BDD, a, BDD, variables, BDDVAR, prev_level)
 
     if (variables == sylvan_false) return sylvan_ref(a);
 
-#if CACHE
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
 
     struct bddcache template_cache_node;
@@ -987,7 +959,6 @@ TASK_3(BDD, sylvan_exists_do, BDD, a, BDD, variables, BDDVAR, prev_level)
             return result;
         }
     }
-#endif
 
     BDD result;
 
@@ -1022,7 +993,6 @@ TASK_3(BDD, sylvan_exists_do, BDD, a, BDD, variables, BDDVAR, prev_level)
         result = sylvan_makenode(level, low, high);
     }
 
-#if CACHE
     if (cachenow) {
         template_cache_node.result = result;
         int cache_res = llci_put(_bdd.cache, &template_cache_node);
@@ -1039,7 +1009,6 @@ TASK_3(BDD, sylvan_exists_do, BDD, a, BDD, variables, BDDVAR, prev_level)
             SV_CNT(C_cache_overwritten);
         }
     }
-#endif
 
     return result;
 }
@@ -1082,7 +1051,6 @@ TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
 
     if (variables == sylvan_false) return sylvan_ref(a);
  
-#if CACHE
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
 
     struct bddcache template_cache_node;
@@ -1101,7 +1069,6 @@ TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
             return result;
         }
     }
-#endif
 
     BDD result;
     
@@ -1137,7 +1104,6 @@ TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
         result = sylvan_makenode(level, low, high);
     }
 
-#if CACHE
     if (cachenow) {
         template_cache_node.result = result;
         int cache_res = llci_put(_bdd.cache, &template_cache_node);
@@ -1154,7 +1120,6 @@ TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
             SV_CNT(C_cache_overwritten);
         }
     }
-#endif
 
     return result;
 }
@@ -1236,7 +1201,6 @@ TASK_4(BDD, sylvan_relprod_do, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
         x == sylvan_false ? 0 : it_var == level;
     });
  
-#if CACHE
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
 
     struct bddcache template_cache_node;
@@ -1255,7 +1219,6 @@ TASK_4(BDD, sylvan_relprod_do, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
             return result;
         }
     }
-#endif
    
     // Recursive computation
     BDD low, high, result;
@@ -1288,7 +1251,6 @@ TASK_4(BDD, sylvan_relprod_do, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
         result = sylvan_makenode(level, low, high);
     }
     
-#if CACHE
     if (cachenow) {
         template_cache_node.result = result;
         int cache_res = llci_put(_bdd.cache, &template_cache_node);
@@ -1305,7 +1267,6 @@ TASK_4(BDD, sylvan_relprod_do, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
             SV_CNT(C_cache_overwritten);
         } 
     }
-#endif
 
     return result;
 }
@@ -1342,7 +1303,6 @@ TASK_3(BDD, sylvan_substitute_do, BDD, a, BDD, vars, BDDVAR, prev_level)
         vars == sylvan_false ? 0 : it_var == level;
     });
 
-#if CACHE
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
 
     struct bddcache template_cache_node;
@@ -1361,7 +1321,6 @@ TASK_3(BDD, sylvan_substitute_do, BDD, a, BDD, vars, BDDVAR, prev_level)
             return result;
         }
     }
-#endif
    
     // Recursive computation
     SPAWN(sylvan_substitute_do, aHigh, vars, level);
@@ -1380,7 +1339,6 @@ TASK_3(BDD, sylvan_substitute_do, BDD, a, BDD, vars, BDDVAR, prev_level)
         else result = sylvan_makenode(level, low, high);
     }
     
-#if CACHE
     if (cachenow) {
         template_cache_node.result = result;
         int cache_res = llci_put(_bdd.cache, &template_cache_node);
@@ -1397,7 +1355,6 @@ TASK_3(BDD, sylvan_substitute_do, BDD, a, BDD, vars, BDDVAR, prev_level)
             SV_CNT(C_cache_overwritten);
         } 
     }
-#endif
 
     return result;
 }
@@ -1485,7 +1442,6 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
         vars == sylvan_false ? 0 : it_var == level;
     });
  
-#if CACHE
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
 
     struct bddcache template_cache_node;
@@ -1504,7 +1460,6 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
             return result;
         }
     }
-#endif
 
     // Recursive computation
     BDD low, high, result;
@@ -1543,7 +1498,6 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
         else result = sylvan_makenode(level, low, high);
     }
     
-#if CACHE
     if (cachenow) {
         template_cache_node.result = result;
         int cache_res = llci_put(_bdd.cache, &template_cache_node);
@@ -1560,7 +1514,6 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
             SV_CNT(C_cache_overwritten);
         } 
     }
-#endif
 
     return result;
 }
@@ -1643,7 +1596,6 @@ TASK_4(BDD, sylvan_relprods_reversed_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev
         bHigh = BDD_TRANSFERMARK(b, nb->high);
     }
     
-#if CACHE
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != x / granularity;
 
     struct bddcache template_cache_node;
@@ -1663,7 +1615,6 @@ TASK_4(BDD, sylvan_relprods_reversed_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev
             return result;
         }
     }
-#endif
 
     BDD low, high, result;
 
@@ -1695,7 +1646,6 @@ TASK_4(BDD, sylvan_relprods_reversed_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev
         result = sylvan_makenode(x, low, high);
     }
 
-#if CACHE
     if (cachenow) {
         template_cache_node.result = result;
         int cache_res = llci_put(_bdd.cache, &template_cache_node);
@@ -1712,7 +1662,6 @@ TASK_4(BDD, sylvan_relprods_reversed_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev
             SV_CNT(C_cache_overwritten);
         }
     }
-#endif
 
     return result;
 }
@@ -1871,12 +1820,10 @@ llgcset_t __sylvan_get_internal_data()
     return _bdd.data;
 }
 
-#if CACHE
 llci_t __sylvan_get_internal_cache() 
 {
     return _bdd.cache;
 }
-#endif
 
 long long sylvan_count_refs()
 {

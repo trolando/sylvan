@@ -23,8 +23,6 @@
     ((LLCI_DATASIZE) <= 4) ? 4 : \
     ((LLCI_DATASIZE) <= 8) ? 8 : (((LLCI_DATASIZE)+15)&(~15)))
 
-
-
 // 64-bit hashing function, http://www.locklessinc.com (hash_mul.s)
 unsigned long long hash_mul(const void* data, unsigned long long len);
 
@@ -144,7 +142,6 @@ int llci_get_quicker_seq(const llci_t dbs, void *data)
     }
 }
 */
-
 
 static int llci_put(const llci_t dbs, void *data)
 {
@@ -270,6 +267,5 @@ static inline void llci_print_size(llci_t dbs, FILE *f)
         dbs->cache_size, dbs->cache_size * 4, dbs->cache_size, 
         LLCI_PDS, dbs->cache_size * LLCI_PDS);
 }
-
 
 #endif

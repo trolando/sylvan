@@ -258,11 +258,7 @@ void sylvan_disable_stats() {
 /**
  * Macro's to convert BDD indices to nodes and vice versa
  */
-#define GETNODE(bdd)        ((bddnode_t)llgcset_index_to_ptr(_bdd.data, BDD_STRIPMARK(bdd)))
-
-
-
-
+#define GETNODE(bdd)        ((bddnode_t)llgcset_index_to_ptr(_bdd.data, BDD_STRIPMARK(bdd), sizeof(struct bddnode)))
 
 /* 
  * GARBAGE COLLECTION 

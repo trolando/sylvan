@@ -32,12 +32,39 @@ struct llgcset
     uint32_t          stacktop;
 };
 
-#define llgcset_index_to_ptr(dbs, index) ((void*)&dbs->data[index*dbs->padded_data_length])
-#define llgcset_ptr_to_index(dbs, ptr) ((size_t)(((size_t)ptr-(size_t)dbs->data)/dbs->padded_data_length))
+// Padded Data Size (per entry) macro
+#define LLGCSET_PDS(x) \
+    (((x) <= 2) ? (x) : ((x) <= 4) ? 4 : ((x) <= 8) ? 8 : (((x)+15)&(~15)))
+
+static __attribute__((always_inline)) inline void* llgcset_index_to_ptr(const llgcset_t dbs, size_t index, size_t data_length)
+{
+    return ((void*)&dbs->data[index * LLGCSET_PDS(data_length)]);
+}
+
+static __attribute__((always_inline)) inline size_t llgcset_ptr_to_index(const llgcset_t dbs, void* ptr, size_t data_length)
+{
+    return ((size_t) ((((size_t)ptr) - ((size_t)dbs->data)) / LLGCSET_PDS(data_length)));
+}
+
+/*
+// These are the old inline functions.
+// Basically, the above optimizes generated code from IMUL with a memory read, to SAL 
+// Use llgcset_XXX_to_XXX(dbs, XXX, sizeof(struct data_struct)) 
+
+static __attribute__((always_inline)) inline void* llgcset_index_to_ptr(const llgcset_t dbs, size_t index)
+{
+    return ((void*)&dbs->data[index * dbs->padded_data_length]);
+}
+
+static __attribute__((always_inline)) inline size_t llgcset_ptr_to_index(const llgcset_t dbs, void* ptr)
+{
+    return ((size_t) ((((size_t)ptr) - ((size_t)dbs->data)) / dbs->padded_data_length));
+}
+*/
 
 void *llgcset_lookup(const llgcset_t dbs, const void *data, int *created, uint32_t *index);
 
-// Use lookup2 when GC is forbidden!
+// Use lookup2 when GC is mutually exclusive with lookup2
 void *llgcset_lookup2(const llgcset_t dbs, const void *data, int *created, uint32_t *index);
 void *llgcset_lookup2_seq(const llgcset_t dbs, const void *data, int *created, uint32_t *index);
 
@@ -52,6 +79,9 @@ void llgcset_ref(const llgcset_t dbs, uint32_t index);
 void llgcset_deref(const llgcset_t dbs, uint32_t index);
 
 void llgcset_gc(const llgcset_t dbs);
+
+// Use this one to do garbage collection with multiple workers...
+// The caller is responsible for proper barriers, etc.
 void llgcset_gc_multi(const llgcset_t dbs, size_t my_id, size_t n_workers);
 
 void llgcset_print_size(llgcset_t dbs, FILE *f);

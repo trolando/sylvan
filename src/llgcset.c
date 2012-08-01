@@ -503,10 +503,7 @@ llgcset_t llgcset_create(size_t key_length, size_t data_length, size_t table_siz
     dbs->data_length = data_length;
 
     // For padded data length, we will just round up to 16 bytes.
-    if (data_length == 1 || data_length == 2) dbs->padded_data_length = data_length;
-    else if (data_length == 3 || data_length == 4) dbs->padded_data_length = 4;
-    else if (data_length <= 8) dbs->padded_data_length = (data_length + 7) & ~7;
-    else dbs->padded_data_length = (data_length + 15) & ~15;
+    dbs->padded_data_length = LLGCSET_PDS(data_length);
 
     if (table_size < HASH_PER_CL) table_size = HASH_PER_CL;
     assert(next_pow2(table_size) == table_size);

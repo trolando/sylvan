@@ -1,10 +1,10 @@
+#include "config.h"
+
 #include <stdlib.h>
 #include <stdio.h>  // for printf
 #include <stdint.h> // for uint32_t etc
-#include <string.h> // for memcopy
+#include <string.h> // for memset
 #include <assert.h> // for assert
-
-#include "config.h"
 
 #include "atomics.h"
 #include "llsimplecache.h"
@@ -22,13 +22,15 @@ struct llsimplecache
 // 64-bit hashing function, http://www.locklessinc.com (hash_mul.s)
 unsigned long long hash_mul(const void* data, unsigned long long len);
 
-static const int       HASH_PER_CL = ((LINE_SIZE) / 4);
-static const uint32_t  CL_MASK     = ~(((LINE_SIZE) / 4) - 1); 
-static const uint32_t  CL_MASK_R   = ((LINE_SIZE) / 4) - 1;
+// We assume LINE_SIZE is a multiple of 4 and a power of 2
+#define        HASH_PER_CL ((uint32_t)((LINE_SIZE) / 4))
+#define        CL_MASK     ((uint32_t)(~(HASH_PER_CL - 1))) 
+#define        CL_MASK_R   ((uint32_t)(HASH_PER_CL - 1))
 
-static const uint32_t  EMPTY       = 0;
+#define        EMPTY       ((uint32_t)(0))
 
-/* Example values with a LINE_SIZE of 64
+/* 
+ * Example values with a LINE_SIZE of 64
  * HASH_PER_CL = 16
  * CL_MASK     = 0xFFFFFFF0
  * CL_MASK_R   = 0x0000000F
@@ -40,10 +42,12 @@ static inline int next(uint32_t *cur, uint32_t last)
     return (*cur = (*cur & CL_MASK) | ((*cur + 1) & CL_MASK_R)) != last;
 }
 
-int llsimplecache_put(const llsimplecache_t dbs, uint32_t *data, uint32_t hash) 
+int llsimplecache_put(const llsimplecache_t dbs, uint32_t *data, uint64_t hash) 
 {
-    if (hash == 0) hash = (uint32_t)hash_mul(data, sizeof(uint32_t));
-    if (hash == 0) hash++; // blah. Just avoid 0, that's all.
+    if (hash == 0) {
+        hash = hash_mul(data, sizeof(uint32_t));
+        if (hash == 0) hash++; // Avoid the value 0
+    }
 
     uint32_t f_idx = hash & dbs->mask;
     uint32_t idx = f_idx;
@@ -60,7 +64,6 @@ restart_bucket:
         // Check empty
         if (v == EMPTY) {
             if (cas(bucket, EMPTY, d)) return 1;
-            cpu_relax();
             goto restart_bucket;
         }
 
@@ -70,15 +73,14 @@ restart_bucket:
 
     // If we are here, the cache line is full.
     // Claim first bucket
+    register volatile uint32_t *bucket = &dbs->table[f_idx];
     while (1) {
-        register volatile uint32_t *bucket = &dbs->table[f_idx];
         register const uint32_t v = *bucket;
         if (v == d) return 0;
         if (cas(bucket, v, d)) {
             *data = v;
             return 2;
         }
-        cpu_relax();
     }
 }
 
@@ -109,41 +111,49 @@ llsimplecache_t llsimplecache_create(size_t cache_size, llsimplecache_delete_f c
     return dbs;
 }
 
-inline void llsimplecache_clear(llsimplecache_t dbs)
+inline void llsimplecache_clear(const llsimplecache_t dbs)
 {
     llsimplecache_clear_partial(dbs, 0, dbs->cache_size);
 }
 
-inline void llsimplecache_clear_partial(llsimplecache_t dbs, size_t first, size_t count)
+inline void llsimplecache_clear_partial(const llsimplecache_t dbs, size_t first, size_t count)
 {
-    register volatile uint32_t *bucket = &dbs->table[first];
-    register uint32_t *end = &dbs->table[first+count];
+    if (first < 0 || first >= dbs->cache_size) return;
+    if (first + count > dbs->cache_size) count = dbs->cache_size - first;
 
     if (dbs->cb_delete == NULL) {
-        while (bucket < end) *bucket++ = 0;        
+        memset(&dbs->table[first], 0, 4*count);
         return;
     }
 
-    while (bucket < end) {
+    register volatile uint32_t *bucket = &dbs->table[first];
+    while (count) {
         while(1) {
             register uint32_t data = *bucket;
             if (data == 0) break;
-            if (cas(bucket, data, 0)) {
-                dbs->cb_delete(dbs->cb_data, data);
-                break;
-            } 
+            *bucket = 0;
+            dbs->cb_delete(dbs->cb_data, data);
         }
         bucket++; // next!
+        count--;
     }
 }
 
-void llsimplecache_free(llsimplecache_t dbs)
+void llsimplecache_clear_multi(const llsimplecache_t dbs, size_t my_id, size_t n_workers)
+{
+    size_t cachelines_total = (dbs->cache_size  + HASH_PER_CL - 1) / HASH_PER_CL;
+    size_t cachelines_each  = (cachelines_total + n_workers   - 1) / n_workers;
+    size_t first            = my_id * cachelines_each * HASH_PER_CL;
+    llsimplecache_clear_partial(dbs, first, cachelines_each * HASH_PER_CL);
+} 
+
+void llsimplecache_free(const llsimplecache_t dbs)
 {
     free(dbs->_table);
     free(dbs);
 }
 
-void llsimplecache_print_size(llsimplecache_t dbs, FILE *f)
+void llsimplecache_print_size(const llsimplecache_t dbs, FILE *f)
 {
     fprintf(f, "4 * %ld = %ld bytes", dbs->cache_size, dbs->cache_size * sizeof(uint32_t));
 }

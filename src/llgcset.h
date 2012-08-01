@@ -24,7 +24,7 @@ struct llgcset
     llgcset_delete_f  cb_delete;    // delete function (callback pre-delete)
     void              *cb_data;
     llsimplecache_t   deadlist;
-    int               clearing;     // bit
+    int               gc;           // counter
     int               stack_lock;   // bitlock on
     ticketlock_t      stacklock;    // lock to protect stack access
     uint32_t          *stack;       // stack
@@ -52,6 +52,7 @@ void llgcset_ref(const llgcset_t dbs, uint32_t index);
 void llgcset_deref(const llgcset_t dbs, uint32_t index);
 
 void llgcset_gc(const llgcset_t dbs);
+void llgcset_gc_multi(const llgcset_t dbs, size_t my_id, size_t n_workers);
 
 void llgcset_print_size(llgcset_t dbs, FILE *f);
 

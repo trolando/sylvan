@@ -10,7 +10,6 @@
 
 typedef uint32_t BDD;
 typedef uint16_t BDDVAR;
-typedef uint32_t BDDOP; // bdd operation
 
 extern const BDD sylvan_true;
 extern const BDD sylvan_false;
@@ -23,17 +22,6 @@ extern const BDD quant_exists;
 extern const BDD quant_forall;
 
 // Would like to use #define statemens, but that is bad for reference counting
-extern BDD sylvan_and(BDD a, BDD b);
-extern BDD sylvan_xor(BDD a, BDD b);
-extern BDD sylvan_or(BDD a, BDD b);
-extern BDD sylvan_nand(BDD a, BDD b);
-extern BDD sylvan_nor(BDD a, BDD b);
-extern BDD sylvan_imp(BDD a, BDD b);
-extern BDD sylvan_biimp(BDD a, BDD b);
-extern BDD sylvan_diff(BDD a, BDD b);
-extern BDD sylvan_less(BDD a, BDD b);
-extern BDD sylvan_invimp(BDD a, BDD b);
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -93,6 +81,16 @@ extern BDD sylvan_not(BDD bdd);
  * Calculate simple if <a> then <b> else <c> (calls sylvan_restructure)
  */
 extern BDD sylvan_ite(BDD a, BDD b, BDD c);
+extern BDD sylvan_and(BDD a, BDD b);
+extern BDD sylvan_xor(BDD a, BDD b);
+extern BDD sylvan_or(BDD a, BDD b);
+extern BDD sylvan_nand(BDD a, BDD b);
+extern BDD sylvan_nor(BDD a, BDD b);
+extern BDD sylvan_imp(BDD a, BDD b);
+extern BDD sylvan_biimp(BDD a, BDD b);
+extern BDD sylvan_diff(BDD a, BDD b);
+extern BDD sylvan_less(BDD a, BDD b);
+extern BDD sylvan_invimp(BDD a, BDD b);
 
 /**
  * Specialized RelProdS using paired variables (X even, X' odd)

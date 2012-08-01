@@ -1,10 +1,10 @@
+#include "config.h"
+
 #include <stdlib.h>
 #include <stdio.h>  // for printf
 #include <stdint.h> // for uint32_t etc
 #include <string.h> // for memcopy
 #include <assert.h> // for assert
-
-#include "config.h"
 
 #include "atomics.h"
 #include "llgcset.h"
@@ -128,8 +128,7 @@ static inline void unlock(volatile uint32_t *bucket)
 }
 
 // Calculate next index on a cache line walk
-#define probe_sequence_next(cur, last) ((cur = (((cur) & CL_MASK) | (((cur) + 1) & CL_MASK_R))) != (last))
-
+#define probe_sequence_next(cur, last) (((cur) = (((cur) & CL_MASK) | (((cur) + 1) & CL_MASK_R))) != (last))
 
 /**
  * Note: lookup_hash will increment the reference count (or set it to 1 if created).
@@ -324,22 +323,25 @@ restart_bucket:
     return 0;
 }
 
-
+/*
+ * This is the version of LL lookup when garbage collection is forbidden
+ */
 void *llgcset_lookup2(const llgcset_t dbs, const void* data, int* created, uint32_t* index)
 {
     uint64_t hash_rehash = hash_mul(data, dbs->key_length);
 
-    // avoid collision of hash with reserved values 
+    // Avoid collision of hash with reserved values 
     uint32_t hash = hash_rehash & HASH_MASK; 
     while (EMPTY == hash || (TOMBSTONE & HASH_MASK) == hash) 
         hash = (hash_rehash = rehash_mul(data, dbs->key_length, hash_rehash)) & HASH_MASK;
 
+    // Allocate memory to store calculated (re)hashes...
     uint32_t *ps_hashes = (uint32_t*)alloca(sizeof(uint32_t)*dbs->threshold);
     ps_hashes[0] = hash_rehash;
-    int ps=1;
+    int ps=1; // this variable records the number of filled entries in ps_hashes
 
-    int insert_loop = 0;
-    int tomb_ps=-1;
+    int insert_loop = 0; // whether we are in the insert loop or not
+    int tomb_ps=-1; // the ps of the tombstone
     int i=0;
 restart_loop:
 
@@ -351,7 +353,7 @@ restart_loop:
         register uint32_t last = idx; // if next() sees idx again, stop.
 
         do {
-            // do not use slot 0 (hack for sylvan)
+            // Do not use slot 0
             if (idx == 0) continue;
 
             register volatile uint32_t *bucket = &dbs->table[idx];
@@ -434,7 +436,7 @@ restart_loop:
         register uint32_t last = idx; // if next() sees idx again, stop.
 
         do {
-            // do not use slot 0 (hack for sylvan)
+            // Do not use slot 0
             if (idx == 0) continue;
 
             register volatile uint32_t *bucket = &dbs->table[idx];
@@ -523,7 +525,7 @@ llgcset_t llgcset_create(size_t key_length, size_t data_length, size_t table_siz
     size_t cache_size = table_size >> 4; // table_size / 16
     dbs->deadlist = llsimplecache_create(cache_size, (llsimplecache_delete_f)&llgcset_deadlist_ondelete, dbs);
 
-    dbs->clearing = 0;
+    dbs->gc = 0;
  
     dbs->cb_delete = cb_delete; // can be NULL
     dbs->cb_data   = cb_data;
@@ -552,6 +554,11 @@ void llgcset_ref(const llgcset_t dbs, uint32_t index)
     } while (ref_res != REF_SUCCESS);
 }
 
+/**
+ * This method checks if the item at the index has 0 references
+ * and if it does, it uses CAS to delete it.
+ * The callback is called, if set.
+ */
 void try_delete_item(const llgcset_t dbs, uint32_t index)
 {
     register volatile uint32_t *hashptr = &dbs->table[index];
@@ -567,12 +574,10 @@ void try_delete_item(const llgcset_t dbs, uint32_t index)
             hash = *hashptr;
             while (!cas(hashptr, hash, hash | TOMBSTONE)) {
                 hash = *hashptr;
-                cpu_relax();
             }
             break;
         }
         hash = *hashptr;
-        cpu_relax();
     }   
 }
 
@@ -587,25 +592,36 @@ void llgcset_deref(const llgcset_t dbs, uint32_t index)
     register volatile uint32_t *hashptr = &dbs->table[index];
     do { 
         ref_res = try_deref(hashptr);
-        // ref_res is REF_NOCAS or REF_SUCCESS or REF_NOWZERO
-    } while (ref_res != REF_NOWZERO && ref_res != REF_SUCCESS);
+        // ref_res in {REF_NOCAS, REF_SUCCESS, REF_NOWZERO}
+    } while (ref_res == REF_NOCAS);
+
+    // ref_res in {REF_SUCCESS, REF_NOWZERO}
 
     if (ref_res == REF_NOWZERO) {
         // Add it to the deadlist, then return.
-        if (dbs->clearing != 0) try_delete_item(dbs, index); /* POTENTIALL UNSAFE */
+        if (dbs->gc != 0) {
+            /* There is a race condition here, where deref is called by a worker
+               that is NOT in garbage collection, while others have already started
+               collecting garbage. */
+            try_delete_item(dbs, index);
+        }
         else if(llsimplecache_put(dbs->deadlist, &index, index) == 2) {
+            // If we're here, then "index" just got replaced by an old value that
+            // is kicked out of the buffer...
             llgcset_stack_push(dbs, index);
         }
     } 
 }
 
+/**
+ * This is meant as a hard reset... potentially unsafe!
+ * The callback will not be called!
+ */
 inline void llgcset_clear(llgcset_t dbs)
 {
-    // TODO MODIFY so the callback is properly called and all???
-    // Or is that simply a matter of gc()...
-    // In that case: do first call gc() and then use llgcset_clear() to get rid of stales...
-    printf("CLEARING GCSET\n");
     memset(dbs->table, 0, sizeof(uint32_t) * dbs->table_size);
+    llsimplecache_clear(dbs->deadlist);
+    dbs->stacktop = 0;
 }
 
 void llgcset_free(llgcset_t dbs)
@@ -622,19 +638,24 @@ void llgcset_free(llgcset_t dbs)
  */
 void llgcset_gc(const llgcset_t dbs)
 {
-    // Increment clearing
-    xinc(&dbs->clearing);
+    llgcset_gc_multi(dbs, 0, 1);
+}
+
+void llgcset_gc_multi(const llgcset_t dbs, size_t my_id, size_t n_workers)
+{
+    // Increment gc
+    xinc(&dbs->gc);
  
-    // Handle dead stack
+    // Handle dead stack (only one worker wins)
     ticketlock_lock(&dbs->stacklock);
     while (dbs->stacktop > 0) { try_delete_item(dbs, dbs->stack[--dbs->stacktop]); }
     ticketlock_unlock(&dbs->stacklock);
 
     // Handle dead buffer
-    llsimplecache_clear(dbs->deadlist);
+    llsimplecache_clear_multi(dbs->deadlist, my_id, n_workers);
 
-    // Decrement clearing
-    xdec(&dbs->clearing);
+    // Decrement gc
+    xdec(&dbs->gc);
 }
 
 void llgcset_stack_push(const llgcset_t dbs, uint32_t index)
@@ -671,10 +692,10 @@ int llgcset_stack_pull(const llgcset_t dbs, uint32_t *index)
 }
 */
 
+// Note that this function is ONLY called when clearing the deadlist
 void llgcset_deadlist_ondelete(const llgcset_t dbs, const uint32_t index)
 {
-    if (dbs->clearing) try_delete_item(dbs, index);
-    else llgcset_stack_push(dbs, index);
+    if (dbs->gc) try_delete_item(dbs, index);
 }
 
 void llgcset_print_size(llgcset_t dbs, FILE *f)

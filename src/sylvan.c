@@ -78,7 +78,7 @@ static int granularity = 1; // default
  */
 __attribute__ ((packed))
 struct bddcache {
-    BDDOP operation;
+    uint32_t operation;
     BDD params[MAXPARAM];
     BDD result;
 };

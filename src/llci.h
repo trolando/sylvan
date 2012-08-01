@@ -1,10 +1,11 @@
+#include "config.h"
+
 #include <stdlib.h>
 #include <stdio.h>  // for printf
 #include <stdint.h> // for uint32_t etc
-#include <string.h> // for memcopy
+#include <string.h> // for memcpy
 #include <assert.h> // for assert
 
-#include "config.h"
 #include "atomics.h"
 
 #ifndef LLCACHE_INLINE_H
@@ -36,29 +37,16 @@ typedef struct llci
     uint8_t            *data;        // table with data
 } *llci_t;
 
-#define LLCI_EMPTY ((uint32_t) 0x00000000)
-#define LLCI_LOCK  ((uint32_t) 0x80000000)
-#define LLCI_MASK  ((uint32_t) 0x7FFFFFFF)
+#define LLCI_EMPTY         ((uint32_t) 0x00000000)
+#define LLCI_LOCK          ((uint32_t) 0x80000000)
+#define LLCI_MASK          ((uint32_t) 0x7FFFFFFF)
 
-#define LLCI_HASH_PER_CL ((LINE_SIZE) / 4)
-#define LLCI_CL_MASK     ((uint32_t)(~(((LINE_SIZE)/4)-1)))
-#define LLCI_CL_MASK_R   ((uint32_t)(((LINE_SIZE)/4)-1))
+// We assume that LINE_SIZE is a multiple of 4, which is reasonable.
+#define LLCI_HASH_PER_CL   ((LINE_SIZE) / 4)
+#define LLCI_CL_MASK       ((uint32_t)(~(LLCI_HASH_PER_CL-1)))
+#define LLCI_CL_MASK_R     ((uint32_t)(LLCI_HASH_PER_CL-1))
 
-/**
- * Calculate next index on a cache line walk
- * Returns 0 if the new index equals last
- */
-static inline int llci_next(uint32_t *cur, uint32_t last) 
-{
-    return (*cur = (*cur & LLCI_CL_MASK) | ((*cur + 1) & LLCI_CL_MASK_R)) != last;
-}
-
-static inline void llci_release(const llci_t dbs, uint32_t index)
-{
-    dbs->table[index] &= ~LLCI_LOCK;
-}
-
-static int llci_get(const llci_t dbs, void *data)
+static int __attribute__((unused)) llci_get(const llci_t dbs, void *data) 
 {
     uint32_t hash = (uint32_t)(hash_mul(data, LLCI_KEYSIZE) & LLCI_MASK);
     if (hash == 0) hash++; // Do not use bucket 0.
@@ -86,64 +74,61 @@ static int llci_get(const llci_t dbs, void *data)
     }
 }
 
-/*
-int llci_get_restart(const llci_t dbs, void *data)
+static int __attribute__((unused)) llci_get_restart(const llci_t dbs, void *data) 
 {
-    uint32_t hash = (uint32_t)(hash_mul(data, dbs->key_length) & MASK);
+    uint32_t hash = (uint32_t)(hash_mul(data, LLCI_KEYSIZE) & LLCI_MASK);
     if (hash == 0) hash++; // Do not use bucket 0.
+
     uint32_t idx = hash & dbs->mask;
 
     volatile uint32_t *bucket = &dbs->table[idx];
 
     while (1) {
         register uint32_t v = *bucket;
-        register uint32_t vh = v&MASK;
-        if (vh != hash) {
-            return 0;
-        }
-        if (v==vh) { // v&LOCK == 0
-            if (cas(bucket, vh, vh|LOCK)) {
-                // Lock acquired, compare
-                const register size_t data_idx = idx * dbs->padded_data_length;
-                const register uint8_t *bdata = &dbs->data[data_idx];
-                if (memcmp(bdata, data, dbs->key_length) == 0) {
-                    // Found existing
-                    memcpy(&data[dbs->key_length], &bdata[dbs->key_length], dbs->data_length-dbs->key_length);
-                    *bucket = vh;
-                    return 1;                    
-                } else {
-                    // Did not match, release bucket again
-                    *bucket = vh;
-                    return 0;
-                }
+        register uint32_t vh = v & LLCI_MASK;
+        if (vh != hash) return 0;
+        if (v == vh) { // v&LOCK == 0
+            if (!cas(bucket, vh, vh|LLCI_LOCK)) continue; // Atomic restart
+            
+            // Lock acquired, compare
+            const size_t data_idx = idx * LLCI_PDS;
+            const uint8_t *bdata = &dbs->data[data_idx];
+            if (memcmp(bdata, data, LLCI_KEYSIZE) == 0) {
+                // Found existing
+                memcpy(&((uint8_t*)data)[LLCI_KEYSIZE], &bdata[LLCI_KEYSIZE], LLCI_DATASIZE-LLCI_KEYSIZE);
+                *bucket = vh;
+                return 1;                    
+            } else {
+                // Did not match, release bucket again
+                *bucket = vh;
+                return 0;
             }
         }
     }
 }
 
-// Sequential version
-int llci_get_quicker_seq(const llci_t dbs, void *data)
+static int __attribute__((unused)) llci_get_seq(const llci_t dbs, void *data) 
 {
-    uint32_t hash = (uint32_t)(hash_mul(data, dbs->key_length) & MASK);
+    uint32_t hash = (uint32_t)(hash_mul(data, LLCI_KEYSIZE) & LLCI_MASK);
     if (hash == 0) hash++; // Do not use bucket 0.
 
-    register uint32_t idx = hash & dbs->mask;
-    volatile register uint32_t *bucket = &dbs->table[idx];
+    uint32_t idx = hash & dbs->mask;
 
-    if (((*bucket) & MASK) != hash) return 0;
+    volatile uint32_t *bucket = &dbs->table[idx];
+    register uint32_t v = *bucket & LLCI_MASK;
+
+    if (v != hash) return 0;
 
     // Lock acquired, compare
-    register uint8_t *data_ptr = &dbs->data[idx * dbs->padded_data_length];
-    if (memcmp(data_ptr, data, dbs->key_length) == 0) {
-        memcpy(&data[dbs->key_length], data_ptr+dbs->key_length, dbs->data_length-dbs->key_length);
-        return 1;                    
-    } else {
-        return 0;
-    }
-}
-*/
+    const size_t data_idx = idx * LLCI_PDS;
+    if (memcmp(&dbs->data[data_idx], data, LLCI_KEYSIZE) != 0) return 0;
 
-static int llci_put(const llci_t dbs, void *data)
+    // Found existing
+    memcpy(&((uint8_t*)data)[LLCI_KEYSIZE], &dbs->data[data_idx+LLCI_KEYSIZE], LLCI_DATASIZE-LLCI_KEYSIZE);
+    return 1;                    
+}
+
+static int __attribute__((unused)) llci_put(const llci_t dbs, void *data) 
 {
     uint32_t hash = (uint32_t)(hash_mul(data, LLCI_KEYSIZE) & LLCI_MASK);
     if (hash == 0) hash++; // Avoid 0.
@@ -184,34 +169,29 @@ static int llci_put(const llci_t dbs, void *data)
     }
 }
 
-
-/*
-// Sequential version
-int llci_put_quicker_seq(const llci_t dbs, void *data)
+static int __attribute__((unused)) llci_put_seq(const llci_t dbs, void *data) 
 {
-    uint32_t hash = (uint32_t)(hash_mul(data, dbs->key_length) & MASK);
-    if (hash == 0) hash++; // Do not use bucket 0.
+    uint32_t hash = (uint32_t)(hash_mul(data, LLCI_KEYSIZE) & LLCI_MASK);
+    if (hash == 0) hash++; // Avoid 0.
+    
+    register uint32_t idx = hash & dbs->mask; // fast version of hash & tableSize
+    register size_t data_idx = idx * LLCI_PDS;
 
-    register uint32_t idx = hash & dbs->mask;
-    volatile register uint32_t *bucket = &dbs->table[idx];
+    register volatile uint32_t *bucket = &dbs->table[idx];
     register uint32_t v = *bucket;
-    register uint8_t *data_ptr = &dbs->data[idx * dbs->padded_data_length];
 
-    if (v == EMPTY) {
-        memcpy(data_ptr, data, dbs->data_length);
-        *bucket = hash;
-        return 1; // Added
-    } else if (v == hash) {
-        if (memcmp(data_ptr, data, dbs->key_length) == 0) return 0;
+    if (v == hash) {
+        if (memcmp(&dbs->data[data_idx], data, LLCI_KEYSIZE) == 0) {
+            return 0;
+        }
     }
 
-    memcpy(data_ptr, data, dbs->data_length);
+    memcpy(&dbs->data[data_idx], data, LLCI_DATASIZE);
     *bucket = hash;
     return 1; // Added
 }
-*/
 
-static inline unsigned next_pow2(unsigned x)
+static inline unsigned llci_next_pow2(unsigned x)
 {
     if (x <= 2) return x;
     return (1ULL << 32) >> __builtin_clz(x - 1);
@@ -227,10 +207,13 @@ static inline llci_t llci_create(size_t cache_size)
     if (cache_size < LLCI_HASH_PER_CL) cache_size = LLCI_HASH_PER_CL;
 
     // Cache size must be a power of 2
-    assert(next_pow2(cache_size) == cache_size);
+    assert(llci_next_pow2(cache_size) == cache_size);
     dbs->cache_size = cache_size;
 
     dbs->mask = dbs->cache_size - 1;
+
+    // Using this calloc/malloc with manual ALIGN trick, it is easier to control
+    // allocation with NUMA.
 
     dbs->_table = (uint32_t*)calloc(dbs->cache_size*sizeof(uint32_t)+LINE_SIZE, 1);
     dbs->table = ALIGN(dbs->_table);
@@ -243,25 +226,40 @@ static inline llci_t llci_create(size_t cache_size)
     return dbs;
 }
 
-static inline void llci_clear_partial(llci_t dbs, size_t first, size_t count)
+static inline void __attribute__((unused)) 
+llci_clear_partial(const llci_t dbs, size_t first, size_t count) 
 {
-    if (count + first > dbs->cache_size) count = dbs->cache_size - first;
-    memset(&dbs->table[first], 0, 4 * count);
+    if (first >= 0 && first < dbs->cache_size) {
+        if (count + first > dbs->cache_size) count = dbs->cache_size - first;
+        memset(&dbs->table[first], 0, 4 * count);
+    }
 }
 
-static inline void llci_clear(llci_t dbs)
+/*
+ * Use llci_clear_multi when you have multiple workers to quickly clear the memoization table...
+ */
+static void __attribute__((unused))
+llci_clear_multi(const llci_t dbs, size_t my_id, size_t n_workers) {
+    size_t cachelines_total = (dbs->cache_size  + LLCI_HASH_PER_CL - 1) / LLCI_HASH_PER_CL;
+    size_t cachelines_each  = (cachelines_total + n_workers        - 1) / n_workers;
+    size_t first            = my_id * cachelines_each * LLCI_HASH_PER_CL;
+    // Note that llci_clear_partial will fix count if overflow...
+    llci_clear_partial(dbs, first, cachelines_each * LLCI_HASH_PER_CL);
+}
+
+static void __attribute__((unused)) llci_clear(const llci_t dbs) 
 {
     llci_clear_partial(dbs, 0, dbs->cache_size);
 }
 
-static inline void llci_free(llci_t dbs)
+static inline void llci_free(const llci_t dbs)
 {
     free(dbs->_data);
     free(dbs->_table);
     free(dbs);
 }
 
-static inline void llci_print_size(llci_t dbs, FILE *f)
+static inline void __attribute__((unused)) llci_print_size(const llci_t dbs, FILE *f) 
 {
     fprintf(f, "Hash: %ld * 4 = %ld bytes; Data: %ld * %ld = %ld bytes",
         dbs->cache_size, dbs->cache_size * 4, dbs->cache_size, 

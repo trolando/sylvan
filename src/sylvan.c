@@ -107,7 +107,6 @@ typedef enum {
   C_cache_overwritten,
   C_gc_user,
   C_gc_hashtable_full,
-  C_gc_deadlist_full,
   C_ite,
   C_exists,
   C_forall,
@@ -223,7 +222,6 @@ void sylvan_report_stats()
     printf(NC ULINE "GC\n" NC LBLUE);
     printf("GC user-request:     %"PRIu64"\n", totals[C_gc_user]);
     printf("GC full table:       %"PRIu64"\n", totals[C_gc_hashtable_full]);
-    printf("GC full dead-list:   %"PRIu64"\n", totals[C_gc_deadlist_full]);
     printf(NC ULINE "Call counters (ITE, exists, forall, relprods, reversed relprods, relprod, substitute)\n" NC LBLUE);
     for (i=0;i<N_CNT_THREAD;i++) {
         if (thread_to_id_map[i].thread_id != 0) 
@@ -267,11 +265,6 @@ typedef struct local_gc_info {
     int gc;
 } *local_gc_info_t;
 
-typedef struct gc_bdd_list {
-    BDD bdd;
-    struct gc_bdd_list *next;
-} *gc_bdd_list_t;
-
 local_gc_info_t *remote_gc_info;
 
 DECLARE_THREAD_LOCAL(gc_info, local_gc_info_t);
@@ -281,73 +274,83 @@ __attribute__ ((constructor)) void sylvan_gc_init() {
     SET_THREAD_LOCAL(gc_info, 0);
 }
 
-local_gc_info_t sylvan_gc_alloc()
-{       
-    // allocate memory (on node)
+local_gc_info_t sylvan_get_local_gc_info()
+{
+    LOCALIZE_THREAD_LOCAL(gc_info, local_gc_info_t);
+    if (gc_info != 0) return gc_info;
+
     local_gc_info_t info;
-/*#ifdef HAVE_NUMA_H 
-    if (numa_available() != -1) {
-        struct bitmask *node_mask = numa_allocate_nodemask();
-        numa_get_run_node_mask(node_mask)
-        info = (local_gc_info_t)numa_alloc_interleaved_subset(sizeof(struct local_gc_info), node_mask);
-        numa_free_nodemask();
-    } else {
-#endif*/
-        info = (local_gc_info_t)calloc(sizeof(struct local_gc_info), 1);
-/*#ifdef HAVE_NUMA_H
-    }
-#endif*/
+    info = (local_gc_info_t)calloc(sizeof(struct local_gc_info), 1);
     remote_gc_info[get_thread_id()] = info;
+    SET_THREAD_LOCAL(gc_info, info);
+
     return info;
 }
 
-static inline void sylvan_gc_participate()
+/* Not to be inlined */
+static void sylvan_gc_participate()
 {
-    LOCALIZE_THREAD_LOCAL(gc_info, local_gc_info_t);
-    if (gc_info == 0) SET_THREAD_LOCAL(gc_info, sylvan_gc_alloc());
+    local_gc_info_t gc_info = sylvan_get_local_gc_info();
 
-    // TODO: mark BDDs
+    assert(gc_info != 0);
 
-    gc_info->gc=1; // ready to start!
+    // TODO: (recursively) mark our BDDs if we are using mark-and-sweep
+
+    gc_info->gc=1; // We are ready!
     while (ACCESS_ONCE(_bdd.gc) != 2) cpu_relax(); 
 
     // _bdd.gc == 2
     
-    // TODO: participate
+    size_t my_id = get_thread_id();
+    llci_clear_multi(_bdd.cache, my_id, _bdd.workers);
+    llgcset_gc_multi(_bdd.data, my_id, _bdd.workers);
 
-    gc_info->gc=0; // done!
+    gc_info->gc=0; // We are done!
     while (ACCESS_ONCE(_bdd.gc) != 0) cpu_relax(); 
 
     // _bdd.gc == 0
 }
 
+VOID_TASK_0(sylvan_gc_participate_task)
+{
+    if (ACCESS_ONCE(_bdd.gc)) {
+        SPAWN(sylvan_gc_participate_task);
+        sylvan_gc_participate();
+        SYNC(sylvan_gc_participate_task);
+    }
+}
+
+/* To be inlined */
 static inline void sylvan_gc_run()
 {
-    LOCALIZE_THREAD_LOCAL(gc_info, local_gc_info_t);
-    if (gc_info == 0) SET_THREAD_LOCAL(gc_info, sylvan_gc_alloc());
+    local_gc_info_t gc_info = sylvan_get_local_gc_info();
+
+    assert(gc_info != 0);
 
     int i=0;
     for (i=0;i<_bdd.workers;i++) {
+        // In case some have not yet allocated their gc structure...
         while (ACCESS_ONCE(remote_gc_info[i])==0) cpu_relax();
     }
 
-    // TODO: mark BDDs
+    // TODO: (recursively) mark our BDDs if we are using mark-and-sweep
 
-    // Sync with rest
-    gc_info->gc = 1;
+    gc_info->gc = 1; // We are ready
+    
+    // Sync with other workers until all are ready
     for (i=0;i<_bdd.workers;i++) {
         while (ACCESS_ONCE(remote_gc_info[i]->gc)!=1) cpu_relax();
     }
 
-    // Todo: distribute
+    _bdd.gc = 2; // Go!
 
-    _bdd.gc = 2; // go
+    size_t my_id = get_thread_id();
+    llci_clear_multi(_bdd.cache, my_id, _bdd.workers);
+    llgcset_gc_multi(_bdd.data, my_id, _bdd.workers);
 
-    llci_clear(_bdd.cache);
-    llgcset_gc(_bdd.data);
-
-    // Sync with rest
-    gc_info->gc = 0;
+    gc_info->gc = 0; // We are done
+    
+    // Sync with other workers until all are done
     for (i=0;i<_bdd.workers;i++) {
         while (ACCESS_ONCE(remote_gc_info[i]->gc)!=0) cpu_relax();
     }
@@ -355,30 +358,26 @@ static inline void sylvan_gc_run()
     _bdd.gc = 0; // done
 }
 
-VOID_TASK_0(sylvan_gc_task)
-{
-    while (ACCESS_ONCE(_bdd.gc)) {
-        SPAWN(sylvan_gc_task);
-        sylvan_gc_participate();
-        SYNC(sylvan_gc_task);
-    }
-}
-
 VOID_TASK_0(sylvan_gc_root_task)
 {
-    SPAWN(sylvan_gc_task);
+    SPAWN(sylvan_gc_participate_task);
     sylvan_gc_run();
-    SYNC(sylvan_gc_task);
+    SYNC(sylvan_gc_participate_task);
 }
 
 static inline void sylvan_gc_go() 
 {
     if (cas(&_bdd.gc, 0, 1)) ROOT_CALL(sylvan_gc_root_task);
-    else ROOT_CALL(sylvan_gc_task);
+    else ROOT_CALL(sylvan_gc_participate_task);
 }
 
+/* 
+ * This method is *often* called *from parallel code* to test if we are
+ * entering a garbage collection phase
+ */
 static inline void sylvan_gc_test()
 {
+    // TODO: add unlikely
     while (ACCESS_ONCE(_bdd.gc)) {
         sylvan_gc_participate();
     }
@@ -531,16 +530,10 @@ inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high)
         if (llgcset_lookup2(_bdd.data, &n, &created, &result) == 0) {
             SV_CNT(C_gc_hashtable_full);
 
-//#ifdef DEBUG
-            size_t before_gc = llgcset_get_filled(_bdd.data);
-//#endif           
-
+            //size_t before_gc = llgcset_get_filled(_bdd.data);
             sylvan_gc_go();
-
-//#ifdef DEBUG
-            size_t after_gc = llgcset_get_filled(_bdd.data);
-            fprintf(stderr, "GC: %ld to %ld (freed %ld)\n", before_gc, after_gc, before_gc-after_gc);
-//#endif           
+            //size_t after_gc = llgcset_get_filled(_bdd.data);
+            //fprintf(stderr, "GC: %ld to %ld (freed %ld)\n", before_gc, after_gc, before_gc-after_gc);
 
             if (llgcset_lookup2(_bdd.data, &n, &created, &result) == 0) {
                 fprintf(stderr, "BDD Unique table full, %ld of %ld buckets filled!\n", llgcset_get_filled(_bdd.data), llgcset_get_size(_bdd.data));
@@ -561,7 +554,10 @@ inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high)
         if (llgcset_lookup2(_bdd.data, &n, &created, &result) == 0) {
             SV_CNT(C_gc_hashtable_full);
 
+            //size_t before_gc = llgcset_get_filled(_bdd.data);
             sylvan_gc_go();
+            //size_t after_gc = llgcset_get_filled(_bdd.data);
+            //fprintf(stderr, "GC: %ld to %ld (freed %ld)\n", before_gc, after_gc, before_gc-after_gc);
 
             if (llgcset_lookup2(_bdd.data, &n, &created, &result) == 0) {
                 fprintf(stderr, "BDD Unique table full, %ld of %ld buckets filled!\n", llgcset_get_filled(_bdd.data), llgcset_get_size(_bdd.data));

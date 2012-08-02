@@ -405,6 +405,12 @@ restart_loop:
         } while (probe_sequence_next(idx, last));
     }
 
+    if (insert_loop == 0 && tomb_ps >= 0) {
+        insert_loop = 1;                
+        i = tomb_ps;
+        goto restart_loop;
+    }
+
     return 0;
 }
 
@@ -481,6 +487,12 @@ restart_loop:
             }
 
         } while (probe_sequence_next(idx, last));
+    }
+
+    if (insert_loop == 0 && tomb_ps >= 0) {
+        insert_loop = 1;                
+        i = tomb_ps;
+        goto restart_loop;
     }
 
     return 0;

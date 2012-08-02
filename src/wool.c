@@ -114,6 +114,45 @@ static void spin( Worker *self, int n )
   }
 }
 
+static int myrand( unsigned int *seedp, int max );
+
+static void steal_random( Worker *_self, Worker *thief, volatile Task *t )
+{
+  Worker **victim = workers, **self = workers;
+
+  // Find self
+  while (*self != _self) self++; // TODO: this is dangerous!
+
+  // Find thief
+  while (*victim != thief) victim++; // TODO: this is dangerous!
+
+  unsigned int self_idx = self - workers;
+  unsigned int seed = self_idx;
+  unsigned int n = n_workers;
+  int i=0; 
+
+  while (t->balarm != STOLEN_DONE) { 
+    // Computing a random number for every steal is too slow, so we do some amount of
+    // sequential scanning of the workers and only randomize once in a while, just 
+    // to be sure.
+
+    if( i>0 ) {
+      i--;
+      victim ++;
+      // A couple of if's is faster than a %...
+      if( victim == self ) victim++;
+      if( victim >= workers + n ) victim = workers;
+    } else {
+      i = myrand( &seed, 40 );
+      victim = workers + ( myrand( &seed, n-1 ) + self_idx + 1 ) % n;
+    }
+
+    steal( *self, *victim, (Task*)t+1 );
+  }
+}
+
+
+
 void wool_sync( volatile Task *t, balarm_t a )
 {
   Worker *self = get_self( t );
@@ -149,6 +188,8 @@ void wool_sync( volatile Task *t, balarm_t a )
           PR_INC( self, CTR_leaps );
         } else {
           spin( self, backoff_mode );
+          // Oh , just go steal somewhere else then
+          steal_random(self, thief, t);
         }
         if( t->balarm == STOLEN_DONE ) { // Leapfrogging is over!
           done = 1;

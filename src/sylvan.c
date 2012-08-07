@@ -97,6 +97,7 @@ static struct {
     llci_t cache; // operations cache
     int workers;
     int gc;
+    unsigned int gccount;
 } _bdd;
 
 // Structures for statistics
@@ -261,54 +262,19 @@ void sylvan_disable_stats() {
 /* 
  * GARBAGE COLLECTION 
  */
-typedef struct local_gc_info {
-    int gc;
-} *local_gc_info_t;
-
-local_gc_info_t *remote_gc_info;
-
-DECLARE_THREAD_LOCAL(gc_info, local_gc_info_t);
-
-__attribute__ ((constructor)) void sylvan_gc_init() {
-    INIT_THREAD_LOCAL(gc_info);
-    SET_THREAD_LOCAL(gc_info, 0);
-}
-
-local_gc_info_t sylvan_get_local_gc_info()
-{
-    LOCALIZE_THREAD_LOCAL(gc_info, local_gc_info_t);
-    if (gc_info != 0) return gc_info;
-
-    local_gc_info_t info;
-    info = (local_gc_info_t)calloc(sizeof(struct local_gc_info), 1);
-    remote_gc_info[get_thread_id()] = info;
-    SET_THREAD_LOCAL(gc_info, info);
-
-    return info;
-}
 
 /* Not to be inlined */
 static void sylvan_gc_participate()
 {
-    local_gc_info_t gc_info = sylvan_get_local_gc_info();
-
-    assert(gc_info != 0);
-
-    // TODO: (recursively) mark our BDDs if we are using mark-and-sweep
-
-    gc_info->gc=1; // We are ready!
+    xinc(&_bdd.gccount);
     while (ACCESS_ONCE(_bdd.gc) != 2) cpu_relax(); 
 
-    // _bdd.gc == 2
-    
     size_t my_id = get_thread_id();
     llci_clear_multi(_bdd.cache, my_id, _bdd.workers);
     llgcset_gc_multi(_bdd.data, my_id, _bdd.workers);
 
-    gc_info->gc=0; // We are done!
+    xinc(&_bdd.gccount);
     while (ACCESS_ONCE(_bdd.gc) != 0) cpu_relax(); 
-
-    // _bdd.gc == 0
 }
 
 VOID_TASK_0(sylvan_gc_participate_task)
@@ -323,39 +289,21 @@ VOID_TASK_0(sylvan_gc_participate_task)
 /* To be inlined */
 static inline void sylvan_gc_run()
 {
-    local_gc_info_t gc_info = sylvan_get_local_gc_info();
-
-    assert(gc_info != 0);
-
-    int i=0;
-    for (i=0;i<_bdd.workers;i++) {
-        // In case some have not yet allocated their gc structure...
-        while (ACCESS_ONCE(remote_gc_info[i])==0) cpu_relax();
-    }
-
-    // TODO: (recursively) mark our BDDs if we are using mark-and-sweep
-
-    gc_info->gc = 1; // We are ready
+    xinc(&_bdd.gccount);
+    while (ACCESS_ONCE(_bdd.gccount) != _bdd.workers) cpu_relax();
     
-    // Sync with other workers until all are ready
-    for (i=0;i<_bdd.workers;i++) {
-        while (ACCESS_ONCE(remote_gc_info[i]->gc)!=1) cpu_relax();
-    }
-
-    _bdd.gc = 2; // Go!
+    _bdd.gccount = 0;
+    _bdd.gc = 2;
 
     size_t my_id = get_thread_id();
     llci_clear_multi(_bdd.cache, my_id, _bdd.workers);
     llgcset_gc_multi(_bdd.data, my_id, _bdd.workers);
 
-    gc_info->gc = 0; // We are done
-    
-    // Sync with other workers until all are done
-    for (i=0;i<_bdd.workers;i++) {
-        while (ACCESS_ONCE(remote_gc_info[i]->gc)!=0) cpu_relax();
-    }
+    xinc(&_bdd.gccount);
+    while (ACCESS_ONCE(_bdd.gccount) != _bdd.workers) cpu_relax();
 
-    _bdd.gc = 0; // done
+    _bdd.gccount = 0;
+    _bdd.gc = 0; 
 }
 
 VOID_TASK_0(sylvan_gc_root_task)
@@ -368,7 +316,7 @@ VOID_TASK_0(sylvan_gc_root_task)
 static inline void sylvan_gc_go() 
 {
     if (cas(&_bdd.gc, 0, 1)) ROOT_CALL(sylvan_gc_root_task);
-    else ROOT_CALL(sylvan_gc_participate_task);
+    else sylvan_gc_participate(); // ROOT_CALL(sylvan_gc_participate_task);
 }
 
 /* 
@@ -406,16 +354,12 @@ void sylvan_package_init(int workers, int dq_size)
 {
     wool_init2(workers, dq_size, dq_size);
 
-    remote_gc_info = (local_gc_info_t *)calloc(sizeof(local_gc_info_t**), workers);
-    
     _bdd.workers = workers;
 }
 
 void sylvan_package_exit()
 {
     wool_fini();
-
-    free(remote_gc_info);
 }
 
 
@@ -466,6 +410,7 @@ void sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
     _bdd.cache = llci_create(1<<cachesize);
 
     _bdd.gc = 0;
+    _bdd.gccount = 0;
 }
 
 void sylvan_quit()

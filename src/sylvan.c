@@ -277,18 +277,20 @@ static void sylvan_gc_participate()
     while (ACCESS_ONCE(_bdd.gc) != 0) cpu_relax(); 
 }
 
-VOID_TASK_0(sylvan_gc_participate_task)
+inline void sylvan_test_gc(void)
 {
     if (ACCESS_ONCE(_bdd.gc)) {
-        SPAWN(sylvan_gc_participate_task);
         sylvan_gc_participate();
-        SYNC(sylvan_gc_participate_task);
     }
 }
 
-/* To be inlined */
-static inline void sylvan_gc_run()
+static inline void sylvan_gc_go() 
 {
+    if (!cas(&_bdd.gc, 0, 1)) {
+        sylvan_gc_participate();
+        return;
+    }
+
     xinc(&_bdd.gccount);
     while (ACCESS_ONCE(_bdd.gccount) != _bdd.workers) cpu_relax();
     
@@ -304,19 +306,6 @@ static inline void sylvan_gc_run()
 
     _bdd.gccount = 0;
     _bdd.gc = 0; 
-}
-
-VOID_TASK_0(sylvan_gc_root_task)
-{
-    SPAWN(sylvan_gc_participate_task);
-    sylvan_gc_run();
-    SYNC(sylvan_gc_participate_task);
-}
-
-static inline void sylvan_gc_go() 
-{
-    if (cas(&_bdd.gc, 0, 1)) ROOT_CALL(sylvan_gc_root_task);
-    else sylvan_gc_participate(); // ROOT_CALL(sylvan_gc_participate_task);
 }
 
 /* 
@@ -352,7 +341,7 @@ unsigned long get_random()
 
 void sylvan_package_init(int workers, int dq_size)
 {
-    wool_init2(workers, dq_size, dq_size);
+    wool_init2(workers, dq_size, dq_size, sylvan_test_gc);
 
     _bdd.workers = workers;
 }

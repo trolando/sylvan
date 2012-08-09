@@ -82,6 +82,8 @@ static Lock more_lock = 0;
 static pthread_attr_t worker_attr;
 static pthread_key_t worker_key;
 
+static wool_cb_stealing cb_stealing;
+
 int lock_delay = 10;
 
 #define lock(a) ticketlock_lock(a)
@@ -147,7 +149,9 @@ static void steal_random( Worker *_self, Worker *thief, volatile Task *t )
       victim = workers + ( myrand( &seed, n-1 ) + self_idx + 1 ) % n;
     }
 
-    steal( *self, *victim, (Task*)t+1 );
+    if (steal(*self, *victim, (Task*)t+1) != SO_STOLE) {
+        if (cb_stealing != NULL) cb_stealing();
+    }
   }
 }
 
@@ -387,6 +391,7 @@ static void *do_work( void *arg )
       }
       attempts = 0;
     }
+    else { if (cb_stealing != NULL) cb_stealing(); }
 
 #if SYNC_MORE
     lock( &more_lock );
@@ -562,11 +567,12 @@ void wool_start()
   start_workers();
 }
 
-void wool_init2( int workers, int dq_size, int stealable )
+void wool_init2( int workers, int dq_size, int stealable, wool_cb_stealing cb )
 {
   n_workers = workers;
   init_worker_dq_size = dq_size;
   n_stealable = stealable;
+  cb_stealing = cb;
   start_workers();
 }
 

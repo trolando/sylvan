@@ -133,7 +133,9 @@ void wool_set_workers(int workers);
 void wool_set_stealable(int stealable);
 void wool_start();
 
-void wool_init2(int, int, int);
+typedef void (*wool_cb_stealing)(void);
+
+void wool_init2(int, int, int, wool_cb_stealing);
 void wool_init( int*, char*** );
 void wool_fini( void );
 Task *wool_get_top( void );

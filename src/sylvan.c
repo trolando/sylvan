@@ -330,15 +330,6 @@ void sylvan_bdd_delete(const void* data, bddnode_t node)
     sylvan_deref(node->high);
 }
 
-/** Random number generator */
-unsigned long rng_hash_128(unsigned long long seed[]);
-
-unsigned long get_random() 
-{
-    static unsigned long long seed[2]; // 256 bits
-    return rng_hash_128(seed);
-}
-
 void sylvan_package_init(int workers, int dq_size)
 {
     wool_init2(workers, dq_size, dq_size, sylvan_test_gc);

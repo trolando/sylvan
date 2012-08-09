@@ -19,7 +19,6 @@ libsylvan_la_SOURCES += src/wool.c
 
 libsylvan_la_SOURCES += src/hash_mul.S
 libsylvan_la_SOURCES += src/rehash_mul.S
-libsylvan_la_SOURCES += src/rng_hash_128.S
 
 libsylvan_la_LDFLAGS = -version-info 0:0:0
 libsylvan_la_LIBADD = -lm 

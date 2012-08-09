@@ -33,7 +33,6 @@ set(sylvan_sources
   src/llgcset.c
   src/hash_mul.S
   src/rehash_mul.S
-  src/rng_hash_128.S
   src/llsimplecache.c
 )
 

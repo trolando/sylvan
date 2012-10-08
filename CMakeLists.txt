@@ -41,15 +41,15 @@ set(test_sources
   test/main.c
 )
 
-add_library(sylvan SHARED ${sylvan_sources})
+add_library(sylvan ${sylvan_sources})
 target_link_libraries(sylvan m ${EXTRA_LIBS})
 
-add_library(sylvan_static ${sylvan_sources})
-target_link_libraries(sylvan_static m ${EXTRA_LIBS})
+#add_library(sylvan_static ${sylvan_sources})
+#target_link_libraries(sylvan_static m ${EXTRA_LIBS})
 
 include_directories(src)
 
 add_executable(sylvan_test ${test_sources})
-target_link_libraries(sylvan_test sylvan_static rt)
+target_link_libraries(sylvan_test sylvan)
 add_test(test ./sylvan_test)
  

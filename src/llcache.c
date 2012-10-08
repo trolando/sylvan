@@ -90,7 +90,7 @@ int llcache_get_quicker(const llcache_t dbs, void *data)
     const size_t data_idx = idx * dbs->padded_data_length;
     if (memcmp(&dbs->data[data_idx], data, dbs->key_length) == 0) {
         // Found existing
-        memcpy(&data[dbs->key_length], &dbs->data[data_idx+dbs->key_length], dbs->data_length-dbs->key_length);
+        memcpy(&((char*)data)[dbs->key_length], &((char*)dbs->data)[data_idx+dbs->key_length], dbs->data_length-dbs->key_length);
         *bucket = v;
         return 1;                    
     } else {
@@ -121,7 +121,7 @@ int llcache_get_quicker_restart(const llcache_t dbs, void *data)
                 const register uint8_t *bdata = &dbs->data[data_idx];
                 if (memcmp(bdata, data, dbs->key_length) == 0) {
                     // Found existing
-                    memcpy(&data[dbs->key_length], &bdata[dbs->key_length], dbs->data_length-dbs->key_length);
+                    memcpy(&((char*)data)[dbs->key_length], &((char*)bdata)[dbs->key_length], dbs->data_length-dbs->key_length);
                     *bucket = vh;
                     return 1;                    
                 } else {
@@ -148,7 +148,7 @@ int llcache_get_quicker_seq(const llcache_t dbs, void *data)
     // Lock acquired, compare
     register uint8_t *data_ptr = &dbs->data[idx * dbs->padded_data_length];
     if (memcmp(data_ptr, data, dbs->key_length) == 0) {
-        memcpy(&data[dbs->key_length], data_ptr+dbs->key_length, dbs->data_length-dbs->key_length);
+        memcpy(&((char*)data)[dbs->key_length], data_ptr+dbs->key_length, dbs->data_length-dbs->key_length);
         return 1;                    
     } else {
         return 0;
@@ -476,7 +476,6 @@ restart_bucket:
     const uint32_t v = (*f_bucket) & MASK;
     if (cas(f_bucket, v, v|LOCK)) {
         register const size_t data_idx = f_idx * dbs->padded_data_length;
-        register void *orig_data = alloca(dbs->data_length);
 
         memxchg(&dbs->data[data_idx], data, dbs->data_length);
 

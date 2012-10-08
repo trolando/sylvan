@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <sys/types.h>
+#include <sys/time.h>
 
 #include <assert.h>
 
@@ -62,7 +63,7 @@ void test_llcache()
 
     assert(llcache_put(c, &n));
 
-    int i;
+//    int i;
 //    for (i = 0;i<(1<<5); i++) {
 //       printf("%d: %X (%d %d)\n", i, c->table[i], *(uint32_t*)&c->data[i*8], *(uint32_t*)&c->data[i*8+4]);
 //    }
@@ -97,10 +98,10 @@ int set2_test_good=0;
 
 void *llgcset_test_worker(void* arg) {
     uint32_t i=0, j=0, k=0, l;
-    int index;
+    uint32_t index;
     int a;
     #define N_TEST_LL 1000
-    int other[N_TEST_LL];
+    uint32_t other[N_TEST_LL];
     for(a=0;a<8;a++) {
         printf("%d,", a);
         fflush(stdout);
@@ -109,12 +110,12 @@ void *llgcset_test_worker(void* arg) {
             for (l=i;l<i+N_TEST_LL;l++) {
               assert(llgcset_lookup(set_under_test, &l, NULL, &other[l-i]));
             }
-            for (j<0;j<5;j++) {
+            for (j=0;j<5;j++) {
                 assert(llgcset_lookup(set_under_test, &i, NULL, &index));
-                assert (i == *(uint32_t*)llgcset_index_to_ptr(set_under_test, index));
+                assert (i == *(uint32_t*)llgcset_index_to_ptr(set_under_test, index, 4));
                 for (k=0;k<7;k++) { 
                     llgcset_ref(set_under_test, index);
-                    int i2;
+                    uint32_t i2;
                     assert(llgcset_lookup(set_under_test, &i, NULL, &i2));
                     assert(i2==index);
                     llgcset_deref(set_under_test, index);
@@ -130,8 +131,8 @@ void *llgcset_test_worker(void* arg) {
               if (index != other[l-i]) {
                    if ((index & ~15) == (other[l-i] & ~15)) printf(LMAGENTA "\n*** SAME CACHE LINE ***\n" NC);
                    printf("\nIndex %u: %x = %d, Other %u: %x = %d\n", 
-                       index, set_under_test->table[index], *(uint32_t*)llgcset_index_to_ptr(set_under_test, index),
-                       other[l-i], set_under_test->table[other[l-i]], *(uint32_t*)llgcset_index_to_ptr(set_under_test, other[l-i]));
+                       index, set_under_test->table[index], *(uint32_t*)llgcset_index_to_ptr(set_under_test, index, 4),
+                       other[l-i], set_under_test->table[other[l-i]], *(uint32_t*)llgcset_index_to_ptr(set_under_test, other[l-i], 4));
               }
               assert(index == other[l-i]);
               llgcset_deref(set_under_test, index);
@@ -143,6 +144,7 @@ void *llgcset_test_worker(void* arg) {
         }
     }
     __sync_fetch_and_add(&set2_test_good, 1);
+    return NULL;
 }
 
 /**
@@ -164,7 +166,6 @@ int test_llgcset2()
     pthread_create(&t[1], NULL, &llgcset_test_worker, (void*)89);
     pthread_create(&t[2], NULL, &llgcset_test_worker, (void*)1055);
     pthread_create(&t[3], NULL, &llgcset_test_worker, (void*)5035);
-    void *ret;
     pthread_join(t[0], NULL);
     pthread_join(t[1], NULL);
     pthread_join(t[2], NULL);
@@ -195,7 +196,8 @@ int test_llgcset()
                          883562435, 2546247838, 190200937, 918456256, 
                          245892765, 29926542,   862864346, 624500973 };
     
-    int index[16], index2[16], created;
+    uint32_t index[16], index2[16];
+    int created;
     
     llgcset_t set = llgcset_create(sizeof(uint32_t), sizeof(uint32_t), 1<<5, NULL, NULL); // size: 32
 
@@ -360,6 +362,8 @@ int test_llgcset()
     }
 
     llgcset_free(set);    
+
+    return 1;
 }
 
 
@@ -416,7 +420,7 @@ void test_or()
 {
     BDD test = sylvan_false;
     
-    int values[16] = {0,1,1,0,1,0,0,1,1,0,1,0,1,1,1,0};
+    // int values[16] = {0,1,1,0,1,0,0,1,1,0,1,0,1,1,1,0};
     
     BDD t1, t2;
     
@@ -1028,8 +1032,8 @@ void runtests(int threads)
     printf(NC "Running two-threaded stresstest 'Mixed'... ");
     fflush(stdout);
 
-    struct timespec begin, end;
-    clock_gettime(CLOCK_MONOTONIC, &begin);
+    struct timeval begin, end;
+    gettimeofday(&begin, NULL);
 
     sylvan_init(16, 10, 3); // minumum: X, 7, 4, 4 ??
     for (j=0;j<10000;j++){
@@ -1042,20 +1046,20 @@ void runtests(int threads)
         for (i=0;i<3;i++) test_modelcheck();
     }
     sylvan_quit();
-
-    clock_gettime(CLOCK_MONOTONIC, &end);
+  
+    gettimeofday(&end, NULL);
     printf(LGREEN "success" NC);
 
     //calculate diff
-    if (end.tv_nsec < begin.tv_nsec) {
+    if (end.tv_usec < begin.tv_usec) {
         end.tv_sec--;
-        end.tv_nsec += 1000000000L;
+        end.tv_usec += 1000000L;
     }
-    end.tv_nsec -= begin.tv_nsec;
+    end.tv_usec -= begin.tv_usec;
     end.tv_sec -= begin.tv_sec;
 
-    long ms = end.tv_sec * 1000 + end.tv_nsec / 1000000;
-    long us = (end.tv_nsec % 1000000) / 1000;
+    long ms = end.tv_sec * 1000 + end.tv_usec / 1000;
+    long us = (end.tv_usec % 1000) / 1000;
     printf(NC " (%ld.%03ld ms)!\n", ms, us);
 
     sylvan_report_stats();
@@ -1070,88 +1074,4 @@ int main(int argc, char **argv)
     runtests(threads);
     printf(NC);
     exit(0);
-
-/*
-    int threads = 2;
-    if (argc > 1) sscanf(argv[1], "%d", &threads);
-
-    sylvan_init(threads, 26, 23);
-
-    BDD a,b,c;
-
-    // A or B       and     C
-
-    // which is A then 1 else B      and C
-
-    a = sylvan_ithvar(1); // A
-    b = sylvan_ithvar(2); // B
-    c = sylvan_ithvar(3); // C
-
-    BDD aorb = sylvan_makenode(1, b, sylvan_true);
-
-    BDD aorb2 = CALL_ITE(a, sylvan_true, b);
-
-    sylvan_print(aorb);
-    sylvan_print(aorb2);
-
-    struct timespec begin, end;
-    clock_gettime(CLOCK_MONOTONIC, &begin);
-
-    BDD ap = CALL_APPLY(aorb, c, operator_xor);
-
-    clock_gettime(CLOCK_MONOTONIC, &end);
-
-    //calculate diff
-    if (end.tv_nsec < begin.tv_nsec) {
-        end.tv_sec--;
-        end.tv_nsec += 1000000000L;
-    }
-    end.tv_nsec -= begin.tv_nsec;
-    end.tv_sec -= begin.tv_sec;
-
-    long ms = end.tv_sec * 1000 + end.tv_nsec / 1000000;
-    long us = (end.tv_nsec % 1000000) / 1000;
-    printf("Time: %ld.%03ld ms\n", ms, us);
-
-    sylvan_print(ap);
-
-    BDD ap2 = CALL_ITE(aorb, sylvan_not(c), c);
-    sylvan_print(ap2);
-
-    sylvan_quit();
-*/
-/*
-    llset_t t = llset_create_size(8, 26);
-
-    printf("size, %d\n", (1<<26)*8);
-
-    char* data = (char*)llset_getOrCreate(t, "Hello\r\n\0", NULL);
-    char* data2 = (char*)llset_getOrCreate(t, "Hello\r\n\0", NULL);
-    printf("%s", data);
-    if (data != data2) printf("error\n");
-    else printf("good\n");
-
-    llset_free(t);
-*/
-
-/*
-
-    llvector_t v = llvector_create(8);
-
-    llvector_add(v, "ASDFQWER");
-    llvector_add(v, "12344321");
-    llvector_add(v, "qwerrewq");
-    llvector_add(v, "freddref");
-
-    llvector_delete(v, 1);
-
-    for (i=0; i<llvector_count(v); i++) {
-        char buf[9];
-        buf[8] = 0;
-        llvector_get(v, i, buf);
-        printf("%d: %s\n", i, buf);
-    }
-
-
-    return 0;*/
 }

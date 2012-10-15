@@ -5,8 +5,13 @@
 #include <stdint.h> // for uint32_t etc
 #include <string.h> // for memcpy
 #include <assert.h> // for assert
+#include <sys/mman.h> // for mmap
 
 #include "atomics.h"
+
+#ifdef HAVE_NUMA_H
+#include "numa_tools.h"
+#endif
 
 #ifndef LLCACHE_INLINE_H
 #define LLCACHE_INLINE_H
@@ -31,10 +36,9 @@ typedef struct llci
 {
     size_t             cache_size;  
     uint32_t           mask;         // size-1
-    uint32_t           *_table;      // table with hashes
-    uint8_t            *_data;       // table with data
     uint32_t           *table;       // table with hashes
     uint8_t            *data;        // table with data
+    size_t             f_size;
 } *llci_t;
 
 #define LLCI_EMPTY         ((uint32_t) 0x00000000)
@@ -212,16 +216,20 @@ static inline llci_t llci_create(size_t cache_size)
 
     dbs->mask = dbs->cache_size - 1;
 
-    // Using this calloc/malloc with manual ALIGN trick, it is easier to control
-    // allocation with NUMA.
+    dbs->table = mmap(0, dbs->cache_size * sizeof(uint32_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    dbs->data = mmap(0, dbs->cache_size * LLCI_PDS, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    if (dbs->table == (uint32_t*)-1 || dbs->data == (uint8_t*)-11) { 
+      fprintf(stderr, "Unable to allocate memory!"); 
+      exit(1);
+    }
 
-    dbs->_table = (uint32_t*)calloc(dbs->cache_size*sizeof(uint32_t)+LINE_SIZE, 1);
-    dbs->table = ALIGN(dbs->_table);
-
-    dbs->_data = (uint8_t*)malloc(dbs->cache_size*LLCI_PDS+LINE_SIZE);
-    dbs->data = ALIGN(dbs->_data);
-
-    // dont care about what is in "data" table - no need to clear it
+#ifdef HAVE_NUMA_H
+    size_t f_size=0;
+    numa_interleave(dbs->table, dbs->cache_size * sizeof(uint32_t), &f_size);
+    dbs->f_size = (f_size /= sizeof(uint32_t));
+    f_size *= LLCI_PDS;
+    numa_interleave(dbs->data, dbs->cache_size * LLCI_PDS, &f_size);
+#endif
 
     return dbs;
 }
@@ -239,12 +247,27 @@ llci_clear_partial(const llci_t dbs, size_t first, size_t count)
  * Use llci_clear_multi when you have multiple workers to quickly clear the memoization table...
  */
 static void __attribute__((unused))
-llci_clear_multi(const llci_t dbs, size_t my_id, size_t n_workers) {
+llci_clear_multi(const llci_t dbs, size_t my_id, size_t n_workers)
+{
+#ifdef HAVE_NUMA_H
+    int node, node_index, index, total;
+    numa_worker_info(my_id, &node, &node_index, &index, &total);
+    // we only clear that of our own node...
+    size_t cachelines_total = (dbs->f_size      + LINE_SIZE - 1) / (LINE_SIZE);
+    size_t cachelines_each  = (cachelines_total + total     - 1) / total;
+    size_t first            = node_index * dbs->f_size + index * cachelines_each * LINE_SIZE;
+    size_t max              = cachelines_total - index * cachelines_each;
+    if (max > 0) {
+        size_t count = max > cachelines_each ? cachelines_each : max;
+        llci_clear_partial(dbs, first / 4, count / 4);
+    }
+#else
     size_t cachelines_total = (dbs->cache_size  + LLCI_HASH_PER_CL - 1) / LLCI_HASH_PER_CL;
     size_t cachelines_each  = (cachelines_total + n_workers        - 1) / n_workers;
     size_t first            = my_id * cachelines_each * LLCI_HASH_PER_CL;
     // Note that llci_clear_partial will fix count if overflow...
     llci_clear_partial(dbs, first, cachelines_each * LLCI_HASH_PER_CL);
+#endif
 }
 
 static void __attribute__((unused)) llci_clear(const llci_t dbs) 
@@ -254,8 +277,8 @@ static void __attribute__((unused)) llci_clear(const llci_t dbs)
 
 static inline void llci_free(const llci_t dbs)
 {
-    free(dbs->_data);
-    free(dbs->_table);
+    munmap(dbs->table, dbs->cache_size * sizeof(uint32_t));
+    munmap(dbs->data, dbs->cache_size * LLCI_PDS);
     free(dbs);
 }
 

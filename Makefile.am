@@ -25,4 +25,5 @@ libsylvan_la_LIBADD = -lm
 
 if HAVE_NUMA_H
 libsylvan_la_LIBADD += -lnuma
+libsylvan_la_SROUCES += src/numa-tools.c
 endif

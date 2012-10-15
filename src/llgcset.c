@@ -5,9 +5,14 @@
 #include <stdint.h> // for uint32_t etc
 #include <string.h> // for memcopy
 #include <assert.h> // for assert
+#include <sys/mman.h> // for mmap
 
 #include "atomics.h"
 #include "llgcset.h"
+
+#ifdef HAVE_NUMA_H
+#include "numa_tools.h"
+#endif
 
 #define DEBUG_LLGCSET 0 // set to 1 to enable logic assertions
 
@@ -524,10 +529,23 @@ llgcset_t llgcset_create(size_t key_length, size_t data_length, size_t table_siz
 
     dbs->threshold = (64 - __builtin_clzl(table_size)) + 4; // doubling table_size increases threshold by 1
 
-    dbs->_table = (uint32_t*)calloc(dbs->table_size*sizeof(uint32_t)+LINE_SIZE, 1);
-    dbs->table = ALIGN(dbs->_table);
-    dbs->_data = (uint8_t*)malloc(dbs->table_size*dbs->padded_data_length+LINE_SIZE);
-    dbs->data = ALIGN(dbs->_data);
+    dbs->table = mmap(0, dbs->table_size * sizeof(uint32_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    if (dbs->table == (uint32_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
+    dbs->data = mmap(0, dbs->table_size * dbs->padded_data_length, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    if (dbs->data == (uint8_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
+
+#ifdef HAVE_NUMA_H
+    size_t f_size=0;
+    numa_interleave(dbs->table, dbs->table_size * sizeof(uint32_t), &f_size);
+    dbs->f_size = f_size / sizeof(uint32_t);
+    f_size *= dbs->padded_data_length / 4;
+    numa_interleave(dbs->data, dbs->table_size * dbs->padded_data_length, &f_size);
+#endif
+
+    //dbs->_table = (uint32_t*)calloc(dbs->table_size*sizeof(uint32_t)+LINE_SIZE, 1);
+    //dbs->table = ALIGN(dbs->_table);
+    //dbs->_data = (uint8_t*)malloc(dbs->table_size*dbs->padded_data_length+LINE_SIZE);
+    //dbs->data = ALIGN(dbs->_data);
 
     // dont care about what is in "data" table
  
@@ -636,8 +654,8 @@ inline void llgcset_clear(llgcset_t dbs)
 void llgcset_free(llgcset_t dbs)
 {
     llsimplecache_free(dbs->deadlist);
-    free(dbs->_data);
-    free(dbs->_table);
+    munmap(dbs->table, dbs->table_size * sizeof(uint32_t));
+    munmap(dbs->data, dbs->table_size * dbs->padded_data_length);
     dbs->stack = realloc(dbs->stack, 0);
     free(dbs);
 }

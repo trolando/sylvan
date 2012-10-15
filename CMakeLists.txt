@@ -34,6 +34,7 @@ set(sylvan_sources
   src/hash_mul.S
   src/rehash_mul.S
   src/llsimplecache.c
+  src/numa_tools.c
 )
 
 set(test_sources

@@ -1281,6 +1281,43 @@ BDD sylvan_substitute(BDD a, BDD vars)
     return ROOT_CALL(sylvan_substitute_do, a, vars, 0);
 }
 
+int sylvan_relprods_analyse(BDD a, BDD b, void_cb cb_in, void_cb cb_out)
+{
+    if (a == sylvan_true && b == sylvan_true) return 0;
+    if (a == sylvan_false || b == sylvan_false) return 0;
+    if (a == b) b = sylvan_true;
+    else if (BDD_EQUALM(a, b)) return 0;
+
+    bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
+    bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
+        
+    BDD aLow=a, aHigh=a, bLow=b, bHigh=b;
+    if (na) {
+        if (nb && na->level > nb->level) {
+            bLow = BDD_TRANSFERMARK(b, nb->low);
+            bHigh = BDD_TRANSFERMARK(b, nb->high);
+        } else if (nb && na->level == nb->level) {
+            aLow = BDD_TRANSFERMARK(a, na->low);
+            aHigh = BDD_TRANSFERMARK(a, na->high);
+            bLow = BDD_TRANSFERMARK(b, nb->low);
+            bHigh = BDD_TRANSFERMARK(b, nb->high);
+        } else {
+            aLow = BDD_TRANSFERMARK(a, na->low);
+            aHigh = BDD_TRANSFERMARK(a, na->high);
+        }
+    } else {
+        bLow = BDD_TRANSFERMARK(b, nb->low);
+        bHigh = BDD_TRANSFERMARK(b, nb->high);
+    }
+
+    cb_in();
+    int d1 = sylvan_relprods_analyse(aLow, bLow, cb_in, cb_out);
+    int d2 = sylvan_relprods_analyse(aHigh, bHigh, cb_in, cb_out);
+    cb_out();
+
+    return d1>d2?d1+1:d2+1;
+}
+
 /**
  * Very specialized RelProdS. Calculates ( \exists X (A /\ B) ) [X'/X]
  * Assumptions on variables: 

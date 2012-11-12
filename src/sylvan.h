@@ -97,6 +97,9 @@ extern BDD sylvan_invimp(BDD a, BDD b);
  */
 extern BDD sylvan_relprods(BDD a, BDD b, BDD vars);
 
+typedef void (*void_cb)();
+extern int sylvan_relprods_analyse(BDD a, BDD b, void_cb cb_in, void_cb cb_out);
+
 /**
  * Reversed RelProdS using paired variables (X even, X' odd)
  */

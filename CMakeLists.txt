@@ -11,6 +11,7 @@ if(USE_NUMA)
   check_include_files(numa.h HAVE_NUMA_H)
   if(HAVE_NUMA_H)
     set (EXTRA_LIBS ${EXTRA_LIBS} numa)
+    set (EXTRA_SRC ${EXTRA_SRC} src/numa_tools.c)
   else()
     message(send_error "ERROR: Using NUMA but no numa.h found!")
   endif()
@@ -34,7 +35,7 @@ set(sylvan_sources
   src/hash_mul.S
   src/rehash_mul.S
   src/llsimplecache.c
-  src/numa_tools.c
+  ${EXTRA_SRC}
 )
 
 set(test_sources

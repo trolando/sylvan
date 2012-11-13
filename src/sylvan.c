@@ -140,6 +140,17 @@ static int get_thread_id() {
     return -1;
 }
 
+static inline size_t rand_1()
+{
+    register const size_t rsp_alias asm ("rsp");
+    size_t id = (size_t)pthread_self();
+    //id += id << 8;
+    id += rsp_alias;
+    id *= 1103515245;
+    id += 12345;
+    return id & 8 ? 1 : 0;
+}
+
 struct {
     uint64_t count[C_MAX];
     char pad[SYLVAN_PAD(sizeof(uint64_t)*C_MAX, 64)];
@@ -791,9 +802,16 @@ TASK_4(BDD, sylvan_ite_do, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     }
     
     // Recursive computation
-    SPAWN(sylvan_ite_do, aLow, bLow, cLow, level);
-    BDD high = CALL(sylvan_ite_do, aHigh, bHigh, cHigh, level);
-    BDD low = SYNC(sylvan_ite_do);
+    BDD low, high;
+    if (rand_1()) {
+        SPAWN(sylvan_ite_do, aHigh, bHigh, cHigh, level);
+        low = CALL(sylvan_ite_do, aLow, bLow, cLow, level);
+        high = SYNC(sylvan_ite_do);
+    } else { 
+        SPAWN(sylvan_ite_do, aLow, bLow, cLow, level);
+        high = CALL(sylvan_ite_do, aHigh, bHigh, cHigh, level);
+        low = SYNC(sylvan_ite_do);
+    }
     BDD result = sylvan_makenode(level, low, high);
     
     /*
@@ -904,9 +922,15 @@ TASK_3(BDD, sylvan_exists_do, BDD, a, BDD, variables, BDDVAR, prev_level)
     } else {
         // no quantify
         BDD low, high;
-        SPAWN(sylvan_exists_do, aLow, variables, level);
-        high = CALL(sylvan_exists_do, aHigh, variables, level);
-        low = SYNC(sylvan_exists_do);
+        if (rand_1()) {
+            SPAWN(sylvan_exists_do, aHigh, variables, level);
+            low = CALL(sylvan_exists_do, aLow, variables, level);
+            high = SYNC(sylvan_exists_do);
+        } else {
+            SPAWN(sylvan_exists_do, aLow, variables, level);
+            high = CALL(sylvan_exists_do, aHigh, variables, level);
+            low = SYNC(sylvan_exists_do);
+        }
         result = sylvan_makenode(level, low, high);
     }
 
@@ -1015,9 +1039,15 @@ TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
     } else {
         // no quantify
         BDD low, high;
-        SPAWN(sylvan_forall_do, aLow, variables, level);
-        high = CALL(sylvan_forall_do, aHigh, variables, level);
-        low = SYNC(sylvan_forall_do);
+        if (rand_1()) {
+            SPAWN(sylvan_forall_do, aHigh, variables, level);
+            low = CALL(sylvan_forall_do, aLow, variables, level);
+            high = SYNC(sylvan_forall_do);
+        } else {
+            SPAWN(sylvan_forall_do, aLow, variables, level);
+            high = CALL(sylvan_forall_do, aHigh, variables, level);
+            low = SYNC(sylvan_forall_do);
+        }
         result = sylvan_makenode(level, low, high);
     }
 
@@ -1162,9 +1192,15 @@ TASK_4(BDD, sylvan_relprod_do, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
             }
         }
     } else {
-        SPAWN(sylvan_relprod_do, aHigh, bHigh, x, level);
-        low = CALL(sylvan_relprod_do, aLow, bLow, x, level);
-        high = SYNC(sylvan_relprod_do);
+        if (rand_1()) {
+            SPAWN(sylvan_relprod_do, aLow, bLow, x, level);
+            high = CALL(sylvan_relprod_do, aHigh, bHigh, x, level);
+            low = SYNC(sylvan_relprod_do);
+        } else {
+            SPAWN(sylvan_relprod_do, aHigh, bHigh, x, level);
+            low = CALL(sylvan_relprod_do, aLow, bLow, x, level);
+            high = SYNC(sylvan_relprod_do);
+        }
         result = sylvan_makenode(level, low, high);
     }
     
@@ -1240,9 +1276,16 @@ TASK_3(BDD, sylvan_substitute_do, BDD, a, BDD, vars, BDDVAR, prev_level)
     }
    
     // Recursive computation
-    SPAWN(sylvan_substitute_do, aHigh, vars, level);
-    BDD low = CALL(sylvan_substitute_do, aLow, vars, level);
-    BDD high = SYNC(sylvan_substitute_do);
+    BDD low, high;
+    if (rand_1()) {
+        SPAWN(sylvan_substitute_do, aLow, vars, level);
+        high = CALL(sylvan_substitute_do, aHigh, vars, level);
+        low = SYNC(sylvan_substitute_do);
+    } else {
+        SPAWN(sylvan_substitute_do, aHigh, vars, level);
+        low = CALL(sylvan_substitute_do, aLow, vars, level);
+        high = SYNC(sylvan_substitute_do);
+    }
     BDD result;
     
     if (in_vars) {
@@ -1419,8 +1462,8 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
     BDD low, high, result;
     
     if (in_vars && 0==(level&1)) {
-        low = CALL(sylvan_relprods_do, aLow, bLow, vars, level);
         // variable in X: quantify
+        low = CALL(sylvan_relprods_do, aLow, bLow, vars, level);
         if (low == sylvan_true) {
             result = sylvan_true;
         }
@@ -1441,9 +1484,15 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
         }
     } 
     else {
-        SPAWN(sylvan_relprods_do, aHigh, bHigh, vars, level);
-        low = CALL(sylvan_relprods_do, aLow, bLow, vars, level);
-        high = SYNC(sylvan_relprods_do);
+        if (rand_1()) {
+            SPAWN(sylvan_relprods_do, aLow, bLow, vars, level);
+            high = CALL(sylvan_relprods_do, aHigh, bHigh, vars, level);
+            low = SYNC(sylvan_relprods_do);
+        } else {
+            SPAWN(sylvan_relprods_do, aHigh, bHigh, vars, level);
+            low = CALL(sylvan_relprods_do, aLow, bLow, vars, level);
+            high = SYNC(sylvan_relprods_do);
+        }
 
         // variable in X': substitute
         if (in_vars == 1) result = sylvan_makenode(level-1, low, high);
@@ -1594,9 +1643,15 @@ TASK_4(BDD, sylvan_relprods_reversed_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev
     } 
     // if x \in X OR if excluded (works in either case)
     else {
-        SPAWN(sylvan_relprods_reversed_do, aHigh, bHigh, vars, x);
-        low = CALL(sylvan_relprods_reversed_do, aLow, bLow, vars, x);
-        high = SYNC(sylvan_relprods_reversed_do);
+        if (rand_1()) {
+            SPAWN(sylvan_relprods_reversed_do, aLow, bLow, vars, x);
+            high = CALL(sylvan_relprods_reversed_do, aHigh, bHigh, vars, x);
+            low = SYNC(sylvan_relprods_reversed_do);
+        } else {
+            SPAWN(sylvan_relprods_reversed_do, aHigh, bHigh, vars, x);
+            low = CALL(sylvan_relprods_reversed_do, aLow, bLow, vars, x);
+            high = SYNC(sylvan_relprods_reversed_do);
+        }
         result = sylvan_makenode(x, low, high);
     }
 

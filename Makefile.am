@@ -14,6 +14,8 @@ libsylvan_la_SOURCES = \
  src/sylvan.h \
  src/llgcset.c \
  src/llgcset.h \
+ src/llmsset.c \
+ src/llmsset.h \
  src/llsimplecache.c \
  src/llsimplecache.h \
  src/llci.h \

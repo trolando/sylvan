@@ -32,6 +32,8 @@ set(sylvan_sources
   src/wool.c
   src/sylvan.c
   src/llgcset.c
+  src/llmsset.c
+  src/llmsset.h
   src/hash_mul.S
   src/rehash_mul.S
   src/llsimplecache.c
@@ -40,6 +42,10 @@ set(sylvan_sources
 
 set(test_sources
   src/llcache.c
+  src/llgcset.c
+  src/llsimplecache.c
+  src/llmsset.c
+  src/llmsset.h
   test/main.c
 )
 

@@ -1,9 +1,8 @@
 AC_PREREQ([2.57])
 AC_INIT([sylvan], [1.0])
 AC_CONFIG_AUX_DIR([tools])
-AM_INIT_AUTOMAKE([foreign no-define silent-rules 1.11])
+AM_INIT_AUTOMAKE([foreign no-define])
 AC_CONFIG_MACRO_DIR([m4])
-AM_SILENT_RULES([yes])
 
 MAJOR_VERSION=`echo "$VERSION" | sed -e 's/^\([[0-9]]*\)\.[[0-9]]*.*$/\1/'`
 MINOR_VERSION=`echo "$VERSION" | sed -e 's/^[[0-9]]*\.\([[0-9]]*\).*$/\1/'`

@@ -118,12 +118,12 @@ llsimplecache_t llsimplecache_create(size_t cache_size, llsimplecache_delete_f c
     return dbs;
 }
 
-inline void llsimplecache_clear(const llsimplecache_t dbs)
+void llsimplecache_clear(const llsimplecache_t dbs)
 {
     llsimplecache_clear_partial(dbs, 0, dbs->cache_size);
 }
 
-inline void llsimplecache_clear_partial(const llsimplecache_t dbs, size_t first, size_t count)
+void llsimplecache_clear_partial(const llsimplecache_t dbs, size_t first, size_t count)
 {
     if (first < 0 || first >= dbs->cache_size) return;
     if (first + count > dbs->cache_size) count = dbs->cache_size - first;

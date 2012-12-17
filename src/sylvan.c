@@ -1755,9 +1755,7 @@ long long sylvan_count_refs()
         c &= 0x0000ffff;
         assert (c!=0x0000ffff); // "about to be deleted" should not be visible here
         
-        assert (c!=0x0000fffe); // If this fails, implement behavior for saturated nodes
-        
-        result += c; // for now, ignore saturated...
+        result += c; // Note: nodes could be saturated... number could be off...
         
         bddnode_t n = GETNODE(i);
 

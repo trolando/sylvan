@@ -828,7 +828,7 @@ TASK_4(BDD, sylvan_ite_do, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
         template_cache_node.params[2] = c;
         template_cache_node.result = sylvan_invalid;
     
-        if (llci_get(_bdd.cache, &template_cache_node)) {
+        if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             BDD res = sylvan_ref(template_cache_node.result);
             SV_CNT(C_cache_reuse);
             return BDD_TRANSFERMARK(r, res);
@@ -873,7 +873,7 @@ TASK_4(BDD, sylvan_ite_do, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 
     if (cachenow) {
         template_cache_node.result = result;
-        int cache_res = llci_put(_bdd.cache, &template_cache_node);
+        int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
         if (cache_res == 0) {
             // It existed!
             SV_CNT(C_cache_exists);
@@ -938,7 +938,7 @@ TASK_3(BDD, sylvan_exists_do, BDD, a, BDD, variables, BDDVAR, prev_level)
         template_cache_node.params[1] = variables;
         template_cache_node.result = sylvan_invalid;
 
-        if (llci_get(_bdd.cache, &template_cache_node)) {
+        if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             BDD result = sylvan_ref(template_cache_node.result);
             SV_CNT(C_cache_reuse);
             return result;
@@ -986,7 +986,7 @@ TASK_3(BDD, sylvan_exists_do, BDD, a, BDD, variables, BDDVAR, prev_level)
 
     if (cachenow) {
         template_cache_node.result = result;
-        int cache_res = llci_put(_bdd.cache, &template_cache_node);
+        int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
         if (cache_res == 0) {
             // It existed!
             SV_CNT(C_cache_exists);
@@ -1052,7 +1052,7 @@ TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
         template_cache_node.params[1] = variables;
         template_cache_node.result = sylvan_invalid;
 
-        if (llci_get(_bdd.cache, &template_cache_node)) {
+        if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             BDD result = sylvan_ref(template_cache_node.result);
             SV_CNT(C_cache_reuse);
             return result;
@@ -1101,7 +1101,7 @@ TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
 
     if (cachenow) {
         template_cache_node.result = result;
-        int cache_res = llci_put(_bdd.cache, &template_cache_node);
+        int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
         if (cache_res == 0) {
             // It existed!
             SV_CNT(C_cache_exists);
@@ -1207,7 +1207,7 @@ TASK_4(BDD, sylvan_relprod_do, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
         template_cache_node.params[2] = x;
         template_cache_node.result = sylvan_invalid;
         
-        if (llci_get(_bdd.cache, &template_cache_node)) {
+        if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             BDD result = sylvan_ref(template_cache_node.result);
             SV_CNT(C_cache_reuse);
             return result;
@@ -1253,7 +1253,7 @@ TASK_4(BDD, sylvan_relprod_do, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
     
     if (cachenow) {
         template_cache_node.result = result;
-        int cache_res = llci_put(_bdd.cache, &template_cache_node);
+        int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
         if (cache_res == 0) {
             // It existed!
             SV_CNT(C_cache_exists);
@@ -1314,7 +1314,7 @@ TASK_3(BDD, sylvan_substitute_do, BDD, a, BDD, vars, BDDVAR, prev_level)
         template_cache_node.params[2] = 0;
         template_cache_node.result = sylvan_invalid;
         
-        if (llci_get(_bdd.cache, &template_cache_node)) {
+        if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             BDD result = sylvan_ref(template_cache_node.result);
             SV_CNT(C_cache_reuse);
             return result;
@@ -1347,7 +1347,7 @@ TASK_3(BDD, sylvan_substitute_do, BDD, a, BDD, vars, BDDVAR, prev_level)
     
     if (cachenow) {
         template_cache_node.result = result;
-        int cache_res = llci_put(_bdd.cache, &template_cache_node);
+        int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
         if (cache_res == 0) {
             // It existed!
             SV_CNT(C_cache_exists);
@@ -1496,7 +1496,7 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
         template_cache_node.params[2] = vars;
         template_cache_node.result = sylvan_invalid;
         
-        if (llci_get(_bdd.cache, &template_cache_node)) {
+        if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             BDD result = sylvan_ref(template_cache_node.result);
             SV_CNT(C_cache_reuse);
             return result;
@@ -1548,7 +1548,7 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
     
     if (cachenow) {
         template_cache_node.result = result;
-        int cache_res = llci_put(_bdd.cache, &template_cache_node);
+        int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
         if (cache_res == 0) {
             // It existed!
             SV_CNT(C_cache_exists);
@@ -1655,7 +1655,7 @@ TASK_4(BDD, sylvan_relprods_reversed_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev
         template_cache_node.params[2] = vars;
         template_cache_node.result = sylvan_invalid;
     
-        if (llci_get(_bdd.cache, &template_cache_node)) {
+        if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             BDD result = sylvan_ref(template_cache_node.result);
             SV_CNT(C_cache_reuse);
             return result;
@@ -1700,7 +1700,7 @@ TASK_4(BDD, sylvan_relprods_reversed_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev
 
     if (cachenow) {
         template_cache_node.result = result;
-        int cache_res = llci_put(_bdd.cache, &template_cache_node);
+        int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
         if (cache_res == 0) {
             // It existed!
             SV_CNT(C_cache_exists);

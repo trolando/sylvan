@@ -34,7 +34,7 @@
 
 #ifdef HAVE_NUMA_H
 #include <numa.h>
-#include "setnuma.h"
+#include "numa_tools.h"
 #endif
 
 /* Implements 
@@ -213,7 +213,7 @@ void wool_sync( volatile Task *t, balarm_t a )
   
 }
 
-static void init_worker( int worker, char node )
+static void init_worker(int worker)
 {
   int i;
 
@@ -222,16 +222,14 @@ static void init_worker( int worker, char node )
 
 #ifdef HAVE_NUMA_H
   // Use NUMA allocator...
-  if (node>=0) {
-    workers[worker] = w = (Worker*)numa_alloc_onnode(sizeof(Worker), node);
-    w->dq_base = (Task*)numa_alloc_onnode(dq_size * sizeof(Task), node);
-  } else {
-#endif
-    posix_memalign((void**)&w, LINE_SIZE, sizeof(Worker));
-    workers[worker] = w;
-    posix_memalign((void**)&w->dq_base, LINE_SIZE, dq_size * sizeof(Task));
-#ifdef HAVE_NUMA_H
-  }
+  int node;
+  numa_worker_info(worker, &node, 0, 0, 0);
+  workers[worker] = w = (Worker*)numa_alloc_onnode(sizeof(Worker), node);
+  w->dq_base = (Task*)numa_alloc_onnode(dq_size * sizeof(Task), node);
+#else
+  posix_memalign((void**)&w, LINE_SIZE, sizeof(Worker));
+  workers[worker] = w;
+  posix_memalign((void**)&w->dq_base, LINE_SIZE, dq_size * sizeof(Task));
 #endif
 
   w->dq_size = dq_size;
@@ -336,9 +334,7 @@ static void *do_work( void *arg )
   // Register as a worker
   
 #ifdef HAVE_NUMA_H
-  if ((*self)->node>=0) {
-    numa_run_on_node((*self)->node);
-  }
+  numa_bind_me(self_idx);
 #endif
 
   pthread_setspecific( worker_key, *self );
@@ -430,34 +426,22 @@ static void start_workers( void )
 
 #ifdef HAVE_NUMA_H
   if (numa_available()!=-1) {
-    int8_t *best = setnuma_calculate_best(n);
-    if (best == 0) { printf("Error: no suitable NUMA config found!\n"); exit(-1); }
-    int nodes;
-    for (nodes=0;best[nodes]!=-1;nodes++) {}
-    for( i=0; i<n; i++ ) {
-      init_worker(i, best[i%nodes]); 
-      //printf("Assigned node %d to worker %d\n", best[i%nodes], i);
-    }
-    free(best);
+    if (numa_distribute(n) != 0) { fprintf(stderr, "Error: no suitable NUMA config found!\n"); exit(-1); }
   } else {
     printf("Warning: NUMA not available!\n");
-#endif
-    for( i=0; i<n; i++ ) {
-      init_worker(i, -1);
-    }
-#ifdef HAVE_NUMA_H
   }
 #endif
+
+  for( i=0; i<n; i++ ) {
+    init_worker(i);
+  }
 
   for( i=0; i < n-1; i++ ) {
     pthread_create( ts+i, &worker_attr, &do_work, workers+i+1 );
   }
  
 #ifdef HAVE_NUMA_H
-  // Pin ourself
-  if ((*workers)->node>=0) {
-    numa_run_on_node((*workers)->node);
-  }
+  numa_bind_me(0);
 #endif
 
   pthread_setspecific( worker_key, *workers );

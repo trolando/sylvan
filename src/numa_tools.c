@@ -145,7 +145,7 @@ int numa_worker_info(int worker, int *node, int *node_index, int *index, int *to
 int numa_bind_me(int worker)
 {
     int node, res;
-    if ((res=numa_worker_info(worker, &node, 0, 0)) != 0) return res;
+    if ((res=numa_worker_info(worker, &node, 0, 0, 0)) != 0) return res;
     if ((res=numa_run_on_node(node)) != 0) return res;
     return 0;
 }

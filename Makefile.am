@@ -32,5 +32,7 @@ libsylvan_la_LIBADD = -lm
 
 if HAVE_NUMA_H
 libsylvan_la_LIBADD += -lnuma
-libsylvan_la_SOURCES += src/numa-tools.c
+libsylvan_la_SOURCES += src/numa_tools.c
 endif
+
+EXTRA_DIST = $(libsylvan_la_SOURCES)

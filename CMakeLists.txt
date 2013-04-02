@@ -50,10 +50,7 @@ set(test_sources
 )
 
 add_library(sylvan ${sylvan_sources})
-target_link_libraries(sylvan m ${EXTRA_LIBS})
-
-#add_library(sylvan_static ${sylvan_sources})
-#target_link_libraries(sylvan_static m ${EXTRA_LIBS})
+target_link_libraries(sylvan m pthread ${EXTRA_LIBS})
 
 include_directories(src)
 

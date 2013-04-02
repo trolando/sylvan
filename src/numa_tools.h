@@ -2,39 +2,27 @@
 #define NUMATOOLS_H
 
 /**
- * Returns number of available cpus
+ * Initializes / refreshes internal data
  */
-int numa_count_cpus_per_node(int *nodes, int *cpus);
+int numa_tools_refresh(void);
 
-/**
- * Calculates the number of currently available cpus
- */
-int numa_available_cpus();
+int get_num_cpus(void);
+const int *get_cpu_to_node(void);
 
-/**
- * Calculate the number of currently available nodes
- */
-int numa_available_nodes();
-    
-/**
- * Calculate the number of available nodes for memory allocation
- */
-int numa_available_memory_nodes();
+int numa_available_cpus(); // number of available cores
+int numa_available_work_nodes(); // number of nodes with available cores
+int numa_available_memory_nodes(); // number of nodes with memory allocation
+int numa_check_sanity(); // check that all work nodes are also memory nodes
 
-/**
- * Calculate highest node number
- */
-int numa_highest_node();
+int numa_distribute(int workers);
 
 int numa_worker_info(int worker, int *node, int *node_index, int *index, int *total);
 
 int numa_bind_me(int worker);
 
-int numa_distribute(int workers);
-
 /**
  * Move some piece of memory to some memory domain.
- * mem should be on a <getpagesize()> boundary!
+ * mem should be on a getpagesize() boundary!
  */
 int numa_move(void *mem, size_t size, int node);
 

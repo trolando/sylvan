@@ -2,70 +2,126 @@
 #include <numaif.h> // mpol
 #include <sys/mman.h> // mmap
 #include <unistd.h> // getpagesize
+#include <stdio.h> // printf
 
-/**
- * Returns number of available cpus
- */
-int numa_count_cpus_per_node(int *nodes, int *cpus)
+static int *cpu_to_node = NULL;
+static int num_cpus = 0;
+static int *node_mem = NULL;
+static int num_nodes = 0;
+static int inited = 0;
+
+int numa_tools_refresh(void)
 {
+    num_cpus = numa_num_configured_cpus();
+    if (cpu_to_node != NULL) free(cpu_to_node);
+    cpu_to_node = calloc(num_cpus, sizeof(int));
+    
     struct bitmask *cpubuf;
-    int i, j;
+    int i;
 
     cpubuf = numa_allocate_cpumask();
     if (numa_sched_getaffinity(0, cpubuf) < 0) {
         numa_free_cpumask(cpubuf);
-        return -1;
+        return 0;
     }
-
-    for (i=j=0; i<cpubuf->size; i++) {
-        if (numa_bitmask_isbitset(cpubuf, i)) {
-            if (nodes != NULL) nodes[numa_node_of_cpu(i)]++;
-            if (cpus != NULL) cpus[j++] = i;
-        }
+    for (i=0; i<cpubuf->size && i<num_cpus; i++) {
+        cpu_to_node[i] = numa_bitmask_isbitset(cpubuf, i) ? numa_node_of_cpu(i) : -1;
     }
-
     numa_free_cpumask(cpubuf);
-    return j;
+
+    num_nodes = numa_max_node()+1;
+    if (node_mem != NULL) free(node_mem);
+    node_mem = calloc(num_nodes, sizeof(int));
+
+    struct bitmask *allowed = numa_allocate_nodemask();
+    if (get_mempolicy(NULL, allowed->maskp, allowed->size+1, 0, MPOL_F_MEMS_ALLOWED) != 0) {
+        numa_bitmask_free(allowed);
+        return 0;
+    }
+    for (i=0; i<allowed->size && i<num_nodes; i++) {
+        node_mem[i] = numa_bitmask_isbitset(allowed, i) ? 1 : 0;
+    }
+    numa_bitmask_free(allowed);
+
+    inited = 1;
+
+    /*
+    printf("There are at most %d cpus and at most %d nodes.\n", num_cpus, num_nodes);
+    printf("Available nodes (memory and program execution):\n");
+    for (i=0; i<num_nodes; i++) {
+        if (!node_mem[i]) continue;
+        int j, k;
+        for (j=k=0; j<num_cpus; j++) if (cpu_to_node[j]==i) k++;
+        printf("- node %d (%d cpus)\n", i, k);
+    }
+    printf("Available nodes for program execution only:\n");
+    for (i=0; i<num_nodes; i++) { 
+        if (node_mem[i]) continue;
+        int j,k=0; 
+        for (j=k=0; j<num_cpus; j++) if (cpu_to_node[j]==i) k++;
+        if (k>0) printf("- node %d (%d cpus)\n", i, k);
+    }
+    */
+
+    return 1;
 }
+
+int get_num_cpus(void)
+{
+    return num_cpus;
+}
+
+const int *get_cpu_to_node(void)
+{
+    return cpu_to_node;
+}
+
+static int numa_tools_init()
+{
+    if (inited) return 1;
+    numa_tools_refresh();
+    return inited;
+}
+
+/**
+ * Returns number of available cpus
+ */
+int numa_cpus_per_node(int *nodes)
+{
+    if (!numa_tools_init()) return 0;
+    int i;
+    for (i=0;i<num_cpus;i++) {
+        if (cpu_to_node[i] != -1) nodes[cpu_to_node[i]]++;
+    }
+    return 1;
+}
+
 
 /**
  * Calculates the number of currently available cpus
  */
 int numa_available_cpus()
 {
-    struct bitmask *cpubuf;
-    int i, j=-1;
-
-    cpubuf = numa_allocate_cpumask();
-    if (numa_sched_getaffinity(0, cpubuf) >= 0) {
-        for (i=j=0; i<cpubuf->size; i++) {
-            j += numa_bitmask_isbitset(cpubuf, i) ? 1 : 0;
-        }
+    if (!numa_tools_init()) return 0;
+    int i,j=0;
+    for (i=0;i<num_cpus;i++) {
+        if (cpu_to_node[i] != -1) j++;
     }
-
-    numa_free_cpumask(cpubuf);
     return j;
 }
 
 /**
  * Calculate the number of currently available nodes
  */
-int numa_available_nodes()
+int numa_available_work_nodes()
 {
-    struct bitmask *cpubuf;
-    int i, j=-1, nnodes, *nodes;
-    
-    nnodes = numa_num_configured_nodes();
-    nodes = (int*)alloca(sizeof(int)*nnodes);
-    memset(nodes, 0, nnodes*sizeof(int));
+    if (!numa_tools_init()) return 0;
+    int *nodes = (int*)alloca(sizeof(int)*num_nodes);
+    memset(nodes, 0, num_nodes*sizeof(int));
 
-    cpubuf = numa_allocate_cpumask();
-    if (numa_sched_getaffinity(0, cpubuf) >= 0) {
-        for (i=0; i<cpubuf->size; i++) if (numa_bitmask_isbitset(cpubuf, i)) nodes[numa_node_of_cpu(i)]++;
-        for (i=j=0; i<nnodes; i++) j += nodes[i] > 0 ? 1 : 0;
-    }
-
-    numa_free_cpumask(cpubuf);
+    int i,j=0;
+    for (i=0;i<num_cpus;i++) if (cpu_to_node[i]!=-1) nodes[cpu_to_node[i]]++;
+    for (i=0;i<num_nodes;i++) j += nodes[i] > 0 ? 1 : 0;
     return j;
 }
 
@@ -74,47 +130,29 @@ int numa_available_nodes()
  */
 int numa_available_memory_nodes()
 {
-    struct bitmask *allowed;
-    int i, j=-1;
-
-    // Determine number of memory domains
-    allowed = numa_allocate_nodemask();
-    if (get_mempolicy(NULL, allowed->maskp, allowed->size+1, 0, MPOL_F_MEMS_ALLOWED) != 0) {
-        numa_bitmask_free(allowed);
-        return -1;
-    }
-
-    j=0;
-    for (i=0;i<allowed->size;i++) {
-        if (numa_bitmask_isbitset(allowed, i)) j++;
-    }
-
-    numa_bitmask_free(allowed);
+    if (!numa_tools_init()) return 0;
+    int i, j=0;
+    for (i=0;i<num_nodes;i++) if (node_mem[i]) j++;
     return j;
 }
 
 /**
- * Calculate highest node number
+ * Check if every core is on a domain where we can allocate memory
  */
-int numa_highest_node()
+int numa_check_sanity(void) 
 {
-    struct bitmask *cpubuf;
-    int i, j=-1, node;
-    
-    cpubuf = numa_allocate_cpumask();
-    if (numa_sched_getaffinity(0, cpubuf) >= 0) 
-        for (i=0; i<cpubuf->size; i++) 
-            if (numa_bitmask_isbitset(cpubuf, i)) {
-                node = numa_node_of_cpu(i);
-                if (node > j) j = node;
-            }
-
-    numa_free_cpumask(cpubuf);
-    return j;
+    if (!numa_tools_init()) return 0;
+    int i, good = 1;
+    for (i=0; i<num_cpus && good; i++) {
+        if (cpu_to_node[i] != -1) {
+            if (node_mem[cpu_to_node[i]] == 0) good = 0;
+        }
+    }
+    return good;
 }
 
 static int n_workers = 0, n_nodes = 0;
-static int *worker_node = 0;
+static int *worker_to_node = 0;
 static int *selected_nodes = 0;
 
 int numa_worker_info(int worker, int *node, int *node_index, int *index, int *total)
@@ -124,12 +162,12 @@ int numa_worker_info(int worker, int *node, int *node_index, int *index, int *to
     if (worker < 0) return -1;
     if (worker >= n_workers) return -1;
 
-    *node = worker_node[worker];
+    *node = worker_to_node[worker];
 
     int i,t=0;
     for (i=0; i<n_workers; i++) {
         if (i == worker && index != NULL) *index = t;
-        if (worker_node[i] == *node) t++;
+        if (worker_to_node[i] == *node) t++;
     }
     if (total != NULL) *total = t;
 
@@ -152,50 +190,58 @@ int numa_bind_me(int worker)
 
 int numa_distribute(int workers)
 {
-    n_workers = workers;
-    if (worker_node != 0) free(worker_node);
-    worker_node = malloc(sizeof(int) * n_workers);
-  
-    int tot_nodes, *nodes, *distances, i, j;
+    if (!numa_tools_init()) return 0;
 
-    tot_nodes = numa_highest_node() + 1;
-    nodes = (int*)alloca(sizeof(int) * tot_nodes);
-    memset(nodes, 0, tot_nodes*sizeof(int));
-    numa_count_cpus_per_node(nodes, NULL);
+    n_workers = workers;
+    if (worker_to_node != 0) free(worker_to_node);
+    worker_to_node = malloc(sizeof(int) * n_workers);
+  
+    int i,j;
+    int *nodes = (int*)alloca(sizeof(int) * num_nodes);
+    memset(nodes, 0, num_nodes*sizeof(int));
+    for (i=0;i<num_cpus;i++) if (cpu_to_node[i]!=-1) nodes[cpu_to_node[i]]++;
 
     // Determine number of selected nodes
+    int tot_nodes = 0;
+    for (i=0;i<num_nodes;i++) if (nodes[i]>0) tot_nodes++;
     n_nodes = workers > tot_nodes ? tot_nodes : workers;
 
     // Get distances
-    distances = (int*)calloc(tot_nodes * tot_nodes, sizeof(int));
-    for (i=0; i<tot_nodes; i++) for (j=0; j<tot_nodes; j++)
-        distances[tot_nodes*i + j] = numa_distance(i, j);
+    int *distances = (int*)malloc(num_nodes * num_nodes * sizeof(int));
+    for (i=0; i<num_nodes; i++) for (j=0; j<num_nodes; j++) distances[num_nodes*i + j] = numa_distance(i, j);
 
     // Calculate best setup
-    long best_setup = -1;
+    unsigned long best_setup = 0;
     double best_avgdist = 0;
-    long setups = 1 << tot_nodes, setup; // 8 nodes: 256 setups
+
+    unsigned long setups = 1 << tot_nodes, setup; // 8 nodes: 256 setups
     for (setup=0;setup<setups;setup++) {
         // Only try setups that actually have the right number of nodes
         if (__builtin_popcount(setup) != n_nodes) continue;
+
         // Calculate cumulative distance
-        int cumdist=0, links=0, k;
+        int cumdist=0, links=0, k, all_available=1;
         long s=setup, t;
         j=0;
-        while (s) { 
+        while (s && all_available) { 
             if (s&1) {
+                if (nodes[j]==0) all_available = 0;
                 t=setup;
                 k=0;
                 while (t) {
-                    if (t&1 && distances[tot_nodes*j + k] > 0) { 
-                        links++;
-                        cumdist += distances[tot_nodes*j + k]; 
+                    if (t&1) {
+                        if (distances[tot_nodes*j + k] > 0) { 
+                            links++;
+                            cumdist += distances[tot_nodes*j + k]; 
+                        }
                     }
                     t>>=1; k++;
                 }
             }
             s>>=1; j++;
         }
+
+        if (all_available == 0) continue;
 
         // Keep best setup
         double d = (double)cumdist/(double)links;
@@ -229,7 +275,7 @@ int numa_distribute(int workers)
             for (k=count=0; k<n_nodes; k++) count += (s_cpus[k] = nodes[selected_nodes[k]]);
         }
         while (s_cpus[j] <= 0) j = (j+1)%n_nodes;
-        worker_node[i] = selected_nodes[j];
+        worker_to_node[i] = selected_nodes[j];
         s_cpus[j]--;
         count--;
         j = (j+1)%n_nodes;

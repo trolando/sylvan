@@ -12,7 +12,6 @@
 
 #include "llmsset.h"
 #include "llgcset.h"
-#include "llcache.h"
 #include "sylvan.h"
 
 #define BLACK "\33[22;30m"
@@ -35,65 +34,7 @@
 #define BLINK "\33[5m"
 #define INVERT "\33[7m"
 
-struct llcache
-{
-    size_t    padded_data_length;
-    size_t    key_length;
-    size_t    data_length;
-    size_t    cache_size;  
-    uint32_t *table;        // table with hashes
-    uint8_t  *data;         // table with data
-    llcache_delete_f  cb_delete;    // delete function (callback pre-delete)
-    uint32_t  mask;         // size-1
-};
-
-void test_llcache() 
-{
-    llcache_t c = llcache_create(4, 8, 1<<5, NULL, NULL);
-  
-    assert(c->padded_data_length == 8);
-   
-    struct tt {
-        uint32_t a, b;
-    };
-
-    struct tt n, m;
-  
-    n.a = 5;
-    n.b = 6;
-    m.a = 5;
-
-    assert(llcache_put(c, &n));
-
-//    int i;
-//    for (i = 0;i<(1<<5); i++) {
-//       printf("%d: %X (%d %d)\n", i, c->table[i], *(uint32_t*)&c->data[i*8], *(uint32_t*)&c->data[i*8+4]);
-//    }
-    assert(llcache_get(c, &m));
-    assert(m.b == 6);
-
-    n.b = 7;
-    assert(!llcache_put(c, &n));
-    assert(n.b == 6);
-//    for (i = 0;i<(1<<5); i++) {
-//       printf("%d: %X (%d %d)\n", i, c->table[i], *(uint32_t*)&c->data[i*8], *(uint32_t*)&c->data[i*8+4]);
-//    }
-    assert(llcache_get(c, &m));
-    assert(m.b == 7);
-
-    llcache_clear(c);
-
-    assert(llcache_get(c, &m)==0);
-
-    llcache_free(c);
-}
-
-
-
 extern llgcset_t __sylvan_get_internal_data();
-#ifdef CACHE
-extern llcache_t __sylvan_get_internal_cache();
-#endif
 
 llgcset_t set_under_test;
 int set2_test_good=0;
@@ -367,7 +308,6 @@ int test_llgcset()
 
     return 1;
 }
-
 
 int test_llmsset() 
 {
@@ -965,27 +905,6 @@ void __is_sylvan_clean()
     int n=0;
     int failure=0;
     int k;
-/*#if CACHE    
-    llgcset_t cache = __sylvan_get_internal_cache();
-    for (k=0;k<cache->size;k++) {
-        if (cache->table[k] == 0) continue;
-        if (cache->table[k] == 0x7fffffff) continue;
-        // if ((cache->table[k] & 0x0000ffff) == 0x0000fffe) continue; // !
-        if (!failure) printf(LRED "\nFailure!\n");
-        failure++;
-        // Find value...
-        BDDOP op = *(BDDOP *)(&cache->data[k*32]);
-        printf(NC "Cache entry still being referenced: %08X (%u) (%d)\n", cache->table[k], k, op);
-        n++;
-    }
-    if (n>0) {
-        printf(LRED "%d ref'd cache entries" NC "!\n", n);
-        fflush(stdout);
-        assert(0);
-    }
-    
-    n=0; // superfluous
-#endif    */
     llgcset_t set = __sylvan_get_internal_data();
 
     // check empty gc queue
@@ -1011,12 +930,6 @@ void __is_sylvan_clean()
 
 void runtests(int threads)
 {
-    printf(BOLD "Testing LL Cache\n" NC);
-    printf("Running singlethreaded test... ");
-    fflush(stdout);
-    test_llcache();
-    printf(LGREEN "success" NC "!\n");
-
     printf(BOLD "Testing LL MS Set\n" NC);
     printf("Running singlethreaded test... ");
     fflush(stdout);

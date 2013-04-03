@@ -41,7 +41,6 @@ set(sylvan_sources
 )
 
 set(test_sources
-  src/llcache.c
   src/llgcset.c
   src/llsimplecache.c
   src/llmsset.c

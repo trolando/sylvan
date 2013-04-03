@@ -1,4 +1,1 @@
-#cmakedefine SYLVAN_NOCACHE 1
 #cmakedefine SYLVAN_STATS 1
-#cmakedefine HAVE_NUMA_H 1
-#cmakedefine SET_AFFINITY 1

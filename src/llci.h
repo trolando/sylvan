@@ -9,7 +9,7 @@
 
 #include "atomics.h"
 
-#ifdef HAVE_NUMA_H
+#if USE_NUMA
 #include "numa_tools.h"
 #endif
 
@@ -266,7 +266,7 @@ static inline llci_t llci_create(size_t cache_size)
         exit(1);
     }
 
-#ifdef HAVE_NUMA_H
+#if USE_NUMA
     size_t f_size=0;
     numa_interleave(dbs->table, dbs->cache_size * sizeof(uint32_t), &f_size);
     if (f_size % (sizeof(uint32_t)*(LINE_SIZE))) {
@@ -295,7 +295,7 @@ llci_clear_partial(const llci_t dbs, size_t first, size_t count)
 static void __attribute__((unused))
 llci_clear_multi(const llci_t dbs, size_t my_id, size_t n_workers)
 {
-#ifdef HAVE_NUMA_H
+#if USE_NUMA
     int node, node_index, index, total;
     numa_worker_info(my_id, &node, &node_index, &index, &total);
     // we only clear that of our own node...

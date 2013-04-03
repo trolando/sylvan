@@ -7,16 +7,19 @@ option(SYLVAN_STATS "Create statistics" ON)
 option(USE_NUMA "Use NUMA" OFF)
 
 include(CheckIncludeFiles)
+
 if(USE_NUMA)
   check_include_files(numa.h HAVE_NUMA_H)
   if(HAVE_NUMA_H)
     set (EXTRA_LIBS ${EXTRA_LIBS} numa)
     set (EXTRA_SRC ${EXTRA_SRC} src/numa_tools.c)
+    set (NUMA_DEF "USE_NUMA=1")
   else()
     message(send_error "ERROR: Using NUMA but no numa.h found!")
+    set (NUMA_DEF "USE_NUMA=0")
   endif()
 else()
-  set(HAVE_NUMA_H OFF)
+  set (NUMA_DEF "USE_NUMA=0")
 endif()
 
 configure_file(
@@ -25,7 +28,7 @@ configure_file(
 )
 
 set (CMAKE_ASM_FLAGS "-g")
-set (CMAKE_C_FLAGS "-g -O3 -Wall")
+set (CMAKE_C_FLAGS "-g -O3 -Wall -D${NUMA_DEF}")
 
 set(sylvan_sources
   src/sylvan.h

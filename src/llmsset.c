@@ -10,7 +10,7 @@
 #include "atomics.h"
 #include "llmsset.h"
 
-#ifdef HAVE_NUMA_H
+#if USE_NUMA
 #include "numa_tools.h"
 #endif
 
@@ -186,7 +186,7 @@ llmsset_t llmsset_create(size_t key_length, size_t data_length, size_t table_siz
     dbs->data = mmap(0, dbs->table_size * dbs->padded_data_length, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (dbs->data == (uint8_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
 
-#ifdef HAVE_NUMA_H
+#if USE_NUMA
     size_t f_size=0;
     numa_interleave(dbs->table, dbs->table_size * sizeof(uint64_t), &f_size);
     dbs->f_size = (f_size /= sizeof(uint64_t));
@@ -251,7 +251,7 @@ void llmsset_deref(const llmsset_t dbs, uint64_t index)
 
 static void llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_workers, size_t *_first_entry, size_t *_entry_count)
 {
-#ifdef HAVE_NUMA_H
+#if USE_NUMA
     int node, node_index, index, total;
     // We are on node <node>, which is the <node_index>th node that we can use.
     // Also we are the <index>th worker on that node, out of <total> workers.

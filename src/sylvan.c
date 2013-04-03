@@ -17,7 +17,7 @@
 
 #include "lace.h"
 
-#ifdef HAVE_NUMA_H 
+#if USE_NUMA 
 #include <numa.h>
 #endif
 
@@ -492,7 +492,7 @@ void sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
     INIT_THREAD_LOCAL(gc_key);
     INIT_THREAD_LOCAL(insert_index);
  
-#ifdef HAVE_NUMA_H 
+#if USE_NUMA 
     if (numa_available() != -1) {
         numa_set_interleave_mask(numa_all_nodes_ptr);  
     }

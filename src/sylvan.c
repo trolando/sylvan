@@ -15,7 +15,7 @@
 #include "tls.h"
 #include "avl.h"
 
-#include "wool.h"
+#include "lace.h"
 
 #ifdef HAVE_NUMA_H 
 #include <numa.h>
@@ -180,33 +180,11 @@ typedef enum {
   C_MAX
 } Counters;
 
-#define N_CNT_THREAD 128
-
-struct {
-    pthread_t thread_id;
-} thread_to_id_map[N_CNT_THREAD];
-
-static int get_thread_id() {
-    pthread_t id = pthread_self();
-    int i=0;
-    for (;i<N_CNT_THREAD;i++) {
-        if (thread_to_id_map[i].thread_id == 0) {
-            if (cas(&thread_to_id_map[i].thread_id, 0, id)) {
-                return i;
-            }
-        } else if (thread_to_id_map[i].thread_id == id) {
-            return i;
-        }
-    }
-    assert(0); // NOT ENOUGH SPACE!!
-    return -1;
-}
-
 static uint64_t *initialize_insert_index()
 {
     LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
     insert_index = (uint64_t*)malloc(LINE_SIZE); 
-    size_t my_id = get_thread_id();
+    size_t my_id = LACE_WORKER_ID;
     *insert_index = llmsset_get_insertindex_multi(_bdd.data, my_id, _bdd.workers);
     SET_THREAD_LOCAL(insert_index, insert_index);
     return insert_index;
@@ -224,6 +202,8 @@ static inline size_t rand_1()
     id += 12345;
     return id & 8 ? 1 : 0;
 }
+
+#define N_CNT_THREAD 128
 
 struct {
     uint64_t count[C_MAX];
@@ -265,7 +245,6 @@ void sylvan_reset_counters()
 
     int i,j;
     for (i=0;i<N_CNT_THREAD;i++) {
-        thread_to_id_map[i].thread_id = 0;
         for (j=0;j<C_MAX;j++) {
             sylvan_stats[i].count[j] = 0;
         }
@@ -309,12 +288,11 @@ void sylvan_report_stats()
     printf("GC user-request:     %"PRIu64"\n", totals[C_gc_user]);
     printf("GC full table:       %"PRIu64"\n", totals[C_gc_hashtable_full]);
     printf(NC ULINE "Call counters (ITE, exists, forall, relprods, reversed relprods, relprod, substitute)\n" NC LBLUE);
-    for (i=0;i<N_CNT_THREAD;i++) {
-        if (thread_to_id_map[i].thread_id != 0) 
-            printf("Thread %02d:           %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64"\n", i, 
-                sylvan_stats[i].count[C_ite], sylvan_stats[i].count[C_exists], sylvan_stats[i].count[C_forall],
-                sylvan_stats[i].count[C_relprods], sylvan_stats[i].count[C_relprods_reversed],
-                sylvan_stats[i].count[C_relprod], sylvan_stats[i].count[C_substitute]);
+    for (i=0;i<_bdd.workers;i++) {
+        printf("Worker %02d:           %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64"\n", i, 
+            sylvan_stats[i].count[C_ite], sylvan_stats[i].count[C_exists], sylvan_stats[i].count[C_forall],
+            sylvan_stats[i].count[C_relprods], sylvan_stats[i].count[C_relprods_reversed],
+            sylvan_stats[i].count[C_relprod], sylvan_stats[i].count[C_substitute]);
     }
     printf("Totals:              %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64" %"PRIu64" %"PRIu64"\n",  
         totals[C_ite], totals[C_exists], totals[C_forall],
@@ -334,7 +312,7 @@ void sylvan_enable_stats() {
 void sylvan_disable_stats() {
     enable_stats = 0;
 }
-#define SV_CNT(s) {if (enable_stats) {(sylvan_stats[get_thread_id()].count[s]+=1);}}
+#define SV_CNT(s) {if (enable_stats) {(sylvan_stats[LACE_WORKER_ID].count[s]+=1);}}
 #else
 #define SV_CNT(s) ; /* Empty */
 #endif
@@ -384,7 +362,7 @@ static void sylvan_gc_participate()
     xinc(&_bdd.gccount);
     while (atomic_read(&_bdd.gc) != 2) ;
 
-    int my_id = get_thread_id();
+    int my_id = LACE_WORKER_ID;
     int workers = _bdd.workers;
 
     // Clear the memoization table
@@ -429,7 +407,7 @@ static inline void sylvan_gc_go()
         return;
     }
 
-    int my_id = get_thread_id();
+    int my_id = LACE_WORKER_ID;
     int workers = _bdd.workers;
 
     while (atomic_read(&_bdd.gccount) != workers - 1) ;
@@ -490,14 +468,15 @@ static inline void sylvan_gc_test()
 
 void sylvan_package_init(int workers, int dq_size)
 {
-    wool_init2(workers, dq_size, dq_size, sylvan_test_gc);
+    lace_init(workers, dq_size, 0);
+    lace_set_callback(sylvan_test_gc);
 
     _bdd.workers = workers;
 }
 
 void sylvan_package_exit()
 {
-    wool_fini();
+    lace_exit();
 }
 
 
@@ -967,7 +946,7 @@ TASK_4(BDD, sylvan_ite_do, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 
 BDD sylvan_ite(BDD a, BDD b, BDD c)
 {
-    return ROOT_CALL(sylvan_ite_do, a, b, c, 0);
+    return CALL(sylvan_ite_do, a, b, c, 0);
 } 
  
 /**
@@ -1086,7 +1065,7 @@ TASK_3(BDD, sylvan_exists_do, BDD, a, BDD, variables, BDDVAR, prev_level)
 
 BDD sylvan_exists(BDD a, BDD variables)
 {
-    return ROOT_CALL(sylvan_exists_do, a, variables, 0);
+    return CALL(sylvan_exists_do, a, variables, 0);
 }
 
 /**
@@ -1206,7 +1185,7 @@ TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
 
 BDD sylvan_forall(BDD a, BDD variables)
 {
-    return ROOT_CALL(sylvan_forall_do, a, variables, 0);
+    return CALL(sylvan_forall_do, a, variables, 0);
 }
 
 /**
@@ -1363,7 +1342,7 @@ TASK_4(BDD, sylvan_relprod_do, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
 
 BDD sylvan_relprod(BDD a, BDD b, BDD x) 
 {
-    return ROOT_CALL(sylvan_relprod_do, a, b, x, 0);
+    return CALL(sylvan_relprod_do, a, b, x, 0);
 }
 
 
@@ -1462,7 +1441,7 @@ TASK_3(BDD, sylvan_substitute_do, BDD, a, BDD, vars, BDDVAR, prev_level)
 
 BDD sylvan_substitute(BDD a, BDD vars)
 {
-    return ROOT_CALL(sylvan_substitute_do, a, vars, 0);
+    return CALL(sylvan_substitute_do, a, vars, 0);
 }
 
 int sylvan_relprods_analyse(BDD a, BDD b, void_cb cb_in, void_cb cb_out)
@@ -1668,7 +1647,7 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
 
 BDD sylvan_relprods(BDD a, BDD b, BDD vars) 
 {
-    return ROOT_CALL(sylvan_relprods_do, a, b, vars, 0);
+    return CALL(sylvan_relprods_do, a, b, vars, 0);
 }
 
 /**
@@ -1825,7 +1804,7 @@ TASK_4(BDD, sylvan_relprods_reversed_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev
 
 BDD sylvan_relprods_reversed(BDD a, BDD b, BDD vars) 
 {
-    return ROOT_CALL(sylvan_relprods_reversed_do, a, b, vars, 0);
+    return CALL(sylvan_relprods_reversed_do, a, b, vars, 0);
 }
 
 void sylvan_nodecount_levels_do_1(BDD bdd, uint32_t *variables)

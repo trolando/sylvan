@@ -29,13 +29,13 @@ set (CMAKE_C_FLAGS "-g -O3 -Wall")
 
 set(sylvan_sources
   src/sylvan.h
-  src/wool.c
   src/sylvan.c
   src/llmsset.c
   src/llmsset.h
   src/hash_mul.S
   src/rehash_mul.S
-  src/ticketlock.h
+  src/lace.c
+  src/lace.h
   ${EXTRA_SRC}
 )
 

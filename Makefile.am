@@ -17,10 +17,8 @@ libsylvan_la_SOURCES = \
  src/llci.h \
  src/tls.h \
  src/atomics.h \
- src/ticketlock.h
-
-libsylvan_la_SOURCES += src/wool.c
-libsylvan_la_SOURCES += src/wool.h
+ src/lace.c \
+ src/lace.h
 
 libsylvan_la_SOURCES += src/hash_mul.S
 libsylvan_la_SOURCES += src/rehash_mul.S

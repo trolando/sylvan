@@ -11,7 +11,6 @@
 #include <assert.h>
 
 #include "llmsset.h"
-#include "llgcset.h"
 #include "sylvan.h"
 
 #define BLACK "\33[22;30m"
@@ -33,281 +32,6 @@
 #define ULINE "\33[4m" //underline
 #define BLINK "\33[5m"
 #define INVERT "\33[7m"
-
-extern llgcset_t __sylvan_get_internal_data();
-
-llgcset_t set_under_test;
-int set2_test_good=0;
-
-void *llgcset_test_worker(void* arg) {
-    uint32_t i=0, j=0, k=0, l;
-    uint32_t index;
-    int a;
-    #define N_TEST_LL 1000
-    uint32_t other[N_TEST_LL];
-    for(a=0;a<8;a++) {
-        printf("%d,", a);
-        fflush(stdout);
-        for (i=(long)arg;i<50000;i++) {
-            //if ((i & 63) == 0) printf("[%d]", i);
-            for (l=i;l<i+N_TEST_LL;l++) {
-              assert(llgcset_lookup(set_under_test, &l, NULL, &other[l-i]));
-            }
-            for (j=0;j<5;j++) {
-                assert(llgcset_lookup(set_under_test, &i, NULL, &index));
-                assert (i == *(uint32_t*)llgcset_index_to_ptr(set_under_test, index, 4));
-                for (k=0;k<7;k++) { 
-                    llgcset_ref(set_under_test, index);
-                    uint32_t i2;
-                    assert(llgcset_lookup(set_under_test, &i, NULL, &i2));
-                    assert(i2==index);
-                    llgcset_deref(set_under_test, index);
-                    llgcset_deref(set_under_test, index);
-                    llgcset_ref(set_under_test, index);
-                    llgcset_deref(set_under_test, index);
-                }
-                llgcset_deref(set_under_test, index);
-            }
-            for (l=i;l<i+N_TEST_LL;l++) {
-              assert(llgcset_lookup(set_under_test, &l, NULL, &index));
-              assert(llgcset_lookup(set_under_test, &l, NULL, &index));
-              if (index != other[l-i]) {
-                   if ((index & ~15) == (other[l-i] & ~15)) printf(LMAGENTA "\n*** SAME CACHE LINE ***\n" NC);
-                   printf("\nIndex %u: %x = %d, Other %u: %x = %d\n", 
-                       index, set_under_test->table[index], *(uint32_t*)llgcset_index_to_ptr(set_under_test, index, 4),
-                       other[l-i], set_under_test->table[other[l-i]], *(uint32_t*)llgcset_index_to_ptr(set_under_test, other[l-i], 4));
-              }
-              assert(index == other[l-i]);
-              llgcset_deref(set_under_test, index);
-              llgcset_ref(set_under_test, index);
-              llgcset_deref(set_under_test, index);
-              llgcset_deref(set_under_test, other[l-i]);
-              llgcset_deref(set_under_test, other[l-i]);
-            }
-        }
-    }
-    __sync_fetch_and_add(&set2_test_good, 1);
-    return NULL;
-}
-
-/**
- * Called pre-gc : first, gc the cache to free nodes
- */
-void test_pre_gc(const llgcset_t dbs) 
-{
-    fflush(stdout);
-}
-
-int test_llgcset2()
-{
-    //set_under_test = llgcset_create(sizeof(uint32_t), 20, 10, NULL, NULL, NULL, &test_pre_gc);
-    set_under_test = llgcset_create(sizeof(uint32_t), sizeof(uint32_t), 1<<20, NULL, NULL);
-
-    int i;
-    pthread_t t[4];
-    pthread_create(&t[0], NULL, &llgcset_test_worker, (void*)12);
-    pthread_create(&t[1], NULL, &llgcset_test_worker, (void*)89);
-    pthread_create(&t[2], NULL, &llgcset_test_worker, (void*)1055);
-    pthread_create(&t[3], NULL, &llgcset_test_worker, (void*)5035);
-    pthread_join(t[0], NULL);
-    pthread_join(t[1], NULL);
-    pthread_join(t[2], NULL);
-    pthread_join(t[3], NULL);
-
-    llgcset_gc(set_under_test);
-
-    int n=0;
-    for (i=0;i<set_under_test->table_size;i++) {
-        uint32_t key = set_under_test->table[i];
-        if (key != 0) {
-            if (key != 0x7fffffff) {
-                printf("Key=%X\n", key);
-            //assert(key == 0x7fffffff);
-                n++;
-            }
-        }
-    }
-    printf("N=%d", n);
-    
-    return set2_test_good == 4;
-}
-
-int test_llgcset() 
-{
-    uint32_t entry[] = { 90570123,  43201432,   31007798,  256346587, 
-                         543578998, 34534278,   86764826,  572667984, 
-                         883562435, 2546247838, 190200937, 918456256, 
-                         245892765, 29926542,   862864346, 624500973 };
-    
-    uint32_t index[16], index2[16];
-    int created;
-    
-    llgcset_t set = llgcset_create(sizeof(uint32_t), sizeof(uint32_t), 1<<5, NULL, NULL); // size: 32
-
-    int i;
-    for (i=0;i<16;i++) {
-        if (llgcset_lookup(set, &entry[i], &created, &index[i])==0) {
-            llgcset_gc(set);
-            assert(llgcset_lookup(set, &entry[i], &created, &index[i])!=0);
-        }
-        //printf("Position: %d\n", index[i]);
-        assert(created);
-    }
-    
-    for (i=0;i<16;i++) {
-        if (llgcset_lookup(set, &entry[i], &created, &index2[i])==0) {
-            llgcset_gc(set);
-            assert(llgcset_lookup(set, &entry[i], &created, &index2[i])!=0);
-        }
-        assert(created == 0);
-        assert(index[i] == index2[i]);
-    }
-    
-    int n=0;
-
-    // check all have ref 2
-    for (i=0;i<set->table_size;i++) {
-        uint32_t key = set->table[i];
-        if (key != 0) {
-            n++;
-            assert((key & 0x0000ffff) == 2);
-        }
-    }
-    
-    assert(n == 16);
-    
-    // deref all twice
-    for (i=0;i<16;i++) {
-        llgcset_deref(set, index[i]);
-        llgcset_deref(set, index[i]);
-    }
-    
-    // check all have ref 0
-    n=0;
-    for (i=0;i<set->table_size;i++) {
-        uint32_t key = set->table[i];
-        if (key != 0) {
-            n++;
-            assert((key & 0x0000ffff) == 0);
-        }
-    }
-    assert(n == 16);
-    
-/*    // check gc list
-    assert(set->gc_head == set->gc_size-1);
-    assert(set->gc_tail == 16);
-    for (i=0;i<16;i++) {
-        assert(set->gc_list[i] == index[i]);
-    }
-*/    
-    for (i=0;i<16;i++) {
-        if (llgcset_lookup(set, &entry[i], &created, &index2[i])==0) {
-            llgcset_gc(set);
-            assert(llgcset_lookup(set, &entry[i], &created, &index2[i])!=0);
-        }
-        assert(created == 0);
-        assert(index[i] == index2[i]);
-    }    
-
-    // check all have ref 1
-    n=0;
-    for (i=0;i<set->table_size;i++) {
-        uint32_t key = set->table[i];
-        if (key != 0) {
-            n++;
-            assert((key & 0x0000ffff) == 1);
-        }
-    }
-    assert(n == 16);
- /*   
-    assert(set->gc_head == set->gc_size-1);
-    assert(set->gc_tail == 16);
- */   
-    llgcset_gc(set);
-    
-    // check all have ref 1
-    n=0;
-    for (i=0;i<set->table_size;i++) {
-        uint32_t key = set->table[i];
-        if (key != 0) {
-            n++;
-            assert((key & 0x0000ffff) == 1);
-        }
-    }
-    assert(n == 16);
-    
-    //assert(set->gc_head == set->gc_tail);
-
-    // deref all 
-    for (i=0;i<16;i++) {
-        llgcset_deref(set, index[i]);
-    }
-    
-   // assert((set->gc_tail-set->gc_head == 16+1));
-
-//    for (i=0;i<16;i++) {
-//        assert(set->gc_list[set->gc_head+1+i] == index[i]);
-//    }
-    
-    llgcset_gc(set);
-    
-  //  assert(set->gc_head == set->gc_tail);
-
-    // printf("head=%d tail=%d size=%d\n", set->gc_head, set->gc_tail, set->gc_size);
-    
-    // check 16 tombstones
-    n=0;
-    for (i=0;i<set->table_size;i++) {
-        uint32_t key = set->table[i];
-        if (key != 0) {
-            assert(key == 0x7fffffff);
-            n++;
-        }
-    }
-    assert(n == 16);
-
-    for (i=0;i<16;i++) {
-        if (llgcset_lookup(set, &entry[i], &created, &index[i])==0) {
-            llgcset_gc(set);
-            assert(llgcset_lookup(set, &entry[i], &created, &index[i])!=0);
-        }
-        assert(created);
-    }
-    
-    // check all have ref 1
-    n=0;
-    for (i=0;i<set->table_size;i++) {
-        uint32_t key = set->table[i];
-        if (key != 0 && key != 0x7fffffff) {
-            n++;
-            assert((key & 0x0000ffff) == 1);
-        }
-    }
-    assert(n == 16);
-
-    // deref all twice
-    for (i=0;i<16;i++) {
-        llgcset_deref(set, index[i]);
-    }
-/*
-    int j;
-    for (j=0;j<set->table_size;j++) {
-        printf("[%d]=%x\n", j, set->table[j]);
-    }
-*/
-    // all now have ref 0
-    for (i=0;i<31;i++) {
-        if (llgcset_lookup(set, &i, &created, NULL)==0) {
-            llgcset_gc(set);
-            assert(llgcset_lookup(set, &i, &created, NULL)!=0);
-        }
-        assert(created);
-    }
-
-    llgcset_free(set);    
-
-    return 1;
-}
 
 int test_llmsset() 
 {
@@ -374,7 +98,6 @@ int test_llmsset()
 }
 
 llmsset_t msset;
-//int ms_test_good=0;
 
 void *llmsset_test_worker(void* arg) 
 {
@@ -416,7 +139,6 @@ void *llmsset_test_worker(void* arg)
         }
     }
 
-    //__sync_fetch_and_add(&ms_test_good, 1);
     return NULL;
 }
 
@@ -446,7 +168,6 @@ int test_llmsset2()
 
     llmsset_free(msset);
     
-    //return ms_test_good == 4;
     return 1;
 }
 
@@ -482,11 +203,11 @@ void test_xor()
     }
     assert(test == test2);
     assert(test2 == test3);
-    sylvan_deref(test);
-    sylvan_deref(test);
-    sylvan_deref(test);
-    sylvan_deref(a);
-    sylvan_deref(b);
+    //sylvan_deref(test);
+    //sylvan_deref(test);
+    //sylvan_deref(test);
+    //sylvan_deref(a);
+    //sylvan_deref(b);
 }
 
 void test_diff()
@@ -495,10 +216,10 @@ void test_diff()
     BDD b = sylvan_ithvar(2);
     BDD test = sylvan_diff(a, b);
     sylvan_diff(a, b); // same as test...
-    sylvan_deref(test);
-    sylvan_deref(test);
-    sylvan_deref(a);
-    sylvan_deref(b);
+    //sylvan_deref(test);
+    //sylvan_deref(test);
+    //sylvan_deref(a);
+    //sylvan_deref(b);
 }
 
 void test_or()
@@ -514,10 +235,10 @@ void test_or()
         if (i>0) assert (sylvan_count_refs()==1);
         else assert(sylvan_count_refs()==0);
         t1 = test;
-        t2 = sylvan_ithvar(i);
+        t2 = sylvan_ref(sylvan_ithvar(i));
         if (i>0) assert (sylvan_count_refs()==2);
         else assert(sylvan_count_refs()==1);
-        test = sylvan_or(t1, t2);
+        test = sylvan_ref(sylvan_or(t1, t2));
         if (i>0) assert (sylvan_count_refs()==3);
         else assert(sylvan_count_refs()==2);
         sylvan_deref(t1);
@@ -545,40 +266,29 @@ void test_apply()
     // REF: a,b,c,d,e,f,g
 	
     // a xor b
-    BDD axorb = sylvan_makenode(1, sylvan_ref(b), sylvan_not(b));
-    assert(testEqual(axorb, sylvan_xor(a, b)));
-    sylvan_deref(axorb); // result of sylvan_xor
+    BDD axorb = sylvan_makenode(1, (b), sylvan_not(b));
+    assert(testEqual(axorb, (sylvan_xor(a, b))));
     
     // c or d
-    BDD cord = sylvan_makenode(3, sylvan_ref(d), sylvan_true);
-    assert(cord == sylvan_or(c, d));
-    sylvan_deref(cord); // result of sylvan_or
+    BDD cord = sylvan_makenode(3, (d), sylvan_true);
+    assert(cord == (sylvan_or(c, d)));
 
-    BDD t = sylvan_makenode(1, sylvan_false, sylvan_ref(cord));
-    assert(t == sylvan_and(a, cord));
-    sylvan_deref(t); // result of cord
-    sylvan_deref(t); // t
+    BDD t = sylvan_makenode(1, sylvan_false, (cord));
+    assert(t == (sylvan_and(a, cord)));
 
     // (a xor b) and (c or d)
-    BDD test = sylvan_makenode(1, sylvan_makenode(2, sylvan_false, sylvan_ref(cord)), sylvan_makenode(2, sylvan_ref(cord), sylvan_false));
+    BDD test = sylvan_makenode(1, sylvan_makenode(2, sylvan_false, (cord)), sylvan_makenode(2, (cord), sylvan_false));
     assert(testEqual(test, sylvan_and(axorb, cord)));
-    sylvan_deref(test); // result of sylvan_and
     assert(test == sylvan_and(cord, axorb));
-    sylvan_deref(test); // result of sylvan_and
-    sylvan_deref(test); // test
 
     // not (A and B)  == not A or not B
     BDD notaxorb = sylvan_not(axorb);
 
     BDD notcord = sylvan_not(cord);    
     test = sylvan_or(notaxorb, notcord);
-    sylvan_deref(notcord);
     
     BDD tmp = sylvan_and(axorb, cord);
     assert(test == sylvan_not(tmp));
-    sylvan_deref(test); // result of sylvan_not
-    sylvan_deref(tmp);
-    sylvan_deref(test); 
     
     // A and not A == false
     assert(sylvan_false == sylvan_and(axorb, notaxorb));
@@ -586,26 +296,12 @@ void test_apply()
     // A or not A = true
     assert(sylvan_true == sylvan_or(axorb, notaxorb));
 
-    sylvan_deref(notaxorb);
-    sylvan_deref(cord);
-    
-    sylvan_deref(axorb);
-    
     assert((tmp = sylvan_and(a, sylvan_true)) == a);
-    sylvan_deref(tmp);
     
     assert((tmp = sylvan_or(a, sylvan_true)) == sylvan_true);
     assert((tmp = sylvan_and(a, sylvan_false)) == sylvan_false);
     
     assert (sylvan_or(sylvan_true, sylvan_false) == sylvan_true);
-
-    sylvan_deref(a);
-    sylvan_deref(b);
-    sylvan_deref(c);
-    sylvan_deref(d);
-    sylvan_deref(e);
-    sylvan_deref(f);
-    sylvan_deref(g);
 }
 
 void test_ite()
@@ -622,62 +318,30 @@ void test_ite()
 
     BDD aandb = sylvan_and(a, b);
     assert(aandb == sylvan_ite(a, b, sylvan_false));
-    sylvan_deref(aandb); // result of ite
 
     BDD notaandc = sylvan_and(sylvan_not(a), c);
-    sylvan_deref(a); // not a
 
     // a then b else c == (a and b) or (not a and c)
     BDD t = sylvan_ite(a,b,c);
     assert(t == sylvan_or(aandb, notaandc));
-    sylvan_deref(t);
-    sylvan_deref(t);
 
     // not d then (a and b) else (not a and c) ==
     // a then (b and not d) else (c and d)
     t = sylvan_ite(sylvan_not(d), aandb, notaandc);
-    sylvan_deref(d); // not d
     BDD candd = sylvan_and(c, d);
     BDD bandnotd = sylvan_and(b, sylvan_not(d));
-    sylvan_deref(d); // not d
     assert(t == sylvan_ite(a, bandnotd, candd));
-    sylvan_deref(candd);
-    sylvan_deref(bandnotd);
-    sylvan_deref(t);
-    sylvan_deref(t);
 
     BDD etheng = sylvan_imp(e, g);
     BDD test = sylvan_ite(etheng, sylvan_true, b);
     t = sylvan_ite(b, sylvan_false, etheng);
     assert(t == sylvan_and(test, sylvan_not(b)));
-    sylvan_deref(b); // not b
-    sylvan_deref(t);
-    sylvan_deref(t);
-
-    sylvan_deref(test);
-    sylvan_deref(etheng);
-    sylvan_deref(notaandc);
-    sylvan_deref(aandb); 
-    
-    sylvan_deref(a);
-    sylvan_deref(b);
-    sylvan_deref(c);
-    sylvan_deref(d);
-    sylvan_deref(e);
-    sylvan_deref(f);
-    sylvan_deref(g);
 }
 
 BDD knownresult;
 
-#define REFSTACK(size) BDD refstack[size]; int refs=0;
-#define REF(a) ({register BDD res = (a);refstack[refs++] = res;res;})
-#define UNREF while (refs) { sylvan_deref(refstack[--refs]); }
-
 void test_modelcheck()
 {
-    REFSTACK(32)
-    
     BDD a,b,c,d,aa,bb,cc,dd;
 
     a = sylvan_ithvar(0);
@@ -691,11 +355,11 @@ void test_modelcheck()
     dd = sylvan_ithvar(7); // d'
 
     BDD x = sylvan_or(a,
-                         REF(sylvan_or(b, 
-                         REF(sylvan_or(c, d)))));
+                         (sylvan_or(b, 
+                         (sylvan_or(c, d)))));
     BDD xx = sylvan_or(aa,
-                         REF(sylvan_or(bb, 
-                         REF(sylvan_or(cc, dd)))));
+                         (sylvan_or(bb, 
+                         (sylvan_or(cc, dd)))));
 
     BDD universe = sylvan_or(x, xx);
 
@@ -704,44 +368,22 @@ void test_modelcheck()
     BDD c_same = sylvan_biimp(c, cc); // c = c'
     BDD d_same = sylvan_biimp(d, dd); // d = d'
 
-    BDD a_diff = sylvan_biimp(REF(sylvan_not(a)), aa); // a = ~a'
-    BDD b_diff = sylvan_biimp(REF(sylvan_not(b)), bb); // b = ~b'
-    BDD c_diff = sylvan_biimp(REF(sylvan_not(c)), cc); // c = ~c'
-    BDD d_diff = sylvan_biimp(REF(sylvan_not(d)), dd); // d = ~d'
+    BDD a_diff = sylvan_biimp((sylvan_not(a)), aa); // a = ~a'
+    BDD b_diff = sylvan_biimp((sylvan_not(b)), bb); // b = ~b'
+    BDD c_diff = sylvan_biimp((sylvan_not(c)), cc); // c = ~c'
+    BDD d_diff = sylvan_biimp((sylvan_not(d)), dd); // d = ~d'
     
-    UNREF
-
     // a = ~a' and rest stay same
-    BDD change_a = sylvan_and(a_diff, REF(sylvan_and(b_same,REF(sylvan_and(c_same,d_same)))));
+    BDD change_a = sylvan_and(a_diff, (sylvan_and(b_same,(sylvan_and(c_same,d_same)))));
     // b = ~b' and rest stay same
-    BDD change_b = sylvan_and(a_same, REF(sylvan_and(b_diff,REF(sylvan_and(c_same,d_same)))));
+    BDD change_b = sylvan_and(a_same, (sylvan_and(b_diff,(sylvan_and(c_same,d_same)))));
     // c = ~c' and rest stay same
-    BDD change_c = sylvan_and(a_same, REF(sylvan_and(b_same,REF(sylvan_and(c_diff,d_same)))));
+    BDD change_c = sylvan_and(a_same, (sylvan_and(b_same,(sylvan_and(c_diff,d_same)))));
     // d = ~d' and rest stay same
-    BDD change_d = sylvan_and(a_same, REF(sylvan_and(b_same,REF(sylvan_and(c_same,d_diff)))));
+    BDD change_d = sylvan_and(a_same, (sylvan_and(b_same,(sylvan_and(c_same,d_diff)))));
     
-    UNREF
-
-    sylvan_deref(a_same);
-    sylvan_deref(b_same);
-    sylvan_deref(c_same);
-    sylvan_deref(d_same);
+    BDD r = sylvan_or(change_a, (sylvan_or(change_b, (sylvan_or(change_c, change_d)))));
     
-    sylvan_deref(a_diff);
-    sylvan_deref(b_diff);
-    sylvan_deref(c_diff);
-    sylvan_deref(d_diff);
-
-    BDD r = sylvan_or(change_a, REF(sylvan_or(change_b, REF(sylvan_or(change_c, change_d)))));
-    UNREF
-    
-    sylvan_deref(change_a);
-    sylvan_deref(change_b);
-    sylvan_deref(change_c);
-    sylvan_deref(change_d);
-    
-    // sylvan_print(r);
-
     // Relation r:
     // (0,x,x,x) <=> (1,x,x,x)
     // (x,0,x,x) <=> (x,1,x,x)
@@ -749,56 +391,31 @@ void test_modelcheck()
     // (x,x,x,0) <=> (x,x,x,1)
 
     // start: (0,0,0,0)
-    BDD start = sylvan_and(REF(sylvan_not(a)), 
-              REF(sylvan_and(REF(sylvan_not(b)), REF(sylvan_and(REF(sylvan_not(c)), REF(sylvan_not(d)))))));
-
-    UNREF
-
-    sylvan_deref(a);
-    sylvan_deref(b);
-    sylvan_deref(c);
-    sylvan_deref(d);
-    
-    sylvan_deref(aa);
-    sylvan_deref(bb);
-    sylvan_deref(cc);
-    sylvan_deref(dd);
+    BDD start = sylvan_and((sylvan_not(a)), 
+              (sylvan_and((sylvan_not(b)), (sylvan_and((sylvan_not(c)), (sylvan_not(d)))))));
 
     BDD visited = start, prev = sylvan_invalid;
 
     /* Check if RelProdS gives the same result as RelProd and Substitute */
-    assert(REF(sylvan_relprods(visited, r, sylvan_true)) ==
-           REF(sylvan_substitute(REF(sylvan_relprod(visited, r, x)), xx)));
-    UNREF
+    assert((sylvan_relprods(visited, r, sylvan_true)) ==
+           (sylvan_substitute((sylvan_relprod(visited, r, x)), xx)));
 
     /* Expected first: (0,0,0,0), (1,0,0,0), (0,1,0,0), (0,0,1,0), (0,0,0,0) */
 
     do {
         //printf("Visited: \n");
         //sylvan_print(visited);
-        if (prev != sylvan_invalid) sylvan_deref(prev);
         prev = visited;
         BDD next = sylvan_relprods(visited, r, sylvan_true);
         visited = sylvan_or(visited, next);
         // check that the "visited" set is a subset of all parents of next.
         BDD check = sylvan_relprods_reversed(next, r, sylvan_true);
         assert (sylvan_diff(prev, check) == sylvan_false); // prev \ check = 0
-        sylvan_deref(check);
-        sylvan_deref(next);
     } while (visited != prev);
-    sylvan_deref(x);
-    sylvan_deref(xx);
-    sylvan_deref(universe);
-
-    sylvan_deref(visited);
-    sylvan_deref(prev);
-    sylvan_deref(r);
 }
 
 void test_exists_forall()
 {
-    REFSTACK(32)
-
     BDD a,b,c,d,e,f,g,h;
 
     a = sylvan_ithvar(1);
@@ -810,38 +427,22 @@ void test_exists_forall()
     g = sylvan_ithvar(7);
     h = sylvan_ithvar(8);
 
-    REF(sylvan_or(REF(sylvan_not(b)), REF(sylvan_not(c))));
+    (sylvan_or((sylvan_not(b)), (sylvan_not(c))));
 
-    BDD test = sylvan_ite(a, REF(sylvan_and(b, d)), REF(sylvan_or(REF(sylvan_not(b)), REF(sylvan_not(c)))));
+    BDD test = sylvan_ite(a, (sylvan_and(b, d)), (sylvan_or((sylvan_not(b)), (sylvan_not(c)))));
 
     BDD axorb = sylvan_xor(a, b);
     BDD dthenf = sylvan_imp(d, f);
     BDD cxorg = sylvan_xor(c, g);
 
-    REF(sylvan_exists(REF(sylvan_ite(dthenf, axorb, cxorg)), d));
-    REF(sylvan_forall(REF(sylvan_ite(dthenf, axorb, cxorg)), d));
-    REF(sylvan_exists(axorb, sylvan_false));
-    REF(sylvan_exists(axorb, sylvan_false));
-    REF(sylvan_exists(dthenf, a));
-    REF(sylvan_exists(dthenf, d));
-    REF(sylvan_exists(dthenf, f));
-    REF(sylvan_exists(sylvan_true, sylvan_false));
-
-    UNREF
-    
-    sylvan_deref(axorb);
-    sylvan_deref(test);
-    sylvan_deref(dthenf);
-    sylvan_deref(cxorg);
-    
-    sylvan_deref(a);
-    sylvan_deref(b);
-    sylvan_deref(c);
-    sylvan_deref(d);
-    sylvan_deref(e);
-    sylvan_deref(f);
-    sylvan_deref(g);
-    sylvan_deref(h);
+    (sylvan_exists((sylvan_ite(dthenf, axorb, cxorg)), d));
+    (sylvan_forall((sylvan_ite(dthenf, axorb, cxorg)), d));
+    (sylvan_exists(axorb, sylvan_false));
+    (sylvan_exists(axorb, sylvan_false));
+    (sylvan_exists(dthenf, a));
+    (sylvan_exists(dthenf, d));
+    (sylvan_exists(dthenf, f));
+    (sylvan_exists(sylvan_true, sylvan_false));
 }
 /*
 void test_CALL_REPLACE()
@@ -899,33 +500,8 @@ void test_CALL_REPLACE()
 }
 */
 
-
 void __is_sylvan_clean() 
 {
-    int n=0;
-    int failure=0;
-    int k;
-    llgcset_t set = __sylvan_get_internal_data();
-
-    // check empty gc queue
-    // assert(set->gc_head == set->gc_tail);
-    
-    for (k=0;k<set->table_size;k++) {
-        if (set->table[k] == 0) continue;
-        if (set->table[k] == 0x7fffffff) continue;
-        //if ((set->table[k] & 0x0000ffff) == 0x0000fffe) continue; // If we allow this, we need to modify more!
-        if (!failure) printf(LRED "\nFailure!\n" NC "Cache is clean, but BDD table is still in use!\n");
-        failure++;
-        printf("BDD key being referenced: %08X\n", set->table[k]);
-        sylvan_print(k);
-        n++;
-    }
-    
-    if (n>0) {
-        printf(LRED "%d dangling ref's" NC "!\n", n);
-        fflush(stdout);
-        assert(0);
-    }
 }
 
 void runtests(int threads)
@@ -937,7 +513,7 @@ void runtests(int threads)
     printf(LGREEN "success" NC "!\n");
     printf("Running multithreaded test... ");
     fflush(stdout);
-    if (0/*skip*/) {
+    if (1/*skip*/) {
         printf("... " LMAGENTA "skipped" NC ".\n");
     }
     else if (test_llmsset2()) {
@@ -947,23 +523,6 @@ void runtests(int threads)
         exit(1);
     }
  
-    printf(BOLD "Testing LL GC Set\n" NC);
-    printf("Running singlethreaded test... ");
-    fflush(stdout);
-    test_llgcset();
-    printf(LGREEN "success" NC "!\n");
-    printf("Running multithreaded test... ");
-    fflush(stdout);
-    if (1/*skip*/) {
-        printf("... " LMAGENTA "skipped" NC ".\n");
-    }
-    else if (test_llgcset2()) {
-        printf("... " LGREEN "success" NC "!\n");
-    } else {
-        printf(LRED "error" NC "!\n");
-        exit(1);
-    }
-    
     sylvan_package_init(threads, 100000);
 
     printf(BOLD "Testing Sylvan\n");
@@ -1109,7 +668,7 @@ void runtests(int threads)
     struct timeval begin, end;
     gettimeofday(&begin, NULL);
 
-    sylvan_init(16, 10, 3); // minumum: X, 7, 4, 4 ??
+    sylvan_init(20, 10, 1); // minumum: X, 7, 4, 4 ??
     for (j=0;j<10000;j++){
         int i;
         for (i=0;i<3;i++) test_apply();

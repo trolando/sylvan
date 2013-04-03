@@ -11,7 +11,7 @@
 
 #include "sylvan.h"
 #include "atomics.h"
-#include "llgcset.h"
+#include "llmsset.h"
 #include "tls.h"
 #include "avl.h"
 
@@ -67,6 +67,7 @@ struct bddnode {
 }; // 16 bytes
 
 typedef struct bddnode* bddnode_t;
+
 /*
 __attribute__((packed))
 struct pair64 {
@@ -127,9 +128,6 @@ static int initialized = 0;
 
 static int granularity = 1; // default
 
-// max number of parameters (set to: 5, 13, 29 to get bddcache node size 32, 64, 128)
-#define MAXPARAM 3
-
 /*
  * Temporary "operations"
  * 0 = ite
@@ -140,30 +138,29 @@ static int granularity = 1; // default
  * 5 = forall
  * 6 = relprod
  * 7 = substitute
- * Operations are stored in BDD_GETDATA(param[0])
+ * Operation numbers are stored in the data field of the first parameter
  */
 __attribute__ ((packed))
 struct bddcache {
-    BDD params[MAXPARAM]; 
+    BDD params[3]; 
     BDD result;
 };
 
 typedef struct bddcache* bddcache_t;
-
-static const int cache_key_length = sizeof(struct bddcache) - sizeof(BDD);
-static const int cache_data_length = sizeof(struct bddcache);
 
 #define LLCI_KEYSIZE ((sizeof(struct bddcache) - sizeof(BDD)))
 #define LLCI_DATASIZE ((sizeof(struct bddcache)))
 #include "llci.h"
 
 static struct {
-    llgcset_t data;
+    llmsset_t data;
     llci_t cache; // operations cache
     int workers;
     int gc;
     unsigned int gccount;
 } _bdd;
+
+DECLARE_THREAD_LOCAL(insert_index, uint64_t*);
 
 // Structures for statistics
 typedef enum {
@@ -203,6 +200,16 @@ static int get_thread_id() {
     }
     assert(0); // NOT ENOUGH SPACE!!
     return -1;
+}
+
+static uint64_t *initialize_insert_index()
+{
+    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
+    insert_index = (uint64_t*)malloc(LINE_SIZE); 
+    size_t my_id = get_thread_id();
+    *insert_index = llmsset_get_insertindex_multi(_bdd.data, my_id, _bdd.workers);
+    SET_THREAD_LOCAL(insert_index, insert_index);
+    return insert_index;
 }
 
 /**
@@ -278,7 +285,7 @@ void sylvan_report_stats()
     printf(     "****************\n");
     printf(NC ULINE "Memory usage\n" NC LBLUE);
     printf("BDD table:          ");
-    llgcset_print_size(_bdd.data, stdout);
+    llmsset_print_size(_bdd.data, stdout);
     printf("\n");
     printf("Cache:              ");
     llci_print_size(_bdd.cache, stdout);
@@ -316,7 +323,7 @@ void sylvan_report_stats()
     printf(LRED  "****************" NC " \n");
 
     // For bonus point, calculate LLGCSET size...
-    printf("BDD Unique table: %zu of %zu buckets filled.\n", llgcset_get_filled(_bdd.data), llgcset_get_size(_bdd.data));
+    printf("BDD Unique table: %zu of %zu buckets filled.\n", llmsset_get_filled(_bdd.data), llmsset_get_size(_bdd.data));
 }
 
 #if STATS
@@ -335,11 +342,41 @@ void sylvan_disable_stats() {
 /**
  * Macro's to convert BDD indices to nodes and vice versa
  */
-#define GETNODE(bdd)        ((bddnode_t)llgcset_index_to_ptr(_bdd.data, BDD_STRIPMARK(bdd), sizeof(struct bddnode)))
+#define GETNODE(bdd)        ((bddnode_t)llmsset_index_to_ptr(_bdd.data, BDD_STRIPMARK(bdd), sizeof(struct bddnode)))
 
 /* 
  * GARBAGE COLLECTION 
  */
+
+typedef struct gc_tomark
+{
+    struct gc_tomark *prev;
+    BDD bdd;
+} *gc_tomark_t;
+
+DECLARE_THREAD_LOCAL(gc_key, gc_tomark_t);
+
+#define TOMARK_INIT \
+            gc_tomark_t __tomark_original, __tomark_top; {\
+                LOCALIZE_THREAD_LOCAL(gc_key, gc_tomark_t);\
+                __tomark_original = __tomark_top = gc_key;}
+
+#define TOMARK_PUSH(p) \
+            { gc_tomark_t tomark = (gc_tomark_t)alloca(sizeof(struct gc_tomark));\
+              *tomark = (struct gc_tomark){__tomark_top, p};\
+              SET_THREAD_LOCAL(gc_key, (__tomark_top = tomark)); }
+
+#define TOMARK_EXIT \
+            SET_THREAD_LOCAL(gc_key, __tomark_original);
+
+static void sylvan_mark_rec(BDD bdd)
+{
+    if (llmsset_mark(_bdd.data, bdd&0x000000ffffffffff)) {
+        bddnode_t n = GETNODE(bdd);
+        sylvan_mark_rec(n->low);
+        sylvan_mark_rec(n->high);
+    }
+}
 
 /* Not to be inlined */
 static void sylvan_gc_participate()
@@ -347,12 +384,35 @@ static void sylvan_gc_participate()
     xinc(&_bdd.gccount);
     while (ACCESS_ONCE(_bdd.gc) != 2) cpu_relax(); 
 
-    size_t my_id = get_thread_id();
-    llci_clear_multi(_bdd.cache, my_id, _bdd.workers);
-    llgcset_gc_multi(_bdd.data, my_id, _bdd.workers);
+    int my_id = get_thread_id();
+    int workers = _bdd.workers;
 
+    // Clear the memoization table
+    llci_clear_multi(_bdd.cache, my_id, workers);
+   
+    // GC phase 1: clear hash table
+    llmsset_clear_multi(_bdd.data, my_id, workers);
     xinc(&_bdd.gccount);
-    while (ACCESS_ONCE(_bdd.gc) != 0) cpu_relax(); 
+    while (ACCESS_ONCE(_bdd.gc) != 3) cpu_relax(); 
+
+    // GC phase 2: mark nodes
+    LOCALIZE_THREAD_LOCAL(gc_key, gc_tomark_t);
+    gc_tomark_t t = gc_key;
+    while (t != NULL) {
+        sylvan_mark_rec(t->bdd);
+        t = t->prev;
+    }
+    xinc(&_bdd.gccount);
+    while (ACCESS_ONCE(_bdd.gc) != 4) cpu_relax(); 
+
+    // GC phase 3: rehash BDDs
+    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
+    if (insert_index == NULL) insert_index = initialize_insert_index();
+    *insert_index = llmsset_get_insertindex_multi(_bdd.data, my_id, _bdd.workers);
+
+    llmsset_rehash_multi(_bdd.data, my_id, workers);
+    xinc(&_bdd.gccount);
+    while (ACCESS_ONCE(_bdd.gc) >= 2) cpu_relax(); // waiting for 0 or 1 
 }
 
 inline void sylvan_test_gc(void)
@@ -369,18 +429,48 @@ static inline void sylvan_gc_go()
         return;
     }
 
-    xinc(&_bdd.gccount);
-    while (ACCESS_ONCE(_bdd.gccount) != _bdd.workers) cpu_relax();
+    int my_id = get_thread_id();
+    int workers = _bdd.workers;
+
+    while (ACCESS_ONCE(_bdd.gccount) != workers - 1) cpu_relax();
     
     _bdd.gccount = 0;
     _bdd.gc = 2;
 
-    size_t my_id = get_thread_id();
-    llci_clear_multi(_bdd.cache, my_id, _bdd.workers);
-    llgcset_gc_multi(_bdd.data, my_id, _bdd.workers);
+    // Clear the memoization table
+    llci_clear_multi(_bdd.cache, my_id, workers);
 
-    xinc(&_bdd.gccount);
-    while (ACCESS_ONCE(_bdd.gccount) != _bdd.workers) cpu_relax();
+    // GC phase 1: clear hash table
+    llmsset_clear_multi(_bdd.data, my_id, workers);
+
+    while (ACCESS_ONCE(_bdd.gccount) != workers - 1) cpu_relax();
+    _bdd.gccount = 0;
+    _bdd.gc = 3;
+
+    // GC phase 2: mark nodes
+    llmsset_refset_t r = _bdd.data->refset;
+    while (r != 0) {
+        sylvan_mark_rec(r->index);
+        r = r->next;
+    }
+    LOCALIZE_THREAD_LOCAL(gc_key, gc_tomark_t);
+    gc_tomark_t t = gc_key;
+    while (t != NULL) {
+        sylvan_mark_rec(t->bdd);
+        t = t->prev;
+    }
+
+    while (ACCESS_ONCE(_bdd.gccount) != workers - 1) cpu_relax();
+    _bdd.gccount = 0;
+    _bdd.gc = 4;
+
+    // GC phase 3: rehash BDDs
+    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
+    if (insert_index == NULL) insert_index = initialize_insert_index();
+    *insert_index = llmsset_get_insertindex_multi(_bdd.data, my_id, _bdd.workers);
+
+    llmsset_rehash_multi(_bdd.data, my_id, workers);
+    while (ACCESS_ONCE(_bdd.gccount) != workers - 1) cpu_relax();
 
     _bdd.gccount = 0;
     _bdd.gc = 0; 
@@ -396,15 +486,6 @@ static inline void sylvan_gc_test()
     while (ACCESS_ONCE(_bdd.gc)) {
         sylvan_gc_participate();
     }
-}
-
-/**
- * When a bdd node is deleted, unref the children
- */
-void sylvan_bdd_delete(const void* data, bddnode_t node)
-{
-    sylvan_deref(node->low);
-    sylvan_deref(node->high);
 }
 
 void sylvan_package_init(int workers, int dq_size)
@@ -429,6 +510,9 @@ void sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
     if (initialized != 0) return;
     initialized = 1;
 
+    INIT_THREAD_LOCAL(gc_key);
+    INIT_THREAD_LOCAL(insert_index);
+ 
 #ifdef HAVE_NUMA_H 
     if (numa_available() != -1) {
         numa_set_interleave_mask(numa_all_nodes_ptr);  
@@ -444,20 +528,18 @@ void sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
         fprintf(stderr, "Invalid size of bdd nodes: %ld\n", sizeof(struct bddnode));
         exit(1);
     }
-/*
-    if (sizeof(struct bddcache) != next_pow2(sizeof(struct bddcache))) {
-        fprintf(stderr, "Invalid size of bdd operation cache: %ld\n", sizeof(struct bddcache));
+
+    if (sizeof(struct bddcache) != 32) {
+        fprintf(stderr, "Invalid size of bdd cache structure: %ld\n", sizeof(struct bddcache));
         exit(1);
     }
-*/
-    //fprintf(stderr, "Sylvan\n");
     
     if (tablesize >= 40) {
         fprintf(stderr, "BDD_init error: tablesize must be < 40!\n");
         exit(1);
     }
-    _bdd.data = llgcset_create(sizeof(struct bddnode), sizeof(struct bddnode), 1LL<<tablesize, (llgcset_delete_f)&sylvan_bdd_delete, NULL);
 
+    _bdd.data = llmsset_create(sizeof(struct bddnode), sizeof(struct bddnode), 1LL<<tablesize);
 
     if (cachesize >= 64) {
         fprintf(stderr, "BDD_init error: cachesize must be < 64!\n");
@@ -476,13 +558,13 @@ void sylvan_quit()
     initialized = 0;
 
     llci_free(_bdd.cache);
-    llgcset_free(_bdd.data);
+    llmsset_free(_bdd.data);
 }
 
 BDD sylvan_ref(BDD a) 
 {
     assert(a != sylvan_invalid);
-    if (!BDD_ISCONSTANT(a)) llgcset_ref(_bdd.data, BDD_STRIPMARK(a));
+    if (!BDD_ISCONSTANT(a)) llmsset_ref(_bdd.data, BDD_STRIPMARK(a));
     return a;
 }
 
@@ -490,7 +572,7 @@ void sylvan_deref(BDD a)
 {
     assert(a != sylvan_invalid);
     if (BDD_ISCONSTANT(a)) return;
-    llgcset_deref(_bdd.data, BDD_STRIPMARK(a));
+    llmsset_deref(_bdd.data, BDD_STRIPMARK(a));
 }
 
 void sylvan_gc()
@@ -508,16 +590,16 @@ void sylvan_gc()
  */
 inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high)
 {
-    if (low == high) {
-        sylvan_deref(high);
-        return low;
-    }
+    if (low == high) return low;
 
     // Normalization to keep canonicity
     // low will have no mark
 
     struct bddnode n;
     int mark;
+
+    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
+    if (insert_index == NULL) insert_index = initialize_insert_index();
 
     if (BDD_HASMARK(low)) {
         mark = 1;
@@ -528,25 +610,20 @@ inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high)
     }
 
     BDD result;
-    uint32_t index;
+    uint64_t index;
     int created;
-    if (llgcset_lookup2(_bdd.data, &n, &created, &index) == 0) {
+    if (llmsset_lookup(_bdd.data, &n, insert_index, &created, &index) == 0) {
         SV_CNT(C_gc_hashtable_full);
 
-        //size_t before_gc = llgcset_get_filled(_bdd.data);
+        //size_t before_gc = llmsset_get_filled(_bdd.data);
         sylvan_gc_go();
-        //size_t after_gc = llgcset_get_filled(_bdd.data);
+        //size_t after_gc = llmsset_get_filled(_bdd.data);
         //fprintf(stderr, "GC: %ld to %ld (freed %ld)\n", before_gc, after_gc, before_gc-after_gc);
 
-        if (llgcset_lookup2(_bdd.data, &n, &created, &index) == 0) {
-            fprintf(stderr, "BDD Unique table full, %ld of %ld buckets filled!\n", llgcset_get_filled(_bdd.data), llgcset_get_size(_bdd.data));
+        if (llmsset_lookup(_bdd.data, &n, insert_index, &created, &index) == 0) {
+            fprintf(stderr, "BDD Unique table full, %ld of %ld buckets filled!\n", llmsset_get_filled(_bdd.data), llmsset_get_size(_bdd.data));
             exit(1);
         }
-    }
-
-    if (!created) {
-        sylvan_deref(low);
-        sylvan_deref(high);
     }
 
     result = index;
@@ -593,7 +670,7 @@ static inline BDD HIGH(BDD n)
 inline BDD sylvan_low(BDD bdd)
 {
     if (bdd == sylvan_false || bdd == sylvan_true) return bdd;
-    return sylvan_ref(LOW(bdd));
+    return LOW(bdd);
 }
 
 /**
@@ -603,7 +680,7 @@ inline BDD sylvan_low(BDD bdd)
 inline BDD sylvan_high(BDD bdd)
 {
     if (bdd == sylvan_false || bdd == sylvan_true) return bdd;
-    return sylvan_ref(HIGH(bdd));
+    return HIGH(bdd);
 }
 
 /**
@@ -612,7 +689,6 @@ inline BDD sylvan_high(BDD bdd)
  */
 inline BDD sylvan_not(BDD bdd)
 {
-    sylvan_ref(bdd);
     return BDD_TOGGLEMARK(bdd);
 }
 
@@ -798,7 +874,7 @@ TASK_4(BDD, sylvan_ite_do, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     // Standard triples
     BDD r = sylvan_triples(&a, &b, &c);
     if (BDD_STRIPMARK(r) != sylvan_invalid) {
-        return sylvan_ref(r);
+        return r;
     }
 
     sylvan_gc_test();
@@ -829,7 +905,7 @@ TASK_4(BDD, sylvan_ite_do, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
         template_cache_node.result = sylvan_invalid;
     
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
-            BDD res = sylvan_ref(template_cache_node.result);
+            BDD res = template_cache_node.result;
             SV_CNT(C_cache_reuse);
             return BDD_TRANSFERMARK(r, res);
         }
@@ -851,26 +927,25 @@ TASK_4(BDD, sylvan_ite_do, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
         cLow = BDD_TRANSFERMARK(c, nc->low);
         cHigh = BDD_TRANSFERMARK(c, node_highedge(nc));
     }
-    
+
     // Recursive computation
     BDD low, high;
+    TOMARK_INIT
     if (rand_1()) {
         SPAWN(sylvan_ite_do, aHigh, bHigh, cHigh, level);
         low = CALL(sylvan_ite_do, aLow, bLow, cLow, level);
+        TOMARK_PUSH(low)
         high = SYNC(sylvan_ite_do);
     } else { 
         SPAWN(sylvan_ite_do, aLow, bLow, cLow, level);
         high = CALL(sylvan_ite_do, aHigh, bHigh, cHigh, level);
+        TOMARK_PUSH(high)
         low = SYNC(sylvan_ite_do);
     }
+    TOMARK_EXIT
+
     BDD result = sylvan_makenode(level, low, high);
     
-    /*
-     * We gained ref on low, high
-     * We exchanged ref on low, high for ref on result
-     * Ref it again for the result.
-     */
-
     if (cachenow) {
         template_cache_node.result = result;
         int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
@@ -904,7 +979,7 @@ TASK_3(BDD, sylvan_exists_do, BDD, a, BDD, variables, BDDVAR, prev_level)
 {
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
-    if (variables == sylvan_false) return sylvan_ref(a);
+    if (variables == sylvan_false) return a;
     
     sylvan_gc_test();
     
@@ -926,7 +1001,7 @@ TASK_3(BDD, sylvan_exists_do, BDD, a, BDD, variables, BDDVAR, prev_level)
         variables == sylvan_false ? 0 : it_var == level;
     });
 
-    if (variables == sylvan_false) return sylvan_ref(a);
+    if (variables == sylvan_false) return a;
 
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
 
@@ -939,13 +1014,15 @@ TASK_3(BDD, sylvan_exists_do, BDD, a, BDD, variables, BDDVAR, prev_level)
         template_cache_node.result = sylvan_invalid;
 
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
-            BDD result = sylvan_ref(template_cache_node.result);
+            BDD result = template_cache_node.result;
             SV_CNT(C_cache_reuse);
             return result;
         }
     }
 
     BDD result;
+
+    TOMARK_INIT
 
     // variables != sylvan_true (always)
     // variables != sylvan_false
@@ -955,18 +1032,17 @@ TASK_3(BDD, sylvan_exists_do, BDD, a, BDD, variables, BDDVAR, prev_level)
         if (low == sylvan_true) {
             result = sylvan_true;
         } else {
+            TOMARK_PUSH(low)
             BDD high = CALL(sylvan_exists_do, aHigh, LOW(variables), level);
             if (high == sylvan_true) {
-                sylvan_deref(low);
                 result = sylvan_true;
             }
             else if (low == sylvan_false && high == sylvan_false) {
                 result = sylvan_false;
             }
             else {
+                TOMARK_PUSH(high)
                 result = CALL(sylvan_ite_do, low, sylvan_true, high, 0); // or 
-                sylvan_deref(low);
-                sylvan_deref(high);
             }
         }
     } else {
@@ -975,14 +1051,18 @@ TASK_3(BDD, sylvan_exists_do, BDD, a, BDD, variables, BDDVAR, prev_level)
         if (rand_1()) {
             SPAWN(sylvan_exists_do, aHigh, variables, level);
             low = CALL(sylvan_exists_do, aLow, variables, level);
+            TOMARK_PUSH(low)
             high = SYNC(sylvan_exists_do);
         } else {
             SPAWN(sylvan_exists_do, aLow, variables, level);
             high = CALL(sylvan_exists_do, aHigh, variables, level);
+            TOMARK_PUSH(high)
             low = SYNC(sylvan_exists_do);
         }
         result = sylvan_makenode(level, low, high);
     }
+
+    TOMARK_EXIT
 
     if (cachenow) {
         template_cache_node.result = result;
@@ -1018,7 +1098,7 @@ TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
 {
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
-    if (variables == sylvan_false) return sylvan_ref(a);
+    if (variables == sylvan_false) return a;
 
     sylvan_gc_test();
 
@@ -1040,7 +1120,7 @@ TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
         variables == sylvan_false ? 0 : it_var == level;
     });
 
-    if (variables == sylvan_false) return sylvan_ref(a);
+    if (variables == sylvan_false) return a;
  
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
 
@@ -1053,7 +1133,7 @@ TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
         template_cache_node.result = sylvan_invalid;
 
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
-            BDD result = sylvan_ref(template_cache_node.result);
+            BDD result = template_cache_node.result;
             SV_CNT(C_cache_reuse);
             return result;
         }
@@ -1063,6 +1143,8 @@ TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
     
     // variables != sylvan_true (always)
     // variables != sylvan_false
+
+    TOMARK_INIT
     
     if (in_x) {
         // quantify
@@ -1070,18 +1152,17 @@ TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
         if (low == sylvan_false) {
             result = sylvan_false;
         } else {
+            TOMARK_PUSH(low)
             BDD high = CALL(sylvan_forall_do, aHigh, LOW(variables), level);
             if (high == sylvan_false) {
-                sylvan_deref(low);
                 result = sylvan_false;
             }
             else if (low == sylvan_true && high == sylvan_true) {
                 result = sylvan_true;
             }
             else {
+                TOMARK_PUSH(high)
                 result = CALL(sylvan_ite_do, low, high, sylvan_false, 0); // and
-                sylvan_deref(low);
-                sylvan_deref(high);
             }
         }
     } else {
@@ -1090,14 +1171,18 @@ TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
         if (rand_1()) {
             SPAWN(sylvan_forall_do, aHigh, variables, level);
             low = CALL(sylvan_forall_do, aLow, variables, level);
+            TOMARK_PUSH(low)
             high = SYNC(sylvan_forall_do);
         } else {
             SPAWN(sylvan_forall_do, aLow, variables, level);
             high = CALL(sylvan_forall_do, aHigh, variables, level);
+            TOMARK_PUSH(high)
             low = SYNC(sylvan_forall_do);
         }
         result = sylvan_makenode(level, low, high);
     }
+
+    TOMARK_EXIT
 
     if (cachenow) {
         template_cache_node.result = result;
@@ -1208,7 +1293,7 @@ TASK_4(BDD, sylvan_relprod_do, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
         template_cache_node.result = sylvan_invalid;
         
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
-            BDD result = sylvan_ref(template_cache_node.result);
+            BDD result = template_cache_node.result;
             SV_CNT(C_cache_reuse);
             return result;
         }
@@ -1216,6 +1301,8 @@ TASK_4(BDD, sylvan_relprod_do, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
    
     // Recursive computation
     BDD low, high, result;
+
+    TOMARK_INIT
     
     if (in_x) {
         low = CALL(sylvan_relprod_do, aLow, bLow, x, level);
@@ -1223,33 +1310,36 @@ TASK_4(BDD, sylvan_relprod_do, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
         if (low == sylvan_true) {
             result = sylvan_true;
         } else {
+            TOMARK_PUSH(low)
             high = CALL(sylvan_relprod_do, aHigh, bHigh, x, level);
             // Calculate low \/ high
             if (high == sylvan_true) {
-                sylvan_deref(low);
                 result = sylvan_true;
             }
             else if (low == sylvan_false && high == sylvan_false) {
                 result = sylvan_false;
             }
             else {
+                TOMARK_PUSH(high)
                 result = CALL(sylvan_ite_do, low, sylvan_true, high, 0); // or
-                sylvan_deref(low);
-                sylvan_deref(high);
             }
         }
     } else {
         if (rand_1()) {
             SPAWN(sylvan_relprod_do, aLow, bLow, x, level);
             high = CALL(sylvan_relprod_do, aHigh, bHigh, x, level);
+            TOMARK_PUSH(high)
             low = SYNC(sylvan_relprod_do);
         } else {
             SPAWN(sylvan_relprod_do, aHigh, bHigh, x, level);
             low = CALL(sylvan_relprod_do, aLow, bLow, x, level);
+            TOMARK_PUSH(low)
             high = SYNC(sylvan_relprod_do);
         }
         result = sylvan_makenode(level, low, high);
     }
+
+    TOMARK_EXIT
     
     if (cachenow) {
         template_cache_node.result = result;
@@ -1284,7 +1374,7 @@ TASK_3(BDD, sylvan_substitute_do, BDD, a, BDD, vars, BDDVAR, prev_level)
 {
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
-    if (vars == sylvan_false) return sylvan_ref(a);
+    if (vars == sylvan_false) return a;
 
     SV_CNT(C_substitute);
 
@@ -1315,32 +1405,37 @@ TASK_3(BDD, sylvan_substitute_do, BDD, a, BDD, vars, BDDVAR, prev_level)
         template_cache_node.result = sylvan_invalid;
         
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
-            BDD result = sylvan_ref(template_cache_node.result);
+            BDD result = template_cache_node.result;
             SV_CNT(C_cache_reuse);
             return result;
         }
     }
+
+    TOMARK_INIT
    
     // Recursive computation
     BDD low, high;
     if (rand_1()) {
         SPAWN(sylvan_substitute_do, aLow, vars, level);
         high = CALL(sylvan_substitute_do, aHigh, vars, level);
+        TOMARK_PUSH(high)
         low = SYNC(sylvan_substitute_do);
     } else {
         SPAWN(sylvan_substitute_do, aHigh, vars, level);
         low = CALL(sylvan_substitute_do, aLow, vars, level);
+        TOMARK_PUSH(low)
         high = SYNC(sylvan_substitute_do);
     }
+
+    TOMARK_EXIT
+
     BDD result;
     
     if (in_vars) {
         result = sylvan_makenode(level-1, low, high);
     } else {
         if (low == aLow && high == aHigh) {
-            sylvan_deref(low);
-            sylvan_deref(high);
-            result = sylvan_ref(a);
+            result = a;
         }
         else result = sylvan_makenode(level, low, high);
     }
@@ -1497,7 +1592,7 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
         template_cache_node.result = sylvan_invalid;
         
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
-            BDD result = sylvan_ref(template_cache_node.result);
+            BDD result = template_cache_node.result;
             SV_CNT(C_cache_reuse);
             return result;
         }
@@ -1505,6 +1600,8 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
 
     // Recursive computation
     BDD low, high, result;
+
+    TOMARK_INIT
     
     if (in_vars && 0==(level&1)) {
         // variable in X: quantify
@@ -1513,18 +1610,17 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
             result = sylvan_true;
         }
         else {
+            TOMARK_PUSH(low)
             high = CALL(sylvan_relprods_do, aHigh, bHigh, vars, level);
             if (high == sylvan_true) {
-                sylvan_deref(low);
                 result = sylvan_true;
             }
             else if (low == sylvan_false && high == sylvan_false) {
                 result = sylvan_false;
             }
             else {
+                TOMARK_PUSH(high)
                 result = CALL(sylvan_ite_do, low, sylvan_true, high, 0);
-                sylvan_deref(low);
-                sylvan_deref(high);
             }
         }
     } 
@@ -1532,10 +1628,12 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
         if (rand_1()) {
             SPAWN(sylvan_relprods_do, aLow, bLow, vars, level);
             high = CALL(sylvan_relprods_do, aHigh, bHigh, vars, level);
+            TOMARK_PUSH(high)
             low = SYNC(sylvan_relprods_do);
         } else {
             SPAWN(sylvan_relprods_do, aHigh, bHigh, vars, level);
             low = CALL(sylvan_relprods_do, aLow, bLow, vars, level);
+            TOMARK_PUSH(low)
             high = SYNC(sylvan_relprods_do);
         }
 
@@ -1545,6 +1643,8 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
         // variable not in X or X': normal behavior
         else result = sylvan_makenode(level, low, high);
     }
+
+    TOMARK_EXIT
     
     if (cachenow) {
         template_cache_node.result = result;
@@ -1656,13 +1756,15 @@ TASK_4(BDD, sylvan_relprods_reversed_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev
         template_cache_node.result = sylvan_invalid;
     
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
-            BDD result = sylvan_ref(template_cache_node.result);
+            BDD result = template_cache_node.result;
             SV_CNT(C_cache_reuse);
             return result;
         }
     }
 
     BDD low, high, result;
+
+    TOMARK_INIT
 
     // if x \in X'
     if ((x&1) == 1 && in_vars) {
@@ -1671,16 +1773,15 @@ TASK_4(BDD, sylvan_relprods_reversed_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev
         if (low == sylvan_true) {
             result = sylvan_true;
         } else {
+            TOMARK_PUSH(low)
             high = CALL(sylvan_relprods_reversed_do, aHigh, bHigh, vars, x);
             if (high == sylvan_true) {
-                sylvan_deref(low);
                 result = sylvan_true;
             } else if (low == sylvan_false && high == sylvan_false) {
                 result = sylvan_false;
             } else {
+                TOMARK_PUSH(high)
                 result = CALL(sylvan_ite_do, low, sylvan_true, high, 0);
-                sylvan_deref(low);
-                sylvan_deref(high);
             }
         }
     } 
@@ -1689,14 +1790,18 @@ TASK_4(BDD, sylvan_relprods_reversed_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev
         if (rand_1()) {
             SPAWN(sylvan_relprods_reversed_do, aLow, bLow, vars, x);
             high = CALL(sylvan_relprods_reversed_do, aHigh, bHigh, vars, x);
+            TOMARK_PUSH(high)
             low = SYNC(sylvan_relprods_reversed_do);
         } else {
             SPAWN(sylvan_relprods_reversed_do, aHigh, bHigh, vars, x);
             low = CALL(sylvan_relprods_reversed_do, aLow, bLow, vars, x);
+            TOMARK_PUSH(low)
             high = SYNC(sylvan_relprods_reversed_do);
         }
         result = sylvan_makenode(x, low, high);
     }
+
+    TOMARK_EXIT
 
     if (cachenow) {
         template_cache_node.result = result;
@@ -1868,7 +1973,7 @@ void sylvan_fprint(FILE *out, BDD bdd)
     sylvan_print_2(bdd);
 }
 
-llgcset_t __sylvan_get_internal_data() 
+llmsset_t __sylvan_get_internal_data() 
 {
     return _bdd.data;
 }
@@ -1881,22 +1986,11 @@ llci_t __sylvan_get_internal_cache()
 long long sylvan_count_refs()
 {
     long long result = 0;
-    
-    int i;
-    for (i=0;i<_bdd.data->table_size;i++) {
-        uint32_t c = _bdd.data->table[i];
-        if (c == 0) continue; // not in use (never used)
-        if (c == 0x7fffffff) continue; // not in use (tombstone)
-        
-        c &= 0x0000ffff;
-        assert (c!=0x0000ffff); // "about to be deleted" should not be visible here
-        
-        result += c; // Note: nodes could be saturated... number could be off...
-        
-        bddnode_t n = GETNODE(i);
 
-        if (!BDD_ISCONSTANT(n->low)) result--; // dont include internals
-        if (!BDD_ISCONSTANT(n->high)) result--; // dont include internals
+    llmsset_refset_t r = _bdd.data->refset;
+    while (r != 0) {
+        result += r->count;
+        r = r->next;
     }
     
     return result;

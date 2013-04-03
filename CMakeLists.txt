@@ -31,18 +31,15 @@ set(sylvan_sources
   src/sylvan.h
   src/wool.c
   src/sylvan.c
-  src/llgcset.c
   src/llmsset.c
   src/llmsset.h
   src/hash_mul.S
   src/rehash_mul.S
-  src/llsimplecache.c
+  src/ticketlock.h
   ${EXTRA_SRC}
 )
 
 set(test_sources
-  src/llgcset.c
-  src/llsimplecache.c
   src/llmsset.c
   src/llmsset.h
   test/main.c

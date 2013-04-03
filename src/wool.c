@@ -226,6 +226,7 @@ static void init_worker(int worker)
   numa_worker_info(worker, &node, 0, 0, 0);
   workers[worker] = w = (Worker*)numa_alloc_onnode(sizeof(Worker), node);
   w->dq_base = (Task*)numa_alloc_onnode(dq_size * sizeof(Task), node);
+  w->node = node;
 #else
   posix_memalign((void**)&w, LINE_SIZE, sizeof(Worker));
   workers[worker] = w;
@@ -233,7 +234,6 @@ static void init_worker(int worker)
 #endif
 
   w->dq_size = dq_size;
-  w->node = node;
 
   for( i=0; i < w->dq_size; i++ ) {
     w->dq_base[i].f = T_BUSY;

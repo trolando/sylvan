@@ -1863,15 +1863,19 @@ uint64_t sylvan_nodecount(BDD a)
     return result;
 }
 
-long double sylvan_pathcount(BDD bdd)
+TASK_1(long double, sylvan_pathcount, BDD, bdd)
 {
     if (bdd == sylvan_false) return 0.0;
     if (bdd == sylvan_true) return 1.0;
-    long double high = sylvan_pathcount(HIGH(bdd));
-    long double low = sylvan_pathcount(LOW(bdd));
-    return high+low;
+    SPAWN(sylvan_pathcount, HIGH(bdd));
+    SPAWN(sylvan_pathcount, LOW(bdd));
+    return SYNC(sylvan_pathcount) + SYNC(sylvan_pathcount);
 }
 
+long double sylvan_pathcount(BDD bdd)
+{
+    return CALL(sylvan_pathcount, bdd);
+}
 
 long double sylvan_satcount_do(BDD bdd, BDD variables)
 {

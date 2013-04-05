@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdio.h> // for FILE
+#include "lace.h" // for definitions
 
 #ifndef SYLVAN_H
 #define SYLVAN_H
@@ -79,6 +80,7 @@ BDD sylvan_not(BDD bdd);
 /**
  * Calculate simple if <a> then <b> else <c> (calls sylvan_restructure)
  */
+TASK_DECL_4(BDD, sylvan_ite, BDD, BDD, BDD, BDDVAR);
 BDD sylvan_ite(BDD a, BDD b, BDD c);
 BDD sylvan_and(BDD a, BDD b);
 BDD sylvan_xor(BDD a, BDD b);
@@ -94,6 +96,7 @@ BDD sylvan_invimp(BDD a, BDD b);
 /**
  * Specialized RelProdS using paired variables (X even, X' odd)
  */
+TASK_DECL_4(BDD, sylvan_relprods, BDD, BDD, BDD, BDDVAR);
 BDD sylvan_relprods(BDD a, BDD b, BDD vars);
 
 typedef void (*void_cb)();
@@ -102,26 +105,31 @@ int sylvan_relprods_analyse(BDD a, BDD b, void_cb cb_in, void_cb cb_out);
 /**
  * Reversed RelProdS using paired variables (X even, X' odd)
  */
+TASK_DECL_4(BDD, sylvan_relprods_reversed, BDD, BDD, BDD, BDDVAR); 
 BDD sylvan_relprods_reversed(BDD a, BDD b, BDD vars);
 
 /**
  * Calculate RelProd: \exists vars (a \and b)
  */
+TASK_DECL_4(BDD, sylvan_relprod, BDD, BDD, BDD, BDDVAR);
 BDD sylvan_relprod(BDD a, BDD b, BDD vars);
 
 /**
  * Calculate substitution from X to X' using paired variables (X even, X' odd)
  */
+TASK_DECL_3(BDD, sylvan_substitute, BDD, BDD, BDDVAR);
 BDD sylvan_substitute(BDD a, BDD vars);
 
 /**
  * Calculate \exists variables . a
  */
+TASK_DECL_3(BDD, sylvan_exists, BDD, BDD, BDDVAR);
 BDD sylvan_exists(BDD a, BDD variables);
 
 /**
  * Calculate \forall variables . a
  */
+TASK_DECL_3(BDD, sylvan_forall, BDD, BDD, BDDVAR);
 BDD sylvan_forall(BDD a, BDD variables);
 
 BDD sylvan_ref(BDD a);
@@ -150,6 +158,7 @@ long long sylvan_count_refs();
  */
 long double sylvan_satcount(BDD bdd, BDD variables);
 
+TASK_DECL_1(long double, sylvan_pathcount, BDD);
 long double sylvan_pathcount(BDD bdd);
 uint64_t sylvan_nodecount(BDD a);
 void sylvan_nodecount_levels(BDD bdd, uint32_t *variables);

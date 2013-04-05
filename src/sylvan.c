@@ -13,6 +13,7 @@
 #include "atomics.h"
 #include "llgcset.h"
 #include "tls.h"
+#include "avl.h"
 
 #include "wool.h"
 
@@ -24,21 +25,21 @@
 #define STATS 1
 #endif
 
-#define complementmark 0x80000000
+#define complementmark 0x8000000000000000
 
 /**
  * Exported BDD constants
  */
 const BDD sylvan_true = 0 | complementmark;
 const BDD sylvan_false = 0;
-const BDD sylvan_invalid = 0x7fffffff; // uint32_t
+const BDD sylvan_invalid = 0x7fffffffffffffff; // uint64_t
 
 #define SYLVAN_PAD(x,b) ( (b) - ( (x) & ((b)-1) ) ) /* b must be power of 2 */
 
 /**
  * Mark handling macros
  */
-#define BDD_HASMARK(s)              (s&complementmark)
+#define BDD_HASMARK(s)              (s&complementmark?1:0)
 #define BDD_TOGGLEMARK(s)           (s^complementmark)
 #define BDD_STRIPMARK(s)            (s&~complementmark)
 #define BDD_TRANSFERMARK(from, to)  (to ^ (from & complementmark))
@@ -46,19 +47,83 @@ const BDD sylvan_invalid = 0x7fffffff; // uint32_t
 // Equal under mark
 #define BDD_EQUALM(a, b)            ((((a)^(b))&(~complementmark))==0)
 
-__attribute__ ((packed))
+static inline uint32_t BDD_GETDATA(BDD s)
+{
+    return (s>>40) & 0x7fffff;
+}
+
+static inline BDD BDD_SETDATA(BDD s, uint32_t data)
+{
+    return (s & 0x800000ffffffffff) | (((uint64_t)data & 0x7fffff)<<40);
+}
+
+__attribute__((packed))
 struct bddnode {
-    BDD low;
-    BDD high;
-    BDDVAR level;
-    uint8_t flags; // for marking, e.g. in node_count 
-    char pad[SYLVAN_PAD(sizeof(BDD)*2+sizeof(BDDVAR)+sizeof(uint8_t), 16)];
-    // 4,4,2,1,5 (pad). 
+    uint64_t high     : 40;
+    uint32_t level    : 24;
+    uint64_t low      : 40;
+    unsigned int data : 23;
+    uint8_t comp      : 1;
 }; // 16 bytes
 
 typedef struct bddnode* bddnode_t;
+/*
+__attribute__((packed))
+struct pair64 {
+    uint64_t one;
+    uint64_t two;
+};
 
-int initialized = 0;
+typedef struct pair64 *pair64_t;
+*/
+/*
+static inline uint64_t BDDNODE_GETLOW(bddnode_t n) 
+{
+    return n->second & 0x000000ffffffffff;
+}
+
+static inline uint64_t BDDNODE_GETHIGH(bddnode_t n) 
+{
+    return n->first & 0x000000ffffffffff;
+}
+
+static inline uint32_t BDDNODE_GETLVL(bddnode_t n) 
+{
+    return n->first >> 40;
+}
+
+static inline unsigned int BDDNODE_GETCOMP(bddnode_t n)
+{
+    return n->second & 0x8000000000000000 ? 1 : 0;
+}
+
+static inline void BDDNODE_SETLOW(bddnode_t n, BDD l)
+{
+    n->second = (n->second & 0xffffff0000000000) | (l & 0x000000ffffffffff);
+}
+
+static inline void BDDNODE_SETHIGH(bddnode_t n, BDD h)
+{
+    n->first  = (n->first  & 0xffffff0000000000) | (h & 0x000000ffffffffff);
+}
+
+static inline void BDDNODE_SETLVL(bddnode_t n, BDDVAR v)
+{
+    n->first  = (n->first  & 0x000000ffffffffff) | ((uint64_t)v << 40);
+}
+
+static inline void BDDNODE_SETCOMP(bddnode_t n, int c)
+{
+    n->second = (n->second & 0x7fffffffffffffff) | (c ? 0x8000000000000000 : 1);
+}
+
+static inline void BDDNODE_MAKE(bddnode_t n, BDDVAR v, BDD l, BDD h, int c) 
+{
+    n->first  = ((uint64_t)v << 40)          | (h & 0x000000ffffffffff);
+    n->second = (c ? 0x8000000000000000 : 0) | (l & 0x000000ffffffffff);
+}
+*/
+static int initialized = 0;
 
 static int granularity = 1; // default
 
@@ -75,11 +140,11 @@ static int granularity = 1; // default
  * 5 = forall
  * 6 = relprod
  * 7 = substitute
+ * Operations are stored in BDD_GETDATA(param[0])
  */
 __attribute__ ((packed))
 struct bddcache {
-    uint32_t operation;
-    BDD params[MAXPARAM];
+    BDD params[MAXPARAM]; 
     BDD result;
 };
 
@@ -118,7 +183,7 @@ typedef enum {
   C_MAX
 } Counters;
 
-#define N_CNT_THREAD 48
+#define N_CNT_THREAD 128
 
 struct {
     pthread_t thread_id;
@@ -140,11 +205,13 @@ static int get_thread_id() {
     return -1;
 }
 
+/**
+ * Very custom random number generator, based on the stack pointer and the OS thread id
+ */
 static inline size_t rand_1()
 {
     register const size_t rsp_alias asm ("rsp");
     size_t id = (size_t)pthread_self();
-    //id += id << 8;
     id += rsp_alias;
     id *= 1103515245;
     id += 12345;
@@ -255,10 +322,10 @@ void sylvan_report_stats()
 #if STATS
 int enable_stats=1;
 void sylvan_enable_stats() {
-  enable_stats = 1;
+    enable_stats = 1;
 }
 void sylvan_disable_stats() {
-  enable_stats = 0;
+    enable_stats = 0;
 }
 #define SV_CNT(s) {if (enable_stats) {(sylvan_stats[get_thread_id()].count[s]+=1);}}
 #else
@@ -325,12 +392,11 @@ static inline void sylvan_gc_go()
  */
 static inline void sylvan_gc_test()
 {
-    // TODO: add unlikely
+    // TODO?: 'unlikely'
     while (ACCESS_ONCE(_bdd.gc)) {
         sylvan_gc_participate();
     }
 }
-
 
 /**
  * When a bdd node is deleted, unref the children
@@ -362,7 +428,7 @@ void sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
 {
     if (initialized != 0) return;
     initialized = 1;
- 
+
 #ifdef HAVE_NUMA_H 
     if (numa_available() != -1) {
         numa_set_interleave_mask(numa_all_nodes_ptr);  
@@ -386,19 +452,19 @@ void sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
 */
     //fprintf(stderr, "Sylvan\n");
     
-    if (tablesize >= 30) {
-        fprintf(stderr, "BDD_init error: tablesize must be < 30!\n");
+    if (tablesize >= 40) {
+        fprintf(stderr, "BDD_init error: tablesize must be < 40!\n");
         exit(1);
     }
-    _bdd.data = llgcset_create(10, sizeof(struct bddnode), 1<<tablesize, (llgcset_delete_f)&sylvan_bdd_delete, NULL);
+    _bdd.data = llgcset_create(sizeof(struct bddnode), sizeof(struct bddnode), 1LL<<tablesize, (llgcset_delete_f)&sylvan_bdd_delete, NULL);
 
 
-    if (cachesize >= 30) {
-        fprintf(stderr, "BDD_init error: cachesize must be <= 30!\n");
+    if (cachesize >= 64) {
+        fprintf(stderr, "BDD_init error: cachesize must be < 64!\n");
         exit(1);
     }
     
-    _bdd.cache = llci_create(1<<cachesize);
+    _bdd.cache = llci_create(1LL<<cachesize);
 
     _bdd.gc = 0;
     _bdd.gccount = 0;
@@ -442,72 +508,49 @@ void sylvan_gc()
  */
 inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high)
 {
-    BDD result;
-    struct bddnode n;
-    memset(&n, 0, sizeof(struct bddnode));
-
     if (low == high) {
         sylvan_deref(high);
         return low;
     }
-    n.level = level;
-    n.flags = 0;
 
     // Normalization to keep canonicity
     // low will have no mark
 
-    int created;
+    struct bddnode n;
+    int mark;
 
     if (BDD_HASMARK(low)) {
-        // ITE(a,not b,c) == not ITE(a,b,not c)
-        n.low = BDD_STRIPMARK(low);
-        n.high = BDD_TOGGLEMARK(high);
-        
-        if (llgcset_lookup2(_bdd.data, &n, &created, &result) == 0) {
-            SV_CNT(C_gc_hashtable_full);
-
-            //size_t before_gc = llgcset_get_filled(_bdd.data);
-            sylvan_gc_go();
-            //size_t after_gc = llgcset_get_filled(_bdd.data);
-            //fprintf(stderr, "GC: %ld to %ld (freed %ld)\n", before_gc, after_gc, before_gc-after_gc);
-
-            if (llgcset_lookup2(_bdd.data, &n, &created, &result) == 0) {
-                fprintf(stderr, "BDD Unique table full, %ld of %ld buckets filled!\n", llgcset_get_filled(_bdd.data), llgcset_get_size(_bdd.data));
-                exit(1);
-            }
-        }
-        
-        if (!created) {
-            sylvan_deref(low);
-            sylvan_deref(high);
-        }
-
-        return result | complementmark;
+        mark = 1;
+        n = (struct bddnode){high, level, low, 0, BDD_HASMARK(high) ? 0 : 1};
     } else {
-        n.low = low;
-        n.high = high;
-
-        if (llgcset_lookup2(_bdd.data, &n, &created, &result) == 0) {
-            SV_CNT(C_gc_hashtable_full);
-
-            //size_t before_gc = llgcset_get_filled(_bdd.data);
-            sylvan_gc_go();
-            //size_t after_gc = llgcset_get_filled(_bdd.data);
-            //fprintf(stderr, "GC: %ld to %ld (freed %ld)\n", before_gc, after_gc, before_gc-after_gc);
-
-            if (llgcset_lookup2(_bdd.data, &n, &created, &result) == 0) {
-                fprintf(stderr, "BDD Unique table full, %ld of %ld buckets filled!\n", llgcset_get_filled(_bdd.data), llgcset_get_size(_bdd.data));
-                exit(1);
-            }
-        }
- 
-        if (!created) {
-            sylvan_deref(low);
-            sylvan_deref(high);
-        }
-
-        return result;
+        mark = 0;
+        n = (struct bddnode){high, level, low, 0, BDD_HASMARK(high)};
     }
+
+    BDD result;
+    uint32_t index;
+    int created;
+    if (llgcset_lookup2(_bdd.data, &n, &created, &index) == 0) {
+        SV_CNT(C_gc_hashtable_full);
+
+        //size_t before_gc = llgcset_get_filled(_bdd.data);
+        sylvan_gc_go();
+        //size_t after_gc = llgcset_get_filled(_bdd.data);
+        //fprintf(stderr, "GC: %ld to %ld (freed %ld)\n", before_gc, after_gc, before_gc-after_gc);
+
+        if (llgcset_lookup2(_bdd.data, &n, &created, &index) == 0) {
+            fprintf(stderr, "BDD Unique table full, %ld of %ld buckets filled!\n", llgcset_get_filled(_bdd.data), llgcset_get_size(_bdd.data));
+            exit(1);
+        }
+    }
+
+    if (!created) {
+        sylvan_deref(low);
+        sylvan_deref(high);
+    }
+
+    result = index;
+    return mark ? result | complementmark : result;
 }
 
 inline BDD sylvan_ithvar(BDDVAR level)
@@ -526,6 +569,23 @@ inline BDDVAR sylvan_var(BDD bdd)
     return GETNODE(bdd)->level;
 }
 
+static inline BDD node_highedge(bddnode_t node)
+{
+    return node->high | (node->comp ? complementmark : 0LL);
+}
+
+static inline BDD LOW(BDD n) 
+{
+    if (BDD_ISCONSTANT(n)) return n;
+    return BDD_TRANSFERMARK(n, GETNODE(n)->low);
+}
+
+static inline BDD HIGH(BDD n) 
+{
+    if (BDD_ISCONSTANT(n)) return n;
+    return BDD_TRANSFERMARK(n, node_highedge(GETNODE(n)));
+}
+
 /**
  * Get the n=0 child.
  * This will ref the result node.
@@ -533,9 +593,7 @@ inline BDDVAR sylvan_var(BDD bdd)
 inline BDD sylvan_low(BDD bdd)
 {
     if (bdd == sylvan_false || bdd == sylvan_true) return bdd;
-    BDD low = GETNODE(bdd)->low;
-    sylvan_ref(low);
-    return BDD_TRANSFERMARK(bdd, low);
+    return sylvan_ref(LOW(bdd));
 }
 
 /**
@@ -545,14 +603,8 @@ inline BDD sylvan_low(BDD bdd)
 inline BDD sylvan_high(BDD bdd)
 {
     if (bdd == sylvan_false || bdd == sylvan_true) return bdd;
-    BDD high = GETNODE(bdd)->high;
-    sylvan_ref(high);
-    return BDD_TRANSFERMARK(bdd, high);
+    return sylvan_ref(HIGH(bdd));
 }
-
-// Macros for internal use (no ref)
-#define LOW(a) ((BDD_ISCONSTANT(a))?a:BDD_TRANSFERMARK(a, GETNODE(a)->low))
-#define HIGH(a) ((BDD_ISCONSTANT(a))?a:BDD_TRANSFERMARK(a, GETNODE(a)->high))
 
 /**
  * Get the complement of the BDD.
@@ -702,7 +754,7 @@ static BDD sylvan_triples(BDD *_a, BDD *_b, BDD *_c)
             c = BDD_TOGGLEMARK(b); // (old a)
         }
     }
-    
+
     // ITE(~A,B,C) = ITE(A,C,B)
     if (BDD_HASMARK(a)) {
         a = BDD_STRIPMARK(a);
@@ -710,7 +762,7 @@ static BDD sylvan_triples(BDD *_a, BDD *_b, BDD *_c)
         c = b;
         b = t;
     }
-    
+
     /**
      * Apply De Morgan: ITE(A,B,C) = ~ITE(A,~B,~C)
      *
@@ -760,7 +812,7 @@ TASK_4(BDD, sylvan_ite_do, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     bddnode_t nc = BDD_ISCONSTANT(c) ? 0 : GETNODE(c);
         
     // Get lowest level
-    BDDVAR level = 0xffff;
+    BDDVAR level = 0xffffffff;
     if (na) level = na->level;
     if (nb && level > nb->level) level = nb->level;
     if (nc && level > nc->level) level = nc->level;
@@ -771,8 +823,7 @@ TASK_4(BDD, sylvan_ite_do, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     if (cachenow) {
         // Check cache
         memset(&template_cache_node, 0, sizeof(struct bddcache));
-        template_cache_node.operation = 0; // ITE operation
-        template_cache_node.params[0] = a;
+        template_cache_node.params[0] = BDD_SETDATA(a, 0); // ITE operation
         template_cache_node.params[1] = b;
         template_cache_node.params[2] = c;
         template_cache_node.result = sylvan_invalid;
@@ -790,15 +841,15 @@ TASK_4(BDD, sylvan_ite_do, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     BDD cLow = c, cHigh = c;
     if (na && level == na->level) {
         aLow = BDD_TRANSFERMARK(a, na->low);
-        aHigh = BDD_TRANSFERMARK(a, na->high);
+        aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
     }
     if (nb && level == nb->level) {
         bLow = BDD_TRANSFERMARK(b, nb->low);
-        bHigh = BDD_TRANSFERMARK(b, nb->high);
+        bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
     }
     if (nc && level == nc->level) {
         cLow = BDD_TRANSFERMARK(c, nc->low);
-        cHigh = BDD_TRANSFERMARK(c, nc->high);
+        cHigh = BDD_TRANSFERMARK(c, node_highedge(nc));
     }
     
     // Recursive computation
@@ -865,7 +916,7 @@ TASK_3(BDD, sylvan_exists_do, BDD, a, BDD, variables, BDDVAR, prev_level)
     
     // Get cofactors
     BDD aLow = BDD_TRANSFERMARK(a, na->low);
-    BDD aHigh = BDD_TRANSFERMARK(a, na->high);
+    BDD aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
     
     register int in_x = ({   
         register BDDVAR it_var;
@@ -883,8 +934,7 @@ TASK_3(BDD, sylvan_exists_do, BDD, a, BDD, variables, BDDVAR, prev_level)
     if (cachenow) {
         // Check cache
         memset(&template_cache_node, 0, sizeof(struct bddcache));
-        template_cache_node.operation = 4; // EXISTS operation
-        template_cache_node.params[0] = a;
+        template_cache_node.params[0] = BDD_SETDATA(a, 4); // exists operation
         template_cache_node.params[1] = variables;
         template_cache_node.result = sylvan_invalid;
 
@@ -980,7 +1030,7 @@ TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
 
     // Get cofactors    
     BDD aLow = BDD_TRANSFERMARK(a, na->low);
-    BDD aHigh = BDD_TRANSFERMARK(a, na->high);
+    BDD aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
    
     register int in_x = ({   
         register BDDVAR it_var;
@@ -998,9 +1048,7 @@ TASK_3(BDD, sylvan_forall_do, BDD, a, BDD, variables, BDDVAR, prev_level)
     if (cachenow) {
         // Check cache
         memset(&template_cache_node, 0, sizeof(struct bddcache));
-        template_cache_node.operation = 5; // FORALL operation
-        //template_cache_node.parameters = 2;
-        template_cache_node.params[0] = a;
+        template_cache_node.params[0] = BDD_SETDATA(a, 5); // forall operation
         template_cache_node.params[1] = variables;
         template_cache_node.result = sylvan_invalid;
 
@@ -1122,22 +1170,22 @@ TASK_4(BDD, sylvan_relprod_do, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
         if (nb && na->level > nb->level) {
             level = nb->level;
             bLow = BDD_TRANSFERMARK(b, nb->low);
-            bHigh = BDD_TRANSFERMARK(b, nb->high);
+            bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
         } else if (nb && na->level == nb->level) {
             level = na->level;
             aLow = BDD_TRANSFERMARK(a, na->low);
-            aHigh = BDD_TRANSFERMARK(a, na->high);
+            aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
             bLow = BDD_TRANSFERMARK(b, nb->low);
-            bHigh = BDD_TRANSFERMARK(b, nb->high);
+            bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
         } else {
             level = na->level;
             aLow = BDD_TRANSFERMARK(a, na->low);
-            aHigh = BDD_TRANSFERMARK(a, na->high);
+            aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
         }
     } else {
         level = nb->level;
         bLow = BDD_TRANSFERMARK(b, nb->low);
-        bHigh = BDD_TRANSFERMARK(b, nb->high);
+        bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
     }
 
     register int in_x = ({   
@@ -1154,8 +1202,7 @@ TASK_4(BDD, sylvan_relprod_do, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
     if (cachenow) {
         // Check cache
         memset(&template_cache_node, 0, sizeof(struct bddcache));
-        template_cache_node.operation = 6; // RelProd operation
-        template_cache_node.params[0] = a;
+        template_cache_node.params[0] = BDD_SETDATA(a, 6); // RelProd operation
         template_cache_node.params[1] = b;
         template_cache_node.params[2] = x;
         template_cache_node.result = sylvan_invalid;
@@ -1246,7 +1293,7 @@ TASK_3(BDD, sylvan_substitute_do, BDD, a, BDD, vars, BDDVAR, prev_level)
     bddnode_t na = GETNODE(a);
     BDDVAR level = na->level;
     BDD aLow = BDD_TRANSFERMARK(a, na->low);
-    BDD aHigh = BDD_TRANSFERMARK(a, na->high);
+    BDD aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
      
     register int in_vars = ({   
         register BDDVAR it_var;
@@ -1262,8 +1309,7 @@ TASK_3(BDD, sylvan_substitute_do, BDD, a, BDD, vars, BDDVAR, prev_level)
     if (cachenow) {
         // Check cache
         memset(&template_cache_node, 0, sizeof(struct bddcache));
-        template_cache_node.operation = 7; // Substitute operation
-        template_cache_node.params[0] = a;
+        template_cache_node.params[0] = BDD_SETDATA(a, 7); // Substitute operation
         template_cache_node.params[1] = vars;
         template_cache_node.params[2] = 0;
         template_cache_node.result = sylvan_invalid;
@@ -1338,19 +1384,19 @@ int sylvan_relprods_analyse(BDD a, BDD b, void_cb cb_in, void_cb cb_out)
     if (na) {
         if (nb && na->level > nb->level) {
             bLow = BDD_TRANSFERMARK(b, nb->low);
-            bHigh = BDD_TRANSFERMARK(b, nb->high);
+            bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
         } else if (nb && na->level == nb->level) {
             aLow = BDD_TRANSFERMARK(a, na->low);
-            aHigh = BDD_TRANSFERMARK(a, na->high);
+            aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
             bLow = BDD_TRANSFERMARK(b, nb->low);
-            bHigh = BDD_TRANSFERMARK(b, nb->high);
+            bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
         } else {
             aLow = BDD_TRANSFERMARK(a, na->low);
-            aHigh = BDD_TRANSFERMARK(a, na->high);
+            aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
         }
     } else {
         bLow = BDD_TRANSFERMARK(b, nb->low);
-        bHigh = BDD_TRANSFERMARK(b, nb->high);
+        bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
     }
 
     cb_in();
@@ -1413,22 +1459,22 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
         if (nb && na->level > nb->level) {
             level = nb->level;
             bLow = BDD_TRANSFERMARK(b, nb->low);
-            bHigh = BDD_TRANSFERMARK(b, nb->high);
+            bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
         } else if (nb && na->level == nb->level) {
             level = na->level;
             aLow = BDD_TRANSFERMARK(a, na->low);
-            aHigh = BDD_TRANSFERMARK(a, na->high);
+            aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
             bLow = BDD_TRANSFERMARK(b, nb->low);
-            bHigh = BDD_TRANSFERMARK(b, nb->high);
+            bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
         } else {
             level = na->level;
             aLow = BDD_TRANSFERMARK(a, na->low);
-            aHigh = BDD_TRANSFERMARK(a, na->high);
+            aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
         }
     } else {
         level = nb->level;
         bLow = BDD_TRANSFERMARK(b, nb->low);
-        bHigh = BDD_TRANSFERMARK(b, nb->high);
+        bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
     }
 
     register int in_vars = vars == sylvan_true ? 1 : ({   
@@ -1445,8 +1491,7 @@ TASK_4(BDD, sylvan_relprods_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
     if (cachenow) {
         // Check cache
         memset(&template_cache_node, 0, sizeof(struct bddcache));
-        template_cache_node.operation = 1; // RelProdS operation
-        template_cache_node.params[0] = a;
+        template_cache_node.params[0] = BDD_SETDATA(a, 1); // RelProdS operation
         template_cache_node.params[1] = b;
         template_cache_node.params[2] = vars;
         template_cache_node.result = sylvan_invalid;
@@ -1591,12 +1636,12 @@ TASK_4(BDD, sylvan_relprods_reversed_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev
     BDD bLow = b, bHigh = b;
     if (na && x == S_x_a) {
         aLow = BDD_TRANSFERMARK(a, na->low);
-        aHigh = BDD_TRANSFERMARK(a, na->high);
+        aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
     }
     
     if (nb && x == x_b) {
         bLow = BDD_TRANSFERMARK(b, nb->low);
-        bHigh = BDD_TRANSFERMARK(b, nb->high);
+        bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
     }
     
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != x / granularity;
@@ -1605,9 +1650,7 @@ TASK_4(BDD, sylvan_relprods_reversed_do, BDD, a, BDD, b, BDD, vars, BDDVAR, prev
     if (cachenow) {
         // Check cache
         memset(&template_cache_node, 0, sizeof(struct bddcache));
-        template_cache_node.operation = 2; // RelProdS operation
-        //template_cache_node.parameters = 3;
-        template_cache_node.params[0] = a;
+        template_cache_node.params[0] = BDD_SETDATA(a, 2); // RelProdS reversed operation
         template_cache_node.params[1] = b;
         template_cache_node.params[2] = vars;
         template_cache_node.result = sylvan_invalid;
@@ -1684,9 +1727,9 @@ void sylvan_nodecount_levels_do_1(BDD bdd, uint32_t *variables)
 {
     if (BDD_ISCONSTANT(bdd)) return;
     bddnode_t na = GETNODE(bdd);
-    if (na->flags & 1) return;
+    if (na->data & 1) return;
     variables[na->level]++;
-    na->flags |= 1; // mark
+    na->data |= 1; // mark
     sylvan_nodecount_levels_do_1(na->low, variables);
     sylvan_nodecount_levels_do_1(na->high, variables);
 }
@@ -1695,8 +1738,8 @@ void sylvan_nodecount_levels_do_2(BDD bdd)
 {
     if (BDD_ISCONSTANT(bdd)) return;
     bddnode_t na = GETNODE(bdd);
-    if (!(na->flags & 1)) return;
-    na->flags &= ~1; // unmark
+    if (!(na->data & 1)) return;
+    na->data &= ~1; // unmark
     sylvan_nodecount_levels_do_2(na->low);
     sylvan_nodecount_levels_do_2(na->high);
 }
@@ -1707,13 +1750,13 @@ void sylvan_nodecount_levels(BDD bdd, uint32_t *variables)
     sylvan_nodecount_levels_do_2(bdd);
 }
 
-uint32_t sylvan_nodecount_do_1(BDD a) 
+uint64_t sylvan_nodecount_do_1(BDD a) 
 {
     if (BDD_ISCONSTANT(a)) return 0;
     bddnode_t na = GETNODE(a);
-    if (na->flags & 1) return 0;
-    na->flags |= 1; // mark
-    uint32_t result = 1;
+    if (na->data & 1) return 0;
+    na->data |= 1; // mark
+    uint64_t result = 1;
     result += sylvan_nodecount_do_1(na->low);
     result += sylvan_nodecount_do_1(na->high);
     return result;
@@ -1723,13 +1766,13 @@ void sylvan_nodecount_do_2(BDD a)
 {
     if (BDD_ISCONSTANT(a)) return;
     bddnode_t na = GETNODE(a);
-    if (!(na->flags & 1)) return;
-    na->flags &= ~1; // unmark
+    if (!(na->data & 1)) return;
+    na->data &= ~1; // unmark
     sylvan_nodecount_do_2(na->low);
     sylvan_nodecount_do_2(na->high);
 }
 
-uint32_t sylvan_nodecount(BDD a) 
+uint64_t sylvan_nodecount(BDD a) 
 {
     uint32_t result = sylvan_nodecount_do_1(a);
     sylvan_nodecount_do_2(a);
@@ -1786,14 +1829,15 @@ static void sylvan_fprint_1(FILE *out, BDD bdd)
     if (bdd==sylvan_invalid) return;
     if (BDD_ISCONSTANT(bdd)) return;
     bddnode_t n = GETNODE(bdd);
-    if (n->flags & 0x2) return;
-    n->flags |= 0x2;
-    
-    fprintf(out, "%08X: (%u, low=%s%08X, high=%s%08X) %s\n", 
+    if (n->data & 0x2) return;
+    n->data |= 0x2;
+
+    fprintf(out, "%016llX: (%u, low=%016llX, high=%s%016llX) %s\n", 
         bdd, n->level, 
-        BDD_HASMARK(n->low)?"~":"", BDD_STRIPMARK(n->low),
-        BDD_HASMARK(n->high)?"~":"", BDD_STRIPMARK(n->high),
-        n->flags & 0x1?"*":"");
+        (uint64_t)n->low,
+        n->comp ? "~" : "", 
+        (uint64_t)n->high,
+        n->data & 0x1?"*":"");
         
     sylvan_fprint_1(out, BDD_STRIPMARK(n->low));
     sylvan_fprint_1(out, BDD_STRIPMARK(n->high));
@@ -1804,8 +1848,8 @@ static void sylvan_print_2(BDD bdd)
     if (bdd==sylvan_invalid) return;
     if (BDD_ISCONSTANT(bdd)) return;
     bddnode_t n = GETNODE(bdd);
-    if (n->flags & 0x2) {
-        n->flags &= ~0x2;
+    if (n->data & 0x2) {
+        n->data &= ~0x2;
         sylvan_print_2(n->low);
         sylvan_print_2(n->high);
     }
@@ -1819,7 +1863,7 @@ void sylvan_print(BDD bdd)
 void sylvan_fprint(FILE *out, BDD bdd)
 {
     if (bdd == sylvan_invalid) return;
-    fprintf(out, "Dump of %08X:\n", bdd);
+    fprintf(out, "Dump of %016llX:\n", bdd);
     sylvan_fprint_1(out, bdd);
     sylvan_print_2(bdd);
 }
@@ -1858,89 +1902,108 @@ long long sylvan_count_refs()
     return result;
 }
 
-// Some 
-static BDD *ser_arr; // serialize array
-static long ser_offset; // offset...
-static uint32_t ser_count = 0;
+/**
+ * SAVE and LOAD routines
+ */
 
-void sylvan_save_reset() 
+struct sylvan_save_dict_type {
+    BDD bdd;
+    uint64_t assigned;
+};
+
+AVL(save, sylvan_save_dict_type)
 {
+    return left->bdd - right->bdd;
+}
+
+static AVL_ROOT(sylvan_save_dict);
+static uint64_t ser_count = 0;
+
+/** COUNTER MANAGEMENT **/
+static long ser_offset;
+
+static void sylvan_save_reset()
+{
+    save_free(&sylvan_save_dict);
     ser_count = 0;
-    int i;
-    // This is a VERY expensive loop.
-    for (i=0;i<_bdd.data->table_size;i++) {
-        bddnode_t n = GETNODE(i);
-        uint32_t *pnum = (uint32_t*)&n->pad[0];
-        *pnum = 0;
-    }
 }
 
 static void sylvan_save_dummy(FILE *f)
 {
     ser_offset = ftell(f);
-    fwrite(&ser_count, 4, 1, f);
+    fwrite(&ser_count, 8, 1, f);
 }
 
 static void sylvan_save_update(FILE *f)
 {
     long off = ftell(f);
     fseek(f, ser_offset, SEEK_SET);
-    fwrite(&ser_count, 4, 1, f);
+    fwrite(&ser_count, 8, 1, f);
     fseek(f, off, SEEK_SET);
 }
+/** END COUNTER MANAGEMENT **/
 
-uint32_t sylvan_save_bdd(FILE* f, BDD bdd) 
+uint64_t sylvan_save_bdd(FILE* f, BDD bdd) 
 {
     if (BDD_ISCONSTANT(bdd)) return bdd;
 
     bddnode_t n = GETNODE(bdd);
-    uint32_t *pnum = (uint32_t*)&n->pad[0];
 
-    if (*pnum == 0) {
-        uint32_t low = sylvan_save_bdd(f, n->low);
-        uint32_t high = sylvan_save_bdd(f, n->high);
+    struct sylvan_save_dict_type e;
+    e.bdd = BDD_STRIPMARK(bdd);
+
+    if (!save_search(sylvan_save_dict, &e)) {
+        uint64_t low = sylvan_save_bdd(f, n->low);
+        uint64_t high = sylvan_save_bdd(f, n->high);
     
         if (ser_count == 0) sylvan_save_dummy(f);
         ser_count++;
-        *pnum = ser_count;
+        e.assigned = ser_count;
+        save_insert(&sylvan_save_dict, &e);
 
-        fwrite(&low, 4, 1, f);
-        fwrite(&high, 4, 1, f);
-        fwrite(&n->level, sizeof(BDDVAR), 1, f);
+        struct bddnode node;
+        node.high = high;
+        node.low = low;
+        node.level = n->level;
+        node.data = 0;
+        node.comp = n->comp;
+
+        fwrite(&node, sizeof(struct bddnode), 1, f);
     }
 
-    return BDD_TRANSFERMARK(bdd, *pnum);
+    return BDD_TRANSFERMARK(bdd, e.assigned);
 }
 
 void sylvan_save_done(FILE *f)
 {
     sylvan_save_update(f);
+    sylvan_save_reset();
 }
+
+static BDD *ser_arr; // serialize array
 
 void sylvan_load(FILE *f) 
 {
-    fread(&ser_count, 4, 1, f);
-
+    fread(&ser_count, 8, 1, f);
     ser_arr = (BDD*)malloc(sizeof(BDD) * ser_count);
 
     unsigned long i;
     for (i=1;i<=ser_count;i++) {
-        uint32_t low, high;
-        BDDVAR var;
-        fread(&low, 4, 1, f);
-        fread(&high, 4, 1, f);
-        fread(&var, sizeof(BDDVAR), 1, f);
+        struct bddnode node;
+        fread(&node, sizeof(struct bddnode), 1, f);
 
-        assert (BDD_STRIPMARK(low) < i);
-        assert (BDD_STRIPMARK(high) < i);
+        assert(node.high < i);
+        assert(node.low  < i);
 
-        BDD _low = BDD_ISCONSTANT(low) ? low : BDD_TRANSFERMARK(low, ser_arr[BDD_STRIPMARK(low)-1]);
-        BDD _high = BDD_ISCONSTANT(high) ? high : BDD_TRANSFERMARK(high, ser_arr[BDD_STRIPMARK(high)-1]);
-        ser_arr[i-1] = sylvan_makenode(var, _low, _high);
+        BDD low = node.low == 0 ? sylvan_false : ser_arr[node.low-1];
+        BDD high = node.high == 0 ? sylvan_false : ser_arr[node.high-1];
+        if (node.comp) high |= complementmark;
+
+        ser_arr[i-1] = sylvan_makenode(node.level, low, high);
     }
 }
 
-BDD sylvan_load_translate(uint32_t bdd) 
+BDD sylvan_load_translate(uint64_t bdd) 
 {
     if (BDD_ISCONSTANT(bdd)) return bdd;
     return BDD_TRANSFERMARK(bdd, ser_arr[BDD_STRIPMARK(bdd)-1]);

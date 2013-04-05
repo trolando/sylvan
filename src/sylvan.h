@@ -8,20 +8,19 @@
 #define COLORSTATS 1
 #endif
 
-typedef uint32_t BDD;
-typedef uint16_t BDDVAR;
+typedef uint64_t BDD;
+typedef uint32_t BDDVAR;
 
 extern const BDD sylvan_true;
 extern const BDD sylvan_false;
 
-// use "BDD something = bddinvalid;" instead of "BDD something = 0;"
+// use "BDD something = sylvan_invalid;" instead of "BDD something = 0;"
 extern const BDD sylvan_invalid;
 
 // Quantifiers
 extern const BDD quant_exists;
 extern const BDD quant_forall;
 
-// Would like to use #define statemens, but that is bad for reference counting
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -152,20 +151,25 @@ long long sylvan_count_refs();
 long double sylvan_satcount(BDD bdd, BDD variables);
 
 long double sylvan_pathcount(BDD bdd);
-uint32_t sylvan_nodecount(BDD a);
+uint64_t sylvan_nodecount(BDD a);
 void sylvan_nodecount_levels(BDD bdd, uint32_t *variables);
 
 /**
- * very low level file write/read functions...
- * need to be able to seek through the file...
+ * To store BDDs, just call sylvan_save_bdd for every BDD, and store
+ * the results in a table somewhere.
+ * Call sylvan_save_done when all BDDs are stored, this will update 
+ * a counter and release all allocated memory.
  */
-uint32_t sylvan_save_bdd(FILE* f, BDD bdd);
+uint64_t sylvan_save_bdd(FILE* f, BDD bdd);
 void sylvan_save_done(FILE *f);
 
-void sylvan_save_reset();
-
+/**
+ * To load a set of stored BDDs, first call sylvan_load once, and then
+ * call sylvan_load_translate for every value you stored from sylvan_save_done earlier.
+ * Finally, call sylvan_load_done to release all allocated memory
+ */
 void sylvan_load(FILE *f);
-BDD sylvan_load_translate(uint32_t bdd);
+BDD sylvan_load_translate(uint64_t bdd);
 void sylvan_load_done();
 
 #ifdef __cplusplus

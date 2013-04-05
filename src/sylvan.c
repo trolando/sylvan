@@ -382,7 +382,7 @@ static void sylvan_mark_rec(BDD bdd)
 static void sylvan_gc_participate()
 {
     xinc(&_bdd.gccount);
-    while (ACCESS_ONCE(_bdd.gc) != 2) cpu_relax(); 
+    while (atomic_read(&_bdd.gc) != 2) ;
 
     int my_id = get_thread_id();
     int workers = _bdd.workers;
@@ -393,7 +393,7 @@ static void sylvan_gc_participate()
     // GC phase 1: clear hash table
     llmsset_clear_multi(_bdd.data, my_id, workers);
     xinc(&_bdd.gccount);
-    while (ACCESS_ONCE(_bdd.gc) != 3) cpu_relax(); 
+    while (atomic_read(&_bdd.gc) != 3) ;
 
     // GC phase 2: mark nodes
     LOCALIZE_THREAD_LOCAL(gc_key, gc_tomark_t);
@@ -403,7 +403,7 @@ static void sylvan_gc_participate()
         t = t->prev;
     }
     xinc(&_bdd.gccount);
-    while (ACCESS_ONCE(_bdd.gc) != 4) cpu_relax(); 
+    while (atomic_read(&_bdd.gc) != 4) ; 
 
     // GC phase 3: rehash BDDs
     LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
@@ -412,12 +412,12 @@ static void sylvan_gc_participate()
 
     llmsset_rehash_multi(_bdd.data, my_id, workers);
     xinc(&_bdd.gccount);
-    while (ACCESS_ONCE(_bdd.gc) >= 2) cpu_relax(); // waiting for 0 or 1 
+    while (atomic_read(&_bdd.gc) >= 2) ; // waiting for 0 or 1 
 }
 
 inline void sylvan_test_gc(void)
 {
-    if (ACCESS_ONCE(_bdd.gc)) {
+    if (atomic_read(&_bdd.gc)) {
         sylvan_gc_participate();
     }
 }
@@ -432,7 +432,7 @@ static inline void sylvan_gc_go()
     int my_id = get_thread_id();
     int workers = _bdd.workers;
 
-    while (ACCESS_ONCE(_bdd.gccount) != workers - 1) cpu_relax();
+    while (atomic_read(&_bdd.gccount) != workers - 1) ;
     
     _bdd.gccount = 0;
     _bdd.gc = 2;
@@ -443,7 +443,7 @@ static inline void sylvan_gc_go()
     // GC phase 1: clear hash table
     llmsset_clear_multi(_bdd.data, my_id, workers);
 
-    while (ACCESS_ONCE(_bdd.gccount) != workers - 1) cpu_relax();
+    while (atomic_read(&_bdd.gccount) != workers - 1) ;
     _bdd.gccount = 0;
     _bdd.gc = 3;
 
@@ -460,7 +460,7 @@ static inline void sylvan_gc_go()
         t = t->prev;
     }
 
-    while (ACCESS_ONCE(_bdd.gccount) != workers - 1) cpu_relax();
+    while (atomic_read(&_bdd.gccount) != workers - 1) ;
     _bdd.gccount = 0;
     _bdd.gc = 4;
 
@@ -470,7 +470,7 @@ static inline void sylvan_gc_go()
     *insert_index = llmsset_get_insertindex_multi(_bdd.data, my_id, _bdd.workers);
 
     llmsset_rehash_multi(_bdd.data, my_id, workers);
-    while (ACCESS_ONCE(_bdd.gccount) != workers - 1) cpu_relax();
+    while (atomic_read(&_bdd.gccount) != workers - 1) ;
 
     _bdd.gccount = 0;
     _bdd.gc = 0; 
@@ -483,7 +483,7 @@ static inline void sylvan_gc_go()
 static inline void sylvan_gc_test()
 {
     // TODO?: 'unlikely'
-    while (ACCESS_ONCE(_bdd.gc)) {
+    while (atomic_read(&_bdd.gc)) {
         sylvan_gc_participate();
     }
 }

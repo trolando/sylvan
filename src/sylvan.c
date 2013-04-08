@@ -1988,12 +1988,12 @@ struct sylvan_save_dict_type {
     uint64_t assigned;
 };
 
-AVL(save, sylvan_save_dict_type)
+AVL(save, struct sylvan_save_dict_type)
 {
     return left->bdd - right->bdd;
 }
 
-static AVL_ROOT(sylvan_save_dict);
+static avl_node_t *sylvan_save_dict = NULL;
 static uint64_t ser_count = 0;
 
 /** COUNTER MANAGEMENT **/
@@ -2029,26 +2029,28 @@ uint64_t sylvan_save_bdd(FILE* f, BDD bdd)
     struct sylvan_save_dict_type e;
     e.bdd = BDD_STRIPMARK(bdd);
 
-    if (!save_search(sylvan_save_dict, &e)) {
-        uint64_t low = sylvan_save_bdd(f, n->low);
-        uint64_t high = sylvan_save_bdd(f, n->high);
-    
-        if (ser_count == 0) sylvan_save_dummy(f);
-        ser_count++;
-        e.assigned = ser_count;
-        save_insert(&sylvan_save_dict, &e);
+    struct sylvan_save_dict_type *ee;
+    ee = save_search(sylvan_save_dict, &e);
+    if (ee != NULL) return BDD_TRANSFERMARK(bdd, ee->assigned);
 
-        struct bddnode node;
-        node.high = high;
-        node.low = low;
-        node.level = n->level;
-        node.data = 0;
-        node.comp = n->comp;
+    uint64_t low = sylvan_save_bdd(f, n->low);
+    uint64_t high = sylvan_save_bdd(f, n->high);
 
-        fwrite(&node, sizeof(struct bddnode), 1, f);
-    }
+    if (ser_count == 0) sylvan_save_dummy(f);
+    ser_count++;
+    e.assigned = ser_count;
+    save_insert(&sylvan_save_dict, &e);
 
-    return BDD_TRANSFERMARK(bdd, e.assigned);
+    struct bddnode node;
+    node.high = high;
+    node.low = low;
+    node.level = n->level;
+    node.data = 0;
+    node.comp = n->comp;
+
+    fwrite(&node, sizeof(struct bddnode), 1, f);
+
+    return BDD_TRANSFERMARK(bdd, ser_count);
 }
 
 void sylvan_save_done(FILE *f)

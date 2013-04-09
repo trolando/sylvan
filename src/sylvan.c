@@ -1912,6 +1912,99 @@ long double sylvan_satcount(BDD bdd, BDD variables)
     return sylvan_satcount_do(bdd, variables);
 }
 
+BDD
+sylvan_set_empty()
+{
+    return sylvan_false;
+}
+
+BDD
+sylvan_set_add(BDD set, BDDVAR level)
+{
+    return sylvan_or(set, sylvan_ithvar(level));
+}
+
+BDD
+sylvan_set_remove(BDD set, BDDVAR level)
+{
+    return sylvan_exists(set, sylvan_ithvar(level));
+}
+
+int
+sylvan_set_in(BDD set, BDDVAR level)
+{
+    while (!BDD_ISCONSTANT(set)) {
+        bddnode_t n = GETNODE(set);
+        if (n->level == level) return 1;
+        if (n->level > level) break; // BDDs are ordered
+        set = n->low;
+    }
+
+    return 0;
+}
+
+BDD
+sylvan_set_next(BDD set)
+{
+    if (BDD_ISCONSTANT(set)) return sylvan_false;
+    return GETNODE(set)->low;
+}
+
+size_t
+sylvan_set_count(BDD set)
+{
+    size_t result = 0;
+    while (set != sylvan_false) {
+        result++;
+        set = sylvan_set_next(set);
+    }
+    return result;
+}
+
+void
+sylvan_set_toarray(BDD set, BDDVAR *arr)
+{
+    size_t i = 0;
+    while (set != sylvan_false) {
+        arr[i++] = GETNODE(set)->level;
+        set = sylvan_set_next(set);
+    }
+}
+
+BDD
+sylvan_set_fromarray(BDDVAR* arr, size_t length)
+{
+    BDD result = sylvan_set_empty();
+    size_t i;
+    for (i=0; i<length; i++) result = sylvan_or(result, sylvan_ithvar(arr[i]));
+    return result;
+}
+
+TASK_IMPL_1(BDD, sylvan_support, BDD, bdd)
+{
+    if (BDD_ISCONSTANT(bdd)) return sylvan_false;
+    bddnode_t n = GETNODE(bdd);
+    BDD high, low, set, result;
+
+    TOMARK_INIT
+    SPAWN(sylvan_support, n->low);
+    high = CALL(sylvan_support, n->high);
+    TOMARK_PUSH(high);
+    low = SYNC(sylvan_support);
+    TOMARK_PUSH(low);
+    set = CALL(sylvan_ite, high, sylvan_true, low, 0);
+    TOMARK_PUSH(set);
+    result = CALL(sylvan_ite, sylvan_ithvar(n->level), sylvan_true, set, 0);
+    TOMARK_EXIT
+
+    return result;
+}
+
+BDD sylvan_support(BDD bdd)
+{
+    return CALL(sylvan_support, bdd);
+}
+
 static void sylvan_fprint_1(FILE *out, BDD bdd)
 {
     if (bdd==sylvan_invalid) return;
@@ -1920,26 +2013,27 @@ static void sylvan_fprint_1(FILE *out, BDD bdd)
     if (n->data & 0x2) return;
     n->data |= 0x2;
 
-    fprintf(out, "%016llX: (%u, low=%016llX, high=%s%016llX) %s\n", 
-        bdd, n->level, 
+    fprintf(out, "%016llX: (%u, low=%016llX, high=%s%016llX) %s\n",
+        bdd, n->level,
         (uint64_t)n->low,
-        n->comp ? "~" : "", 
+        n->comp ? "~" : "",
         (uint64_t)n->high,
         n->data & 0x1?"*":"");
-        
+
     sylvan_fprint_1(out, BDD_STRIPMARK(n->low));
     sylvan_fprint_1(out, BDD_STRIPMARK(n->high));
 }
 
-static void sylvan_print_2(BDD bdd)
+static void
+sylvan_unmark(BDD bdd)
 {
-    if (bdd==sylvan_invalid) return;
-    if (BDD_ISCONSTANT(bdd)) return;
-    bddnode_t n = GETNODE(bdd);
-    if (n->data & 0x2) {
-        n->data &= ~0x2;
-        sylvan_print_2(n->low);
-        sylvan_print_2(n->high);
+    if (bdd != sylvan_invalid && !BDD_ISCONSTANT(bdd)) {
+        bddnode_t n = GETNODE(bdd);
+        if (n->data & 0x2) {
+            n->data &= ~0x2;
+            sylvan_unmark(n->low);
+            sylvan_unmark(n->high);
+        }
     }
 }
 
@@ -1953,142 +2047,282 @@ void sylvan_fprint(FILE *out, BDD bdd)
     if (bdd == sylvan_invalid) return;
     fprintf(out, "Dump of %016llX:\n", bdd);
     sylvan_fprint_1(out, bdd);
-    sylvan_print_2(bdd);
+    sylvan_unmark(bdd);
 }
 
-llmsset_t __sylvan_get_internal_data() 
+/*************
+ * DOT OUTPUT
+*************/
+
+/***
+ * We keep a set [level -> [node]] using AVLset
+ */
+#include <avl.h>
+
+struct level_to_nodeset {
+    BDDVAR level;
+    avl_node_t *set;
+};
+
+AVL(level_to_nodeset, struct level_to_nodeset)
+{
+    return left->level - right->level;
+}
+
+AVL(nodeset, BDD)
+{
+    return *left - *right;
+}
+
+static void __attribute__((noinline))
+sylvan_dothelper_register(avl_node_t **set, BDD bdd)
+{
+    struct level_to_nodeset s, *ss;
+    bddnode_t node = GETNODE(bdd);
+    s.level = node->level;
+    ss = level_to_nodeset_search(*set, &s);
+    if (ss == NULL) {
+        s.set = NULL;
+        ss = level_to_nodeset_put(set, &s, NULL);
+    }
+    assert(ss != NULL);
+    bdd = BDD_STRIPMARK(bdd);
+    nodeset_insert(&ss->set, &bdd);
+}
+
+static void
+sylvan_fprintdot_rec(FILE *out, BDD bdd, avl_node_t **levels)
+{
+    if (bdd == sylvan_invalid || BDD_ISCONSTANT(bdd)) return;
+
+    bdd = BDD_STRIPMARK(bdd);
+
+    bddnode_t n = GETNODE(bdd);
+    if (n->data & 0x2) return;
+    n->data |= 0x2;
+
+    sylvan_dothelper_register(levels, bdd);
+
+    fprintf(out, "%llu [label=\"%d\"];\n", bdd, n->level);
+
+    sylvan_fprintdot_rec(out, n->low, levels);
+    sylvan_fprintdot_rec(out, n->high, levels);
+
+    fprintf(out, "%llu -> %llu [style=dashed];\n", bdd, (BDD)n->low);
+    fprintf(out, "%llu -> %llu [style=solid dir=both arrowtail=%s];\n", bdd, (BDD)n->high, n->comp ? "dot" : "none");
+}
+
+void
+sylvan_fprintdot(FILE *out, BDD bdd)
+{
+    fprintf(out, "digraph \"DD\" {\n");
+    fprintf(out, "graph [dpi = 300];\n");
+    fprintf(out, "center = true;\n");
+    fprintf(out, "edge [dir = forward];\n");
+    fprintf(out, "0 [shape=box, label=\"0\", style=filled, shape=box, height=0.3, width=0.3];\n");
+    avl_node_t *levels = NULL;
+    sylvan_fprintdot_rec(out, bdd, &levels);
+
+    size_t levels_count = avl_count(levels);
+    struct level_to_nodeset *arr = level_to_nodeset_toarray(levels);
+    size_t i;
+    for (i=0;i<levels_count;i++) {
+        fprintf(out, "{ rank=same; ");
+        size_t node_count = avl_count(arr[i].set);
+        size_t j;
+        BDD *arr_j = nodeset_toarray(arr[i].set);
+        for (j=0;j<node_count;j++) {
+            fprintf(out, "%llu; ", arr_j[j]);
+        }
+        fprintf(out, "}\n");
+    }
+    level_to_nodeset_free(&levels);
+
+    fprintf(out, "}\n");
+    sylvan_unmark(bdd);
+}
+
+void
+sylvan_printdot(BDD bdd)
+{
+    sylvan_fprintdot(stdout, bdd);
+}
+
+/**
+ * END DOT OUTPUT
+ */
+
+
+llmsset_t
+__sylvan_get_internal_data()
 {
     return _bdd.data;
 }
 
-llci_t __sylvan_get_internal_cache() 
+llci_t
+__sylvan_get_internal_cache()
 {
     return _bdd.cache;
 }
 
-long long sylvan_count_refs()
+size_t
+sylvan_count_refs()
 {
-    long long result = 0;
+    size_t result = 0;
 
     llmsset_refset_t r = _bdd.data->refset;
     while (r != 0) {
         result += r->count;
         r = r->next;
     }
-    
+
     return result;
 }
 
 /**
- * SAVE and LOAD routines
+ * SERIALIZATION helpers
  */
 
-struct sylvan_save_dict_type {
+struct sylvan_ser {
     BDD bdd;
-    uint64_t assigned;
+    size_t assigned;
 };
 
-AVL(save, struct sylvan_save_dict_type)
+AVL(sylvan_ser, struct sylvan_ser)
 {
     return left->bdd - right->bdd;
 }
 
-static avl_node_t *sylvan_save_dict = NULL;
-static uint64_t ser_count = 0;
-
-/** COUNTER MANAGEMENT **/
-static long ser_offset;
-
-static void sylvan_save_reset()
+AVL(sylvan_ser_reversed, struct sylvan_ser)
 {
-    save_free(&sylvan_save_dict);
-    ser_count = 0;
+    return left->assigned - right->assigned;
 }
 
-static void sylvan_save_dummy(FILE *f)
+static avl_node_t *sylvan_ser_set = NULL;
+static avl_node_t *sylvan_ser_reversed_set = NULL;
+static size_t sylvan_ser_counter = 1;
+
+static void
+sylvan_serialize_assign_rec(BDD bdd)
 {
-    ser_offset = ftell(f);
-    fwrite(&ser_count, 8, 1, f);
-}
+    if (!BDD_ISCONSTANT(bdd)) {
+        bddnode_t n = GETNODE(bdd);
 
-static void sylvan_save_update(FILE *f)
-{
-    long off = ftell(f);
-    fseek(f, ser_offset, SEEK_SET);
-    fwrite(&ser_count, 8, 1, f);
-    fseek(f, off, SEEK_SET);
-}
-/** END COUNTER MANAGEMENT **/
+        struct sylvan_ser s, *ss;
+        s.bdd = BDD_STRIPMARK(bdd);
+        ss = sylvan_ser_search(sylvan_ser_set, &s);
+        if (ss == NULL) {
+            s.assigned = 0; // dummy value
+            ss = sylvan_ser_put(&sylvan_ser_set, &s, NULL);
 
-uint64_t sylvan_save_bdd(FILE* f, BDD bdd) 
-{
-    if (BDD_ISCONSTANT(bdd)) return bdd;
+            sylvan_serialize_assign_rec(n->low);
+            sylvan_serialize_assign_rec(n->high);
 
-    bddnode_t n = GETNODE(bdd);
-
-    struct sylvan_save_dict_type e;
-    e.bdd = BDD_STRIPMARK(bdd);
-
-    struct sylvan_save_dict_type *ee;
-    ee = save_search(sylvan_save_dict, &e);
-    if (ee != NULL) return BDD_TRANSFERMARK(bdd, ee->assigned);
-
-    uint64_t low = sylvan_save_bdd(f, n->low);
-    uint64_t high = sylvan_save_bdd(f, n->high);
-
-    if (ser_count == 0) sylvan_save_dummy(f);
-    ser_count++;
-    e.assigned = ser_count;
-    save_insert(&sylvan_save_dict, &e);
-
-    struct bddnode node;
-    node.high = high;
-    node.low = low;
-    node.level = n->level;
-    node.data = 0;
-    node.comp = n->comp;
-
-    fwrite(&node, sizeof(struct bddnode), 1, f);
-
-    return BDD_TRANSFERMARK(bdd, ser_count);
-}
-
-void sylvan_save_done(FILE *f)
-{
-    sylvan_save_update(f);
-    sylvan_save_reset();
-}
-
-static BDD *ser_arr; // serialize array
-
-void sylvan_load(FILE *f) 
-{
-    fread(&ser_count, 8, 1, f);
-    ser_arr = (BDD*)malloc(sizeof(BDD) * ser_count);
-
-    unsigned long i;
-    for (i=1;i<=ser_count;i++) {
-        struct bddnode node;
-        fread(&node, sizeof(struct bddnode), 1, f);
-
-        assert(node.high < i);
-        assert(node.low  < i);
-
-        BDD low = node.low == 0 ? sylvan_false : ser_arr[node.low-1];
-        BDD high = node.high == 0 ? sylvan_false : ser_arr[node.high-1];
-        if (node.comp) high |= complementmark;
-
-        ser_arr[i-1] = sylvan_makenode(node.level, low, high);
+            ss->assigned = sylvan_ser_counter++;
+            sylvan_ser_reversed_insert(&sylvan_ser_reversed_set, ss); // put a copy in the reversed table...
+        }
     }
 }
 
-BDD sylvan_load_translate(uint64_t bdd) 
+void
+sylvan_serialize_add(BDD bdd)
 {
-    if (BDD_ISCONSTANT(bdd)) return bdd;
-    return BDD_TRANSFERMARK(bdd, ser_arr[BDD_STRIPMARK(bdd)-1]);
+    sylvan_serialize_assign_rec(bdd);
 }
 
-void sylvan_load_done()
+void
+sylvan_serialize_reset()
 {
-    free(ser_arr);
+    sylvan_ser_free(&sylvan_ser_set);
+    sylvan_ser_free(&sylvan_ser_reversed_set);
+    sylvan_ser_counter = 1;
+}
+
+size_t
+sylvan_serialize_get(BDD bdd)
+{
+    if (BDD_ISCONSTANT(bdd)) return bdd;
+    struct sylvan_ser s, *ss;
+    s.bdd = BDD_STRIPMARK(bdd);
+    ss = sylvan_ser_search(sylvan_ser_set, &s);
+    assert(ss != NULL);
+    return BDD_TRANSFERMARK(bdd, ss->assigned);
+}
+
+BDD
+sylvan_serialize_get_reversed(size_t value)
+{
+    if (BDD_ISCONSTANT(value)) return value;
+    struct sylvan_ser s, *ss;
+    s.assigned = BDD_STRIPMARK(value);
+    ss = sylvan_ser_reversed_search(sylvan_ser_reversed_set, &s);
+    assert(ss != NULL);
+    return BDD_TRANSFERMARK(value, ss->bdd);
+}
+
+void
+sylvan_serialize_totext(FILE *out)
+{
+    fprintf(out, "[");
+    avl_iter_t *it = sylvan_ser_reversed_iter(sylvan_ser_reversed_set);
+    struct sylvan_ser *s;
+    while ((s=sylvan_ser_reversed_iter_next(it))) {
+        BDD bdd = s->bdd;
+        bddnode_t n = GETNODE(bdd);
+        fprintf(out, "(%zu,%u,%zu,%zu,%u),", s->assigned,
+                                             n->level,
+                                             sylvan_serialize_get(n->low),
+                                             sylvan_serialize_get(n->high),
+                                             n->comp);
+    }
+    sylvan_ser_reversed_iter_free(it);
+    fprintf(out, "]");
+}
+
+void
+sylvan_serialize_tofile(FILE *out)
+{
+    size_t count = avl_count(sylvan_ser_reversed_set);
+    fwrite(&count, sizeof(size_t), 1, out);
+
+    struct sylvan_ser *s;
+    avl_iter_t *it = sylvan_ser_reversed_iter(sylvan_ser_reversed_set);
+    while ((s=sylvan_ser_reversed_iter_next(it))) {
+        bddnode_t n = GETNODE(s->bdd);
+
+        struct bddnode node;
+        node.high = sylvan_serialize_get(n->high);
+        node.low = sylvan_serialize_get(n->low);
+        node.level = n->level;
+        node.data = 0;
+        node.comp = n->comp;
+
+        fwrite(&node, sizeof(struct bddnode), 1, out);
+    }
+    sylvan_ser_reversed_iter_free(it);
+}
+
+void
+sylvan_serialize_fromfile(FILE *in)
+{
+    sylvan_serialize_reset();
+    size_t count, i;
+    fread(&count, 8, 1, in);
+
+    for (i=1; i<=count; i++) {
+        struct bddnode node;
+        fread(&node, sizeof(struct bddnode), 1, in);
+
+        BDD low = sylvan_serialize_get_reversed(node.low);
+        BDD high = sylvan_serialize_get_reversed(node.high);
+        if (node.comp) high |= complementmark;
+
+        struct sylvan_ser s;
+
+        s.bdd = sylvan_makenode(node.level, low, high);
+        s.assigned = i;
+
+        sylvan_ser_insert(&sylvan_ser_set, &s);
+        sylvan_ser_reversed_insert(&sylvan_ser_reversed_set, &s);
+    }
 }

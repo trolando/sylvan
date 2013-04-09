@@ -105,7 +105,7 @@ int sylvan_relprods_analyse(BDD a, BDD b, void_cb cb_in, void_cb cb_out);
 /**
  * Reversed RelProdS using paired variables (X even, X' odd)
  */
-TASK_DECL_4(BDD, sylvan_relprods_reversed, BDD, BDD, BDD, BDDVAR); 
+TASK_DECL_4(BDD, sylvan_relprods_reversed, BDD, BDD, BDD, BDDVAR);
 BDD sylvan_relprods_reversed(BDD a, BDD b, BDD vars);
 
 /**
@@ -132,9 +132,21 @@ BDD sylvan_exists(BDD a, BDD variables);
 TASK_DECL_3(BDD, sylvan_forall, BDD, BDD, BDDVAR);
 BDD sylvan_forall(BDD a, BDD variables);
 
+TASK_DECL_1(BDD, sylvan_support, BDD);
+BDD sylvan_support(BDD bdd);
+
 BDD sylvan_ref(BDD a);
 void sylvan_deref(BDD a);
 void sylvan_gc();
+
+BDD sylvan_set_empty();
+BDD sylvan_set_add(BDD set, BDDVAR level);
+BDD sylvan_set_remove(BDD set, BDDVAR level);
+int sylvan_set_in(BDD set, BDDVAR level);
+BDD sylvan_set_next(BDD set);
+size_t sylvan_set_count(BDD set);
+void sylvan_set_toarray(BDD set, BDDVAR *arr);
+BDD sylvan_set_fromarray(BDDVAR *arr, size_t length);
 
 /**
  * Dangerous creation primitive.
@@ -144,12 +156,18 @@ void sylvan_gc();
 BDD sylvan_makenode(BDDVAR level, BDD low, BDD high);
 
 /**
- * Send a dump of the BDD to stdout
+ * Very low-level print function (prefer serialize functions or .dot output!
  */
 void sylvan_print(BDD bdd);
 void sylvan_fprint(FILE *out, BDD bdd);
 
-long long sylvan_count_refs();
+/**
+ * Write a .dot file of a BDD 
+ */
+void sylvan_printdot(BDD bdd);
+void sylvan_fprintdot(FILE *out, BDD bdd);
+
+size_t sylvan_count_refs();
 
 /**
  * Calculate number of satisfying variable assignments.
@@ -164,22 +182,27 @@ uint64_t sylvan_nodecount(BDD a);
 void sylvan_nodecount_levels(BDD bdd, uint32_t *variables);
 
 /**
- * To store BDDs, just call sylvan_save_bdd for every BDD, and store
- * the results in a table somewhere.
- * Call sylvan_save_done when all BDDs are stored, this will update 
- * a counter and release all allocated memory.
+ * SAVING:
+ * use sylvan_serialize_add on every BDD you want to store
+ * use sylvan_serialize_get to retrieve the key of every stored BDD
+ * use sylvan_serialize_tofile
+ *
+ * LOADING:
+ * use sylvan_serialize_fromfile (implies sylvan_serialize_reset)
+ * use sylvan_serialize_get_reversed for every key
+ *
+ * MISC:
+ * use sylvan_serialize_reset to free all allocated structures
+ * use sylvan_serialize_totext to store a textual list of tuples of all BDDs.
+ *         format: [(<key>,<level>,<key_low>,<key_high>,<complement_high>),...]
  */
-uint64_t sylvan_save_bdd(FILE* f, BDD bdd);
-void sylvan_save_done(FILE *f);
-
-/**
- * To load a set of stored BDDs, first call sylvan_load once, and then
- * call sylvan_load_translate for every value you stored from sylvan_save_done earlier.
- * Finally, call sylvan_load_done to release all allocated memory
- */
-void sylvan_load(FILE *f);
-BDD sylvan_load_translate(uint64_t bdd);
-void sylvan_load_done();
+void sylvan_serialize_add(BDD bdd);
+size_t sylvan_serialize_get(BDD bdd);
+BDD sylvan_serialize_get_reversed(size_t value);
+void sylvan_serialize_reset();
+void sylvan_serialize_totext(FILE *out);
+void sylvan_serialize_tofile(FILE *out);
+void sylvan_serialize_fromfile(FILE *out);
 
 #ifdef __cplusplus
 }

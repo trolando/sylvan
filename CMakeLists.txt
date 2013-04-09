@@ -28,7 +28,7 @@ configure_file(
 )
 
 set (CMAKE_ASM_FLAGS "-g")
-set (CMAKE_C_FLAGS "-g -O3 -Wall -D${NUMA_DEF}")
+set (CMAKE_C_FLAGS "-g -O3 -Wextra -Wall -Werror -D${NUMA_DEF}")
 
 set(sylvan_sources
   src/sylvan.h
@@ -56,4 +56,4 @@ include_directories(src)
 add_executable(sylvan_test ${test_sources})
 target_link_libraries(sylvan_test sylvan)
 add_test(test ./sylvan_test)
- 
+

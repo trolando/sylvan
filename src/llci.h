@@ -33,7 +33,7 @@
 unsigned long long hash_mul(const void* data, unsigned long long len);
 
 typedef struct llci {
-    size_t             cache_size;  
+    size_t             cache_size;
     size_t             mask;         // size-1
     uint32_t           *table;       // table with hashes
     uint8_t            *data;        // table with data
@@ -49,7 +49,7 @@ typedef struct llci {
 #define LLCI_CL_MASK       ((uint32_t)(~(LLCI_HASH_PER_CL-1)))
 #define LLCI_CL_MASK_R     ((uint32_t)(LLCI_HASH_PER_CL-1))
 
-static int __attribute__((unused)) llci_get_tag(const llci_t dbs, void *data) 
+static int __attribute__((unused)) llci_get_tag(const llci_t dbs, void *data)
 {
     size_t hash = (size_t)hash_mul(data, LLCI_KEYSIZE);
     const size_t idx = hash & dbs->mask;
@@ -69,7 +69,7 @@ static int __attribute__((unused)) llci_get_tag(const llci_t dbs, void *data)
     return (*bucket == v) ? 1 : 0;
 }
 
-static int __attribute__((unused)) llci_put_tag(const llci_t dbs, void *data) 
+static int __attribute__((unused)) llci_put_tag(const llci_t dbs, void *data)
 {
     size_t hash = (size_t)hash_mul(data, LLCI_KEYSIZE);
     const size_t idx = hash & dbs->mask;
@@ -97,10 +97,10 @@ static int __attribute__((unused)) llci_put_tag(const llci_t dbs, void *data)
 
     memcpy(&dbs->data[data_idx], data, LLCI_DATASIZE);
     *bucket = hh;
-    return 1; 
+    return 1;
 }
 
-static int __attribute__((unused)) llci_get(const llci_t dbs, void *data) 
+static int __attribute__((unused)) llci_get(const llci_t dbs, void *data)
 {
     size_t hash = hash_mul(data, LLCI_KEYSIZE);
     const size_t idx = hash & dbs->mask;
@@ -122,14 +122,14 @@ static int __attribute__((unused)) llci_get(const llci_t dbs, void *data)
     if (memcmp(&dbs->data[data_idx], data, LLCI_KEYSIZE) == 0) {
         memcpy(&((uint8_t*)data)[LLCI_KEYSIZE], &dbs->data[data_idx+LLCI_KEYSIZE], LLCI_DATASIZE-LLCI_KEYSIZE);
         *bucket = v;
-        return 1;                    
+        return 1;
     } else {
         *bucket = v;
         return 0;
     }
 }
 
-static int __attribute__((unused)) llci_get_restart(const llci_t dbs, void *data) 
+static int __attribute__((unused)) llci_get_restart(const llci_t dbs, void *data)
 {
     size_t hash = hash_mul(data, LLCI_KEYSIZE);
     const size_t idx = hash & dbs->mask;
@@ -149,11 +149,11 @@ static int __attribute__((unused)) llci_get_restart(const llci_t dbs, void *data
 
         // acquire lock
         if (!cas(bucket, v, v|LLCI_LOCK)) continue; // atomic restart
-            
+
         if (memcmp(&dbs->data[data_idx], data, LLCI_KEYSIZE) == 0) {
             memcpy(&((uint8_t*)data)[LLCI_KEYSIZE], &dbs->data[data_idx+LLCI_KEYSIZE], LLCI_DATASIZE-LLCI_KEYSIZE);
             *bucket = v;
-            return 1;                    
+            return 1;
         } else {
             *bucket = v;
             return 0;
@@ -161,7 +161,7 @@ static int __attribute__((unused)) llci_get_restart(const llci_t dbs, void *data
     }
 }
 
-static int __attribute__((unused)) llci_get_seq(const llci_t dbs, void *data) 
+static int __attribute__((unused)) llci_get_seq(const llci_t dbs, void *data)
 {
     size_t hash = hash_mul(data, LLCI_KEYSIZE);
     const size_t idx = hash & dbs->mask;
@@ -180,15 +180,15 @@ static int __attribute__((unused)) llci_get_seq(const llci_t dbs, void *data)
 
     // Found existing
     memcpy(&((uint8_t*)data)[LLCI_KEYSIZE], &dbs->data[data_idx+LLCI_KEYSIZE], LLCI_DATASIZE-LLCI_KEYSIZE);
-    return 1;                    
+    return 1;
 }
 
-static int __attribute__((unused)) llci_put(const llci_t dbs, void *data) 
+static int __attribute__((unused)) llci_put(const llci_t dbs, void *data)
 {
     size_t hash = hash_mul(data, LLCI_KEYSIZE);
     const size_t idx = hash & dbs->mask;
     const size_t data_idx = idx * LLCI_PDS;
-    
+
     volatile uint32_t * const bucket = &dbs->table[idx];
     register uint32_t v = *bucket;
 
@@ -211,12 +211,12 @@ static int __attribute__((unused)) llci_put(const llci_t dbs, void *data)
     return 1; // Added
 }
 
-static int __attribute__((unused)) llci_put_seq(const llci_t dbs, void *data) 
+static int __attribute__((unused)) llci_put_seq(const llci_t dbs, void *data)
 {
     size_t hash = hash_mul(data, LLCI_KEYSIZE);
     const size_t idx = hash & dbs->mask;
     const size_t data_idx = idx * LLCI_PDS;
-    
+
     volatile uint32_t * const bucket = &dbs->table[idx];
     register uint32_t v = *bucket;
 
@@ -245,7 +245,7 @@ static inline llci_t llci_create(size_t cache_size)
 {
     llci_t dbs;
     posix_memalign((void**)&dbs, LINE_SIZE, sizeof(struct llci));
-    
+
     assert(LLCI_KEYSIZE <= LLCI_DATASIZE);
 
     if (cache_size < LLCI_HASH_PER_CL) cache_size = LLCI_HASH_PER_CL;
@@ -261,8 +261,8 @@ static inline llci_t llci_create(size_t cache_size)
 
     dbs->table = mmap(0, dbs->cache_size * sizeof(uint32_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     dbs->data = mmap(0, dbs->cache_size * LLCI_PDS, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
-    if (dbs->table == (uint32_t*)-1 || dbs->data == (uint8_t*)-1) { 
-        fprintf(stderr, "LLCI: Unable to allocate memory!\n"); 
+    if (dbs->table == (uint32_t*)-1 || dbs->data == (uint8_t*)-1) {
+        fprintf(stderr, "LLCI: Unable to allocate memory!\n");
         exit(1);
     }
 
@@ -280,10 +280,10 @@ static inline llci_t llci_create(size_t cache_size)
     return dbs;
 }
 
-static inline void __attribute__((unused)) 
-llci_clear_partial(const llci_t dbs, size_t first, size_t count) 
+static inline void __attribute__((unused))
+llci_clear_partial(const llci_t dbs, size_t first, size_t count)
 {
-    if (first >= 0 && first < dbs->cache_size) {
+    if (/*first >= 0 &&*/ first < dbs->cache_size) {
         if (count > dbs->cache_size - first) count = dbs->cache_size - first;
         memset(dbs->table + first, 0, 4 * count);
     }
@@ -319,7 +319,7 @@ llci_clear_multi(const llci_t dbs, size_t my_id, size_t n_workers)
 #endif
 }
 
-static void __attribute__((unused)) llci_clear(const llci_t dbs) 
+static void __attribute__((unused)) llci_clear(const llci_t dbs)
 {
     llci_clear_partial(dbs, 0, dbs->cache_size);
 }
@@ -331,7 +331,7 @@ static inline void llci_free(const llci_t dbs)
     free(dbs);
 }
 
-static inline void __attribute__((unused)) llci_print_size(const llci_t dbs, FILE *f) 
+static inline void __attribute__((unused)) llci_print_size(const llci_t dbs, FILE *f)
 {
     fprintf(f, "LLCI table with %ld entries; hash array = %ld bytes; data array = %ld bytes",
         dbs->cache_size, dbs->cache_size * 4, dbs->cache_size * LLCI_PDS);

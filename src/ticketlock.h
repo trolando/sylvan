@@ -34,7 +34,7 @@ static inline int ticketlock_trylock(ticketlock_t *t)
     unsigned cmpnew = ((unsigned) menew << 16) + me;
 
     if (cmpxchg(&t->u, cmp, cmpnew) == cmp) return 0;
-    
+
     return 1;
 }
 

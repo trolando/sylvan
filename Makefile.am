@@ -24,7 +24,7 @@ libsylvan_la_SOURCES += src/hash_mul.S
 libsylvan_la_SOURCES += src/rehash_mul.S
 
 libsylvan_la_LDFLAGS = -version-info 0:0:0
-libsylvan_la_LIBADD = -lm 
+libsylvan_la_LIBADD = -lm
 
 if HAVE_NUMA_H
 libsylvan_la_LIBADD += -lnuma

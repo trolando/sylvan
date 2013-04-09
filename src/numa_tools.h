@@ -28,7 +28,7 @@ int numa_move(void *mem, size_t size, int node);
 
 /**
  * This function distributes a preallocated array of <size> bytes
- * over all available NUMA memory domains. 
+ * over all available NUMA memory domains.
  *
  * Note that mem should be aligned on a <getpagesize()> boundary!
  *
@@ -39,7 +39,7 @@ int numa_move(void *mem, size_t size, int node);
  * For example, if domains 0,3,6 are available, with 20000 bytes and page size of 4096,
  * then the first 8192 bytes are bound to domain 0, the next 8192 bytes to domain 3 and
  * the final 3616 bytes are bound to domain 6.
- * 
+ *
  * Returns 0 on success, -1 on failure.
  */
 int numa_interleave(void *mem, size_t size, size_t *fragment_size);

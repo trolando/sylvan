@@ -4,7 +4,7 @@
  * Lace is loosely based on ideas implemented by Karl-Filip Faxen in Wool.
  *
  * Copyright (C) 2012-2013 Tom van Dijk, University of Twente
- * 
+ *
  * TODO: add BSD license
  */
 
@@ -51,11 +51,11 @@
 /* The size of a pointer, 8 bytes on a 64-bit architecture */
 #define P_SZ (sizeof(void *))
 
-#define PAD(x,b) ( ( (b) - ((x)%(b)) ) & ((b)-1) ) /* b must be power of 2 */ 
+#define PAD(x,b) ( ( (b) - ((x)%(b)) ) & ((b)-1) ) /* b must be power of 2 */
 #define ROUND(x,b) ( (x) + PAD( (x), (b) ) )
 
 #ifndef LACE_TASKSIZE
-#define LACE_TASKSIZE 4*8 
+#define LACE_TASKSIZE 4*8
 #endif
 
 struct _Worker;
@@ -109,7 +109,7 @@ typedef struct _Worker {
 
     char pad2[PAD(3*P_SZ+2, LINE_SIZE)];
 
-    LaceFlags flags; 
+    LaceFlags flags;
 
     char pad3[PAD(sizeof(LaceFlags), LINE_SIZE)];
 } Worker;
@@ -140,8 +140,8 @@ Worker *lace_get_worker();
  * If using SYNC, SPAWN and CALL outside Lace functions, the default
  * values below are used and the value of __lace_in_task triggers the
  * special behavior from outside Lace functions.
- * 
- * The DISPATCH functions are always inlined and due to compiler 
+ *
+ * The DISPATCH functions are always inlined and due to compiler
  * optimization they do not generate any overhead.
  */
 
@@ -329,7 +329,7 @@ RTYPE CALL_DISPATCH_##NAME(Worker *w, Task *__dq_head, int __intask )           
                                                                                       \
                                                                                       \
                                                                                       \
- 
+
 #define TASK_IMPL_0(RTYPE, NAME)                                                      \
 void NAME##_WRAP(Worker *w, Task *__dq_head, TD_##NAME *t)                            \
 {                                                                                     \
@@ -347,7 +347,7 @@ RTYPE NAME##_CALL(Worker *w, Task *__dq_head )                                  
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 RTYPE NAME##_WORK(Worker *__lace_worker, Task *__lace_dq_head, int __lace_in_task )   \
- 
+
 #define TASK_0(RTYPE, NAME) TASK_DECL_0(RTYPE, NAME) TASK_IMPL_0(RTYPE, NAME)
 
 #define VOID_TASK_DECL_0(NAME)                                                        \
@@ -518,7 +518,7 @@ void CALL_DISPATCH_##NAME(Worker *w, Task *__dq_head, int __intask )            
                                                                                       \
                                                                                       \
                                                                                       \
- 
+
 #define VOID_TASK_IMPL_0(NAME)                                                        \
 void NAME##_WRAP(Worker *w, Task *__dq_head, TD_##NAME *t)                            \
 {                                                                                     \
@@ -536,7 +536,7 @@ void NAME##_CALL(Worker *w, Task *__dq_head )                                   
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 void NAME##_WORK(Worker *__lace_worker, Task *__lace_dq_head, int __lace_in_task )    \
- 
+
 #define VOID_TASK_0(NAME) VOID_TASK_DECL_0(NAME) VOID_TASK_IMPL_0(NAME)
 
 
@@ -710,7 +710,7 @@ RTYPE CALL_DISPATCH_##NAME(Worker *w, Task *__dq_head, int __intask , ATYPE_1 ar
                                                                                       \
                                                                                       \
                                                                                       \
- 
+
 #define TASK_IMPL_1(RTYPE, NAME, ATYPE_1, ARG_1)                                      \
 void NAME##_WRAP(Worker *w, Task *__dq_head, TD_##NAME *t)                            \
 {                                                                                     \
@@ -728,7 +728,7 @@ RTYPE NAME##_CALL(Worker *w, Task *__dq_head , ATYPE_1 arg_1)                   
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 RTYPE NAME##_WORK(Worker *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1 ARG_1)\
- 
+
 #define TASK_1(RTYPE, NAME, ATYPE_1, ARG_1) TASK_DECL_1(RTYPE, NAME, ATYPE_1) TASK_IMPL_1(RTYPE, NAME, ATYPE_1, ARG_1)
 
 #define VOID_TASK_DECL_1(NAME, ATYPE_1)                                               \
@@ -899,7 +899,7 @@ void CALL_DISPATCH_##NAME(Worker *w, Task *__dq_head, int __intask , ATYPE_1 arg
                                                                                       \
                                                                                       \
                                                                                       \
- 
+
 #define VOID_TASK_IMPL_1(NAME, ATYPE_1, ARG_1)                                        \
 void NAME##_WRAP(Worker *w, Task *__dq_head, TD_##NAME *t)                            \
 {                                                                                     \
@@ -917,7 +917,7 @@ void NAME##_CALL(Worker *w, Task *__dq_head , ATYPE_1 arg_1)                    
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 void NAME##_WORK(Worker *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1 ARG_1)\
- 
+
 #define VOID_TASK_1(NAME, ATYPE_1, ARG_1) VOID_TASK_DECL_1(NAME, ATYPE_1) VOID_TASK_IMPL_1(NAME, ATYPE_1, ARG_1)
 
 
@@ -1091,7 +1091,7 @@ RTYPE CALL_DISPATCH_##NAME(Worker *w, Task *__dq_head, int __intask , ATYPE_1 ar
                                                                                       \
                                                                                       \
                                                                                       \
- 
+
 #define TASK_IMPL_2(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2)                      \
 void NAME##_WRAP(Worker *w, Task *__dq_head, TD_##NAME *t)                            \
 {                                                                                     \
@@ -1109,7 +1109,7 @@ RTYPE NAME##_CALL(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)    
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 RTYPE NAME##_WORK(Worker *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1 ARG_1, ATYPE_2 ARG_2)\
- 
+
 #define TASK_2(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2) TASK_DECL_2(RTYPE, NAME, ATYPE_1, ATYPE_2) TASK_IMPL_2(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2)
 
 #define VOID_TASK_DECL_2(NAME, ATYPE_1, ATYPE_2)                                      \
@@ -1280,7 +1280,7 @@ void CALL_DISPATCH_##NAME(Worker *w, Task *__dq_head, int __intask , ATYPE_1 arg
                                                                                       \
                                                                                       \
                                                                                       \
- 
+
 #define VOID_TASK_IMPL_2(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2)                        \
 void NAME##_WRAP(Worker *w, Task *__dq_head, TD_##NAME *t)                            \
 {                                                                                     \
@@ -1298,7 +1298,7 @@ void NAME##_CALL(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)     
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 void NAME##_WORK(Worker *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1 ARG_1, ATYPE_2 ARG_2)\
- 
+
 #define VOID_TASK_2(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2) VOID_TASK_DECL_2(NAME, ATYPE_1, ATYPE_2) VOID_TASK_IMPL_2(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2)
 
 
@@ -1472,7 +1472,7 @@ RTYPE CALL_DISPATCH_##NAME(Worker *w, Task *__dq_head, int __intask , ATYPE_1 ar
                                                                                       \
                                                                                       \
                                                                                       \
- 
+
 #define TASK_IMPL_3(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3)      \
 void NAME##_WRAP(Worker *w, Task *__dq_head, TD_##NAME *t)                            \
 {                                                                                     \
@@ -1490,7 +1490,7 @@ RTYPE NAME##_CALL(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 RTYPE NAME##_WORK(Worker *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3)\
- 
+
 #define TASK_3(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3) TASK_DECL_3(RTYPE, NAME, ATYPE_1, ATYPE_2, ATYPE_3) TASK_IMPL_3(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3)
 
 #define VOID_TASK_DECL_3(NAME, ATYPE_1, ATYPE_2, ATYPE_3)                             \
@@ -1661,7 +1661,7 @@ void CALL_DISPATCH_##NAME(Worker *w, Task *__dq_head, int __intask , ATYPE_1 arg
                                                                                       \
                                                                                       \
                                                                                       \
- 
+
 #define VOID_TASK_IMPL_3(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3)        \
 void NAME##_WRAP(Worker *w, Task *__dq_head, TD_##NAME *t)                            \
 {                                                                                     \
@@ -1679,7 +1679,7 @@ void NAME##_CALL(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYP
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 void NAME##_WORK(Worker *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3)\
- 
+
 #define VOID_TASK_3(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3) VOID_TASK_DECL_3(NAME, ATYPE_1, ATYPE_2, ATYPE_3) VOID_TASK_IMPL_3(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3)
 
 
@@ -1853,7 +1853,7 @@ RTYPE CALL_DISPATCH_##NAME(Worker *w, Task *__dq_head, int __intask , ATYPE_1 ar
                                                                                       \
                                                                                       \
                                                                                       \
- 
+
 #define TASK_IMPL_4(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4)\
 void NAME##_WRAP(Worker *w, Task *__dq_head, TD_##NAME *t)                            \
 {                                                                                     \
@@ -1871,7 +1871,7 @@ RTYPE NAME##_CALL(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 RTYPE NAME##_WORK(Worker *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4)\
- 
+
 #define TASK_4(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4) TASK_DECL_4(RTYPE, NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4) TASK_IMPL_4(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4)
 
 #define VOID_TASK_DECL_4(NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4)                    \
@@ -2042,7 +2042,7 @@ void CALL_DISPATCH_##NAME(Worker *w, Task *__dq_head, int __intask , ATYPE_1 arg
                                                                                       \
                                                                                       \
                                                                                       \
- 
+
 #define VOID_TASK_IMPL_4(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4)\
 void NAME##_WRAP(Worker *w, Task *__dq_head, TD_##NAME *t)                            \
 {                                                                                     \
@@ -2060,7 +2060,7 @@ void NAME##_CALL(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYP
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 void NAME##_WORK(Worker *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4)\
- 
+
 #define VOID_TASK_4(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4) VOID_TASK_DECL_4(NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4) VOID_TASK_IMPL_4(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4)
 
 #endif

@@ -1,16 +1,16 @@
-/* 
+/*
  * Written by Josh Dybnis and released to the public domain, as explained at
  * http://creativecommons.org/licenses/publicdomain
  *
- * A platform independant wrapper around thread-local storage. On platforms that don't support 
- * __thread variables (e.g. Mac OS X), we have to use the pthreads library for thread-local storage 
+ * A platform independant wrapper around thread-local storage. On platforms that don't support
+ * __thread variables (e.g. Mac OS X), we have to use the pthreads library for thread-local storage
  */
 #ifndef TLS_H
 #define TLS_H
 
 #ifdef __ELF__ // use gcc thread-local storage (i.e. __thread variables)
 #define DECLARE_THREAD_LOCAL(name, type) __thread type name
-#define INIT_THREAD_LOCAL(name) 
+#define INIT_THREAD_LOCAL(name)
 #define SET_THREAD_LOCAL(name, value) name = value
 #define LOCALIZE_THREAD_LOCAL(name, type)
 

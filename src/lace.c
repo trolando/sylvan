@@ -64,7 +64,7 @@ int __attribute__((noinline)) lace_steal(Worker *self, Task *__dq_head, Worker *
     register TailSplit ts_new = ts;
     ts_new.ts.tail++;
     if (!cas(&victim->ts.v, ts.v, ts_new.v)) {
-        return LACE_BUSY; 
+        return LACE_BUSY;
     }
 
     // Stolen
@@ -75,7 +75,7 @@ int __attribute__((noinline)) lace_steal(Worker *self, Task *__dq_head, Worker *
     return LACE_STOLEN;
 }
 
-static inline uint32_t rng(uint32_t *seed, int max) 
+static inline uint32_t rng(uint32_t *seed, int max)
 {
     uint32_t next = *seed;
 
@@ -109,7 +109,7 @@ static void *worker_thread( void *arg )
 
     do {
         // Computing a random number for every steal is too slow, so we do some amount of
-        // sequential scanning of the workers and only randomize once in a while, just 
+        // sequential scanning of the workers and only randomize once in a while, just
         // to be sure.
 
         if( i>0 ) {
@@ -193,13 +193,13 @@ void lace_init(int n, size_t dq_size, size_t stacksize)
 #if USE_NUMA
     if (numa_available() != 0) {
         fprintf(stderr, "Error: NUMA not available!\n");
-        exit(1); 
+        exit(1);
     }
     else fprintf(stderr, "Initializing Lace with NUMA support.\n");
 
-    if (numa_distribute(n) != 0) { 
-        fprintf(stderr, "Error: no suitable NUMA configuration found!\n"); 
-        exit(1); 
+    if (numa_distribute(n) != 0) {
+        fprintf(stderr, "Error: no suitable NUMA configuration found!\n");
+        exit(1);
     }
 #endif
 

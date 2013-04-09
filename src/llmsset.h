@@ -54,8 +54,8 @@ void llmsset_deref(const llmsset_t dbs, uint64_t index);
  * 2) for each index in the linked list "refset", call llmsset_mark
  * 3) for any externally managed nodes, call llmsset_mark
  * 4) call llmsset_rehash
- * 
- * Note that the _multi variants use numa_tools 
+ *
+ * Note that the _multi variants use numa_tools
  */
 void llmsset_clear(const llmsset_t dbs);
 void llmsset_clear_multi(const llmsset_t dbs, size_t my_id, size_t n_workers);

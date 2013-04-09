@@ -12,7 +12,7 @@
 
 #ifndef LINE_SIZE
 #define LINE_SIZE 64
-#endif 
+#endif
 
 #ifndef ALIGN
 #define ALIGN(x) ((typeof(x))((((size_t)(x))+(LINE_SIZE-1))&(~((size_t)(LINE_SIZE-1)))))

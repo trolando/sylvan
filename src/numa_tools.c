@@ -15,7 +15,7 @@ int numa_tools_refresh(void)
     num_cpus = numa_num_configured_cpus();
     if (cpu_to_node != NULL) free(cpu_to_node);
     cpu_to_node = calloc(num_cpus, sizeof(int));
-    
+
     struct bitmask *cpubuf;
     int i;
 
@@ -55,9 +55,9 @@ int numa_tools_refresh(void)
         printf("- node %d (%d cpus)\n", i, k);
     }
     printf("Available nodes for program execution only:\n");
-    for (i=0; i<num_nodes; i++) { 
+    for (i=0; i<num_nodes; i++) {
         if (node_mem[i]) continue;
-        int j,k=0; 
+        int j,k=0;
         for (j=k=0; j<num_cpus; j++) if (cpu_to_node[j]==i) k++;
         if (k>0) printf("- node %d (%d cpus)\n", i, k);
     }
@@ -139,7 +139,7 @@ int numa_available_memory_nodes()
 /**
  * Check if every core is on a domain where we can allocate memory
  */
-int numa_check_sanity(void) 
+int numa_check_sanity(void)
 {
     if (!numa_tools_init()) return 0;
     int i, good = 1;
@@ -195,7 +195,7 @@ int numa_distribute(int workers)
     n_workers = workers;
     if (worker_to_node != 0) free(worker_to_node);
     worker_to_node = malloc(sizeof(int) * n_workers);
-  
+
     int i,j;
     int *nodes = (int*)alloca(sizeof(int) * num_nodes);
     memset(nodes, 0, num_nodes*sizeof(int));
@@ -223,16 +223,16 @@ int numa_distribute(int workers)
         int cumdist=0, links=0, k, all_available=1;
         long s=setup, t;
         j=0;
-        while (s && all_available) { 
+        while (s && all_available) {
             if (s&1) {
                 if (nodes[j]==0) all_available = 0;
                 t=setup;
                 k=0;
                 while (t) {
                     if (t&1) {
-                        if (distances[tot_nodes*j + k] > 0) { 
+                        if (distances[tot_nodes*j + k] > 0) {
                             links++;
-                            cumdist += distances[tot_nodes*j + k]; 
+                            cumdist += distances[tot_nodes*j + k];
                         }
                     }
                     t>>=1; k++;
@@ -280,7 +280,7 @@ int numa_distribute(int workers)
         count--;
         j = (j+1)%n_nodes;
     }
-         
+
     return 0;
 }
 
@@ -300,7 +300,7 @@ int numa_move(void *mem, size_t size, int node)
 
 /**
  * This function distributes a preallocated array of <size> bytes
- * over all available NUMA memory domains. 
+ * over all available NUMA memory domains.
  *
  * Note that mem should be aligned on a <getpagesize()> boundary!
  *
@@ -311,7 +311,7 @@ int numa_move(void *mem, size_t size, int node)
  * For example, if domains 0,3,6 are available, with 20000 bytes and page size of 4096,
  * then the first 8192 bytes are bound to domain 0, the next 8192 bytes to domain 3 and
  * the final 3616 bytes are bound to domain 6.
- * 
+ *
  * Returns 0 on success, -1 on failure.
  */
 int numa_interleave(void *mem, size_t size, size_t *fragment_size)
@@ -370,7 +370,7 @@ int numa_interleave(void *mem, size_t size, size_t *fragment_size)
 
 /**
  * This function allocates an array of <size> bytes and automatically distributes it
- * over all available NUMA memory domains. 
+ * over all available NUMA memory domains.
  */
 void *numa_alloc_interleaved_manually(size_t size, size_t *fragment_size, int shared)
 {
@@ -382,7 +382,7 @@ void *numa_alloc_interleaved_manually(size_t size, size_t *fragment_size, int sh
     else
         mem = mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
 
-    if (mem == (char*)-1) { 
+    if (mem == (char*)-1) {
         return NULL;
     }
 
@@ -401,7 +401,7 @@ void *numa_alloc_interleaved_manually(size_t size, size_t *fragment_size, int sh
         munmap(mem, size);
         mem = 0;
     }
-  
+
     return mem;
 }
 

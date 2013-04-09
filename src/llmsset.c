@@ -29,7 +29,7 @@ unsigned long long rehash_mul(const void* data, unsigned long long len, unsigned
 #define MASK_INDEX ((uint64_t)0x000000ffffffffff)
 #define MASK_HASH  ((uint64_t)0x3fffff0000000000)
 
-static const int      HASH_PER_CL = ((LINE_SIZE) / 8);
+static const uint8_t  HASH_PER_CL = ((LINE_SIZE) / 8);
 static const uint64_t CL_MASK     = ~(((LINE_SIZE) / 8) - 1);
 static const uint64_t CL_MASK_R   = ((LINE_SIZE) / 8) - 1;
 
@@ -50,7 +50,7 @@ static const uint64_t CL_MASK_R   = ((LINE_SIZE) / 8) - 1;
 void *llmsset_lookup(const llmsset_t dbs, const void* data, uint64_t* insert_index, int* created, uint64_t* index)
 {
     uint64_t hash_rehash = hash_mul(data, dbs->key_length);
-    const uint64_t hash = hash_rehash & MASK_HASH; 
+    const uint64_t hash = hash_rehash & MASK_HASH;
     int i=0;
 
     for (;i<dbs->threshold;i++) {
@@ -61,7 +61,7 @@ void *llmsset_lookup(const llmsset_t dbs, const void* data, uint64_t* insert_ind
             volatile uint64_t *bucket = &dbs->table[idx];
             uint64_t v = *bucket;
 
-            if (!(v & HFILLED)) goto phase2; 
+            if (!(v & HFILLED)) goto phase2;
 
             if (hash == (v & MASK_HASH)) {
                 uint64_t d_idx = v & MASK_INDEX;
@@ -85,8 +85,8 @@ phase2:
         if (!d_idx) d_idx++; // do not use bucket 0 for data
         volatile uint64_t *ptr = dbs->table + d_idx;
         uint64_t h = *ptr;
-        if (h & DFILLED) { 
-            d_idx = (d_idx+1) & dbs->mask; 
+        if (h & DFILLED) {
+            d_idx = (d_idx+1) & dbs->mask;
         } else if (cas(ptr, h, h|DFILLED)) {
             d_ptr = dbs->data + d_idx * dbs->padded_data_length;
             memcpy(d_ptr, data, dbs->data_length);
@@ -169,7 +169,7 @@ llmsset_t llmsset_create(size_t key_length, size_t data_length, size_t table_siz
     llmsset_t dbs;
     posix_memalign((void**)&dbs, LINE_SIZE, sizeof(struct llmsset));
 
-    assert(key_length <= data_length);  
+    assert(key_length <= data_length);
 
     dbs->key_length = key_length;
     dbs->data_length = data_length;
@@ -257,7 +257,7 @@ static void llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_wo
     // Also we are the <index>th worker on that node, out of <total> workers.
     numa_worker_info(my_id, &node, &node_index, &index, &total);
     // On each node, there are <cachelines_total> cachelines, <cachelines_each> per worker.
-    const size_t entries_total    = dbs->f_size; 
+    const size_t entries_total    = dbs->f_size;
     const size_t cachelines_total = (entries_total * sizeof(uint64_t) + LINE_SIZE - 1) / LINE_SIZE;
     const size_t cachelines_each  = (cachelines_total + total - 1) / total;
     const size_t entries_each     = cachelines_each * LINE_SIZE / sizeof(uint64_t);
@@ -265,7 +265,7 @@ static void llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_wo
     const size_t cap_node         = entries_total - index * entries_each;
     const size_t cap_total        = dbs->table_size - first_entry;
     *_first_entry = first_entry;
-    *_entry_count = entries_each < cap_node ? entries_each < cap_total ? entries_each : cap_total : 
+    *_entry_count = entries_each < cap_node ? entries_each < cap_total ? entries_each : cap_total :
                                               cap_node     < cap_total ? cap_node     : cap_total ;
 #else
     const size_t entries_total    = dbs->table_size;
@@ -357,7 +357,7 @@ void llmsset_gc_multi(const llmsset_t dbs, size_t my_id, size_t n_workers)
 void llmsset_print_size(llmsset_t dbs, FILE *f)
 {
     fprintf(f, "Hash: %ld * 8 = %ld bytes; Data: %ld * %d = %ld bytes ",
-        dbs->table_size, dbs->table_size * 8, dbs->table_size, 
+        dbs->table_size, dbs->table_size * 8, dbs->table_size,
         dbs->padded_data_length, dbs->table_size * dbs->padded_data_length);
 }
 

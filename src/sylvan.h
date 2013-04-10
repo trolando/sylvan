@@ -30,7 +30,6 @@ extern "C" {
  * Initialize package (program level)
  */
 void sylvan_package_init(int threads, int dq_size);
-
 void sylvan_package_exit();
 
 void sylvan_report_stats();
@@ -50,27 +49,27 @@ void sylvan_quit();
 /**
  * Create a BDD representing <level>
  */
-BDD sylvan_ithvar(BDDVAR level);
+inline BDD sylvan_ithvar(BDDVAR level);
 
 /**
  * Create a BDD representing ~<level>
  */
-BDD sylvan_nithvar(BDDVAR level);
+inline BDD sylvan_nithvar(BDDVAR level);
 
 /**
  * Get the <level> of the root node of <bdd>
  */
-BDDVAR sylvan_var(BDD bdd);
+inline BDDVAR sylvan_var(BDD bdd);
 
 /**
  * Get the <low> child of <bdd>
  */
-BDD sylvan_low(BDD bdd);
+inline BDD sylvan_low(BDD bdd);
 
 /**
  * Get the <high> child of <bdd>
  */
-BDD sylvan_high(BDD bdd);
+inline BDD sylvan_high(BDD bdd);
 
 /**
  * Get ~bdd
@@ -78,10 +77,14 @@ BDD sylvan_high(BDD bdd);
 BDD sylvan_not(BDD bdd);
 
 /**
- * Calculate simple if <a> then <b> else <c> (calls sylvan_restructure)
+ * Calculate simple if <a> then <b> else <c>
  */
 TASK_DECL_4(BDD, sylvan_ite, BDD, BDD, BDD, BDDVAR);
 BDD sylvan_ite(BDD a, BDD b, BDD c);
+
+/**
+ * Binary operations (implemented using ite)
+ */
 BDD sylvan_and(BDD a, BDD b);
 BDD sylvan_xor(BDD a, BDD b);
 BDD sylvan_or(BDD a, BDD b);
@@ -132,6 +135,10 @@ BDD sylvan_exists(BDD a, BDD variables);
 TASK_DECL_3(BDD, sylvan_forall, BDD, BDD, BDDVAR);
 BDD sylvan_forall(BDD a, BDD variables);
 
+/**
+ * Calculate the support of <bdd>
+ * This is the set of variable levels in the BDD nodes
+ */
 TASK_DECL_1(BDD, sylvan_support, BDD);
 BDD sylvan_support(BDD bdd);
 
@@ -139,6 +146,10 @@ BDD sylvan_ref(BDD a);
 void sylvan_deref(BDD a);
 void sylvan_gc();
 
+/**
+ * Set using BDD operations
+ */
+int sylvan_set_isempty(BDD set);
 BDD sylvan_set_empty();
 BDD sylvan_set_add(BDD set, BDDVAR level);
 BDD sylvan_set_remove(BDD set, BDDVAR level);
@@ -149,20 +160,13 @@ void sylvan_set_toarray(BDD set, BDDVAR *arr);
 BDD sylvan_set_fromarray(BDDVAR *arr, size_t length);
 
 /**
- * Dangerous creation primitive.
- * May cause bad ordering.
- * Do not use except for debugging purposes!
+ * Node creation primitive.
+ * Careful: does not check ordering!
  */
 BDD sylvan_makenode(BDDVAR level, BDD low, BDD high);
 
 /**
- * Very low-level print function (prefer serialize functions or .dot output!
- */
-void sylvan_print(BDD bdd);
-void sylvan_fprint(FILE *out, BDD bdd);
-
-/**
- * Write a .dot file of a BDD 
+ * Write a DOT representation of a BDD
  */
 void sylvan_printdot(BDD bdd);
 void sylvan_fprintdot(FILE *out, BDD bdd);
@@ -178,7 +182,9 @@ long double sylvan_satcount(BDD bdd, BDD variables);
 
 TASK_DECL_1(long double, sylvan_pathcount, BDD);
 long double sylvan_pathcount(BDD bdd);
-uint64_t sylvan_nodecount(BDD a);
+
+TASK_DECL_1(size_t, sylvan_nodecount, BDD);
+size_t sylvan_nodecount(BDD a);
 void sylvan_nodecount_levels(BDD bdd, uint32_t *variables);
 
 /**
@@ -193,8 +199,10 @@ void sylvan_nodecount_levels(BDD bdd, uint32_t *variables);
  *
  * MISC:
  * use sylvan_serialize_reset to free all allocated structures
- * use sylvan_serialize_totext to store a textual list of tuples of all BDDs.
+ * use sylvan_serialize_totext to write a textual list of tuples of all BDDs.
  *         format: [(<key>,<level>,<key_low>,<key_high>,<complement_high>),...]
+ *
+ * for the old sylvan_print functions, use sylvan_serialize_totext
  */
 void sylvan_serialize_add(BDD bdd);
 size_t sylvan_serialize_get(BDD bdd);

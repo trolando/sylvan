@@ -33,6 +33,20 @@
 #define BLINK "\33[5m"
 #define INVERT "\33[7m"
 
+static inline void
+sylvan_fprint(FILE *f, BDD bdd)
+{
+    sylvan_serialize_reset();
+    sylvan_serialize_add(bdd);
+    sylvan_serialize_totext(f);
+}
+
+static inline void
+sylvan_print(BDD bdd)
+{
+    sylvan_fprint(stdout, bdd);
+}
+
 int test_llmsset()
 {
     uint32_t entry[] = { 90570123,  43201432,   31007798,  256346587,

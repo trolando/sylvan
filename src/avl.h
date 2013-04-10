@@ -208,7 +208,7 @@ typedef struct avl_iter
 static inline avl_iter_t*
 avl_iter(avl_node_t *node)
 {
-    size_t max = node->height+1;
+    size_t max = node ? node->height+1 : 1;
     avl_iter_t *result = (avl_iter_t*)malloc(sizeof(avl_iter_t) + sizeof(avl_node_t*) * max);
     result->height = 0;
     result->nodes[0] = node;

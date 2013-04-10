@@ -54,7 +54,7 @@ int test_llmsset()
                          883562435, 2546247838, 190200937, 918456256,
                          245892765, 29926542,   862864346, 624500973 };
 
-    uint64_t index[16], index2[16];
+    uint64_t index[16];
     uint64_t insert_index = 0;
     int created;
     unsigned int i;
@@ -79,31 +79,6 @@ int test_llmsset()
     for (i=0;i<set->table_size;i++) {
         assert(set->table[i] == 0);
     }
-
-    // Add all entries, and do ref
-    for (i=0;i<16;i++) {
-        assert(llmsset_lookup(set, entry + i, &insert_index, &created, index + i) != 0);
-        assert(created);
-        llmsset_ref(set, index[i]);
-    }
-
-    // Check that GC does not remove ref'd
-    assert(llmsset_get_filled(set)==16);
-    llmsset_gc(set);
-    assert(llmsset_get_filled(set)==16);
-
-    // Add all entries again, then deref
-    for (i=0;i<16;i++) {
-        assert(llmsset_lookup(set, entry + i, &insert_index, &created, index2 + i) != 0);
-        assert(!created);
-        assert(index[i] == index2[i]);
-        llmsset_deref(set, index[i]);
-    }
-
-    // Check that GC removes deref'd
-    assert(llmsset_get_filled(set)==16);
-    llmsset_gc(set);
-    assert(llmsset_get_filled(set)==0);
 
     // Cleanup
     llmsset_free(set);
@@ -169,8 +144,6 @@ int test_llmsset2()
     pthread_join(t[1], NULL);
     pthread_join(t[2], NULL);
     pthread_join(t[3], NULL);
-
-    llmsset_gc(msset);
 
     uint64_t i;
     for (i=0;i<msset->table_size;i++) {

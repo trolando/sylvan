@@ -144,6 +144,7 @@ BDD sylvan_support(BDD bdd);
 
 BDD sylvan_ref(BDD a);
 void sylvan_deref(BDD a);
+size_t sylvan_count_refs();
 void sylvan_gc();
 
 /**
@@ -170,8 +171,6 @@ BDD sylvan_makenode(BDDVAR level, BDD low, BDD high);
  */
 void sylvan_printdot(BDD bdd);
 void sylvan_fprintdot(FILE *out, BDD bdd);
-
-size_t sylvan_count_refs();
 
 /**
  * Calculate number of satisfying variable assignments.

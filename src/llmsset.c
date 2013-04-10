@@ -1,14 +1,14 @@
-#include "config.h"
+#include <config.h>
 
-#include <stdlib.h>
-#include <stdio.h>  // for printf
-#include <stdint.h> // for uint64_t etc
-#include <string.h> // for memcopy
 #include <assert.h> // for assert
+#include <stdint.h> // for uint64_t etc
+#include <stdio.h>  // for printf
+#include <stdlib.h>
+#include <string.h> // for memcopy
 #include <sys/mman.h> // for mmap
 
-#include "atomics.h"
-#include "llmsset.h"
+#include <atomics.h>
+#include <llmsset.h>
 
 #if USE_NUMA
 #include "numa_tools.h"
@@ -47,7 +47,8 @@ static const uint64_t CL_MASK_R   = ((LINE_SIZE) / 8) - 1;
  * Note: garbage collection during lookup strictly forbidden
  * insert_index points to a starting point and is updated.
  */
-void *llmsset_lookup(const llmsset_t dbs, const void* data, uint64_t* insert_index, int* created, uint64_t* index)
+void *
+llmsset_lookup(const llmsset_t dbs, const void* data, uint64_t* insert_index, int* created, uint64_t* index)
 {
     uint64_t hash_rehash = hash_mul(data, dbs->key_length);
     const uint64_t hash = hash_rehash & MASK_HASH;
@@ -138,7 +139,8 @@ phase2_restart:
     return 0;
 }
 
-static inline int llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
+static inline int
+llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 {
     const uint8_t * const d_ptr = dbs->data + d_idx * dbs->padded_data_length;
     uint64_t hash_rehash = hash_mul(d_ptr, dbs->key_length);
@@ -164,7 +166,8 @@ static inline int llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
     return 0;
 }
 
-llmsset_t llmsset_create(size_t key_length, size_t data_length, size_t table_size)
+llmsset_t
+llmsset_create(size_t key_length, size_t data_length, size_t table_size)
 {
     llmsset_t dbs;
     posix_memalign((void**)&dbs, LINE_SIZE, sizeof(struct llmsset));
@@ -194,62 +197,19 @@ llmsset_t llmsset_create(size_t key_length, size_t data_length, size_t table_siz
     numa_interleave(dbs->data, dbs->table_size * dbs->padded_data_length, &f_size);
 #endif
 
-    dbs->refset = 0;
-
     return dbs;
 }
 
-void llmsset_free(llmsset_t dbs)
+void
+llmsset_free(llmsset_t dbs)
 {
     munmap(dbs->table, dbs->table_size * sizeof(uint64_t));
     munmap(dbs->data, dbs->table_size * dbs->padded_data_length);
     free(dbs);
 }
 
-/**
- * Increase reference counter
- */
-void llmsset_ref(const llmsset_t dbs, uint64_t index)
-{
-    llmsset_refset_t r = dbs->refset;
-    while (r != 0) {
-        if (r->index == index) {
-            r->count++;
-            return;
-        }
-        r = r->next;
-    }
-
-    r = (llmsset_refset_t)malloc(sizeof(struct llmsset_refset));
-    r->index = index;
-    r->count = 1;
-    r->next = dbs->refset;
-    dbs->refset = r;
-}
-
-/**
- * Decrease reference counter
- */
-void llmsset_deref(const llmsset_t dbs, uint64_t index)
-{
-    llmsset_refset_t r = dbs->refset, last=0;
-    while (r != 0) {
-        if (r->index == index) {
-            r->count--;
-            if (r->count == 0) {
-                if (last == 0) dbs->refset = r->next;
-                else last->next = r->next;
-                free(r);
-            }
-            return;
-        }
-        last = r;
-        r = r->next;
-    }
-    assert(0);
-}
-
-static void llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_workers, size_t *_first_entry, size_t *_entry_count)
+static void
+llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_workers, size_t *_first_entry, size_t *_entry_count)
 {
 #if USE_NUMA
     int node, node_index, index, total;
@@ -279,38 +239,55 @@ static void llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_wo
 #endif
 }
 
-size_t llmsset_get_insertindex_multi(const llmsset_t dbs, size_t my_id, size_t n_workers)
+size_t
+llmsset_get_insertindex_multi(const llmsset_t dbs, size_t my_id, size_t n_workers)
 {
     size_t first_entry, entry_count;
     llmsset_compute_multi(dbs, my_id, n_workers, &first_entry, &entry_count);
     return first_entry;
 }
 
-static inline void _llmsset_clear(const llmsset_t dbs, uint64_t start, uint64_t count)
+static inline void
+llmsset_clear_range(const llmsset_t dbs, uint64_t start, uint64_t count)
 {
     memset(dbs->table + start, 0, sizeof(uint64_t) * count);
 }
 
-void llmsset_clear(const llmsset_t dbs)
+void
+llmsset_clear(const llmsset_t dbs)
 {
-    _llmsset_clear(dbs, 0, dbs->table_size);
+    llmsset_clear_range(dbs, 0, dbs->table_size);
 }
 
-void llmsset_clear_multi(const llmsset_t dbs, size_t my_id, size_t n_workers)
+void
+llmsset_clear_multi(const llmsset_t dbs, size_t my_id, size_t n_workers)
 {
     size_t first_entry, entry_count;
     llmsset_compute_multi(dbs, my_id, n_workers, &first_entry, &entry_count);
     if (entry_count <= 0) return;
-    _llmsset_clear(dbs, first_entry, entry_count);
+    llmsset_clear_range(dbs, first_entry, entry_count);
 }
 
-int llmsset_mark(const llmsset_t dbs, uint64_t index) {
+int
+llmsset_mark_unsafe(const llmsset_t dbs, uint64_t index)
+{
     uint64_t v = dbs->table[index];
     dbs->table[index] = DFILLED;
     return v & DFILLED ? 0 : 1;
 }
 
-static inline void _llmsset_rehash(const llmsset_t dbs, uint64_t start, uint64_t count)
+int
+llmsset_mark_safe(const llmsset_t dbs, uint64_t index)
+{
+    while (1) {
+        uint64_t v = atomic_read(&dbs->table[index]);
+        if (v & DFILLED) return 0;
+        if (cas(&dbs->table[index], v, v|DFILLED)) return 1;
+    }
+}
+
+static inline void
+llmsset_rehash_range(const llmsset_t dbs, uint64_t start, uint64_t count)
 {
     while (count) {
         if (dbs->table[start]&DFILLED) llmsset_rehash_bucket(dbs, start);
@@ -319,49 +296,31 @@ static inline void _llmsset_rehash(const llmsset_t dbs, uint64_t start, uint64_t
     }
 }
 
-void llmsset_rehash(const llmsset_t dbs)
+void
+llmsset_rehash(const llmsset_t dbs)
 {
-    _llmsset_rehash(dbs, 0, dbs->table_size);
+    llmsset_rehash_range(dbs, 0, dbs->table_size);
 }
 
-void llmsset_rehash_multi(const llmsset_t dbs, size_t my_id, size_t n_workers)
+void
+llmsset_rehash_multi(const llmsset_t dbs, size_t my_id, size_t n_workers)
 {
     size_t first_entry, entry_count;
     llmsset_compute_multi(dbs, my_id, n_workers, &first_entry, &entry_count);
     if (entry_count <= 0) return;
-    _llmsset_rehash(dbs, first_entry, entry_count);
+    llmsset_rehash_range(dbs, first_entry, entry_count);
 }
 
-void llmsset_gc(const llmsset_t dbs)
-{
-    llmsset_clear(dbs);
-    llmsset_refset_t r = dbs->refset;
-    while (r != 0) {
-        llmsset_mark(dbs, r->index);
-        r = r->next;
-    }
-    llmsset_rehash(dbs);
-}
-
-void llmsset_gc_multi(const llmsset_t dbs, size_t my_id, size_t n_workers)
-{
-    llmsset_clear_multi(dbs, my_id, n_workers);
-    llmsset_refset_t r = dbs->refset;
-    while (r != 0) {
-        llmsset_mark(dbs, r->index);
-        r = r->next;
-    }
-    llmsset_rehash_multi(dbs, my_id, n_workers);
-}
-
-void llmsset_print_size(llmsset_t dbs, FILE *f)
+void
+llmsset_print_size(llmsset_t dbs, FILE *f)
 {
     fprintf(f, "Hash: %ld * 8 = %ld bytes; Data: %ld * %d = %ld bytes ",
         dbs->table_size, dbs->table_size * 8, dbs->table_size,
         dbs->padded_data_length, dbs->table_size * dbs->padded_data_length);
 }
 
-size_t llmsset_get_filled(const llmsset_t dbs)
+size_t
+llmsset_get_filled(const llmsset_t dbs)
 {
     size_t count=0;
 
@@ -373,7 +332,8 @@ size_t llmsset_get_filled(const llmsset_t dbs)
     return count;
 }
 
-size_t llmsset_get_size(const llmsset_t dbs)
+size_t
+llmsset_get_size(const llmsset_t dbs)
 {
     return dbs->table_size;
 }

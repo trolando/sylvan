@@ -147,6 +147,113 @@ initialize_insert_index()
     return insert_index;
 }
 
+/**
+ * Handling references (note: protected by a spinlock)
+ */
+struct sylvan_ref_s
+{
+    BDD bdd;
+    size_t count;
+};
+
+AVL(refset, struct sylvan_ref_s)
+{
+    return left->bdd - right->bdd;
+}
+
+static avl_node_t *sylvan_refs = NULL;
+static volatile int sylvan_refs_spinlock = 0;
+
+BDD
+sylvan_ref(BDD a)
+{
+    if (BDD_ISCONSTANT(a)) return a;
+
+    while (!cas(&sylvan_refs_spinlock, 0, 1)) {
+        while (sylvan_refs_spinlock != 0) ;
+    }
+
+    struct sylvan_ref_s s, *ss;
+    s.bdd = BDD_STRIPMARK(a);
+    ss = refset_search(sylvan_refs, &s);
+    if (ss == NULL) {
+        s.count = 0;
+        ss = refset_put(&sylvan_refs, &s, 0);
+    }
+    ss->count++;
+
+    sylvan_refs_spinlock = 0;
+
+    return a;
+}
+
+void
+sylvan_deref(BDD a)
+{
+    if (BDD_ISCONSTANT(a)) return;
+
+    while (!cas(&sylvan_refs_spinlock, 0, 1)) {
+        while (sylvan_refs_spinlock != 0) ;
+    }
+
+    struct sylvan_ref_s s, *ss;
+    s.bdd = BDD_STRIPMARK(a);
+    ss = refset_search(sylvan_refs, &s);
+    assert (ss != NULL);
+    assert (ss->count > 0);
+    ss->count--;
+
+    sylvan_refs_spinlock = 0;
+}
+
+size_t
+sylvan_count_refs()
+{
+    size_t result = 0;
+
+    while (!cas(&sylvan_refs_spinlock, 0, 1)) {
+        while (sylvan_refs_spinlock != 0) ;
+    }
+
+    struct sylvan_ref_s *ss;
+    avl_iter_t *iter = refset_iter(sylvan_refs);
+    while ((ss = refset_iter_next(iter))) {
+        result += ss->count;
+    }
+    refset_iter_free(iter);
+
+    sylvan_refs_spinlock = 0;
+
+    return result;
+}
+
+static void
+sylvan_pregc_mark_rec(BDD bdd)
+{
+    if (llmsset_mark_unsafe(_bdd.data, bdd&0x000000ffffffffff)) {
+        bddnode_t n = GETNODE(bdd);
+        sylvan_pregc_mark_rec(n->low);
+        sylvan_pregc_mark_rec(n->high);
+    }
+}
+
+static void
+sylvan_pregc_mark_refs()
+{
+    while (!cas(&sylvan_refs_spinlock, 0, 1)) {
+        while (sylvan_refs_spinlock != 0) ;
+    }
+
+    struct sylvan_ref_s *ss;
+    avl_iter_t *iter = refset_iter(sylvan_refs);
+    while ((ss = refset_iter_next(iter))) {
+        if (ss->count > 0) sylvan_pregc_mark_rec(ss->bdd);
+    }
+    refset_iter_free(iter);
+
+    sylvan_refs_spinlock = 0;
+}
+
 static int initialized = 0;
 static int granularity = 1; // default
 
@@ -224,24 +331,8 @@ sylvan_quit()
 
     llci_free(_bdd.cache);
     llmsset_free(_bdd.data);
+    refset_free(&sylvan_refs);
 }
-
-BDD
-sylvan_ref(BDD a)
-{
-    assert(a != sylvan_invalid);
-    if (!BDD_ISCONSTANT(a)) llmsset_ref(_bdd.data, BDD_STRIPMARK(a));
-    return a;
-}
-
-void
-sylvan_deref(BDD a)
-{
-    assert(a != sylvan_invalid);
-    if (BDD_ISCONSTANT(a)) return;
-    llmsset_deref(_bdd.data, BDD_STRIPMARK(a));
-}
-
 
 /**
  * Statistics stuff
@@ -398,16 +489,6 @@ size_t rand_1()
 
 
 
-static void
-sylvan_pregc_mark_rec(BDD bdd)
-{
-    if (llmsset_mark(_bdd.data, bdd&0x000000ffffffffff)) {
-        bddnode_t n = GETNODE(bdd);
-        sylvan_pregc_mark_rec(n->low);
-        sylvan_pregc_mark_rec(n->high);
-    }
-}
-
 /* Not to be inlined */
 static void
 sylvan_gc_participate()
@@ -480,12 +561,10 @@ void sylvan_gc_go()
     _bdd.gccount = 0;
     _bdd.gc = 3;
 
-    // GC phase 2: mark nodes
-    llmsset_refset_t r = _bdd.data->refset;
-    while (r != 0) {
-        sylvan_pregc_mark_rec(r->index);
-        r = r->next;
-    }
+    // GC phase 2a: mark external refs
+    sylvan_pregc_mark_refs();
+
+    // GC phase 2b: mark internal refs
     LOCALIZE_THREAD_LOCAL(gc_key, gc_tomark_t);
     gc_tomark_t t = gc_key;
     while (t != NULL) {
@@ -2131,20 +2210,6 @@ llci_t
 __sylvan_get_internal_cache()
 {
     return _bdd.cache;
-}
-
-size_t
-sylvan_count_refs()
-{
-    size_t result = 0;
-
-    llmsset_refset_t r = _bdd.data->refset;
-    while (r != 0) {
-        result += r->count;
-        r = r->next;
-    }
-
-    return result;
 }
 
 /**

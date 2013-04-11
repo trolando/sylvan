@@ -147,6 +147,9 @@ void sylvan_deref(BDD a);
 size_t sylvan_count_refs();
 void sylvan_gc();
 
+void sylvan_gc_enable();
+void sylvan_gc_disable();
+
 /**
  * Set using BDD operations
  */

@@ -487,7 +487,19 @@ size_t rand_1()
     return id & 8 ? 1 : 0;
 }
 
+static int gc_enabled = 1;
 
+void
+sylvan_gc_enable()
+{
+    gc_enabled = 1;
+}
+
+void
+sylvan_gc_disable()
+{
+    gc_enabled = 0;
+}
 
 /* Not to be inlined */
 static void
@@ -641,7 +653,7 @@ sylvan_makenode(BDDVAR level, BDD low, BDD high)
         SV_CNT(C_gc_hashtable_full);
 
         //size_t before_gc = llmsset_get_filled(_bdd.data);
-        sylvan_gc_go();
+        if (gc_enabled) sylvan_gc_go();
         //size_t after_gc = llmsset_get_filled(_bdd.data);
         //fprintf(stderr, "GC: %ld to %ld (freed %ld)\n", before_gc, after_gc, before_gc-after_gc);
 

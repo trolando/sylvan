@@ -258,7 +258,6 @@ static int initialized = 0;
 static int granularity = 1; // default
 
 static void sylvan_test_gc();
-static void sylvan_reset_counters();
 
 void
 sylvan_package_init(int workers, int dq_size)
@@ -393,7 +392,7 @@ struct {
 #endif
 
 
-static void
+void
 sylvan_reset_counters()
 {
     if (initialized == 0) return;

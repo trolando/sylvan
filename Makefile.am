@@ -1,6 +1,8 @@
 ACLOCAL_AMFLAGS = -I m4
 
 AM_CPPFLAGS = -I$(top_builddir)
+AM_CPPFLAGS = -I$(top_builddir)
+AM_CPPFLAGS += -I$(srcdir)/src
 
 AM_CFLAGS = -g -O3 -Wall
 AM_CCASFLAGS = -g
@@ -17,6 +19,7 @@ libsylvan_la_SOURCES = \
  src/llci.h \
  src/tls.h \
  src/atomics.h \
+ src/avl.h \
  src/lace.c \
  src/lace.h
 

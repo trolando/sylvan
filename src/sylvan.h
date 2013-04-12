@@ -32,6 +32,7 @@ extern "C" {
 void sylvan_package_init(int threads, int dq_size);
 void sylvan_package_exit();
 
+void sylvan_reset_counters();
 void sylvan_report_stats();
 
 /**
@@ -212,7 +213,7 @@ BDD sylvan_serialize_get_reversed(size_t value);
 void sylvan_serialize_reset();
 void sylvan_serialize_totext(FILE *out);
 void sylvan_serialize_tofile(FILE *out);
-void sylvan_serialize_fromfile(FILE *out);
+void sylvan_serialize_fromfile(FILE *in);
 
 #ifdef __cplusplus
 }

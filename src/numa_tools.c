@@ -190,7 +190,7 @@ int numa_bind_me(int worker)
 
 int numa_distribute(int workers)
 {
-    if (!numa_tools_init()) return 0;
+    if (!numa_tools_init()) return 1;
 
     n_workers = workers;
     if (worker_to_node != 0) free(worker_to_node);

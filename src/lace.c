@@ -1,8 +1,9 @@
-#include "lace.h"
+#include <pthread.h>
 #include <stdio.h>  // for fprintf
 #include <stdlib.h> // for memalign, malloc
 #include <sys/mman.h> // for mprotect
-#include <pthread.h>
+
+#include <lace.h>
 
 #ifndef USE_NUMA
 #define USE_NUMA 0 // by default, don't use special numa handling code
@@ -10,7 +11,7 @@
 
 #if USE_NUMA
 #include <numa.h>
-#include "numa_tools.h"
+#include <numa_tools.h>
 #endif
 
 static Worker **workers;
@@ -161,7 +162,6 @@ static void lace_default_cb()
 
 void lace_init(int n, size_t dq_size, size_t stacksize)
 {
-
     n_workers = n;
     int i;
 
@@ -169,7 +169,7 @@ void lace_init(int n, size_t dq_size, size_t stacksize)
     lace_cb_stealing = &lace_default_cb;
 
     posix_memalign((void**)&workers, LINE_SIZE, n*sizeof(Worker*));
-    ts      = (pthread_t *)malloc((n-1) * sizeof(pthread_t));
+    ts = (pthread_t *)malloc((n-1) * sizeof(pthread_t));
     pthread_attr_init(&worker_attr);
     pthread_attr_setscope(&worker_attr, PTHREAD_SCOPE_SYSTEM);
 

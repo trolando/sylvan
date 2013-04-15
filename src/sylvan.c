@@ -2179,6 +2179,8 @@ sylvan_fprintdot(FILE *out, BDD bdd)
     fprintf(out, "center = true;\n");
     fprintf(out, "edge [dir = forward];\n");
     fprintf(out, "0 [shape=box, label=\"0\", style=filled, shape=box, height=0.3, width=0.3];\n");
+    fprintf(out, "root [style=invis];\n");
+    fprintf(out, "root -> %llu [style=solid dir=both arrowtail=%s];\n", BDD_STRIPMARK(bdd), BDD_HASMARK(bdd) ? "dot" : "none");
     avl_node_t *levels = NULL;
     sylvan_fprintdot_rec(out, bdd, &levels);
 

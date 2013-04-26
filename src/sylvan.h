@@ -5,10 +5,6 @@
 #ifndef SYLVAN_H
 #define SYLVAN_H
 
-#ifndef COLORSTATS
-#define COLORSTATS 1
-#endif
-
 typedef uint64_t BDD;
 typedef uint32_t BDDVAR;
 

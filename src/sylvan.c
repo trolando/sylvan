@@ -20,8 +20,18 @@
 #include <numa.h>
 #endif
 
-#if SYLVAN_STATS
-#define STATS 1
+#ifndef SYLVAN_CACHE_STATS
+#define SYLVAN_CACHE_STATS 0
+#endif
+
+#ifndef SYLVAN_OPERATION_STATS
+#define SYLVAN_OPERATION_STATS 0
+#endif
+
+#define SYLVAN_STATS SYLVAN_CACHE_STATS || SYLVAN_OPERATION_STATS
+
+#ifndef SYLVAN_REPORT_COLORED
+#define SYLVAN_REPORT_COLORED 1
 #endif
 
 #define complementmark 0x8000000000000000
@@ -336,13 +346,16 @@ sylvan_quit()
 /**
  * Statistics stuff
  */
+#if SYLVAN_STATS
 typedef enum {
+#if SYLVAN_CACHE_STATS
   C_cache_new,
   C_cache_exists,
   C_cache_reuse,
-  C_cache_overwritten,
+#endif
   C_gc_user,
   C_gc_hashtable_full,
+#if SYLVAN_OPERATION_STATS
   C_ite,
   C_exists,
   C_forall,
@@ -350,19 +363,19 @@ typedef enum {
   C_relprods_reversed,
   C_relprod,
   C_substitute,
+#endif
   C_MAX
 } Counters;
 
 #define N_CNT_THREAD 128
-
 #define SYLVAN_PAD(x,b) ( (b) - ( (x) & ((b)-1) ) ) /* b must be power of 2 */
-
 struct {
     uint64_t count[C_MAX];
     char pad[SYLVAN_PAD(sizeof(uint64_t)*C_MAX, 64)];
 } sylvan_stats[N_CNT_THREAD];
+#endif
 
-#if COLORSTATS
+#if SYLVAN_REPORT_COLORED
 #define BLACK "\33[22;30m"
 #define GRAY "\33[01;30m"
 #define RED "\33[22;31m"
@@ -391,18 +404,19 @@ struct {
 #define RED
 #endif
 
-
 void
 sylvan_reset_counters()
 {
     if (initialized == 0) return;
 
+#if SYLVAN_STATS
     int i,j;
     for (i=0;i<N_CNT_THREAD;i++) {
         for (j=0;j<C_MAX;j++) {
             sylvan_stats[i].count[j] = 0;
         }
     }
+#endif
 }
 
 void
@@ -410,6 +424,7 @@ sylvan_report_stats()
 {
     if (initialized == 0) return;
 
+#if SYLVAN_STATS
     int i,j;
 
     printf(LRED  "****************\n");
@@ -425,23 +440,27 @@ sylvan_report_stats()
     llci_print_size(_bdd.cache, stdout);
     printf("\n");
 
-    printf(NC ULINE "Cache\n" NC LBLUE);
-
     uint64_t totals[C_MAX];
     for (i=0;i<C_MAX;i++) totals[i] = 0;
     for (i=0;i<N_CNT_THREAD;i++) {
         for (j=0;j<C_MAX;j++) totals[j] += sylvan_stats[i].count[j];
     }
 
+#if SYLVAN_CACHE_STATS
+    printf(NC ULINE "Cache\n" NC LBLUE);
+
     uint64_t total_cache = totals[C_cache_new] + totals[C_cache_exists] + totals[C_cache_reuse];
-    printf("New results:         %"PRIu64" of %"PRIu64"\n", totals[C_cache_new], total_cache);
-    printf("Existing results:    %"PRIu64" of %"PRIu64"\n", totals[C_cache_exists], total_cache);
-    printf("Reused results:      %"PRIu64" of %"PRIu64"\n", totals[C_cache_reuse], total_cache);
-    printf("Overwritten results: %"PRIu64" of %"PRIu64"\n", totals[C_cache_overwritten], total_cache);
+    printf("New results:         %"PRIu64"\n", totals[C_cache_new]);
+    printf("Existing results:    %"PRIu64"\n", totals[C_cache_exists]);
+    printf("Reused results:      %"PRIu64"\n", totals[C_cache_reuse]);
+    printf("Total results:       %"PRIu64"\n", total_cache);
+#endif
 
     printf(NC ULINE "GC\n" NC LBLUE);
     printf("GC user-request:     %"PRIu64"\n", totals[C_gc_user]);
     printf("GC full table:       %"PRIu64"\n", totals[C_gc_hashtable_full]);
+
+#if SYLVAN_OPERATION_STATS
     printf(NC ULINE "Call counters (ITE, exists, forall, relprods, reversed relprods, relprod, substitute)\n" NC LBLUE);
     for (i=0;i<_bdd.workers;i++) {
         printf("Worker %02d:           %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64"\n", i,
@@ -453,23 +472,31 @@ sylvan_report_stats()
         totals[C_ite], totals[C_exists], totals[C_forall],
         totals[C_relprods], totals[C_relprods_reversed],
         totals[C_relprod], totals[C_substitute]);
+#endif
+
     printf(LRED  "****************" NC " \n");
 
     // For bonus point, calculate LLGCSET size...
     printf("BDD Unique table: %zu of %zu buckets filled.\n", llmsset_get_filled(_bdd.data), llmsset_get_size(_bdd.data));
+#endif
 }
 
-#if STATS
-int enable_stats=1;
-void sylvan_enable_stats() {
-    enable_stats = 1;
-}
-void sylvan_disable_stats() {
-    enable_stats = 0;
-}
-#define SV_CNT(s) {if (enable_stats) {(sylvan_stats[LACE_WORKER_ID].count[s]+=1);}}
+#if SYLVAN_STATS
+#define SV_CNT(s) {(sylvan_stats[LACE_WORKER_ID].count[s]+=1);}
 #else
 #define SV_CNT(s) ; /* Empty */
+#endif
+
+#if SYLVAN_CACHE_STATS
+#define SV_CNT_CACHE(s) SV_CNT(s)
+#else
+#define SV_CNT_CACHE(s) /* Empty */
+#endif
+
+#if SYLVAN_OPERATION_STATS
+#define SV_CNT_OP(s) SV_CNT(s)
+#else
+#define SV_CNT_OP(s) /* Empty */
 #endif
 
 /**
@@ -917,7 +944,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 
     // The value of a,b,c may be changed, but the reference counters are not changed at this point.
 
-    SV_CNT(C_ite);
+    SV_CNT_OP(C_ite);
 
     bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
     bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
@@ -942,7 +969,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             BDD res = template_cache_node.result;
-            SV_CNT(C_cache_reuse);
+            SV_CNT_CACHE(C_cache_reuse);
             return BDD_TRANSFERMARK(r, res);
         }
     }
@@ -987,14 +1014,10 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
         int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
         if (cache_res == 0) {
             // It existed!
-            SV_CNT(C_cache_exists);
+            SV_CNT_CACHE(C_cache_exists);
         } else if (cache_res == 1) {
             // Created new!
-            SV_CNT(C_cache_new);
-        } else if (cache_res == 2) {
-            // Replaced existing!
-            SV_CNT(C_cache_new);
-            SV_CNT(C_cache_overwritten);
+            SV_CNT_CACHE(C_cache_new);
         }
     }
 
@@ -1020,7 +1043,7 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
 
     sylvan_gc_test();
 
-    SV_CNT(C_exists);
+    SV_CNT_OP(C_exists);
 
     // a != constant
     bddnode_t na = GETNODE(a);
@@ -1049,7 +1072,7 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
 
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             BDD result = template_cache_node.result;
-            SV_CNT(C_cache_reuse);
+            SV_CNT_CACHE(C_cache_reuse);
             return result;
         }
     }
@@ -1100,15 +1123,11 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
         int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
         if (cache_res == 0) {
             // It existed!
-            SV_CNT(C_cache_exists);
+            SV_CNT_CACHE(C_cache_exists);
             // No need to ref
         } else if (cache_res == 1) {
             // Created new!
-            SV_CNT(C_cache_new);
-        } else if (cache_res == 2) {
-            // Replaced existing!
-            SV_CNT(C_cache_new);
-            SV_CNT(C_cache_overwritten);
+            SV_CNT_CACHE(C_cache_new);
         }
     }
 
@@ -1134,7 +1153,7 @@ TASK_IMPL_3(BDD, sylvan_forall, BDD, a, BDD, variables, BDDVAR, prev_level)
 
     sylvan_gc_test();
 
-    SV_CNT(C_forall);
+    SV_CNT_OP(C_forall);
 
     // a != constant
     bddnode_t na = GETNODE(a);
@@ -1163,7 +1182,7 @@ TASK_IMPL_3(BDD, sylvan_forall, BDD, a, BDD, variables, BDDVAR, prev_level)
 
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             BDD result = template_cache_node.result;
-            SV_CNT(C_cache_reuse);
+            SV_CNT_CACHE(C_cache_reuse);
             return result;
         }
     }
@@ -1215,15 +1234,11 @@ TASK_IMPL_3(BDD, sylvan_forall, BDD, a, BDD, variables, BDDVAR, prev_level)
         int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
         if (cache_res == 0) {
             // It existed!
-            SV_CNT(C_cache_exists);
+            SV_CNT_CACHE(C_cache_exists);
             // No need to ref
         } else if (cache_res == 1) {
             // Created new!
-            SV_CNT(C_cache_new);
-        } else if (cache_res == 2) {
-            // Replaced existing!
-            SV_CNT(C_cache_new);
-            SV_CNT(C_cache_overwritten);
+            SV_CNT_CACHE(C_cache_new);
         }
     }
 
@@ -1268,7 +1283,7 @@ TASK_IMPL_4(BDD, sylvan_relprod, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
 
     sylvan_gc_test();
 
-    SV_CNT(C_relprod);
+    SV_CNT_OP(C_relprod);
 
     bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
     bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
@@ -1316,7 +1331,7 @@ TASK_IMPL_4(BDD, sylvan_relprod, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
 
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             BDD result = template_cache_node.result;
-            SV_CNT(C_cache_reuse);
+            SV_CNT_CACHE(C_cache_reuse);
             return result;
         }
     }
@@ -1367,15 +1382,11 @@ TASK_IMPL_4(BDD, sylvan_relprod, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
         int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
         if (cache_res == 0) {
             // It existed!
-            SV_CNT(C_cache_exists);
+            SV_CNT_CACHE(C_cache_exists);
             // No need to ref
         } else if (cache_res == 1) {
             // Created new!
-            SV_CNT(C_cache_new);
-        } else if (cache_res == 2) {
-            // Replaced existing!
-            SV_CNT(C_cache_new);
-            SV_CNT(C_cache_overwritten);
+            SV_CNT_CACHE(C_cache_new);
         }
     }
 
@@ -1396,7 +1407,7 @@ TASK_IMPL_3(BDD, sylvan_substitute, BDD, a, BDD, vars, BDDVAR, prev_level)
     // Trivial cases
     if (BDD_ISCONSTANT(a)) return a;
 
-    SV_CNT(C_substitute);
+    SV_CNT_OP(C_substitute);
 
     sylvan_gc_test();
 
@@ -1426,7 +1437,7 @@ TASK_IMPL_3(BDD, sylvan_substitute, BDD, a, BDD, vars, BDDVAR, prev_level)
 
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             BDD result = template_cache_node.result;
-            SV_CNT(C_cache_reuse);
+            SV_CNT_CACHE(C_cache_reuse);
             return result;
         }
     }
@@ -1463,15 +1474,11 @@ TASK_IMPL_3(BDD, sylvan_substitute, BDD, a, BDD, vars, BDDVAR, prev_level)
         int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
         if (cache_res == 0) {
             // It existed!
-            SV_CNT(C_cache_exists);
+            SV_CNT_CACHE(C_cache_exists);
             // No need to ref
         } else if (cache_res == 1) {
             // Created new!
-            SV_CNT(C_cache_new);
-        } else if (cache_res == 2) {
-            // Replaced existing!
-            SV_CNT(C_cache_new);
-            SV_CNT(C_cache_overwritten);
+            SV_CNT_CACHE(C_cache_new);
         }
     }
 
@@ -1562,7 +1569,7 @@ TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
 
     sylvan_gc_test();
 
-    SV_CNT(C_relprods);
+    SV_CNT_OP(C_relprods);
 
     bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
     bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
@@ -1613,7 +1620,7 @@ TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
 
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             BDD result = template_cache_node.result;
-            SV_CNT(C_cache_reuse);
+            SV_CNT_CACHE(C_cache_reuse);
             return result;
         }
     }
@@ -1671,15 +1678,11 @@ TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
         int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
         if (cache_res == 0) {
             // It existed!
-            SV_CNT(C_cache_exists);
+            SV_CNT_CACHE(C_cache_exists);
             // No need to ref
         } else if (cache_res == 1) {
             // Created new!
-            SV_CNT(C_cache_new);
-        } else if (cache_res == 2) {
-            // Replaced existing!
-            SV_CNT(C_cache_new);
-            SV_CNT(C_cache_overwritten);
+            SV_CNT_CACHE(C_cache_new);
         }
     }
 
@@ -1716,7 +1719,7 @@ TASK_IMPL_4(BDD, sylvan_relprods_reversed, BDD, a, BDD, b, BDD, vars, BDDVAR, pr
 
     sylvan_gc_test();
 
-    SV_CNT(C_relprods_reversed);
+    SV_CNT_OP(C_relprods_reversed);
 
     bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
     bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
@@ -1778,7 +1781,7 @@ TASK_IMPL_4(BDD, sylvan_relprods_reversed, BDD, a, BDD, b, BDD, vars, BDDVAR, pr
 
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             BDD result = template_cache_node.result;
-            SV_CNT(C_cache_reuse);
+            SV_CNT_CACHE(C_cache_reuse);
             return result;
         }
     }
@@ -1829,15 +1832,11 @@ TASK_IMPL_4(BDD, sylvan_relprods_reversed, BDD, a, BDD, b, BDD, vars, BDDVAR, pr
         int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
         if (cache_res == 0) {
             // It existed!
-            SV_CNT(C_cache_exists);
+            SV_CNT_CACHE(C_cache_exists);
             // No need to ref
         } else if (cache_res == 1) {
             // Created new!
-            SV_CNT(C_cache_new);
-        } else if (cache_res == 2) {
-            // Replaced existing!
-            SV_CNT(C_cache_new);
-            SV_CNT(C_cache_overwritten);
+            SV_CNT_CACHE(C_cache_new);
         }
     }
 

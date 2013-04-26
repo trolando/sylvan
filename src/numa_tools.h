@@ -44,4 +44,16 @@ int numa_move(void *mem, size_t size, int node);
  */
 int numa_interleave(void *mem, size_t size, size_t *fragment_size);
 
+/**
+ * Retrieves the domain of a memory address...
+ */
+int numa_getdomain(void *ptr);
+
+/**
+ * Returns <0 on error move_pages
+ * or 0 if not all pages on the right domain
+ * or 1 if they are on the expected domain
+ */
+int numa_checkdomain(void *ptr, size_t size, int expected_node);
+
 #endif

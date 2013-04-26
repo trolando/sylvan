@@ -15,6 +15,20 @@
 #ifndef __LACE_H__
 #define __LACE_H__
 
+/* Some flags */
+
+#ifndef LACE_PIE_TIMES
+#define LACE_PIE_TIMES 0
+#endif
+
+#ifndef LACE_COUNT_TASKS
+#define LACE_COUNT_TASKS 0
+#endif
+
+#ifndef LACE_COUNT_EVENTS
+#define LACE_COUNT_EVENTS LACE_PIE_TIMES || LACE_COUNT_TASKS
+#endif
+
 /* Common code for atomic operations */
 
 /* Processor cache line size */
@@ -57,6 +71,59 @@
 #ifndef LACE_TASKSIZE
 #define LACE_TASKSIZE 4*8
 #endif
+
+#if LACE_PIE_TIMES
+/* Some code for event counters and timers */
+typedef uint64_t hrtime_t;
+
+static inline hrtime_t gethrtime()
+{
+    uint32_t hi, lo;
+    asm volatile ("rdtsc" : "=a"(lo), "=d"(hi) :: "memory");
+    return (uint64_t)hi<<32 | lo;
+}
+#endif
+
+#if LACE_COUNT_EVENTS
+void lace_count_reset();
+void lace_count_report_file(FILE *file);
+#endif
+
+#if LACE_COUNT_TASKS
+#define PR_COUNTTASK(s) PR_INC(s,CTR_tasks)
+#else
+#define PR_COUNTTASK(s) /* Empty */
+#endif
+
+#if LACE_COUNT_EVENTS
+#define PR_ADD(s,i,k) ( ((s)->ctr[i])+=k )
+#else
+#define PR_ADD(s,i,k) /* Empty */
+#endif
+#define PR_INC(s,i) PR_ADD(s,i,1)
+
+typedef enum {
+    CTR_tasks=0,     /* Number of tasks spawned */
+    CTR_steal_tries, /* Number of steal attempts */
+    CTR_leap_tries,  /* Number of leap attempts */
+    CTR_steals,      /* Number of succesful steals */
+    CTR_leaps,       /* Number of succesful leaps */
+    CTR_split,       /* Number of split modifications */
+    CTR_splitreq,    /* Number of split requests */
+    CTR_fast_sync,   /* Number of fast syncs */
+    CTR_slow_sync,   /* Number of slow syncs */
+    CTR_init,        /* Timer for initialization */
+    CTR_close,       /* Timer for shutdown */
+    CTR_wapp,        /* Timer for application code (steal) */
+    CTR_lapp,        /* Timer for application code (leap) */
+    CTR_wsteal,      /* Timer for steal code (steal) */
+    CTR_lsteal,      /* Timer for steal code (leap) */
+    CTR_wstealsucc,  /* Timer for succesful steal code (steal) */
+    CTR_lstealsucc,  /* Timer for succesful steal code (leap) */
+    CTR_wsignal,     /* Timer for signal after work (steal) */
+    CTR_lsignal,     /* Timer for signal after work (leap) */
+    CTR_MAX
+} CTR_index;
 
 struct _Worker;
 struct _Task;
@@ -112,12 +179,25 @@ typedef struct _Worker {
     LaceFlags flags;
 
     char pad3[PAD(sizeof(LaceFlags), LINE_SIZE)];
+
+#if LACE_COUNT_EVENTS
+    uint64_t ctr[CTR_MAX]; // counters
+    volatile hrtime_t time;
+    volatile int level;
+#endif
 } Worker;
 
 int lace_steal(Worker *self, Task *head, Worker *victim);
 
+/**
+ * Either use lace_init and lace_exit, or use lace_boot with a callback function.
+ * lace_init will start w-1 workers, lace_boot will start w workers and run the callback function in a worker.
+ * Use lace_boot is recommended because there is more control over the program stack allocation then.
+ */
+void lace_boot(int workers, size_t dq_size, size_t stack_size, void (*function)(void));
 void lace_init(int workers, size_t dq_size, size_t stack_size);
 void lace_exit();
+int lace_inited();
 
 extern void (*lace_cb_stealing)(void);
 void lace_set_callback(void (*cb)(void));
@@ -157,6 +237,97 @@ static const int __lace_in_task = 0;
 #define CALL(f, ...)      ( CALL_DISPATCH_##f((Worker *)__lace_worker, (Task *)__lace_dq_head, __lace_in_task, ##__VA_ARGS__) )
 #define LACE_WORKER_ID    ( (int16_t) (__lace_worker == NULL ? lace_get_worker()->worker : __lace_worker->worker) )
 
+#if LACE_PIE_TIMES
+static void lace_time_event( Worker *w, int event )
+{
+    hrtime_t now = gethrtime(),
+             prev = w->time;
+
+    switch( event ) {
+
+        // Enter application code
+        case 1 :
+            if(  w->level /* level */ == 0 ) {
+                PR_ADD( w, CTR_init, now - prev );
+                w->level = 1;
+            } else if( w->level /* level */ == 1 ) {
+                PR_ADD( w, CTR_wsteal, now - prev );
+                PR_ADD( w, CTR_wstealsucc, now - prev );
+            } else {
+                PR_ADD( w, CTR_lsteal, now - prev );
+                PR_ADD( w, CTR_lstealsucc, now - prev );
+            }
+            break;
+
+            // Exit application code
+        case 2 :
+            if( w->level /* level */ == 1 ) {
+                PR_ADD( w, CTR_wapp, now - prev );
+            } else {
+                PR_ADD( w, CTR_lapp, now - prev );
+            }
+            break;
+
+            // Enter sync on stolen
+        case 3 :
+            if( w->level /* level */ == 1 ) {
+                PR_ADD( w, CTR_wapp, now - prev );
+            } else {
+                PR_ADD( w, CTR_lapp, now - prev );
+            }
+            w->level++;
+            break;
+
+            // Exit sync on stolen
+        case 4 :
+            if( w->level /* level */ == 1 ) {
+                fprintf( stderr, "This should not happen, level = %d\n", w->level );
+            } else {
+                PR_ADD( w, CTR_lsteal, now - prev );
+            }
+            w->level--;
+            break;
+
+            // Return from failed steal
+        case 7 :
+            if( w->level /* level */ == 0 ) {
+                PR_ADD( w, CTR_init, now - prev );
+            } else if( w->level /* level */ == 1 ) {
+                PR_ADD( w, CTR_wsteal, now - prev );
+            } else {
+                PR_ADD( w, CTR_lsteal, now - prev );
+            }
+            break;
+
+            // Signalling time
+        case 8 :
+            if( w->level /* level */ == 1 ) {
+                PR_ADD( w, CTR_wsignal, now - prev );
+                PR_ADD( w, CTR_wsteal, now - prev );
+            } else {
+                PR_ADD( w, CTR_lsignal, now - prev );
+                PR_ADD( w, CTR_lsteal, now - prev );
+            }
+            break;
+
+            // Done
+        case 9 :
+            if( w->level /* level */ == 0 ) {
+                PR_ADD( w, CTR_init, now - prev );
+            } else {
+                PR_ADD( w, CTR_close, now - prev );
+            }
+            break;
+
+        default: return;
+    }
+
+    w->time = now;
+}
+#else
+#define lace_time_event( w, e ) /* Empty */
+#endif
+
 
 
 // Task macros for tasks of arity 0
@@ -179,6 +350,8 @@ static RTYPE NAME##_SYNC_SLOW(Worker *, Task *);                                
 static inline                                                                         \
 void NAME##_SPAWN(Worker *w, Task *__dq_head )                                        \
 {                                                                                     \
+    PR_COUNTTASK(w);                                                                  \
+                                                                                      \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
     uint32_t head, tail, newsplit;                                                    \
@@ -273,6 +446,7 @@ RTYPE NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                              
                                                                                       \
 lace_allstolen_##NAME:                                                                \
                                                                                       \
+    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
@@ -288,6 +462,7 @@ lace_allstolen_##NAME:                                                          
     }                                                                                 \
                                                                                       \
     t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
     return ((TD_##NAME *)t)->d.res;                                                   \
 }                                                                                     \
                                                                                       \
@@ -368,6 +543,8 @@ static void NAME##_SYNC_SLOW(Worker *, Task *);                                 
 static inline                                                                         \
 void NAME##_SPAWN(Worker *w, Task *__dq_head )                                        \
 {                                                                                     \
+    PR_COUNTTASK(w);                                                                  \
+                                                                                      \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
     uint32_t head, tail, newsplit;                                                    \
@@ -462,6 +639,7 @@ void NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                               
                                                                                       \
 lace_allstolen_##NAME:                                                                \
                                                                                       \
+    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
@@ -477,6 +655,7 @@ lace_allstolen_##NAME:                                                          
     }                                                                                 \
                                                                                       \
     t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
     return ;                                                                          \
 }                                                                                     \
                                                                                       \
@@ -560,6 +739,8 @@ static RTYPE NAME##_SYNC_SLOW(Worker *, Task *);                                
 static inline                                                                         \
 void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1)                         \
 {                                                                                     \
+    PR_COUNTTASK(w);                                                                  \
+                                                                                      \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
     uint32_t head, tail, newsplit;                                                    \
@@ -654,6 +835,7 @@ RTYPE NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                              
                                                                                       \
 lace_allstolen_##NAME:                                                                \
                                                                                       \
+    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
@@ -669,6 +851,7 @@ lace_allstolen_##NAME:                                                          
     }                                                                                 \
                                                                                       \
     t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
     return ((TD_##NAME *)t)->d.res;                                                   \
 }                                                                                     \
                                                                                       \
@@ -749,6 +932,8 @@ static void NAME##_SYNC_SLOW(Worker *, Task *);                                 
 static inline                                                                         \
 void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1)                         \
 {                                                                                     \
+    PR_COUNTTASK(w);                                                                  \
+                                                                                      \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
     uint32_t head, tail, newsplit;                                                    \
@@ -843,6 +1028,7 @@ void NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                               
                                                                                       \
 lace_allstolen_##NAME:                                                                \
                                                                                       \
+    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
@@ -858,6 +1044,7 @@ lace_allstolen_##NAME:                                                          
     }                                                                                 \
                                                                                       \
     t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
     return ;                                                                          \
 }                                                                                     \
                                                                                       \
@@ -941,6 +1128,8 @@ static RTYPE NAME##_SYNC_SLOW(Worker *, Task *);                                
 static inline                                                                         \
 void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)          \
 {                                                                                     \
+    PR_COUNTTASK(w);                                                                  \
+                                                                                      \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
     uint32_t head, tail, newsplit;                                                    \
@@ -1035,6 +1224,7 @@ RTYPE NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                              
                                                                                       \
 lace_allstolen_##NAME:                                                                \
                                                                                       \
+    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
@@ -1050,6 +1240,7 @@ lace_allstolen_##NAME:                                                          
     }                                                                                 \
                                                                                       \
     t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
     return ((TD_##NAME *)t)->d.res;                                                   \
 }                                                                                     \
                                                                                       \
@@ -1130,6 +1321,8 @@ static void NAME##_SYNC_SLOW(Worker *, Task *);                                 
 static inline                                                                         \
 void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)          \
 {                                                                                     \
+    PR_COUNTTASK(w);                                                                  \
+                                                                                      \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
     uint32_t head, tail, newsplit;                                                    \
@@ -1224,6 +1417,7 @@ void NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                               
                                                                                       \
 lace_allstolen_##NAME:                                                                \
                                                                                       \
+    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
@@ -1239,6 +1433,7 @@ lace_allstolen_##NAME:                                                          
     }                                                                                 \
                                                                                       \
     t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
     return ;                                                                          \
 }                                                                                     \
                                                                                       \
@@ -1322,6 +1517,8 @@ static RTYPE NAME##_SYNC_SLOW(Worker *, Task *);                                
 static inline                                                                         \
 void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3)\
 {                                                                                     \
+    PR_COUNTTASK(w);                                                                  \
+                                                                                      \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
     uint32_t head, tail, newsplit;                                                    \
@@ -1416,6 +1613,7 @@ RTYPE NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                              
                                                                                       \
 lace_allstolen_##NAME:                                                                \
                                                                                       \
+    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
@@ -1431,6 +1629,7 @@ lace_allstolen_##NAME:                                                          
     }                                                                                 \
                                                                                       \
     t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
     return ((TD_##NAME *)t)->d.res;                                                   \
 }                                                                                     \
                                                                                       \
@@ -1511,6 +1710,8 @@ static void NAME##_SYNC_SLOW(Worker *, Task *);                                 
 static inline                                                                         \
 void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3)\
 {                                                                                     \
+    PR_COUNTTASK(w);                                                                  \
+                                                                                      \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
     uint32_t head, tail, newsplit;                                                    \
@@ -1605,6 +1806,7 @@ void NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                               
                                                                                       \
 lace_allstolen_##NAME:                                                                \
                                                                                       \
+    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
@@ -1620,6 +1822,7 @@ lace_allstolen_##NAME:                                                          
     }                                                                                 \
                                                                                       \
     t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
     return ;                                                                          \
 }                                                                                     \
                                                                                       \
@@ -1703,6 +1906,8 @@ static RTYPE NAME##_SYNC_SLOW(Worker *, Task *);                                
 static inline                                                                         \
 void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4)\
 {                                                                                     \
+    PR_COUNTTASK(w);                                                                  \
+                                                                                      \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
     uint32_t head, tail, newsplit;                                                    \
@@ -1797,6 +2002,7 @@ RTYPE NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                              
                                                                                       \
 lace_allstolen_##NAME:                                                                \
                                                                                       \
+    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
@@ -1812,6 +2018,7 @@ lace_allstolen_##NAME:                                                          
     }                                                                                 \
                                                                                       \
     t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
     return ((TD_##NAME *)t)->d.res;                                                   \
 }                                                                                     \
                                                                                       \
@@ -1892,6 +2099,8 @@ static void NAME##_SYNC_SLOW(Worker *, Task *);                                 
 static inline                                                                         \
 void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4)\
 {                                                                                     \
+    PR_COUNTTASK(w);                                                                  \
+                                                                                      \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
     uint32_t head, tail, newsplit;                                                    \
@@ -1986,6 +2195,7 @@ void NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                               
                                                                                       \
 lace_allstolen_##NAME:                                                                \
                                                                                       \
+    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
@@ -2001,6 +2211,7 @@ lace_allstolen_##NAME:                                                          
     }                                                                                 \
                                                                                       \
     t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
     return ;                                                                          \
 }                                                                                     \
                                                                                       \

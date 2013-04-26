@@ -9,9 +9,13 @@ static int num_cpus = 0;
 static int *node_mem = NULL;
 static int num_nodes = 0;
 static int inited = 0;
+static size_t pagesize = 0;
 
-int numa_tools_refresh(void)
+int
+numa_tools_refresh(void)
 {
+    pagesize = getpagesize();
+
     num_cpus = numa_num_configured_cpus();
     if (cpu_to_node != NULL) free(cpu_to_node);
     cpu_to_node = calloc(num_cpus, sizeof(int));
@@ -66,17 +70,20 @@ int numa_tools_refresh(void)
     return 1;
 }
 
-int get_num_cpus(void)
+int
+get_num_cpus(void)
 {
     return num_cpus;
 }
 
-const int *get_cpu_to_node(void)
+const int*
+get_cpu_to_node(void)
 {
     return cpu_to_node;
 }
 
-static int numa_tools_init()
+static int
+numa_tools_init()
 {
     if (inited) return 1;
     numa_tools_refresh();
@@ -86,7 +93,8 @@ static int numa_tools_init()
 /**
  * Returns number of available cpus
  */
-int numa_cpus_per_node(int *nodes)
+int
+numa_cpus_per_node(int *nodes)
 {
     if (!numa_tools_init()) return 0;
     int i;
@@ -100,7 +108,8 @@ int numa_cpus_per_node(int *nodes)
 /**
  * Calculates the number of currently available cpus
  */
-int numa_available_cpus()
+int
+numa_available_cpus()
 {
     if (!numa_tools_init()) return 0;
     int i,j=0;
@@ -113,7 +122,8 @@ int numa_available_cpus()
 /**
  * Calculate the number of currently available nodes
  */
-int numa_available_work_nodes()
+int
+numa_available_work_nodes()
 {
     if (!numa_tools_init()) return 0;
     int *nodes = (int*)alloca(sizeof(int)*num_nodes);
@@ -128,7 +138,8 @@ int numa_available_work_nodes()
 /**
  * Calculate the number of available nodes for memory allocation
  */
-int numa_available_memory_nodes()
+int
+numa_available_memory_nodes()
 {
     if (!numa_tools_init()) return 0;
     int i, j=0;
@@ -139,7 +150,8 @@ int numa_available_memory_nodes()
 /**
  * Check if every core is on a domain where we can allocate memory
  */
-int numa_check_sanity(void)
+int
+numa_check_sanity(void)
 {
     if (!numa_tools_init()) return 0;
     int i, good = 1;
@@ -155,7 +167,8 @@ static int n_workers = 0, n_nodes = 0;
 static int *worker_to_node = 0;
 static int *selected_nodes = 0;
 
-int numa_worker_info(int worker, int *node, int *node_index, int *index, int *total)
+int
+numa_worker_info(int worker, int *node, int *node_index, int *index, int *total)
 {
     *node = -1;
 
@@ -180,7 +193,8 @@ int numa_worker_info(int worker, int *node, int *node_index, int *index, int *to
     return 0;
 }
 
-int numa_bind_me(int worker)
+int
+numa_bind_me(int worker)
 {
     int node, res;
     if ((res=numa_worker_info(worker, &node, 0, 0, 0)) != 0) return res;
@@ -188,7 +202,8 @@ int numa_bind_me(int worker)
     return 0;
 }
 
-int numa_distribute(int workers)
+int
+numa_distribute(int workers)
 {
     if (!numa_tools_init()) return 1;
 
@@ -288,7 +303,8 @@ int numa_distribute(int workers)
  * Move some piece of memory to some memory domain.
  * mem should be on a <getpagesize()> boundary!
  */
-int numa_move(void *mem, size_t size, int node)
+int
+numa_move(void *mem, size_t size, int node)
 {
     struct bitmask *bmp = numa_allocate_nodemask();
     numa_bitmask_clearall(bmp);
@@ -372,7 +388,8 @@ int numa_interleave(void *mem, size_t size, size_t *fragment_size)
  * This function allocates an array of <size> bytes and automatically distributes it
  * over all available NUMA memory domains.
  */
-void *numa_alloc_interleaved_manually(size_t size, size_t *fragment_size, int shared)
+void *
+numa_alloc_interleaved_manually(size_t size, size_t *fragment_size, int shared)
 {
     char *mem;
     size_t f_size=0;
@@ -388,7 +405,7 @@ void *numa_alloc_interleaved_manually(size_t size, size_t *fragment_size, int sh
 
     if (shared) {
         size_t offset;
-        for (offset = 0; offset < size; offset+=4096) {
+        for (offset = 0; offset < size; offset+=pagesize) {
             *((volatile char*)&mem[offset]) = 0;
         }
     }
@@ -405,3 +422,25 @@ void *numa_alloc_interleaved_manually(size_t size, size_t *fragment_size, int sh
     return mem;
 }
 
+int
+numa_getdomain(void *ptr)
+{
+    ptr = (void*) ((size_t)ptr & ~(pagesize-1)); // align to page
+    int status = -1;
+    move_pages(0, 1, &ptr, NULL, &status, 0);
+    return status;
+}
+
+int
+numa_checkdomain(void *ptr, size_t size, int expected_node)
+{
+    size_t base = ((size_t)ptr & ~(pagesize-1));
+    size_t last = ((((size_t)ptr) + size) & ~(pagesize-1));
+    for (; base != last; base += pagesize) {
+        int status = -1, res;
+        if ((res = move_pages(0, 1, (void**)&base, NULL, &status, 0)) != 0) return res;
+        if (status != expected_node) return 0;
+    }
+
+    return 1;
+}

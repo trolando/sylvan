@@ -3,7 +3,8 @@ project(sylvan C)
 enable_language(ASM)
 enable_testing()
 
-option(SYLVAN_STATS "Create statistics" ON)
+option(SYLVAN_OPERATION_STATS "Create operation statistics" OFF)
+option(SYLVAN_CACHE_STATS "Create cache statistics" OFF)
 option(USE_NUMA "Use NUMA" OFF)
 
 include(CheckIncludeFiles)

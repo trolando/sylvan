@@ -18,15 +18,6 @@ AC_ARG_WITH(numa,
   [],
   [with_numa=no])
 
-AC_ARG_ENABLE(stats,
-  AS_HELP_STRING([--enable-stats], [Enable statistics gathering (default=yes)]),
-  [],
-  [enable_stats=yes])
-
-if test "x$enable_stats" != xno; then
-  AC_DEFINE([SYLVAN_STATS], [1], [Define to 1 to enable gathering statistics in Sylvan])
-fi
-
 if test "x$with_numa" != xno; then
   AC_CHECK_HEADER([numa.h],
                   [numa=yes; AC_DEFINE([HAVE_NUMA_H], [1], [Define to 1 if you have <numa.h>])],

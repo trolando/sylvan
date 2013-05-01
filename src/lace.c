@@ -247,6 +247,12 @@ lace_inited()
     return inited;
 }
 
+size_t
+lace_workers()
+{
+    return n_workers;
+}
+
 static void
 _lace_init(int n, size_t dq_size, size_t stacksize, void (*f)(void))
 {
@@ -464,6 +470,8 @@ lace_count_report_file(FILE *file)
     fprintf(file, "\n" );
 #endif
 #endif
+    return;
+    (void)file;
 }
 
 void lace_exit()

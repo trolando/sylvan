@@ -198,6 +198,7 @@ void lace_boot(int workers, size_t dq_size, size_t stack_size, void (*function)(
 void lace_init(int workers, size_t dq_size, size_t stack_size);
 void lace_exit();
 int lace_inited();
+size_t lace_workers();
 
 extern void (*lace_cb_stealing)(void);
 void lace_set_callback(void (*cb)(void));

@@ -22,12 +22,6 @@ extern const BDD quant_forall;
 extern "C" {
 #endif
 
-/**
- * Initialize package (program level)
- */
-void sylvan_package_init(int threads, int dq_size);
-void sylvan_package_exit();
-
 void sylvan_reset_counters();
 void sylvan_report_stats();
 
@@ -39,7 +33,7 @@ void sylvan_report_stats();
 void sylvan_init(size_t datasize, size_t cachesize, int granularity);
 
 /**
- * Stop threads and free data
+ * Free data
  */
 void sylvan_quit();
 

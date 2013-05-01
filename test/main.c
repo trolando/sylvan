@@ -598,7 +598,7 @@ void runtests(int threads)
         exit(1);
     }
 
-    sylvan_package_init(threads, 100000);
+    lace_init(threads, 100000, 0);
 
     printf(BOLD "Testing Sylvan\n");
 
@@ -771,7 +771,7 @@ void runtests(int threads)
     printf(NC " (%ld.%03ld ms)!\n", ms, us);
 
     sylvan_report_stats();
-    sylvan_package_exit();
+    lace_exit();
 }
 
 int main(int argc, char **argv)

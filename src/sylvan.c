@@ -270,25 +270,18 @@ static int granularity = 1; // default
 static void sylvan_test_gc();
 
 void
-sylvan_package_init(int workers, int dq_size)
-{
-    lace_init(workers, dq_size, 0);
-    lace_set_callback(sylvan_test_gc);
-
-    _bdd.workers = workers;
-}
-
-void
-sylvan_package_exit()
-{
-    lace_exit();
-}
-
-void
 sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
 {
     if (initialized != 0) return;
     initialized = 1;
+
+    if (!lace_inited()) {
+        fprintf(stderr, "Lace has not been initialized!\n");
+        exit(1);
+    }
+
+    lace_set_callback(sylvan_test_gc);
+    _bdd.workers = lace_workers();
 
     INIT_THREAD_LOCAL(gc_key);
     INIT_THREAD_LOCAL(insert_index);
@@ -337,6 +330,8 @@ sylvan_quit()
 {
     if (initialized == 0) return;
     initialized = 0;
+
+    // TODO: remove lace callback
 
     llci_free(_bdd.cache);
     llmsset_free(_bdd.data);

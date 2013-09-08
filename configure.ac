@@ -1,7 +1,7 @@
 AC_PREREQ([2.57])
 AC_INIT([sylvan], [1.0])
 AC_CONFIG_AUX_DIR([tools])
-AM_INIT_AUTOMAKE([foreign no-define])
+AM_INIT_AUTOMAKE([foreign no-define subdir-objects])
 AC_CONFIG_MACRO_DIR([m4])
 
 MAJOR_VERSION=`echo "$VERSION" | sed -e 's/^\([[0-9]]*\)\.[[0-9]]*.*$/\1/'`

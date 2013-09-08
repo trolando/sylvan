@@ -34,3 +34,5 @@ libsylvan_la_LIBADD += -lnuma
 libsylvan_la_SOURCES += src/numa_tools.c
 AM_CFLAGS += -DUSE_NUMA=1
 endif
+
+EXTRA_DIST = $(libsylvan_la_SOURCES)

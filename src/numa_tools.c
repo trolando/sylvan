@@ -5,9 +5,9 @@
 #include <stdio.h> // printf
 
 static int *cpu_to_node = NULL;
-static int num_cpus = 0;
+static size_t num_cpus = 0;
 static int *node_mem = NULL;
-static int num_nodes = 0;
+static size_t num_nodes = 0;
 static int inited = 0;
 static size_t pagesize = 0;
 
@@ -21,7 +21,7 @@ numa_tools_refresh(void)
     cpu_to_node = calloc(num_cpus, sizeof(int));
 
     struct bitmask *cpubuf;
-    int i;
+    size_t i;
 
     cpubuf = numa_allocate_cpumask();
     if (numa_sched_getaffinity(0, cpubuf) < 0) {
@@ -97,7 +97,7 @@ int
 numa_cpus_per_node(int *nodes)
 {
     if (!numa_tools_init()) return 0;
-    int i;
+    unsigned int i;
     for (i=0;i<num_cpus;i++) {
         if (cpu_to_node[i] != -1) nodes[cpu_to_node[i]]++;
     }
@@ -112,7 +112,7 @@ int
 numa_available_cpus()
 {
     if (!numa_tools_init()) return 0;
-    int i,j=0;
+    size_t i,j=0;
     for (i=0;i<num_cpus;i++) {
         if (cpu_to_node[i] != -1) j++;
     }
@@ -129,7 +129,7 @@ numa_available_work_nodes()
     int *nodes = (int*)alloca(sizeof(int)*num_nodes);
     memset(nodes, 0, num_nodes*sizeof(int));
 
-    int i,j=0;
+    size_t i,j=0;
     for (i=0;i<num_cpus;i++) if (cpu_to_node[i]!=-1) nodes[cpu_to_node[i]]++;
     for (i=0;i<num_nodes;i++) j += nodes[i] > 0 ? 1 : 0;
     return j;
@@ -142,7 +142,7 @@ int
 numa_available_memory_nodes()
 {
     if (!numa_tools_init()) return 0;
-    int i, j=0;
+    size_t i, j=0;
     for (i=0;i<num_nodes;i++) if (node_mem[i]) j++;
     return j;
 }
@@ -154,7 +154,7 @@ int
 numa_check_sanity(void)
 {
     if (!numa_tools_init()) return 0;
-    int i, good = 1;
+    size_t i, good = 1;
     for (i=0; i<num_cpus && good; i++) {
         if (cpu_to_node[i] != -1) {
             if (node_mem[cpu_to_node[i]] == 0) good = 0;
@@ -163,21 +163,20 @@ numa_check_sanity(void)
     return good;
 }
 
-static int n_workers = 0, n_nodes = 0;
+static size_t n_workers = 0, n_nodes = 0;
 static int *worker_to_node = 0;
 static int *selected_nodes = 0;
 
 int
-numa_worker_info(int worker, int *node, int *node_index, int *index, int *total)
+numa_worker_info(size_t worker, int *node, int *node_index, int *index, int *total)
 {
     *node = -1;
 
-    if (worker < 0) return -1;
     if (worker >= n_workers) return -1;
 
     *node = worker_to_node[worker];
 
-    int i,t=0;
+    size_t i,t=0;
     for (i=0; i<n_workers; i++) {
         if (i == worker && index != NULL) *index = t;
         if (worker_to_node[i] == *node) t++;
@@ -194,7 +193,7 @@ numa_worker_info(int worker, int *node, int *node_index, int *index, int *total)
 }
 
 int
-numa_bind_me(int worker)
+numa_bind_me(size_t worker)
 {
     int node, res;
     if ((res=numa_worker_info(worker, &node, 0, 0, 0)) != 0) return res;
@@ -203,7 +202,7 @@ numa_bind_me(int worker)
 }
 
 int
-numa_distribute(int workers)
+numa_distribute(size_t workers)
 {
     if (!numa_tools_init()) return 1;
 
@@ -211,13 +210,13 @@ numa_distribute(int workers)
     if (worker_to_node != 0) free(worker_to_node);
     worker_to_node = malloc(sizeof(int) * n_workers);
 
-    int i,j;
+    size_t i,j;
     int *nodes = (int*)alloca(sizeof(int) * num_nodes);
     memset(nodes, 0, num_nodes*sizeof(int));
     for (i=0;i<num_cpus;i++) if (cpu_to_node[i]!=-1) nodes[cpu_to_node[i]]++;
 
     // Determine number of selected nodes
-    int tot_nodes = 0;
+    size_t tot_nodes = 0;
     for (i=0;i<num_nodes;i++) if (nodes[i]>0) tot_nodes++;
     n_nodes = workers > tot_nodes ? tot_nodes : workers;
 
@@ -281,12 +280,13 @@ numa_distribute(int workers)
     }
 
     // Distribute workers
-    int count, *s_cpus = (int*)alloca(sizeof(int) * n_nodes);
+    size_t count;
+    int *s_cpus = (int*)alloca(sizeof(int) * n_nodes);
     for (i=count=0; i<n_nodes; i++) count += (s_cpus[i] = nodes[selected_nodes[i]]);
 
     for (i=j=0; i<n_workers; i++) {
         if (count == 0) {
-            int k;
+            size_t k;
             for (k=count=0; k<n_nodes; k++) count += (s_cpus[k] = nodes[selected_nodes[k]]);
         }
         while (s_cpus[j] <= 0) j = (j+1)%n_nodes;
@@ -333,7 +333,7 @@ numa_move(void *mem, size_t size, int node)
 int numa_interleave(void *mem, size_t size, size_t *fragment_size)
 {
     struct bitmask *allowed;
-    int i, n_allowed, nodesleft;
+    size_t i, n_allowed, nodesleft;
     size_t f_size, offset;
 
     // Determine number of memory domains

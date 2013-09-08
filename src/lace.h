@@ -25,8 +25,16 @@
 #define LACE_COUNT_TASKS 0
 #endif
 
+#ifndef LACE_COUNT_STEALS
+#define LACE_COUNT_STEALS 0
+#endif
+
+#ifndef LACE_COUNT_SPLITS
+#define LACE_COUNT_SPLITS 0
+#endif
+
 #ifndef LACE_COUNT_EVENTS
-#define LACE_COUNT_EVENTS LACE_PIE_TIMES || LACE_COUNT_TASKS
+#define LACE_COUNT_EVENTS (LACE_PIE_TIMES || LACE_COUNT_TASKS || LACE_COUNT_STEALS || LACE_COUNT_SPLITS)
 #endif
 
 /* Common code for atomic operations */
@@ -60,6 +68,8 @@
 #ifndef likely
 #define likely(x)       __builtin_expect((x),1)
 #define unlikely(x)     __builtin_expect((x),0)
+//#define likely(x)  (x)
+//#define unlikely(x) (x)
 #endif
 
 /* The size of a pointer, 8 bytes on a 64-bit architecture */
@@ -69,12 +79,15 @@
 #define ROUND(x,b) ( (x) + PAD( (x), (b) ) )
 
 #ifndef LACE_TASKSIZE
-#define LACE_TASKSIZE 4*8
+#define LACE_TASKSIZE (4+1)*8
+#endif
+
+#if LACE_COUNT_EVENTS
+typedef uint64_t hrtime_t;
 #endif
 
 #if LACE_PIE_TIMES
 /* Some code for event counters and timers */
-typedef uint64_t hrtime_t;
 
 static inline hrtime_t gethrtime()
 {
@@ -95,6 +108,18 @@ void lace_count_report_file(FILE *file);
 #define PR_COUNTTASK(s) /* Empty */
 #endif
 
+#if LACE_COUNT_STEALS
+#define PR_COUNTSTEALS(s,i) PR_INC(s,i)
+#else
+#define PR_COUNTSTEALS(s,i) /* Empty */
+#endif
+
+#if LACE_COUNT_SPLITS
+#define PR_COUNTSPLITS(s,i) PR_INC(s,i)
+#else
+#define PR_COUNTSPLITS(s,i) /* Empty */
+#endif
+
 #if LACE_COUNT_EVENTS
 #define PR_ADD(s,i,k) ( ((s)->ctr[i])+=k )
 #else
@@ -103,15 +128,25 @@ void lace_count_report_file(FILE *file);
 #define PR_INC(s,i) PR_ADD(s,i,1)
 
 typedef enum {
-    CTR_tasks=0,     /* Number of tasks spawned */
+#ifdef LACE_COUNT_TASKS
+    CTR_tasks,       /* Number of tasks spawned */
+#endif
+#ifdef LACE_COUNT_STEALS
     CTR_steal_tries, /* Number of steal attempts */
     CTR_leap_tries,  /* Number of leap attempts */
     CTR_steals,      /* Number of succesful steals */
     CTR_leaps,       /* Number of succesful leaps */
-    CTR_split,       /* Number of split modifications */
-    CTR_splitreq,    /* Number of split requests */
+    CTR_steal_busy,  /* Number of steal busies */
+    CTR_leap_busy,   /* Number of leap busies */
+#endif
+#ifdef LACE_COUNT_SPLITS
+    CTR_split_grow,  /* Number of split right */
+    CTR_split_shrink,/* Number of split left */
+    CTR_split_req,   /* Number of split requests */
+#endif
     CTR_fast_sync,   /* Number of fast syncs */
     CTR_slow_sync,   /* Number of slow syncs */
+#ifdef LACE_PIE_TIMES
     CTR_init,        /* Timer for initialization */
     CTR_close,       /* Timer for shutdown */
     CTR_wapp,        /* Timer for application code (steal) */
@@ -122,6 +157,7 @@ typedef enum {
     CTR_lstealsucc,  /* Timer for succesful steal code (leap) */
     CTR_wsignal,     /* Timer for signal after work (steal) */
     CTR_lsignal,     /* Timer for signal after work (leap) */
+#endif
     CTR_MAX
 } CTR_index;
 
@@ -132,7 +168,7 @@ struct _Task;
 
 #define TASK_COMMON_FIELDS(type)                               \
     void (*f)(struct _Worker *, struct _Task *, struct type *);  \
-struct _Worker *thief;
+    struct _Worker *thief;
 
 #define LACE_COMMON_FIELD_SIZE sizeof(struct { TASK_COMMON_FIELDS(_Task) })
 
@@ -151,14 +187,6 @@ typedef union __attribute__((packed)) {
     uint64_t v;
 } TailSplit;
 
-typedef union __attribute__((packed)) {
-    struct {
-        uint8_t allstolen;   // same as allstolen on thief cache line
-        uint8_t movesplit;   // split required? (written by thieves)
-    } o;
-    uint16_t all;
-} LaceFlags;
-
 typedef struct _Worker {
     // Thief cache line
     Task *dq;
@@ -171,14 +199,14 @@ typedef struct _Worker {
     Task *o_dq;        // same as dq
     Task *o_split;     // same as dq+ts.ts.split
     Task *o_end;       // dq+dq_size
-
     int16_t worker;     // what is my worker id?
+    uint8_t o_allstolen; // my allstolen
 
-    char pad2[PAD(3*P_SZ+2, LINE_SIZE)];
+    char pad2[PAD(3*P_SZ+2+1, LINE_SIZE)];
 
-    LaceFlags flags;
+    uint8_t movesplit;
 
-    char pad3[PAD(sizeof(LaceFlags), LINE_SIZE)];
+    char pad3[PAD(1, LINE_SIZE)];
 
 #if LACE_COUNT_EVENTS
     uint64_t ctr[CTR_MAX]; // counters
@@ -186,8 +214,6 @@ typedef struct _Worker {
     volatile int level;
 #endif
 } Worker;
-
-int lace_steal(Worker *self, Task *head, Worker *victim);
 
 /**
  * Either use lace_init and lace_exit, or use lace_boot with a callback function.
@@ -329,6 +355,40 @@ static void lace_time_event( Worker *w, int event )
 #define lace_time_event( w, e ) /* Empty */
 #endif
 
+static int __attribute__((noinline))
+lace_steal(Worker *self, Task *__dq_head, Worker *victim)
+{
+    if (!victim->allstolen) {
+        register TailSplit ts = victim->ts;
+        if (ts.ts.tail < ts.ts.split) {
+            register TailSplit ts_new = ts;
+            ts_new.ts.tail++;
+            if (cas(&victim->ts.v, ts.v, ts_new.v)) {
+                // Stolen
+                Task *t = &victim->dq[ts.ts.tail];
+                t->thief = self;
+                lace_time_event(self, 1);
+                t->f(self, __dq_head, t);
+                lace_time_event(self, 2);
+                t->thief = THIEF_COMPLETED;
+                lace_time_event(self, 8);
+                return LACE_STOLEN;
+            }
+
+            lace_time_event(self, 7);
+            return LACE_BUSY;
+        }
+
+        if (victim->movesplit == 0) {
+            victim->movesplit = 1;
+            PR_COUNTSPLITS(self, CTR_split_req);
+        }
+    }
+
+    lace_time_event(self, 7);
+    return LACE_NOWORK;
+}
+
 
 
 // Task macros for tasks of arity 0
@@ -343,6 +403,9 @@ typedef struct _TD_##NAME {                                                     
   } d;                                                                                \
 } TD_##NAME;                                                                          \
                                                                                       \
+/* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
+typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##NAME)<=sizeof(Task)) ? 0 : -1];\
+                                                                                      \
 void NAME##_WRAP(Worker *, Task *, TD_##NAME *);                                      \
 RTYPE NAME##_CALL(Worker *, Task * );                                                 \
 static inline RTYPE NAME##_SYNC_FAST(Worker *, Task *);                               \
@@ -355,7 +418,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head )                                  
                                                                                       \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
-    uint32_t head, tail, newsplit;                                                    \
+    uint32_t head, split, newsplit;                                                   \
                                                                                       \
     /* assert(__dq_head < w->o_end); */ /* Assuming to be true */                     \
                                                                                       \
@@ -365,118 +428,137 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head )                                  
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
-    /* Using w->flags.all to check for both flags at once                             \
-       will actually worsen performance! */                                           \
-                                                                                      \
-    if (unlikely(w->flags.o.allstolen)) {                                             \
+    if (unlikely(w->o_allstolen)) {                                                   \
+        if (w->movesplit) w->movesplit = 0;                                           \
         head = __dq_head - w->o_dq;                                                   \
-        ts.ts.tail = head;                                                            \
-        ts.ts.split = head+1;                                                         \
+        ts = (TailSplit){{head,head+1}};                                              \
         w->ts.v = ts.v;                                                               \
         compiler_barrier();                                                           \
         w->allstolen = 0;                                                             \
         w->o_split = __dq_head+1;                                                     \
-        w->flags.all = 0;                                                             \
-    } else if (unlikely(w->flags.o.movesplit)) {                                      \
-        tail = w->ts.ts.tail;                                                         \
+        w->o_allstolen = 0;                                                           \
+    } else if (unlikely(w->movesplit)) {                                              \
         head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head + tail + 2)/2;                                               \
+        split = w->o_split - w->o_dq;                                                 \
+        newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
-        w->flags.all = 0;                                                             \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+}                                                                                     \
+                                                                                      \
+static int                                                                            \
+NAME##_shrink_shared(Worker *w)                                                       \
+{                                                                                     \
+    TailSplit ts;                                                                     \
+    ts.v = w->ts.v; /* Force in 1 memory read */                                      \
+    uint32_t tail = ts.ts.tail;                                                       \
+    uint32_t split = ts.ts.split;                                                     \
+                                                                                      \
+    if (tail != split) {                                                              \
+        uint32_t newsplit = (tail + split)/2;                                         \
+        w->ts.ts.split = newsplit;                                                    \
+        mfence();                                                                     \
+        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        if (tail != split) {                                                          \
+            if (unlikely(tail > newsplit)) {                                          \
+                newsplit = (tail + split) / 2;                                        \
+                w->ts.ts.split = newsplit;                                            \
+            }                                                                         \
+            w->o_split = w->o_dq + newsplit;                                          \
+            PR_COUNTSPLITS(w, CTR_split_shrink);                                      \
+            return 0;                                                                 \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    w->allstolen = 1;                                                                 \
+    w->o_allstolen = 1;                                                               \
+    return 1;                                                                         \
+}                                                                                     \
+                                                                                      \
+static inline void                                                                    \
+NAME##_leapfrog(Worker *w, Task *__dq_head)                                           \
+{                                                                                     \
+    lace_time_event(w, 3);                                                            \
+    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    Worker *thief = t->thief;                                                         \
+    if (thief != THIEF_COMPLETED) {                                                   \
+        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+                                                                                      \
+        /* PRE-LEAP: increase head again */                                           \
+        __dq_head += 1;                                                               \
+                                                                                      \
+        /* Now leapfrog */                                                            \
+        while (thief != THIEF_COMPLETED) {                                            \
+            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
+            switch (lace_steal(w, __dq_head, thief)) {                                \
+            case LACE_NOWORK:                                                         \
+                lace_cb_stealing();                                                   \
+                break;                                                                \
+            case LACE_STOLEN:                                                         \
+                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                break;                                                                \
+            case LACE_BUSY:                                                           \
+                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                break;                                                                \
+            default:                                                                  \
+                break;                                                                \
+            }                                                                         \
+            thief = atomic_read(&(t->thief));                                         \
+        }                                                                             \
+                                                                                      \
+        /* POST-LEAP: really pop the finished task */                                 \
+        /*            no need to decrease __dq_head, since it is a local variable */  \
+        if (w->o_allstolen == 0) {                                                    \
+            /* Assume: tail = split = head (pre-pop) */                               \
+            /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
+            w->allstolen = 1;                                                         \
+            w->o_allstolen = 1;                                                       \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
 RTYPE NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                                    \
 {                                                                                     \
     TD_##NAME *t;                                                                     \
-    uint32_t head, tail, newsplit, oldsplit;                                          \
                                                                                       \
-    if (w->flags.o.allstolen) goto lace_allstolen_##NAME;                             \
-                                                                                      \
-    if ((w->flags.o.movesplit)) {                                                     \
-        tail = w->ts.ts.tail;                                                         \
-        head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head+tail+1)/2;                                                   \
-        oldsplit = w->ts.ts.split;                                                    \
-        if (newsplit != oldsplit) {                                                   \
-            w->ts.ts.split = newsplit;                                                \
-            if (newsplit < oldsplit) {                                                \
-                mfence();                                                             \
-                tail = atomic_read(&(w->ts.ts.tail));                                 \
-                if (tail > newsplit) {                                                \
-                    newsplit = (head+tail+1)/2;                                       \
-                    w->ts.ts.split = newsplit;                                        \
-                }                                                                     \
-            }                                                                         \
-            w->o_split = w->o_dq+newsplit;                                            \
-        }                                                                             \
-        w->flags.o.movesplit=0;                                                       \
-    }                                                                                 \
-                                                                                      \
-    if (likely(w->o_split <= __dq_head)) {                                            \
+    if ((w->o_allstolen) || (w->o_split > __dq_head && NAME##_shrink_shared(w))) {    \
+        NAME##_leapfrog(w, __dq_head);                                                \
         t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head );                                            \
+        return ((TD_##NAME *)t)->d.res;                                               \
     }                                                                                 \
                                                                                       \
-    tail = w->ts.ts.tail;                                                             \
-    head = __dq_head - w->o_dq;                                                       \
-    newsplit = (head+tail+1)/2;                                                       \
-    oldsplit = w->ts.ts.split;                                                        \
-    if (newsplit != oldsplit) {                                                       \
-        w->ts.ts.split = newsplit;                                                    \
-        mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
-        if (tail > newsplit) {                                                        \
-            newsplit = (head+tail+1)/2;                                               \
-            w->ts.ts.split = newsplit;                                                \
-        }                                                                             \
-        w->o_split = w->o_dq+newsplit;                                                \
+    if ((w->movesplit)) {                                                             \
+        Task *t = w->o_split;                                                         \
+        size_t diff = __dq_head - t;                                                  \
+        diff = (diff + 1) / 2;                                                        \
+        w->o_split = t + diff;                                                        \
+        w->ts.ts.split += diff;                                                       \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
                                                                                       \
-    if (likely(newsplit <= head)) {                                                   \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head );                                            \
-    }                                                                                 \
-                                                                                      \
-    w->allstolen = 1;                                                                 \
-    w->flags.o.allstolen = 1;                                                         \
-                                                                                      \
-lace_allstolen_##NAME:                                                                \
-                                                                                      \
-    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
-    Worker *thief = t->thief;                                                         \
-    if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
-                                                                                      \
-        /* Now leapfrog */                                                            \
-        while (thief != THIEF_COMPLETED) {                                            \
-            if (lace_steal(w, __dq_head+1, thief) == LACE_NOWORK) lace_cb_stealing(); \
-            thief = atomic_read(&(t->thief));                                         \
-        }                                                                             \
-        w->allstolen = 1;                                                             \
-        w->flags.o.allstolen = 1;                                                     \
-    }                                                                                 \
-                                                                                      \
     t->f = 0;                                                                         \
-    lace_time_event(w, 4);                                                            \
-    return ((TD_##NAME *)t)->d.res;                                                   \
+    return NAME##_CALL(w, __dq_head );                                                \
 }                                                                                     \
                                                                                       \
 static inline                                                                         \
 RTYPE NAME##_SYNC_FAST(Worker *w, Task *__dq_head)                                    \
 {                                                                                     \
-    TD_##NAME *t;                                                                     \
+    /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    /* assert (head > 0); */  /* Commented out because we assume contract */          \
-    if (likely(0 == w->flags.o.movesplit && w->o_split <= __dq_head)) {               \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head );                                            \
+    if (likely(0 == w->movesplit)) {                                                  \
+        if (likely(w->o_split <= __dq_head)) {                                        \
+            TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
+            t->f = 0;                                                                 \
+            return NAME##_CALL(w, __dq_head );                                        \
+        }                                                                             \
     }                                                                                 \
                                                                                       \
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
@@ -536,6 +618,9 @@ typedef struct _TD_##NAME {                                                     
   } d;                                                                                \
 } TD_##NAME;                                                                          \
                                                                                       \
+/* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
+typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##NAME)<=sizeof(Task)) ? 0 : -1];\
+                                                                                      \
 void NAME##_WRAP(Worker *, Task *, TD_##NAME *);                                      \
 void NAME##_CALL(Worker *, Task * );                                                  \
 static inline void NAME##_SYNC_FAST(Worker *, Task *);                                \
@@ -548,7 +633,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head )                                  
                                                                                       \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
-    uint32_t head, tail, newsplit;                                                    \
+    uint32_t head, split, newsplit;                                                   \
                                                                                       \
     /* assert(__dq_head < w->o_end); */ /* Assuming to be true */                     \
                                                                                       \
@@ -558,118 +643,137 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head )                                  
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
-    /* Using w->flags.all to check for both flags at once                             \
-       will actually worsen performance! */                                           \
-                                                                                      \
-    if (unlikely(w->flags.o.allstolen)) {                                             \
+    if (unlikely(w->o_allstolen)) {                                                   \
+        if (w->movesplit) w->movesplit = 0;                                           \
         head = __dq_head - w->o_dq;                                                   \
-        ts.ts.tail = head;                                                            \
-        ts.ts.split = head+1;                                                         \
+        ts = (TailSplit){{head,head+1}};                                              \
         w->ts.v = ts.v;                                                               \
         compiler_barrier();                                                           \
         w->allstolen = 0;                                                             \
         w->o_split = __dq_head+1;                                                     \
-        w->flags.all = 0;                                                             \
-    } else if (unlikely(w->flags.o.movesplit)) {                                      \
-        tail = w->ts.ts.tail;                                                         \
+        w->o_allstolen = 0;                                                           \
+    } else if (unlikely(w->movesplit)) {                                              \
         head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head + tail + 2)/2;                                               \
+        split = w->o_split - w->o_dq;                                                 \
+        newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
-        w->flags.all = 0;                                                             \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+}                                                                                     \
+                                                                                      \
+static int                                                                            \
+NAME##_shrink_shared(Worker *w)                                                       \
+{                                                                                     \
+    TailSplit ts;                                                                     \
+    ts.v = w->ts.v; /* Force in 1 memory read */                                      \
+    uint32_t tail = ts.ts.tail;                                                       \
+    uint32_t split = ts.ts.split;                                                     \
+                                                                                      \
+    if (tail != split) {                                                              \
+        uint32_t newsplit = (tail + split)/2;                                         \
+        w->ts.ts.split = newsplit;                                                    \
+        mfence();                                                                     \
+        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        if (tail != split) {                                                          \
+            if (unlikely(tail > newsplit)) {                                          \
+                newsplit = (tail + split) / 2;                                        \
+                w->ts.ts.split = newsplit;                                            \
+            }                                                                         \
+            w->o_split = w->o_dq + newsplit;                                          \
+            PR_COUNTSPLITS(w, CTR_split_shrink);                                      \
+            return 0;                                                                 \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    w->allstolen = 1;                                                                 \
+    w->o_allstolen = 1;                                                               \
+    return 1;                                                                         \
+}                                                                                     \
+                                                                                      \
+static inline void                                                                    \
+NAME##_leapfrog(Worker *w, Task *__dq_head)                                           \
+{                                                                                     \
+    lace_time_event(w, 3);                                                            \
+    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    Worker *thief = t->thief;                                                         \
+    if (thief != THIEF_COMPLETED) {                                                   \
+        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+                                                                                      \
+        /* PRE-LEAP: increase head again */                                           \
+        __dq_head += 1;                                                               \
+                                                                                      \
+        /* Now leapfrog */                                                            \
+        while (thief != THIEF_COMPLETED) {                                            \
+            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
+            switch (lace_steal(w, __dq_head, thief)) {                                \
+            case LACE_NOWORK:                                                         \
+                lace_cb_stealing();                                                   \
+                break;                                                                \
+            case LACE_STOLEN:                                                         \
+                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                break;                                                                \
+            case LACE_BUSY:                                                           \
+                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                break;                                                                \
+            default:                                                                  \
+                break;                                                                \
+            }                                                                         \
+            thief = atomic_read(&(t->thief));                                         \
+        }                                                                             \
+                                                                                      \
+        /* POST-LEAP: really pop the finished task */                                 \
+        /*            no need to decrease __dq_head, since it is a local variable */  \
+        if (w->o_allstolen == 0) {                                                    \
+            /* Assume: tail = split = head (pre-pop) */                               \
+            /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
+            w->allstolen = 1;                                                         \
+            w->o_allstolen = 1;                                                       \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
 void NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                                     \
 {                                                                                     \
     TD_##NAME *t;                                                                     \
-    uint32_t head, tail, newsplit, oldsplit;                                          \
                                                                                       \
-    if (w->flags.o.allstolen) goto lace_allstolen_##NAME;                             \
-                                                                                      \
-    if ((w->flags.o.movesplit)) {                                                     \
-        tail = w->ts.ts.tail;                                                         \
-        head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head+tail+1)/2;                                                   \
-        oldsplit = w->ts.ts.split;                                                    \
-        if (newsplit != oldsplit) {                                                   \
-            w->ts.ts.split = newsplit;                                                \
-            if (newsplit < oldsplit) {                                                \
-                mfence();                                                             \
-                tail = atomic_read(&(w->ts.ts.tail));                                 \
-                if (tail > newsplit) {                                                \
-                    newsplit = (head+tail+1)/2;                                       \
-                    w->ts.ts.split = newsplit;                                        \
-                }                                                                     \
-            }                                                                         \
-            w->o_split = w->o_dq+newsplit;                                            \
-        }                                                                             \
-        w->flags.o.movesplit=0;                                                       \
-    }                                                                                 \
-                                                                                      \
-    if (likely(w->o_split <= __dq_head)) {                                            \
+    if ((w->o_allstolen) || (w->o_split > __dq_head && NAME##_shrink_shared(w))) {    \
+        NAME##_leapfrog(w, __dq_head);                                                \
         t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head );                                            \
+        return ;                                                                      \
     }                                                                                 \
                                                                                       \
-    tail = w->ts.ts.tail;                                                             \
-    head = __dq_head - w->o_dq;                                                       \
-    newsplit = (head+tail+1)/2;                                                       \
-    oldsplit = w->ts.ts.split;                                                        \
-    if (newsplit != oldsplit) {                                                       \
-        w->ts.ts.split = newsplit;                                                    \
-        mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
-        if (tail > newsplit) {                                                        \
-            newsplit = (head+tail+1)/2;                                               \
-            w->ts.ts.split = newsplit;                                                \
-        }                                                                             \
-        w->o_split = w->o_dq+newsplit;                                                \
+    if ((w->movesplit)) {                                                             \
+        Task *t = w->o_split;                                                         \
+        size_t diff = __dq_head - t;                                                  \
+        diff = (diff + 1) / 2;                                                        \
+        w->o_split = t + diff;                                                        \
+        w->ts.ts.split += diff;                                                       \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
                                                                                       \
-    if (likely(newsplit <= head)) {                                                   \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head );                                            \
-    }                                                                                 \
-                                                                                      \
-    w->allstolen = 1;                                                                 \
-    w->flags.o.allstolen = 1;                                                         \
-                                                                                      \
-lace_allstolen_##NAME:                                                                \
-                                                                                      \
-    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
-    Worker *thief = t->thief;                                                         \
-    if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
-                                                                                      \
-        /* Now leapfrog */                                                            \
-        while (thief != THIEF_COMPLETED) {                                            \
-            if (lace_steal(w, __dq_head+1, thief) == LACE_NOWORK) lace_cb_stealing(); \
-            thief = atomic_read(&(t->thief));                                         \
-        }                                                                             \
-        w->allstolen = 1;                                                             \
-        w->flags.o.allstolen = 1;                                                     \
-    }                                                                                 \
-                                                                                      \
     t->f = 0;                                                                         \
-    lace_time_event(w, 4);                                                            \
-    return ;                                                                          \
+    return NAME##_CALL(w, __dq_head );                                                \
 }                                                                                     \
                                                                                       \
 static inline                                                                         \
 void NAME##_SYNC_FAST(Worker *w, Task *__dq_head)                                     \
 {                                                                                     \
-    TD_##NAME *t;                                                                     \
+    /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    /* assert (head > 0); */  /* Commented out because we assume contract */          \
-    if (likely(0 == w->flags.o.movesplit && w->o_split <= __dq_head)) {               \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head );                                            \
+    if (likely(0 == w->movesplit)) {                                                  \
+        if (likely(w->o_split <= __dq_head)) {                                        \
+            TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
+            t->f = 0;                                                                 \
+            return NAME##_CALL(w, __dq_head );                                        \
+        }                                                                             \
     }                                                                                 \
                                                                                       \
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
@@ -732,6 +836,9 @@ typedef struct _TD_##NAME {                                                     
   } d;                                                                                \
 } TD_##NAME;                                                                          \
                                                                                       \
+/* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
+typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##NAME)<=sizeof(Task)) ? 0 : -1];\
+                                                                                      \
 void NAME##_WRAP(Worker *, Task *, TD_##NAME *);                                      \
 RTYPE NAME##_CALL(Worker *, Task * , ATYPE_1 arg_1);                                  \
 static inline RTYPE NAME##_SYNC_FAST(Worker *, Task *);                               \
@@ -744,7 +851,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1)                   
                                                                                       \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
-    uint32_t head, tail, newsplit;                                                    \
+    uint32_t head, split, newsplit;                                                   \
                                                                                       \
     /* assert(__dq_head < w->o_end); */ /* Assuming to be true */                     \
                                                                                       \
@@ -754,118 +861,137 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1)                   
      t->d.args.arg_1 = arg_1;                                                         \
     compiler_barrier();                                                               \
                                                                                       \
-    /* Using w->flags.all to check for both flags at once                             \
-       will actually worsen performance! */                                           \
-                                                                                      \
-    if (unlikely(w->flags.o.allstolen)) {                                             \
+    if (unlikely(w->o_allstolen)) {                                                   \
+        if (w->movesplit) w->movesplit = 0;                                           \
         head = __dq_head - w->o_dq;                                                   \
-        ts.ts.tail = head;                                                            \
-        ts.ts.split = head+1;                                                         \
+        ts = (TailSplit){{head,head+1}};                                              \
         w->ts.v = ts.v;                                                               \
         compiler_barrier();                                                           \
         w->allstolen = 0;                                                             \
         w->o_split = __dq_head+1;                                                     \
-        w->flags.all = 0;                                                             \
-    } else if (unlikely(w->flags.o.movesplit)) {                                      \
-        tail = w->ts.ts.tail;                                                         \
+        w->o_allstolen = 0;                                                           \
+    } else if (unlikely(w->movesplit)) {                                              \
         head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head + tail + 2)/2;                                               \
+        split = w->o_split - w->o_dq;                                                 \
+        newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
-        w->flags.all = 0;                                                             \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+}                                                                                     \
+                                                                                      \
+static int                                                                            \
+NAME##_shrink_shared(Worker *w)                                                       \
+{                                                                                     \
+    TailSplit ts;                                                                     \
+    ts.v = w->ts.v; /* Force in 1 memory read */                                      \
+    uint32_t tail = ts.ts.tail;                                                       \
+    uint32_t split = ts.ts.split;                                                     \
+                                                                                      \
+    if (tail != split) {                                                              \
+        uint32_t newsplit = (tail + split)/2;                                         \
+        w->ts.ts.split = newsplit;                                                    \
+        mfence();                                                                     \
+        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        if (tail != split) {                                                          \
+            if (unlikely(tail > newsplit)) {                                          \
+                newsplit = (tail + split) / 2;                                        \
+                w->ts.ts.split = newsplit;                                            \
+            }                                                                         \
+            w->o_split = w->o_dq + newsplit;                                          \
+            PR_COUNTSPLITS(w, CTR_split_shrink);                                      \
+            return 0;                                                                 \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    w->allstolen = 1;                                                                 \
+    w->o_allstolen = 1;                                                               \
+    return 1;                                                                         \
+}                                                                                     \
+                                                                                      \
+static inline void                                                                    \
+NAME##_leapfrog(Worker *w, Task *__dq_head)                                           \
+{                                                                                     \
+    lace_time_event(w, 3);                                                            \
+    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    Worker *thief = t->thief;                                                         \
+    if (thief != THIEF_COMPLETED) {                                                   \
+        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+                                                                                      \
+        /* PRE-LEAP: increase head again */                                           \
+        __dq_head += 1;                                                               \
+                                                                                      \
+        /* Now leapfrog */                                                            \
+        while (thief != THIEF_COMPLETED) {                                            \
+            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
+            switch (lace_steal(w, __dq_head, thief)) {                                \
+            case LACE_NOWORK:                                                         \
+                lace_cb_stealing();                                                   \
+                break;                                                                \
+            case LACE_STOLEN:                                                         \
+                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                break;                                                                \
+            case LACE_BUSY:                                                           \
+                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                break;                                                                \
+            default:                                                                  \
+                break;                                                                \
+            }                                                                         \
+            thief = atomic_read(&(t->thief));                                         \
+        }                                                                             \
+                                                                                      \
+        /* POST-LEAP: really pop the finished task */                                 \
+        /*            no need to decrease __dq_head, since it is a local variable */  \
+        if (w->o_allstolen == 0) {                                                    \
+            /* Assume: tail = split = head (pre-pop) */                               \
+            /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
+            w->allstolen = 1;                                                         \
+            w->o_allstolen = 1;                                                       \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
 RTYPE NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                                    \
 {                                                                                     \
     TD_##NAME *t;                                                                     \
-    uint32_t head, tail, newsplit, oldsplit;                                          \
                                                                                       \
-    if (w->flags.o.allstolen) goto lace_allstolen_##NAME;                             \
-                                                                                      \
-    if ((w->flags.o.movesplit)) {                                                     \
-        tail = w->ts.ts.tail;                                                         \
-        head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head+tail+1)/2;                                                   \
-        oldsplit = w->ts.ts.split;                                                    \
-        if (newsplit != oldsplit) {                                                   \
-            w->ts.ts.split = newsplit;                                                \
-            if (newsplit < oldsplit) {                                                \
-                mfence();                                                             \
-                tail = atomic_read(&(w->ts.ts.tail));                                 \
-                if (tail > newsplit) {                                                \
-                    newsplit = (head+tail+1)/2;                                       \
-                    w->ts.ts.split = newsplit;                                        \
-                }                                                                     \
-            }                                                                         \
-            w->o_split = w->o_dq+newsplit;                                            \
-        }                                                                             \
-        w->flags.o.movesplit=0;                                                       \
-    }                                                                                 \
-                                                                                      \
-    if (likely(w->o_split <= __dq_head)) {                                            \
+    if ((w->o_allstolen) || (w->o_split > __dq_head && NAME##_shrink_shared(w))) {    \
+        NAME##_leapfrog(w, __dq_head);                                                \
         t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1);                           \
+        return ((TD_##NAME *)t)->d.res;                                               \
     }                                                                                 \
                                                                                       \
-    tail = w->ts.ts.tail;                                                             \
-    head = __dq_head - w->o_dq;                                                       \
-    newsplit = (head+tail+1)/2;                                                       \
-    oldsplit = w->ts.ts.split;                                                        \
-    if (newsplit != oldsplit) {                                                       \
-        w->ts.ts.split = newsplit;                                                    \
-        mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
-        if (tail > newsplit) {                                                        \
-            newsplit = (head+tail+1)/2;                                               \
-            w->ts.ts.split = newsplit;                                                \
-        }                                                                             \
-        w->o_split = w->o_dq+newsplit;                                                \
+    if ((w->movesplit)) {                                                             \
+        Task *t = w->o_split;                                                         \
+        size_t diff = __dq_head - t;                                                  \
+        diff = (diff + 1) / 2;                                                        \
+        w->o_split = t + diff;                                                        \
+        w->ts.ts.split += diff;                                                       \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
                                                                                       \
-    if (likely(newsplit <= head)) {                                                   \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1);                           \
-    }                                                                                 \
-                                                                                      \
-    w->allstolen = 1;                                                                 \
-    w->flags.o.allstolen = 1;                                                         \
-                                                                                      \
-lace_allstolen_##NAME:                                                                \
-                                                                                      \
-    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
-    Worker *thief = t->thief;                                                         \
-    if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
-                                                                                      \
-        /* Now leapfrog */                                                            \
-        while (thief != THIEF_COMPLETED) {                                            \
-            if (lace_steal(w, __dq_head+1, thief) == LACE_NOWORK) lace_cb_stealing(); \
-            thief = atomic_read(&(t->thief));                                         \
-        }                                                                             \
-        w->allstolen = 1;                                                             \
-        w->flags.o.allstolen = 1;                                                     \
-    }                                                                                 \
-                                                                                      \
     t->f = 0;                                                                         \
-    lace_time_event(w, 4);                                                            \
-    return ((TD_##NAME *)t)->d.res;                                                   \
+    return NAME##_CALL(w, __dq_head , t->d.args.arg_1);                               \
 }                                                                                     \
                                                                                       \
 static inline                                                                         \
 RTYPE NAME##_SYNC_FAST(Worker *w, Task *__dq_head)                                    \
 {                                                                                     \
-    TD_##NAME *t;                                                                     \
+    /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    /* assert (head > 0); */  /* Commented out because we assume contract */          \
-    if (likely(0 == w->flags.o.movesplit && w->o_split <= __dq_head)) {               \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1);                           \
+    if (likely(0 == w->movesplit)) {                                                  \
+        if (likely(w->o_split <= __dq_head)) {                                        \
+            TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
+            t->f = 0;                                                                 \
+            return NAME##_CALL(w, __dq_head , t->d.args.arg_1);                       \
+        }                                                                             \
     }                                                                                 \
                                                                                       \
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
@@ -925,6 +1051,9 @@ typedef struct _TD_##NAME {                                                     
   } d;                                                                                \
 } TD_##NAME;                                                                          \
                                                                                       \
+/* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
+typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##NAME)<=sizeof(Task)) ? 0 : -1];\
+                                                                                      \
 void NAME##_WRAP(Worker *, Task *, TD_##NAME *);                                      \
 void NAME##_CALL(Worker *, Task * , ATYPE_1 arg_1);                                   \
 static inline void NAME##_SYNC_FAST(Worker *, Task *);                                \
@@ -937,7 +1066,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1)                   
                                                                                       \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
-    uint32_t head, tail, newsplit;                                                    \
+    uint32_t head, split, newsplit;                                                   \
                                                                                       \
     /* assert(__dq_head < w->o_end); */ /* Assuming to be true */                     \
                                                                                       \
@@ -947,118 +1076,137 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1)                   
      t->d.args.arg_1 = arg_1;                                                         \
     compiler_barrier();                                                               \
                                                                                       \
-    /* Using w->flags.all to check for both flags at once                             \
-       will actually worsen performance! */                                           \
-                                                                                      \
-    if (unlikely(w->flags.o.allstolen)) {                                             \
+    if (unlikely(w->o_allstolen)) {                                                   \
+        if (w->movesplit) w->movesplit = 0;                                           \
         head = __dq_head - w->o_dq;                                                   \
-        ts.ts.tail = head;                                                            \
-        ts.ts.split = head+1;                                                         \
+        ts = (TailSplit){{head,head+1}};                                              \
         w->ts.v = ts.v;                                                               \
         compiler_barrier();                                                           \
         w->allstolen = 0;                                                             \
         w->o_split = __dq_head+1;                                                     \
-        w->flags.all = 0;                                                             \
-    } else if (unlikely(w->flags.o.movesplit)) {                                      \
-        tail = w->ts.ts.tail;                                                         \
+        w->o_allstolen = 0;                                                           \
+    } else if (unlikely(w->movesplit)) {                                              \
         head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head + tail + 2)/2;                                               \
+        split = w->o_split - w->o_dq;                                                 \
+        newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
-        w->flags.all = 0;                                                             \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+}                                                                                     \
+                                                                                      \
+static int                                                                            \
+NAME##_shrink_shared(Worker *w)                                                       \
+{                                                                                     \
+    TailSplit ts;                                                                     \
+    ts.v = w->ts.v; /* Force in 1 memory read */                                      \
+    uint32_t tail = ts.ts.tail;                                                       \
+    uint32_t split = ts.ts.split;                                                     \
+                                                                                      \
+    if (tail != split) {                                                              \
+        uint32_t newsplit = (tail + split)/2;                                         \
+        w->ts.ts.split = newsplit;                                                    \
+        mfence();                                                                     \
+        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        if (tail != split) {                                                          \
+            if (unlikely(tail > newsplit)) {                                          \
+                newsplit = (tail + split) / 2;                                        \
+                w->ts.ts.split = newsplit;                                            \
+            }                                                                         \
+            w->o_split = w->o_dq + newsplit;                                          \
+            PR_COUNTSPLITS(w, CTR_split_shrink);                                      \
+            return 0;                                                                 \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    w->allstolen = 1;                                                                 \
+    w->o_allstolen = 1;                                                               \
+    return 1;                                                                         \
+}                                                                                     \
+                                                                                      \
+static inline void                                                                    \
+NAME##_leapfrog(Worker *w, Task *__dq_head)                                           \
+{                                                                                     \
+    lace_time_event(w, 3);                                                            \
+    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    Worker *thief = t->thief;                                                         \
+    if (thief != THIEF_COMPLETED) {                                                   \
+        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+                                                                                      \
+        /* PRE-LEAP: increase head again */                                           \
+        __dq_head += 1;                                                               \
+                                                                                      \
+        /* Now leapfrog */                                                            \
+        while (thief != THIEF_COMPLETED) {                                            \
+            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
+            switch (lace_steal(w, __dq_head, thief)) {                                \
+            case LACE_NOWORK:                                                         \
+                lace_cb_stealing();                                                   \
+                break;                                                                \
+            case LACE_STOLEN:                                                         \
+                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                break;                                                                \
+            case LACE_BUSY:                                                           \
+                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                break;                                                                \
+            default:                                                                  \
+                break;                                                                \
+            }                                                                         \
+            thief = atomic_read(&(t->thief));                                         \
+        }                                                                             \
+                                                                                      \
+        /* POST-LEAP: really pop the finished task */                                 \
+        /*            no need to decrease __dq_head, since it is a local variable */  \
+        if (w->o_allstolen == 0) {                                                    \
+            /* Assume: tail = split = head (pre-pop) */                               \
+            /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
+            w->allstolen = 1;                                                         \
+            w->o_allstolen = 1;                                                       \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
 void NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                                     \
 {                                                                                     \
     TD_##NAME *t;                                                                     \
-    uint32_t head, tail, newsplit, oldsplit;                                          \
                                                                                       \
-    if (w->flags.o.allstolen) goto lace_allstolen_##NAME;                             \
-                                                                                      \
-    if ((w->flags.o.movesplit)) {                                                     \
-        tail = w->ts.ts.tail;                                                         \
-        head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head+tail+1)/2;                                                   \
-        oldsplit = w->ts.ts.split;                                                    \
-        if (newsplit != oldsplit) {                                                   \
-            w->ts.ts.split = newsplit;                                                \
-            if (newsplit < oldsplit) {                                                \
-                mfence();                                                             \
-                tail = atomic_read(&(w->ts.ts.tail));                                 \
-                if (tail > newsplit) {                                                \
-                    newsplit = (head+tail+1)/2;                                       \
-                    w->ts.ts.split = newsplit;                                        \
-                }                                                                     \
-            }                                                                         \
-            w->o_split = w->o_dq+newsplit;                                            \
-        }                                                                             \
-        w->flags.o.movesplit=0;                                                       \
-    }                                                                                 \
-                                                                                      \
-    if (likely(w->o_split <= __dq_head)) {                                            \
+    if ((w->o_allstolen) || (w->o_split > __dq_head && NAME##_shrink_shared(w))) {    \
+        NAME##_leapfrog(w, __dq_head);                                                \
         t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1);                           \
+        return ;                                                                      \
     }                                                                                 \
                                                                                       \
-    tail = w->ts.ts.tail;                                                             \
-    head = __dq_head - w->o_dq;                                                       \
-    newsplit = (head+tail+1)/2;                                                       \
-    oldsplit = w->ts.ts.split;                                                        \
-    if (newsplit != oldsplit) {                                                       \
-        w->ts.ts.split = newsplit;                                                    \
-        mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
-        if (tail > newsplit) {                                                        \
-            newsplit = (head+tail+1)/2;                                               \
-            w->ts.ts.split = newsplit;                                                \
-        }                                                                             \
-        w->o_split = w->o_dq+newsplit;                                                \
+    if ((w->movesplit)) {                                                             \
+        Task *t = w->o_split;                                                         \
+        size_t diff = __dq_head - t;                                                  \
+        diff = (diff + 1) / 2;                                                        \
+        w->o_split = t + diff;                                                        \
+        w->ts.ts.split += diff;                                                       \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
                                                                                       \
-    if (likely(newsplit <= head)) {                                                   \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1);                           \
-    }                                                                                 \
-                                                                                      \
-    w->allstolen = 1;                                                                 \
-    w->flags.o.allstolen = 1;                                                         \
-                                                                                      \
-lace_allstolen_##NAME:                                                                \
-                                                                                      \
-    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
-    Worker *thief = t->thief;                                                         \
-    if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
-                                                                                      \
-        /* Now leapfrog */                                                            \
-        while (thief != THIEF_COMPLETED) {                                            \
-            if (lace_steal(w, __dq_head+1, thief) == LACE_NOWORK) lace_cb_stealing(); \
-            thief = atomic_read(&(t->thief));                                         \
-        }                                                                             \
-        w->allstolen = 1;                                                             \
-        w->flags.o.allstolen = 1;                                                     \
-    }                                                                                 \
-                                                                                      \
     t->f = 0;                                                                         \
-    lace_time_event(w, 4);                                                            \
-    return ;                                                                          \
+    return NAME##_CALL(w, __dq_head , t->d.args.arg_1);                               \
 }                                                                                     \
                                                                                       \
 static inline                                                                         \
 void NAME##_SYNC_FAST(Worker *w, Task *__dq_head)                                     \
 {                                                                                     \
-    TD_##NAME *t;                                                                     \
+    /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    /* assert (head > 0); */  /* Commented out because we assume contract */          \
-    if (likely(0 == w->flags.o.movesplit && w->o_split <= __dq_head)) {               \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1);                           \
+    if (likely(0 == w->movesplit)) {                                                  \
+        if (likely(w->o_split <= __dq_head)) {                                        \
+            TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
+            t->f = 0;                                                                 \
+            return NAME##_CALL(w, __dq_head , t->d.args.arg_1);                       \
+        }                                                                             \
     }                                                                                 \
                                                                                       \
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
@@ -1121,6 +1269,9 @@ typedef struct _TD_##NAME {                                                     
   } d;                                                                                \
 } TD_##NAME;                                                                          \
                                                                                       \
+/* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
+typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##NAME)<=sizeof(Task)) ? 0 : -1];\
+                                                                                      \
 void NAME##_WRAP(Worker *, Task *, TD_##NAME *);                                      \
 RTYPE NAME##_CALL(Worker *, Task * , ATYPE_1 arg_1, ATYPE_2 arg_2);                   \
 static inline RTYPE NAME##_SYNC_FAST(Worker *, Task *);                               \
@@ -1133,7 +1284,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)    
                                                                                       \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
-    uint32_t head, tail, newsplit;                                                    \
+    uint32_t head, split, newsplit;                                                   \
                                                                                       \
     /* assert(__dq_head < w->o_end); */ /* Assuming to be true */                     \
                                                                                       \
@@ -1143,118 +1294,137 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)    
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2;                                \
     compiler_barrier();                                                               \
                                                                                       \
-    /* Using w->flags.all to check for both flags at once                             \
-       will actually worsen performance! */                                           \
-                                                                                      \
-    if (unlikely(w->flags.o.allstolen)) {                                             \
+    if (unlikely(w->o_allstolen)) {                                                   \
+        if (w->movesplit) w->movesplit = 0;                                           \
         head = __dq_head - w->o_dq;                                                   \
-        ts.ts.tail = head;                                                            \
-        ts.ts.split = head+1;                                                         \
+        ts = (TailSplit){{head,head+1}};                                              \
         w->ts.v = ts.v;                                                               \
         compiler_barrier();                                                           \
         w->allstolen = 0;                                                             \
         w->o_split = __dq_head+1;                                                     \
-        w->flags.all = 0;                                                             \
-    } else if (unlikely(w->flags.o.movesplit)) {                                      \
-        tail = w->ts.ts.tail;                                                         \
+        w->o_allstolen = 0;                                                           \
+    } else if (unlikely(w->movesplit)) {                                              \
         head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head + tail + 2)/2;                                               \
+        split = w->o_split - w->o_dq;                                                 \
+        newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
-        w->flags.all = 0;                                                             \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+}                                                                                     \
+                                                                                      \
+static int                                                                            \
+NAME##_shrink_shared(Worker *w)                                                       \
+{                                                                                     \
+    TailSplit ts;                                                                     \
+    ts.v = w->ts.v; /* Force in 1 memory read */                                      \
+    uint32_t tail = ts.ts.tail;                                                       \
+    uint32_t split = ts.ts.split;                                                     \
+                                                                                      \
+    if (tail != split) {                                                              \
+        uint32_t newsplit = (tail + split)/2;                                         \
+        w->ts.ts.split = newsplit;                                                    \
+        mfence();                                                                     \
+        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        if (tail != split) {                                                          \
+            if (unlikely(tail > newsplit)) {                                          \
+                newsplit = (tail + split) / 2;                                        \
+                w->ts.ts.split = newsplit;                                            \
+            }                                                                         \
+            w->o_split = w->o_dq + newsplit;                                          \
+            PR_COUNTSPLITS(w, CTR_split_shrink);                                      \
+            return 0;                                                                 \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    w->allstolen = 1;                                                                 \
+    w->o_allstolen = 1;                                                               \
+    return 1;                                                                         \
+}                                                                                     \
+                                                                                      \
+static inline void                                                                    \
+NAME##_leapfrog(Worker *w, Task *__dq_head)                                           \
+{                                                                                     \
+    lace_time_event(w, 3);                                                            \
+    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    Worker *thief = t->thief;                                                         \
+    if (thief != THIEF_COMPLETED) {                                                   \
+        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+                                                                                      \
+        /* PRE-LEAP: increase head again */                                           \
+        __dq_head += 1;                                                               \
+                                                                                      \
+        /* Now leapfrog */                                                            \
+        while (thief != THIEF_COMPLETED) {                                            \
+            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
+            switch (lace_steal(w, __dq_head, thief)) {                                \
+            case LACE_NOWORK:                                                         \
+                lace_cb_stealing();                                                   \
+                break;                                                                \
+            case LACE_STOLEN:                                                         \
+                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                break;                                                                \
+            case LACE_BUSY:                                                           \
+                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                break;                                                                \
+            default:                                                                  \
+                break;                                                                \
+            }                                                                         \
+            thief = atomic_read(&(t->thief));                                         \
+        }                                                                             \
+                                                                                      \
+        /* POST-LEAP: really pop the finished task */                                 \
+        /*            no need to decrease __dq_head, since it is a local variable */  \
+        if (w->o_allstolen == 0) {                                                    \
+            /* Assume: tail = split = head (pre-pop) */                               \
+            /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
+            w->allstolen = 1;                                                         \
+            w->o_allstolen = 1;                                                       \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
 RTYPE NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                                    \
 {                                                                                     \
     TD_##NAME *t;                                                                     \
-    uint32_t head, tail, newsplit, oldsplit;                                          \
                                                                                       \
-    if (w->flags.o.allstolen) goto lace_allstolen_##NAME;                             \
-                                                                                      \
-    if ((w->flags.o.movesplit)) {                                                     \
-        tail = w->ts.ts.tail;                                                         \
-        head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head+tail+1)/2;                                                   \
-        oldsplit = w->ts.ts.split;                                                    \
-        if (newsplit != oldsplit) {                                                   \
-            w->ts.ts.split = newsplit;                                                \
-            if (newsplit < oldsplit) {                                                \
-                mfence();                                                             \
-                tail = atomic_read(&(w->ts.ts.tail));                                 \
-                if (tail > newsplit) {                                                \
-                    newsplit = (head+tail+1)/2;                                       \
-                    w->ts.ts.split = newsplit;                                        \
-                }                                                                     \
-            }                                                                         \
-            w->o_split = w->o_dq+newsplit;                                            \
-        }                                                                             \
-        w->flags.o.movesplit=0;                                                       \
-    }                                                                                 \
-                                                                                      \
-    if (likely(w->o_split <= __dq_head)) {                                            \
+    if ((w->o_allstolen) || (w->o_split > __dq_head && NAME##_shrink_shared(w))) {    \
+        NAME##_leapfrog(w, __dq_head);                                                \
         t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2);          \
+        return ((TD_##NAME *)t)->d.res;                                               \
     }                                                                                 \
                                                                                       \
-    tail = w->ts.ts.tail;                                                             \
-    head = __dq_head - w->o_dq;                                                       \
-    newsplit = (head+tail+1)/2;                                                       \
-    oldsplit = w->ts.ts.split;                                                        \
-    if (newsplit != oldsplit) {                                                       \
-        w->ts.ts.split = newsplit;                                                    \
-        mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
-        if (tail > newsplit) {                                                        \
-            newsplit = (head+tail+1)/2;                                               \
-            w->ts.ts.split = newsplit;                                                \
-        }                                                                             \
-        w->o_split = w->o_dq+newsplit;                                                \
+    if ((w->movesplit)) {                                                             \
+        Task *t = w->o_split;                                                         \
+        size_t diff = __dq_head - t;                                                  \
+        diff = (diff + 1) / 2;                                                        \
+        w->o_split = t + diff;                                                        \
+        w->ts.ts.split += diff;                                                       \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
                                                                                       \
-    if (likely(newsplit <= head)) {                                                   \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2);          \
-    }                                                                                 \
-                                                                                      \
-    w->allstolen = 1;                                                                 \
-    w->flags.o.allstolen = 1;                                                         \
-                                                                                      \
-lace_allstolen_##NAME:                                                                \
-                                                                                      \
-    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
-    Worker *thief = t->thief;                                                         \
-    if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
-                                                                                      \
-        /* Now leapfrog */                                                            \
-        while (thief != THIEF_COMPLETED) {                                            \
-            if (lace_steal(w, __dq_head+1, thief) == LACE_NOWORK) lace_cb_stealing(); \
-            thief = atomic_read(&(t->thief));                                         \
-        }                                                                             \
-        w->allstolen = 1;                                                             \
-        w->flags.o.allstolen = 1;                                                     \
-    }                                                                                 \
-                                                                                      \
     t->f = 0;                                                                         \
-    lace_time_event(w, 4);                                                            \
-    return ((TD_##NAME *)t)->d.res;                                                   \
+    return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2);              \
 }                                                                                     \
                                                                                       \
 static inline                                                                         \
 RTYPE NAME##_SYNC_FAST(Worker *w, Task *__dq_head)                                    \
 {                                                                                     \
-    TD_##NAME *t;                                                                     \
+    /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    /* assert (head > 0); */  /* Commented out because we assume contract */          \
-    if (likely(0 == w->flags.o.movesplit && w->o_split <= __dq_head)) {               \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2);          \
+    if (likely(0 == w->movesplit)) {                                                  \
+        if (likely(w->o_split <= __dq_head)) {                                        \
+            TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
+            t->f = 0;                                                                 \
+            return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2);      \
+        }                                                                             \
     }                                                                                 \
                                                                                       \
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
@@ -1314,6 +1484,9 @@ typedef struct _TD_##NAME {                                                     
   } d;                                                                                \
 } TD_##NAME;                                                                          \
                                                                                       \
+/* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
+typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##NAME)<=sizeof(Task)) ? 0 : -1];\
+                                                                                      \
 void NAME##_WRAP(Worker *, Task *, TD_##NAME *);                                      \
 void NAME##_CALL(Worker *, Task * , ATYPE_1 arg_1, ATYPE_2 arg_2);                    \
 static inline void NAME##_SYNC_FAST(Worker *, Task *);                                \
@@ -1326,7 +1499,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)    
                                                                                       \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
-    uint32_t head, tail, newsplit;                                                    \
+    uint32_t head, split, newsplit;                                                   \
                                                                                       \
     /* assert(__dq_head < w->o_end); */ /* Assuming to be true */                     \
                                                                                       \
@@ -1336,118 +1509,137 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)    
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2;                                \
     compiler_barrier();                                                               \
                                                                                       \
-    /* Using w->flags.all to check for both flags at once                             \
-       will actually worsen performance! */                                           \
-                                                                                      \
-    if (unlikely(w->flags.o.allstolen)) {                                             \
+    if (unlikely(w->o_allstolen)) {                                                   \
+        if (w->movesplit) w->movesplit = 0;                                           \
         head = __dq_head - w->o_dq;                                                   \
-        ts.ts.tail = head;                                                            \
-        ts.ts.split = head+1;                                                         \
+        ts = (TailSplit){{head,head+1}};                                              \
         w->ts.v = ts.v;                                                               \
         compiler_barrier();                                                           \
         w->allstolen = 0;                                                             \
         w->o_split = __dq_head+1;                                                     \
-        w->flags.all = 0;                                                             \
-    } else if (unlikely(w->flags.o.movesplit)) {                                      \
-        tail = w->ts.ts.tail;                                                         \
+        w->o_allstolen = 0;                                                           \
+    } else if (unlikely(w->movesplit)) {                                              \
         head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head + tail + 2)/2;                                               \
+        split = w->o_split - w->o_dq;                                                 \
+        newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
-        w->flags.all = 0;                                                             \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+}                                                                                     \
+                                                                                      \
+static int                                                                            \
+NAME##_shrink_shared(Worker *w)                                                       \
+{                                                                                     \
+    TailSplit ts;                                                                     \
+    ts.v = w->ts.v; /* Force in 1 memory read */                                      \
+    uint32_t tail = ts.ts.tail;                                                       \
+    uint32_t split = ts.ts.split;                                                     \
+                                                                                      \
+    if (tail != split) {                                                              \
+        uint32_t newsplit = (tail + split)/2;                                         \
+        w->ts.ts.split = newsplit;                                                    \
+        mfence();                                                                     \
+        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        if (tail != split) {                                                          \
+            if (unlikely(tail > newsplit)) {                                          \
+                newsplit = (tail + split) / 2;                                        \
+                w->ts.ts.split = newsplit;                                            \
+            }                                                                         \
+            w->o_split = w->o_dq + newsplit;                                          \
+            PR_COUNTSPLITS(w, CTR_split_shrink);                                      \
+            return 0;                                                                 \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    w->allstolen = 1;                                                                 \
+    w->o_allstolen = 1;                                                               \
+    return 1;                                                                         \
+}                                                                                     \
+                                                                                      \
+static inline void                                                                    \
+NAME##_leapfrog(Worker *w, Task *__dq_head)                                           \
+{                                                                                     \
+    lace_time_event(w, 3);                                                            \
+    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    Worker *thief = t->thief;                                                         \
+    if (thief != THIEF_COMPLETED) {                                                   \
+        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+                                                                                      \
+        /* PRE-LEAP: increase head again */                                           \
+        __dq_head += 1;                                                               \
+                                                                                      \
+        /* Now leapfrog */                                                            \
+        while (thief != THIEF_COMPLETED) {                                            \
+            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
+            switch (lace_steal(w, __dq_head, thief)) {                                \
+            case LACE_NOWORK:                                                         \
+                lace_cb_stealing();                                                   \
+                break;                                                                \
+            case LACE_STOLEN:                                                         \
+                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                break;                                                                \
+            case LACE_BUSY:                                                           \
+                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                break;                                                                \
+            default:                                                                  \
+                break;                                                                \
+            }                                                                         \
+            thief = atomic_read(&(t->thief));                                         \
+        }                                                                             \
+                                                                                      \
+        /* POST-LEAP: really pop the finished task */                                 \
+        /*            no need to decrease __dq_head, since it is a local variable */  \
+        if (w->o_allstolen == 0) {                                                    \
+            /* Assume: tail = split = head (pre-pop) */                               \
+            /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
+            w->allstolen = 1;                                                         \
+            w->o_allstolen = 1;                                                       \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
 void NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                                     \
 {                                                                                     \
     TD_##NAME *t;                                                                     \
-    uint32_t head, tail, newsplit, oldsplit;                                          \
                                                                                       \
-    if (w->flags.o.allstolen) goto lace_allstolen_##NAME;                             \
-                                                                                      \
-    if ((w->flags.o.movesplit)) {                                                     \
-        tail = w->ts.ts.tail;                                                         \
-        head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head+tail+1)/2;                                                   \
-        oldsplit = w->ts.ts.split;                                                    \
-        if (newsplit != oldsplit) {                                                   \
-            w->ts.ts.split = newsplit;                                                \
-            if (newsplit < oldsplit) {                                                \
-                mfence();                                                             \
-                tail = atomic_read(&(w->ts.ts.tail));                                 \
-                if (tail > newsplit) {                                                \
-                    newsplit = (head+tail+1)/2;                                       \
-                    w->ts.ts.split = newsplit;                                        \
-                }                                                                     \
-            }                                                                         \
-            w->o_split = w->o_dq+newsplit;                                            \
-        }                                                                             \
-        w->flags.o.movesplit=0;                                                       \
-    }                                                                                 \
-                                                                                      \
-    if (likely(w->o_split <= __dq_head)) {                                            \
+    if ((w->o_allstolen) || (w->o_split > __dq_head && NAME##_shrink_shared(w))) {    \
+        NAME##_leapfrog(w, __dq_head);                                                \
         t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2);          \
+        return ;                                                                      \
     }                                                                                 \
                                                                                       \
-    tail = w->ts.ts.tail;                                                             \
-    head = __dq_head - w->o_dq;                                                       \
-    newsplit = (head+tail+1)/2;                                                       \
-    oldsplit = w->ts.ts.split;                                                        \
-    if (newsplit != oldsplit) {                                                       \
-        w->ts.ts.split = newsplit;                                                    \
-        mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
-        if (tail > newsplit) {                                                        \
-            newsplit = (head+tail+1)/2;                                               \
-            w->ts.ts.split = newsplit;                                                \
-        }                                                                             \
-        w->o_split = w->o_dq+newsplit;                                                \
+    if ((w->movesplit)) {                                                             \
+        Task *t = w->o_split;                                                         \
+        size_t diff = __dq_head - t;                                                  \
+        diff = (diff + 1) / 2;                                                        \
+        w->o_split = t + diff;                                                        \
+        w->ts.ts.split += diff;                                                       \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
                                                                                       \
-    if (likely(newsplit <= head)) {                                                   \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2);          \
-    }                                                                                 \
-                                                                                      \
-    w->allstolen = 1;                                                                 \
-    w->flags.o.allstolen = 1;                                                         \
-                                                                                      \
-lace_allstolen_##NAME:                                                                \
-                                                                                      \
-    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
-    Worker *thief = t->thief;                                                         \
-    if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
-                                                                                      \
-        /* Now leapfrog */                                                            \
-        while (thief != THIEF_COMPLETED) {                                            \
-            if (lace_steal(w, __dq_head+1, thief) == LACE_NOWORK) lace_cb_stealing(); \
-            thief = atomic_read(&(t->thief));                                         \
-        }                                                                             \
-        w->allstolen = 1;                                                             \
-        w->flags.o.allstolen = 1;                                                     \
-    }                                                                                 \
-                                                                                      \
     t->f = 0;                                                                         \
-    lace_time_event(w, 4);                                                            \
-    return ;                                                                          \
+    return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2);              \
 }                                                                                     \
                                                                                       \
 static inline                                                                         \
 void NAME##_SYNC_FAST(Worker *w, Task *__dq_head)                                     \
 {                                                                                     \
-    TD_##NAME *t;                                                                     \
+    /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    /* assert (head > 0); */  /* Commented out because we assume contract */          \
-    if (likely(0 == w->flags.o.movesplit && w->o_split <= __dq_head)) {               \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2);          \
+    if (likely(0 == w->movesplit)) {                                                  \
+        if (likely(w->o_split <= __dq_head)) {                                        \
+            TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
+            t->f = 0;                                                                 \
+            return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2);      \
+        }                                                                             \
     }                                                                                 \
                                                                                       \
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
@@ -1510,6 +1702,9 @@ typedef struct _TD_##NAME {                                                     
   } d;                                                                                \
 } TD_##NAME;                                                                          \
                                                                                       \
+/* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
+typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##NAME)<=sizeof(Task)) ? 0 : -1];\
+                                                                                      \
 void NAME##_WRAP(Worker *, Task *, TD_##NAME *);                                      \
 RTYPE NAME##_CALL(Worker *, Task * , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3);    \
 static inline RTYPE NAME##_SYNC_FAST(Worker *, Task *);                               \
@@ -1522,7 +1717,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
                                                                                       \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
-    uint32_t head, tail, newsplit;                                                    \
+    uint32_t head, split, newsplit;                                                   \
                                                                                       \
     /* assert(__dq_head < w->o_end); */ /* Assuming to be true */                     \
                                                                                       \
@@ -1532,118 +1727,137 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3;       \
     compiler_barrier();                                                               \
                                                                                       \
-    /* Using w->flags.all to check for both flags at once                             \
-       will actually worsen performance! */                                           \
-                                                                                      \
-    if (unlikely(w->flags.o.allstolen)) {                                             \
+    if (unlikely(w->o_allstolen)) {                                                   \
+        if (w->movesplit) w->movesplit = 0;                                           \
         head = __dq_head - w->o_dq;                                                   \
-        ts.ts.tail = head;                                                            \
-        ts.ts.split = head+1;                                                         \
+        ts = (TailSplit){{head,head+1}};                                              \
         w->ts.v = ts.v;                                                               \
         compiler_barrier();                                                           \
         w->allstolen = 0;                                                             \
         w->o_split = __dq_head+1;                                                     \
-        w->flags.all = 0;                                                             \
-    } else if (unlikely(w->flags.o.movesplit)) {                                      \
-        tail = w->ts.ts.tail;                                                         \
+        w->o_allstolen = 0;                                                           \
+    } else if (unlikely(w->movesplit)) {                                              \
         head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head + tail + 2)/2;                                               \
+        split = w->o_split - w->o_dq;                                                 \
+        newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
-        w->flags.all = 0;                                                             \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+}                                                                                     \
+                                                                                      \
+static int                                                                            \
+NAME##_shrink_shared(Worker *w)                                                       \
+{                                                                                     \
+    TailSplit ts;                                                                     \
+    ts.v = w->ts.v; /* Force in 1 memory read */                                      \
+    uint32_t tail = ts.ts.tail;                                                       \
+    uint32_t split = ts.ts.split;                                                     \
+                                                                                      \
+    if (tail != split) {                                                              \
+        uint32_t newsplit = (tail + split)/2;                                         \
+        w->ts.ts.split = newsplit;                                                    \
+        mfence();                                                                     \
+        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        if (tail != split) {                                                          \
+            if (unlikely(tail > newsplit)) {                                          \
+                newsplit = (tail + split) / 2;                                        \
+                w->ts.ts.split = newsplit;                                            \
+            }                                                                         \
+            w->o_split = w->o_dq + newsplit;                                          \
+            PR_COUNTSPLITS(w, CTR_split_shrink);                                      \
+            return 0;                                                                 \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    w->allstolen = 1;                                                                 \
+    w->o_allstolen = 1;                                                               \
+    return 1;                                                                         \
+}                                                                                     \
+                                                                                      \
+static inline void                                                                    \
+NAME##_leapfrog(Worker *w, Task *__dq_head)                                           \
+{                                                                                     \
+    lace_time_event(w, 3);                                                            \
+    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    Worker *thief = t->thief;                                                         \
+    if (thief != THIEF_COMPLETED) {                                                   \
+        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+                                                                                      \
+        /* PRE-LEAP: increase head again */                                           \
+        __dq_head += 1;                                                               \
+                                                                                      \
+        /* Now leapfrog */                                                            \
+        while (thief != THIEF_COMPLETED) {                                            \
+            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
+            switch (lace_steal(w, __dq_head, thief)) {                                \
+            case LACE_NOWORK:                                                         \
+                lace_cb_stealing();                                                   \
+                break;                                                                \
+            case LACE_STOLEN:                                                         \
+                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                break;                                                                \
+            case LACE_BUSY:                                                           \
+                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                break;                                                                \
+            default:                                                                  \
+                break;                                                                \
+            }                                                                         \
+            thief = atomic_read(&(t->thief));                                         \
+        }                                                                             \
+                                                                                      \
+        /* POST-LEAP: really pop the finished task */                                 \
+        /*            no need to decrease __dq_head, since it is a local variable */  \
+        if (w->o_allstolen == 0) {                                                    \
+            /* Assume: tail = split = head (pre-pop) */                               \
+            /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
+            w->allstolen = 1;                                                         \
+            w->o_allstolen = 1;                                                       \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
 RTYPE NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                                    \
 {                                                                                     \
     TD_##NAME *t;                                                                     \
-    uint32_t head, tail, newsplit, oldsplit;                                          \
                                                                                       \
-    if (w->flags.o.allstolen) goto lace_allstolen_##NAME;                             \
-                                                                                      \
-    if ((w->flags.o.movesplit)) {                                                     \
-        tail = w->ts.ts.tail;                                                         \
-        head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head+tail+1)/2;                                                   \
-        oldsplit = w->ts.ts.split;                                                    \
-        if (newsplit != oldsplit) {                                                   \
-            w->ts.ts.split = newsplit;                                                \
-            if (newsplit < oldsplit) {                                                \
-                mfence();                                                             \
-                tail = atomic_read(&(w->ts.ts.tail));                                 \
-                if (tail > newsplit) {                                                \
-                    newsplit = (head+tail+1)/2;                                       \
-                    w->ts.ts.split = newsplit;                                        \
-                }                                                                     \
-            }                                                                         \
-            w->o_split = w->o_dq+newsplit;                                            \
-        }                                                                             \
-        w->flags.o.movesplit=0;                                                       \
-    }                                                                                 \
-                                                                                      \
-    if (likely(w->o_split <= __dq_head)) {                                            \
+    if ((w->o_allstolen) || (w->o_split > __dq_head && NAME##_shrink_shared(w))) {    \
+        NAME##_leapfrog(w, __dq_head);                                                \
         t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3);\
+        return ((TD_##NAME *)t)->d.res;                                               \
     }                                                                                 \
                                                                                       \
-    tail = w->ts.ts.tail;                                                             \
-    head = __dq_head - w->o_dq;                                                       \
-    newsplit = (head+tail+1)/2;                                                       \
-    oldsplit = w->ts.ts.split;                                                        \
-    if (newsplit != oldsplit) {                                                       \
-        w->ts.ts.split = newsplit;                                                    \
-        mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
-        if (tail > newsplit) {                                                        \
-            newsplit = (head+tail+1)/2;                                               \
-            w->ts.ts.split = newsplit;                                                \
-        }                                                                             \
-        w->o_split = w->o_dq+newsplit;                                                \
+    if ((w->movesplit)) {                                                             \
+        Task *t = w->o_split;                                                         \
+        size_t diff = __dq_head - t;                                                  \
+        diff = (diff + 1) / 2;                                                        \
+        w->o_split = t + diff;                                                        \
+        w->ts.ts.split += diff;                                                       \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
                                                                                       \
-    if (likely(newsplit <= head)) {                                                   \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3);\
-    }                                                                                 \
-                                                                                      \
-    w->allstolen = 1;                                                                 \
-    w->flags.o.allstolen = 1;                                                         \
-                                                                                      \
-lace_allstolen_##NAME:                                                                \
-                                                                                      \
-    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
-    Worker *thief = t->thief;                                                         \
-    if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
-                                                                                      \
-        /* Now leapfrog */                                                            \
-        while (thief != THIEF_COMPLETED) {                                            \
-            if (lace_steal(w, __dq_head+1, thief) == LACE_NOWORK) lace_cb_stealing(); \
-            thief = atomic_read(&(t->thief));                                         \
-        }                                                                             \
-        w->allstolen = 1;                                                             \
-        w->flags.o.allstolen = 1;                                                     \
-    }                                                                                 \
-                                                                                      \
     t->f = 0;                                                                         \
-    lace_time_event(w, 4);                                                            \
-    return ((TD_##NAME *)t)->d.res;                                                   \
+    return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3);\
 }                                                                                     \
                                                                                       \
 static inline                                                                         \
 RTYPE NAME##_SYNC_FAST(Worker *w, Task *__dq_head)                                    \
 {                                                                                     \
-    TD_##NAME *t;                                                                     \
+    /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    /* assert (head > 0); */  /* Commented out because we assume contract */          \
-    if (likely(0 == w->flags.o.movesplit && w->o_split <= __dq_head)) {               \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3);\
+    if (likely(0 == w->movesplit)) {                                                  \
+        if (likely(w->o_split <= __dq_head)) {                                        \
+            TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
+            t->f = 0;                                                                 \
+            return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3);\
+        }                                                                             \
     }                                                                                 \
                                                                                       \
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
@@ -1703,6 +1917,9 @@ typedef struct _TD_##NAME {                                                     
   } d;                                                                                \
 } TD_##NAME;                                                                          \
                                                                                       \
+/* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
+typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##NAME)<=sizeof(Task)) ? 0 : -1];\
+                                                                                      \
 void NAME##_WRAP(Worker *, Task *, TD_##NAME *);                                      \
 void NAME##_CALL(Worker *, Task * , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3);     \
 static inline void NAME##_SYNC_FAST(Worker *, Task *);                                \
@@ -1715,7 +1932,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
                                                                                       \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
-    uint32_t head, tail, newsplit;                                                    \
+    uint32_t head, split, newsplit;                                                   \
                                                                                       \
     /* assert(__dq_head < w->o_end); */ /* Assuming to be true */                     \
                                                                                       \
@@ -1725,118 +1942,137 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3;       \
     compiler_barrier();                                                               \
                                                                                       \
-    /* Using w->flags.all to check for both flags at once                             \
-       will actually worsen performance! */                                           \
-                                                                                      \
-    if (unlikely(w->flags.o.allstolen)) {                                             \
+    if (unlikely(w->o_allstolen)) {                                                   \
+        if (w->movesplit) w->movesplit = 0;                                           \
         head = __dq_head - w->o_dq;                                                   \
-        ts.ts.tail = head;                                                            \
-        ts.ts.split = head+1;                                                         \
+        ts = (TailSplit){{head,head+1}};                                              \
         w->ts.v = ts.v;                                                               \
         compiler_barrier();                                                           \
         w->allstolen = 0;                                                             \
         w->o_split = __dq_head+1;                                                     \
-        w->flags.all = 0;                                                             \
-    } else if (unlikely(w->flags.o.movesplit)) {                                      \
-        tail = w->ts.ts.tail;                                                         \
+        w->o_allstolen = 0;                                                           \
+    } else if (unlikely(w->movesplit)) {                                              \
         head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head + tail + 2)/2;                                               \
+        split = w->o_split - w->o_dq;                                                 \
+        newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
-        w->flags.all = 0;                                                             \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+}                                                                                     \
+                                                                                      \
+static int                                                                            \
+NAME##_shrink_shared(Worker *w)                                                       \
+{                                                                                     \
+    TailSplit ts;                                                                     \
+    ts.v = w->ts.v; /* Force in 1 memory read */                                      \
+    uint32_t tail = ts.ts.tail;                                                       \
+    uint32_t split = ts.ts.split;                                                     \
+                                                                                      \
+    if (tail != split) {                                                              \
+        uint32_t newsplit = (tail + split)/2;                                         \
+        w->ts.ts.split = newsplit;                                                    \
+        mfence();                                                                     \
+        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        if (tail != split) {                                                          \
+            if (unlikely(tail > newsplit)) {                                          \
+                newsplit = (tail + split) / 2;                                        \
+                w->ts.ts.split = newsplit;                                            \
+            }                                                                         \
+            w->o_split = w->o_dq + newsplit;                                          \
+            PR_COUNTSPLITS(w, CTR_split_shrink);                                      \
+            return 0;                                                                 \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    w->allstolen = 1;                                                                 \
+    w->o_allstolen = 1;                                                               \
+    return 1;                                                                         \
+}                                                                                     \
+                                                                                      \
+static inline void                                                                    \
+NAME##_leapfrog(Worker *w, Task *__dq_head)                                           \
+{                                                                                     \
+    lace_time_event(w, 3);                                                            \
+    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    Worker *thief = t->thief;                                                         \
+    if (thief != THIEF_COMPLETED) {                                                   \
+        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+                                                                                      \
+        /* PRE-LEAP: increase head again */                                           \
+        __dq_head += 1;                                                               \
+                                                                                      \
+        /* Now leapfrog */                                                            \
+        while (thief != THIEF_COMPLETED) {                                            \
+            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
+            switch (lace_steal(w, __dq_head, thief)) {                                \
+            case LACE_NOWORK:                                                         \
+                lace_cb_stealing();                                                   \
+                break;                                                                \
+            case LACE_STOLEN:                                                         \
+                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                break;                                                                \
+            case LACE_BUSY:                                                           \
+                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                break;                                                                \
+            default:                                                                  \
+                break;                                                                \
+            }                                                                         \
+            thief = atomic_read(&(t->thief));                                         \
+        }                                                                             \
+                                                                                      \
+        /* POST-LEAP: really pop the finished task */                                 \
+        /*            no need to decrease __dq_head, since it is a local variable */  \
+        if (w->o_allstolen == 0) {                                                    \
+            /* Assume: tail = split = head (pre-pop) */                               \
+            /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
+            w->allstolen = 1;                                                         \
+            w->o_allstolen = 1;                                                       \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
 void NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                                     \
 {                                                                                     \
     TD_##NAME *t;                                                                     \
-    uint32_t head, tail, newsplit, oldsplit;                                          \
                                                                                       \
-    if (w->flags.o.allstolen) goto lace_allstolen_##NAME;                             \
-                                                                                      \
-    if ((w->flags.o.movesplit)) {                                                     \
-        tail = w->ts.ts.tail;                                                         \
-        head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head+tail+1)/2;                                                   \
-        oldsplit = w->ts.ts.split;                                                    \
-        if (newsplit != oldsplit) {                                                   \
-            w->ts.ts.split = newsplit;                                                \
-            if (newsplit < oldsplit) {                                                \
-                mfence();                                                             \
-                tail = atomic_read(&(w->ts.ts.tail));                                 \
-                if (tail > newsplit) {                                                \
-                    newsplit = (head+tail+1)/2;                                       \
-                    w->ts.ts.split = newsplit;                                        \
-                }                                                                     \
-            }                                                                         \
-            w->o_split = w->o_dq+newsplit;                                            \
-        }                                                                             \
-        w->flags.o.movesplit=0;                                                       \
-    }                                                                                 \
-                                                                                      \
-    if (likely(w->o_split <= __dq_head)) {                                            \
+    if ((w->o_allstolen) || (w->o_split > __dq_head && NAME##_shrink_shared(w))) {    \
+        NAME##_leapfrog(w, __dq_head);                                                \
         t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3);\
+        return ;                                                                      \
     }                                                                                 \
                                                                                       \
-    tail = w->ts.ts.tail;                                                             \
-    head = __dq_head - w->o_dq;                                                       \
-    newsplit = (head+tail+1)/2;                                                       \
-    oldsplit = w->ts.ts.split;                                                        \
-    if (newsplit != oldsplit) {                                                       \
-        w->ts.ts.split = newsplit;                                                    \
-        mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
-        if (tail > newsplit) {                                                        \
-            newsplit = (head+tail+1)/2;                                               \
-            w->ts.ts.split = newsplit;                                                \
-        }                                                                             \
-        w->o_split = w->o_dq+newsplit;                                                \
+    if ((w->movesplit)) {                                                             \
+        Task *t = w->o_split;                                                         \
+        size_t diff = __dq_head - t;                                                  \
+        diff = (diff + 1) / 2;                                                        \
+        w->o_split = t + diff;                                                        \
+        w->ts.ts.split += diff;                                                       \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
                                                                                       \
-    if (likely(newsplit <= head)) {                                                   \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3);\
-    }                                                                                 \
-                                                                                      \
-    w->allstolen = 1;                                                                 \
-    w->flags.o.allstolen = 1;                                                         \
-                                                                                      \
-lace_allstolen_##NAME:                                                                \
-                                                                                      \
-    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
-    Worker *thief = t->thief;                                                         \
-    if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
-                                                                                      \
-        /* Now leapfrog */                                                            \
-        while (thief != THIEF_COMPLETED) {                                            \
-            if (lace_steal(w, __dq_head+1, thief) == LACE_NOWORK) lace_cb_stealing(); \
-            thief = atomic_read(&(t->thief));                                         \
-        }                                                                             \
-        w->allstolen = 1;                                                             \
-        w->flags.o.allstolen = 1;                                                     \
-    }                                                                                 \
-                                                                                      \
     t->f = 0;                                                                         \
-    lace_time_event(w, 4);                                                            \
-    return ;                                                                          \
+    return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3);\
 }                                                                                     \
                                                                                       \
 static inline                                                                         \
 void NAME##_SYNC_FAST(Worker *w, Task *__dq_head)                                     \
 {                                                                                     \
-    TD_##NAME *t;                                                                     \
+    /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    /* assert (head > 0); */  /* Commented out because we assume contract */          \
-    if (likely(0 == w->flags.o.movesplit && w->o_split <= __dq_head)) {               \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3);\
+    if (likely(0 == w->movesplit)) {                                                  \
+        if (likely(w->o_split <= __dq_head)) {                                        \
+            TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
+            t->f = 0;                                                                 \
+            return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3);\
+        }                                                                             \
     }                                                                                 \
                                                                                       \
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
@@ -1899,6 +2135,9 @@ typedef struct _TD_##NAME {                                                     
   } d;                                                                                \
 } TD_##NAME;                                                                          \
                                                                                       \
+/* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
+typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##NAME)<=sizeof(Task)) ? 0 : -1];\
+                                                                                      \
 void NAME##_WRAP(Worker *, Task *, TD_##NAME *);                                      \
 RTYPE NAME##_CALL(Worker *, Task * , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4);\
 static inline RTYPE NAME##_SYNC_FAST(Worker *, Task *);                               \
@@ -1911,7 +2150,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
                                                                                       \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
-    uint32_t head, tail, newsplit;                                                    \
+    uint32_t head, split, newsplit;                                                   \
                                                                                       \
     /* assert(__dq_head < w->o_end); */ /* Assuming to be true */                     \
                                                                                       \
@@ -1921,118 +2160,137 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4;\
     compiler_barrier();                                                               \
                                                                                       \
-    /* Using w->flags.all to check for both flags at once                             \
-       will actually worsen performance! */                                           \
-                                                                                      \
-    if (unlikely(w->flags.o.allstolen)) {                                             \
+    if (unlikely(w->o_allstolen)) {                                                   \
+        if (w->movesplit) w->movesplit = 0;                                           \
         head = __dq_head - w->o_dq;                                                   \
-        ts.ts.tail = head;                                                            \
-        ts.ts.split = head+1;                                                         \
+        ts = (TailSplit){{head,head+1}};                                              \
         w->ts.v = ts.v;                                                               \
         compiler_barrier();                                                           \
         w->allstolen = 0;                                                             \
         w->o_split = __dq_head+1;                                                     \
-        w->flags.all = 0;                                                             \
-    } else if (unlikely(w->flags.o.movesplit)) {                                      \
-        tail = w->ts.ts.tail;                                                         \
+        w->o_allstolen = 0;                                                           \
+    } else if (unlikely(w->movesplit)) {                                              \
         head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head + tail + 2)/2;                                               \
+        split = w->o_split - w->o_dq;                                                 \
+        newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
-        w->flags.all = 0;                                                             \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+}                                                                                     \
+                                                                                      \
+static int                                                                            \
+NAME##_shrink_shared(Worker *w)                                                       \
+{                                                                                     \
+    TailSplit ts;                                                                     \
+    ts.v = w->ts.v; /* Force in 1 memory read */                                      \
+    uint32_t tail = ts.ts.tail;                                                       \
+    uint32_t split = ts.ts.split;                                                     \
+                                                                                      \
+    if (tail != split) {                                                              \
+        uint32_t newsplit = (tail + split)/2;                                         \
+        w->ts.ts.split = newsplit;                                                    \
+        mfence();                                                                     \
+        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        if (tail != split) {                                                          \
+            if (unlikely(tail > newsplit)) {                                          \
+                newsplit = (tail + split) / 2;                                        \
+                w->ts.ts.split = newsplit;                                            \
+            }                                                                         \
+            w->o_split = w->o_dq + newsplit;                                          \
+            PR_COUNTSPLITS(w, CTR_split_shrink);                                      \
+            return 0;                                                                 \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    w->allstolen = 1;                                                                 \
+    w->o_allstolen = 1;                                                               \
+    return 1;                                                                         \
+}                                                                                     \
+                                                                                      \
+static inline void                                                                    \
+NAME##_leapfrog(Worker *w, Task *__dq_head)                                           \
+{                                                                                     \
+    lace_time_event(w, 3);                                                            \
+    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    Worker *thief = t->thief;                                                         \
+    if (thief != THIEF_COMPLETED) {                                                   \
+        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+                                                                                      \
+        /* PRE-LEAP: increase head again */                                           \
+        __dq_head += 1;                                                               \
+                                                                                      \
+        /* Now leapfrog */                                                            \
+        while (thief != THIEF_COMPLETED) {                                            \
+            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
+            switch (lace_steal(w, __dq_head, thief)) {                                \
+            case LACE_NOWORK:                                                         \
+                lace_cb_stealing();                                                   \
+                break;                                                                \
+            case LACE_STOLEN:                                                         \
+                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                break;                                                                \
+            case LACE_BUSY:                                                           \
+                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                break;                                                                \
+            default:                                                                  \
+                break;                                                                \
+            }                                                                         \
+            thief = atomic_read(&(t->thief));                                         \
+        }                                                                             \
+                                                                                      \
+        /* POST-LEAP: really pop the finished task */                                 \
+        /*            no need to decrease __dq_head, since it is a local variable */  \
+        if (w->o_allstolen == 0) {                                                    \
+            /* Assume: tail = split = head (pre-pop) */                               \
+            /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
+            w->allstolen = 1;                                                         \
+            w->o_allstolen = 1;                                                       \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
 RTYPE NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                                    \
 {                                                                                     \
     TD_##NAME *t;                                                                     \
-    uint32_t head, tail, newsplit, oldsplit;                                          \
                                                                                       \
-    if (w->flags.o.allstolen) goto lace_allstolen_##NAME;                             \
-                                                                                      \
-    if ((w->flags.o.movesplit)) {                                                     \
-        tail = w->ts.ts.tail;                                                         \
-        head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head+tail+1)/2;                                                   \
-        oldsplit = w->ts.ts.split;                                                    \
-        if (newsplit != oldsplit) {                                                   \
-            w->ts.ts.split = newsplit;                                                \
-            if (newsplit < oldsplit) {                                                \
-                mfence();                                                             \
-                tail = atomic_read(&(w->ts.ts.tail));                                 \
-                if (tail > newsplit) {                                                \
-                    newsplit = (head+tail+1)/2;                                       \
-                    w->ts.ts.split = newsplit;                                        \
-                }                                                                     \
-            }                                                                         \
-            w->o_split = w->o_dq+newsplit;                                            \
-        }                                                                             \
-        w->flags.o.movesplit=0;                                                       \
-    }                                                                                 \
-                                                                                      \
-    if (likely(w->o_split <= __dq_head)) {                                            \
+    if ((w->o_allstolen) || (w->o_split > __dq_head && NAME##_shrink_shared(w))) {    \
+        NAME##_leapfrog(w, __dq_head);                                                \
         t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4);\
+        return ((TD_##NAME *)t)->d.res;                                               \
     }                                                                                 \
                                                                                       \
-    tail = w->ts.ts.tail;                                                             \
-    head = __dq_head - w->o_dq;                                                       \
-    newsplit = (head+tail+1)/2;                                                       \
-    oldsplit = w->ts.ts.split;                                                        \
-    if (newsplit != oldsplit) {                                                       \
-        w->ts.ts.split = newsplit;                                                    \
-        mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
-        if (tail > newsplit) {                                                        \
-            newsplit = (head+tail+1)/2;                                               \
-            w->ts.ts.split = newsplit;                                                \
-        }                                                                             \
-        w->o_split = w->o_dq+newsplit;                                                \
+    if ((w->movesplit)) {                                                             \
+        Task *t = w->o_split;                                                         \
+        size_t diff = __dq_head - t;                                                  \
+        diff = (diff + 1) / 2;                                                        \
+        w->o_split = t + diff;                                                        \
+        w->ts.ts.split += diff;                                                       \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
                                                                                       \
-    if (likely(newsplit <= head)) {                                                   \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4);\
-    }                                                                                 \
-                                                                                      \
-    w->allstolen = 1;                                                                 \
-    w->flags.o.allstolen = 1;                                                         \
-                                                                                      \
-lace_allstolen_##NAME:                                                                \
-                                                                                      \
-    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
-    Worker *thief = t->thief;                                                         \
-    if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
-                                                                                      \
-        /* Now leapfrog */                                                            \
-        while (thief != THIEF_COMPLETED) {                                            \
-            if (lace_steal(w, __dq_head+1, thief) == LACE_NOWORK) lace_cb_stealing(); \
-            thief = atomic_read(&(t->thief));                                         \
-        }                                                                             \
-        w->allstolen = 1;                                                             \
-        w->flags.o.allstolen = 1;                                                     \
-    }                                                                                 \
-                                                                                      \
     t->f = 0;                                                                         \
-    lace_time_event(w, 4);                                                            \
-    return ((TD_##NAME *)t)->d.res;                                                   \
+    return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4);\
 }                                                                                     \
                                                                                       \
 static inline                                                                         \
 RTYPE NAME##_SYNC_FAST(Worker *w, Task *__dq_head)                                    \
 {                                                                                     \
-    TD_##NAME *t;                                                                     \
+    /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    /* assert (head > 0); */  /* Commented out because we assume contract */          \
-    if (likely(0 == w->flags.o.movesplit && w->o_split <= __dq_head)) {               \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4);\
+    if (likely(0 == w->movesplit)) {                                                  \
+        if (likely(w->o_split <= __dq_head)) {                                        \
+            TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
+            t->f = 0;                                                                 \
+            return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4);\
+        }                                                                             \
     }                                                                                 \
                                                                                       \
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
@@ -2092,6 +2350,9 @@ typedef struct _TD_##NAME {                                                     
   } d;                                                                                \
 } TD_##NAME;                                                                          \
                                                                                       \
+/* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
+typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##NAME)<=sizeof(Task)) ? 0 : -1];\
+                                                                                      \
 void NAME##_WRAP(Worker *, Task *, TD_##NAME *);                                      \
 void NAME##_CALL(Worker *, Task * , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4);\
 static inline void NAME##_SYNC_FAST(Worker *, Task *);                                \
@@ -2104,7 +2365,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
                                                                                       \
     TD_##NAME *t;                                                                     \
     TailSplit ts;                                                                     \
-    uint32_t head, tail, newsplit;                                                    \
+    uint32_t head, split, newsplit;                                                   \
                                                                                       \
     /* assert(__dq_head < w->o_end); */ /* Assuming to be true */                     \
                                                                                       \
@@ -2114,118 +2375,137 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4;\
     compiler_barrier();                                                               \
                                                                                       \
-    /* Using w->flags.all to check for both flags at once                             \
-       will actually worsen performance! */                                           \
-                                                                                      \
-    if (unlikely(w->flags.o.allstolen)) {                                             \
+    if (unlikely(w->o_allstolen)) {                                                   \
+        if (w->movesplit) w->movesplit = 0;                                           \
         head = __dq_head - w->o_dq;                                                   \
-        ts.ts.tail = head;                                                            \
-        ts.ts.split = head+1;                                                         \
+        ts = (TailSplit){{head,head+1}};                                              \
         w->ts.v = ts.v;                                                               \
         compiler_barrier();                                                           \
         w->allstolen = 0;                                                             \
         w->o_split = __dq_head+1;                                                     \
-        w->flags.all = 0;                                                             \
-    } else if (unlikely(w->flags.o.movesplit)) {                                      \
-        tail = w->ts.ts.tail;                                                         \
+        w->o_allstolen = 0;                                                           \
+    } else if (unlikely(w->movesplit)) {                                              \
         head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head + tail + 2)/2;                                               \
+        split = w->o_split - w->o_dq;                                                 \
+        newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
-        w->flags.all = 0;                                                             \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+}                                                                                     \
+                                                                                      \
+static int                                                                            \
+NAME##_shrink_shared(Worker *w)                                                       \
+{                                                                                     \
+    TailSplit ts;                                                                     \
+    ts.v = w->ts.v; /* Force in 1 memory read */                                      \
+    uint32_t tail = ts.ts.tail;                                                       \
+    uint32_t split = ts.ts.split;                                                     \
+                                                                                      \
+    if (tail != split) {                                                              \
+        uint32_t newsplit = (tail + split)/2;                                         \
+        w->ts.ts.split = newsplit;                                                    \
+        mfence();                                                                     \
+        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        if (tail != split) {                                                          \
+            if (unlikely(tail > newsplit)) {                                          \
+                newsplit = (tail + split) / 2;                                        \
+                w->ts.ts.split = newsplit;                                            \
+            }                                                                         \
+            w->o_split = w->o_dq + newsplit;                                          \
+            PR_COUNTSPLITS(w, CTR_split_shrink);                                      \
+            return 0;                                                                 \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    w->allstolen = 1;                                                                 \
+    w->o_allstolen = 1;                                                               \
+    return 1;                                                                         \
+}                                                                                     \
+                                                                                      \
+static inline void                                                                    \
+NAME##_leapfrog(Worker *w, Task *__dq_head)                                           \
+{                                                                                     \
+    lace_time_event(w, 3);                                                            \
+    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    Worker *thief = t->thief;                                                         \
+    if (thief != THIEF_COMPLETED) {                                                   \
+        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+                                                                                      \
+        /* PRE-LEAP: increase head again */                                           \
+        __dq_head += 1;                                                               \
+                                                                                      \
+        /* Now leapfrog */                                                            \
+        while (thief != THIEF_COMPLETED) {                                            \
+            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
+            switch (lace_steal(w, __dq_head, thief)) {                                \
+            case LACE_NOWORK:                                                         \
+                lace_cb_stealing();                                                   \
+                break;                                                                \
+            case LACE_STOLEN:                                                         \
+                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                break;                                                                \
+            case LACE_BUSY:                                                           \
+                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                break;                                                                \
+            default:                                                                  \
+                break;                                                                \
+            }                                                                         \
+            thief = atomic_read(&(t->thief));                                         \
+        }                                                                             \
+                                                                                      \
+        /* POST-LEAP: really pop the finished task */                                 \
+        /*            no need to decrease __dq_head, since it is a local variable */  \
+        if (w->o_allstolen == 0) {                                                    \
+            /* Assume: tail = split = head (pre-pop) */                               \
+            /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
+            w->allstolen = 1;                                                         \
+            w->o_allstolen = 1;                                                       \
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    t->f = 0;                                                                         \
+    lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
 void NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                                     \
 {                                                                                     \
     TD_##NAME *t;                                                                     \
-    uint32_t head, tail, newsplit, oldsplit;                                          \
                                                                                       \
-    if (w->flags.o.allstolen) goto lace_allstolen_##NAME;                             \
-                                                                                      \
-    if ((w->flags.o.movesplit)) {                                                     \
-        tail = w->ts.ts.tail;                                                         \
-        head = __dq_head - w->o_dq;                                                   \
-        newsplit = (head+tail+1)/2;                                                   \
-        oldsplit = w->ts.ts.split;                                                    \
-        if (newsplit != oldsplit) {                                                   \
-            w->ts.ts.split = newsplit;                                                \
-            if (newsplit < oldsplit) {                                                \
-                mfence();                                                             \
-                tail = atomic_read(&(w->ts.ts.tail));                                 \
-                if (tail > newsplit) {                                                \
-                    newsplit = (head+tail+1)/2;                                       \
-                    w->ts.ts.split = newsplit;                                        \
-                }                                                                     \
-            }                                                                         \
-            w->o_split = w->o_dq+newsplit;                                            \
-        }                                                                             \
-        w->flags.o.movesplit=0;                                                       \
-    }                                                                                 \
-                                                                                      \
-    if (likely(w->o_split <= __dq_head)) {                                            \
+    if ((w->o_allstolen) || (w->o_split > __dq_head && NAME##_shrink_shared(w))) {    \
+        NAME##_leapfrog(w, __dq_head);                                                \
         t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4);\
+        return ;                                                                      \
     }                                                                                 \
                                                                                       \
-    tail = w->ts.ts.tail;                                                             \
-    head = __dq_head - w->o_dq;                                                       \
-    newsplit = (head+tail+1)/2;                                                       \
-    oldsplit = w->ts.ts.split;                                                        \
-    if (newsplit != oldsplit) {                                                       \
-        w->ts.ts.split = newsplit;                                                    \
-        mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
-        if (tail > newsplit) {                                                        \
-            newsplit = (head+tail+1)/2;                                               \
-            w->ts.ts.split = newsplit;                                                \
-        }                                                                             \
-        w->o_split = w->o_dq+newsplit;                                                \
+    if ((w->movesplit)) {                                                             \
+        Task *t = w->o_split;                                                         \
+        size_t diff = __dq_head - t;                                                  \
+        diff = (diff + 1) / 2;                                                        \
+        w->o_split = t + diff;                                                        \
+        w->ts.ts.split += diff;                                                       \
+        w->movesplit = 0;                                                             \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
                                                                                       \
-    if (likely(newsplit <= head)) {                                                   \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4);\
-    }                                                                                 \
-                                                                                      \
-    w->allstolen = 1;                                                                 \
-    w->flags.o.allstolen = 1;                                                         \
-                                                                                      \
-lace_allstolen_##NAME:                                                                \
-                                                                                      \
-    lace_time_event(w, 3);                                                            \
     t = (TD_##NAME *)__dq_head;                                                       \
-    Worker *thief = t->thief;                                                         \
-    if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
-                                                                                      \
-        /* Now leapfrog */                                                            \
-        while (thief != THIEF_COMPLETED) {                                            \
-            if (lace_steal(w, __dq_head+1, thief) == LACE_NOWORK) lace_cb_stealing(); \
-            thief = atomic_read(&(t->thief));                                         \
-        }                                                                             \
-        w->allstolen = 1;                                                             \
-        w->flags.o.allstolen = 1;                                                     \
-    }                                                                                 \
-                                                                                      \
     t->f = 0;                                                                         \
-    lace_time_event(w, 4);                                                            \
-    return ;                                                                          \
+    return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4);\
 }                                                                                     \
                                                                                       \
 static inline                                                                         \
 void NAME##_SYNC_FAST(Worker *w, Task *__dq_head)                                     \
 {                                                                                     \
-    TD_##NAME *t;                                                                     \
+    /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    /* assert (head > 0); */  /* Commented out because we assume contract */          \
-    if (likely(0 == w->flags.o.movesplit && w->o_split <= __dq_head)) {               \
-        t = (TD_##NAME *)__dq_head;                                                   \
-        t->f = 0;                                                                     \
-        return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4);\
+    if (likely(0 == w->movesplit)) {                                                  \
+        if (likely(w->o_split <= __dq_head)) {                                        \
+            TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
+            t->f = 0;                                                                 \
+            return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4);\
+        }                                                                             \
     }                                                                                 \
                                                                                       \
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \

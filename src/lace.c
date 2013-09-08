@@ -75,7 +75,8 @@ init_worker(int worker, size_t dq_size)
     w->o_dq = w->dq;
     w->o_end = w->dq + dq_size;
     w->o_split = w->o_dq;
-    w->flags.all = 0;
+    w->o_allstolen = 0;
+    w->movesplit = 0;
     w->worker = worker;
 
 #if LACE_COUNT_EVENTS
@@ -88,39 +89,6 @@ init_worker(int worker, size_t dq_size)
 #endif
 
     workers[worker] = w;
-}
-
-int __attribute__((noinline))
-lace_steal(Worker *self, Task *__dq_head, Worker *victim)
-{
-    if (victim->allstolen) {
-        lace_time_event(self, 7);
-        return LACE_NOWORK;
-    }
-
-    register TailSplit ts = victim->ts;
-    if (ts.ts.tail >= ts.ts.split) {
-        if (victim->flags.o.movesplit == 0) victim->flags.o.movesplit = 1;
-        lace_time_event(self, 7);
-        return LACE_NOWORK;
-    }
-
-    register TailSplit ts_new = ts;
-    ts_new.ts.tail++;
-    if (!cas(&victim->ts.v, ts.v, ts_new.v)) {
-        lace_time_event(self, 7);
-        return LACE_BUSY;
-    }
-
-    // Stolen
-    Task *t = &victim->dq[ts.ts.tail];
-    t->thief = self;
-    lace_time_event(self, 1);
-    t->f(self, __dq_head, t);
-    lace_time_event(self, 2);
-    t->thief = THIEF_COMPLETED;
-    lace_time_event(self, 8);
-    return LACE_STOLEN;
 }
 
 static inline uint32_t
@@ -200,7 +168,20 @@ worker_thread( void *arg )
             victim = workers + (rng(&seed, n-1) + worker_id + 1) % n;
         }
 
-        if (lace_steal(*self, (*self)->o_dq, *victim) == LACE_NOWORK) lace_cb_stealing();
+        PR_COUNTSTEALS(*self, CTR_steal_tries);
+        switch (lace_steal(*self, (*self)->o_dq, *victim)) {
+        case LACE_NOWORK:
+            lace_cb_stealing();
+            break;
+        case LACE_STOLEN:
+            PR_COUNTSTEALS(*self, CTR_steals);
+            break;
+        case LACE_BUSY:
+            PR_COUNTSTEALS(*self, CTR_steal_busy);
+            break;
+        default:
+            break;
+        }
 
         if (!more_work) break;
 
@@ -251,6 +232,42 @@ size_t
 lace_workers()
 {
     return n_workers;
+}
+
+static pthread_t
+_lace_create_thread(int worker, size_t stacksize, void* (*f)(void*), void *arg)
+{
+#if USE_NUMA
+    if (stacksize != 0) {
+        size_t pagesize = numa_pagesize();
+        stacksize = (stacksize + pagesize - 1) & ~(pagesize - 1); // ceil(stacksize, pagesize)
+
+        // Allocate memory for the program stack on the NUMA nodes
+        int node;
+        numa_worker_info(worker, &node, 0, 0, 0);
+        void *stack_location = numa_alloc_onnode(stacksize + pagesize, node);
+        if (stack_location == 0) {
+            fprintf(stderr, "Error: Unable to allocate memory for the pthread stack!\n");
+            exit(1);
+        }
+        if (0 != mprotect(stack_location, pagesize, PROT_NONE)) {
+            fprintf(stderr, "Error: Unable to protect the allocated stack memory with a guard page!\n");
+            exit(1);
+        }
+        stack_location = stack_location + pagesize; // skip protected page.
+        if (0 != pthread_attr_setstack(&worker_attr, stack_location, stacksize)) {
+            fprintf(stderr, "Error: Unable to set the pthread stack in Lace!\n");
+            exit(1);
+        }
+    }
+#endif
+    pthread_t res;
+    pthread_create(&res, &worker_attr, f, arg);
+    return res;
+#if ! USE_NUMA
+    (void)worker;
+    (void)stacksize;
+#endif
 }
 
 static void
@@ -312,54 +329,11 @@ _lace_init(int n, size_t dq_size, size_t stacksize, void (*f)(void))
 #endif
 
     for (i=1; i<n; i++) {
-#if USE_NUMA
-        if (stacksize != 0) {
-            // Allocate memory for the program stack on the NUMA nodes
-            int node;
-            numa_worker_info(i, &node, 0, 0, 0);
-            void *stack_location = numa_alloc_onnode(stacksize + pagesize, node);
-            if (stack_location == 0) {
-                fprintf(stderr, "Error: Unable to allocate memory for the pthread stack!\n");
-                exit(1);
-            }
-            if (0 != mprotect(stack_location, pagesize, PROT_NONE)) {
-                fprintf(stderr, "Error: Unable to protect the allocated stack memory with a guard page!\n");
-                exit(1);
-            }
-            stack_location = stack_location + pagesize; // skip protected page.
-            if (0 != pthread_attr_setstack(&worker_attr, stack_location, stacksize)) {
-                fprintf(stderr, "Error: Unable to set the pthread stack in Lace!\n");
-                exit(1);
-            }
-        }
-#endif
-        pthread_create(ts+i-1, &worker_attr, &worker_thread, workers+i);
+        *(ts+i-1) = _lace_create_thread(i, stacksize, &worker_thread, workers+i);
     }
 
     if (f != 0) {
-        pthread_t thr;
-#if USE_NUMA
-        if (stacksize != 0) {
-            // Allocate memory for the program stack on the NUMA nodes
-            int node;
-            numa_worker_info(0, &node, 0, 0, 0);
-            void *stack_location = numa_alloc_onnode(stacksize + pagesize, node);
-            if (stack_location == 0) {
-                fprintf(stderr, "Error: Unable to allocate memory for the pthread stack!\n");
-                exit(1);
-            }
-            if (0 != mprotect(stack_location, pagesize, PROT_NONE)) {
-                fprintf(stderr, "Error: Unable to protect the allocated stack memory with a guard page!\n");
-                exit(1);
-            }
-            stack_location = stack_location + pagesize; // skip protected page.
-            if (0 != pthread_attr_setstack(&worker_attr, stack_location, stacksize)) {
-                fprintf(stderr, "Error: Unable to set the pthread stack in Lace!\n");
-                exit(1);
-            }
-        }
-#endif
-        pthread_create(&thr, &worker_attr, &lace_boot_wrapper, f);
+        _lace_create_thread(0, stacksize, &lace_boot_wrapper, f);
 
         // Wait on condition until done
         pthread_mutex_lock(&wait_until_done_mutex);
@@ -430,6 +404,39 @@ lace_count_report_file(FILE *file)
         fprintf(file, "Tasks (%zu): %zu\n", i, workers[i]->ctr[CTR_tasks]);
     }
     fprintf(file, "Tasks (sum): %zu\n", ctr_all[CTR_tasks]);
+    fprintf(file, "\n");
+#endif
+
+#if LACE_COUNT_STEALS
+    for (i=0;i<n_workers;i++) {
+        fprintf(file, "Steals (%zu): %zu good/%zu busy of %zu tries; leaps: %zu good/%zu busy of %zu tries\n", i,
+            workers[i]->ctr[CTR_steals], workers[i]->ctr[CTR_steal_busy],
+            workers[i]->ctr[CTR_steal_tries], workers[i]->ctr[CTR_leaps], 
+            workers[i]->ctr[CTR_leap_busy], workers[i]->ctr[CTR_leap_tries]);
+    }
+    fprintf(file, "Steals (sum): %zu good/%zu busy of %zu tries; leaps: %zu good/%zu busy of %zu tries\n", 
+        ctr_all[CTR_steals], ctr_all[CTR_steal_busy],
+        ctr_all[CTR_steal_tries], ctr_all[CTR_leaps], 
+        ctr_all[CTR_leap_busy], ctr_all[CTR_leap_tries]);
+    fprintf(file, "\n");
+#endif
+
+#if LACE_COUNT_STEALS && LACE_COUNT_TASKS
+    for (i=0;i<n_workers;i++) {
+        fprintf(file, "Tasks per steal (%zu): %zu\n", i, 
+            workers[i]->ctr[CTR_tasks]/(workers[i]->ctr[CTR_steals]+workers[i]->ctr[CTR_leaps]));
+    }
+    fprintf(file, "Tasks per steal (sum): %zu\n", ctr_all[CTR_tasks]/(ctr_all[CTR_steals]+ctr_all[CTR_leaps]));
+    fprintf(file, "\n");
+#endif
+
+#if LACE_COUNT_SPLITS
+    for (i=0;i<n_workers;i++) {
+        fprintf(file, "Splits (%zu): %zu shrinks, %zu grows, %zu outgoing requests\n", i,
+            workers[i]->ctr[CTR_split_shrink], workers[i]->ctr[CTR_split_grow], workers[i]->ctr[CTR_split_req]);
+    }
+    fprintf(file, "Splits (sum): %zu shrinks, %zu grows, %zu outgoing requests\n",
+        ctr_all[CTR_split_shrink], ctr_all[CTR_split_grow], ctr_all[CTR_split_req]);
     fprintf(file, "\n");
 #endif
 

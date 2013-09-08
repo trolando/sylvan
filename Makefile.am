@@ -1,10 +1,9 @@
 ACLOCAL_AMFLAGS = -I m4
 
 AM_CPPFLAGS = -I$(top_builddir)
-AM_CPPFLAGS = -I$(top_builddir)
 AM_CPPFLAGS += -I$(srcdir)/src
 
-AM_CFLAGS = -g -O2 -Wall
+AM_CFLAGS = -g -O2 -Wall -Wextra
 AM_CCASFLAGS = -g
 
 include_HEADERS = src/sylvan.h

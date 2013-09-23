@@ -2228,20 +2228,28 @@ struct sylvan_ser {
     size_t assigned;
 };
 
+// Define a AVL tree type with prefix 'sylvan_ser' holding
+// nodes of struct sylvan_ser with the following compare() function...
 AVL(sylvan_ser, struct sylvan_ser)
 {
     return left->bdd - right->bdd;
 }
 
+// Define a AVL tree type with prefix 'sylvan_ser_reversed' holding 
+// nodes of struct sylvan_ser with the following compare() function...
 AVL(sylvan_ser_reversed, struct sylvan_ser)
 {
     return left->assigned - right->assigned;
 }
 
+// Initially, both sets are empty
 static avl_node_t *sylvan_ser_set = NULL;
 static avl_node_t *sylvan_ser_reversed_set = NULL;
+
+// Start counting (assigning numbers to BDDs) at 1
 static size_t sylvan_ser_counter = 1;
 
+// Given a BDD, assign unique numbers to all nodes
 static void
 sylvan_serialize_assign_rec(BDD bdd)
 {
@@ -2252,14 +2260,19 @@ sylvan_serialize_assign_rec(BDD bdd)
         s.bdd = BDD_STRIPMARK(bdd);
         ss = sylvan_ser_search(sylvan_ser_set, &s);
         if (ss == NULL) {
-            s.assigned = 0; // dummy value
+            // assign dummy value
+            s.assigned = 0;
             ss = sylvan_ser_put(&sylvan_ser_set, &s, NULL);
 
+            // first assign recursively
             sylvan_serialize_assign_rec(n->low);
             sylvan_serialize_assign_rec(n->high);
 
+            // assign real value
             ss->assigned = sylvan_ser_counter++;
-            sylvan_ser_reversed_insert(&sylvan_ser_reversed_set, ss); // put a copy in the reversed table...
+
+            // put a copy in the reversed table
+            sylvan_ser_reversed_insert(&sylvan_ser_reversed_set, ss);
         }
     }
 }

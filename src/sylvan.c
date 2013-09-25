@@ -2206,7 +2206,6 @@ sylvan_printdot(BDD bdd)
  * END DOT OUTPUT
  */
 
-
 llmsset_t
 __sylvan_get_internal_data()
 {
@@ -2248,6 +2247,7 @@ static avl_node_t *sylvan_ser_reversed_set = NULL;
 
 // Start counting (assigning numbers to BDDs) at 1
 static size_t sylvan_ser_counter = 1;
+static size_t sylvan_ser_done = 0;
 
 // Given a BDD, assign unique numbers to all nodes
 static void
@@ -2289,6 +2289,7 @@ sylvan_serialize_reset()
     sylvan_ser_free(&sylvan_ser_set);
     sylvan_ser_free(&sylvan_ser_reversed_set);
     sylvan_ser_counter = 1;
+    sylvan_ser_done = 0;
 }
 
 size_t
@@ -2319,6 +2320,11 @@ sylvan_serialize_totext(FILE *out)
     fprintf(out, "[");
     avl_iter_t *it = sylvan_ser_reversed_iter(sylvan_ser_reversed_set);
     struct sylvan_ser *s;
+
+    /* Skip already written entries */
+    size_t index = 0;
+    while (index < sylvan_ser_done && (s=sylvan_ser_reversed_iter_next(it))) index++;
+
     while ((s=sylvan_ser_reversed_iter_next(it))) {
         BDD bdd = s->bdd;
         bddnode_t n = GETNODE(bdd);
@@ -2328,6 +2334,7 @@ sylvan_serialize_totext(FILE *out)
                                              sylvan_serialize_get(n->high),
                                              n->comp);
     }
+
     sylvan_ser_reversed_iter_free(it);
     fprintf(out, "]");
 }
@@ -2336,10 +2343,17 @@ void
 sylvan_serialize_tofile(FILE *out)
 {
     size_t count = avl_count(sylvan_ser_reversed_set);
+    assert(count >= sylvan_ser_done);
+    count -= sylvan_ser_done;
     fwrite(&count, sizeof(size_t), 1, out);
 
     struct sylvan_ser *s;
     avl_iter_t *it = sylvan_ser_reversed_iter(sylvan_ser_reversed_set);
+
+    /* Skip already written entries */
+    size_t index = 0;
+    while (index < sylvan_ser_done && (s=sylvan_ser_reversed_iter_next(it))) index++;
+
     while ((s=sylvan_ser_reversed_iter_next(it))) {
         bddnode_t n = GETNODE(s->bdd);
 
@@ -2351,14 +2365,15 @@ sylvan_serialize_tofile(FILE *out)
         node.comp = n->comp;
 
         fwrite(&node, sizeof(struct bddnode), 1, out);
+        sylvan_ser_done++;
     }
+
     sylvan_ser_reversed_iter_free(it);
 }
 
 void
 sylvan_serialize_fromfile(FILE *in)
 {
-    sylvan_serialize_reset();
     size_t count, i;
     fread(&count, 8, 1, in);
 
@@ -2373,7 +2388,7 @@ sylvan_serialize_fromfile(FILE *in)
         struct sylvan_ser s;
 
         s.bdd = sylvan_makenode(node.level, low, high);
-        s.assigned = i;
+        s.assigned = ++sylvan_ser_done; // starts at 0 but we want 1-based...
 
         sylvan_ser_insert(&sylvan_ser_set, &s);
         sylvan_ser_reversed_insert(&sylvan_ser_reversed_set, &s);

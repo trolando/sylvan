@@ -197,7 +197,7 @@ void sylvan_nodecount_levels(BDD bdd, uint32_t *variables);
  *
  * for the old sylvan_print functions, use sylvan_serialize_totext
  */
-void sylvan_serialize_add(BDD bdd);
+size_t sylvan_serialize_add(BDD bdd);
 size_t sylvan_serialize_get(BDD bdd);
 BDD sylvan_serialize_get_reversed(size_t value);
 void sylvan_serialize_reset();

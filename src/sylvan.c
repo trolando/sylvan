@@ -2250,7 +2250,7 @@ static size_t sylvan_ser_counter = 1;
 static size_t sylvan_ser_done = 0;
 
 // Given a BDD, assign unique numbers to all nodes
-static void
+static size_t
 sylvan_serialize_assign_rec(BDD bdd)
 {
     if (!BDD_ISCONSTANT(bdd)) {
@@ -2274,13 +2274,17 @@ sylvan_serialize_assign_rec(BDD bdd)
             // put a copy in the reversed table
             sylvan_ser_reversed_insert(&sylvan_ser_reversed_set, ss);
         }
+
+        return ss->assigned;
     }
+
+    return BDD_STRIPMARK(bdd);
 }
 
-void
+size_t
 sylvan_serialize_add(BDD bdd)
 {
-    sylvan_serialize_assign_rec(bdd);
+    return sylvan_serialize_assign_rec(bdd);
 }
 
 void

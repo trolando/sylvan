@@ -40,27 +40,27 @@ void sylvan_quit();
 /**
  * Create a BDD representing <level>
  */
-inline BDD sylvan_ithvar(BDDVAR level);
+BDD sylvan_ithvar(BDDVAR level);
 
 /**
  * Create a BDD representing ~<level>
  */
-inline BDD sylvan_nithvar(BDDVAR level);
+BDD sylvan_nithvar(BDDVAR level);
 
 /**
  * Get the <level> of the root node of <bdd>
  */
-inline BDDVAR sylvan_var(BDD bdd);
+BDDVAR sylvan_var(BDD bdd);
 
 /**
  * Get the <low> child of <bdd>
  */
-inline BDD sylvan_low(BDD bdd);
+BDD sylvan_low(BDD bdd);
 
 /**
  * Get the <high> child of <bdd>
  */
-inline BDD sylvan_high(BDD bdd);
+BDD sylvan_high(BDD bdd);
 
 /**
  * Get ~bdd

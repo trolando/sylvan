@@ -994,15 +994,17 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
         low = CALL(sylvan_ite, aLow, bLow, cLow, level);
         TOMARK_PUSH(low)
         high = SYNC(sylvan_ite);
+        TOMARK_PUSH(high)
     } else {
         SPAWN(sylvan_ite, aLow, bLow, cLow, level);
         high = CALL(sylvan_ite, aHigh, bHigh, cHigh, level);
         TOMARK_PUSH(high)
         low = SYNC(sylvan_ite);
+        TOMARK_PUSH(low)
     }
-    TOMARK_EXIT
 
     BDD result = sylvan_makenode(level, low, high);
+    TOMARK_EXIT
 
     if (cachenow) {
         template_cache_node.result = result;
@@ -1102,11 +1104,13 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
             low = CALL(sylvan_exists, aLow, variables, level);
             TOMARK_PUSH(low)
             high = SYNC(sylvan_exists);
+            TOMARK_PUSH(high)
         } else {
             SPAWN(sylvan_exists, aLow, variables, level);
             high = CALL(sylvan_exists, aHigh, variables, level);
             TOMARK_PUSH(high)
             low = SYNC(sylvan_exists);
+            TOMARK_PUSH(low)
         }
         result = sylvan_makenode(level, low, high);
     }
@@ -1213,11 +1217,13 @@ TASK_IMPL_3(BDD, sylvan_forall, BDD, a, BDD, variables, BDDVAR, prev_level)
             low = CALL(sylvan_forall, aLow, variables, level);
             TOMARK_PUSH(low)
             high = SYNC(sylvan_forall);
+            TOMARK_PUSH(high)
         } else {
             SPAWN(sylvan_forall, aLow, variables, level);
             high = CALL(sylvan_forall, aHigh, variables, level);
             TOMARK_PUSH(high)
             low = SYNC(sylvan_forall);
+            TOMARK_PUSH(low)
         }
         result = sylvan_makenode(level, low, high);
     }
@@ -1361,11 +1367,13 @@ TASK_IMPL_4(BDD, sylvan_relprod, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
             high = CALL(sylvan_relprod, aHigh, bHigh, x, level);
             TOMARK_PUSH(high)
             low = SYNC(sylvan_relprod);
+            TOMARK_PUSH(low)
         } else {
             SPAWN(sylvan_relprod, aHigh, bHigh, x, level);
             low = CALL(sylvan_relprod, aLow, bLow, x, level);
             TOMARK_PUSH(low)
             high = SYNC(sylvan_relprod);
+            TOMARK_PUSH(high)
         }
         result = sylvan_makenode(level, low, high);
     }
@@ -1446,14 +1454,14 @@ TASK_IMPL_3(BDD, sylvan_substitute, BDD, a, BDD, vars, BDDVAR, prev_level)
         high = CALL(sylvan_substitute, aHigh, vars, level);
         TOMARK_PUSH(high)
         low = SYNC(sylvan_substitute);
+        TOMARK_PUSH(low)
     } else {
         SPAWN(sylvan_substitute, aHigh, vars, level);
         low = CALL(sylvan_substitute, aLow, vars, level);
         TOMARK_PUSH(low)
         high = SYNC(sylvan_substitute);
+        TOMARK_PUSH(high)
     }
-
-    TOMARK_EXIT
 
     BDD result;
 
@@ -1463,6 +1471,8 @@ TASK_IMPL_3(BDD, sylvan_substitute, BDD, a, BDD, vars, BDDVAR, prev_level)
         if (low == aLow && high == aHigh) result = a;
         else result = sylvan_makenode(level, low, high);
     }
+
+    TOMARK_EXIT
 
     if (cachenow) {
         template_cache_node.result = result;
@@ -1652,11 +1662,13 @@ TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
             high = CALL(sylvan_relprods, aHigh, bHigh, vars, level);
             TOMARK_PUSH(high)
             low = SYNC(sylvan_relprods);
+            TOMARK_PUSH(low)
         } else {
             SPAWN(sylvan_relprods, aHigh, bHigh, vars, level);
             low = CALL(sylvan_relprods, aLow, bLow, vars, level);
             TOMARK_PUSH(low)
             high = SYNC(sylvan_relprods);
+            TOMARK_PUSH(high)
         }
 
         // variable in X': substitute
@@ -1811,11 +1823,13 @@ TASK_IMPL_4(BDD, sylvan_relprods_reversed, BDD, a, BDD, b, BDD, vars, BDDVAR, pr
             high = CALL(sylvan_relprods_reversed, aHigh, bHigh, vars, x);
             TOMARK_PUSH(high)
             low = SYNC(sylvan_relprods_reversed);
+            TOMARK_PUSH(low)
         } else {
             SPAWN(sylvan_relprods_reversed, aHigh, bHigh, vars, x);
             low = CALL(sylvan_relprods_reversed, aLow, bLow, vars, x);
             TOMARK_PUSH(low)
             high = SYNC(sylvan_relprods_reversed);
+            TOMARK_PUSH(high)
         }
         result = sylvan_makenode(x, low, high);
     }

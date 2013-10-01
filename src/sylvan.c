@@ -1999,9 +1999,21 @@ sylvan_set_add(BDD set, BDDVAR level)
 }
 
 BDD
+sylvan_set_addall(BDD set, BDD toadd)
+{
+    return sylvan_or(set, toadd);
+}
+
+BDD
 sylvan_set_remove(BDD set, BDDVAR level)
 {
     return sylvan_exists(set, sylvan_ithvar(level));
+}
+
+BDD
+sylvan_set_removeall(BDD set, BDD toremove)
+{
+    return sylvan_exists(set, toremove);
 }
 
 int

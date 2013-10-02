@@ -7,6 +7,7 @@
 #include <time.h>
 #include <sys/types.h>
 #include <sys/time.h>
+#include <inttypes.h>
 
 #include <assert.h>
 
@@ -118,7 +119,7 @@ void *llmsset_test_worker(void* arg)
                     assert(llmsset_lookup(msset, &val2, &insert_index, NULL, &index));
 
                     if (index != stored[k]) {
-                        fprintf(stderr, "Difference! Index %Ld (%d) vs index %Ld (%d), expecting %d!\n", index, *(uint32_t*)llmsset_index_to_ptr(msset, index, sizeof(uint32_t)), stored[k], *(uint32_t*)llmsset_index_to_ptr(msset, stored[k], sizeof(uint32_t)), val2);
+                        fprintf(stderr, "Difference! Index %"PRIu64" (%d) vs index %"PRIu64" (%d), expecting %d!\n", index, *(uint32_t*)llmsset_index_to_ptr(msset, index, sizeof(uint32_t)), stored[k], *(uint32_t*)llmsset_index_to_ptr(msset, stored[k], sizeof(uint32_t)), val2);
                     }
 
                     assert(index == stored[k]);
@@ -149,7 +150,7 @@ int test_llmsset2()
     for (i=0;i<msset->table_size;i++) {
         uint64_t key = msset->table[i];
         if (key != 0) {
-            printf("Key=%llX\n", key);
+            printf("Key=%"PRIx64"\n", key);
         }
     }
 

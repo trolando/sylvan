@@ -680,7 +680,7 @@ sylvan_makenode(BDDVAR level, BDD low, BDD high)
         //fprintf(stderr, "GC: %ld to %ld (freed %ld)\n", before_gc, after_gc, before_gc-after_gc);
 
         if (llmsset_lookup(_bdd.data, &n, insert_index, &created, &index) == 0) {
-            fprintf(stderr, "BDD Unique table full, %ld of %ld buckets filled!\n", llmsset_get_filled(_bdd.data), llmsset_get_size(_bdd.data));
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_get_filled(_bdd.data), llmsset_get_size(_bdd.data));
             exit(1);
         }
     }
@@ -2326,13 +2326,13 @@ sylvan_fprintdot_rec(FILE *out, BDD bdd, avl_node_t **levels)
 
     sylvan_dothelper_register(levels, bdd);
 
-    fprintf(out, "%llu [label=\"%d\"];\n", bdd, n->level);
+    fprintf(out, "%"PRIu64" [label=\"%d\"];\n", bdd, n->level);
 
     sylvan_fprintdot_rec(out, n->low, levels);
     sylvan_fprintdot_rec(out, n->high, levels);
 
-    fprintf(out, "%llu -> %llu [style=dashed];\n", bdd, (BDD)n->low);
-    fprintf(out, "%llu -> %llu [style=solid dir=both arrowtail=%s];\n", bdd, (BDD)n->high, n->comp ? "dot" : "none");
+    fprintf(out, "%"PRIu64" -> %"PRIu64" [style=dashed];\n", bdd, (BDD)n->low);
+    fprintf(out, "%"PRIu64" -> %"PRIu64" [style=solid dir=both arrowtail=%s];\n", bdd, (BDD)n->high, n->comp ? "dot" : "none");
 }
 
 void
@@ -2344,7 +2344,7 @@ sylvan_fprintdot(FILE *out, BDD bdd)
     fprintf(out, "edge [dir = forward];\n");
     fprintf(out, "0 [shape=box, label=\"0\", style=filled, shape=box, height=0.3, width=0.3];\n");
     fprintf(out, "root [style=invis];\n");
-    fprintf(out, "root -> %llu [style=solid dir=both arrowtail=%s];\n", BDD_STRIPMARK(bdd), BDD_HASMARK(bdd) ? "dot" : "none");
+    fprintf(out, "root -> %"PRIu64" [style=solid dir=both arrowtail=%s];\n", BDD_STRIPMARK(bdd), BDD_HASMARK(bdd) ? "dot" : "none");
     avl_node_t *levels = NULL;
     sylvan_fprintdot_rec(out, bdd, &levels);
 
@@ -2357,7 +2357,7 @@ sylvan_fprintdot(FILE *out, BDD bdd)
         size_t j;
         BDD *arr_j = nodeset_toarray(arr[i].set);
         for (j=0;j<node_count;j++) {
-            fprintf(out, "%llu; ", arr_j[j]);
+            fprintf(out, "%"PRIu64"; ", arr_j[j]);
         }
         fprintf(out, "}\n");
     }

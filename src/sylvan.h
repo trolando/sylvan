@@ -115,6 +115,12 @@ TASK_DECL_3(BDD, sylvan_substitute, BDD, BDD, BDDVAR);
 BDD sylvan_substitute(BDD a, BDD vars);
 
 /**
+ * Calculate stuff
+ */
+TASK_DECL_3(BDD, sylvan_constrain, BDD, BDD, BDDVAR);
+BDD sylvan_constrain(BDD a, BDD b);
+
+/**
  * Calculate \exists variables . a
  */
 TASK_DECL_3(BDD, sylvan_exists, BDD, BDD, BDDVAR);

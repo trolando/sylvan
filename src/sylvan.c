@@ -118,6 +118,7 @@ DECLARE_THREAD_LOCAL(gc_key, gc_tomark_t);
  * 5 = forall
  * 6 = relprod
  * 7 = substitute
+ * 8 = contrain
  * Operation numbers are stored in the data field of the first parameter
  */
 __attribute__ ((packed))
@@ -358,6 +359,7 @@ typedef enum {
   C_relprods_reversed,
   C_relprod,
   C_substitute,
+  C_constrain,
 #endif
   C_MAX
 } Counters;
@@ -456,17 +458,17 @@ sylvan_report_stats()
     printf("GC full table:       %"PRIu64"\n", totals[C_gc_hashtable_full]);
 
 #if SYLVAN_OPERATION_STATS
-    printf(NC ULINE "Call counters (ITE, exists, forall, relprods, reversed relprods, relprod, substitute)\n" NC LBLUE);
+    printf(NC ULINE "Call counters (ITE, exists, forall, relprods, reversed relprods, relprod, substitute, constrain)\n" NC LBLUE);
     for (i=0;i<_bdd.workers;i++) {
-        printf("Worker %02d:           %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64"\n", i,
+        printf("Worker %02d:           %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64"\n", i,
             sylvan_stats[i].count[C_ite], sylvan_stats[i].count[C_exists], sylvan_stats[i].count[C_forall],
             sylvan_stats[i].count[C_relprods], sylvan_stats[i].count[C_relprods_reversed],
-            sylvan_stats[i].count[C_relprod], sylvan_stats[i].count[C_substitute]);
+            sylvan_stats[i].count[C_relprod], sylvan_stats[i].count[C_substitute], sylvan_stats[i].count[C_constrain]);
     }
-    printf("Totals:              %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64" %"PRIu64" %"PRIu64"\n",
+    printf("Totals:              %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64"\n",
         totals[C_ite], totals[C_exists], totals[C_forall],
         totals[C_relprods], totals[C_relprods_reversed],
-        totals[C_relprod], totals[C_substitute]);
+        totals[C_relprod], totals[C_substitute], totals[C_constrain]);
 #endif
 
     printf(LRED  "****************" NC " \n");
@@ -1025,6 +1027,150 @@ BDD
 sylvan_ite(BDD a, BDD b, BDD c)
 {
     return CALL(sylvan_ite, a, b, c, 0);
+}
+
+/**
+ * Calculate constrain a @ c
+ */
+TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
+{
+    // Trivial cases
+    if (b == sylvan_true) return a;
+    if (b == sylvan_false) return sylvan_false;
+    if (BDD_ISCONSTANT(a)) return a;
+    if (a == b) return sylvan_true;
+    if (a == BDD_TOGGLEMARK(b)) return sylvan_false;
+
+    sylvan_gc_test();
+
+    SV_CNT_OP(C_constrain);
+
+    // a != constant and b != constant
+    bddnode_t na = GETNODE(a);
+    bddnode_t nb = GETNODE(b);
+
+    BDDVAR level = na->level < nb->level ? na->level : nb->level;
+
+    // CONSULT CACHE
+
+    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
+    struct bddcache template_cache_node;
+    if (cachenow) {
+        // TODO: get rid of complement on a for better cache see cudd
+        memset(&template_cache_node, 0, sizeof(struct bddcache));
+        template_cache_node.params[0] = BDD_SETDATA(a, 8); // restrict operation
+        template_cache_node.params[1] = b;
+        template_cache_node.result = sylvan_invalid;
+
+        if (llci_get_tag(_bdd.cache, &template_cache_node)) {
+            BDD result = template_cache_node.result;
+            SV_CNT_CACHE(C_cache_reuse);
+            return result;
+        }
+    }
+
+    // DETERMINE TOP BDDVAR AND COFACTORS
+
+    BDD aLow, aHigh, bLow, bHigh;
+
+    if (na->level == level) {
+        aLow = BDD_TRANSFERMARK(a, na->low);
+        aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
+    } else {
+        aLow = aHigh = a;
+    }
+
+    if (nb->level == level) {
+        bLow = BDD_TRANSFERMARK(b, nb->low);
+        bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
+    } else {
+        bLow = bHigh = b;
+    }
+
+    BDD result;
+    TOMARK_INIT
+
+    BDD low=sylvan_invalid, high=sylvan_invalid;
+    if (rand_1()) {
+        // Since we already computed bHigh, we can see some trivial results
+        if (bHigh == sylvan_true) {
+            high = aHigh;
+        } else if (bHigh == sylvan_false) {
+            // okay, return aLow @ bLow and skip cache
+            return CALL(sylvan_constrain, aLow, bLow, level);
+        } else {
+            SPAWN(sylvan_constrain, aHigh, bHigh, level);
+        }
+
+        // Since we already computed bLow, we can see some trivial results
+        if (bLow == sylvan_true) {
+            low = bLow;
+        } else if (bLow == sylvan_false) {
+            // okay, return aHigh @ bHigh and skip cache
+            if (bHigh != sylvan_true) high = SYNC(sylvan_constrain);
+            return high;
+        } else {
+            low = CALL(sylvan_constrain, aLow, bLow, level);
+            TOMARK_PUSH(low)
+        }
+
+        if (bHigh != sylvan_true) {
+            high = SYNC(sylvan_constrain);
+            TOMARK_PUSH(high)
+        }
+    } else {
+        // Since we already computed bHigh, we can see some trivial results
+        if (bLow == sylvan_true) {
+            low = aLow;
+        } else if (bLow == sylvan_false) {
+            // okay, return aHigh @ bHigh and skip cache
+            return CALL(sylvan_constrain, aHigh, bHigh, level);
+        } else {
+            SPAWN(sylvan_constrain, aLow, bLow, level);
+        }
+
+        // Since we already computed bLow, we can see some trivial results
+        if (bHigh == sylvan_true) {
+            high = bHigh;
+        } else if (bHigh == sylvan_false) {
+            // okay, return aLow @ bLow and skip cache
+            if (bLow != sylvan_true) low = SYNC(sylvan_constrain);
+            return low;
+        } else {
+            high = CALL(sylvan_constrain, aHigh, bHigh, level);
+            TOMARK_PUSH(high)
+        }
+
+        if (bLow != sylvan_true) {
+            low = SYNC(sylvan_constrain);
+            TOMARK_PUSH(low)
+        }
+    }
+
+    result = sylvan_makenode(level, low, high);
+
+    TOMARK_EXIT
+
+    if (cachenow) {
+        template_cache_node.result = result;
+        int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
+        if (cache_res == 0) {
+            // It existed!
+            SV_CNT_CACHE(C_cache_exists);
+            // No need to ref
+        } else if (cache_res == 1) {
+            // Created new!
+            SV_CNT_CACHE(C_cache_new);
+        }
+    }
+
+    return result;
+}
+
+BDD
+sylvan_constrain(BDD a, BDD b)
+{
+    return CALL(sylvan_constrain, a, b, 0);
 }
 
 /**
@@ -2062,7 +2208,7 @@ sylvan_set_fromarray(BDDVAR* arr, size_t length)
 {
     BDD result = sylvan_set_empty();
     size_t i;
-    for (i=0; i<length; i++) result = sylvan_or(result, sylvan_ithvar(arr[i]));
+    for (i=length;i-->0;) result = sylvan_or(result, sylvan_ithvar(arr[i]));
     return result;
 }
 

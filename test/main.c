@@ -486,6 +486,36 @@ void test_modelcheck()
     } while (visited != prev);
 }
 
+void test_constrain()
+{
+    BDD a,b,c,d,e,f,g,h;
+
+    a = sylvan_ithvar(1);
+    b = sylvan_ithvar(2);
+    c = sylvan_ithvar(3);
+    d = sylvan_ithvar(4);
+    e = sylvan_ithvar(5);
+    f = sylvan_ithvar(6);
+    g = sylvan_ithvar(7);
+    h = sylvan_ithvar(8);
+
+    sylvan_gc_disable();
+
+    BDD a_b = sylvan_or(a,b);
+    assert(testEqual(a, sylvan_constrain(a_b, sylvan_not(b))));
+
+    BDD all_or = sylvan_or(a,sylvan_or(b,sylvan_or(c,sylvan_or(d,sylvan_or(e,sylvan_or(f,sylvan_or(g,h)))))));
+    BDD a_b_c  = sylvan_or(a,sylvan_or(a,sylvan_or(a,sylvan_or(b,sylvan_or(b,sylvan_or(c,sylvan_or(c,c)))))));
+    assert(testEqual(a_b_c, sylvan_or(a,sylvan_or(b,c))));
+
+    BDD d_e_f_g_h = sylvan_or(d,sylvan_or(e,sylvan_or(f,sylvan_or(g,h))));
+    assert(testEqual(d_e_f_g_h, sylvan_constrain(all_or, sylvan_not(a_b_c))));
+
+    sylvan_gc_enable();
+
+    return;
+}
+
 void test_exists_forall()
 {
     BDD a,b,c,d,e,f,g,h;
@@ -694,6 +724,20 @@ void runtests(int threads)
         sylvan_quit();
     }
     printf(LGREEN "success" NC "!\n");
+
+    printf(NC "Running test 'Constrain'... ");
+    fflush(stdout);
+    for (j=0;j<16;j++) {
+        sylvan_init(16, 16, 1);
+        int i;
+        for (i=0;i<3;i++) test_constrain();
+        // verify gc
+        sylvan_gc();
+        __is_sylvan_clean();
+        sylvan_quit();
+    }
+    printf(LGREEN "success" NC "!\n");
+
 
     printf(NC "Running test 'ExistsForall'... ");
     fflush(stdout);

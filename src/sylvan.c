@@ -502,9 +502,8 @@ sylvan_report_stats()
 static inline
 size_t rand_1()
 {
-    register const size_t rsp_alias asm ("rsp");
     size_t id = (size_t)pthread_self();
-    id += rsp_alias;
+    asm("addq %%rsp, %0" : "+r"(id) : : "cc"); // add RSP to id to increase randomness
     id *= 1103515245;
     id += 12345;
     return id & 8 ? 1 : 0;

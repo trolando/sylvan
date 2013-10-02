@@ -2153,13 +2153,13 @@ sylvan_set_addall(BDD set, BDD toadd)
 BDD
 sylvan_set_remove(BDD set, BDDVAR level)
 {
-    return sylvan_exists(set, sylvan_ithvar(level));
+    return sylvan_constrain(set, sylvan_nithvar(level));
 }
 
 BDD
 sylvan_set_removeall(BDD set, BDD toremove)
 {
-    return sylvan_exists(set, toremove);
+    return sylvan_constrain(set, sylvan_not(toremove));
 }
 
 int

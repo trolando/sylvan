@@ -184,7 +184,7 @@ long double sylvan_satcount(BDD bdd, BDD variables);
 TASK_DECL_1(long double, sylvan_pathcount, BDD);
 long double sylvan_pathcount(BDD bdd);
 
-TASK_DECL_1(size_t, sylvan_nodecount, BDD);
+// TASK_DECL_1(size_t, sylvan_nodecount, BDD);
 size_t sylvan_nodecount(BDD a);
 void sylvan_nodecount_levels(BDD bdd, uint32_t *variables);
 

@@ -40,6 +40,7 @@ sylvan_fprint(FILE *f, BDD bdd)
     sylvan_serialize_reset();
     sylvan_serialize_add(bdd);
     sylvan_serialize_totext(f);
+    fprintf(f, "\n");
 }
 
 static inline void

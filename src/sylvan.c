@@ -988,20 +988,34 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     }
 
     // Recursive computation
-    BDD low, high;
+    BDD low=sylvan_invalid, high=sylvan_invalid;
     TOMARK_INIT
     if (rand_1()) {
-        SPAWN(sylvan_ite, aHigh, bHigh, cHigh, level);
-        low = CALL(sylvan_ite, aLow, bLow, cLow, level);
-        TOMARK_PUSH(low)
-        high = SYNC(sylvan_ite);
-        TOMARK_PUSH(high)
+        if (BDD_ISCONSTANT(aHigh)) {
+            if (aHigh == sylvan_true) high = bHigh;
+            else high = cHigh;
+            low = CALL(sylvan_ite, aLow, bLow, cLow, level);
+            TOMARK_PUSH(low)
+        } else {
+            SPAWN(sylvan_ite, aHigh, bHigh, cHigh, level);
+            low = CALL(sylvan_ite, aLow, bLow, cLow, level);
+            TOMARK_PUSH(low)
+            high = SYNC(sylvan_ite);
+            TOMARK_PUSH(high)
+        }
     } else {
-        SPAWN(sylvan_ite, aLow, bLow, cLow, level);
-        high = CALL(sylvan_ite, aHigh, bHigh, cHigh, level);
-        TOMARK_PUSH(high)
-        low = SYNC(sylvan_ite);
-        TOMARK_PUSH(low)
+        if (BDD_ISCONSTANT(aLow)) {
+            if (aLow == sylvan_true) low = bLow;
+            else low = cLow;
+            high = CALL(sylvan_ite, aHigh, bHigh, cHigh, level);
+            TOMARK_PUSH(high)
+        } else {
+            SPAWN(sylvan_ite, aLow, bLow, cLow, level);
+            high = CALL(sylvan_ite, aHigh, bHigh, cHigh, level);
+            TOMARK_PUSH(high)
+            low = SYNC(sylvan_ite);
+            TOMARK_PUSH(low)
+        }
     }
 
     BDD result = sylvan_makenode(level, low, high);
@@ -1092,22 +1106,21 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
     BDD low=sylvan_invalid, high=sylvan_invalid;
     if (rand_1()) {
         // Since we already computed bHigh, we can see some trivial results
-        if (bHigh == sylvan_true) {
-            high = aHigh;
-        } else if (bHigh == sylvan_false) {
-            // okay, return aLow @ bLow and skip cache
-            return CALL(sylvan_constrain, aLow, bLow, level);
+        if (BDD_ISCONSTANT(bHigh)) {
+            if (bHigh == sylvan_true) high = aHigh;
+            else return CALL(sylvan_constrain, aLow, bLow, level);
         } else {
             SPAWN(sylvan_constrain, aHigh, bHigh, level);
         }
 
         // Since we already computed bLow, we can see some trivial results
-        if (bLow == sylvan_true) {
-            low = bLow;
-        } else if (bLow == sylvan_false) {
-            // okay, return aHigh @ bHigh and skip cache
-            if (bHigh != sylvan_true) high = SYNC(sylvan_constrain);
-            return high;
+        if (BDD_ISCONSTANT(bLow)) {
+            if (bLow == sylvan_true) low = bLow;
+            else {
+                // okay, return aHigh @ bHigh and skip cache
+                if (bHigh != sylvan_true) high = SYNC(sylvan_constrain);
+                return high;
+            }
         } else {
             low = CALL(sylvan_constrain, aLow, bLow, level);
             TOMARK_PUSH(low)
@@ -1119,22 +1132,21 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
         }
     } else {
         // Since we already computed bHigh, we can see some trivial results
-        if (bLow == sylvan_true) {
-            low = aLow;
-        } else if (bLow == sylvan_false) {
-            // okay, return aHigh @ bHigh and skip cache
-            return CALL(sylvan_constrain, aHigh, bHigh, level);
+        if (BDD_ISCONSTANT(bLow)) {
+            if (bLow == sylvan_true) low = aLow;
+            else return CALL(sylvan_constrain, aHigh, bHigh, level);
         } else {
             SPAWN(sylvan_constrain, aLow, bLow, level);
         }
 
         // Since we already computed bLow, we can see some trivial results
-        if (bHigh == sylvan_true) {
-            high = bHigh;
-        } else if (bHigh == sylvan_false) {
-            // okay, return aLow @ bLow and skip cache
-            if (bLow != sylvan_true) low = SYNC(sylvan_constrain);
-            return low;
+        if (BDD_ISCONSTANT(bHigh)) {
+            if (bHigh == sylvan_true) high = bHigh;
+            else {
+                // okay, return aLow @ bLow and skip cache
+                if (bLow != sylvan_true) low = SYNC(sylvan_constrain);
+                return low;
+            }
         } else {
             high = CALL(sylvan_constrain, aHigh, bHigh, level);
             TOMARK_PUSH(high)
@@ -1803,17 +1815,39 @@ TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
     }
     else {
         if (rand_1()) {
-            SPAWN(sylvan_relprods, aLow, bLow, vars, level);
+            int spawned = 0;
+            // Get rid of trivial cases
+            if (aLow == sylvan_true && bLow == sylvan_true) low = sylvan_true;
+            else if (aLow == sylvan_false || bLow == sylvan_false) low = sylvan_false;
+            else if (aLow == bLow) low = sylvan_true;
+            else if (BDD_EQUALM(aLow, bLow)) low = sylvan_false;
+            else {
+                SPAWN(sylvan_relprods, aLow, bLow, vars, level);
+                spawned = 1;
+            }
             high = CALL(sylvan_relprods, aHigh, bHigh, vars, level);
             TOMARK_PUSH(high)
-            low = SYNC(sylvan_relprods);
-            TOMARK_PUSH(low)
+            if (spawned) {
+                low = SYNC(sylvan_relprods);
+                TOMARK_PUSH(low)
+            }
         } else {
-            SPAWN(sylvan_relprods, aHigh, bHigh, vars, level);
+            int spawned = 0;
+            // Get rid of trivial cases
+            if (aHigh == sylvan_true && bHigh == sylvan_true) high = sylvan_true;
+            else if (aHigh == sylvan_false || bHigh == sylvan_false) high = sylvan_false;
+            else if (aHigh == bHigh) high = sylvan_true;
+            else if (BDD_EQUALM(aHigh, bHigh)) high = sylvan_false;
+            else {
+                SPAWN(sylvan_relprods, aHigh, bHigh, vars, level);
+                spawned = 1;
+            }
             low = CALL(sylvan_relprods, aLow, bLow, vars, level);
             TOMARK_PUSH(low)
-            high = SYNC(sylvan_relprods);
-            TOMARK_PUSH(high)
+            if (spawned) {
+                high = SYNC(sylvan_relprods);
+                TOMARK_PUSH(high)
+            }
         }
 
         // variable in X': substitute

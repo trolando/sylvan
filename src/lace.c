@@ -61,7 +61,7 @@ init_worker(int worker, size_t dq_size)
     Worker *w;
 
 #if USE_NUMA
-    int node;
+    size_t node;
     numa_worker_info(worker, &node, 0, 0, 0);
     w = (Worker *)numa_alloc_onnode(sizeof(Worker), node);
     w->dq = (Task*)numa_alloc_onnode(dq_size * sizeof(Task), node);
@@ -243,7 +243,7 @@ _lace_create_thread(int worker, size_t stacksize, void* (*f)(void*), void *arg)
         stacksize = (stacksize + pagesize - 1) & ~(pagesize - 1); // ceil(stacksize, pagesize)
 
         // Allocate memory for the program stack on the NUMA nodes
-        int node;
+        size_t node;
         numa_worker_info(worker, &node, 0, 0, 0);
         void *stack_location = numa_alloc_onnode(stacksize + pagesize, node);
         if (stack_location == 0) {

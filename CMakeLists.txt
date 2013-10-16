@@ -58,3 +58,5 @@ add_executable(sylvan_test ${test_sources})
 target_link_libraries(sylvan_test sylvan)
 add_test(test ./sylvan_test)
 
+add_executable(mc test/mc.c)
+target_link_libraries(mc sylvan)

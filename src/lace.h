@@ -359,7 +359,11 @@ static int __attribute__((noinline))
 lace_steal(Worker *self, Task *__dq_head, Worker *victim)
 {
     if (!victim->allstolen) {
-        register TailSplit ts = victim->ts;
+        /* Must be a volatile. In GCC 4.8, if it is not declared volatile, the
+           compiler will optimize extra memory accesses to victim->ts instead
+           of comparing the local values ts.ts.tail and ts.ts.split, causing
+           thieves to steal non existent tasks! */
+        register TailSplit ts = *(volatile TailSplit *)&victim->ts;
         if (ts.ts.tail < ts.ts.split) {
             register TailSplit ts_new = ts;
             ts_new.ts.tail++;
@@ -443,6 +447,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head )                                  
         newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
@@ -505,11 +510,13 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
             default:                                                                  \
                 break;                                                                \
             }                                                                         \
+            compiler_barrier();                                                       \
             thief = atomic_read(&(t->thief));                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
         /*            no need to decrease __dq_head, since it is a local variable */  \
+        compiler_barrier();                                                           \
         if (w->o_allstolen == 0) {                                                    \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
@@ -518,6 +525,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
         }                                                                             \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
     t->f = 0;                                                                         \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
@@ -533,15 +541,20 @@ RTYPE NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                              
         return ((TD_##NAME *)t)->d.res;                                               \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
+                                                                                      \
     if ((w->movesplit)) {                                                             \
         Task *t = w->o_split;                                                         \
         size_t diff = __dq_head - t;                                                  \
         diff = (diff + 1) / 2;                                                        \
         w->o_split = t + diff;                                                        \
         w->ts.ts.split += diff;                                                       \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+                                                                                      \
+    compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = 0;                                                                         \
@@ -658,6 +671,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head )                                  
         newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
@@ -720,11 +734,13 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
             default:                                                                  \
                 break;                                                                \
             }                                                                         \
+            compiler_barrier();                                                       \
             thief = atomic_read(&(t->thief));                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
         /*            no need to decrease __dq_head, since it is a local variable */  \
+        compiler_barrier();                                                           \
         if (w->o_allstolen == 0) {                                                    \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
@@ -733,6 +749,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
         }                                                                             \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
     t->f = 0;                                                                         \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
@@ -748,15 +765,20 @@ void NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                               
         return ;                                                                      \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
+                                                                                      \
     if ((w->movesplit)) {                                                             \
         Task *t = w->o_split;                                                         \
         size_t diff = __dq_head - t;                                                  \
         diff = (diff + 1) / 2;                                                        \
         w->o_split = t + diff;                                                        \
         w->ts.ts.split += diff;                                                       \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+                                                                                      \
+    compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = 0;                                                                         \
@@ -876,6 +898,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1)                   
         newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
@@ -938,11 +961,13 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
             default:                                                                  \
                 break;                                                                \
             }                                                                         \
+            compiler_barrier();                                                       \
             thief = atomic_read(&(t->thief));                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
         /*            no need to decrease __dq_head, since it is a local variable */  \
+        compiler_barrier();                                                           \
         if (w->o_allstolen == 0) {                                                    \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
@@ -951,6 +976,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
         }                                                                             \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
     t->f = 0;                                                                         \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
@@ -966,15 +992,20 @@ RTYPE NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                              
         return ((TD_##NAME *)t)->d.res;                                               \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
+                                                                                      \
     if ((w->movesplit)) {                                                             \
         Task *t = w->o_split;                                                         \
         size_t diff = __dq_head - t;                                                  \
         diff = (diff + 1) / 2;                                                        \
         w->o_split = t + diff;                                                        \
         w->ts.ts.split += diff;                                                       \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+                                                                                      \
+    compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = 0;                                                                         \
@@ -1091,6 +1122,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1)                   
         newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
@@ -1153,11 +1185,13 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
             default:                                                                  \
                 break;                                                                \
             }                                                                         \
+            compiler_barrier();                                                       \
             thief = atomic_read(&(t->thief));                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
         /*            no need to decrease __dq_head, since it is a local variable */  \
+        compiler_barrier();                                                           \
         if (w->o_allstolen == 0) {                                                    \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
@@ -1166,6 +1200,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
         }                                                                             \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
     t->f = 0;                                                                         \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
@@ -1181,15 +1216,20 @@ void NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                               
         return ;                                                                      \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
+                                                                                      \
     if ((w->movesplit)) {                                                             \
         Task *t = w->o_split;                                                         \
         size_t diff = __dq_head - t;                                                  \
         diff = (diff + 1) / 2;                                                        \
         w->o_split = t + diff;                                                        \
         w->ts.ts.split += diff;                                                       \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+                                                                                      \
+    compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = 0;                                                                         \
@@ -1309,6 +1349,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)    
         newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
@@ -1371,11 +1412,13 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
             default:                                                                  \
                 break;                                                                \
             }                                                                         \
+            compiler_barrier();                                                       \
             thief = atomic_read(&(t->thief));                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
         /*            no need to decrease __dq_head, since it is a local variable */  \
+        compiler_barrier();                                                           \
         if (w->o_allstolen == 0) {                                                    \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
@@ -1384,6 +1427,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
         }                                                                             \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
     t->f = 0;                                                                         \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
@@ -1399,15 +1443,20 @@ RTYPE NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                              
         return ((TD_##NAME *)t)->d.res;                                               \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
+                                                                                      \
     if ((w->movesplit)) {                                                             \
         Task *t = w->o_split;                                                         \
         size_t diff = __dq_head - t;                                                  \
         diff = (diff + 1) / 2;                                                        \
         w->o_split = t + diff;                                                        \
         w->ts.ts.split += diff;                                                       \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+                                                                                      \
+    compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = 0;                                                                         \
@@ -1524,6 +1573,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)    
         newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
@@ -1586,11 +1636,13 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
             default:                                                                  \
                 break;                                                                \
             }                                                                         \
+            compiler_barrier();                                                       \
             thief = atomic_read(&(t->thief));                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
         /*            no need to decrease __dq_head, since it is a local variable */  \
+        compiler_barrier();                                                           \
         if (w->o_allstolen == 0) {                                                    \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
@@ -1599,6 +1651,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
         }                                                                             \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
     t->f = 0;                                                                         \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
@@ -1614,15 +1667,20 @@ void NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                               
         return ;                                                                      \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
+                                                                                      \
     if ((w->movesplit)) {                                                             \
         Task *t = w->o_split;                                                         \
         size_t diff = __dq_head - t;                                                  \
         diff = (diff + 1) / 2;                                                        \
         w->o_split = t + diff;                                                        \
         w->ts.ts.split += diff;                                                       \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+                                                                                      \
+    compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = 0;                                                                         \
@@ -1742,6 +1800,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
         newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
@@ -1804,11 +1863,13 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
             default:                                                                  \
                 break;                                                                \
             }                                                                         \
+            compiler_barrier();                                                       \
             thief = atomic_read(&(t->thief));                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
         /*            no need to decrease __dq_head, since it is a local variable */  \
+        compiler_barrier();                                                           \
         if (w->o_allstolen == 0) {                                                    \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
@@ -1817,6 +1878,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
         }                                                                             \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
     t->f = 0;                                                                         \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
@@ -1832,15 +1894,20 @@ RTYPE NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                              
         return ((TD_##NAME *)t)->d.res;                                               \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
+                                                                                      \
     if ((w->movesplit)) {                                                             \
         Task *t = w->o_split;                                                         \
         size_t diff = __dq_head - t;                                                  \
         diff = (diff + 1) / 2;                                                        \
         w->o_split = t + diff;                                                        \
         w->ts.ts.split += diff;                                                       \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+                                                                                      \
+    compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = 0;                                                                         \
@@ -1957,6 +2024,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
         newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
@@ -2019,11 +2087,13 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
             default:                                                                  \
                 break;                                                                \
             }                                                                         \
+            compiler_barrier();                                                       \
             thief = atomic_read(&(t->thief));                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
         /*            no need to decrease __dq_head, since it is a local variable */  \
+        compiler_barrier();                                                           \
         if (w->o_allstolen == 0) {                                                    \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
@@ -2032,6 +2102,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
         }                                                                             \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
     t->f = 0;                                                                         \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
@@ -2047,15 +2118,20 @@ void NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                               
         return ;                                                                      \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
+                                                                                      \
     if ((w->movesplit)) {                                                             \
         Task *t = w->o_split;                                                         \
         size_t diff = __dq_head - t;                                                  \
         diff = (diff + 1) / 2;                                                        \
         w->o_split = t + diff;                                                        \
         w->ts.ts.split += diff;                                                       \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+                                                                                      \
+    compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = 0;                                                                         \
@@ -2175,6 +2251,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
         newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
@@ -2237,11 +2314,13 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
             default:                                                                  \
                 break;                                                                \
             }                                                                         \
+            compiler_barrier();                                                       \
             thief = atomic_read(&(t->thief));                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
         /*            no need to decrease __dq_head, since it is a local variable */  \
+        compiler_barrier();                                                           \
         if (w->o_allstolen == 0) {                                                    \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
@@ -2250,6 +2329,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
         }                                                                             \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
     t->f = 0;                                                                         \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
@@ -2265,15 +2345,20 @@ RTYPE NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                              
         return ((TD_##NAME *)t)->d.res;                                               \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
+                                                                                      \
     if ((w->movesplit)) {                                                             \
         Task *t = w->o_split;                                                         \
         size_t diff = __dq_head - t;                                                  \
         diff = (diff + 1) / 2;                                                        \
         w->o_split = t + diff;                                                        \
         w->ts.ts.split += diff;                                                       \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+                                                                                      \
+    compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = 0;                                                                         \
@@ -2390,6 +2475,7 @@ void NAME##_SPAWN(Worker *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
         newsplit = (split + head + 2)/2;                                              \
         w->ts.ts.split = newsplit;                                                    \
         w->o_split = w->o_dq + newsplit;                                              \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
@@ -2452,11 +2538,13 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
             default:                                                                  \
                 break;                                                                \
             }                                                                         \
+            compiler_barrier();                                                       \
             thief = atomic_read(&(t->thief));                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
         /*            no need to decrease __dq_head, since it is a local variable */  \
+        compiler_barrier();                                                           \
         if (w->o_allstolen == 0) {                                                    \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
@@ -2465,6 +2553,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
         }                                                                             \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
     t->f = 0;                                                                         \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
@@ -2480,15 +2569,20 @@ void NAME##_SYNC_SLOW(Worker *w, Task *__dq_head)                               
         return ;                                                                      \
     }                                                                                 \
                                                                                       \
+    compiler_barrier();                                                               \
+                                                                                      \
     if ((w->movesplit)) {                                                             \
         Task *t = w->o_split;                                                         \
         size_t diff = __dq_head - t;                                                  \
         diff = (diff + 1) / 2;                                                        \
         w->o_split = t + diff;                                                        \
         w->ts.ts.split += diff;                                                       \
+        compiler_barrier();                                                           \
         w->movesplit = 0;                                                             \
         PR_COUNTSPLITS(w, CTR_split_grow);                                            \
     }                                                                                 \
+                                                                                      \
+    compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = 0;                                                                         \

@@ -282,11 +282,11 @@ test_diff()
 {
     test_diff2(sylvan_ithvar(1), sylvan_ithvar(2));
     int i;
-    for (i = 0; i<10; i++) {
-        test_diff2(make_random(2, 8), make_random(5, 10));
-        test_diff2(make_random(18, 28), make_random(25, 35));
-        test_diff2(make_random(3, 11), make_random(5, 10));
-        test_diff2(make_random(2, 15), make_random(7, 10));
+    for (i=0; i<4; i++) {
+        test_diff2(make_random(6, 8), make_random(5, 10));
+        test_diff2(make_random(22, 28), make_random(25, 30));
+        test_diff2(make_random(4, 11), make_random(5, 10));
+        test_diff2(make_random(1, 7), make_random(3, 10));
     }
 }
 

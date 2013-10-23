@@ -800,38 +800,31 @@ sylvan_invimp(BDD a, BDD b)
     return sylvan_ite(a, sylvan_false, BDD_TOGGLEMARK(b));
 }
 
-/**
- * Calculate standard triples. Find trivial cases.
- * Returns either
- * - sylvan_invalid | complement
- * - sylvan_invalid
- * - a result BDD
- * This function does not alter reference counters.
- */
-static BDD
-sylvan_triples(BDD *_a, BDD *_b, BDD *_c)
+TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 {
-    BDD a=*_a, b=*_b, c=*_c;
-
-    // ITE(T,B,C) = B
-    // ITE(F,B,C) = C
+    /* Terminal cases */
+    // ITE(1,B,C) = B
     if (a == sylvan_true) return b;
+    // ITE(0,B,C) = C
     if (a == sylvan_false) return c;
-
-    // Normalization to standard triples
-    // ITE(A,A,C) = ITE(A,T,C)
-    // ITE(A,~A,C) = ITE(A,F,C)
+    // ITE(A,A,C) = ITE(A,1,C)
     if (a == b) b = sylvan_true;
+    // ITE(A,~A,C) = ITE(A,0,C)
     if (a == BDD_TOGGLEMARK(b)) b = sylvan_false;
-
-    // ITE(A,B,A) = ITE(A,B,F)
-    // ITE(A,B,~A) = ITE(A,B,T)
+    // ITE(A,B,A) = ITE(A,B,0)
     if (a == c) c = sylvan_false;
+    // ITE(A,B,~A) = ITE(A,B,1)
     if (a == BDD_TOGGLEMARK(c)) c = sylvan_true;
-
+    // ITE(A, B, B) = B
     if (b == c) return b;
+    // ITE(A, 1, 0) = A
     if (b == sylvan_true && c == sylvan_false) return a;
+    // ITE(A, 0, 1) = -A
     if (b == sylvan_false && c == sylvan_true) return BDD_TOGGLEMARK(a);
+
+    /* End terminal cases. Apply rewrite rules to optimize cache use */
+
+    /* At this point, A is not a constant true/false. */
 
     if (BDD_ISCONSTANT(b) && BDD_STRIPMARK(c) < BDD_STRIPMARK(a)) {
         if (b == sylvan_false) {
@@ -879,14 +872,14 @@ sylvan_triples(BDD *_a, BDD *_b, BDD *_c)
     }
 
     if (BDD_STRIPMARK(b) == BDD_STRIPMARK(c)) {
-        // b and c not constants...
-        // 1. if A then B else not-B = if B then A else not-A
-        // 2. if A then not-B else B = if not-B then A else not-A
+        // At this point, B and C are not constants because that is a terminal case
+        // 1. if A then B else ~B = if B then A else ~A
+        // 2. if A then ~B else B = if ~B then A else ~A
         if (BDD_STRIPMARK(a) > BDD_STRIPMARK(b)) {
             // a > b, exchange:
             b = a;
             a = BDD_TOGGLEMARK(c);
-            c = BDD_TOGGLEMARK(b); // (old a)
+            c = BDD_TOGGLEMARK(b);
         }
     }
 
@@ -909,31 +902,11 @@ sylvan_triples(BDD *_a, BDD *_b, BDD *_c)
      *              = ~((A and ~B) or (~A and ~C))
      *              = ~ITE(A,~B,~C)
      */
+    int mark = 0;
     if (BDD_HASMARK(b)) {
         b = BDD_TOGGLEMARK(b);
         c = BDD_TOGGLEMARK(c);
-        *_a=a;
-        *_b=b;
-        *_c=c;
-        return sylvan_invalid | complementmark;
-    }
-
-    *_a=a;
-    *_b=b;
-    *_c=c;
-    return sylvan_invalid;
-}
-
-/**
- * At entry, all BDDs should be ref'd by caller.
- * At exit, they still are ref'd by caller, and the result it ref'd, and any items in the OC are ref'd.
- */
-TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
-{
-    // Standard triples
-    BDD r = sylvan_triples(&a, &b, &c);
-    if (BDD_STRIPMARK(r) != sylvan_invalid) {
-        return r;
+        mark = 1;
     }
 
     sylvan_gc_test();
@@ -966,7 +939,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             BDD res = template_cache_node.result;
             SV_CNT_CACHE(C_cache_reuse);
-            return BDD_TRANSFERMARK(r, res);
+            return mark ? BDD_TOGGLEMARK(res) : res;
         }
     }
 
@@ -1033,7 +1006,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
         }
     }
 
-    return BDD_TRANSFERMARK(r, result);
+    return mark ? BDD_TOGGLEMARK(result) : result;
 }
 
 BDD

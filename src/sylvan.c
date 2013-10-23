@@ -1676,72 +1676,66 @@ sylvan_relprods_analyse(BDD a, BDD b, void_cb cb_in, void_cb cb_out)
 
 TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
 {
-    /*
-     * Normalization and trivial cases
-     */
-
+    /* Trivial cases */
+    // 1 and 1 = 1
     if (a == sylvan_true && b == sylvan_true) return sylvan_true;
+    // 0 and B = 0, A = 0 = 0
     if (a == sylvan_false || b == sylvan_false) return sylvan_false;
-
-    // A /\ A = A /\ 1
+    // A and A = A and 1
     if (a == b) b = sylvan_true;
-
-    // A /\ -A = 0;
+    // A and ~A = 0
     else if (BDD_EQUALM(a, b)) return sylvan_false;
 
-    // A /\ B = B /\ A         (exchange when b < a)
+    /* Rewrite to improve cache utilisation */
+
+    // A and B = B and A (exchange when b < a)
+    // also : A and 1 = 1 and A
     if (BDD_STRIPMARK(a) > BDD_STRIPMARK(b)) {
         register BDD _b = b;
         b = a;
         a = _b;
     }
 
-    // Note: the above also takes care of (A, 1)
-
-    /*
-     * END of Normalization and trivial cases
-     */
+    /* From this point on, B is never a constant */
 
     sylvan_gc_test();
 
     SV_CNT_OP(C_relprods);
 
     bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
-    bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
+    bddnode_t nb = GETNODE(b);
 
-    // Get lowest level and cofactors
-    BDDVAR level;
+    // Get lowest level
+    BDDVAR level = nb->level;
+    if (na && na->level < level) level = na->level;
+
+    // Get cofactors
     BDD aLow=a, aHigh=a, bLow=b, bHigh=b;
-    if (na) {
-        if (nb && na->level > nb->level) {
-            level = nb->level;
-            bLow = BDD_TRANSFERMARK(b, nb->low);
-            bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
-        } else if (nb && na->level == nb->level) {
-            level = na->level;
-            aLow = BDD_TRANSFERMARK(a, na->low);
-            aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
-            bLow = BDD_TRANSFERMARK(b, nb->low);
-            bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
-        } else {
-            level = na->level;
-            aLow = BDD_TRANSFERMARK(a, na->low);
-            aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
-        }
-    } else {
-        level = nb->level;
+    if (na && na->level == level) {
+        aLow = BDD_TRANSFERMARK(a, na->low);
+        aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
+    }
+    if (nb->level == level) {
         bLow = BDD_TRANSFERMARK(b, nb->low);
         bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
     }
 
-    register int in_vars = vars == sylvan_true ? 1 : ({
-        register BDDVAR it_var = -1;
-        while (vars != sylvan_false && (it_var=(GETNODE(vars)->level)) < level) {
-            vars = BDD_TRANSFERMARK(vars, GETNODE(vars)->low);
+    // Determine if level \in vars
+    int in_vars = vars == sylvan_true;
+    if (!in_vars) while (!sylvan_set_isempty(vars)) {
+        BDD it_var = sylvan_set_var(vars);
+        if (it_var < level) {
+            vars = sylvan_set_next(vars);
+            continue;
         }
-        vars == sylvan_false ? 0 : it_var == level;
-    });
+        if (it_var == level) {
+            vars = sylvan_set_next(vars);
+            in_vars = 1;
+        }
+        break;
+    }
 
+    // Determine if we are going to use the cache for this task
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
 
     struct bddcache template_cache_node;
@@ -1824,7 +1818,7 @@ TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
         }
 
         // variable in X': substitute
-        if (in_vars == 1) result = sylvan_makenode(level-1, low, high);
+        if (in_vars) result = sylvan_makenode(level-1, low, high);
 
         // variable not in X or X': normal behavior
         else result = sylvan_makenode(level, low, high);
@@ -2136,6 +2130,12 @@ int
 sylvan_set_isempty(BDD set)
 {
     return set == sylvan_false ? 1 : 0;
+}
+
+BDDVAR
+sylvan_set_var(BDDSET set)
+{
+    return sylvan_var(set);
 }
 
 BDD

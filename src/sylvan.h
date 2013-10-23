@@ -6,6 +6,7 @@
 #define SYLVAN_H
 
 typedef uint64_t BDD;
+typedef uint64_t BDDSET; // set is just a bdd
 typedef uint32_t BDDVAR;
 
 extern const BDD sylvan_true;
@@ -150,17 +151,18 @@ void sylvan_gc_disable();
 /**
  * Set using BDD operations
  */
-int sylvan_set_isempty(BDD set);
-BDD sylvan_set_empty();
-BDD sylvan_set_add(BDD set, BDDVAR level);
-BDD sylvan_set_addall(BDD set, BDD toadd);
-BDD sylvan_set_remove(BDD set, BDDVAR level);
-BDD sylvan_set_removeall(BDD set, BDD toremove);
-int sylvan_set_in(BDD set, BDDVAR level);
-BDD sylvan_set_next(BDD set);
-size_t sylvan_set_count(BDD set);
-void sylvan_set_toarray(BDD set, BDDVAR *arr);
-BDD sylvan_set_fromarray(BDDVAR *arr, size_t length);
+int sylvan_set_isempty(BDDSET set);
+BDDVAR sylvan_set_var(BDDSET set);
+BDDSET sylvan_set_empty();
+BDDSET sylvan_set_add(BDDSET set, BDDVAR level);
+BDDSET sylvan_set_addall(BDDSET set, BDD toadd);
+BDDSET sylvan_set_remove(BDDSET set, BDDVAR level);
+BDDSET sylvan_set_removeall(BDDSET set, BDDSET toremove);
+int sylvan_set_in(BDDSET set, BDDVAR level);
+BDDSET sylvan_set_next(BDDSET set);
+size_t sylvan_set_count(BDDSET set);
+void sylvan_set_toarray(BDDSET set, BDDVAR *arr);
+BDDSET sylvan_set_fromarray(BDDVAR *arr, size_t length);
 
 /**
  * Node creation primitive.

@@ -115,7 +115,6 @@ DECLARE_THREAD_LOCAL(gc_key, gc_tomark_t);
  * 2 = relprods_reversed
  * 3 = count
  * 4 = exists
- * 5 = forall
  * 6 = relprod
  * 7 = substitute
  * 8 = contrain
@@ -354,7 +353,6 @@ typedef enum {
 #if SYLVAN_OPERATION_STATS
   C_ite,
   C_exists,
-  C_forall,
   C_relprods,
   C_relprods_reversed,
   C_relprod,
@@ -458,15 +456,15 @@ sylvan_report_stats()
     printf("GC full table:       %"PRIu64"\n", totals[C_gc_hashtable_full]);
 
 #if SYLVAN_OPERATION_STATS
-    printf(NC ULINE "Call counters (ITE, exists, forall, relprods, reversed relprods, relprod, substitute, constrain)\n" NC LBLUE);
+    printf(NC ULINE "Call counters (ITE, exists, relprods, reversed relprods, relprod, substitute, constrain)\n" NC LBLUE);
     for (i=0;i<_bdd.workers;i++) {
-        printf("Worker %02d:           %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64"\n", i,
-            sylvan_stats[i].count[C_ite], sylvan_stats[i].count[C_exists], sylvan_stats[i].count[C_forall],
+        printf("Worker %02d:           %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64"\n", i,
+            sylvan_stats[i].count[C_ite], sylvan_stats[i].count[C_exists], 
             sylvan_stats[i].count[C_relprods], sylvan_stats[i].count[C_relprods_reversed],
             sylvan_stats[i].count[C_relprod], sylvan_stats[i].count[C_substitute], sylvan_stats[i].count[C_constrain]);
     }
-    printf("Totals:              %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64"\n",
-        totals[C_ite], totals[C_exists], totals[C_forall],
+    printf("Totals:              %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64"\n",
+        totals[C_ite], totals[C_exists], 
         totals[C_relprods], totals[C_relprods_reversed],
         totals[C_relprod], totals[C_substitute], totals[C_constrain]);
 #endif
@@ -1159,14 +1157,12 @@ sylvan_constrain(BDD a, BDD b)
 
 /**
  * Calculates \exists variables . a
- * Requires caller has ref on a, variables
- * Ensures caller as ref on a, variables and on result
  */
 TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
 {
-    // Trivial cases
+    /* Trivial cases */
     if (BDD_ISCONSTANT(a)) return a;
-    if (variables == sylvan_false) return a;
+    if (sylvan_set_isempty(variables)) return a;
 
     sylvan_gc_test();
 
@@ -1185,7 +1181,7 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
         variables = sylvan_set_next(variables);
     }
 
-    if (sylvan_set_isempty(variables)) return a;
+    if (sylvan_set_isempty(variables)) return a; // again, trivial case
 
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
 
@@ -1207,7 +1203,7 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
     BDD result;
     TOMARK_INIT
 
-    if (sylvan_var(variables) == level) {
+    if (sylvan_set_var(variables) == level) {
         // level is in variable set, perform abstraction
         BDD low = CALL(sylvan_exists, aLow, sylvan_set_next(variables), level);
         if (low == sylvan_true) {
@@ -1269,117 +1265,11 @@ sylvan_exists(BDD a, BDD variables)
     return CALL(sylvan_exists, a, variables, 0);
 }
 
-/**
- * Calculates \forall variables . a
- * Requires ref on a, variables
- * Ensures ref on a, variables, result
- */
-TASK_IMPL_3(BDD, sylvan_forall, BDD, a, BDD, variables, BDDVAR, prev_level)
-{
-    // Trivial cases
-    if (BDD_ISCONSTANT(a)) return a;
-    if (variables == sylvan_false) return a;
-
-    sylvan_gc_test();
-
-    SV_CNT_OP(C_forall);
-
-    // a != constant
-    bddnode_t na = GETNODE(a);
-    BDDVAR level = na->level;
-
-    // Get cofactors
-    BDD aLow = BDD_TRANSFERMARK(a, na->low);
-    BDD aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
-
-    while (!sylvan_set_isempty(variables) && sylvan_var(variables) < level) {
-        // Skip variables before x
-        variables = sylvan_set_next(variables);
-    }
-
-    if (sylvan_set_isempty(variables)) return a;
-
-    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
-
-    struct bddcache template_cache_node;
-    if (cachenow) {
-        // Check cache
-        memset(&template_cache_node, 0, sizeof(struct bddcache));
-        template_cache_node.params[0] = BDD_SETDATA(a, 5); // forall operation
-        template_cache_node.params[1] = variables;
-        template_cache_node.result = sylvan_invalid;
-
-        if (llci_get_tag(_bdd.cache, &template_cache_node)) {
-            BDD result = template_cache_node.result;
-            SV_CNT_CACHE(C_cache_reuse);
-            return result;
-        }
-    }
-
-    BDD result;
-
-    TOMARK_INIT
-
-    if (sylvan_var(variables) == level) {
-        // level is in variable set, perform abstraction
-        BDD low = CALL(sylvan_forall, aLow, sylvan_set_next(variables), level);
-        if (low == sylvan_false) {
-            result = sylvan_false;
-        } else {
-            TOMARK_PUSH(low)
-            BDD high = CALL(sylvan_forall, aHigh, sylvan_set_next(variables), level);
-            if (high == sylvan_false) {
-                result = sylvan_false;
-            }
-            else if (low == sylvan_true && high == sylvan_true) {
-                result = sylvan_true;
-            }
-            else {
-                TOMARK_PUSH(high)
-                result = CALL(sylvan_ite, low, high, sylvan_false, 0); // and
-            }
-        }
-    } else {
-        // level is not in variable set
-        BDD low, high;
-        if (rand_1()) {
-            SPAWN(sylvan_forall, aHigh, variables, level);
-            low = CALL(sylvan_forall, aLow, variables, level);
-            TOMARK_PUSH(low)
-            high = SYNC(sylvan_forall);
-            TOMARK_PUSH(high)
-        } else {
-            SPAWN(sylvan_forall, aLow, variables, level);
-            high = CALL(sylvan_forall, aHigh, variables, level);
-            TOMARK_PUSH(high)
-            low = SYNC(sylvan_forall);
-            TOMARK_PUSH(low)
-        }
-        result = sylvan_makenode(level, low, high);
-    }
-
-    TOMARK_EXIT
-
-    if (cachenow) {
-        template_cache_node.result = result;
-        int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
-        if (cache_res == 0) {
-            // It existed!
-            SV_CNT_CACHE(C_cache_exists);
-            // No need to ref
-        } else if (cache_res == 1) {
-            // Created new!
-            SV_CNT_CACHE(C_cache_new);
-        }
-    }
-
-    return result;
-}
-
 BDD
 sylvan_forall(BDD a, BDD variables)
 {
-    return CALL(sylvan_forall, a, variables, 0);
+    // You know, forall x.f = ~exists x.~f
+    return sylvan_not(CALL(sylvan_exists, sylvan_not(a), variables, 0));
 }
 
 /**

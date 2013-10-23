@@ -15,10 +15,6 @@ extern const BDD sylvan_false;
 // use "BDD something = sylvan_invalid;" instead of "BDD something = 0;"
 extern const BDD sylvan_invalid;
 
-// Quantifiers
-extern const BDD quant_exists;
-extern const BDD quant_forall;
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -123,14 +119,10 @@ BDD sylvan_constrain(BDD a, BDD b);
 
 /**
  * Calculate \exists variables . a
+ * Calculate \forall variables . a
  */
 TASK_DECL_3(BDD, sylvan_exists, BDD, BDD, BDDVAR);
 BDD sylvan_exists(BDD a, BDD variables);
-
-/**
- * Calculate \forall variables . a
- */
-TASK_DECL_3(BDD, sylvan_forall, BDD, BDD, BDDVAR);
 BDD sylvan_forall(BDD a, BDD variables);
 
 /**

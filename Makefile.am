@@ -4,7 +4,6 @@ AM_CPPFLAGS = -I$(top_builddir)
 AM_CPPFLAGS += -I$(srcdir)/src
 
 AM_CFLAGS = -g -O2 -Wall -Wextra
-AM_CCASFLAGS = -g
 
 include_HEADERS = src/sylvan.h
 
@@ -20,10 +19,9 @@ libsylvan_la_SOURCES = \
  src/atomics.h \
  src/avl.h \
  src/lace.c \
- src/lace.h
-
-libsylvan_la_SOURCES += src/hash_mul.S
-libsylvan_la_SOURCES += src/rehash_mul.S
+ src/lace.h \
+ src/murmur.c \
+ src/murmur.h
 
 libsylvan_la_LDFLAGS = -version-info 0:0:0
 libsylvan_la_LIBADD = -lm

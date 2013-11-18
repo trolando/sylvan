@@ -8,6 +8,7 @@
 #include <sys/mman.h> // for mmap
 
 #include "atomics.h"
+#include <murmur.h>
 
 #if USE_NUMA
 #include "numa_tools.h"
@@ -28,9 +29,6 @@
     (((LLCI_DATASIZE) <= 2) ? (LLCI_DATASIZE) : \
     ((LLCI_DATASIZE) <= 4) ? 4 : \
     ((LLCI_DATASIZE) <= 8) ? 8 : (((LLCI_DATASIZE)+15)&(~15)))
-
-// 64-bit hashing function, http://www.locklessinc.com (hash_mul.s)
-unsigned long long hash_mul(const void* data, unsigned long long len);
 
 typedef struct llci {
     size_t             cache_size;

@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 2.6)
 project(sylvan C)
-enable_language(ASM)
 enable_testing()
 
 option(SYLVAN_OPERATION_STATS "Create operation statistics" OFF)
@@ -36,10 +35,10 @@ set(sylvan_sources
   src/sylvan.c
   src/llmsset.c
   src/llmsset.h
-  src/hash_mul.S
-  src/rehash_mul.S
   src/lace.c
   src/lace.h
+  src/murmur.c
+  src/murmur.h
   ${EXTRA_SRC}
 )
 

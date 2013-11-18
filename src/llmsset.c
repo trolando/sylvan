@@ -9,14 +9,11 @@
 
 #include <atomics.h>
 #include <llmsset.h>
+#include <murmur.h>
 
 #if USE_NUMA
 #include "numa_tools.h"
 #endif
-
-// 64-bit hashing function, http://www.locklessinc.com (hash_mul.s)
-unsigned long long hash_mul(const void* data, unsigned long long len);
-unsigned long long rehash_mul(const void* data, unsigned long long len, unsigned long long seed);
 
 /*
  *  1 bit  for data-filled

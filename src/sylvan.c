@@ -11,6 +11,7 @@
 
 #include <atomics.h>
 #include <avl.h>
+#include <barrier.h>
 #include <lace.h>
 #include <llmsset.h>
 #include <sylvan.h>
@@ -68,6 +69,7 @@ typedef struct bddnode* bddnode_t;
 const BDD sylvan_true = 0 | complementmark;
 const BDD sylvan_false = 0;
 const BDD sylvan_invalid = 0x7fffffffffffffff; // uint64_t
+static barrier_t bar;
 
 /**
  * Methods to manipulate the free field inside the BDD type
@@ -135,8 +137,7 @@ static struct
     llmsset_t data;
     llci_t cache; // operations cache
     int workers;
-    volatile int gc;
-    volatile unsigned int gccount;
+    int gc;
 } _bdd;
 
 /**
@@ -280,6 +281,7 @@ sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
 
     lace_set_callback(sylvan_test_gc);
     _bdd.workers = lace_workers();
+    barrier_init (&bar, lace_workers());
 
     INIT_THREAD_LOCAL(gc_key);
     INIT_THREAD_LOCAL(insert_index);
@@ -320,7 +322,6 @@ sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
     _bdd.cache = llci_create(1LL<<cachesize);
 
     _bdd.gc = 0;
-    _bdd.gccount = 0;
 }
 
 void
@@ -334,6 +335,7 @@ sylvan_quit()
     llci_free(_bdd.cache);
     llmsset_free(_bdd.data);
     refset_free(&sylvan_refs);
+    barrier_destroy (&bar);
 }
 
 /**
@@ -523,8 +525,7 @@ sylvan_gc_disable()
 static void
 sylvan_gc_participate()
 {
-    xinc(&_bdd.gccount);
-    while (_bdd.gc != 2) ;
+    barrier_wait (&bar);
 
     int my_id = LACE_WORKER_ID;
     int workers = _bdd.workers;
@@ -534,8 +535,7 @@ sylvan_gc_participate()
 
     // GC phase 1: clear hash table
     llmsset_clear_multi(_bdd.data, my_id, workers);
-    xinc(&_bdd.gccount);
-    while (_bdd.gc != 3) ;
+    barrier_wait (&bar);
 
     // GC phase 2: mark nodes
     LOCALIZE_THREAD_LOCAL(gc_key, gc_tomark_t);
@@ -544,8 +544,7 @@ sylvan_gc_participate()
         sylvan_pregc_mark_rec(t->bdd);
         t = t->prev;
     }
-    xinc(&_bdd.gccount);
-    while (_bdd.gc != 4) ;
+    barrier_wait (&bar);
 
     // GC phase 3: rehash BDDs
     LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
@@ -553,8 +552,8 @@ sylvan_gc_participate()
     *insert_index = llmsset_get_insertindex_multi(_bdd.data, my_id, _bdd.workers);
 
     llmsset_rehash_multi(_bdd.data, my_id, workers);
-    xinc(&_bdd.gccount);
-    while (_bdd.gc >= 2) ; // waiting for 0 or 1
+
+    barrier_wait (&bar);
 }
 
 static void
@@ -576,10 +575,7 @@ void sylvan_gc_go()
     int my_id = LACE_WORKER_ID;
     unsigned int workers = _bdd.workers;
 
-    while (_bdd.gccount != workers - 1) ;
-
-    _bdd.gccount = 0;
-    _bdd.gc = 2;
+    barrier_wait (&bar);
 
     // Clear the memoization table
     llci_clear_multi(_bdd.cache, my_id, workers);
@@ -587,9 +583,7 @@ void sylvan_gc_go()
     // GC phase 1: clear hash table
     llmsset_clear_multi(_bdd.data, my_id, workers);
 
-    while (_bdd.gccount != workers - 1) ;
-    _bdd.gccount = 0;
-    _bdd.gc = 3;
+    barrier_wait (&bar);
 
     // GC phase 2a: mark external refs
     sylvan_pregc_mark_refs();
@@ -602,9 +596,7 @@ void sylvan_gc_go()
         t = t->prev;
     }
 
-    while (_bdd.gccount != workers - 1) ;
-    _bdd.gccount = 0;
-    _bdd.gc = 4;
+    barrier_wait (&bar);
 
     // GC phase 3: rehash BDDs
     LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
@@ -612,10 +604,9 @@ void sylvan_gc_go()
     *insert_index = llmsset_get_insertindex_multi(_bdd.data, my_id, _bdd.workers);
 
     llmsset_rehash_multi(_bdd.data, my_id, workers);
-    while (_bdd.gccount != workers - 1) ;
 
-    _bdd.gccount = 0;
-    _bdd.gc = 0;
+    ATOMIC_WRITE(_bdd.gc, 0);
+    barrier_wait (&bar);
 }
 
 /*

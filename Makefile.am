@@ -10,6 +10,8 @@ include_HEADERS = src/sylvan.h
 lib_LTLIBRARIES = libsylvan.la
 
 libsylvan_la_SOURCES = \
+ src/barrier.c \
+ src/barrier.h \
  src/sylvan.c \
  src/sylvan.h \
  src/llmsset.c \

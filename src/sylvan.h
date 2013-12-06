@@ -15,10 +15,6 @@ extern const BDD sylvan_false;
 // use "BDD something = sylvan_invalid;" instead of "BDD something = 0;"
 extern const BDD sylvan_invalid;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 void sylvan_reset_counters();
 void sylvan_report_stats();
 
@@ -206,11 +202,6 @@ void sylvan_serialize_reset();
 void sylvan_serialize_totext(FILE *out);
 void sylvan_serialize_tofile(FILE *out);
 void sylvan_serialize_fromfile(FILE *in);
-
-#ifdef __cplusplus
-}
-#endif
-
 
 #endif
 

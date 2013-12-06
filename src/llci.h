@@ -7,11 +7,11 @@
 #include <assert.h> // for assert
 #include <sys/mman.h> // for mmap
 
-#include "atomics.h"
+#include <atomics.h>
 #include <murmur.h>
 
 #if USE_NUMA
-#include "numa_tools.h"
+#include <numa_tools.h>
 #endif
 
 #ifndef LLCACHE_INLINE_H
@@ -257,8 +257,8 @@ static inline llci_t llci_create(size_t cache_size)
     dbs->cache_size = cache_size;
     dbs->mask = dbs->cache_size - 1;
 
-    dbs->table = mmap(0, dbs->cache_size * sizeof(uint32_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
-    dbs->data = mmap(0, dbs->cache_size * LLCI_PDS, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    dbs->table = (uint32_t*)mmap(0, dbs->cache_size * sizeof(uint32_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    dbs->data = (uint8_t*)mmap(0, dbs->cache_size * LLCI_PDS, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (dbs->table == (uint32_t*)-1 || dbs->data == (uint8_t*)-1) {
         fprintf(stderr, "LLCI: Unable to allocate memory!\n");
         exit(1);
@@ -294,7 +294,7 @@ static void __attribute__((unused))
 llci_clear_multi(const llci_t dbs, size_t my_id, size_t n_workers)
 {
 #if USE_NUMA
-    int node, node_index, index, total;
+    size_t node, node_index, index, total;
     numa_worker_info(my_id, &node, &node_index, &index, &total);
     // we only clear that of our own node...
     // note f_size is the number of buckets, and is aligned to page_size...

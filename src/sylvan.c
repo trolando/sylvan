@@ -47,8 +47,7 @@
 // Equal under mark
 #define BDD_EQUALM(a, b)            ((((a)^(b))&(~complementmark))==0)
 
-__attribute__((packed))
-struct bddnode {
+struct __attribute__((packed)) bddnode {
     uint64_t high     : 40;
     uint32_t level    : 24;
     uint64_t low      : 40;
@@ -120,8 +119,7 @@ DECLARE_THREAD_LOCAL(gc_key, gc_tomark_t);
  * 8 = contrain
  * Operation numbers are stored in the data field of the first parameter
  */
-__attribute__ ((packed))
-struct bddcache {
+struct __attribute__((packed)) bddcache {
     BDD params[3];
     BDD result;
 };
@@ -137,8 +135,8 @@ static struct
     llmsset_t data;
     llci_t cache; // operations cache
     int workers;
-    int gc;
-    unsigned int gccount;
+    volatile int gc;
+    volatile unsigned int gccount;
 } _bdd;
 
 /**
@@ -445,25 +443,25 @@ sylvan_report_stats()
     printf(NC ULINE "Cache\n" NC LBLUE);
 
     uint64_t total_cache = totals[C_cache_new] + totals[C_cache_exists] + totals[C_cache_reuse];
-    printf("New results:         %"PRIu64"\n", totals[C_cache_new]);
-    printf("Existing results:    %"PRIu64"\n", totals[C_cache_exists]);
-    printf("Reused results:      %"PRIu64"\n", totals[C_cache_reuse]);
-    printf("Total results:       %"PRIu64"\n", total_cache);
+    printf("New results:         %" PRIu64 "\n", totals[C_cache_new]);
+    printf("Existing results:    %" PRIu64 "\n", totals[C_cache_exists]);
+    printf("Reused results:      %" PRIu64 "\n", totals[C_cache_reuse]);
+    printf("Total results:       %" PRIu64 "\n", total_cache);
 #endif
 
     printf(NC ULINE "GC\n" NC LBLUE);
-    printf("GC user-request:     %"PRIu64"\n", totals[C_gc_user]);
-    printf("GC full table:       %"PRIu64"\n", totals[C_gc_hashtable_full]);
+    printf("GC user-request:     %" PRIu64 "\n", totals[C_gc_user]);
+    printf("GC full table:       %" PRIu64 "\n", totals[C_gc_hashtable_full]);
 
 #if SYLVAN_OPERATION_STATS
     printf(NC ULINE "Call counters (ITE, exists, relprods, reversed relprods, relprod, substitute, constrain)\n" NC LBLUE);
     for (i=0;i<_bdd.workers;i++) {
-        printf("Worker %02d:           %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64"\n", i,
+        printf("Worker %02d:           %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 "\n", i,
             sylvan_stats[i].count[C_ite], sylvan_stats[i].count[C_exists], 
             sylvan_stats[i].count[C_relprods], sylvan_stats[i].count[C_relprods_reversed],
             sylvan_stats[i].count[C_relprod], sylvan_stats[i].count[C_substitute], sylvan_stats[i].count[C_constrain]);
     }
-    printf("Totals:              %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64", %"PRIu64"\n",
+    printf("Totals:              %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 "\n",
         totals[C_ite], totals[C_exists], 
         totals[C_relprods], totals[C_relprods_reversed],
         totals[C_relprod], totals[C_substitute], totals[C_constrain]);
@@ -526,7 +524,7 @@ static void
 sylvan_gc_participate()
 {
     xinc(&_bdd.gccount);
-    while (atomic_read(&_bdd.gc) != 2) ;
+    while (_bdd.gc != 2) ;
 
     int my_id = LACE_WORKER_ID;
     int workers = _bdd.workers;
@@ -537,7 +535,7 @@ sylvan_gc_participate()
     // GC phase 1: clear hash table
     llmsset_clear_multi(_bdd.data, my_id, workers);
     xinc(&_bdd.gccount);
-    while (atomic_read(&_bdd.gc) != 3) ;
+    while (_bdd.gc != 3) ;
 
     // GC phase 2: mark nodes
     LOCALIZE_THREAD_LOCAL(gc_key, gc_tomark_t);
@@ -547,7 +545,7 @@ sylvan_gc_participate()
         t = t->prev;
     }
     xinc(&_bdd.gccount);
-    while (atomic_read(&_bdd.gc) != 4) ;
+    while (_bdd.gc != 4) ;
 
     // GC phase 3: rehash BDDs
     LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
@@ -556,13 +554,13 @@ sylvan_gc_participate()
 
     llmsset_rehash_multi(_bdd.data, my_id, workers);
     xinc(&_bdd.gccount);
-    while (atomic_read(&_bdd.gc) >= 2) ; // waiting for 0 or 1
+    while (_bdd.gc >= 2) ; // waiting for 0 or 1
 }
 
 static void
 sylvan_test_gc(void)
 {
-    if (atomic_read(&_bdd.gc)) {
+    if (_bdd.gc) {
         sylvan_gc_participate();
     }
 }
@@ -578,7 +576,7 @@ void sylvan_gc_go()
     int my_id = LACE_WORKER_ID;
     unsigned int workers = _bdd.workers;
 
-    while (atomic_read(&_bdd.gccount) != workers - 1) ;
+    while (_bdd.gccount != workers - 1) ;
 
     _bdd.gccount = 0;
     _bdd.gc = 2;
@@ -589,7 +587,7 @@ void sylvan_gc_go()
     // GC phase 1: clear hash table
     llmsset_clear_multi(_bdd.data, my_id, workers);
 
-    while (atomic_read(&_bdd.gccount) != workers - 1) ;
+    while (_bdd.gccount != workers - 1) ;
     _bdd.gccount = 0;
     _bdd.gc = 3;
 
@@ -604,7 +602,7 @@ void sylvan_gc_go()
         t = t->prev;
     }
 
-    while (atomic_read(&_bdd.gccount) != workers - 1) ;
+    while (_bdd.gccount != workers - 1) ;
     _bdd.gccount = 0;
     _bdd.gc = 4;
 
@@ -614,7 +612,7 @@ void sylvan_gc_go()
     *insert_index = llmsset_get_insertindex_multi(_bdd.data, my_id, _bdd.workers);
 
     llmsset_rehash_multi(_bdd.data, my_id, workers);
-    while (atomic_read(&_bdd.gccount) != workers - 1) ;
+    while (_bdd.gccount != workers - 1) ;
 
     _bdd.gccount = 0;
     _bdd.gc = 0;
@@ -628,7 +626,7 @@ static inline void
 sylvan_gc_test()
 {
     // TODO?: 'unlikely'
-    while (atomic_read(&_bdd.gc)) {
+    while (_bdd.gc) {
         sylvan_gc_participate();
     }
 }
@@ -660,10 +658,10 @@ sylvan_makenode(BDDVAR level, BDD low, BDD high)
 
     if (BDD_HASMARK(low)) {
         mark = 1;
-        n = (struct bddnode){high, level, low, 0, BDD_HASMARK(high) ? 0 : 1};
+        n = (struct bddnode){high, level, low, 0, (uint8_t)(BDD_HASMARK(high) ? 0 : 1)};
     } else {
         mark = 0;
-        n = (struct bddnode){high, level, low, 0, BDD_HASMARK(high)};
+        n = (struct bddnode){high, level, low, 0, (uint8_t)(BDD_HASMARK(high) ? 1 : 0)};
     }
 
     BDD result;
@@ -2223,13 +2221,13 @@ sylvan_fprintdot_rec(FILE *out, BDD bdd, avl_node_t **levels)
 
     sylvan_dothelper_register(levels, bdd);
 
-    fprintf(out, "%"PRIu64" [label=\"%d\"];\n", bdd, n->level);
+    fprintf(out, "%" PRIu64 " [label=\"%d\"];\n", bdd, n->level);
 
     sylvan_fprintdot_rec(out, n->low, levels);
     sylvan_fprintdot_rec(out, n->high, levels);
 
-    fprintf(out, "%"PRIu64" -> %"PRIu64" [style=dashed];\n", bdd, (BDD)n->low);
-    fprintf(out, "%"PRIu64" -> %"PRIu64" [style=solid dir=both arrowtail=%s];\n", bdd, (BDD)n->high, n->comp ? "dot" : "none");
+    fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=dashed];\n", bdd, (BDD)n->low);
+    fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=solid dir=both arrowtail=%s];\n", bdd, (BDD)n->high, n->comp ? "dot" : "none");
 }
 
 void
@@ -2241,7 +2239,7 @@ sylvan_fprintdot(FILE *out, BDD bdd)
     fprintf(out, "edge [dir = forward];\n");
     fprintf(out, "0 [shape=box, label=\"0\", style=filled, shape=box, height=0.3, width=0.3];\n");
     fprintf(out, "root [style=invis];\n");
-    fprintf(out, "root -> %"PRIu64" [style=solid dir=both arrowtail=%s];\n", BDD_STRIPMARK(bdd), BDD_HASMARK(bdd) ? "dot" : "none");
+    fprintf(out, "root -> %" PRIu64 " [style=solid dir=both arrowtail=%s];\n", BDD_STRIPMARK(bdd), BDD_HASMARK(bdd) ? "dot" : "none");
     avl_node_t *levels = NULL;
     sylvan_fprintdot_rec(out, bdd, &levels);
 
@@ -2254,7 +2252,7 @@ sylvan_fprintdot(FILE *out, BDD bdd)
         size_t j;
         BDD *arr_j = nodeset_toarray(arr[i].set);
         for (j=0;j<node_count;j++) {
-            fprintf(out, "%"PRIu64"; ", arr_j[j]);
+            fprintf(out, "%" PRIu64 "; ", arr_j[j]);
         }
         fprintf(out, "}\n");
     }

@@ -15,7 +15,7 @@ typedef union ticketlock
 
 static inline __attribute__((always_inline)) void ticketlock_lock(ticketlock_t *t)
 {
-    register unsigned short me = xadd(&t->s.users, 1);
+    register unsigned short me = xinc(&t->s.users);
     register volatile unsigned short *tick = &t->s.ticket;
     while (*tick != me) cpu_relax();
 }

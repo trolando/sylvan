@@ -18,7 +18,7 @@ numa_tools_refresh(void)
 
     num_cpus = numa_num_configured_cpus();
     if (cpu_to_node != NULL) free(cpu_to_node);
-    cpu_to_node = calloc(num_cpus, sizeof(int));
+    cpu_to_node = (int*)calloc(num_cpus, sizeof(int));
 
     struct bitmask *cpubuf;
     size_t i;
@@ -35,7 +35,7 @@ numa_tools_refresh(void)
 
     num_nodes = numa_max_node()+1;
     if (node_mem != NULL) free(node_mem);
-    node_mem = calloc(num_nodes, sizeof(int));
+    node_mem = (int*)calloc(num_nodes, sizeof(int));
 
     struct bitmask *allowed = numa_allocate_nodemask();
     if (get_mempolicy(NULL, allowed->maskp, allowed->size+1, 0, MPOL_F_MEMS_ALLOWED) != 0) {
@@ -209,7 +209,7 @@ numa_distribute(size_t workers)
 
     n_workers = workers;
     if (worker_to_node != 0) free(worker_to_node);
-    worker_to_node = malloc(sizeof(size_t) * n_workers);
+    worker_to_node = (size_t*)malloc(sizeof(size_t) * n_workers);
 
     size_t i,j;
     size_t *nodes = (size_t*)alloca(sizeof(size_t) * num_nodes);
@@ -370,7 +370,7 @@ int numa_interleave(void *mem, size_t size, size_t *fragment_size)
             } else {
                 if (to_bind > (size-offset)) to_bind = size-offset;
             }
-            if (numa_move(mem+offset, to_bind, i) != 0) {
+            if (numa_move((char*)mem+offset, to_bind, i) != 0) {
                 numa_bitmask_free(allowed);
                 return -1;
             }
@@ -396,9 +396,9 @@ numa_alloc_interleaved_manually(size_t size, size_t *fragment_size, int shared)
     size_t f_size=0;
 
     if (shared)
-        mem = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+        mem = (char*)mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
     else
-        mem = mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+        mem = (char*)mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
 
     if (mem == (char*)-1) {
         return NULL;

@@ -44,12 +44,6 @@
 #define LINE_SIZE 64  /* A common value for current processors */
 #endif
 
-/* Ensure a fresh memory read/write */
-#ifndef atomic_read
-#define atomic_read(v)      (*(volatile typeof(*v) *)(v))
-#define atomic_write(v,a)   (*(volatile typeof(*v) *)(v) = (a))
-#endif
-
 /* Some fences */
 #ifndef compiler_barrier
 #define compiler_barrier() { asm volatile("" ::: "memory"); }
@@ -78,6 +72,9 @@
 #define PAD(x,b) ( ( (b) - ((x)%(b)) ) & ((b)-1) ) /* b must be power of 2 */
 #define ROUND(x,b) ( (x) + PAD( (x), (b) ) )
 
+/* The size is in bytes. Note that this is without the extra overhead from Lace.
+   The value must be greater than or equal to the maximum size of your tasks.
+   The task size is the maximum of the size of the result or of the sum of the parameter sizes. */
 #ifndef LACE_TASKSIZE
 #define LACE_TASKSIZE (4+1)*8
 #endif
@@ -163,6 +160,7 @@ typedef enum {
 
 struct _Worker;
 struct _Task;
+typedef struct _Worker* Worker_p;
 
 #define THIEF_COMPLETED ((struct _Worker*)0x1)
 
@@ -170,7 +168,8 @@ struct _Task;
     void (*f)(struct _Worker *, struct _Task *, struct type *);  \
     struct _Worker *thief;
 
-#define LACE_COMMON_FIELD_SIZE sizeof(struct { TASK_COMMON_FIELDS(_Task) })
+struct __lace_common_fields_only { TASK_COMMON_FIELDS(_Task) };
+#define LACE_COMMON_FIELD_SIZE sizeof(struct __lace_common_fields_only)
 
 typedef struct _Task {
     TASK_COMMON_FIELDS(_Task);
@@ -363,9 +362,11 @@ lace_steal(Worker *self, Task *__dq_head, Worker *victim)
            compiler will optimize extra memory accesses to victim->ts instead
            of comparing the local values ts.ts.tail and ts.ts.split, causing
            thieves to steal non existent tasks! */
-        register TailSplit ts = *(volatile TailSplit *)&victim->ts;
+        register TailSplit ts;
+        ts.v = *(volatile uint64_t *)&victim->ts.v;
         if (ts.ts.tail < ts.ts.split) {
-            register TailSplit ts_new = ts;
+            register TailSplit ts_new;
+            ts_new.v = ts.v;
             ts_new.ts.tail++;
             if (cas(&victim->ts.v, ts.v, ts_new.v)) {
                 // Stolen
@@ -465,7 +466,7 @@ NAME##_shrink_shared(Worker *w)                                                 
         uint32_t newsplit = (tail + split)/2;                                         \
         w->ts.ts.split = newsplit;                                                    \
         mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        tail = *(volatile uint32_t *)&(w->ts.ts.tail);                                \
         if (tail != split) {                                                          \
             if (unlikely(tail > newsplit)) {                                          \
                 newsplit = (tail + split) / 2;                                        \
@@ -489,7 +490,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+        while (thief == 0) thief = *(volatile Worker_p *)&(t->thief);                 \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -511,7 +512,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
                 break;                                                                \
             }                                                                         \
             compiler_barrier();                                                       \
-            thief = atomic_read(&(t->thief));                                         \
+            thief = *(volatile Worker_p *)&(t->thief);                                \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
@@ -689,7 +690,7 @@ NAME##_shrink_shared(Worker *w)                                                 
         uint32_t newsplit = (tail + split)/2;                                         \
         w->ts.ts.split = newsplit;                                                    \
         mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        tail = *(volatile uint32_t *)&(w->ts.ts.tail);                                \
         if (tail != split) {                                                          \
             if (unlikely(tail > newsplit)) {                                          \
                 newsplit = (tail + split) / 2;                                        \
@@ -713,7 +714,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+        while (thief == 0) thief = *(volatile Worker_p *)&(t->thief);                 \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -735,7 +736,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
                 break;                                                                \
             }                                                                         \
             compiler_barrier();                                                       \
-            thief = atomic_read(&(t->thief));                                         \
+            thief = *(volatile Worker_p *)&(t->thief);                                \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
@@ -916,7 +917,7 @@ NAME##_shrink_shared(Worker *w)                                                 
         uint32_t newsplit = (tail + split)/2;                                         \
         w->ts.ts.split = newsplit;                                                    \
         mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        tail = *(volatile uint32_t *)&(w->ts.ts.tail);                                \
         if (tail != split) {                                                          \
             if (unlikely(tail > newsplit)) {                                          \
                 newsplit = (tail + split) / 2;                                        \
@@ -940,7 +941,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+        while (thief == 0) thief = *(volatile Worker_p *)&(t->thief);                 \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -962,7 +963,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
                 break;                                                                \
             }                                                                         \
             compiler_barrier();                                                       \
-            thief = atomic_read(&(t->thief));                                         \
+            thief = *(volatile Worker_p *)&(t->thief);                                \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
@@ -1140,7 +1141,7 @@ NAME##_shrink_shared(Worker *w)                                                 
         uint32_t newsplit = (tail + split)/2;                                         \
         w->ts.ts.split = newsplit;                                                    \
         mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        tail = *(volatile uint32_t *)&(w->ts.ts.tail);                                \
         if (tail != split) {                                                          \
             if (unlikely(tail > newsplit)) {                                          \
                 newsplit = (tail + split) / 2;                                        \
@@ -1164,7 +1165,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+        while (thief == 0) thief = *(volatile Worker_p *)&(t->thief);                 \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -1186,7 +1187,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
                 break;                                                                \
             }                                                                         \
             compiler_barrier();                                                       \
-            thief = atomic_read(&(t->thief));                                         \
+            thief = *(volatile Worker_p *)&(t->thief);                                \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
@@ -1367,7 +1368,7 @@ NAME##_shrink_shared(Worker *w)                                                 
         uint32_t newsplit = (tail + split)/2;                                         \
         w->ts.ts.split = newsplit;                                                    \
         mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        tail = *(volatile uint32_t *)&(w->ts.ts.tail);                                \
         if (tail != split) {                                                          \
             if (unlikely(tail > newsplit)) {                                          \
                 newsplit = (tail + split) / 2;                                        \
@@ -1391,7 +1392,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+        while (thief == 0) thief = *(volatile Worker_p *)&(t->thief);                 \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -1413,7 +1414,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
                 break;                                                                \
             }                                                                         \
             compiler_barrier();                                                       \
-            thief = atomic_read(&(t->thief));                                         \
+            thief = *(volatile Worker_p *)&(t->thief);                                \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
@@ -1591,7 +1592,7 @@ NAME##_shrink_shared(Worker *w)                                                 
         uint32_t newsplit = (tail + split)/2;                                         \
         w->ts.ts.split = newsplit;                                                    \
         mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        tail = *(volatile uint32_t *)&(w->ts.ts.tail);                                \
         if (tail != split) {                                                          \
             if (unlikely(tail > newsplit)) {                                          \
                 newsplit = (tail + split) / 2;                                        \
@@ -1615,7 +1616,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+        while (thief == 0) thief = *(volatile Worker_p *)&(t->thief);                 \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -1637,7 +1638,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
                 break;                                                                \
             }                                                                         \
             compiler_barrier();                                                       \
-            thief = atomic_read(&(t->thief));                                         \
+            thief = *(volatile Worker_p *)&(t->thief);                                \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
@@ -1818,7 +1819,7 @@ NAME##_shrink_shared(Worker *w)                                                 
         uint32_t newsplit = (tail + split)/2;                                         \
         w->ts.ts.split = newsplit;                                                    \
         mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        tail = *(volatile uint32_t *)&(w->ts.ts.tail);                                \
         if (tail != split) {                                                          \
             if (unlikely(tail > newsplit)) {                                          \
                 newsplit = (tail + split) / 2;                                        \
@@ -1842,7 +1843,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+        while (thief == 0) thief = *(volatile Worker_p *)&(t->thief);                 \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -1864,7 +1865,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
                 break;                                                                \
             }                                                                         \
             compiler_barrier();                                                       \
-            thief = atomic_read(&(t->thief));                                         \
+            thief = *(volatile Worker_p *)&(t->thief);                                \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
@@ -2042,7 +2043,7 @@ NAME##_shrink_shared(Worker *w)                                                 
         uint32_t newsplit = (tail + split)/2;                                         \
         w->ts.ts.split = newsplit;                                                    \
         mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        tail = *(volatile uint32_t *)&(w->ts.ts.tail);                                \
         if (tail != split) {                                                          \
             if (unlikely(tail > newsplit)) {                                          \
                 newsplit = (tail + split) / 2;                                        \
@@ -2066,7 +2067,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+        while (thief == 0) thief = *(volatile Worker_p *)&(t->thief);                 \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -2088,7 +2089,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
                 break;                                                                \
             }                                                                         \
             compiler_barrier();                                                       \
-            thief = atomic_read(&(t->thief));                                         \
+            thief = *(volatile Worker_p *)&(t->thief);                                \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
@@ -2269,7 +2270,7 @@ NAME##_shrink_shared(Worker *w)                                                 
         uint32_t newsplit = (tail + split)/2;                                         \
         w->ts.ts.split = newsplit;                                                    \
         mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        tail = *(volatile uint32_t *)&(w->ts.ts.tail);                                \
         if (tail != split) {                                                          \
             if (unlikely(tail > newsplit)) {                                          \
                 newsplit = (tail + split) / 2;                                        \
@@ -2293,7 +2294,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+        while (thief == 0) thief = *(volatile Worker_p *)&(t->thief);                 \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -2315,7 +2316,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
                 break;                                                                \
             }                                                                         \
             compiler_barrier();                                                       \
-            thief = atomic_read(&(t->thief));                                         \
+            thief = *(volatile Worker_p *)&(t->thief);                                \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
@@ -2493,7 +2494,7 @@ NAME##_shrink_shared(Worker *w)                                                 
         uint32_t newsplit = (tail + split)/2;                                         \
         w->ts.ts.split = newsplit;                                                    \
         mfence();                                                                     \
-        tail = atomic_read(&(w->ts.ts.tail));                                         \
+        tail = *(volatile uint32_t *)&(w->ts.ts.tail);                                \
         if (tail != split) {                                                          \
             if (unlikely(tail > newsplit)) {                                          \
                 newsplit = (tail + split) / 2;                                        \
@@ -2517,7 +2518,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = atomic_read(&(t->thief));                          \
+        while (thief == 0) thief = *(volatile Worker_p *)&(t->thief);                 \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -2539,7 +2540,7 @@ NAME##_leapfrog(Worker *w, Task *__dq_head)                                     
                 break;                                                                \
             }                                                                         \
             compiler_barrier();                                                       \
-            thief = atomic_read(&(t->thief));                                         \
+            thief = *(volatile Worker_p *)&(t->thief);                                \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \

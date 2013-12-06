@@ -195,7 +195,7 @@ worker_thread( void *arg )
 Task*
 lace_get_head()
 {
-    Worker *self = pthread_getspecific(worker_key);
+    Worker *self = (Worker*)pthread_getspecific(worker_key);
 
     Task *low = self->o_dq;
     Task *high = self->o_end;
@@ -214,7 +214,7 @@ lace_get_head()
 Worker*
 lace_get_worker()
 {
-    return pthread_getspecific(worker_key);
+    return (Worker*)pthread_getspecific(worker_key);
 }
 
 static void
@@ -254,7 +254,7 @@ _lace_create_thread(int worker, size_t stacksize, void* (*f)(void*), void *arg)
             fprintf(stderr, "Error: Unable to protect the allocated stack memory with a guard page!\n");
             exit(1);
         }
-        stack_location = stack_location + pagesize; // skip protected page.
+        stack_location = (uint8_t *)stack_location + pagesize; // skip protected page.
         if (0 != pthread_attr_setstack(&worker_attr, stack_location, stacksize)) {
             fprintf(stderr, "Error: Unable to set the pthread stack in Lace!\n");
             exit(1);
@@ -333,7 +333,7 @@ _lace_init(int n, size_t dq_size, size_t stacksize, void (*f)(void))
     }
 
     if (f != 0) {
-        _lace_create_thread(0, stacksize, &lace_boot_wrapper, f);
+        _lace_create_thread(0, stacksize, &lace_boot_wrapper, (void*)f);
 
         // Wait on condition until done
         pthread_mutex_lock(&wait_until_done_mutex);

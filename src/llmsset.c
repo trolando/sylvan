@@ -12,7 +12,7 @@
 #include <murmur.h>
 
 #if USE_NUMA
-#include "numa_tools.h"
+#include <numa_tools.h>
 #endif
 
 /*
@@ -181,9 +181,9 @@ llmsset_create(size_t key_length, size_t data_length, size_t table_size)
 
     dbs->threshold = (64 - __builtin_clzl(table_size)) + 4; // doubling table_size increases threshold by 1
 
-    dbs->table = mmap(0, dbs->table_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    dbs->table = (uint64_t*)mmap(0, dbs->table_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (dbs->table == (uint64_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
-    dbs->data = mmap(0, dbs->table_size * dbs->padded_data_length, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    dbs->data = (uint8_t*)mmap(0, dbs->table_size * dbs->padded_data_length, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (dbs->data == (uint8_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
 
 #if USE_NUMA
@@ -209,7 +209,7 @@ static void
 llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_workers, size_t *_first_entry, size_t *_entry_count)
 {
 #if USE_NUMA
-    int node, node_index, index, total;
+    size_t node, node_index, index, total;
     // We are on node <node>, which is the <node_index>th node that we can use.
     // Also we are the <index>th worker on that node, out of <total> workers.
     numa_worker_info(my_id, &node, &node_index, &index, &total);
@@ -277,7 +277,7 @@ int
 llmsset_mark_safe(const llmsset_t dbs, uint64_t index)
 {
     while (1) {
-        uint64_t v = atomic_read(&dbs->table[index]);
+        uint64_t v = *(volatile uint64_t *)&(dbs->table[index]);
         if (v & DFILLED) return 0;
         if (cas(&dbs->table[index], v, v|DFILLED)) return 1;
     }

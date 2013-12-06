@@ -258,6 +258,20 @@ int testEqual(BDD a, BDD b)
 }
 
 void
+test_cube()
+{
+    BDDVAR vars[] = {2,4,8,6,1,3};
+
+    char cube[6], check[6];
+    int i;
+    for (i=0;i<6;i++) cube[i] = rng(0,3);
+    BDD bdd = sylvan_cube(vars, 6, cube);
+
+    sylvan_pick_cube(bdd, vars, 6, check);
+    for (i=0; i<6;i++) assert(cube[i] == check[i]);
+}
+
+void
 test_xor()
 {
     BDD a = sylvan_ithvar(1);
@@ -633,6 +647,14 @@ void runtests(int threads)
     lace_init(threads, 100000, 0);
 
     printf(BOLD "Testing Sylvan\n");
+
+    // what happens if we make a cube
+    printf(NC "Testing cube function... ");
+    fflush(stdout);
+    sylvan_init(6,6,1);
+    test_cube();
+    sylvan_quit();
+    printf(LGREEN "success" NC "!\n");
 
     printf(NC "Running test 'Xor'... ");
     fflush(stdout);

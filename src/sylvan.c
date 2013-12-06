@@ -2010,6 +2010,93 @@ sylvan_satcount(BDD bdd, BDD variables)
     return sylvan_satcount_rec(bdd, variables);
 }
 
+static void
+gnomesort_bddvars(BDDVAR* arr, size_t size)
+{
+    size_t i=0;
+    while (i<size) {
+        if (i == 0 || arr[i-1] <= arr[i]) i++;
+        else { BDDVAR tmp = arr[i]; arr[i] = arr[i-1]; arr[--i] = tmp; }
+    }
+}
+
+int
+sylvan_sat_one(BDD bdd, BDDVAR *vars, size_t cnt, char* str)
+{
+    if (bdd == sylvan_false) return 0;
+    if (str == NULL) return 0;
+
+    BDDVAR *sorted_vars = (BDDVAR*)alloca(sizeof(BDDVAR)*cnt);
+    memcpy(sorted_vars, vars, sizeof(BDDVAR)*cnt);
+    gnomesort_bddvars(sorted_vars, cnt);
+
+    size_t i = 0;
+    for (i=0; i<cnt; i++) {
+        BDDVAR var = sorted_vars[i];
+
+        size_t idx=0;
+        for (idx=0; vars[idx]!=var; idx++) {}
+
+        if (bdd != sylvan_true) {
+            bddnode_t node = GETNODE(bdd);
+            if (node->level == var) {
+                BDD lowedge = BDD_TRANSFERMARK(bdd, node_lowedge(node));
+                BDD highedge = BDD_TRANSFERMARK(bdd, node_highedge(node));
+                if (highedge == sylvan_false) {
+                    // take low edge
+                    bdd = lowedge;
+                    str[idx++] = 0;
+                } else if (lowedge == sylvan_false) {
+                    // take high edge
+                    bdd = highedge;
+                    str[idx++] = 1;
+                } else {
+                    // take random edge
+                    if (rand() & 0x2000) {
+                        bdd = lowedge;
+                        str[idx++] = 0;
+                    } else {
+                        bdd = highedge;
+                        str[idx++] = 1;
+                    }
+                }
+                continue;
+            }
+        }
+        str[idx++] = 2;
+    }
+
+    return 1;
+}
+
+BDD
+sylvan_cube(BDDVAR* vars, size_t cnt, char* cube)
+{
+    assert(cube != NULL);
+
+    BDDVAR *sorted_vars = (BDDVAR*)alloca(sizeof(BDDVAR)*cnt);
+    memcpy(sorted_vars, vars, sizeof(BDDVAR)*cnt);
+    gnomesort_bddvars(sorted_vars, cnt);
+
+    BDD bdd = sylvan_true;
+
+    size_t i;
+    for (i=0; i<cnt; i++) {
+        BDDVAR var = sorted_vars[cnt-i-1];
+        size_t idx=0;
+        for (idx=0; vars[idx]!=var; idx++) {}
+        if (cube[idx] == 0) {
+            bdd = sylvan_makenode(var, bdd, sylvan_false);
+        } else if (cube[idx] == 1) {
+            bdd = sylvan_makenode(var, sylvan_false, bdd);
+        } else {
+            bdd = sylvan_makenode(var, bdd, bdd); // actually: this skips
+        }
+    }
+
+    return bdd;
+}
+
 /**
  * IMPLEMENTATION OF BDD-AS-SET
  */

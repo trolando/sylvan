@@ -41,6 +41,13 @@ BDD sylvan_ithvar(BDDVAR level);
 BDD sylvan_nithvar(BDDVAR level);
 
 /**
+ * Create a BDD cube representing the conjunction of variables in their positive or negative
+ * form depending on whether the cube[idx] equals 0 (negative), 1 (positive) or 2 (any).
+ * For example, sylvan_cube({2,4,6,8},4,{0,1,2,1}) returns BDD of Boolean formula "not(x_2) & x_4 & x_8"
+ */
+BDD sylvan_cube(BDDVAR *variables, size_t count, char* cube);
+
+/**
  * Get the <level> of the root node of <bdd>
  */
 BDDVAR sylvan_var(BDD bdd);
@@ -170,6 +177,16 @@ void sylvan_fprintdot(FILE *out, BDD bdd);
  * <variables> is a BDD with every variable 'high' set to 'true'
  */
 long double sylvan_satcount(BDD bdd, BDD variables);
+
+/**
+ * Pick one satisfying variable assignment randomly from the given <bdd>.
+ * sizeof(str) must be >= sylvan_set_count(<variables>)
+ * str[index] where index is the index in the <variables> set is set to
+ *   0 when 0, 1 when 1, or 2 when either 0 or 1
+ * Returns 1 when succesful, or 0 when no assignment is found.
+ */
+int sylvan_sat_one(BDD bdd, BDDVAR *variables, size_t count, char* str);
+#define sylvan_pick_cube sylvan_sat_one
 
 TASK_DECL_1(long double, sylvan_pathcount, BDD);
 long double sylvan_pathcount(BDD bdd);

@@ -171,6 +171,9 @@ BDD sylvan_makenode(BDDVAR level, BDD low, BDD high);
 void sylvan_printdot(BDD bdd);
 void sylvan_fprintdot(FILE *out, BDD bdd);
 
+void sylvan_print(BDD bdd);
+void sylvan_fprint(FILE *f, BDD bdd);
+
 /**
  * Calculate number of satisfying variable assignments.
  * <bdd> must only have variables in <variables>

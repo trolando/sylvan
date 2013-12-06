@@ -34,21 +34,6 @@
 #define BLINK "\33[5m"
 #define INVERT "\33[7m"
 
-static inline void
-sylvan_fprint(FILE *f, BDD bdd)
-{
-    sylvan_serialize_reset();
-    sylvan_serialize_add(bdd);
-    sylvan_serialize_totext(f);
-    fprintf(f, "\n");
-}
-
-static inline void
-sylvan_print(BDD bdd)
-{
-    sylvan_fprint(stdout, bdd);
-}
-
 int test_llmsset()
 {
     uint32_t entry[] = { 90570123,  43201432,   31007798,  256346587,
@@ -215,12 +200,12 @@ void testFun(BDD p1, BDD p2, BDD r1, BDD r2)
     printf("Parameter 1:\n");
     fflush(stdout);
     sylvan_printdot(p1);
-    sylvan_print(p1);
+    sylvan_print(p1);printf("\n");
 
     printf("Parameter 2:\n");
     fflush(stdout);
     sylvan_printdot(p2);
-    sylvan_print(p2);
+    sylvan_print(p2);printf("\n");
 
     printf("Result 1:\n");
     fflush(stdout);
@@ -232,7 +217,6 @@ void testFun(BDD p1, BDD p2, BDD r1, BDD r2)
 
     assert(0);
 }
-
 
 int testEqual(BDD a, BDD b)
 {
@@ -251,10 +235,23 @@ int testEqual(BDD a, BDD b)
     printf("Not Equal!\n");
     fflush(stdout);
 
-    sylvan_print(a);
-    sylvan_print(b);
+    sylvan_print(a);printf("\n");
+    sylvan_print(b);printf("\n");
 
 	return 0;
+}
+
+void
+test_bdd()
+{
+    sylvan_gc_disable();
+
+    assert(sylvan_makenode(sylvan_ithvar(1), sylvan_true, sylvan_true) == sylvan_not(sylvan_makenode(sylvan_ithvar(1), sylvan_false, sylvan_false)));
+    assert(sylvan_makenode(sylvan_ithvar(1), sylvan_false, sylvan_true) == sylvan_not(sylvan_makenode(sylvan_ithvar(1), sylvan_true, sylvan_false)));
+    assert(sylvan_makenode(sylvan_ithvar(1), sylvan_true, sylvan_false) == sylvan_not(sylvan_makenode(sylvan_ithvar(1), sylvan_false, sylvan_true)));
+    assert(sylvan_makenode(sylvan_ithvar(1), sylvan_false, sylvan_false) == sylvan_not(sylvan_makenode(sylvan_ithvar(1), sylvan_true, sylvan_true)));
+
+    sylvan_gc_enable();
 }
 
 void
@@ -492,7 +489,7 @@ void test_modelcheck()
 
     do {
         //printf("Visited: \n");
-        //sylvan_print(visited);
+        //sylvan_print(visited);printf("\n");
         prev = visited;
         BDD next = sylvan_relprods(visited, r, sylvan_true);
         visited = sylvan_or(visited, next);
@@ -609,8 +606,8 @@ void test_CALL_REPLACE()
 
     if (cmp != result) {
         printf("Assertion failed cmp != result: %x != %x\n", cmp, result);
-        sylvan_print(cmp);
-        sylvan_print(result);
+        sylvan_print(cmp);printf("\n");
+        sylvan_print(result);printf("\n");
         exit(1);
     }
 
@@ -647,6 +644,13 @@ void runtests(int threads)
     lace_init(threads, 100000, 0);
 
     printf(BOLD "Testing Sylvan\n");
+
+    printf(NC "Testing basic bdd functionality... ");
+    fflush(stdout);
+    sylvan_init(16,10,1);
+    test_bdd();
+    sylvan_quit();
+    printf(LGREEN "success" NC "!\n");
 
     // what happens if we make a cube
     printf(NC "Testing cube function... ");

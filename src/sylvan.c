@@ -625,7 +625,6 @@ void sylvan_gc_go()
 static inline void
 sylvan_gc_test()
 {
-    // TODO?: 'unlikely'
     while (_bdd.gc) {
         sylvan_gc_participate();
     }
@@ -636,6 +635,24 @@ void sylvan_gc()
     if (initialized == 0) return;
     SV_CNT(C_gc_user);
     sylvan_gc_go();
+}
+
+/**
+ * Tiny debug stuff
+ */
+void
+sylvan_fprint(FILE *f, BDD bdd)
+{
+    sylvan_serialize_reset();
+    size_t v = sylvan_serialize_add(bdd);
+    fprintf(f, "%s%zu,", bdd&complementmark?"!":"", v);
+    sylvan_serialize_totext(f);
+}
+
+void
+sylvan_print(BDD bdd)
+{
+    sylvan_fprint(stdout, bdd);
 }
 
 /**
@@ -944,15 +961,15 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     BDD bLow = b, bHigh = b;
     BDD cLow = c, cHigh = c;
     if (na && level == na->level) {
-        aLow = BDD_TRANSFERMARK(a, na->low);
+        aLow = BDD_TRANSFERMARK(a, node_lowedge(na));
         aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
     }
     if (nb && level == nb->level) {
-        bLow = BDD_TRANSFERMARK(b, nb->low);
+        bLow = BDD_TRANSFERMARK(b, node_lowedge(nb));
         bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
     }
     if (nc && level == nc->level) {
-        cLow = BDD_TRANSFERMARK(c, nc->low);
+        cLow = BDD_TRANSFERMARK(c, node_lowedge(nc));
         cHigh = BDD_TRANSFERMARK(c, node_highedge(nc));
     }
 
@@ -1056,14 +1073,14 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
     BDD aLow, aHigh, bLow, bHigh;
 
     if (na->level == level) {
-        aLow = BDD_TRANSFERMARK(a, na->low);
+        aLow = BDD_TRANSFERMARK(a, node_lowedge(na));
         aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
     } else {
         aLow = aHigh = a;
     }
 
     if (nb->level == level) {
-        bLow = BDD_TRANSFERMARK(b, nb->low);
+        bLow = BDD_TRANSFERMARK(b, node_lowedge(nb));
         bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
     } else {
         bLow = bHigh = b;
@@ -1171,7 +1188,7 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
     BDDVAR level = na->level;
 
     // Get cofactors
-    BDD aLow = BDD_TRANSFERMARK(a, na->low);
+    BDD aLow = BDD_TRANSFERMARK(a, node_lowedge(na));
     BDD aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
 
     while (!sylvan_set_isempty(variables) && sylvan_var(variables) < level) {
@@ -1313,22 +1330,22 @@ TASK_IMPL_4(BDD, sylvan_relprod, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
     if (na) {
         if (nb && na->level > nb->level) {
             level = nb->level;
-            bLow = BDD_TRANSFERMARK(b, nb->low);
+            bLow = BDD_TRANSFERMARK(b, node_lowedge(nb));
             bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
         } else if (nb && na->level == nb->level) {
             level = na->level;
-            aLow = BDD_TRANSFERMARK(a, na->low);
+            aLow = BDD_TRANSFERMARK(a, node_lowedge(na));
             aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
-            bLow = BDD_TRANSFERMARK(b, nb->low);
+            bLow = BDD_TRANSFERMARK(b, node_lowedge(nb));
             bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
         } else {
             level = na->level;
-            aLow = BDD_TRANSFERMARK(a, na->low);
+            aLow = BDD_TRANSFERMARK(a, node_lowedge(na));
             aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
         }
     } else {
         level = nb->level;
-        bLow = BDD_TRANSFERMARK(b, nb->low);
+        bLow = BDD_TRANSFERMARK(b, node_lowedge(nb));
         bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
     }
 
@@ -1435,7 +1452,7 @@ TASK_IMPL_3(BDD, sylvan_substitute, BDD, a, BDD, vars, BDDVAR, prev_level)
     bddnode_t na = GETNODE(a);
     BDDVAR level = na->level;
 
-    BDD aLow = BDD_TRANSFERMARK(a, na->low);
+    BDD aLow = BDD_TRANSFERMARK(a, node_lowedge(na));
     BDD aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
 
     while (!sylvan_set_isempty(vars) && sylvan_var(vars) < level) {
@@ -1528,19 +1545,19 @@ sylvan_relprods_analyse(BDD a, BDD b, void_cb cb_in, void_cb cb_out)
     BDD aLow=a, aHigh=a, bLow=b, bHigh=b;
     if (na) {
         if (nb && na->level > nb->level) {
-            bLow = BDD_TRANSFERMARK(b, nb->low);
+            bLow = BDD_TRANSFERMARK(b, node_lowedge(nb));
             bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
         } else if (nb && na->level == nb->level) {
-            aLow = BDD_TRANSFERMARK(a, na->low);
+            aLow = BDD_TRANSFERMARK(a, node_lowedge(na));
             aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
-            bLow = BDD_TRANSFERMARK(b, nb->low);
+            bLow = BDD_TRANSFERMARK(b, node_lowedge(nb));
             bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
         } else {
-            aLow = BDD_TRANSFERMARK(a, na->low);
+            aLow = BDD_TRANSFERMARK(a, node_lowedge(na));
             aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
         }
     } else {
-        bLow = BDD_TRANSFERMARK(b, nb->low);
+        bLow = BDD_TRANSFERMARK(b, node_lowedge(nb));
         bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
     }
 
@@ -1600,11 +1617,11 @@ TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
     // Get cofactors
     BDD aLow=a, aHigh=a, bLow=b, bHigh=b;
     if (na && na->level == level) {
-        aLow = BDD_TRANSFERMARK(a, na->low);
+        aLow = BDD_TRANSFERMARK(a, node_lowedge(na));
         aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
     }
     if (nb->level == level) {
-        bLow = BDD_TRANSFERMARK(b, nb->low);
+        bLow = BDD_TRANSFERMARK(b, node_lowedge(nb));
         bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
     }
 
@@ -1780,8 +1797,8 @@ TASK_IMPL_4(BDD, sylvan_relprods_reversed, BDD, a, BDD, b, BDD, vars, BDDVAR, pr
 
     register int in_vars = vars == sylvan_true ? 1 : ({
         register BDDVAR it_var;
-        while (vars != sylvan_false && (it_var=(GETNODE(vars)->level)) < x) {
-            vars = BDD_TRANSFERMARK(vars, GETNODE(vars)->low);
+        while (!sylvan_set_isempty(vars) && (it_var=(GETNODE(vars)->level)) < x) {
+            vars = sylvan_set_next(vars);
         }
         vars == sylvan_false ? 0 : it_var == x;
     });
@@ -1800,12 +1817,12 @@ TASK_IMPL_4(BDD, sylvan_relprods_reversed, BDD, a, BDD, b, BDD, vars, BDDVAR, pr
     BDD aLow = a, aHigh = a;
     BDD bLow = b, bHigh = b;
     if (na && x == S_x_a) {
-        aLow = BDD_TRANSFERMARK(a, na->low);
+        aLow = BDD_TRANSFERMARK(a, node_lowedge(na));
         aHigh = BDD_TRANSFERMARK(a, node_highedge(na));
     }
 
     if (nb && x == x_b) {
-        bLow = BDD_TRANSFERMARK(b, nb->low);
+        bLow = BDD_TRANSFERMARK(b, node_lowedge(nb));
         bHigh = BDD_TRANSFERMARK(b, node_highedge(nb));
     }
 
@@ -2160,7 +2177,7 @@ BDD
 sylvan_set_next(BDD set)
 {
     if (BDD_ISCONSTANT(set)) return sylvan_false;
-    return GETNODE(set)->low;
+    return sylvan_low(set);
 }
 
 size_t

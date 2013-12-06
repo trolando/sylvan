@@ -103,21 +103,6 @@ static int nGrps;
 static vrel_t *next;
 static int report = 0;
 
-static inline void
-sylvan_fprint(FILE *f, BDD bdd)
-{
-    sylvan_serialize_reset();
-    sylvan_serialize_add(bdd);
-    sylvan_serialize_totext(f);
-    fprintf(f, "\n");
-}
-
-static inline void
-sylvan_print(BDD bdd)
-{
-    sylvan_fprint(stdout, bdd);
-}
-
 static void
 bfs(vset_t set)
 {

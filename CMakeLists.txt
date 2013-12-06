@@ -31,6 +31,8 @@ set (CMAKE_ASM_FLAGS "-g")
 set (CMAKE_C_FLAGS "-g -O3 -Wextra -Wall -Werror -D${NUMA_DEF}")
 
 set(sylvan_sources
+  src/barrier.h
+  src/barrier.c
   src/sylvan.h
   src/sylvan.c
   src/llmsset.c

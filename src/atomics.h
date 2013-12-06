@@ -1,8 +1,14 @@
 #ifndef __ATOMICS_H
 #define __ATOMICS_H
 
+
+#if defined(__cplusplus) && __cplusplus >= 201103L
+#define ATOMIC_READ(x) (*(volatile decltype(x) *)&(x))
+#define ATOMIC_WRITE(v,a) (*(volatile decltype(v) *)(&(v)) = (a))
+#else
 #define ATOMIC_READ(x)  (*(volatile typeof(x) *)&(x))
-#define ATOMIC_WRITE(v,a) (*(volatile  typeof(v) *)(&v) = (a))
+#define ATOMIC_WRITE(v,a) (*(volatile  typeof(v) *)(&(v)) = (a))
+#endif
 
 #ifndef LINE_SIZE
 #define LINE_SIZE 64

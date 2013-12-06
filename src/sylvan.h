@@ -5,8 +5,15 @@
 #ifndef SYLVAN_H
 #define SYLVAN_H
 
+/**
+ * Sylvan: BDD package.
+ *
+ * Explicit referencing, so use sylvan_ref and sylvan_deref manually.
+ * To temporarily disable garbage collection, use sylvan_gc_disable() and sylvan_gc_enable().
+ */
+
 typedef uint64_t BDD;
-typedef uint64_t BDDSET; // set is just a bdd
+typedef uint64_t BDDSET;
 typedef uint32_t BDDVAR;
 
 extern const BDD sylvan_true;
@@ -15,30 +22,31 @@ extern const BDD sylvan_false;
 // use "BDD something = sylvan_invalid;" instead of "BDD something = 0;"
 extern const BDD sylvan_invalid;
 
-void sylvan_reset_counters();
-void sylvan_report_stats();
-
 /**
- * Initialize BDD subsystem of package
+ * Initialize Sylvan BDD package
  * datasize in number of nodes will be 1<<datasize
  * cachesize in number of nodes will be 1<<cachesize
+ * granularity determines usage of memoization cache, default=1 (memoize at every level)
+ *   [memoization occurs at every next 'level % granularity' recursion, e.g.
+ *    with granularity=3, from lvl 0->1, 1->2 no memoization, but memoize 0->3, 1->3, 1->4, etc.]
+ * reasonable default values: datasize=24, cachesize=20, granularity=2
  */
 void sylvan_init(size_t datasize, size_t cachesize, int granularity);
 
 /**
- * Free data
+ * Frees all Sylvan data
  */
 void sylvan_quit();
 
 /**
- * Create a BDD representing <level>
+ * Create a BDD representing <var>
  */
-BDD sylvan_ithvar(BDDVAR level);
+BDD sylvan_ithvar(BDDVAR var);
 
 /**
- * Create a BDD representing ~<level>
+ * Create a BDD representing not(<var>)
  */
-BDD sylvan_nithvar(BDDVAR level);
+BDD sylvan_nithvar(BDDVAR var);
 
 /**
  * Create a BDD cube representing the conjunction of variables in their positive or negative
@@ -48,7 +56,8 @@ BDD sylvan_nithvar(BDDVAR level);
 BDD sylvan_cube(BDDVAR *variables, size_t count, char* cube);
 
 /**
- * Get the <level> of the root node of <bdd>
+ * Get the <var> of the root node of <bdd>
+ * This is also the first variable in the support of <bdd> according to the ordering.
  */
 BDDVAR sylvan_var(BDD bdd);
 
@@ -63,7 +72,7 @@ BDD sylvan_low(BDD bdd);
 BDD sylvan_high(BDD bdd);
 
 /**
- * Get ~bdd
+ * Get not(bdd)
  */
 BDD sylvan_not(BDD bdd);
 
@@ -74,7 +83,7 @@ TASK_DECL_4(BDD, sylvan_ite, BDD, BDD, BDD, BDDVAR);
 BDD sylvan_ite(BDD a, BDD b, BDD c);
 
 /**
- * Binary operations (implemented using ite)
+ * Binary BDD operations (implemented using ite)
  */
 BDD sylvan_and(BDD a, BDD b);
 BDD sylvan_xor(BDD a, BDD b);
@@ -115,7 +124,14 @@ TASK_DECL_3(BDD, sylvan_substitute, BDD, BDD, BDDVAR);
 BDD sylvan_substitute(BDD a, BDD vars);
 
 /**
- * Calculate stuff
+ * Calculate a@b (a constrain b), such that (b -> a@b) = (b -> a)
+ * Special cases:
+ *   - a@0 = 0
+ *   - a@1 = f
+ *   - 0@b = 0
+ *   - 1@b = 1
+ *   - a@a = 1
+ *   - a@not(a) = 0
  */
 TASK_DECL_3(BDD, sylvan_constrain, BDD, BDD, BDDVAR);
 BDD sylvan_constrain(BDD a, BDD b);
@@ -129,8 +145,9 @@ BDD sylvan_exists(BDD a, BDD variables);
 BDD sylvan_forall(BDD a, BDD variables);
 
 /**
- * Calculate the support of <bdd>
- * This is the set of variable levels in the BDD nodes
+ * Calculate the support of <bdd>.
+ * This is the set of used variables in the BDD nodes.
+ * A variable v is in the support of BDD F iff not F[v<-0] = F[v<-1].
  */
 TASK_DECL_1(BDD, sylvan_support, BDD);
 BDD sylvan_support(BDD bdd);
@@ -142,6 +159,18 @@ void sylvan_gc();
 
 void sylvan_gc_enable();
 void sylvan_gc_disable();
+
+/**
+ * Reset all counters (for statistics)
+ */
+void sylvan_reset_counters();
+
+/**
+ * Write statistic report to stdout
+ */
+void sylvan_report_stats();
+
+
 
 /**
  * Set using BDD operations

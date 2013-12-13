@@ -41,6 +41,7 @@ set(sylvan_sources
   src/lace.h
   src/murmur.c
   src/murmur.h
+  src/ticketlock.h
   ${EXTRA_SRC}
 )
 

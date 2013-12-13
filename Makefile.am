@@ -22,6 +22,7 @@ libsylvan_la_SOURCES = \
  src/avl.h \
  src/lace.c \
  src/lace.h \
+ src/ticketlock.h \
  src/murmur.c \
  src/murmur.h
 

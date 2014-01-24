@@ -2335,26 +2335,29 @@ sylvan_fprintdot(FILE *out, BDD bdd)
     fprintf(out, "0 [shape=box, label=\"0\", style=filled, shape=box, height=0.3, width=0.3];\n");
     fprintf(out, "root [style=invis];\n");
     fprintf(out, "root -> %" PRIu64 " [style=solid dir=both arrowtail=%s];\n", BDD_STRIPMARK(bdd), BDD_HASMARK(bdd) ? "dot" : "none");
+
     avl_node_t *levels = NULL;
     sylvan_fprintdot_rec(out, bdd, &levels);
 
-    size_t levels_count = avl_count(levels);
-    struct level_to_nodeset *arr = level_to_nodeset_toarray(levels);
-    size_t i;
-    for (i=0;i<levels_count;i++) {
-        fprintf(out, "{ rank=same; ");
-        size_t node_count = avl_count(arr[i].set);
-        size_t j;
-        BDD *arr_j = nodeset_toarray(arr[i].set);
-        for (j=0;j<node_count;j++) {
-            fprintf(out, "%" PRIu64 "; ", arr_j[j]);
+    if (levels != NULL) {
+        size_t levels_count = avl_count(levels);
+        struct level_to_nodeset *arr = level_to_nodeset_toarray(levels);
+        size_t i;
+        for (i=0;i<levels_count;i++) {
+            fprintf(out, "{ rank=same; ");
+            size_t node_count = avl_count(arr[i].set);
+            size_t j;
+            BDD *arr_j = nodeset_toarray(arr[i].set);
+            for (j=0;j<node_count;j++) {
+                fprintf(out, "%" PRIu64 "; ", arr_j[j]);
+            }
+            fprintf(out, "}\n");
         }
-        fprintf(out, "}\n");
+        level_to_nodeset_free(&levels);
     }
-    level_to_nodeset_free(&levels);
 
     fprintf(out, "}\n");
-    sylvan_unmark_rec(GETNODE(bdd), 1);
+    if (!BDD_ISCONSTANT(bdd)) sylvan_unmark_rec(GETNODE(bdd), 1);
 }
 
 void

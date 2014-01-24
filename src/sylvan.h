@@ -17,6 +17,7 @@ typedef uint64_t BDDSET;
 typedef uint32_t BDDVAR;
 
 extern const BDD sylvan_true;
+extern const BDD sylvan_true_nc; // sylvan_true when not using complement edges
 extern const BDD sylvan_false;
 
 // use "BDD something = sylvan_invalid;" instead of "BDD something = 0;"
@@ -54,6 +55,12 @@ BDD sylvan_nithvar(BDDVAR var);
  * For example, sylvan_cube({2,4,6,8},4,{0,1,2,1}) returns BDD of Boolean formula "not(x_2) & x_4 & x_8"
  */
 BDD sylvan_cube(BDDVAR *variables, size_t count, char* cube);
+
+/**
+ * Convert normal BDD to a BDD without complement edges
+ * Also replaces sylvan_true by sylvan_true_nc
+ */
+BDD sylvan_bdd_to_nocomp(BDD bdd);
 
 /**
  * Get the <var> of the root node of <bdd>
@@ -98,6 +105,9 @@ BDD sylvan_invimp(BDD a, BDD b);
 
 /**
  * Specialized RelProdS using paired variables (X even, X' odd)
+ * For example, variable x_1 is paired with x_0, with x_1 being the X' equivalent of x_0.
+ * When using relprods to generate the 'next' states, you will want to
+ * use <var> 0,2,4,6,8 etc for the 'state' booleans, and 1,3,5,7,9 etc for the 'next state' booleans
  */
 TASK_DECL_4(BDD, sylvan_relprods, BDD, BDD, BDD, BDDVAR);
 BDD sylvan_relprods(BDD a, BDD b, BDD vars);
@@ -199,6 +209,9 @@ BDD sylvan_makenode(BDDVAR level, BDD low, BDD high);
  */
 void sylvan_printdot(BDD bdd);
 void sylvan_fprintdot(FILE *out, BDD bdd);
+
+void sylvan_printdot_nocomp(BDD bdd);
+void sylvan_fprintdot_nocomp(FILE *out, BDD bdd);
 
 void sylvan_print(BDD bdd);
 void sylvan_fprint(FILE *f, BDD bdd);

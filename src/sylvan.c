@@ -2565,7 +2565,7 @@ sylvan_serialize_assign_rec(BDD bdd)
 size_t
 sylvan_serialize_add(BDD bdd)
 {
-    return sylvan_serialize_assign_rec(bdd);
+    return BDD_TRANSFERMARK(bdd, sylvan_serialize_assign_rec(bdd));
 }
 
 void
@@ -2629,6 +2629,7 @@ sylvan_serialize_tofile(FILE *out)
 {
     size_t count = avl_count(sylvan_ser_reversed_set);
     assert(count >= sylvan_ser_done);
+    assert(count == sylvan_ser_counter-1);
     count -= sylvan_ser_done;
     fwrite(&count, sizeof(size_t), 1, out);
 
@@ -2637,9 +2638,15 @@ sylvan_serialize_tofile(FILE *out)
 
     /* Skip already written entries */
     size_t index = 0;
-    while (index < sylvan_ser_done && (s=sylvan_ser_reversed_iter_next(it))) index++;
+    while (index < sylvan_ser_done && (s=sylvan_ser_reversed_iter_next(it))) {
+        index++;
+        assert(s->assigned == index);
+    }
 
     while ((s=sylvan_ser_reversed_iter_next(it))) {
+        index++;
+        assert(s->assigned == index);
+
         bddnode_t n = GETNODE(s->bdd);
 
         struct bddnode node;
@@ -2649,10 +2656,13 @@ sylvan_serialize_tofile(FILE *out)
         node.data = 0;
         node.comp = n->comp;
 
+        assert(node.high < index);
+        assert(node.low < index);
+
         fwrite(&node, sizeof(struct bddnode), 1, out);
-        sylvan_ser_done++;
     }
 
+    sylvan_ser_done = sylvan_ser_counter-1;
     sylvan_ser_reversed_iter_free(it);
 }
 
@@ -2660,18 +2670,20 @@ void
 sylvan_serialize_fromfile(FILE *in)
 {
     size_t count, i;
-    fread(&count, 8, 1, in);
+    fread(&count, sizeof(size_t), 1, in);
 
     for (i=1; i<=count; i++) {
         struct bddnode node;
         fread(&node, sizeof(struct bddnode), 1, in);
+
+        assert(node.low <= sylvan_ser_done);
+        assert(node.high <= sylvan_ser_done);
 
         BDD low = sylvan_serialize_get_reversed(node.low);
         BDD high = sylvan_serialize_get_reversed(node.high);
         if (node.comp) high |= complementmark;
 
         struct sylvan_ser s;
-
         s.bdd = sylvan_makenode(node.level, low, high);
         s.assigned = ++sylvan_ser_done; // starts at 0 but we want 1-based...
 

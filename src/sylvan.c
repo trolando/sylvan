@@ -2055,50 +2055,8 @@ sylvan_cube(BDDVAR* vars, size_t cnt, char* cube)
 }
 
 /**
- * IMPLEMENTATION OF BDD-AS-SET
+ * IMPLEMENTATION OF BDDSET
  */
-
-int
-sylvan_set_isempty(BDD set)
-{
-    return set == sylvan_false ? 1 : 0;
-}
-
-BDDVAR
-sylvan_set_var(BDDSET set)
-{
-    return sylvan_var(set);
-}
-
-BDD
-sylvan_set_empty()
-{
-    return sylvan_false;
-}
-
-BDD
-sylvan_set_add(BDD set, BDDVAR level)
-{
-    return sylvan_or(set, sylvan_ithvar(level));
-}
-
-BDD
-sylvan_set_addall(BDD set, BDD toadd)
-{
-    return sylvan_or(set, toadd);
-}
-
-BDD
-sylvan_set_remove(BDD set, BDDVAR level)
-{
-    return sylvan_constrain(set, sylvan_nithvar(level));
-}
-
-BDD
-sylvan_set_removeall(BDD set, BDD toremove)
-{
-    return sylvan_constrain(set, sylvan_not(toremove));
-}
 
 int
 sylvan_set_in(BDD set, BDDVAR level)
@@ -2111,13 +2069,6 @@ sylvan_set_in(BDD set, BDDVAR level)
     }
 
     return 0;
-}
-
-BDD
-sylvan_set_next(BDD set)
-{
-    if (sylvan_isconst(set)) return sylvan_false;
-    return sylvan_low(set);
 }
 
 size_t

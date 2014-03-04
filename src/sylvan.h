@@ -178,17 +178,24 @@ void sylvan_report_stats();
 
 
 /**
- * Set using BDD operations
+ * A BDDSET, used by BDD functions.
+ * Basically this is a union of all variables in the set in their positive form.
+ * Note that you need to do external referencing manually.
+ * If using this during your initialization, you could disable GC temporarily.
  */
-int sylvan_set_isempty(BDDSET set);
-BDDVAR sylvan_set_var(BDDSET set);
-BDDSET sylvan_set_empty();
-BDDSET sylvan_set_add(BDDSET set, BDDVAR level);
-BDDSET sylvan_set_addall(BDDSET set, BDD toadd);
-BDDSET sylvan_set_remove(BDDSET set, BDDVAR level);
-BDDSET sylvan_set_removeall(BDDSET set, BDDSET toremove);
-int sylvan_set_in(BDDSET set, BDDVAR level);
-BDDSET sylvan_set_next(BDDSET set);
+// empty bddset
+static inline BDDSET sylvan_set_empty() { return sylvan_false; }
+static inline int sylvan_set_isempty(BDDSET set) { return set == sylvan_false ? 1 : 0; }
+// add variables to the bddset
+static inline BDDSET sylvan_set_add(BDDSET set, BDDVAR var) { return sylvan_or(set, sylvan_ithvar(var)); }
+static inline BDDSET sylvan_set_addall(BDDSET set, BDDSET toadd) { return sylvan_or(set, toadd); }
+// remove variables from the bddset
+static inline BDDSET sylvan_set_remove(BDDSET set, BDDVAR var) { return sylvan_constrain(set, sylvan_nithvar(var)); }
+static inline BDDSET sylvan_set_removeall(BDDSET set, BDDSET toremove) { return sylvan_constrain(set, sylvan_not(toremove)); }
+// iterate through all variables
+static inline BDDVAR sylvan_set_var(BDDSET set) { return sylvan_var(set); }
+static inline BDDSET sylvan_set_next(BDDSET set) { return sylvan_low(set); }
+int sylvan_set_in(BDDSET set, BDDVAR var);
 size_t sylvan_set_count(BDDSET set);
 void sylvan_set_toarray(BDDSET set, BDDVAR *arr);
 BDDSET sylvan_set_fromarray(BDDVAR *arr, size_t length);

@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include <stdio.h> // for FILE
-#include "lace.h" // for definitions
+#include <lace.h> // for definitions
 
 #ifndef SYLVAN_H
 #define SYLVAN_H

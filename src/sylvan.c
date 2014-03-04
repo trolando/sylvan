@@ -1,4 +1,4 @@
-#include "config.h"
+#include <config.h>
 
 #include <assert.h>
 #include <inttypes.h>
@@ -131,7 +131,7 @@ typedef struct bddcache* bddcache_t;
 
 #define LLCI_KEYSIZE ((sizeof(struct bddcache) - sizeof(BDD)))
 #define LLCI_DATASIZE ((sizeof(struct bddcache)))
-#include "llci.h"
+#include <llci.h>
 
 static struct
 {

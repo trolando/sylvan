@@ -174,7 +174,7 @@ main(int argc, char **argv)
 
     // Init Lace and Sylvan
     lace_init(2, 100000, 0);
-    sylvan_init(24, 24, 1);
+    sylvan_init(25, 24, 4);
 
     // Create domain
     domain = (vdom_t)malloc(sizeof(struct vector_domain));

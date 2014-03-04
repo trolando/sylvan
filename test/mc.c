@@ -3,6 +3,14 @@
 #include <sylvan.h>
 #include <inttypes.h>
 #include <assert.h>
+#include <sys/time.h>
+
+double wctime()
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (tv.tv_sec + 1E-6 * tv.tv_usec);
+}
 
 typedef struct vector_domain *vdom_t;
 typedef struct vector_set *vset_t;
@@ -215,7 +223,10 @@ main(int argc, char **argv)
     }
 
     // Run mc
+    double t1 = wctime();
     bfs(initial);
+    double t2 = wctime();
+    printf("BFS Time: %f\n", t2-t1);
 
     // Now we just have states
     BDD states = initial->bdd;

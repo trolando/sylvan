@@ -35,18 +35,16 @@
 #define SYLVAN_REPORT_COLORED 1
 #endif
 
-#define complementmark 0x8000000000000000
-
 /**
  * Complement handling macros
  */
-#define BDD_HASMARK(s)              (s&complementmark?1:0)
-#define BDD_TOGGLEMARK(s)           (s^complementmark)
-#define BDD_STRIPMARK(s)            (s&~complementmark)
-#define BDD_TRANSFERMARK(from, to)  (to ^ (from & complementmark))
+#define BDD_HASMARK(s)              (s&sylvan_complement?1:0)
+#define BDD_TOGGLEMARK(s)           (s^sylvan_complement)
+#define BDD_STRIPMARK(s)            (s&~sylvan_complement)
+#define BDD_TRANSFERMARK(from, to)  (to ^ (from & sylvan_complement))
 #define BDD_ISCONSTANT(s)           (BDD_STRIPMARK(s) == 0 || s == sylvan_true_nc)
 // Equal under mark
-#define BDD_EQUALM(a, b)            ((((a)^(b))&(~complementmark))==0)
+#define BDD_EQUALM(a, b)            ((((a)^(b))&(~sylvan_complement))==0)
 
 struct __attribute__((packed)) bddnode {
     uint64_t high     : 40;
@@ -63,13 +61,6 @@ typedef struct bddnode* bddnode_t;
  */
 #define GETNODE(bdd) ((bddnode_t)llmsset_index_to_ptr(_bdd.data, BDD_STRIPMARK(bdd), sizeof(struct bddnode)))
 
-/**
- * Exported BDD constants
- */
-const BDD sylvan_true = 0 | complementmark;
-const BDD sylvan_true_nc = 0x000000ffffffffff;
-const BDD sylvan_false = 0;
-const BDD sylvan_invalid = 0x7fffffffffffffff; // uint64_t
 static barrier_t bar;
 
 /**
@@ -637,7 +628,7 @@ sylvan_fprint(FILE *f, BDD bdd)
 {
     sylvan_serialize_reset();
     size_t v = sylvan_serialize_add(bdd);
-    fprintf(f, "%s%zu,", bdd&complementmark?"!":"", v);
+    fprintf(f, "%s%zu,", bdd&sylvan_complement?"!":"", v);
     sylvan_serialize_totext(f);
 }
 
@@ -691,7 +682,7 @@ sylvan_makenode(BDDVAR level, BDD low, BDD high)
     }
 
     result = index;
-    return mark ? result | complementmark : result;
+    return mark ? result | sylvan_complement : result;
 }
 
 BDD
@@ -703,7 +694,7 @@ sylvan_ithvar(BDDVAR level)
 BDD
 sylvan_nithvar(BDDVAR level)
 {
-    return sylvan_makenode(level, sylvan_true, sylvan_false);
+    return sylvan_not(sylvan_ithvar(level));
 }
 
 BDDVAR
@@ -722,7 +713,7 @@ BDD node_lowedge(bddnode_t node)
 static inline
 BDD node_highedge(bddnode_t node)
 {
-    return node->high | (node->comp ? complementmark : 0LL);
+    return node->high | (node->comp ? sylvan_complement : 0LL);
 }
 
 BDD
@@ -774,93 +765,19 @@ sylvan_bdd_to_nocomp(BDD bdd)
                                             sylvan_bdd_to_nocomp(BDD_TRANSFERMARK(bdd, node_highedge(n))));
 }
 
-inline BDD
-sylvan_not(BDD bdd)
-{
-    return BDD_TOGGLEMARK(bdd);
-}
-
-BDD
-sylvan_and(BDD a, BDD b)
-{
-    return sylvan_ite(a, b, sylvan_false);
-}
-
-BDD
-sylvan_xor(BDD a, BDD b)
-{
-    return sylvan_ite(a, BDD_TOGGLEMARK(b), b);
-}
-
-BDD
-sylvan_or(BDD a, BDD b)
-{
-    return sylvan_ite(a, sylvan_true, b);
-}
-
-BDD
-sylvan_nand(BDD a, BDD b)
-{
-    return sylvan_ite(a, BDD_TOGGLEMARK(b), sylvan_true);
-}
-
-BDD
-sylvan_nor(BDD a, BDD b)
-{
-    return sylvan_ite(a, sylvan_false, BDD_TOGGLEMARK(b));
-}
-
-BDD
-sylvan_imp(BDD a, BDD b)
-{
-    return sylvan_ite(a, b, sylvan_true);
-}
-
-BDD
-sylvan_biimp(BDD a, BDD b)
-{
-    return sylvan_ite(a, b, BDD_TOGGLEMARK(b));
-}
-
-BDD
-sylvan_diff(BDD a, BDD b)
-{
-    return sylvan_ite(a, BDD_TOGGLEMARK(b), sylvan_false);
-}
-
-BDD
-sylvan_less(BDD a, BDD b)
-{
-    return sylvan_ite(a, sylvan_false, b);
-}
-
-BDD
-sylvan_invimp(BDD a, BDD b)
-{
-    return sylvan_ite(a, sylvan_true, BDD_TOGGLEMARK(b));
-}
-
+/* IMPLEMENTATION of OPERATORS */
 TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 {
     /* Terminal cases */
-    // ITE(1,B,C) = B
     if (a == sylvan_true) return b;
-    // ITE(0,B,C) = C
     if (a == sylvan_false) return c;
-    // ITE(A,A,C) = ITE(A,1,C)
     if (a == b) b = sylvan_true;
-    // ITE(A,~A,C) = ITE(A,0,C)
-    if (a == BDD_TOGGLEMARK(b)) b = sylvan_false;
-    // ITE(A,B,A) = ITE(A,B,0)
+    if (a == sylvan_not(b)) b = sylvan_false;
     if (a == c) c = sylvan_false;
-    // ITE(A,B,~A) = ITE(A,B,1)
-    if (a == BDD_TOGGLEMARK(c)) c = sylvan_true;
-    // ITE(A, B, B) = B
+    if (a == sylvan_not(c)) c = sylvan_true;
     if (b == c) return b;
-    // ITE(A, 1, 0) = A
     if (b == sylvan_true && c == sylvan_false) return a;
-    // ITE(A, 0, 1) = -A
-    if (b == sylvan_false && c == sylvan_true) return BDD_TOGGLEMARK(a);
+    if (b == sylvan_false && c == sylvan_true) return sylvan_not(a);
 
     /* End terminal cases. Apply rewrite rules to optimize cache use */
 
@@ -874,8 +791,8 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
             //            = (~C and F) or (C and ~A)
             //            = ITE(~C,F,~A)
             BDD t = a;
-            a = BDD_TOGGLEMARK(c);
-            c = BDD_TOGGLEMARK(t);
+            a = sylvan_not(c);
+            c = sylvan_not(t);
         } else {
             // ITE(A,T,C) = ITE(C,T,A)
             //            = (A and T) or (~A and C)
@@ -906,8 +823,8 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
             //            = (~B and ~A) or (B and T)
             //            = ITE(~B,~A,T)
             BDD t = a;
-            a = BDD_TOGGLEMARK(b);
-            b = BDD_TOGGLEMARK(t);
+            a = sylvan_not(b);
+            b = sylvan_not(t);
         }
     }
 
@@ -918,8 +835,8 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
         if (BDD_STRIPMARK(a) > BDD_STRIPMARK(b)) {
             // a > b, exchange:
             b = a;
-            a = BDD_TOGGLEMARK(c);
-            c = BDD_TOGGLEMARK(b);
+            a = sylvan_not(c);
+            c = sylvan_not(b);
         }
     }
 
@@ -944,8 +861,8 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
      */
     int mark = 0;
     if (BDD_HASMARK(b)) {
-        b = BDD_TOGGLEMARK(b);
-        c = BDD_TOGGLEMARK(c);
+        b = sylvan_not(b);
+        c = sylvan_not(c);
         mark = 1;
     }
 
@@ -979,7 +896,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             BDD res = template_cache_node.result;
             SV_CNT_CACHE(C_cache_reuse);
-            return mark ? BDD_TOGGLEMARK(res) : res;
+            return mark ? sylvan_not(res) : res;
         }
     }
 
@@ -1046,13 +963,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
         }
     }
 
-    return mark ? BDD_TOGGLEMARK(result) : result;
-}
-
-BDD
-sylvan_ite(BDD a, BDD b, BDD c)
-{
-    return CALL(sylvan_ite, a, b, c, 0);
+    return mark ? sylvan_not(result) : result;
 }
 
 /**
@@ -2721,7 +2632,7 @@ sylvan_serialize_fromfile(FILE *in)
 
         BDD low = sylvan_serialize_get_reversed(node.low);
         BDD high = sylvan_serialize_get_reversed(node.high);
-        if (node.comp) high |= complementmark;
+        if (node.comp) high |= sylvan_complement;
 
         struct sylvan_ser s;
         s.bdd = sylvan_makenode(node.level, low, high);

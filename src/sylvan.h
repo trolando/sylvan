@@ -16,12 +16,11 @@ typedef uint64_t BDD;
 typedef uint64_t BDDSET;
 typedef uint32_t BDDVAR;
 
-extern const BDD sylvan_true;
-extern const BDD sylvan_true_nc; // sylvan_true when not using complement edges
-extern const BDD sylvan_false;
-
-// use "BDD something = sylvan_invalid;" instead of "BDD something = 0;"
-extern const BDD sylvan_invalid;
+#define sylvan_complement   0x8000000000000000
+#define sylvan_false        ((BDD)0x0000000000000000)
+#define sylvan_true         (sylvan_false|sylvan_complement)
+#define sylvan_true_nc      ((BDD)0x000000ffffffffff)  // sylvan_true without complement edges
+#define sylvan_invalid      ((BDD)0x7fffffffffffffff)
 
 /**
  * Initialize Sylvan BDD package
@@ -78,30 +77,21 @@ BDD sylvan_low(BDD bdd);
  */
 BDD sylvan_high(BDD bdd);
 
-/**
- * Get not(bdd)
- */
-BDD sylvan_not(BDD bdd);
-
-/**
- * Calculate simple if <a> then <b> else <c>
- */
+/* Unary, binary and if-then-else operations */
+#define sylvan_not(a) (((BDD)a)^sylvan_complement)
 TASK_DECL_4(BDD, sylvan_ite, BDD, BDD, BDD, BDDVAR);
-BDD sylvan_ite(BDD a, BDD b, BDD c);
-
-/**
- * Binary BDD operations (implemented using ite)
- */
-BDD sylvan_and(BDD a, BDD b);
-BDD sylvan_xor(BDD a, BDD b);
-BDD sylvan_or(BDD a, BDD b);
-BDD sylvan_nand(BDD a, BDD b);
-BDD sylvan_nor(BDD a, BDD b);
-BDD sylvan_imp(BDD a, BDD b);
-BDD sylvan_biimp(BDD a, BDD b);
-BDD sylvan_diff(BDD a, BDD b);
-BDD sylvan_less(BDD a, BDD b);
-BDD sylvan_invimp(BDD a, BDD b);
+static inline BDD sylvan_ite(BDD a, BDD b, BDD c) { return CALL(sylvan_ite, a, b, c, 0); }
+static inline BDD sylvan_xor(BDD a, BDD b) { return sylvan_ite(a, BDD_TOGGLEMARK(b), b); }
+static inline BDD sylvan_equiv(BDD a, BDD b) { return sylvan_ite(a, b, BDD_TOGGLEMARK(b)); }
+#define sylvan_or(a,b) sylvan_ite(a, sylvan_true, b)
+#define sylvan_and(a,b) sylvan_ite(a,b,sylvan_false)
+#define sylvan_nand(a,b) sylvan_not(sylvan_and(a,b))
+#define sylvan_nor(a,b) sylvan_not(sylvan_or(a,b))
+#define sylvan_imp(a,b) sylvan_not(sylvan_and(a,sylvan_not(b)))
+#define sylvan_invimp(a,b) sylvan_not(sylvan_and(sylvan_not(a),b))
+#define sylvan_biimp sylvan_equiv
+#define sylvan_diff(a,b) sylvan_and(a,sylvan_not(b))
+#define sylvan_less(a,b) sylvan_and(sylvan_not(a),b)
 
 /**
  * Specialized RelProdS using paired variables (X even, X' odd)

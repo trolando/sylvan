@@ -268,159 +268,73 @@ test_cube()
     for (i=0; i<6;i++) assert(cube[i] == check[i]);
 }
 
-void
-test_xor()
+static void
+test_operators()
 {
+    // We need to test: xor, and, or, nand, nor, imp, biimp, invimp, diff, less
+    sylvan_gc_disable();
+
+    //int i;
     BDD a = sylvan_ithvar(1);
     BDD b = sylvan_ithvar(2);
-    testFun(a, b, sylvan_xor(a, b), sylvan_xor(a, b));
-    testFun(a, b, sylvan_xor(a, b), sylvan_makenode(1, b, sylvan_not(b)));
-}
+    BDD one = make_random(3, 16);
+    BDD two = make_random(8, 24);
 
-static inline void
-test_diff2(BDD a, BDD b)
-{
-    sylvan_ref(sylvan_diff(a, b));
-    testFun(a, b, sylvan_diff(a, b), sylvan_diff(a, b));
-    testFun(a, b, sylvan_diff(a, b), sylvan_diff(a, sylvan_and(a, b)));
-    testFun(a, b, sylvan_diff(a, b), sylvan_and(a, sylvan_not(b)));
-    testFun(a, b, sylvan_diff(a, b), sylvan_ite(b, sylvan_false, a));
-    sylvan_deref(sylvan_diff(a, b));
-}
+    // Test or
+    assert(testEqual(sylvan_or(a, b), sylvan_makenode(1, b, sylvan_true)));
+    assert(testEqual(sylvan_or(a, b), sylvan_or(b, a)));
+    assert(testEqual(sylvan_or(one, two), sylvan_or(two, one)));
 
-static void
-test_diff()
-{
-    test_diff2(sylvan_ithvar(1), sylvan_ithvar(2));
-    int i;
-    for (i=0; i<4; i++) {
-        test_diff2(make_random(6, 8), make_random(5, 10));
-        test_diff2(make_random(22, 28), make_random(25, 30));
-        test_diff2(make_random(4, 11), make_random(5, 10));
-        test_diff2(make_random(1, 7), make_random(3, 10));
-    }
-}
+    // Test and
+    assert(testEqual(sylvan_and(a, b), sylvan_makenode(1, sylvan_false, b)));
+    assert(testEqual(sylvan_and(a, b), sylvan_and(b, a)));
+    assert(testEqual(sylvan_and(one, two), sylvan_and(two, one)));
 
-void test_or()
-{
-    BDD test = sylvan_false;
+    // Test xor
+    assert(testEqual(sylvan_xor(a, b), sylvan_makenode(1, b, sylvan_not(b))));
+    assert(testEqual(sylvan_xor(a, b), sylvan_xor(a, b)));
+    assert(testEqual(sylvan_xor(a, b), sylvan_xor(b, a)));
+    assert(testEqual(sylvan_xor(one, two), sylvan_xor(two, one)));
+    assert(testEqual(sylvan_xor(a, b), sylvan_ite(a, sylvan_not(b), b)));
 
-    // int values[16] = {0,1,1,0,1,0,0,1,1,0,1,0,1,1,1,0};
+    // Test diff
+    assert(testEqual(sylvan_diff(a, b), sylvan_diff(a, b)));
+    assert(testEqual(sylvan_diff(a, b), sylvan_diff(a, sylvan_and(a, b))));
+    assert(testEqual(sylvan_diff(a, b), sylvan_and(a, sylvan_not(b))));
+    assert(testEqual(sylvan_diff(a, b), sylvan_ite(b, sylvan_false, a)));
+    assert(testEqual(sylvan_diff(one, two), sylvan_diff(one, two)));
+    assert(testEqual(sylvan_diff(one, two), sylvan_diff(one, sylvan_and(one, two))));
+    assert(testEqual(sylvan_diff(one, two), sylvan_and(one, sylvan_not(two))));
+    assert(testEqual(sylvan_diff(one, two), sylvan_ite(two, sylvan_false, one)));
 
-    BDD t1, t2;
+    // Test biimp
+    assert(testEqual(sylvan_biimp(a, b), sylvan_makenode(1, sylvan_not(b), b)));
+    assert(testEqual(sylvan_biimp(a, b), sylvan_biimp(b, a)));
+    assert(testEqual(sylvan_biimp(one, two), sylvan_biimp(two, one)));
 
-    int i;
-    for (i=0;i<16;i++) {
-        if (i>0) assert (sylvan_count_refs()==1);
-        else assert(sylvan_count_refs()==0);
-        t1 = test;
-        t2 = sylvan_ref(sylvan_ithvar(i));
-        if (i>0) assert (sylvan_count_refs()==2);
-        else assert(sylvan_count_refs()==1);
-        test = sylvan_ref(sylvan_or(t1, t2));
-        if (i>0) assert (sylvan_count_refs()==3);
-        else assert(sylvan_count_refs()==2);
-        sylvan_deref(t1);
-        assert(sylvan_count_refs()==2);
-        sylvan_deref(t2);
-        assert (sylvan_count_refs()==1);
-    }
+    // Test nand / and
+    assert(testEqual(sylvan_not(sylvan_and(a, b)), sylvan_nand(b, a)));
+    assert(testEqual(sylvan_not(sylvan_and(one, two)), sylvan_nand(two, one)));
 
-    sylvan_deref(test);
-    assert(sylvan_count_refs()==0);
-}
+    // Test nor / or
+    assert(testEqual(sylvan_not(sylvan_or(a, b)), sylvan_nor(b, a)));
+    assert(testEqual(sylvan_not(sylvan_or(one, two)), sylvan_nor(two, one)));
 
-void test_apply()
-{
-    BDD a,b,c,d,e,f,g;
+    // Test xor / biimp
+    assert(testEqual(sylvan_xor(a, b), sylvan_not(sylvan_biimp(b, a))));
+    assert(testEqual(sylvan_xor(one, two), sylvan_not(sylvan_biimp(two, one))));
 
-    a = sylvan_ithvar(1);
-    b = sylvan_ithvar(2);
-    c = sylvan_ithvar(3);
-    d = sylvan_ithvar(4);
-    e = sylvan_ithvar(5);
-    f = sylvan_ithvar(6);
-    g = sylvan_ithvar(7);
+    // Test imp
+    assert(testEqual(sylvan_imp(a, b), sylvan_ite(a, b, sylvan_true)));
+    assert(testEqual(sylvan_imp(one, two), sylvan_ite(one, two, sylvan_true)));
+    assert(testEqual(sylvan_imp(one, two), sylvan_not(sylvan_diff(one, two))));
+    assert(testEqual(sylvan_invimp(one, two), sylvan_not(sylvan_less(one, two))));
+    assert(testEqual(sylvan_imp(a, b), sylvan_invimp(b, a)));
+    assert(testEqual(sylvan_imp(one, two), sylvan_invimp(two, one)));
 
-    // REF: a,b,c,d,e,f,g
+    // Test constrain, exists and forall
 
-    // a xor b
-    BDD axorb = sylvan_makenode(1, (b), sylvan_not(b));
-    assert(testEqual(axorb, (sylvan_xor(a, b))));
-
-    // c or d
-    BDD cord = sylvan_makenode(3, (d), sylvan_true);
-    assert(cord == (sylvan_or(c, d)));
-
-    BDD t = sylvan_makenode(1, sylvan_false, (cord));
-    assert(t == (sylvan_and(a, cord)));
-
-    // (a xor b) and (c or d)
-    BDD test = sylvan_makenode(1, sylvan_makenode(2, sylvan_false, (cord)), sylvan_makenode(2, (cord), sylvan_false));
-    assert(testEqual(test, sylvan_and(axorb, cord)));
-    assert(test == sylvan_and(cord, axorb));
-
-    // not (A and B)  == not A or not B
-    BDD notaxorb = sylvan_not(axorb);
-
-    BDD notcord = sylvan_not(cord);
-    test = sylvan_or(notaxorb, notcord);
-
-    BDD tmp = sylvan_and(axorb, cord);
-    assert(test == sylvan_not(tmp));
-
-    // A and not A == false
-    assert(sylvan_false == sylvan_and(axorb, notaxorb));
-
-    // A or not A = true
-    assert(sylvan_true == sylvan_or(axorb, notaxorb));
-
-    assert((tmp = sylvan_and(a, sylvan_true)) == a);
-
-    assert((tmp = sylvan_or(a, sylvan_true)) == sylvan_true);
-    assert((tmp = sylvan_and(a, sylvan_false)) == sylvan_false);
-
-    assert (sylvan_or(sylvan_true, sylvan_false) == sylvan_true);
-
-    return;
-    (void)g; (void)f; (void)e;
-}
-
-void test_ite()
-{
-    BDD a,b,c,d,e,f,g;
-
-    a = sylvan_ithvar(1);
-    b = sylvan_ithvar(2);
-    c = sylvan_ithvar(3);
-    d = sylvan_ithvar(4);
-    e = sylvan_ithvar(5);
-    f = sylvan_ithvar(6);
-    g = sylvan_ithvar(7);
-
-    BDD aandb = sylvan_and(a, b);
-    assert(aandb == sylvan_ite(a, b, sylvan_false));
-
-    BDD notaandc = sylvan_and(sylvan_not(a), c);
-
-    // a then b else c == (a and b) or (not a and c)
-    BDD t = sylvan_ite(a,b,c);
-    assert(t == sylvan_or(aandb, notaandc));
-
-    // not d then (a and b) else (not a and c) ==
-    // a then (b and not d) else (c and d)
-    t = sylvan_ite(sylvan_not(d), aandb, notaandc);
-    BDD candd = sylvan_and(c, d);
-    BDD bandnotd = sylvan_and(b, sylvan_not(d));
-    assert(t == sylvan_ite(a, bandnotd, candd));
-
-    BDD etheng = sylvan_imp(e, g);
-    BDD test = sylvan_ite(etheng, sylvan_true, b);
-    t = sylvan_ite(b, sylvan_false, etheng);
-    assert(t == sylvan_and(test, sylvan_not(b)));
-
-    return;
-    (void)f;
+    sylvan_gc_enable();
 }
 
 BDD knownresult;
@@ -499,129 +413,6 @@ void test_modelcheck()
     } while (visited != prev);
 }
 
-void test_constrain()
-{
-    BDD a,b,c,d,e,f,g,h;
-
-    a = sylvan_ithvar(1);
-    b = sylvan_ithvar(2);
-    c = sylvan_ithvar(3);
-    d = sylvan_ithvar(4);
-    e = sylvan_ithvar(5);
-    f = sylvan_ithvar(6);
-    g = sylvan_ithvar(7);
-    h = sylvan_ithvar(8);
-
-    sylvan_gc_disable();
-
-    BDD a_b = sylvan_or(a,b);
-    assert(testEqual(a, sylvan_constrain(a_b, sylvan_not(b))));
-
-    BDD all_or = sylvan_or(a,sylvan_or(b,sylvan_or(c,sylvan_or(d,sylvan_or(e,sylvan_or(f,sylvan_or(g,h)))))));
-    BDD a_b_c  = sylvan_or(a,sylvan_or(a,sylvan_or(a,sylvan_or(b,sylvan_or(b,sylvan_or(c,sylvan_or(c,c)))))));
-    assert(testEqual(a_b_c, sylvan_or(a,sylvan_or(b,c))));
-
-    BDD d_e_f_g_h = sylvan_or(d,sylvan_or(e,sylvan_or(f,sylvan_or(g,h))));
-    assert(testEqual(d_e_f_g_h, sylvan_constrain(all_or, sylvan_not(a_b_c))));
-
-    sylvan_gc_enable();
-
-    return;
-}
-
-void test_exists_forall()
-{
-    BDD a,b,c,d,e,f,g,h;
-
-    a = sylvan_ithvar(1);
-    b = sylvan_ithvar(2);
-    c = sylvan_ithvar(3);
-    d = sylvan_ithvar(4);
-    e = sylvan_ithvar(5);
-    f = sylvan_ithvar(6);
-    g = sylvan_ithvar(7);
-    h = sylvan_ithvar(8);
-
-    (sylvan_or((sylvan_not(b)), (sylvan_not(c))));
-
-    sylvan_ite(a, (sylvan_and(b, d)), (sylvan_or((sylvan_not(b)), (sylvan_not(c)))));
-
-    BDD axorb = sylvan_xor(a, b);
-    BDD dthenf = sylvan_imp(d, f);
-    BDD cxorg = sylvan_xor(c, g);
-
-    (sylvan_exists((sylvan_ite(dthenf, axorb, cxorg)), d));
-    (sylvan_forall((sylvan_ite(dthenf, axorb, cxorg)), d));
-    (sylvan_exists(axorb, sylvan_false));
-    (sylvan_exists(axorb, sylvan_false));
-    (sylvan_exists(dthenf, a));
-    (sylvan_exists(dthenf, d));
-    (sylvan_exists(dthenf, f));
-    (sylvan_exists(sylvan_true, sylvan_false));
-
-    return;
-    (void)h; (void)e;
-}
-/*
-void test_CALL_REPLACE()
-{
-    BDD a,b,c,d,e,f,g,h;
-
-    a = sylvan_ithvar(1);
-    b = sylvan_ithvar(2);
-    c = sylvan_ithvar(3);
-    d = sylvan_ithvar(4);
-    e = sylvan_ithvar(5);
-    f = sylvan_ithvar(6);
-    g = sylvan_ithvar(7);
-    h = sylvan_ithvar(8);
-
-    assert(b == CALL_REPLACE(a, (BDDLEVEL[]){1, 2}, 1));
-    assert(sylvan_not(b) == CALL_REPLACE(sylvan_not(a), (BDDLEVEL[]){1, 2}, 1));
-
-    BDD aorc = CALL_APPLY(a, c, operator_or);
-    BDD dorc = CALL_REPLACE(aorc, (BDDLEVEL[]){1,4}, 1);
-    assert (dorc == CALL_APPLY(d, c, operator_or));
-
-    BDD not_candd = sylvan_not(CALL_APPLY(c, d, operator_and));
-    BDD note_or_notf = CALL_APPLY(sylvan_not(e), sylvan_not(f), operator_or);
-    assert(note_or_notf == CALL_REPLACE(not_candd, (BDDLEVEL[]){3,6,4,5}, 2));
-
-    BDD axorc = CALL_APPLY(a, c, operator_xor);
-    BDD dxorc = CALL_REPLACE(axorc, (BDDLEVEL[]){1,4}, 1);
-    assert( dxorc == CALL_APPLY(d, c, operator_xor));
-
-    // more complex test
-    // e imp g then (if a then (b and not d) else (c and d)) else f
-    BDD test = CALL_ITE(a, CALL_APPLY(b, sylvan_not(d), operator_and), CALL_APPLY(c, d, operator_and));
-    test = CALL_ITE(CALL_APPLY(e, g, operator_imp), test, f);
-    // a imp b then (if c then (d and not e) else (f and e)) else g
-    BDD result = CALL_REPLACE(test, (BDDLEVEL[]){5,1, 7,2, 1,3, 2,4, 4,5, 3,6, 6,7}, 7);
-
-    BDD cmp = CALL_ITE(c, CALL_APPLY(d, sylvan_not(e), operator_and), CALL_APPLY(f, e, operator_and));
-    cmp = CALL_ITE(CALL_APPLY(a, b, operator_imp), cmp, g);
-
-    if (knownresult == sylvan_invalid) knownresult = cmp;
-    else assert(cmp == knownresult);
-
-    if (cmp != result) {
-        printf("Assertion failed cmp != result: %x != %x\n", cmp, result);
-        sylvan_print(cmp);printf("\n");
-        sylvan_print(result);printf("\n");
-        exit(1);
-    }
-
-    static int cn=1;
-    printf("BDD replace test %d successful!\n", cn++);
-
-
-}
-*/
-
-void __is_sylvan_clean()
-{
-}
-
 void runtests(int threads)
 {
     printf(BOLD "Testing LL MS Set\n" NC);
@@ -660,189 +451,28 @@ void runtests(int threads)
     sylvan_quit();
     printf(LGREEN "success" NC "!\n");
 
-    printf(NC "Running test 'Xor'... ");
+    printf(NC "Testing operators... ");
     fflush(stdout);
     int j;
-    for (j=0;j<16;j++) {
-        sylvan_init(6, 6, 1);
-
-        test_xor();
-        // verify gc
-        sylvan_gc();
-        __is_sylvan_clean();
-
-        int i;
-        for (i=0;i<3;i++) test_xor();
-        // verify gc
-        sylvan_gc();
-        __is_sylvan_clean();
-
+    for (j=0;j<50;j++) {
+        sylvan_init(16, 16, 1);
+        test_operators();
+        test_operators();
+        test_operators();
         sylvan_quit();
     }
     printf(LGREEN "success" NC "!\n");
 
-    printf(NC "Running test 'Diff'... ");
-    fflush(stdout);
-    for (j=0;j<16;j++) {
-        sylvan_init(20, 14, 1);
-
-        test_diff();
-        // verify gc
-        sylvan_gc();
-        __is_sylvan_clean();
-
-        int i;
-        for (i=0;i<3;i++) test_diff();
-        // verify gc
-        sylvan_gc();
-        __is_sylvan_clean();
-
-        sylvan_quit();
-    }
-    printf(LGREEN "success" NC "!\n");
-
-    printf(NC "Running test 'Or'... ");
-    fflush(stdout);
-    for (j=0;j<16;j++) {
-        sylvan_init(9, 9, 1);
-
-        test_or();
-        // verify gc
-        sylvan_gc();
-        __is_sylvan_clean();
-
-        int i;
-        for (i=0;i<3;i++) test_or();
-        // verify gc
-        sylvan_gc();
-        __is_sylvan_clean();
-
-        sylvan_quit();
-    }
-    printf(LGREEN "success" NC "!\n");
-
-    printf(NC "Running test 'Apply'... ");
-    fflush(stdout);
-    for (j=0;j<16;j++) {
-        sylvan_init(6, 6, 1);
-        test_apply();
-        // verify gc
-        sylvan_gc();
-        __is_sylvan_clean();
-
-        int i;
-        for (i=0;i<3;i++) test_apply();
-        // verify gc
-        sylvan_gc();
-        __is_sylvan_clean();
-
-        sylvan_quit();
-    }
-    printf(LGREEN "success" NC "!\n");
-
-    printf(NC "Running test 'ITE'... ");
-    fflush(stdout);
-    for (j=0;j<16;j++) {
-        sylvan_init(5, 5, 1);
-        int i;
-        for (i=0;i<3;i++) test_ite();
-        // verify gc
-        sylvan_gc();
-        __is_sylvan_clean();
-        sylvan_quit();
-    }
-    printf(LGREEN "success" NC "!\n");
-
-    printf(NC "Running test 'Constrain'... ");
+    printf(NC "Testing simple model checking... ");
     fflush(stdout);
     for (j=0;j<16;j++) {
         sylvan_init(16, 16, 1);
         int i;
-        for (i=0;i<3;i++) test_constrain();
-        // verify gc
-        sylvan_gc();
-        __is_sylvan_clean();
+        for (i=0;i<3;i++) test_modelcheck();
         sylvan_quit();
     }
     printf(LGREEN "success" NC "!\n");
 
-
-    printf(NC "Running test 'ExistsForall'... ");
-    fflush(stdout);
-    for (j=0;j<16;j++) {
-        sylvan_init(16, 16, 1);
-        int i;
-        for (i=0;i<3;i++) test_exists_forall();
-        // verify gc
-        sylvan_gc();
-        __is_sylvan_clean();
-        sylvan_quit();
-    }
-    printf(LGREEN "success" NC "!\n");
-
-
-    printf(NC "Running test 'ModelCheck'... ");
-    fflush(stdout);
-    for (j=0;j<16;j++) {
-        sylvan_init(7, 10, 3); // 7, 4, 2, 2 but slow on 2
-        int i;
-        for (i=0;i<3;i++) test_modelcheck();
-        // verify gc
-        sylvan_gc();
-        __is_sylvan_clean();
-        sylvan_quit();
-    }
-    printf(LGREEN "success" NC "!\n");
-
-    printf(NC "Running test 'Mixed'... ");
-    fflush(stdout);
-    for (j=0;j<16;j++) {
-        sylvan_init(7, 10, 3);
-        int i;
-        for (i=0;i<3;i++) test_apply();
-        for (i=0;i<3;i++) test_ite();
-        for (i=0;i<3;i++) test_modelcheck();
-        // verify gc
-        sylvan_gc();
-        __is_sylvan_clean();
-        sylvan_quit();
-    }
-    printf(LGREEN "success" NC "!\n");
-
-    printf(NC "Running two-threaded stresstest 'Mixed'... ");
-    fflush(stdout);
-
-    struct timeval begin, end;
-    gettimeofday(&begin, NULL);
-
-    sylvan_init(20, 10, 1); // minumum: X, 7, 4, 4 ??
-    for (j=0;j<10000;j++){
-        int i;
-        for (i=0;i<3;i++) test_apply();
-        for (i=0;i<3;i++) test_ite();
-        for (i=0;i<3;i++) test_modelcheck();
-        for (i=0;i<3;i++) test_apply();
-        for (i=0;i<3;i++) test_ite();
-        for (i=0;i<3;i++) test_modelcheck();
-    }
-    sylvan_quit();
-
-    gettimeofday(&end, NULL);
-    printf(LGREEN "success" NC);
-
-    //calculate diff
-    if (end.tv_usec < begin.tv_usec) {
-        end.tv_sec--;
-        end.tv_usec += 1000000L;
-    }
-    end.tv_usec -= begin.tv_usec;
-    end.tv_sec -= begin.tv_sec;
-
-    long ms = end.tv_sec * 1000 + end.tv_usec / 1000;
-    long us = (end.tv_usec % 1000) / 1000;
-    printf(NC " (%ld.%03ld ms)!\n", ms, us);
-
-    sylvan_report_stats();
     lace_exit();
 }
 

@@ -6,17 +6,32 @@
 #define SYLVAN_H
 
 /**
- * Sylvan: BDD package.
+ * Sylvan: parallel BDD package.
  *
- * Explicit referencing, so use sylvan_ref and sylvan_deref manually.
+ * This is a multi-core implementation of BDDs with complement edges.
+ *
+ * This package requires parallel work-stealing framework Lace.
+ * Lace must be initialized before calling any Sylvan operations.
+ *
+ * This package uses explicit referencing.
+ * Use sylvan_ref and sylvan_deref to manage external references.
+ *
+ * Garbage collection requires all workers to cooperate. Garbage collection is either initiated
+ * by the user (calling sylvan_gc) or when the BDD node table is full. All Sylvan operations
+ * check whether they need to cooperate on garbage collection. Garbage collection cannot occur
+ * otherwise. This means that it is perfectly fine to do this:
+ *              BDD a = sylvan_ref(sylvan_and(b, c));
+ * since it is not possible that garbage collection occurs between the two calls.
+ *
  * To temporarily disable garbage collection, use sylvan_gc_disable() and sylvan_gc_enable().
  */
 
-typedef uint64_t BDD;
-typedef uint64_t BDDSET;
-typedef uint32_t BDDVAR;
+typedef uint64_t BDD;       // low 40 bits used for index, highest bit for complement, rest 0
+// BDDSET uses the BDD node hash table. A BDDSET is an ordered BDD.
+typedef uint64_t BDDSET;    // encodes a set of variables (e.g. for exists etc.)
+typedef uint32_t BDDVAR;    // low 24 bits only
 
-#define sylvan_complement   0x8000000000000000
+#define sylvan_complement   ((uint64_t)0x8000000000000000)
 #define sylvan_false        ((BDD)0x0000000000000000)
 #define sylvan_true         (sylvan_false|sylvan_complement)
 #define sylvan_true_nc      ((BDD)0x000000ffffffffff)  // sylvan_true without complement edges
@@ -25,66 +40,66 @@ typedef uint32_t BDDVAR;
 #define sylvan_isconst(a)   ( ((a&(~sylvan_complement)) == sylvan_false) || (a == sylvan_true_nc) )
 
 /**
- * Initialize Sylvan BDD package
- * datasize in number of nodes will be 1<<datasize
- * cachesize in number of nodes will be 1<<cachesize
- * granularity determines usage of memoization cache, default=1 (memoize at every level)
- *   [memoization occurs at every next 'level % granularity' recursion, e.g.
- *    with granularity=3, from lvl 0->1, 1->2 no memoization, but memoize 0->3, 1->3, 1->4, etc.]
- * reasonable default values: datasize=24, cachesize=20, granularity=2
+ * Initialize the Sylvan parallel BDD package.
+ *
+ * Allocates a BDD node table of size "2^datasize" and a operation cache of size "2^cachesize".
+ * Every BDD node requires 32 bytes memory. (16 data + 16 bytes overhead)
+ * Every operation cache entry requires 36 bytes memory. (32 bytes data + 4 bytes overhead)
+ *
+ * Granularity determines usage of operation cache. Smallest value is 1: use the operation cache always.
+ * Higher values mean that the cache is used less often. Variables are grouped such that
+ * the cache is used when going to the next group, i.e., with granularity=3, variables [0,1,2] are in the
+ * first group, [3,4,5] in the next, etc. Then no caching occur between 0->1, 1->2, 0->2. Caching occurs
+ * on 0->3, 1->4, 2->3, etc.
+ * 
+ * Reasonable defaults: datasize of 26 (2048 MB), cachesize of 24 (576 MB), granularity of 4-16
  */
 void sylvan_init(size_t datasize, size_t cachesize, int granularity);
 
 /**
- * Frees all Sylvan data
+ * Frees all Sylvan data.
  */
 void sylvan_quit();
 
-/**
- * Create a BDD representing <var>
- */
+/* Create a BDD representing just <var> */
 BDD sylvan_ithvar(BDDVAR var);
-
-/**
- * Create a BDD representing not(<var>)
- */
-BDD sylvan_nithvar(BDDVAR var);
+/* Create a BDD representing the negation of <var> */
+static inline BDD sylvan_nithvar(BDD var) { return sylvan_ithvar(var) ^ sylvan_complement; }
 
 /**
  * Create a BDD cube representing the conjunction of variables in their positive or negative
  * form depending on whether the cube[idx] equals 0 (negative), 1 (positive) or 2 (any).
  * For example, sylvan_cube({2,4,6,8},4,{0,1,2,1}) returns BDD of Boolean formula "not(x_2) & x_4 & x_8"
  */
-BDD sylvan_cube(BDDVAR *variables, size_t count, char* cube);
+BDD sylvan_cube(BDDVAR *variables, size_t count, char *cube);
 
-/**
- * Convert normal BDD to a BDD without complement edges
- * Also replaces sylvan_true by sylvan_true_nc
- */
-BDD sylvan_bdd_to_nocomp(BDD bdd);
-
-/**
- * Get the <var> of the root node of <bdd>
- * This is also the first variable in the support of <bdd> according to the ordering.
- */
+/* Retrieve the <var> of the BDD node <bdd> */
 BDDVAR sylvan_var(BDD bdd);
 
-/**
- * Get the <low> child of <bdd>
- */
+/* Follow <low> and <high> edges */
 BDD sylvan_low(BDD bdd);
-
-/**
- * Get the <high> child of <bdd>
- */
 BDD sylvan_high(BDD bdd);
+
+/* Add or remove external reference to BDD */
+BDD sylvan_ref(BDD a); 
+void sylvan_deref(BDD a);
+
+/* Return the number of external references */
+size_t sylvan_count_refs();
+
+/* Perform garbage collection */
+void sylvan_gc();
+
+/* Enable or disable garbage collection. It is enabled by default. */
+void sylvan_gc_enable();
+void sylvan_gc_disable();
 
 /* Unary, binary and if-then-else operations */
 #define sylvan_not(a) (((BDD)a)^sylvan_complement)
 TASK_DECL_4(BDD, sylvan_ite, BDD, BDD, BDD, BDDVAR);
 static inline BDD sylvan_ite(BDD a, BDD b, BDD c) { return CALL(sylvan_ite, a, b, c, 0); }
-static inline BDD sylvan_xor(BDD a, BDD b) { return sylvan_ite(a, BDD_TOGGLEMARK(b), b); }
-static inline BDD sylvan_equiv(BDD a, BDD b) { return sylvan_ite(a, b, BDD_TOGGLEMARK(b)); }
+static inline BDD sylvan_xor(BDD a, BDD b) { return sylvan_ite(a, sylvan_not(b), b); }
+static inline BDD sylvan_equiv(BDD a, BDD b) { return sylvan_ite(a, b, sylvan_not(b)); }
 #define sylvan_or(a,b) sylvan_ite(a, sylvan_true, b)
 #define sylvan_and(a,b) sylvan_ite(a,b,sylvan_false)
 #define sylvan_nand(a,b) sylvan_not(sylvan_and(a,b))
@@ -95,6 +110,11 @@ static inline BDD sylvan_equiv(BDD a, BDD b) { return sylvan_ite(a, b, BDD_TOGGL
 #define sylvan_diff(a,b) sylvan_and(a,sylvan_not(b))
 #define sylvan_less(a,b) sylvan_and(sylvan_not(a),b)
 
+/* Existential and Universal quantifiers */
+TASK_DECL_3(BDD, sylvan_exists, BDD, BDD, BDDVAR);
+static inline BDD sylvan_exists(BDD a, BDD variables) { return CALL(sylvan_exists, a, variables, 0); }
+static inline BDD sylvan_forall(BDD a, BDD variables) { return sylvan_not(CALL(sylvan_exists, sylvan_not(a), variables, 0)); }
+
 /**
  * Specialized RelProdS using paired variables (X even, X' odd)
  * For example, variable x_1 is paired with x_0, with x_1 being the X' equivalent of x_0.
@@ -102,7 +122,7 @@ static inline BDD sylvan_equiv(BDD a, BDD b) { return sylvan_ite(a, b, BDD_TOGGL
  * use <var> 0,2,4,6,8 etc for the 'state' booleans, and 1,3,5,7,9 etc for the 'next state' booleans
  */
 TASK_DECL_4(BDD, sylvan_relprods, BDD, BDD, BDD, BDDVAR);
-BDD sylvan_relprods(BDD a, BDD b, BDD vars);
+static inline BDD sylvan_relprods(BDD a, BDD b, BDD vars) { return CALL(sylvan_relprods, a, b, vars, 0); }
 
 typedef void (*void_cb)();
 int sylvan_relprods_analyse(BDD a, BDD b, void_cb cb_in, void_cb cb_out);
@@ -111,19 +131,19 @@ int sylvan_relprods_analyse(BDD a, BDD b, void_cb cb_in, void_cb cb_out);
  * Reversed RelProdS using paired variables (X even, X' odd)
  */
 TASK_DECL_4(BDD, sylvan_relprods_reversed, BDD, BDD, BDD, BDDVAR);
-BDD sylvan_relprods_reversed(BDD a, BDD b, BDD vars);
+static inline BDD sylvan_relprods_reversed(BDD a, BDD b, BDD vars) { return CALL(sylvan_relprods_reversed, a, b, vars, 0); }
 
 /**
- * Calculate RelProd: \exists vars (a \and b)
+ * RelProd: \exists vars (a \and b)
  */
 TASK_DECL_4(BDD, sylvan_relprod, BDD, BDD, BDD, BDDVAR);
-BDD sylvan_relprod(BDD a, BDD b, BDD vars);
+static inline BDD sylvan_relprod(BDD a, BDD b, BDD vars) { return CALL(sylvan_relprod, a, b, vars, 0); }
 
 /**
  * Calculate substitution from X to X' using paired variables (X even, X' odd)
  */
 TASK_DECL_3(BDD, sylvan_substitute, BDD, BDD, BDDVAR);
-BDD sylvan_substitute(BDD a, BDD vars);
+static inline BDD sylvan_substitute(BDD a, BDD vars) { return CALL(sylvan_substitute, a, vars, 0); }
 
 /**
  * Calculate a@b (a constrain b), such that (b -> a@b) = (b -> a)
@@ -136,31 +156,15 @@ BDD sylvan_substitute(BDD a, BDD vars);
  *   - a@not(a) = 0
  */
 TASK_DECL_3(BDD, sylvan_constrain, BDD, BDD, BDDVAR);
-BDD sylvan_constrain(BDD a, BDD b);
+static inline BDD sylvan_constrain(BDD a, BDD b) { return CALL(sylvan_constrain, a, b, 0); }
 
 /**
- * Calculate \exists variables . a
- * Calculate \forall variables . a
- */
-TASK_DECL_3(BDD, sylvan_exists, BDD, BDD, BDDVAR);
-BDD sylvan_exists(BDD a, BDD variables);
-BDD sylvan_forall(BDD a, BDD variables);
-
-/**
- * Calculate the support of <bdd>.
- * This is the set of used variables in the BDD nodes.
- * A variable v is in the support of BDD F iff not F[v<-0] = F[v<-1].
+ * Calculate the support of a BDD.
+ * A variable v is in the support of a Boolean function f iff f[v<-0] != f[v<-1]
+ * It is also the set of all variables in the BDD nodes of the BDD.
  */
 TASK_DECL_1(BDD, sylvan_support, BDD);
-BDD sylvan_support(BDD bdd);
-
-BDD sylvan_ref(BDD a);
-void sylvan_deref(BDD a);
-size_t sylvan_count_refs();
-void sylvan_gc();
-
-void sylvan_gc_enable();
-void sylvan_gc_disable();
+static inline BDD sylvan_support(BDD bdd) { return CALL(sylvan_support, bdd); }
 
 /**
  * Reset all counters (for statistics)
@@ -171,7 +175,6 @@ void sylvan_reset_counters();
  * Write statistic report to stdout
  */
 void sylvan_report_stats();
-
 
 
 /**
@@ -207,6 +210,13 @@ void sylvan_fprintdot_nocomp(FILE *out, BDD bdd);
 
 void sylvan_print(BDD bdd);
 void sylvan_fprint(FILE *f, BDD bdd);
+
+/**
+ * Convert normal BDD to a BDD without complement edges
+ * Also replaces sylvan_true by sylvan_true_nc
+ * Function only meant for debugging purposes.
+ */
+BDD sylvan_bdd_to_nocomp(BDD bdd);
 
 /**
  * Calculate number of satisfying variable assignments.

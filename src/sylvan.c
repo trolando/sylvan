@@ -123,6 +123,8 @@ typedef struct bddcache* bddcache_t;
 #define LLCI_DATASIZE ((sizeof(struct bddcache)))
 #include <llci.h>
 
+/** static _bdd struct */
+
 static struct
 {
     llmsset_t data;
@@ -261,6 +263,8 @@ static int initialized = 0;
 static int granularity = 1; // default
 
 static void sylvan_test_gc();
+
+/** init and quit functions */
 
 void
 sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
@@ -693,12 +697,6 @@ sylvan_ithvar(BDDVAR level)
     return sylvan_makenode(level, sylvan_false, sylvan_true);
 }
 
-BDD
-sylvan_nithvar(BDDVAR level)
-{
-    return sylvan_not(sylvan_ithvar(level));
-}
-
 BDDVAR
 sylvan_var(BDD bdd)
 {
@@ -973,15 +971,17 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
  */
 TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
 {
-    // Trivial cases
+    /* Trivial cases */
     if (b == sylvan_true) return a;
     if (b == sylvan_false) return sylvan_false;
     if (sylvan_isconst(a)) return a;
     if (a == b) return sylvan_true;
-    if (a == BDD_TOGGLEMARK(b)) return sylvan_false;
+    if (a == sylvan_not(b)) return sylvan_false;
 
+    /* Perhaps execute garbage collection */
     sylvan_gc_test();
 
+    /* Count operation */
     SV_CNT_OP(C_constrain);
 
     // a != constant and b != constant
@@ -1104,19 +1104,13 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
     return result;
 }
 
-BDD
-sylvan_constrain(BDD a, BDD b)
-{
-    return CALL(sylvan_constrain, a, b, 0);
-}
-
 /**
  * Calculates \exists variables . a
  */
 TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
 {
     /* Trivial cases */
-    if (BDD_ISCONSTANT(a)) return a;
+    if (sylvan_isconst(a)) return a;
     if (sylvan_set_isempty(variables)) return a;
 
     sylvan_gc_test();
@@ -1212,19 +1206,6 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
     }
 
     return result;
-}
-
-BDD
-sylvan_exists(BDD a, BDD variables)
-{
-    return CALL(sylvan_exists, a, variables, 0);
-}
-
-BDD
-sylvan_forall(BDD a, BDD variables)
-{
-    // You know, forall x.f = ~exists x.~f
-    return sylvan_not(CALL(sylvan_exists, sylvan_not(a), variables, 0));
 }
 
 /**
@@ -1371,19 +1352,13 @@ TASK_IMPL_4(BDD, sylvan_relprod, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
     return result;
 }
 
-BDD
-sylvan_relprod(BDD a, BDD b, BDD x)
-{
-    return CALL(sylvan_relprod, a, b, x, 0);
-}
-
 /**
  * Specialized substitute, substitutes variables 'x' \in vars by 'x-1'
  */
 TASK_IMPL_3(BDD, sylvan_substitute, BDD, a, BDD, vars, BDDVAR, prev_level)
 {
     // Trivial cases
-    if (BDD_ISCONSTANT(a)) return a;
+    if (sylvan_isconst(a)) return a;
 
     SV_CNT_OP(C_substitute);
 
@@ -1465,12 +1440,6 @@ TASK_IMPL_3(BDD, sylvan_substitute, BDD, a, BDD, vars, BDDVAR, prev_level)
     return result;
 }
 
-BDD
-sylvan_substitute(BDD a, BDD vars)
-{
-    return CALL(sylvan_substitute, a, vars, 0);
-}
-
 int
 sylvan_relprods_analyse(BDD a, BDD b, void_cb cb_in, void_cb cb_out)
 {
@@ -1522,14 +1491,10 @@ sylvan_relprods_analyse(BDD a, BDD b, void_cb cb_in, void_cb cb_out)
 TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
 {
     /* Trivial cases */
-    // 1 and 1 = 1
     if (a == sylvan_true && b == sylvan_true) return sylvan_true;
-    // 0 and B = 0, A = 0 = 0
     if (a == sylvan_false || b == sylvan_false) return sylvan_false;
-    // A and A = A and 1
     if (a == b) b = sylvan_true;
-    // A and ~A = 0
-    else if (BDD_EQUALM(a, b)) return sylvan_false;
+    else if (a == sylvan_not(b)) return sylvan_false;
 
     /* Rewrite to improve cache utilisation */
 
@@ -1687,12 +1652,6 @@ TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
     return result;
 }
 
-BDD
-sylvan_relprods(BDD a, BDD b, BDD vars)
-{
-    return CALL(sylvan_relprods, a, b, vars, 0);
-}
-
 /**
  * Very specialized reversed RelProdS. Calculates \exists X' (A[X/X'] /\ B)
  * Assumptions:
@@ -1841,12 +1800,6 @@ TASK_IMPL_4(BDD, sylvan_relprods_reversed, BDD, a, BDD, b, BDD, vars, BDDVAR, pr
     }
 
     return result;
-}
-
-BDD
-sylvan_relprods_reversed(BDD a, BDD b, BDD vars)
-{
-    return CALL(sylvan_relprods_reversed, a, b, vars, 0);
 }
 
 /**
@@ -2075,7 +2028,13 @@ sylvan_cube(BDDVAR* vars, size_t cnt, char* cube)
     memcpy(sorted_vars, vars, sizeof(BDDVAR)*cnt);
     gnomesort_bddvars(sorted_vars, cnt);
 
-    BDD bdd = sylvan_true;
+    LOCALIZE_THREAD_LOCAL(gc_key, gc_tomark_t);
+
+    struct gc_tomark m;
+    m.prev = gc_key;
+    m.bdd = sylvan_true; 
+
+    SET_THREAD_LOCAL(gc_key, &m);
 
     size_t i;
     for (i=0; i<cnt; i++) {
@@ -2083,15 +2042,16 @@ sylvan_cube(BDDVAR* vars, size_t cnt, char* cube)
         size_t idx=0;
         for (idx=0; vars[idx]!=var; idx++) {}
         if (cube[idx] == 0) {
-            bdd = sylvan_makenode(var, bdd, sylvan_false);
+            m.bdd = sylvan_makenode(var, m.bdd, sylvan_false);
         } else if (cube[idx] == 1) {
-            bdd = sylvan_makenode(var, sylvan_false, bdd);
+            m.bdd = sylvan_makenode(var, sylvan_false, m.bdd);
         } else {
-            bdd = sylvan_makenode(var, bdd, bdd); // actually: this skips
+            m.bdd = sylvan_makenode(var, m.bdd, m.bdd); // actually: this skips
         }
     }
 
-    return bdd;
+    SET_THREAD_LOCAL(gc_key, m.prev);
+    return m.bdd;
 }
 
 /**
@@ -2208,11 +2168,6 @@ TASK_IMPL_1(BDD, sylvan_support, BDD, bdd)
     TOMARK_EXIT
 
     return result;
-}
-
-BDD sylvan_support(BDD bdd)
-{
-    return CALL(sylvan_support, bdd);
 }
 
 /**

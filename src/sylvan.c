@@ -302,14 +302,14 @@ sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
     }
 
     if (tablesize >= 40) {
-        fprintf(stderr, "BDD_init error: tablesize must be < 40!\n");
+        fprintf(stderr, "sylvan_init error: tablesize must be < 40!\n");
         exit(1);
     }
 
     _bdd.data = llmsset_create(sizeof(struct bddnode), sizeof(struct bddnode), 1LL<<tablesize);
 
     if (cachesize >= 64) {
-        fprintf(stderr, "BDD_init error: cachesize must be < 64!\n");
+        fprintf(stderr, "sylvan_init error: cachesize must be < 64!\n");
         exit(1);
     }
 

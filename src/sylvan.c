@@ -42,7 +42,6 @@
 #define BDD_TOGGLEMARK(s)           (s^sylvan_complement)
 #define BDD_STRIPMARK(s)            (s&~sylvan_complement)
 #define BDD_TRANSFERMARK(from, to)  (to ^ (from & sylvan_complement))
-#define BDD_ISCONSTANT(s)           (BDD_STRIPMARK(s) == 0 || s == sylvan_true_nc)
 // Equal under mark
 #define BDD_EQUALM(a, b)            ((((a)^(b))&(~sylvan_complement))==0)
 
@@ -168,7 +167,7 @@ static volatile int sylvan_refs_spinlock = 0;
 BDD
 sylvan_ref(BDD a)
 {
-    if (BDD_ISCONSTANT(a)) return a;
+    if (sylvan_isconst(a)) return a;
 
     while (!cas(&sylvan_refs_spinlock, 0, 1)) {
         while (sylvan_refs_spinlock != 0) ;
@@ -191,7 +190,7 @@ sylvan_ref(BDD a)
 void
 sylvan_deref(BDD a)
 {
-    if (BDD_ISCONSTANT(a)) return;
+    if (sylvan_isconst(a)) return;
 
     while (!cas(&sylvan_refs_spinlock, 0, 1)) {
         while (sylvan_refs_spinlock != 0) ;
@@ -231,6 +230,9 @@ sylvan_count_refs()
 static void
 sylvan_pregc_mark_rec(BDD bdd)
 {
+    if (sylvan_isconst(bdd)) return;
+    if (bdd == sylvan_invalid) return;
+
     if (llmsset_mark_unsafe(_bdd.data, bdd&0x000000ffffffffff)) {
         bddnode_t n = GETNODE(bdd);
         sylvan_pregc_mark_rec(n->low);
@@ -700,7 +702,7 @@ sylvan_nithvar(BDDVAR level)
 BDDVAR
 sylvan_var(BDD bdd)
 {
-    assert(!BDD_ISCONSTANT(bdd));
+    assert(!sylvan_isconst(bdd));
     return GETNODE(bdd)->level;
 }
 
@@ -719,14 +721,14 @@ BDD node_highedge(bddnode_t node)
 BDD
 sylvan_low(BDD bdd)
 {
-    if (BDD_ISCONSTANT(bdd)) return bdd;
+    if (sylvan_isconst(bdd)) return bdd;
     return BDD_TRANSFERMARK(bdd, node_lowedge(GETNODE(bdd)));
 }
 
 BDD
 sylvan_high(BDD bdd)
 {
-    if (BDD_ISCONSTANT(bdd)) return bdd;
+    if (sylvan_isconst(bdd)) return bdd;
     return BDD_TRANSFERMARK(bdd, node_highedge(GETNODE(bdd)));
 }
 
@@ -783,7 +785,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 
     /* At this point, A is not a constant true/false. */
 
-    if (BDD_ISCONSTANT(b) && BDD_STRIPMARK(c) < BDD_STRIPMARK(a)) {
+    if (sylvan_isconst(b) && BDD_STRIPMARK(c) < BDD_STRIPMARK(a)) {
         if (b == sylvan_false) {
             // ITE(A,F,C) = ITE(~C,F,~A)
             //            = (A and F) or (~A and C)
@@ -806,7 +808,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
         }
     }
 
-    if (BDD_ISCONSTANT(c) && BDD_STRIPMARK(b) < BDD_STRIPMARK(a)) {
+    if (sylvan_isconst(c) && BDD_STRIPMARK(b) < BDD_STRIPMARK(a)) {
         if (c == sylvan_false) {
             // ITE(A,B,F) = ITE(B,A,F)
             //            = (A and B) or (~A and F)
@@ -872,9 +874,9 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 
     SV_CNT_OP(C_ite);
 
-    bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
-    bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
-    bddnode_t nc = BDD_ISCONSTANT(c) ? 0 : GETNODE(c);
+    bddnode_t na = sylvan_isconst(a) ? 0 : GETNODE(a);
+    bddnode_t nb = sylvan_isconst(b) ? 0 : GETNODE(b);
+    bddnode_t nc = sylvan_isconst(c) ? 0 : GETNODE(c);
 
     // Get lowest level
     BDDVAR level = 0xffffffff;
@@ -921,7 +923,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     BDD low=sylvan_invalid, high=sylvan_invalid;
     TOMARK_INIT
     if (rand_1()) {
-        if (BDD_ISCONSTANT(aHigh)) {
+        if (sylvan_isconst(aHigh)) {
             if (aHigh == sylvan_true) high = bHigh;
             else high = cHigh;
             low = CALL(sylvan_ite, aLow, bLow, cLow, level);
@@ -934,7 +936,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
             TOMARK_PUSH(high)
         }
     } else {
-        if (BDD_ISCONSTANT(aLow)) {
+        if (sylvan_isconst(aLow)) {
             if (aLow == sylvan_true) low = bLow;
             else low = cLow;
             high = CALL(sylvan_ite, aHigh, bHigh, cHigh, level);
@@ -974,7 +976,7 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
     // Trivial cases
     if (b == sylvan_true) return a;
     if (b == sylvan_false) return sylvan_false;
-    if (BDD_ISCONSTANT(a)) return a;
+    if (sylvan_isconst(a)) return a;
     if (a == b) return sylvan_true;
     if (a == BDD_TOGGLEMARK(b)) return sylvan_false;
 
@@ -1030,7 +1032,7 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
     BDD low=sylvan_invalid, high=sylvan_invalid;
     if (rand_1()) {
         // Since we already computed bHigh, we can see some trivial results
-        if (BDD_ISCONSTANT(bHigh)) {
+        if (sylvan_isconst(bHigh)) {
             if (bHigh == sylvan_true) high = aHigh;
             else return CALL(sylvan_constrain, aLow, bLow, level);
         } else {
@@ -1038,7 +1040,7 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
         }
 
         // Since we already computed bLow, we can see some trivial results
-        if (BDD_ISCONSTANT(bLow)) {
+        if (sylvan_isconst(bLow)) {
             if (bLow == sylvan_true) low = bLow;
             else {
                 // okay, return aHigh @ bHigh and skip cache
@@ -1056,7 +1058,7 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
         }
     } else {
         // Since we already computed bHigh, we can see some trivial results
-        if (BDD_ISCONSTANT(bLow)) {
+        if (sylvan_isconst(bLow)) {
             if (bLow == sylvan_true) low = aLow;
             else return CALL(sylvan_constrain, aHigh, bHigh, level);
         } else {
@@ -1064,7 +1066,7 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
         }
 
         // Since we already computed bLow, we can see some trivial results
-        if (BDD_ISCONSTANT(bHigh)) {
+        if (sylvan_isconst(bHigh)) {
             if (bHigh == sylvan_true) high = bHigh;
             else {
                 // okay, return aLow @ bLow and skip cache
@@ -1259,8 +1261,8 @@ TASK_IMPL_4(BDD, sylvan_relprod, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
 
     SV_CNT_OP(C_relprod);
 
-    bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
-    bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
+    bddnode_t na = sylvan_isconst(a) ? 0 : GETNODE(a);
+    bddnode_t nb = sylvan_isconst(b) ? 0 : GETNODE(b);
 
     // Get lowest level and cofactors
     BDDVAR level;
@@ -1477,8 +1479,8 @@ sylvan_relprods_analyse(BDD a, BDD b, void_cb cb_in, void_cb cb_out)
     if (a == b) b = sylvan_true;
     else if (BDD_EQUALM(a, b)) return 0;
 
-    bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
-    bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
+    bddnode_t na = sylvan_isconst(a) ? 0 : GETNODE(a);
+    bddnode_t nb = sylvan_isconst(b) ? 0 : GETNODE(b);
 
     BDD aLow=a, aHigh=a, bLow=b, bHigh=b;
     if (na) {
@@ -1545,7 +1547,7 @@ TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
 
     SV_CNT_OP(C_relprods);
 
-    bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
+    bddnode_t na = sylvan_isconst(a) ? 0 : GETNODE(a);
     bddnode_t nb = GETNODE(b);
 
     // Get lowest level
@@ -1717,8 +1719,8 @@ TASK_IMPL_4(BDD, sylvan_relprods_reversed, BDD, a, BDD, b, BDD, vars, BDDVAR, pr
 
     SV_CNT_OP(C_relprods_reversed);
 
-    bddnode_t na = BDD_ISCONSTANT(a) ? 0 : GETNODE(a);
-    bddnode_t nb = BDD_ISCONSTANT(b) ? 0 : GETNODE(b);
+    bddnode_t na = sylvan_isconst(a) ? 0 : GETNODE(a);
+    bddnode_t nb = sylvan_isconst(b) ? 0 : GETNODE(b);
 
     BDDVAR x_a=-1, x_b=-1, S_x_a=-1, x=0xFFFF;
     if (na) {
@@ -1854,7 +1856,7 @@ sylvan_relprods_reversed(BDD a, BDD b, BDD vars)
 
 void sylvan_nodecount_levels_do_1(BDD bdd, uint32_t *variables)
 {
-    if (BDD_ISCONSTANT(bdd)) return;
+    if (sylvan_isconst(bdd)) return;
     bddnode_t na = GETNODE(bdd);
     if (na->data & 1) return;
     variables[na->level]++;
@@ -1865,7 +1867,7 @@ void sylvan_nodecount_levels_do_1(BDD bdd, uint32_t *variables)
 
 void sylvan_nodecount_levels_do_2(BDD bdd)
 {
-    if (BDD_ISCONSTANT(bdd)) return;
+    if (sylvan_isconst(bdd)) return;
     bddnode_t na = GETNODE(bdd);
     if (!(na->data & 1)) return;
     na->data &= ~1; // unmark
@@ -1885,7 +1887,7 @@ void sylvan_nodecount_levels(BDD bdd, uint32_t *variables)
 
 uint64_t sylvan_nodecount_do_1(BDD a)
 {
-    if (BDD_ISCONSTANT(a)) return 0;
+    if (sylvan_isconst(a)) return 0;
     bddnode_t na = GETNODE(a);
     if (na->data & 1) return 0;
     na->data |= 1; // mark
@@ -1897,7 +1899,7 @@ uint64_t sylvan_nodecount_do_1(BDD a)
 
 void sylvan_nodecount_do_2(BDD a)
 {
-    if (BDD_ISCONSTANT(a)) return;
+    if (sylvan_isconst(a)) return;
     bddnode_t na = GETNODE(a);
     if (!(na->data & 1)) return;
     na->data &= ~1; // unmark
@@ -2141,7 +2143,7 @@ sylvan_set_removeall(BDD set, BDD toremove)
 int
 sylvan_set_in(BDD set, BDDVAR level)
 {
-    while (!BDD_ISCONSTANT(set)) {
+    while (!sylvan_isconst(set)) {
         bddnode_t n = GETNODE(set);
         if (n->level == level) return 1;
         if (n->level > level) break; // BDDs are ordered
@@ -2154,7 +2156,7 @@ sylvan_set_in(BDD set, BDDVAR level)
 BDD
 sylvan_set_next(BDD set)
 {
-    if (BDD_ISCONSTANT(set)) return sylvan_false;
+    if (sylvan_isconst(set)) return sylvan_false;
     return sylvan_low(set);
 }
 
@@ -2190,7 +2192,7 @@ sylvan_set_fromarray(BDDVAR* arr, size_t length)
 
 TASK_IMPL_1(BDD, sylvan_support, BDD, bdd)
 {
-    if (BDD_ISCONSTANT(bdd)) return sylvan_false;
+    if (sylvan_isconst(bdd)) return sylvan_false;
     bddnode_t n = GETNODE(bdd);
     BDD high, low, set, result;
 
@@ -2240,8 +2242,8 @@ static __attribute__((unused)) void
 sylvan_mark_rec(bddnode_t node, unsigned int mark)
 {
     if (sylvan_mark(node, mark)) {
-        if (!BDD_ISCONSTANT(node->low)) sylvan_mark_rec(GETNODE(node->low), mark);
-        if (!BDD_ISCONSTANT(node->high)) sylvan_mark_rec(GETNODE(node->high), mark);
+        if (!sylvan_isconst(node->low)) sylvan_mark_rec(GETNODE(node->low), mark);
+        if (!sylvan_isconst(node->high)) sylvan_mark_rec(GETNODE(node->high), mark);
     }
 }
 
@@ -2249,8 +2251,8 @@ static __attribute__((unused)) void
 sylvan_unmark_rec(bddnode_t node, unsigned int mark)
 {
     if (sylvan_unmark(node, mark)) {
-        if (!BDD_ISCONSTANT(node->low)) sylvan_unmark_rec(GETNODE(node->low), mark);
-        if (!BDD_ISCONSTANT(node->high)) sylvan_unmark_rec(GETNODE(node->high), mark);
+        if (!sylvan_isconst(node->low)) sylvan_unmark_rec(GETNODE(node->low), mark);
+        if (!sylvan_isconst(node->high)) sylvan_unmark_rec(GETNODE(node->high), mark);
     }
 }
 
@@ -2295,7 +2297,7 @@ sylvan_dothelper_register(avl_node_t **set, BDD bdd)
 static void
 sylvan_fprintdot_rec(FILE *out, BDD bdd, avl_node_t **levels)
 {
-    if (bdd == sylvan_invalid || BDD_ISCONSTANT(bdd)) return;
+    if (bdd == sylvan_invalid || sylvan_isconst(bdd)) return;
 
     bdd = BDD_STRIPMARK(bdd);
     bddnode_t n = GETNODE(bdd);
@@ -2344,7 +2346,7 @@ sylvan_fprintdot(FILE *out, BDD bdd)
     }
 
     fprintf(out, "}\n");
-    if (!BDD_ISCONSTANT(bdd)) sylvan_unmark_rec(GETNODE(bdd), 1);
+    if (!sylvan_isconst(bdd)) sylvan_unmark_rec(GETNODE(bdd), 1);
 }
 
 void
@@ -2422,10 +2424,10 @@ sylvan_fprintdot_nocomp(FILE *out, BDD bdd)
         level_to_nodeset_free(&levels);
     }
 
-    if (!BDD_ISCONSTANT(bdd)) fprintf(out, "{ rank=same; 0; %" PRIu64 "; }\n", sylvan_true_nc);
+    if (!sylvan_isconst(bdd)) fprintf(out, "{ rank=same; 0; %" PRIu64 "; }\n", sylvan_true_nc);
 
     fprintf(out, "}\n");
-    if (!BDD_ISCONSTANT(bdd)) sylvan_unmark_rec(GETNODE(bdd), 1);
+    if (!sylvan_isconst(bdd)) sylvan_unmark_rec(GETNODE(bdd), 1);
 }
 
 void
@@ -2485,7 +2487,7 @@ static size_t sylvan_ser_done = 0;
 static size_t
 sylvan_serialize_assign_rec(BDD bdd)
 {
-    if (!BDD_ISCONSTANT(bdd)) {
+    if (!sylvan_isconst(bdd)) {
         bddnode_t n = GETNODE(bdd);
 
         struct sylvan_ser s, *ss;
@@ -2531,7 +2533,7 @@ sylvan_serialize_reset()
 size_t
 sylvan_serialize_get(BDD bdd)
 {
-    if (BDD_ISCONSTANT(bdd)) return bdd;
+    if (sylvan_isconst(bdd)) return bdd;
     struct sylvan_ser s, *ss;
     s.bdd = BDD_STRIPMARK(bdd);
     ss = sylvan_ser_search(sylvan_ser_set, &s);
@@ -2542,7 +2544,7 @@ sylvan_serialize_get(BDD bdd)
 BDD
 sylvan_serialize_get_reversed(size_t value)
 {
-    if (BDD_ISCONSTANT(value)) return value;
+    if (sylvan_isconst(value)) return value;
     struct sylvan_ser s, *ss;
     s.assigned = BDD_STRIPMARK(value);
     ss = sylvan_ser_reversed_search(sylvan_ser_reversed_set, &s);

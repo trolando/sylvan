@@ -22,6 +22,8 @@ typedef uint32_t BDDVAR;
 #define sylvan_true_nc      ((BDD)0x000000ffffffffff)  // sylvan_true without complement edges
 #define sylvan_invalid      ((BDD)0x7fffffffffffffff)
 
+#define sylvan_isconst(a)   ( ((a&(~sylvan_complement)) == sylvan_false) || (a == sylvan_true_nc) )
+
 /**
  * Initialize Sylvan BDD package
  * datasize in number of nodes will be 1<<datasize

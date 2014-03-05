@@ -224,14 +224,25 @@ void sylvan_fprint(FILE *f, BDD bdd);
 long double sylvan_satcount(BDD bdd, BDD variables);
 
 /**
- * Pick one satisfying variable assignment randomly from the given <bdd>.
- * sizeof(str) must be >= sylvan_set_count(<variables>)
+ * Pick one satisfying variable assignment randomly for which <bdd> is true.
+ * Note that <variables> must include all variables in the support of <bdd>,
+ * and that count must equal the size of both arrays.
+ *
+ * The function will set the values of str, such that
  * str[index] where index is the index in the <variables> set is set to
- *   0 when 0, 1 when 1, or 2 when either 0 or 1
- * Returns 1 when succesful, or 0 when no assignment is found.
+ * 0 when the variable is negative, 1 when positive, or 2 when it could be either.
+ *
+ * Returns 1 when succesful, or 0 when no assignment is found (i.e. bdd==sylvan_false).
  */
 int sylvan_sat_one(BDD bdd, BDDVAR *variables, size_t count, char* str);
-#define sylvan_pick_cube sylvan_sat_one
+
+/**
+ * Pick one satisfying variable assignment randomly from the given <bdd>.
+ * Functionally equivalent to performing sylvan_cube on the result of sylvan_sat_one.
+ * For the result: sylvan_and(res, bdd) = res.
+ */
+BDD sylvan_sat_one_bdd(BDD bdd);
+#define sylvan_pick_cube sylvan_sat_one_bdd
 
 TASK_DECL_1(long double, sylvan_pathcount, BDD);
 long double sylvan_pathcount(BDD bdd);

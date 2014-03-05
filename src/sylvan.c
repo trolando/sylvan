@@ -2115,6 +2115,45 @@ sylvan_sat_one(BDD bdd, BDDVAR *vars, size_t cnt, char* str)
 }
 
 BDD
+sylvan_sat_one_bdd(BDD bdd)
+{
+    if (bdd == sylvan_false) return sylvan_false;
+    if (bdd == sylvan_true) return sylvan_true;
+
+    bddnode_t node = GETNODE(bdd);
+    BDD low = BDD_TRANSFERMARK(bdd, node_lowedge(node));
+    BDD high = BDD_TRANSFERMARK(bdd, node_highedge(node));
+
+    LOCALIZE_THREAD_LOCAL(gc_key, gc_tomark_t);
+
+    struct gc_tomark m;
+    m.prev = gc_key;
+    m.bdd = sylvan_invalid;
+
+    SET_THREAD_LOCAL(gc_key, &m);
+
+    BDD result;
+    if (low == sylvan_false) {
+        m.bdd = sylvan_sat_one_bdd(high);
+        result = sylvan_makenode(node->level, sylvan_false, m.bdd);
+    } else if (high == sylvan_false) {
+        m.bdd = sylvan_sat_one_bdd(low);
+        result = sylvan_makenode(node->level, m.bdd, sylvan_false);
+    } else {
+        if (rand() & 0x2000) {
+            m.bdd = sylvan_sat_one_bdd(low);
+            result = sylvan_makenode(node->level, m.bdd, sylvan_false);
+        } else {
+            m.bdd = sylvan_sat_one_bdd(high);
+            result = sylvan_makenode(node->level, sylvan_false, m.bdd);
+        }
+    }
+
+    SET_THREAD_LOCAL(gc_key, m.prev);
+    return result;
+}
+
+BDD
 sylvan_cube(BDDVAR* vars, size_t cnt, char* cube)
 {
     assert(cube != NULL);

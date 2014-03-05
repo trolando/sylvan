@@ -264,8 +264,20 @@ test_cube()
     for (i=0;i<6;i++) cube[i] = rng(0,3);
     BDD bdd = sylvan_cube(vars, 6, cube);
 
-    sylvan_pick_cube(bdd, vars, 6, check);
+    sylvan_sat_one(bdd, vars, 6, check);
     for (i=0; i<6;i++) assert(cube[i] == check[i]);
+
+    testEqual(sylvan_cube(vars, 6, check), sylvan_sat_one_bdd(bdd));
+    assert(sylvan_cube(vars, 6, check) == sylvan_sat_one_bdd(bdd));
+
+    BDD picked = sylvan_pick_cube(bdd);
+    assert(testEqual(sylvan_and(picked, bdd), picked));
+
+    bdd = make_random(1, 16);
+    for (i=0;i<36;i++) {
+        picked = sylvan_pick_cube(bdd);
+        assert(testEqual(sylvan_and(picked, bdd), picked));
+    }
 }
 
 static void
@@ -438,7 +450,7 @@ void runtests(int threads)
 
     printf(NC "Testing basic bdd functionality... ");
     fflush(stdout);
-    sylvan_init(16,10,1);
+    sylvan_init(16, 16, 1);
     test_bdd();
     sylvan_quit();
     printf(LGREEN "success" NC "!\n");
@@ -446,14 +458,16 @@ void runtests(int threads)
     // what happens if we make a cube
     printf(NC "Testing cube function... ");
     fflush(stdout);
-    sylvan_init(6,6,1);
-    test_cube();
-    sylvan_quit();
+    int j;
+    for (j=0;j<20;j++) {
+        sylvan_init(16, 16, 1);
+        test_cube();
+        sylvan_quit();
+    }
     printf(LGREEN "success" NC "!\n");
 
     printf(NC "Testing operators... ");
     fflush(stdout);
-    int j;
     for (j=0;j<50;j++) {
         sylvan_init(16, 16, 1);
         test_operators();

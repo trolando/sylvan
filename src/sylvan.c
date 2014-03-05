@@ -837,7 +837,7 @@ sylvan_less(BDD a, BDD b)
 BDD
 sylvan_invimp(BDD a, BDD b)
 {
-    return sylvan_ite(a, sylvan_false, BDD_TOGGLEMARK(b));
+    return sylvan_ite(a, sylvan_true, BDD_TOGGLEMARK(b));
 }
 
 TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)

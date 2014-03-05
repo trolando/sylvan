@@ -694,19 +694,19 @@ sylvan_makenode(BDDVAR level, BDD low, BDD high)
     return mark ? result | complementmark : result;
 }
 
-inline BDD
+BDD
 sylvan_ithvar(BDDVAR level)
 {
     return sylvan_makenode(level, sylvan_false, sylvan_true);
 }
 
-inline BDD
+BDD
 sylvan_nithvar(BDDVAR level)
 {
     return sylvan_makenode(level, sylvan_true, sylvan_false);
 }
 
-inline BDDVAR
+BDDVAR
 sylvan_var(BDD bdd)
 {
     assert(!BDD_ISCONSTANT(bdd));
@@ -725,14 +725,14 @@ BDD node_highedge(bddnode_t node)
     return node->high | (node->comp ? complementmark : 0LL);
 }
 
-inline BDD
+BDD
 sylvan_low(BDD bdd)
 {
     if (BDD_ISCONSTANT(bdd)) return bdd;
     return BDD_TRANSFERMARK(bdd, node_lowedge(GETNODE(bdd)));
 }
 
-inline BDD
+BDD
 sylvan_high(BDD bdd)
 {
     if (BDD_ISCONSTANT(bdd)) return bdd;
@@ -2011,7 +2011,8 @@ TASK_IMPL_1(long double, sylvan_pathcount, BDD, bdd)
     if (bdd == sylvan_true) return 1.0;
     SPAWN(sylvan_pathcount, sylvan_low(bdd));
     SPAWN(sylvan_pathcount, sylvan_high(bdd));
-    return SYNC(sylvan_pathcount) + SYNC(sylvan_pathcount);
+    long double res1 = SYNC(sylvan_pathcount);
+    return res1 + SYNC(sylvan_pathcount);
 }
 
 long double sylvan_pathcount(BDD bdd)

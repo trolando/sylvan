@@ -2059,45 +2059,46 @@ sylvan_cube(BDDVAR* vars, size_t cnt, char* cube)
  */
 
 int
-sylvan_set_in(BDD set, BDDVAR level)
+sylvan_set_in(BDDSET set, BDDVAR level)
 {
-    while (!sylvan_isconst(set)) {
+    while (!sylvan_set_isempty(set)) {
         bddnode_t n = GETNODE(set);
         if (n->level == level) return 1;
-        if (n->level > level) break; // BDDs are ordered
-        set = n->low;
+        if (n->level > level) return 0; // BDDs are ordered
+        set = BDD_TRANSFERMARK(set, node_lowedge(n));
     }
 
     return 0;
 }
 
 size_t
-sylvan_set_count(BDD set)
+sylvan_set_count(BDDSET set)
 {
     size_t result = 0;
-    while (set != sylvan_false) {
-        result++;
-        set = sylvan_set_next(set);
-    }
+    for (;!sylvan_set_isempty(set);set = sylvan_set_next(set)) result++;
     return result;
 }
 
 void
-sylvan_set_toarray(BDD set, BDDVAR *arr)
+sylvan_set_toarray(BDDSET set, BDDVAR *arr)
 {
     size_t i = 0;
-    while (set != sylvan_false) {
-        arr[i++] = GETNODE(set)->level;
-        set = sylvan_set_next(set);
+    while (!sylvan_set_isempty(set)) {
+        bddnode_t n = GETNODE(set);
+        arr[i++] = n->level;
+        set = BDD_TRANSFERMARK(set, node_lowedge(n));
     }
 }
 
-BDD
+BDDSET
 sylvan_set_fromarray(BDDVAR* arr, size_t length)
 {
-    BDD result = sylvan_set_empty();
-    size_t i;
-    for (i=length;i-->0;) result = sylvan_or(result, sylvan_ithvar(arr[i]));
+    if (length == 0) return sylvan_set_empty();
+    TOMARK_INIT
+    BDDSET sub = sylvan_set_fromarray(arr+1, length-1);
+    TOMARK_PUSH(sub)
+    BDDSET result = sylvan_set_add(sub, *arr);
+    TOMARK_EXIT
     return result;
 }
 

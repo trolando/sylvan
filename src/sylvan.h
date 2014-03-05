@@ -32,6 +32,8 @@ typedef char __sylvan_check_size_t_is_8_bytes[(sizeof(uint64_t) == sizeof(size_t
 typedef uint64_t BDD;       // low 40 bits used for index, highest bit for complement, rest 0
 // BDDSET uses the BDD node hash table. A BDDSET is an ordered BDD.
 typedef uint64_t BDDSET;    // encodes a set of variables (e.g. for exists etc.)
+// BDDMAP also uses the BDD node hash table. A BDDMAP is *not* an ordered BDD.
+typedef uint64_t BDDMAP;    // encodes a function of variable->BDD (e.g. for substitute)
 typedef uint32_t BDDVAR;    // low 24 bits only
 
 #define sylvan_complement   ((uint64_t)0x8000000000000000)
@@ -184,6 +186,30 @@ size_t sylvan_set_count(BDDSET set);
 void sylvan_set_toarray(BDDSET set, BDDVAR *arr);
 BDDSET sylvan_set_fromarray(BDDVAR *arr, size_t length);
 void sylvan_test_isset(BDDSET set);
+
+/**
+ * BDDMAP maps BDDVAR-->BDD, implemented using BDD nodes.
+ * Based on disjunction of variables, but with high edges to BDDs instead of True terminals.
+ */
+// empty bddmap
+static inline BDDMAP sylvan_map_empty() { return sylvan_false; }
+static inline int sylvan_map_isempty(BDDMAP map) { return map == sylvan_false ? 1 : 0; }
+// add key-value pairs to the bddmap
+BDDMAP sylvan_map_add(BDDMAP map, BDDVAR key, BDD value);
+BDDMAP sylvan_map_addall(BDDMAP map_1, BDDMAP map_2);
+// remove key-value pairs from the bddmap
+BDDMAP sylvan_map_remove(BDDMAP map, BDDVAR key);
+BDDMAP sylvan_map_removeall(BDDMAP map, BDDMAP toremove);
+// iterate through all pairs
+static inline BDDVAR sylvan_map_key(BDDMAP map) { return sylvan_var(map); }
+static inline BDD sylvan_map_value(BDDMAP map) { return sylvan_high(map); }
+static inline BDDMAP sylvan_map_next(BDDMAP map) { return sylvan_low(map); }
+// is a key in the map
+int sylvan_map_in(BDDMAP map, BDDVAR key);
+// count number of keys
+size_t sylvan_map_count(BDDMAP map);
+// convert a BDDSET (disjunction of variables) to a map, with all variables pointing on the value
+BDDMAP sylvan_set_to_map(BDDSET set, BDD value);
 
 /**
  * Node creation primitive.

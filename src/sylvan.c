@@ -1909,6 +1909,151 @@ sylvan_test_isset(BDDSET set)
 }
 
 /**
+ * IMPLEMENTATION OF BDDMAP
+ */
+
+BDDMAP
+sylvan_map_add(BDDMAP map, BDDVAR key, BDD value)
+{
+    if (sylvan_map_isempty(map)) return sylvan_makenode(key, sylvan_map_empty(), value);
+
+    bddnode_t n = GETNODE(map);
+    BDDVAR key_m = n->level;
+
+    if (key_m < key) {
+        // add recursively and rebuild tree
+        TOMARK_INIT
+        BDDMAP low = sylvan_map_add(node_low(map, n), key, value);
+        TOMARK_PUSH(low)
+        BDDMAP result = sylvan_makenode(key_m, low, node_high(map, n));
+        TOMARK_EXIT
+        return result;
+    } else if (key_m > key) {
+        return sylvan_makenode(key, map, value);
+    } else {
+        // replace old
+        return sylvan_makenode(key, node_low(map, n), value);
+    }
+}
+
+BDDMAP
+sylvan_map_addall(BDDMAP map_1, BDDMAP map_2)
+{
+    // one of the maps is empty
+    if (sylvan_map_isempty(map_1)) return map_2;
+    if (sylvan_map_isempty(map_2)) return map_1;
+
+    bddnode_t n_1 = GETNODE(map_1);
+    BDDVAR key_1 = n_1->level;
+
+    bddnode_t n_2 = GETNODE(map_2);
+    BDDVAR key_2 = n_2->level;
+
+    TOMARK_INIT
+    BDDMAP result;
+    if (key_1 < key_2) {
+        // key_1, recurse on n_1->low, map_2
+        BDDMAP low = sylvan_map_addall(node_low(map_1, n_1), map_2);
+        TOMARK_PUSH(low)
+        result = sylvan_makenode(key_1, low, node_high(map_1, n_1));
+    } else if (key_1 > key_2) {
+        // key_2, recurse on map_1, n_2->low
+        BDDMAP low = sylvan_map_addall(map_1, node_low(map_2, n_2));
+        TOMARK_PUSH(low)
+        result = sylvan_makenode(key_2, low, node_high(map_2, n_2));
+    } else {
+        // equal: key_2, recurse on n_1->low, n_2->low
+        BDDMAP low = sylvan_map_addall(node_low(map_1, n_1), node_low(map_2, n_2));
+        TOMARK_PUSH(low)
+        result = sylvan_makenode(key_2, low, node_high(map_2, n_2));
+    }
+    TOMARK_EXIT
+    return result;
+}
+
+BDDMAP
+sylvan_map_remove(BDDMAP map, BDDVAR key)
+{
+    if (sylvan_map_isempty(map)) return map;
+
+    bddnode_t n = GETNODE(map);
+    BDDVAR key_m = n->level;
+
+    if (key_m < key) {
+        TOMARK_INIT
+        BDDMAP low = sylvan_map_remove(node_low(map, n), key);
+        TOMARK_PUSH(low)
+        BDDMAP result = sylvan_makenode(key_m, low, node_high(map, n));
+        TOMARK_EXIT
+        return result;
+    } else if (key_m > key) {
+        return map;
+    } else {
+        return node_low(map, n);
+    }
+}
+
+BDDMAP
+sylvan_map_removeall(BDDMAP map, BDDMAP toremove)
+{
+    if (sylvan_map_isempty(map)) return map;
+    if (sylvan_map_isempty(toremove)) return map;
+
+    bddnode_t n_1 = GETNODE(map);
+    BDDVAR key_1 = n_1->level;
+
+    bddnode_t n_2 = GETNODE(toremove);
+    BDDVAR key_2 = n_2->level;
+
+    if (key_1 < key_2) {
+        TOMARK_INIT
+        BDDMAP low = sylvan_map_removeall(node_low(map, n_1), toremove);
+        TOMARK_PUSH(low)
+        BDDMAP result = sylvan_makenode(key_1, low, node_high(map, n_1));
+        TOMARK_EXIT
+        return result;
+    } else if (key_1 > key_2) {
+        return sylvan_map_removeall(map, node_low(toremove, n_2));
+    } else {
+        return sylvan_map_removeall(node_low(map, n_1), node_low(toremove, n_2));
+    }
+}
+
+int
+sylvan_map_in(BDDMAP map, BDDVAR key)
+{
+    while (!sylvan_map_isempty(map)) {
+        bddnode_t n = GETNODE(map);
+        if (n->level == key) return 1;
+        if (n->level > key) return 0; // BDDs are ordered
+        map = node_low(map, n);
+    }
+
+    return 0;
+}
+
+size_t
+sylvan_map_count(BDDMAP map)
+{
+    size_t r=0;
+    while (!sylvan_map_isempty(map)) { r++; map=sylvan_map_next(map); }
+    return r;
+}
+
+BDDMAP
+sylvan_set_to_map(BDDSET set, BDD value)
+{
+    if (sylvan_set_isempty(set)) return sylvan_map_empty();
+    TOMARK_INIT
+    bddnode_t set_n = GETNODE(set);
+    BDD sub = sylvan_set_to_map(node_low(set, set_n), value); 
+    TOMARK_PUSH(sub)
+    BDD result = sylvan_makenode(sub, set_n->level, value);
+    TOMARK_EXIT
+    return result;
+}
+
+/**
  * Determine the support of a BDD (all variables used in the BDD)
  */
 

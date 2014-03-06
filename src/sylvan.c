@@ -133,6 +133,18 @@ static struct
     int gc;
 } _bdd;
 
+llmsset_t
+__sylvan_get_internal_data()
+{
+    return _bdd.data;
+}
+
+llci_t
+__sylvan_get_internal_cache()
+{
+    return _bdd.cache;
+}
+
 /**
  * Thread-local Insert index for LLMSset
  */
@@ -150,7 +162,7 @@ initialize_insert_index()
 }
 
 /**
- * Handling references (note: protected by a spinlock)
+ * External references (note: protected by a spinlock)
  */
 struct sylvan_ref_s
 {
@@ -169,22 +181,22 @@ static volatile int sylvan_refs_spinlock = 0;
 BDD
 sylvan_ref(BDD a)
 {
-    if (sylvan_isconst(a)) return a;
+    if (sylvan_isnode(a)) {
+        while (!cas(&sylvan_refs_spinlock, 0, 1)) {
+            while (sylvan_refs_spinlock != 0) ;
+        }
 
-    while (!cas(&sylvan_refs_spinlock, 0, 1)) {
-        while (sylvan_refs_spinlock != 0) ;
+        struct sylvan_ref_s s, *ss;
+        s.bdd = BDD_STRIPMARK(a);
+        ss = refset_search(sylvan_refs, &s);
+        if (ss == NULL) {
+            s.count = 0;
+            ss = refset_put(&sylvan_refs, &s, 0);
+        }
+        ss->count++;
+
+        sylvan_refs_spinlock = 0;
     }
-
-    struct sylvan_ref_s s, *ss;
-    s.bdd = BDD_STRIPMARK(a);
-    ss = refset_search(sylvan_refs, &s);
-    if (ss == NULL) {
-        s.count = 0;
-        ss = refset_put(&sylvan_refs, &s, 0);
-    }
-    ss->count++;
-
-    sylvan_refs_spinlock = 0;
 
     return a;
 }
@@ -192,20 +204,20 @@ sylvan_ref(BDD a)
 void
 sylvan_deref(BDD a)
 {
-    if (sylvan_isconst(a)) return;
+    if (sylvan_isnode(a)) {
+        while (!cas(&sylvan_refs_spinlock, 0, 1)) {
+            while (sylvan_refs_spinlock != 0) ;
+        }
 
-    while (!cas(&sylvan_refs_spinlock, 0, 1)) {
-        while (sylvan_refs_spinlock != 0) ;
+        struct sylvan_ref_s s, *ss;
+        s.bdd = BDD_STRIPMARK(a);
+        ss = refset_search(sylvan_refs, &s);
+        assert (ss != NULL);
+        assert (ss->count > 0);
+        ss->count--;
+
+        sylvan_refs_spinlock = 0;
     }
-
-    struct sylvan_ref_s s, *ss;
-    s.bdd = BDD_STRIPMARK(a);
-    ss = refset_search(sylvan_refs, &s);
-    assert (ss != NULL);
-    assert (ss->count > 0);
-    ss->count--;
-
-    sylvan_refs_spinlock = 0;
 }
 
 size_t
@@ -229,11 +241,11 @@ sylvan_count_refs()
     return result;
 }
 
+// During garbage collection, after clear, mark stuff again
 static void
 sylvan_pregc_mark_rec(BDD bdd)
 {
-    if (sylvan_isconst(bdd)) return;
-    if (bdd == sylvan_invalid) return;
+    if (!sylvan_isnode(bdd)) return;
 
     if (llmsset_mark_unsafe(_bdd.data, bdd&0x000000ffffffffff)) {
         bddnode_t n = GETNODE(bdd);
@@ -242,6 +254,7 @@ sylvan_pregc_mark_rec(BDD bdd)
     }
 }
 
+// Recursively mark all externally referenced BDDs
 static void
 sylvan_pregc_mark_refs()
 {
@@ -259,12 +272,12 @@ sylvan_pregc_mark_refs()
     sylvan_refs_spinlock = 0;
 }
 
+/** init and quit functions */
+
 static int initialized = 0;
 static int granularity = 1; // default
 
 static void sylvan_test_gc();
-
-/** init and quit functions */
 
 void
 sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
@@ -505,6 +518,10 @@ size_t rand_1()
     return id & 8 ? 1 : 0;
 }
 
+/**
+ * Garbage collection
+ */
+
 static int gc_enabled = 1;
 
 void
@@ -742,6 +759,10 @@ sylvan_high(BDD bdd)
     return node_high(bdd, GETNODE(bdd));
 }
 
+/**
+ * Debugging functionality that converts a BDD to one without complemented edges.
+ */
+
 BDD
 sylvan_makenode_nocomp(BDDVAR level, BDD low, BDD high)
 {
@@ -774,10 +795,12 @@ sylvan_bdd_to_nocomp(BDD bdd)
 
     bddnode_t n = GETNODE(bdd);
     return sylvan_makenode_nocomp(n->level, sylvan_bdd_to_nocomp(node_low(bdd, n)), sylvan_bdd_to_nocomp(node_high(bdd, n)));
-
 }
 
-/* IMPLEMENTATION of OPERATORS */
+/**
+ * Implementation of unary, binary and if-then-else operators.
+ */
+
 TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 {
     /* Terminal cases */
@@ -1354,7 +1377,6 @@ TASK_IMPL_4(BDD, sylvan_relprod, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
         if (cache_res == 0) {
             // It existed!
             SV_CNT_CACHE(C_cache_exists);
-            // No need to ref
         } else if (cache_res == 1) {
             // Created new!
             SV_CNT_CACHE(C_cache_new);
@@ -1442,7 +1464,6 @@ TASK_IMPL_3(BDD, sylvan_substitute, BDD, a, BDD, vars, BDDVAR, prev_level)
         if (cache_res == 0) {
             // It existed!
             SV_CNT_CACHE(C_cache_exists);
-            // No need to ref
         } else if (cache_res == 1) {
             // Created new!
             SV_CNT_CACHE(C_cache_new);
@@ -1508,39 +1529,26 @@ TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
     if (a == b) b = sylvan_true;
     else if (a == sylvan_not(b)) return sylvan_false;
 
-    /* Rewrite to improve cache utilisation */
 
-    // A and B = B and A (exchange when b < a)
-    // also : A and 1 = 1 and A
-    if (BDD_STRIPMARK(a) > BDD_STRIPMARK(b)) {
-        register BDD _b = b;
+    /* Perhaps execute garbage collection */
+    sylvan_gc_test();
+
+    /* Rewrite to improve cache utilisation */
+    if (a > b || b == sylvan_true) {
+        BDD _b = b;
         b = a;
         a = _b;
     }
 
-    /* From this point on, B is never a constant */
-
-    sylvan_gc_test();
-
+    /* Count operation */
     SV_CNT_OP(C_relprods);
 
+    /* Determine top level */
     bddnode_t na = sylvan_isconst(a) ? 0 : GETNODE(a);
     bddnode_t nb = GETNODE(b);
 
-    // Get lowest level
     BDDVAR level = nb->level;
     if (na && na->level < level) level = na->level;
-
-    // Get cofactors
-    BDD aLow=a, aHigh=a, bLow=b, bHigh=b;
-    if (na && na->level == level) {
-        aLow = node_low(a, na);
-        aHigh = node_high(a, na);
-    }
-    if (nb->level == level) {
-        bLow = node_low(b, nb);
-        bHigh = node_high(b, nb);
-    }
 
     // Determine if level \in vars
     int in_vars = vars == sylvan_true;
@@ -1557,7 +1565,7 @@ TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
         break;
     }
 
-    // Determine if we are going to use the cache for this task
+    /* Consult cache */
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
 
     struct bddcache template_cache_node;
@@ -1576,9 +1584,21 @@ TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
         }
     }
 
-    // Recursive computation
-    BDD low, high, result;
+    /* Determine cofactors */
+    BDD aLow=a, aHigh=a, bLow=b, bHigh=b;
+    if (na && na->level == level) {
+        aLow = node_low(a, na);
+        aHigh = node_high(a, na);
+    }
+    if (nb->level == level) {
+        bLow = node_low(b, nb);
+        bHigh = node_high(b, nb);
+    }
 
+    /* Recursively calculate low and high */
+    BDD low=sylvan_invalid, high=sylvan_invalid, result;
+
+    // Save old internal reference stack top
     TOMARK_INIT
 
     if (in_vars && 0==(level&1)) {
@@ -1646,6 +1666,7 @@ TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
         else result = sylvan_makenode(level, low, high);
     }
 
+    // Drop references added after TOMARK_INIT
     TOMARK_EXIT
 
     if (cachenow) {
@@ -1654,7 +1675,6 @@ TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
         if (cache_res == 0) {
             // It existed!
             SV_CNT_CACHE(C_cache_exists);
-            // No need to ref
         } else if (cache_res == 1) {
             // Created new!
             SV_CNT_CACHE(C_cache_new);
@@ -1817,11 +1837,13 @@ TASK_IMPL_4(BDD, sylvan_relprods_reversed, BDD, a, BDD, b, BDD, vars, BDDVAR, pr
 /**
  * Count number of nodes for each level
  */
+
 // TODO: use AVL
 
 void sylvan_nodecount_levels_do_1(BDD bdd, uint32_t *variables)
 {
-    if (sylvan_isconst(bdd)) return;
+    if (!sylvan_isnode(bdd)) return;
+
     bddnode_t na = GETNODE(bdd);
     if (na->data & 1) return;
     variables[na->level]++;
@@ -1832,7 +1854,8 @@ void sylvan_nodecount_levels_do_1(BDD bdd, uint32_t *variables)
 
 void sylvan_nodecount_levels_do_2(BDD bdd)
 {
-    if (sylvan_isconst(bdd)) return;
+    if (!sylvan_isnode(bdd)) return;
+
     bddnode_t na = GETNODE(bdd);
     if (!(na->data & 1)) return;
     na->data &= ~1; // unmark
@@ -1891,11 +1914,6 @@ TASK_IMPL_1(long double, sylvan_pathcount, BDD, bdd)
     SPAWN(sylvan_pathcount, sylvan_high(bdd));
     long double res1 = SYNC(sylvan_pathcount);
     return res1 + SYNC(sylvan_pathcount);
-}
-
-long double sylvan_pathcount(BDD bdd)
-{
-    return CALL(sylvan_pathcount, bdd);
 }
 
 /**
@@ -2114,9 +2132,14 @@ sylvan_set_fromarray(BDDVAR* arr, size_t length)
     return result;
 }
 
+/**
+ * Determine the support of a BDD (all variables used in the BDD)
+ */
+
 TASK_IMPL_1(BDD, sylvan_support, BDD, bdd)
 {
-    if (sylvan_isconst(bdd)) return sylvan_false;
+    if (!sylvan_isnode(bdd)) return sylvan_false;
+
     bddnode_t n = GETNODE(bdd);
     BDD high, low, set, result;
 
@@ -2216,7 +2239,7 @@ sylvan_dothelper_register(avl_node_t **set, BDD bdd)
 static void
 sylvan_fprintdot_rec(FILE *out, BDD bdd, avl_node_t **levels)
 {
-    if (bdd == sylvan_invalid || sylvan_isconst(bdd)) return;
+    if (!sylvan_isnode(bdd)) return;
 
     bdd = BDD_STRIPMARK(bdd);
     bddnode_t n = GETNODE(bdd);
@@ -2292,7 +2315,7 @@ sylvan_dothelper_nocomp_register(avl_node_t **set, BDD bdd)
 static void
 sylvan_fprintdot_nocomp_rec(FILE *out, BDD bdd, avl_node_t **levels)
 {
-    if (bdd == sylvan_invalid || bdd == sylvan_true_nc || bdd == sylvan_false) return;
+    if (!sylvan_isnode(bdd)) return;
 
     bddnode_t n = GETNODE(bdd);
     if (!sylvan_mark(n, 1)) return;
@@ -2356,23 +2379,7 @@ sylvan_printdot_nocomp(BDD bdd)
 }
 
 /**
- * END DOT OUTPUT
- */
-
-llmsset_t
-__sylvan_get_internal_data()
-{
-    return _bdd.data;
-}
-
-llci_t
-__sylvan_get_internal_cache()
-{
-    return _bdd.cache;
-}
-
-/**
- * SERIALIZATION helpers
+ * SERIALIZATION
  */
 
 struct sylvan_ser {
@@ -2406,7 +2413,7 @@ static size_t sylvan_ser_done = 0;
 static size_t
 sylvan_serialize_assign_rec(BDD bdd)
 {
-    if (!sylvan_isconst(bdd)) {
+    if (sylvan_isnode(bdd)) {
         bddnode_t n = GETNODE(bdd);
 
         struct sylvan_ser s, *ss;
@@ -2452,7 +2459,7 @@ sylvan_serialize_reset()
 size_t
 sylvan_serialize_get(BDD bdd)
 {
-    if (sylvan_isconst(bdd)) return bdd;
+    if (!sylvan_isnode(bdd)) return bdd;
     struct sylvan_ser s, *ss;
     s.bdd = BDD_STRIPMARK(bdd);
     ss = sylvan_ser_search(sylvan_ser_set, &s);
@@ -2463,7 +2470,7 @@ sylvan_serialize_get(BDD bdd)
 BDD
 sylvan_serialize_get_reversed(size_t value)
 {
-    if (sylvan_isconst(value)) return value;
+    if (!sylvan_isnode(value)) return value;
     struct sylvan_ser s, *ss;
     s.assigned = BDD_STRIPMARK(value);
     ss = sylvan_ser_reversed_search(sylvan_ser_reversed_set, &s);

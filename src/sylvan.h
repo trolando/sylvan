@@ -38,6 +38,7 @@ typedef uint32_t BDDVAR;    // low 24 bits only
 #define sylvan_invalid      ((BDD)0x7fffffffffffffff)
 
 #define sylvan_isconst(a)   ( ((a&(~sylvan_complement)) == sylvan_false) || (a == sylvan_true_nc) )
+#define sylvan_isnode(a)    ( ((a&(~sylvan_complement)) != sylvan_false) && ((a&(~sylvan_complement)) < sylvan_true_nc) )
 
 /**
  * Initialize the Sylvan parallel BDD package.
@@ -65,13 +66,6 @@ void sylvan_quit();
 BDD sylvan_ithvar(BDDVAR var);
 /* Create a BDD representing the negation of <var> */
 static inline BDD sylvan_nithvar(BDD var) { return sylvan_ithvar(var) ^ sylvan_complement; }
-
-/**
- * Create a BDD cube representing the conjunction of variables in their positive or negative
- * form depending on whether the cube[idx] equals 0 (negative), 1 (positive) or 2 (any).
- * For example, sylvan_cube({2,4,6,8},4,{0,1,2,1}) returns BDD of Boolean formula "not(x_2) & x_4 & x_8"
- */
-BDD sylvan_cube(BDDVAR *variables, size_t count, char *cube);
 
 /* Retrieve the <var> of the BDD node <bdd> */
 BDDVAR sylvan_var(BDD bdd);
@@ -233,6 +227,13 @@ BDD sylvan_bdd_to_nocomp(BDD bdd);
 long double sylvan_satcount(BDD bdd, BDD variables);
 
 /**
+ * Create a BDD cube representing the conjunction of variables in their positive or negative
+ * form depending on whether the cube[idx] equals 0 (negative), 1 (positive) or 2 (any).
+ * For example, sylvan_cube({2,4,6,8},4,{0,1,2,1}) returns BDD of Boolean formula "not(x_2) & x_4 & x_8"
+ */
+BDD sylvan_cube(BDDVAR *variables, size_t count, char *cube);
+
+/**
  * Pick one satisfying variable assignment randomly for which <bdd> is true.
  * Note that <variables> must include all variables in the support of <bdd>,
  * and that count must equal the size of both arrays.
@@ -254,7 +255,7 @@ BDD sylvan_sat_one_bdd(BDD bdd);
 #define sylvan_pick_cube sylvan_sat_one_bdd
 
 TASK_DECL_1(long double, sylvan_pathcount, BDD);
-long double sylvan_pathcount(BDD bdd);
+static inline long double sylvan_pathcount(BDD bdd) { return CALL(sylvan_pathcount, bdd); }
 
 // TASK_DECL_1(size_t, sylvan_nodecount, BDD);
 size_t sylvan_nodecount(BDD a);

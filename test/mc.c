@@ -180,34 +180,31 @@ main(int argc, char **argv)
     domain = (vdom_t)malloc(sizeof(struct vector_domain));
 
     // Read domain info
-    // fread(&domain->vector_size, sizeof(size_t), 1, f);
-    // fread(&domain->bits_per_integer, sizeof(size_t), 1, f);
-    domain->vector_size = 28;
-    domain->bits_per_integer = 8;
+    fread(&domain->vector_size, sizeof(size_t), 1, f);
+    fread(&domain->bits_per_integer, sizeof(size_t), 1, f);
+
+    printf("Vector size: %zu\n", domain->vector_size);
+    printf("Bits per integer: %zu\n", domain->bits_per_integer);
 
     // Create universe
     domain->vec_to_bddvar = (BDDVAR*)malloc(sizeof(BDDVAR) * domain->bits_per_integer * domain->vector_size);
     domain->prime_vec_to_bddvar = (BDDVAR*)malloc(sizeof(BDDVAR) * domain->bits_per_integer * domain->vector_size);
 
-    size_t i, j;
-    for (i=0; i<domain->vector_size; i++) {
-        for (j=0; j<domain->bits_per_integer; j++) {
-            domain->vec_to_bddvar[i*domain->bits_per_integer+j] = 2*(i*domain->bits_per_integer+j);
-            domain->prime_vec_to_bddvar[i*domain->bits_per_integer+j] = 2*(i*domain->bits_per_integer+j)+1;
-        }
-    }
+    fread(domain->vec_to_bddvar, sizeof(BDDVAR), domain->vector_size * domain->bits_per_integer, f);
+    fread(domain->prime_vec_to_bddvar, sizeof(BDDVAR), domain->vector_size * domain->bits_per_integer, f);
 
     sylvan_gc_disable();
     domain->universe = sylvan_ref(sylvan_set_fromarray(domain->vec_to_bddvar, domain->bits_per_integer * domain->vector_size));
     domain->prime_universe = sylvan_ref(sylvan_set_fromarray(domain->prime_vec_to_bddvar, domain->bits_per_integer * domain->vector_size));
     sylvan_gc_enable();
 
+    vset_t initial = set_load(f, domain);
+
     // Read transitions
     fread(&nGrps, sizeof(int), 1, f);
     next = (vrel_t*)malloc(sizeof(vrel_t) * nGrps);
 
-    vset_t initial = set_load(f, domain);
-
+    size_t i;
     for (i=0; i<(size_t)nGrps; i++) {
         next[i] = rel_load(f, domain);
     }

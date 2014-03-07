@@ -123,7 +123,7 @@ bfs(vset_t set)
     do {
         printf("Level %zu... ", counter++);
         if (report) {
-            printf("%zu satisfying assignments\n", (size_t)sylvan_satcount(states, set->variables));
+            printf("%zu states\n", (size_t)sylvan_satcount(states, set->variables));
         }
         BDD cur = new;
         new = sylvan_false;
@@ -183,7 +183,7 @@ main(int argc, char **argv)
     }
 
     // Init Lace and Sylvan
-    lace_init(2, 100000, 0);
+    lace_init(4, 100000, 0);
     sylvan_init(25, 24, 4);
 
     // Create domain
@@ -208,17 +208,25 @@ main(int argc, char **argv)
     domain->prime_universe = sylvan_ref(sylvan_set_fromarray(domain->prime_vec_to_bddvar, domain->bits_per_integer * domain->vector_size));
     sylvan_gc_enable();
 
+    printf("Loading initial state... ");
+    fflush(stdout);
     vset_t initial = set_load(f, domain);
+    printf("done\n");
 
     // Read transitions
     fread(&nGrps, sizeof(int), 1, f);
     next = (vrel_t*)malloc(sizeof(vrel_t) * nGrps);
 
+    printf("Loading transition relations... ");
+    fflush(stdout);
     size_t i;
     for (i=0; i<(size_t)nGrps; i++) {
         next[i] = rel_load(f, domain);
+        printf("%zu, ", i);
+        fflush(stdout);
     }
     fclose(f);
+    printf("done\n");
 
     // Report statistics
     printf("Read file '%s'\n", argv[1]);
@@ -237,7 +245,7 @@ main(int argc, char **argv)
 
     // Now we just have states
     BDD states = initial->bdd;
-    printf("Final states: %zu satisfying assignments\n", (size_t)sylvan_satcount(states, initial->variables));
+    printf("Final states: %zu states\n", (size_t)sylvan_satcount(states, initial->variables));
     printf("Final states: %zu BDD nodes\n", sylvan_nodecount(states));
 
     return 0;

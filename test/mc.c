@@ -4,6 +4,10 @@
 #include <inttypes.h>
 #include <assert.h>
 #include <sys/time.h>
+#include <llmsset.h>
+
+static int report = 0;
+static int report_table = 0;
 
 double wctime()
 {
@@ -109,7 +113,6 @@ rel_load(FILE* f, vdom_t dom)
 static vdom_t domain;
 static int nGrps;
 static vrel_t *next;
-static int report = 0;
 
 static void
 bfs(vset_t set)
@@ -126,10 +129,10 @@ bfs(vset_t set)
         new = sylvan_false;
         size_t i;
         for (i=0; i<(size_t)nGrps; i++) {
-            if (!report) {
+            /*if (!report) {
                 printf("%zu, ", i);
                 fflush(stdout);
-            }
+            }*/
             // a = RelProdS(cur, next)
             BDD a = sylvan_ref(sylvan_relprods(cur, next[i]->bdd, next[i]->all_variables));
             // b = a - states
@@ -150,12 +153,19 @@ bfs(vset_t set)
         BDD temp = sylvan_ref(sylvan_or(states, new));
         sylvan_deref(states);
         states = temp;
-        printf("done.\n");
+        if (report_table) {
+            llmsset_t __sylvan_get_internal_data();
+            llmsset_t tbl = __sylvan_get_internal_data();
+            size_t filled = llmsset_get_filled(tbl);
+            size_t total = llmsset_get_size(tbl);
+            printf("done, table: %0.1f%% full (%zu nodes).\n", 100.0*(double)filled/total, filled);
+        } else {
+            printf("done.\n");
+        }
     } while (new != sylvan_false);
     sylvan_deref(new);
     set->bdd = states;
 }
-
 
 int
 main(int argc, char **argv)

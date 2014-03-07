@@ -107,6 +107,7 @@ DECLARE_THREAD_LOCAL(gc_key, gc_tomark_t);
  * 2 = relprods_reversed
  * 3 = count
  * 4 = exists
+ * 5 = satcount
  * 6 = relprod
  * 7 = substitute
  * 8 = contrain
@@ -1920,35 +1921,97 @@ TASK_IMPL_1(long double, sylvan_pathcount, BDD, bdd)
  * CALCULATE NUMBER OF VAR ASSIGNMENTS THAT YIELD TRUE
  */
 
-static long double
-sylvan_satcount_rec(BDD bdd, BDD variables)
+TASK_IMPL_3(sylvan_satcount_double_t, sylvan_satcount_cached, BDD, bdd, BDDSET, variables, BDDVAR, prev_level)
 {
+    /* Trivial cases */
     if (bdd == sylvan_false) return 0.0;
     if (bdd == sylvan_true) return powl(2.0L, sylvan_set_count(variables));
 
-    // Skip all variables before level(bdd)
+    /* Perhaps execute garbage collection */
+    sylvan_gc_test();
+
+    /* Count variables before var(bdd) */
     size_t skipped = 0;
-    while (sylvan_var(bdd) > sylvan_var(variables)) {
+    BDDVAR var = sylvan_var(bdd);
+    bddnode_t set_node = GETNODE(variables);
+    while (var != set_node->level) {
         skipped++;
-        variables = sylvan_set_next(variables);
-        if (sylvan_set_isempty(variables)) break;
+        variables = node_low(variables, set_node);
+        // if this assertion fails, then variables is not the support of <bdd>
+        assert(!sylvan_set_isempty(variables));
+        set_node = GETNODE(variables);
     }
 
-    // We now expect sylvan_var(variables) == sylvan_var(bdd)
-    if (sylvan_set_isempty(variables) || sylvan_var(variables) != sylvan_var(bdd)) {
-        fprintf(stderr, "[sylvan_satcount] bdd contains unexpected level %d!\n", sylvan_var(bdd));
-        assert(0);
+    /* Count operation */
+    // SV_CNT_OP(C_satcount);
+    
+    union {
+        sylvan_satcount_double_t d;
+        size_t s;
+    } hack;
+
+    /* Consult cache */
+    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != var / granularity;
+    struct bddcache template_cache_node;
+    if (cachenow) {
+        // Check cache
+        memset(&template_cache_node, 0, sizeof(struct bddcache));
+        template_cache_node.params[0] = BDD_SETDATA(bdd, 5); // satcount operation
+        template_cache_node.params[1] = variables;
+        if (llci_get_tag(_bdd.cache, &template_cache_node)) {
+            SV_CNT_CACHE(C_cache_reuse);
+            hack.s = template_cache_node.result;
+            return hack.d * powl(2.0L, skipped);
+        }
     }
 
-    long double high = sylvan_satcount_rec(sylvan_high(bdd), sylvan_set_next(variables));
-    long double low = sylvan_satcount_rec(sylvan_low(bdd), sylvan_set_next(variables));
-    return (high+low) * powl(2.0L, skipped);
+    SPAWN(sylvan_satcount_cached, sylvan_high(bdd), node_low(variables, set_node), var);
+    sylvan_satcount_double_t low = CALL(sylvan_satcount_cached, sylvan_low(bdd), node_low(variables, set_node), var);
+    sylvan_satcount_double_t result = (low + SYNC(sylvan_satcount_cached));
+
+    if (cachenow) {
+        hack.d = result;
+        template_cache_node.result = hack.s;
+        int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
+        if (cache_res == 0) {
+            // It existed!
+            SV_CNT_CACHE(C_cache_exists);
+        } else if (cache_res == 1) {
+            // Created new!
+            SV_CNT_CACHE(C_cache_new);
+        }
+    }
+
+    return result * powl(2.0L, skipped);
 }
 
-long double
-sylvan_satcount(BDD bdd, BDD variables)
+TASK_IMPL_2(long double, sylvan_satcount, BDD, bdd, BDD, variables)
 {
-    return sylvan_satcount_rec(bdd, variables);
+    /* Trivial cases */
+    if (bdd == sylvan_false) return 0.0;
+    if (bdd == sylvan_true) return powl(2.0L, sylvan_set_count(variables));
+
+    /* Perhaps execute garbage collection */
+    sylvan_gc_test();
+
+    /* Count variables before var(bdd) */
+    size_t skipped = 0;
+    BDDVAR var = sylvan_var(bdd);
+    bddnode_t set_node = GETNODE(variables);
+    while (var != set_node->level) {
+        skipped++;
+        variables = node_low(variables, set_node);
+        // if this assertion fails, then variables is not the support of <bdd>
+        assert(!sylvan_set_isempty(variables));
+        set_node = GETNODE(variables);
+    }
+
+    /* Count operation */
+    // SV_CNT_OP(C_satcount);
+
+    SPAWN(sylvan_satcount, sylvan_high(bdd), node_low(variables, set_node));
+    long double low = CALL(sylvan_satcount, sylvan_low(bdd), node_low(variables, set_node));
+    return (low + SYNC(sylvan_satcount)) * powl(2.0L, skipped);
 }
 
 static void

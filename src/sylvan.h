@@ -26,6 +26,9 @@
  * To temporarily disable garbage collection, use sylvan_gc_disable() and sylvan_gc_enable().
  */
 
+// For now, only support 64-bit systems
+typedef char __sylvan_check_size_t_is_8_bytes[(sizeof(uint64_t) == sizeof(size_t))?1:-1];
+
 typedef uint64_t BDD;       // low 40 bits used for index, highest bit for complement, rest 0
 // BDDSET uses the BDD node hash table. A BDDSET is an ordered BDD.
 typedef uint64_t BDDSET;    // encodes a set of variables (e.g. for exists etc.)
@@ -221,10 +224,21 @@ BDD sylvan_bdd_to_nocomp(BDD bdd);
 
 /**
  * Calculate number of satisfying variable assignments.
- * <bdd> must only have variables in <variables>
- * <variables> is a BDD with every variable 'high' set to 'true'
+ * The set of variables must be >= the support of the BDD.
+ * (i.e. all variables in the BDD must be in variables)
+ * 
+ * The cached version uses the operation cache, but is limited to 64-bit floating point numbers.
  */
-long double sylvan_satcount(BDD bdd, BDD variables);
+
+typedef double sylvan_satcount_double_t;
+// if this line below gives an error, modify the above typedef until fixed ;)
+typedef char __sylvan_check_double_is_8_bytes[(sizeof(sylvan_satcount_double_t) == sizeof(size_t))?1:-1];
+
+TASK_DECL_3(sylvan_satcount_double_t, sylvan_satcount_cached, BDD, BDDSET, BDDVAR);
+TASK_DECL_2(long double, sylvan_satcount, BDD, BDDSET);
+
+static inline sylvan_satcount_double_t sylvan_satcount_cached(BDD bdd, BDDSET variables) { return CALL(sylvan_satcount_cached, bdd, variables, 0); }
+static inline long double sylvan_satcount(BDD bdd, BDDSET variables) { return CALL(sylvan_satcount, bdd, variables); }
 
 /**
  * Create a BDD cube representing the conjunction of variables in their positive or negative

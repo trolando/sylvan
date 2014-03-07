@@ -349,82 +349,6 @@ test_operators()
     sylvan_gc_enable();
 }
 
-BDD knownresult;
-
-void test_modelcheck()
-{
-    BDD a,b,c,d,aa,bb,cc,dd;
-
-    a = sylvan_ithvar(0);
-    b = sylvan_ithvar(2);
-    c = sylvan_ithvar(4);
-    d = sylvan_ithvar(6);
-
-    aa = sylvan_ithvar(1); // a'
-    bb = sylvan_ithvar(3); // b'
-    cc = sylvan_ithvar(5); // c'
-    dd = sylvan_ithvar(7); // d'
-
-    BDD x = sylvan_or(a,
-                         (sylvan_or(b,
-                         (sylvan_or(c, d)))));
-    BDD xx = sylvan_or(aa,
-                         (sylvan_or(bb,
-                         (sylvan_or(cc, dd)))));
-
-    //BDD universe = sylvan_or(x, xx);
-
-    BDD a_same = sylvan_biimp(a, aa); // a = a'
-    BDD b_same = sylvan_biimp(b, bb); // b = b'
-    BDD c_same = sylvan_biimp(c, cc); // c = c'
-    BDD d_same = sylvan_biimp(d, dd); // d = d'
-
-    BDD a_diff = sylvan_biimp((sylvan_not(a)), aa); // a = ~a'
-    BDD b_diff = sylvan_biimp((sylvan_not(b)), bb); // b = ~b'
-    BDD c_diff = sylvan_biimp((sylvan_not(c)), cc); // c = ~c'
-    BDD d_diff = sylvan_biimp((sylvan_not(d)), dd); // d = ~d'
-
-    // a = ~a' and rest stay same
-    BDD change_a = sylvan_and(a_diff, (sylvan_and(b_same,(sylvan_and(c_same,d_same)))));
-    // b = ~b' and rest stay same
-    BDD change_b = sylvan_and(a_same, (sylvan_and(b_diff,(sylvan_and(c_same,d_same)))));
-    // c = ~c' and rest stay same
-    BDD change_c = sylvan_and(a_same, (sylvan_and(b_same,(sylvan_and(c_diff,d_same)))));
-    // d = ~d' and rest stay same
-    BDD change_d = sylvan_and(a_same, (sylvan_and(b_same,(sylvan_and(c_same,d_diff)))));
-
-    BDD r = sylvan_or(change_a, (sylvan_or(change_b, (sylvan_or(change_c, change_d)))));
-
-    // Relation r:
-    // (0,x,x,x) <=> (1,x,x,x)
-    // (x,0,x,x) <=> (x,1,x,x)
-    // (x,x,0,x) <=> (x,x,1,x)
-    // (x,x,x,0) <=> (x,x,x,1)
-
-    // start: (0,0,0,0)
-    BDD start = sylvan_and((sylvan_not(a)),
-              (sylvan_and((sylvan_not(b)), (sylvan_and((sylvan_not(c)), (sylvan_not(d)))))));
-
-    BDD visited = start, prev = sylvan_invalid;
-
-    /* Check if RelProdS gives the same result as RelProd and Substitute */
-    assert((sylvan_relprods(visited, r, sylvan_true)) ==
-           (sylvan_substitute((sylvan_relprod(visited, r, x)), xx)));
-
-    /* Expected first: (0,0,0,0), (1,0,0,0), (0,1,0,0), (0,0,1,0), (0,0,0,0) */
-
-    do {
-        //printf("Visited: \n");
-        //sylvan_print(visited);printf("\n");
-        prev = visited;
-        BDD next = sylvan_relprods(visited, r, sylvan_true);
-        visited = sylvan_or(visited, next);
-        // check that the "visited" set is a subset of all parents of next.
-        BDD check = sylvan_relprods_reversed(next, r, sylvan_true);
-        assert (sylvan_diff(prev, check) == sylvan_false); // prev \ check = 0
-    } while (visited != prev);
-}
-
 void runtests(int threads)
 {
     printf(BOLD "Testing LL MS Set\n" NC);
@@ -477,16 +401,6 @@ void runtests(int threads)
     }
     printf(LGREEN "success" NC "!\n");
 
-    printf(NC "Testing simple model checking... ");
-    fflush(stdout);
-    for (j=0;j<16;j++) {
-        sylvan_init(16, 16, 1);
-        int i;
-        for (i=0;i<3;i++) test_modelcheck();
-        sylvan_quit();
-    }
-    printf(LGREEN "success" NC "!\n");
-
     lace_exit();
 }
 
@@ -494,28 +408,6 @@ int main(int argc, char **argv)
 {
     int threads = 2;
     if (argc > 1) sscanf(argv[1], "%d", &threads);
-
-    /*
-    sylvan_package_init(1, 100000);
-    sylvan_init(20, 10, 1);
-    BDD bdd = make_random(0, 15);
-    sylvan_serialize_add(bdd);
-    sylvan_serialize_totext(stdout);
-
-    FILE *tmp = fopen("test.bdd", "w");
-    sylvan_serialize_tofile(tmp);
-    fclose(tmp);
-    tmp = fopen("test.bdd", "r");
-    size_t v = sylvan_serialize_get(bdd);
-    sylvan_serialize_fromfile(tmp);
-    assert (bdd == sylvan_serialize_get_reversed(v));
-
-    printf("\n");
-    sylvan_printdot(bdd);
-    sylvan_quit();
-    sylvan_package_exit();
-    exit(0);
-    */
 
     runtests(threads);
     printf(NC);

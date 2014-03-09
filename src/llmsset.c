@@ -167,7 +167,10 @@ llmsset_t
 llmsset_create(size_t key_length, size_t data_length, size_t table_size)
 {
     llmsset_t dbs;
-    posix_memalign((void**)&dbs, LINE_SIZE, sizeof(struct llmsset));
+    if (posix_memalign((void**)&dbs, LINE_SIZE, sizeof(struct llmsset)) != 0) {
+        fprintf(stderr, "Unable to allocate memory!");
+        exit(1);
+    }
 
     assert(key_length <= data_length);
 

@@ -73,11 +73,22 @@ init_worker(int worker)
     numa_worker_info(worker, &node, 0, 0, 0);
     ticketlock_lock(&lock);
     w = (Worker *)numa_alloc_onnode(sizeof(Worker), node);
+    if (w == NULL) {
+        fprintf(stderr, "Error: unable to allocate memory for worker!\n");
+        exit(1);
+    }
     w->dq = (Task*)numa_alloc_onnode(dq_size * sizeof(Task), node);
+    if (w->dq == NULL) {
+        fprintf(stderr, "Error: unable to allocate worker deques!\n");
+        exit(1);
+    }
     ticketlock_unlock(&lock);
 #else
-    posix_memalign((void**)&w, LINE_SIZE, sizeof(Worker));
-    posix_memalign((void**)&w->dq, LINE_SIZE, dq_size * sizeof(Task));
+    if (posix_memalign((void**)&w, LINE_SIZE, sizeof(Worker)) != 0 ||
+        posix_memalign((void**)&w->dq, LINE_SIZE, dq_size * sizeof(Task)) != 0) {
+        fprintf(stderr, "Error: unable to allocate worker deques!\n");
+        exit(1);
+    }
 #endif
 
     w->ts.v = 0;
@@ -296,7 +307,11 @@ _lace_init(int n)
     lace_cb_stealing = &lace_default_cb;
 
     barrier_init(&bar, lace_workers());
-    posix_memalign((void**)&workers, LINE_SIZE, n*sizeof(Worker*));
+    if (posix_memalign((void**)&workers, LINE_SIZE, n*sizeof(Worker*)) != 0) {
+        fprintf(stderr, "Error: unable to allocate memory for Lace workers\n");
+        exit(1);
+    }
+
     pthread_key_create(&worker_key, NULL);
 
 #if USE_NUMA

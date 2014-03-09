@@ -70,12 +70,12 @@ set_load(FILE* f, vdom_t dom)
     sylvan_serialize_fromfile(f);
 
     size_t bdd;
-    fread(&bdd, sizeof(size_t), 1, f);
+    assert(fread(&bdd, sizeof(size_t), 1, f) == 1);
     set->bdd = sylvan_ref(sylvan_serialize_get_reversed(bdd));
 
-    fread(&set->vector_size, sizeof(size_t), 1, f);
+    assert(fread(&set->vector_size, sizeof(size_t), 1, f) == 1);
     set->vec_to_bddvar = (BDDVAR*)malloc(sizeof(BDDVAR) * dom->bits_per_integer * set->vector_size);
-    fread(set->vec_to_bddvar, sizeof(BDDVAR), dom->bits_per_integer * set->vector_size, f);
+    assert(fread(set->vec_to_bddvar, sizeof(BDDVAR), dom->bits_per_integer * set->vector_size, f) == dom->bits_per_integer * set->vector_size);
 
     sylvan_gc_disable();
     set->variables = sylvan_ref(sylvan_set_fromarray(set->vec_to_bddvar, dom->bits_per_integer * set->vector_size));
@@ -93,14 +93,14 @@ rel_load(FILE* f, vdom_t dom)
     sylvan_serialize_fromfile(f);
 
     size_t bdd;
-    fread(&bdd, sizeof(size_t), 1, f);
+    assert(fread(&bdd, sizeof(size_t), 1, f) == 1);
     rel->bdd = sylvan_ref(sylvan_serialize_get_reversed(bdd));
 
-    fread(&rel->vector_size, sizeof(size_t), 1, f);
+    assert(fread(&rel->vector_size, sizeof(size_t), 1, f) == 1);
     rel->vec_to_bddvar = (BDDVAR*)malloc(sizeof(BDDVAR) * dom->bits_per_integer * rel->vector_size);
     rel->prime_vec_to_bddvar = (BDDVAR*)malloc(sizeof(BDDVAR) * dom->bits_per_integer * rel->vector_size);
-    fread(rel->vec_to_bddvar, sizeof(BDDVAR), rel->vector_size*dom->bits_per_integer, f);
-    fread(rel->prime_vec_to_bddvar, sizeof(BDDVAR), rel->vector_size*dom->bits_per_integer, f);
+    assert(fread(rel->vec_to_bddvar, sizeof(BDDVAR), rel->vector_size*dom->bits_per_integer, f) == rel->vector_size * dom->bits_per_integer);
+    assert(fread(rel->prime_vec_to_bddvar, sizeof(BDDVAR), rel->vector_size*dom->bits_per_integer, f) == rel->vector_size * dom->bits_per_integer);
 
     sylvan_gc_disable();
     rel->variables = sylvan_ref(sylvan_set_fromarray(rel->vec_to_bddvar, dom->bits_per_integer * rel->vector_size));
@@ -248,8 +248,8 @@ main(int argc, char **argv)
     domain = (vdom_t)malloc(sizeof(struct vector_domain));
 
     // Read domain info
-    fread(&domain->vector_size, sizeof(size_t), 1, f);
-    fread(&domain->bits_per_integer, sizeof(size_t), 1, f);
+    assert(fread(&domain->vector_size, sizeof(size_t), 1, f)==1);
+    assert(fread(&domain->bits_per_integer, sizeof(size_t), 1, f)==1);
 
     printf("Vector size: %zu\n", domain->vector_size);
     printf("Bits per integer: %zu\n", domain->bits_per_integer);
@@ -258,8 +258,8 @@ main(int argc, char **argv)
     domain->vec_to_bddvar = (BDDVAR*)malloc(sizeof(BDDVAR) * domain->bits_per_integer * domain->vector_size);
     domain->prime_vec_to_bddvar = (BDDVAR*)malloc(sizeof(BDDVAR) * domain->bits_per_integer * domain->vector_size);
 
-    fread(domain->vec_to_bddvar, sizeof(BDDVAR), domain->vector_size * domain->bits_per_integer, f);
-    fread(domain->prime_vec_to_bddvar, sizeof(BDDVAR), domain->vector_size * domain->bits_per_integer, f);
+    assert(fread(domain->vec_to_bddvar, sizeof(BDDVAR), domain->vector_size * domain->bits_per_integer, f) == domain->vector_size * domain->bits_per_integer);
+    assert(fread(domain->prime_vec_to_bddvar, sizeof(BDDVAR), domain->vector_size * domain->bits_per_integer, f) == domain->vector_size * domain->bits_per_integer);
 
     sylvan_gc_disable();
     domain->universe = sylvan_ref(sylvan_set_fromarray(domain->vec_to_bddvar, domain->bits_per_integer * domain->vector_size));
@@ -272,7 +272,7 @@ main(int argc, char **argv)
     printf("done\n");
 
     // Read transitions
-    fread(&nGrps, sizeof(int), 1, f);
+    assert(fread(&nGrps, sizeof(int), 1, f) == 1);
     next = (vrel_t*)malloc(sizeof(vrel_t) * nGrps);
 
     printf("Loading transition relations... ");

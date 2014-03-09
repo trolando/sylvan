@@ -2612,11 +2612,11 @@ void
 sylvan_serialize_fromfile(FILE *in)
 {
     size_t count, i;
-    fread(&count, sizeof(size_t), 1, in);
+    assert(fread(&count, sizeof(size_t), 1, in) == 1);
 
     for (i=1; i<=count; i++) {
         struct bddnode node;
-        fread(&node, sizeof(struct bddnode), 1, in);
+        assert(fread(&node, sizeof(struct bddnode), 1, in) == 1);
 
         assert(node.low <= sylvan_ser_done);
         assert(node.high <= sylvan_ser_done);

@@ -242,7 +242,7 @@ static inline unsigned llci_next_pow2(unsigned x)
 static inline llci_t llci_create(size_t cache_size)
 {
     llci_t dbs;
-    posix_memalign((void**)&dbs, LINE_SIZE, sizeof(struct llci));
+    assert(posix_memalign((void**)&dbs, LINE_SIZE, sizeof(struct llci)) == 0);
 
     assert(LLCI_KEYSIZE <= LLCI_DATASIZE);
 

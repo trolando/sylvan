@@ -102,17 +102,18 @@ DECLARE_THREAD_LOCAL(gc_key, gc_tomark_t);
 
 /**
  * Cached operations:
- * 0 = ite
- * 1 = relprods
- * 2 = relprods_reversed
- * 3 = count
- * 4 = exists
- * 5 = satcount
- * 6 = relprod
- * 7 = substitute
- * 8 = contrain
  * Operation numbers are stored in the data field of the first parameter
  */
+#define CACHE_ITE 0
+#define CACHE_RELPRODS 1
+#define CACHE_RRELPRODS 2
+#define CACHE_COUNT 3
+#define CACHE_EXISTS 4
+#define CACHE_SATCOUNT 5
+#define CACHE_RELPROD 6
+#define CACHE_SUBST 7
+#define CACHE_CONSTRAIN 8
+
 struct __attribute__((packed)) bddcache {
     BDD params[3];
     BDD result;
@@ -924,7 +925,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     if (cachenow) {
         // Check cache
         memset(&template_cache_node, 0, sizeof(struct bddcache));
-        template_cache_node.params[0] = BDD_SETDATA(a, 0); // ITE operation
+        template_cache_node.params[0] = BDD_SETDATA(a, CACHE_ITE);
         template_cache_node.params[1] = b;
         template_cache_node.params[2] = c;
         template_cache_node.result = sylvan_invalid;
@@ -1033,7 +1034,7 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
     if (cachenow) {
         // TODO: get rid of complement on a for better cache see cudd
         memset(&template_cache_node, 0, sizeof(struct bddcache));
-        template_cache_node.params[0] = BDD_SETDATA(a, 8); // restrict operation
+        template_cache_node.params[0] = BDD_SETDATA(a, CACHE_CONSTRAIN);
         template_cache_node.params[1] = b;
         template_cache_node.result = sylvan_invalid;
 
@@ -1174,7 +1175,7 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
     if (cachenow) {
         // Check cache
         memset(&template_cache_node, 0, sizeof(struct bddcache));
-        template_cache_node.params[0] = BDD_SETDATA(a, 4); // exists operation
+        template_cache_node.params[0] = BDD_SETDATA(a, CACHE_EXISTS);
         template_cache_node.params[1] = variables;
         template_cache_node.result = sylvan_invalid;
 
@@ -1317,7 +1318,7 @@ TASK_IMPL_4(BDD, sylvan_relprod, BDD, a, BDD, b, BDD, x, BDDVAR, prev_level)
     if (cachenow) {
         // Check cache
         memset(&template_cache_node, 0, sizeof(struct bddcache));
-        template_cache_node.params[0] = BDD_SETDATA(a, 6); // RelProd operation
+        template_cache_node.params[0] = BDD_SETDATA(a, CACHE_RELPROD);
         template_cache_node.params[1] = b;
         template_cache_node.params[2] = x;
         template_cache_node.result = sylvan_invalid;
@@ -1418,7 +1419,7 @@ TASK_IMPL_3(BDD, sylvan_substitute, BDD, a, BDD, vars, BDDVAR, prev_level)
     if (cachenow) {
         // Check cache
         memset(&template_cache_node, 0, sizeof(struct bddcache));
-        template_cache_node.params[0] = BDD_SETDATA(a, 7); // Substitute operation
+        template_cache_node.params[0] = BDD_SETDATA(a, CACHE_SUBST);
         template_cache_node.params[1] = vars;
         template_cache_node.params[2] = 0;
         template_cache_node.result = sylvan_invalid;
@@ -1573,7 +1574,7 @@ TASK_IMPL_4(BDD, sylvan_relprods, BDD, a, BDD, b, BDD, vars, BDDVAR, prev_level)
     if (cachenow) {
         // Check cache
         memset(&template_cache_node, 0, sizeof(struct bddcache));
-        template_cache_node.params[0] = BDD_SETDATA(a, 1); // RelProdS operation
+        template_cache_node.params[0] = BDD_SETDATA(a, CACHE_RELPRODS);
         template_cache_node.params[1] = b;
         template_cache_node.params[2] = vars;
         template_cache_node.result = sylvan_invalid;
@@ -1764,7 +1765,7 @@ TASK_IMPL_4(BDD, sylvan_relprods_reversed, BDD, a, BDD, b, BDD, vars, BDDVAR, pr
     if (cachenow) {
         // Check cache
         memset(&template_cache_node, 0, sizeof(struct bddcache));
-        template_cache_node.params[0] = BDD_SETDATA(a, 2); // RelProdS reversed operation
+        template_cache_node.params[0] = BDD_SETDATA(a, CACHE_RRELPRODS);
         template_cache_node.params[1] = b;
         template_cache_node.params[2] = vars;
         template_cache_node.result = sylvan_invalid;
@@ -1956,7 +1957,7 @@ TASK_IMPL_3(sylvan_satcount_double_t, sylvan_satcount_cached, BDD, bdd, BDDSET, 
     if (cachenow) {
         // Check cache
         memset(&template_cache_node, 0, sizeof(struct bddcache));
-        template_cache_node.params[0] = BDD_SETDATA(bdd, 5); // satcount operation
+        template_cache_node.params[0] = BDD_SETDATA(bdd, CACHE_SATCOUNT);
         template_cache_node.params[1] = variables;
         if (llci_get_tag(_bdd.cache, &template_cache_node)) {
             SV_CNT_CACHE(C_cache_reuse);

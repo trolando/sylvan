@@ -8,6 +8,7 @@
 
 static int report = 0;
 static int report_table = 0;
+static int run_par = 1;
 
 double wctime()
 {
@@ -114,6 +115,58 @@ static vdom_t domain;
 static int nGrps;
 static vrel_t *next;
 
+TASK_4(BDD, go_par, BDD, set, BDD, all, size_t, from, size_t, len)
+{
+    if (len == 1) {
+        BDD succ = sylvan_relprods(set, next[from]->bdd, next[from]->all_variables);
+        sylvan_ref(succ);
+        BDD result = sylvan_diff(succ, all);
+        sylvan_deref(succ);
+        return result;
+    }
+
+    BDD left, right;
+    SPAWN(go_par, set, all, from, (len+1)/2);
+    right = sylvan_ref(CALL(go_par, set, all, from+(len+1)/2, len/2));
+    left = sylvan_ref(SYNC(go_par));
+    BDD result = CALL(sylvan_ite, left, sylvan_true, right, 0);
+    sylvan_deref(left);
+    sylvan_deref(right);
+    return result;
+}
+
+static void
+par(vset_t set)
+{
+    BDD states = set->bdd;
+    BDD new = sylvan_ref(states);
+    size_t counter = 1;
+    do {
+        printf("Level %zu... ", counter++);
+        if (report) {
+            printf("%zu states\n", (size_t)sylvan_satcount(states, set->variables));
+        }
+        BDD cur = new;
+        new = sylvan_ref(CALL(go_par, cur, states, 0, nGrps));
+        sylvan_deref(cur);
+        // states = states + new
+        BDD temp = sylvan_ref(sylvan_or(states, new));
+        sylvan_deref(states);
+        states = temp;
+        if (report_table) {
+            llmsset_t __sylvan_get_internal_data();
+            llmsset_t tbl = __sylvan_get_internal_data();
+            size_t filled = llmsset_get_filled(tbl);
+            size_t total = llmsset_get_size(tbl);
+            printf("done, table: %0.1f%% full (%zu nodes).\n", 100.0*(double)filled/total, filled);
+        } else {
+            printf("done.\n");
+        }
+    } while (new != sylvan_false);
+    sylvan_deref(new);
+    set->bdd = states;
+}
+
 static void
 bfs(vset_t set)
 {
@@ -183,8 +236,13 @@ main(int argc, char **argv)
     }
 
     // Init Lace and Sylvan
-    lace_init(4, 100000, 0);
-    sylvan_init(25, 24, 4);
+    // Reasonable defaults: datasize of 26 (2048 MB), cachesize of 24 (576 MB), granularity of 4-16
+    // 26: 2GB
+    // 30: 32GB
+    // 31: 64GB
+    // 32: 128GB
+    lace_init(4, 100000, 0); // 4 workers
+    sylvan_init(25, 24, 4); // 2GB memory
 
     // Create domain
     domain = (vdom_t)malloc(sizeof(struct vector_domain));
@@ -237,11 +295,19 @@ main(int argc, char **argv)
         printf("Transition %zu: %zu BDD nodes\n", i, sylvan_nodecount(next[i]->bdd));
     }
 
-    // Run mc
-    double t1 = wctime();
-    bfs(initial);
-    double t2 = wctime();
-    printf("BFS Time: %f\n", t2-t1);
+    sylvan_gc();
+
+    if (run_par) {
+        double t1 = wctime();
+        par(initial);
+        double t2 = wctime();
+        printf("PAR Time: %f\n", t2-t1);
+    } else {
+        double t1 = wctime();
+        bfs(initial);
+        double t2 = wctime();
+        printf("BFS Time: %f\n", t2-t1);
+    }
 
     // Now we just have states
     BDD states = initial->bdd;

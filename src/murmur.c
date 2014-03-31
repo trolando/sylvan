@@ -71,7 +71,79 @@ FORCE_INLINE uint64_t fmix64 ( uint64_t k )
   return k;
 }
 
-uint64_t rehash_mul(const void *key, const size_t len, const uint64_t seed)
+uint64_t FNV1A_Hash_Jesteress(const void *key, const size_t _len, const uint64_t seed)
+{
+    size_t len = _len;
+    const uint64_t prime = 1099511628211;
+    uint64_t hash = seed;
+    const uint8_t *p = (const uint8_t *)key;
+
+    for (; len >= 8; len-=8, p+=8) {
+        hash = (hash ^ *(uint64_t*)p) * prime;
+        // hash = (hash ^ (rotl32(*(uint32_t*)p, 5) ^ *(uint32_t*)(p+4))) * prime;
+    }
+
+    if (len & 4) {
+        hash = (hash ^ *(uint32_t*)p) * prime;
+        p += 4;
+    }
+
+    if (len & 2) {
+        hash = (hash ^ *(uint16_t*)p) * prime;
+        p += 2;
+    }
+
+    if (len & 1) hash = (hash ^ *p) * prime;
+
+    return hash ^ (hash >> 32);
+}
+
+static uint64_t __attribute__((unused))
+MurmurHash64(const void * key, int len, unsigned int seed)
+{
+    const uint64_t m = 0xc6a4a7935bd1e995;
+    const int r = 47;
+
+    uint64_t h = seed ^ (len * m);
+
+    const uint64_t * data = (const uint64_t *)key;
+    const uint64_t * end = data + (len/8);
+
+    while(data != end)
+    {
+        uint64_t k = *data++;
+
+        k *= m;
+        k ^= k >> r;
+        k *= m;
+
+        h ^= k;
+        h *= m;
+    }
+
+    const unsigned char * data2 = (const unsigned char*)data;
+
+    switch(len & 7)
+    {
+    case 7: h ^= ((uint64_t)data2[6]) << 48;
+    case 6: h ^= ((uint64_t)data2[5]) << 40;
+    case 5: h ^= ((uint64_t)data2[4]) << 32;
+    case 4: h ^= ((uint64_t)data2[3]) << 24;
+    case 3: h ^= ((uint64_t)data2[2]) << 16;
+    case 2: h ^= ((uint64_t)data2[1]) << 8;
+    case 1: h ^= ((uint64_t)data2[0]);
+            h *= m;
+    };
+
+    h ^= h >> r;
+    h *= m;
+    h ^= h >> r;
+
+    return h;
+}
+
+static uint64_t __attribute__((unused))
+murmurhash3(const void *key, const size_t len, const uint64_t seed)
 {
     const uint8_t * data = (const uint8_t*)key;
     const int nblocks = len / 16;
@@ -149,9 +221,16 @@ uint64_t rehash_mul(const void *key, const size_t len, const uint64_t seed)
     return h1;
 }
 
+uint64_t rehash_mul(const void *key, const size_t len, const uint64_t seed)
+{
+    return FNV1A_Hash_Jesteress(key, len, seed);
+    // return MurmurHash64(key, len, seed);
+    // return murmurhash3(key, len, seed);
+}
+
 uint64_t hash_mul(const void *key, const size_t len)
 {
-    return rehash_mul(key, len, BIG_CONSTANT(12345678901234567890));
+    return rehash_mul(key, len, 14695981039346656037LLU);
 }
 
 //-----------------------------------------------------------------------------

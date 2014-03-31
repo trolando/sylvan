@@ -66,11 +66,6 @@ static barrier_t bar;
  * Methods to manipulate the free field inside the BDD type
  */
 
-static inline uint32_t BDD_GETDATA(BDD s)
-{
-    return (s>>40) & 0x7fffff;
-}
-
 static inline BDD BDD_SETDATA(BDD s, uint32_t data)
 {
     return (s & 0x800000ffffffffff) | (((uint64_t)data & 0x7fffff)<<40);

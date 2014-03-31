@@ -80,7 +80,7 @@ typedef struct gc_tomark
     BDD bdd;
 } *gc_tomark_t;
 
-DECLARE_THREAD_LOCAL(gc_key, gc_tomark_t);
+static DECLARE_THREAD_LOCAL(gc_key, gc_tomark_t);
 
 #define TOMARK_INIT \
             gc_tomark_t __tomark_original, __tomark_top; {\
@@ -145,7 +145,7 @@ __sylvan_get_internal_cache()
 /**
  * Thread-local Insert index for LLMSset
  */
-DECLARE_THREAD_LOCAL(insert_index, uint64_t*);
+static DECLARE_THREAD_LOCAL(insert_index, uint64_t*);
 
 static uint64_t*
 initialize_insert_index()

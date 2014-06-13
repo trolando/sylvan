@@ -1,10 +1,29 @@
+/* 
+ * Copyright 2013-2014 Formal Methods and Tools, University of Twente
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#include <sched.h> // for sched_getaffinity
 #include <stdio.h>  // for fprintf
 #include <stdlib.h> // for memalign, malloc
+#include <string.h> // for memset
 #include <sys/mman.h> // for mprotect
 #include <sys/time.h> // for gettimeofday
 #include <pthread.h>
+#include <unistd.h>
+#include <assert.h>
 
-#include <barrier.h>
 #include <lace.h>
 #include <ticketlock.h>
 
@@ -17,21 +36,51 @@
 #include <numa_tools.h>
 #endif
 
+// public Worker data
 static Worker **workers;
-static int inited = 0;
-static size_t dq_size = -1;
+static size_t default_stacksize = 4*1024*1024; // 4 megabytes
+static size_t default_dqsize = 100000;
 
 static int n_workers = 0;
 
-static int more_work = 1;
-static pthread_t *ts = NULL;
+// set to 0 when quitting
+static volatile int more_work = 1;
 
+// for storing private Worker data
 static pthread_attr_t worker_attr;
 static pthread_key_t worker_key;
-static barrier_t bar;
 
 static pthread_cond_t wait_until_done = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t wait_until_done_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+WorkerP*
+lace_get_worker()
+{
+    return (WorkerP*)pthread_getspecific(worker_key);
+}
+
+Task*
+lace_get_head(WorkerP *self)
+{
+    Task *low = self->dq;
+    Task *high = self->end;
+
+    if (low->f == 0) return low;
+
+    while (low < high) {
+        Task *mid = low + (high-low)/2;
+        if (mid->f == 0) high = mid;
+        else low = mid + 1;
+    }
+
+    return low;
+}
+
+size_t
+lace_workers()
+{
+    return n_workers;
+}
 
 #if LACE_PIE_TIMES
 static hrtime_t count_at_start, count_at_end;
@@ -60,58 +109,154 @@ us_elapsed(void)
 #endif
 
 #if USE_NUMA
+// Lock used only during parallel lace_init_worker...
 ticketlock_t lock = {0};
 #endif
 
-static void
-init_worker(int worker)
+/* Barrier */
+#define BARRIER_MAX_THREADS 128
+
+typedef union __attribute__((__packed__)) asize_u
 {
-    Worker *w;
+    volatile size_t val;
+    char            pad[LINE_SIZE - sizeof(size_t)];
+} asize_t;
+
+typedef struct barrier_s {
+    size_t __attribute__((aligned(LINE_SIZE))) ids;
+    size_t __attribute__((aligned(LINE_SIZE))) threads;
+    size_t __attribute__((aligned(LINE_SIZE))) count;
+    size_t __attribute__((aligned(LINE_SIZE))) wait;
+    /* the following is needed only for destroy: */
+    asize_t             entered[BARRIER_MAX_THREADS];
+    pthread_key_t       tls_key;
+} barrier_t;
+
+static inline size_t
+barrier_get_next_id(barrier_t *b)
+{
+    size_t val, new_val;
+    do { // cas is faster than __sync_fetch_and_inc / __sync_inc_and_fetch
+        val = ATOMIC_READ (b->ids);
+        new_val = val + 1;
+    } while (!cas(&b->ids, val, new_val));
+    return val;
+}
+
+static inline int
+barrier_get_id(barrier_t *b)
+{
+    int *id = (int*)pthread_getspecific(b->tls_key);
+    if (id == NULL) {
+        id = (int*)malloc(sizeof(int));
+        *id = barrier_get_next_id(b);
+        pthread_setspecific(b->tls_key, id);
+    }
+    return *id;
+}
+
+static int
+barrier_wait(barrier_t *b)
+{
+    // get id ( only needed for destroy :( )
+    int id = barrier_get_id(b);
+
+    // signal entry
+    ATOMIC_WRITE (b->entered[id].val, 1);
+
+    size_t wait = ATOMIC_READ(b->wait);
+    if (b->threads == add_fetch(b->count, 1)) {
+        ATOMIC_WRITE(b->count, 0); // reset counter
+        ATOMIC_WRITE(b->wait, 1 - wait); // flip wait
+        ATOMIC_WRITE(b->entered[id].val, 0); // signal exit
+        return -1; // master return value
+    } else {
+        while (wait == ATOMIC_READ(b->wait)) {} // wait
+        ATOMIC_WRITE(b->entered[id].val, 0); // signal exit
+        return 0; // slave return value
+    }
+}
+
+static void
+barrier_init(barrier_t *b, unsigned count)
+{
+    assert(count <= BARRIER_MAX_THREADS);
+    memset(b, 0, sizeof(barrier_t));
+    pthread_key_create(&b->tls_key, NULL);
+    b->threads = count;
+}
+
+static void
+barrier_destroy(barrier_t *b)
+{
+    // wait for all to exit
+    size_t i;
+    for (i=0; i<b->threads; i++)
+        while (1 == b->entered[i].val) {}
+    pthread_key_delete(b->tls_key);
+}
+
+static size_t default_stacksize;
+static barrier_t bar;
+
+void
+lace_init_worker(int worker, size_t dq_size)
+{
+    Worker *wt;
+    WorkerP *w;
+
+    if (dq_size == 0) dq_size = default_dqsize;
 
 #if USE_NUMA
+    // Retrieve our NUMA node...
     size_t node;
     numa_worker_info(worker, &node, 0, 0, 0);
+
+    // Pin our thread...
+    numa_run_on_node(node);
+
+    // Allocate memory on our NUMA node...
     ticketlock_lock(&lock);
-    w = (Worker *)numa_alloc_onnode(sizeof(Worker), node);
-    if (w == NULL) {
-        fprintf(stderr, "Error: unable to allocate memory for worker!\n");
-        exit(1);
-    }
+    wt = (Worker *)numa_alloc_onnode(sizeof(Worker), node);
+    w = (WorkerP *)numa_alloc_onnode(sizeof(WorkerP), node);
     w->dq = (Task*)numa_alloc_onnode(dq_size * sizeof(Task), node);
-    if (w->dq == NULL) {
-        fprintf(stderr, "Error: unable to allocate worker deques!\n");
-        exit(1);
-    }
     ticketlock_unlock(&lock);
 #else
-    if (posix_memalign((void**)&w, LINE_SIZE, sizeof(Worker)) != 0 ||
-        posix_memalign((void**)&w->dq, LINE_SIZE, dq_size * sizeof(Task)) != 0) {
-        fprintf(stderr, "Error: unable to allocate worker deques!\n");
-        exit(1);
-    }
+    // Allocate memory...
+    posix_memalign((void**)&wt, LINE_SIZE, sizeof(Worker));
+    posix_memalign((void**)&w, LINE_SIZE, sizeof(WorkerP));
+    posix_memalign((void**)&w->dq, LINE_SIZE, dq_size * sizeof(Task));
 #endif
 
-    w->ts.v = 0;
+    // Initialize public worker data
+    wt->dq = w->dq;
+    wt->ts.v = 0;
+    wt->allstolen = 0;
+    wt->movesplit = 0;
+
+    /// Initialize private worker data
+    w->public = wt;
+    w->end = w->dq + dq_size;
+    w->split = w->dq;
     w->allstolen = 0;
-    w->o_dq = w->dq;
-    w->o_end = w->dq + dq_size;
-    w->o_split = w->o_dq;
-    w->o_allstolen = 0;
-    w->movesplit = 0;
     w->worker = worker;
 
 #if LACE_COUNT_EVENTS
+    // Reset counters
     { int k; for (k=0; k<CTR_MAX; k++) w->ctr[k] = 0; }
 #endif
+
+    // Set pointers
+    pthread_setspecific(worker_key, w);
+    workers[worker] = wt;
+
+    // Synchronize with others
+    barrier_wait(&bar);
 
 #if LACE_PIE_TIMES
     w->time = gethrtime();
     w->level = 0;
 #endif
-
-    pthread_setspecific(worker_key, w);
-    workers[worker] = w;
-    barrier_wait(&bar);
 }
 
 static inline uint32_t
@@ -127,118 +272,103 @@ rng(uint32_t *seed, int max)
     return next % max;
 }
 
-static void*
-lace_boot_wrapper(void *arg)
+void
+lace_steal_random(WorkerP *self, Task *head)
 {
-#if USE_NUMA
-    numa_bind_me(0);
-#endif
+    Worker *victim = workers[(self->worker + 1 + rng(&self->seed, n_workers-1)) % n_workers];
 
-    init_worker(0); // init master
+    PR_COUNTSTEALS(self, CTR_steal_tries);
+    Worker *res = lace_steal(self, head, victim);
+    if (res == LACE_NOWORK) {
+        lace_cb_stealing();
+    } else if (res == LACE_STOLEN) {
+        PR_COUNTSTEALS(self, CTR_steals);
+    } else if (res == LACE_BUSY) {
+        PR_COUNTSTEALS(self, CTR_steal_busy);
+    }
+}
+
+void
+lace_steal_random_loop()
+{
+    // Determine who I am
+    WorkerP * const me = lace_get_worker();
+    Task * const head = me->dq;
+    while (more_work) lace_steal_random(me, head);
+}
+
+static lace_callback_f main_cb;
+
+static void*
+lace_main_wrapper(void *arg)
+{
+    lace_init_worker(0, 0);
+    WorkerP *self = lace_get_worker();
 
 #if LACE_PIE_TIMES
     self->time = gethrtime();
 #endif
 
-    lace_time_event(workers[0], 1);
-
-    ((void (*)())arg)();
-
+    lace_time_event(self, 1);
+    main_cb(self, self->dq, 1, arg);
+    lace_exit();
     pthread_cond_broadcast(&wait_until_done);
 
     return NULL;
 }
 
-// By default, scan sequentially for 0..39 attempts
-#define rand_interval 40
-
-static void*
-worker_thread( void *arg )
+void
+lace_steal_loop()
 {
-    long self_id = (long) arg;
+    // Determine who I am
+    WorkerP * const me = lace_get_worker();
+    const int worker_id = me->worker;
 
-#if USE_NUMA
-    numa_bind_me(self_id);
-#endif
-
-    init_worker(self_id); // init slave
-
-    Worker **self = &workers[self_id];
-    Worker **victim = NULL;
-    int worker_id = (*self)->worker;
-    uint32_t seed = worker_id;
-    unsigned int n = n_workers;
-    int i=0;
+    // Prepare self, victim
+    Worker ** const self = &workers[worker_id];
+    Worker **victim = self;
 
 #if LACE_PIE_TIMES
     (*self)->time = gethrtime();
 #endif
 
-    victim = self;
+    uint32_t seed = worker_id;
+    unsigned int n = n_workers;
+    int i=0;
 
-    do {
-        // Computing a random number for every steal is too slow, so we do some amount of
-        // sequential scanning of the workers and only randomize once in a while, just
-        // to be sure.
-
+    while(more_work) {
+        // Select victim
         if( i>0 ) {
             i--;
-            victim ++;
-            // A couple of if's is faster than a %...
-            if( victim == self ) victim++;
-            if( victim >= workers + n ) victim = workers;
+            victim++;
+            if (victim == self) victim++;
+            if (victim >= workers + n) victim = workers;
+            if (victim == self) victim++;
         } else {
-            i = rng(&seed, rand_interval);
+            i = rng(&seed, 40); // compute random i 0..40
             victim = workers + (rng(&seed, n-1) + worker_id + 1) % n;
         }
 
-        PR_COUNTSTEALS(*self, CTR_steal_tries);
-        switch (lace_steal(*self, (*self)->o_dq, *victim)) {
-        case LACE_NOWORK:
+        PR_COUNTSTEALS(me, CTR_steal_tries);
+        Worker *res = lace_steal(me, me->dq, *victim);
+        if (res == LACE_NOWORK) {
             lace_cb_stealing();
-            break;
-        case LACE_STOLEN:
-            PR_COUNTSTEALS(*self, CTR_steals);
-            break;
-        case LACE_BUSY:
-            PR_COUNTSTEALS(*self, CTR_steal_busy);
-            break;
-        default:
-            break;
+        } else if (res == LACE_STOLEN) {
+            PR_COUNTSTEALS(me, CTR_steals);
+        } else if (res == LACE_BUSY) {
+            PR_COUNTSTEALS(me, CTR_steal_busy);
         }
-
-        if (!more_work) break;
-
-    } while(1);
-
-    lace_time_event(*self, 9);
-
-    return NULL;
-}
-
-Task*
-lace_get_head()
-{
-    Worker *self = (Worker*)pthread_getspecific(worker_key);
-
-    Task *low = self->o_dq;
-    Task *high = self->o_end;
-
-    if (low->f == 0) return low;
-
-    while (low < high) {
-        Task *mid = low + (high-low)/2;
-        if (mid->f == 0) high = mid;
-        else low = mid + 1;
     }
-
-    return low;
 }
 
-Worker*
-lace_get_worker()
+static void*
+lace_default_worker(void* arg)
 {
-    return (Worker*)pthread_getspecific(worker_key);
+    lace_init_worker((size_t)arg, 0);
+    lace_steal_loop();
+    lace_time_event(lace_get_worker(), 9);
+    barrier_wait(&bar);
+    return NULL;
 }
 
 static void
@@ -246,21 +376,12 @@ lace_default_cb()
 {
 }
 
-int
-lace_inited()
+pthread_t
+lace_spawn_worker(int worker, size_t stacksize, void* (*fun)(void*), void* arg)
 {
-    return inited;
-}
+    // Determine stack size
+    if (stacksize == 0) stacksize = default_stacksize;
 
-size_t
-lace_workers()
-{
-    return n_workers;
-}
-
-static pthread_t
-_lace_create_thread(int worker, size_t stacksize, void* (*f)(void*), void *arg)
-{
 #if USE_NUMA
     if (stacksize != 0) {
         size_t pagesize = numa_pagesize();
@@ -286,122 +407,114 @@ _lace_create_thread(int worker, size_t stacksize, void* (*f)(void*), void *arg)
         }
         ticketlock_unlock(&lock);
     }
-#endif
-
-    pthread_t res;
-    pthread_create(&res, &worker_attr, f, arg);
-    return res;
-#if ! USE_NUMA
+#else
+    if (pthread_attr_setstacksize(&worker_attr, stacksize) != 0) {
+        fprintf(stderr, "Lace warning: Cannot set stacksize for new pthreads!\n");
+    }
     (void)worker;
-    (void)stacksize;
 #endif
-}
 
-static void
-_lace_init(int n)
-{
-    n_workers = n;
-
-    more_work = 1;
-    inited = 1;
-    lace_cb_stealing = &lace_default_cb;
-
-    barrier_init(&bar, lace_workers());
-    if (posix_memalign((void**)&workers, LINE_SIZE, n*sizeof(Worker*)) != 0) {
-        fprintf(stderr, "Error: unable to allocate memory for Lace workers\n");
-        exit(1);
+    if (fun == 0) {
+        fun = lace_default_worker;
+        arg = (void*)(size_t)worker;
     }
 
+    pthread_t res;
+    pthread_create(&res, &worker_attr, fun, arg);
+    return res;
+}
+
+static int
+get_cpu_count()
+{
+#ifdef sched_getaffinity
+    /* Best solution: find actual available cpus */
+    cpu_set_t cs;
+    CPU_ZERO(&cs);
+    sched_getaffinity(0, sizeof(cs), &cs);
+    int count = CPU_COUNT(&cs);
+#elif defined(_SC_NPROCESSORS_ONLN)
+    /* Fallback */
+    int count = sysconf(_SC_NPROCESSORS_ONLN);
+#else
+    /* Okay... */
+    int count = 1;
+#endif
+    return count < 1 ? 1 : count;
+}
+
+void
+lace_init(int n, size_t dqsize)
+{
+    // Initialize globals
+    n_workers = n;
+    if (n_workers == 0) n_workers = get_cpu_count();
+    if (dqsize != 0) default_dqsize = dqsize;
+    more_work = 1;
+    lace_cb_stealing = &lace_default_cb;
+
+    // Create barrier for all workers
+    barrier_init(&bar, n);
+
+    // Allocate array with all workers
+    posix_memalign((void**)&workers, LINE_SIZE, n*sizeof(Worker*));
+
+    // Create pthread key
     pthread_key_create(&worker_key, NULL);
 
+    // Prepare structures for thread creation
+    pthread_attr_init(&worker_attr);
+
+    // Set contention scope to system (instead of process)
+    pthread_attr_setscope(&worker_attr, PTHREAD_SCOPE_SYSTEM);
+
+    // Get default stack size
+    if (pthread_attr_getstacksize(&worker_attr, &default_stacksize) != 0) {
+        fprintf(stderr, "Lace warning: pthread_attr_getstacksize returned error!\n");
+        default_stacksize = 0;
+    }
+
 #if USE_NUMA
+    // If we have NUMA, initialize it
     if (numa_available() != 0) {
         fprintf(stderr, "Error: NUMA not available!\n");
         exit(1);
-    }
-    else fprintf(stderr, "Initializing Lace with NUMA support.\n");
-
-    if (numa_distribute(n) != 0) {
-        fprintf(stderr, "Error: no suitable NUMA configuration found!\n");
-        exit(1);
+    } else {
+        fprintf(stderr, "Initializing Lace with NUMA support.\n");
+        if (numa_distribute(n) != 0) {
+            fprintf(stderr, "Error: no suitable NUMA configuration found!\n");
+            exit(1);
+        }
     }
 #endif
 
 #if LACE_PIE_TIMES
+    // Initialize counters for pie times
     us_elapsed_start();
     count_at_start = gethrtime();
 #endif
 }
 
-static void
-_lace_spawn_workers(int n, size_t stacksize, void (*f)(void))
+void
+lace_startup(size_t stacksize, lace_callback_f cb, void *arg)
 {
-    pthread_attr_init(&worker_attr);
-    pthread_attr_setscope(&worker_attr, PTHREAD_SCOPE_SYSTEM);
+    /* Spawn workers */
+    int i;
+    for (i=1; i<n_workers; i++) lace_spawn_worker(i, stacksize, 0, 0);
 
-    if (stacksize == 0) {
-        pthread_attr_getstacksize(&worker_attr, &stacksize);
-    } else {
-        if (0 != pthread_attr_setstacksize(&worker_attr, stacksize)) {
-            fprintf(stderr, "Error: Cannot set stacksize for new pthreads in Lace!\n");
-            exit(1);
-            pthread_attr_getstacksize(&worker_attr, &stacksize);
-        }
-    }
+    if (cb != 0) {
+        main_cb = cb;
+        lace_spawn_worker(0, stacksize, lace_main_wrapper, arg);
 
-    if (stacksize == 0) {
-        fprintf(stderr, "Error: Unable to get stacksize for new pthreads in Lace!\n");
-        exit(1);
-    }
-
-    long i;
-    ts = (pthread_t *)malloc((n-1) * sizeof(pthread_t));
-    for (i=1; i<n; i++) {
-        *(ts+i-1) = _lace_create_thread(i, stacksize, &worker_thread, (void*)i);
-    }
-
-    if (f != NULL) {
-        _lace_create_thread(0, stacksize, &lace_boot_wrapper, (void*)f);
-
-        // Wait on condition until done
+        // Suspend this thread until cb returns
         pthread_mutex_lock(&wait_until_done_mutex);
         pthread_cond_wait(&wait_until_done, &wait_until_done_mutex);
         pthread_mutex_unlock(&wait_until_done_mutex);
     } else {
-#if USE_NUMA
-        // Pin ourself
-        numa_bind_me(0);
-#endif
-
-        init_worker(0); // init master
-        lace_time_event(workers[0], 1);
+        // use this thread as worker and return control
+        lace_init_worker(0, 0);
+        lace_time_event(lace_get_worker(), 1);
     }
-}
-
-void
-lace_init_static(int workers, size_t dqsize)
-{
-    dq_size = dqsize;
-    _lace_init(workers);
-}
-
-void
-lace_init_worker(int idx)
-{
-    long i = idx;
-    if (idx != 0) {
-        worker_thread((void *)i);
-    } else {
-        init_worker(idx);
-    }
-}
-
-void
-lace_init(int workers, size_t dqsize, size_t stacksize)
-{
-    dq_size = dqsize;
-    _lace_init(workers);
-    _lace_spawn_workers(workers, stacksize, NULL);
 }
 
 #if LACE_COUNT_EVENTS
@@ -533,27 +646,15 @@ void lace_exit()
     lace_time_event(workers[0], 2);
 
     more_work = 0;
-    inited = 0;
 
-    if (ts != NULL) {
-        int i;
-        for(i=0; i<n_workers-1; i++) pthread_join(ts[i], NULL);
-    }
+    // Wait for others
+    barrier_wait(&bar);
 
     barrier_destroy(&bar);
 
 #if LACE_COUNT_EVENTS
     lace_count_report_file(stderr);
 #endif
-}
-
-void
-lace_boot(int workers, size_t dqsize, size_t stack_size, void (*f)(void))
-{
-    dq_size = dqsize;
-    _lace_init(workers);
-    _lace_spawn_workers(workers, stack_size, f);
-    lace_exit();
 }
 
 void (*lace_cb_stealing)(void);

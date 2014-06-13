@@ -282,11 +282,6 @@ sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
     if (initialized != 0) return;
     initialized = 1;
 
-    if (!lace_inited()) {
-        fprintf(stderr, "Lace has not been initialized!\n");
-        exit(1);
-    }
-
     lace_set_callback(sylvan_test_gc);
     _bdd.workers = lace_workers();
     barrier_init (&bar, lace_workers());

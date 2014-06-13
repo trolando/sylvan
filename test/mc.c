@@ -241,7 +241,9 @@ main(int argc, char **argv)
     // 30: 32GB
     // 31: 64GB
     // 32: 128GB
-    lace_init(4, 100000, 0); // 4 workers
+    lace_init(4, 100000); // 4 workers
+    lace_startup(0, NULL, NULL);
+
     sylvan_init(25, 24, 4); // 2GB memory
 
     // Create domain

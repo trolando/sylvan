@@ -368,7 +368,8 @@ void runtests(int threads)
         exit(1);
     }
 
-    lace_init(threads, 100000, 0);
+    lace_init(threads, 100000);
+    lace_startup(0, NULL, NULL);
 
     printf(BOLD "Testing Sylvan\n");
 

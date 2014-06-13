@@ -32,6 +32,8 @@ set(sylvan_sources
   src/sha2.c
   src/sylvan.h
   src/sylvan.c
+  src/lddmc.h
+  src/lddmc.c
   src/llmsset.c
   src/llmsset.h
   src/lace.c

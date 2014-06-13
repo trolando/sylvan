@@ -105,7 +105,7 @@ phase2:
     for (;;) {
         if (count >= 2048) return 0; /* come on, just gc */
         d_idx &= dbs->mask; // sanitize...
-        if (!d_idx) d_idx++; // do not use bucket 0 for data
+        while (d_idx <= 1) d_idx++; // do not use bucket 0,1 for data
         volatile uint64_t *ptr = dbs->table + d_idx;
         uint64_t h = *ptr;
         if (h & DFILLED) {

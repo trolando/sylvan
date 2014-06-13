@@ -13,6 +13,7 @@
 
 #include "llmsset.h"
 #include "sylvan.h"
+#include "lddmc.h"
 
 #if USE_NUMA
 #include "numa_tools.h"
@@ -397,6 +398,159 @@ void test_gc(int threads)
     assert(sylvan_count_refs() == (size_t)N_canaries);
 }
 
+TASK_2(MDD, random_ldd, int, depth, int, count)
+{
+    uint32_t n[depth];
+
+    MDD result = lddmc_false;
+
+    int i, j;
+    for (i=0; i<count; i++) {
+        for (j=0; j<depth; j++) {
+            n[j] = rng(0, 10);
+        }
+        MDD old = result;
+        result = lddmc_union_cube(result, n, depth);
+        assert(lddmc_cube(n, depth) != lddmc_true);
+        assert(result == lddmc_union(old, lddmc_cube(n, depth)));
+        assert(result != lddmc_true);
+    }
+
+    return result;
+}
+
+TASK_3(void*, enumer, uint32_t*, values, size_t, count, void*, context)
+{
+    return 0;
+    (void)values;
+    (void)count;
+    (void)context;
+}
+
+void
+test_lddmc()
+{
+    LACE_ME;
+
+    lddmc_init(24, 24);
+    lddmc_gc_disable();
+
+    MDD a, b, c;
+
+    // Test union, union_cube, member_cube, satcount
+
+    a = lddmc_cube((uint32_t[]){1,2,3,5,4,3}, 6);
+    a = lddmc_union(a,lddmc_cube((uint32_t[]){2,2,3,5,4,3}, 6));
+    c = b = a = lddmc_union_cube(a, (uint32_t[]){2,2,3,5,4,2}, 6);
+    a = lddmc_union_cube(a, (uint32_t[]){2,3,3,5,4,3}, 6);
+    a = lddmc_union(a, lddmc_cube((uint32_t[]){2,3,4,4,4,3}, 6));
+
+    assert(lddmc_member_cube(a, (uint32_t[]){2,3,3,5,4,3}, 6));
+    assert(lddmc_member_cube(a, (uint32_t[]){1,2,3,5,4,3}, 6));
+    assert(lddmc_member_cube(a, (uint32_t[]){2,2,3,5,4,3}, 6));
+    assert(lddmc_member_cube(a, (uint32_t[]){2,2,3,5,4,2}, 6));
+
+    assert(lddmc_satcount(a) == 5);
+
+    lddmc_sat_all_par(a, TASK(enumer), NULL);
+
+    // Test minus, member_cube, satcount
+
+    a = lddmc_minus(a, b);
+    assert(lddmc_member_cube(a, (uint32_t[]){2,3,3,5,4,3}, 6));
+    assert(!lddmc_member_cube(a, (uint32_t[]){1,2,3,5,4,3}, 6));
+    assert(!lddmc_member_cube(a, (uint32_t[]){2,2,3,5,4,3}, 6));
+    assert(!lddmc_member_cube(a, (uint32_t[]){2,2,3,5,4,2}, 6));
+    assert(lddmc_member_cube(a, (uint32_t[]){2,3,4,4,4,3}, 6));
+
+    assert(lddmc_satcount(a) == 2);
+
+    // Test intersect
+
+    assert(lddmc_satcount(lddmc_intersect(a,b)) == 0);
+    assert(lddmc_intersect(b,c)==lddmc_intersect(c,b));
+    assert(lddmc_intersect(b,c)==c);
+
+    // Test relprod
+
+    a = lddmc_cube((uint32_t[]){1},1);
+    b = lddmc_cube((uint32_t[]){1,2},2);
+    MDD proj = lddmc_cube((uint32_t[]){1,2,-1}, 3);
+    assert(lddmc_cube((uint32_t[]){2},1) == lddmc_relprod(a, b, proj));
+    assert(lddmc_cube((uint32_t[]){3},1) == lddmc_relprod(a, lddmc_cube((uint32_t[]){1,3},2), proj));
+    a = lddmc_union_cube(a, (uint32_t[]){2},1);
+    assert(lddmc_satcount(a) == 2);
+    assert(lddmc_cube((uint32_t[]){2},1) == lddmc_relprod(a, b, proj));
+    b = lddmc_union_cube(b, (uint32_t[]){2,2},2);
+    assert(lddmc_cube((uint32_t[]){2},1) == lddmc_relprod(a, b, proj));
+    b = lddmc_union_cube(b, (uint32_t[]){2,3},2);
+    assert(lddmc_satcount(lddmc_relprod(a, b, proj)) == 2);
+    assert(lddmc_union(lddmc_cube((uint32_t[]){2},1),lddmc_cube((uint32_t[]){3},1)) == lddmc_relprod(a, b, proj));
+
+    // Test relprev
+    MDD universe = lddmc_union(lddmc_cube((uint32_t[]){1},1), lddmc_cube((uint32_t[]){2},1));
+    a = lddmc_cube((uint32_t[]){2},1);
+    b = lddmc_cube((uint32_t[]){1,2},2);
+    assert(lddmc_cube((uint32_t[]){1},1) == lddmc_relprev(a, b, proj, universe));
+    assert(lddmc_cube((uint32_t[]){1},1) == lddmc_relprev(a, b, proj, lddmc_cube((uint32_t[]){1},1)));
+    a = lddmc_cube((uint32_t[]){1},1);
+    MDD next = lddmc_relprod(a, b, proj);
+    assert(lddmc_relprev(next, b, proj, a) == a);
+
+    // Random tests
+
+    MDD rnd1, rnd2;
+
+    int i;
+    for (i=0; i<200; i++) {
+        int depth = rng(1, 20);
+        rnd1 = CALL(random_ldd, depth, rng(0, 30));
+        rnd2 = CALL(random_ldd, depth, rng(0, 30));
+        assert(rnd1 != lddmc_true);
+        assert(rnd2 != lddmc_true);
+        assert(lddmc_intersect(rnd1,rnd2) == lddmc_intersect(rnd2,rnd1));
+        assert(lddmc_union(rnd1,rnd2) == lddmc_union(rnd2,rnd1));
+        MDD tmp = lddmc_union(lddmc_minus(rnd1, rnd2), lddmc_minus(rnd2, rnd1));
+        assert(lddmc_intersect(tmp, lddmc_intersect(rnd1, rnd2)) == lddmc_false);
+        assert(lddmc_union(tmp, lddmc_intersect(rnd1, rnd2)) == lddmc_union(rnd1, rnd2));
+        assert(lddmc_minus(rnd1,rnd2) == lddmc_minus(rnd1, lddmc_intersect(rnd1,rnd2)));
+    }
+
+    // Test file stuff
+    for (i=0; i<10; i++) {
+        FILE *f = fopen("__lddmc_test_bdd", "w+");
+        int N = 20;
+        MDD rnd[N];
+        size_t a[N];
+        char sha[N][65];
+        int j;
+        for (j=0;j<N;j++) rnd[j] = CALL(random_ldd, 5, 500);
+        for (j=0;j<N;j++) lddmc_getsha(rnd[j], sha[j]);
+        for (j=0;j<N;j++) { a[j] = lddmc_serialize_add(rnd[j]); lddmc_serialize_tofile(f); }
+        for (j=0;j<N;j++) assert(a[j] == lddmc_serialize_get(rnd[j]));
+        for (j=0;j<N;j++) assert(rnd[j] == lddmc_serialize_get_reversed(a[j]));
+        fseek(f, 0, SEEK_SET);
+        lddmc_serialize_reset();
+
+        lddmc_quit();
+        lddmc_init(24, 24);
+        lddmc_gc_disable();
+
+        for (j=0;j<N;j++) lddmc_serialize_fromfile(f);
+        fclose(f);
+        unlink("__lddmc_test_bdd");
+
+        for (j=0;j<N;j++) rnd[j] = lddmc_serialize_get_reversed(a[j]);
+        char sha2[N][65];
+        for (j=0;j<N;j++) lddmc_getsha(rnd[j], sha2[j]);
+        for (j=0;j<N;j++) assert(memcmp(sha[j], sha2[j], 64)==0);
+    
+        lddmc_serialize_reset();
+    }
+
+    lddmc_quit();
+}
+
 void runtests(int threads)
 {
 #if USE_NUMA
@@ -405,6 +559,11 @@ void runtests(int threads)
 
     lace_init(threads, 100000);
     lace_startup(0, NULL, NULL);
+
+    printf(BOLD "Testing LDDMC... ");
+    fflush(stdout);
+    test_lddmc();
+    printf(LGREEN "success" NC "!\n");
 
     printf(BOLD "Testing Sylvan\n");
 

@@ -12,6 +12,8 @@ lib_LTLIBRARIES = libsylvan.la
 libsylvan_la_SOURCES = \
  src/barrier.c \
  src/barrier.h \
+ src/sha2.c \
+ src/sha2.h \
  src/sylvan.c \
  src/sylvan.h \
  src/llmsset.c \

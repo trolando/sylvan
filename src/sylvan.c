@@ -14,6 +14,7 @@
 #include <barrier.h>
 #include <lace.h>
 #include <llmsset.h>
+#include <sha2.h>
 #include <sylvan.h>
 #include <tls.h>
 
@@ -2623,4 +2624,46 @@ sylvan_serialize_fromfile(FILE *in)
         sylvan_ser_insert(&sylvan_ser_set, &s);
         sylvan_ser_reversed_insert(&sylvan_ser_reversed_set, &s);
     }
+}
+
+static void
+sylvan_sha2_rec(BDD bdd, SHA256_CTX *ctx)
+{
+    if (bdd == sylvan_true || bdd == sylvan_false) {
+        SHA256_Update(ctx, (void*)&bdd, sizeof(BDD));
+        return;
+    }
+
+    bddnode_t node = GETNODE(bdd);
+    if (sylvan_mark(node, 1)) {
+        uint32_t level = node->level;
+        if (node->comp) level |= 0x80000000;
+        SHA256_Update(ctx, (void*)&level, sizeof(uint32_t));
+        sylvan_sha2_rec(node->high, ctx);
+        sylvan_sha2_rec(node->low, ctx);
+    }
+}
+
+void
+sylvan_printsha(BDD bdd)
+{
+    sylvan_fprintsha(stdout, bdd);
+}
+
+void
+sylvan_fprintsha(FILE *f, BDD bdd)
+{
+    char buf[80];
+    sylvan_getsha(bdd, buf);
+    fprintf(f, "%s", buf);
+}
+
+void
+sylvan_getsha(BDD bdd, char *target)
+{
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+    sylvan_sha2_rec(bdd, &ctx);
+    if (bdd != sylvan_true && bdd != sylvan_false) sylvan_unmark_rec(GETNODE(bdd), 1);
+    SHA256_End(&ctx, target);
 }

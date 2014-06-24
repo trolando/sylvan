@@ -215,6 +215,10 @@ void sylvan_fprintdot_nocomp(FILE *out, BDD bdd);
 void sylvan_print(BDD bdd);
 void sylvan_fprint(FILE *f, BDD bdd);
 
+void sylvan_printsha(BDD bdd);
+void sylvan_fprintsha(FILE *f, BDD bdd);
+void sylvan_getsha(BDD bdd, char *target); // at least 65 bytes...
+
 /**
  * Convert normal BDD to a BDD without complement edges
  * Also replaces sylvan_true by sylvan_true_nc

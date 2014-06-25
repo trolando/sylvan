@@ -190,11 +190,11 @@ llmsset_create(size_t key_length, size_t data_length, size_t table_size)
     if (dbs->data == (uint8_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
 
 #if USE_NUMA
-    size_t f_size=0;
-    numa_interleave(dbs->table, dbs->table_size * sizeof(uint64_t), &f_size);
-    dbs->f_size = (f_size /= sizeof(uint64_t));
-    f_size *= dbs->padded_data_length;
-    numa_interleave(dbs->data, dbs->table_size * dbs->padded_data_length, &f_size);
+    size_t fragment_size=0;
+    numa_interleave(dbs->table, dbs->table_size * sizeof(uint64_t), &fragment_size);
+    dbs->fragment_size = (fragment_size /= sizeof(uint64_t));
+    fragment_size *= dbs->padded_data_length;
+    numa_interleave(dbs->data, dbs->table_size * dbs->padded_data_length, &fragment_size);
 #endif
 
     return dbs;
@@ -224,9 +224,14 @@ llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_workers, size_
     const size_t first_entry      = node_index * dbs->f_size + index * entries_each;
     const size_t cap_node         = entries_total - index * entries_each;
     const size_t cap_total        = dbs->table_size - first_entry;
-    *_first_entry = first_entry;
-    *_entry_count = entries_each < cap_node ? entries_each < cap_total ? entries_each : cap_total :
-                                              cap_node     < cap_total ? cap_node     : cap_total ;
+    if (first_entry > dbs->table_size) {
+        *_first_entry = dbs->table_size;
+        *_entry_count = 0;
+    } else {
+        *_first_entry = first_entry;
+        *_entry_count = entries_each < cap_node ? entries_each < cap_total ? entries_each : cap_total :
+                                                  cap_node     < cap_total ? cap_node     : cap_total ;
+    }
 #else
     const size_t entries_total    = dbs->table_size;
     const size_t cachelines_total = (entries_total * sizeof(uint64_t) + LINE_SIZE - 1) / LINE_SIZE;
@@ -234,9 +239,28 @@ llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_workers, size_
     const size_t entries_each     = cachelines_each * LINE_SIZE / sizeof(uint64_t);
     const size_t first_entry      = my_id * entries_each;
     const size_t cap_total        = dbs->table_size - first_entry;
-    *_first_entry = first_entry;
-    *_entry_count = entries_each < cap_total ? entries_each : cap_total;
+    if (first_entry > dbs->table_size) {
+        *_first_entry = dbs->table_size;
+        *_entry_count = 0;
+    } else {
+        *_first_entry = first_entry;
+        *_entry_count = entries_each < cap_total ? entries_each : cap_total;
+    }
 #endif
+}
+
+void
+llmsset_test_multi(const llmsset_t dbs, size_t n_workers)
+{
+    if (n_workers < 1) return; // Never mind...
+
+    size_t first, count, expected=0, i;
+    for (i=0; i<n_workers; i++) {
+        llmsset_compute_multi(dbs, i, n_workers, &first, &count);
+        assert(expected == first);
+        expected += count;
+    }
+    assert(expected == dbs->table_size);
 }
 
 size_t

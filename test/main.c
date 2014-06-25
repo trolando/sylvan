@@ -48,6 +48,8 @@ int test_llmsset()
 
     llmsset_t set = llmsset_create(sizeof(uint32_t), sizeof(uint32_t), 1<<5); // size: 32
 
+    for (i=1;i<200;i++) llmsset_test_multi(set, i);
+
     // Add all entries, but do not ref
     for (i=0;i<16;i++) {
         assert(llmsset_lookup(set, entry + i, &insert_index, &created, index + i) != 0);
@@ -133,6 +135,7 @@ int test_llmsset2()
     pthread_join(t[3], NULL);
 
     uint64_t i;
+    for (i=1;i<200;i++) llmsset_test_multi(msset, i);
     for (i=0;i<msset->table_size;i++) {
         uint64_t key = msset->table[i];
         if (key != 0) {

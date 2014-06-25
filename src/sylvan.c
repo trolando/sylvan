@@ -317,6 +317,7 @@ sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
     }
 
     _bdd.data = llmsset_create(sizeof(struct bddnode), sizeof(struct bddnode), 1LL<<tablesize);
+    llmsset_test_multi(_bdd.data, _bdd.workers);
 
     if (cachesize >= 64) {
         fprintf(stderr, "sylvan_init error: cachesize must be < 64!\n");

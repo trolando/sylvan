@@ -78,4 +78,10 @@ void llmsset_print_size(llmsset_t dbs, FILE *f);
 size_t llmsset_get_filled(const llmsset_t dbs);
 size_t llmsset_get_size(const llmsset_t dbs);
 size_t llmsset_get_insertindex_multi(const llmsset_t dbs, size_t my_id, size_t n_workers);
+
+/**
+ * Self-test for internal method
+ */
+void llmsset_test_multi(const llmsset_t dbs, size_t n_workers);
+
 #endif

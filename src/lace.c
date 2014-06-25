@@ -454,10 +454,10 @@ lace_init(int n, size_t dqsize)
     lace_cb_stealing = &lace_default_cb;
 
     // Create barrier for all workers
-    barrier_init(&bar, n);
+    barrier_init(&bar, n_workers);
 
     // Allocate array with all workers
-    posix_memalign((void**)&workers, LINE_SIZE, n*sizeof(Worker*));
+    posix_memalign((void**)&workers, LINE_SIZE, n_workers*sizeof(Worker*));
 
     // Create pthread key
     pthread_key_create(&worker_key, NULL);
@@ -481,7 +481,7 @@ lace_init(int n, size_t dqsize)
         exit(1);
     } else {
         fprintf(stderr, "Initializing Lace with NUMA support.\n");
-        if (numa_distribute(n) != 0) {
+        if (numa_distribute(n_workers) != 0) {
             fprintf(stderr, "Error: no suitable NUMA configuration found!\n");
             exit(1);
         }

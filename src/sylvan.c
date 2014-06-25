@@ -2200,6 +2200,17 @@ sylvan_set_fromarray(BDDVAR* arr, size_t length)
     return result;
 }
 
+void
+sylvan_test_isset(BDDSET set)
+{
+    while (set != sylvan_false) {
+        assert(set != sylvan_true);
+        bddnode_t n = GETNODE(set);
+        assert(node_high(set, n) == sylvan_true);
+        set = node_low(set, n);
+    }
+}
+
 /**
  * Determine the support of a BDD (all variables used in the BDD)
  */
@@ -2679,4 +2690,25 @@ sylvan_getsha(BDD bdd, char *target)
     sylvan_sha2_rec(bdd, &ctx);
     if (bdd != sylvan_true && bdd != sylvan_false) sylvan_unmark_rec(GETNODE(bdd), 1);
     SHA256_End(&ctx, target);
+}
+
+static void
+sylvan_test_isbdd_rec(BDD bdd, BDDVAR parent)
+{
+    if (bdd == sylvan_true) return;
+    if (bdd == sylvan_false) return;
+    bddnode_t n = GETNODE(bdd);
+    assert(parent < n->level);
+    sylvan_test_isbdd_rec(node_low(bdd, n), n->level);
+    sylvan_test_isbdd_rec(node_high(bdd, n), n->level);
+}
+
+void
+sylvan_test_isbdd(BDD bdd)
+{
+    if (bdd == sylvan_true) return;
+    if (bdd == sylvan_false) return;
+    bddnode_t n = GETNODE(bdd);
+    sylvan_test_isbdd_rec(node_low(bdd, n), n->level);
+    sylvan_test_isbdd_rec(node_high(bdd, n), n->level);
 }

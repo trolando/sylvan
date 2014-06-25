@@ -144,7 +144,12 @@ par(vset_t set)
     do {
         printf("Level %zu... ", counter++);
         if (report) {
-            printf("%zu states\n", (size_t)sylvan_satcount(states, set->variables));
+            sylvan_test_isbdd(states);
+            sylvan_test_isset(set->variables);
+            printf("satcount(");
+            sylvan_printsha(states);
+            printf(") = ");
+            printf("%zu states... ", (size_t)sylvan_satcount(states, set->variables));
         }
         BDD cur = new;
         new = sylvan_ref(CALL(go_par, cur, states, 0, nGrps));

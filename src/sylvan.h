@@ -196,6 +196,7 @@ int sylvan_set_in(BDDSET set, BDDVAR var);
 size_t sylvan_set_count(BDDSET set);
 void sylvan_set_toarray(BDDSET set, BDDVAR *arr);
 BDDSET sylvan_set_fromarray(BDDVAR *arr, size_t length);
+void sylvan_test_isset(BDDSET set);
 
 /**
  * Node creation primitive.
@@ -304,6 +305,7 @@ void sylvan_serialize_totext(FILE *out);
 void sylvan_serialize_tofile(FILE *out);
 void sylvan_serialize_fromfile(FILE *in);
 
+void sylvan_test_isbdd(BDD bdd);
 #endif
 
 

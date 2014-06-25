@@ -1990,12 +1990,24 @@ TASK_IMPL_2(long double, sylvan_satcount, BDD, bdd, BDD, variables)
     size_t skipped = 0;
     BDDVAR var = sylvan_var(bdd);
     bddnode_t set_node = GETNODE(variables);
-    while (var != set_node->level) {
+    BDDVAR var_var = set_node->level;
+    while (var != var_var) {
+        if (var < var_var) {
+            fprintf(stderr, "sylvan_satcount: var %d is not in variables!\n", var);
+            assert(0);
+        }
         skipped++;
         variables = node_low(variables, set_node);
-        // if this assertion fails, then variables is not the support of <bdd>
-        assert(!sylvan_set_isempty(variables));
+        if (sylvan_set_isempty(variables)) {
+            fprintf(stderr, "sylvan_satcount: var %d is not in variables!\n", var);
+            assert(0);
+        }
         set_node = GETNODE(variables);
+        if (var_var >= set_node->level) {
+            fprintf(stderr, "sylvan_satcount: bad order in variables! (%d >= %d)\n", var_var, set_node->level);
+            assert(0);
+        }
+        var_var = set_node->level;
     }
 
     /* Count operation */

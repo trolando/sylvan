@@ -219,13 +219,19 @@ lace_init_worker(int worker, size_t dq_size)
     ticketlock_lock(&lock);
     wt = (Worker *)numa_alloc_onnode(sizeof(Worker), node);
     w = (WorkerP *)numa_alloc_onnode(sizeof(WorkerP), node);
-    w->dq = (Task*)numa_alloc_onnode(dq_size * sizeof(Task), node);
+    if (wt == NULL || w == NULL || (w->dq = (Task*)numa_alloc_onnode(dq_size * sizeof(Task), node)) == NULL) {
+        fprintf(stderr, "Lace error: Unable to allocate memory for the Lace worker!\n");
+        exit(1);
+    }
     ticketlock_unlock(&lock);
 #else
     // Allocate memory...
-    posix_memalign((void**)&wt, LINE_SIZE, sizeof(Worker));
-    posix_memalign((void**)&w, LINE_SIZE, sizeof(WorkerP));
-    posix_memalign((void**)&w->dq, LINE_SIZE, dq_size * sizeof(Task));
+    if (posix_memalign((void**)&wt, LINE_SIZE, sizeof(Worker)) ||
+        posix_memalign((void**)&w, LINE_SIZE, sizeof(WorkerP)) || 
+        posix_memalign((void**)&w->dq, LINE_SIZE, dq_size * sizeof(Task))) {
+            fprintf(stderr, "Lace error: Unable to allocate memory for the Lace worker!\n");
+            exit(1);
+    }
 #endif
 
     // Initialize public worker data
@@ -393,16 +399,16 @@ lace_spawn_worker(int worker, size_t stacksize, void* (*fun)(void*), void* arg)
         ticketlock_lock(&lock);
         void *stack_location = numa_alloc_onnode(stacksize + pagesize, node);
         if (stack_location == 0) {
-            fprintf(stderr, "Error: Unable to allocate memory for the pthread stack!\n");
+            fprintf(stderr, "Lace error: Unable to allocate memory for the pthread stack!\n");
             exit(1);
         }
         if (0 != mprotect(stack_location, pagesize, PROT_NONE)) {
-            fprintf(stderr, "Error: Unable to protect the allocated stack memory with a guard page!\n");
+            fprintf(stderr, "Lace error: Unable to protect the allocated stack memory with a guard page!\n");
             exit(1);
         }
         stack_location = (uint8_t *)stack_location + pagesize; // skip protected page.
         if (0 != pthread_attr_setstack(&worker_attr, stack_location, stacksize)) {
-            fprintf(stderr, "Error: Unable to set the pthread stack in Lace!\n");
+            fprintf(stderr, "Lace error: Unable to set the pthread stack in Lace!\n");
             exit(1);
         }
         ticketlock_unlock(&lock);
@@ -457,7 +463,10 @@ lace_init(int n, size_t dqsize)
     barrier_init(&bar, n_workers);
 
     // Allocate array with all workers
-    posix_memalign((void**)&workers, LINE_SIZE, n_workers*sizeof(Worker*));
+    if (posix_memalign((void**)&workers, LINE_SIZE, n_workers*sizeof(Worker*)) != 0) {
+        fprintf(stderr, "Lace error: unable to allocate memory!\n");
+        exit(1);
+    }
 
     // Create pthread key
     pthread_key_create(&worker_key, NULL);
@@ -477,12 +486,12 @@ lace_init(int n, size_t dqsize)
 #if USE_NUMA
     // If we have NUMA, initialize it
     if (numa_available() != 0) {
-        fprintf(stderr, "Error: NUMA not available!\n");
+        fprintf(stderr, "Lace error: NUMA not available!\n");
         exit(1);
     } else {
         fprintf(stderr, "Initializing Lace with NUMA support.\n");
         if (numa_distribute(n_workers) != 0) {
-            fprintf(stderr, "Error: no suitable NUMA configuration found!\n");
+            fprintf(stderr, "Lace error: no suitable NUMA configuration found!\n");
             exit(1);
         }
     }

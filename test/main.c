@@ -148,17 +148,58 @@ int test_llmsset2()
     return 1;
 }
 
+__thread uint64_t seed = 1;
+
+uint64_t
+xorshift_rand(void)
+{
+    uint64_t x = seed;
+    if (seed == 0) seed = rand();
+    x ^= x >> 12;
+    x ^= x << 25;
+    x ^= x >> 27;
+    seed = x;
+    return x * 2685821657736338717LL;
+}
 
 double
-uniform_deviate(int seed)
+uniform_deviate(uint64_t seed)
 {
-    return seed * (1.0 / (RAND_MAX + 1.0));
+    return seed * (1.0 / (0xffffffffffffffffL + 1.0));
 }
 
 int
 rng(int low, int high)
 {
-    return low + uniform_deviate(rand()) * (high-low);
+    return low + uniform_deviate(xorshift_rand()) * (high-low);
+}
+
+static inline BDD
+make_random_unsafe(int i, int j)
+{
+    if (i == j) return rng(0, 2) ? sylvan_true : sylvan_false;
+
+    BDD yes = make_random_unsafe(i+1, j);
+    BDD no = make_random_unsafe(i+1, j);
+    BDD result = sylvan_invalid;
+
+    switch(rng(0, 4)) {
+    case 0:
+        result = no;
+        break;
+    case 1:
+        result = yes;
+        break;
+    case 2:
+        result = sylvan_makenode(i, yes, no);
+        break;
+    case 3:
+    default:
+        result = sylvan_makenode(i, no, yes);
+        break;
+    }
+
+    return result;
 }
 
 static inline BDD
@@ -352,6 +393,52 @@ test_operators()
     sylvan_gc_enable();
 }
 
+
+/** GC testing */
+VOID_TASK_2(gctest_fill, int, levels, int, width)
+{
+    if (levels > 1) {
+        int i;
+        for (i=0; i<width; i++) { SPAWN(gctest_fill, levels-1, width); }
+        for (i=0; i<width; i++) { SYNC(gctest_fill); }
+    } else {
+        make_random_unsafe(0, 10);
+    }
+}
+
+void report_table()
+{
+    llmsset_t __sylvan_get_internal_data();
+    llmsset_t tbl = __sylvan_get_internal_data();
+    size_t filled = llmsset_get_filled(tbl);
+    size_t total = llmsset_get_size(tbl);
+    printf("done, table: %0.1f%% full (%zu nodes).\n", 100.0*(double)filled/total, filled);
+}
+
+void test_gc(int threads)
+{
+    int N_canaries = 16;
+    BDD canaries[N_canaries];
+    char* hashes[N_canaries];
+    char* hashes2[N_canaries];
+    int i,j;
+    for (i=0;i<N_canaries;i++) {
+        canaries[i] = make_random(0, 10);
+        hashes[i] = (char*)malloc(80);
+        hashes2[i] = (char*)malloc(80);
+        sylvan_getsha(canaries[i], hashes[i]);
+        sylvan_test_isbdd(canaries[i]);
+    }
+    for (j=0;j<10*threads;j++) {
+        CALL(gctest_fill, 6, 5);
+        for (i=0;i<N_canaries;i++) {
+            sylvan_test_isbdd(canaries[i]);
+            sylvan_getsha(canaries[i], hashes2[i]);
+            assert(strcmp(hashes[i], hashes2[i]) == 0);
+        }
+    }
+}
+
 void runtests(int threads)
 {
     printf(BOLD "Testing LL MS Set\n" NC);
@@ -392,6 +479,13 @@ void runtests(int threads)
         test_cube();
         sylvan_quit();
     }
+    printf(LGREEN "success" NC "!\n");
+
+    printf(NC "Testing garbage collection... ");
+    fflush(stdout);
+    sylvan_init(14, 10, 1);
+    test_gc(threads);
+    sylvan_quit();
     printf(LGREEN "success" NC "!\n");
 
     printf(NC "Testing operators... ");

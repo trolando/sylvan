@@ -65,6 +65,7 @@ void llmsset_clear_multi(const llmsset_t dbs, size_t my_id, size_t n_workers);
  * The _safe version uses a CAS operation, the _unsafe version a normal memory operation.
  * Use the _unsafe version unless you are bothered by false negatives
  */
+int llmsset_is_marked(const llmsset_t dbs, uint64_t index);
 int llmsset_mark_unsafe(const llmsset_t dbs, uint64_t index);
 int llmsset_mark_safe(const llmsset_t dbs, uint64_t index);
 

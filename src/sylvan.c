@@ -192,7 +192,7 @@ sylvan_ref(BDD a)
             ss = refset_put(&sylvan_refs, &s, 0);
         }
         ss->count++;
-
+        compiler_barrier();
         sylvan_refs_spinlock = 0;
     }
 
@@ -213,7 +213,7 @@ sylvan_deref(BDD a)
         assert (ss != NULL);
         assert (ss->count > 0);
         ss->count--;
-
+        compiler_barrier();
         sylvan_refs_spinlock = 0;
     }
 }
@@ -234,6 +234,7 @@ sylvan_count_refs()
     }
     refset_iter_free(iter);
 
+    compiler_barrier();
     sylvan_refs_spinlock = 0;
 
     return result;
@@ -267,6 +268,7 @@ sylvan_pregc_mark_refs()
     }
     refset_iter_free(iter);
 
+    compiler_barrier();
     sylvan_refs_spinlock = 0;
 }
 
@@ -2697,6 +2699,7 @@ sylvan_test_isbdd_rec(BDD bdd, BDDVAR parent)
 {
     if (bdd == sylvan_true) return;
     if (bdd == sylvan_false) return;
+    assert(llmsset_is_marked(_bdd.data, BDD_STRIPMARK(bdd)));
     bddnode_t n = GETNODE(bdd);
     assert(parent < n->level);
     sylvan_test_isbdd_rec(node_low(bdd, n), n->level);
@@ -2708,7 +2711,9 @@ sylvan_test_isbdd(BDD bdd)
 {
     if (bdd == sylvan_true) return;
     if (bdd == sylvan_false) return;
+    assert(llmsset_is_marked(_bdd.data, BDD_STRIPMARK(bdd)));
     bddnode_t n = GETNODE(bdd);
     sylvan_test_isbdd_rec(node_low(bdd, n), n->level);
     sylvan_test_isbdd_rec(node_high(bdd, n), n->level);
 }
+

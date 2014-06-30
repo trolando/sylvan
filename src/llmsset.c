@@ -80,6 +80,7 @@ llmsset_lookup(const llmsset_t dbs, const void* data, uint64_t* insert_index, in
 phase2:
     d_idx = *insert_index;
     while (1) {
+        d_idx &= dbs->mask; // sanitize...
         if (!d_idx) d_idx++; // do not use bucket 0 for data
         volatile uint64_t *ptr = dbs->table + d_idx;
         uint64_t h = *ptr;
@@ -290,6 +291,13 @@ llmsset_clear_multi(const llmsset_t dbs, size_t my_id, size_t n_workers)
     llmsset_compute_multi(dbs, my_id, n_workers, &first_entry, &entry_count);
     if (entry_count <= 0) return;
     llmsset_clear_range(dbs, first_entry, entry_count);
+}
+
+int
+llmsset_is_marked(const llmsset_t dbs, uint64_t index)
+{
+    uint64_t v = dbs->table[index];
+    return v & DFILLED ? 1 : 0;
 }
 
 int

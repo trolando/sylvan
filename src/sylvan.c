@@ -162,82 +162,28 @@ initialize_insert_index()
 /**
  * External references (note: protected by a spinlock)
  */
-struct sylvan_ref_s
-{
-    BDD bdd;
-    size_t count;
-};
 
-AVL(refset, struct sylvan_ref_s)
-{
-    return left->bdd - right->bdd;
-}
-
-static avl_node_t *sylvan_refs = NULL;
-static volatile int sylvan_refs_spinlock = 0;
+#include <refs.h>
 
 BDD
 sylvan_ref(BDD a)
 {
-    if (sylvan_isnode(a)) {
-        while (!cas(&sylvan_refs_spinlock, 0, 1)) {
-            while (sylvan_refs_spinlock != 0) ;
-        }
-
-        struct sylvan_ref_s s, *ss;
-        s.bdd = BDD_STRIPMARK(a);
-        ss = refset_search(sylvan_refs, &s);
-        if (ss == NULL) {
-            s.count = 0;
-            ss = refset_put(&sylvan_refs, &s, 0);
-        }
-        ss->count++;
-        compiler_barrier();
-        sylvan_refs_spinlock = 0;
-    }
-
+    if (a == sylvan_false || a == sylvan_true) return a;
+    refs_up(BDD_STRIPMARK(a));
     return a;
 }
 
 void
 sylvan_deref(BDD a)
 {
-    if (sylvan_isnode(a)) {
-        while (!cas(&sylvan_refs_spinlock, 0, 1)) {
-            while (sylvan_refs_spinlock != 0) ;
-        }
-
-        struct sylvan_ref_s s, *ss;
-        s.bdd = BDD_STRIPMARK(a);
-        ss = refset_search(sylvan_refs, &s);
-        assert (ss != NULL);
-        assert (ss->count > 0);
-        ss->count--;
-        compiler_barrier();
-        sylvan_refs_spinlock = 0;
-    }
+    if (a == sylvan_false || a == sylvan_true) return;
+    refs_down(BDD_STRIPMARK(a));
 }
 
 size_t
 sylvan_count_refs()
 {
-    size_t result = 0;
-
-    while (!cas(&sylvan_refs_spinlock, 0, 1)) {
-        while (sylvan_refs_spinlock != 0) ;
-    }
-
-    struct sylvan_ref_s *ss;
-    avl_iter_t *iter = refset_iter(sylvan_refs);
-    while ((ss = refset_iter_next(iter))) {
-        result += ss->count;
-    }
-    refset_iter_free(iter);
-
-    compiler_barrier();
-    sylvan_refs_spinlock = 0;
-
-    return result;
+    return refs_count();
 }
 
 // During garbage collection, after clear, mark stuff again
@@ -257,19 +203,11 @@ sylvan_pregc_mark_rec(BDD bdd)
 static void
 sylvan_pregc_mark_refs()
 {
-    while (!cas(&sylvan_refs_spinlock, 0, 1)) {
-        while (sylvan_refs_spinlock != 0) ;
+    size_t *it = refs_iter();
+    while (it != NULL) {
+        BDD bdd = refs_next(&it);
+        sylvan_pregc_mark_rec(bdd);
     }
-
-    struct sylvan_ref_s *ss;
-    avl_iter_t *iter = refset_iter(sylvan_refs);
-    while ((ss = refset_iter_next(iter))) {
-        if (ss->count > 0) sylvan_pregc_mark_rec(ss->bdd);
-    }
-    refset_iter_free(iter);
-
-    compiler_barrier();
-    sylvan_refs_spinlock = 0;
 }
 
 /** init and quit functions */
@@ -328,6 +266,8 @@ sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
 
     _bdd.cache = llci_create(1LL<<cachesize);
 
+    refs_create(1024);
+
     _bdd.gc = 0;
 }
 
@@ -341,7 +281,7 @@ sylvan_quit()
 
     llci_free(_bdd.cache);
     llmsset_free(_bdd.data);
-    refset_free(&sylvan_refs);
+    refs_free();
     barrier_destroy (&bar);
 }
 

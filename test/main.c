@@ -175,34 +175,6 @@ rng(int low, int high)
 }
 
 static inline BDD
-make_random_unsafe(int i, int j)
-{
-    if (i == j) return rng(0, 2) ? sylvan_true : sylvan_false;
-
-    BDD yes = make_random_unsafe(i+1, j);
-    BDD no = make_random_unsafe(i+1, j);
-    BDD result = sylvan_invalid;
-
-    switch(rng(0, 4)) {
-    case 0:
-        result = no;
-        break;
-    case 1:
-        result = yes;
-        break;
-    case 2:
-        result = sylvan_makenode(i, yes, no);
-        break;
-    case 3:
-    default:
-        result = sylvan_makenode(i, no, yes);
-        break;
-    }
-
-    return result;
-}
-
-static inline BDD
 make_random(int i, int j)
 {
     if (i == j) return rng(0, 2) ? sylvan_true : sylvan_false;
@@ -402,7 +374,7 @@ VOID_TASK_2(gctest_fill, int, levels, int, width)
         for (i=0; i<width; i++) { SPAWN(gctest_fill, levels-1, width); }
         for (i=0; i<width; i++) { SYNC(gctest_fill); }
     } else {
-        make_random_unsafe(0, 10);
+        sylvan_deref(make_random(0, 10));
     }
 }
 
@@ -429,6 +401,7 @@ void test_gc(int threads)
         sylvan_getsha(canaries[i], hashes[i]);
         sylvan_test_isbdd(canaries[i]);
     }
+    assert(sylvan_count_refs() == (size_t)N_canaries);
     for (j=0;j<10*threads;j++) {
         CALL(gctest_fill, 6, 5);
         for (i=0;i<N_canaries;i++) {
@@ -437,6 +410,7 @@ void test_gc(int threads)
             assert(strcmp(hashes[i], hashes2[i]) == 0);
         }
     }
+    assert(sylvan_count_refs() == (size_t)N_canaries);
 }
 
 void runtests(int threads)

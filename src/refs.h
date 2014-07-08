@@ -248,7 +248,40 @@ refs_down(uint64_t a)
     assert(res != 0);
 }
 
-static inline size_t*
+static inline size_t* __attribute__((unused))
+refs_iter2(size_t first, size_t end)
+{
+    assert(first < refs_size);
+    assert(end <= refs_size);
+
+    size_t *bucket = refs_table + first;
+    while (bucket != refs_table + end) {
+        if (*bucket != 0 && *bucket != refs_ts) return bucket;
+        bucket++;
+    }
+    return NULL;
+}
+
+static inline size_t __attribute__((unused))
+refs_next2(size_t **_bucket, size_t end)
+{
+    size_t *bucket = *_bucket;
+    assert(bucket != NULL);
+    assert(end <= refs_size);
+    size_t result = *bucket & 0x000000ffffffffff;
+    bucket++;
+    while (bucket != refs_table + end) {
+        if (*bucket != 0 && *bucket != refs_ts) {
+            *_bucket = bucket;
+            return result;
+        }
+        bucket++;
+    }
+    *_bucket = NULL;
+    return result;
+}
+
+static inline size_t* __attribute__((unused))
 refs_iter()
 {
     size_t *bucket = refs_table;
@@ -259,7 +292,7 @@ refs_iter()
     return NULL;
 }
 
-static inline size_t
+static inline size_t __attribute__((unused))
 refs_next(size_t **_bucket)
 {
     size_t *bucket = *_bucket;

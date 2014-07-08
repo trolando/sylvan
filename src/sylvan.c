@@ -201,11 +201,17 @@ sylvan_pregc_mark_rec(BDD bdd)
 
 // Recursively mark all externally referenced BDDs
 static void
-sylvan_pregc_mark_refs()
+sylvan_pregc_mark_refs(int my_id, int workers)
 {
-    size_t *it = refs_iter();
+    size_t per_worker = refs_size / workers;
+    if (per_worker < 8) per_worker = 8;
+    size_t first = per_worker * my_id;
+    if (first >= refs_size) return;
+    size_t end = per_worker * (my_id + 1);
+    if (end >= refs_size) end = refs_size;
+    size_t *it = refs_iter2(first, end);
     while (it != NULL) {
-        BDD bdd = refs_next(&it);
+        BDD bdd = refs_next2(&it, end);
         sylvan_pregc_mark_rec(bdd);
     }
 }
@@ -489,6 +495,8 @@ sylvan_gc_participate()
     barrier_wait (&bar);
 
     // GC phase 2: mark nodes
+    sylvan_pregc_mark_refs(my_id, (int)workers);
+
     LOCALIZE_THREAD_LOCAL(gc_key, gc_tomark_t);
     gc_tomark_t t = gc_key;
     while (t != NULL) {
@@ -537,7 +545,7 @@ void sylvan_gc_go()
     barrier_wait (&bar);
 
     // GC phase 2a: mark external refs
-    sylvan_pregc_mark_refs();
+    sylvan_pregc_mark_refs(my_id, (int)workers);
 
     // GC phase 2b: mark internal refs
     LOCALIZE_THREAD_LOCAL(gc_key, gc_tomark_t);

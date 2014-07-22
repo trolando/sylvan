@@ -137,7 +137,10 @@ TASK_DECL_4(BDD, sylvan_relprod_paired_prev, BDD, BDD, BDDSET, BDDVAR);
  *   - a@not(a) = 0
  */
 TASK_DECL_3(BDD, sylvan_constrain, BDD, BDD, BDDVAR);
-static inline BDD sylvan_constrain(BDD a, BDD b) { return CALL(sylvan_constrain, a, b, 0); }
+#define sylvan_constrain(f,c) (CALL(sylvan_constrain, (f), (c), 0))
+
+TASK_DECL_3(BDD, sylvan_restrict, BDD, BDD, BDDVAR);
+#define sylvan_restrict(f,c) (CALL(sylvan_restrict, (f), (c), 0))
 
 /**
  * Calculate the support of a BDD.

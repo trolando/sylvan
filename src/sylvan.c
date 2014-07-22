@@ -106,6 +106,7 @@ static DECLARE_THREAD_LOCAL(gc_key, gc_tomark_t);
 #define CACHE_COUNT 3
 #define CACHE_EXISTS 4
 #define CACHE_SATCOUNT 5
+#define CACHE_RESTRICT 7
 #define CACHE_CONSTRAIN 8
 
 struct __attribute__((packed)) bddcache {
@@ -307,6 +308,7 @@ typedef enum {
   C_relprod_paired,
   C_relprod_paired_prev,
   C_constrain,
+  C_restrict,
 #endif
   C_MAX
 } Counters;
@@ -1005,61 +1007,108 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
     TOMARK_INIT
 
     BDD low=sylvan_invalid, high=sylvan_invalid;
-    if (rand_1()) {
-        // Since we already computed bHigh, we can see some trivial results
-        if (sylvan_isconst(bHigh)) {
-            if (bHigh == sylvan_true) high = aHigh;
-            else return CALL(sylvan_constrain, aLow, bLow, level);
-        } else {
-            SPAWN(sylvan_constrain, aHigh, bHigh, level);
-        }
-
-        // Since we already computed bLow, we can see some trivial results
-        if (sylvan_isconst(bLow)) {
-            if (bLow == sylvan_true) low = bLow;
-            else {
-                // okay, return aHigh @ bHigh and skip cache
-                if (bHigh != sylvan_true) high = SYNC(sylvan_constrain);
-                return high;
-            }
-        } else {
-            low = CALL(sylvan_constrain, aLow, bLow, level);
-            TOMARK_PUSH(low)
-        }
-
-        if (bHigh != sylvan_true) {
-            high = SYNC(sylvan_constrain);
-            TOMARK_PUSH(high)
-        }
+    if (bLow == sylvan_true) low = aLow;
+    else if (bLow == sylvan_false) return CALL(sylvan_constrain, aHigh, bHigh, level);
+    else SPAWN(sylvan_constrain, aLow, bLow, level);
+    if (bHigh == sylvan_true) high = bHigh;
+    else if (bHigh == sylvan_false) {
+        if (bLow != sylvan_true) low = SYNC(sylvan_constrain);
+        return low;
     } else {
-        // Since we already computed bHigh, we can see some trivial results
-        if (sylvan_isconst(bLow)) {
-            if (bLow == sylvan_true) low = aLow;
-            else return CALL(sylvan_constrain, aHigh, bHigh, level);
-        } else {
-            SPAWN(sylvan_constrain, aLow, bLow, level);
-        }
+        high = CALL(sylvan_constrain, aHigh, bHigh, level);
+        TOMARK_PUSH(high);
+    }
+    if (bLow != sylvan_true) {
+        low = SYNC(sylvan_constrain);
+        TOMARK_PUSH(low);
+    }
+    result = sylvan_makenode(level, low, high);
 
-        // Since we already computed bLow, we can see some trivial results
-        if (sylvan_isconst(bHigh)) {
-            if (bHigh == sylvan_true) high = bHigh;
-            else {
-                // okay, return aLow @ bLow and skip cache
-                if (bLow != sylvan_true) low = SYNC(sylvan_constrain);
-                return low;
-            }
-        } else {
-            high = CALL(sylvan_constrain, aHigh, bHigh, level);
-            TOMARK_PUSH(high)
-        }
+    TOMARK_EXIT
 
-        if (bLow != sylvan_true) {
-            low = SYNC(sylvan_constrain);
-            TOMARK_PUSH(low)
+    if (cachenow) {
+        template_cache_node.result = result;
+        int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
+        if (cache_res == 0) {
+            // It existed!
+            SV_CNT_CACHE(C_cache_exists);
+            // No need to ref
+        } else if (cache_res == 1) {
+            // Created new!
+            SV_CNT_CACHE(C_cache_new);
         }
     }
 
-    result = sylvan_makenode(level, low, high);
+    return result;
+}
+
+/**
+ * Calculate restrict a @ b
+ */
+TASK_IMPL_3(BDD, sylvan_restrict, BDD, a, BDD, b, BDDVAR, prev_level)
+{
+    /* Trivial cases */
+    if (b == sylvan_true) return a;
+    if (b == sylvan_false) return sylvan_false;
+    if (sylvan_isconst(a)) return a;
+    if (a == b) return sylvan_true;
+    if (a == sylvan_not(b)) return sylvan_false;
+
+    /* Perhaps execute garbage collection */
+    sylvan_gc_test();
+
+    /* Count operation */
+    SV_CNT_OP(C_restrict);
+
+    // a != constant and b != constant
+    bddnode_t na = GETNODE(a);
+    bddnode_t nb = GETNODE(b);
+
+    BDDVAR level = na->level < nb->level ? na->level : nb->level;
+
+    /* Consult cache */
+    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
+    struct bddcache template_cache_node;
+    if (cachenow) {
+        // TODO: get rid of complement on a for better cache see cudd
+        memset(&template_cache_node, 0, sizeof(struct bddcache));
+        template_cache_node.params[0] = BDD_SETDATA(a, CACHE_RESTRICT);
+        template_cache_node.params[1] = b;
+        template_cache_node.result = sylvan_invalid;
+
+        if (llci_get_tag(_bdd.cache, &template_cache_node)) {
+            BDD result = template_cache_node.result;
+            SV_CNT_CACHE(C_cache_reuse);
+            return result;
+        }
+    }
+
+    BDD result;
+    TOMARK_INIT
+
+    if (nb->level < na->level) {
+        BDD c = CALL(sylvan_ite, node_low(b,nb), sylvan_true, node_high(b,nb), 0);
+        TOMARK_PUSH(c);
+        result = CALL(sylvan_restrict, a, c, level);
+    } else {
+        BDD aLow=node_low(a,na),aHigh=node_high(a,na),bLow=b,bHigh=b;
+        if (na->level == nb->level) {
+            bLow = node_low(b,nb);
+            bHigh = node_high(b,nb);
+        }
+        if (bLow == sylvan_false) {
+            result = CALL(sylvan_restrict, aHigh, bHigh, level);
+        } else if (bHigh == sylvan_false) {
+            result = CALL(sylvan_restrict, aLow, bLow, level);
+        } else {
+            SPAWN(sylvan_restrict, aLow, bLow, level);
+            BDD high = CALL(sylvan_restrict, aHigh, bHigh, level);
+            TOMARK_PUSH(high);
+            BDD low = SYNC(sylvan_restrict);
+            TOMARK_PUSH(low);
+            result = sylvan_makenode(level, low, high);
+        }
+    }
 
     TOMARK_EXIT
 

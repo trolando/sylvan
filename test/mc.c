@@ -56,9 +56,7 @@ struct vector_relation
     BDDVAR *prime_vec_to_bddvar;// Translation of bit to BDDVAR for X'
 
     // Generated based on vec_to_bddvar and vector_size
-    BDD variables;              // X
-    BDD prime_variables;        // X'
-    BDD all_variables;          // X U X'
+    BDD variables;
 };
 
 static vset_t
@@ -103,9 +101,9 @@ rel_load(FILE* f, vdom_t dom)
     assert(fread(rel->prime_vec_to_bddvar, sizeof(BDDVAR), rel->vector_size*dom->bits_per_integer, f) == rel->vector_size * dom->bits_per_integer);
 
     sylvan_gc_disable();
-    rel->variables = sylvan_ref(sylvan_set_fromarray(rel->vec_to_bddvar, dom->bits_per_integer * rel->vector_size));
-    rel->prime_variables = sylvan_ref(sylvan_set_fromarray(rel->prime_vec_to_bddvar, dom->bits_per_integer * rel->vector_size));
-    rel->all_variables = sylvan_ref(sylvan_set_addall(rel->prime_variables, rel->variables));
+    BDD x = sylvan_set_fromarray(rel->vec_to_bddvar, dom->bits_per_integer * rel->vector_size);
+    BDD x2 = sylvan_set_fromarray(rel->prime_vec_to_bddvar, dom->bits_per_integer * rel->vector_size);
+    rel->variables = sylvan_ref(sylvan_set_addall(x, x2));
     sylvan_gc_enable();
 
     return rel;
@@ -118,7 +116,7 @@ static vrel_t *next;
 TASK_4(BDD, go_par, BDD, set, BDD, all, size_t, from, size_t, len)
 {
     if (len == 1) {
-        BDD succ = sylvan_relprods(set, next[from]->bdd, next[from]->all_variables);
+        BDD succ = sylvan_relprod_paired(set, next[from]->bdd, next[from]->variables);
         sylvan_ref(succ);
         BDD result = sylvan_diff(succ, all);
         sylvan_deref(succ);
@@ -192,7 +190,7 @@ bfs(vset_t set)
                 fflush(stdout);
             }*/
             // a = RelProdS(cur, next)
-            BDD a = sylvan_ref(sylvan_relprods(cur, next[i]->bdd, next[i]->all_variables));
+            BDD a = sylvan_ref(sylvan_relprod_paired(cur, next[i]->bdd, next[i]->variables));
             // b = a - states
             BDD b = sylvan_ref(sylvan_diff(a, states));
             // report

@@ -365,6 +365,53 @@ test_operators()
     sylvan_gc_enable();
 }
 
+static void
+test_relprod()
+{
+    sylvan_gc_disable();
+
+    BDDVAR vars[] = {0,2,4};
+    BDDVAR all_vars[] = {0,1,2,3,4,5};
+
+    BDDSET all_vars_set = sylvan_set_fromarray(all_vars, 6);
+
+    BDD s, t, next, prev;
+    BDD zeroes, ones;
+
+    // transition relation: 000 --> 111 and !000 --> 000
+    t = sylvan_false;
+    t = sylvan_or(t, sylvan_cube(all_vars, 6, (char[]){0,1,0,1,0,1}));
+    t = sylvan_or(t, sylvan_cube(all_vars, 6, (char[]){1,0,2,0,2,0}));
+    t = sylvan_or(t, sylvan_cube(all_vars, 6, (char[]){2,0,1,0,2,0}));
+    t = sylvan_or(t, sylvan_cube(all_vars, 6, (char[]){2,0,2,0,1,0}));
+
+    s = sylvan_cube(vars, 3, (char[]){0,0,1});
+    zeroes = sylvan_cube(vars, 3, (char[]){0,0,0});
+    ones = sylvan_cube(vars, 3, (char[]){1,1,1});
+
+    next = sylvan_relprod_paired(s, t, all_vars_set);
+    prev = sylvan_relprod_paired_prev(next, t, all_vars_set);
+    assert(next == zeroes);
+    assert(prev == sylvan_not(zeroes));
+
+    next = sylvan_relprod_paired(next, t, all_vars_set);
+    prev = sylvan_relprod_paired_prev(next, t, all_vars_set);
+    assert(next == ones);
+    assert(prev == zeroes);
+
+    t = sylvan_cube(all_vars, 6, (char[]){0,0,0,0,0,1});
+    assert(sylvan_relprod_paired_prev(s, t, all_vars_set) == zeroes);
+    assert(sylvan_relprod_paired_prev(sylvan_not(s), t, all_vars_set) == sylvan_false);
+    assert(sylvan_relprod_paired(s, t, all_vars_set) == sylvan_false);
+    assert(sylvan_relprod_paired(zeroes, t, all_vars_set) == s);
+
+    t = sylvan_cube(all_vars, 6, (char[]){0,0,0,0,0,2});
+    assert(sylvan_relprod_paired_prev(s, t, all_vars_set) == zeroes);
+    assert(sylvan_relprod_paired_prev(zeroes, t, all_vars_set) == zeroes);
+    assert(sylvan_relprod_paired(sylvan_not(zeroes), t, all_vars_set) == sylvan_false);
+
+    sylvan_gc_enable();
+}
 
 /** GC testing */
 VOID_TASK_2(gctest_fill, int, levels, int, width)
@@ -451,6 +498,15 @@ void runtests(int threads)
     for (j=0;j<20;j++) {
         sylvan_init(16, 16, 1);
         test_cube();
+        sylvan_quit();
+    }
+    printf(LGREEN "success" NC "!\n");
+
+    printf(NC "Testing relational products... ");
+    fflush(stdout);
+    for (j=0;j<20;j++) {
+        sylvan_init(16, 16, 1);
+        test_relprod();
         sylvan_quit();
     }
     printf(LGREEN "success" NC "!\n");

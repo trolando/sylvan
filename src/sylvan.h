@@ -113,34 +113,18 @@ static inline BDD sylvan_exists(BDD a, BDD variables) { return CALL(sylvan_exist
 static inline BDD sylvan_forall(BDD a, BDD variables) { return sylvan_not(CALL(sylvan_exists, sylvan_not(a), variables, 0)); }
 
 /**
- * Specialized RelProdS using paired variables (X even, X' odd)
- * For example, variable x_1 is paired with x_0, with x_1 being the X' equivalent of x_0.
- * When using relprods to generate the 'next' states, you will want to
- * use <var> 0,2,4,6,8 etc for the 'state' booleans, and 1,3,5,7,9 etc for the 'next state' booleans
+ * Relational Product for paired variables
+ * Assumes variables x,x' are paired, x is even, x'=x+1
  */
-TASK_DECL_4(BDD, sylvan_relprods, BDD, BDD, BDD, BDDVAR);
-static inline BDD sylvan_relprods(BDD a, BDD b, BDD vars) { return CALL(sylvan_relprods, a, b, vars, 0); }
-
-typedef void (*void_cb)();
-int sylvan_relprods_analyse(BDD a, BDD b, void_cb cb_in, void_cb cb_out);
+TASK_DECL_4(BDD, sylvan_relprod_paired, BDD, BDD, BDDSET, BDDVAR);
+#define sylvan_relprod_paired(s,trans,vars) (CALL(sylvan_relprod_paired,(s),(trans),(vars),0))
 
 /**
- * Reversed RelProdS using paired variables (X even, X' odd)
+ * Backward relational product for paired variables
+ * Assumes variables x,x' are paired, x is even, x'=x+1
  */
-TASK_DECL_4(BDD, sylvan_relprods_reversed, BDD, BDD, BDD, BDDVAR);
-static inline BDD sylvan_relprods_reversed(BDD a, BDD b, BDD vars) { return CALL(sylvan_relprods_reversed, a, b, vars, 0); }
-
-/**
- * RelProd: \exists vars (a \and b)
- */
-TASK_DECL_4(BDD, sylvan_relprod, BDD, BDD, BDD, BDDVAR);
-static inline BDD sylvan_relprod(BDD a, BDD b, BDD vars) { return CALL(sylvan_relprod, a, b, vars, 0); }
-
-/**
- * Calculate substitution from X to X' using paired variables (X even, X' odd)
- */
-TASK_DECL_3(BDD, sylvan_substitute, BDD, BDD, BDDVAR);
-static inline BDD sylvan_substitute(BDD a, BDD vars) { return CALL(sylvan_substitute, a, vars, 0); }
+TASK_DECL_4(BDD, sylvan_relprod_paired_prev, BDD, BDD, BDDSET, BDDVAR);
+#define sylvan_relprod_paired_prev(s,trans,vars) (CALL(sylvan_relprod_paired_prev,(s),(trans),(vars),0))
 
 /**
  * Calculate a@b (a constrain b), such that (b -> a@b) = (b -> a)

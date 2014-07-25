@@ -1,5 +1,3 @@
-#include <config.h>
-
 #include <stdio.h>  // for fprintf
 #include <stdint.h> // for uint32_t etc
 #include <sys/mman.h> // for mmap

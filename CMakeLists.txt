@@ -9,8 +9,8 @@ option(USE_NUMA "Use NUMA" OFF)
 include(CheckIncludeFiles)
 
 if(USE_NUMA)
-  check_include_files(numa.h HAVE_NUMA_H)
-  if(HAVE_NUMA_H)
+  check_include_files(numa.h HAVE_NUMA)
+  if(HAVE_NUMA)
     set (EXTRA_LIBS ${EXTRA_LIBS} numa)
     set (EXTRA_SRC ${EXTRA_SRC} src/numa_tools.c)
     set (NUMA_DEF "USE_NUMA=1")
@@ -21,11 +21,6 @@ if(USE_NUMA)
 else()
   set (NUMA_DEF "USE_NUMA=0")
 endif()
-
-configure_file(
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/config.h.cmakein"
-  "${CMAKE_CURRENT_BINARY_DIR}/src/config.h"
-)
 
 set (CMAKE_ASM_FLAGS "-g")
 set (CMAKE_C_FLAGS "-g -O3 -Wextra -Wall -Werror -D${NUMA_DEF}")

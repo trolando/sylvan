@@ -1,5 +1,3 @@
-#include <config.h>
-
 #include <assert.h> // for assert
 #include <stdint.h> // for uint64_t etc
 #include <stdio.h>  // for printf

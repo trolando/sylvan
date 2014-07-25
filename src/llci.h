@@ -1,5 +1,3 @@
-#include <config.h>
-
 #include <stdlib.h>
 #include <stdio.h>  // for printf
 #include <stdint.h> // for uint32_t etc

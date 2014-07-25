@@ -1,2 +1,0 @@
-#cmakedefine SYLVAN_OPERATION_STATS 1
-#cmakedefine SYLVAN_CACHE_STATS 1

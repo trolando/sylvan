@@ -1,13 +1,13 @@
 ACLOCAL_AMFLAGS = -I m4
 
-AM_CPPFLAGS = -I$(top_builddir)
-AM_CPPFLAGS += -I$(srcdir)/src
-
-AM_CFLAGS = -g -O2 -Wall -Wextra
-
-include_HEADERS = src/sylvan.h
-
 lib_LTLIBRARIES = libsylvan.la
+
+libsylvan_la_CFLAGS = -g -O2 -Wall -Wextra
+libsylvan_la_CFLAGS += -I$(top_builddir)
+libsylvan_la_CFLAGS += -I$(srcdir)/src
+libsylvan_la_LIBADD = -lm
+
+include_HEADERS = src/sylvan.h src/lace.h src/atomics.h
 
 libsylvan_la_SOURCES = \
  src/barrier.c \
@@ -29,13 +29,8 @@ libsylvan_la_SOURCES = \
  src/murmur.c \
  src/murmur.h
 
-libsylvan_la_LDFLAGS = -version-info 0:0:0
-libsylvan_la_LIBADD = -lm
-
-if HAVE_NUMA_H
+if HAVE_NUMA
 libsylvan_la_LIBADD += -lnuma
 libsylvan_la_SOURCES += src/numa_tools.c src/numa_tools.h
-AM_CFLAGS += -DUSE_NUMA=1
+libsylvan_la_CFLAGS += -DUSE_NUMA=1
 endif
-
-EXTRA_DIST = $(libsylvan_la_SOURCES)

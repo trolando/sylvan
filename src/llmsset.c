@@ -193,7 +193,7 @@ llmsset_create(size_t key_length, size_t data_length, size_t table_size)
 #if USE_NUMA
     size_t fragment_size=0;
     numa_interleave(dbs->table, dbs->table_size * sizeof(uint64_t), &fragment_size);
-    fragment_size /= sizeof(uint64_t);
+    dbs->f_size = (fragment_size /= sizeof(uint64_t));
     fragment_size *= dbs->padded_data_length;
     numa_interleave(dbs->data, dbs->table_size * dbs->padded_data_length, &fragment_size);
 #endif
@@ -216,8 +216,14 @@ llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_workers, size_
     size_t node, node_index, index, total;
     // We are on node <node>, which is the <node_index>th node that we can use.
     // Also we are the <index>th worker on that node, out of <total> workers.
-    numa_worker_info(my_id, &node, &node_index, &index, &total);
+    int res = numa_worker_info(my_id, &node, &node_index, &index, &total);
+    if (res == -1) {
+        *_first_entry = dbs->table_size;
+        *_entry_count = 0;
+    }
     // On each node, there are <cachelines_total> cachelines, <cachelines_each> per worker.
+    if (numa_available_memory_nodes() > n_workers) goto fallback;
+
     const size_t entries_total    = dbs->f_size;
     const size_t cachelines_total = (entries_total * sizeof(uint64_t) + LINE_SIZE - 1) / LINE_SIZE;
     const size_t cachelines_each  = (cachelines_total + total - 1) / total;
@@ -233,8 +239,9 @@ llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_workers, size_
         *_entry_count = entries_each < cap_node ? entries_each < cap_total ? entries_each : cap_total :
                                                   cap_node     < cap_total ? cap_node     : cap_total ;
     }
-    (void)n_workers;
-#else
+fallback:
+#endif
+    {
     const size_t entries_total    = dbs->table_size;
     const size_t cachelines_total = (entries_total * sizeof(uint64_t) + LINE_SIZE - 1) / LINE_SIZE;
     const size_t cachelines_each  = (cachelines_total + n_workers - 1) / n_workers;
@@ -248,7 +255,7 @@ llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_workers, size_
         *_first_entry = first_entry;
         *_entry_count = entries_each < cap_total ? entries_each : cap_total;
     }
-#endif
+    }
 }
 
 void

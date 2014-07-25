@@ -14,6 +14,10 @@
 #include "llmsset.h"
 #include "sylvan.h"
 
+#if USE_NUMA
+#include "numa_tools.h"
+#endif
+
 #define BLACK "\33[22;30m"
 #define GRAY "\33[01;30m"
 #define RED "\33[22;31m"
@@ -47,8 +51,6 @@ int test_llmsset()
     unsigned int i;
 
     llmsset_t set = llmsset_create(sizeof(uint32_t), sizeof(uint32_t), 1<<5); // size: 32
-
-    for (i=1;i<200;i++) llmsset_test_multi(set, i);
 
     // Add all entries, but do not ref
     for (i=0;i<16;i++) {
@@ -135,7 +137,6 @@ int test_llmsset2()
     pthread_join(t[3], NULL);
 
     uint64_t i;
-    for (i=1;i<200;i++) llmsset_test_multi(msset, i);
     for (i=0;i<msset->table_size;i++) {
         uint64_t key = msset->table[i];
         if (key != 0) {
@@ -501,6 +502,9 @@ void test_gc(int threads)
 
 void runtests(int threads)
 {
+#if USE_NUMA
+    numa_distribute(threads);
+#endif
     printf(BOLD "Testing LL MS Set\n" NC);
     printf("Running singlethreaded test... ");
     fflush(stdout);

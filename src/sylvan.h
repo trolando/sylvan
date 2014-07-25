@@ -144,6 +144,9 @@ TASK_DECL_3(BDD, sylvan_constrain, BDD, BDD, BDDVAR);
 TASK_DECL_3(BDD, sylvan_restrict, BDD, BDD, BDDVAR);
 #define sylvan_restrict(f,c) (CALL(sylvan_restrict, (f), (c), 0))
 
+TASK_DECL_3(BDD, sylvan_compose, BDD, BDDMAP, BDDVAR);
+#define sylvan_compose(f,m) (CALL(sylvan_compose, (f), (m), 0))
+
 /**
  * Calculate the support of a BDD.
  * A variable v is in the support of a Boolean function f iff f[v<-0] != f[v<-1]

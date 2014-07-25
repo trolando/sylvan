@@ -106,6 +106,7 @@ static DECLARE_THREAD_LOCAL(gc_key, gc_tomark_t);
 #define CACHE_COUNT 3
 #define CACHE_EXISTS 4
 #define CACHE_SATCOUNT 5
+#define CACHE_COMPOSE 6
 #define CACHE_RESTRICT 7
 #define CACHE_CONSTRAIN 8
 
@@ -309,6 +310,7 @@ typedef enum {
   C_relprod_paired_prev,
   C_constrain,
   C_restrict,
+  C_compose,
 #endif
   C_MAX
 } Counters;
@@ -1524,6 +1526,82 @@ TASK_IMPL_4(BDD, sylvan_relprod_paired_prev, BDD, a, BDD, b, BDD, vars, BDDVAR, 
 
     return result;
 }
+
+/**
+ * Function composition
+ */
+TASK_IMPL_3(BDD, sylvan_compose, BDD, a, BDDMAP, map, BDDVAR, prev_level)
+{
+    /* Trivial cases */
+    if (a == sylvan_false || a == sylvan_true) return a;
+    if (sylvan_map_isempty(map)) return a;
+
+    /* Perhaps execute garbage collection */
+    sylvan_gc_test();
+
+    /* Count operation */
+    SV_CNT_OP(C_compose);
+
+    /* Determine top level */
+    bddnode_t n = GETNODE(a);
+    BDDVAR level = n->level;
+
+    /* Skip map */
+    bddnode_t map_node = GETNODE(map);
+    while (map_node->level < level) {
+        map = node_low(map, map_node);
+        if (sylvan_map_isempty(map)) return a;
+        map_node = GETNODE(map);
+    }
+
+    /* Consult cache */
+    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
+    struct bddcache template_cache_node;
+    if (cachenow) {
+        // Check cache
+        memset(&template_cache_node, 0, sizeof(struct bddcache));
+        template_cache_node.params[0] = BDD_SETDATA(a, CACHE_COMPOSE);
+        template_cache_node.params[1] = map;
+        template_cache_node.result = sylvan_invalid;
+
+        if (llci_get_tag(_bdd.cache, &template_cache_node)) {
+            BDD result = template_cache_node.result;
+            SV_CNT_CACHE(C_cache_reuse);
+            return result;
+        }
+    }
+
+    TOMARK_INIT
+
+    /* Recursively calculate low and high */
+    SPAWN(sylvan_compose, node_low(a, n), map, level);
+    BDD high = CALL(sylvan_compose, node_high(a, n), map, level);
+    TOMARK_PUSH(high)
+    BDD low = SYNC(sylvan_compose);
+    TOMARK_PUSH(low)
+
+    /* Calculate result */
+    BDD root = map_node->level == level ? node_high(map, map_node) : sylvan_ithvar(level);
+    TOMARK_PUSH(root)
+    BDD result = CALL(sylvan_ite, root, high, low, 0);
+
+    TOMARK_EXIT
+
+    if (cachenow) {
+        template_cache_node.result = result;
+        int cache_res = llci_put_tag(_bdd.cache, &template_cache_node);
+        if (cache_res == 0) {
+            // It existed!
+            SV_CNT_CACHE(C_cache_exists);
+        } else if (cache_res == 1) {
+            // Created new!
+            SV_CNT_CACHE(C_cache_new);
+        }
+    }
+
+    return result;
+}
+
 
 /**
  * Count number of nodes for each level

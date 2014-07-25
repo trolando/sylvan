@@ -413,6 +413,45 @@ test_relprod()
     sylvan_gc_enable();
 }
 
+static void
+test_compose()
+{
+    sylvan_gc_disable();
+
+    BDD a = sylvan_ithvar(1);
+    BDD b = sylvan_ithvar(2);
+
+    BDD a_or_b = sylvan_or(a, b);
+
+    BDD one = make_random(3, 16);
+    BDD two = make_random(8, 24);
+
+    BDDMAP map = sylvan_map_empty();
+
+    map = sylvan_map_add(map, 1, one);
+    map = sylvan_map_add(map, 2, two);
+
+    assert(sylvan_map_key(map) == 1);
+    assert(sylvan_map_value(map) == one);
+    assert(sylvan_map_key(sylvan_map_next(map)) == 2);
+    assert(sylvan_map_value(sylvan_map_next(map)) == two);
+
+    assert(testEqual(one, sylvan_compose(a, map)));
+    assert(testEqual(two, sylvan_compose(b, map)));
+
+    assert(testEqual(sylvan_or(one, two), sylvan_compose(a_or_b, map)));
+
+    map = sylvan_map_add(map, 2, one);
+    assert(testEqual(sylvan_compose(a_or_b, map), one));
+
+    map = sylvan_map_add(map, 1, two);
+    assert(testEqual(sylvan_or(one, two), sylvan_compose(a_or_b, map)));
+
+    assert(testEqual(sylvan_and(one, two), sylvan_compose(sylvan_and(a, b), map)));
+
+    sylvan_gc_enable();
+}
+
 /** GC testing */
 VOID_TASK_2(gctest_fill, int, levels, int, width)
 {
@@ -507,6 +546,15 @@ void runtests(int threads)
     for (j=0;j<20;j++) {
         sylvan_init(16, 16, 1);
         test_relprod();
+        sylvan_quit();
+    }
+    printf(LGREEN "success" NC "!\n");
+
+    printf(NC "Testing function composition... ");
+    fflush(stdout);
+    for (j=0;j<20;j++) {
+        sylvan_init(16, 16, 1);
+        test_compose();
         sylvan_quit();
     }
     printf(LGREEN "success" NC "!\n");

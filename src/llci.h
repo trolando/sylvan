@@ -308,6 +308,7 @@ llci_clear_multi(const llci_t dbs, size_t my_id, size_t n_workers)
         // Note that llci_clear_partial will fix count if overflow...
         llci_clear_partial(dbs, first_line * LLCI_HASH_PER_CL, count * LLCI_HASH_PER_CL);
     }
+    (void)n_workers;
 #else
     size_t cachelines_total = (dbs->cache_size  + LLCI_HASH_PER_CL - 1) / LLCI_HASH_PER_CL;
     size_t cachelines_each  = (cachelines_total + n_workers        - 1) / n_workers;

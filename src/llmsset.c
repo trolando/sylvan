@@ -193,7 +193,7 @@ llmsset_create(size_t key_length, size_t data_length, size_t table_size)
 #if USE_NUMA
     size_t fragment_size=0;
     numa_interleave(dbs->table, dbs->table_size * sizeof(uint64_t), &fragment_size);
-    dbs->fragment_size = (fragment_size /= sizeof(uint64_t));
+    fragment_size /= sizeof(uint64_t);
     fragment_size *= dbs->padded_data_length;
     numa_interleave(dbs->data, dbs->table_size * dbs->padded_data_length, &fragment_size);
 #endif
@@ -233,6 +233,7 @@ llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_workers, size_
         *_entry_count = entries_each < cap_node ? entries_each < cap_total ? entries_each : cap_total :
                                                   cap_node     < cap_total ? cap_node     : cap_total ;
     }
+    (void)n_workers;
 #else
     const size_t entries_total    = dbs->table_size;
     const size_t cachelines_total = (entries_total * sizeof(uint64_t) + LINE_SIZE - 1) / LINE_SIZE;

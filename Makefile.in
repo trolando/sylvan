@@ -137,14 +137,14 @@ libsylvan_la_DEPENDENCIES = $(am__DEPENDENCIES_1)
 am__libsylvan_la_SOURCES_DIST = src/barrier.c src/barrier.h src/sha2.c \
 	src/sha2.h src/sylvan.c src/sylvan.h src/llmsset.c \
 	src/llmsset.h src/llci.h src/tls.h src/atomics.h src/avl.h \
-	src/lace.c src/lace.h src/refs.h src/hash.c src/hash.h \
-	src/hash24.h src/numa_tools.c src/numa_tools.h
+	src/lace.c src/lace.h src/refs.h src/hash24.h src/hash16.h \
+	src/numa_tools.c src/numa_tools.h
 am__dirstamp = $(am__leading_dot)dirstamp
 @HAVE_NUMA_TRUE@am__objects_1 = src/libsylvan_la-numa_tools.lo
 am_libsylvan_la_OBJECTS = src/libsylvan_la-barrier.lo \
 	src/libsylvan_la-sha2.lo src/libsylvan_la-sylvan.lo \
 	src/libsylvan_la-llmsset.lo src/libsylvan_la-lace.lo \
-	src/libsylvan_la-hash.lo $(am__objects_1)
+	$(am__objects_1)
 libsylvan_la_OBJECTS = $(am_libsylvan_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -357,8 +357,8 @@ include_HEADERS = src/sylvan.h src/lace.h src/atomics.h
 libsylvan_la_SOURCES = src/barrier.c src/barrier.h src/sha2.c \
 	src/sha2.h src/sylvan.c src/sylvan.h src/llmsset.c \
 	src/llmsset.h src/llci.h src/tls.h src/atomics.h src/avl.h \
-	src/lace.c src/lace.h src/refs.h src/hash.c src/hash.h \
-	src/hash24.h $(am__append_2)
+	src/lace.c src/lace.h src/refs.h src/hash24.h src/hash16.h \
+	$(am__append_2)
 all: all-am
 
 .SUFFIXES:
@@ -448,8 +448,6 @@ src/libsylvan_la-llmsset.lo: src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 src/libsylvan_la-lace.lo: src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
-src/libsylvan_la-hash.lo: src/$(am__dirstamp) \
-	src/$(DEPDIR)/$(am__dirstamp)
 src/libsylvan_la-numa_tools.lo: src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 
@@ -465,7 +463,6 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/libsylvan_la-barrier.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/libsylvan_la-hash.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/libsylvan_la-lace.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/libsylvan_la-llmsset.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/libsylvan_la-numa_tools.Plo@am__quote@
@@ -530,13 +527,6 @@ src/libsylvan_la-lace.lo: src/lace.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/lace.c' object='src/libsylvan_la-lace.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsylvan_la_CFLAGS) $(CFLAGS) -c -o src/libsylvan_la-lace.lo `test -f 'src/lace.c' || echo '$(srcdir)/'`src/lace.c
-
-src/libsylvan_la-hash.lo: src/hash.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsylvan_la_CFLAGS) $(CFLAGS) -MT src/libsylvan_la-hash.lo -MD -MP -MF src/$(DEPDIR)/libsylvan_la-hash.Tpo -c -o src/libsylvan_la-hash.lo `test -f 'src/hash.c' || echo '$(srcdir)/'`src/hash.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) src/$(DEPDIR)/libsylvan_la-hash.Tpo src/$(DEPDIR)/libsylvan_la-hash.Plo
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='src/hash.c' object='src/libsylvan_la-hash.lo' libtool=yes @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsylvan_la_CFLAGS) $(CFLAGS) -c -o src/libsylvan_la-hash.lo `test -f 'src/hash.c' || echo '$(srcdir)/'`src/hash.c
 
 src/libsylvan_la-numa_tools.lo: src/numa_tools.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libsylvan_la_CFLAGS) $(CFLAGS) -MT src/libsylvan_la-numa_tools.lo -MD -MP -MF src/$(DEPDIR)/libsylvan_la-numa_tools.Tpo -c -o src/libsylvan_la-numa_tools.lo `test -f 'src/numa_tools.c' || echo '$(srcdir)/'`src/numa_tools.c

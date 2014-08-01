@@ -25,9 +25,8 @@ libsylvan_la_SOURCES = \
  src/lace.c \
  src/lace.h \
  src/refs.h \
- src/hash.c \
- src/hash.h \
- src/hash24.h
+ src/hash24.h \
+ src/hash16.h
 
 if HAVE_NUMA
 libsylvan_la_LIBADD += -lnuma

@@ -57,7 +57,7 @@ typedef struct bddnode* bddnode_t;
 /**
  * Macro's to convert BDD indices to nodes and vice versa
  */
-#define GETNODE(bdd) ((bddnode_t)llmsset_index_to_ptr(_bdd.data, BDD_STRIPMARK(bdd), sizeof(struct bddnode)))
+#define GETNODE(bdd) ((bddnode_t)llmsset_index_to_ptr(_bdd.data, BDD_STRIPMARK(bdd)))
 
 static barrier_t bar;
 
@@ -265,7 +265,8 @@ sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
         exit(1);
     }
 
-    _bdd.data = llmsset_create(sizeof(struct bddnode), sizeof(struct bddnode), 1LL<<tablesize);
+    assert(sizeof(struct bddnode) == 16);
+    _bdd.data = llmsset_create(1LL<<tablesize);
     llmsset_test_multi(_bdd.data, _bdd.workers);
 
     if (cachesize >= 64) {

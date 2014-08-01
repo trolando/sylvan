@@ -8,39 +8,34 @@ typedef struct llmsset
     size_t            table_size;   // size of the hash table (number of slots) --> power of 2!
     size_t            mask;         // size-1
     size_t            f_size;
-    int16_t           padded_data_length;
-    int16_t           key_length;
-    int16_t           data_length;
     int16_t           threshold;    // number of iterations for insertion until returning error
 } *llmsset_t;
 
-/**
- * Calculate size of buckets in data array (padded)
- */
-#define LLMSSET_PDS(x) (((x) <= 2) ? (x) : ((x) <= 4) ? 4 : ((x) <= 8) ? 8 : (((x)+15)&(~15)))
+// Every key is 16 bytes, also inserted data same size, also padded size is 16 bytes
+#define LLMSSET_LEN 16
 
 /**
  * Translate an index to a pointer (data array)
  */
 static inline void*
-llmsset_index_to_ptr(const llmsset_t dbs, size_t index, size_t data_length)
+llmsset_index_to_ptr(const llmsset_t dbs, size_t index)
 {
-    return dbs->data + index * LLMSSET_PDS(data_length);
+    return dbs->data + index * LLMSSET_LEN;
 }
 
 /**
  * Translate a pointer (data array) to index
  */
 static inline size_t
-llmsset_ptr_to_index(const llmsset_t dbs, void* ptr, size_t data_length)
+llmsset_ptr_to_index(const llmsset_t dbs, void* ptr)
 {
-    return ((size_t)ptr - (size_t)dbs->data) / LLMSSET_PDS(data_length);
+    return ((size_t)ptr - (size_t)dbs->data) / LLMSSET_LEN;
 }
 
 /**
  * Create and free a lockless MS set
  */
-llmsset_t llmsset_create(size_t key_length, size_t data_length, size_t table_size);
+llmsset_t llmsset_create(size_t table_size);
 void llmsset_free(llmsset_t dbs);
 
 /**

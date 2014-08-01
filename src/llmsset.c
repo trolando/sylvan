@@ -7,10 +7,15 @@
 
 #include <atomics.h>
 #include <llmsset.h>
-#include <hash.h>
+#include <hash16.h>
 
 #if USE_NUMA
 #include <numa_tools.h>
+#endif
+
+#if LLMSSET_LEN == 16
+#define hash_mul hash16_mul
+#define rehash_mul rehash16_mul
 #endif
 
 /*
@@ -45,7 +50,7 @@ static const uint64_t CL_MASK_R   = ((LINE_SIZE) / 8) - 1;
 void *
 llmsset_lookup(const llmsset_t dbs, const void* data, uint64_t* insert_index, int* created, uint64_t* index)
 {
-    uint64_t hash_rehash = hash_mul(data, dbs->key_length);
+    uint64_t hash_rehash = hash_mul(data);
     const uint64_t hash = hash_rehash & MASK_HASH;
     int i=0;
 
@@ -61,8 +66,8 @@ llmsset_lookup(const llmsset_t dbs, const void* data, uint64_t* insert_index, in
 
             if (hash == (v & MASK_HASH)) {
                 uint64_t d_idx = v & MASK_INDEX;
-                register uint8_t *d_ptr = dbs->data + d_idx * dbs->padded_data_length;
-                if (memcmp(d_ptr, data, dbs->key_length) == 0) {
+                register uint8_t *d_ptr = dbs->data + d_idx * LLMSSET_LEN;
+                if (memcmp(d_ptr, data, LLMSSET_LEN) == 0) {
                     if (index) *index = d_idx;
                     if (created) *created = 0;
                     return d_ptr;
@@ -70,7 +75,7 @@ llmsset_lookup(const llmsset_t dbs, const void* data, uint64_t* insert_index, in
             }
         } while (probe_sequence_next(idx, last));
 
-        hash_rehash = rehash_mul(data, dbs->key_length, hash_rehash);
+        hash_rehash = rehash16_mul(data, hash_rehash);
     }
 
     uint64_t d_idx;
@@ -85,8 +90,8 @@ phase2:
         if (h & DFILLED) {
             d_idx = (d_idx+1) & dbs->mask;
         } else if (cas(ptr, h, h|DFILLED)) {
-            d_ptr = dbs->data + d_idx * dbs->padded_data_length;
-            memcpy(d_ptr, data, dbs->data_length);
+            d_ptr = dbs->data + d_idx * LLMSSET_LEN;
+            memcpy(d_ptr, data, LLMSSET_LEN);
             *insert_index = d_idx;
             break;
         }
@@ -117,8 +122,8 @@ phase2_restart:
 
             if (hash == (v & MASK_HASH)) {
                 uint64_t d2_idx = v & MASK_INDEX;
-                register uint8_t *d2_ptr = dbs->data + d2_idx * dbs->padded_data_length;
-                if (memcmp(d2_ptr, data, dbs->key_length) == 0) {
+                register uint8_t *d2_ptr = dbs->data + d2_idx * LLMSSET_LEN;
+                if (memcmp(d2_ptr, data, LLMSSET_LEN) == 0) {
                     volatile uint64_t *ptr = dbs->table + d_idx;
                     uint64_t h = *ptr;
                     while (!cas(ptr, h, h&~(DFILLED))) { h = *ptr; } // uninsert data
@@ -129,7 +134,7 @@ phase2_restart:
             }
         } while (probe_sequence_next(idx, last));
 
-        hash_rehash = rehash_mul(data, dbs->key_length, hash_rehash);
+        hash_rehash = rehash_mul(data, hash_rehash);
     }
 
     return 0;
@@ -138,8 +143,8 @@ phase2_restart:
 static inline int
 llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 {
-    const uint8_t * const d_ptr = dbs->data + d_idx * dbs->padded_data_length;
-    uint64_t hash_rehash = hash_mul(d_ptr, dbs->key_length);
+    const uint8_t * const d_ptr = dbs->data + d_idx * LLMSSET_LEN;
+    uint64_t hash_rehash = hash_mul(d_ptr);
     uint64_t mask = (hash_rehash & MASK_HASH) | d_idx | HFILLED;
 
     int i;
@@ -156,26 +161,20 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
             if (cas(bucket, v, mask | (v&DFILLED))) return 1;
         } while (probe_sequence_next(idx, last));
 
-        hash_rehash = rehash_mul(d_ptr, dbs->key_length, hash_rehash);
+        hash_rehash = rehash_mul(d_ptr, hash_rehash);
     }
 
     return 0;
 }
 
 llmsset_t
-llmsset_create(size_t key_length, size_t data_length, size_t table_size)
+llmsset_create(size_t table_size)
 {
     llmsset_t dbs;
     if (posix_memalign((void**)&dbs, LINE_SIZE, sizeof(struct llmsset)) != 0) {
         fprintf(stderr, "Unable to allocate memory!");
         exit(1);
     }
-
-    assert(key_length <= data_length);
-
-    dbs->key_length = key_length;
-    dbs->data_length = data_length;
-    dbs->padded_data_length = LLMSSET_PDS(data_length);
 
     if (table_size < HASH_PER_CL) table_size = HASH_PER_CL;
     dbs->table_size = table_size;
@@ -185,15 +184,15 @@ llmsset_create(size_t key_length, size_t data_length, size_t table_size)
 
     dbs->table = (uint64_t*)mmap(0, dbs->table_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (dbs->table == (uint64_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
-    dbs->data = (uint8_t*)mmap(0, dbs->table_size * dbs->padded_data_length, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    dbs->data = (uint8_t*)mmap(0, dbs->table_size * LLMSSET_LEN, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (dbs->data == (uint8_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
 
 #if USE_NUMA
     size_t fragment_size=0;
     numa_interleave(dbs->table, dbs->table_size * sizeof(uint64_t), &fragment_size);
     dbs->f_size = (fragment_size /= sizeof(uint64_t));
-    fragment_size *= dbs->padded_data_length;
-    numa_interleave(dbs->data, dbs->table_size * dbs->padded_data_length, &fragment_size);
+    fragment_size *= LLMSSET_LEN;
+    numa_interleave(dbs->data, dbs->table_size * LLMSSET_LEN, &fragment_size);
 #endif
 
     return dbs;
@@ -203,7 +202,7 @@ void
 llmsset_free(llmsset_t dbs)
 {
     munmap(dbs->table, dbs->table_size * sizeof(uint64_t));
-    munmap(dbs->data, dbs->table_size * dbs->padded_data_length);
+    munmap(dbs->data, dbs->table_size * LLMSSET_LEN);
     free(dbs);
 }
 
@@ -354,7 +353,7 @@ llmsset_print_size(llmsset_t dbs, FILE *f)
 {
     fprintf(f, "Hash: %ld * 8 = %ld bytes; Data: %ld * %d = %ld bytes ",
         dbs->table_size, dbs->table_size * 8, dbs->table_size,
-        dbs->padded_data_length, dbs->table_size * dbs->padded_data_length);
+        LLMSSET_LEN, dbs->table_size * LLMSSET_LEN);
 }
 
 size_t

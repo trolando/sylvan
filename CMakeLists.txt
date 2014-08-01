@@ -36,8 +36,9 @@ set(sylvan_sources
   src/llmsset.h
   src/lace.c
   src/lace.h
-  src/murmur.c
-  src/murmur.h
+  src/hash.c
+  src/hash.h
+  src/hash24.h
   src/refs.h
   ${EXTRA_SRC}
 )

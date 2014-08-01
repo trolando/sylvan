@@ -117,6 +117,11 @@ typedef struct bddcache* bddcache_t;
 
 #define LLCI_KEYSIZE ((sizeof(struct bddcache) - sizeof(BDD)))
 #define LLCI_DATASIZE ((sizeof(struct bddcache)))
+
+#include <hash24.h>
+#define hash_mul(key,len) hash24_mul(key)
+#define rehash_mul(key,len,seed) rehash24_mul(key,seed)
+
 #include <llci.h>
 
 /** static _bdd struct */

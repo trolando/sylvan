@@ -6,7 +6,6 @@
 #include <sys/mman.h> // for mmap
 
 #include <atomics.h>
-#include <murmur.h>
 
 #if USE_NUMA
 #include <numa_tools.h>

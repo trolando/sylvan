@@ -7,7 +7,7 @@
 
 #include <atomics.h>
 #include <llmsset.h>
-#include <murmur.h>
+#include <hash.h>
 
 #if USE_NUMA
 #include <numa_tools.h>

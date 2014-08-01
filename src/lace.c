@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright 2013-2014 Formal Methods and Tools, University of Twente
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,7 +25,6 @@
 #include <assert.h>
 
 #include <lace.h>
-#include <ticketlock.h>
 
 #ifndef USE_NUMA
 #define USE_NUMA 0 // by default, don't use special numa handling code
@@ -110,7 +109,20 @@ us_elapsed(void)
 
 #if USE_NUMA
 // Lock used only during parallel lace_init_worker...
-ticketlock_t lock = {0};
+static volatile int __attribute__((aligned(64))) lock = 0;
+static inline void
+lock_acquire()
+{
+    while (1) {
+        while (lock) {}
+        if (cas(&lock, 0, 1)) return;
+    }
+}
+static inline void
+lock_release()
+{
+    lock=0;
+}
 #endif
 
 /* Barrier */
@@ -216,14 +228,14 @@ lace_init_worker(int worker, size_t dq_size)
     numa_run_on_node(node);
 
     // Allocate memory on our NUMA node...
-    ticketlock_lock(&lock);
+    lock_acquire();
     wt = (Worker *)numa_alloc_onnode(sizeof(Worker), node);
     w = (WorkerP *)numa_alloc_onnode(sizeof(WorkerP), node);
     if (wt == NULL || w == NULL || (w->dq = (Task*)numa_alloc_onnode(dq_size * sizeof(Task), node)) == NULL) {
         fprintf(stderr, "Lace error: Unable to allocate memory for the Lace worker!\n");
         exit(1);
     }
-    ticketlock_unlock(&lock);
+    lock_release();
 #else
     // Allocate memory...
     if (posix_memalign((void**)&wt, LINE_SIZE, sizeof(Worker)) ||
@@ -396,7 +408,7 @@ lace_spawn_worker(int worker, size_t stacksize, void* (*fun)(void*), void* arg)
         // Allocate memory for the program stack on the NUMA nodes
         size_t node;
         numa_worker_info(worker, &node, 0, 0, 0);
-        ticketlock_lock(&lock);
+        lock_acquire();
         void *stack_location = numa_alloc_onnode(stacksize + pagesize, node);
         if (stack_location == 0) {
             fprintf(stderr, "Lace error: Unable to allocate memory for the pthread stack!\n");
@@ -411,7 +423,7 @@ lace_spawn_worker(int worker, size_t stacksize, void* (*fun)(void*), void* arg)
             fprintf(stderr, "Lace error: Unable to set the pthread stack in Lace!\n");
             exit(1);
         }
-        ticketlock_unlock(&lock);
+        lock_release();
     }
 #else
     if (pthread_attr_setstacksize(&worker_attr, stacksize) != 0) {

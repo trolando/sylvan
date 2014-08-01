@@ -39,7 +39,6 @@ set(sylvan_sources
   src/murmur.c
   src/murmur.h
   src/refs.h
-  src/ticketlock.h
   ${EXTRA_SRC}
 )
 

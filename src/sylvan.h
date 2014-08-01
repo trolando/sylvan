@@ -112,9 +112,10 @@ void sylvan_gc_disable();
 /* Unary, binary and if-then-else operations */
 #define sylvan_not(a) (((BDD)a)^sylvan_complement)
 TASK_DECL_4(BDD, sylvan_ite, BDD, BDD, BDD, BDDVAR);
-static inline BDD sylvan_ite(BDD a, BDD b, BDD c) { return CALL(sylvan_ite, a, b, c, 0); }
-static inline BDD sylvan_xor(BDD a, BDD b) { return sylvan_ite(a, sylvan_not(b), b); }
-static inline BDD sylvan_equiv(BDD a, BDD b) { return sylvan_ite(a, b, sylvan_not(b)); }
+#define sylvan_ite(a,b,c) (CALL(sylvan_ite,a,b,c,0))
+/* Do not use nested calls for xor/equiv parameter b! */
+#define sylvan_xor(a,b) (CALL(sylvan_ite,a,sylvan_not(b),b,0))
+#define sylvan_equiv(a,b) (CALL(sylvan_ite,a,b,sylvan_not(b),0))
 #define sylvan_or(a,b) sylvan_ite(a, sylvan_true, b)
 #define sylvan_and(a,b) sylvan_ite(a,b,sylvan_false)
 #define sylvan_nand(a,b) sylvan_not(sylvan_and(a,b))
@@ -127,8 +128,8 @@ static inline BDD sylvan_equiv(BDD a, BDD b) { return sylvan_ite(a, b, sylvan_no
 
 /* Existential and Universal quantifiers */
 TASK_DECL_3(BDD, sylvan_exists, BDD, BDD, BDDVAR);
-static inline BDD sylvan_exists(BDD a, BDD variables) { return CALL(sylvan_exists, a, variables, 0); }
-static inline BDD sylvan_forall(BDD a, BDD variables) { return sylvan_not(CALL(sylvan_exists, sylvan_not(a), variables, 0)); }
+#define sylvan_exists(a, vars) (CALL(sylvan_exists, a, vars, 0))
+#define sylvan_forall(a, vars) (sylvan_not(CALL(sylvan_exists, sylvan_not(a), vars, 0)))
 
 /**
  * Relational Product for paired variables
@@ -169,7 +170,7 @@ TASK_DECL_3(BDD, sylvan_compose, BDD, BDDMAP, BDDVAR);
  * It is also the set of all variables in the BDD nodes of the BDD.
  */
 TASK_DECL_1(BDD, sylvan_support, BDD);
-static inline BDD sylvan_support(BDD bdd) { return CALL(sylvan_support, bdd); }
+#define sylvan_support(bdd) (CALL(sylvan_support, bdd))
 
 /**
  * Reset all counters (for statistics)
@@ -250,7 +251,7 @@ void sylvan_fprint(FILE *f, BDD bdd);
 
 void sylvan_printsha(BDD bdd);
 void sylvan_fprintsha(FILE *f, BDD bdd);
-void sylvan_getsha(BDD bdd, char *target); // at least 65 bytes...
+void sylvan_getsha(BDD bdd, char *target); // target must be at least 65 bytes...
 
 /**
  * Convert normal BDD to a BDD without complement edges
@@ -306,7 +307,7 @@ BDD sylvan_sat_one_bdd(BDD bdd);
 #define sylvan_pick_cube sylvan_sat_one_bdd
 
 TASK_DECL_1(long double, sylvan_pathcount, BDD);
-static inline long double sylvan_pathcount(BDD bdd) { return CALL(sylvan_pathcount, bdd); }
+#define sylvan_pathcount(bdd) (CALL(sylvan_pathcount, bdd))
 
 // TASK_DECL_1(size_t, sylvan_nodecount, BDD);
 size_t sylvan_nodecount(BDD a);
@@ -337,6 +338,7 @@ void sylvan_serialize_totext(FILE *out);
 void sylvan_serialize_tofile(FILE *out);
 void sylvan_serialize_fromfile(FILE *in);
 
+/* For debugging: if the bdd is not a well-formed BDD, assertions fail. */
 void sylvan_test_isbdd(BDD bdd);
 #endif
 

@@ -247,6 +247,7 @@ main(int argc, char **argv)
     lace_init(0, 1000000);
     lace_startup(0, NULL, NULL);
 
+    // For bigger examples, set this to 31, 30. Or other higher values.
     sylvan_init(25, 24, 4); // 2GB memory
 
     // Create domain

@@ -6,6 +6,9 @@ Sylvan is developed (&copy; 2011-2014) by the [Formal Methods and Tools](http://
 
 You can contact the main author of Sylvan at <t.vandijk@utwente.nl>.
 
+Java/JNI bindings: https://github.com/trolando/jsylvan  
+Haskell bindings: https://github.com/adamwalker/sylvan-haskell
+
 Publications
 ------------
 Dijk, T. van (2012) [The parallelization of binary decision diagram operations for model checking](http://essay.utwente.nl/61650/). Master’s Thesis, University of Twente, 27 April 2012.

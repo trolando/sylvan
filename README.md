@@ -17,7 +17,7 @@ Dijk, T. van and Laarman, A.W. and Pol, J.C. van de (2012) [Multi-Core BDD Opera
 
 Usage
 -----
-For a quick demo, you can find an example of a simple BDD-based reachability algorithm in `test/mc.c`. This demo features both a sequential (bfs) and a parallel (par) symbolic reachability algorithm.
+For a quick demo, you can find an example of a simple BDD-based reachability algorithm in `test/mc.c`. This demo features both a sequential (bfs) and a parallel (par) symbolic reachability algorithm, demonstrating how both sequential programs and parallel programs can benefit from parallized BDD operations.
 
 To use Sylvan, include header file `sylvan.h`.
 
@@ -29,20 +29,15 @@ Example C code for initialization:
 ```
 #include <sylvan.h>
 
-/* First, init and start Lace */
 lace_init(0, 1000000); // autodetect number of workers N; task queue size of 1,000,000 
 lace_startup(0, NULL, NULL); // use defaults, spawn N-1 workers
-
-/* Then, init Sylvan
- * - 2**25 BDD nodes     * 24 bytes = 768MB
- * - 2**24 cache entries * 36 bytes = 576MB */
 sylvan_init(25, 24, 4);
 ```
 
 Sylvan may require a larger than normal program stack. You may need to increase the program stack size on your system using `ulimit -s`. Segmentation faults on large computations typically indicate a program stack overflow.
 
-Basic functionality
--------------------
+### Basic functionality
+
 To create new BDDs, you can use:
 - `sylvan_true`: representation of constant `true`.
 - `sylvan_false`: representation of constant `false`.
@@ -76,13 +71,13 @@ These primitives are used to implement the following operations:
 - `sylvan_imp(a, b)` (a implies b)
 - `sylvan_invimp(a, b)` (b implies a)
 - `sylvan_xor(a, b)`
-- `sylvan_equiv(a, b)` (alias: sylvan_biimp)
+- `sylvan_equiv(a, b)` (alias: `sylvan_biimp`)
 - `sylvan_diff(a, b)` (a and not b)
 - `sylvan_less(a, b)` (b and not a)
 - `sylvan_forall(bdd, vars)`
 
-Other BDD operations
---------------------
+### Other BDD operations
+
 We also implemented the following BDD operations:
 - `sylvan_restrict(f, c)`: calculate the restrict algorithm on f,c.
 - `sylvan_constrain(f, c)`: calculate the constrain f@c, also called generalized co-factor (gcf).
@@ -95,30 +90,31 @@ We also implemented the following BDD operations:
 - `sylvan_sat_one_bdd(bdd)`: calculate a cube that satisfies &lt;bdd&gt;.
 - `sylvan_sat_one(bdd, vars, count, vector)`: reverse of `sylvan_cube` on the result of `sylvan_sat_one_bdd`. Alias: `sylvan_pick_cube`.
  
-Garbage collection
-------------------
+### Garbage collection
+
 Garbage collection is triggered when trying to insert a new node and no new bucket can be found within a reasonable upper bound. This upper bound is typically 8*(4+tablesize) buckets, where tablesize is the log2 size of the table. In practice, garbage collection occurs when the table is about 90% full. Garbage collection occurs by rehashing all BDD nodes that must stay in the table. It is designed such that all workers must cooperate on garbage collection. This condition is checked in `sylvan_gc_test()` which is called from every BDD operation and from a callback in the Lace framework that is called when there is no work.
 
 - `sylvan_gc()`: manually trigger garbage collection.
 - `sylvan_gc_enable()`: enable garbage collection.
 - `sylvan_gc_disable()`: disable garbage collection.
 
-Caching granularity
--------------------
+### Caching granularity
+
 Caching granularity works as follows: with granularity G, each variable x is in a variable group x/G, e.g. the first G variables are in variable group 0, the next G variables are in variable group 1, etc.
 BDD operations only consult the operation cache when they change variable groups.
 
 Higher granularity values result in less cache use. In practice, values between 4 and 8 tend to work well, but this depends on many factors, such as the structure and size of the BDDs and the characteristics of the computer architecture.
 
-Dynamic reordering
-------------------
+### Dynamic reordering
+
 Dynamic reordening is currently not supported.
 We are interested in examples where this is necessary for good performance and would like to perform research into parallel dynamic reordering in future work.
 
 For now, we suggest users find a good static variable ordering.
 
-Resizing tables
----------------
+### Resizing tables
+
 Resizing of nodes table and operation cache is currently not supported. In theory stop-the-world resizing can be implemented to grow the nodes table, but not to shrink the nodes table, since shrinking requires recreating all BDDs. Operation cache resizing is trivial to implement.
 
 Please let us know if you need this functionality.
+

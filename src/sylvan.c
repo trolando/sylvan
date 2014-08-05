@@ -660,7 +660,8 @@ sylvan_makenode(BDDVAR level, BDD low, BDD high)
         //size_t before_gc = llmsset_get_filled(_bdd.data);
         if (gc_enabled) sylvan_gc_go();
         //size_t after_gc = llmsset_get_filled(_bdd.data);
-        //fprintf(stderr, "GC: %ld to %ld (freed %ld)\n", before_gc, after_gc, before_gc-after_gc);
+        //size_t total = llmsset_get_size(_bdd.data);
+        //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
 
         if (llmsset_lookup(_bdd.data, &n, insert_index, &created, &index) == 0) {
             fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_get_filled(_bdd.data), llmsset_get_size(_bdd.data));

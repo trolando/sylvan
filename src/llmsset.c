@@ -98,6 +98,18 @@ llmsset_lookup(const llmsset_t dbs, const void* data, uint64_t* insert_index, in
     uint8_t *d_ptr;
 phase2:
     d_idx = *insert_index;
+
+    /* Randomize d_idx */
+    // Note that the following code is sensitive to a minor modulo bias.
+    // Can be removed using: do { randomize } while (d_idx > ~(dbs->mask));
+    /* RNG option 1: lcg64
+       d_idx = 2862933555777941757ULL * d_idx + 3037000493ULL; */
+    /* RNG option 2: xorshift* */
+    d_idx ^= d_idx >> 12;
+    d_idx ^= d_idx << 25;
+    // d_idx ^= d_idx >> 27;
+    // d_idx *= 2685821657736338717LL;
+
     while (1) {
         d_idx &= dbs->mask; // sanitize...
         if (!d_idx) d_idx++; // do not use bucket 0 for data
@@ -288,9 +300,9 @@ llmsset_test_multi(const llmsset_t dbs, size_t n_workers)
 size_t
 llmsset_get_insertindex_multi(const llmsset_t dbs, size_t my_id, size_t n_workers)
 {
-    size_t first_entry, entry_count;
-    llmsset_compute_multi(dbs, my_id, n_workers, &first_entry, &entry_count);
-    return first_entry;
+    return my_id; // good enough since we randomize insert index now
+    (void) n_workers;
+    (void) dbs;
 }
 
 static inline void

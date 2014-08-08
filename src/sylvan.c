@@ -222,7 +222,7 @@ sylvan_pregc_mark_rec(BDD bdd)
 static void
 sylvan_pregc_mark_refs(int my_id, int workers)
 {
-    size_t per_worker = refs_size / workers;
+    size_t per_worker = (refs_size + workers - 1)/ workers;
     if (per_worker < 8) per_worker = 8;
     size_t first = per_worker * my_id;
     if (first >= refs_size) return;

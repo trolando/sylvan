@@ -38,6 +38,7 @@ set(sylvan_sources
   src/lace.h
   src/hash24.h
   src/hash16.h
+  src/cache.h
   src/refs.h
   ${EXTRA_SRC}
 )

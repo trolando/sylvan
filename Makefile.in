@@ -136,7 +136,7 @@ am__DEPENDENCIES_1 =
 libsylvan_la_DEPENDENCIES = $(am__DEPENDENCIES_1)
 am__libsylvan_la_SOURCES_DIST = src/barrier.c src/barrier.h src/sha2.c \
 	src/sha2.h src/sylvan.c src/sylvan.h src/llmsset.c \
-	src/llmsset.h src/llci.h src/tls.h src/atomics.h src/avl.h \
+	src/llmsset.h src/cache.h src/tls.h src/atomics.h src/avl.h \
 	src/lace.c src/lace.h src/refs.h src/hash24.h src/hash16.h \
 	src/numa_tools.c src/numa_tools.h
 am__dirstamp = $(am__leading_dot)dirstamp
@@ -356,7 +356,7 @@ libsylvan_la_LIBADD = -lm $(am__append_1)
 include_HEADERS = src/sylvan.h src/lace.h src/atomics.h
 libsylvan_la_SOURCES = src/barrier.c src/barrier.h src/sha2.c \
 	src/sha2.h src/sylvan.c src/sylvan.h src/llmsset.c \
-	src/llmsset.h src/llci.h src/tls.h src/atomics.h src/avl.h \
+	src/llmsset.h src/cache.h src/tls.h src/atomics.h src/avl.h \
 	src/lace.c src/lace.h src/refs.h src/hash24.h src/hash16.h \
 	$(am__append_2)
 all: all-am

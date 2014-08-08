@@ -337,8 +337,9 @@ int
 llmsset_mark_unsafe(const llmsset_t dbs, uint64_t index)
 {
     uint64_t v = dbs->table[index];
+    if (v & DFILLED) return 0;
     dbs->table[index] = DFILLED;
-    return v & DFILLED ? 0 : 1;
+    return 1;
 }
 
 int

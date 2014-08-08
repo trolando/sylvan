@@ -88,30 +88,6 @@ static inline BDD BDD_SETDATA(BDD s, uint32_t data)
 }
 
 /**
- * Some essential garbage collection helpers
- */
-typedef struct gc_tomark
-{
-    struct gc_tomark *prev;
-    BDD bdd;
-} *gc_tomark_t;
-
-static DECLARE_THREAD_LOCAL(gc_key, gc_tomark_t);
-
-#define TOMARK_INIT \
-            gc_tomark_t __tomark_original, __tomark_top; {\
-                LOCALIZE_THREAD_LOCAL(gc_key, gc_tomark_t);\
-                __tomark_original = __tomark_top = gc_key;}
-
-#define TOMARK_PUSH(p) \
-            { gc_tomark_t tomark = (gc_tomark_t)alloca(sizeof(struct gc_tomark));\
-              *tomark = (struct gc_tomark){__tomark_top, p};\
-              SET_THREAD_LOCAL(gc_key, (__tomark_top = tomark)); }
-
-#define TOMARK_EXIT \
-            SET_THREAD_LOCAL(gc_key, __tomark_original);
-
-/**
  * Cached operations:
  * Operation numbers are stored in the data field of the first parameter
  */
@@ -157,7 +133,7 @@ initialize_insert_index()
 }
 
 /**
- * External references (note: protected by a spinlock)
+ * External references
  */
 
 #include <refs.h>
@@ -176,6 +152,64 @@ sylvan_deref(BDD a)
     if (a == sylvan_false || a == sylvan_true) return;
     refs_down(BDD_STRIPMARK(a));
 }
+
+typedef struct mark_internal
+{
+    size_t size, count;
+    BDD data[0];
+} *mark_internal_t;
+
+static DECLARE_THREAD_LOCAL(mark_key, mark_internal_t);
+
+static __attribute__((noinline)) void
+ref_init()
+{
+    mark_internal_t s = (mark_internal_t)malloc(sizeof(struct mark_internal) + sizeof(BDD) * 4096);
+    s->size = 4096;
+    s->count = 0;
+    SET_THREAD_LOCAL(mark_key, s);
+}
+
+static __attribute__((noinline)) void
+ref_resize()
+{
+    LOCALIZE_THREAD_LOCAL(mark_key, mark_internal_t);
+    mark_internal_t s = (mark_internal_t)malloc(sizeof(struct mark_internal) + sizeof(BDD) * mark_key->size*2);
+    s->size = mark_key->size*2;
+    s->count = mark_key->count;
+    memcpy(s->data, mark_key->data, sizeof(BDD) * mark_key->count);
+    mark_internal_t old = mark_key;
+    SET_THREAD_LOCAL(mark_key, s);
+    free(old);
+}
+
+void
+ref_internal(const BDD a)
+{
+    if (a == sylvan_false || a == sylvan_true) return;
+    LOCALIZE_THREAD_LOCAL(mark_key, mark_internal_t);
+    if (likely(mark_key->count < mark_key->size)) {
+        mark_key->data[mark_key->count++] = a;
+    } else {
+        ref_resize();
+        LOCALIZE_THREAD_LOCAL(mark_key, mark_internal_t);
+        mark_key->data[mark_key->count++] = a;
+    }
+}
+
+void
+deref_internal(BDD a)
+{
+    if (a == sylvan_false || a == sylvan_true) return;
+    LOCALIZE_THREAD_LOCAL(mark_key, mark_internal_t);
+    mark_key->count--;
+    return;
+    (void)a;
+}
+
+#define TOMARK_INIT size_t mark_old_count=0; { LOCALIZE_THREAD_LOCAL(mark_key, mark_internal_t); if (mark_key) mark_old_count = mark_key->count; else ref_init(); }
+#define TOMARK_PUSH(a) ref_internal(a);
+#define TOMARK_EXIT { LOCALIZE_THREAD_LOCAL(mark_key, mark_internal_t); mark_key->count = mark_old_count; }
 
 size_t
 sylvan_count_refs()
@@ -230,7 +264,7 @@ sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
     _bdd.workers = lace_workers();
     barrier_init (&bar, lace_workers());
 
-    INIT_THREAD_LOCAL(gc_key);
+    INIT_THREAD_LOCAL(mark_key);
     INIT_THREAD_LOCAL(insert_index);
 
 #if USE_NUMA
@@ -487,12 +521,15 @@ sylvan_gc_participate()
     // GC phase 2: mark nodes
     sylvan_pregc_mark_refs(my_id, (int)workers);
 
-    LOCALIZE_THREAD_LOCAL(gc_key, gc_tomark_t);
-    gc_tomark_t t = gc_key;
-    while (t != NULL) {
-        sylvan_pregc_mark_rec(t->bdd);
-        t = t->prev;
+    LOCALIZE_THREAD_LOCAL(mark_key, mark_internal_t);
+    if (mark_key) {
+        size_t i = mark_key->count;
+        while (i--) {
+            sylvan_pregc_mark_rec(mark_key->data[i]);
+            sylvan_test_isbdd(mark_key->data[i]);
+        }
     }
+
     barrier_wait (&bar);
 
     // GC phase 3: rehash BDDs
@@ -537,12 +574,10 @@ void sylvan_gc_go()
     // GC phase 2a: mark external refs
     sylvan_pregc_mark_refs(my_id, (int)workers);
 
-    // GC phase 2b: mark internal refs
-    LOCALIZE_THREAD_LOCAL(gc_key, gc_tomark_t);
-    gc_tomark_t t = gc_key;
-    while (t != NULL) {
-        sylvan_pregc_mark_rec(t->bdd);
-        t = t->prev;
+    LOCALIZE_THREAD_LOCAL(mark_key, mark_internal_t);
+    if (mark_key) {
+        size_t i = mark_key->count;
+        while (i--) sylvan_pregc_mark_rec(mark_key->data[i]);
     }
 
     barrier_wait (&bar);
@@ -1773,32 +1808,32 @@ sylvan_sat_one_bdd(BDD bdd)
     BDD low = node_low(bdd, node);
     BDD high = node_high(bdd, node);
 
-    LOCALIZE_THREAD_LOCAL(gc_key, gc_tomark_t);
-
-    struct gc_tomark m;
-    m.prev = gc_key;
-    m.bdd = sylvan_invalid;
-
-    SET_THREAD_LOCAL(gc_key, &m);
+    TOMARK_INIT;
+    BDD m;
 
     BDD result;
     if (low == sylvan_false) {
-        m.bdd = sylvan_sat_one_bdd(high);
-        result = sylvan_makenode(node->level, sylvan_false, m.bdd);
+        m = sylvan_sat_one_bdd(high);
+        TOMARK_PUSH(m);
+        result = sylvan_makenode(node->level, sylvan_false, m);
     } else if (high == sylvan_false) {
-        m.bdd = sylvan_sat_one_bdd(low);
-        result = sylvan_makenode(node->level, m.bdd, sylvan_false);
+        m = sylvan_sat_one_bdd(low);
+        TOMARK_PUSH(m);
+        result = sylvan_makenode(node->level, m, sylvan_false);
     } else {
         if (rand() & 0x2000) {
-            m.bdd = sylvan_sat_one_bdd(low);
-            result = sylvan_makenode(node->level, m.bdd, sylvan_false);
+            m = sylvan_sat_one_bdd(low);
+            TOMARK_PUSH(m);
+            result = sylvan_makenode(node->level, m, sylvan_false);
         } else {
-            m.bdd = sylvan_sat_one_bdd(high);
-            result = sylvan_makenode(node->level, sylvan_false, m.bdd);
+            m = sylvan_sat_one_bdd(high);
+            TOMARK_PUSH(m);
+            result = sylvan_makenode(node->level, sylvan_false, m);
         }
     }
 
-    SET_THREAD_LOCAL(gc_key, m.prev);
+    TOMARK_EXIT
+
     return result;
 }
 
@@ -1811,30 +1846,27 @@ sylvan_cube(BDDVAR* vars, size_t cnt, char* cube)
     memcpy(sorted_vars, vars, sizeof(BDDVAR)*cnt);
     gnomesort_bddvars(sorted_vars, cnt);
 
-    LOCALIZE_THREAD_LOCAL(gc_key, gc_tomark_t);
-
-    struct gc_tomark m;
-    m.prev = gc_key;
-    m.bdd = sylvan_true; 
-
-    SET_THREAD_LOCAL(gc_key, &m);
+    TOMARK_INIT;
+    BDD m = sylvan_true;
 
     size_t i;
     for (i=0; i<cnt; i++) {
         BDDVAR var = sorted_vars[cnt-i-1];
         size_t idx=0;
         for (idx=0; vars[idx]!=var; idx++) {}
+        TOMARK_PUSH(m);
         if (cube[idx] == 0) {
-            m.bdd = sylvan_makenode(var, m.bdd, sylvan_false);
+            m = sylvan_makenode(var, m, sylvan_false);
         } else if (cube[idx] == 1) {
-            m.bdd = sylvan_makenode(var, sylvan_false, m.bdd);
+            m = sylvan_makenode(var, sylvan_false, m);
         } else {
-            m.bdd = sylvan_makenode(var, m.bdd, m.bdd); // actually: this skips
+            m = sylvan_makenode(var, m, m); // actually: this skips
         }
+        TOMARK_EXIT;
     }
 
-    SET_THREAD_LOCAL(gc_key, m.prev);
-    return m.bdd;
+    TOMARK_EXIT;
+    return m;
 }
 
 /**

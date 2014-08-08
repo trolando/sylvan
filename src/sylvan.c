@@ -2001,6 +2001,7 @@ sylvan_test_isset(BDDSET set)
 {
     while (set != sylvan_false) {
         assert(set != sylvan_true);
+        assert(llmsset_is_marked(_bdd.data, set));
         bddnode_t n = GETNODE(set);
         assert(node_high(set, n) == sylvan_true);
         set = node_low(set, n);

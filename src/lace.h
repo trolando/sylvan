@@ -306,6 +306,10 @@ static const int __lace_in_task = 0;
 #define LACE_CALLBACK(f) LACE_DECL_CALLBACK(f) LACE_IMPL_CALLBACK(f)
 #define CALL_CALLBACK(f, arg) ( f(__lace_worker, __lace_dq_head, __lace_in_task, arg) )
 
+#define TASK_IS_STOLEN(t) (t->thief != 0)
+#define TASK_IS_COMPLETED(t) ((size_t)t->thief == 1)
+#define TASK_RESULT(t) (&t->d[0])
+
 #if LACE_PIE_TIMES
 static void lace_time_event( WorkerP *w, int event )
 {

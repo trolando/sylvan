@@ -23,7 +23,7 @@ else()
 endif()
 
 set (CMAKE_ASM_FLAGS "-g")
-set (CMAKE_C_FLAGS "-g -O3 -Wextra -Wall -Werror -D${NUMA_DEF}")
+set (CMAKE_C_FLAGS "-g -O3 -Wextra -Wall -Werror -fno-strict-aliasing -D${NUMA_DEF}")
 
 set(sylvan_sources
   src/barrier.h

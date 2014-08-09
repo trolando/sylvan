@@ -2,7 +2,7 @@ ACLOCAL_AMFLAGS = -I m4
 
 lib_LTLIBRARIES = libsylvan.la
 
-libsylvan_la_CFLAGS = -g -O2 -Wall -Wextra
+libsylvan_la_CFLAGS = -g -O2 -Wall -Wextra -fno-strict-aliasing
 libsylvan_la_CFLAGS += -I$(top_builddir)
 libsylvan_la_CFLAGS += -I$(srcdir)/src
 libsylvan_la_LIBADD = -lm

@@ -331,9 +331,9 @@ void sylvan_gc_go(int master)
     if (ref_key) {
         size_t i = ref_key->r_count;
         while (i--) sylvan_gc_mark_rec(ref_key->results[i]);
-        i = ref_key->s_count;
-        while (i--) {
+        for (i=0; i<ref_key->s_count; i++) {
             Task *t = ref_key->spawns[i];
+            if (!TASK_IS_STOLEN(t)) break;
             if (TASK_IS_COMPLETED(t)) sylvan_gc_mark_rec(*(BDD*)TASK_RESULT(t));
         }
     }

@@ -350,8 +350,8 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 ACLOCAL_AMFLAGS = -I m4
 lib_LTLIBRARIES = libsylvan.la
-libsylvan_la_CFLAGS = -g -O2 -Wall -Wextra -I$(top_builddir) \
-	-I$(srcdir)/src $(am__append_3)
+libsylvan_la_CFLAGS = -g -O2 -Wall -Wextra -fno-strict-aliasing \
+	-I$(top_builddir) -I$(srcdir)/src $(am__append_3)
 libsylvan_la_LIBADD = -lm $(am__append_1)
 include_HEADERS = src/sylvan.h src/lace.h src/atomics.h
 libsylvan_la_SOURCES = src/barrier.c src/barrier.h src/sha2.c \

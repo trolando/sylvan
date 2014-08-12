@@ -813,10 +813,10 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     if (nb && level > nb->level) level = nb->level;
     if (nc && level > nc->level) level = nc->level;
 
-    cache_entry_t hash;
+    size_t hash;
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
-        hash = cache_bucket(BDD_SETDATA(a, CACHE_ITE), b, c);
+        hash = cache_hash(BDD_SETDATA(a, CACHE_ITE), b, c);
         BDD result;
         if (cache_get(hash, BDD_SETDATA(a, CACHE_ITE), b, c, &result)) {
             SV_CNT_CACHE(C_cache_reuse);
@@ -898,10 +898,10 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
 
     // CONSULT CACHE
 
-    cache_entry_t hash;
+    size_t hash;
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
-        hash = cache_bucket(BDD_SETDATA(a, CACHE_CONSTRAIN), b, 0);
+        hash = cache_hash(BDD_SETDATA(a, CACHE_CONSTRAIN), b, 0);
         BDD result;
         if (cache_get(hash, BDD_SETDATA(a, CACHE_CONSTRAIN), b, 0, &result)) {
             SV_CNT_CACHE(C_cache_reuse);
@@ -987,10 +987,10 @@ TASK_IMPL_3(BDD, sylvan_restrict, BDD, a, BDD, b, BDDVAR, prev_level)
     BDDVAR level = na->level < nb->level ? na->level : nb->level;
 
     /* Consult cache */
-    cache_entry_t hash;
+    size_t hash;
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
-        hash = cache_bucket(BDD_SETDATA(a, CACHE_RESTRICT), b, 0);
+        hash = cache_hash(BDD_SETDATA(a, CACHE_RESTRICT), b, 0);
         BDD result;
         if (cache_get(hash, BDD_SETDATA(a, CACHE_RESTRICT), b, 0, &result)) {
             SV_CNT_CACHE(C_cache_reuse);
@@ -1067,10 +1067,10 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
 
     if (sylvan_set_isempty(variables)) return a; // again, trivial case
 
-    cache_entry_t hash;
+    size_t hash;
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
-        hash = cache_bucket(BDD_SETDATA(a, CACHE_EXISTS), variables, 0);
+        hash = cache_hash(BDD_SETDATA(a, CACHE_EXISTS), variables, 0);
         BDD result;
         if (cache_get(hash, BDD_SETDATA(a, CACHE_EXISTS), variables, 0, &result)) {
             SV_CNT_CACHE(C_cache_reuse);
@@ -1165,10 +1165,10 @@ TASK_IMPL_4(BDD, sylvan_relprod_paired, BDD, a, BDD, b, BDDSET, vars, BDDVAR, pr
     }
 
     /* Consult cache */
-    cache_entry_t hash;
+    size_t hash;
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
-        hash = cache_bucket(BDD_SETDATA(a, CACHE_RELPROD_PAIRED), b, vars);
+        hash = cache_hash(BDD_SETDATA(a, CACHE_RELPROD_PAIRED), b, vars);
         BDD result;
         if (cache_get(hash, BDD_SETDATA(a, CACHE_RELPROD_PAIRED), b, vars, &result)) {
             SV_CNT_CACHE(C_cache_reuse);
@@ -1294,10 +1294,10 @@ TASK_IMPL_4(BDD, sylvan_relprod_paired_prev, BDD, a, BDD, b, BDD, vars, BDDVAR, 
     }
 
     /* Consult cache */
-    cache_entry_t hash;
+    size_t hash;
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
-        hash = cache_bucket(BDD_SETDATA(a, CACHE_RELPROD_PAIRED_PREV), b, vars);
+        hash = cache_hash(BDD_SETDATA(a, CACHE_RELPROD_PAIRED_PREV), b, vars);
         BDD result;
         if (cache_get(hash, BDD_SETDATA(a, CACHE_RELPROD_PAIRED_PREV), b, vars, &result)) {
             SV_CNT_CACHE(C_cache_reuse);
@@ -1432,10 +1432,10 @@ TASK_IMPL_3(BDD, sylvan_compose, BDD, a, BDDMAP, map, BDDVAR, prev_level)
     }
 
     /* Consult cache */
-    cache_entry_t hash;
+    size_t hash;
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
-        hash = cache_bucket(BDD_SETDATA(a, CACHE_COMPOSE), map, 0);
+        hash = cache_hash(BDD_SETDATA(a, CACHE_COMPOSE), map, 0);
         BDD result;
         if (cache_get(hash, BDD_SETDATA(a, CACHE_COMPOSE), map, 0, &result)) {
             SV_CNT_CACHE(C_cache_reuse);
@@ -1591,10 +1591,10 @@ TASK_IMPL_3(sylvan_satcount_double_t, sylvan_satcount_cached, BDD, bdd, BDDSET, 
     } hack;
 
     /* Consult cache */
-    cache_entry_t hash;
+    size_t hash;
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != var / granularity;
     if (cachenow) {
-        hash = cache_bucket(BDD_SETDATA(bdd, CACHE_SATCOUNT), variables, 0);
+        hash = cache_hash(BDD_SETDATA(bdd, CACHE_SATCOUNT), variables, 0);
         if (cache_get(hash, BDD_SETDATA(bdd, CACHE_SATCOUNT), variables, 0, &hack.s)) {
             SV_CNT_CACHE(C_cache_reuse);
             return hack.d * powl(2.0L, skipped);

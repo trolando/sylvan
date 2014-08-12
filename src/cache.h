@@ -12,22 +12,28 @@
 #define CACHE_INLINE_H
 
 /**
- * This cache is designed to store (a,b,c)->d,
- * with a,b,c 64-bit integers, and d is a 40-bit integer
+ * This cache is designed to store a,b,c->res, with a,b,c,res 64-bit integers.
  *
- * Each cache bucket takes 32 bytes, 2 buckets per cache line.
+ * Each cache bucket takes 32 bytes, 2 per cache line.
+ * Each cache status bucket takes 4 bytes, 16 per cache line.
+ * Therefore, size 2^N = 36*(2^N) bytes.
  */
 
 typedef struct __attribute__((packed)) cache_entry {
-    volatile uint64_t   res;
     uint64_t            a;
     uint64_t            b;
     uint64_t            c;
+    uint64_t            res;
 } * cache_entry_t;
 
 static size_t             cache_size;         // power of 2
 static size_t             cache_mask;         // cache_size-1
 static cache_entry_t      cache_table;
+static uint32_t*          cache_status;
+
+// status: 0x80000000 - bitlock
+//         0x7fff0000 - hash (part of the 64-bit hash not used to position)
+//         0x0000ffff - tag (every put increases tag field)
 
 static inline uint64_t
 cache_rotl64(uint64_t x, int8_t r)
@@ -35,60 +41,58 @@ cache_rotl64(uint64_t x, int8_t r)
     return (x << r) | (x >> (64 - r));
 }
 
-// FNV1A_Hash_Jesteress
+/* Rotating 64-bit FNV-1a hash */
 static inline uint64_t
 cache_hash(uint64_t a, uint64_t b, uint64_t c)
 {
     const uint64_t prime = 1099511628211;
     uint64_t hash = 14695981039346656037LLU;
-
-    hash = (hash ^ cache_rotl64(a, 5)) * prime;
-    hash = (hash ^ cache_rotl64(b, 7)) * prime;
-    hash = (hash ^ cache_rotl64(c, 11)) * prime;
-
-    return hash ^ (hash >> 32);
+    hash = cache_rotl64(hash ^ a, 12) * prime;
+    hash = cache_rotl64(hash ^ b, 25) * prime;
+    hash = cache_rotl64(hash ^ c, 27) * prime;
+    return hash;
 }
 
-static cache_entry_t
-cache_bucket(uint64_t a, uint64_t b, uint64_t c)
+static int
+cache_get(const size_t hash, uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
 {
-    return cache_table + (cache_hash(a, b, c) & cache_mask);
-}
-
-// Geduld, mijn vriend, geduld, zei de slak tegen de schildpad...
-
-static inline int __attribute__((unused))
-cache_get(const cache_entry_t bucket, uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
-{
-    const uint64_t _res = bucket->res;
+    volatile uint32_t *s_bucket = cache_status + (hash & cache_mask);
+    const uint32_t s = *s_bucket;
     // abort if locked
-    if (_res & 0x8000000000000000) return 0;
+    if (s & 0x80000000) return 0;
+    // abort if different hash
+    if ((s ^ (hash>>32)) & 0x7fff0000) return 0;
     // abort if key different
+    cache_entry_t bucket = cache_table + (hash & cache_mask);
     if (bucket->a != a || bucket->b != b || bucket->c != c) return 0;
+    *res = bucket->res;
     compiler_barrier();
-    if (bucket->res != _res) return 0;
-    *res = _res & 0x000000ffffffffff;
-    return 1;
+    // abort if status field changed after compiler_barrier()
+    return *s_bucket == s ? 1 : 0;
 }
 
-static inline int __attribute__((unused))
-cache_put(const cache_entry_t bucket, uint64_t a, uint64_t b, uint64_t c, uint64_t res)
+static int
+cache_put(const size_t hash, uint64_t a, uint64_t b, uint64_t c, uint64_t res)
 {
-    const uint64_t _res = bucket->res;
-    // abort if locked or may exist
-    if (_res & 0x8000000000000000) return 0;
-    if (bucket->a == a && bucket->b == b && bucket->c == c) return 0;
-
-    uint64_t new_res = ((_res & 0x7fffff0000000000) + 0x0000010000000000) & 0x7fffff0000000000;
-    new_res |= res;
-    if (!cas(&bucket->res, _res, new_res | 0x8000000000000000)) return 0;
-
+    volatile uint32_t *s_bucket = cache_status + (hash & cache_mask);
+    const uint32_t s = *s_bucket;
+    // abort if locked
+    if (s & 0x80000000) return 0;
+    // abort if same hash
+    const uint32_t hash_mask = (hash>>32) & 0x7fff0000;
+    if ((s & 0x7fff0000) == hash_mask) return 0;
+    // use cas to claim bucket
+    const uint32_t new_s = ((s+1) & 0x0000ffff) | hash_mask;
+    if (!cas(s_bucket, s, new_s | 0x80000000)) return 0;
+    // cas succesful: write data
+    cache_entry_t bucket = cache_table + (hash & cache_mask);
     bucket->a = a;
     bucket->b = b;
     bucket->c = c;
+    bucket->res = res;
     compiler_barrier();
-    bucket->res = new_res;
-
+    // after compiler_barrier(), unlock status field
+    *s_bucket = new_s;
     return 1;
 }
 
@@ -105,23 +109,15 @@ cache_create(size_t _cache_size)
     cache_mask = cache_size - 1;
 
     cache_table = (cache_entry_t)mmap(0, cache_size * sizeof(struct cache_entry), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
-    if (cache_table == (cache_entry_t)-1) {
+    cache_status = (uint32_t*)mmap(0, cache_size * sizeof(uint32_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    if (cache_table == (cache_entry_t)-1 || cache_status == (uint32_t*)-1) {
         fprintf(stderr, "cache: Unable to allocate memory!\n");
         exit(1);
     }
 
 #if USE_NUMA
     numa_interleave(cache_table, cache_size * sizeof(struct cache_entry), 0);
-#endif
-}
-
-static void __attribute__((unused))
-cache_clear()
-{
-    munmap(cache_table, cache_size * sizeof(struct cache_entry));
-    cache_table = (cache_entry_t)mmap(0, cache_size * sizeof(struct cache_entry), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
-#if USE_NUMA
-    numa_interleave(cache_table, cache_size * sizeof(struct cache_entry), 0);
+    numa_interleave(cache_status, cache_size * sizeof(uint32_t), 0);
 #endif
 }
 
@@ -129,6 +125,15 @@ static inline void __attribute__((unused))
 cache_free()
 {
     munmap(cache_table, cache_size * sizeof(struct cache_entry));
+    munmap(cache_status, cache_size * sizeof(uint32_t));
+}
+
+static void __attribute__((unused))
+cache_clear()
+{
+    // a bit silly, but this works just fine, and does not require writing 0 everywhere...
+    cache_free();
+    cache_create(cache_size);
 }
 
 #endif

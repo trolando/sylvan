@@ -268,9 +268,9 @@ BDD sylvan_bdd_to_nocomp(BDD bdd);
  * The cached version uses the operation cache, but is limited to 64-bit floating point numbers.
  */
 
-typedef float sylvan_satcount_double_t;
+typedef double sylvan_satcount_double_t;
 // if this line below gives an error, modify the above typedef until fixed ;)
-typedef char __sylvan_check_double_is_4_bytes[(sizeof(sylvan_satcount_double_t) == sizeof(uint32_t))?1:-1];
+typedef char __sylvan_check_double_is_8_bytes[(sizeof(sylvan_satcount_double_t) == sizeof(uint64_t))?1:-1];
 
 TASK_DECL_3(sylvan_satcount_double_t, sylvan_satcount_cached, BDD, BDDSET, BDDVAR);
 TASK_DECL_2(long double, sylvan_satcount, BDD, BDDSET);

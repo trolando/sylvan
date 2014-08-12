@@ -99,29 +99,29 @@ llmsset_lookup(const llmsset_t dbs, const void* data, uint64_t* insert_index, in
 phase2:
     d_idx = *insert_index;
 
-    /* Randomize d_idx */
-    // Note that the following code is sensitive to a minor modulo bias.
-    // Can be removed using: do { randomize } while (d_idx > ~(dbs->mask));
-    /* RNG option 1: lcg64
-       d_idx = 2862933555777941757ULL * d_idx + 3037000493ULL; */
-    /* RNG option 2: xorshift* */
-    d_idx ^= d_idx >> 12;
-    d_idx ^= d_idx << 25;
-    // d_idx ^= d_idx >> 27;
-    // d_idx *= 2685821657736338717LL;
-
-    while (1) {
+    int count=0;
+    for (;;) {
         d_idx &= dbs->mask; // sanitize...
         if (!d_idx) d_idx++; // do not use bucket 0 for data
         volatile uint64_t *ptr = dbs->table + d_idx;
         uint64_t h = *ptr;
         if (h & DFILLED) {
-            d_idx = (d_idx+1) & dbs->mask;
+            if (count++ == 128) {
+                // random d_idx (xorshift)
+                d_idx ^= d_idx >> 12;
+                d_idx ^= d_idx << 25;
+                d_idx ^= d_idx >> 27;
+                count = 0;
+            } else {
+                d_idx++;
+            }
         } else if (cas(ptr, h, h|DFILLED)) {
             d_ptr = dbs->data + d_idx * LLMSSET_LEN;
             memcpy(d_ptr, data, LLMSSET_LEN);
             *insert_index = d_idx;
             break;
+        } else {
+            d_idx++;
         }
     }
 

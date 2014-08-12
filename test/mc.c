@@ -8,8 +8,8 @@
 #include <llmsset.h>
 
 /* Configuration */
-static int report_levels = 1; // report states at start of every level
-static int report_table = 1; // report table size at end of every level
+static int report_levels = 0; // report states at start of every level
+static int report_table = 0; // report table size at end of every level
 static int run_par = 1; // set to 1 = use PAR strategy; set to 0 = use BFS strategy
 
 /* Globals */
@@ -296,6 +296,8 @@ main(int argc, char **argv)
     // Now we just have states
     printf("Final states: %zu states\n", (size_t)sylvan_satcount(states->bdd, states->variables));
     printf("Final states: %zu BDD nodes\n", sylvan_nodecount(states->bdd));
+
+    sylvan_report_stats();
 
     return 0;
 }

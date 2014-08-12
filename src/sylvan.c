@@ -201,6 +201,7 @@ ref_init()
     s->s_count = 0;
     s->results = (BDD*)malloc(sizeof(BDD) * 128);
     s->spawns = (Task**)malloc(sizeof(Task*) * 128);
+    LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);
     SET_THREAD_LOCAL(ref_key, s);
     return ref_key;
 }
@@ -228,6 +229,7 @@ ref_resize_spawns()
 {                                                                                       \
     BDD result_to_mark = a;                                                             \
     if (result_to_mark != sylvan_false && result_to_mark != sylvan_true) {              \
+        LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);                                 \
         size_t count = ref_key->r_count;                                                \
         if (count >= ref_key->r_size) { ref_resize_results(); }                         \
         ref_key->results[count] = result_to_mark;                                       \
@@ -238,6 +240,7 @@ ref_resize_spawns()
 #define REFS_SPAWN(s)                                                                   \
 {                                                                                       \
     Task *task_to_mark = s;                                                             \
+    LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);                                     \
     size_t count = ref_key->s_count;                                                    \
     if (count >= ref_key->s_size) { ref_resize_spawns(); }                              \
     ref_key->spawns[count] = task_to_mark;                                              \
@@ -246,11 +249,13 @@ ref_resize_spawns()
 
 #define REFS_DESPAWN                                                                    \
 {                                                                                       \
+    LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);                                     \
     ref_key->s_count--;                                                                 \
 }
 
 #define REFS_EXIT                                                                       \
 {                                                                                       \
+    LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);                                     \
     ref_key->r_count = mark_old_count;                                                  \
 }
 

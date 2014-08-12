@@ -35,27 +35,22 @@ static uint32_t*          cache_status;
 //         0x7fff0000 - hash (part of the 64-bit hash not used to position)
 //         0x0000ffff - tag (every put increases tag field)
 
-static inline uint64_t
-cache_rotl64(uint64_t x, int8_t r)
-{
-    return (x << r) | (x >> (64 - r));
-}
-
 /* Rotating 64-bit FNV-1a hash */
 static inline uint64_t
 cache_hash(uint64_t a, uint64_t b, uint64_t c)
 {
     const uint64_t prime = 1099511628211;
     uint64_t hash = 14695981039346656037LLU;
-    hash = cache_rotl64(hash ^ a, 12) * prime;
-    hash = cache_rotl64(hash ^ b, 25) * prime;
-    hash = cache_rotl64(hash ^ c, 27) * prime;
+    hash = (hash ^ a) * prime;
+    hash = (hash ^ b) * prime;
+    hash = (hash ^ c) * prime;
     return hash;
 }
 
 static int
-cache_get(const size_t hash, uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
+cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
 {
+    const uint64_t hash = cache_hash(a, b, c);
     volatile uint32_t *s_bucket = cache_status + (hash & cache_mask);
     const uint32_t s = *s_bucket;
     // abort if locked
@@ -72,8 +67,9 @@ cache_get(const size_t hash, uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
 }
 
 static int
-cache_put(const size_t hash, uint64_t a, uint64_t b, uint64_t c, uint64_t res)
+cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
 {
+    const uint64_t hash = cache_hash(a, b, c);
     volatile uint32_t *s_bucket = cache_status + (hash & cache_mask);
     const uint32_t s = *s_bucket;
     // abort if locked

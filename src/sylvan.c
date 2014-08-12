@@ -293,8 +293,8 @@ sylvan_gc_mark_refs(int my_id, int workers)
     if (end >= refs_size) end = refs_size;
 
     // iterate through refs hash table, mark all found
-    size_t *it = refs_iter2(first, end);
-    while (it != NULL) sylvan_gc_mark_rec(refs_next2(&it, end));
+    size_t *it = refs_iter(first, end);
+    while (it != NULL) sylvan_gc_mark_rec(refs_next(&it, end));
 }
 
 static int gc_enabled = 1;

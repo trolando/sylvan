@@ -39,13 +39,14 @@ static size_t refs_resize_part;
 static size_t refs_resize_done;
 static size_t refs_resize_size;
 
-// FNV1A_Hash_Jesteress
+/* FNV-1a hash */
 static inline uint64_t
 refs_hash(uint64_t a)
 {
     const uint64_t prime = 1099511628211;
     uint64_t hash = 14695981039346656037LLU;
-    hash = (hash ^ ((a << 5) | (a >> (64 - 5)))) * prime;
+    hash = (hash ^ a) * prime;
+    hash = (hash ^ ((a << 25) | (a >> 39))) * prime;
     return hash ^ (hash >> 32);
 }
 
@@ -94,7 +95,7 @@ refs_resize_help()
     for (i=0; i<128; i++) refs_rehash(*bucket++);
 
     __sync_fetch_and_add(&refs_resize_done, 1);
-    return 0;
+    return 1;
 }
 
 static void
@@ -153,10 +154,11 @@ refs_resize()
     munmap(refs_resize_table, refs_resize_size * sizeof(size_t));
 }
 
+/* Enter refs_modify */
 static inline void
 refs_enter()
 {
-    while (1) {
+    for (;;) {
         uint32_t v = refs_control;
         if (v & 0xf0000000) {
             while (refs_resize_help()) continue;
@@ -166,10 +168,11 @@ refs_enter()
     }
 }
 
+/* Leave refs_modify */
 static inline void
 refs_leave()
 {
-    while (1) {
+    for (;;) {
         uint32_t v = refs_control;
         if (cas(&refs_control, v, v-1)) return;
     }
@@ -178,12 +181,17 @@ refs_leave()
 static inline int
 refs_modify(const uint64_t a, const int dir)
 {
+    volatile size_t *bucket;
+    volatile size_t *ts_bucket;
+    size_t v, new_v;
+    int res, i;
+
     refs_enter();
 
-    volatile size_t *bucket = refs_table + (refs_hash(a) & (refs_size - 1));
-    volatile size_t *ts_bucket = NULL; // tombstone
-    size_t v, new_v;
-    int res, i = 128; // try 128 times linear probing
+ref_retry:
+    bucket = refs_table + (refs_hash(a) & (refs_size - 1));
+    ts_bucket = NULL; // tombstone
+    i = 128; // try 128 times linear probing
 
     while (i--) {
 ref_restart:
@@ -192,26 +200,23 @@ ref_restart:
             if (ts_bucket == NULL) ts_bucket = bucket;
         } else if (v == 0) {
             // not found
-            if (dir < 0) {
-                printf("uh oh\n");
-                res = 0;
-                goto ref_exit;
-            }
+            res = 0;
+            if (dir < 0) goto ref_exit;
             if (ts_bucket != NULL) {
                 bucket = ts_bucket;
                 ts_bucket = NULL;
                 v = refs_ts;
             }
             new_v = a | (1ULL << 40);
-            res = 0;
             goto ref_mod;
         } else if ((v & 0x000000ffffffffff) == a) {
+            // found
+            res = 1;
             size_t count = v >> 40;
-            if (count == 0x7fffff) { res = 1; goto ref_exit; }
+            if (count == 0x7fffff) goto ref_exit;
             count += dir;
             if (count == 0) new_v = refs_ts;
             else new_v = a | (count << 40);
-            res = 1;
             goto ref_mod;
         }
 
@@ -227,11 +232,7 @@ ref_restart:
         ts_bucket = NULL;
         v = refs_ts;
         new_v = a | (1ULL << 40);
-        if (!cas(bucket, v, new_v)) {
-            // fully try again
-            refs_leave();
-            return refs_modify(a, dir);
-        }
+        if (!cas(bucket, v, new_v)) goto ref_retry;
         res = 1;
         goto ref_exit;
     } else {
@@ -249,24 +250,24 @@ ref_exit:
     return res;
 }
 
-static inline void
+static void
 refs_up(uint64_t a)
 {
     refs_modify(a, 1);
 }
 
-static inline void
+static void
 refs_down(uint64_t a)
 {
     int res = refs_modify(a, -1);
     assert(res != 0);
 }
 
-static inline size_t* __attribute__((unused))
-refs_iter2(size_t first, size_t end)
+static size_t*
+refs_iter(size_t first, size_t end)
 {
-    assert(first < refs_size);
-    assert(end <= refs_size);
+    // assert(first < refs_size);
+    // assert(end <= refs_size);
 
     size_t *bucket = refs_table + first;
     while (bucket != refs_table + end) {
@@ -276,44 +277,15 @@ refs_iter2(size_t first, size_t end)
     return NULL;
 }
 
-static inline size_t __attribute__((unused))
-refs_next2(size_t **_bucket, size_t end)
+static size_t
+refs_next(size_t **_bucket, size_t end)
 {
     size_t *bucket = *_bucket;
-    assert(bucket != NULL);
-    assert(end <= refs_size);
+    // assert(bucket != NULL);
+    // assert(end <= refs_size);
     size_t result = *bucket & 0x000000ffffffffff;
     bucket++;
     while (bucket != refs_table + end) {
-        if (*bucket != 0 && *bucket != refs_ts) {
-            *_bucket = bucket;
-            return result;
-        }
-        bucket++;
-    }
-    *_bucket = NULL;
-    return result;
-}
-
-static inline size_t* __attribute__((unused))
-refs_iter()
-{
-    size_t *bucket = refs_table;
-    while (bucket != refs_table + refs_size) {
-        if (*bucket != 0 && *bucket != refs_ts) return bucket;
-        bucket++;
-    }
-    return NULL;
-}
-
-static inline size_t __attribute__((unused))
-refs_next(size_t **_bucket)
-{
-    size_t *bucket = *_bucket;
-    assert(bucket != NULL);
-    size_t result = *bucket & 0x000000ffffffffff;
-    bucket++;
-    while (bucket != refs_table + refs_size) {
         if (*bucket != 0 && *bucket != refs_ts) {
             *_bucket = bucket;
             return result;
@@ -333,7 +305,6 @@ refs_create(size_t _refs_size)
     }
 
     refs_size = _refs_size;
-
     refs_table = (size_t*)mmap(0, refs_size * sizeof(size_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (refs_table == (size_t*)-1) {
         fprintf(stderr, "refs: Unable to allocate memory!\n");
@@ -345,7 +316,7 @@ refs_create(size_t _refs_size)
 #endif
 }
 
-static inline void __attribute__((unused))
+static void
 refs_free()
 {
     munmap(refs_table, refs_size * sizeof(size_t));

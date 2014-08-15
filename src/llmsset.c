@@ -94,6 +94,8 @@ llmsset_lookup(const llmsset_t dbs, const void* data, uint64_t* insert_index, in
         hash_rehash = rehash16_mul(data, hash_rehash);
     }
 
+    return 0; // failed to find empty spot
+
     uint64_t d_idx;
     uint8_t *d_ptr;
 phase2:
@@ -101,17 +103,16 @@ phase2:
 
     int count=0;
     for (;;) {
+        if (count >= 2048) return 0; /* come on, just gc */
         d_idx &= dbs->mask; // sanitize...
         if (!d_idx) d_idx++; // do not use bucket 0 for data
         volatile uint64_t *ptr = dbs->table + d_idx;
         uint64_t h = *ptr;
         if (h & DFILLED) {
-            if (count++ == 128) {
-                // random d_idx (xorshift)
-                d_idx ^= d_idx >> 12;
-                d_idx ^= d_idx << 25;
-                d_idx ^= d_idx >> 27;
-                count = 0;
+            if ((++count & 127) == 0) {
+                // random d_idx (lcg, and a shift)
+                d_idx = 2862933555777941757ULL * d_idx + 3037000493ULL;
+                d_idx ^= d_idx >> 32;
             } else {
                 d_idx++;
             }

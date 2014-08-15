@@ -195,8 +195,8 @@ test_operators()
     //int i;
     BDD a = sylvan_ithvar(1);
     BDD b = sylvan_ithvar(2);
-    BDD one = make_random(3, 16);
-    BDD two = make_random(8, 24);
+    BDD one = make_random(1, 12);
+    BDD two = make_random(6, 24);
 
     // Test or
     assert(testEqual(sylvan_or(a, b), sylvan_makenode(1, b, sylvan_true)));
@@ -411,29 +411,23 @@ void runtests(int threads)
     printf(NC "Testing cube function... ");
     fflush(stdout);
     int j;
-    for (j=0;j<20;j++) {
-        sylvan_init(16, 16, 1);
-        test_cube();
-        sylvan_quit();
-    }
+    sylvan_init(24, 20, 1);
+    for (j=0;j<20;j++) test_cube();
+    sylvan_quit();
     printf(LGREEN "success" NC "!\n");
 
     printf(NC "Testing relational products... ");
     fflush(stdout);
-    for (j=0;j<20;j++) {
-        sylvan_init(16, 16, 1);
-        test_relprod();
-        sylvan_quit();
-    }
+    sylvan_init(24, 20, 1);
+    for (j=0;j<20;j++) test_relprod();
+    sylvan_quit();
     printf(LGREEN "success" NC "!\n");
 
     printf(NC "Testing function composition... ");
     fflush(stdout);
-    for (j=0;j<20;j++) {
-        sylvan_init(16, 16, 1);
-        test_compose();
-        sylvan_quit();
-    }
+    sylvan_init(24, 20, 1);
+    for (j=0;j<20;j++) test_compose();
+    sylvan_quit();
     printf(LGREEN "success" NC "!\n");
 
     printf(NC "Testing garbage collection... ");
@@ -445,13 +439,9 @@ void runtests(int threads)
 
     printf(NC "Testing operators... ");
     fflush(stdout);
-    for (j=0;j<50;j++) {
-        sylvan_init(16, 16, 1);
-        test_operators();
-        test_operators();
-        test_operators();
-        sylvan_quit();
-    }
+    sylvan_init(24, 20, 1);
+    for (j=0;j<20;j++) test_operators();
+    sylvan_quit();
     printf(LGREEN "success" NC "!\n");
 
     lace_exit();

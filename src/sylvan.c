@@ -201,9 +201,8 @@ ref_init()
     s->s_count = 0;
     s->results = (BDD*)malloc(sizeof(BDD) * 128);
     s->spawns = (Task**)malloc(sizeof(Task*) * 128);
-    LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);
     SET_THREAD_LOCAL(ref_key, s);
-    return ref_key;
+    return s;
 }
 
 static __attribute__((noinline)) void

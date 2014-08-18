@@ -185,7 +185,8 @@ void sylvan_report_stats();
 /**
  * Return number of occupied buckets in nodes table and total number of buckets.
  */
-void sylvan_table_usage(size_t *filled, size_t *total);
+VOID_TASK_DECL_2(sylvan_table_usage, size_t*, size_t*);
+#define sylvan_table_usage(filled, total) (CALL(sylvan_table_usage, filled, total))
 
 /**
  * A BDDSET, used by BDD functions.

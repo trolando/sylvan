@@ -389,11 +389,16 @@ llmsset_print_size(llmsset_t dbs, FILE *f)
 size_t
 llmsset_get_filled(const llmsset_t dbs)
 {
+    return llmsset_get_filled_partial(dbs, 0, dbs->table_size);
+}
+
+size_t
+llmsset_get_filled_partial(const llmsset_t dbs, size_t start, size_t end)
+{
     size_t count=0;
 
-    size_t i;
-    for (i=0; i<dbs->table_size; i++) {
-        if (dbs->table[i] & DFILLED) count++;
+    while (start < end) {
+        if (dbs->table[start++] & DFILLED) count++;
     }
 
     return count;

@@ -86,15 +86,6 @@ rel_load(FILE* f)
 }
 
 static void
-table_usage(size_t *filled, size_t *total)
-{
-    llmsset_t __sylvan_get_internal_data();
-    llmsset_t tbl = __sylvan_get_internal_data();
-    *filled = llmsset_get_filled(tbl);
-    *total = llmsset_get_size(tbl);
-}
-
-static void
 print_example(BDD example)
 {
     char str[vector_size * bits_per_integer];
@@ -194,7 +185,7 @@ VOID_TASK_1(par, set_t, set)
 
         if (report_table) {
             size_t filled, total;
-            table_usage(&filled, &total);
+            sylvan_table_usage(&filled, &total);
             printf("done, table: %0.1f%% full (%zu nodes).\n", 100.0*(double)filled/total, filled);
         } else {
             printf("done.\n");
@@ -282,7 +273,7 @@ bfs(set_t set)
 
         if (report_table) {
             size_t filled, total;
-            table_usage(&filled, &total);
+            sylvan_table_usage(&filled, &total);
             printf("done, table: %0.1f%% full (%zu nodes).\n", 100.0*(double)filled/total, filled);
         } else {
             printf("done.\n");

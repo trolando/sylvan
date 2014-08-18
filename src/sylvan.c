@@ -87,6 +87,13 @@ __sylvan_get_internal_data()
     return nodes;
 }
 
+void
+sylvan_table_usage(size_t *filled, size_t *total)
+{
+    if (filled != NULL) *filled = llmsset_get_filled(nodes);
+    if (total != NULL) *total = llmsset_get_size(nodes);
+}
+
 /**
  * Macros for statistics
  */

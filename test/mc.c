@@ -10,6 +10,7 @@
 static int report_levels = 0; // report states at start of every level
 static int report_table = 0; // report table size at end of every level
 static int run_par = 1; // set to 1 = use PAR strategy; set to 0 = use BFS strategy
+static int check_deadlocks = 1; // set to 1 to check for deadlocks
 
 /* Globals */
 typedef struct set
@@ -24,7 +25,9 @@ typedef struct relation
     BDD variables; // all variables in the relation (used by relprod)
 } *rel_t;
 
+static size_t vector_size; // size of vector
 static size_t bits_per_integer; // number of bits per integer in the vector
+BDDVAR* vector_variables; // maps variable index to BDD variable
 static int next_count; // number of partitions of the transition relation
 static rel_t *next; // each partition of the transition relation
 
@@ -91,25 +94,67 @@ table_usage(size_t *filled, size_t *total)
     *total = llmsset_get_size(tbl);
 }
 
+static void
+print_example(BDD example)
+{
+    char str[vector_size * bits_per_integer];
+    size_t i, j;
+
+    if (example != sylvan_false) {
+        sylvan_sat_one(example, vector_variables, vector_size * bits_per_integer, str);
+        printf("[");
+        for (i=0; i<vector_size; i++) {
+            uint32_t res = 0;
+            for (j=0; j<bits_per_integer; j++) {
+                if (str[bits_per_integer*i+j] == 1) res++;
+                res<<=1;
+            }
+            if (i>0) printf(",");
+            printf("%" PRIu32, res);
+        }
+        printf("]");
+    }
+}
+
 /* Straight-forward implementation of parallel reduction */
-TASK_4(BDD, go_par, BDD, cur, BDD, visited, size_t, from, size_t, len)
+TASK_5(BDD, go_par, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, deadlocks)
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
         BDD succ = sylvan_ref(sylvan_relprod_paired(cur, next[from]->bdd, next[from]->variables));
+        if (deadlocks) {
+            // check which BDDs in deadlocks do not have a successor in this relation
+            BDD anc = sylvan_ref(sylvan_relprod_paired_prev(succ, next[from]->bdd, next[from]->variables));
+            *deadlocks = sylvan_ref(sylvan_diff(*deadlocks, anc));
+            sylvan_deref(anc);
+        }
         BDD result = sylvan_ref(sylvan_diff(succ, visited));
         sylvan_deref(succ);
         return result;
     } else {
+        BDD deadlocks_left;
+        BDD deadlocks_right;
+        if (deadlocks) {
+            deadlocks_left = *deadlocks;
+            deadlocks_right = *deadlocks;
+        }
+
         // Recursively calculate left+right
-        SPAWN(go_par, cur, visited, from, (len+1)/2);
-        BDD right = CALL(go_par, cur, visited, from+(len+1)/2, len/2);
+        SPAWN(go_par, cur, visited, from, (len+1)/2, deadlocks ? &deadlocks_left: NULL);
+        BDD right = CALL(go_par, cur, visited, from+(len+1)/2, len/2, deadlocks ? &deadlocks_right : NULL);
         BDD left = SYNC(go_par);
 
         // Merge results of left+right
         BDD result = sylvan_ref(sylvan_or(left, right));
         sylvan_deref(left);
         sylvan_deref(right);
+
+        if (deadlocks) {
+            *deadlocks = sylvan_ref(sylvan_and(deadlocks_left, deadlocks_right));
+            sylvan_deref(deadlocks_left);
+            sylvan_deref(deadlocks_right);
+        }
+
         return result;
     }
 }
@@ -128,8 +173,19 @@ VOID_TASK_1(par, set_t, set)
 
         // calculate successors in parallel
         BDD cur = new;
-        new = CALL(go_par, cur, visited, 0, next_count);
+        BDD deadlocks = cur;
+        new = CALL(go_par, cur, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
         sylvan_deref(cur);
+
+        if (check_deadlocks) {
+            printf("found %zu deadlock states... ", (size_t)sylvan_satcount(deadlocks, set->variables));
+            if (deadlocks != sylvan_false) {
+                printf("example: ");
+                print_example(deadlocks);
+                printf("... ");
+                check_deadlocks = 0;
+            }
+        }
 
         // visited = visited + new
         BDD old_visited = visited;
@@ -150,23 +206,43 @@ VOID_TASK_1(par, set_t, set)
 
 /* Sequential version of merge-reduction */
 static BDD
-go_bfs(const BDD cur, const BDD visited, const size_t from, const size_t len)
+go_bfs(const BDD cur, const BDD visited, const size_t from, const size_t len, BDD *deadlocks)
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
         BDD succ = sylvan_ref(sylvan_relprod_paired(cur, next[from]->bdd, next[from]->variables));
+        if (deadlocks) {
+            // check which BDDs in deadlocks do not have a successor in this relation
+            BDD anc = sylvan_ref(sylvan_relprod_paired_prev(succ, next[from]->bdd, next[from]->variables));
+            *deadlocks = sylvan_ref(sylvan_diff(*deadlocks, anc));
+            sylvan_deref(anc);
+        }
         BDD result = sylvan_ref(sylvan_diff(succ, visited));
         sylvan_deref(succ);
         return result;
     } else {
+        BDD deadlocks_left;
+        BDD deadlocks_right;
+        if (deadlocks) {
+            deadlocks_left = *deadlocks;
+            deadlocks_right = *deadlocks;
+        }
+
         // Recursively calculate left+right
-        BDD left = go_bfs(cur, visited, from, (len+1)/2);
-        BDD right = go_bfs(cur, visited, from+(len+1)/2, len/2);
+        BDD left = go_bfs(cur, visited, from, (len+1)/2, deadlocks ? &deadlocks_left : NULL);
+        BDD right = go_bfs(cur, visited, from+(len+1)/2, len/2, deadlocks ? &deadlocks_right : NULL);
 
         // Merge results of left+right
         BDD result = sylvan_ref(sylvan_or(left, right));
         sylvan_deref(left);
         sylvan_deref(right);
+
+        if (deadlocks) {
+            *deadlocks = sylvan_ref(sylvan_and(deadlocks_left, deadlocks_right));
+            sylvan_deref(deadlocks_left);
+            sylvan_deref(deadlocks_right);
+        }
+
         return result;
     }
 }
@@ -185,8 +261,19 @@ bfs(set_t set)
         }
 
         BDD cur = new;
-        new = go_bfs(cur, visited, 0, next_count);
+        BDD deadlocks = cur;
+        new = go_bfs(cur, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
         sylvan_deref(cur);
+
+        if (check_deadlocks) {
+            printf("found %zu deadlock states... ", (size_t)sylvan_satcount(deadlocks, set->variables));
+            if (deadlocks != sylvan_false) {
+                printf("example: ");
+                print_example(deadlocks);
+                printf("... ");
+                check_deadlocks = 0;
+            }
+        }
 
         // visited = visited + new
         BDD old_visited = visited;
@@ -240,7 +327,6 @@ main(int argc, char **argv)
     sylvan_init(25, 24, 6); // granularity 6 is decent default value - 1 means "use cache for every operation"
 
     // Read and report domain info (integers per vector and bits per integer)
-    size_t vector_size;
     if (fread(&vector_size, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
     if (fread(&bits_per_integer, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
 
@@ -248,8 +334,13 @@ main(int argc, char **argv)
     printf("Bits per integer: %zu\n", bits_per_integer);
     printf("Number of BDD variables: %zu\n", vector_size * bits_per_integer);
 
-    // Skip some unnecessary data
-    if (fseek(f, bits_per_integer * vector_size * sizeof(BDDVAR) * 2, SEEK_CUR) != 0) Abort("Invalid input file!\n");
+    // Read mapping vector variable to BDD variable
+    vector_variables = (BDDVAR*)malloc(sizeof(BDDVAR) * bits_per_integer * vector_size);
+    if (fread(vector_variables, sizeof(BDDVAR), bits_per_integer * vector_size, f) != bits_per_integer * vector_size)
+        Abort("Invalid input file!\n");
+
+    // Skip some unnecessary data (mapping of primed vector variables to BDD variables)
+    if (fseek(f, bits_per_integer * vector_size * sizeof(BDDVAR), SEEK_CUR) != 0) Abort("Invalid input file!\n");
 
     // Read initial state
     printf("Loading initial state... ");

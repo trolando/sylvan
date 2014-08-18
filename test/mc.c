@@ -1,4 +1,3 @@
-#include <assert.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,6 +28,8 @@ static size_t bits_per_integer; // number of bits per integer in the vector
 static int next_count; // number of partitions of the transition relation
 static rel_t *next; // each partition of the transition relation
 
+#define Abort(...) { fprintf(stderr, __VA_ARGS__); exit(-1); }
+
 /* Load a set from file */
 static set_t
 set_load(FILE* f)
@@ -36,13 +37,14 @@ set_load(FILE* f)
     sylvan_serialize_fromfile(f);
 
     size_t bdd;
-    assert(fread(&bdd, sizeof(size_t), 1, f) == 1);
-
     size_t vector_size;
-    assert(fread(&vector_size, sizeof(size_t), 1, f) == 1);
+    
+    if (fread(&bdd, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
+    if (fread(&vector_size, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
 
     BDDVAR vec_to_bddvar[bits_per_integer * vector_size];
-    assert(fread(vec_to_bddvar, sizeof(BDDVAR), bits_per_integer * vector_size, f) == bits_per_integer * vector_size);
+    if (fread(vec_to_bddvar, sizeof(BDDVAR), bits_per_integer * vector_size, f) != bits_per_integer * vector_size)
+        Abort("Invalid input file!\n");
 
     set_t set = (set_t)malloc(sizeof(struct set));
     set->bdd = sylvan_ref(sylvan_serialize_get_reversed(bdd));
@@ -58,15 +60,16 @@ rel_load(FILE* f)
     sylvan_serialize_fromfile(f);
 
     size_t bdd;
-    assert(fread(&bdd, sizeof(size_t), 1, f) == 1);
-
     size_t vector_size;
-    assert(fread(&vector_size, sizeof(size_t), 1, f) == 1);
+    if (fread(&bdd, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
+    if (fread(&vector_size, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
 
     BDDVAR vec_to_bddvar[bits_per_integer * vector_size];
     BDDVAR prime_vec_to_bddvar[bits_per_integer * vector_size];
-    assert(fread(vec_to_bddvar, sizeof(BDDVAR), vector_size*bits_per_integer, f) == vector_size * bits_per_integer);
-    assert(fread(prime_vec_to_bddvar, sizeof(BDDVAR), vector_size*bits_per_integer, f) == vector_size * bits_per_integer);
+    if (fread(vec_to_bddvar, sizeof(BDDVAR), bits_per_integer * vector_size, f) != bits_per_integer * vector_size)
+        Abort("Invalid input file!\n");
+    if (fread(prime_vec_to_bddvar, sizeof(BDDVAR), bits_per_integer * vector_size, f) != bits_per_integer * vector_size)
+        Abort("Invalid input file!\n");
 
     rel_t rel = (rel_t)malloc(sizeof(struct relation));
     rel->bdd = sylvan_ref(sylvan_serialize_get_reversed(bdd));
@@ -238,15 +241,15 @@ main(int argc, char **argv)
 
     // Read and report domain info (integers per vector and bits per integer)
     size_t vector_size;
-    assert(fread(&vector_size, sizeof(size_t), 1, f)==1);
-    assert(fread(&bits_per_integer, sizeof(size_t), 1, f)==1);
+    if (fread(&vector_size, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
+    if (fread(&bits_per_integer, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
 
     printf("Vector size: %zu\n", vector_size);
     printf("Bits per integer: %zu\n", bits_per_integer);
     printf("Number of BDD variables: %zu\n", vector_size * bits_per_integer);
 
     // Skip some unnecessary data
-    assert(fseek(f, bits_per_integer * vector_size * sizeof(BDDVAR) * 2, SEEK_CUR) == 0);
+    if (fseek(f, bits_per_integer * vector_size * sizeof(BDDVAR) * 2, SEEK_CUR) != 0) Abort("Invalid input file!\n");
 
     // Read initial state
     printf("Loading initial state... ");
@@ -255,7 +258,7 @@ main(int argc, char **argv)
     printf("done.\n");
 
     // Read transitions
-    assert(fread(&next_count, sizeof(int), 1, f) == 1);
+    if (fread(&next_count, sizeof(int), 1, f) != 1) Abort("Invalid input file!\n");
     next = (rel_t*)malloc(sizeof(rel_t) * next_count);
 
     printf("Loading transition relations... ");

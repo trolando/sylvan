@@ -336,8 +336,9 @@ numa_move(void *mem, size_t size, size_t node)
  * over all available NUMA memory domains.
  *
  * Note that mem should be aligned on a <getpagesize()> boundary!
+ * It is encouraged to allocate this memory using mmap.
  *
- * On success, the array will be distributed over all memory nodes.
+ * On success, the array will be distributed over all available memory domains.
  * If <fragment_size> is not null, it will contain the size of each fragment.
  * The fragment size is rounded up to the page size.
  *
@@ -349,26 +350,27 @@ numa_move(void *mem, size_t size, size_t node)
  */
 int numa_interleave(void *mem, size_t size, size_t *fragment_size)
 {
-    struct bitmask *allowed;
-    size_t i, n_allowed, nodesleft;
-    size_t f_size, offset;
+    size_t i;
 
-    // Determine number of memory domains
-    allowed = numa_allocate_nodemask();
+    // Get information on memory domains
+    struct bitmask *allowed = numa_allocate_nodemask();
     if (get_mempolicy(NULL, allowed->maskp, allowed->size+1, 0, MPOL_F_MEMS_ALLOWED) != 0) {
         numa_bitmask_free(allowed);
         return -1;
     }
 
-    n_allowed=0;
+    // Get number of allowed memory domains
+    size_t n_allowed=0;
     for (i=0;i<allowed->size;i++) {
         if (numa_bitmask_isbitset(allowed, i)) n_allowed++;
     }
 
-    // Determine fragment size
+    // Determine size of each fragment
+    size_t f_size;
     if (fragment_size != 0 && *fragment_size != 0) f_size = *fragment_size;
     else f_size = size / n_allowed;
     if (f_size != 0) {
+        // Round up
         size_t ps1 = getpagesize()-1;
         f_size = (f_size + ps1) & ~ps1;
     } else {
@@ -376,30 +378,28 @@ int numa_interleave(void *mem, size_t size, size_t *fragment_size)
     }
 
     // Bind all fragments
-    offset = 0;
-    nodesleft = n_allowed;
-    for (i=0;i<allowed->size && offset < size;i++) {
-        if (numa_bitmask_isbitset(allowed, i)) {
-            size_t to_bind = f_size;
-            if (--nodesleft == 0) {
-                to_bind = size-offset;
-            } else {
-                if (to_bind > (size-offset)) to_bind = size-offset;
-            }
-            if (numa_move((char*)mem+offset, to_bind, i) != 0) {
-                numa_bitmask_free(allowed);
-                return -1;
-            }
-            offset += to_bind;
+    size_t offset = 0;
+    i = 0;
+    while (offset < size) {
+        // Find next allowed domain
+        while (!numa_bitmask_isbitset(allowed, i)) {
+            if (++i == allowed->size) i=0;
         }
+        // Determine size to bind
+        size_t to_bind = f_size;
+        if (size - offset > to_bind) to_bind = size - offset;
+        // Bind
+        if (numa_move((char*)mem+offset, to_bind, i) != 0) {
+            numa_bitmask_free(allowed);
+            return -1;
+        }
+        offset += to_bind;
     }
 
     numa_bitmask_free(allowed);
-
     if (fragment_size != NULL) *fragment_size = f_size;
     return 0;
 }
-
 
 /**
  * This function allocates an array of <size> bytes and automatically distributes it
@@ -409,34 +409,16 @@ void *
 numa_alloc_interleaved_manually(size_t size, size_t *fragment_size, int shared)
 {
     char *mem;
-    size_t f_size=0;
 
-    if (shared)
-        mem = (char*)mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
-    else
-        mem = (char*)mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+    if (shared) mem = (char*)mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS | MAP_POPULATE, 0, 0);
+    else mem = (char*)mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
 
-    if (mem == (char*)-1) {
-        return NULL;
-    }
-
-    if (shared) {
-        size_t offset;
-        for (offset = 0; offset < size; offset+=pagesize) {
-            *((volatile char*)&mem[offset]) = 0;
-        }
-    }
-
-    if (fragment_size != 0) f_size = *fragment_size;
-    int res = numa_interleave(mem, size, &f_size);
-    if (fragment_size != 0) *fragment_size = f_size;
-
-    if (res == -1) {
+    if (mem != (char*)-1) {
+        if (numa_interleave(mem, size, fragment_size) == 0) return mem;
         munmap(mem, size);
-        mem = 0;
     }
 
-    return mem;
+    return NULL;
 }
 
 int

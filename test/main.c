@@ -163,6 +163,7 @@ test_bdd()
 void
 test_cube()
 {
+    LACE_ME;
     BDDVAR vars[] = {2,4,8,6,1,3};
 
     char cube[6], check[6];
@@ -191,6 +192,8 @@ test_operators()
 {
     // We need to test: xor, and, or, nand, nor, imp, biimp, invimp, diff, less
     sylvan_gc_disable();
+
+    LACE_ME;
 
     //int i;
     BDD a = sylvan_ithvar(1);
@@ -258,6 +261,8 @@ test_operators()
 static void
 test_relprod()
 {
+    LACE_ME;
+
     sylvan_gc_disable();
 
     BDDVAR vars[] = {0,2,4};
@@ -307,6 +312,8 @@ static void
 test_compose()
 {
     sylvan_gc_disable();
+
+    LACE_ME;
 
     BDD a = sylvan_ithvar(1);
     BDD b = sylvan_ithvar(2);
@@ -365,6 +372,7 @@ void report_table()
 
 void test_gc(int threads)
 {
+    LACE_ME;
     int N_canaries = 16;
     BDD canaries[N_canaries];
     char* hashes[N_canaries];

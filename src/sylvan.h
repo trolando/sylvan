@@ -195,21 +195,22 @@ VOID_TASK_DECL_2(sylvan_table_usage, size_t*, size_t*);
  * If using this during your initialization, you could disable GC temporarily.
  */
 // empty bddset
-static inline BDDSET sylvan_set_empty() { return sylvan_false; }
-static inline int sylvan_set_isempty(BDDSET set) { return set == sylvan_false ? 1 : 0; }
+#define sylvan_set_empty() sylvan_false
+#define sylvan_set_isempty(set) (set == sylvan_false)
 // add variables to the bddset
-static inline BDDSET sylvan_set_add(BDDSET set, BDDVAR var) { return sylvan_or(set, sylvan_ithvar(var)); }
-static inline BDDSET sylvan_set_addall(BDDSET set, BDDSET toadd) { return sylvan_or(set, toadd); }
+#define sylvan_set_add(set, var) sylvan_or(set, sylvan_ithvar(var))
+#define sylvan_set_addall(set, set_to_add) sylvan_or(set, set_to_add)
 // remove variables from the bddset
-static inline BDDSET sylvan_set_remove(BDDSET set, BDDVAR var) { return sylvan_constrain(set, sylvan_nithvar(var)); }
-static inline BDDSET sylvan_set_removeall(BDDSET set, BDDSET toremove) { return sylvan_constrain(set, sylvan_not(toremove)); }
+#define sylvan_set_remove(set, var) sylvan_constrain(set, sylvan_nithvar(var))
+#define sylvan_set_removeall(set, set_to_remove) sylvan_constrain(set, sylvan_not(set_to_remove))
 // iterate through all variables
-static inline BDDVAR sylvan_set_var(BDDSET set) { return sylvan_var(set); }
-static inline BDDSET sylvan_set_next(BDDSET set) { return sylvan_low(set); }
+#define sylvan_set_var(set) (sylvan_var(set))
+#define sylvan_set_next(set) (sylvan_low(set))
 int sylvan_set_in(BDDSET set, BDDVAR var);
 size_t sylvan_set_count(BDDSET set);
 void sylvan_set_toarray(BDDSET set, BDDVAR *arr);
-BDDSET sylvan_set_fromarray(BDDVAR *arr, size_t length);
+TASK_DECL_2(BDDSET, sylvan_set_fromarray, BDDVAR*, size_t);
+#define sylvan_set_fromarray(arr, length) ( CALL(sylvan_set_fromarray, arr, length) )
 void sylvan_test_isset(BDDSET set);
 
 /**
@@ -278,10 +279,10 @@ typedef double sylvan_satcount_double_t;
 typedef char __sylvan_check_double_is_8_bytes[(sizeof(sylvan_satcount_double_t) == sizeof(uint64_t))?1:-1];
 
 TASK_DECL_3(sylvan_satcount_double_t, sylvan_satcount_cached, BDD, BDDSET, BDDVAR);
-TASK_DECL_2(long double, sylvan_satcount, BDD, BDDSET);
+#define sylvan_satcount_cached(bdd, variables) CALL(sylvan_satcount_cached, bdd, variables, 0)
 
-static inline sylvan_satcount_double_t sylvan_satcount_cached(BDD bdd, BDDSET variables) { return CALL(sylvan_satcount_cached, bdd, variables, 0); }
-static inline long double sylvan_satcount(BDD bdd, BDDSET variables) { return CALL(sylvan_satcount, bdd, variables); }
+TASK_DECL_2(long double, sylvan_satcount, BDD, BDDSET);
+#define sylvan_satcount(bdd, variables) CALL(sylvan_satcount, bdd, variables)
 
 /**
  * Create a BDD cube representing the conjunction of variables in their positive or negative

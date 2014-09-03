@@ -49,6 +49,8 @@ set_load(FILE* f)
     if (fread(vec_to_bddvar, sizeof(BDDVAR), bits_per_integer * vector_size, f) != bits_per_integer * vector_size)
         Abort("Invalid input file!\n");
 
+    LACE_ME;
+
     set_t set = (set_t)malloc(sizeof(struct set));
     set->bdd = sylvan_ref(sylvan_serialize_get_reversed(bdd));
     set->variables = sylvan_ref(sylvan_set_fromarray(vec_to_bddvar, bits_per_integer * vector_size));
@@ -74,6 +76,8 @@ rel_load(FILE* f)
     if (fread(prime_vec_to_bddvar, sizeof(BDDVAR), bits_per_integer * vector_size, f) != bits_per_integer * vector_size)
         Abort("Invalid input file!\n");
 
+    LACE_ME;
+
     rel_t rel = (rel_t)malloc(sizeof(struct relation));
     rel->bdd = sylvan_ref(sylvan_serialize_get_reversed(bdd));
     BDD x = sylvan_ref(sylvan_set_fromarray(vec_to_bddvar, bits_per_integer * vector_size));
@@ -90,6 +94,8 @@ print_example(BDD example)
 {
     char str[vector_size * bits_per_integer];
     size_t i, j;
+
+    LACE_ME;
 
     if (example != sylvan_false) {
         sylvan_sat_one(example, vector_variables, vector_size * bits_per_integer, str);
@@ -196,8 +202,7 @@ VOID_TASK_1(par, set_t, set)
 }
 
 /* Sequential version of merge-reduction */
-static BDD
-go_bfs(const BDD cur, const BDD visited, const size_t from, const size_t len, BDD *deadlocks)
+TASK_5(BDD, go_bfs, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, deadlocks)
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
@@ -220,8 +225,8 @@ go_bfs(const BDD cur, const BDD visited, const size_t from, const size_t len, BD
         }
 
         // Recursively calculate left+right
-        BDD left = go_bfs(cur, visited, from, (len+1)/2, deadlocks ? &deadlocks_left : NULL);
-        BDD right = go_bfs(cur, visited, from+(len+1)/2, len/2, deadlocks ? &deadlocks_right : NULL);
+        BDD left = CALL(go_bfs, cur, visited, from, (len+1)/2, deadlocks ? &deadlocks_left : NULL);
+        BDD right = CALL(go_bfs, cur, visited, from+(len+1)/2, len/2, deadlocks ? &deadlocks_right : NULL);
 
         // Merge results of left+right
         BDD result = sylvan_ref(sylvan_or(left, right));
@@ -239,8 +244,7 @@ go_bfs(const BDD cur, const BDD visited, const size_t from, const size_t len, BD
 }
 
 /* BFS strategy, sequential strategy (but operations are parallelized by Sylvan) */
-static void
-bfs(set_t set)
+VOID_TASK_1(bfs, set_t, set)
 {
     BDD visited = set->bdd;
     BDD new = sylvan_ref(visited);
@@ -253,7 +257,7 @@ bfs(set_t set)
 
         BDD cur = new;
         BDD deadlocks = cur;
-        new = go_bfs(cur, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
+        new = CALL(go_bfs, cur, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
         sylvan_deref(cur);
 
         if (check_deadlocks) {
@@ -366,6 +370,8 @@ main(int argc, char **argv)
     // Run garbage collection
     sylvan_gc();
 
+    LACE_ME;
+
     if (run_par) {
         double t1 = wctime();
         CALL(par, states);
@@ -373,7 +379,7 @@ main(int argc, char **argv)
         printf("PAR Time: %f\n", t2-t1);
     } else {
         double t1 = wctime();
-        bfs(states);
+        CALL(bfs, states);
         double t2 = wctime();
         printf("BFS Time: %f\n", t2-t1);
     }

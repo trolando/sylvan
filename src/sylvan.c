@@ -170,6 +170,7 @@ initialize_insert_index()
 {
     LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
     insert_index = (uint64_t*)malloc(LINE_SIZE);
+    LACE_ME;
     size_t my_id = LACE_WORKER_ID;
     *insert_index = llmsset_get_insertindex_multi(nodes, my_id, workers);
     SET_THREAD_LOCAL(insert_index, insert_index);
@@ -346,6 +347,7 @@ void sylvan_gc_go(int master)
 
     if (master) cache_clear();
 
+    LACE_ME;
     int my_id = LACE_WORKER_ID;
     llmsset_clear_multi(nodes, my_id, workers);
 
@@ -381,10 +383,10 @@ void sylvan_gc_go(int master)
 }
 
 /* Callback for Lace */
-static void
-sylvan_lace_test_gc(void)
+TASK_0(void*, sylvan_lace_test_gc)
 {
     if (gc) sylvan_gc_go(0);
+    return 0;
 }
 
 /* Test called from every BDD operation */
@@ -398,7 +400,10 @@ sylvan_gc_test()
 void
 sylvan_gc()
 {
+#if SYLVAN_STATS
+    LACE_ME;
     SV_CNT(C_gc_user);
+#endif
     sylvan_gc_go(1);
 }
 
@@ -409,7 +414,7 @@ static int granularity = 1; // default
 void
 sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
 {
-    lace_set_callback(sylvan_lace_test_gc);
+    lace_set_callback(TASK(sylvan_lace_test_gc));
     workers = lace_workers();
 
     INIT_THREAD_LOCAL(ref_key);
@@ -598,7 +603,10 @@ sylvan_makenode(BDDVAR level, BDD low, BDD high)
     uint64_t index;
     int created;
     if (llmsset_lookup(nodes, &n, insert_index, &created, &index) == 0) {
+#if SYLVAN_STATS
+        LACE_ME;
         SV_CNT(C_gc_hashtable_full);
+#endif
 
         if (gc_enabled) {
             //size_t before_gc = llmsset_get_filled(nodes);
@@ -686,7 +694,10 @@ sylvan_makenode_nocomp(BDDVAR level, BDD low, BDD high)
     uint64_t index;
     int created;
     if (llmsset_lookup(nodes, &n, insert_index, &created, &index) == 0) {
+#if SYLVAN_STATS
+        LACE_ME;
         SV_CNT(C_gc_hashtable_full);
+#endif
         if (gc_enabled) sylvan_gc_go(1);
         if (llmsset_lookup(nodes, &n, insert_index, &created, &index) == 0) {
             fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_get_filled(nodes), llmsset_get_size(nodes));
@@ -1837,8 +1848,7 @@ sylvan_set_toarray(BDDSET set, BDDVAR *arr)
     }
 }
 
-BDDSET
-sylvan_set_fromarray(BDDVAR* arr, size_t length)
+TASK_IMPL_2(BDDSET, sylvan_set_fromarray, BDDVAR*, arr, size_t, length)
 {
     if (length == 0) return sylvan_set_empty();
     REFS_INIT;

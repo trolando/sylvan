@@ -140,7 +140,9 @@ struct _WorkerP;
 struct _Worker;
 struct _Task;
 
-#define THIEF_COMPLETED ((struct _Worker*)0x1)
+#define THIEF_EMPTY     ((struct _Worker*)0x0)
+#define THIEF_TASK      ((struct _Worker*)0x1)
+#define THIEF_COMPLETED ((struct _Worker*)0x2)
 
 #define TASK_COMMON_FIELDS(type)                               \
     void (*f)(struct _WorkerP *, struct _Task *, struct type *);  \
@@ -191,7 +193,8 @@ typedef struct _WorkerP {
     uint32_t seed; // my random seed (for lace_steal_random)
 } WorkerP;
 
-typedef void* (*lace_callback_f)(WorkerP *, Task *, int, void *);
+#define LACE_TYPEDEF_CB(f, ...) typedef void* (*f)(WorkerP *, Task *, ##__VA_ARGS__);
+LACE_TYPEDEF_CB(lace_startup_cb, void*);
 
 /**
  * Initialize master structures for Lace with <n_workers> workers
@@ -208,7 +211,7 @@ void lace_init(int n_workers, size_t dqsize);
  * and exit Lace upon return
  * Otherwise, the current thread is initialized as a Lace thread.
  */
-void lace_startup(size_t stacksize, lace_callback_f cb, void* arg);
+void lace_startup(size_t stacksize, lace_startup_cb, void* arg);
 
 /**
  * Manually spawn worker <idx> with (optional) program stack size <stacksize>.
@@ -261,53 +264,26 @@ void lace_steal_random(WorkerP *self, Task *head);
  */
 void lace_exit();
 
-extern void (*lace_cb_stealing)(void);
-void lace_set_callback(void (*cb)(void));
+LACE_TYPEDEF_CB(lace_nowork_cb);
+extern lace_nowork_cb lace_cb_stealing;
+void lace_set_callback(lace_nowork_cb cb);
 
 #define LACE_STOLEN   ((Worker*)0)
 #define LACE_BUSY     ((Worker*)1)
 #define LACE_NOWORK   ((Worker*)2)
 
-/*
- * The DISPATCH functions are a trick to allow using
- * the macros SPAWN, SYNC, CALL in code outside Lace code.
- * Note that using SPAWN and SYNC outside Lace code is probably
- * not something you really want.
- *
- * The __lace_worker, __lace_dq_head and __lace_in_task variables
- * are usually set to appropriate values in Lace functions.
- * If using SYNC, SPAWN and CALL outside Lace functions, the default
- * values below are used and the value of __lace_in_task triggers the
- * special behavior from outside Lace functions.
- *
- * The DISPATCH functions are always inlined and due to compiler
- * optimization they do not generate any overhead.
- */
-
-__attribute__((unused))
-static const WorkerP *__lace_worker = NULL;
-__attribute__((unused))
-static const Task *__lace_dq_head = NULL;
-__attribute__((unused))
-static const int __lace_in_task = 0;
-
-#define SYNC(f)           ( __lace_dq_head--, SYNC_DISPATCH_##f((WorkerP *)__lace_worker, (Task *)__lace_dq_head, __lace_in_task))
-#define SPAWN(f, ...)     ( SPAWN_DISPATCH_##f((WorkerP *)__lace_worker, (Task *)__lace_dq_head, __lace_in_task, ##__VA_ARGS__), __lace_dq_head++ )
-#define CALL(f, ...)      ( CALL_DISPATCH_##f((WorkerP *)__lace_worker, (Task *)__lace_dq_head, __lace_in_task, ##__VA_ARGS__) )
-#define LACE_WORKER_ID    ( (int16_t) (__lace_worker == NULL ? lace_get_worker()->worker : __lace_worker->worker) )
+#define TASK(f)           ( f##_CALL )
+#define WRAP(f, ...)      ( f((WorkerP *)__lace_worker, (Task *)__lace_dq_head, ##__VA_ARGS__) )
+#define SYNC(f)           ( __lace_dq_head--, WRAP(f##_SYNC) )
+#define SPAWN(f, ...)     ( WRAP(f##_SPAWN, ##__VA_ARGS__), __lace_dq_head++ )
+#define CALL(f, ...)      ( WRAP(f##_CALL, ##__VA_ARGS__) )
+#define LACE_WORKER_ID    ( __lace_worker->worker )
 
 /* Use LACE_ME to initialize Lace variables, in case you want to call multiple Lace tasks */
-#define LACE_ME WorkerP * __attribute__((unused)) __lace_worker = lace_get_worker(); Task * __attribute__((unused)) __lace_dq_head = lace_get_head(__lace_worker); int __attribute__((unused)) __lace_in_task = 1;
+#define LACE_ME WorkerP * __attribute__((unused)) __lace_worker = lace_get_worker(); Task * __attribute__((unused)) __lace_dq_head = lace_get_head(__lace_worker);
 
-#define LACE_DECL_CALLBACK(f) void *f(WorkerP *, Task *, int, void *); \
-            static inline __attribute__((always_inline)) __attribute__((unused)) void* \
-            CALL_DISPATCH_##f(WorkerP *w, Task *t, int i, void *a) { if (i) { return f(w, t, 1, a); } else { LACE_ME; return f(__lace_worker, __lace_dq_head, 1, a); } }
-#define LACE_IMPL_CALLBACK(f) void *f(__attribute__((unused)) WorkerP *__lace_worker, __attribute__((unused)) Task *__lace_dq_head, __attribute__((unused)) int __lace_in_task, __attribute__((unused)) void *arg)        
-#define LACE_CALLBACK(f) LACE_DECL_CALLBACK(f) LACE_IMPL_CALLBACK(f)
-#define CALL_CALLBACK(f, arg) ( f(__lace_worker, __lace_dq_head, __lace_in_task, arg) )
-
-#define TASK_IS_STOLEN(t) (t->thief != 0)
-#define TASK_IS_COMPLETED(t) ((size_t)t->thief == 1)
+#define TASK_IS_STOLEN(t) ((size_t)t->thief > 1)
+#define TASK_IS_COMPLETED(t) ((size_t)t->thief == 2)
 #define TASK_RESULT(t) (&t->d[0])
 
 #if LACE_PIE_TIMES
@@ -460,10 +436,10 @@ typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##
                                                                                       \
 void NAME##_WRAP(WorkerP *, Task *, TD_##NAME *);                                     \
 RTYPE NAME##_CALL(WorkerP *, Task * );                                                \
-static inline RTYPE NAME##_SYNC_FAST(WorkerP *, Task *);                              \
+static inline RTYPE NAME##_SYNC(WorkerP *, Task *);                                   \
 static RTYPE NAME##_SYNC_SLOW(WorkerP *, Task *);                                     \
                                                                                       \
-static inline                                                                         \
+static inline __attribute__((unused))                                                 \
 void NAME##_SPAWN(WorkerP *w, Task *__dq_head )                                       \
 {                                                                                     \
     PR_COUNTTASK(w);                                                                  \
@@ -476,7 +452,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head )                                 
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
-    t->thief = 0;                                                                     \
+    t->thief = THIEF_TASK;                                                            \
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
@@ -539,7 +515,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = t->thief;                                          \
+        while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -551,7 +527,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
             Worker *res = lace_steal(w, __dq_head, thief);                            \
             if (res == LACE_NOWORK) {                                                 \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing();                                              \
+                else lace_cb_stealing(w, __dq_head);                                  \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(w, CTR_leaps);                                         \
             } else if (res == LACE_BUSY) {                                            \
@@ -574,7 +550,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
@@ -606,19 +582,19 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
     compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     return NAME##_CALL(w, __dq_head );                                                \
 }                                                                                     \
                                                                                       \
-static inline                                                                         \
-RTYPE NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                                   \
+static inline __attribute__((unused))                                                 \
+RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                        \
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
-            t->f = 0;                                                                 \
+            t->thief = THIEF_EMPTY;                                                   \
             return NAME##_CALL(w, __dq_head );                                        \
         }                                                                             \
     }                                                                                 \
@@ -626,47 +602,25 @@ RTYPE NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                             
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
 }                                                                                     \
                                                                                       \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SPAWN_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask )                \
-{                                                                                     \
-    if (__intask) { NAME##_SPAWN(w, __dq_head ); }                                    \
-    else { w = lace_get_worker(); NAME##_SPAWN(w, lace_get_head(w) ); }               \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-RTYPE SYNC_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask)                 \
-{                                                                                     \
-    if (__intask) { return NAME##_SYNC_FAST(w, __dq_head); }                          \
-    else { w = lace_get_worker(); return NAME##_SYNC_FAST(w, lace_get_head(w)); }     \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-RTYPE CALL_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask )                \
-{                                                                                     \
-    if (__intask) { return NAME##_CALL(w, __dq_head ); }                              \
-    else { w = lace_get_worker(); return NAME##_CALL(w, lace_get_head(w) ); }         \
-}                                                                                     \
-                                                                                      \
-                                                                                      \
                                                                                       \
  
 #define TASK_IMPL_0(RTYPE, NAME)                                                      \
-void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t)                           \
+void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
     t->d.res = NAME##_CALL(w, __dq_head );                                            \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-RTYPE NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head, int __lace_in_task ); \
+RTYPE NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head );                     \
                                                                                       \
 /* NAME##_WORK is inlined in NAME##_CALL and the parameter __lace_in_task will disappear */\
 RTYPE NAME##_CALL(WorkerP *w, Task *__dq_head )                                       \
 {                                                                                     \
-    return NAME##_WORK(w, __dq_head, 1 );                                             \
+    return NAME##_WORK(w, __dq_head );                                                \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)), int __lace_in_task __attribute__((unused)) )\
+RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) )\
  
 #define TASK_0(RTYPE, NAME) TASK_DECL_0(RTYPE, NAME) TASK_IMPL_0(RTYPE, NAME)
 
@@ -685,10 +639,10 @@ typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##
                                                                                       \
 void NAME##_WRAP(WorkerP *, Task *, TD_##NAME *);                                     \
 void NAME##_CALL(WorkerP *, Task * );                                                 \
-static inline void NAME##_SYNC_FAST(WorkerP *, Task *);                               \
+static inline void NAME##_SYNC(WorkerP *, Task *);                                    \
 static void NAME##_SYNC_SLOW(WorkerP *, Task *);                                      \
                                                                                       \
-static inline                                                                         \
+static inline __attribute__((unused))                                                 \
 void NAME##_SPAWN(WorkerP *w, Task *__dq_head )                                       \
 {                                                                                     \
     PR_COUNTTASK(w);                                                                  \
@@ -701,7 +655,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head )                                 
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
-    t->thief = 0;                                                                     \
+    t->thief = THIEF_TASK;                                                            \
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
@@ -764,7 +718,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = t->thief;                                          \
+        while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -776,7 +730,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
             Worker *res = lace_steal(w, __dq_head, thief);                            \
             if (res == LACE_NOWORK) {                                                 \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing();                                              \
+                else lace_cb_stealing(w, __dq_head);                                  \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(w, CTR_leaps);                                         \
             } else if (res == LACE_BUSY) {                                            \
@@ -799,7 +753,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
@@ -831,19 +785,19 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
     compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     return NAME##_CALL(w, __dq_head );                                                \
 }                                                                                     \
                                                                                       \
-static inline                                                                         \
-void NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                                    \
+static inline __attribute__((unused))                                                 \
+void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                         \
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
-            t->f = 0;                                                                 \
+            t->thief = THIEF_EMPTY;                                                   \
             return NAME##_CALL(w, __dq_head );                                        \
         }                                                                             \
     }                                                                                 \
@@ -851,47 +805,25 @@ void NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                              
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
 }                                                                                     \
                                                                                       \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SPAWN_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask )                \
-{                                                                                     \
-    if (__intask) { NAME##_SPAWN(w, __dq_head ); }                                    \
-    else { w = lace_get_worker(); NAME##_SPAWN(w, lace_get_head(w) ); }               \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SYNC_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask)                  \
-{                                                                                     \
-    if (__intask) { return NAME##_SYNC_FAST(w, __dq_head); }                          \
-    else { w = lace_get_worker(); return NAME##_SYNC_FAST(w, lace_get_head(w)); }     \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void CALL_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask )                 \
-{                                                                                     \
-    if (__intask) { return NAME##_CALL(w, __dq_head ); }                              \
-    else { w = lace_get_worker(); return NAME##_CALL(w, lace_get_head(w) ); }         \
-}                                                                                     \
-                                                                                      \
-                                                                                      \
                                                                                       \
  
 #define VOID_TASK_IMPL_0(NAME)                                                        \
-void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t)                           \
+void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
      NAME##_CALL(w, __dq_head );                                                      \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-void NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head, int __lace_in_task );  \
+void NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head );                      \
                                                                                       \
 /* NAME##_WORK is inlined in NAME##_CALL and the parameter __lace_in_task will disappear */\
 void NAME##_CALL(WorkerP *w, Task *__dq_head )                                        \
 {                                                                                     \
-    return NAME##_WORK(w, __dq_head, 1 );                                             \
+    return NAME##_WORK(w, __dq_head );                                                \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)), int __lace_in_task __attribute__((unused)) )\
+void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) )\
  
 #define VOID_TASK_0(NAME) VOID_TASK_DECL_0(NAME) VOID_TASK_IMPL_0(NAME)
 
@@ -913,10 +845,10 @@ typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##
                                                                                       \
 void NAME##_WRAP(WorkerP *, Task *, TD_##NAME *);                                     \
 RTYPE NAME##_CALL(WorkerP *, Task * , ATYPE_1 arg_1);                                 \
-static inline RTYPE NAME##_SYNC_FAST(WorkerP *, Task *);                              \
+static inline RTYPE NAME##_SYNC(WorkerP *, Task *);                                   \
 static RTYPE NAME##_SYNC_SLOW(WorkerP *, Task *);                                     \
                                                                                       \
-static inline                                                                         \
+static inline __attribute__((unused))                                                 \
 void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                        \
 {                                                                                     \
     PR_COUNTTASK(w);                                                                  \
@@ -929,7 +861,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                  
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
-    t->thief = 0;                                                                     \
+    t->thief = THIEF_TASK;                                                            \
      t->d.args.arg_1 = arg_1;                                                         \
     compiler_barrier();                                                               \
                                                                                       \
@@ -992,7 +924,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = t->thief;                                          \
+        while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -1004,7 +936,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
             Worker *res = lace_steal(w, __dq_head, thief);                            \
             if (res == LACE_NOWORK) {                                                 \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing();                                              \
+                else lace_cb_stealing(w, __dq_head);                                  \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(w, CTR_leaps);                                         \
             } else if (res == LACE_BUSY) {                                            \
@@ -1027,7 +959,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
@@ -1059,19 +991,19 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
     compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     return NAME##_CALL(w, __dq_head , t->d.args.arg_1);                               \
 }                                                                                     \
                                                                                       \
-static inline                                                                         \
-RTYPE NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                                   \
+static inline __attribute__((unused))                                                 \
+RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                        \
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
-            t->f = 0;                                                                 \
+            t->thief = THIEF_EMPTY;                                                   \
             return NAME##_CALL(w, __dq_head , t->d.args.arg_1);                       \
         }                                                                             \
     }                                                                                 \
@@ -1079,47 +1011,25 @@ RTYPE NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                             
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
 }                                                                                     \
                                                                                       \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SPAWN_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1) \
-{                                                                                     \
-    if (__intask) { NAME##_SPAWN(w, __dq_head , arg_1); }                             \
-    else { w = lace_get_worker(); NAME##_SPAWN(w, lace_get_head(w) , arg_1); }        \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-RTYPE SYNC_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask)                 \
-{                                                                                     \
-    if (__intask) { return NAME##_SYNC_FAST(w, __dq_head); }                          \
-    else { w = lace_get_worker(); return NAME##_SYNC_FAST(w, lace_get_head(w)); }     \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-RTYPE CALL_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1) \
-{                                                                                     \
-    if (__intask) { return NAME##_CALL(w, __dq_head , arg_1); }                       \
-    else { w = lace_get_worker(); return NAME##_CALL(w, lace_get_head(w) , arg_1); }  \
-}                                                                                     \
-                                                                                      \
-                                                                                      \
                                                                                       \
  
 #define TASK_IMPL_1(RTYPE, NAME, ATYPE_1, ARG_1)                                      \
-void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t)                           \
+void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
     t->d.res = NAME##_CALL(w, __dq_head , t->d.args.arg_1);                           \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-RTYPE NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1);\
+RTYPE NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head , ATYPE_1);            \
                                                                                       \
 /* NAME##_WORK is inlined in NAME##_CALL and the parameter __lace_in_task will disappear */\
 RTYPE NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                        \
 {                                                                                     \
-    return NAME##_WORK(w, __dq_head, 1 , arg_1);                                      \
+    return NAME##_WORK(w, __dq_head , arg_1);                                         \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)), int __lace_in_task __attribute__((unused)) , ATYPE_1 ARG_1)\
+RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1)\
  
 #define TASK_1(RTYPE, NAME, ATYPE_1, ARG_1) TASK_DECL_1(RTYPE, NAME, ATYPE_1) TASK_IMPL_1(RTYPE, NAME, ATYPE_1, ARG_1)
 
@@ -1138,10 +1048,10 @@ typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##
                                                                                       \
 void NAME##_WRAP(WorkerP *, Task *, TD_##NAME *);                                     \
 void NAME##_CALL(WorkerP *, Task * , ATYPE_1 arg_1);                                  \
-static inline void NAME##_SYNC_FAST(WorkerP *, Task *);                               \
+static inline void NAME##_SYNC(WorkerP *, Task *);                                    \
 static void NAME##_SYNC_SLOW(WorkerP *, Task *);                                      \
                                                                                       \
-static inline                                                                         \
+static inline __attribute__((unused))                                                 \
 void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                        \
 {                                                                                     \
     PR_COUNTTASK(w);                                                                  \
@@ -1154,7 +1064,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                  
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
-    t->thief = 0;                                                                     \
+    t->thief = THIEF_TASK;                                                            \
      t->d.args.arg_1 = arg_1;                                                         \
     compiler_barrier();                                                               \
                                                                                       \
@@ -1217,7 +1127,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = t->thief;                                          \
+        while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -1229,7 +1139,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
             Worker *res = lace_steal(w, __dq_head, thief);                            \
             if (res == LACE_NOWORK) {                                                 \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing();                                              \
+                else lace_cb_stealing(w, __dq_head);                                  \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(w, CTR_leaps);                                         \
             } else if (res == LACE_BUSY) {                                            \
@@ -1252,7 +1162,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
@@ -1284,19 +1194,19 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
     compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     return NAME##_CALL(w, __dq_head , t->d.args.arg_1);                               \
 }                                                                                     \
                                                                                       \
-static inline                                                                         \
-void NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                                    \
+static inline __attribute__((unused))                                                 \
+void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                         \
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
-            t->f = 0;                                                                 \
+            t->thief = THIEF_EMPTY;                                                   \
             return NAME##_CALL(w, __dq_head , t->d.args.arg_1);                       \
         }                                                                             \
     }                                                                                 \
@@ -1304,47 +1214,25 @@ void NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                              
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
 }                                                                                     \
                                                                                       \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SPAWN_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1) \
-{                                                                                     \
-    if (__intask) { NAME##_SPAWN(w, __dq_head , arg_1); }                             \
-    else { w = lace_get_worker(); NAME##_SPAWN(w, lace_get_head(w) , arg_1); }        \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SYNC_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask)                  \
-{                                                                                     \
-    if (__intask) { return NAME##_SYNC_FAST(w, __dq_head); }                          \
-    else { w = lace_get_worker(); return NAME##_SYNC_FAST(w, lace_get_head(w)); }     \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void CALL_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1)  \
-{                                                                                     \
-    if (__intask) { return NAME##_CALL(w, __dq_head , arg_1); }                       \
-    else { w = lace_get_worker(); return NAME##_CALL(w, lace_get_head(w) , arg_1); }  \
-}                                                                                     \
-                                                                                      \
-                                                                                      \
                                                                                       \
  
 #define VOID_TASK_IMPL_1(NAME, ATYPE_1, ARG_1)                                        \
-void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t)                           \
+void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
      NAME##_CALL(w, __dq_head , t->d.args.arg_1);                                     \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-void NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1);\
+void NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head , ATYPE_1);             \
                                                                                       \
 /* NAME##_WORK is inlined in NAME##_CALL and the parameter __lace_in_task will disappear */\
 void NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                         \
 {                                                                                     \
-    return NAME##_WORK(w, __dq_head, 1 , arg_1);                                      \
+    return NAME##_WORK(w, __dq_head , arg_1);                                         \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)), int __lace_in_task __attribute__((unused)) , ATYPE_1 ARG_1)\
+void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1)\
  
 #define VOID_TASK_1(NAME, ATYPE_1, ARG_1) VOID_TASK_DECL_1(NAME, ATYPE_1) VOID_TASK_IMPL_1(NAME, ATYPE_1, ARG_1)
 
@@ -1366,10 +1254,10 @@ typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##
                                                                                       \
 void NAME##_WRAP(WorkerP *, Task *, TD_##NAME *);                                     \
 RTYPE NAME##_CALL(WorkerP *, Task * , ATYPE_1 arg_1, ATYPE_2 arg_2);                  \
-static inline RTYPE NAME##_SYNC_FAST(WorkerP *, Task *);                              \
+static inline RTYPE NAME##_SYNC(WorkerP *, Task *);                                   \
 static RTYPE NAME##_SYNC_SLOW(WorkerP *, Task *);                                     \
                                                                                       \
-static inline                                                                         \
+static inline __attribute__((unused))                                                 \
 void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)         \
 {                                                                                     \
     PR_COUNTTASK(w);                                                                  \
@@ -1382,7 +1270,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)   
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
-    t->thief = 0;                                                                     \
+    t->thief = THIEF_TASK;                                                            \
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2;                                \
     compiler_barrier();                                                               \
                                                                                       \
@@ -1445,7 +1333,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = t->thief;                                          \
+        while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -1457,7 +1345,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
             Worker *res = lace_steal(w, __dq_head, thief);                            \
             if (res == LACE_NOWORK) {                                                 \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing();                                              \
+                else lace_cb_stealing(w, __dq_head);                                  \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(w, CTR_leaps);                                         \
             } else if (res == LACE_BUSY) {                                            \
@@ -1480,7 +1368,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
@@ -1512,19 +1400,19 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
     compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2);              \
 }                                                                                     \
                                                                                       \
-static inline                                                                         \
-RTYPE NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                                   \
+static inline __attribute__((unused))                                                 \
+RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                        \
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
-            t->f = 0;                                                                 \
+            t->thief = THIEF_EMPTY;                                                   \
             return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2);      \
         }                                                                             \
     }                                                                                 \
@@ -1532,47 +1420,25 @@ RTYPE NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                             
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
 }                                                                                     \
                                                                                       \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SPAWN_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1, ATYPE_2 arg_2)\
-{                                                                                     \
-    if (__intask) { NAME##_SPAWN(w, __dq_head , arg_1, arg_2); }                      \
-    else { w = lace_get_worker(); NAME##_SPAWN(w, lace_get_head(w) , arg_1, arg_2); } \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-RTYPE SYNC_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask)                 \
-{                                                                                     \
-    if (__intask) { return NAME##_SYNC_FAST(w, __dq_head); }                          \
-    else { w = lace_get_worker(); return NAME##_SYNC_FAST(w, lace_get_head(w)); }     \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-RTYPE CALL_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1, ATYPE_2 arg_2)\
-{                                                                                     \
-    if (__intask) { return NAME##_CALL(w, __dq_head , arg_1, arg_2); }                \
-    else { w = lace_get_worker(); return NAME##_CALL(w, lace_get_head(w) , arg_1, arg_2); }\
-}                                                                                     \
-                                                                                      \
-                                                                                      \
                                                                                       \
  
 #define TASK_IMPL_2(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2)                      \
-void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t)                           \
+void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
     t->d.res = NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2);          \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-RTYPE NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1, ATYPE_2);\
+RTYPE NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head , ATYPE_1, ATYPE_2);   \
                                                                                       \
 /* NAME##_WORK is inlined in NAME##_CALL and the parameter __lace_in_task will disappear */\
 RTYPE NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)         \
 {                                                                                     \
-    return NAME##_WORK(w, __dq_head, 1 , arg_1, arg_2);                               \
+    return NAME##_WORK(w, __dq_head , arg_1, arg_2);                                  \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)), int __lace_in_task __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2)\
+RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2)\
  
 #define TASK_2(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2) TASK_DECL_2(RTYPE, NAME, ATYPE_1, ATYPE_2) TASK_IMPL_2(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2)
 
@@ -1591,10 +1457,10 @@ typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##
                                                                                       \
 void NAME##_WRAP(WorkerP *, Task *, TD_##NAME *);                                     \
 void NAME##_CALL(WorkerP *, Task * , ATYPE_1 arg_1, ATYPE_2 arg_2);                   \
-static inline void NAME##_SYNC_FAST(WorkerP *, Task *);                               \
+static inline void NAME##_SYNC(WorkerP *, Task *);                                    \
 static void NAME##_SYNC_SLOW(WorkerP *, Task *);                                      \
                                                                                       \
-static inline                                                                         \
+static inline __attribute__((unused))                                                 \
 void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)         \
 {                                                                                     \
     PR_COUNTTASK(w);                                                                  \
@@ -1607,7 +1473,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)   
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
-    t->thief = 0;                                                                     \
+    t->thief = THIEF_TASK;                                                            \
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2;                                \
     compiler_barrier();                                                               \
                                                                                       \
@@ -1670,7 +1536,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = t->thief;                                          \
+        while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -1682,7 +1548,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
             Worker *res = lace_steal(w, __dq_head, thief);                            \
             if (res == LACE_NOWORK) {                                                 \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing();                                              \
+                else lace_cb_stealing(w, __dq_head);                                  \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(w, CTR_leaps);                                         \
             } else if (res == LACE_BUSY) {                                            \
@@ -1705,7 +1571,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
@@ -1737,19 +1603,19 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
     compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2);              \
 }                                                                                     \
                                                                                       \
-static inline                                                                         \
-void NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                                    \
+static inline __attribute__((unused))                                                 \
+void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                         \
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
-            t->f = 0;                                                                 \
+            t->thief = THIEF_EMPTY;                                                   \
             return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2);      \
         }                                                                             \
     }                                                                                 \
@@ -1757,47 +1623,25 @@ void NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                              
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
 }                                                                                     \
                                                                                       \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SPAWN_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1, ATYPE_2 arg_2)\
-{                                                                                     \
-    if (__intask) { NAME##_SPAWN(w, __dq_head , arg_1, arg_2); }                      \
-    else { w = lace_get_worker(); NAME##_SPAWN(w, lace_get_head(w) , arg_1, arg_2); } \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SYNC_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask)                  \
-{                                                                                     \
-    if (__intask) { return NAME##_SYNC_FAST(w, __dq_head); }                          \
-    else { w = lace_get_worker(); return NAME##_SYNC_FAST(w, lace_get_head(w)); }     \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void CALL_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1, ATYPE_2 arg_2)\
-{                                                                                     \
-    if (__intask) { return NAME##_CALL(w, __dq_head , arg_1, arg_2); }                \
-    else { w = lace_get_worker(); return NAME##_CALL(w, lace_get_head(w) , arg_1, arg_2); }\
-}                                                                                     \
-                                                                                      \
-                                                                                      \
                                                                                       \
  
 #define VOID_TASK_IMPL_2(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2)                        \
-void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t)                           \
+void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
      NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2);                    \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-void NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1, ATYPE_2);\
+void NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head , ATYPE_1, ATYPE_2);    \
                                                                                       \
 /* NAME##_WORK is inlined in NAME##_CALL and the parameter __lace_in_task will disappear */\
 void NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)          \
 {                                                                                     \
-    return NAME##_WORK(w, __dq_head, 1 , arg_1, arg_2);                               \
+    return NAME##_WORK(w, __dq_head , arg_1, arg_2);                                  \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)), int __lace_in_task __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2)\
+void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2)\
  
 #define VOID_TASK_2(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2) VOID_TASK_DECL_2(NAME, ATYPE_1, ATYPE_2) VOID_TASK_IMPL_2(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2)
 
@@ -1819,10 +1663,10 @@ typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##
                                                                                       \
 void NAME##_WRAP(WorkerP *, Task *, TD_##NAME *);                                     \
 RTYPE NAME##_CALL(WorkerP *, Task * , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3);   \
-static inline RTYPE NAME##_SYNC_FAST(WorkerP *, Task *);                              \
+static inline RTYPE NAME##_SYNC(WorkerP *, Task *);                                   \
 static RTYPE NAME##_SYNC_SLOW(WorkerP *, Task *);                                     \
                                                                                       \
-static inline                                                                         \
+static inline __attribute__((unused))                                                 \
 void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3)\
 {                                                                                     \
     PR_COUNTTASK(w);                                                                  \
@@ -1835,7 +1679,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
-    t->thief = 0;                                                                     \
+    t->thief = THIEF_TASK;                                                            \
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3;       \
     compiler_barrier();                                                               \
                                                                                       \
@@ -1898,7 +1742,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = t->thief;                                          \
+        while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -1910,7 +1754,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
             Worker *res = lace_steal(w, __dq_head, thief);                            \
             if (res == LACE_NOWORK) {                                                 \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing();                                              \
+                else lace_cb_stealing(w, __dq_head);                                  \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(w, CTR_leaps);                                         \
             } else if (res == LACE_BUSY) {                                            \
@@ -1933,7 +1777,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
@@ -1965,19 +1809,19 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
     compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3);\
 }                                                                                     \
                                                                                       \
-static inline                                                                         \
-RTYPE NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                                   \
+static inline __attribute__((unused))                                                 \
+RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                        \
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
-            t->f = 0;                                                                 \
+            t->thief = THIEF_EMPTY;                                                   \
             return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3);\
         }                                                                             \
     }                                                                                 \
@@ -1985,47 +1829,25 @@ RTYPE NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                             
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
 }                                                                                     \
                                                                                       \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SPAWN_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3)\
-{                                                                                     \
-    if (__intask) { NAME##_SPAWN(w, __dq_head , arg_1, arg_2, arg_3); }               \
-    else { w = lace_get_worker(); NAME##_SPAWN(w, lace_get_head(w) , arg_1, arg_2, arg_3); }\
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-RTYPE SYNC_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask)                 \
-{                                                                                     \
-    if (__intask) { return NAME##_SYNC_FAST(w, __dq_head); }                          \
-    else { w = lace_get_worker(); return NAME##_SYNC_FAST(w, lace_get_head(w)); }     \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-RTYPE CALL_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3)\
-{                                                                                     \
-    if (__intask) { return NAME##_CALL(w, __dq_head , arg_1, arg_2, arg_3); }         \
-    else { w = lace_get_worker(); return NAME##_CALL(w, lace_get_head(w) , arg_1, arg_2, arg_3); }\
-}                                                                                     \
-                                                                                      \
-                                                                                      \
                                                                                       \
  
 #define TASK_IMPL_3(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3)      \
-void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t)                           \
+void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
     t->d.res = NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3);\
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-RTYPE NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1, ATYPE_2, ATYPE_3);\
+RTYPE NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head , ATYPE_1, ATYPE_2, ATYPE_3);\
                                                                                       \
 /* NAME##_WORK is inlined in NAME##_CALL and the parameter __lace_in_task will disappear */\
 RTYPE NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3)\
 {                                                                                     \
-    return NAME##_WORK(w, __dq_head, 1 , arg_1, arg_2, arg_3);                        \
+    return NAME##_WORK(w, __dq_head , arg_1, arg_2, arg_3);                           \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)), int __lace_in_task __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3)\
+RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3)\
  
 #define TASK_3(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3) TASK_DECL_3(RTYPE, NAME, ATYPE_1, ATYPE_2, ATYPE_3) TASK_IMPL_3(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3)
 
@@ -2044,10 +1866,10 @@ typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##
                                                                                       \
 void NAME##_WRAP(WorkerP *, Task *, TD_##NAME *);                                     \
 void NAME##_CALL(WorkerP *, Task * , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3);    \
-static inline void NAME##_SYNC_FAST(WorkerP *, Task *);                               \
+static inline void NAME##_SYNC(WorkerP *, Task *);                                    \
 static void NAME##_SYNC_SLOW(WorkerP *, Task *);                                      \
                                                                                       \
-static inline                                                                         \
+static inline __attribute__((unused))                                                 \
 void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3)\
 {                                                                                     \
     PR_COUNTTASK(w);                                                                  \
@@ -2060,7 +1882,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
-    t->thief = 0;                                                                     \
+    t->thief = THIEF_TASK;                                                            \
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3;       \
     compiler_barrier();                                                               \
                                                                                       \
@@ -2123,7 +1945,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = t->thief;                                          \
+        while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -2135,7 +1957,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
             Worker *res = lace_steal(w, __dq_head, thief);                            \
             if (res == LACE_NOWORK) {                                                 \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing();                                              \
+                else lace_cb_stealing(w, __dq_head);                                  \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(w, CTR_leaps);                                         \
             } else if (res == LACE_BUSY) {                                            \
@@ -2158,7 +1980,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
@@ -2190,19 +2012,19 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
     compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3);\
 }                                                                                     \
                                                                                       \
-static inline                                                                         \
-void NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                                    \
+static inline __attribute__((unused))                                                 \
+void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                         \
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
-            t->f = 0;                                                                 \
+            t->thief = THIEF_EMPTY;                                                   \
             return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3);\
         }                                                                             \
     }                                                                                 \
@@ -2210,47 +2032,25 @@ void NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                              
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
 }                                                                                     \
                                                                                       \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SPAWN_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3)\
-{                                                                                     \
-    if (__intask) { NAME##_SPAWN(w, __dq_head , arg_1, arg_2, arg_3); }               \
-    else { w = lace_get_worker(); NAME##_SPAWN(w, lace_get_head(w) , arg_1, arg_2, arg_3); }\
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SYNC_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask)                  \
-{                                                                                     \
-    if (__intask) { return NAME##_SYNC_FAST(w, __dq_head); }                          \
-    else { w = lace_get_worker(); return NAME##_SYNC_FAST(w, lace_get_head(w)); }     \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void CALL_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3)\
-{                                                                                     \
-    if (__intask) { return NAME##_CALL(w, __dq_head , arg_1, arg_2, arg_3); }         \
-    else { w = lace_get_worker(); return NAME##_CALL(w, lace_get_head(w) , arg_1, arg_2, arg_3); }\
-}                                                                                     \
-                                                                                      \
-                                                                                      \
                                                                                       \
  
 #define VOID_TASK_IMPL_3(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3)        \
-void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t)                           \
+void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
      NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3);   \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-void NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1, ATYPE_2, ATYPE_3);\
+void NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head , ATYPE_1, ATYPE_2, ATYPE_3);\
                                                                                       \
 /* NAME##_WORK is inlined in NAME##_CALL and the parameter __lace_in_task will disappear */\
 void NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3)\
 {                                                                                     \
-    return NAME##_WORK(w, __dq_head, 1 , arg_1, arg_2, arg_3);                        \
+    return NAME##_WORK(w, __dq_head , arg_1, arg_2, arg_3);                           \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)), int __lace_in_task __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3)\
+void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3)\
  
 #define VOID_TASK_3(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3) VOID_TASK_DECL_3(NAME, ATYPE_1, ATYPE_2, ATYPE_3) VOID_TASK_IMPL_3(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3)
 
@@ -2272,10 +2072,10 @@ typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##
                                                                                       \
 void NAME##_WRAP(WorkerP *, Task *, TD_##NAME *);                                     \
 RTYPE NAME##_CALL(WorkerP *, Task * , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4);\
-static inline RTYPE NAME##_SYNC_FAST(WorkerP *, Task *);                              \
+static inline RTYPE NAME##_SYNC(WorkerP *, Task *);                                   \
 static RTYPE NAME##_SYNC_SLOW(WorkerP *, Task *);                                     \
                                                                                       \
-static inline                                                                         \
+static inline __attribute__((unused))                                                 \
 void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4)\
 {                                                                                     \
     PR_COUNTTASK(w);                                                                  \
@@ -2288,7 +2088,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
-    t->thief = 0;                                                                     \
+    t->thief = THIEF_TASK;                                                            \
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4;\
     compiler_barrier();                                                               \
                                                                                       \
@@ -2351,7 +2151,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = t->thief;                                          \
+        while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -2363,7 +2163,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
             Worker *res = lace_steal(w, __dq_head, thief);                            \
             if (res == LACE_NOWORK) {                                                 \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing();                                              \
+                else lace_cb_stealing(w, __dq_head);                                  \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(w, CTR_leaps);                                         \
             } else if (res == LACE_BUSY) {                                            \
@@ -2386,7 +2186,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
@@ -2418,19 +2218,19 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
     compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4);\
 }                                                                                     \
                                                                                       \
-static inline                                                                         \
-RTYPE NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                                   \
+static inline __attribute__((unused))                                                 \
+RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                        \
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
-            t->f = 0;                                                                 \
+            t->thief = THIEF_EMPTY;                                                   \
             return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4);\
         }                                                                             \
     }                                                                                 \
@@ -2438,47 +2238,25 @@ RTYPE NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                             
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
 }                                                                                     \
                                                                                       \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SPAWN_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4)\
-{                                                                                     \
-    if (__intask) { NAME##_SPAWN(w, __dq_head , arg_1, arg_2, arg_3, arg_4); }        \
-    else { w = lace_get_worker(); NAME##_SPAWN(w, lace_get_head(w) , arg_1, arg_2, arg_3, arg_4); }\
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-RTYPE SYNC_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask)                 \
-{                                                                                     \
-    if (__intask) { return NAME##_SYNC_FAST(w, __dq_head); }                          \
-    else { w = lace_get_worker(); return NAME##_SYNC_FAST(w, lace_get_head(w)); }     \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-RTYPE CALL_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4)\
-{                                                                                     \
-    if (__intask) { return NAME##_CALL(w, __dq_head , arg_1, arg_2, arg_3, arg_4); }  \
-    else { w = lace_get_worker(); return NAME##_CALL(w, lace_get_head(w) , arg_1, arg_2, arg_3, arg_4); }\
-}                                                                                     \
-                                                                                      \
-                                                                                      \
                                                                                       \
  
 #define TASK_IMPL_4(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4)\
-void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t)                           \
+void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
     t->d.res = NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4);\
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-RTYPE NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4);\
+RTYPE NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head , ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4);\
                                                                                       \
 /* NAME##_WORK is inlined in NAME##_CALL and the parameter __lace_in_task will disappear */\
 RTYPE NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4)\
 {                                                                                     \
-    return NAME##_WORK(w, __dq_head, 1 , arg_1, arg_2, arg_3, arg_4);                 \
+    return NAME##_WORK(w, __dq_head , arg_1, arg_2, arg_3, arg_4);                    \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)), int __lace_in_task __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4)\
+RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4)\
  
 #define TASK_4(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4) TASK_DECL_4(RTYPE, NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4) TASK_IMPL_4(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4)
 
@@ -2497,10 +2275,10 @@ typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##
                                                                                       \
 void NAME##_WRAP(WorkerP *, Task *, TD_##NAME *);                                     \
 void NAME##_CALL(WorkerP *, Task * , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4);\
-static inline void NAME##_SYNC_FAST(WorkerP *, Task *);                               \
+static inline void NAME##_SYNC(WorkerP *, Task *);                                    \
 static void NAME##_SYNC_SLOW(WorkerP *, Task *);                                      \
                                                                                       \
-static inline                                                                         \
+static inline __attribute__((unused))                                                 \
 void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4)\
 {                                                                                     \
     PR_COUNTTASK(w);                                                                  \
@@ -2513,7 +2291,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
-    t->thief = 0;                                                                     \
+    t->thief = THIEF_TASK;                                                            \
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4;\
     compiler_barrier();                                                               \
                                                                                       \
@@ -2576,7 +2354,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = t->thief;                                          \
+        while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -2588,7 +2366,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
             Worker *res = lace_steal(w, __dq_head, thief);                            \
             if (res == LACE_NOWORK) {                                                 \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing();                                              \
+                else lace_cb_stealing(w, __dq_head);                                  \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(w, CTR_leaps);                                         \
             } else if (res == LACE_BUSY) {                                            \
@@ -2611,7 +2389,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
@@ -2643,19 +2421,19 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
     compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4);\
 }                                                                                     \
                                                                                       \
-static inline                                                                         \
-void NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                                    \
+static inline __attribute__((unused))                                                 \
+void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                         \
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
-            t->f = 0;                                                                 \
+            t->thief = THIEF_EMPTY;                                                   \
             return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4);\
         }                                                                             \
     }                                                                                 \
@@ -2663,47 +2441,25 @@ void NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                              
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
 }                                                                                     \
                                                                                       \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SPAWN_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4)\
-{                                                                                     \
-    if (__intask) { NAME##_SPAWN(w, __dq_head , arg_1, arg_2, arg_3, arg_4); }        \
-    else { w = lace_get_worker(); NAME##_SPAWN(w, lace_get_head(w) , arg_1, arg_2, arg_3, arg_4); }\
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SYNC_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask)                  \
-{                                                                                     \
-    if (__intask) { return NAME##_SYNC_FAST(w, __dq_head); }                          \
-    else { w = lace_get_worker(); return NAME##_SYNC_FAST(w, lace_get_head(w)); }     \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void CALL_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4)\
-{                                                                                     \
-    if (__intask) { return NAME##_CALL(w, __dq_head , arg_1, arg_2, arg_3, arg_4); }  \
-    else { w = lace_get_worker(); return NAME##_CALL(w, lace_get_head(w) , arg_1, arg_2, arg_3, arg_4); }\
-}                                                                                     \
-                                                                                      \
-                                                                                      \
                                                                                       \
  
 #define VOID_TASK_IMPL_4(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4)\
-void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t)                           \
+void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
      NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4);\
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-void NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4);\
+void NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head , ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4);\
                                                                                       \
 /* NAME##_WORK is inlined in NAME##_CALL and the parameter __lace_in_task will disappear */\
 void NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4)\
 {                                                                                     \
-    return NAME##_WORK(w, __dq_head, 1 , arg_1, arg_2, arg_3, arg_4);                 \
+    return NAME##_WORK(w, __dq_head , arg_1, arg_2, arg_3, arg_4);                    \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)), int __lace_in_task __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4)\
+void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4)\
  
 #define VOID_TASK_4(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4) VOID_TASK_DECL_4(NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4) VOID_TASK_IMPL_4(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4)
 
@@ -2725,10 +2481,10 @@ typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##
                                                                                       \
 void NAME##_WRAP(WorkerP *, Task *, TD_##NAME *);                                     \
 RTYPE NAME##_CALL(WorkerP *, Task * , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5);\
-static inline RTYPE NAME##_SYNC_FAST(WorkerP *, Task *);                              \
+static inline RTYPE NAME##_SYNC(WorkerP *, Task *);                                   \
 static RTYPE NAME##_SYNC_SLOW(WorkerP *, Task *);                                     \
                                                                                       \
-static inline                                                                         \
+static inline __attribute__((unused))                                                 \
 void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5)\
 {                                                                                     \
     PR_COUNTTASK(w);                                                                  \
@@ -2741,7 +2497,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
-    t->thief = 0;                                                                     \
+    t->thief = THIEF_TASK;                                                            \
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4; t->d.args.arg_5 = arg_5;\
     compiler_barrier();                                                               \
                                                                                       \
@@ -2804,7 +2560,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = t->thief;                                          \
+        while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -2816,7 +2572,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
             Worker *res = lace_steal(w, __dq_head, thief);                            \
             if (res == LACE_NOWORK) {                                                 \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing();                                              \
+                else lace_cb_stealing(w, __dq_head);                                  \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(w, CTR_leaps);                                         \
             } else if (res == LACE_BUSY) {                                            \
@@ -2839,7 +2595,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
@@ -2871,19 +2627,19 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
     compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4, t->d.args.arg_5);\
 }                                                                                     \
                                                                                       \
-static inline                                                                         \
-RTYPE NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                                   \
+static inline __attribute__((unused))                                                 \
+RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                        \
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
-            t->f = 0;                                                                 \
+            t->thief = THIEF_EMPTY;                                                   \
             return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4, t->d.args.arg_5);\
         }                                                                             \
     }                                                                                 \
@@ -2891,47 +2647,25 @@ RTYPE NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                             
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
 }                                                                                     \
                                                                                       \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SPAWN_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5)\
-{                                                                                     \
-    if (__intask) { NAME##_SPAWN(w, __dq_head , arg_1, arg_2, arg_3, arg_4, arg_5); } \
-    else { w = lace_get_worker(); NAME##_SPAWN(w, lace_get_head(w) , arg_1, arg_2, arg_3, arg_4, arg_5); }\
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-RTYPE SYNC_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask)                 \
-{                                                                                     \
-    if (__intask) { return NAME##_SYNC_FAST(w, __dq_head); }                          \
-    else { w = lace_get_worker(); return NAME##_SYNC_FAST(w, lace_get_head(w)); }     \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-RTYPE CALL_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5)\
-{                                                                                     \
-    if (__intask) { return NAME##_CALL(w, __dq_head , arg_1, arg_2, arg_3, arg_4, arg_5); }\
-    else { w = lace_get_worker(); return NAME##_CALL(w, lace_get_head(w) , arg_1, arg_2, arg_3, arg_4, arg_5); }\
-}                                                                                     \
-                                                                                      \
-                                                                                      \
                                                                                       \
  
 #define TASK_IMPL_5(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5)\
-void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t)                           \
+void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
     t->d.res = NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4, t->d.args.arg_5);\
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-RTYPE NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4, ATYPE_5);\
+RTYPE NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head , ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4, ATYPE_5);\
                                                                                       \
 /* NAME##_WORK is inlined in NAME##_CALL and the parameter __lace_in_task will disappear */\
 RTYPE NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5)\
 {                                                                                     \
-    return NAME##_WORK(w, __dq_head, 1 , arg_1, arg_2, arg_3, arg_4, arg_5);          \
+    return NAME##_WORK(w, __dq_head , arg_1, arg_2, arg_3, arg_4, arg_5);             \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)), int __lace_in_task __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4, ATYPE_5 ARG_5)\
+RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4, ATYPE_5 ARG_5)\
  
 #define TASK_5(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5) TASK_DECL_5(RTYPE, NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4, ATYPE_5) TASK_IMPL_5(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5)
 
@@ -2950,10 +2684,10 @@ typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##
                                                                                       \
 void NAME##_WRAP(WorkerP *, Task *, TD_##NAME *);                                     \
 void NAME##_CALL(WorkerP *, Task * , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5);\
-static inline void NAME##_SYNC_FAST(WorkerP *, Task *);                               \
+static inline void NAME##_SYNC(WorkerP *, Task *);                                    \
 static void NAME##_SYNC_SLOW(WorkerP *, Task *);                                      \
                                                                                       \
-static inline                                                                         \
+static inline __attribute__((unused))                                                 \
 void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5)\
 {                                                                                     \
     PR_COUNTTASK(w);                                                                  \
@@ -2966,7 +2700,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
-    t->thief = 0;                                                                     \
+    t->thief = THIEF_TASK;                                                            \
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4; t->d.args.arg_5 = arg_5;\
     compiler_barrier();                                                               \
                                                                                       \
@@ -3029,7 +2763,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
-        while (thief == 0) thief = t->thief;                                          \
+        while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
         __dq_head += 1;                                                               \
@@ -3041,7 +2775,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
             Worker *res = lace_steal(w, __dq_head, thief);                            \
             if (res == LACE_NOWORK) {                                                 \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing();                                              \
+                else lace_cb_stealing(w, __dq_head);                                  \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(w, CTR_leaps);                                         \
             } else if (res == LACE_BUSY) {                                            \
@@ -3064,7 +2798,7 @@ NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                    
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     lace_time_event(w, 4);                                                            \
 }                                                                                     \
                                                                                       \
@@ -3096,19 +2830,19 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
     compiler_barrier();                                                               \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
-    t->f = 0;                                                                         \
+    t->thief = THIEF_EMPTY;                                                           \
     return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4, t->d.args.arg_5);\
 }                                                                                     \
                                                                                       \
-static inline                                                                         \
-void NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                                    \
+static inline __attribute__((unused))                                                 \
+void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                         \
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
-            t->f = 0;                                                                 \
+            t->thief = THIEF_EMPTY;                                                   \
             return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4, t->d.args.arg_5);\
         }                                                                             \
     }                                                                                 \
@@ -3116,47 +2850,25 @@ void NAME##_SYNC_FAST(WorkerP *w, Task *__dq_head)                              
     return NAME##_SYNC_SLOW(w, __dq_head);                                            \
 }                                                                                     \
                                                                                       \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SPAWN_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5)\
-{                                                                                     \
-    if (__intask) { NAME##_SPAWN(w, __dq_head , arg_1, arg_2, arg_3, arg_4, arg_5); } \
-    else { w = lace_get_worker(); NAME##_SPAWN(w, lace_get_head(w) , arg_1, arg_2, arg_3, arg_4, arg_5); }\
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void SYNC_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask)                  \
-{                                                                                     \
-    if (__intask) { return NAME##_SYNC_FAST(w, __dq_head); }                          \
-    else { w = lace_get_worker(); return NAME##_SYNC_FAST(w, lace_get_head(w)); }     \
-}                                                                                     \
-                                                                                      \
-static inline __attribute__((always_inline)) __attribute__((unused))                  \
-void CALL_DISPATCH_##NAME(WorkerP *w, Task *__dq_head, int __intask , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5)\
-{                                                                                     \
-    if (__intask) { return NAME##_CALL(w, __dq_head , arg_1, arg_2, arg_3, arg_4, arg_5); }\
-    else { w = lace_get_worker(); return NAME##_CALL(w, lace_get_head(w) , arg_1, arg_2, arg_3, arg_4, arg_5); }\
-}                                                                                     \
-                                                                                      \
-                                                                                      \
                                                                                       \
  
 #define VOID_TASK_IMPL_5(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5)\
-void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t)                           \
+void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
      NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4, t->d.args.arg_5);\
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-void NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head, int __lace_in_task , ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4, ATYPE_5);\
+void NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head , ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4, ATYPE_5);\
                                                                                       \
 /* NAME##_WORK is inlined in NAME##_CALL and the parameter __lace_in_task will disappear */\
 void NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5)\
 {                                                                                     \
-    return NAME##_WORK(w, __dq_head, 1 , arg_1, arg_2, arg_3, arg_4, arg_5);          \
+    return NAME##_WORK(w, __dq_head , arg_1, arg_2, arg_3, arg_4, arg_5);             \
 }                                                                                     \
                                                                                       \
 static inline __attribute__((always_inline))                                          \
-void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)), int __lace_in_task __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4, ATYPE_5 ARG_5)\
+void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4, ATYPE_5 ARG_5)\
  
 #define VOID_TASK_5(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5) VOID_TASK_DECL_5(NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4, ATYPE_5) VOID_TASK_IMPL_5(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5)
 

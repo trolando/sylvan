@@ -121,8 +121,8 @@ TASK_DECL_4(MDD, lddmc_relprev, MDD, MDD, MDD, MDD);
 TASK_DECL_2(MDD, lddmc_project, MDD, MDD);
 #define lddmc_project(mdd, proj) CALL(lddmc_project, mdd, proj)
 
-TASK_DECL_3(MDD, lddmc_join, MDD, MDD, MDD);
-#define lddmc_join(a, b, proj) CALL(lddmc_join, a, b, proj)
+TASK_DECL_4(MDD, lddmc_join, MDD, MDD, MDD, MDD);
+#define lddmc_join(a, b, a_proj, b_proj) CALL(lddmc_join, a, b, a_proj, b_proj)
 
 /* Write a DOT representation */
 void lddmc_printdot(MDD mdd);

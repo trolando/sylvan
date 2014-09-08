@@ -1267,71 +1267,75 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
     return result;
 }
 
-// proj: 0 = end, 1 = only a, 2 = only b, 3 = both, -1 = only a left, -2 = only b left, -3 = only both left
-TASK_IMPL_3(MDD, lddmc_join, MDD, a, MDD, b, MDD, proj)
+// Same 'proj' as project. So: proj: -2 (end; quantify rest), -1 (end; keep rest), 0 (quantify), 1 (keep)
+TASK_IMPL_4(MDD, lddmc_join, MDD, a, MDD, b, MDD, a_proj, MDD, b_proj)
 {
     if (a == lddmc_false || b == lddmc_false) return lddmc_false;
-
-    mddnode_t p_node = GETNODE(proj);
-    uint32_t p_val = mddnode_getvalue(p_node);
-
-    if (p_val == 0) {
-        assert(a == lddmc_true && b == lddmc_true);
-        return lddmc_true;
-    } else if (p_val == (uint32_t)-1) {
-        assert(b == lddmc_true);
-        return a;
-    } else if (p_val == (uint32_t)-2) {
-        assert(a == lddmc_true);
-        return b;
-    } else if (p_val == (uint32_t)-3) return CALL(lddmc_intersect, a, b);
 
     /* Test gc */
     lddmc_gc_test();
 
-    /* Get nodes */
-    mddnode_t na = GETNODE(a);
-    mddnode_t nb = GETNODE(b);
-    uint32_t na_value = mddnode_getvalue(na);
-    uint32_t nb_value = mddnode_getvalue(nb);
+    mddnode_t n_a_proj = GETNODE(a_proj);
+    mddnode_t n_b_proj = GETNODE(b_proj);
+    uint32_t a_proj_val = mddnode_getvalue(n_a_proj);
+    uint32_t b_proj_val = mddnode_getvalue(n_b_proj);
 
-    /* Skip nodes if possible */
-    if (p_val == 3) {
-        while (na_value != nb_value) {
-            if (na_value < nb_value) {
-                a = mddnode_getright(na);
-                if (a == lddmc_false) return lddmc_false;
-                na = GETNODE(a);
-                na_value = mddnode_getvalue(na);
-            }
-            if (nb_value < na_value) {
-                b = mddnode_getright(nb);
-                if (b == lddmc_false) return lddmc_false;
-                nb = GETNODE(b);
-                nb_value = mddnode_getvalue(nb);
-            }
-        }
+    while (a_proj_val == 0 && b_proj_val == 0) {
+        a_proj = mddnode_getdown(n_a_proj);
+        b_proj = mddnode_getdown(n_b_proj);
+        n_a_proj = GETNODE(a_proj);
+        n_b_proj = GETNODE(b_proj);
+        a_proj_val = mddnode_getvalue(n_a_proj);
+        b_proj_val = mddnode_getvalue(n_b_proj);
+    }
+
+    if (a_proj_val == (uint32_t)-2) return b; // no a left
+    if (b_proj_val == (uint32_t)-2) return a; // no b left
+    if (a_proj_val == (uint32_t)-1 && b_proj_val == (uint32_t)-1) return CALL(lddmc_intersect, a, b);
+    
+    // At this point, only proj_val {-1, 0, 1}; max one with -1; max one with 0.
+    const int keep_a = a_proj_val != 0;
+    const int keep_b = b_proj_val != 0;
+
+    if (keep_a && keep_b) {
+        // If both 'keep', then match values
+        if (!match_ldds(&a, &b)) return lddmc_false;
     }
 
     /* Access cache */
     MDD result;
-    if (cache_get(MDD_SETDATA(a, CACHE_JOIN), b, proj, &result)) return result;
+    const MDD c_a = MDD_SETDATA(a, CACHE_JOIN);
+    const MDD c_b = MDD_SETDATA(b, (uint32_t)a_proj); // store lower 22 bits in c_b
+    const MDD c_c = MDD_SETDATA(b_proj, (uint32_t)(a_proj>>22)); // store higher 20 bits in c_c
+    if (cache_get(c_a, c_b, c_c, &result)) return result;
 
     /* Perform recursive calculation */
-    MDD p_down = mddnode_getdown(p_node);
-    uint32_t val = p_val == 2 ? nb_value : na_value;
+    const mddnode_t na = GETNODE(a);
+    const mddnode_t nb = GETNODE(b);
+    uint32_t val;
     MDD down;
+
     REFS_INIT;
-    if (p_val == 1) { // only a
-        /* right = */ SSPAWN(lddmc_join, mddnode_getright(na), b, proj);
-        down = CALL(lddmc_join, mddnode_getdown(na), b, p_down);
-    } else if (p_val == 2) { // only b
-        /* right = */ SSPAWN(lddmc_join, a, mddnode_getright(nb), proj);
-        down = CALL(lddmc_join, a, mddnode_getdown(nb), p_down);
-    } else /* p_val == 3 */ { // both
-        assert(p_val == 3);
-        /* right = */ SSPAWN(lddmc_join, mddnode_getright(na), mddnode_getright(nb), proj);
-        down = CALL(lddmc_join, mddnode_getdown(na), mddnode_getdown(nb), p_down);
+    if (keep_a) {
+        if (keep_b) {
+            val = mddnode_getvalue(nb);
+            SSPAWN(lddmc_join, mddnode_getright(na), mddnode_getright(nb), a_proj, b_proj);
+            if (a_proj_val != (uint32_t)-1) a_proj = mddnode_getdown(n_a_proj);
+            if (b_proj_val != (uint32_t)-1) b_proj = mddnode_getdown(n_b_proj);
+            down = CALL(lddmc_join, mddnode_getdown(na), mddnode_getdown(nb), a_proj, b_proj);
+        } else {
+            val = mddnode_getvalue(na);
+            SSPAWN(lddmc_join, mddnode_getright(na), b, a_proj, b_proj);
+            if (a_proj_val != (uint32_t)-1) a_proj = mddnode_getdown(n_a_proj);
+            if (b_proj_val != (uint32_t)-1) b_proj = mddnode_getdown(n_b_proj);
+            down = CALL(lddmc_join, mddnode_getdown(na), b, a_proj, b_proj);
+        }
+    } else {
+        val = mddnode_getvalue(nb);
+        SSPAWN(lddmc_join, a, mddnode_getright(nb), a_proj, b_proj);
+        if (a_proj_val != (uint32_t)-1) a_proj = mddnode_getdown(n_a_proj);
+        if (b_proj_val != (uint32_t)-1) b_proj = mddnode_getdown(n_b_proj);
+        down = CALL(lddmc_join, a, mddnode_getdown(nb), a_proj, b_proj);
     }
 
     REFS_PUSH(down);
@@ -1340,7 +1344,7 @@ TASK_IMPL_3(MDD, lddmc_join, MDD, a, MDD, b, MDD, proj)
     result = lddmc_makenode(val, down, right);
 
     /* Write to cache */
-    cache_put(MDD_SETDATA(a, CACHE_JOIN), b, proj, result);
+    cache_put(c_a, c_b, c_c, result);
 
     return result;
 }

@@ -481,13 +481,15 @@ lddmc_value(MDD mdd)
 MDD
 lddmc_follow(MDD mdd, uint32_t value)
 {
-    if (mdd <= lddmc_true) return mdd;
-
-    while (1) {
-        mddnode_t n = GETNODE(mdd);
-        if (!mddnode_getcopy(n) && mddnode_getvalue(n) == value) return mddnode_getdown(n);
-        mdd = mddnode_getright(n);
+    for (;;) {
         if (mdd <= lddmc_true) return mdd;
+        const mddnode_t n = GETNODE(mdd);
+        if (!mddnode_getcopy(n)) {
+            const uint32_t v = mddnode_getvalue(n);
+            if (v == value) return mddnode_getdown(n);
+            if (v > value) return lddmc_false;
+        }
+        mdd = mddnode_getright(n);
     }
 }
 

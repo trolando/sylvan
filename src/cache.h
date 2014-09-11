@@ -4,10 +4,6 @@
 
 #include <atomics.h>
 
-#if USE_NUMA
-#include <numa_tools.h>
-#endif
-
 #ifndef CACHE_INLINE_H
 #define CACHE_INLINE_H
 
@@ -110,11 +106,6 @@ cache_create(size_t _cache_size)
         fprintf(stderr, "cache: Unable to allocate memory!\n");
         exit(1);
     }
-
-#if USE_NUMA
-    numa_interleave(cache_table, cache_size * sizeof(struct cache_entry), 0);
-    numa_interleave(cache_status, cache_size * sizeof(uint32_t), 0);
-#endif
 }
 
 static inline void __attribute__((unused))

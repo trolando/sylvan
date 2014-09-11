@@ -25,10 +25,6 @@
 #include <llmsset.h>
 #include <hash16.h>
 
-#if USE_NUMA
-#include <numa_tools.h>
-#endif
-
 #if LLMSSET_LEN == 16
 #define hash_mul hash16_mul
 #define rehash_mul rehash16_mul
@@ -216,14 +212,6 @@ llmsset_create(size_t table_size)
     dbs->data = (uint8_t*)mmap(0, dbs->table_size * LLMSSET_LEN, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (dbs->data == (uint8_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
 
-#if USE_NUMA
-    size_t fragment_size=0;
-    numa_interleave(dbs->table, dbs->table_size * sizeof(uint64_t), &fragment_size);
-    dbs->f_size = (fragment_size /= sizeof(uint64_t));
-    fragment_size *= LLMSSET_LEN;
-    numa_interleave(dbs->data, dbs->table_size * LLMSSET_LEN, &fragment_size);
-#endif
-
     return dbs;
 }
 
@@ -238,36 +226,6 @@ llmsset_free(llmsset_t dbs)
 static void
 llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_workers, size_t *_first_entry, size_t *_entry_count)
 {
-#if USE_NUMA
-    size_t node, node_index, index, total;
-    // We are on node <node>, which is the <node_index>th node that we can use.
-    // Also we are the <index>th worker on that node, out of <total> workers.
-    int res = numa_worker_info(my_id, &node, &node_index, &index, &total);
-    if (res == -1) {
-        *_first_entry = dbs->table_size;
-        *_entry_count = 0;
-    }
-    // On each node, there are <cachelines_total> cachelines, <cachelines_each> per worker.
-    if (numa_available_memory_nodes() > n_workers) goto fallback;
-
-    const size_t entries_total    = dbs->f_size;
-    const size_t cachelines_total = (entries_total * sizeof(uint64_t) + LINE_SIZE - 1) / LINE_SIZE;
-    const size_t cachelines_each  = (cachelines_total + total - 1) / total;
-    const size_t entries_each     = cachelines_each * LINE_SIZE / sizeof(uint64_t);
-    const size_t first_entry      = node_index * dbs->f_size + index * entries_each;
-    const size_t cap_node         = entries_total - index * entries_each;
-    const size_t cap_total        = dbs->table_size - first_entry;
-    if (first_entry > dbs->table_size) {
-        *_first_entry = dbs->table_size;
-        *_entry_count = 0;
-    } else {
-        *_first_entry = first_entry;
-        *_entry_count = entries_each < cap_node ? entries_each < cap_total ? entries_each : cap_total :
-                                                  cap_node     < cap_total ? cap_node     : cap_total ;
-    }
-fallback:
-#endif
-    {
     const size_t entries_total    = dbs->table_size;
     const size_t cachelines_total = (entries_total * sizeof(uint64_t) + LINE_SIZE - 1) / LINE_SIZE;
     const size_t cachelines_each  = (cachelines_total + n_workers - 1) / n_workers;
@@ -280,7 +238,6 @@ fallback:
     } else {
         *_first_entry = first_entry;
         *_entry_count = entries_each < cap_total ? entries_each : cap_total;
-    }
     }
 }
 

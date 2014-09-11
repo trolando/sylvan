@@ -20,10 +20,6 @@
 
 #include <atomics.h>
 
-#if USE_NUMA
-#include <numa_tools.h>
-#endif
-
 #ifndef REFS_INLINE_H
 #define REFS_INLINE_H
 
@@ -132,10 +128,6 @@ refs_resize()
         fprintf(stderr, "refs: Unable to allocate memory!\n");
         exit(1);
     }
-
-#if USE_NUMA
-    numa_interleave(new_table, new_size * sizeof(size_t), 0);
-#endif
 
     // set new data and go
     refs_table = new_table;
@@ -310,10 +302,6 @@ refs_create(size_t _refs_size)
         fprintf(stderr, "refs: Unable to allocate memory!\n");
         exit(1);
     }
-
-#if USE_NUMA
-    numa_interleave(refs_table, refs_size * sizeof(size_t), 0);
-#endif
 }
 
 static void

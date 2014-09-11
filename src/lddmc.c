@@ -852,33 +852,15 @@ TASK_IMPL_3(MDD, lddmc_match, MDD, a, MDD, b, MDD, proj)
     uint32_t p_val = mddnode_getvalue(p_node);
     if (p_val == (uint32_t)-1) return a;
 
-    assert(a != lddmc_true && b != lddmc_true);
+    assert(a != lddmc_true);
+    if (p_val == 1) assert(b != lddmc_true);
 
     /* Test gc */
     lddmc_gc_test();
 
-    /* Get nodes */
-    mddnode_t na = GETNODE(a);
-    mddnode_t nb = GETNODE(b);
-    uint32_t na_value = mddnode_getvalue(na);
-    uint32_t nb_value = mddnode_getvalue(nb);
-
     /* Skip nodes if possible */
     if (p_val == 1) {
-        while (na_value != nb_value) {
-            if (na_value < nb_value) {
-                a = mddnode_getright(na);
-                if (a == lddmc_false) return lddmc_false;
-                na = GETNODE(a);
-                na_value = mddnode_getvalue(na);
-            }
-            if (nb_value < na_value) {
-                b = mddnode_getright(nb);
-                if (b == lddmc_false) return lddmc_false;
-                nb = GETNODE(b);
-                nb_value = mddnode_getvalue(nb);
-            }
-        }
+        if (!match_ldds(&a, &b)) return lddmc_false;
     }
 
     /* Access cache */
@@ -887,12 +869,20 @@ TASK_IMPL_3(MDD, lddmc_match, MDD, a, MDD, b, MDD, proj)
 
     /* Perform recursive calculation */
     REFS_INIT;
-    /* right = */ SSPAWN(lddmc_match, mddnode_getright(na), mddnode_getright(nb), proj);
-    MDD down = CALL(lddmc_match, mddnode_getdown(na), mddnode_getdown(nb), mddnode_getdown(p_node));
+    mddnode_t na = GETNODE(a);
+    MDD down;
+    if (p_val == 1) {
+        mddnode_t nb = GETNODE(b);
+        /* right = */ SSPAWN(lddmc_match, mddnode_getright(na), mddnode_getright(nb), proj);
+        down = CALL(lddmc_match, mddnode_getdown(na), mddnode_getdown(nb), mddnode_getdown(p_node));
+    } else {
+        /* right = */ SSPAWN(lddmc_match, mddnode_getright(na), b, proj);
+        down = CALL(lddmc_match, mddnode_getdown(na), b, mddnode_getdown(p_node));
+    }
     REFS_PUSH(down);
     MDD right = SSYNC(lddmc_match);
     REFS_RESET;
-    result = lddmc_makenode(na_value, down, right);
+    result = lddmc_makenode(mddnode_getvalue(na), down, right);
 
     /* Write to cache */
     cache_put(MDD_SETDATA(a, CACHE_MATCH), b, proj, result);

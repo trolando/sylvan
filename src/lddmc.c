@@ -596,6 +596,31 @@ lddmc_quit()
 #define CACHE_MATCH     7
 #define CACHE_RELPREV   8
 
+static inline int
+match_ldds(MDD *one, MDD *two)
+{
+    MDD m1 = *one, m2 = *two;
+    if (m1 == lddmc_false || m2 == lddmc_false) return 0;
+    mddnode_t n1 = GETNODE(m1), n2 = GETNODE(m2);
+    uint32_t v1 = mddnode_getvalue(n1), v2 = mddnode_getvalue(n2);
+    while (v1 != v2) {
+        if (v1 < v2) {
+            m1 = mddnode_getright(n1);
+            if (m1 == lddmc_false) return 0;
+            n1 = GETNODE(m1);
+            v1 = mddnode_getvalue(n1);
+        } else if (v1 > v2) {
+            m2 = mddnode_getright(n2);
+            if (m2 == lddmc_false) return 0;
+            n2 = GETNODE(m2);
+            v2 = mddnode_getvalue(n2);
+        }
+    }
+    *one = m1;
+    *two = m2;
+    return 1;
+}
+
 TASK_IMPL_2(MDD, lddmc_union, MDD, a, MDD, b)
 {
     /* Terminal cases */
@@ -873,31 +898,6 @@ TASK_IMPL_3(MDD, lddmc_match, MDD, a, MDD, b, MDD, proj)
     cache_put(MDD_SETDATA(a, CACHE_MATCH), b, proj, result);
 
     return result;
-}
-
-static inline int
-match_ldds(MDD *one, MDD *two)
-{
-    MDD m1 = *one, m2 = *two;
-    if (m1 == lddmc_false || m2 == lddmc_false) return 0;
-    mddnode_t n1 = GETNODE(m1), n2 = GETNODE(m2);
-    uint32_t v1 = mddnode_getvalue(n1), v2 = mddnode_getvalue(n2);
-    while (v1 != v2) {
-        if (v1 < v2) {
-            m1 = mddnode_getright(n1);
-            if (m1 == lddmc_false) return 0;
-            n1 = GETNODE(m1);
-            v1 = mddnode_getvalue(n1);
-        } else if (v1 > v2) {
-            m2 = mddnode_getright(n2);
-            if (m2 == lddmc_false) return 0;
-            n2 = GETNODE(m2);
-            v2 = mddnode_getvalue(n2);
-        }
-    }
-    *one = m1;
-    *two = m2;
-    return 1;
 }
 
 TASK_4(MDD, lddmc_relprod_help, uint32_t, val, MDD, set, MDD, rel, MDD, proj)

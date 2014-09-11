@@ -1056,15 +1056,6 @@ TASK_5(MDD, lddmc_relprev_help, uint32_t, val, MDD, set, MDD, rel, MDD, proj, MD
     return lddmc_makenode(val, CALL(lddmc_relprev, set, rel, proj, uni), lddmc_false);
 }
 
-static MDD
-lddmc_replace_down(MDD mdd, MDD target)
-{
-    if (mdd == lddmc_false) return mdd;
-    mddnode_t n = GETNODE(mdd);
-    MDD right = lddmc_replace_down(mddnode_getright(n), target);
-    return lddmc_makenode(mddnode_getvalue(n), target, right);
-}
-
 /**
  * Calculate all predecessors to a in uni according to rel[meta]
  * <meta> follows the same semantics as relprod
@@ -1086,13 +1077,15 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
     if (m_val != 0) assert(set != lddmc_true && rel != lddmc_true && uni != lddmc_true);
 
     /* Skip nodes if possible */
-    if (m_val == 0 || mddnode_getcopy(GETNODE(rel))) {
+    if (m_val == 0) {
         // not in rel: match set and uni ('intersect')
-        // read+copy: pre is everything in uni
-        // write+copy: match set and uni
+        if (!match_ldds(&set, &uni)) return lddmc_false;
+    } else if (mddnode_getcopy(GETNODE(rel))) {
+        // read+copy: no matching (pre is everything in uni)
+        // write+copy: no matching (match after split: set and uni)
         // only-read+copy: match set and uni
-        // only-write+copy: match set and uni
-        if (m_val != 1) {
+        // only-write+copy: no matching (match after split: set and uni)
+        if (m_val == 3) {
             if (!match_ldds(&set, &uni)) return lddmc_false;
         }
     } else if (m_val == 1) {
@@ -1130,7 +1123,7 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
             }
         }
     } else if (m_val == 4) {
-        // only-write: match set and rel
+        // only-write: match set and rel (then use whole universe)
         if (!match_ldds(&set, &rel)) return lddmc_false;
     }
 
@@ -1191,7 +1184,7 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
         result = CALL(lddmc_union, result, result2);
         REFS_RESET;
     } else if (m_val == 3) { // only-read level
-        // result value is in case of copy: match set and uni!
+        // result value is in case of copy: match set and uni! (already done first match)
         // result value is in case of not-copy: match set and uni and rel!
         SSPAWN(lddmc_relprev, set, mddnode_getright(n_rel), meta, uni); // next in rel
         if (mddnode_getcopy(n_rel)) {
@@ -1226,25 +1219,70 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
         result = CALL(lddmc_union, result, result2);
         REFS_RESET;
     } else if (m_val == 2) { // write level
-        // write+copy: match set and uni
-        // write: match set and rel
-        SSPAWN(lddmc_relprev, mddnode_getright(n_set), rel, meta, uni);
-        result = CALL(lddmc_relprev, mddnode_getdown(n_set), mddnode_getdown(n_rel), mddnode_getdown(n_meta), mddnode_getdown(n_uni));
+        // note: the read level has already matched the uni that was read.
+        // write+copy: only for the one set equal to uni...
+        // write: match set and rel (already done)
+        SSPAWN(lddmc_relprev, set, mddnode_getright(n_rel), meta, uni);
+        if (mddnode_getcopy(n_rel)) {
+            MDD down = lddmc_follow(set, mddnode_getvalue(n_uni));
+            if (down != lddmc_false) {
+                result = CALL(lddmc_relprev, down, mddnode_getdown(n_rel), mddnode_getdown(n_meta), mddnode_getdown(n_uni));
+            } else {
+                result = lddmc_false;
+            }
+        } else {
+            result = CALL(lddmc_relprev, mddnode_getdown(n_set), mddnode_getdown(n_rel), mddnode_getdown(n_meta), mddnode_getdown(n_uni));
+        }
         REFS_PUSH(result);
         MDD result2 = SSYNC(lddmc_relprev);
         REFS_PUSH(result2);
         result = CALL(lddmc_union, result, result2);
         REFS_RESET;
     } else if (m_val == 4) { // only-write level
-        // only-write+copy: match set and uni
-        // only-write: match set and rel
-        SSPAWN(lddmc_relprev, mddnode_getright(n_set), rel, meta, uni);
-        MDD down = CALL(lddmc_relprev, mddnode_getdown(n_set), mddnode_getdown(n_rel), mddnode_getdown(n_meta), mddnode_getdown(n_uni));
+        // only-write+copy: match set and uni after spawn
+        // only-write: match set and rel (already done)
+        SSPAWN(lddmc_relprev, set, mddnode_getright(n_rel), meta, uni);
         if (mddnode_getcopy(n_rel)) {
-            result = lddmc_makenode(mddnode_getvalue(n_uni), down, lddmc_false);
+            // spawn for every matching set+uni
+            int count = 0;
+            for (;;) {
+                if (!match_ldds(&set, &uni)) break;
+                n_set = GETNODE(set);
+                n_uni = GETNODE(uni);
+                SSPAWN(lddmc_relprev_help, mddnode_getvalue(n_uni), mddnode_getdown(n_set), mddnode_getdown(n_rel), mddnode_getdown(n_meta), mddnode_getdown(n_uni));
+                count++;
+                uni = mddnode_getright(n_uni);
+            }
+
+            // sync+union (one by one)
+            result = lddmc_false;
+            while (count--) {
+                REFS_PUSH(result);
+                MDD result2 = SSYNC(lddmc_relprev_help);
+                REFS_PUSH(result2);
+                result = CALL(lddmc_union, result, result2);
+                REFS_RESET;
+            }
         } else {
-            // for every value in universe!!
-            result = lddmc_replace_down(uni, down);
+            // spawn for every value in universe!!
+            int count = 0;
+            for (;;) {
+                SSPAWN(lddmc_relprev_help, mddnode_getvalue(n_uni), mddnode_getdown(n_set), mddnode_getdown(n_rel), mddnode_getdown(n_meta), mddnode_getdown(n_uni));
+                count++;
+                uni = mddnode_getright(n_uni);
+                if (uni == lddmc_false) break;
+                n_uni = GETNODE(uni);
+            }
+
+            // sync+union (one by one)
+            result = lddmc_false;
+            while (count--) {
+                REFS_PUSH(result);
+                MDD result2 = SSYNC(lddmc_relprev_help);
+                REFS_PUSH(result2);
+                result = CALL(lddmc_union, result, result2);
+                REFS_RESET;
+            }
         }
         REFS_PUSH(result);
         MDD result2 = SSYNC(lddmc_relprev);

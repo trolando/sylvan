@@ -1782,34 +1782,100 @@ sylvan_sat_one_bdd(BDD bdd)
 }
 
 BDD
-sylvan_cube(BDDVAR* vars, size_t cnt, char* cube)
+sylvan_cube(BDDSET vars, char *cube)
 {
-    assert(cube != NULL);
+    if (vars == sylvan_false) return sylvan_true;
 
-    BDDVAR *sorted_vars = (BDDVAR*)alloca(sizeof(BDDVAR)*cnt);
-    memcpy(sorted_vars, vars, sizeof(BDDVAR)*cnt);
-    gnomesort_bddvars(sorted_vars, cnt);
+    bddnode_t n = GETNODE(vars);
+    BDDVAR v = n->level;
+    vars = node_low(vars, n);
 
-    REFS_INIT;
-    BDD m = sylvan_true;
-
-    size_t i;
-    for (i=0; i<cnt; i++) {
-        BDDVAR var = sorted_vars[cnt-i-1];
-        size_t idx=0;
-        for (idx=0; vars[idx]!=var; idx++) {}
-        REFS_PUSH(m);
-        if (cube[idx] == 0) {
-            m = sylvan_makenode(var, m, sylvan_false);
-        } else if (cube[idx] == 1) {
-            m = sylvan_makenode(var, sylvan_false, m);
-        } else {
-            m = sylvan_makenode(var, m, m); // actually: this skips
-        }
+    BDD result = sylvan_cube(vars, cube+1);
+    if (*cube == 0) {
+        REFS_INIT;
+        REFS_PUSH(result);
+        result = sylvan_makenode(v, result, sylvan_false);
+        REFS_EXIT;
+    } else if (*cube == 1) {
+        REFS_INIT;
+        REFS_PUSH(result);
+        result = sylvan_makenode(v, sylvan_false, result);
         REFS_EXIT;
     }
 
-    return m;
+    return result;
+}
+
+TASK_IMPL_3(BDD, sylvan_union_cube, BDD, bdd, BDDSET, vars, char*, cube)
+{
+    /* Terminal cases */
+    if (bdd == sylvan_true) return sylvan_true;
+    if (bdd == sylvan_false) return sylvan_cube(vars, cube);
+    if (vars == sylvan_false) return sylvan_true;
+
+    bddnode_t nv = GETNODE(vars);
+
+    for (;;) {
+        if (*cube == 0 || *cube == 1) break;
+        // *cube should be 2
+        cube++;
+        vars = node_low(vars, nv);
+        if (vars == sylvan_false) return sylvan_true;
+        nv = GETNODE(vars);
+    }
+
+    sylvan_gc_test();
+
+    // missing: SV_CNT_OP
+    
+    bddnode_t n = GETNODE(bdd);
+    BDD result = bdd;
+    BDDVAR v = nv->level;
+
+    REFS_INIT;
+    if (v < n->level) {
+        vars = node_low(vars, nv);
+        if (*cube == 0) {
+            result = sylvan_union_cube(bdd, vars, cube+1);
+            REFS_PUSH(result);
+            result = sylvan_makenode(v, result, bdd);
+        } else /* *cube == 1 */ {
+            result = sylvan_union_cube(bdd, vars, cube+1);
+            REFS_PUSH(result);
+            result = sylvan_makenode(v, bdd, result);
+        }
+    } else if (v > n->level) {
+        BDD high = node_high(bdd, n);
+        BDD low = node_low(bdd, n);
+        SPAWN(sylvan_union_cube, high, vars, cube);
+        BDD new_low = sylvan_union_cube(low, vars, cube);
+        REFS_PUSH(new_low);
+        BDD new_high = SYNC(sylvan_union_cube);
+        if (new_low != low || new_high != high) {
+            REFS_PUSH(new_high);
+            result = sylvan_makenode(n->level, new_low, new_high);
+        }
+    } else /* v == n->level */ {
+        vars = node_low(vars, nv);
+        BDD high = node_high(bdd, n);
+        BDD low = node_low(bdd, n);
+        if (*cube == 0) {
+            BDD new_low = sylvan_union_cube(low, vars, cube+1);
+            if (new_low != low) {
+                REFS_PUSH(new_low);
+                result = sylvan_makenode(n->level, new_low, high);
+            }
+        } else /* *cube == 1 */ {
+            BDD new_high = sylvan_union_cube(high, vars, cube+1);
+            if (new_high != high) {
+                REFS_PUSH(new_high);
+                result = sylvan_makenode(n->level, low, new_high);
+            }
+        }
+    }
+    REFS_EXIT;
+
+    return result;
 }
 
 /**

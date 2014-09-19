@@ -287,9 +287,11 @@ TASK_DECL_2(long double, sylvan_satcount, BDD, BDDSET);
 /**
  * Create a BDD cube representing the conjunction of variables in their positive or negative
  * form depending on whether the cube[idx] equals 0 (negative), 1 (positive) or 2 (any).
- * For example, sylvan_cube({2,4,6,8},4,{0,1,2,1}) returns BDD of Boolean formula "not(x_2) & x_4 & x_8"
+ * CHANGED 2014/09/19: vars is now a BDDSET (ordered!)
  */
-BDD sylvan_cube(BDDVAR *variables, size_t count, char *cube);
+BDD sylvan_cube(BDDSET variables, char *cube);
+TASK_DECL_3(BDD, sylvan_union_cube, BDD, BDDSET, char*);
+#define sylvan_union_cube(bdd, variables, cube) CALL(sylvan_union_cube, bdd, variables, cube)
 
 /**
  * Pick one satisfying variable assignment randomly for which <bdd> is true.

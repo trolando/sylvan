@@ -165,27 +165,43 @@ void
 test_cube()
 {
     LACE_ME;
-    BDDVAR vars[] = {2,4,8,6,1,3};
+    BDDSET vars = sylvan_set_fromarray(((BDDVAR[]){1,2,3,4,6,8}), 6);
 
     char cube[6], check[6];
-    int i;
+    int i, j;
     for (i=0;i<6;i++) cube[i] = rng(0,3);
-    BDD bdd = sylvan_cube(vars, 6, cube);
+    BDD bdd = sylvan_cube(vars, cube);
 
-    sylvan_sat_one(bdd, vars, 6, check);
+    sylvan_sat_one(bdd, (BDDVAR[]){1,2,3,4,6,8}, 6, check);
     for (i=0; i<6;i++) assert(cube[i] == check[i]);
 
-    testEqual(sylvan_cube(vars, 6, check), sylvan_sat_one_bdd(bdd));
-    assert(sylvan_cube(vars, 6, check) == sylvan_sat_one_bdd(bdd));
+    testEqual(sylvan_cube(vars, check), sylvan_sat_one_bdd(bdd));
+    assert(sylvan_cube(vars, check) == sylvan_sat_one_bdd(bdd));
 
     BDD picked = sylvan_pick_cube(bdd);
     assert(testEqual(sylvan_and(picked, bdd), picked));
 
+    BDD t1 = sylvan_cube(vars, ((char[]){1,1,2,2,0,0}));
+    BDD t2 = sylvan_cube(vars, ((char[]){1,1,1,0,0,2}));
+    assert(testEqual(sylvan_union_cube(t1, vars, ((char[]){1,1,1,0,0,2})), sylvan_or(t1, t2)));
+    t2 = sylvan_cube(vars, ((char[]){2,2,2,1,1,0}));
+    assert(testEqual(sylvan_union_cube(t1, vars, ((char[]){2,2,2,1,1,0})), sylvan_or(t1, t2)));
+    t2 = sylvan_cube(vars, ((char[]){1,1,1,0,0,0}));
+    assert(testEqual(sylvan_union_cube(t1, vars, ((char[]){1,1,1,0,0,0})), sylvan_or(t1, t2)));
+
+    sylvan_gc_disable();
     bdd = make_random(1, 16);
-    for (i=0;i<36;i++) {
+    for (j=0;j<10;j++) {
+        for (i=0;i<6;i++) cube[i] = rng(0,3);
+        BDD c = sylvan_cube(vars, cube);
+        assert(sylvan_union_cube(bdd, vars, cube) == sylvan_or(bdd, c));
+    }
+
+    for (i=0;i<10;i++) {
         picked = sylvan_pick_cube(bdd);
         assert(testEqual(sylvan_and(picked, bdd), picked));
     }
+    sylvan_gc_enable();
 }
 
 static void
@@ -269,6 +285,7 @@ test_relprod()
     BDDVAR vars[] = {0,2,4};
     BDDVAR all_vars[] = {0,1,2,3,4,5};
 
+    BDDSET vars_set = sylvan_set_fromarray(vars, 3);
     BDDSET all_vars_set = sylvan_set_fromarray(all_vars, 6);
 
     BDD s, t, next, prev;
@@ -276,14 +293,14 @@ test_relprod()
 
     // transition relation: 000 --> 111 and !000 --> 000
     t = sylvan_false;
-    t = sylvan_or(t, sylvan_cube(all_vars, 6, (char[]){0,1,0,1,0,1}));
-    t = sylvan_or(t, sylvan_cube(all_vars, 6, (char[]){1,0,2,0,2,0}));
-    t = sylvan_or(t, sylvan_cube(all_vars, 6, (char[]){2,0,1,0,2,0}));
-    t = sylvan_or(t, sylvan_cube(all_vars, 6, (char[]){2,0,2,0,1,0}));
+    t = sylvan_union_cube(t, all_vars_set, ((char[]){0,1,0,1,0,1}));
+    t = sylvan_union_cube(t, all_vars_set, ((char[]){1,0,2,0,2,0}));
+    t = sylvan_union_cube(t, all_vars_set, ((char[]){2,0,1,0,2,0}));
+    t = sylvan_union_cube(t, all_vars_set, ((char[]){2,0,2,0,1,0}));
 
-    s = sylvan_cube(vars, 3, (char[]){0,0,1});
-    zeroes = sylvan_cube(vars, 3, (char[]){0,0,0});
-    ones = sylvan_cube(vars, 3, (char[]){1,1,1});
+    s = sylvan_cube(vars_set, (char[]){0,0,1});
+    zeroes = sylvan_cube(vars_set, (char[]){0,0,0});
+    ones = sylvan_cube(vars_set, (char[]){1,1,1});
 
     next = sylvan_relprod_paired(s, t, all_vars_set);
     prev = sylvan_relprod_paired_prev(next, t, all_vars_set);
@@ -295,13 +312,13 @@ test_relprod()
     assert(next == ones);
     assert(prev == zeroes);
 
-    t = sylvan_cube(all_vars, 6, (char[]){0,0,0,0,0,1});
+    t = sylvan_cube(all_vars_set, (char[]){0,0,0,0,0,1});
     assert(sylvan_relprod_paired_prev(s, t, all_vars_set) == zeroes);
     assert(sylvan_relprod_paired_prev(sylvan_not(s), t, all_vars_set) == sylvan_false);
     assert(sylvan_relprod_paired(s, t, all_vars_set) == sylvan_false);
     assert(sylvan_relprod_paired(zeroes, t, all_vars_set) == s);
 
-    t = sylvan_cube(all_vars, 6, (char[]){0,0,0,0,0,2});
+    t = sylvan_cube(all_vars_set, (char[]){0,0,0,0,0,2});
     assert(sylvan_relprod_paired_prev(s, t, all_vars_set) == zeroes);
     assert(sylvan_relprod_paired_prev(zeroes, t, all_vars_set) == zeroes);
     assert(sylvan_relprod_paired(sylvan_not(zeroes), t, all_vars_set) == sylvan_false);

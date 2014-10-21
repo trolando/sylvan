@@ -4,8 +4,9 @@ Sylvan is a parallel (multi-core) BDD library in C. Sylvan allows both sequentia
 
 Sylvan is developed (&copy; 2011-2014) by the [Formal Methods and Tools](http://fmt.ewi.utwente.nl/) group at the University of Twente as part of the MaDriD project, which is funded by NWO. Sylvan is licensed with the Apache 2.0 license.
 
-You can contact the main author of Sylvan at <t.vandijk@utwente.nl>.
+You can contact the main author of Sylvan at <t.vandijk@utwente.nl>. Please let us know if you use Sylvan in your projects.
 
+Sylvan is available at: https://github.com/utwente-fmt/sylvan  
 Java/JNI bindings: https://github.com/trolando/jsylvan  
 Haskell bindings: https://github.com/adamwalker/sylvan-haskell
 
@@ -21,7 +22,7 @@ For a quick demo, you can find an example of a simple BDD-based reachability alg
 
 To use Sylvan, include header file `sylvan.h`.
 
-Sylvan depends on the work-stealing framework Lace for its implementation. Currently, Lace is embedded in the Sylvan distribution, but this may change in the future. To use the BDD operations of Sylvan, you must first start Lace and run all workers.
+Sylvan depends on the [work-stealing framework Lace](http://fmt.ewi.utwente.nl/tools/lace) for its implementation. Currently, Lace is embedded in the Sylvan distribution, but this may change in the future. To use the BDD operations of Sylvan, you must first start Lace and run all workers.
 
 Sylvan must be initialized after `lace_init` with a call to `sylvan_init`. This function takes three parameters: the log2 size of the BDD nodes table, the log2 size of the operation cache and the caching granularity. For example, `sylvan_init(16, 15, 4)` will initialize Sylvan with a BDD nodes table of size 65536, an operation cache of size 32768 and granularity 4. See below for detailed information about caching granularity.
 
@@ -29,8 +30,14 @@ Example C code for initialization:
 ```
 #include <sylvan.h>
 
-lace_init(0, 1000000); // autodetect number of workers N; task queue size of 1,000,000 
-lace_startup(0, NULL, NULL); // use defaults, spawn N-1 workers
+// initialize with queue size of 1000000
+// autodetect number of workers
+lace_init(0, 1000000);
+// startup with defaults (create N-1 workers)
+lace_startup(0, NULL, NULL);
+// initialize with unique table size = 2^25
+//                 cache table size = 2^24
+//                 cache granularity = 4
 sylvan_init(25, 24, 4);
 ```
 

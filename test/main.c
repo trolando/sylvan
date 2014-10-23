@@ -488,11 +488,26 @@ test_lddmc()
     assert(lddmc_intersect(b,c)==lddmc_intersect(c,b));
     assert(lddmc_intersect(b,c)==c);
 
+    // Test project, project_minus
+    a = lddmc_cube((uint32_t[]){1,2,3,5,4,3}, 6);
+    a = lddmc_union_cube(a, (uint32_t[]){2,2,3,5,4,3}, 6);
+    a = lddmc_union_cube(a, (uint32_t[]){2,2,3,5,4,2}, 6);
+    a = lddmc_union_cube(a, (uint32_t[]){2,3,3,5,4,3}, 6);
+    a = lddmc_union_cube(a, (uint32_t[]){2,3,4,4,4,3}, 6);
+    // a = {<1,2,3,5,4,3>,<2,2,3,5,4,3>,<2,2,3,5,4,2>,<2,3,3,5,4,3>,<2,3,4,4,4,3>}
+    MDD proj = lddmc_cube((uint32_t[]){1,1,-2},3);
+    b = lddmc_cube((uint32_t[]){1,2}, 2);
+    b = lddmc_union_cube(b, (uint32_t[]){2,2}, 2);
+    b = lddmc_union_cube(b, (uint32_t[]){2,3}, 2);
+    assert(lddmc_project(a, proj)==b);
+    assert(lddmc_project_minus(a, proj, lddmc_false)==b);
+    assert(lddmc_project_minus(a, proj, b)==lddmc_false);
+
     // Test relprod
 
     a = lddmc_cube((uint32_t[]){1},1);
     b = lddmc_cube((uint32_t[]){1,2},2);
-    MDD proj = lddmc_cube((uint32_t[]){1,2,-1}, 3);
+    proj = lddmc_cube((uint32_t[]){1,2,-1}, 3);
     assert(lddmc_cube((uint32_t[]){2},1) == lddmc_relprod(a, b, proj));
     assert(lddmc_cube((uint32_t[]){3},1) == lddmc_relprod(a, lddmc_cube((uint32_t[]){1,3},2), proj));
     a = lddmc_union_cube(a, (uint32_t[]){2},1);

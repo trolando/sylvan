@@ -1436,6 +1436,80 @@ TASK_IMPL_2(MDD, lddmc_project, const MDD, mdd, const MDD, proj)
     return result;
 }
 
+// so: proj: -2 (end; quantify rest), -1 (end; keep rest), 0 (quantify), 1 (keep)
+TASK_IMPL_3(MDD, lddmc_project_minus, const MDD, mdd, const MDD, proj, MDD, avoid)
+{
+    // This implementation assumed "avoid" has correct depth
+    if (avoid == lddmc_true) return lddmc_false;
+    if (mdd == avoid) return lddmc_false;
+    if (mdd == lddmc_false) return lddmc_false; // projection of empty is empty
+    if (mdd == lddmc_true) return lddmc_true; // avoid != lddmc_true
+
+    mddnode_t p_node = GETNODE(proj);
+    uint32_t p_val = mddnode_getvalue(p_node);
+    if (p_val == (uint32_t)-1) return lddmc_minus(mdd, avoid);
+    if (p_val == (uint32_t)-2) return lddmc_true;
+
+    lddmc_gc_test();
+
+    MDD result;
+    if (cache_get(MDD_SETDATA(mdd, CACHE_PROJECT), proj, avoid, &result)) return result;
+
+    mddnode_t n = GETNODE(mdd);
+
+    REFS_INIT;
+    if (p_val == 1) { // keep
+        // move 'avoid' until it matches
+        uint32_t val = mddnode_getvalue(n);
+        MDD a_down = lddmc_false;
+        while (avoid != lddmc_false) {
+            mddnode_t a_node = GETNODE(avoid);
+            uint32_t a_val = mddnode_getvalue(a_node);
+            if (a_val > val) {
+                break;
+            } else if (a_val == val) {
+                a_down = mddnode_getdown(a_node);
+                break;
+            }
+            avoid = mddnode_getright(a_node);
+        }
+        SSPAWN(lddmc_project_minus, mddnode_getright(n), proj, avoid);
+        MDD down = CALL(lddmc_project_minus, mddnode_getdown(n), mddnode_getdown(p_node), a_down);
+        REFS_PUSH(down);
+        MDD right = SSYNC(lddmc_project_minus);
+        REFS_RESET;
+        result = lddmc_makenode(val, down, right);
+    } else { // quantify
+        if (mddnode_getdown(n) == lddmc_true) { // assume lowest level
+            result = lddmc_true;
+        } else {
+            int count = 0;
+            MDD p_down = mddnode_getdown(p_node), _mdd=mdd;
+            while (1) {
+                SSPAWN(lddmc_project_minus, mddnode_getdown(n), p_down, avoid);
+                count++;
+                _mdd = mddnode_getright(n);
+                assert(_mdd != lddmc_true);
+                if (_mdd == lddmc_false) break;
+                n = GETNODE(_mdd);
+            }
+            result = lddmc_false;
+            while (count) {
+                REFS_PUSH(result);
+                MDD down = SSYNC(lddmc_project_minus);
+                count--;
+                REFS_PUSH(down);
+                result = CALL(lddmc_union, result, down);
+                REFS_RESET;
+            }
+        }
+    }
+
+    cache_put(MDD_SETDATA(mdd, CACHE_PROJECT), proj, avoid, result);
+
+    return result;
+}
+
 MDD
 lddmc_union_cube(MDD a, uint32_t* values, size_t count)
 {

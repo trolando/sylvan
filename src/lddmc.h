@@ -118,8 +118,12 @@ TASK_DECL_3(MDD, lddmc_relprod, MDD, MDD, MDD);
 TASK_DECL_4(MDD, lddmc_relprev, MDD, MDD, MDD, MDD);
 #define lddmc_relprev(a, rel, proj, uni) CALL(lddmc_relprev, a, rel, proj, uni)
 
+// so: proj: -2 (end; quantify rest), -1 (end; keep rest), 0 (quantify), 1 (keep)
 TASK_DECL_2(MDD, lddmc_project, MDD, MDD);
 #define lddmc_project(mdd, proj) CALL(lddmc_project, mdd, proj)
+
+TASK_DECL_3(MDD, lddmc_project_minus, MDD, MDD, MDD);
+#define lddmc_project_minus(mdd, proj, avoid) CALL(lddmc_project_minus, mdd, proj, avoid)
 
 TASK_DECL_4(MDD, lddmc_join, MDD, MDD, MDD, MDD);
 #define lddmc_join(a, b, a_proj, b_proj) CALL(lddmc_join, a, b, a_proj, b_proj)

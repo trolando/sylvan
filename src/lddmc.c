@@ -2358,7 +2358,8 @@ lddmc_serialize_tofile(FILE *out)
         struct mddnode node;
         uint64_t right = lddmc_serialize_get(mddnode_getright(n));
         uint64_t down = lddmc_serialize_get(mddnode_getdown(n));
-        mddnode_make(&node, mddnode_getvalue(n), right, down);
+        if (mddnode_getcopy(n)) mddnode_makecopy(&node, right, down);
+        else mddnode_make(&node, mddnode_getvalue(n), right, down);
 
         assert(right <= index);
         assert(down <= index);
@@ -2387,7 +2388,8 @@ lddmc_serialize_fromfile(FILE *in)
         MDD down = lddmc_serialize_get_reversed(mddnode_getdown(&node));
 
         struct lddmc_ser s;
-        s.mdd = lddmc_makenode(mddnode_getvalue(&node), down, right);
+        if (mddnode_getcopy(&node)) s.mdd = lddmc_make_copynode(down, right);
+        else s.mdd = lddmc_makenode(mddnode_getvalue(&node), down, right);
         s.assigned = lddmc_ser_done+2; // starts at 0 but we want 2-based...
         lddmc_ser_done++;
 
@@ -2447,11 +2449,21 @@ lddmc_test_ismdd(MDD mdd)
     uint32_t value = 0;
     size_t depth = 0;
 
+    if (mdd != lddmc_false) {
+        mddnode_t n = GETNODE(mdd);
+        if (mddnode_getcopy(n)) {
+            mdd = mddnode_getright(n);
+            depth = lddmc_test_ismdd(mddnode_getdown(n));
+            assert(depth >= 1);
+        }
+    }
+
     while (mdd != lddmc_false) {
         assert(llmsset_is_marked(nodes, mdd));
 
         mddnode_t n = GETNODE(mdd);
         uint32_t next_value = mddnode_getvalue(n);
+        assert(mddnode_getcopy(n) == 0);
         if (first) {
             first = 0;
             depth = lddmc_test_ismdd(mddnode_getdown(n));

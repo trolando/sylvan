@@ -1928,6 +1928,22 @@ lddmc_sat_one_mdd(MDD mdd)
     return lddmc_makenode(mddnode_getvalue(n), down, lddmc_false);
 }
 
+TASK_IMPL_4(MDD, lddmc_compose, MDD, mdd, lddmc_compose_cb, cb, void*, context, int, depth)
+{
+    if (depth == 0) {
+        return (MDD)WRAP(cb, mdd, context);
+    } else {
+        mddnode_t n = GETNODE(mdd);
+        REFS_INIT;
+        SSPAWN(lddmc_compose, mddnode_getright(n), cb, context, depth);
+        MDD down = lddmc_compose(mddnode_getdown(n), cb, context, depth-1);
+        REFS_PUSH(down);
+        MDD right = SSYNC(lddmc_compose);
+        REFS_RESET;
+        return lddmc_makenode(mddnode_getvalue(n), down, right);
+    }
+}
+
 /**
  * GENERIC MARK/UNMARK METHODS
  */

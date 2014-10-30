@@ -186,6 +186,15 @@ size_t lddmc_nodecount(MDD mdd);
 void lddmc_nodecount_levels(MDD mdd, size_t *variables);
 
 /**
+ * Functional composition
+ * For every node at depth <depth>, call function cb (MDD -> MDD).
+ * and replace the node by the result of the function
+ */
+LACE_TYPEDEF_CB(lddmc_compose_cb, MDD, void*);
+TASK_DECL_4(MDD, lddmc_compose, MDD, lddmc_compose_cb, void*, int);
+#define lddmc_compose(mdd, cb, context, depth) CALL(lddmc_compose, mdd, cb, context, depth)
+
+/**
  * SAVING:
  * use lddmc_serialize_add on every MDD you want to store
  * use lddmc_serialize_get to retrieve the key of every stored MDD

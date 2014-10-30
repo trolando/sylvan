@@ -219,6 +219,12 @@ void lddmc_serialize_totext(FILE *out);
 void lddmc_serialize_tofile(FILE *out);
 void lddmc_serialize_fromfile(FILE *in);
 
+/**
+ * Return number of occupied buckets in nodes table and total number of buckets.
+ */
+VOID_TASK_DECL_2(lddmc_table_usage, size_t*, size_t*);
+#define lddmc_table_usage(filled, total) (CALL(lddmc_table_usage, filled, total))
+
 #endif
 
 

@@ -62,3 +62,6 @@ add_test(test ./sylvan_test)
 
 add_executable(mc test/mc.c)
 target_link_libraries(mc sylvan)
+
+add_executable(lddmc test/lddmc.c)
+target_link_libraries(lddmc sylvan)

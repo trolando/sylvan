@@ -1930,7 +1930,7 @@ lddmc_sat_one_mdd(MDD mdd)
 
 TASK_IMPL_4(MDD, lddmc_compose, MDD, mdd, lddmc_compose_cb, cb, void*, context, int, depth)
 {
-    if (depth == 0) {
+    if (depth == 0 || mdd == lddmc_false || mdd == lddmc_true) {
         return (MDD)WRAP(cb, mdd, context);
     } else {
         mddnode_t n = GETNODE(mdd);

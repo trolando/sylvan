@@ -1982,106 +1982,68 @@ lddmc_unmark_rec(mddnode_t node)
  * DOT OUTPUT
 *************/
 
-/***
- * We keep a set [level -> [node]] using AVLset
- */
-struct level_to_nodeset {
-    int level;
-    avl_node_t *set;
-};
-
-AVL(level_to_nodeset, struct level_to_nodeset)
+static void
+lddmc_fprintdot_rec(FILE* out, MDD mdd)
 {
-    return left->level - right->level;
-}
+    // assert(mdd > lddmc_true);
 
-AVL(nodeset, MDD)
-{
-    return *left - *right;
-}
+    // check mark
+    mddnode_t n = GETNODE(mdd);
+    if (mddnode_getmark(n)) return;
+    mddnode_setmark(n, 1);
 
-struct mddroot_map {
-    MDD mdd;
-    MDD root;
-};
+    // print the node
+    uint32_t val = mddnode_getvalue(n);
+    fprintf(out, "%" PRIu64 " [shape=record, label=\"", mdd);
+    if (mddnode_getcopy(n)) fprintf(out, "<c> *");
+    else fprintf(out, "<%u> %u", val, val);
+    MDD right = mddnode_getright(n);
+    while (right != lddmc_false) {
+        mddnode_t n2 = GETNODE(right);
+        uint32_t val2 = mddnode_getvalue(n2);
+        fprintf(out, "|<%u> %u", val2, val2);
+        right = mddnode_getright(n2);
+        // assert(right != lddmc_true);
+    }
+    fprintf(out, "\"];\n");
 
-AVL(mddroot_map, struct mddroot_map)
-{
-    return left->mdd - right->mdd;
-}
-
-AVL(mddroot, MDD)
-{
-    return *left - *right;
+    // recurse and print the edges
+    for (;;) {
+        MDD down = mddnode_getdown(n);
+        // assert(down != lddmc_false);
+        if (down > lddmc_true) {
+            lddmc_fprintdot_rec(out, down);
+            if (mddnode_getcopy(n)) {
+                fprintf(out, "%" PRIu64 ":c -> ", mdd);
+            } else {
+                fprintf(out, "%" PRIu64 ":%u -> ", mdd, mddnode_getvalue(n));
+            }
+            if (mddnode_getcopy(GETNODE(down))) {
+                fprintf(out, "%" PRIu64 ":c [style=solid];\n", down);
+            } else {
+                fprintf(out, "%" PRIu64 ":%u [style=solid];\n", down, mddnode_getvalue(GETNODE(down)));
+            }
+        }
+        MDD right = mddnode_getright(n);
+        if (right == lddmc_false) break;
+        n = GETNODE(right);
+    }
 }
 
 static void
-lddmc_collect_roots(avl_node_t **roots_map, avl_node_t **roots, avl_node_t **levels, MDD mdd, int level)
+lddmc_fprintdot_unmark(MDD mdd)
 {
     if (mdd <= lddmc_true) return;
-
-    // update roots_map
-    struct mddroot_map s, *ss;
-    s.mdd = mdd;
-    ss = mddroot_map_search(*roots_map, &s);
-    if (ss != NULL) return;
-
-    // add mdd as root for all nodes until existing mapping found
-    do {
-        s.root = mdd;
-        mddroot_map_put(roots_map, &s, NULL);
-
-        mddnode_t n = GETNODE(s.mdd);
-        lddmc_collect_roots(roots_map, roots, levels, mddnode_getdown(n), level+1);
-
-        s.mdd = mddnode_getright(n);
-        if (s.mdd == lddmc_false) break;
-
-        ss = mddroot_map_search(*roots_map, &s);
-    } while (ss == NULL);
-
-    // now replace roots of next part until collision
-    if (ss != NULL) {
-        MDD rep = ss->mdd;
-        if (ss->root == rep) mddroot_delete(roots, &rep);
-        while (ss->root == rep) {
-            ss->root = mdd;
-
-            mddnode_t n = GETNODE(s.mdd);
-            s.mdd = mddnode_getright(n);
-            if (s.mdd == lddmc_false) break;
-
-            ss = mddroot_map_search(*roots_map, &s);
-            if (ss->root != rep) rep = ss->mdd;
-            if (ss->root == rep) mddroot_delete(roots, &rep);
+    mddnode_t n = GETNODE(mdd);
+    if (mddnode_getmark(n)) {
+        mddnode_setmark(n, 0);
+        for (;;) {
+            lddmc_fprintdot_unmark(mddnode_getdown(n));
+            mdd = mddnode_getright(n);
+            if (mdd == lddmc_false) return;
+            n = GETNODE(mdd);
         }
     }
-
-    // add new root to roots
-    mddroot_insert(roots, &mdd);
-
-    // add new root to level set
-    {
-        struct level_to_nodeset s, *ss;
-        s.level = level;
-        ss = level_to_nodeset_search(*levels, &s);
-        if (ss == NULL) {
-            s.set = NULL;
-            ss = level_to_nodeset_put(levels, &s, NULL);
-        }
-        nodeset_insert(&ss->set, &mdd);
-    }
-}
-
-static MDD
-lddmc_dot_getroot(avl_node_t *roots, MDD mdd)
-{
-    if (mdd <= lddmc_true) return mdd;
-    struct mddroot_map s;
-    s.mdd = mdd;
-    struct mddroot_map *ss = mddroot_map_search(roots, &s);
-    assert(ss != NULL);
-    return ss->root;
 }
 
 void
@@ -2094,110 +2056,20 @@ lddmc_fprintdot(FILE *out, MDD mdd)
 
     // Special case: false
     if (mdd == lddmc_false) {
-        // fprintf(out, "root [style=invis];\n");
         fprintf(out, "0 [shape=record, label=\"False\"];\n");
-        // fprintf(out, "root -> 0 [style=solid];\n");
         fprintf(out, "}\n");
         return;
     }
 
     // Special case: true
     if (mdd == lddmc_true) {
-        // fprintf(out, "root [style=invis];\n");
         fprintf(out, "1 [shape=record, label=\"True\"];\n");
-        // fprintf(out, "root -> 1 [style=solid];\n");
         fprintf(out, "}\n");
         return;
     }
 
-    avl_node_t *roots_map = NULL;
-    avl_node_t *roots = NULL;
-    avl_node_t *levels = NULL;
-    lddmc_collect_roots(&roots_map, &roots, &levels, mdd, 0);
-
-    // fprintf(out, "root [style=invis];\n");
-    // fprintf(out, "root -> %" PRIu64 ":%" PRIu32 " [style=solid];\n", lddmc_dot_getroot(roots_map, mdd), mddnode_getvalue(GETNODE(mdd)));
-
-    // print every root
-    avl_iter_t *it = mddroot_iter(roots);
-    MDD *r;
-    while ((r = mddroot_iter_next(it)) != NULL) {
-        mddnode_t n;
-        int count;
-        MDD down, right;
-        uint32_t val;
-
-        // first print the node
-        n = GETNODE(*r);
-        val = mddnode_getvalue(n);
-        count=1;
-        if (mddnode_getcopy(n)) fprintf(out, "%" PRIu64 " [shape=record, label=\"<c> *", *r);
-        else fprintf(out, "%" PRIu64 " [shape=record, label=\"<%u> %u", *r, val, val);
-        right = mddnode_getright(n);
-        while (right != lddmc_false) {
-            if (lddmc_dot_getroot(roots_map, right) == right) break;
-            count++;
-            n = GETNODE(right);
-            val = mddnode_getvalue(n);
-            fprintf(out, "|<%u> %u", val, val);
-            right = mddnode_getright(n);
-        }
-        fprintf(out, "\"];\n");
-
-        // then print the edges
-        n = GETNODE(*r);
-        do {
-            down = mddnode_getdown(n);
-            if (down != lddmc_true) {
-                if (mddnode_getcopy(n)) {
-                    fprintf(out, "%" PRIu64 ":c -> ", *r);
-                } else {
-                    fprintf(out, "%" PRIu64 ":%u -> ", *r, mddnode_getvalue(n));
-                }
-                if (mddnode_getcopy(GETNODE(down))) {
-                   fprintf(out, "%" PRIu64 ":c [style=solid];\n", lddmc_dot_getroot(roots_map, down));
-                } else {
-                    fprintf(out, "%" PRIu64 ":%u [style=solid];\n", lddmc_dot_getroot(roots_map, down), mddnode_getvalue(GETNODE(down)));
-                }
-            }
-            right = mddnode_getright(n);
-            count--;
-            if (count == 0 && right != lddmc_false) {
-                if (mddnode_getcopy(n)) {
-                    fprintf(out, "%" PRIu64 ":c -> ", *r);
-                } else {
-                    fprintf(out, "%" PRIu64 ":%u -> ", *r, mddnode_getvalue(n));
-                }
-                if (mddnode_getcopy(GETNODE(right))) {
-                    fprintf(out, "%" PRIu64 ":c [style=dashed];\n", lddmc_dot_getroot(roots_map, right));
-                } else {
-                    fprintf(out, "%" PRIu64 ":%u [style=dashed];\n", lddmc_dot_getroot(roots_map, right), mddnode_getvalue(GETNODE(right)));
-                }
-            }
-            n = GETNODE(right);
-        } while (count);
-    }
-    mddroot_iter_free(it);
-
-    // no need to keep roots / roots_map
-    mddroot_free(&roots);
-    mddroot_map_free(&roots_map);
-
-    // add levels
-    size_t levels_count = avl_count(levels);
-    struct level_to_nodeset *arr = level_to_nodeset_toarray(levels);
-    size_t i;
-    for (i=0;i<levels_count;i++) {
-        fprintf(out, "{ rank=same; ");
-        size_t node_count = avl_count(arr[i].set);
-        size_t j;
-        MDD *arr_j = nodeset_toarray(arr[i].set);
-        for (j=0;j<node_count;j++) {
-            fprintf(out, "%" PRIu64 "; ", arr_j[j]);
-        }
-        fprintf(out, "}\n");
-    }
-    level_to_nodeset_free(&levels);
+    lddmc_fprintdot_rec(out, mdd);
+    lddmc_fprintdot_unmark(mdd);
 
     fprintf(out, "}\n");
 }

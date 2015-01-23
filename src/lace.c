@@ -37,7 +37,7 @@
 
 // public Worker data
 static Worker **workers;
-static size_t default_stacksize = 4*1024*1024; // 4 megabytes
+static size_t default_stacksize = 0; // set by lace_init
 static size_t default_dqsize = 100000;
 
 static int n_workers = 0;
@@ -82,6 +82,12 @@ size_t
 lace_workers()
 {
     return n_workers;
+}
+
+size_t
+lace_default_stacksize()
+{
+    return default_stacksize;
 }
 
 #if LACE_PIE_TIMES
@@ -211,7 +217,6 @@ barrier_destroy(barrier_t *b)
     pthread_key_delete(b->tls_key);
 }
 
-static size_t default_stacksize;
 static barrier_t bar;
 
 void
@@ -406,36 +411,41 @@ lace_spawn_worker(int worker, size_t stacksize, void* (*fun)(void*), void* arg)
     if (stacksize == 0) stacksize = default_stacksize;
 
 #if USE_NUMA
-    if (stacksize != 0) {
-        size_t pagesize = numa_pagesize();
-        stacksize = (stacksize + pagesize - 1) & ~(pagesize - 1); // ceil(stacksize, pagesize)
+    size_t pagesize = numa_pagesize();
+#else
+    size_t pagesize = sysconf(_SC_PAGESIZE);
+#endif
 
-        // Allocate memory for the program stack on the NUMA nodes
-        size_t node;
-        numa_worker_info(worker, &node, 0, 0, 0);
-        lock_acquire();
-        void *stack_location = numa_alloc_onnode(stacksize + pagesize, node);
-        if (stack_location == 0) {
-            fprintf(stderr, "Lace error: Unable to allocate memory for the pthread stack!\n");
-            exit(1);
-        }
-        if (0 != mprotect(stack_location, pagesize, PROT_NONE)) {
-            fprintf(stderr, "Lace error: Unable to protect the allocated stack memory with a guard page!\n");
-            exit(1);
-        }
-        stack_location = (uint8_t *)stack_location + pagesize; // skip protected page.
-        if (0 != pthread_attr_setstack(&worker_attr, stack_location, stacksize)) {
-            fprintf(stderr, "Lace error: Unable to set the pthread stack in Lace!\n");
-            exit(1);
-        }
-        lock_release();
+    stacksize = (stacksize + pagesize - 1) & ~(pagesize - 1); // ceil(stacksize, pagesize)
+
+#if USE_NUMA
+    // Allocate memory for the program stack on the NUMA nodes
+    size_t node;
+    lock_acquire();
+    numa_worker_info(worker, &node, 0, 0, 0);
+    void *stack_location = numa_alloc_onnode(stacksize + pagesize, node);
+    lock_release();
+    if (stack_location == 0) {
+        fprintf(stderr, "Lace error: Unable to allocate memory for the pthread stack!\n");
+        exit(1);
     }
 #else
-    if (pthread_attr_setstacksize(&worker_attr, stacksize) != 0) {
-        fprintf(stderr, "Lace warning: Cannot set stacksize for new pthreads!\n");
+    void *stack_location = mmap(NULL, stacksize + pagesize, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, 0, 0);
+    if (stack_location == MAP_FAILED) {
+        fprintf(stderr, "Lace error: Cannot allocate program stack, errno=%d!\n", errno);
+        exit(1);
     }
-    (void)worker;
 #endif
+
+    if (0 != mprotect(stack_location, pagesize, PROT_NONE)) {
+        fprintf(stderr, "Lace error: Unable to protect the allocated program stack with a guard page!\n");
+        exit(1);
+    }
+    stack_location = (uint8_t *)stack_location + pagesize; // skip protected page.
+    if (0 != pthread_attr_setstack(&worker_attr, stack_location, stacksize)) {
+        fprintf(stderr, "Lace error: Unable to set the pthread stack in Lace!\n");
+        exit(1);
+    }
 
     if (fun == 0) {
         fun = lace_default_worker;
@@ -498,7 +508,7 @@ lace_init(int n, size_t dqsize)
     // Get default stack size
     if (pthread_attr_getstacksize(&worker_attr, &default_stacksize) != 0) {
         fprintf(stderr, "Lace warning: pthread_attr_getstacksize returned error!\n");
-        default_stacksize = 0;
+        default_stacksize = 1048576; // 1 megabyte default
     }
 
 #if USE_NUMA
@@ -507,12 +517,14 @@ lace_init(int n, size_t dqsize)
         fprintf(stderr, "Lace error: NUMA not available!\n");
         exit(1);
     } else {
-        fprintf(stderr, "Initializing Lace with NUMA support.\n");
+        fprintf(stderr, "Initializing Lace with NUMA support, %d workers.\n", n_workers);
         if (numa_distribute(n_workers) != 0) {
             fprintf(stderr, "Lace error: no suitable NUMA configuration found!\n");
             exit(1);
         }
     }
+#else
+    fprintf(stderr, "Initializing Lace without NUMA support, %d workers.\n", n_workers);
 #endif
 
 #if LACE_PIE_TIMES
@@ -525,6 +537,16 @@ lace_init(int n, size_t dqsize)
 void
 lace_startup(size_t stacksize, lace_startup_cb cb, void *arg)
 {
+    if (stacksize == 0) stacksize = default_stacksize;
+
+    if (cb != 0) {
+        fprintf(stderr, "Lace startup, creating %d worker threads with program stack %zu bytes.\n", n_workers, stacksize);
+    } else if (n_workers == 1) {
+        fprintf(stderr, "Lace startup, creating 0 worker threads.\n");
+    } else {
+        fprintf(stderr, "Lace startup, creating %d worker threads with program stack %zu bytes.\n", n_workers-1, stacksize);
+    }
+
     /* Spawn workers */
     int i;
     for (i=1; i<n_workers; i++) lace_spawn_worker(i, stacksize, 0, 0);

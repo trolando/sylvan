@@ -245,6 +245,11 @@ void lace_steal_loop();
 size_t lace_workers();
 
 /**
+ * Retrieve default program stack size
+ */
+size_t lace_default_stacksize();
+
+/**
  * Retrieve current worker. (for lace_steal_random)
  */
 WorkerP *lace_get_worker();

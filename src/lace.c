@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <errno.h>
 #include <sched.h> // for sched_getaffinity
 #include <stdio.h>  // for fprintf
 #include <stdlib.h> // for memalign, malloc

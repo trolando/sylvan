@@ -300,7 +300,8 @@ void lace_set_callback(lace_nowork_cb cb);
 static inline void CHECKSTACK(WorkerP *w)
 {
     if (w->stack_trigger != 0) {
-        register const size_t rsp asm ("rsp");
+        register size_t rsp;
+        asm volatile("movq %%rsp, %0" : "+r"(rsp) : : "cc");
         if (rsp < w->stack_trigger) {
             fputs("Warning: program stack 95% used!\n", stderr);
             w->stack_trigger = 0;

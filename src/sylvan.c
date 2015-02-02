@@ -367,6 +367,15 @@ void sylvan_gc_go(int master)
         }
     }
 
+    // phase 2b: maybe resize
+    if (master) {
+        if (!llmsset_is_maxsize(nodes)) {
+            size_t filled, total;
+            sylvan_table_usage(&filled, &total);
+            if (filled > total/2) llmsset_sizeup(nodes);
+        }
+    }
+
     // phase 3: rehash
     barrier_wait(&gcbar);
 

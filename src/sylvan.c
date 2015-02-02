@@ -421,7 +421,7 @@ sylvan_gc()
 static int granularity = 1; // default
 
 void
-sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
+sylvan_init(size_t tablesize, size_t maxsize, size_t cachesize, int _granularity)
 {
     lace_set_callback(TASK(sylvan_lace_test_gc));
     workers = lace_workers();
@@ -448,7 +448,7 @@ sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
         exit(1);
     }
 
-    if (tablesize > 40) {
+    if (tablesize > 40 || maxsize > 40) {
         fprintf(stderr, "sylvan_init error: tablesize must be <= 40!\n");
         exit(1);
     }
@@ -458,7 +458,7 @@ sylvan_init(size_t tablesize, size_t cachesize, int _granularity)
         exit(1);
     }
 
-    nodes = llmsset_create(1LL<<tablesize, 1LL<<tablesize);
+    nodes = llmsset_create(1LL<<tablesize, 1LL<<maxsize);
     cache_create(1LL<<cachesize);
     refs_create(1024);
 

@@ -405,7 +405,7 @@ main(int argc, char **argv)
     // Nodes table size: 24 bytes * 2**N_nodes
     // Cache table size: 36 bytes * 2**N_cache
     // With: N_nodes=25, N_cache=24: 1.3 GB memory
-    lddmc_init(25, 24);
+    lddmc_init(25, 25, 24);
 
     // Read and report domain info (integers per vector and bits per integer)
     if (fread(&vector_size, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");

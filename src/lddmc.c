@@ -535,7 +535,7 @@ lddmc_followcopy(MDD mdd)
 }*/
 
 void
-lddmc_init(size_t tablesize, size_t cachesize)
+lddmc_init(size_t tablesize, size_t maxsize, size_t cachesize)
 {
     lace_set_callback(TASK(lddmc_lace_test_gc));
     workers = lace_workers();
@@ -558,7 +558,7 @@ lddmc_init(size_t tablesize, size_t cachesize)
         exit(1);
     }
 
-    if (tablesize > 42) {
+    if (tablesize > 42 || maxsize > 42) {
         fprintf(stderr, "lddmc_init error: tablesize must be <= 47!\n");
         exit(1);
     }
@@ -568,7 +568,7 @@ lddmc_init(size_t tablesize, size_t cachesize)
         exit(1);
     }
 
-    nodes = llmsset_create(1LL<<tablesize, 1LL<<tablesize);
+    nodes = llmsset_create(1LL<<tablesize, 1LL<<maxsize);
     cache_create(1LL<<cachesize);
     refs_create(1024);
 

@@ -75,8 +75,10 @@ typedef uint32_t BDDVAR;    // low 24 bits only
  * on 0->3, 1->4, 2->3, etc.
  * 
  * Reasonable defaults: datasize of 26 (2048 MB), cachesize of 24 (576 MB), granularity of 4-16
+ *
+ * Now automatically resizes nodes table when >50% filled during garbage collection.
  */
-void sylvan_init(size_t datasize, size_t cachesize, int granularity);
+void sylvan_init(size_t initial_tablesize, size_t max_tablesize, size_t cachesize, int granularity);
 
 /**
  * Frees all Sylvan data.

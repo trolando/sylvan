@@ -3,6 +3,10 @@
 /autom4te.cache/
 config.*
 .dirstamp
+aclocal.m4
+configure
+m4
+tools
 
 # cmake
 CMakeCache.txt

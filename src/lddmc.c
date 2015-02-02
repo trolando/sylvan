@@ -559,7 +559,7 @@ lddmc_init(size_t tablesize, size_t cachesize)
         exit(1);
     }
 
-    nodes = llmsset_create(1LL<<tablesize);
+    nodes = llmsset_create(1LL<<tablesize, 1LL<<tablesize);
     cache_create(1LL<<cachesize);
     refs_create(1024);
 

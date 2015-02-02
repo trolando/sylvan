@@ -21,6 +21,7 @@ typedef struct llmsset
 {
     uint64_t          *table;       // table with hashes
     uint8_t           *data;        // table with values
+    size_t            max_size;     // maximum size of the hash table (for resizing)
     size_t            table_size;   // size of the hash table (number of slots) --> power of 2!
     size_t            mask;         // size-1
     size_t            f_size;
@@ -51,8 +52,21 @@ llmsset_ptr_to_index(const llmsset_t dbs, void* ptr)
 /**
  * Create and free a lockless MS set
  */
-llmsset_t llmsset_create(size_t table_size);
+llmsset_t llmsset_create(size_t initial_size, size_t max_size);
 void llmsset_free(llmsset_t dbs);
+
+/**
+ * Double size of MS set. After this, all keys must be rehashed.
+ * Typically called during garbage collection, after clear and before rehash
+ * Returns 0 if maximum size reached, or 1 if size doubled.
+ */
+int llmsset_sizeup(llmsset_t dbs);
+
+static inline int
+llmsset_is_maxsize(llmsset_t dbs)
+{
+    return dbs->table_size == dbs->max_size;
+}
 
 /**
  * Core function: find existing data, or add new

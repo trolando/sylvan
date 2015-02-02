@@ -56,6 +56,14 @@ static pthread_key_t worker_key;
 static pthread_cond_t wait_until_done = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t wait_until_done_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+struct lace_worker_init
+{
+    void* stack;
+    size_t stacksize;
+};
+
+static struct lace_worker_init *workers_init;
+
 WorkerP*
 lace_get_worker()
 {
@@ -267,6 +275,11 @@ lace_init_worker(int worker, size_t dq_size)
     w->split = w->dq;
     w->allstolen = 0;
     w->worker = worker;
+    if (workers_init[worker].stack != 0) {
+        w->stack_trigger = ((size_t)workers_init[worker].stack) + workers_init[worker].stacksize/20;
+    } else {
+        w->stack_trigger = 0;
+    }
 
 #if LACE_COUNT_EVENTS
     // Reset counters
@@ -448,6 +461,9 @@ lace_spawn_worker(int worker, size_t stacksize, void* (*fun)(void*), void* arg)
         exit(1);
     }
 
+    workers_init[worker].stack = stack_location;
+    workers_init[worker].stacksize = stacksize;
+
     if (fun == 0) {
         fun = lace_default_worker;
         arg = (void*)(size_t)worker;
@@ -527,6 +543,9 @@ lace_init(int n, size_t dqsize)
 #else
     fprintf(stderr, "Initializing Lace without NUMA support, %d workers.\n", n_workers);
 #endif
+
+    // Prepare lace_init structure
+    workers_init = (struct lace_worker_init*)calloc(1, sizeof(struct lace_worker_init) * n_workers);
 
 #if LACE_PIE_TIMES
     // Initialize counters for pie times

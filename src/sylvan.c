@@ -461,7 +461,7 @@ sylvan_init(size_t tablesize, size_t maxsize, size_t cachesize, int _granularity
     }
 
     nodes = llmsset_create(1LL<<tablesize, 1LL<<maxsize);
-    cache_create(1LL<<cachesize);
+    cache_create(1LL<<cachesize, 1LL<<cachesize);
     refs_create(1024);
 
     // Another sanity check

@@ -23,6 +23,7 @@ typedef struct __attribute__((packed)) cache_entry {
 } * cache_entry_t;
 
 static size_t             cache_size;         // power of 2
+static size_t             cache_max;          // power of 2
 static size_t             cache_mask;         // cache_size-1
 static cache_entry_t      cache_table;
 static uint32_t*          cache_status;
@@ -89,19 +90,20 @@ cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
 }
 
 static void
-cache_create(size_t _cache_size)
+cache_create(size_t _cache_size, size_t _max_size)
 {
     // Cache size must be a power of 2
-    if (__builtin_popcountll(_cache_size) != 1) {
+    if (__builtin_popcountll(_cache_size) != 1 || __builtin_popcountll(_max_size) != 1) {
         fprintf(stderr, "cache: Table size must be a power of 2!\n");
         exit(1);
     }
 
     cache_size = _cache_size;
+    cache_max  = _max_size;
     cache_mask = cache_size - 1;
 
-    cache_table = (cache_entry_t)mmap(0, cache_size * sizeof(struct cache_entry), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
-    cache_status = (uint32_t*)mmap(0, cache_size * sizeof(uint32_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    cache_table = (cache_entry_t)mmap(0, cache_max * sizeof(struct cache_entry), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    cache_status = (uint32_t*)mmap(0, cache_max * sizeof(uint32_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (cache_table == (cache_entry_t)-1 || cache_status == (uint32_t*)-1) {
         fprintf(stderr, "cache: Unable to allocate memory!\n");
         exit(1);
@@ -111,8 +113,8 @@ cache_create(size_t _cache_size)
 static inline void __attribute__((unused))
 cache_free()
 {
-    munmap(cache_table, cache_size * sizeof(struct cache_entry));
-    munmap(cache_status, cache_size * sizeof(uint32_t));
+    munmap(cache_table, cache_max * sizeof(struct cache_entry));
+    munmap(cache_status, cache_max * sizeof(uint32_t));
 }
 
 static void __attribute__((unused))
@@ -120,7 +122,7 @@ cache_clear()
 {
     // a bit silly, but this works just fine, and does not require writing 0 everywhere...
     cache_free();
-    cache_create(cache_size);
+    cache_create(cache_size, cache_max);
 }
 
 #endif

@@ -267,11 +267,11 @@ ref_resize_spawns()
 #define SSYNC(...) SYNC(__VA_ARGS__); REFS_DESPAWN
 
 /**
- * Garbage collection
+ * Implementation of garbage collection
  */
 
 static int gc_enabled = 1;
-static volatile int gc = 0; // which gc phase
+static volatile int gc = 0; // gc in progress
 static barrier_t gcbar; // barrier
 
 void
@@ -327,6 +327,7 @@ lddmc_gc_go(int master)
 
     // phase 1: clear cache and hash array
     barrier_wait(&gcbar);
+
     if (master) cache_clear();
 
     LACE_ME;
@@ -340,26 +341,29 @@ lddmc_gc_go(int master)
 
     LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);
     if (ref_key) {
-        size_t i = ref_key->r_count;
-        for (i=0;i<ref_key->r_count;i++) lddmc_gc_mark_rec(ref_key->results[i]);
-        for (i=0;i<ref_key->s_count;i++) {
+        size_t i;
+        for (i=0; i<ref_key->r_count; i++) lddmc_gc_mark_rec(ref_key->results[i]);
+        for (i=0; i<ref_key->s_count; i++) {
             Task *t = ref_key->spawns[i];
             if (!TASK_IS_STOLEN(t)) break;
             if (TASK_IS_COMPLETED(t)) lddmc_gc_mark_rec(*(MDD*)TASK_RESULT(t));
         }
     }
 
-    // phase 3: rehash
-    barrier_wait(&gcbar);
-
-    // phase 3a: maybe resize
-    if (master) {
-        if (!llmsset_is_maxsize(nodes)) {
+    // phase 3: maybe resize
+    if (!llmsset_is_maxsize(nodes)) {
+        barrier_wait(&gcbar);
+        if (master) {
             size_t filled, total;
             lddmc_table_usage(&filled, &total);
-            if (filled > total/2) llmsset_sizeup(nodes);
+            if (filled > total/2) {
+                llmsset_sizeup(nodes);
+            }
         }
     }
+
+    // phase 4: rehash
+    barrier_wait(&gcbar);
 
     LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
     if (insert_index == NULL) insert_index = initialize_insert_index();
@@ -367,7 +371,7 @@ lddmc_gc_go(int master)
 
     llmsset_rehash_multi(nodes, my_id, workers);
 
-    // phase 4: done
+    // phase 5: done
     compiler_barrier();
     if (master) gc = 0;
     barrier_wait(&gcbar);

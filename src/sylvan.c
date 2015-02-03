@@ -286,6 +286,22 @@ ref_resize_spawns()
  * Implementation of garbage collection
  */
 
+static int gc_enabled = 1;
+static barrier_t gcbar; // gc in progress
+static volatile int gc; // barrier
+
+void
+sylvan_gc_enable()
+{
+    gc_enabled = 1;
+}
+
+void
+sylvan_gc_disable()
+{
+    gc_enabled = 0;
+}
+
 /* Recursively mark BDD nodes as 'in use' */
 static void
 sylvan_gc_mark_rec(BDD bdd)
@@ -301,7 +317,7 @@ sylvan_gc_mark_rec(BDD bdd)
 
 /* Mark external references */
 static void
-sylvan_gc_mark_refs(int my_id, int workers)
+sylvan_gc_mark_external_refs(int my_id, int workers)
 {
     // part of the refs hash table per worker
     size_t per_worker = (refs_size + workers - 1)/ workers;
@@ -320,23 +336,6 @@ sylvan_gc_mark_refs(int my_id, int workers)
     while (it != NULL) sylvan_gc_mark_rec(refs_next(&it, end));
 }
 
-static int gc_enabled = 1;
-
-void
-sylvan_gc_enable()
-{
-    gc_enabled = 1;
-}
-
-void
-sylvan_gc_disable()
-{
-    gc_enabled = 0;
-}
-
-static barrier_t gcbar;
-static volatile int gc;
-
 static
 void sylvan_gc_go(int master)
 {
@@ -354,12 +353,12 @@ void sylvan_gc_go(int master)
     // phase 2: mark nodes to keep
     barrier_wait(&gcbar);
 
-    sylvan_gc_mark_refs(my_id, workers);
+    sylvan_gc_mark_external_refs(my_id, workers);
 
     LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);
     if (ref_key) {
-        size_t i = ref_key->r_count;
-        while (i--) sylvan_gc_mark_rec(ref_key->results[i]);
+        size_t i;
+        for (i=0; i<ref_key->r_count; i++) sylvan_gc_mark_rec(ref_key->results[i]);
         for (i=0; i<ref_key->s_count; i++) {
             Task *t = ref_key->spawns[i];
             if (!TASK_IS_STOLEN(t)) break;
@@ -367,17 +366,20 @@ void sylvan_gc_go(int master)
         }
     }
 
-    // phase 3: rehash
-    barrier_wait(&gcbar);
-
-    // phase 3a: maybe resize
-    if (master) {
-        if (!llmsset_is_maxsize(nodes)) {
+    // phase 3: maybe resize
+    if (!llmsset_is_maxsize(nodes)) {
+        barrier_wait(&gcbar);
+        if (master) {
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
-            if (filled > total/2) llmsset_sizeup(nodes);
+            if (filled > total/2) {
+                llmsset_sizeup(nodes);
+            }
         }
     }
+
+    // phase 4: rehash
+    barrier_wait(&gcbar);
 
     LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
     if (insert_index == NULL) insert_index = initialize_insert_index();
@@ -385,7 +387,7 @@ void sylvan_gc_go(int master)
 
     llmsset_rehash_multi(nodes, my_id, workers);
 
-    // phase 4: done
+    // phase 5: done
     compiler_barrier();
     if (master) gc = 0;
     barrier_wait(&gcbar);

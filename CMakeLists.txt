@@ -71,6 +71,10 @@ add_test(test ./sylvan_test)
 
 add_executable(mc test/mc.c)
 target_link_libraries(mc sylvan)
+if(HAVE_PROFILER)
+  set_target_properties(mc PROPERTIES COMPILE_DEFINITIONS "HAVE_PROFILER")
+  target_link_libraries(mc profiler)
+endif()
 
 add_executable(lddmc test/lddmc.c)
 target_link_libraries(lddmc sylvan ${ARGP_LIBS})

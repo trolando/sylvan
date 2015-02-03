@@ -17,13 +17,19 @@
 #ifndef LLMSSET_H
 #define LLMSSET_H
 
+#ifndef LLMSSET_MASK
+#define LLMSSET_MASK 0
+#endif
+
 typedef struct llmsset
 {
     uint64_t          *table;       // table with hashes
     uint8_t           *data;        // table with values
     size_t            max_size;     // maximum size of the hash table (for resizing)
     size_t            table_size;   // size of the hash table (number of slots) --> power of 2!
+#if LLMSSET_MASK
     size_t            mask;         // size-1
+#endif
     size_t            f_size;
     int16_t           threshold;    // number of iterations for insertion until returning error
 } *llmsset_t;

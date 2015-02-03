@@ -67,7 +67,11 @@ llmsset_lookup(const llmsset_t dbs, const void* data, uint64_t* insert_index, in
     int i=0;
 
     for (;i<dbs->threshold;i++) {
+#if LLMSSET_MASK
         uint64_t idx = hash_rehash & dbs->mask;
+#else
+        uint64_t idx = hash_rehash % dbs->table_size;
+#endif
         const uint64_t last = idx; // if next() sees idx again, stop.
 
         do {
@@ -100,7 +104,11 @@ phase2:
     int count=0;
     for (;;) {
         if (count >= 2048) return 0; /* come on, just gc */
+#if LLMSSET_MASK
         d_idx &= dbs->mask; // sanitize...
+#else
+        d_idx %= dbs->table_size; // sanitize...
+#endif
         while (d_idx <= 1) d_idx++; // do not use bucket 0,1 for data
         volatile uint64_t *ptr = dbs->table + d_idx;
         uint64_t h = *ptr;
@@ -127,7 +135,11 @@ phase2:
 
     // continue where we were...
     for (;i<dbs->threshold;i++) {
+#if LLMSSET_MASK
         uint64_t idx = hash_rehash & dbs->mask;
+#else
+        uint64_t idx = hash_rehash % dbs->table_size;
+#endif
         const uint64_t last = idx; // if next() sees idx again, stop.
 
         do {
@@ -174,7 +186,11 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 
     int i;
     for (i=0;i<dbs->threshold;i++) {
+#if LLMSSET_MASK
         uint64_t idx = hash_rehash & dbs->mask;
+#else
+        uint64_t idx = hash_rehash % dbs->table_size;
+#endif
         const uint64_t last = idx; // if next() sees idx again, stop.
 
         // no need for atomic restarts
@@ -201,6 +217,7 @@ llmsset_create(size_t initial_size, size_t max_size)
         exit(1);
     }
 
+#if LLMSSET_MASK
     /* Check if initial_size and max_size are powers of 2 */
     if (__builtin_popcountll(initial_size) != 1) {
         fprintf(stderr, "llmsset_create: initial_size is not a power of 2!\n");
@@ -211,6 +228,7 @@ llmsset_create(size_t initial_size, size_t max_size)
         fprintf(stderr, "llmsset_create: max_size is not a power of 2!\n");
         exit(1);
     }
+#endif
 
     if (initial_size > max_size) {
         fprintf(stderr, "llmsset_create: initial_size > max_size!\n");
@@ -223,7 +241,9 @@ llmsset_create(size_t initial_size, size_t max_size)
 
     dbs->table_size = initial_size;
     dbs->max_size = max_size;
+#if LLMSSET_MASK
     dbs->mask = dbs->table_size - 1;
+#endif
 
     dbs->threshold = (64 - __builtin_clzl(dbs->table_size)) + 4; // doubling table_size increases threshold by 1
 
@@ -244,7 +264,9 @@ llmsset_sizeup(llmsset_t dbs)
     /* After this, all keys must be rehashed by caller! */
     if (dbs->table_size >= dbs->max_size) return 0;
     dbs->table_size *= 2;
+#if LLMSSET_MASK
     dbs->mask = dbs->table_size - 1;
+#endif
     dbs->threshold++;
     return 1;
 }

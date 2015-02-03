@@ -367,7 +367,10 @@ void sylvan_gc_go(int master)
         }
     }
 
-    // phase 2b: maybe resize
+    // phase 3: rehash
+    barrier_wait(&gcbar);
+
+    // phase 3a: maybe resize
     if (master) {
         if (!llmsset_is_maxsize(nodes)) {
             size_t filled, total;
@@ -375,9 +378,6 @@ void sylvan_gc_go(int master)
             if (filled > total/2) llmsset_sizeup(nodes);
         }
     }
-
-    // phase 3: rehash
-    barrier_wait(&gcbar);
 
     LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
     if (insert_index == NULL) insert_index = initialize_insert_index();

@@ -468,9 +468,6 @@ main(int argc, char **argv)
         }
     }
 
-    // Run garbage collection
-    lddmc_gc();
-
     LACE_ME;
 
 #ifdef HAVE_PROFILER

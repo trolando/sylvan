@@ -367,9 +367,6 @@ main(int argc, char **argv)
         printf("Transition %d: %zu BDD nodes\n", i, sylvan_nodecount(next[i]->bdd));
     }
 
-    // Run garbage collection
-    sylvan_gc();
-
     LACE_ME;
 
     if (run_par) {

@@ -10,6 +10,7 @@
 #include <gperftools/profiler.h>
 #endif
 
+#include <getrss.h>
 #include <lddmc.h>
 #include <llmsset.h>
 
@@ -195,6 +196,16 @@ print_matrix(size_t size, MDD meta)
     }
 }
 
+static char*
+to_h(double size, char *buf)
+{
+    const char* units[] = {"B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"};
+    int i = 0;
+    for (;size>1024;size/=1024) i++;
+    sprintf(buf, "%.*f %s", i, size, units[i]);
+    return buf;
+}
+
 static int
 get_first(MDD meta)
 {
@@ -253,10 +264,14 @@ VOID_TASK_1(par, set_t, set)
     MDD new = lddmc_ref(visited);
     size_t counter = 1;
     do {
+        char buf[32];
+        to_h(getCurrentRSS(), buf);
+        printf("Memory usage: %s\n", buf);
         printf("Level %zu... ", counter++);
         if (report_levels) {
             printf("%zu states... ", (size_t)lddmc_satcount_cached(visited));
         }
+        fflush(stdout);
 
         // calculate successors in parallel
         MDD cur = new;
@@ -340,10 +355,14 @@ VOID_TASK_1(bfs, set_t, set)
     MDD new = lddmc_ref(visited);
     size_t counter = 1;
     do {
+        char buf[32];
+        to_h(getCurrentRSS(), buf);
+        printf("Memory usage: %s\n", buf);
         printf("Level %zu... ", counter++);
         if (report_levels) {
             printf("%zu states... ", (size_t)lddmc_satcount_cached(visited));
         }
+        fflush(stdout);
 
         MDD cur = new;
         MDD deadlocks = cur;

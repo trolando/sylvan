@@ -7,6 +7,10 @@
 #ifndef CACHE_INLINE_H
 #define CACHE_INLINE_H
 
+#ifndef CACHE_MASK
+#define CACHE_MASK 0
+#endif
+
 /**
  * This cache is designed to store a,b,c->res, with a,b,c,res 64-bit integers.
  *
@@ -24,7 +28,9 @@ typedef struct __attribute__((packed)) cache_entry {
 
 static size_t             cache_size;         // power of 2
 static size_t             cache_max;          // power of 2
+#if CACHE_MASK
 static size_t             cache_mask;         // cache_size-1
+#endif
 static cache_entry_t      cache_table;
 static uint32_t*          cache_status;
 
@@ -48,14 +54,22 @@ static int
 cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
 {
     const uint64_t hash = cache_hash(a, b, c);
+#if CACHE_MASK
     volatile uint32_t *s_bucket = cache_status + (hash & cache_mask);
+#else
+    volatile uint32_t *s_bucket = cache_status + (hash % cache_size);
+#endif
     const uint32_t s = *s_bucket;
     // abort if locked
     if (s & 0x80000000) return 0;
     // abort if different hash
     if ((s ^ (hash>>32)) & 0x7fff0000) return 0;
     // abort if key different
+#if CACHE_MASK
     cache_entry_t bucket = cache_table + (hash & cache_mask);
+#else
+    cache_entry_t bucket = cache_table + (hash % cache_size);
+#endif
     if (bucket->a != a || bucket->b != b || bucket->c != c) return 0;
     *res = bucket->res;
     compiler_barrier();
@@ -67,7 +81,11 @@ static int
 cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
 {
     const uint64_t hash = cache_hash(a, b, c);
+#if CACHE_MASK
     volatile uint32_t *s_bucket = cache_status + (hash & cache_mask);
+#else
+    volatile uint32_t *s_bucket = cache_status + (hash % cache_size);
+#endif
     const uint32_t s = *s_bucket;
     // abort if locked
     if (s & 0x80000000) return 0;
@@ -78,7 +96,11 @@ cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
     const uint32_t new_s = ((s+1) & 0x0000ffff) | hash_mask;
     if (!cas(s_bucket, s, new_s | 0x80000000)) return 0;
     // cas succesful: write data
+#if CACHE_MASK
     cache_entry_t bucket = cache_table + (hash & cache_mask);
+#else
+    cache_entry_t bucket = cache_table + (hash % cache_size);
+#endif
     bucket->a = a;
     bucket->b = b;
     bucket->c = c;
@@ -100,7 +122,9 @@ cache_create(size_t _cache_size, size_t _max_size)
 
     cache_size = _cache_size;
     cache_max  = _max_size;
+#if CACHE_MASK
     cache_mask = cache_size - 1;
+#endif
 
     cache_table = (cache_entry_t)mmap(0, cache_max * sizeof(struct cache_entry), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     cache_status = (uint32_t*)mmap(0, cache_max * sizeof(uint32_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);

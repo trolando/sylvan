@@ -18,7 +18,7 @@
 #define LLMSSET_H
 
 #ifndef LLMSSET_MASK
-#define LLMSSET_MASK 0
+#define LLMSSET_MASK 0 // set to 1 to use bit mask instead of modulo
 #endif
 
 typedef struct llmsset

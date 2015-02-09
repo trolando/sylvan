@@ -62,11 +62,51 @@ llmsset_t llmsset_create(size_t initial_size, size_t max_size);
 void llmsset_free(llmsset_t dbs);
 
 /**
+ * Retrieve maximum size of lockless MS set.
+ */
+static inline size_t
+llmsset_get_max_table_size(llmsset_t dbs)
+{
+    return dbs->max_size;
+}
+
+/**
+ * Retrieve current size of lockless MS set.
+ */
+static inline size_t
+llmsset_get_current_table_size(llmsset_t dbs)
+{
+    return dbs->table_size;
+}
+
+/**
+ * Set size of set.
+ * Typically called during garbage collection, after clear and before rehash.
+ * Returns 0 if dbs->table_size > dbs->max_size!
+ */
+static inline int
+llmsset_set_current_table_size(llmsset_t dbs, size_t size)
+{
+    if (size > dbs->max_size) return 0;
+    dbs->table_size = size;
+#if LLMSSET_MASK
+    /* Warning: if size is not a power of two, this will certainly cause issues */
+    dbs->mask = dbs->table_size - 1;
+#endif
+    dbs->threshold = (64 - __builtin_clzl(dbs->table_size)) + 4; // doubling table_size increases threshold by 1
+    return 1;
+}
+
+/**
  * Double size of MS set. After this, all keys must be rehashed.
  * Typically called during garbage collection, after clear and before rehash
  * Returns 0 if maximum size reached, or 1 if size doubled.
  */
-int llmsset_sizeup(llmsset_t dbs);
+static inline int
+llmsset_sizeup(llmsset_t dbs)
+{
+    return llmsset_set_current_table_size(dbs, dbs->table_size*2);
+}
 
 static inline int
 llmsset_is_maxsize(llmsset_t dbs)
@@ -76,6 +116,7 @@ llmsset_is_maxsize(llmsset_t dbs)
 
 /**
  * Core function: find existing data, or add new
+ * Returns NULL when not found and no available bucket in the hash table.
  */
 void *llmsset_lookup(const llmsset_t dbs, const void *data, uint64_t *insert_index, int *created, uint64_t *index);
 

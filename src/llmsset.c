@@ -240,13 +240,8 @@ llmsset_create(size_t initial_size, size_t max_size)
         exit(1);
     }
 
-    dbs->table_size = initial_size;
     dbs->max_size = max_size;
-#if LLMSSET_MASK
-    dbs->mask = dbs->table_size - 1;
-#endif
-
-    dbs->threshold = (64 - __builtin_clzl(dbs->table_size)) + 4; // doubling table_size increases threshold by 1
+    llmsset_set_current_table_size(dbs, initial_size);
 
     /* This implementation of "resizable hash table" allocates the max_size table in virtual memory,
        but only uses the "actual size" part in real memory */
@@ -257,19 +252,6 @@ llmsset_create(size_t initial_size, size_t max_size)
     if (dbs->data == (uint8_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
 
     return dbs;
-}
-
-int
-llmsset_sizeup(llmsset_t dbs)
-{
-    /* After this, all keys must be rehashed by caller! */
-    if (dbs->table_size >= dbs->max_size) return 0;
-    dbs->table_size *= 2;
-#if LLMSSET_MASK
-    dbs->mask = dbs->table_size - 1;
-#endif
-    dbs->threshold++;
-    return 1;
 }
 
 void

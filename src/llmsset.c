@@ -232,6 +232,7 @@ llmsset_create(size_t initial_size, size_t max_size)
 
     if (initial_size > max_size) {
         fprintf(stderr, "llmsset_create: initial_size > max_size!\n");
+        exit(1);
     }
 
     if (initial_size < HASH_PER_CL) {

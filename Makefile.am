@@ -15,7 +15,6 @@ libsylvan_la_SOURCES = \
  src/sha2.c \
  src/sha2.h \
  src/lddmc.c \
- src/lddmc.h \
  src/sylvan.c \
  src/sylvan.h \
  src/llmsset.c \

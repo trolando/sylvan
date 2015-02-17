@@ -29,9 +29,9 @@
 #include <cache.h>
 #include <lace.h>
 #include <llmsset.h>
-#include <lddmc.h>
 #include <refs.h>
 #include <sha2.h>
+#include <sylvan.h>
 #include <tls.h>
 
 #if USE_NUMA

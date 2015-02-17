@@ -13,7 +13,6 @@
 
 #include "llmsset.h"
 #include "sylvan.h"
-#include "lddmc.h"
 
 #if USE_NUMA
 #include "numa_tools.h"

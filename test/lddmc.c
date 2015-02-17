@@ -11,7 +11,7 @@
 #endif
 
 #include <getrss.h>
-#include <lddmc.h>
+#include <sylvan.h>
 #include <llmsset.h>
 
 /* Configuration */

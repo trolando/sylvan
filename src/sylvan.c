@@ -32,6 +32,7 @@
 #include <refs.h>
 #include <sha2.h>
 #include <sylvan.h>
+#include <sylvan_common.h>
 #include <tls.h>
 
 #if USE_NUMA
@@ -64,43 +65,6 @@ typedef struct __attribute__((packed)) bddnode {
 } *bddnode_t; // 16 bytes
 
 #define GETNODE(bdd) ((bddnode_t)llmsset_index_to_ptr(nodes, BDD_STRIPMARK(bdd)))
-
-/**
- * Static global variables
- */
-
-static int workers;
-
-static llmsset_t nodes;
-
-llmsset_t
-__sylvan_get_internal_data()
-{
-    return nodes;
-}
-
-TASK_2(size_t, sylvan_table_usage_par, size_t, start, size_t, end)
-{
-    if (end - start <= 128) {
-        return llmsset_get_filled_partial(nodes, start, end);
-    } else {
-        size_t part = (end-start)/2;
-        if (part < 128) part = 128;
-        SPAWN(sylvan_table_usage_par, start, start+part);
-        size_t end2 = start+2*part;
-        if (end2 > end) end2 = end;
-        size_t res = CALL(sylvan_table_usage_par, start+part, end2);;
-        res += SYNC(sylvan_table_usage_par);
-        return res;
-    }
-}
-
-VOID_TASK_IMPL_2(sylvan_table_usage, size_t*, filled, size_t*, total)
-{
-    size_t tot = llmsset_get_size(nodes);
-    if (filled != NULL) *filled = CALL(sylvan_table_usage_par, 0, tot);
-    if (total != NULL) *total = tot;
-}
 
 /**
  * Macros for statistics
@@ -151,23 +115,6 @@ struct {
 #else
 #define SV_CNT_OP(s) /* Empty */
 #endif
-
-/**
- * Thread-local insert index for LLMSset
- */
-static DECLARE_THREAD_LOCAL(insert_index, uint64_t*);
-
-static uint64_t*
-initialize_insert_index()
-{
-    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
-    insert_index = (uint64_t*)malloc(LINE_SIZE);
-    LACE_ME;
-    size_t my_id = LACE_WORKER_ID;
-    *insert_index = llmsset_get_insertindex_multi(nodes, my_id, workers);
-    SET_THREAD_LOCAL(insert_index, insert_index);
-    return insert_index;
-}
 
 /**
  * External references

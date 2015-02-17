@@ -296,7 +296,7 @@ VOID_TASK_1(par, set_t, set)
 
         if (report_table) {
             size_t filled, total;
-            lddmc_table_usage(&filled, &total);
+            sylvan_table_usage(&filled, &total);
             printf("done, table: %0.1f%% full (%zu nodes).\n", 100.0*(double)filled/total, filled);
         } else {
             printf("done.\n");
@@ -386,7 +386,7 @@ VOID_TASK_1(bfs, set_t, set)
 
         if (report_table) {
             size_t filled, total;
-            lddmc_table_usage(&filled, &total);
+            sylvan_table_usage(&filled, &total);
             printf("done, table: %0.1f%% full (%zu nodes).\n", 100.0*(double)filled/total, filled);
         } else {
             printf("done.\n");

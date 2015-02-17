@@ -14,6 +14,11 @@
  * limitations under the License.
  */
 
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
 #ifndef LLMSSET_H
 #define LLMSSET_H
 

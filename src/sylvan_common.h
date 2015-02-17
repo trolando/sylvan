@@ -14,7 +14,24 @@
  * limitations under the License.
  */
 
+#include <assert.h>
+#include <llmsset.h>
+#include <sylvan.h>
+#include <tls.h>
+
 #ifndef SYLVAN_COMMON_H
 #define SYLVAN_COMMON_H
 
+/**
+ * Thread-local insert index for LLMSset
+ */
+extern DECLARE_THREAD_LOCAL(insert_index, uint64_t*);
+uint64_t* initialize_insert_index();
+
+/**
+ * Global variables (number of workers, nodes table)
+ */
+
+extern int workers;
+extern llmsset_t nodes;
 #endif

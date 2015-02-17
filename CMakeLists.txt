@@ -57,8 +57,6 @@ set(sylvan_sources
 )
 
 set(test_sources
-  src/llmsset.c
-  src/llmsset.h
   test/main.c
 )
 

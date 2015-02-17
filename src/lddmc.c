@@ -1957,6 +1957,37 @@ TASK_IMPL_4(MDD, lddmc_compose, MDD, mdd, lddmc_compose_cb, cb, void*, context, 
     }
 }
 
+VOID_TASK_IMPL_4(lddmc_visit_seq, MDD, mdd, lddmc_visit_callbacks_t*, cbs, size_t, ctx_size, void*, context)
+{
+    if (WRAP(cbs->lddmc_visit_pre, mdd, context) == NULL) return;
+
+    void* context_down = alloca(ctx_size);
+    void* context_right = alloca(ctx_size);
+    WRAP(cbs->lddmc_visit_init_context, context_down, context, 1);
+    WRAP(cbs->lddmc_visit_init_context, context_right, context, 0);
+
+    CALL(lddmc_visit_seq, mddnode_getdown(GETNODE(mdd)), cbs, ctx_size, context_down);
+    CALL(lddmc_visit_seq, mddnode_getright(GETNODE(mdd)), cbs, ctx_size, context_right);
+
+    WRAP(cbs->lddmc_visit_post, mdd, context);
+}
+
+VOID_TASK_IMPL_4(lddmc_visit_par, MDD, mdd, lddmc_visit_callbacks_t*, cbs, size_t, ctx_size, void*, context)
+{
+    if (WRAP(cbs->lddmc_visit_pre, mdd, context) == NULL) return;
+
+    void* context_down = alloca(ctx_size);
+    void* context_right = alloca(ctx_size);
+    WRAP(cbs->lddmc_visit_init_context, context_down, context, 1);
+    WRAP(cbs->lddmc_visit_init_context, context_right, context, 0);
+
+    SPAWN(lddmc_visit_par, mddnode_getdown(GETNODE(mdd)), cbs, ctx_size, context_down);
+    CALL(lddmc_visit_par, mddnode_getright(GETNODE(mdd)), cbs, ctx_size, context_right);
+    SYNC(lddmc_visit_par);
+
+    WRAP(cbs->lddmc_visit_post, mdd, context);
+}
+
 /**
  * GENERIC MARK/UNMARK METHODS
  */

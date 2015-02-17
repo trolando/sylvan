@@ -184,6 +184,27 @@ int lddmc_sat_one(MDD mdd, uint32_t *values, size_t count);
 MDD lddmc_sat_one_mdd(MDD mdd);
 #define lddmc_pick_cube lddmc_sat_one_mdd
 
+/**
+ * Callback functions for visiting nodes.
+ * lddmc_visit_seq sequentially visits nodes, down first, then right.
+ * lddmc_visit_par visits nodes in parallel (down || right)
+ */
+LACE_TYPEDEF_CB(lddmc_visit_pre_cb, MDD, void*); // int pre(MDD, context)
+LACE_TYPEDEF_CB(lddmc_visit_post_cb, MDD, void*); // void post(MDD, context)
+LACE_TYPEDEF_CB(lddmc_visit_init_context_cb, void*, void*, int); // void init_context(context, parent, is_down)
+
+typedef struct lddmc_visit_node_callbacks {
+    lddmc_visit_pre_cb lddmc_visit_pre;
+    lddmc_visit_post_cb lddmc_visit_post;
+    lddmc_visit_init_context_cb lddmc_visit_init_context;
+} lddmc_visit_callbacks_t;
+
+VOID_TASK_DECL_4(lddmc_visit_par, MDD, lddmc_visit_callbacks_t*, size_t, void*);
+#define lddmc_visit_par(mdd, cbs, ctx_size, context) CALL(lddmc_visit_par, mdd, cbs, ctx_size, context);
+
+VOID_TASK_DECL_4(lddmc_visit_seq, MDD, lddmc_visit_callbacks_t*, size_t, void*);
+#define lddmc_visit_seq(mdd, cbs, ctx_size, context) CALL(lddmc_visit_seq, mdd, cbs, ctx_size, context);
+
 size_t lddmc_nodecount(MDD mdd);
 void lddmc_nodecount_levels(MDD mdd, size_t *variables);
 

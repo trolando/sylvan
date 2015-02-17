@@ -583,16 +583,6 @@ lddmc_quit()
 /**
  * MDD operations
  */
-#define CACHE_RELPROD   0
-#define CACHE_MINUS     1
-#define CACHE_UNION     2
-#define CACHE_INTERSECT 3
-#define CACHE_SATCOUNT  4
-#define CACHE_PROJECT   5
-#define CACHE_JOIN      6
-#define CACHE_MATCH     7
-#define CACHE_RELPREV   8
-
 static inline int
 match_ldds(MDD *one, MDD *two)
 {

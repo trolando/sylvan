@@ -15,6 +15,7 @@
  */
 
 #include <assert.h>
+#include <cache.h>
 #include <llmsset.h>
 #include <sylvan.h>
 #include <tls.h>
@@ -34,4 +35,26 @@ uint64_t* initialize_insert_index();
 
 extern int workers;
 extern llmsset_t nodes;
+
+// BDD operations
+#define CACHE_ITE 0
+#define CACHE_RELPROD_PAIRED 1
+#define CACHE_RELPROD_PAIRED_PREV 2
+#define CACHE_COUNT 3
+#define CACHE_EXISTS 4
+#define CACHE_SATCOUNT 5
+#define CACHE_COMPOSE 6
+#define CACHE_RESTRICT 7
+#define CACHE_CONSTRAIN 8
+
+// MDD operations
+#define CACHE_RELPROD   10
+#define CACHE_MINUS     11
+#define CACHE_UNION     12
+#define CACHE_INTERSECT 13
+#define CACHE_PROJECT   14
+#define CACHE_JOIN      15
+#define CACHE_MATCH     16
+#define CACHE_RELPREV   17
+
 #endif

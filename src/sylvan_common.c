@@ -24,6 +24,18 @@ int workers;
 llmsset_t nodes;
 
 /**
+ * Variables for operation cache
+ */
+
+size_t             cache_size;         // power of 2
+size_t             cache_max;          // power of 2
+#if CACHE_MASK
+size_t             cache_mask;         // cache_size-1
+#endif
+cache_entry_t      cache_table;
+uint32_t*          cache_status;
+
+/**
  * Retrieve nodes
  */
 

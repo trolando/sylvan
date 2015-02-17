@@ -1,5 +1,6 @@
 #include <stdio.h>  // for fprintf
 #include <stdint.h> // for uint32_t etc
+#include <stdlib.h> // for exit
 #include <sys/mman.h> // for mmap
 
 #include <atomics.h>
@@ -26,20 +27,20 @@ typedef struct __attribute__((packed)) cache_entry {
     uint64_t            res;
 } * cache_entry_t;
 
-static size_t             cache_size;         // power of 2
-static size_t             cache_max;          // power of 2
+extern size_t             cache_size;         // power of 2
+extern size_t             cache_max;          // power of 2
 #if CACHE_MASK
-static size_t             cache_mask;         // cache_size-1
+extern size_t             cache_mask;         // cache_size-1
 #endif
-static cache_entry_t      cache_table;
-static uint32_t*          cache_status;
+extern cache_entry_t      cache_table;
+extern uint32_t*          cache_status;
 
 // status: 0x80000000 - bitlock
 //         0x7fff0000 - hash (part of the 64-bit hash not used to position)
 //         0x0000ffff - tag (every put increases tag field)
 
 /* Rotating 64-bit FNV-1a hash */
-static inline uint64_t
+static inline uint64_t __attribute__((unused))
 cache_hash(uint64_t a, uint64_t b, uint64_t c)
 {
     const uint64_t prime = 1099511628211;
@@ -50,7 +51,7 @@ cache_hash(uint64_t a, uint64_t b, uint64_t c)
     return hash;
 }
 
-static int
+static int __attribute__((unused))
 cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
 {
     const uint64_t hash = cache_hash(a, b, c);
@@ -77,7 +78,7 @@ cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
     return *s_bucket == s ? 1 : 0;
 }
 
-static int
+static int __attribute__((unused))
 cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
 {
     const uint64_t hash = cache_hash(a, b, c);
@@ -111,7 +112,7 @@ cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
     return 1;
 }
 
-static void
+static void __attribute__((unused))
 cache_create(size_t _cache_size, size_t _max_size)
 {
     // Cache size must be a power of 2

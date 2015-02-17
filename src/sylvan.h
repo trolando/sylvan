@@ -398,11 +398,6 @@ MDD lddmc_ref(MDD a);
 void lddmc_deref(MDD a);
 size_t lddmc_count_refs();
 
-/* Garbage collection */
-void lddmc_gc();
-void lddmc_gc_enable();
-void lddmc_gc_disable();
-
 /* Sanity check - returns depth of MDD including 'true' terminal or 0 for empty set */
 size_t lddmc_test_ismdd(MDD mdd);
 

@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <barrier.h>
 #include <sylvan_common.h>
 
 #if USE_NUMA
@@ -94,6 +95,113 @@ initialize_insert_index()
 }
 
 /**
+ * Implementation of garbage collection
+ */
+static int gc_enabled = 1;
+static barrier_t gcbar; // gc in progress
+static volatile int gc; // barrier
+
+struct reg_gc_mark_entry
+{
+    struct reg_gc_mark_entry *next;
+    gc_mark_cb cb;
+};
+
+static struct reg_gc_mark_entry *gc_mark_register = NULL;
+
+void
+sylvan_gc_register_mark(gc_mark_cb cb)
+{
+    struct reg_gc_mark_entry *e = (struct reg_gc_mark_entry*)malloc(sizeof(struct reg_gc_mark_entry));
+    e->next = gc_mark_register;
+    e->cb = cb;
+    gc_mark_register = e;
+}
+
+void
+sylvan_gc_enable()
+{
+    gc_enabled = 1;
+}
+
+void
+sylvan_gc_disable()
+{
+    gc_enabled = 0;
+}
+
+void
+sylvan_gc_go(int master)
+{
+    // check gc_enabled
+    if (!gc_enabled) return;
+
+    if (master && !cas(&gc, 0, 1)) master = 0;
+
+    // phase 1: clear cache and hash array
+    barrier_wait(&gcbar);
+
+    if (master) cache_clear();
+
+    LACE_ME;
+    int my_id = LACE_WORKER_ID;
+    llmsset_clear_multi(nodes, my_id, workers);
+
+    // phase 2: mark nodes to keep
+    barrier_wait(&gcbar);
+
+    struct reg_gc_mark_entry *e = gc_mark_register;
+    while (e != NULL) {
+        e->cb(my_id);
+        e = e->next;
+    }
+
+    // phase 3: maybe resize
+    if (!llmsset_is_maxsize(nodes)) {
+        barrier_wait(&gcbar);
+        if (master) {
+            size_t filled, total;
+            sylvan_table_usage(&filled, &total);
+            if (filled > total/2) {
+                llmsset_sizeup(nodes);
+            }
+        }
+    }
+
+    // phase 4: rehash
+    barrier_wait(&gcbar);
+
+    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
+    if (insert_index == NULL) insert_index = initialize_insert_index();
+    *insert_index = llmsset_get_insertindex_multi(nodes, my_id, workers);
+
+    llmsset_rehash_multi(nodes, my_id, workers);
+
+    // phase 5: done
+    compiler_barrier();
+    if (master) gc = 0;
+    barrier_wait(&gcbar);
+}
+
+/* Callback for Lace */
+TASK_IMPL_0(void*, sylvan_lace_test_gc)
+{
+    if (gc) sylvan_gc_go(0);
+    return 0;
+}
+
+/* Manually perform garbage collection */
+void
+sylvan_gc()
+{
+#if SYLVAN_STATS
+    LACE_ME;
+    SV_CNT(C_gc_user);
+#endif
+    sylvan_gc_go(1);
+}
+
+/**
  * Package init and quit functions
  */
 void
@@ -121,6 +229,10 @@ sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize)
 
     nodes = llmsset_create(1LL<<tablesize, 1LL<<maxsize);
     cache_create(1LL<<cachesize, 1LL<<cachesize);
+
+    lace_set_callback(TASK(sylvan_lace_test_gc));
+    gc = 0;
+    barrier_init(&gcbar, lace_workers());
 
     // Another sanity check
     llmsset_test_multi(nodes, workers);
@@ -153,8 +265,15 @@ sylvan_quit()
         free(e);
     }
 
+    while (gc_mark_register != NULL) {
+        struct reg_gc_mark_entry *e = gc_mark_register;
+        gc_mark_register = e->next;
+        free(e);
+    }
+
     // TODO: remove lace callback
 
     cache_free();
     llmsset_free(nodes);
+    barrier_destroy(&gcbar);
 }

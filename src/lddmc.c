@@ -25,7 +25,6 @@
 
 #include <atomics.h>
 #include <avl.h>
-#include <barrier.h>
 #include <cache.h>
 #include <lace.h>
 #include <llmsset.h>
@@ -238,22 +237,6 @@ ref_resize_spawns()
  * Implementation of garbage collection
  */
 
-static int gc_enabled = 1;
-static volatile int gc = 0; // gc in progress
-static barrier_t gcbar; // barrier
-
-void
-lddmc_gc_enable()
-{
-    gc_enabled = 1;
-}
-
-void
-lddmc_gc_disable()
-{
-    gc_enabled = 0;
-}
-
 /* Recursively mark MDD nodes as 'in use' */
 static void
 lddmc_gc_mark_rec(MDD mdd)
@@ -290,7 +273,7 @@ lddmc_gc_mark_external_refs(int my_id)
 
 /* Mark internal references */
 void
-lddmc_gc_mark_internal_refs()
+lddmc_gc_mark_internal_refs(int my_id)
 {
     LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);
     if (ref_key) {
@@ -302,77 +285,7 @@ lddmc_gc_mark_internal_refs()
             if (TASK_IS_COMPLETED(t)) lddmc_gc_mark_rec(*(MDD*)TASK_RESULT(t));
         }
     }
-}
-
-static void
-lddmc_gc_go(int master)
-{
-    // check gc_enabled
-    if (!gc_enabled) return;
-
-    if (master && !cas(&gc, 0, 1)) master = 0;
-
-    // phase 1: clear cache and hash array
-    barrier_wait(&gcbar);
-
-    if (master) cache_clear();
-
-    LACE_ME;
-    int my_id = LACE_WORKER_ID;
-    llmsset_clear_multi(nodes, my_id, workers);
-
-    // phase 2: mark nodes to keep
-    barrier_wait(&gcbar);
-
-    lddmc_gc_mark_external_refs(my_id);
-    lddmc_gc_mark_internal_refs();
-
-    // phase 3: maybe resize
-    if (!llmsset_is_maxsize(nodes)) {
-        barrier_wait(&gcbar);
-        if (master) {
-            size_t filled, total;
-            sylvan_table_usage(&filled, &total);
-            if (filled > total/2) {
-                llmsset_sizeup(nodes);
-            }
-        }
-    }
-
-    // phase 4: rehash
-    barrier_wait(&gcbar);
-
-    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
-    if (insert_index == NULL) insert_index = initialize_insert_index();
-    *insert_index = llmsset_get_insertindex_multi(nodes, my_id, workers);
-
-    llmsset_rehash_multi(nodes, my_id, workers);
-
-    // phase 5: done
-    compiler_barrier();
-    if (master) gc = 0;
-    barrier_wait(&gcbar);
-}
-
-/* Callback for Lace */
-TASK_0(void*, lddmc_lace_test_gc)
-{
-    if (gc) lddmc_gc_go(0);
-    return 0;
-}
-
-/* Test called from every MDD operation */
-static inline void
-lddmc_gc_test()
-{
-    while (gc) lddmc_gc_go(0);
-}
-
-/* Manually perform garbage collection */
-void
-lddmc_gc()
-{
-    lddmc_gc_go(1);
+    (void)my_id;
 }
 
 /**
@@ -401,7 +314,7 @@ lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
         REFS_INIT;
         REFS_PUSH(ifeq);
         REFS_PUSH(ifneq);
-        lddmc_gc_go(1);
+        sylvan_gc_go(1);
         REFS_RESET;
         //size_t after_gc = llmsset_get_filled(nodes);
         //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
@@ -431,7 +344,7 @@ lddmc_make_copynode(MDD ifeq, MDD ifneq)
         REFS_INIT;
         REFS_PUSH(ifeq);
         REFS_PUSH(ifneq);
-        lddmc_gc_go(1);
+        sylvan_gc_go(1);
         REFS_RESET;
         //size_t after_gc = llmsset_get_filled(nodes);
         //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
@@ -527,17 +440,14 @@ static void
 lddmc_quit()
 {
     refs_free(&mdd_refs);
-    barrier_destroy(&gcbar);
 }
 
 void
 sylvan_init_ldd()
 {
     sylvan_register_quit(lddmc_quit);
-
-    lace_set_callback(TASK(lddmc_lace_test_gc));
-    gc = 0;
-    barrier_init(&gcbar, lace_workers());
+    sylvan_gc_register_mark(lddmc_gc_mark_external_refs);
+    sylvan_gc_register_mark(lddmc_gc_mark_internal_refs);
 
     // Sanity check
     if (sizeof(struct mddnode) != 16) {
@@ -586,7 +496,7 @@ TASK_IMPL_2(MDD, lddmc_union, MDD, a, MDD, b)
     assert(a != lddmc_true && b != lddmc_true); // expecting same length
 
     /* Test gc */
-    lddmc_gc_test();
+    sylvan_gc_test();
 
     /* Improve cache behavior */
     if (a < b) { MDD tmp=b; b=a; a=tmp; }
@@ -651,7 +561,7 @@ TASK_IMPL_2(MDD, lddmc_minus, MDD, a, MDD, b)
     assert(a != lddmc_true); // Universe is unknown!! // Possibly depth issue?
 
     /* Test gc */
-    lddmc_gc_test();
+    sylvan_gc_test();
 
     /* Access cache */
     MDD result;
@@ -705,7 +615,7 @@ TASK_IMPL_3(MDD, lddmc_zip, MDD, a, MDD, b, MDD*, res2)
     assert(a != lddmc_true && b != lddmc_true); // expecting same length
 
     /* Test gc */
-    lddmc_gc_test();
+    sylvan_gc_test();
 
     /* Access cache */
     MDD result;
@@ -755,7 +665,7 @@ TASK_IMPL_2(MDD, lddmc_intersect, MDD, a, MDD, b)
     assert(a != lddmc_true && b != lddmc_true);
 
     /* Test gc */
-    lddmc_gc_test();
+    sylvan_gc_test();
 
     /* Get nodes */
     mddnode_t na = GETNODE(a);
@@ -812,7 +722,7 @@ TASK_IMPL_3(MDD, lddmc_match, MDD, a, MDD, b, MDD, proj)
     if (p_val == 1) assert(b != lddmc_true);
 
     /* Test gc */
-    lddmc_gc_test();
+    sylvan_gc_test();
 
     /* Skip nodes if possible */
     if (p_val == 1) {
@@ -1543,7 +1453,7 @@ TASK_IMPL_4(MDD, lddmc_join, MDD, a, MDD, b, MDD, a_proj, MDD, b_proj)
     if (a == lddmc_false || b == lddmc_false) return lddmc_false;
 
     /* Test gc */
-    lddmc_gc_test();
+    sylvan_gc_test();
 
     mddnode_t n_a_proj = GETNODE(a_proj);
     mddnode_t n_b_proj = GETNODE(b_proj);
@@ -1630,7 +1540,7 @@ TASK_IMPL_2(MDD, lddmc_project, const MDD, mdd, const MDD, proj)
     if (p_val == (uint32_t)-1) return mdd;
     if (p_val == (uint32_t)-2) return lddmc_true; // because we always end with true.
 
-    lddmc_gc_test();
+    sylvan_gc_test();
 
     MDD result;
     if (cache_get(MDD_SETDATA(mdd, CACHE_PROJECT), proj, 0, &result)) return result;
@@ -1690,7 +1600,7 @@ TASK_IMPL_3(MDD, lddmc_project_minus, const MDD, mdd, const MDD, proj, MDD, avoi
     if (p_val == (uint32_t)-1) return lddmc_minus(mdd, avoid);
     if (p_val == (uint32_t)-2) return lddmc_true;
 
-    lddmc_gc_test();
+    sylvan_gc_test();
 
     MDD result;
     if (cache_get(MDD_SETDATA(mdd, CACHE_PROJECT), proj, avoid, &result)) return result;
@@ -1943,7 +1853,7 @@ TASK_IMPL_1(lddmc_satcount_double_t, lddmc_satcount_cached, MDD, mdd)
     if (mdd == lddmc_true) return 1.0;
 
     /* Perhaps execute garbage collection */
-    lddmc_gc_test();
+    sylvan_gc_test();
 
     union {
         lddmc_satcount_double_t d;
@@ -1968,7 +1878,7 @@ TASK_IMPL_1(long double, lddmc_satcount, MDD, mdd)
     if (mdd == lddmc_true) return 1.0;
 
     /* Perhaps execute garbage collection */
-    lddmc_gc_test();
+    sylvan_gc_test();
 
     mddnode_t n = GETNODE(mdd);
 

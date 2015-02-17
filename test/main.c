@@ -450,7 +450,7 @@ test_lddmc()
 
     sylvan_init_package(24, 24, 24);
     sylvan_init_ldd();
-    lddmc_gc_disable();
+    sylvan_gc_disable();
 
     MDD a, b, c;
 
@@ -567,7 +567,7 @@ test_lddmc()
         sylvan_quit();
         sylvan_init_package(24, 24, 24);
         sylvan_init_ldd();
-        lddmc_gc_disable();
+        sylvan_gc_disable();
 
         for (j=0;j<N;j++) lddmc_serialize_fromfile(f);
         fclose(f);

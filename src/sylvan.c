@@ -25,7 +25,6 @@
 
 #include <atomics.h>
 #include <avl.h>
-#include <barrier.h>
 #include <cache.h>
 #include <lace.h>
 #include <llmsset.h>
@@ -223,22 +222,6 @@ ref_resize_spawns()
  * Implementation of garbage collection
  */
 
-static int gc_enabled = 1;
-static barrier_t gcbar; // gc in progress
-static volatile int gc; // barrier
-
-void
-sylvan_gc_enable()
-{
-    gc_enabled = 1;
-}
-
-void
-sylvan_gc_disable()
-{
-    gc_enabled = 0;
-}
-
 /* Recursively mark BDD nodes as 'in use' */
 static void
 sylvan_gc_mark_rec(BDD bdd)
@@ -275,7 +258,7 @@ sylvan_gc_mark_external_refs(int my_id)
 
 /* Mark internal references */
 void
-sylvan_gc_mark_internal_refs()
+sylvan_gc_mark_internal_refs(int my_id)
 {
     LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);
     if (ref_key) {
@@ -287,81 +270,7 @@ sylvan_gc_mark_internal_refs()
             if (TASK_IS_COMPLETED(t)) sylvan_gc_mark_rec(*(BDD*)TASK_RESULT(t));
         }
     }
-}
-
-static
-void sylvan_gc_go(int master)
-{
-    // check gc_enabled
-    if (!gc_enabled) return;
-
-    if (master && !cas(&gc, 0, 1)) master=0;
-
-    // phase 1: clear cache and hash array
-    barrier_wait(&gcbar);
-
-    if (master) cache_clear();
-
-    LACE_ME;
-    int my_id = LACE_WORKER_ID;
-    llmsset_clear_multi(nodes, my_id, workers);
-
-    // phase 2: mark nodes to keep
-    barrier_wait(&gcbar);
-
-    sylvan_gc_mark_external_refs(my_id);
-    sylvan_gc_mark_internal_refs();
-
-    // phase 3: maybe resize
-    if (!llmsset_is_maxsize(nodes)) {
-        barrier_wait(&gcbar);
-        if (master) {
-            size_t filled, total;
-            sylvan_table_usage(&filled, &total);
-            if (filled > total/2) {
-                llmsset_sizeup(nodes);
-            }
-        }
-    }
-
-    // phase 4: rehash
-    barrier_wait(&gcbar);
-
-    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
-    if (insert_index == NULL) insert_index = initialize_insert_index();
-    *insert_index = llmsset_get_insertindex_multi(nodes, my_id, workers);
-
-    llmsset_rehash_multi(nodes, my_id, workers);
-
-    // phase 5: done
-    compiler_barrier();
-    if (master) gc = 0;
-    barrier_wait(&gcbar);
-}
-
-/* Callback for Lace */
-TASK_0(void*, sylvan_lace_test_gc)
-{
-    if (gc) sylvan_gc_go(0);
-    return 0;
-}
-
-/* Test called from every BDD operation */
-static inline void
-sylvan_gc_test()
-{
-    while (gc) sylvan_gc_go(0);
-}
-
-/* Manually perform garbage collection */
-void
-sylvan_gc()
-{
-#if SYLVAN_STATS
-    LACE_ME;
-    SV_CNT(C_gc_user);
-#endif
-    sylvan_gc_go(1);
+    (void)my_id;
 }
 
 /** init and quit functions */
@@ -371,17 +280,14 @@ static void
 sylvan_quit_bdd()
 {
     refs_free(&bdd_refs);
-    barrier_destroy(&gcbar);
 }
 
 void
 sylvan_init_bdd(int _granularity)
 {
     sylvan_register_quit(sylvan_quit_bdd);
-
-    lace_set_callback(TASK(sylvan_lace_test_gc));
-    gc = 0;
-    barrier_init(&gcbar, lace_workers());
+    sylvan_gc_register_mark(sylvan_gc_mark_external_refs);
+    sylvan_gc_register_mark(sylvan_gc_mark_internal_refs);
 
     granularity = _granularity;
 

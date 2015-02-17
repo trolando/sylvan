@@ -38,14 +38,6 @@
 #include <numa.h>
 #endif
 
-#ifndef SYLVAN_CACHE_STATS
-#define SYLVAN_CACHE_STATS 0
-#endif
-
-#ifndef SYLVAN_OPERATION_STATS
-#define SYLVAN_OPERATION_STATS 0
-#endif
-
 #define SYLVAN_STATS SYLVAN_CACHE_STATS || SYLVAN_OPERATION_STATS
 
 /**

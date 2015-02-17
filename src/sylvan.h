@@ -42,6 +42,14 @@
  * To temporarily disable garbage collection, use sylvan_gc_disable() and sylvan_gc_enable().
  */
 
+#ifndef SYLVAN_CACHE_STATS
+#define SYLVAN_CACHE_STATS 0
+#endif
+
+#ifndef SYLVAN_OPERATION_STATS
+#define SYLVAN_OPERATION_STATS 0
+#endif
+
 // For now, only support 64-bit systems
 typedef char __sylvan_check_size_t_is_8_bytes[(sizeof(uint64_t) == sizeof(size_t))?1:-1];
 

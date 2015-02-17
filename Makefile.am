@@ -19,6 +19,8 @@ libsylvan_la_SOURCES = \
  src/sylvan.h \
  src/llmsset.c \
  src/llmsset.h \
+ src/sylvan_common.c \
+ src/sylvan_common.h \
  src/cache.h \
  src/tls.h \
  src/atomics.h \

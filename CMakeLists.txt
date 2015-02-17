@@ -49,6 +49,8 @@ set(sylvan_sources
   src/hash16.h
   src/getrss.h
   src/getrss.c
+  src/sylvan_common.h
+  src/sylvan_common.c
   src/cache.h
   src/refs.h
   src/refs.c

@@ -486,9 +486,21 @@ lddmc_extendnode(MDD mdd, uint32_t value, MDD ifeq)
 }
 
 uint32_t
-lddmc_value(MDD mdd)
+lddmc_getvalue(MDD mdd)
 {
     return mddnode_getvalue(GETNODE(mdd));
+}
+
+MDD
+lddmc_getdown(MDD mdd)
+{
+    return mddnode_getdown(GETNODE(mdd));
+}
+
+MDD
+lddmc_getright(MDD mdd)
+{
+    return mddnode_getright(GETNODE(mdd));
 }
 
 MDD

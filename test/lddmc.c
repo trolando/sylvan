@@ -129,12 +129,12 @@ static int
 calculate_size(MDD meta)
 {
     int result = 0;
-    uint32_t val = lddmc_value(meta);
+    uint32_t val = lddmc_getvalue(meta);
     while (val != (uint32_t)-1) {
         if (val != 0) result += 1;
         meta = lddmc_follow(meta, val);
         assert(meta != lddmc_true && meta != lddmc_false);
-        val = lddmc_value(meta);
+        val = lddmc_getvalue(meta);
     }
     return result;
 }
@@ -183,7 +183,7 @@ static void
 print_matrix(size_t size, MDD meta)
 {
     if (size == 0) return;
-    uint32_t val = lddmc_value(meta);
+    uint32_t val = lddmc_getvalue(meta);
     if (val == 1) {
         printf("+");
         print_matrix(size-1, lddmc_follow(lddmc_follow(meta, 1), 2));
@@ -209,7 +209,7 @@ to_h(double size, char *buf)
 static int
 get_first(MDD meta)
 {
-    uint32_t val = lddmc_value(meta);
+    uint32_t val = lddmc_getvalue(meta);
     if (val != 0) return 0;
     return 1+get_first(lddmc_follow(meta, val));
 }

@@ -57,7 +57,9 @@ void lddmc_quit();
 /* Primitives */
 MDD lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq);
 MDD lddmc_extendnode(MDD mdd, uint32_t value, MDD ifeq);
-uint32_t lddmc_value(MDD mdd);
+uint32_t lddmc_getvalue(MDD mdd);
+MDD lddmc_getdown(MDD mdd);
+MDD lddmc_getright(MDD mdd);
 MDD lddmc_follow(MDD mdd, uint32_t value);
 
 /**

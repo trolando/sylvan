@@ -114,6 +114,9 @@ MDD lddmc_cube_copy(uint32_t* values, int* copy, size_t count);
 TASK_DECL_3(MDD, lddmc_relprod, MDD, MDD, MDD);
 #define lddmc_relprod(a, b, proj) CALL(lddmc_relprod, a, b, proj)
 
+TASK_DECL_4(MDD, lddmc_relprod_union, MDD, MDD, MDD, MDD);
+#define lddmc_relprod_union(a, b, meta, un) CALL(lddmc_relprod_union, a, b, meta, un)
+
 /**
  * Calculate all predecessors to a in uni according to rel[proj]
  * <proj> follows the same semantics as relprod

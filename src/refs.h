@@ -23,10 +23,16 @@
 #ifndef REFS_INLINE_H
 #define REFS_INLINE_H
 
+/**
+ * Implementation of external references
+ * Based on a hash table for 40-bit non-null values, linear probing
+ * Use tombstones for deleting, higher bits for reference count
+ */
+
 static size_t refs_size;
 static uint64_t *refs_table;
 
-static const uint64_t refs_ts = 0x7fffffffffffffff;
+static const uint64_t refs_ts = 0x7fffffffffffffff; // tombstone
 
 /* for resizing */
 static volatile uint32_t refs_control;
@@ -35,9 +41,9 @@ static size_t refs_resize_part;
 static size_t refs_resize_done;
 static size_t refs_resize_size;
 
-/* FNV-1a hash */
+/* FNV-1a 64-bit hash */
 static inline uint64_t
-refs_hash(uint64_t a)
+fnv_hash(uint64_t a)
 {
     const uint64_t prime = 1099511628211;
     uint64_t hash = 14695981039346656037LLU;
@@ -46,12 +52,14 @@ refs_hash(uint64_t a)
     return hash ^ (hash >> 32);
 }
 
+// Count number of unique entries (not number of references)
 static inline size_t
 refs_count()
 {
     size_t count = 0;
     uint64_t *bucket = refs_table;
-    while (bucket != refs_table + refs_size) {
+    uint64_t * const end = refs_table + refs_size;
+    while (bucket != end) {
         if (*bucket != 0 && *bucket != refs_ts) count++;
         bucket++;
     }
@@ -61,20 +69,25 @@ refs_count()
 static inline void
 refs_rehash(uint64_t v)
 {
-    if (v == 0) return; // do not rehash empty
+    if (v == 0) return; // do not rehash empty value
     if (v == refs_ts) return; // do not rehash tombstone
 
-    volatile uint64_t *bucket = refs_table + (refs_hash(v & 0x000000ffffffffff) & (refs_size - 1));
+    volatile uint64_t *bucket = refs_table + (fnv_hash(v & 0x000000ffffffffff) & (refs_size - 1));
+    uint64_t * const end = refs_table + refs_size;
 
     int i = 128; // try 128 times linear probing
     while (i--) {
         if (*bucket == 0) { if (cas(bucket, 0, v)) return; }
-        if (++bucket == refs_table + refs_size) bucket = refs_table;
+        if (++bucket == end) bucket = refs_table;
     }
 
-    assert(0); // impossible!
+    // assert(0); // impossible!
 }
 
+/**
+ * Called internally to assist resize operations
+ * Returns 1 for retry, 0 for done
+ */
 static int
 refs_resize_help()
 {
@@ -181,7 +194,7 @@ refs_modify(const uint64_t a, const int dir)
     refs_enter();
 
 ref_retry:
-    bucket = refs_table + (refs_hash(a) & (refs_size - 1));
+    bucket = refs_table + (fnv_hash(a) & (refs_size - 1));
     ts_bucket = NULL; // tombstone
     i = 128; // try 128 times linear probing
 

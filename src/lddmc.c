@@ -272,8 +272,8 @@ lddmc_gc_mark_rec(MDD mdd)
 }
 
 /* Mark external references */
-static void
-lddmc_gc_mark_external_refs(int my_id, int workers)
+void
+lddmc_gc_mark_external_refs(int my_id)
 {
     // part of the refs hash table per worker
     size_t per_worker = (mdd_refs.refs_size + workers - 1)/ workers;
@@ -290,6 +290,22 @@ lddmc_gc_mark_external_refs(int my_id, int workers)
     // iterate through refs hash table, mark all found
     uint64_t *it = refs_iter(&mdd_refs, first, end);
     while (it != NULL) lddmc_gc_mark_rec(refs_next(&mdd_refs, &it, end));
+}
+
+/* Mark internal references */
+void
+lddmc_gc_mark_internal_refs()
+{
+    LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);
+    if (ref_key) {
+        size_t i;
+        for (i=0; i<ref_key->r_count; i++) lddmc_gc_mark_rec(ref_key->results[i]);
+        for (i=0; i<ref_key->s_count; i++) {
+            Task *t = ref_key->spawns[i];
+            if (!TASK_IS_STOLEN(t)) break;
+            if (TASK_IS_COMPLETED(t)) lddmc_gc_mark_rec(*(MDD*)TASK_RESULT(t));
+        }
+    }
 }
 
 static void
@@ -310,17 +326,7 @@ lddmc_gc_go(int master)
     barrier_wait(&gcbar);
 
     lddmc_gc_mark_external_refs(my_id, workers);
-
-    LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);
-    if (ref_key) {
-        size_t i;
-        for (i=0; i<ref_key->r_count; i++) lddmc_gc_mark_rec(ref_key->results[i]);
-        for (i=0; i<ref_key->s_count; i++) {
-            Task *t = ref_key->spawns[i];
-            if (!TASK_IS_STOLEN(t)) break;
-            if (TASK_IS_COMPLETED(t)) lddmc_gc_mark_rec(*(MDD*)TASK_RESULT(t));
-        }
-    }
+    lddmc_gc_mark_internal_refs();
 
     // phase 3: maybe resize
     if (!llmsset_is_maxsize(nodes)) {

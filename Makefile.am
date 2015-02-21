@@ -30,7 +30,6 @@ libsylvan_la_SOURCES = \
  src/refs.c \
  src/getrss.c \
  src/getrss.h \
- src/hash24.h \
  src/hash16.h
 
 if HAVE_NUMA

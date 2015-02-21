@@ -14,9 +14,11 @@ libsylvan_la_SOURCES = \
  src/barrier.h \
  src/sha2.c \
  src/sha2.h \
- src/lddmc.c \
- src/sylvan.c \
  src/sylvan.h \
+ src/sylvan_bdd.h \
+ src/sylvan_bdd.c \
+ src/sylvan_ldd.h \
+ src/sylvan_ldd.c \
  src/llmsset.c \
  src/llmsset.h \
  src/sylvan_common.c \

@@ -40,8 +40,10 @@ set(sylvan_sources
   src/sha2.h
   src/sha2.c
   src/sylvan.h
-  src/sylvan.c
-  src/lddmc.c
+  src/sylvan_bdd.h
+  src/sylvan_bdd.c
+  src/sylvan_ldd.h
+  src/sylvan_ldd.c
   src/llmsset.c
   src/llmsset.h
   src/lace.c

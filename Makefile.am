@@ -27,6 +27,7 @@ libsylvan_la_SOURCES = \
  src/lace.c \
  src/lace.h \
  src/refs.h \
+ src/refs.c \
  src/getrss.c \
  src/getrss.h \
  src/hash24.h \

@@ -53,6 +53,7 @@ set(sylvan_sources
   src/getrss.c
   src/cache.h
   src/refs.h
+  src/refs.c
   ${EXTRA_SRC}
 )
 

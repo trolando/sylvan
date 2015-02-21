@@ -24,13 +24,13 @@
 #define REFS_INLINE_H
 
 static size_t refs_size;
-static size_t *refs_table;
+static uint64_t *refs_table;
 
-static const size_t refs_ts = 0x7fffffffffffffff;
+static const uint64_t refs_ts = 0x7fffffffffffffff;
 
 /* for resizing */
 static volatile uint32_t refs_control;
-static size_t *refs_resize_table;
+static uint64_t *refs_resize_table;
 static size_t refs_resize_part;
 static size_t refs_resize_done;
 static size_t refs_resize_size;
@@ -50,7 +50,7 @@ static inline size_t
 refs_count()
 {
     size_t count = 0;
-    size_t *bucket = refs_table;
+    uint64_t *bucket = refs_table;
     while (bucket != refs_table + refs_size) {
         if (*bucket != 0 && *bucket != refs_ts) count++;
         bucket++;
@@ -59,12 +59,12 @@ refs_count()
 }
 
 static inline void
-refs_rehash(size_t v)
+refs_rehash(uint64_t v)
 {
     if (v == 0) return; // do not rehash empty
     if (v == refs_ts) return; // do not rehash tombstone
 
-    volatile size_t *bucket = refs_table + (refs_hash(v & 0x000000ffffffffff) & (refs_size - 1));
+    volatile uint64_t *bucket = refs_table + (refs_hash(v & 0x000000ffffffffff) & (refs_size - 1));
 
     int i = 128; // try 128 times linear probing
     while (i--) {
@@ -87,7 +87,7 @@ refs_resize_help()
 
     // rehash all
     int i;
-    volatile size_t *bucket = refs_resize_table + part * 128;
+    volatile uint64_t *bucket = refs_resize_table + part * 128;
     for (i=0; i<128; i++) refs_rehash(*bucket++);
 
     __sync_fetch_and_add(&refs_resize_done, 1);
@@ -123,8 +123,8 @@ refs_resize()
     if (count*4 > refs_size) new_size *= 2;
 
     // allocate new table
-    size_t *new_table = (size_t*)mmap(0, new_size * sizeof(size_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
-    if (new_table == (size_t*)-1) {
+    uint64_t *new_table = (uint64_t*)mmap(0, new_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    if (new_table == (uint64_t*)-1) {
         fprintf(stderr, "refs: Unable to allocate memory!\n");
         exit(1);
     }
@@ -143,7 +143,7 @@ refs_resize()
     refs_control = 0;
 
     // unmap old table
-    munmap(refs_resize_table, refs_resize_size * sizeof(size_t));
+    munmap(refs_resize_table, refs_resize_size * sizeof(uint64_t));
 }
 
 /* Enter refs_modify */
@@ -173,9 +173,9 @@ refs_leave()
 static inline int
 refs_modify(const uint64_t a, const int dir)
 {
-    volatile size_t *bucket;
-    volatile size_t *ts_bucket;
-    size_t v, new_v;
+    volatile uint64_t *bucket;
+    volatile uint64_t *ts_bucket;
+    uint64_t v, new_v;
     int res, i;
 
     refs_enter();
@@ -204,7 +204,7 @@ ref_restart:
         } else if ((v & 0x000000ffffffffff) == a) {
             // found
             res = 1;
-            size_t count = v >> 40;
+            uint64_t count = v >> 40;
             if (count == 0x7fffff) goto ref_exit;
             count += dir;
             if (count == 0) new_v = refs_ts;
@@ -255,13 +255,13 @@ refs_down(uint64_t a)
     assert(res != 0);
 }
 
-static size_t*
+static uint64_t*
 refs_iter(size_t first, size_t end)
 {
     // assert(first < refs_size);
     // assert(end <= refs_size);
 
-    size_t *bucket = refs_table + first;
+    uint64_t *bucket = refs_table + first;
     while (bucket != refs_table + end) {
         if (*bucket != 0 && *bucket != refs_ts) return bucket;
         bucket++;
@@ -269,13 +269,13 @@ refs_iter(size_t first, size_t end)
     return NULL;
 }
 
-static size_t
-refs_next(size_t **_bucket, size_t end)
+static uint64_t
+refs_next(uint64_t **_bucket, size_t end)
 {
-    size_t *bucket = *_bucket;
+    uint64_t *bucket = *_bucket;
     // assert(bucket != NULL);
     // assert(end <= refs_size);
-    size_t result = *bucket & 0x000000ffffffffff;
+    uint64_t result = *bucket & 0x000000ffffffffff;
     bucket++;
     while (bucket != refs_table + end) {
         if (*bucket != 0 && *bucket != refs_ts) {
@@ -297,8 +297,8 @@ refs_create(size_t _refs_size)
     }
 
     refs_size = _refs_size;
-    refs_table = (size_t*)mmap(0, refs_size * sizeof(size_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
-    if (refs_table == (size_t*)-1) {
+    refs_table = (uint64_t*)mmap(0, refs_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    if (refs_table == (uint64_t*)-1) {
         fprintf(stderr, "refs: Unable to allocate memory!\n");
         exit(1);
     }
@@ -307,7 +307,7 @@ refs_create(size_t _refs_size)
 static void
 refs_free()
 {
-    munmap(refs_table, refs_size * sizeof(size_t));
+    munmap(refs_table, refs_size * sizeof(uint64_t));
 }
 
 #endif

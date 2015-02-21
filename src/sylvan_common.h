@@ -17,6 +17,7 @@
 #include <assert.h>
 #include <cache.h>
 #include <llmsset.h>
+#include <refs.h>
 #include <sylvan.h>
 #include <tls.h>
 

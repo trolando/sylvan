@@ -25,14 +25,9 @@
 
 #include <atomics.h>
 #include <avl.h>
-#include <cache.h>
-#include <lace.h>
-#include <llmsset.h>
-#include <refs.h>
 #include <sha2.h>
 #include <sylvan.h>
 #include <sylvan_common.h>
-#include <tls.h>
 
 /**
  * MDD node structure

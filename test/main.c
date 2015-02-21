@@ -448,7 +448,8 @@ test_lddmc()
 {
     LACE_ME;
 
-    lddmc_init(24, 24, 24);
+    sylvan_init_package(24, 24, 24);
+    sylvan_init_ldd();
     lddmc_gc_disable();
 
     MDD a, b, c;
@@ -563,8 +564,9 @@ test_lddmc()
         fseek(f, 0, SEEK_SET);
         lddmc_serialize_reset();
 
-        lddmc_quit();
-        lddmc_init(24, 24, 24);
+        sylvan_quit();
+        sylvan_init_package(24, 24, 24);
+        sylvan_init_ldd();
         lddmc_gc_disable();
 
         for (j=0;j<N;j++) lddmc_serialize_fromfile(f);
@@ -579,7 +581,7 @@ test_lddmc()
         lddmc_serialize_reset();
     }
 
-    lddmc_quit();
+    sylvan_quit();
 }
 
 void runtests(int threads)
@@ -600,7 +602,8 @@ void runtests(int threads)
 
     printf(NC "Testing basic bdd functionality... ");
     fflush(stdout);
-    sylvan_init(16, 16, 16, 1);
+    sylvan_init_package(16, 16, 16);
+    sylvan_init_bdd(1);
     test_bdd();
     sylvan_quit();
     printf(LGREEN "success" NC "!\n");
@@ -609,35 +612,40 @@ void runtests(int threads)
     printf(NC "Testing cube function... ");
     fflush(stdout);
     int j;
-    sylvan_init(24, 24, 20, 1);
+    sylvan_init_package(24, 24, 20);
+    sylvan_init_bdd(1);
     for (j=0;j<20;j++) test_cube();
     sylvan_quit();
     printf(LGREEN "success" NC "!\n");
 
     printf(NC "Testing relational products... ");
     fflush(stdout);
-    sylvan_init(24, 24, 20, 1);
+    sylvan_init_package(24, 24, 20);
+    sylvan_init_bdd(1);
     for (j=0;j<20;j++) test_relprod();
     sylvan_quit();
     printf(LGREEN "success" NC "!\n");
 
     printf(NC "Testing function composition... ");
     fflush(stdout);
-    sylvan_init(24, 24, 20, 1);
+    sylvan_init_package(24, 24, 20);
+    sylvan_init_bdd(1);
     for (j=0;j<20;j++) test_compose();
     sylvan_quit();
     printf(LGREEN "success" NC "!\n");
 
     printf(NC "Testing garbage collection... ");
     fflush(stdout);
-    sylvan_init(14, 14, 10, 1);
+    sylvan_init_package(14, 14, 10);
+    sylvan_init_bdd(1);
     test_gc(threads);
     sylvan_quit();
     printf(LGREEN "success" NC "!\n");
 
     printf(NC "Testing operators... ");
     fflush(stdout);
-    sylvan_init(24, 24, 20, 1);
+    sylvan_init_package(24, 24, 20);
+    sylvan_init_bdd(1);
     for (j=0;j<20;j++) test_operators();
     sylvan_quit();
     printf(LGREEN "success" NC "!\n");

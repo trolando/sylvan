@@ -57,4 +57,10 @@ extern llmsset_t nodes;
 #define CACHE_MATCH     16
 #define CACHE_RELPREV   17
 
+/**
+ * Registration of quit functions
+ */
+typedef void (*quit_cb)();
+void sylvan_register_quit(quit_cb cb);
+
 #endif

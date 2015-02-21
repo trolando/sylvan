@@ -70,23 +70,30 @@ typedef uint32_t BDDVAR;    // low 24 bits only
 #define sylvan_isnode(a)    ( ((a&(~sylvan_complement)) != sylvan_false) && ((a&(~sylvan_complement)) < sylvan_true_nc) )
 
 /**
- * Initialize the Sylvan parallel BDD package.
+ * Initialize the Sylvan parallel decision diagrams package.
+ * After initialization, call sylvan_init_bdd and/or sylvan_init_ldd if you want to use
+ * the BDD and/or LDD functionality.
  *
- * Allocates a BDD node table of size "2^datasize" and a operation cache of size "2^cachesize".
- * Every BDD node requires 32 bytes memory. (16 data + 16 bytes overhead)
+ * BDDs and LDDs share a common node table and operations cache.
+ *
+ * The node table is resizable.
+ * The table is resized automatically when >50% of the table is filled during garbage collection.
+ * 
+ * Memory usage:
+ * Every node requires 32 bytes memory. (16 data + 16 bytes overhead)
  * Every operation cache entry requires 36 bytes memory. (32 bytes data + 4 bytes overhead)
  *
- * Granularity determines usage of operation cache. Smallest value is 1: use the operation cache always.
+ * Granularity (BDD only) determines usage of operation cache. Smallest value is 1: use the operation cache always.
  * Higher values mean that the cache is used less often. Variables are grouped such that
  * the cache is used when going to the next group, i.e., with granularity=3, variables [0,1,2] are in the
  * first group, [3,4,5] in the next, etc. Then no caching occur between 0->1, 1->2, 0->2. Caching occurs
  * on 0->3, 1->4, 2->3, etc.
  * 
  * Reasonable defaults: datasize of 26 (2048 MB), cachesize of 24 (576 MB), granularity of 4-16
- *
- * Now automatically resizes nodes table when >50% filled during garbage collection.
  */
-void sylvan_init(size_t initial_tablesize, size_t max_tablesize, size_t cachesize, int granularity);
+void sylvan_init_package(size_t initial_tablesize, size_t max_tablesize, size_t cachesize);
+void sylvan_init_bdd(int granularity);
+void sylvan_init_ldd();
 
 /**
  * Frees all Sylvan data.
@@ -365,30 +372,6 @@ typedef uint64_t MDD;       // Note: low 42 bits only
 
 #define lddmc_false         ((MDD)0)
 #define lddmc_true          ((MDD)1)
-
-/**
- * Initialize LDDMC.
- *
- * Allocates a MDD node table of size "2^datasize" and a operation cache of size "2^cachesize".
- * Every MDD node requires 32 bytes memory. (16 data + 16 bytes overhead)
- * Every operation cache entry requires 36 bytes memory. (32 bytes data + 4 bytes overhead)
- *
- * Granularity determines usage of operation cache. Smallest value is 1: use the operation cache always.
- * Higher values mean that the cache is used less often. Variables are grouped such that
- * the cache is used when going to the next group, i.e., with granularity=3, variables [0,1,2] are in the
- * first group, [3,4,5] in the next, etc. Then no caching occur between 0->1, 1->2, 0->2. Caching occurs
- * on 0->3, 1->4, 2->3, etc.
- *
- * Reasonable defaults: datasize of 26 (2048 MB), cachesize of 24 (576 MB), granularity of 4-16
- *
- * Now automatically resizes nodes table when >50% filled during garbage collection.
- */
-void lddmc_init(size_t initial_tablesize, size_t max_tablesize, size_t cachesize);
-
-/**
- * Frees all Sylvan data.
- */
-void lddmc_quit();
 
 /* Primitives */
 MDD lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq);

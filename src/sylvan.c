@@ -35,10 +35,6 @@
 #include <sylvan_common.h>
 #include <tls.h>
 
-#if USE_NUMA
-#include <numa.h>
-#endif
-
 #define SYLVAN_STATS SYLVAN_CACHE_STATS || SYLVAN_OPERATION_STATS
 
 /**
@@ -310,7 +306,7 @@ void sylvan_gc_go(int master)
     // phase 2: mark nodes to keep
     barrier_wait(&gcbar);
 
-    sylvan_gc_mark_external_refs(my_id, workers);
+    sylvan_gc_mark_external_refs(my_id);
     sylvan_gc_mark_internal_refs();
 
     // phase 3: maybe resize
@@ -366,30 +362,25 @@ sylvan_gc()
 }
 
 /** init and quit functions */
-
 static int granularity = 1; // default
 
-void
-sylvan_init(size_t tablesize, size_t maxsize, size_t cachesize, int _granularity)
+static void
+sylvan_quit_bdd()
 {
+    refs_free(&bdd_refs);
+    barrier_destroy(&gcbar);
+}
+
+void
+sylvan_init_bdd(int _granularity)
+{
+    sylvan_register_quit(sylvan_quit_bdd);
+
     lace_set_callback(TASK(sylvan_lace_test_gc));
-    workers = lace_workers();
-
-    INIT_THREAD_LOCAL(ref_key);
-    INIT_THREAD_LOCAL(insert_index);
-
-#if USE_NUMA
-    if (numa_available() != -1) {
-        numa_set_interleave_mask(numa_all_nodes_ptr);
-    }
-#endif
-
-    sylvan_reset_counters();
-
-    granularity = _granularity;
-
     gc = 0;
     barrier_init(&gcbar, lace_workers());
+
+    granularity = _granularity;
 
     // Sanity check
     if (sizeof(struct bddnode) != 16) {
@@ -397,33 +388,10 @@ sylvan_init(size_t tablesize, size_t maxsize, size_t cachesize, int _granularity
         exit(1);
     }
 
-    if (tablesize > 40 || maxsize > 40) {
-        fprintf(stderr, "sylvan_init error: tablesize must be <= 40!\n");
-        exit(1);
-    }
-
-    if (cachesize > 40) {
-        fprintf(stderr, "sylvan_init error: cachesize must be <= 40!\n");
-        exit(1);
-    }
-
-    nodes = llmsset_create(1LL<<tablesize, 1LL<<maxsize);
-    cache_create(1LL<<cachesize, 1LL<<cachesize);
+    INIT_THREAD_LOCAL(ref_key);
     refs_create(&bdd_refs, 1024);
 
-    // Another sanity check
-    llmsset_test_multi(nodes, workers);
-}
-
-void
-sylvan_quit()
-{
-    // TODO: remove lace callback
-
-    cache_free();
-    llmsset_free(nodes);
-    refs_free(&bdd_refs);
-    barrier_destroy(&gcbar);
+    sylvan_reset_counters();
 }
 
 #ifndef SYLVAN_REPORT_COLORED

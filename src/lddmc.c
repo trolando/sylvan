@@ -35,10 +35,6 @@
 #include <sylvan_common.h>
 #include <tls.h>
 
-#if USE_NUMA
-#include <numa.h>
-#endif
-
 /**
  * MDD node structure
  */
@@ -325,7 +321,7 @@ lddmc_gc_go(int master)
     // phase 2: mark nodes to keep
     barrier_wait(&gcbar);
 
-    lddmc_gc_mark_external_refs(my_id, workers);
+    lddmc_gc_mark_external_refs(my_id);
     lddmc_gc_mark_internal_refs();
 
     // phase 3: maybe resize
@@ -528,21 +524,19 @@ lddmc_followcopy(MDD mdd)
     return buf;
 }*/
 
-void
-lddmc_init(size_t tablesize, size_t maxsize, size_t cachesize)
+static void
+lddmc_quit()
 {
+    refs_free(&mdd_refs);
+    barrier_destroy(&gcbar);
+}
+
+void
+sylvan_init_ldd()
+{
+    sylvan_register_quit(lddmc_quit);
+
     lace_set_callback(TASK(lddmc_lace_test_gc));
-    workers = lace_workers();
-
-    INIT_THREAD_LOCAL(ref_key);
-    INIT_THREAD_LOCAL(insert_index);
-
-#if USE_NUMA
-    if (numa_available() != -1) {
-        numa_set_interleave_mask(numa_all_nodes_ptr);
-    }
-#endif
-
     gc = 0;
     barrier_init(&gcbar, lace_workers());
 
@@ -552,38 +546,8 @@ lddmc_init(size_t tablesize, size_t maxsize, size_t cachesize)
         exit(1);
     }
 
-    if (tablesize > 42 || maxsize > 42) {
-        fprintf(stderr, "lddmc_init error: tablesize must be <= 47!\n");
-        exit(1);
-    }
-
-    if (cachesize > 40) {
-        fprintf(stderr, "lddmc_init error: cachesize must be <= 40!\n");
-        exit(1);
-    }
-
-    nodes = llmsset_create(1LL<<tablesize, 1LL<<maxsize);
-    cache_create(1LL<<cachesize, 1LL<<cachesize);
+    INIT_THREAD_LOCAL(ref_key);
     refs_create(&mdd_refs, 1024);
-
-    /*
-    size_t nodes_mem = (1LL<<tablesize) * (sizeof(struct mddnode) + 8); // 8 bytes overhead per node
-    size_t cache_mem = (1LL<<cachesize) * sizeof(struct cache_entry);
-
-    char buf1[32], buf2[32];
-    fprintf(stderr, "LDDmc initialized, nodes table: %s, operations cache: %s\n", to_h(nodes_mem, buf1), to_h(cache_mem, buf2));
-    */
-}
-
-void
-lddmc_quit()
-{
-    // TODO: remove lace callback
-
-    cache_free();
-    llmsset_free(nodes);
-    refs_free(&mdd_refs);
-    barrier_destroy(&gcbar);
 }
 
 /**

@@ -16,6 +16,10 @@
 
 #include <sylvan_common.h>
 
+#if USE_NUMA
+#include <numa.h>
+#endif
+
 /**
  * Static global variables
  */
@@ -87,4 +91,70 @@ initialize_insert_index()
     *insert_index = llmsset_get_insertindex_multi(nodes, my_id, workers);
     SET_THREAD_LOCAL(insert_index, insert_index);
     return insert_index;
+}
+
+/**
+ * Package init and quit functions
+ */
+void
+sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize)
+{
+    workers = lace_workers();
+
+    INIT_THREAD_LOCAL(insert_index);
+
+#if USE_NUMA
+    if (numa_available() != -1) {
+        numa_set_interleave_mask(numa_all_nodes_ptr);
+    }
+#endif
+
+    if (tablesize > 40 || maxsize > 40) {
+        fprintf(stderr, "sylvan_init error: tablesize must be <= 40!\n");
+        exit(1);
+    }
+
+    if (cachesize > 40) {
+        fprintf(stderr, "sylvan_init error: cachesize must be <= 40!\n");
+        exit(1);
+    }
+
+    nodes = llmsset_create(1LL<<tablesize, 1LL<<maxsize);
+    cache_create(1LL<<cachesize, 1LL<<cachesize);
+
+    // Another sanity check
+    llmsset_test_multi(nodes, workers);
+}
+
+struct reg_quit_entry
+{
+    struct reg_quit_entry *next;
+    quit_cb cb;
+};
+
+static struct reg_quit_entry *quit_register = NULL;
+
+void
+sylvan_register_quit(quit_cb cb)
+{
+    struct reg_quit_entry *e = (struct reg_quit_entry*)malloc(sizeof(struct reg_quit_entry));
+    e->next = quit_register;
+    e->cb = cb;
+    quit_register = e;
+}
+
+void
+sylvan_quit()
+{
+    while (quit_register != NULL) {
+        struct reg_quit_entry *e = quit_register;
+        quit_register = e->next;
+        e->cb();
+        free(e);
+    }
+
+    // TODO: remove lace callback
+
+    cache_free();
+    llmsset_free(nodes);
 }

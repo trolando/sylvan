@@ -130,8 +130,7 @@ sylvan_gc_disable()
     gc_enabled = 0;
 }
 
-void
-sylvan_gc_go(int master)
+VOID_TASK_IMPL_1(sylvan_gc_go, int, master)
 {
     // check gc_enabled
     if (!gc_enabled) return;
@@ -143,7 +142,6 @@ sylvan_gc_go(int master)
 
     if (master) cache_clear();
 
-    LACE_ME;
     int my_id = LACE_WORKER_ID;
     llmsset_clear_multi(nodes, my_id, workers);
 
@@ -152,7 +150,7 @@ sylvan_gc_go(int master)
 
     struct reg_gc_mark_entry *e = gc_mark_register;
     while (e != NULL) {
-        e->cb(my_id);
+        WRAP(e->cb, my_id);
         e = e->next;
     }
 
@@ -194,10 +192,7 @@ TASK_IMPL_0(void*, sylvan_lace_test_gc)
 void
 sylvan_gc()
 {
-#if SYLVAN_STATS
     LACE_ME;
-    SV_CNT(C_gc_user);
-#endif
     sylvan_gc_go(1);
 }
 

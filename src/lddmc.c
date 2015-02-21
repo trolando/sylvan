@@ -246,8 +246,7 @@ lddmc_gc_mark_rec(MDD mdd)
 }
 
 /* Mark external references */
-void
-lddmc_gc_mark_external_refs(int my_id)
+TASK_1(void*, lddmc_gc_mark_external_refs, int, my_id)
 {
     // part of the refs hash table per worker
     size_t per_worker = (mdd_refs.refs_size + workers - 1)/ workers;
@@ -255,7 +254,7 @@ lddmc_gc_mark_external_refs(int my_id)
 
     // which part of the refs hash table we start
     size_t first = per_worker * my_id;
-    if (first >= mdd_refs.refs_size) return;
+    if (first >= mdd_refs.refs_size) return NULL;
 
     // which part of the refs hash table we end
     size_t end = per_worker * (my_id + 1);
@@ -264,11 +263,12 @@ lddmc_gc_mark_external_refs(int my_id)
     // iterate through refs hash table, mark all found
     uint64_t *it = refs_iter(&mdd_refs, first, end);
     while (it != NULL) lddmc_gc_mark_rec(refs_next(&mdd_refs, &it, end));
+
+    return NULL;
 }
 
 /* Mark internal references */
-void
-lddmc_gc_mark_internal_refs(int my_id)
+TASK_1(void*, lddmc_gc_mark_internal_refs, int, my_id)
 {
     LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);
     if (ref_key) {
@@ -280,7 +280,9 @@ lddmc_gc_mark_internal_refs(int my_id)
             if (TASK_IS_COMPLETED(t)) lddmc_gc_mark_rec(*(MDD*)TASK_RESULT(t));
         }
     }
+
     (void)my_id;
+    return NULL;
 }
 
 /**
@@ -309,6 +311,7 @@ lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
         REFS_INIT;
         REFS_PUSH(ifeq);
         REFS_PUSH(ifneq);
+        LACE_ME;
         sylvan_gc_go(1);
         REFS_RESET;
         //size_t after_gc = llmsset_get_filled(nodes);
@@ -339,6 +342,7 @@ lddmc_make_copynode(MDD ifeq, MDD ifneq)
         REFS_INIT;
         REFS_PUSH(ifeq);
         REFS_PUSH(ifneq);
+        LACE_ME;
         sylvan_gc_go(1);
         REFS_RESET;
         //size_t after_gc = llmsset_get_filled(nodes);
@@ -441,8 +445,8 @@ void
 sylvan_init_ldd()
 {
     sylvan_register_quit(lddmc_quit);
-    sylvan_gc_register_mark(lddmc_gc_mark_external_refs);
-    sylvan_gc_register_mark(lddmc_gc_mark_internal_refs);
+    sylvan_gc_register_mark(TASK(lddmc_gc_mark_external_refs));
+    sylvan_gc_register_mark(TASK(lddmc_gc_mark_internal_refs));
 
     // Sanity check
     if (sizeof(struct mddnode) != 16) {

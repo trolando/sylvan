@@ -41,7 +41,8 @@ extern llmsset_t nodes;
 TASK_DECL_0(void*, sylvan_lace_test_gc);
 #define sylvan_gc_test() CALL(sylvan_lace_test_gc)
 
-void sylvan_gc_go(int master);
+VOID_TASK_DECL_1(sylvan_gc_go, int);
+#define sylvan_gc_go(master) CALL(sylvan_gc_go, master)
 
 /**
  * Garbage collection "mark" callbacks.
@@ -50,7 +51,7 @@ void sylvan_gc_go(int master);
  * They receive one parameter (my_id) which is the
  * index of the worker (0..workers-1)
  */
-typedef void (*gc_mark_cb)(int);
+LACE_TYPEDEF_CB(gc_mark_cb, int);
 void sylvan_gc_register_mark(gc_mark_cb cb);
 
 // BDD operations

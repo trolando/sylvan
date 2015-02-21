@@ -231,8 +231,7 @@ sylvan_gc_mark_rec(BDD bdd)
 }
 
 /* Mark external references */
-void
-sylvan_gc_mark_external_refs(int my_id)
+TASK_1(void*, sylvan_gc_mark_external_refs, int, my_id)
 {
     // part of the refs hash table per worker
     size_t per_worker = (bdd_refs.refs_size + workers - 1)/ workers;
@@ -240,7 +239,7 @@ sylvan_gc_mark_external_refs(int my_id)
 
     // which part of the refs hash table we start
     size_t first = per_worker * my_id;
-    if (first >= bdd_refs.refs_size) return;
+    if (first >= bdd_refs.refs_size) return NULL;
 
     // which part of the refs hash table we end
     size_t end = per_worker * (my_id + 1);
@@ -249,11 +248,12 @@ sylvan_gc_mark_external_refs(int my_id)
     // iterate through refs hash table, mark all found
     uint64_t *it = refs_iter(&bdd_refs, first, end);
     while (it != NULL) sylvan_gc_mark_rec(refs_next(&bdd_refs, &it, end));
+
+    return NULL;
 }
 
 /* Mark internal references */
-void
-sylvan_gc_mark_internal_refs(int my_id)
+TASK_1(void*, sylvan_gc_mark_internal_refs, int, my_id)
 {
     LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);
     if (ref_key) {
@@ -266,6 +266,7 @@ sylvan_gc_mark_internal_refs(int my_id)
         }
     }
     (void)my_id;
+    return NULL;
 }
 
 /** init and quit functions */
@@ -281,8 +282,8 @@ void
 sylvan_init_bdd(int _granularity)
 {
     sylvan_register_quit(sylvan_quit_bdd);
-    sylvan_gc_register_mark(sylvan_gc_mark_external_refs);
-    sylvan_gc_register_mark(sylvan_gc_mark_internal_refs);
+    sylvan_gc_register_mark(TASK(sylvan_gc_mark_external_refs));
+    sylvan_gc_register_mark(TASK(sylvan_gc_mark_internal_refs));
 
     granularity = _granularity;
 
@@ -433,8 +434,8 @@ sylvan_makenode(BDDVAR level, BDD low, BDD high)
     uint64_t index;
     int created;
     if (llmsset_lookup(nodes, &n, insert_index, &created, &index) == 0) {
-#if SYLVAN_STATS
         LACE_ME;
+#if SYLVAN_STATS
         SV_CNT(C_gc_hashtable_full);
 #endif
 
@@ -522,8 +523,8 @@ sylvan_makenode_nocomp(BDDVAR level, BDD low, BDD high)
     uint64_t index;
     int created;
     if (llmsset_lookup(nodes, &n, insert_index, &created, &index) == 0) {
-#if SYLVAN_STATS
         LACE_ME;
+#if SYLVAN_STATS
         SV_CNT(C_gc_hashtable_full);
 #endif
         sylvan_gc_go(1);

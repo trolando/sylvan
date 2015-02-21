@@ -173,11 +173,13 @@ initialize_insert_index()
  * External references
  */
 
+refs_table_t bdd_refs;
+
 BDD
 sylvan_ref(BDD a)
 {
     if (a == sylvan_false || a == sylvan_true) return a;
-    refs_up(BDD_STRIPMARK(a));
+    refs_up(&bdd_refs, BDD_STRIPMARK(a));
     return a;
 }
 
@@ -185,13 +187,13 @@ void
 sylvan_deref(BDD a)
 {
     if (a == sylvan_false || a == sylvan_true) return;
-    refs_down(BDD_STRIPMARK(a));
+    refs_down(&bdd_refs, BDD_STRIPMARK(a));
 }
 
 size_t
 sylvan_count_refs()
 {
-    return refs_count();
+    return refs_count(&bdd_refs);
 }
 
 /**
@@ -312,20 +314,20 @@ static void
 sylvan_gc_mark_external_refs(int my_id, int workers)
 {
     // part of the refs hash table per worker
-    size_t per_worker = (refs_size + workers - 1)/ workers;
+    size_t per_worker = (bdd_refs.refs_size + workers - 1)/ workers;
     if (per_worker < 8) per_worker = 8;
 
     // which part of the refs hash table we start
     size_t first = per_worker * my_id;
-    if (first >= refs_size) return;
+    if (first >= bdd_refs.refs_size) return;
 
     // which part of the refs hash table we end
     size_t end = per_worker * (my_id + 1);
-    if (end >= refs_size) end = refs_size;
+    if (end >= bdd_refs.refs_size) end = bdd_refs.refs_size;
 
     // iterate through refs hash table, mark all found
-    uint64_t *it = refs_iter(first, end);
-    while (it != NULL) sylvan_gc_mark_rec(refs_next(&it, end));
+    uint64_t *it = refs_iter(&bdd_refs, first, end);
+    while (it != NULL) sylvan_gc_mark_rec(refs_next(&bdd_refs, &it, end));
 }
 
 static
@@ -454,7 +456,7 @@ sylvan_init(size_t tablesize, size_t maxsize, size_t cachesize, int _granularity
 
     nodes = llmsset_create(1LL<<tablesize, 1LL<<maxsize);
     cache_create(1LL<<cachesize, 1LL<<cachesize);
-    refs_create(1024);
+    refs_create(&bdd_refs, 1024);
 
     // Another sanity check
     llmsset_test_multi(nodes, workers);
@@ -467,7 +469,7 @@ sylvan_quit()
 
     cache_free();
     llmsset_free(nodes);
-    refs_free();
+    refs_free(&bdd_refs);
     barrier_destroy(&gcbar);
 }
 

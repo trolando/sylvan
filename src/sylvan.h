@@ -120,7 +120,8 @@ void sylvan_deref(BDD a);
 size_t sylvan_count_refs();
 
 /* Perform garbage collection */
-void sylvan_gc();
+VOID_TASK_DECL_0(sylvan_gc);
+#define sylvan_gc() (CALL(sylvan_gc))
 
 /* Enable or disable garbage collection. It is enabled by default. */
 void sylvan_gc_enable();

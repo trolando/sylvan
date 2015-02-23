@@ -189,11 +189,9 @@ TASK_IMPL_0(void*, sylvan_lace_test_gc)
 }
 
 /* Manually perform garbage collection */
-void
-sylvan_gc()
+VOID_TASK_IMPL_0(sylvan_gc)
 {
-    LACE_ME;
-    sylvan_gc_go(1);
+    CALL(sylvan_gc_go, 1);
 }
 
 /**

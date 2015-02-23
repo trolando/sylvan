@@ -119,6 +119,23 @@ static inline MDD MDD_SETDATA(MDD s, uint32_t data)
 #define GETNODE(mdd) ((mddnode_t)llmsset_index_to_ptr(nodes, mdd))
 
 /**
+ * Implementation of garbage collection
+ */
+
+/* Recursively mark MDD nodes as 'in use' */
+static void
+lddmc_gc_mark_rec(MDD mdd)
+{
+    if (mdd <= lddmc_true) return;
+
+    if (llmsset_mark_unsafe(nodes, mdd)) {
+        mddnode_t n = GETNODE(mdd);
+        lddmc_gc_mark_rec(mddnode_getright(n));
+        lddmc_gc_mark_rec(mddnode_getdown(n));
+    }
+}
+
+/**
  * External references
  */
 
@@ -143,6 +160,28 @@ size_t
 lddmc_count_refs()
 {
     return refs_count(&mdd_refs);
+}
+
+/* Called during garbage collection */
+TASK_1(void*, lddmc_gc_mark_external_refs, int, my_id)
+{
+    // part of the refs hash table per worker
+    size_t per_worker = (mdd_refs.refs_size + workers - 1)/ workers;
+    if (per_worker < 8) per_worker = 8;
+
+    // which part of the refs hash table we start
+    size_t first = per_worker * my_id;
+    if (first >= mdd_refs.refs_size) return NULL;
+
+    // which part of the refs hash table we end
+    size_t end = per_worker * (my_id + 1);
+    if (end >= mdd_refs.refs_size) end = mdd_refs.refs_size;
+
+    // iterate through refs hash table, mark all found
+    uint64_t *it = refs_iter(&mdd_refs, first, end);
+    while (it != NULL) lddmc_gc_mark_rec(refs_next(&mdd_refs, &it, end));
+
+    return NULL;
 }
 
 /**
@@ -228,46 +267,7 @@ ref_resize_spawns()
 #define SSPAWN(...) REFS_SPAWN(SPAWN(__VA_ARGS__))
 #define SSYNC(...) SYNC(__VA_ARGS__); REFS_DESPAWN
 
-/**
- * Implementation of garbage collection
- */
-
-/* Recursively mark MDD nodes as 'in use' */
-static void
-lddmc_gc_mark_rec(MDD mdd)
-{
-    if (mdd <= lddmc_true) return;
-
-    if (llmsset_mark_unsafe(nodes, mdd)) {
-        mddnode_t n = GETNODE(mdd);
-        lddmc_gc_mark_rec(mddnode_getright(n));
-        lddmc_gc_mark_rec(mddnode_getdown(n));
-    }
-}
-
-/* Mark external references */
-TASK_1(void*, lddmc_gc_mark_external_refs, int, my_id)
-{
-    // part of the refs hash table per worker
-    size_t per_worker = (mdd_refs.refs_size + workers - 1)/ workers;
-    if (per_worker < 8) per_worker = 8;
-
-    // which part of the refs hash table we start
-    size_t first = per_worker * my_id;
-    if (first >= mdd_refs.refs_size) return NULL;
-
-    // which part of the refs hash table we end
-    size_t end = per_worker * (my_id + 1);
-    if (end >= mdd_refs.refs_size) end = mdd_refs.refs_size;
-
-    // iterate through refs hash table, mark all found
-    uint64_t *it = refs_iter(&mdd_refs, first, end);
-    while (it != NULL) lddmc_gc_mark_rec(refs_next(&mdd_refs, &it, end));
-
-    return NULL;
-}
-
-/* Mark internal references */
+/* Called during garbage collection */
 TASK_1(void*, lddmc_gc_mark_internal_refs, int, my_id)
 {
     LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);

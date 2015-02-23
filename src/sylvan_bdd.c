@@ -107,6 +107,23 @@ struct {
 #endif
 
 /**
+ * Implementation of garbage collection.
+ */
+
+/* Recursively mark BDD nodes as 'in use' */
+static void
+sylvan_gc_mark_rec(BDD bdd)
+{
+    if (bdd == sylvan_false || bdd == sylvan_true) return;
+
+    if (llmsset_mark_unsafe(nodes, bdd&0x000000ffffffffff)) {
+        bddnode_t n = GETNODE(bdd);
+        sylvan_gc_mark_rec(n->low);
+        sylvan_gc_mark_rec(n->high);
+    }
+}
+
+/**
  * External references
  */
 
@@ -131,6 +148,28 @@ size_t
 sylvan_count_refs()
 {
     return refs_count(&bdd_refs);
+}
+
+/* Called during garbage collection */
+TASK_1(void*, sylvan_gc_mark_external_refs, int, my_id)
+{
+    // part of the refs hash table per worker
+    size_t per_worker = (bdd_refs.refs_size + workers - 1)/ workers;
+    if (per_worker < 8) per_worker = 8;
+
+    // which part of the refs hash table we start
+    size_t first = per_worker * my_id;
+    if (first >= bdd_refs.refs_size) return NULL;
+
+    // which part of the refs hash table we end
+    size_t end = per_worker * (my_id + 1);
+    if (end >= bdd_refs.refs_size) end = bdd_refs.refs_size;
+
+    // iterate through refs hash table, mark all found
+    uint64_t *it = refs_iter(&bdd_refs, first, end);
+    while (it != NULL) sylvan_gc_mark_rec(refs_next(&bdd_refs, &it, end));
+
+    return NULL;
 }
 
 /**
@@ -213,46 +252,7 @@ ref_resize_spawns()
     ref_key->r_count = mark_old_count;                                                  \
 }
 
-/**
- * Implementation of garbage collection
- */
-
-/* Recursively mark BDD nodes as 'in use' */
-static void
-sylvan_gc_mark_rec(BDD bdd)
-{
-    if (bdd == sylvan_false || bdd == sylvan_true) return;
-
-    if (llmsset_mark_unsafe(nodes, bdd&0x000000ffffffffff)) {
-        bddnode_t n = GETNODE(bdd);
-        sylvan_gc_mark_rec(n->low);
-        sylvan_gc_mark_rec(n->high);
-    }
-}
-
-/* Mark external references */
-TASK_1(void*, sylvan_gc_mark_external_refs, int, my_id)
-{
-    // part of the refs hash table per worker
-    size_t per_worker = (bdd_refs.refs_size + workers - 1)/ workers;
-    if (per_worker < 8) per_worker = 8;
-
-    // which part of the refs hash table we start
-    size_t first = per_worker * my_id;
-    if (first >= bdd_refs.refs_size) return NULL;
-
-    // which part of the refs hash table we end
-    size_t end = per_worker * (my_id + 1);
-    if (end >= bdd_refs.refs_size) end = bdd_refs.refs_size;
-
-    // iterate through refs hash table, mark all found
-    uint64_t *it = refs_iter(&bdd_refs, first, end);
-    while (it != NULL) sylvan_gc_mark_rec(refs_next(&bdd_refs, &it, end));
-
-    return NULL;
-}
-
-/* Mark internal references */
+/* Called during garbage collection */
 TASK_1(void*, sylvan_gc_mark_internal_refs, int, my_id)
 {
     LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);

@@ -38,11 +38,10 @@ extern int workers;
 extern llmsset_t nodes;
 
 /* Garbage collection test task */
-TASK_DECL_0(void*, sylvan_lace_test_gc);
-#define sylvan_gc_test() CALL(sylvan_lace_test_gc)
+#define sylvan_gc_test() YIELD_NEWFRAME()
 
 VOID_TASK_DECL_1(sylvan_gc_go, int);
-#define sylvan_gc_go(master) CALL(sylvan_gc_go, master)
+#define sylvan_gc_go(master) TOGETHER(sylvan_gc_go, master)
 
 // BDD operations
 #define CACHE_ITE 0

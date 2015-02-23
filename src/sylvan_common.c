@@ -181,17 +181,10 @@ VOID_TASK_IMPL_1(sylvan_gc_go, int, master)
     barrier_wait(&gcbar);
 }
 
-/* Callback for Lace */
-TASK_IMPL_0(void*, sylvan_lace_test_gc)
-{
-    if (gc) sylvan_gc_go(0);
-    return 0;
-}
-
 /* Manually perform garbage collection */
 VOID_TASK_IMPL_0(sylvan_gc)
 {
-    CALL(sylvan_gc_go, 1);
+    TOGETHER(sylvan_gc_go, 1);
 }
 
 /**
@@ -223,7 +216,6 @@ sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize)
     nodes = llmsset_create(1LL<<tablesize, 1LL<<maxsize);
     cache_create(1LL<<cachesize, 1LL<<cachesize);
 
-    lace_set_callback(TASK(sylvan_lace_test_gc));
     gc = 0;
     barrier_init(&gcbar, lace_workers());
 
@@ -263,8 +255,6 @@ sylvan_quit()
         gc_mark_register = e->next;
         free(e);
     }
-
-    // TODO: remove lace callback
 
     cache_free();
     llmsset_free(nodes);

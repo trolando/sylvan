@@ -292,6 +292,9 @@ sylvan_gc_mark_internal_refs()
 static
 void sylvan_gc_go(int master)
 {
+    // check gc_enabled
+    if (!gc_enabled) return;
+
     if (master && !cas(&gc, 0, 1)) master=0;
 
     // phase 1: clear cache and hash array
@@ -534,13 +537,11 @@ sylvan_makenode(BDDVAR level, BDD low, BDD high)
         SV_CNT(C_gc_hashtable_full);
 #endif
 
-        if (gc_enabled) {
-            //size_t before_gc = llmsset_get_filled(nodes);
-            sylvan_gc_go(1);
-            //size_t after_gc = llmsset_get_filled(nodes);
-            //size_t total = llmsset_get_size(nodes);
-            //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
-        }
+        //size_t before_gc = llmsset_get_filled(nodes);
+        sylvan_gc_go(1);
+        //size_t after_gc = llmsset_get_filled(nodes);
+        //size_t total = llmsset_get_size(nodes);
+        //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
 
         if (llmsset_lookup(nodes, &n, insert_index, &created, &index) == 0) {
             fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_get_filled(nodes), llmsset_get_size(nodes));
@@ -624,7 +625,7 @@ sylvan_makenode_nocomp(BDDVAR level, BDD low, BDD high)
         LACE_ME;
         SV_CNT(C_gc_hashtable_full);
 #endif
-        if (gc_enabled) sylvan_gc_go(1);
+        sylvan_gc_go(1);
         if (llmsset_lookup(nodes, &n, insert_index, &created, &index) == 0) {
             fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_get_filled(nodes), llmsset_get_size(nodes));
             exit(1);

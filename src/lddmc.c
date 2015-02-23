@@ -307,6 +307,9 @@ lddmc_gc_mark_internal_refs()
 static void
 lddmc_gc_go(int master)
 {
+    // check gc_enabled
+    if (!gc_enabled) return;
+
     if (master && !cas(&gc, 0, 1)) master = 0;
 
     // phase 1: clear cache and hash array
@@ -394,16 +397,14 @@ lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
     uint64_t index;
     int created;
     if (llmsset_lookup(nodes, &n, insert_index, &created, &index) == 0) {
-        if (gc_enabled) {
-            //size_t before_gc = llmsset_get_filled(nodes);
-            REFS_INIT;
-            REFS_PUSH(ifeq);
-            REFS_PUSH(ifneq);
-            lddmc_gc_go(1);
-            REFS_RESET;
-            //size_t after_gc = llmsset_get_filled(nodes);
-            //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
-        }
+        //size_t before_gc = llmsset_get_filled(nodes);
+        REFS_INIT;
+        REFS_PUSH(ifeq);
+        REFS_PUSH(ifneq);
+        lddmc_gc_go(1);
+        REFS_RESET;
+        //size_t after_gc = llmsset_get_filled(nodes);
+        //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
 
         if (llmsset_lookup(nodes, &n, insert_index, &created, &index) == 0) {
             fprintf(stderr, "MDD Unique table full, %zu of %zu buckets filled!\n", llmsset_get_filled(nodes), llmsset_get_size(nodes));
@@ -426,16 +427,14 @@ lddmc_make_copynode(MDD ifeq, MDD ifneq)
     uint64_t index;
     int created;
     if (llmsset_lookup(nodes, &n, insert_index, &created, &index) == 0) {
-        if (gc_enabled) {
-            //size_t before_gc = llmsset_get_filled(nodes);
-            REFS_INIT;
-            REFS_PUSH(ifeq);
-            REFS_PUSH(ifneq);
-            lddmc_gc_go(1);
-            REFS_RESET;
-            //size_t after_gc = llmsset_get_filled(nodes);
-            //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
-        }
+        //size_t before_gc = llmsset_get_filled(nodes);
+        REFS_INIT;
+        REFS_PUSH(ifeq);
+        REFS_PUSH(ifneq);
+        lddmc_gc_go(1);
+        REFS_RESET;
+        //size_t after_gc = llmsset_get_filled(nodes);
+        //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
 
         if (llmsset_lookup(nodes, &n, insert_index, &created, &index) == 0) {
             fprintf(stderr, "MDD Unique table full, %zu of %zu buckets filled!\n", llmsset_get_filled(nodes), llmsset_get_size(nodes));

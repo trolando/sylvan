@@ -44,16 +44,6 @@ TASK_DECL_0(void*, sylvan_lace_test_gc);
 VOID_TASK_DECL_1(sylvan_gc_go, int);
 #define sylvan_gc_go(master) CALL(sylvan_gc_go, master)
 
-/**
- * Garbage collection "mark" callbacks.
- * These are called during garbage collection to
- * recursively mark references.
- * They receive one parameter (my_id) which is the
- * index of the worker (0..workers-1)
- */
-LACE_TYPEDEF_CB(gc_mark_cb, int);
-void sylvan_gc_register_mark(gc_mark_cb cb);
-
 // BDD operations
 #define CACHE_ITE 0
 #define CACHE_RELPROD_PAIRED 1

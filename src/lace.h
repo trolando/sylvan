@@ -239,10 +239,16 @@ void lace_init_worker(int idx, size_t dqsize);
 pthread_t lace_spawn_worker(int idx, size_t stacksize, void *(*fun)(void*), void* arg);
 
 /**
- * Steal random tasks until Lace exits.
+ * Steal a random task.
  */
-void lace_steal_random_loop();
-void lace_steal_loop();
+#define lace_steal_random() CALL(lace_steal_random)
+
+/**
+ * Steal random tasks until parameter *quit is set
+ * Note: task declarations at end; quit is of type int*
+ */
+#define lace_steal_random_loop(quit) CALL(lace_steal_random_loop, quit)
+#define lace_steal_loop(quit) CALL(lace_steal_loop, quit)
 
 /**
  * Retrieve number of Lace workers
@@ -255,7 +261,7 @@ size_t lace_workers();
 size_t lace_default_stacksize();
 
 /**
- * Retrieve current worker. (for lace_steal_random)
+ * Retrieve current worker.
  */
 WorkerP *lace_get_worker();
 
@@ -263,11 +269,6 @@ WorkerP *lace_get_worker();
  * Retrieve the current head of the deque
  */
 Task *lace_get_head(WorkerP *);
-
-/**
- * Steal a random task.
- */
-void lace_steal_random(WorkerP *self, Task *head);
 
 /**
  * Exit Lace. Automatically called when started with cb,arg.
@@ -287,6 +288,9 @@ void lace_set_callback(lace_nowork_cb cb);
 #define SYNC(f)           ( __lace_dq_head--, WRAP(f##_SYNC) )
 #define SPAWN(f, ...)     ( WRAP(f##_SPAWN, ##__VA_ARGS__), __lace_dq_head++ )
 #define CALL(f, ...)      ( WRAP(f##_CALL, ##__VA_ARGS__) )
+#define TOGETHER(f, ...)  ( WRAP(f##_TOGETHER, ##__VA_ARGS__) )
+#define NEWFRAME(f, ...)  ( WRAP(f##_NEWFRAME, ##__VA_ARGS__) )
+#define STEAL_RANDOM()    ( CALL(lace_steal_random) )
 #define LACE_WORKER_ID    ( __lace_worker->worker )
 
 /* Use LACE_ME to initialize Lace variables, in case you want to call multiple Lace tasks */
@@ -311,6 +315,26 @@ static inline void CHECKSTACK(WorkerP *w)
 #else
 #define CHECKSTACK(w) {}
 #endif
+
+typedef struct
+{
+    Task *t;
+    uint8_t all;
+    char pad[64-sizeof(Task *)-sizeof(uint8_t)];
+} lace_newframe_t;
+
+extern lace_newframe_t lace_newframe;
+
+/**
+ * Internal function to start participating on a task in a new frame
+ * Usually, <root> is set to NULL and the task is copied from lace_newframe.t
+ * It is possible to override the start task by setting <root>.
+ */
+void lace_do_together(WorkerP *__lace_worker, Task *__lace_dq_head, Task *task);
+void lace_do_newframe(WorkerP *__lace_worker, Task *__lace_dq_head, Task *task);
+
+void lace_yield(WorkerP *__lace_worker, Task *__lace_dq_head);
+#define YIELD_NEWFRAME() { if (unlikely(lace_newframe.t != NULL)) lace_yield(__lace_worker, __lace_dq_head); }
 
 #if LACE_PIE_TIMES
 static void lace_time_event( WorkerP *w, int event )
@@ -504,6 +528,31 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head )                                 
     }                                                                                 \
 }                                                                                     \
                                                                                       \
+static inline __attribute__((unused))                                                 \
+RTYPE NAME##_NEWFRAME(WorkerP *w, Task *__dq_head )                                   \
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+                                                                                      \
+                                                                                      \
+    lace_do_newframe(w, __dq_head, &_t);                                              \
+    return ((TD_##NAME *)t)->d.res;                                                   \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_TOGETHER(WorkerP *w, Task *__dq_head )                                    \
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+                                                                                      \
+                                                                                      \
+    lace_do_together(w, __dq_head, &_t);                                              \
+}                                                                                     \
+                                                                                      \
 static int                                                                            \
 NAME##_shrink_shared(WorkerP *w)                                                      \
 {                                                                                     \
@@ -535,49 +584,50 @@ NAME##_shrink_shared(WorkerP *w)                                                
 }                                                                                     \
                                                                                       \
 static inline void                                                                    \
-NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                          \
+NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                         \
 {                                                                                     \
-    lace_time_event(w, 3);                                                            \
-    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    lace_time_event(__lace_worker, 3);                                                \
+    TD_##NAME *t = (TD_##NAME *)__lace_dq_head;                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
         while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
-        __dq_head += 1;                                                               \
+        __lace_dq_head += 1;                                                          \
                                                                                       \
         /* Now leapfrog */                                                            \
         int attempts = 32;                                                            \
         while (thief != THIEF_COMPLETED) {                                            \
-            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
-            Worker *res = lace_steal(w, __dq_head, thief);                            \
+            PR_COUNTSTEALS(__lace_worker, CTR_leap_tries);                            \
+            Worker *res = lace_steal(__lace_worker, __lace_dq_head, thief);           \
             if (res == LACE_NOWORK) {                                                 \
-                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing(w, __dq_head);                                  \
+                YIELD_NEWFRAME();                                                     \
+                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
+                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
-                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
-                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                PR_COUNTSTEALS(__lace_worker, CTR_leap_busy);                         \
             }                                                                         \
             compiler_barrier();                                                       \
             thief = t->thief;                                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
-        /*            no need to decrease __dq_head, since it is a local variable */  \
+        /*            no need to decrease __lace_dq_head, since it is a local variable */\
         compiler_barrier();                                                           \
-        if (w->allstolen == 0) {                                                      \
+        if (__lace_worker->allstolen == 0) {                                          \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
-            Worker *wt = w->public;                                                   \
+            Worker *wt = __lace_worker->public;                                       \
             wt->allstolen = 1;                                                        \
-            w->allstolen = 1;                                                         \
+            __lace_worker->allstolen = 1;                                             \
         }                                                                             \
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
     t->thief = THIEF_EMPTY;                                                           \
-    lace_time_event(w, 4);                                                            \
+    lace_time_event(__lace_worker, 4);                                                \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
@@ -615,7 +665,6 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
 static inline __attribute__((unused))                                                 \
 RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                        \
 {                                                                                     \
-    CHECKSTACK(w);                                                                    \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
@@ -709,6 +758,31 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head )                                 
     }                                                                                 \
 }                                                                                     \
                                                                                       \
+static inline __attribute__((unused))                                                 \
+void NAME##_NEWFRAME(WorkerP *w, Task *__dq_head )                                    \
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+                                                                                      \
+                                                                                      \
+    lace_do_newframe(w, __dq_head, &_t);                                              \
+    return ;                                                                          \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_TOGETHER(WorkerP *w, Task *__dq_head )                                    \
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+                                                                                      \
+                                                                                      \
+    lace_do_together(w, __dq_head, &_t);                                              \
+}                                                                                     \
+                                                                                      \
 static int                                                                            \
 NAME##_shrink_shared(WorkerP *w)                                                      \
 {                                                                                     \
@@ -740,49 +814,50 @@ NAME##_shrink_shared(WorkerP *w)                                                
 }                                                                                     \
                                                                                       \
 static inline void                                                                    \
-NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                          \
+NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                         \
 {                                                                                     \
-    lace_time_event(w, 3);                                                            \
-    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    lace_time_event(__lace_worker, 3);                                                \
+    TD_##NAME *t = (TD_##NAME *)__lace_dq_head;                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
         while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
-        __dq_head += 1;                                                               \
+        __lace_dq_head += 1;                                                          \
                                                                                       \
         /* Now leapfrog */                                                            \
         int attempts = 32;                                                            \
         while (thief != THIEF_COMPLETED) {                                            \
-            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
-            Worker *res = lace_steal(w, __dq_head, thief);                            \
+            PR_COUNTSTEALS(__lace_worker, CTR_leap_tries);                            \
+            Worker *res = lace_steal(__lace_worker, __lace_dq_head, thief);           \
             if (res == LACE_NOWORK) {                                                 \
-                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing(w, __dq_head);                                  \
+                YIELD_NEWFRAME();                                                     \
+                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
+                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
-                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
-                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                PR_COUNTSTEALS(__lace_worker, CTR_leap_busy);                         \
             }                                                                         \
             compiler_barrier();                                                       \
             thief = t->thief;                                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
-        /*            no need to decrease __dq_head, since it is a local variable */  \
+        /*            no need to decrease __lace_dq_head, since it is a local variable */\
         compiler_barrier();                                                           \
-        if (w->allstolen == 0) {                                                      \
+        if (__lace_worker->allstolen == 0) {                                          \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
-            Worker *wt = w->public;                                                   \
+            Worker *wt = __lace_worker->public;                                       \
             wt->allstolen = 1;                                                        \
-            w->allstolen = 1;                                                         \
+            __lace_worker->allstolen = 1;                                             \
         }                                                                             \
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
     t->thief = THIEF_EMPTY;                                                           \
-    lace_time_event(w, 4);                                                            \
+    lace_time_event(__lace_worker, 4);                                                \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
@@ -820,7 +895,6 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
 static inline __attribute__((unused))                                                 \
 void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                         \
 {                                                                                     \
-    CHECKSTACK(w);                                                                    \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
@@ -917,6 +991,31 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                  
     }                                                                                 \
 }                                                                                     \
                                                                                       \
+static inline __attribute__((unused))                                                 \
+RTYPE NAME##_NEWFRAME(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                    \
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1;                                                         \
+                                                                                      \
+    lace_do_newframe(w, __dq_head, &_t);                                              \
+    return ((TD_##NAME *)t)->d.res;                                                   \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_TOGETHER(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                     \
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1;                                                         \
+                                                                                      \
+    lace_do_together(w, __dq_head, &_t);                                              \
+}                                                                                     \
+                                                                                      \
 static int                                                                            \
 NAME##_shrink_shared(WorkerP *w)                                                      \
 {                                                                                     \
@@ -948,49 +1047,50 @@ NAME##_shrink_shared(WorkerP *w)                                                
 }                                                                                     \
                                                                                       \
 static inline void                                                                    \
-NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                          \
+NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                         \
 {                                                                                     \
-    lace_time_event(w, 3);                                                            \
-    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    lace_time_event(__lace_worker, 3);                                                \
+    TD_##NAME *t = (TD_##NAME *)__lace_dq_head;                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
         while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
-        __dq_head += 1;                                                               \
+        __lace_dq_head += 1;                                                          \
                                                                                       \
         /* Now leapfrog */                                                            \
         int attempts = 32;                                                            \
         while (thief != THIEF_COMPLETED) {                                            \
-            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
-            Worker *res = lace_steal(w, __dq_head, thief);                            \
+            PR_COUNTSTEALS(__lace_worker, CTR_leap_tries);                            \
+            Worker *res = lace_steal(__lace_worker, __lace_dq_head, thief);           \
             if (res == LACE_NOWORK) {                                                 \
-                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing(w, __dq_head);                                  \
+                YIELD_NEWFRAME();                                                     \
+                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
+                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
-                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
-                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                PR_COUNTSTEALS(__lace_worker, CTR_leap_busy);                         \
             }                                                                         \
             compiler_barrier();                                                       \
             thief = t->thief;                                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
-        /*            no need to decrease __dq_head, since it is a local variable */  \
+        /*            no need to decrease __lace_dq_head, since it is a local variable */\
         compiler_barrier();                                                           \
-        if (w->allstolen == 0) {                                                      \
+        if (__lace_worker->allstolen == 0) {                                          \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
-            Worker *wt = w->public;                                                   \
+            Worker *wt = __lace_worker->public;                                       \
             wt->allstolen = 1;                                                        \
-            w->allstolen = 1;                                                         \
+            __lace_worker->allstolen = 1;                                             \
         }                                                                             \
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
     t->thief = THIEF_EMPTY;                                                           \
-    lace_time_event(w, 4);                                                            \
+    lace_time_event(__lace_worker, 4);                                                \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
@@ -1028,7 +1128,6 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
 static inline __attribute__((unused))                                                 \
 RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                        \
 {                                                                                     \
-    CHECKSTACK(w);                                                                    \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
@@ -1122,6 +1221,31 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                  
     }                                                                                 \
 }                                                                                     \
                                                                                       \
+static inline __attribute__((unused))                                                 \
+void NAME##_NEWFRAME(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                     \
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1;                                                         \
+                                                                                      \
+    lace_do_newframe(w, __dq_head, &_t);                                              \
+    return ;                                                                          \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_TOGETHER(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                     \
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1;                                                         \
+                                                                                      \
+    lace_do_together(w, __dq_head, &_t);                                              \
+}                                                                                     \
+                                                                                      \
 static int                                                                            \
 NAME##_shrink_shared(WorkerP *w)                                                      \
 {                                                                                     \
@@ -1153,49 +1277,50 @@ NAME##_shrink_shared(WorkerP *w)                                                
 }                                                                                     \
                                                                                       \
 static inline void                                                                    \
-NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                          \
+NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                         \
 {                                                                                     \
-    lace_time_event(w, 3);                                                            \
-    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    lace_time_event(__lace_worker, 3);                                                \
+    TD_##NAME *t = (TD_##NAME *)__lace_dq_head;                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
         while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
-        __dq_head += 1;                                                               \
+        __lace_dq_head += 1;                                                          \
                                                                                       \
         /* Now leapfrog */                                                            \
         int attempts = 32;                                                            \
         while (thief != THIEF_COMPLETED) {                                            \
-            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
-            Worker *res = lace_steal(w, __dq_head, thief);                            \
+            PR_COUNTSTEALS(__lace_worker, CTR_leap_tries);                            \
+            Worker *res = lace_steal(__lace_worker, __lace_dq_head, thief);           \
             if (res == LACE_NOWORK) {                                                 \
-                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing(w, __dq_head);                                  \
+                YIELD_NEWFRAME();                                                     \
+                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
+                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
-                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
-                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                PR_COUNTSTEALS(__lace_worker, CTR_leap_busy);                         \
             }                                                                         \
             compiler_barrier();                                                       \
             thief = t->thief;                                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
-        /*            no need to decrease __dq_head, since it is a local variable */  \
+        /*            no need to decrease __lace_dq_head, since it is a local variable */\
         compiler_barrier();                                                           \
-        if (w->allstolen == 0) {                                                      \
+        if (__lace_worker->allstolen == 0) {                                          \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
-            Worker *wt = w->public;                                                   \
+            Worker *wt = __lace_worker->public;                                       \
             wt->allstolen = 1;                                                        \
-            w->allstolen = 1;                                                         \
+            __lace_worker->allstolen = 1;                                             \
         }                                                                             \
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
     t->thief = THIEF_EMPTY;                                                           \
-    lace_time_event(w, 4);                                                            \
+    lace_time_event(__lace_worker, 4);                                                \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
@@ -1233,7 +1358,6 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
 static inline __attribute__((unused))                                                 \
 void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                         \
 {                                                                                     \
-    CHECKSTACK(w);                                                                    \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
@@ -1330,6 +1454,31 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)   
     }                                                                                 \
 }                                                                                     \
                                                                                       \
+static inline __attribute__((unused))                                                 \
+RTYPE NAME##_NEWFRAME(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)     \
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2;                                \
+                                                                                      \
+    lace_do_newframe(w, __dq_head, &_t);                                              \
+    return ((TD_##NAME *)t)->d.res;                                                   \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_TOGETHER(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)      \
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2;                                \
+                                                                                      \
+    lace_do_together(w, __dq_head, &_t);                                              \
+}                                                                                     \
+                                                                                      \
 static int                                                                            \
 NAME##_shrink_shared(WorkerP *w)                                                      \
 {                                                                                     \
@@ -1361,49 +1510,50 @@ NAME##_shrink_shared(WorkerP *w)                                                
 }                                                                                     \
                                                                                       \
 static inline void                                                                    \
-NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                          \
+NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                         \
 {                                                                                     \
-    lace_time_event(w, 3);                                                            \
-    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    lace_time_event(__lace_worker, 3);                                                \
+    TD_##NAME *t = (TD_##NAME *)__lace_dq_head;                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
         while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
-        __dq_head += 1;                                                               \
+        __lace_dq_head += 1;                                                          \
                                                                                       \
         /* Now leapfrog */                                                            \
         int attempts = 32;                                                            \
         while (thief != THIEF_COMPLETED) {                                            \
-            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
-            Worker *res = lace_steal(w, __dq_head, thief);                            \
+            PR_COUNTSTEALS(__lace_worker, CTR_leap_tries);                            \
+            Worker *res = lace_steal(__lace_worker, __lace_dq_head, thief);           \
             if (res == LACE_NOWORK) {                                                 \
-                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing(w, __dq_head);                                  \
+                YIELD_NEWFRAME();                                                     \
+                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
+                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
-                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
-                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                PR_COUNTSTEALS(__lace_worker, CTR_leap_busy);                         \
             }                                                                         \
             compiler_barrier();                                                       \
             thief = t->thief;                                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
-        /*            no need to decrease __dq_head, since it is a local variable */  \
+        /*            no need to decrease __lace_dq_head, since it is a local variable */\
         compiler_barrier();                                                           \
-        if (w->allstolen == 0) {                                                      \
+        if (__lace_worker->allstolen == 0) {                                          \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
-            Worker *wt = w->public;                                                   \
+            Worker *wt = __lace_worker->public;                                       \
             wt->allstolen = 1;                                                        \
-            w->allstolen = 1;                                                         \
+            __lace_worker->allstolen = 1;                                             \
         }                                                                             \
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
     t->thief = THIEF_EMPTY;                                                           \
-    lace_time_event(w, 4);                                                            \
+    lace_time_event(__lace_worker, 4);                                                \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
@@ -1441,7 +1591,6 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
 static inline __attribute__((unused))                                                 \
 RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                        \
 {                                                                                     \
-    CHECKSTACK(w);                                                                    \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
@@ -1535,6 +1684,31 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)   
     }                                                                                 \
 }                                                                                     \
                                                                                       \
+static inline __attribute__((unused))                                                 \
+void NAME##_NEWFRAME(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)      \
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2;                                \
+                                                                                      \
+    lace_do_newframe(w, __dq_head, &_t);                                              \
+    return ;                                                                          \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_TOGETHER(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)      \
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2;                                \
+                                                                                      \
+    lace_do_together(w, __dq_head, &_t);                                              \
+}                                                                                     \
+                                                                                      \
 static int                                                                            \
 NAME##_shrink_shared(WorkerP *w)                                                      \
 {                                                                                     \
@@ -1566,49 +1740,50 @@ NAME##_shrink_shared(WorkerP *w)                                                
 }                                                                                     \
                                                                                       \
 static inline void                                                                    \
-NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                          \
+NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                         \
 {                                                                                     \
-    lace_time_event(w, 3);                                                            \
-    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    lace_time_event(__lace_worker, 3);                                                \
+    TD_##NAME *t = (TD_##NAME *)__lace_dq_head;                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
         while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
-        __dq_head += 1;                                                               \
+        __lace_dq_head += 1;                                                          \
                                                                                       \
         /* Now leapfrog */                                                            \
         int attempts = 32;                                                            \
         while (thief != THIEF_COMPLETED) {                                            \
-            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
-            Worker *res = lace_steal(w, __dq_head, thief);                            \
+            PR_COUNTSTEALS(__lace_worker, CTR_leap_tries);                            \
+            Worker *res = lace_steal(__lace_worker, __lace_dq_head, thief);           \
             if (res == LACE_NOWORK) {                                                 \
-                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing(w, __dq_head);                                  \
+                YIELD_NEWFRAME();                                                     \
+                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
+                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
-                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
-                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                PR_COUNTSTEALS(__lace_worker, CTR_leap_busy);                         \
             }                                                                         \
             compiler_barrier();                                                       \
             thief = t->thief;                                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
-        /*            no need to decrease __dq_head, since it is a local variable */  \
+        /*            no need to decrease __lace_dq_head, since it is a local variable */\
         compiler_barrier();                                                           \
-        if (w->allstolen == 0) {                                                      \
+        if (__lace_worker->allstolen == 0) {                                          \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
-            Worker *wt = w->public;                                                   \
+            Worker *wt = __lace_worker->public;                                       \
             wt->allstolen = 1;                                                        \
-            w->allstolen = 1;                                                         \
+            __lace_worker->allstolen = 1;                                             \
         }                                                                             \
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
     t->thief = THIEF_EMPTY;                                                           \
-    lace_time_event(w, 4);                                                            \
+    lace_time_event(__lace_worker, 4);                                                \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
@@ -1646,7 +1821,6 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
 static inline __attribute__((unused))                                                 \
 void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                         \
 {                                                                                     \
-    CHECKSTACK(w);                                                                    \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
@@ -1743,6 +1917,31 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
     }                                                                                 \
 }                                                                                     \
                                                                                       \
+static inline __attribute__((unused))                                                 \
+RTYPE NAME##_NEWFRAME(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3)\
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3;       \
+                                                                                      \
+    lace_do_newframe(w, __dq_head, &_t);                                              \
+    return ((TD_##NAME *)t)->d.res;                                                   \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_TOGETHER(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3)\
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3;       \
+                                                                                      \
+    lace_do_together(w, __dq_head, &_t);                                              \
+}                                                                                     \
+                                                                                      \
 static int                                                                            \
 NAME##_shrink_shared(WorkerP *w)                                                      \
 {                                                                                     \
@@ -1774,49 +1973,50 @@ NAME##_shrink_shared(WorkerP *w)                                                
 }                                                                                     \
                                                                                       \
 static inline void                                                                    \
-NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                          \
+NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                         \
 {                                                                                     \
-    lace_time_event(w, 3);                                                            \
-    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    lace_time_event(__lace_worker, 3);                                                \
+    TD_##NAME *t = (TD_##NAME *)__lace_dq_head;                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
         while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
-        __dq_head += 1;                                                               \
+        __lace_dq_head += 1;                                                          \
                                                                                       \
         /* Now leapfrog */                                                            \
         int attempts = 32;                                                            \
         while (thief != THIEF_COMPLETED) {                                            \
-            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
-            Worker *res = lace_steal(w, __dq_head, thief);                            \
+            PR_COUNTSTEALS(__lace_worker, CTR_leap_tries);                            \
+            Worker *res = lace_steal(__lace_worker, __lace_dq_head, thief);           \
             if (res == LACE_NOWORK) {                                                 \
-                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing(w, __dq_head);                                  \
+                YIELD_NEWFRAME();                                                     \
+                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
+                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
-                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
-                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                PR_COUNTSTEALS(__lace_worker, CTR_leap_busy);                         \
             }                                                                         \
             compiler_barrier();                                                       \
             thief = t->thief;                                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
-        /*            no need to decrease __dq_head, since it is a local variable */  \
+        /*            no need to decrease __lace_dq_head, since it is a local variable */\
         compiler_barrier();                                                           \
-        if (w->allstolen == 0) {                                                      \
+        if (__lace_worker->allstolen == 0) {                                          \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
-            Worker *wt = w->public;                                                   \
+            Worker *wt = __lace_worker->public;                                       \
             wt->allstolen = 1;                                                        \
-            w->allstolen = 1;                                                         \
+            __lace_worker->allstolen = 1;                                             \
         }                                                                             \
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
     t->thief = THIEF_EMPTY;                                                           \
-    lace_time_event(w, 4);                                                            \
+    lace_time_event(__lace_worker, 4);                                                \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
@@ -1854,7 +2054,6 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
 static inline __attribute__((unused))                                                 \
 RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                        \
 {                                                                                     \
-    CHECKSTACK(w);                                                                    \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
@@ -1948,6 +2147,31 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
     }                                                                                 \
 }                                                                                     \
                                                                                       \
+static inline __attribute__((unused))                                                 \
+void NAME##_NEWFRAME(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3)\
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3;       \
+                                                                                      \
+    lace_do_newframe(w, __dq_head, &_t);                                              \
+    return ;                                                                          \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_TOGETHER(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3)\
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3;       \
+                                                                                      \
+    lace_do_together(w, __dq_head, &_t);                                              \
+}                                                                                     \
+                                                                                      \
 static int                                                                            \
 NAME##_shrink_shared(WorkerP *w)                                                      \
 {                                                                                     \
@@ -1979,49 +2203,50 @@ NAME##_shrink_shared(WorkerP *w)                                                
 }                                                                                     \
                                                                                       \
 static inline void                                                                    \
-NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                          \
+NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                         \
 {                                                                                     \
-    lace_time_event(w, 3);                                                            \
-    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    lace_time_event(__lace_worker, 3);                                                \
+    TD_##NAME *t = (TD_##NAME *)__lace_dq_head;                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
         while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
-        __dq_head += 1;                                                               \
+        __lace_dq_head += 1;                                                          \
                                                                                       \
         /* Now leapfrog */                                                            \
         int attempts = 32;                                                            \
         while (thief != THIEF_COMPLETED) {                                            \
-            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
-            Worker *res = lace_steal(w, __dq_head, thief);                            \
+            PR_COUNTSTEALS(__lace_worker, CTR_leap_tries);                            \
+            Worker *res = lace_steal(__lace_worker, __lace_dq_head, thief);           \
             if (res == LACE_NOWORK) {                                                 \
-                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing(w, __dq_head);                                  \
+                YIELD_NEWFRAME();                                                     \
+                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
+                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
-                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
-                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                PR_COUNTSTEALS(__lace_worker, CTR_leap_busy);                         \
             }                                                                         \
             compiler_barrier();                                                       \
             thief = t->thief;                                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
-        /*            no need to decrease __dq_head, since it is a local variable */  \
+        /*            no need to decrease __lace_dq_head, since it is a local variable */\
         compiler_barrier();                                                           \
-        if (w->allstolen == 0) {                                                      \
+        if (__lace_worker->allstolen == 0) {                                          \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
-            Worker *wt = w->public;                                                   \
+            Worker *wt = __lace_worker->public;                                       \
             wt->allstolen = 1;                                                        \
-            w->allstolen = 1;                                                         \
+            __lace_worker->allstolen = 1;                                             \
         }                                                                             \
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
     t->thief = THIEF_EMPTY;                                                           \
-    lace_time_event(w, 4);                                                            \
+    lace_time_event(__lace_worker, 4);                                                \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
@@ -2059,7 +2284,6 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
 static inline __attribute__((unused))                                                 \
 void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                         \
 {                                                                                     \
-    CHECKSTACK(w);                                                                    \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
@@ -2156,6 +2380,31 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
     }                                                                                 \
 }                                                                                     \
                                                                                       \
+static inline __attribute__((unused))                                                 \
+RTYPE NAME##_NEWFRAME(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4)\
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4;\
+                                                                                      \
+    lace_do_newframe(w, __dq_head, &_t);                                              \
+    return ((TD_##NAME *)t)->d.res;                                                   \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_TOGETHER(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4)\
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4;\
+                                                                                      \
+    lace_do_together(w, __dq_head, &_t);                                              \
+}                                                                                     \
+                                                                                      \
 static int                                                                            \
 NAME##_shrink_shared(WorkerP *w)                                                      \
 {                                                                                     \
@@ -2187,49 +2436,50 @@ NAME##_shrink_shared(WorkerP *w)                                                
 }                                                                                     \
                                                                                       \
 static inline void                                                                    \
-NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                          \
+NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                         \
 {                                                                                     \
-    lace_time_event(w, 3);                                                            \
-    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    lace_time_event(__lace_worker, 3);                                                \
+    TD_##NAME *t = (TD_##NAME *)__lace_dq_head;                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
         while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
-        __dq_head += 1;                                                               \
+        __lace_dq_head += 1;                                                          \
                                                                                       \
         /* Now leapfrog */                                                            \
         int attempts = 32;                                                            \
         while (thief != THIEF_COMPLETED) {                                            \
-            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
-            Worker *res = lace_steal(w, __dq_head, thief);                            \
+            PR_COUNTSTEALS(__lace_worker, CTR_leap_tries);                            \
+            Worker *res = lace_steal(__lace_worker, __lace_dq_head, thief);           \
             if (res == LACE_NOWORK) {                                                 \
-                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing(w, __dq_head);                                  \
+                YIELD_NEWFRAME();                                                     \
+                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
+                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
-                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
-                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                PR_COUNTSTEALS(__lace_worker, CTR_leap_busy);                         \
             }                                                                         \
             compiler_barrier();                                                       \
             thief = t->thief;                                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
-        /*            no need to decrease __dq_head, since it is a local variable */  \
+        /*            no need to decrease __lace_dq_head, since it is a local variable */\
         compiler_barrier();                                                           \
-        if (w->allstolen == 0) {                                                      \
+        if (__lace_worker->allstolen == 0) {                                          \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
-            Worker *wt = w->public;                                                   \
+            Worker *wt = __lace_worker->public;                                       \
             wt->allstolen = 1;                                                        \
-            w->allstolen = 1;                                                         \
+            __lace_worker->allstolen = 1;                                             \
         }                                                                             \
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
     t->thief = THIEF_EMPTY;                                                           \
-    lace_time_event(w, 4);                                                            \
+    lace_time_event(__lace_worker, 4);                                                \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
@@ -2267,7 +2517,6 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
 static inline __attribute__((unused))                                                 \
 RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                        \
 {                                                                                     \
-    CHECKSTACK(w);                                                                    \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
@@ -2361,6 +2610,31 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
     }                                                                                 \
 }                                                                                     \
                                                                                       \
+static inline __attribute__((unused))                                                 \
+void NAME##_NEWFRAME(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4)\
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4;\
+                                                                                      \
+    lace_do_newframe(w, __dq_head, &_t);                                              \
+    return ;                                                                          \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_TOGETHER(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4)\
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4;\
+                                                                                      \
+    lace_do_together(w, __dq_head, &_t);                                              \
+}                                                                                     \
+                                                                                      \
 static int                                                                            \
 NAME##_shrink_shared(WorkerP *w)                                                      \
 {                                                                                     \
@@ -2392,49 +2666,50 @@ NAME##_shrink_shared(WorkerP *w)                                                
 }                                                                                     \
                                                                                       \
 static inline void                                                                    \
-NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                          \
+NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                         \
 {                                                                                     \
-    lace_time_event(w, 3);                                                            \
-    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    lace_time_event(__lace_worker, 3);                                                \
+    TD_##NAME *t = (TD_##NAME *)__lace_dq_head;                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
         while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
-        __dq_head += 1;                                                               \
+        __lace_dq_head += 1;                                                          \
                                                                                       \
         /* Now leapfrog */                                                            \
         int attempts = 32;                                                            \
         while (thief != THIEF_COMPLETED) {                                            \
-            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
-            Worker *res = lace_steal(w, __dq_head, thief);                            \
+            PR_COUNTSTEALS(__lace_worker, CTR_leap_tries);                            \
+            Worker *res = lace_steal(__lace_worker, __lace_dq_head, thief);           \
             if (res == LACE_NOWORK) {                                                 \
-                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing(w, __dq_head);                                  \
+                YIELD_NEWFRAME();                                                     \
+                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
+                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
-                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
-                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                PR_COUNTSTEALS(__lace_worker, CTR_leap_busy);                         \
             }                                                                         \
             compiler_barrier();                                                       \
             thief = t->thief;                                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
-        /*            no need to decrease __dq_head, since it is a local variable */  \
+        /*            no need to decrease __lace_dq_head, since it is a local variable */\
         compiler_barrier();                                                           \
-        if (w->allstolen == 0) {                                                      \
+        if (__lace_worker->allstolen == 0) {                                          \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
-            Worker *wt = w->public;                                                   \
+            Worker *wt = __lace_worker->public;                                       \
             wt->allstolen = 1;                                                        \
-            w->allstolen = 1;                                                         \
+            __lace_worker->allstolen = 1;                                             \
         }                                                                             \
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
     t->thief = THIEF_EMPTY;                                                           \
-    lace_time_event(w, 4);                                                            \
+    lace_time_event(__lace_worker, 4);                                                \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
@@ -2472,7 +2747,6 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
 static inline __attribute__((unused))                                                 \
 void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                         \
 {                                                                                     \
-    CHECKSTACK(w);                                                                    \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
@@ -2569,6 +2843,31 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
     }                                                                                 \
 }                                                                                     \
                                                                                       \
+static inline __attribute__((unused))                                                 \
+RTYPE NAME##_NEWFRAME(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5)\
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4; t->d.args.arg_5 = arg_5;\
+                                                                                      \
+    lace_do_newframe(w, __dq_head, &_t);                                              \
+    return ((TD_##NAME *)t)->d.res;                                                   \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_TOGETHER(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5)\
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4; t->d.args.arg_5 = arg_5;\
+                                                                                      \
+    lace_do_together(w, __dq_head, &_t);                                              \
+}                                                                                     \
+                                                                                      \
 static int                                                                            \
 NAME##_shrink_shared(WorkerP *w)                                                      \
 {                                                                                     \
@@ -2600,49 +2899,50 @@ NAME##_shrink_shared(WorkerP *w)                                                
 }                                                                                     \
                                                                                       \
 static inline void                                                                    \
-NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                          \
+NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                         \
 {                                                                                     \
-    lace_time_event(w, 3);                                                            \
-    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    lace_time_event(__lace_worker, 3);                                                \
+    TD_##NAME *t = (TD_##NAME *)__lace_dq_head;                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
         while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
-        __dq_head += 1;                                                               \
+        __lace_dq_head += 1;                                                          \
                                                                                       \
         /* Now leapfrog */                                                            \
         int attempts = 32;                                                            \
         while (thief != THIEF_COMPLETED) {                                            \
-            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
-            Worker *res = lace_steal(w, __dq_head, thief);                            \
+            PR_COUNTSTEALS(__lace_worker, CTR_leap_tries);                            \
+            Worker *res = lace_steal(__lace_worker, __lace_dq_head, thief);           \
             if (res == LACE_NOWORK) {                                                 \
-                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing(w, __dq_head);                                  \
+                YIELD_NEWFRAME();                                                     \
+                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
+                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
-                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
-                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                PR_COUNTSTEALS(__lace_worker, CTR_leap_busy);                         \
             }                                                                         \
             compiler_barrier();                                                       \
             thief = t->thief;                                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
-        /*            no need to decrease __dq_head, since it is a local variable */  \
+        /*            no need to decrease __lace_dq_head, since it is a local variable */\
         compiler_barrier();                                                           \
-        if (w->allstolen == 0) {                                                      \
+        if (__lace_worker->allstolen == 0) {                                          \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
-            Worker *wt = w->public;                                                   \
+            Worker *wt = __lace_worker->public;                                       \
             wt->allstolen = 1;                                                        \
-            w->allstolen = 1;                                                         \
+            __lace_worker->allstolen = 1;                                             \
         }                                                                             \
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
     t->thief = THIEF_EMPTY;                                                           \
-    lace_time_event(w, 4);                                                            \
+    lace_time_event(__lace_worker, 4);                                                \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
@@ -2680,7 +2980,6 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
 static inline __attribute__((unused))                                                 \
 RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                        \
 {                                                                                     \
-    CHECKSTACK(w);                                                                    \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
@@ -2774,6 +3073,31 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
     }                                                                                 \
 }                                                                                     \
                                                                                       \
+static inline __attribute__((unused))                                                 \
+void NAME##_NEWFRAME(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5)\
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4; t->d.args.arg_5 = arg_5;\
+                                                                                      \
+    lace_do_newframe(w, __dq_head, &_t);                                              \
+    return ;                                                                          \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_TOGETHER(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5)\
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4; t->d.args.arg_5 = arg_5;\
+                                                                                      \
+    lace_do_together(w, __dq_head, &_t);                                              \
+}                                                                                     \
+                                                                                      \
 static int                                                                            \
 NAME##_shrink_shared(WorkerP *w)                                                      \
 {                                                                                     \
@@ -2805,49 +3129,50 @@ NAME##_shrink_shared(WorkerP *w)                                                
 }                                                                                     \
                                                                                       \
 static inline void                                                                    \
-NAME##_leapfrog(WorkerP *w, Task *__dq_head)                                          \
+NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                         \
 {                                                                                     \
-    lace_time_event(w, 3);                                                            \
-    TD_##NAME *t = (TD_##NAME *)__dq_head;                                            \
+    lace_time_event(__lace_worker, 3);                                                \
+    TD_##NAME *t = (TD_##NAME *)__lace_dq_head;                                       \
     Worker *thief = t->thief;                                                         \
     if (thief != THIEF_COMPLETED) {                                                   \
         while ((size_t)thief <= 1) thief = t->thief;                                  \
                                                                                       \
         /* PRE-LEAP: increase head again */                                           \
-        __dq_head += 1;                                                               \
+        __lace_dq_head += 1;                                                          \
                                                                                       \
         /* Now leapfrog */                                                            \
         int attempts = 32;                                                            \
         while (thief != THIEF_COMPLETED) {                                            \
-            PR_COUNTSTEALS(w, CTR_leap_tries);                                        \
-            Worker *res = lace_steal(w, __dq_head, thief);                            \
+            PR_COUNTSTEALS(__lace_worker, CTR_leap_tries);                            \
+            Worker *res = lace_steal(__lace_worker, __lace_dq_head, thief);           \
             if (res == LACE_NOWORK) {                                                 \
-                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(w, __dq_head); attempts = 32; }\
-                else lace_cb_stealing(w, __dq_head);                                  \
+                YIELD_NEWFRAME();                                                     \
+                if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
+                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
-                PR_COUNTSTEALS(w, CTR_leaps);                                         \
+                PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
-                PR_COUNTSTEALS(w, CTR_leap_busy);                                     \
+                PR_COUNTSTEALS(__lace_worker, CTR_leap_busy);                         \
             }                                                                         \
             compiler_barrier();                                                       \
             thief = t->thief;                                                         \
         }                                                                             \
                                                                                       \
         /* POST-LEAP: really pop the finished task */                                 \
-        /*            no need to decrease __dq_head, since it is a local variable */  \
+        /*            no need to decrease __lace_dq_head, since it is a local variable */\
         compiler_barrier();                                                           \
-        if (w->allstolen == 0) {                                                      \
+        if (__lace_worker->allstolen == 0) {                                          \
             /* Assume: tail = split = head (pre-pop) */                               \
             /* Now we do a 'real pop' ergo either decrease tail,split,head or declare allstolen */\
-            Worker *wt = w->public;                                                   \
+            Worker *wt = __lace_worker->public;                                       \
             wt->allstolen = 1;                                                        \
-            w->allstolen = 1;                                                         \
+            __lace_worker->allstolen = 1;                                             \
         }                                                                             \
     }                                                                                 \
                                                                                       \
     compiler_barrier();                                                               \
     t->thief = THIEF_EMPTY;                                                           \
-    lace_time_event(w, 4);                                                            \
+    lace_time_event(__lace_worker, 4);                                                \
 }                                                                                     \
                                                                                       \
 static __attribute__((noinline))                                                      \
@@ -2885,7 +3210,6 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
 static inline __attribute__((unused))                                                 \
 void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                         \
 {                                                                                     \
-    CHECKSTACK(w);                                                                    \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
     if (likely(0 == w->public->movesplit)) {                                          \
@@ -2921,5 +3245,11 @@ static inline __attribute__((always_inline))                                    
 void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4, ATYPE_5 ARG_5)\
  
 #define VOID_TASK_5(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5) VOID_TASK_DECL_5(NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4, ATYPE_5) VOID_TASK_IMPL_5(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5)
+
+
+VOID_TASK_DECL_0(lace_steal_random);
+VOID_TASK_DECL_1(lace_steal_random_loop, int*);
+VOID_TASK_DECL_1(lace_steal_loop, int*);
+VOID_TASK_DECL_2(lace_steal_loop_root, Task *, int*);
 
 #endif

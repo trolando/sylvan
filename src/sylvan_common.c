@@ -161,13 +161,16 @@ VOID_TASK_0(sylvan_gc_go)
     // phase 1: clear cache and hash array
     barrier_wait(&gcbar);
 
+    // clear cache
     if (master) cache_clear();
 
+    // clear hash array (parallel)
     CALL(sylvan_gc_clear_llmsset);
 
     // phase 2: mark nodes to keep
     barrier_wait(&gcbar);
 
+    // call mark functions
     CALL(sylvan_gc_mark);
 
     // phase 3: maybe resize
@@ -185,6 +188,7 @@ VOID_TASK_0(sylvan_gc_go)
     // phase 4: rehash
     barrier_wait(&gcbar);
 
+    // rehash
     CALL(sylvan_gc_rehash);
 
     // phase 5: done

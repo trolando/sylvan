@@ -130,6 +130,29 @@ sylvan_gc_disable()
     gc_enabled = 0;
 }
 
+VOID_TASK_0(sylvan_gc_clear_llmsset)
+{
+    llmsset_clear_multi(nodes, LACE_WORKER_ID, workers);
+}
+
+VOID_TASK_0(sylvan_gc_mark)
+{
+    struct reg_gc_mark_entry *e = gc_mark_register;
+    while (e != NULL) {
+        WRAP(e->cb, LACE_WORKER_ID);
+        e = e->next;
+    }
+}
+
+VOID_TASK_0(sylvan_gc_rehash)
+{
+    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
+    if (insert_index == NULL) insert_index = initialize_insert_index();
+    *insert_index = llmsset_get_insertindex_multi(nodes, LACE_WORKER_ID, workers);
+
+    llmsset_rehash_multi(nodes, LACE_WORKER_ID, workers);
+}
+
 VOID_TASK_0(sylvan_gc_go)
 {
     int master = 1;
@@ -140,17 +163,12 @@ VOID_TASK_0(sylvan_gc_go)
 
     if (master) cache_clear();
 
-    int my_id = LACE_WORKER_ID;
-    llmsset_clear_multi(nodes, my_id, workers);
+    CALL(sylvan_gc_clear_llmsset);
 
     // phase 2: mark nodes to keep
     barrier_wait(&gcbar);
 
-    struct reg_gc_mark_entry *e = gc_mark_register;
-    while (e != NULL) {
-        WRAP(e->cb, my_id);
-        e = e->next;
-    }
+    CALL(sylvan_gc_mark);
 
     // phase 3: maybe resize
     if (!llmsset_is_maxsize(nodes)) {
@@ -167,11 +185,7 @@ VOID_TASK_0(sylvan_gc_go)
     // phase 4: rehash
     barrier_wait(&gcbar);
 
-    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
-    if (insert_index == NULL) insert_index = initialize_insert_index();
-    *insert_index = llmsset_get_insertindex_multi(nodes, my_id, workers);
-
-    llmsset_rehash_multi(nodes, my_id, workers);
+    CALL(sylvan_gc_rehash);
 
     // phase 5: done
     compiler_barrier();

@@ -135,15 +135,6 @@ VOID_TASK_0(sylvan_gc_clear_llmsset)
     llmsset_clear_multi(nodes, LACE_WORKER_ID, workers);
 }
 
-VOID_TASK_0(sylvan_gc_mark)
-{
-    struct reg_gc_mark_entry *e = gc_mark_register;
-    while (e != NULL) {
-        WRAP(e->cb, LACE_WORKER_ID);
-        e = e->next;
-    }
-}
-
 VOID_TASK_0(sylvan_gc_rehash)
 {
     LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
@@ -162,7 +153,11 @@ VOID_TASK_0(sylvan_gc_go)
     TOGETHER(sylvan_gc_clear_llmsset);
 
     // call mark functions
-    TOGETHER(sylvan_gc_mark);
+    struct reg_gc_mark_entry *e = gc_mark_register;
+    while (e != NULL) {
+        WRAP(e->cb);
+        e = e->next;
+    }
 
     // maybe resize
     if (!llmsset_is_maxsize(nodes)) {

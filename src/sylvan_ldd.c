@@ -163,24 +163,17 @@ lddmc_count_refs()
 }
 
 /* Called during garbage collection */
-TASK_1(void*, lddmc_gc_mark_external_refs, int, my_id)
+TASK_0(void*, lddmc_gc_mark_external_refs)
 {
-    // part of the refs hash table per worker
-    size_t per_worker = (mdd_refs.refs_size + workers - 1)/ workers;
-    if (per_worker < 8) per_worker = 8;
-
-    // which part of the refs hash table we start
-    size_t first = per_worker * my_id;
-    if (first >= mdd_refs.refs_size) return NULL;
-
-    // which part of the refs hash table we end
-    size_t end = per_worker * (my_id + 1);
-    if (end >= mdd_refs.refs_size) end = mdd_refs.refs_size;
-
     // iterate through refs hash table, mark all found
-    uint64_t *it = refs_iter(&mdd_refs, first, end);
+    size_t count=0;
+    uint64_t *it = refs_iter(&mdd_refs, 0, mdd_refs.refs_size);
     while (it != NULL) {
-        CALL(lddmc_gc_mark_rec, refs_next(&mdd_refs, &it, end));
+        SPAWN(lddmc_gc_mark_rec, refs_next(&mdd_refs, &it, mdd_refs.refs_size));
+        count++;
+    }
+    while (count--) {
+        SYNC(lddmc_gc_mark_rec);
     }
 
     return NULL;
@@ -270,7 +263,7 @@ ref_resize_spawns()
 #define SSYNC(...) SYNC(__VA_ARGS__); REFS_DESPAWN
 
 /* Called during garbage collection */
-TASK_1(void*, lddmc_gc_mark_internal_refs, int, my_id)
+VOID_TASK_0(lddmc_gc_mark_internal_refs_task)
 {
     LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);
     if (ref_key) {
@@ -286,8 +279,11 @@ TASK_1(void*, lddmc_gc_mark_internal_refs, int, my_id)
             }
         }
     }
+}
 
-    (void)my_id;
+TASK_0(void*, lddmc_gc_mark_internal_refs)
+{
+    TOGETHER(lddmc_gc_mark_internal_refs_task);
     return NULL;
 }
 

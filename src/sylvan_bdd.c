@@ -151,25 +151,18 @@ sylvan_count_refs()
 }
 
 /* Called during garbage collection */
-TASK_1(void*, sylvan_gc_mark_external_refs, int, my_id)
+TASK_0(void*, sylvan_gc_mark_external_refs)
 {
-    // part of the refs hash table per worker
-    size_t per_worker = (bdd_refs.refs_size + workers - 1)/ workers;
-    if (per_worker < 8) per_worker = 8;
-
-    // which part of the refs hash table we start
-    size_t first = per_worker * my_id;
-    if (first >= bdd_refs.refs_size) return NULL;
-
-    // which part of the refs hash table we end
-    size_t end = per_worker * (my_id + 1);
-    if (end >= bdd_refs.refs_size) end = bdd_refs.refs_size;
-
     // iterate through refs hash table, mark all found
-    uint64_t *it = refs_iter(&bdd_refs, first, end);
+    size_t count=0;
+    uint64_t *it = refs_iter(&bdd_refs, 0, bdd_refs.refs_size);
     while (it != NULL) {
-        BDD to_mark = refs_next(&bdd_refs, &it, end);
-        CALL(sylvan_gc_mark_rec, to_mark);
+        BDD to_mark = refs_next(&bdd_refs, &it, bdd_refs.refs_size);
+        SPAWN(sylvan_gc_mark_rec, to_mark);
+        count++;
+    }
+    while (count--) {
+        SYNC(sylvan_gc_mark_rec);
     }
 
     return NULL;
@@ -256,7 +249,7 @@ ref_resize_spawns()
 }
 
 /* Called during garbage collection */
-TASK_1(void*, sylvan_gc_mark_internal_refs, int, my_id)
+VOID_TASK_0(sylvan_gc_mark_internal_refs_task)
 {
     LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);
     if (ref_key) {
@@ -272,7 +265,11 @@ TASK_1(void*, sylvan_gc_mark_internal_refs, int, my_id)
             }
         }
     }
-    (void)my_id;
+}
+
+TASK_0(void*, sylvan_gc_mark_internal_refs)
+{
+    TOGETHER(sylvan_gc_mark_internal_refs_task);
     return NULL;
 }
 

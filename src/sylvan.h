@@ -95,10 +95,8 @@ void sylvan_gc_disable();
  * Garbage collection "mark" callbacks.
  * These are called during garbage collection to
  * recursively mark references.
- * They receive one parameter (my_id) which is the
- * index of the worker (0..workers-1)
  */
-LACE_TYPEDEF_CB(gc_mark_cb, int);
+LACE_TYPEDEF_CB(gc_mark_cb);
 void sylvan_gc_register_mark(gc_mark_cb cb);
 
 #include <sylvan_bdd.h>

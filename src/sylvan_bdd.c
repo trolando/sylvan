@@ -111,15 +111,15 @@ struct {
  */
 
 /* Recursively mark BDD nodes as 'in use' */
-static void
-sylvan_gc_mark_rec(BDD bdd)
+VOID_TASK_1(sylvan_gc_mark_rec, BDD, bdd)
 {
     if (bdd == sylvan_false || bdd == sylvan_true) return;
 
     if (llmsset_mark_unsafe(nodes, bdd&0x000000ffffffffff)) {
         bddnode_t n = GETNODE(bdd);
-        sylvan_gc_mark_rec(n->low);
-        sylvan_gc_mark_rec(n->high);
+        SPAWN(sylvan_gc_mark_rec, n->low);
+        CALL(sylvan_gc_mark_rec, n->high);
+        SYNC(sylvan_gc_mark_rec);
     }
 }
 
@@ -167,7 +167,10 @@ TASK_1(void*, sylvan_gc_mark_external_refs, int, my_id)
 
     // iterate through refs hash table, mark all found
     uint64_t *it = refs_iter(&bdd_refs, first, end);
-    while (it != NULL) sylvan_gc_mark_rec(refs_next(&bdd_refs, &it, end));
+    while (it != NULL) {
+        BDD to_mark = refs_next(&bdd_refs, &it, end);
+        CALL(sylvan_gc_mark_rec, to_mark);
+    }
 
     return NULL;
 }
@@ -258,11 +261,15 @@ TASK_1(void*, sylvan_gc_mark_internal_refs, int, my_id)
     LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);
     if (ref_key) {
         size_t i;
-        for (i=0; i<ref_key->r_count; i++) sylvan_gc_mark_rec(ref_key->results[i]);
+        for (i=0; i<ref_key->r_count; i++) {
+            CALL(sylvan_gc_mark_rec, ref_key->results[i]);
+        }
         for (i=0; i<ref_key->s_count; i++) {
             Task *t = ref_key->spawns[i];
             if (!TASK_IS_STOLEN(t)) break;
-            if (TASK_IS_COMPLETED(t)) sylvan_gc_mark_rec(*(BDD*)TASK_RESULT(t));
+            if (TASK_IS_COMPLETED(t)) {
+                CALL(sylvan_gc_mark_rec, *(BDD*)TASK_RESULT(t));
+            }
         }
     }
     (void)my_id;

@@ -440,7 +440,7 @@ sylvan_makenode(BDDVAR level, BDD low, BDD high)
 #endif
 
         //size_t before_gc = llmsset_get_filled(nodes);
-        sylvan_gc_go(1);
+        sylvan_gc();
         //size_t after_gc = llmsset_get_filled(nodes);
         //size_t total = llmsset_get_size(nodes);
         //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
@@ -527,7 +527,7 @@ sylvan_makenode_nocomp(BDDVAR level, BDD low, BDD high)
 #if SYLVAN_STATS
         SV_CNT(C_gc_hashtable_full);
 #endif
-        sylvan_gc_go(1);
+        sylvan_gc();
         if (llmsset_lookup(nodes, &n, insert_index, &created, &index) == 0) {
             fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_get_filled(nodes), llmsset_get_size(nodes));
             exit(1);

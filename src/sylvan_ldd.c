@@ -312,7 +312,7 @@ lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
         REFS_PUSH(ifeq);
         REFS_PUSH(ifneq);
         LACE_ME;
-        sylvan_gc_go(1);
+        sylvan_gc();
         REFS_RESET;
         //size_t after_gc = llmsset_get_filled(nodes);
         //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
@@ -343,7 +343,7 @@ lddmc_make_copynode(MDD ifeq, MDD ifneq)
         REFS_PUSH(ifeq);
         REFS_PUSH(ifneq);
         LACE_ME;
-        sylvan_gc_go(1);
+        sylvan_gc();
         REFS_RESET;
         //size_t after_gc = llmsset_get_filled(nodes);
         //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);

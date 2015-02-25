@@ -130,12 +130,10 @@ sylvan_gc_disable()
     gc_enabled = 0;
 }
 
-VOID_TASK_IMPL_1(sylvan_gc_go, int, master)
+VOID_TASK_0(sylvan_gc_go)
 {
-    // check gc_enabled
-    if (!gc_enabled) return;
-
-    if (master && !cas(&gc, 0, 1)) master = 0;
+    int master = 1;
+    if (!cas(&gc, 0, 1)) master = 0;
 
     // phase 1: clear cache and hash array
     barrier_wait(&gcbar);
@@ -181,10 +179,11 @@ VOID_TASK_IMPL_1(sylvan_gc_go, int, master)
     barrier_wait(&gcbar);
 }
 
-/* Manually perform garbage collection */
+/* Perform garbage collection */
 VOID_TASK_IMPL_0(sylvan_gc)
 {
-    TOGETHER(sylvan_gc_go, 1);
+    if (!gc_enabled) return;
+    TOGETHER(sylvan_gc_go);
 }
 
 /**

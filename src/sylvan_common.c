@@ -155,53 +155,40 @@ VOID_TASK_0(sylvan_gc_rehash)
 
 VOID_TASK_0(sylvan_gc_go)
 {
-    int master = 1;
-    if (!cas(&gc, 0, 1)) master = 0;
-
-    // phase 1: clear cache and hash array
-    barrier_wait(&gcbar);
-
     // clear cache
-    if (master) cache_clear();
+    cache_clear();
 
     // clear hash array (parallel)
-    CALL(sylvan_gc_clear_llmsset);
-
-    // phase 2: mark nodes to keep
-    barrier_wait(&gcbar);
+    TOGETHER(sylvan_gc_clear_llmsset);
 
     // call mark functions
-    CALL(sylvan_gc_mark);
+    TOGETHER(sylvan_gc_mark);
 
-    // phase 3: maybe resize
+    // maybe resize
     if (!llmsset_is_maxsize(nodes)) {
-        barrier_wait(&gcbar);
-        if (master) {
-            size_t filled, total;
-            sylvan_table_usage(&filled, &total);
-            if (filled > total/2) {
-                llmsset_sizeup(nodes);
-            }
+        size_t filled, total;
+        sylvan_table_usage(&filled, &total);
+        if (filled > total/2) {
+            llmsset_sizeup(nodes);
         }
     }
 
-    // phase 4: rehash
-    barrier_wait(&gcbar);
-
     // rehash
-    CALL(sylvan_gc_rehash);
-
-    // phase 5: done
-    compiler_barrier();
-    if (master) gc = 0;
-    barrier_wait(&gcbar);
+    TOGETHER(sylvan_gc_rehash);
 }
 
 /* Perform garbage collection */
 VOID_TASK_IMPL_0(sylvan_gc)
 {
     if (!gc_enabled) return;
-    TOGETHER(sylvan_gc_go);
+    if (cas(&gc, 0, 1)) {
+        NEWFRAME(sylvan_gc_go);
+        gc = 0;
+    } else {
+        /* wait for new frame to appear */
+        while (*(volatile Task**)&lace_newframe.t == 0) {}
+        YIELD_NEWFRAME();
+    }
 }
 
 /**

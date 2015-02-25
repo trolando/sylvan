@@ -123,15 +123,15 @@ static inline MDD MDD_SETDATA(MDD s, uint32_t data)
  */
 
 /* Recursively mark MDD nodes as 'in use' */
-static void
-lddmc_gc_mark_rec(MDD mdd)
+VOID_TASK_1(lddmc_gc_mark_rec, MDD, mdd)
 {
     if (mdd <= lddmc_true) return;
 
     if (llmsset_mark_unsafe(nodes, mdd)) {
         mddnode_t n = GETNODE(mdd);
-        lddmc_gc_mark_rec(mddnode_getright(n));
-        lddmc_gc_mark_rec(mddnode_getdown(n));
+        SPAWN(lddmc_gc_mark_rec, mddnode_getright(n));
+        CALL(lddmc_gc_mark_rec, mddnode_getdown(n));
+        SYNC(lddmc_gc_mark_rec);
     }
 }
 
@@ -179,7 +179,9 @@ TASK_1(void*, lddmc_gc_mark_external_refs, int, my_id)
 
     // iterate through refs hash table, mark all found
     uint64_t *it = refs_iter(&mdd_refs, first, end);
-    while (it != NULL) lddmc_gc_mark_rec(refs_next(&mdd_refs, &it, end));
+    while (it != NULL) {
+        CALL(lddmc_gc_mark_rec, refs_next(&mdd_refs, &it, end));
+    }
 
     return NULL;
 }
@@ -273,11 +275,15 @@ TASK_1(void*, lddmc_gc_mark_internal_refs, int, my_id)
     LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);
     if (ref_key) {
         size_t i;
-        for (i=0; i<ref_key->r_count; i++) lddmc_gc_mark_rec(ref_key->results[i]);
+        for (i=0; i<ref_key->r_count; i++) {
+            CALL(lddmc_gc_mark_rec, ref_key->results[i]);
+        }
         for (i=0; i<ref_key->s_count; i++) {
             Task *t = ref_key->spawns[i];
             if (!TASK_IS_STOLEN(t)) break;
-            if (TASK_IS_COMPLETED(t)) lddmc_gc_mark_rec(*(MDD*)TASK_RESULT(t));
+            if (TASK_IS_COMPLETED(t)) {
+                CALL(lddmc_gc_mark_rec, *(MDD*)TASK_RESULT(t));
+            }
         }
     }
 

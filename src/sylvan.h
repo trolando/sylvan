@@ -96,7 +96,7 @@ void sylvan_gc_disable();
  * These are called during garbage collection to
  * recursively mark references.
  */
-LACE_TYPEDEF_CB(gc_mark_cb);
+LACE_TYPEDEF_CB(void, gc_mark_cb);
 void sylvan_gc_register_mark(gc_mark_cb cb);
 
 #include <sylvan_bdd.h>

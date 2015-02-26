@@ -139,18 +139,19 @@ TASK_DECL_1(long double, lddmc_satcount, MDD);
  * For collect, use:
  * TASK_3(MDD, ...)
  */
-LACE_TYPEDEF_CB(lddmc_sat_cb, uint32_t*, size_t, void*);
+LACE_TYPEDEF_CB(void, lddmc_enum_cb, uint32_t*, size_t, void*);
+LACE_TYPEDEF_CB(MDD, lddmc_collect_cb, uint32_t*, size_t, void*);
 
-VOID_TASK_DECL_5(lddmc_sat_all_par, MDD, lddmc_sat_cb, void*, uint32_t*, size_t);
+VOID_TASK_DECL_5(lddmc_sat_all_par, MDD, lddmc_enum_cb, void*, uint32_t*, size_t);
 #define lddmc_sat_all_par(mdd, cb, context) CALL(lddmc_sat_all_par, mdd, cb, context, 0, 0)
 
-VOID_TASK_DECL_3(lddmc_sat_all_nopar, MDD, lddmc_sat_cb, void*);
+VOID_TASK_DECL_3(lddmc_sat_all_nopar, MDD, lddmc_enum_cb, void*);
 #define lddmc_sat_all_nopar(mdd, cb, context) CALL(lddmc_sat_all_nopar, mdd, cb, context)
 
-TASK_DECL_5(MDD, lddmc_collect, MDD, lddmc_sat_cb, void*, uint32_t*, size_t);
+TASK_DECL_5(MDD, lddmc_collect, MDD, lddmc_collect_cb, void*, uint32_t*, size_t);
 #define lddmc_collect(mdd, cb, context) CALL(lddmc_collect, mdd, cb, context, 0, 0)
 
-VOID_TASK_DECL_5(lddmc_match_sat_par, MDD, MDD, MDD, lddmc_sat_cb, void*);
+VOID_TASK_DECL_5(lddmc_match_sat_par, MDD, MDD, MDD, lddmc_enum_cb, void*);
 #define lddmc_match_sat_par(mdd, match, proj, cb, context) CALL(lddmc_match_sat_par, mdd, match, proj, cb, context)
 
 int lddmc_sat_one(MDD mdd, uint32_t *values, size_t count);
@@ -162,9 +163,9 @@ MDD lddmc_sat_one_mdd(MDD mdd);
  * lddmc_visit_seq sequentially visits nodes, down first, then right.
  * lddmc_visit_par visits nodes in parallel (down || right)
  */
-LACE_TYPEDEF_CB(lddmc_visit_pre_cb, MDD, void*); // int pre(MDD, context)
-LACE_TYPEDEF_CB(lddmc_visit_post_cb, MDD, void*); // void post(MDD, context)
-LACE_TYPEDEF_CB(lddmc_visit_init_context_cb, void*, void*, int); // void init_context(context, parent, is_down)
+LACE_TYPEDEF_CB(int, lddmc_visit_pre_cb, MDD, void*); // int pre(MDD, context)
+LACE_TYPEDEF_CB(void, lddmc_visit_post_cb, MDD, void*); // void post(MDD, context)
+LACE_TYPEDEF_CB(void, lddmc_visit_init_context_cb, void*, void*, int); // void init_context(context, parent, is_down)
 
 typedef struct lddmc_visit_node_callbacks {
     lddmc_visit_pre_cb lddmc_visit_pre;
@@ -186,7 +187,7 @@ void lddmc_nodecount_levels(MDD mdd, size_t *variables);
  * For every node at depth <depth>, call function cb (MDD -> MDD).
  * and replace the node by the result of the function
  */
-LACE_TYPEDEF_CB(lddmc_compose_cb, MDD, void*);
+LACE_TYPEDEF_CB(MDD, lddmc_compose_cb, MDD, void*);
 TASK_DECL_4(MDD, lddmc_compose, MDD, lddmc_compose_cb, void*, int);
 #define lddmc_compose(mdd, cb, context, depth) CALL(lddmc_compose, mdd, cb, context, depth)
 

@@ -435,9 +435,9 @@ TASK_2(MDD, random_ldd, int, depth, int, count)
     return result;
 }
 
-TASK_3(void*, enumer, uint32_t*, values, size_t, count, void*, context)
+VOID_TASK_3(enumer, uint32_t*, values, size_t, count, void*, context)
 {
-    return 0;
+    return;
     (void)values;
     (void)count;
     (void)context;

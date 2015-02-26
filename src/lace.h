@@ -198,8 +198,8 @@ typedef struct _WorkerP {
     uint32_t seed; // my random seed (for lace_steal_random)
 } WorkerP;
 
-#define LACE_TYPEDEF_CB(f, ...) typedef void* (*f)(WorkerP *, Task *, ##__VA_ARGS__);
-LACE_TYPEDEF_CB(lace_startup_cb, void*);
+#define LACE_TYPEDEF_CB(t, f, ...) typedef t (*f)(WorkerP *, Task *, ##__VA_ARGS__);
+LACE_TYPEDEF_CB(void, lace_startup_cb, void*);
 
 /**
  * Initialize master structures for Lace with <n_workers> workers
@@ -274,10 +274,6 @@ Task *lace_get_head(WorkerP *);
  * Exit Lace. Automatically called when started with cb,arg.
  */
 void lace_exit();
-
-LACE_TYPEDEF_CB(lace_nowork_cb);
-extern lace_nowork_cb lace_cb_stealing;
-void lace_set_callback(lace_nowork_cb cb);
 
 #define LACE_STOLEN   ((Worker*)0)
 #define LACE_BUSY     ((Worker*)1)
@@ -603,7 +599,6 @@ NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                   
             if (res == LACE_NOWORK) {                                                 \
                 YIELD_NEWFRAME();                                                     \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
-                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
@@ -833,7 +828,6 @@ NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                   
             if (res == LACE_NOWORK) {                                                 \
                 YIELD_NEWFRAME();                                                     \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
-                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
@@ -1066,7 +1060,6 @@ NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                   
             if (res == LACE_NOWORK) {                                                 \
                 YIELD_NEWFRAME();                                                     \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
-                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
@@ -1296,7 +1289,6 @@ NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                   
             if (res == LACE_NOWORK) {                                                 \
                 YIELD_NEWFRAME();                                                     \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
-                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
@@ -1529,7 +1521,6 @@ NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                   
             if (res == LACE_NOWORK) {                                                 \
                 YIELD_NEWFRAME();                                                     \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
-                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
@@ -1759,7 +1750,6 @@ NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                   
             if (res == LACE_NOWORK) {                                                 \
                 YIELD_NEWFRAME();                                                     \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
-                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
@@ -1992,7 +1982,6 @@ NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                   
             if (res == LACE_NOWORK) {                                                 \
                 YIELD_NEWFRAME();                                                     \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
-                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
@@ -2222,7 +2211,6 @@ NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                   
             if (res == LACE_NOWORK) {                                                 \
                 YIELD_NEWFRAME();                                                     \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
-                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
@@ -2455,7 +2443,6 @@ NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                   
             if (res == LACE_NOWORK) {                                                 \
                 YIELD_NEWFRAME();                                                     \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
-                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
@@ -2685,7 +2672,6 @@ NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                   
             if (res == LACE_NOWORK) {                                                 \
                 YIELD_NEWFRAME();                                                     \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
-                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
@@ -2918,7 +2904,6 @@ NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                   
             if (res == LACE_NOWORK) {                                                 \
                 YIELD_NEWFRAME();                                                     \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
-                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \
@@ -3148,7 +3133,6 @@ NAME##_leapfrog(WorkerP *__lace_worker, Task *__lace_dq_head)                   
             if (res == LACE_NOWORK) {                                                 \
                 YIELD_NEWFRAME();                                                     \
                 if ((LACE_LEAP_RANDOM) && (--attempts == 0)) { lace_steal_random(); attempts = 32; }\
-                else lace_cb_stealing(__lace_worker, __lace_dq_head);                 \
             } else if (res == LACE_STOLEN) {                                          \
                 PR_COUNTSTEALS(__lace_worker, CTR_leaps);                             \
             } else if (res == LACE_BUSY) {                                            \

@@ -151,7 +151,7 @@ sylvan_count_refs()
 }
 
 /* Called during garbage collection */
-TASK_0(void*, sylvan_gc_mark_external_refs)
+VOID_TASK_0(sylvan_gc_mark_external_refs)
 {
     // iterate through refs hash table, mark all found
     size_t count=0;
@@ -164,8 +164,6 @@ TASK_0(void*, sylvan_gc_mark_external_refs)
     while (count--) {
         SYNC(sylvan_gc_mark_rec);
     }
-
-    return NULL;
 }
 
 /**
@@ -267,10 +265,9 @@ VOID_TASK_0(sylvan_gc_mark_internal_refs_task)
     }
 }
 
-TASK_0(void*, sylvan_gc_mark_internal_refs)
+VOID_TASK_0(sylvan_gc_mark_internal_refs)
 {
     TOGETHER(sylvan_gc_mark_internal_refs_task);
-    return NULL;
 }
 
 /** init and quit functions */

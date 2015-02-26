@@ -323,7 +323,6 @@ VOID_TASK_IMPL_0(lace_steal_random)
     Worker *res = lace_steal(__lace_worker, __lace_dq_head, victim);
     if (res == LACE_NOWORK) {
         YIELD_NEWFRAME();
-        lace_cb_stealing(__lace_worker, __lace_dq_head);
     } else if (res == LACE_STOLEN) {
         PR_COUNTSTEALS(__lace_worker, CTR_steals);
     } else if (res == LACE_BUSY) {
@@ -390,7 +389,6 @@ VOID_TASK_IMPL_1(lace_steal_loop, int*, quit)
         Worker *res = lace_steal(__lace_worker, __lace_dq_head, *victim);
         if (res == LACE_NOWORK) {
             YIELD_NEWFRAME();
-            lace_cb_stealing(__lace_worker, __lace_dq_head);
         } else if (res == LACE_STOLEN) {
             PR_COUNTSTEALS(__lace_worker, CTR_steals);
         } else if (res == LACE_BUSY) {
@@ -409,12 +407,6 @@ lace_default_worker(void* arg)
     lace_time_event(__lace_worker, 9);
     barrier_wait(&bar);
     return NULL;
-}
-
-static void*
-lace_default_cb()
-{
-    return 0;
 }
 
 pthread_t
@@ -500,7 +492,6 @@ lace_init(int n, size_t dqsize)
     if (n_workers == 0) n_workers = get_cpu_count();
     if (dqsize != 0) default_dqsize = dqsize;
     lace_quits = 0;
-    lace_cb_stealing = &lace_default_cb;
 
     // Create barrier for all workers
     barrier_init(&bar, n_workers);
@@ -727,13 +718,6 @@ void lace_exit()
 #if LACE_COUNT_EVENTS
     lace_count_report_file(stderr);
 #endif
-}
-
-lace_nowork_cb lace_cb_stealing;
-
-void lace_set_callback(lace_nowork_cb cb)
-{
-    lace_cb_stealing = cb;
 }
 
 void

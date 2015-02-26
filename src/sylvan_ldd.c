@@ -163,7 +163,7 @@ lddmc_count_refs()
 }
 
 /* Called during garbage collection */
-TASK_0(void*, lddmc_gc_mark_external_refs)
+VOID_TASK_0(lddmc_gc_mark_external_refs)
 {
     // iterate through refs hash table, mark all found
     size_t count=0;
@@ -175,8 +175,6 @@ TASK_0(void*, lddmc_gc_mark_external_refs)
     while (count--) {
         SYNC(lddmc_gc_mark_rec);
     }
-
-    return NULL;
 }
 
 /**
@@ -281,10 +279,9 @@ VOID_TASK_0(lddmc_gc_mark_internal_refs_task)
     }
 }
 
-TASK_0(void*, lddmc_gc_mark_internal_refs)
+VOID_TASK_0(lddmc_gc_mark_internal_refs)
 {
     TOGETHER(lddmc_gc_mark_internal_refs_task);
-    return NULL;
 }
 
 /**
@@ -1888,11 +1885,11 @@ TASK_IMPL_1(long double, lddmc_satcount, MDD, mdd)
     return right + SYNC(lddmc_satcount);
 }
 
-TASK_IMPL_5(MDD, lddmc_collect, MDD, mdd, lddmc_sat_cb, cb, void*, context, uint32_t*, values, size_t, count)
+TASK_IMPL_5(MDD, lddmc_collect, MDD, mdd, lddmc_collect_cb, cb, void*, context, uint32_t*, values, size_t, count)
 {
     if (mdd == lddmc_false) return lddmc_false;
     if (mdd == lddmc_true) {
-        return (MDD)WRAP(cb, values, count, context);
+        return WRAP(cb, values, count, context);
     }
 
     mddnode_t n = GETNODE(mdd);
@@ -1925,7 +1922,7 @@ TASK_IMPL_5(MDD, lddmc_collect, MDD, mdd, lddmc_sat_cb, cb, void*, context, uint
     return result;
 }
 
-VOID_TASK_5(_lddmc_sat_all_nopar, MDD, mdd, lddmc_sat_cb, cb, void*, context, uint32_t*, values, size_t, count)
+VOID_TASK_5(_lddmc_sat_all_nopar, MDD, mdd, lddmc_enum_cb, cb, void*, context, uint32_t*, values, size_t, count)
 {
     if (mdd == lddmc_false) return;
     if (mdd == lddmc_true) {
@@ -1939,7 +1936,7 @@ VOID_TASK_5(_lddmc_sat_all_nopar, MDD, mdd, lddmc_sat_cb, cb, void*, context, ui
     CALL(_lddmc_sat_all_nopar, mddnode_getright(n), cb, context, values, count);
 }
 
-VOID_TASK_IMPL_3(lddmc_sat_all_nopar, MDD, mdd, lddmc_sat_cb, cb, void*, context)
+VOID_TASK_IMPL_3(lddmc_sat_all_nopar, MDD, mdd, lddmc_enum_cb, cb, void*, context)
 {
     // determine depth
     size_t count=0;
@@ -1954,7 +1951,7 @@ VOID_TASK_IMPL_3(lddmc_sat_all_nopar, MDD, mdd, lddmc_sat_cb, cb, void*, context
     CALL(_lddmc_sat_all_nopar, mdd, cb, context, values, 0);
 }
 
-VOID_TASK_IMPL_5(lddmc_sat_all_par, MDD, mdd, lddmc_sat_cb, cb, void*, context, uint32_t*, values, size_t, count)
+VOID_TASK_IMPL_5(lddmc_sat_all_par, MDD, mdd, lddmc_enum_cb, cb, void*, context, uint32_t*, values, size_t, count)
 {
     if (mdd == lddmc_false) return;
     if (mdd == lddmc_true) {
@@ -1984,7 +1981,7 @@ struct lddmc_match_sat_info
 };
 
 // proj: -1 (rest 0), 0 (no match), 1 (match)
-VOID_TASK_3(lddmc_match_sat, struct lddmc_match_sat_info *, info, lddmc_sat_cb, cb, void*, context)
+VOID_TASK_3(lddmc_match_sat, struct lddmc_match_sat_info *, info, lddmc_enum_cb, cb, void*, context)
 {
     MDD a = info->mdd, b = info->match, proj = info->proj;
 
@@ -2048,7 +2045,7 @@ VOID_TASK_3(lddmc_match_sat, struct lddmc_match_sat_info *, info, lddmc_sat_cb, 
     SYNC(lddmc_match_sat);
 }
 
-VOID_TASK_IMPL_5(lddmc_match_sat_par, MDD, mdd, MDD, match, MDD, proj, lddmc_sat_cb, cb, void*, context)
+VOID_TASK_IMPL_5(lddmc_match_sat_par, MDD, mdd, MDD, match, MDD, proj, lddmc_enum_cb, cb, void*, context)
 {
     struct lddmc_match_sat_info i;
     i.mdd = mdd;
@@ -2082,7 +2079,7 @@ lddmc_sat_one_mdd(MDD mdd)
 TASK_IMPL_4(MDD, lddmc_compose, MDD, mdd, lddmc_compose_cb, cb, void*, context, int, depth)
 {
     if (depth == 0 || mdd == lddmc_false || mdd == lddmc_true) {
-        return (MDD)WRAP(cb, mdd, context);
+        return WRAP(cb, mdd, context);
     } else {
         mddnode_t n = GETNODE(mdd);
         REFS_INIT;
@@ -2097,7 +2094,7 @@ TASK_IMPL_4(MDD, lddmc_compose, MDD, mdd, lddmc_compose_cb, cb, void*, context, 
 
 VOID_TASK_IMPL_4(lddmc_visit_seq, MDD, mdd, lddmc_visit_callbacks_t*, cbs, size_t, ctx_size, void*, context)
 {
-    if (WRAP(cbs->lddmc_visit_pre, mdd, context) == NULL) return;
+    if (WRAP(cbs->lddmc_visit_pre, mdd, context) == 0) return;
 
     void* context_down = alloca(ctx_size);
     void* context_right = alloca(ctx_size);
@@ -2112,7 +2109,7 @@ VOID_TASK_IMPL_4(lddmc_visit_seq, MDD, mdd, lddmc_visit_callbacks_t*, cbs, size_
 
 VOID_TASK_IMPL_4(lddmc_visit_par, MDD, mdd, lddmc_visit_callbacks_t*, cbs, size_t, ctx_size, void*, context)
 {
-    if (WRAP(cbs->lddmc_visit_pre, mdd, context) == NULL) return;
+    if (WRAP(cbs->lddmc_visit_pre, mdd, context) == 0) return;
 
     void* context_down = alloca(ctx_size);
     void* context_right = alloca(ctx_size);

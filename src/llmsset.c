@@ -241,7 +241,7 @@ llmsset_create(size_t initial_size, size_t max_size)
     }
 
     dbs->max_size = max_size;
-    llmsset_set_current_table_size(dbs, initial_size);
+    llmsset_set_size(dbs, initial_size);
 
     /* This implementation of "resizable hash table" allocates the max_size table in virtual memory,
        but only uses the "actual size" part in real memory */
@@ -398,10 +398,4 @@ llmsset_get_filled_partial(const llmsset_t dbs, size_t start, size_t end)
     }
 
     return count;
-}
-
-size_t
-llmsset_get_size(const llmsset_t dbs)
-{
-    return dbs->table_size;
 }

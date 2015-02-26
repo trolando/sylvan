@@ -159,12 +159,12 @@ VOID_TASK_0(sylvan_gc_default_hook)
      * Default behavior:
      * if we can resize the nodes set, and if we use more than 50%, then increase size
      */
-    if (!llmsset_is_maxsize(nodes)) {
+    size_t max_size = llmsset_get_max_size(nodes);
+    size_t size = llmsset_get_size(nodes);
+    if (size*2 <= max_size) {
         size_t filled, total;
         sylvan_table_usage(&filled, &total);
-        if (filled > total/2) {
-            llmsset_sizeup(nodes);
-        }
+        if (filled*2 > size) llmsset_set_size(nodes, size*2);
     }
 }
 

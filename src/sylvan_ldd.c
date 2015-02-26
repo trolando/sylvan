@@ -127,7 +127,7 @@ VOID_TASK_1(lddmc_gc_mark_rec, MDD, mdd)
 {
     if (mdd <= lddmc_true) return;
 
-    if (llmsset_mark_unsafe(nodes, mdd)) {
+    if (llmsset_mark(nodes, mdd)) {
         mddnode_t n = GETNODE(mdd);
         SPAWN(lddmc_gc_mark_rec, mddnode_getright(n));
         CALL(lddmc_gc_mark_rec, mddnode_getdown(n));

@@ -123,13 +123,16 @@ VOID_TASK_DECL_1(llmsset_clear, llmsset_t);
 #define llmsset_clear(dbs) CALL(llmsset_clear, dbs)
 
 /**
- * llmsset_mark_... returns a non-zero value when the node was unmarked
- * The _safe version uses a CAS operation, the _unsafe version a normal memory operation.
- * Use the _unsafe version unless you are bothered by false negatives
+ * Check if a certain data bucket is marked (in use)
  */
 int llmsset_is_marked(const llmsset_t dbs, uint64_t index);
-int llmsset_mark_unsafe(const llmsset_t dbs, uint64_t index);
-int llmsset_mark_safe(const llmsset_t dbs, uint64_t index);
+
+/**
+ * During garbage collection, buckets are marked (for rehashing) with this function.
+ * Returns 0 if the node was already marked, or non-zero if it was not marked.
+ * May also return non-zero if multiple workers marked at the same time.
+ */
+int llmsset_mark(const llmsset_t dbs, uint64_t index);
 
 void llmsset_rehash(const llmsset_t dbs);
 void llmsset_rehash_multi(const llmsset_t dbs, size_t my_id, size_t n_workers);

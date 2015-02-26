@@ -115,7 +115,7 @@ VOID_TASK_1(sylvan_gc_mark_rec, BDD, bdd)
 {
     if (bdd == sylvan_false || bdd == sylvan_true) return;
 
-    if (llmsset_mark_unsafe(nodes, bdd&0x000000ffffffffff)) {
+    if (llmsset_mark(nodes, bdd&0x000000ffffffffff)) {
         bddnode_t n = GETNODE(bdd);
         SPAWN(sylvan_gc_mark_rec, n->low);
         CALL(sylvan_gc_mark_rec, n->high);

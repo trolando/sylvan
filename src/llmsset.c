@@ -323,22 +323,12 @@ llmsset_is_marked(const llmsset_t dbs, uint64_t index)
 }
 
 int
-llmsset_mark_unsafe(const llmsset_t dbs, uint64_t index)
+llmsset_mark(const llmsset_t dbs, uint64_t index)
 {
     uint64_t v = dbs->table[index];
     if (v & DFILLED) return 0;
     dbs->table[index] = DFILLED;
     return 1;
-}
-
-int
-llmsset_mark_safe(const llmsset_t dbs, uint64_t index)
-{
-    while (1) {
-        uint64_t v = *(volatile uint64_t *)&(dbs->table[index]);
-        if (v & DFILLED) return 0;
-        if (cas(&dbs->table[index], v, v|DFILLED)) return 1;
-    }
 }
 
 static inline void

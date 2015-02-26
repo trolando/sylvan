@@ -382,7 +382,8 @@ void report_table()
 {
     llmsset_t __sylvan_get_internal_data();
     llmsset_t tbl = __sylvan_get_internal_data();
-    size_t filled = llmsset_get_filled(tbl);
+    LACE_ME;
+    size_t filled = llmsset_count_marked(tbl);
     size_t total = llmsset_get_size(tbl);
     printf("done, table: %0.1f%% full (%zu nodes).\n", 100.0*(double)filled/total, filled);
 }

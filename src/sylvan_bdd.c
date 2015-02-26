@@ -401,7 +401,7 @@ sylvan_report_stats()
 
     printf(LRED  "****************" NC " \n");
 
-    printf("BDD Unique table: %zu of %zu buckets filled.\n", llmsset_get_filled(nodes), llmsset_get_size(nodes));
+    printf("BDD Unique table: %zu of %zu buckets filled.\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
 #endif
 }
 
@@ -436,15 +436,15 @@ sylvan_makenode(BDDVAR level, BDD low, BDD high)
         SV_CNT(C_gc_hashtable_full);
 #endif
 
-        //size_t before_gc = llmsset_get_filled(nodes);
+        //size_t before_gc = llmsset_count_marked(nodes);
         sylvan_gc();
-        //size_t after_gc = llmsset_get_filled(nodes);
+        //size_t after_gc = llmsset_count_marked(nodes);
         //size_t total = llmsset_get_size(nodes);
         //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
 
         index = llmsset_lookup(nodes, &n);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_get_filled(nodes), llmsset_get_size(nodes));
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
             exit(1);
         }
     }
@@ -524,7 +524,7 @@ sylvan_makenode_nocomp(BDDVAR level, BDD low, BDD high)
         sylvan_gc();
         index = llmsset_lookup(nodes, &n);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_get_filled(nodes), llmsset_get_size(nodes));
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
             exit(1);
         }
     }

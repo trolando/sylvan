@@ -381,20 +381,31 @@ llmsset_print_size(llmsset_t dbs, FILE *f)
         LLMSSET_LEN, dbs->table_size * LLMSSET_LEN);
 }
 
-size_t
-llmsset_get_filled(const llmsset_t dbs)
+TASK_3(size_t, llmsset_count_marked_range, llmsset_t, dbs, size_t, first, size_t, count)
 {
-    return llmsset_get_filled_partial(dbs, 0, dbs->table_size);
+    size_t result = 0;
+    while (count--) {
+        if (dbs->table[first++] & DFILLED) result++;
+    }
+    return result;
 }
 
-size_t
-llmsset_get_filled_partial(const llmsset_t dbs, size_t start, size_t end)
+TASK_IMPL_1(size_t, llmsset_count_marked, llmsset_t, dbs)
 {
-    size_t count=0;
-
-    while (start < end) {
-        if (dbs->table[start++] & DFILLED) count++;
+    size_t spawn_count = 0;
+    size_t count = dbs->table_size, first=0;
+    while (count > 4096) {
+        SPAWN(llmsset_count_marked_range, dbs, first, 4096);
+        first += 4096;
+        count -= 4096;
+        spawn_count++;
     }
-
-    return count;
+    size_t marked_count = 0;
+    if (count > 0) {
+        marked_count = CALL(llmsset_count_marked_range, dbs, first, count);
+    }
+    while (spawn_count--) {
+        marked_count += SYNC(llmsset_count_marked_range);
+    }
+    return marked_count;
 }

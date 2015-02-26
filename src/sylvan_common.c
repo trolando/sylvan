@@ -53,27 +53,10 @@ __sylvan_get_internal_data()
 /**
  * Calculate table usage (in parallel)
  */
-
-TASK_2(size_t, sylvan_table_usage_par, size_t, start, size_t, end)
-{
-    if (end - start <= 128) {
-        return llmsset_get_filled_partial(nodes, start, end);
-    } else {
-        size_t part = (end-start)/2;
-        if (part < 128) part = 128;
-        SPAWN(sylvan_table_usage_par, start, start+part);
-        size_t end2 = start+2*part;
-        if (end2 > end) end2 = end;
-        size_t res = CALL(sylvan_table_usage_par, start+part, end2);;
-        res += SYNC(sylvan_table_usage_par);
-        return res;
-    }
-}
-
 VOID_TASK_IMPL_2(sylvan_table_usage, size_t*, filled, size_t*, total)
 {
     size_t tot = llmsset_get_size(nodes);
-    if (filled != NULL) *filled = CALL(sylvan_table_usage_par, 0, tot);
+    if (filled != NULL) *filled = llmsset_count_marked(nodes);
     if (total != NULL) *total = tot;
 }
 

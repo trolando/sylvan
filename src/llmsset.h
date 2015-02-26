@@ -138,11 +138,15 @@ VOID_TASK_DECL_1(llmsset_rehash, llmsset_t);
 #define llmsset_rehash(dbs) CALL(llmsset_rehash, dbs)
 
 /**
+ * Retrieve number of marked buckets.
+ */
+TASK_DECL_1(size_t, llmsset_count_marked, llmsset_t);
+#define llmsset_count_marked(dbs) CALL(llmsset_count_marked, dbs)
+
+/**
  * Some information retrieval methods
  */
 void llmsset_print_size(llmsset_t dbs, FILE *f);
-size_t llmsset_get_filled(const llmsset_t dbs);
-size_t llmsset_get_filled_partial(const llmsset_t dbs, size_t start, size_t end);
 
 /**
  * Self-test for internal method

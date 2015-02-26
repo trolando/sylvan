@@ -43,7 +43,7 @@ typedef struct llmsset
 #define LLMSSET_LEN 16
 
 /**
- * Translate an index to a pointer (data array)
+ * Translate an index to a pointer to the data.
  */
 static inline void*
 llmsset_index_to_ptr(const llmsset_t dbs, size_t index)
@@ -52,13 +52,19 @@ llmsset_index_to_ptr(const llmsset_t dbs, size_t index)
 }
 
 /**
- * Create and free a lockless MS set
+ * Create a lockless MS set.
+ * This will allocate a MS set of <max_size> buckets in virtual memory.
+ * The actual space used is <initial_size> buckets.
  */
 llmsset_t llmsset_create(size_t initial_size, size_t max_size);
+
+/**
+ * Free the lockless MS set.
+ */
 void llmsset_free(llmsset_t dbs);
 
 /**
- * Retrieve maximum size of lockless MS set.
+ * Retrieve the maximum size of the lockless MS set.
  */
 static inline size_t
 llmsset_get_max_size(const llmsset_t dbs)
@@ -67,7 +73,7 @@ llmsset_get_max_size(const llmsset_t dbs)
 }
 
 /**
- * Retrieve current size of lockless MS set.
+ * Retrieve the current size of the lockless MS set.
  */
 static inline size_t
 llmsset_get_size(const llmsset_t dbs)
@@ -76,7 +82,7 @@ llmsset_get_size(const llmsset_t dbs)
 }
 
 /**
- * Set size of set.
+ * Set the current table size of the lockless MS set.
  * Typically called during garbage collection, after clear and before rehash.
  * Returns 0 if dbs->table_size > dbs->max_size!
  */
@@ -84,6 +90,7 @@ static inline int
 llmsset_set_size(llmsset_t dbs, size_t size)
 {
     if (size > dbs->max_size) return 0;
+    /* todo: add lower bound */
     dbs->table_size = size;
 #if LLMSSET_MASK
     /* Warning: if size is not a power of two, this will certainly cause issues */
@@ -94,8 +101,10 @@ llmsset_set_size(llmsset_t dbs, size_t size)
 }
 
 /**
- * Core function: find existing data, or add new
+ * Core function: find existing data or add new.
  * Returns NULL when not found and no available bucket in the hash table.
+ * If the data is inserted, then *created is set to non-zero.
+ * *index is set to the unique 42-bit value associated with the data.
  */
 void *llmsset_lookup(const llmsset_t dbs, const void *data, uint64_t *insert_index, int *created, uint64_t *index);
 

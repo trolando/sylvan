@@ -99,6 +99,16 @@ void sylvan_gc_disable();
 LACE_TYPEDEF_CB(void, gc_mark_cb);
 void sylvan_gc_add_mark(gc_mark_cb callback);
 
+/**
+ * Set "hook" callback. There can be only one.
+ *
+ * The hook is called after the "mark" phase and before the "rehash" phase.
+ * This allows users to perform certain actions, such as resizing the nodes table
+ * and the operation cache. Also, dynamic resizing could be performed then.
+ */
+LACE_TYPEDEF_CB(void, gc_hook_cb);
+void sylvan_gc_set_hook(gc_hook_cb new_hook);
+
 #include <sylvan_bdd.h>
 #include <sylvan_ldd.h>
 

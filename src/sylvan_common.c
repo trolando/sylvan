@@ -118,6 +118,14 @@ sylvan_gc_add_mark(gc_mark_cb cb)
     gc_mark_register = e;
 }
 
+static gc_hook_cb gc_hook;
+
+void
+sylvan_gc_set_hook(gc_hook_cb new_hook)
+{
+    gc_hook = new_hook;
+}
+
 void
 sylvan_gc_enable()
 {
@@ -144,6 +152,22 @@ VOID_TASK_0(sylvan_gc_rehash)
     llmsset_rehash_multi(nodes, LACE_WORKER_ID, workers);
 }
 
+/* Default hook */
+VOID_TASK_0(sylvan_gc_default_hook)
+{
+    /**
+     * Default behavior:
+     * if we can resize the nodes set, and if we use more than 50%, then increase size
+     */
+    if (!llmsset_is_maxsize(nodes)) {
+        size_t filled, total;
+        sylvan_table_usage(&filled, &total);
+        if (filled > total/2) {
+            llmsset_sizeup(nodes);
+        }
+    }
+}
+
 VOID_TASK_0(sylvan_gc_go)
 {
     // clear cache
@@ -159,14 +183,8 @@ VOID_TASK_0(sylvan_gc_go)
         e = e->next;
     }
 
-    // maybe resize
-    if (!llmsset_is_maxsize(nodes)) {
-        size_t filled, total;
-        sylvan_table_usage(&filled, &total);
-        if (filled > total/2) {
-            llmsset_sizeup(nodes);
-        }
-    }
+    // call hook function (resizing, reordering, etc)
+    WRAP(gc_hook);
 
     // rehash
     TOGETHER(sylvan_gc_rehash);
@@ -217,6 +235,7 @@ sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize)
 
     gc = 0;
     barrier_init(&gcbar, lace_workers());
+    gc_hook = TASK(sylvan_gc_default_hook);
 
     // Another sanity check
     llmsset_test_multi(nodes, workers);

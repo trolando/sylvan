@@ -302,17 +302,12 @@ llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_workers, size_
     }
 }
 
-VOID_TASK_1(llmsset_clear_task, llmsset_t, dbs)
-{
-    size_t first_entry, entry_count;
-    llmsset_compute_multi(dbs, LACE_WORKER_ID, lace_workers(), &first_entry, &entry_count);
-    if (entry_count <= 0) return;
-    memset(dbs->table + first_entry, 0, sizeof(uint64_t) * entry_count);
-}
-
 VOID_TASK_IMPL_1(llmsset_clear, llmsset_t, dbs)
 {
-    TOGETHER(llmsset_clear_task, dbs);
+    // a bit silly, but this works just fine, and does not require writing 0 everywhere...
+    munmap(dbs->table, dbs->max_size * sizeof(uint64_t));
+    dbs->table = (uint64_t*)mmap(0, dbs->max_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    if (dbs->table == (uint64_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
 }
 
 int

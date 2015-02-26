@@ -264,6 +264,17 @@ llmsset_create(size_t initial_size, size_t max_size)
     LACE_ME;
     TOGETHER(llmsset_init_worker, dbs);
 
+    /* self-test */
+    /* if (lace_workers() > 1) {
+        size_t first, count, expected=0, i;
+        for (i=0; i<lace_workers(); i++) {
+            llmsset_compute_multi(dbs, i, lace_workers(), &first, &count);
+            assert(expected == first);
+            expected += count;
+        }
+        assert(expected == dbs->table_size);
+    }*/
+
     return dbs;
 }
 
@@ -291,20 +302,6 @@ llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_workers, size_
         *_first_entry = first_entry;
         *_entry_count = entries_each < cap_total ? entries_each : cap_total;
     }
-}
-
-void
-llmsset_test_multi(const llmsset_t dbs, size_t n_workers)
-{
-    if (n_workers < 1) return; // Never mind...
-
-    size_t first, count, expected=0, i;
-    for (i=0; i<n_workers; i++) {
-        llmsset_compute_multi(dbs, i, n_workers, &first, &count);
-        assert(expected == first);
-        expected += count;
-    }
-    assert(expected == dbs->table_size);
 }
 
 VOID_TASK_1(llmsset_clear_task, llmsset_t, dbs)
@@ -371,14 +368,6 @@ VOID_TASK_IMPL_1(llmsset_rehash, llmsset_t, dbs)
     TOGETHER(llmsset_rehash_task, dbs);
     /* for now, call init_worker to reset "insert_index" */
     TOGETHER(llmsset_init_worker, dbs);
-}
-
-void
-llmsset_print_size(llmsset_t dbs, FILE *f)
-{
-    fprintf(f, "Hash: %ld * 8 = %ld bytes; Data: %ld * %d = %ld bytes ",
-        dbs->table_size, dbs->table_size * 8, dbs->table_size,
-        LLMSSET_LEN, dbs->table_size * LLMSSET_LEN);
 }
 
 TASK_3(size_t, llmsset_count_marked_range, llmsset_t, dbs, size_t, first, size_t, count)

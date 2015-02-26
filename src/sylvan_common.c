@@ -186,9 +186,6 @@ sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize)
     gc = 0;
     barrier_init(&gcbar, lace_workers());
     gc_hook = TASK(sylvan_gc_default_hook);
-
-    // Another sanity check
-    llmsset_test_multi(nodes, workers);
 }
 
 struct reg_quit_entry

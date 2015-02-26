@@ -357,13 +357,7 @@ sylvan_report_stats()
     printf(NC BOLD"SYLVAN STATS");
     printf(NC LRED             " *\n");
     printf(     "****************\n");
-    printf(NC ULINE "Memory usage\n" NC LBLUE);
-    printf("BDD table:          ");
-    llmsset_print_size(nodes, stdout);
     printf("\n");
-    //printf("Cache:              ");
-    //llci_print_size(_bdd.cache, stdout);
-    //printf("\n");
 
     uint64_t totals[C_MAX];
     for (i=0;i<C_MAX;i++) totals[i] = 0;

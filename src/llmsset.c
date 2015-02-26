@@ -302,25 +302,17 @@ llmsset_get_insertindex_multi(const llmsset_t dbs, size_t my_id, size_t n_worker
     (void) dbs;
 }
 
-static inline void
-llmsset_clear_range(const llmsset_t dbs, uint64_t start, uint64_t count)
-{
-    memset(dbs->table + start, 0, sizeof(uint64_t) * count);
-}
-
-void
-llmsset_clear(const llmsset_t dbs)
-{
-    llmsset_clear_range(dbs, 0, dbs->table_size);
-}
-
-void
-llmsset_clear_multi(const llmsset_t dbs, size_t my_id, size_t n_workers)
+VOID_TASK_1(llmsset_clear_task, llmsset_t, dbs)
 {
     size_t first_entry, entry_count;
-    llmsset_compute_multi(dbs, my_id, n_workers, &first_entry, &entry_count);
+    llmsset_compute_multi(dbs, LACE_WORKER_ID, lace_workers(), &first_entry, &entry_count);
     if (entry_count <= 0) return;
-    llmsset_clear_range(dbs, first_entry, entry_count);
+    memset(dbs->table + first_entry, 0, sizeof(uint64_t) * entry_count);
+}
+
+VOID_TASK_IMPL_1(llmsset_clear, llmsset_t, dbs)
+{
+    TOGETHER(llmsset_clear_task, dbs);
 }
 
 int

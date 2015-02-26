@@ -138,11 +138,6 @@ sylvan_gc_disable()
     gc_enabled = 0;
 }
 
-VOID_TASK_0(sylvan_gc_clear_llmsset)
-{
-    llmsset_clear_multi(nodes, LACE_WORKER_ID, workers);
-}
-
 VOID_TASK_0(sylvan_gc_rehash)
 {
     LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
@@ -174,7 +169,7 @@ VOID_TASK_0(sylvan_gc_go)
     cache_clear();
 
     // clear hash array (parallel)
-    TOGETHER(sylvan_gc_clear_llmsset);
+    llmsset_clear(nodes);
 
     // call mark functions
     struct reg_gc_mark_entry *e = gc_mark_register;

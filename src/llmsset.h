@@ -19,6 +19,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <lace.h>
+
 #ifndef LLMSSET_H
 #define LLMSSET_H
 
@@ -117,8 +119,8 @@ void *llmsset_lookup(const llmsset_t dbs, const void *data, uint64_t *insert_ind
  *
  * Note that the _multi variants use numa_tools
  */
-void llmsset_clear(const llmsset_t dbs);
-void llmsset_clear_multi(const llmsset_t dbs, size_t my_id, size_t n_workers);
+VOID_TASK_DECL_1(llmsset_clear, llmsset_t);
+#define llmsset_clear(dbs) CALL(llmsset_clear, dbs)
 
 /**
  * llmsset_mark_... returns a non-zero value when the node was unmarked

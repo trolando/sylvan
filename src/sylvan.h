@@ -83,18 +83,41 @@ void sylvan_quit();
 VOID_TASK_DECL_2(sylvan_table_usage, size_t*, size_t*);
 #define sylvan_table_usage(filled, total) (CALL(sylvan_table_usage, filled, total))
 
-/* Perform garbage collection */
+/**
+ * Perform garbage collection.
+ *
+ * Garbage collection is performed in a new Lace frame, interrupting all ongoing work
+ * until garbage collection is completed.
+ *
+ * Garbage collection procedure:
+ * 1) The operation cache is cleared and the hash table is reset.
+ * 2) All live nodes are marked (to be rehashed). This is done by the "mark" callbacks.
+ * 3) The "hook" callback is called.
+ *    By default, this doubles the hash table size when it is >50% full.
+ * 4) All live nodes are rehashed into the hash table.
+ *
+ * The behavior of garbage collection can be customized by adding "mark" callbacks and
+ * replacing the "hook" callback.
+ */
 VOID_TASK_DECL_0(sylvan_gc);
 #define sylvan_gc() (CALL(sylvan_gc))
 
-/* Enable or disable garbage collection. It is enabled by default. */
+/**
+ * Enable or disable garbage collection.
+ *
+ * This affects both automatic and manual garbage collection, i.e.,
+ * calling sylvan_gc() while garbage collection is disabled does not have any effect.
+ */
 void sylvan_gc_enable();
 void sylvan_gc_disable();
 
 /**
- * Garbage collection "mark" callbacks.
- * These are called during garbage collection to
- * recursively mark references.
+ * Add a "mark" callback to the list of callbacks.
+ *
+ * These are called during garbage collection to recursively mark nodes.
+ *
+ * Default "mark" functions that mark external references (via sylvan_ref) and internal
+ * references (inside operations) are added by sylvan_init_bdd/sylvan_init_bdd.
  */
 LACE_TYPEDEF_CB(void, gc_mark_cb);
 void sylvan_gc_add_mark(gc_mark_cb callback);

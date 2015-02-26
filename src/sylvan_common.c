@@ -186,7 +186,7 @@ VOID_TASK_0(sylvan_gc_go)
     // call hook function (resizing, reordering, etc)
     WRAP(gc_hook);
 
-    // rehash
+    // rehash marked nodes
     TOGETHER(sylvan_gc_rehash);
 }
 

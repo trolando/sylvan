@@ -73,8 +73,8 @@ VOID_TASK_1(llmsset_init_worker, llmsset_t, dbs)
  * Note: garbage collection during lookup strictly forbidden
  * insert_index points to a starting point and is updated.
  */
-void *
-llmsset_lookup(const llmsset_t dbs, const void* data, int* created, uint64_t* index)
+uint64_t
+llmsset_lookup(const llmsset_t dbs, const void* data, int* created)
 {
     LOCALIZE_THREAD_LOCAL(insert_index, uint64_t);
 
@@ -100,9 +100,8 @@ llmsset_lookup(const llmsset_t dbs, const void* data, int* created, uint64_t* in
                 uint64_t d_idx = v & MASK_INDEX;
                 register uint8_t *d_ptr = dbs->data + d_idx * LLMSSET_LEN;
                 if (memcmp(d_ptr, data, LLMSSET_LEN) == 0) {
-                    if (index) *index = d_idx;
-                    if (created) *created = 0;
-                    return d_ptr;
+                    *created = 0;
+                    return d_idx;
                 }
             }
         } while (probe_sequence_next(idx, last));
@@ -169,9 +168,8 @@ phase2_restart:
                 uint64_t new_v = (v&DFILLED) | mask;
                 if (!cas(bucket, v, new_v)) goto phase2_restart;
 
-                if (index) *index = d_idx;
-                if (created) *created = 1;
-                return d_ptr;
+                *created = 1;
+                return d_idx;
             }
 
             if (hash == (v & MASK_HASH)) {
@@ -181,9 +179,8 @@ phase2_restart:
                     volatile uint64_t *ptr = dbs->table + d_idx;
                     uint64_t h = *ptr;
                     while (!cas(ptr, h, h&~(DFILLED))) { h = *ptr; } // uninsert data
-                    if (index) *index = d2_idx;
-                    if (created) *created = 0;
-                    return d2_ptr;
+                    *created = 0;
+                    return d2_idx;
                 }
             }
         } while (probe_sequence_next(idx, last));

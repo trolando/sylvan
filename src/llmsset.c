@@ -26,10 +26,8 @@
 #include <hash16.h>
 #include <tls.h>
 
-#if LLMSSET_LEN == 16
 #define hash_mul hash16_mul
 #define rehash_mul rehash16_mul
-#endif
 
 /*
  *  1 bit  for data-filled
@@ -98,8 +96,8 @@ llmsset_lookup(const llmsset_t dbs, const void* data)
 
             if (hash == (v & MASK_HASH)) {
                 uint64_t d_idx = v & MASK_INDEX;
-                register uint8_t *d_ptr = dbs->data + d_idx * LLMSSET_LEN;
-                if (memcmp(d_ptr, data, LLMSSET_LEN) == 0) {
+                register uint8_t *d_ptr = dbs->data + d_idx * 16;
+                if (memcmp(d_ptr, data, 16) == 0) {
                     return d_idx;
                 }
             }
@@ -135,8 +133,8 @@ phase2:
                 d_idx++;
             }
         } else if (cas(ptr, h, h|DFILLED)) {
-            d_ptr = dbs->data + d_idx * LLMSSET_LEN;
-            memcpy(d_ptr, data, LLMSSET_LEN);
+            d_ptr = dbs->data + d_idx * 16;
+            memcpy(d_ptr, data, 16);
             insert_index = d_idx;
             SET_THREAD_LOCAL(insert_index, insert_index);
             break;
@@ -171,8 +169,8 @@ phase2_restart:
 
             if (hash == (v & MASK_HASH)) {
                 uint64_t d2_idx = v & MASK_INDEX;
-                register uint8_t *d2_ptr = dbs->data + d2_idx * LLMSSET_LEN;
-                if (memcmp(d2_ptr, data, LLMSSET_LEN) == 0) {
+                register uint8_t *d2_ptr = dbs->data + d2_idx * 16;
+                if (memcmp(d2_ptr, data, 16) == 0) {
                     volatile uint64_t *ptr = dbs->table + d_idx;
                     uint64_t h = *ptr;
                     while (!cas(ptr, h, h&~(DFILLED))) { h = *ptr; } // uninsert data
@@ -190,7 +188,7 @@ phase2_restart:
 static inline int
 llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 {
-    const uint8_t * const d_ptr = dbs->data + d_idx * LLMSSET_LEN;
+    const uint8_t * const d_ptr = dbs->data + d_idx * 16;
     uint64_t hash_rehash = hash_mul(d_ptr);
     uint64_t mask = (hash_rehash & MASK_HASH) | d_idx | HFILLED;
 
@@ -258,7 +256,7 @@ llmsset_create(size_t initial_size, size_t max_size)
 
     dbs->table = (uint64_t*)mmap(0, dbs->max_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (dbs->table == (uint64_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
-    dbs->data = (uint8_t*)mmap(0, dbs->max_size * LLMSSET_LEN, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    dbs->data = (uint8_t*)mmap(0, dbs->max_size * 16, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (dbs->data == (uint8_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
 
     LACE_ME;
@@ -282,7 +280,7 @@ void
 llmsset_free(llmsset_t dbs)
 {
     munmap(dbs->table, dbs->max_size * sizeof(uint64_t));
-    munmap(dbs->data, dbs->max_size * LLMSSET_LEN);
+    munmap(dbs->data, dbs->max_size * 16);
     free(dbs);
 }
 

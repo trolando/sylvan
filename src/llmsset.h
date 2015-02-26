@@ -28,6 +28,15 @@
 #define LLMSSET_MASK 0 // set to 1 to use bit mask instead of modulo
 #endif
 
+/**
+ * Lockless hash table (set) to store 16-byte keys.
+ * Each unique key is associated with a 42-bit number.
+ *
+ * The set has support for stop-the-world garbage collection.
+ * Methods llmsset_clear, llmsset_mark and llmsset_rehash implement garbage collection.
+ * During their execution, llmsset_lookup is not allowed.
+ */
+
 typedef struct llmsset
 {
     uint64_t          *table;       // table with hashes
@@ -41,32 +50,29 @@ typedef struct llmsset
     int16_t           threshold;    // number of iterations for insertion until returning error
 } *llmsset_t;
 
-// Every key is 16 bytes, also inserted data same size, also padded size is 16 bytes
-#define LLMSSET_LEN 16
-
 /**
- * Translate an index to a pointer to the data.
+ * Retrieve a pointer to the data associated with the 42-bit value.
  */
 static inline void*
 llmsset_index_to_ptr(const llmsset_t dbs, size_t index)
 {
-    return dbs->data + index * LLMSSET_LEN;
+    return dbs->data + index * 16;
 }
 
 /**
- * Create a lockless MS set.
- * This will allocate a MS set of <max_size> buckets in virtual memory.
+ * Create the set.
+ * This will allocate a set of <max_size> buckets in virtual memory.
  * The actual space used is <initial_size> buckets.
  */
 llmsset_t llmsset_create(size_t initial_size, size_t max_size);
 
 /**
- * Free the lockless MS set.
+ * Free the set.
  */
 void llmsset_free(llmsset_t dbs);
 
 /**
- * Retrieve the maximum size of the lockless MS set.
+ * Retrieve the maximum size of the set.
  */
 static inline size_t
 llmsset_get_max_size(const llmsset_t dbs)
@@ -84,22 +90,22 @@ llmsset_get_size(const llmsset_t dbs)
 }
 
 /**
- * Set the current table size of the lockless MS set.
+ * Set the table size of the set.
  * Typically called during garbage collection, after clear and before rehash.
  * Returns 0 if dbs->table_size > dbs->max_size!
  */
-static inline int
+static inline void
 llmsset_set_size(llmsset_t dbs, size_t size)
 {
-    if (size > dbs->max_size) return 0;
-    /* todo: add lower bound */
-    dbs->table_size = size;
+    /* check bounds (don't be rediculous) */
+    if (size > 128 && size <= dbs->max_size) {
+        dbs->table_size = size;
 #if LLMSSET_MASK
-    /* Warning: if size is not a power of two, this will certainly cause issues */
-    dbs->mask = dbs->table_size - 1;
+        /* Warning: if size is not a power of two, you will get interesting behavior */
+        dbs->mask = dbs->table_size - 1;
 #endif
-    dbs->threshold = (64 - __builtin_clzl(dbs->table_size)) + 4; // doubling table_size increases threshold by 1
-    return 1;
+        dbs->threshold = (64 - __builtin_clzl(dbs->table_size)) + 4; // doubling table_size increases threshold by 1
+    }
 }
 
 /**

@@ -113,17 +113,15 @@ void *llmsset_lookup(const llmsset_t dbs, const void *data, uint64_t *insert_ind
 /**
  * To perform garbage collection, the user is responsible that no lookups are performed during the process.
  *
- * 1) call llmsset_clear or llmsset_clear_multi
- * 2) call llmsset_mark for each entry to keep
- * 3) call llmsset_rehash or llmsset_rehash_multi
- *
- * Note that the _multi variants use numa_tools
+ * 1) call llmsset_clear 
+ * 2) call llmsset_mark for every bucket to rehash
+ * 3) call llmsset_rehash 
  */
 VOID_TASK_DECL_1(llmsset_clear, llmsset_t);
 #define llmsset_clear(dbs) CALL(llmsset_clear, dbs)
 
 /**
- * Check if a certain data bucket is marked (in use)
+ * Check if a certain data bucket is marked (in use).
  */
 int llmsset_is_marked(const llmsset_t dbs, uint64_t index);
 
@@ -134,8 +132,11 @@ int llmsset_is_marked(const llmsset_t dbs, uint64_t index);
  */
 int llmsset_mark(const llmsset_t dbs, uint64_t index);
 
-void llmsset_rehash(const llmsset_t dbs);
-void llmsset_rehash_multi(const llmsset_t dbs, size_t my_id, size_t n_workers);
+/**
+ * Rehash all marked buckets.
+ */
+VOID_TASK_DECL_1(llmsset_rehash, llmsset_t);
+#define llmsset_rehash(dbs) CALL(llmsset_rehash, dbs)
 
 /**
  * Some information retrieval methods

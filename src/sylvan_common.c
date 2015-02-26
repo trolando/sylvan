@@ -144,7 +144,7 @@ VOID_TASK_0(sylvan_gc_rehash)
     if (insert_index == NULL) insert_index = initialize_insert_index();
     *insert_index = llmsset_get_insertindex_multi(nodes, LACE_WORKER_ID, workers);
 
-    llmsset_rehash_multi(nodes, LACE_WORKER_ID, workers);
+    llmsset_rehash(nodes);
 }
 
 /* Default hook */

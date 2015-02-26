@@ -331,29 +331,39 @@ llmsset_mark(const llmsset_t dbs, uint64_t index)
     return 1;
 }
 
-static inline void
-llmsset_rehash_range(const llmsset_t dbs, uint64_t start, uint64_t count)
+VOID_TASK_3(llmsset_rehash_range, llmsset_t, dbs, size_t, first, size_t, count)
 {
-    while (count) {
-        if (dbs->table[start]&DFILLED) llmsset_rehash_bucket(dbs, start);
-        start++;
-        count--;
+    while (count--) {
+        if (dbs->table[first]&DFILLED) llmsset_rehash_bucket(dbs, first);
+        first++;
     }
 }
 
-void
-llmsset_rehash(const llmsset_t dbs)
+VOID_TASK_1(llmsset_rehash_task, llmsset_t, dbs)
 {
-    llmsset_rehash_range(dbs, 0, dbs->table_size);
+    /* retrieve first entry and number of bucket */
+    size_t first, count;
+    llmsset_compute_multi(dbs, LACE_WORKER_ID, lace_workers(), &first, &count);
+
+    // now proceed in blocks of 1024 buckets
+    size_t spawn_count = 0;
+    while (count > 1024) {
+        SPAWN(llmsset_rehash_range, dbs, first, 1024);
+        first += 1024;
+        count -= 1024;
+        spawn_count++;
+    }
+    if (count > 0) {
+        CALL(llmsset_rehash_range, dbs, first, count);
+    }
+    while (spawn_count--) {
+        SYNC(llmsset_rehash_range);
+    }
 }
 
-void
-llmsset_rehash_multi(const llmsset_t dbs, size_t my_id, size_t n_workers)
+VOID_TASK_IMPL_1(llmsset_rehash, llmsset_t, dbs)
 {
-    size_t first_entry, entry_count;
-    llmsset_compute_multi(dbs, my_id, n_workers, &first_entry, &entry_count);
-    if (entry_count <= 0) return;
-    llmsset_rehash_range(dbs, first_entry, entry_count);
+    TOGETHER(llmsset_rehash_task, dbs);
 }
 
 void

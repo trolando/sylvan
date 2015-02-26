@@ -179,8 +179,7 @@ typedef struct ref_internal
 
 static DECLARE_THREAD_LOCAL(ref_key, ref_internal_t);
 
-static __attribute__((noinline)) ref_internal_t
-ref_init()
+VOID_TASK_0(sylvan_bdd_ref_init)
 {
     ref_internal_t s = (ref_internal_t)malloc(sizeof(struct ref_internal));
     s->r_size = 128;
@@ -190,7 +189,6 @@ ref_init()
     s->results = (BDD*)malloc(sizeof(BDD) * 128);
     s->spawns = (Task**)malloc(sizeof(Task*) * 128);
     SET_THREAD_LOCAL(ref_key, s);
-    return s;
 }
 
 static __attribute__((noinline)) void
@@ -209,7 +207,6 @@ ref_resize_spawns()
 
 #define REFS_INIT                                                                       \
     LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);                                     \
-    if (!ref_key) { ref_key=ref_init(); }                                               \
     size_t mark_old_count = ref_key->r_count;
  
 #define REFS_PUSH(a)                                                                    \
@@ -250,17 +247,15 @@ ref_resize_spawns()
 VOID_TASK_0(sylvan_gc_mark_internal_refs_task)
 {
     LOCALIZE_THREAD_LOCAL(ref_key, ref_internal_t);
-    if (ref_key) {
-        size_t i;
-        for (i=0; i<ref_key->r_count; i++) {
-            CALL(sylvan_gc_mark_rec, ref_key->results[i]);
-        }
-        for (i=0; i<ref_key->s_count; i++) {
-            Task *t = ref_key->spawns[i];
-            if (!TASK_IS_STOLEN(t)) break;
-            if (TASK_IS_COMPLETED(t)) {
-                CALL(sylvan_gc_mark_rec, *(BDD*)TASK_RESULT(t));
-            }
+    size_t i;
+    for (i=0; i<ref_key->r_count; i++) {
+        CALL(sylvan_gc_mark_rec, ref_key->results[i]);
+    }
+    for (i=0; i<ref_key->s_count; i++) {
+        Task *t = ref_key->spawns[i];
+        if (!TASK_IS_STOLEN(t)) break;
+        if (TASK_IS_COMPLETED(t)) {
+            CALL(sylvan_gc_mark_rec, *(BDD*)TASK_RESULT(t));
         }
     }
 }
@@ -294,8 +289,11 @@ sylvan_init_bdd(int _granularity)
         exit(1);
     }
 
-    INIT_THREAD_LOCAL(ref_key);
     refs_create(&bdd_refs, 1024);
+
+    INIT_THREAD_LOCAL(ref_key);
+    LACE_ME;
+    TOGETHER(sylvan_bdd_ref_init);
 
     sylvan_reset_counters();
 }

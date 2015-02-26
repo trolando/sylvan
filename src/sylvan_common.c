@@ -114,9 +114,8 @@ VOID_TASK_0(sylvan_gc_default_hook)
     size_t max_size = llmsset_get_max_size(nodes);
     size_t size = llmsset_get_size(nodes);
     if (size*2 <= max_size) {
-        size_t filled, total;
-        sylvan_table_usage(&filled, &total);
-        if (filled*2 > size) llmsset_set_size(nodes, size*2);
+        size_t marked = llmsset_count_marked(nodes);
+        if (marked*2 > size) llmsset_set_size(nodes, size*2);
     }
 }
 
@@ -125,7 +124,7 @@ VOID_TASK_0(sylvan_gc_go)
     // clear cache
     cache_clear();
 
-    // clear hash array (parallel)
+    // clear hash array
     llmsset_clear(nodes);
 
     // call mark functions

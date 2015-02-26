@@ -444,8 +444,8 @@ void
 sylvan_init_ldd()
 {
     sylvan_register_quit(lddmc_quit);
-    sylvan_gc_register_mark(TASK(lddmc_gc_mark_external_refs));
-    sylvan_gc_register_mark(TASK(lddmc_gc_mark_internal_refs));
+    sylvan_gc_add_mark(TASK(lddmc_gc_mark_external_refs));
+    sylvan_gc_add_mark(TASK(lddmc_gc_mark_internal_refs));
 
     // Sanity check
     if (sizeof(struct mddnode) != 16) {

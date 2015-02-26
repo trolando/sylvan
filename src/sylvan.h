@@ -97,7 +97,7 @@ void sylvan_gc_disable();
  * recursively mark references.
  */
 LACE_TYPEDEF_CB(void, gc_mark_cb);
-void sylvan_gc_register_mark(gc_mark_cb cb);
+void sylvan_gc_add_mark(gc_mark_cb callback);
 
 #include <sylvan_bdd.h>
 #include <sylvan_ldd.h>

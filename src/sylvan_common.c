@@ -110,7 +110,7 @@ struct reg_gc_mark_entry
 static struct reg_gc_mark_entry *gc_mark_register = NULL;
 
 void
-sylvan_gc_register_mark(gc_mark_cb cb)
+sylvan_gc_add_mark(gc_mark_cb cb)
 {
     struct reg_gc_mark_entry *e = (struct reg_gc_mark_entry*)malloc(sizeof(struct reg_gc_mark_entry));
     e->next = gc_mark_register;

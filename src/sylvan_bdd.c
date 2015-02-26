@@ -283,8 +283,8 @@ void
 sylvan_init_bdd(int _granularity)
 {
     sylvan_register_quit(sylvan_quit_bdd);
-    sylvan_gc_register_mark(TASK(sylvan_gc_mark_external_refs));
-    sylvan_gc_register_mark(TASK(sylvan_gc_mark_internal_refs));
+    sylvan_gc_add_mark(TASK(sylvan_gc_mark_external_refs));
+    sylvan_gc_add_mark(TASK(sylvan_gc_mark_internal_refs));
 
     granularity = _granularity;
 

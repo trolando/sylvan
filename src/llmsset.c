@@ -24,6 +24,7 @@
 #include <atomics.h>
 #include <llmsset.h>
 #include <hash16.h>
+#include <tls.h>
 
 #if LLMSSET_LEN == 16
 #define hash_mul hash16_mul
@@ -55,13 +56,28 @@ static const uint64_t CL_MASK_R   = ((LINE_SIZE) / 8) - 1;
 // Calculate next index on a cache line walk
 #define probe_sequence_next(cur, last) (((cur) = (((cur) & CL_MASK) | (((cur) + 1) & CL_MASK_R))) != (last))
 
+DECLARE_THREAD_LOCAL(insert_index, uint64_t);
+
+VOID_TASK_1(llmsset_init_worker, llmsset_t, dbs)
+{
+    // yes, ugly. for now, we use a global thread-local value.
+    // that is a problem with multiple tables.
+    INIT_THREAD_LOCAL(insert_index);
+    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t);
+    // take some start place
+    insert_index = (dbs->table_size * LACE_WORKER_ID)/lace_workers();
+    SET_THREAD_LOCAL(insert_index, insert_index);
+}
+
 /*
  * Note: garbage collection during lookup strictly forbidden
  * insert_index points to a starting point and is updated.
  */
 void *
-llmsset_lookup(const llmsset_t dbs, const void* data, uint64_t* insert_index, int* created, uint64_t* index)
+llmsset_lookup(const llmsset_t dbs, const void* data, int* created, uint64_t* index)
 {
+    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t);
+
     uint64_t hash_rehash = hash_mul(data);
     const uint64_t hash = hash_rehash & MASK_HASH;
     int i=0;
@@ -99,7 +115,7 @@ llmsset_lookup(const llmsset_t dbs, const void* data, uint64_t* insert_index, in
     uint64_t d_idx;
     uint8_t *d_ptr;
 phase2:
-    d_idx = *insert_index;
+    d_idx = insert_index;
 
     int count=0;
     for (;;) {
@@ -123,7 +139,8 @@ phase2:
         } else if (cas(ptr, h, h|DFILLED)) {
             d_ptr = dbs->data + d_idx * LLMSSET_LEN;
             memcpy(d_ptr, data, LLMSSET_LEN);
-            *insert_index = d_idx;
+            insert_index = d_idx;
+            SET_THREAD_LOCAL(insert_index, insert_index);
             break;
         } else {
             d_idx++;
@@ -251,6 +268,9 @@ llmsset_create(size_t initial_size, size_t max_size)
     dbs->data = (uint8_t*)mmap(0, dbs->max_size * LLMSSET_LEN, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (dbs->data == (uint8_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
 
+    LACE_ME;
+    TOGETHER(llmsset_init_worker, dbs);
+
     return dbs;
 }
 
@@ -292,14 +312,6 @@ llmsset_test_multi(const llmsset_t dbs, size_t n_workers)
         expected += count;
     }
     assert(expected == dbs->table_size);
-}
-
-size_t
-llmsset_get_insertindex_multi(const llmsset_t dbs, size_t my_id, size_t n_workers)
-{
-    return my_id; // good enough since we randomize insert index now
-    (void) n_workers;
-    (void) dbs;
 }
 
 VOID_TASK_1(llmsset_clear_task, llmsset_t, dbs)
@@ -364,6 +376,8 @@ VOID_TASK_1(llmsset_rehash_task, llmsset_t, dbs)
 VOID_TASK_IMPL_1(llmsset_rehash, llmsset_t, dbs)
 {
     TOGETHER(llmsset_rehash_task, dbs);
+    /* for now, call init_worker to reset "insert_index" */
+    TOGETHER(llmsset_init_worker, dbs);
 }
 
 void

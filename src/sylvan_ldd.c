@@ -297,15 +297,12 @@ lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
     assert(ifneq != lddmc_true);
     if (ifneq != lddmc_false) assert(value < mddnode_getvalue(GETNODE(ifneq)));
 
-    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
-    if (insert_index == NULL) insert_index = initialize_insert_index();
-
     struct mddnode n;
     mddnode_make(&n, value, ifneq, ifeq);
 
     uint64_t index;
     int created;
-    if (llmsset_lookup(nodes, &n, insert_index, &created, &index) == 0) {
+    if (llmsset_lookup(nodes, &n, &created, &index) == 0) {
         //size_t before_gc = llmsset_get_filled(nodes);
         REFS_INIT;
         REFS_PUSH(ifeq);
@@ -316,7 +313,7 @@ lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
         //size_t after_gc = llmsset_get_filled(nodes);
         //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
 
-        if (llmsset_lookup(nodes, &n, insert_index, &created, &index) == 0) {
+        if (llmsset_lookup(nodes, &n, &created, &index) == 0) {
             fprintf(stderr, "MDD Unique table full, %zu of %zu buckets filled!\n", llmsset_get_filled(nodes), llmsset_get_size(nodes));
             exit(1);
         }
@@ -328,15 +325,12 @@ lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
 MDD
 lddmc_make_copynode(MDD ifeq, MDD ifneq)
 {
-    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
-    if (insert_index == NULL) insert_index = initialize_insert_index();
-
     struct mddnode n;
     mddnode_makecopy(&n, ifneq, ifeq);
 
     uint64_t index;
     int created;
-    if (llmsset_lookup(nodes, &n, insert_index, &created, &index) == 0) {
+    if (llmsset_lookup(nodes, &n, &created, &index) == 0) {
         //size_t before_gc = llmsset_get_filled(nodes);
         REFS_INIT;
         REFS_PUSH(ifeq);
@@ -347,7 +341,7 @@ lddmc_make_copynode(MDD ifeq, MDD ifneq)
         //size_t after_gc = llmsset_get_filled(nodes);
         //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
 
-        if (llmsset_lookup(nodes, &n, insert_index, &created, &index) == 0) {
+        if (llmsset_lookup(nodes, &n, &created, &index) == 0) {
             fprintf(stderr, "MDD Unique table full, %zu of %zu buckets filled!\n", llmsset_get_filled(nodes), llmsset_get_size(nodes));
             exit(1);
         }

@@ -25,12 +25,6 @@
 #define SYLVAN_COMMON_H
 
 /**
- * Thread-local insert index for LLMSset
- */
-extern DECLARE_THREAD_LOCAL(insert_index, uint64_t*);
-uint64_t* initialize_insert_index();
-
-/**
  * Global variables (number of workers, nodes table)
  */
 

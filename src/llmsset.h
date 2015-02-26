@@ -108,7 +108,7 @@ llmsset_set_size(llmsset_t dbs, size_t size)
  * If the data is inserted, then *created is set to non-zero.
  * *index is set to the unique 42-bit value associated with the data.
  */
-void *llmsset_lookup(const llmsset_t dbs, const void *data, uint64_t *insert_index, int *created, uint64_t *index);
+void *llmsset_lookup(const llmsset_t dbs, const void *data, int *created, uint64_t *index);
 
 /**
  * To perform garbage collection, the user is responsible that no lookups are performed during the process.
@@ -144,7 +144,6 @@ VOID_TASK_DECL_1(llmsset_rehash, llmsset_t);
 void llmsset_print_size(llmsset_t dbs, FILE *f);
 size_t llmsset_get_filled(const llmsset_t dbs);
 size_t llmsset_get_filled_partial(const llmsset_t dbs, size_t start, size_t end);
-size_t llmsset_get_insertindex_multi(const llmsset_t dbs, size_t my_id, size_t n_workers);
 
 /**
  * Self-test for internal method

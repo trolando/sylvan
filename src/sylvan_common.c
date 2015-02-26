@@ -78,23 +78,6 @@ VOID_TASK_IMPL_2(sylvan_table_usage, size_t*, filled, size_t*, total)
 }
 
 /**
- * Thread-local insert index for LLMSset
- */
-DECLARE_THREAD_LOCAL(insert_index, uint64_t*);
-
-uint64_t*
-initialize_insert_index()
-{
-    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
-    insert_index = (uint64_t*)malloc(LINE_SIZE);
-    LACE_ME;
-    size_t my_id = LACE_WORKER_ID;
-    *insert_index = llmsset_get_insertindex_multi(nodes, my_id, workers);
-    SET_THREAD_LOCAL(insert_index, insert_index);
-    return insert_index;
-}
-
-/**
  * Implementation of garbage collection
  */
 static int gc_enabled = 1;
@@ -138,15 +121,6 @@ sylvan_gc_disable()
     gc_enabled = 0;
 }
 
-VOID_TASK_0(sylvan_gc_rehash)
-{
-    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t*);
-    if (insert_index == NULL) insert_index = initialize_insert_index();
-    *insert_index = llmsset_get_insertindex_multi(nodes, LACE_WORKER_ID, workers);
-
-    llmsset_rehash(nodes);
-}
-
 /* Default hook */
 VOID_TASK_0(sylvan_gc_default_hook)
 {
@@ -182,7 +156,7 @@ VOID_TASK_0(sylvan_gc_go)
     WRAP(gc_hook);
 
     // rehash marked nodes
-    TOGETHER(sylvan_gc_rehash);
+    llmsset_rehash(nodes);
 }
 
 /* Perform garbage collection */
@@ -206,8 +180,6 @@ void
 sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize)
 {
     workers = lace_workers();
-
-    INIT_THREAD_LOCAL(insert_index);
 
 #if USE_NUMA
     if (numa_available() != -1) {

@@ -52,15 +52,6 @@ llmsset_index_to_ptr(const llmsset_t dbs, size_t index)
 }
 
 /**
- * Translate a pointer (data array) to index
- */
-static inline size_t
-llmsset_ptr_to_index(const llmsset_t dbs, void* ptr)
-{
-    return ((size_t)ptr - (size_t)dbs->data) / LLMSSET_LEN;
-}
-
-/**
  * Create and free a lockless MS set
  */
 llmsset_t llmsset_create(size_t initial_size, size_t max_size);

@@ -106,9 +106,8 @@ llmsset_set_size(llmsset_t dbs, size_t size)
  * Core function: find existing data or add new.
  * Returns the unique 42-bit value associated with the data, or 0 when table is full.
  * Also, this value will never equal 0 or 1.
- * If the data is inserted, then *created is set to non-zero.
  */
-uint64_t llmsset_lookup(const llmsset_t dbs, const void *data, int *created);
+uint64_t llmsset_lookup(const llmsset_t dbs, const void *data);
 
 /**
  * To perform garbage collection, the user is responsible that no lookups are performed during the process.

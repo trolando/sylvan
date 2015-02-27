@@ -9,7 +9,7 @@
 #define CACHE_INLINE_H
 
 #ifndef CACHE_MASK
-#define CACHE_MASK 0
+#define CACHE_MASK 1
 #endif
 
 /**
@@ -150,6 +150,14 @@ cache_clear()
     // a bit silly, but this works just fine, and does not require writing 0 everywhere...
     cache_free();
     cache_create(cache_size, cache_max);
+}
+
+static void __attribute__((unused))
+cache_setsize(size_t size)
+{
+    // easy solution
+    cache_free();
+    cache_create(size, cache_max);
 }
 
 #endif

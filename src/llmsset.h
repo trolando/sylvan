@@ -25,7 +25,7 @@
 #define LLMSSET_H
 
 #ifndef LLMSSET_MASK
-#define LLMSSET_MASK 0 // set to 1 to use bit mask instead of modulo
+#define LLMSSET_MASK 1 // set to 1 to use bit mask instead of modulo
 #endif
 
 /**

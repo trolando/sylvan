@@ -13,7 +13,7 @@
  * This MAY result in more conservative memory consumption, but is not
  * great for performance.
  * By default, powers of 2 should be used.
- * If you set this, then set CACHE_MASK and LLMSSET_MASK to 0. 
+ * If you set this, then set CACHE_MASK and LLMSSET_MASK to 0.
  */
 #ifndef SYLVAN_SIZE_FIBONACCI
 #define SYLVAN_SIZE_FIBONACCI 0

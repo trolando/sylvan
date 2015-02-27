@@ -111,7 +111,17 @@ sylvan_gc_disable()
 size_t
 next_size(size_t n)
 {
+#if SYLVAN_SIZE_FIBONACCI
+    size_t f1=1, f2=1;
+    for (;;) {
+        f2 += f1;
+        if (f2 > n) return f2;
+        f1 += f2;
+        if (f1 > n) return f1;
+    }
+#else
     return n*2;
+#endif
 }
 
 VOID_TASK_0(sylvan_gc_default_hook)

@@ -19,6 +19,14 @@
 #ifndef SYLVAN_BDD_H
 #define SYLVAN_BDD_H
 
+#ifndef SYLVAN_CACHE_STATS
+#define SYLVAN_CACHE_STATS 0
+#endif
+
+#ifndef SYLVAN_OPERATION_STATS
+#define SYLVAN_OPERATION_STATS 0
+#endif
+
 typedef uint64_t BDD;       // low 40 bits used for index, highest bit for complement, rest 0
 // BDDSET uses the BDD node hash table. A BDDSET is an ordered BDD.
 typedef uint64_t BDDSET;    // encodes a set of variables (e.g. for exists etc.)

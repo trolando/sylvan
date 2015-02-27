@@ -27,6 +27,7 @@
 
 #include <atomics.h>
 #include <avl.h>
+#include <refs.h>
 #include <sha2.h>
 #include <sylvan.h>
 #include <sylvan_common.h>
@@ -384,7 +385,7 @@ sylvan_report_stats()
 
 #if SYLVAN_OPERATION_STATS
     printf(NC ULINE "Call counters (ITE, exists, relprod_paired, relprod_paired_prev, constrain)\n" NC LBLUE);
-    for (i=0;i<workers;i++) {
+    for (i=0;i<lace_workers();i++) {
         printf("Worker %02d:           %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 "\n", i,
             sylvan_stats[i].count[C_ite], sylvan_stats[i].count[C_exists], 
             sylvan_stats[i].count[C_relprod_paired], sylvan_stats[i].count[C_relprod_paired_prev],

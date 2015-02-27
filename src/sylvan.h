@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2014 Formal Methods and Tools, University of Twente
+ * Copyright 2011-2015 Formal Methods and Tools, University of Twente
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,14 +44,6 @@
 #ifndef SYLVAN_H
 #define SYLVAN_H
 
-#ifndef SYLVAN_CACHE_STATS
-#define SYLVAN_CACHE_STATS 0
-#endif
-
-#ifndef SYLVAN_OPERATION_STATS
-#define SYLVAN_OPERATION_STATS 0
-#endif
-
 #ifndef SYLVAN_SIZE_FIBONACCI
 #define SYLVAN_SIZE_FIBONACCI 0
 #endif
@@ -80,7 +72,7 @@ typedef char __sylvan_check_size_t_is_8_bytes[(sizeof(uint64_t) == sizeof(size_t
 void sylvan_init_package(size_t initial_tablesize, size_t max_tablesize, size_t initial_cachesize, size_t max_cachesize);
 
 /**
- * Frees all Sylvan data.
+ * Frees all Sylvan data (also calls the quit() functions of BDD/MDD parts)
  */
 void sylvan_quit();
 
@@ -138,6 +130,16 @@ void sylvan_gc_add_mark(gc_mark_cb callback);
  */
 LACE_TYPEDEF_CB(void, gc_hook_cb);
 void sylvan_gc_set_hook(gc_hook_cb new_hook);
+
+/**
+ * Global variables (number of workers, nodes table)
+ */
+
+#include <llmsset.h>
+
+extern llmsset_t nodes;
+
+#include <cache.h>
 
 #include <sylvan_bdd.h>
 #include <sylvan_ldd.h>

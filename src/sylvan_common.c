@@ -27,7 +27,6 @@
  * Static global variables
  */
 
-int workers;
 llmsset_t nodes;
 
 /**
@@ -189,8 +188,6 @@ VOID_TASK_IMPL_0(sylvan_gc)
 void
 sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize, size_t max_cachesize)
 {
-    workers = lace_workers();
-
 #if USE_NUMA
     if (numa_available() != -1) {
         numa_set_interleave_mask(numa_all_nodes_ptr);

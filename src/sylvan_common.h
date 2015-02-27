@@ -15,23 +15,13 @@
  */
 
 #include <assert.h>
-#include <cache.h>
-#include <llmsset.h>
-#include <refs.h>
 #include <sylvan.h>
 #include <tls.h>
 
 #ifndef SYLVAN_COMMON_H
 #define SYLVAN_COMMON_H
 
-/**
- * Global variables (number of workers, nodes table)
- */
-
-extern int workers;
-extern llmsset_t nodes;
-
-/* Garbage collection test task */
+/* Garbage collection test task - t */
 #define sylvan_gc_test() YIELD_NEWFRAME()
 
 // BDD operations

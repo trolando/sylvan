@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#include <sylvan_config.h>
+
 #include <numa.h> // various numa functions
 #include <numaif.h> // mpol
 #include <sys/mman.h> // mmap

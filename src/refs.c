@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#include <sylvan_config.h>
+
 #include <assert.h> // for assert
 #include <stdio.h>  // for fprintf
 #include <stdint.h> // for uint32_t etc

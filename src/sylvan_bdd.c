@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#include <sylvan_config.h>
+
 #include <assert.h>
 #include <inttypes.h>
 #include <math.h>

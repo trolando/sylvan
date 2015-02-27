@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#include <sylvan_config.h>
+
 #include <errno.h>
 #include <sched.h> // for sched_getaffinity
 #include <stdio.h>  // for fprintf

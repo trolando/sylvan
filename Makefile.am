@@ -15,6 +15,7 @@ libsylvan_la_SOURCES = \
  src/sha2.c \
  src/sha2.h \
  src/sylvan.h \
+ src/sylvan_config.h \
  src/sylvan_bdd.h \
  src/sylvan_bdd.c \
  src/sylvan_ldd.h \

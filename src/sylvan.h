@@ -35,6 +35,8 @@
  * To temporarily disable garbage collection, use sylvan_gc_disable() and sylvan_gc_enable().
  */
 
+#include <sylvan_config.h>
+
 #include <stdint.h>
 #include <stdio.h> // for FILE
 #include <lace.h> // for definitions

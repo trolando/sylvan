@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#include <sylvan_config.h>
+
 #include <barrier.h>
 #include <sylvan_common.h>
 

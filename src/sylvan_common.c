@@ -113,9 +113,16 @@ VOID_TASK_0(sylvan_gc_default_hook)
      */
     size_t max_size = llmsset_get_max_size(nodes);
     size_t size = llmsset_get_size(nodes);
-    if (size*2 <= max_size) {
+    if (size < max_size) {
         size_t marked = llmsset_count_marked(nodes);
-        if (marked*2 > size) llmsset_set_size(nodes, size*2);
+        if (marked*2 > size) {
+            llmsset_set_size(nodes, size*2 < max_size ? size*2 : max_size);
+            if (cache_size < cache_max) {
+                // current design: just increase cache_size
+                if (cache_size*2 < cache_max) cache_size *= 2;
+                else cache_size = cache_max;
+            }
+        }
     }
 }
 

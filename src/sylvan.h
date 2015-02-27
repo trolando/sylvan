@@ -63,14 +63,15 @@ typedef char __sylvan_check_size_t_is_8_bytes[(sizeof(uint64_t) == sizeof(size_t
  *
  * The node table is resizable.
  * The table is resized automatically when >50% of the table is filled during garbage collection.
+ * This behavior can be customized by overriding the gc hook.
  * 
  * Memory usage:
- * Every node requires 32 bytes memory. (16 data + 16 bytes overhead)
+ * Every node requires 24 bytes memory. (16 bytes data + 8 bytes overhead)
  * Every operation cache entry requires 36 bytes memory. (32 bytes data + 4 bytes overhead)
  *
- * Reasonable defaults: datasize of 26 (2048 MB), cachesize of 24 (576 MB)
+ * Reasonable defaults: datasize of 1L<<26 (2048 MB), cachesize of 1L<<25 (1152 MB)
  */
-void sylvan_init_package(size_t initial_tablesize, size_t max_tablesize, size_t cachesize);
+void sylvan_init_package(size_t initial_tablesize, size_t max_tablesize, size_t initial_cachesize, size_t max_cachesize);
 
 /**
  * Frees all Sylvan data.

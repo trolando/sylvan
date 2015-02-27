@@ -449,7 +449,7 @@ test_lddmc()
 {
     LACE_ME;
 
-    sylvan_init_package(24, 24, 24);
+    sylvan_init_package(1LL<<24, 1LL<<24, 1LL<<24, 1LL<<24);
     sylvan_init_ldd();
     sylvan_gc_disable();
 
@@ -566,7 +566,7 @@ test_lddmc()
         lddmc_serialize_reset();
 
         sylvan_quit();
-        sylvan_init_package(24, 24, 24);
+        sylvan_init_package(1LL<<24, 1LL<<24, 1LL<<24, 1LL<<24);
         sylvan_init_ldd();
         sylvan_gc_disable();
 
@@ -603,7 +603,7 @@ void runtests(int threads)
 
     printf(NC "Testing basic bdd functionality... ");
     fflush(stdout);
-    sylvan_init_package(16, 16, 16);
+    sylvan_init_package(1LL<<16, 1LL<<16, 1LL<<16, 1LL<<16);
     sylvan_init_bdd(1);
     test_bdd();
     sylvan_quit();
@@ -613,7 +613,7 @@ void runtests(int threads)
     printf(NC "Testing cube function... ");
     fflush(stdout);
     int j;
-    sylvan_init_package(24, 24, 20);
+    sylvan_init_package(1LL<<24, 1LL<<24, 1LL<<24, 1LL<<24);
     sylvan_init_bdd(1);
     for (j=0;j<20;j++) test_cube();
     sylvan_quit();
@@ -621,7 +621,7 @@ void runtests(int threads)
 
     printf(NC "Testing relational products... ");
     fflush(stdout);
-    sylvan_init_package(24, 24, 20);
+    sylvan_init_package(1LL<<24, 1LL<<24, 1LL<<24, 1LL<<24);
     sylvan_init_bdd(1);
     for (j=0;j<20;j++) test_relprod();
     sylvan_quit();
@@ -629,7 +629,7 @@ void runtests(int threads)
 
     printf(NC "Testing function composition... ");
     fflush(stdout);
-    sylvan_init_package(24, 24, 20);
+    sylvan_init_package(1LL<<24, 1LL<<24, 1LL<<24, 1LL<<24);
     sylvan_init_bdd(1);
     for (j=0;j<20;j++) test_compose();
     sylvan_quit();
@@ -637,7 +637,7 @@ void runtests(int threads)
 
     printf(NC "Testing garbage collection... ");
     fflush(stdout);
-    sylvan_init_package(14, 14, 10);
+    sylvan_init_package(1LL<<14, 1LL<<14, 1LL<<20, 1LL<<20);
     sylvan_init_bdd(1);
     test_gc(threads);
     sylvan_quit();
@@ -645,7 +645,7 @@ void runtests(int threads)
 
     printf(NC "Testing operators... ");
     fflush(stdout);
-    sylvan_init_package(24, 24, 20);
+    sylvan_init_package(1LL<<24, 1LL<<24, 1LL<<24, 1LL<<24);
     sylvan_init_bdd(1);
     for (j=0;j<20;j++) test_operators();
     sylvan_quit();

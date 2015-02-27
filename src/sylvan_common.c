@@ -159,7 +159,7 @@ VOID_TASK_IMPL_0(sylvan_gc)
  * Package init and quit functions
  */
 void
-sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize)
+sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize, size_t max_cachesize)
 {
     workers = lace_workers();
 
@@ -169,18 +169,16 @@ sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize)
     }
 #endif
 
-    if (tablesize > 40 || maxsize > 40) {
-        fprintf(stderr, "sylvan_init error: tablesize must be <= 40!\n");
+    if (tablesize > maxsize) tablesize = maxsize;
+    if (cachesize > max_cachesize) cachesize = max_cachesize;
+
+    if (maxsize > 0x000003ffffffffff) {
+        fprintf(stderr, "sylvan_init_package error: tablesize must be <= 42 bits!\n");
         exit(1);
     }
 
-    if (cachesize > 40) {
-        fprintf(stderr, "sylvan_init error: cachesize must be <= 40!\n");
-        exit(1);
-    }
-
-    nodes = llmsset_create(1LL<<tablesize, 1LL<<maxsize);
-    cache_create(1LL<<cachesize, 1LL<<cachesize);
+    nodes = llmsset_create(tablesize, maxsize);
+    cache_create(cachesize, max_cachesize);
 
     gc = 0;
     barrier_init(&gcbar, lace_workers());

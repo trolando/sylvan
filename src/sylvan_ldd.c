@@ -280,6 +280,36 @@ VOID_TASK_0(lddmc_gc_mark_internal_refs)
 }
 
 /**
+ * Initialize and quit functions
+ */
+
+static void
+lddmc_quit()
+{
+    refs_free(&mdd_refs);
+}
+
+void
+sylvan_init_ldd()
+{
+    sylvan_register_quit(lddmc_quit);
+    sylvan_gc_add_mark(TASK(lddmc_gc_mark_external_refs));
+    sylvan_gc_add_mark(TASK(lddmc_gc_mark_internal_refs));
+
+    // Sanity check
+    if (sizeof(struct mddnode) != 16) {
+        fprintf(stderr, "Invalid size of mdd nodes: %ld\n", sizeof(struct mddnode));
+        exit(1);
+    }
+
+    refs_create(&mdd_refs, 1024);
+
+    LACE_ME;
+    INIT_THREAD_LOCAL(ref_key);
+    TOGETHER(lddmc_ref_init);
+}
+
+/**
  * Primitives
  */
 
@@ -408,45 +438,6 @@ lddmc_followcopy(MDD mdd)
     mddnode_t n = GETNODE(mdd);
     if (mddnode_getcopy(n)) return mddnode_getdown(n);
     else return lddmc_false;
-}
-
-/**
- * Initialize and Quit functions
- */
-
-/*static char* to_h(double size, char *buf)
-{
-    const char* units[] = {"B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"};
-    int i = 0;
-    for (;size>1024;size/=1024) i++;
-    sprintf(buf, "%.*f %s", i, size, units[i]);
-    return buf;
-}*/
-
-static void
-lddmc_quit()
-{
-    refs_free(&mdd_refs);
-}
-
-void
-sylvan_init_ldd()
-{
-    sylvan_register_quit(lddmc_quit);
-    sylvan_gc_add_mark(TASK(lddmc_gc_mark_external_refs));
-    sylvan_gc_add_mark(TASK(lddmc_gc_mark_internal_refs));
-
-    // Sanity check
-    if (sizeof(struct mddnode) != 16) {
-        fprintf(stderr, "Invalid size of mdd nodes: %ld\n", sizeof(struct mddnode));
-        exit(1);
-    }
-
-    refs_create(&mdd_refs, 1024);
-
-    LACE_ME;
-    INIT_THREAD_LOCAL(ref_key);
-    TOGETHER(lddmc_ref_init);
 }
 
 /**

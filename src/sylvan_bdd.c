@@ -265,7 +265,10 @@ VOID_TASK_0(sylvan_gc_mark_internal_refs)
     TOGETHER(sylvan_gc_mark_internal_refs_task);
 }
 
-/** init and quit functions */
+/**
+ * Initialize and quit functions
+ */
+
 static int granularity = 1; // default
 
 static void

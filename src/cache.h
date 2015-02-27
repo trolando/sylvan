@@ -115,11 +115,13 @@ cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
 static void __attribute__((unused))
 cache_create(size_t _cache_size, size_t _max_size)
 {
+#if CACHE_MASK
     // Cache size must be a power of 2
     if (__builtin_popcountll(_cache_size) != 1 || __builtin_popcountll(_max_size) != 1) {
         fprintf(stderr, "cache: Table size must be a power of 2!\n");
         exit(1);
     }
+#endif
 
     cache_size = _cache_size;
     cache_max  = _max_size;

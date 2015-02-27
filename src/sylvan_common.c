@@ -107,6 +107,13 @@ sylvan_gc_disable()
 }
 
 /* Default hook */
+
+size_t
+next_size(size_t n)
+{
+    return n*2;
+}
+
 VOID_TASK_0(sylvan_gc_default_hook)
 {
     /**
@@ -118,11 +125,13 @@ VOID_TASK_0(sylvan_gc_default_hook)
     if (size < max_size) {
         size_t marked = llmsset_count_marked(nodes);
         if (marked*2 > size) {
-            llmsset_set_size(nodes, size*2 < max_size ? size*2 : max_size);
+            size_t new_size = next_size(size);
+            if (new_size > max_size) new_size = max_size;
+            llmsset_set_size(nodes, new_size);
             if (cache_size < cache_max) {
-                // current design: just increase cache_size
-                if (cache_size*2 < cache_max) cache_size *= 2;
-                else cache_size = cache_max;
+                new_size = next_size(cache_size);
+                if (new_size > cache_max) new_size = cache_max;
+                cache_size = new_size;
             }
         }
     }

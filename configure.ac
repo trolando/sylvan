@@ -1,13 +1,11 @@
-AC_PREREQ([2.57])
+AC_PREREQ([2.69])
 AC_INIT([sylvan], [1.0])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR([tools])
-AM_INIT_AUTOMAKE([foreign no-define subdir-objects])
+AM_INIT_AUTOMAKE([foreign subdir-objects])
 
 AC_PROG_CC
-AC_PROG_LIBTOOL
-AC_SUBST(LIBTOOL_DEPS)
-AC_C_CONST
+LT_INIT
 
 AC_ARG_WITH(numa, 
   AS_HELP_STRING([--with-numa], [Use NUMA allocators in Sylvan (default=no)]),
@@ -22,6 +20,10 @@ AC_ARG_WITH(numa,
   [numa=no])
 
 AM_CONDITIONAL([HAVE_NUMA], [test "$numa" = "yes"])
+
+AC_CANONICAL_HOST
+AM_CONDITIONAL([DARWIN], [case $host_os in darwin*) true;; *) false;; esac])
+# test x$(uname) == "xDarwin"])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

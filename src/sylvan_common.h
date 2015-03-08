@@ -34,6 +34,7 @@
 #define CACHE_COMPOSE 6
 #define CACHE_RESTRICT 7
 #define CACHE_CONSTRAIN 8
+#define CACHE_AND_EXISTS 9
 
 // MDD operations
 #define CACHE_RELPROD   10

@@ -977,6 +977,113 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
     return result;
 }
 
+/**
+ * Calculate exists(a AND b, v)
+ */
+TASK_IMPL_4(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, v, BDDVAR, prev_level)
+{
+    /* Trivial cases */
+    if (a == sylvan_false) return sylvan_false;
+    if (b == sylvan_false) return sylvan_false;
+    if (a == sylvan_true) return CALL(sylvan_exists, b, v, 0);
+    if (b == sylvan_true) return CALL(sylvan_exists, a, v, 0);
+    if (v == sylvan_false) return CALL(sylvan_ite, a, b, sylvan_false, 0);
+    // v cannot be sylvan_true
+    if (a == b) return CALL(sylvan_exists, a, v, 0);
+    if (a == sylvan_not(b)) return sylvan_false;
+
+    /* Maybe perform garbage collection */
+    sylvan_gc_test();
+
+    // SV_CNT_OP(C_exists);
+
+    // a != constant
+    bddnode_t na = GETNODE(a);
+    bddnode_t nb = GETNODE(b);
+    bddnode_t nv = GETNODE(v);
+
+    BDDVAR level = na->level < nb->level ? na->level : nb->level;
+
+    // skip to relevant variable in disjunction
+    while (nv->level < level) {
+        v = node_low(v, nv);
+        if (v == sylvan_false) return CALL(sylvan_ite, a, b, sylvan_false, 0);
+        nv = GETNODE(v);
+    }
+
+    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
+    if (cachenow) {
+        BDD result;
+        if (cache_get(BDD_SETDATA(a, CACHE_AND_EXISTS), b, v, &result)) {
+            SV_CNT_CACHE(C_cache_reuse);
+            return result;
+        }
+    }
+
+    // Get cofactors
+    BDD aLow, aHigh, bLow, bHigh;
+    if (level == na->level) {
+        aLow = node_low(a, na);
+        aHigh = node_high(a, na);
+    } else {
+        aLow = a;
+        aHigh = a;
+    }
+    if (level == nb->level) {
+        bLow = node_low(b, nb);
+        bHigh = node_high(b, nb);
+    } else {
+        bLow = b;
+        bHigh = b;
+    }
+
+    BDD result;
+    REFS_INIT;
+
+    if (nv->level == level) {
+        // level is in variable set, perform abstraction
+        BDD low = CALL(sylvan_and_exists, aLow, bLow, node_low(v, nv), level);
+        if (low == sylvan_true) {
+            result = sylvan_true;
+        } else {
+            REFS_PUSH(low);
+            BDD high = CALL(sylvan_and_exists, aHigh, bHigh, node_low(v, nv), level);
+            if (high == sylvan_true) {
+                result = sylvan_true;
+            }
+            else if (low == sylvan_false && high == sylvan_false) {
+                result = sylvan_false;
+            }
+            else {
+                REFS_PUSH(high);
+                result = CALL(sylvan_ite, low, sylvan_true, high, 0); // or
+            }
+        }
+    } else {
+        // level is not in variable set
+        BDD low, high;
+        REFS_SPAWN(SPAWN(sylvan_and_exists, aHigh, bHigh, v, level));
+        low = CALL(sylvan_and_exists, aLow, bLow, v, level);
+        REFS_PUSH(low);
+        high = SYNC(sylvan_and_exists);
+        REFS_DESPAWN;
+        REFS_PUSH(high);
+        result = sylvan_makenode(level, low, high);
+    }
+
+    REFS_EXIT;
+
+    if (cachenow) {
+        if (cache_put(BDD_SETDATA(a, CACHE_AND_EXISTS), b, v, result)) {
+            SV_CNT_CACHE(C_cache_new);
+        } else {
+            SV_CNT_CACHE(C_cache_exists);
+        }
+    }
+
+    return result;
+}
+
 TASK_IMPL_4(BDD, sylvan_relprod_paired, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_level)
 {
     /* Trivial cases */

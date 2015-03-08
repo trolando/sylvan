@@ -130,6 +130,12 @@ TASK_DECL_3(BDD, sylvan_compose, BDD, BDDMAP, BDDVAR);
 #define sylvan_compose(f,m) (CALL(sylvan_compose, (f), (m), 0))
 
 /**
+ * Calculate exists(a AND b, v)
+ */
+TASK_DECL_4(BDD, sylvan_and_exists, BDD, BDD, BDDSET, BDDVAR);
+#define sylvan_and_exists(a,b,v) CALL(sylvan_and_exists, a, b, v, 0)
+
+/**
  * Calculate the support of a BDD.
  * A variable v is in the support of a Boolean function f iff f[v<-0] != f[v<-1]
  * It is also the set of all variables in the BDD nodes of the BDD.

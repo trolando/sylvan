@@ -71,6 +71,10 @@ BDD sylvan_high(BDD bdd);
 BDD sylvan_ref(BDD a); 
 void sylvan_deref(BDD a);
 
+/* For use in custom mark functions */
+VOID_TASK_DECL_1(sylvan_gc_mark_rec, BDD);
+#define sylvan_gc_mark_rec(mdd) CALL(sylvan_gc_mark_rec, mdd)
+
 /* Return the number of external references */
 size_t sylvan_count_refs();
 

@@ -126,7 +126,7 @@ static inline MDD MDD_SETDATA(MDD s, uint32_t data)
  */
 
 /* Recursively mark MDD nodes as 'in use' */
-VOID_TASK_1(lddmc_gc_mark_rec, MDD, mdd)
+VOID_TASK_IMPL_1(lddmc_gc_mark_rec, MDD, mdd)
 {
     if (mdd <= lddmc_true) return;
 

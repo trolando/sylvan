@@ -114,7 +114,7 @@ struct {
  */
 
 /* Recursively mark BDD nodes as 'in use' */
-VOID_TASK_1(sylvan_gc_mark_rec, BDD, bdd)
+VOID_TASK_IMPL_1(sylvan_gc_mark_rec, BDD, bdd)
 {
     if (bdd == sylvan_false || bdd == sylvan_true) return;
 

@@ -50,6 +50,12 @@ MDD lddmc_followcopy(MDD mdd);
 /* Add or remove external reference to MDD */
 MDD lddmc_ref(MDD a);
 void lddmc_deref(MDD a);
+
+/* For use in custom mark functions */
+VOID_TASK_DECL_1(lddmc_gc_mark_rec, MDD)
+#define lddmc_gc_mark_rec(mdd) CALL(lddmc_gc_mark_rec, mdd)
+
+/* Return the number of external references */
 size_t lddmc_count_refs();
 
 /* Sanity check - returns depth of MDD including 'true' terminal or 0 for empty set */

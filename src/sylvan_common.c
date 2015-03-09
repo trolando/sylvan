@@ -105,6 +105,16 @@ sylvan_gc_disable()
     gc_enabled = 0;
 }
 
+/* Mark hook for cache */
+VOID_TASK_0(sylvan_gc_mark_cache)
+{
+    /* We simply clear the cache.
+     * Alternatively, we could implement for example some strategy
+     * where part of the cache is cleared and part is marked
+     */
+    cache_clear();
+}
+
 /* Default hook */
 
 size_t
@@ -148,9 +158,6 @@ VOID_TASK_0(sylvan_gc_default_hook)
 
 VOID_TASK_0(sylvan_gc_go)
 {
-    // clear cache
-    cache_clear();
-
     // clear hash array
     llmsset_clear(nodes);
 
@@ -208,6 +215,7 @@ sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize, size_t m
     gc = 0;
     barrier_init(&gcbar, lace_workers());
     gc_hook = TASK(sylvan_gc_default_hook);
+    sylvan_gc_add_mark(TASK(sylvan_gc_mark_cache));
 }
 
 struct reg_quit_entry

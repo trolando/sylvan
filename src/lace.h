@@ -330,7 +330,7 @@ void lace_do_together(WorkerP *__lace_worker, Task *__lace_dq_head, Task *task);
 void lace_do_newframe(WorkerP *__lace_worker, Task *__lace_dq_head, Task *task);
 
 void lace_yield(WorkerP *__lace_worker, Task *__lace_dq_head);
-#define YIELD_NEWFRAME() { if (unlikely(lace_newframe.t != NULL)) lace_yield(__lace_worker, __lace_dq_head); }
+#define YIELD_NEWFRAME() { if (unlikely(ATOMIC_READ(lace_newframe.t) != NULL)) lace_yield(__lace_worker, __lace_dq_head); }
 
 #if LACE_PIE_TIMES
 static void lace_time_event( WorkerP *w, int event )

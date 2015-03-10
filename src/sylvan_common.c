@@ -184,8 +184,8 @@ VOID_TASK_IMPL_0(sylvan_gc)
         gc = 0;
     } else {
         /* wait for new frame to appear */
-        while (*(volatile Task**)&lace_newframe.t == 0) {}
-        YIELD_NEWFRAME();
+        while (ATOMIC_READ(lace_newframe.t) == 0) {}
+        lace_yield(__lace_worker, __lace_dq_head);
     }
 }
 

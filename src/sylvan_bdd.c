@@ -460,7 +460,7 @@ sylvan_ithvar(BDDVAR level)
 BDDVAR
 sylvan_var(BDD bdd)
 {
-    assert(!sylvan_isconst(bdd));
+    if (bdd == sylvan_false || bdd == sylvan_true) bdd = sylvan_invalid; // force crash
     return GETNODE(bdd)->level;
 }
 

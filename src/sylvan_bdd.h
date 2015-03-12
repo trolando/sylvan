@@ -16,6 +16,8 @@
 
 /* Do not include this file directly. Instead, include sylvan.h */
 
+#include <tls.h>
+
 #ifndef SYLVAN_BDD_H
 #define SYLVAN_BDD_H
 
@@ -318,5 +320,54 @@ void sylvan_serialize_fromfile(FILE *in);
 
 /* For debugging: if the bdd is not a well-formed BDD, assertions fail. */
 void sylvan_test_isbdd(BDD bdd);
+
+/* Infrastructure for internal markings */
+typedef struct bdd_refs_internal
+{
+    size_t r_size, r_count;
+    size_t s_size, s_count;
+    BDD *results;
+    Task **spawns;
+} *bdd_refs_internal_t;
+
+extern DECLARE_THREAD_LOCAL(bdd_refs_key, bdd_refs_internal_t);
+
+static inline BDD
+bdd_refs_push(BDD bdd)
+{
+    LOCALIZE_THREAD_LOCAL(bdd_refs_key, bdd_refs_internal_t);
+    if (bdd_refs_key->r_count >= bdd_refs_key->r_size) {
+        bdd_refs_key->r_size *= 2;
+        bdd_refs_key->results = (BDD*)realloc(bdd_refs_key->results, sizeof(BDD) * bdd_refs_key->r_size);
+    }
+    bdd_refs_key->results[bdd_refs_key->r_count++] = bdd;
+    return bdd;
+}
+
+static inline void
+bdd_refs_pop(int amount)
+{
+    LOCALIZE_THREAD_LOCAL(bdd_refs_key, bdd_refs_internal_t);
+    bdd_refs_key->r_count-=amount;
+}
+
+static inline void
+bdd_refs_spawn(Task *t)
+{
+    LOCALIZE_THREAD_LOCAL(bdd_refs_key, bdd_refs_internal_t);
+    if (bdd_refs_key->s_count >= bdd_refs_key->s_size) {
+        bdd_refs_key->s_size *= 2;
+        bdd_refs_key->spawns = (Task**)realloc(bdd_refs_key->spawns, sizeof(Task*) * bdd_refs_key->s_size);
+    }
+    bdd_refs_key->spawns[bdd_refs_key->s_count++] = t;
+}
+
+static inline BDD
+bdd_refs_sync(BDD result)
+{
+    LOCALIZE_THREAD_LOCAL(bdd_refs_key, bdd_refs_internal_t);
+    bdd_refs_key->s_count--;
+    return result;
+}
 
 #endif

@@ -170,65 +170,7 @@ VOID_TASK_0(sylvan_gc_mark_external_refs)
 }
 
 /* Infrastructure for internal markings */
-typedef struct bdd_refs_internal
-{
-    size_t r_size, r_count;
-    size_t s_size, s_count;
-    BDD *results;
-    Task **spawns;
-} *bdd_refs_internal_t;
-
 DECLARE_THREAD_LOCAL(bdd_refs_key, bdd_refs_internal_t);
-
-VOID_TASK_0(bdd_refs_init_task)
-{
-    bdd_refs_internal_t s = (bdd_refs_internal_t)malloc(sizeof(struct bdd_refs_internal));
-    s->r_size = 128;
-    s->r_count = 0;
-    s->s_size = 128;
-    s->s_count = 0;
-    s->results = (BDD*)malloc(sizeof(BDD) * 128);
-    s->spawns = (Task**)malloc(sizeof(Task*) * 128);
-    SET_THREAD_LOCAL(bdd_refs_key, s);
-}
-
-static inline BDD
-bdd_refs_push(BDD bdd)
-{
-    LOCALIZE_THREAD_LOCAL(bdd_refs_key, bdd_refs_internal_t);
-    if (bdd_refs_key->r_count >= bdd_refs_key->r_size) {
-        bdd_refs_key->r_size *= 2;
-        bdd_refs_key->results = (BDD*)realloc(bdd_refs_key->results, sizeof(BDD) * bdd_refs_key->r_size);
-    }
-    bdd_refs_key->results[bdd_refs_key->r_count++] = bdd;
-    return bdd;
-}
-
-static inline void
-bdd_refs_pop(int amount)
-{
-    LOCALIZE_THREAD_LOCAL(bdd_refs_key, bdd_refs_internal_t);
-    bdd_refs_key->r_count-=amount;
-}
-
-static inline void
-bdd_refs_spawn(Task *t)
-{
-    LOCALIZE_THREAD_LOCAL(bdd_refs_key, bdd_refs_internal_t);
-    if (bdd_refs_key->s_count >= bdd_refs_key->s_size) {
-        bdd_refs_key->s_size *= 2;
-        bdd_refs_key->spawns = (Task**)realloc(bdd_refs_key->spawns, sizeof(Task*) * bdd_refs_key->s_size);
-    }
-    bdd_refs_key->spawns[bdd_refs_key->s_count++] = t;
-}
-
-static inline BDD
-bdd_refs_sync(BDD result)
-{
-    LOCALIZE_THREAD_LOCAL(bdd_refs_key, bdd_refs_internal_t);
-    bdd_refs_key->s_count--;
-    return result;
-}
 
 VOID_TASK_0(bdd_refs_mark_task)
 {
@@ -249,6 +191,18 @@ VOID_TASK_0(bdd_refs_mark_task)
 VOID_TASK_0(bdd_refs_mark)
 {
     TOGETHER(bdd_refs_mark_task);
+}
+
+VOID_TASK_0(bdd_refs_init_task)
+{
+    bdd_refs_internal_t s = (bdd_refs_internal_t)malloc(sizeof(struct bdd_refs_internal));
+    s->r_size = 128;
+    s->r_count = 0;
+    s->s_size = 128;
+    s->s_count = 0;
+    s->results = (BDD*)malloc(sizeof(BDD) * 128);
+    s->spawns = (Task**)malloc(sizeof(Task*) * 128);
+    SET_THREAD_LOCAL(bdd_refs_key, s);
 }
 
 VOID_TASK_0(bdd_refs_init)

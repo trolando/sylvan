@@ -30,7 +30,7 @@
 #endif
 
 #ifndef LACE_LEAP_RANDOM /* Use random leaping when leapfrogging fails */
-#define LACE_LEAP_RANDOM 1
+#define LACE_LEAP_RANDOM 0
 #endif
 
 #ifndef LACE_PIE_TIMES /* Record time spent stealing and leapfrogging */

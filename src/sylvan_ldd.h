@@ -222,4 +222,53 @@ void lddmc_serialize_totext(FILE *out);
 void lddmc_serialize_tofile(FILE *out);
 void lddmc_serialize_fromfile(FILE *in);
 
+/* Infrastructure for internal markings */
+typedef struct lddmc_refs_internal
+{
+    size_t r_size, r_count;
+    size_t s_size, s_count;
+    MDD *results;
+    Task **spawns;
+} *lddmc_refs_internal_t;
+
+extern DECLARE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
+
+static inline MDD
+lddmc_refs_push(MDD ldd)
+{
+    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
+    if (lddmc_refs_key->r_count >= lddmc_refs_key->r_size) {
+        lddmc_refs_key->r_size *= 2;
+        lddmc_refs_key->results = (MDD*)realloc(lddmc_refs_key->results, sizeof(MDD) * lddmc_refs_key->r_size);
+    }
+    lddmc_refs_key->results[lddmc_refs_key->r_count++] = ldd;
+    return ldd;
+}
+
+static inline void
+lddmc_refs_pop(int amount)
+{
+    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
+    lddmc_refs_key->r_count-=amount;
+}
+
+static inline void
+lddmc_refs_spawn(Task *t)
+{
+    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
+    if (lddmc_refs_key->s_count >= lddmc_refs_key->s_size) {
+        lddmc_refs_key->s_size *= 2;
+        lddmc_refs_key->spawns = (Task**)realloc(lddmc_refs_key->spawns, sizeof(Task*) * lddmc_refs_key->s_size);
+    }
+    lddmc_refs_key->spawns[lddmc_refs_key->s_count++] = t;
+}
+
+static inline MDD
+lddmc_refs_sync(MDD result)
+{
+    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
+    lddmc_refs_key->s_count--;
+    return result;
+}
+
 #endif

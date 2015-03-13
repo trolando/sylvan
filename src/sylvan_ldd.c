@@ -1787,11 +1787,29 @@ TASK_IMPL_1(long double, lddmc_satcount, MDD, mdd)
     /* Perhaps execute garbage collection */
     sylvan_gc_test();
 
+    union {
+        long double d;
+        struct {
+            uint64_t s1;
+            uint64_t s2;
+        } s;
+    } hack;
+
+    if (cache_get(MDD_SETDATA(mdd, CACHE_SATCOUNTL1), 0, 0, &hack.s.s1) &&
+        cache_get(MDD_SETDATA(mdd, CACHE_SATCOUNTL2), 0, 0, &hack.s.s2)) {
+        return hack.d;
+    }
+
     mddnode_t n = GETNODE(mdd);
 
     SPAWN(lddmc_satcount, mddnode_getdown(n));
     long double right = CALL(lddmc_satcount, mddnode_getright(n));
-    return right + SYNC(lddmc_satcount);
+    hack.d = right + SYNC(lddmc_satcount);
+
+    cache_put(MDD_SETDATA(mdd, CACHE_SATCOUNTL1), 0, 0, hack.s.s1);
+    cache_put(MDD_SETDATA(mdd, CACHE_SATCOUNTL2), 0, 0, hack.s.s2);
+
+    return hack.d;
 }
 
 TASK_IMPL_5(MDD, lddmc_collect, MDD, mdd, lddmc_collect_cb, cb, void*, context, uint32_t*, values, size_t, count)

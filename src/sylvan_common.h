@@ -45,6 +45,8 @@
 #define CACHE_JOIN      15
 #define CACHE_MATCH     16
 #define CACHE_RELPREV   17
+#define CACHE_SATCOUNTL1 18
+#define CACHE_SATCOUNTL2 19
 
 /**
  * Registration of quit functions

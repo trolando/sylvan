@@ -209,7 +209,7 @@ VOID_TASK_0(bdd_refs_init)
 {
     INIT_THREAD_LOCAL(bdd_refs_key);
     TOGETHER(bdd_refs_init_task);
-    sylvan_gc_add_mark(TASK(bdd_refs_mark));
+    sylvan_gc_add_mark(10, TASK(bdd_refs_mark));
 }
 
 /**
@@ -228,7 +228,7 @@ void
 sylvan_init_bdd(int _granularity)
 {
     sylvan_register_quit(sylvan_quit_bdd);
-    sylvan_gc_add_mark(TASK(sylvan_gc_mark_external_refs));
+    sylvan_gc_add_mark(10, TASK(sylvan_gc_mark_external_refs));
 
     granularity = _granularity;
 

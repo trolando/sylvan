@@ -72,17 +72,36 @@ struct reg_gc_mark_entry
 {
     struct reg_gc_mark_entry *next;
     gc_mark_cb cb;
+    int order;
 };
 
 static struct reg_gc_mark_entry *gc_mark_register = NULL;
 
 void
-sylvan_gc_add_mark(gc_mark_cb cb)
+sylvan_gc_add_mark(int order, gc_mark_cb cb)
 {
     struct reg_gc_mark_entry *e = (struct reg_gc_mark_entry*)malloc(sizeof(struct reg_gc_mark_entry));
-    e->next = gc_mark_register;
     e->cb = cb;
-    gc_mark_register = e;
+    e->order = order;
+    if (gc_mark_register == NULL || gc_mark_register->order>order) {
+        e->next = gc_mark_register;
+        gc_mark_register = e;
+        return;
+    }
+    struct reg_gc_mark_entry *f = gc_mark_register;
+    for (;;) {
+        if (f->next == NULL) {
+            e->next = NULL;
+            f->next = e;
+            return;
+        }
+        if (f->next->order > order) {
+            e->next = f->next;
+            f->next = e;
+            return;
+        }
+        f = f->next;
+    }
 }
 
 static gc_hook_cb gc_hook;
@@ -156,23 +175,29 @@ VOID_TASK_0(sylvan_gc_default_hook)
     }
 }
 
+VOID_TASK_0(sylvan_gc_call_hook)
+{
+    // call hook function (resizing, reordering, etc)
+    WRAP(gc_hook);
+}
+
+VOID_TASK_0(sylvan_gc_rehash)
+{
+    // rehash marked nodes
+    llmsset_rehash(nodes);
+}
+
 VOID_TASK_0(sylvan_gc_go)
 {
     // clear hash array
     llmsset_clear(nodes);
 
-    // call mark functions
+    // call mark functions, hook and rehash
     struct reg_gc_mark_entry *e = gc_mark_register;
     while (e != NULL) {
         WRAP(e->cb);
         e = e->next;
     }
-
-    // call hook function (resizing, reordering, etc)
-    WRAP(gc_hook);
-
-    // rehash marked nodes
-    llmsset_rehash(nodes);
 }
 
 /* Perform garbage collection */
@@ -215,7 +240,9 @@ sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize, size_t m
     gc = 0;
     barrier_init(&gcbar, lace_workers());
     gc_hook = TASK(sylvan_gc_default_hook);
-    sylvan_gc_add_mark(TASK(sylvan_gc_mark_cache));
+    sylvan_gc_add_mark(10, TASK(sylvan_gc_mark_cache));
+    sylvan_gc_add_mark(20, TASK(sylvan_gc_call_hook));
+    sylvan_gc_add_mark(30, TASK(sylvan_gc_rehash));
 }
 
 struct reg_quit_entry

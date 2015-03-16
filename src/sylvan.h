@@ -117,9 +117,14 @@ void sylvan_gc_disable();
  *
  * Default "mark" functions that mark external references (via sylvan_ref) and internal
  * references (inside operations) are added by sylvan_init_bdd/sylvan_init_bdd.
+ *
+ * Functions are called in order.
+ * level 10: marking functions of Sylvan (external/internal references)
+ * level 20: call the hook function (for resizing)
+ * level 30: rehashing
  */
 LACE_TYPEDEF_CB(void, gc_mark_cb);
-void sylvan_gc_add_mark(gc_mark_cb callback);
+void sylvan_gc_add_mark(int order, gc_mark_cb callback);
 
 /**
  * Set "hook" callback. There can be only one.

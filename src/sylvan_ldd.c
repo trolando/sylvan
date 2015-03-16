@@ -186,17 +186,26 @@ DECLARE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
 VOID_TASK_0(lddmc_refs_mark_task)
 {
     LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
-    size_t i;
+    size_t i, j=0;
     for (i=0; i<lddmc_refs_key->r_count; i++) {
-        CALL(lddmc_gc_mark_rec, lddmc_refs_key->results[i]);
+        if (j >= 40) {
+            while (j--) SYNC(lddmc_gc_mark_rec);
+        }
+        SPAWN(lddmc_gc_mark_rec, lddmc_refs_key->results[i]);
+        j++;
     }
     for (i=0; i<lddmc_refs_key->s_count; i++) {
         Task *t = lddmc_refs_key->spawns[i];
         if (!TASK_IS_STOLEN(t)) break;
         if (TASK_IS_COMPLETED(t)) {
-            CALL(lddmc_gc_mark_rec, *(BDD*)TASK_RESULT(t));
+            if (j >= 40) {
+                while (j--) SYNC(lddmc_gc_mark_rec);
+            }
+            SPAWN(lddmc_gc_mark_rec, *(BDD*)TASK_RESULT(t));
+            j++;
         }
     }
+    while (j--) SYNC(lddmc_gc_mark_rec);
 }
 
 VOID_TASK_0(lddmc_refs_mark)

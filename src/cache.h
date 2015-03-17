@@ -45,6 +45,7 @@ cache_hash(uint64_t a, uint64_t b, uint64_t c)
 {
     const uint64_t prime = 1099511628211;
     uint64_t hash = 14695981039346656037LLU;
+    hash = (hash ^ (a>>32));
     hash = (hash ^ a) * prime;
     hash = (hash ^ b) * prime;
     hash = (hash ^ c) * prime;

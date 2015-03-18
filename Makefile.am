@@ -44,13 +44,13 @@ endif
 noinst_PROGRAMS = mc lddmc sylvan_test
 
 mc_SOURCES = test/mc.c
-mc_LDADD = -lsylvan -lpthread
+mc_LDADD = libsylvan.la -lpthread
 
 lddmc_SOURCES = test/lddmc.c
-lddmc_LDADD = -lsylvan -lpthread
+lddmc_LDADD = libsylvan.la -lpthread
 
 sylvan_test_SOURCES = test/main.c
-sylvan_test_LDADD = -lsylvan -lpthread
+sylvan_test_LDADD = libsylvan.la -lpthread
 
 if DARWIN
 mc_LDADD += -largp

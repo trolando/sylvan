@@ -221,7 +221,7 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 llmsset_t
 llmsset_create(size_t initial_size, size_t max_size)
 {
-    llmsset_t dbs;
+    llmsset_t dbs = NULL;
     if (posix_memalign((void**)&dbs, LINE_SIZE, sizeof(struct llmsset)) != 0) {
         fprintf(stderr, "Unable to allocate memory!\n");
         exit(1);

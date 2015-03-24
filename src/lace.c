@@ -235,8 +235,8 @@ static barrier_t bar;
 void
 lace_init_worker(int worker, size_t dq_size)
 {
-    Worker *wt;
-    WorkerP *w;
+    Worker *wt=NULL;
+    WorkerP *w=NULL;
 
     if (dq_size == 0) dq_size = default_dqsize;
 

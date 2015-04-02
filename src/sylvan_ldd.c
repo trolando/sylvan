@@ -433,7 +433,7 @@ TASK_IMPL_2(MDD, lddmc_union, MDD, a, MDD, b)
 
     /* Access cache */
     MDD result;
-    if (cache_get(MDD_SETDATA(a, CACHE_UNION), b, 0, &result)) return result;
+    if (cache_get(MDD_SETDATA(a, CACHE_MDD_UNION), b, 0, &result)) return result;
 
     /* Get nodes */
     mddnode_t na = GETNODE(a);
@@ -474,7 +474,7 @@ TASK_IMPL_2(MDD, lddmc_union, MDD, a, MDD, b)
     }
 
     /* Write to cache */
-    cache_put(MDD_SETDATA(a, CACHE_UNION), b, 0, result);
+    cache_put(MDD_SETDATA(a, CACHE_MDD_UNION), b, 0, result);
 
     return result;
 }
@@ -493,7 +493,7 @@ TASK_IMPL_2(MDD, lddmc_minus, MDD, a, MDD, b)
 
     /* Access cache */
     MDD result;
-    if (cache_get(MDD_SETDATA(a, CACHE_MINUS), b, 0, &result)) return result;
+    if (cache_get(MDD_SETDATA(a, CACHE_MDD_MINUS), b, 0, &result)) return result;
 
     /* Get nodes */
     mddnode_t na = GETNODE(a);
@@ -517,7 +517,7 @@ TASK_IMPL_2(MDD, lddmc_minus, MDD, a, MDD, b)
     }
 
     /* Write to cache */
-    cache_put(MDD_SETDATA(a, CACHE_MINUS), b, 0, result);
+    cache_put(MDD_SETDATA(a, CACHE_MDD_MINUS), b, 0, result);
 
     return result;
 }
@@ -546,8 +546,8 @@ TASK_IMPL_3(MDD, lddmc_zip, MDD, a, MDD, b, MDD*, res2)
 
     /* Access cache */
     MDD result;
-    if (cache_get(MDD_SETDATA(a, CACHE_UNION), b, 0, &result) &&
-        cache_get(MDD_SETDATA(b, CACHE_MINUS), a, 0, res2)) return result;
+    if (cache_get(MDD_SETDATA(a, CACHE_MDD_UNION), b, 0, &result) &&
+        cache_get(MDD_SETDATA(b, CACHE_MDD_MINUS), a, 0, res2)) return result;
 
     /* Get nodes */
     mddnode_t na = GETNODE(a);
@@ -577,8 +577,8 @@ TASK_IMPL_3(MDD, lddmc_zip, MDD, a, MDD, b, MDD*, res2)
     }
 
     /* Write to cache */
-    cache_put(MDD_SETDATA(a, CACHE_UNION), b, 0, result);
-    cache_put(MDD_SETDATA(b, CACHE_MINUS), a, 0, *res2);
+    cache_put(MDD_SETDATA(a, CACHE_MDD_UNION), b, 0, result);
+    cache_put(MDD_SETDATA(b, CACHE_MDD_MINUS), a, 0, *res2);
 
     return result;
 }
@@ -617,7 +617,7 @@ TASK_IMPL_2(MDD, lddmc_intersect, MDD, a, MDD, b)
 
     /* Access cache */
     MDD result;
-    if (cache_get(MDD_SETDATA(a, CACHE_INTERSECT), b, 0, &result)) return result;
+    if (cache_get(MDD_SETDATA(a, CACHE_MDD_INTERSECT), b, 0, &result)) return result;
 
     /* Perform recursive calculation */
     lddmc_refs_spawn(SPAWN(lddmc_intersect, mddnode_getright(na), mddnode_getright(nb)));
@@ -628,7 +628,7 @@ TASK_IMPL_2(MDD, lddmc_intersect, MDD, a, MDD, b)
     result = lddmc_makenode(na_value, down, right);
 
     /* Write to cache */
-    cache_put(MDD_SETDATA(a, CACHE_INTERSECT), b, 0, result);
+    cache_put(MDD_SETDATA(a, CACHE_MDD_INTERSECT), b, 0, result);
 
     return result;
 }
@@ -656,7 +656,7 @@ TASK_IMPL_3(MDD, lddmc_match, MDD, a, MDD, b, MDD, proj)
 
     /* Access cache */
     MDD result;
-    if (cache_get(MDD_SETDATA(a, CACHE_MATCH), b, proj, &result)) return result;
+    if (cache_get(MDD_SETDATA(a, CACHE_MDD_MATCH), b, proj, &result)) return result;
 
     /* Perform recursive calculation */
     mddnode_t na = GETNODE(a);
@@ -675,7 +675,7 @@ TASK_IMPL_3(MDD, lddmc_match, MDD, a, MDD, b, MDD, proj)
     result = lddmc_makenode(mddnode_getvalue(na), down, right);
 
     /* Write to cache */
-    cache_put(MDD_SETDATA(a, CACHE_MATCH), b, proj, result);
+    cache_put(MDD_SETDATA(a, CACHE_MDD_MATCH), b, proj, result);
 
     return result;
 }
@@ -705,7 +705,7 @@ TASK_IMPL_3(MDD, lddmc_relprod, MDD, set, MDD, rel, MDD, meta)
 
     /* Access cache */
     MDD result;
-    if (cache_get(MDD_SETDATA(set, CACHE_RELPROD), rel, meta, &result)) return result;
+    if (cache_get(MDD_SETDATA(set, CACHE_MDD_RELPROD), rel, meta, &result)) return result;
 
     mddnode_t n_set = GETNODE(set);
     mddnode_t n_rel = GETNODE(rel);
@@ -835,7 +835,7 @@ TASK_IMPL_3(MDD, lddmc_relprod, MDD, set, MDD, rel, MDD, meta)
     } 
 
     /* Write to cache */
-    cache_put(MDD_SETDATA(set, CACHE_RELPROD), rel, meta, result);
+    cache_put(MDD_SETDATA(set, CACHE_MDD_RELPROD), rel, meta, result);
 
     return result;
 }
@@ -897,7 +897,7 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
 
     /* Access cache */
     MDD result;
-    const MDD c_a = MDD_SETDATA(set, CACHE_RELPROD);
+    const MDD c_a = MDD_SETDATA(set, CACHE_MDD_RELPROD);
     const MDD c_b = MDD_SETDATA(rel, (uint32_t)un); // store lower 22 bits in c_b
     const MDD c_c = MDD_SETDATA(meta, (uint32_t)(un>>22)); // store higher 20 bits in c_c
     if (cache_get(c_a, c_b, c_c, &result)) return result;
@@ -1201,7 +1201,7 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
 
     /* Access cache */
     MDD result;
-    const MDD c_a = MDD_SETDATA(set, CACHE_RELPREV);
+    const MDD c_a = MDD_SETDATA(set, CACHE_MDD_RELPREV);
     const MDD c_b = MDD_SETDATA(rel, (uint32_t)uni); // store lower 22 bits in c_b
     const MDD c_c = MDD_SETDATA(meta, (uint32_t)(uni>>22)); // store higher 20 bits in c_c
     if (cache_get(c_a, c_b, c_c, &result)) return result;
@@ -1405,7 +1405,7 @@ TASK_IMPL_4(MDD, lddmc_join, MDD, a, MDD, b, MDD, a_proj, MDD, b_proj)
 
     /* Access cache */
     MDD result;
-    const MDD c_a = MDD_SETDATA(a, CACHE_JOIN);
+    const MDD c_a = MDD_SETDATA(a, CACHE_MDD_JOIN);
     const MDD c_b = MDD_SETDATA(b, (uint32_t)a_proj); // store lower 22 bits in c_b
     const MDD c_c = MDD_SETDATA(b_proj, (uint32_t)(a_proj>>22)); // store higher 20 bits in c_c
     if (cache_get(c_a, c_b, c_c, &result)) return result;
@@ -1463,7 +1463,7 @@ TASK_IMPL_2(MDD, lddmc_project, const MDD, mdd, const MDD, proj)
     sylvan_gc_test();
 
     MDD result;
-    if (cache_get(MDD_SETDATA(mdd, CACHE_PROJECT), proj, 0, &result)) return result;
+    if (cache_get(MDD_SETDATA(mdd, CACHE_MDD_PROJECT), proj, 0, &result)) return result;
 
     mddnode_t n = GETNODE(mdd);
 
@@ -1499,7 +1499,7 @@ TASK_IMPL_2(MDD, lddmc_project, const MDD, mdd, const MDD, proj)
         }
     }
 
-    cache_put(MDD_SETDATA(mdd, CACHE_PROJECT), proj, 0, result);
+    cache_put(MDD_SETDATA(mdd, CACHE_MDD_PROJECT), proj, 0, result);
 
     return result;
 }
@@ -1521,7 +1521,7 @@ TASK_IMPL_3(MDD, lddmc_project_minus, const MDD, mdd, const MDD, proj, MDD, avoi
     sylvan_gc_test();
 
     MDD result;
-    if (cache_get(MDD_SETDATA(mdd, CACHE_PROJECT), proj, avoid, &result)) return result;
+    if (cache_get(MDD_SETDATA(mdd, CACHE_MDD_PROJECT), proj, avoid, &result)) return result;
 
     mddnode_t n = GETNODE(mdd);
 
@@ -1571,7 +1571,7 @@ TASK_IMPL_3(MDD, lddmc_project_minus, const MDD, mdd, const MDD, proj, MDD, avoi
         }
     }
 
-    cache_put(MDD_SETDATA(mdd, CACHE_PROJECT), proj, avoid, result);
+    cache_put(MDD_SETDATA(mdd, CACHE_MDD_PROJECT), proj, avoid, result);
 
     return result;
 }
@@ -1776,14 +1776,14 @@ TASK_IMPL_1(lddmc_satcount_double_t, lddmc_satcount_cached, MDD, mdd)
         uint64_t s;
     } hack;
 
-    if (cache_get(MDD_SETDATA(mdd, CACHE_SATCOUNT), 0, 0, &hack.s)) return hack.d;
+    if (cache_get(MDD_SETDATA(mdd, CACHE_MDD_SATCOUNT), 0, 0, &hack.s)) return hack.d;
     mddnode_t n = GETNODE(mdd);
 
     SPAWN(lddmc_satcount_cached, mddnode_getdown(n));
     lddmc_satcount_double_t right = CALL(lddmc_satcount_cached, mddnode_getright(n));
     hack.d = right + SYNC(lddmc_satcount_cached);
 
-    cache_put(MDD_SETDATA(mdd, CACHE_SATCOUNT), 0, 0, hack.s);
+    cache_put(MDD_SETDATA(mdd, CACHE_MDD_SATCOUNT), 0, 0, hack.s);
 
     return hack.d;
 }
@@ -1804,8 +1804,8 @@ TASK_IMPL_1(long double, lddmc_satcount, MDD, mdd)
         } s;
     } hack;
 
-    if (cache_get(MDD_SETDATA(mdd, CACHE_SATCOUNTL1), 0, 0, &hack.s.s1) &&
-        cache_get(MDD_SETDATA(mdd, CACHE_SATCOUNTL2), 0, 0, &hack.s.s2)) {
+    if (cache_get(MDD_SETDATA(mdd, CACHE_MDD_SATCOUNTL1), 0, 0, &hack.s.s1) &&
+        cache_get(MDD_SETDATA(mdd, CACHE_MDD_SATCOUNTL2), 0, 0, &hack.s.s2)) {
         return hack.d;
     }
 
@@ -1815,8 +1815,8 @@ TASK_IMPL_1(long double, lddmc_satcount, MDD, mdd)
     long double right = CALL(lddmc_satcount, mddnode_getright(n));
     hack.d = right + SYNC(lddmc_satcount);
 
-    cache_put(MDD_SETDATA(mdd, CACHE_SATCOUNTL1), 0, 0, hack.s.s1);
-    cache_put(MDD_SETDATA(mdd, CACHE_SATCOUNTL2), 0, 0, hack.s.s2);
+    cache_put(MDD_SETDATA(mdd, CACHE_MDD_SATCOUNTL1), 0, 0, hack.s.s1);
+    cache_put(MDD_SETDATA(mdd, CACHE_MDD_SATCOUNTL2), 0, 0, hack.s.s2);
 
     return hack.d;
 }

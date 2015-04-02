@@ -37,16 +37,17 @@
 #define CACHE_CONSTRAIN       9
 
 // MDD operations
-#define CACHE_RELPROD   10
-#define CACHE_MINUS     11
-#define CACHE_UNION     12
-#define CACHE_INTERSECT 13
-#define CACHE_PROJECT   14
-#define CACHE_JOIN      15
-#define CACHE_MATCH     16
-#define CACHE_RELPREV   17
-#define CACHE_SATCOUNTL1 18
-#define CACHE_SATCOUNTL2 19
+#define CACHE_MDD_RELPROD     20
+#define CACHE_MDD_MINUS       21
+#define CACHE_MDD_UNION       22
+#define CACHE_MDD_INTERSECT   23
+#define CACHE_MDD_PROJECT     24
+#define CACHE_MDD_JOIN        25
+#define CACHE_MDD_MATCH       26
+#define CACHE_MDD_RELPREV     27
+#define CACHE_MDD_SATCOUNT    28
+#define CACHE_MDD_SATCOUNTL1  29
+#define CACHE_MDD_SATCOUNTL2  30
 
 /**
  * Registration of quit functions

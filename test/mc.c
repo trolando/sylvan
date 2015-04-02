@@ -118,10 +118,10 @@ TASK_5(BDD, go_par, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, dea
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        BDD succ = sylvan_ref(sylvan_relprod_paired(cur, next[from]->bdd, next[from]->variables));
+        BDD succ = sylvan_ref(sylvan_relnext(cur, next[from]->bdd, next[from]->variables));
         if (deadlocks) {
             // check which BDDs in deadlocks do not have a successor in this relation
-            BDD anc = sylvan_ref(sylvan_relprod_paired_prev(succ, next[from]->bdd, next[from]->variables));
+            BDD anc = sylvan_ref(sylvan_relprev(next[from]->bdd, succ, next[from]->variables));
             *deadlocks = sylvan_ref(sylvan_diff(*deadlocks, anc));
             sylvan_deref(anc);
         }
@@ -206,10 +206,10 @@ TASK_5(BDD, go_bfs, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, dea
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        BDD succ = sylvan_ref(sylvan_relprod_paired(cur, next[from]->bdd, next[from]->variables));
+        BDD succ = sylvan_ref(sylvan_relnext(cur, next[from]->bdd, next[from]->variables));
         if (deadlocks) {
             // check which BDDs in deadlocks do not have a successor in this relation
-            BDD anc = sylvan_ref(sylvan_relprod_paired_prev(succ, next[from]->bdd, next[from]->variables));
+            BDD anc = sylvan_ref(sylvan_relprev(next[from]->bdd, succ, next[from]->variables));
             *deadlocks = sylvan_ref(sylvan_diff(*deadlocks, anc));
             sylvan_deref(anc);
         }

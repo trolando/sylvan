@@ -103,18 +103,36 @@ TASK_DECL_3(BDD, sylvan_exists, BDD, BDD, BDDVAR);
 #define sylvan_forall(a, vars) (sylvan_not(CALL(sylvan_exists, sylvan_not(a), vars, 0)))
 
 /**
- * Relational Product for paired variables
- * Assumes variables x,x' are paired, x is even, x'=x+1
+ * Compute \exists v: A(...) \and B(...)
+ * Parameter vars is the disjunction of all v variables.
  */
-TASK_DECL_4(BDD, sylvan_relprod_paired, BDD, BDD, BDDSET, BDDVAR);
-#define sylvan_relprod_paired(s,trans,vars) (CALL(sylvan_relprod_paired,(s),(trans),(vars),0))
+TASK_DECL_4(BDD, sylvan_and_exists, BDD, BDD, BDDSET, BDDVAR);
+#define sylvan_and_exists(a,b,vars) CALL(sylvan_and_exists,a,b,vars,0)
 
 /**
- * Backward relational product for paired variables
- * Assumes variables x,x' are paired, x is even, x'=x+1
+ * Compute R(s,t) = \exists x: A(s,x) \and B(x,t)
+ *      or R(s)   = \exists x: A(s,x) \and B(x)
+ * Assumes s,t are interleaved with s odd and t even.
+ * Parameter vars is the disjunction of all s and/or t variables.
+ * For variables in A/B that are not in vars, relprev behaves as A \and B
+ *
+ * Use this function to concatenate two relations   --> -->
+ * or to take the 'previous' of a set               -->  S
  */
-TASK_DECL_4(BDD, sylvan_relprod_paired_prev, BDD, BDD, BDDSET, BDDVAR);
-#define sylvan_relprod_paired_prev(s,trans,vars) (CALL(sylvan_relprod_paired_prev,(s),(trans),(vars),0))
+TASK_DECL_4(BDD, sylvan_relprev, BDD, BDD, BDDSET, BDDVAR);
+#define sylvan_relprev(a,b,vars) CALL(sylvan_relprev,a,b,vars,0)
+
+/**
+ * Compute R(s) = \exists x: A(x) \and B(x,s)
+ * with support(result) = s, support(A) = s, support(B) = s+t
+ * Assumes s,t are interleaved with s odd and t even.
+ * Parameter vars is the disjunction of all s and/or t variables.
+ * For variables in A/B that are not in vars, relnext behaves as A \and B
+ *
+ * Use this function to take the 'next' of a set     S  -->
+ */
+TASK_DECL_4(BDD, sylvan_relnext, BDD, BDD, BDDSET, BDDVAR);
+#define sylvan_relnext(a,b,vars) CALL(sylvan_relnext,a,b,vars,0)
 
 /**
  * Calculate a@b (a constrain b), such that (b -> a@b) = (b -> a)
@@ -134,12 +152,6 @@ TASK_DECL_3(BDD, sylvan_restrict, BDD, BDD, BDDVAR);
 
 TASK_DECL_3(BDD, sylvan_compose, BDD, BDDMAP, BDDVAR);
 #define sylvan_compose(f,m) (CALL(sylvan_compose, (f), (m), 0))
-
-/**
- * Calculate exists(a AND b, v)
- */
-TASK_DECL_4(BDD, sylvan_and_exists, BDD, BDD, BDDSET, BDDVAR);
-#define sylvan_and_exists(a,b,v) CALL(sylvan_and_exists, a, b, v, 0)
 
 /**
  * Calculate the support of a BDD.

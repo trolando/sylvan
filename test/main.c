@@ -301,26 +301,26 @@ test_relprod()
     zeroes = sylvan_cube(vars_set, (char[]){0,0,0});
     ones = sylvan_cube(vars_set, (char[]){1,1,1});
 
-    next = sylvan_relprod_paired(s, t, all_vars_set);
-    prev = sylvan_relprod_paired_prev(next, t, all_vars_set);
+    next = sylvan_relnext(s, t, all_vars_set);
+    prev = sylvan_relprev(t, next, all_vars_set);
     assert(next == zeroes);
     assert(prev == sylvan_not(zeroes));
 
-    next = sylvan_relprod_paired(next, t, all_vars_set);
-    prev = sylvan_relprod_paired_prev(next, t, all_vars_set);
+    next = sylvan_relnext(next, t, all_vars_set);
+    prev = sylvan_relprev(t, next, all_vars_set);
     assert(next == ones);
     assert(prev == zeroes);
 
     t = sylvan_cube(all_vars_set, (char[]){0,0,0,0,0,1});
-    assert(sylvan_relprod_paired_prev(s, t, all_vars_set) == zeroes);
-    assert(sylvan_relprod_paired_prev(sylvan_not(s), t, all_vars_set) == sylvan_false);
-    assert(sylvan_relprod_paired(s, t, all_vars_set) == sylvan_false);
-    assert(sylvan_relprod_paired(zeroes, t, all_vars_set) == s);
+    assert(sylvan_relprev(t, s, all_vars_set) == zeroes);
+    assert(sylvan_relprev(t, sylvan_not(s), all_vars_set) == sylvan_false);
+    assert(sylvan_relnext(s, t, all_vars_set) == sylvan_false);
+    assert(sylvan_relnext(zeroes, t, all_vars_set) == s);
 
     t = sylvan_cube(all_vars_set, (char[]){0,0,0,0,0,2});
-    assert(sylvan_relprod_paired_prev(s, t, all_vars_set) == zeroes);
-    assert(sylvan_relprod_paired_prev(zeroes, t, all_vars_set) == zeroes);
-    assert(sylvan_relprod_paired(sylvan_not(zeroes), t, all_vars_set) == sylvan_false);
+    assert(sylvan_relprev(t, s, all_vars_set) == zeroes);
+    assert(sylvan_relprev(t, zeroes, all_vars_set) == zeroes);
+    assert(sylvan_relnext(sylvan_not(zeroes), t, all_vars_set) == sylvan_false);
 
     sylvan_gc_enable();
 }

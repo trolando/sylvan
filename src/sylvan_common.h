@@ -25,16 +25,16 @@
 #define sylvan_gc_test() YIELD_NEWFRAME()
 
 // BDD operations
-#define CACHE_ITE 0
-#define CACHE_RELPROD_PAIRED 1
-#define CACHE_RELPROD_PAIRED_PREV 2
-#define CACHE_COUNT 3
-#define CACHE_EXISTS 4
-#define CACHE_SATCOUNT 5
-#define CACHE_COMPOSE 6
-#define CACHE_RESTRICT 7
-#define CACHE_CONSTRAIN 8
-#define CACHE_AND_EXISTS 9
+#define CACHE_ITE             0
+#define CACHE_COUNT           1
+#define CACHE_EXISTS          2
+#define CACHE_AND_EXISTS      3
+#define CACHE_RELNEXT         4
+#define CACHE_RELPREV         5
+#define CACHE_SATCOUNT        6
+#define CACHE_COMPOSE         7
+#define CACHE_RESTRICT        8
+#define CACHE_CONSTRAIN       9
 
 // MDD operations
 #define CACHE_RELPROD   10

@@ -1446,6 +1446,118 @@ TASK_IMPL_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
 }
 
 /**
+ * Computes the transitive closure by traversing the BDD recursively.
+ * See Y. Matsunaga, P. C. McGeer, R. K. Brayton
+ *     On Computing the Transitive Closre of a State Transition Relation
+ *     30th ACM Design Automation Conference, 1993.
+ */
+TASK_IMPL_2(BDD, sylvan_closure, BDD, a, BDDVAR, prev_level)
+{
+    /* Terminals */
+    if (a == sylvan_true) return a;
+    if (a == sylvan_false) return a;
+
+    /* Perhaps execute garbage collection */
+    sylvan_gc_test();
+
+    /* Count operation */
+    // SV_CNT_OP(C_closure);
+
+    /* Determine top level */
+    bddnode_t n = GETNODE(a);
+    BDDVAR level = n->level;
+
+    /* Consult cache */
+    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
+    if (cachenow) {
+        BDD result;
+        if (cache_get(BDD_SETDATA(a, CACHE_CLOSURE), 0, 0, &result)) {
+            SV_CNT_CACHE(C_cache_reuse);
+            return result;
+        }
+    }
+
+    BDDVAR s = level & (~1);
+    BDDVAR t = s+1;
+
+    BDD a0, a1;
+    if (n->level == s) {
+        a0 = node_low(a, n);
+        a1 = node_high(a, n);
+    } else {
+        a0 = a1 = a;
+    }
+
+    BDD a00, a01, a10, a11;
+    if (!sylvan_isconst(a0)) {
+        bddnode_t na0 = GETNODE(a0);
+        if (na0->level == t) {
+            a00 = node_low(a0, na0);
+            a01 = node_high(a0, na0);
+        } else {
+            a00 = a01 = a0;
+        }
+    } else {
+        a00 = a01 = a0;
+    }
+    if (!sylvan_isconst(a1)) {
+        bddnode_t na1 = GETNODE(a1);
+        if (na1->level == t) {
+            a10 = node_low(a1, na1);
+            a11 = node_high(a1, na1);
+        } else {
+            a10 = a11 = a1;
+        }
+    } else {
+        a10 = a11 = a1;
+    }
+
+    BDD u1 = CALL(sylvan_closure, a11, level);
+    bdd_refs_push(u1);
+    /* u3 = */ bdd_refs_spawn(SPAWN(sylvan_relprev, a01, u1, sylvan_true, level));
+    BDD u2 = CALL(sylvan_relprev, u1, a10, sylvan_true, level);
+    bdd_refs_push(u2);
+    BDD e = CALL(sylvan_relprev, a01, u2, sylvan_true, level);
+    bdd_refs_push(e);
+    e = CALL(sylvan_ite, a00, sylvan_true, e, level);
+    bdd_refs_pop(1);
+    bdd_refs_push(e);
+    e = CALL(sylvan_closure, e, level);
+    bdd_refs_pop(1);
+    bdd_refs_push(e);
+    BDD g = CALL(sylvan_relprev, u2, e, sylvan_true, level);
+    bdd_refs_push(g);
+    BDD u3 = bdd_refs_sync(SYNC(sylvan_relprev));
+    bdd_refs_push(u3);
+    BDD f = CALL(sylvan_relprev, e, u3, sylvan_true, level);
+    bdd_refs_push(f);
+    BDD h = CALL(sylvan_relprev, u2, f, sylvan_true, level);
+    bdd_refs_push(h);
+    h = CALL(sylvan_ite, u1, sylvan_true, h, level);
+    bdd_refs_pop(1);
+    bdd_refs_push(h);
+
+    BDD r0, r1;
+    /* R0 */ r0 = sylvan_makenode(t, e, f);
+    bdd_refs_pop(7);
+    bdd_refs_push(r0);
+    /* R1 */ r1 = sylvan_makenode(t, g, h);
+    bdd_refs_pop(1);
+    BDD result = sylvan_makenode(s, r0, r1);
+
+    if (cachenow) {
+        if (cache_put(BDD_SETDATA(a, CACHE_CLOSURE), 0, 0, result)) {
+            SV_CNT_CACHE(C_cache_new);
+        } else {
+            SV_CNT_CACHE(C_cache_exists);
+        }
+    }
+
+    return result;
+}
+
+
+/**
  * Function composition
  */
 TASK_IMPL_3(BDD, sylvan_compose, BDD, a, BDDMAP, map, BDDVAR, prev_level)

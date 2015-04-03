@@ -143,6 +143,15 @@ TASK_DECL_4(BDD, sylvan_relnext, BDD, BDD, BDDSET, BDDVAR);
 #define sylvan_relnext(a,b,vars) CALL(sylvan_relnext,a,b,vars,0)
 
 /**
+ * Computes the transitive closure by traversing the BDD recursively.
+ * See Y. Matsunaga, P. C. McGeer, R. K. Brayton
+ *     On Computing the Transitive Closre of a State Transition Relation
+ *     30th ACM Design Automation Conference, 1993.
+ */
+TASK_DECL_2(BDD, sylvan_closure, BDD, BDDVAR);
+#define sylvan_closure(a) CALL(sylvan_closure,a,0);
+
+/**
  * Calculate a@b (a constrain b), such that (b -> a@b) = (b -> a)
  * Special cases:
  *   - a@0 = 0

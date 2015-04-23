@@ -115,6 +115,7 @@ TASK_DECL_4(BDD, sylvan_and_exists, BDD, BDD, BDDSET, BDDVAR);
  * Assumes s,t are interleaved with s odd and t even.
  * Parameter vars is the disjunction of all s and/or t variables.
  * For variables in A/B that are not in vars, relprev behaves as A \and B
+ * Alternatively, vars=true means all variables are in vars
  *
  * Use this function to concatenate two relations   --> -->
  * or to take the 'previous' of a set               -->  S
@@ -128,6 +129,7 @@ TASK_DECL_4(BDD, sylvan_relprev, BDD, BDD, BDDSET, BDDVAR);
  * Assumes s,t are interleaved with s odd and t even.
  * Parameter vars is the disjunction of all s and/or t variables.
  * For variables in A/B that are not in vars, relnext behaves as A \and B
+ * Alternatively, vars=true means all variables are in vars
  *
  * Use this function to take the 'next' of a set     S  -->
  */

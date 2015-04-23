@@ -1048,15 +1048,18 @@ TASK_IMPL_4(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
     else level = nb->level;
 
     /* Skip vars */
-    bddnode_t vars_node = GETNODE(vars);
-    for (;;) {
-        /* check if level is s/t */
-        if (level == vars_node->level || (level^1) == vars_node->level) break;
-        /* check if level < s/t */
-        if (level < vars_node->level) break;
-        vars = node_low(vars, vars_node);
-        if (sylvan_set_isempty(vars)) return sylvan_and(a, b);
+    bddnode_t vars_node = 0;
+    if (vars != sylvan_true) {
         vars_node = GETNODE(vars);
+        for (;;) {
+            /* check if level is s/t */
+            if (level == vars_node->level || (level^1) == vars_node->level) break;
+            /* check if level < s/t */
+            if (level < vars_node->level) break;
+            vars = node_low(vars, vars_node);
+            if (sylvan_set_isempty(vars)) return sylvan_and(a, b);
+            vars_node = GETNODE(vars);
+        }
     }
 
     /* Consult cache */
@@ -1071,9 +1074,9 @@ TASK_IMPL_4(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
 
     BDD result;
 
-    if (level == vars_node->level || (level^1) == vars_node->level) {
+    if (vars == sylvan_true || level == vars_node->level || (level^1) == vars_node->level) {
         /* Get s and t */
-        BDDVAR s = vars_node->level & (~1);
+        BDDVAR s = level & (~1);
         BDDVAR t = s+1;
 
         BDD a0, a1, b0, b1;
@@ -1114,7 +1117,7 @@ TASK_IMPL_4(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
             b10 = b11 = b1;
         }
 
-        BDD _vars = node_low(vars, vars_node);
+        BDD _vars = vars == sylvan_true ? sylvan_true : node_low(vars, vars_node);
 
         bdd_refs_spawn(SPAWN(sylvan_relnext, a0, b00, _vars, level));
         bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b10, _vars, level));
@@ -1195,15 +1198,18 @@ TASK_IMPL_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
     else level = nb->level;
 
     /* Skip vars */
-    bddnode_t vars_node = GETNODE(vars);
-    for (;;) {
-        /* check if level is s/t */
-        if (level == vars_node->level || (level^1) == vars_node->level) break;
-        /* check if level < s/t */
-        if (level < vars_node->level) break;
-        vars = node_low(vars, vars_node);
-        if (sylvan_set_isempty(vars)) return sylvan_and(a, b);
+    bddnode_t vars_node = 0;
+    if (vars != sylvan_true) {
         vars_node = GETNODE(vars);
+        for (;;) {
+            /* check if level is s/t */
+            if (level == vars_node->level || (level^1) == vars_node->level) break;
+            /* check if level < s/t */
+            if (level < vars_node->level) break;
+            vars = node_low(vars, vars_node);
+            if (sylvan_set_isempty(vars)) return sylvan_and(a, b);
+            vars_node = GETNODE(vars);
+        }
     }
 
     /* Consult cache */
@@ -1218,9 +1224,9 @@ TASK_IMPL_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
 
     BDD result;
 
-    if (level == vars_node->level || (level^1) == vars_node->level) {
+    if (vars == sylvan_true || level == vars_node->level || (level^1) == vars_node->level) {
         /* Get s and t */
-        BDDVAR s = vars_node->level & (~1);
+        BDDVAR s = level & (~1);
         BDDVAR t = s+1;
 
         BDD a0, a1, b0, b1;
@@ -1283,7 +1289,7 @@ TASK_IMPL_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
             b10 = b11 = b1;
         }
 
-        BDD _vars = node_low(vars, vars_node);
+        BDD _vars = vars == sylvan_true? sylvan_true : node_low(vars, vars_node);
 
         bdd_refs_spawn(SPAWN(sylvan_relprev, a00, b00, _vars, level));
         bdd_refs_spawn(SPAWN(sylvan_relprev, a01, b10, _vars, level));

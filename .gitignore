@@ -5,7 +5,7 @@ config.*
 .dirstamp
 aclocal.m4
 configure
-m4
+m4/*
 tools
 Makefile.in
 

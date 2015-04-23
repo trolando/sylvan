@@ -190,6 +190,7 @@ VOID_TASK_0(lddmc_refs_mark_task)
     for (i=0; i<lddmc_refs_key->r_count; i++) {
         if (j >= 40) {
             while (j--) SYNC(lddmc_gc_mark_rec);
+            j=0;
         }
         SPAWN(lddmc_gc_mark_rec, lddmc_refs_key->results[i]);
         j++;
@@ -200,6 +201,7 @@ VOID_TASK_0(lddmc_refs_mark_task)
         if (TASK_IS_COMPLETED(t)) {
             if (j >= 40) {
                 while (j--) SYNC(lddmc_gc_mark_rec);
+                j=0;
             }
             SPAWN(lddmc_gc_mark_rec, *(BDD*)TASK_RESULT(t));
             j++;

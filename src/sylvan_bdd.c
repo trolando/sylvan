@@ -179,6 +179,7 @@ VOID_TASK_0(bdd_refs_mark_task)
     for (i=0; i<bdd_refs_key->r_count; i++) {
         if (j >= 40) {
             while (j--) SYNC(sylvan_gc_mark_rec);
+            j=0;
         }
         SPAWN(sylvan_gc_mark_rec, bdd_refs_key->results[i]);
         j++;
@@ -189,6 +190,7 @@ VOID_TASK_0(bdd_refs_mark_task)
         if (TASK_IS_COMPLETED(t)) {
             if (j >= 40) {
                 while (j--) SYNC(sylvan_gc_mark_rec);
+                j=0;
             }
             SPAWN(sylvan_gc_mark_rec, *(BDD*)TASK_RESULT(t));
             j++;

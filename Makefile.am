@@ -35,10 +35,9 @@ libsylvan_la_SOURCES = \
     src/getrss.h \
     src/hash16.h
 
-if HAVE_NUMA
-libsylvan_la_LIBADD += -lnuma
-libsylvan_la_SOURCES += src/numa_tools.c src/numa_tools.h
-libsylvan_la_CFLAGS += -DUSE_NUMA=1
+if HAVE_LIBHWLOC
+libsylvan_la_LIBADD += -lhwloc
+libsylvan_la_CFLAGS += -DUSE_HWLOC=1
 endif
 
 noinst_PROGRAMS = mc lddmc sylvan_test

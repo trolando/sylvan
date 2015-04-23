@@ -16,22 +16,15 @@ enable_testing()
 
 option(SYLVAN_OPERATION_STATS "Create operation statistics" OFF)
 option(SYLVAN_CACHE_STATS "Create cache statistics" OFF)
-option(USE_NUMA "Use NUMA" OFF)
 
 include(CheckIncludeFiles)
 
-if(USE_NUMA)
-    check_include_files(numa.h HAVE_NUMA)
-    if(HAVE_NUMA)
-        set(EXTRA_LIBS ${EXTRA_LIBS} numa)
-        set(EXTRA_SRC ${EXTRA_SRC} src/numa_tools.c)
-        set(NUMA_DEF "USE_NUMA=1")
-    else()
-        message("ERROR: Using NUMA but no numa.h found!")
-        set(NUMA_DEF "USE_NUMA=0")
-    endif()
+check_include_files(hwloc.h HAVE_HWLOC)
+if(HAVE_HWLOC)
+    set(EXTRA_LIBS ${EXTRA_LIBS} hwloc)
+    set(HWLOC_DEF "USE_HWLOC=1")
 else()
-    set (NUMA_DEF "USE_NUMA=0")
+    set(HWLOC_DEF "USE_HWLOC=0")
 endif()
 
 check_include_files("gperftools/profiler.h" HAVE_PROFILER)
@@ -41,7 +34,7 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     set(ARGP_LIBS "argp")
 endif()
 
-set(CMAKE_C_FLAGS "-g -O3 -Wextra -Wall -Werror -fno-strict-aliasing -D${NUMA_DEF}")
+set(CMAKE_C_FLAGS "-g -O3 -Wextra -Wall -Werror -fno-strict-aliasing -D${HWLOC_DEF}")
 
 set(sylvan_sources
     src/barrier.h

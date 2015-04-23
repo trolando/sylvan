@@ -7,19 +7,9 @@ AM_INIT_AUTOMAKE([foreign subdir-objects])
 AC_PROG_CC
 LT_INIT
 
-AC_ARG_WITH(numa, 
-  AS_HELP_STRING([--with-numa], [Use NUMA allocators in Sylvan (default=no)]),
-  [case $with_numa in
-     no)
-       ;;
-     yes)
-       AC_CHECK_HEADERS([numa.h], AC_CHECK_LIB([numa], [numa_available], numa=yes))
-       ;;
-   esac
-  ],
-  [numa=no])
-
-AM_CONDITIONAL([HAVE_NUMA], [test "$numa" = "yes"])
+AC_CHECKING([for any suitable hwloc installation])
+AC_CHECK_LIB([hwloc], [hwloc_topology_init], [AC_CHECK_HEADER([hwloc.h], [hwloc=yes])])
+AM_CONDITIONAL([HAVE_LIBHWLOC], [test "$hwloc" = "yes"])
 
 AC_CANONICAL_HOST
 AM_CONDITIONAL([DARWIN], [case $host_os in darwin*) true;; *) false;; esac])

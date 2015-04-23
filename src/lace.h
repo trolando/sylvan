@@ -30,7 +30,7 @@
 #endif
 
 #ifndef LACE_LEAP_RANDOM /* Use random leaping when leapfrogging fails */
-#define LACE_LEAP_RANDOM 0
+#define LACE_LEAP_RANDOM 1
 #endif
 
 #ifndef LACE_PIE_TIMES /* Record time spent stealing and leapfrogging */
@@ -205,7 +205,6 @@ LACE_TYPEDEF_CB(void, lace_startup_cb, void*);
  * Initialize master structures for Lace with <n_workers> workers
  * and default deque size of <dqsize>.
  * Does not create new threads.
- * If compiled with NUMA support and NUMA is not available, program quits.
  * Tries to detect number of cpus, if n_workers equals 0.
  */
 void lace_init(int n_workers, size_t dqsize);

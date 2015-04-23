@@ -14,10 +14,6 @@
 #include "llmsset.h"
 #include "sylvan.h"
 
-#if USE_NUMA
-#include "numa_tools.h"
-#endif
-
 #define BLACK "\33[22;30m"
 #define GRAY "\33[01;30m"
 #define RED "\33[22;31m"
@@ -587,10 +583,6 @@ test_lddmc()
 
 void runtests(int threads)
 {
-#if USE_NUMA
-    numa_distribute(threads);
-#endif
-
     lace_init(threads, 100000);
     lace_startup(0, NULL, NULL);
 

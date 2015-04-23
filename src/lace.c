@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#include <sylvan_config.h>
-
 #include <errno.h>
 #include <sched.h> // for sched_getaffinity
 #include <stdio.h>  // for fprintf
@@ -29,19 +27,23 @@
 
 #include <lace.h>
 
-#ifndef USE_NUMA
-#define USE_NUMA 0 // by default, don't use special numa handling code
+#ifndef USE_HWLOC
+#define USE_HWLOC 1
 #endif
 
-#if USE_NUMA
-#include <numa.h>
-#include <numa_tools.h>
+#if USE_HWLOC
+#include <hwloc.h>
 #endif
 
 // public Worker data
 static Worker **workers;
 static size_t default_stacksize = 0; // set by lace_init
 static size_t default_dqsize = 100000;
+
+#if USE_HWLOC
+static hwloc_topology_t topo;
+static unsigned int n_nodes, n_cores, n_pus;
+#endif
 
 static int n_workers = 0;
 
@@ -129,7 +131,7 @@ us_elapsed(void)
 }
 #endif
 
-#if USE_NUMA
+#if USE_HWLOC
 // Lock used only during parallel lace_init_worker...
 static volatile int __attribute__((aligned(64))) lock = 0;
 static inline void
@@ -235,24 +237,23 @@ static barrier_t bar;
 void
 lace_init_worker(int worker, size_t dq_size)
 {
-    Worker *wt=NULL;
-    WorkerP *w=NULL;
+    Worker *wt = NULL;
+    WorkerP *w = NULL;
 
     if (dq_size == 0) dq_size = default_dqsize;
 
-#if USE_NUMA
-    // Retrieve our NUMA node...
-    size_t node;
-    numa_worker_info(worker, &node, 0, 0, 0);
+#if USE_HWLOC
+    // Get our logical processor
+    hwloc_obj_t pu = hwloc_get_obj_by_type(topo, HWLOC_OBJ_PU, worker % n_pus);
 
     // Pin our thread...
-    numa_run_on_node(node);
+    hwloc_set_cpubind(topo, pu->cpuset, HWLOC_CPUBIND_THREAD);
 
-    // Allocate memory on our NUMA node...
+    // Allocate memory on our node...
     lock_acquire();
-    wt = (Worker *)numa_alloc_onnode(sizeof(Worker), node);
-    w = (WorkerP *)numa_alloc_onnode(sizeof(WorkerP), node);
-    if (wt == NULL || w == NULL || (w->dq = (Task*)numa_alloc_onnode(dq_size * sizeof(Task), node)) == NULL) {
+    wt = (Worker *)hwloc_alloc_membind(topo, sizeof(Worker), pu->cpuset, HWLOC_MEMBIND_BIND, 0);
+    w = (WorkerP *)hwloc_alloc_membind(topo, sizeof(WorkerP), pu->cpuset, HWLOC_MEMBIND_BIND, 0);
+    if (wt == NULL || w == NULL || (w->dq = (Task*)hwloc_alloc_membind(topo, dq_size * sizeof(Task), pu->cpuset, HWLOC_MEMBIND_BIND, 0)) == NULL) {
         fprintf(stderr, "Lace error: Unable to allocate memory for the Lace worker!\n");
         exit(1);
     }
@@ -273,7 +274,7 @@ lace_init_worker(int worker, size_t dq_size)
     wt->allstolen = 0;
     wt->movesplit = 0;
 
-    /// Initialize private worker data
+    // Initialize private worker data
     w->public = wt;
     w->end = w->dq + dq_size;
     w->split = w->dq;
@@ -417,20 +418,16 @@ lace_spawn_worker(int worker, size_t stacksize, void* (*fun)(void*), void* arg)
     // Determine stack size
     if (stacksize == 0) stacksize = default_stacksize;
 
-#if USE_NUMA
-    size_t pagesize = numa_pagesize();
-#else
     size_t pagesize = sysconf(_SC_PAGESIZE);
-#endif
-
     stacksize = (stacksize + pagesize - 1) & ~(pagesize - 1); // ceil(stacksize, pagesize)
 
-#if USE_NUMA
-    // Allocate memory for the program stack on the NUMA nodes
-    size_t node;
+#if USE_HWLOC
+    // Get our logical processor
+    hwloc_obj_t pu = hwloc_get_obj_by_type(topo, HWLOC_OBJ_PU, worker % n_pus);
+
+    // Allocate memory for the program stack
     lock_acquire();
-    numa_worker_info(worker, &node, 0, 0, 0);
-    void *stack_location = numa_alloc_onnode(stacksize + pagesize, node);
+    void *stack_location = hwloc_alloc_membind(topo, stacksize + pagesize, pu->cpuset, HWLOC_MEMBIND_BIND, 0);
     lock_release();
     if (stack_location == 0) {
         fprintf(stderr, "Lace error: Unable to allocate memory for the pthread stack!\n");
@@ -470,7 +467,9 @@ lace_spawn_worker(int worker, size_t stacksize, void* (*fun)(void*), void* arg)
 static int
 get_cpu_count()
 {
-#ifdef sched_getaffinity
+#if USE_HWLOC
+    int count = hwloc_get_nbobjs_by_type(topo, HWLOC_OBJ_PU);
+#elif defined(sched_getaffinity)
     /* Best solution: find actual available cpus */
     cpu_set_t cs;
     CPU_ZERO(&cs);
@@ -489,6 +488,15 @@ get_cpu_count()
 void
 lace_init(int n, size_t dqsize)
 {
+#if USE_HWLOC
+    hwloc_topology_init(&topo);
+    hwloc_topology_load(topo);
+
+    n_nodes = hwloc_get_nbobjs_by_type(topo, HWLOC_OBJ_NODE);
+    n_cores = hwloc_get_nbobjs_by_type(topo, HWLOC_OBJ_CORE);
+    n_pus = hwloc_get_nbobjs_by_type(topo, HWLOC_OBJ_PU);
+#endif
+
     // Initialize globals
     n_workers = n;
     if (n_workers == 0) n_workers = get_cpu_count();
@@ -520,20 +528,10 @@ lace_init(int n, size_t dqsize)
         default_stacksize = 1048576; // 1 megabyte default
     }
 
-#if USE_NUMA
-    // If we have NUMA, initialize it
-    if (numa_available() != 0) {
-        fprintf(stderr, "Lace error: NUMA not available!\n");
-        exit(1);
-    } else {
-        fprintf(stderr, "Initializing Lace with NUMA support, %d workers.\n", n_workers);
-        if (numa_distribute(n_workers) != 0) {
-            fprintf(stderr, "Lace error: no suitable NUMA configuration found!\n");
-            exit(1);
-        }
-    }
+#if USE_HWLOC
+    fprintf(stderr, "Initializing Lace, %u nodes, %u cores, %u logical processors, %d workers.\n", n_nodes, n_cores, n_pus, n_workers);
 #else
-    fprintf(stderr, "Initializing Lace without NUMA support, %d workers.\n", n_workers);
+    fprintf(stderr, "Initializing Lace, %d workers.\n", n_workers);
 #endif
 
     // Prepare lace_init structure

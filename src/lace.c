@@ -59,6 +59,7 @@ static pthread_key_t worker_key;
 
 static pthread_cond_t wait_until_done = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t wait_until_done_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_barrier_t suspend_barrier;
 
 struct lace_worker_init
 {
@@ -305,6 +306,29 @@ lace_init_worker(int worker, size_t dq_size)
 #endif
 }
 
+static int must_suspend = 0;
+
+static inline void
+lace_go_suspend()
+{
+    barrier_wait(&bar);
+    pthread_barrier_wait(&suspend_barrier);
+}
+
+void
+lace_suspend()
+{
+    must_suspend = 1;
+    barrier_wait(&bar);
+    must_suspend = 0;
+}
+
+void
+lace_resume()
+{
+    pthread_barrier_wait(&suspend_barrier);
+}
+
 static inline uint32_t
 rng(uint32_t *seed, int max)
 {
@@ -326,6 +350,7 @@ VOID_TASK_IMPL_0(lace_steal_random)
     Worker *res = lace_steal(__lace_worker, __lace_dq_head, victim);
     if (res == LACE_NOWORK) {
         YIELD_NEWFRAME();
+        if (must_suspend) lace_go_suspend();
     } else if (res == LACE_STOLEN) {
         PR_COUNTSTEALS(__lace_worker, CTR_steals);
     } else if (res == LACE_BUSY) {
@@ -392,6 +417,7 @@ VOID_TASK_IMPL_1(lace_steal_loop, int*, quit)
         Worker *res = lace_steal(__lace_worker, __lace_dq_head, *victim);
         if (res == LACE_NOWORK) {
             YIELD_NEWFRAME();
+            if (must_suspend) lace_go_suspend();
         } else if (res == LACE_STOLEN) {
             PR_COUNTSTEALS(__lace_worker, CTR_steals);
         } else if (res == LACE_BUSY) {
@@ -505,6 +531,9 @@ lace_init(int n, size_t dqsize)
 
     // Create barrier for all workers
     barrier_init(&bar, n_workers);
+
+    // Create suspend barrier
+    pthread_barrier_init(&suspend_barrier, NULL, n_workers);
 
     // Allocate array with all workers
     if (posix_memalign((void**)&workers, LINE_SIZE, n_workers*sizeof(Worker*)) != 0 ||
@@ -714,6 +743,8 @@ void lace_exit()
     barrier_wait(&bar);
 
     barrier_destroy(&bar);
+
+    pthread_barrier_destroy(&suspend_barrier);
 
 #if LACE_COUNT_EVENTS
     lace_count_report_file(stderr);

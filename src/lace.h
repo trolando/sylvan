@@ -251,6 +251,14 @@ void lace_steal_random_CALL(WorkerP*, Task*);
 #define lace_steal_loop(quit) CALL(lace_steal_loop, quit)
 
 /**
+ * Suspend and resume all other workers.
+ * Careful with usage. Only suspend when all other workers are idle.
+ * Always use resume before exiting Lace.
+ */
+void lace_suspend();
+void lace_resume();
+
+/**
  * Retrieve number of Lace workers
  */
 size_t lace_workers();

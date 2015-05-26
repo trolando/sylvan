@@ -1690,60 +1690,45 @@ TASK_IMPL_2(long double, sylvan_satcount, BDD, bdd, BDD, variables)
     return result;
 }
 
-static void
-gnomesort_bddvars(BDDVAR* arr, size_t size)
-{
-    size_t i=0;
-    while (i<size) {
-        if (i == 0 || arr[i-1] <= arr[i]) i++;
-        else { BDDVAR tmp = arr[i]; arr[i] = arr[i-1]; arr[--i] = tmp; }
-    }
-}
-
 int
-sylvan_sat_one(BDD bdd, BDDVAR *vars, size_t cnt, char* str)
+sylvan_sat_one(BDD bdd, BDDSET vars, char *str)
 {
     if (bdd == sylvan_false) return 0;
     if (str == NULL) return 0;
+    if (vars == sylvan_false) return 1;
 
-    BDDVAR *sorted_vars = (BDDVAR*)alloca(sizeof(BDDVAR)*cnt);
-    memcpy(sorted_vars, vars, sizeof(BDDVAR)*cnt);
-    gnomesort_bddvars(sorted_vars, cnt);
-
-    size_t i = 0;
-    for (i=0; i<cnt; i++) {
-        BDDVAR var = sorted_vars[i];
-
-        size_t idx=0;
-        for (idx=0; vars[idx]!=var; idx++) {}
-
-        if (bdd != sylvan_true) {
-            bddnode_t node = GETNODE(bdd);
-            if (node->level == var) {
-                BDD lowedge = node_low(bdd, node);
-                BDD highedge = node_high(bdd, node);
-                if (highedge == sylvan_false) {
-                    // take low edge
-                    bdd = lowedge;
-                    str[idx++] = 0;
-                } else if (lowedge == sylvan_false) {
+    for (;;) {
+        bddnode_t n_vars = GETNODE(vars);
+        if (bdd == sylvan_true) {
+            *str = 2;
+        } else {
+            bddnode_t n_bdd = GETNODE(bdd);
+            if (n_bdd->level != n_vars->level) {
+                *str = 2;
+            } else {
+                if (node_low(bdd, n_bdd) == sylvan_false) {
                     // take high edge
-                    bdd = highedge;
-                    str[idx++] = 1;
+                    *str = 1;
+                    bdd = node_high(bdd, n_bdd);
+                } else if (node_high(bdd, n_bdd) == sylvan_false) {
+                    // take low edge
+                    *str = 0;
+                    bdd = node_low(bdd, n_bdd);
                 } else {
                     // take random edge
-                    if (rand() & 0x2000) {
-                        bdd = lowedge;
-                        str[idx++] = 0;
+                    if (rand() & 1) {
+                        *str = 1;
+                        bdd = node_high(bdd, n_bdd);
                     } else {
-                        bdd = highedge;
-                        str[idx++] = 1;
+                        *str = 0;
+                        bdd = node_low(bdd, n_bdd);
                     }
                 }
-                continue;
             }
         }
-        str[idx++] = 2;
+        vars = node_low(vars, n_vars);
+        if (vars == sylvan_false) break;
+        str++;
     }
 
     return 1;

@@ -167,7 +167,7 @@ test_cube()
     for (i=0;i<6;i++) cube[i] = rng(0,3);
     BDD bdd = sylvan_cube(vars, cube);
 
-    sylvan_sat_one(bdd, (BDDVAR[]){1,2,3,4,6,8}, 6, check);
+    sylvan_sat_one(bdd, vars, check);
     for (i=0; i<6;i++) assert(cube[i] == check[i]);
 
     testEqual(sylvan_cube(vars, check), sylvan_sat_one_bdd(bdd));

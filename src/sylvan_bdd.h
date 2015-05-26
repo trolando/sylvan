@@ -287,16 +287,17 @@ TASK_DECL_3(BDD, sylvan_union_cube, BDD, BDDSET, char*);
 
 /**
  * Pick one satisfying variable assignment randomly for which <bdd> is true.
- * Note that <variables> must include all variables in the support of <bdd>,
- * and that count must equal the size of both arrays.
+ * The <variables> set must include all variables in the support of <bdd>.
  *
  * The function will set the values of str, such that
  * str[index] where index is the index in the <variables> set is set to
  * 0 when the variable is negative, 1 when positive, or 2 when it could be either.
  *
+ * This implies that str[i] will be set in the variable ordering as in <variables>.
+ *
  * Returns 1 when succesful, or 0 when no assignment is found (i.e. bdd==sylvan_false).
  */
-int sylvan_sat_one(BDD bdd, BDDVAR *variables, size_t count, char* str);
+int sylvan_sat_one(BDD bdd, BDDSET variables, char* str);
 
 /**
  * Pick one satisfying variable assignment randomly from the given <bdd>.

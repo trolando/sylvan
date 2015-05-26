@@ -40,18 +40,7 @@ libsylvan_la_LIBADD += -lhwloc
 libsylvan_la_CFLAGS += -DUSE_HWLOC=1
 endif
 
-noinst_PROGRAMS = mc lddmc sylvan_test
-
-mc_SOURCES = test/mc.c
-mc_LDADD = libsylvan.la -lpthread
-
-lddmc_SOURCES = test/lddmc.c
-lddmc_LDADD = libsylvan.la -lpthread
+noinst_PROGRAMS = sylvan_test
 
 sylvan_test_SOURCES = test/main.c
 sylvan_test_LDADD = libsylvan.la -lpthread
-
-if DARWIN
-mc_LDADD += -largp
-lddmc_LDADD += -largp
-endif

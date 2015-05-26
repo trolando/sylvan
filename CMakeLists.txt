@@ -16,6 +16,7 @@ enable_testing()
 
 option(SYLVAN_OPERATION_STATS "Create operation statistics" OFF)
 option(SYLVAN_CACHE_STATS "Create cache statistics" OFF)
+option(SYLVAN_BUILD_EXAMPLES "Build example tools" OFF)
 
 include(CheckIncludeFiles)
 
@@ -25,13 +26,6 @@ if(HAVE_HWLOC)
     set(HWLOC_DEF "USE_HWLOC=1")
 else()
     set(HWLOC_DEF "USE_HWLOC=0")
-endif()
-
-check_include_files("gperftools/profiler.h" HAVE_PROFILER)
-
-if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-    # add argp library for OSX
-    set(ARGP_LIBS "argp")
 endif()
 
 set(CMAKE_C_FLAGS "-g -O3 -Wextra -Wall -Werror -fno-strict-aliasing -D${HWLOC_DEF}")
@@ -74,19 +68,9 @@ add_executable(sylvan_test test/main.c)
 target_link_libraries(sylvan_test sylvan)
 add_test(sylvan_test sylvan_test)
 
-add_executable(mc test/mc.c)
-target_link_libraries(mc sylvan)
-if(HAVE_PROFILER)
-    set_target_properties(mc PROPERTIES COMPILE_DEFINITIONS "HAVE_PROFILER")
-    target_link_libraries(mc profiler)
-endif()
-
-add_executable(lddmc test/lddmc.c)
-target_link_libraries(lddmc sylvan ${ARGP_LIBS})
-if(HAVE_PROFILER)
-    set_target_properties(lddmc PROPERTIES COMPILE_DEFINITIONS "HAVE_PROFILER")
-    target_link_libraries(lddmc profiler ${ARGP_LIBS})
-endif()
-
 add_executable(test_cxx test/test_cxx.cpp)
 target_link_libraries(test_cxx sylvan)
+
+if(SYLVAN_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()

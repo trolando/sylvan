@@ -23,6 +23,10 @@
 #ifndef __LACE_H__
 #define __LACE_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
 /* Some flags */
 
 #ifndef LACE_DEBUG_PROGRAMSTACK /* Write to stderr when 95% program stack reached */
@@ -2425,5 +2429,10 @@ VOID_TASK_DECL_0(lace_steal_random);
 VOID_TASK_DECL_1(lace_steal_random_loop, int*);
 VOID_TASK_DECL_1(lace_steal_loop, int*);
 VOID_TASK_DECL_2(lace_steal_loop_root, Task *, int*);
+
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
 
 #endif

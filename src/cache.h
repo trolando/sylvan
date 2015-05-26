@@ -8,6 +8,10 @@
 #ifndef CACHE_INLINE_H
 #define CACHE_INLINE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
 #ifndef CACHE_MASK
 #define CACHE_MASK 1
 #endif
@@ -160,5 +164,10 @@ cache_setsize(size_t size)
     cache_free();
     cache_create(size, cache_max);
 }
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
+
 
 #endif

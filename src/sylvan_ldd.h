@@ -19,6 +19,11 @@
 #ifndef SYLVAN_LDD_H
 #define SYLVAN_LDD_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
+
 typedef uint64_t MDD;       // Note: low 40 bits only
 
 #define lddmc_false         ((MDD)0)
@@ -270,5 +275,9 @@ lddmc_refs_sync(MDD result)
     lddmc_refs_key->s_count--;
     return result;
 }
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
 
 #endif

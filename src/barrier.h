@@ -22,6 +22,10 @@
 
 #include <atomics.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
 #ifndef PTHREAD_BARRIER_SERIAL_THREAD
 #   define PTHREAD_BARRIER_SERIAL_THREAD -1
 #endif
@@ -50,5 +54,9 @@ extern void barrier_init (barrier_t *b, unsigned count);
 extern void barrier_destroy (barrier_t *b);
 
 extern int barrier_wait (barrier_t *b);
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
 
 #endif

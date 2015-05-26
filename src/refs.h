@@ -19,6 +19,10 @@
 #ifndef REFS_INLINE_H
 #define REFS_INLINE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
 /**
  * Implementation of external references
  * Based on a hash table for 40-bit non-null values, linear probing
@@ -54,5 +58,10 @@ uint64_t refs_next(refs_table_t *tbl, uint64_t **bucket, size_t end);
 // User must supply a pointer, refs_create and refs_free handle initialization/destruction
 void refs_create(refs_table_t *tbl, size_t _refs_size);
 void refs_free(refs_table_t *tbl);
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
+
 
 #endif

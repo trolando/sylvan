@@ -21,6 +21,10 @@
 #ifndef SYLVAN_COMMON_H
 #define SYLVAN_COMMON_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
 /* Garbage collection test task - t */
 #define sylvan_gc_test() YIELD_NEWFRAME()
 
@@ -54,5 +58,9 @@
  */
 typedef void (*quit_cb)();
 void sylvan_register_quit(quit_cb cb);
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
 
 #endif

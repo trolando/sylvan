@@ -19,6 +19,10 @@
 #ifndef HASH16_H
 #define HASH16_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
 #ifndef rotl64
 static inline uint64_t
 rotl64(uint64_t x, int8_t r)
@@ -49,5 +53,9 @@ hash16_mul(const void *key)
 {
     return rehash16_mul(key, 14695981039346656037LLU);
 }
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
 
 #endif

@@ -21,6 +21,10 @@
 #ifndef SYLVAN_BDD_H
 #define SYLVAN_BDD_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
 #ifndef SYLVAN_CACHE_STATS
 #define SYLVAN_CACHE_STATS 0
 #endif
@@ -385,5 +389,9 @@ bdd_refs_sync(BDD result)
     bdd_refs_key->s_count--;
     return result;
 }
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
 
 #endif

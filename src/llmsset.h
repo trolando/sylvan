@@ -24,6 +24,10 @@
 #ifndef LLMSSET_H
 #define LLMSSET_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
 #ifndef LLMSSET_MASK
 #define LLMSSET_MASK 1 // set to 1 to use bit mask instead of modulo
 #endif
@@ -148,5 +152,10 @@ VOID_TASK_DECL_1(llmsset_rehash, llmsset_t);
  */
 TASK_DECL_1(size_t, llmsset_count_marked, llmsset_t);
 #define llmsset_count_marked(dbs) CALL(llmsset_count_marked, dbs)
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
+
 
 #endif

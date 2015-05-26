@@ -66,6 +66,10 @@
 #ifndef __AVL_H__
 #define __AVL_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
 typedef struct avl_node
 {
     struct avl_node *left, *right;
@@ -386,5 +390,9 @@ NAME##_iter_free(avl_iter_t *iter)                                              
 }                                                                                           \
 static inline int                                                                           \
 NAME##_AVL_compare(TYPE *left, TYPE *right)
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
 
 #endif

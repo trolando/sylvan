@@ -11,7 +11,7 @@
 # > make install
 
 cmake_minimum_required(VERSION 2.6)
-project(sylvan C)
+project(sylvan C CXX)
 enable_testing()
 
 option(SYLVAN_OPERATION_STATS "Create operation statistics" OFF)
@@ -87,3 +87,6 @@ if(HAVE_PROFILER)
     set_target_properties(lddmc PROPERTIES COMPILE_DEFINITIONS "HAVE_PROFILER")
     target_link_libraries(lddmc profiler ${ARGP_LIBS})
 endif()
+
+add_executable(test_cxx test/test_cxx.cpp)
+target_link_libraries(test_cxx sylvan)

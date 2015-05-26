@@ -32,8 +32,7 @@ libsylvan_la_SOURCES = \
     src/refs.h \
     src/refs.c \
     src/getrss.c \
-    src/getrss.h \
-    src/hash16.h
+    src/getrss.h
 
 if HAVE_LIBHWLOC
 libsylvan_la_LIBADD += -lhwloc

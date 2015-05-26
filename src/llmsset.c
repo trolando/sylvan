@@ -25,11 +25,7 @@
 
 #include <atomics.h>
 #include <llmsset.h>
-#include <hash16.h>
 #include <tls.h>
-
-#define hash_mul hash16_mul
-#define rehash_mul rehash16_mul
 
 /*
  *  1 bit  for data-filled
@@ -69,6 +65,40 @@ VOID_TASK_1(llmsset_init_worker, llmsset_t, dbs)
     SET_THREAD_LOCAL(insert_index, insert_index);
 }
 
+/**
+ * hash16
+ */
+#ifndef rotl64
+static inline uint64_t
+rotl64(uint64_t x, int8_t r)
+{
+    return ((x<<r) | (x>>(64-r)));
+}
+#endif
+
+static uint64_t
+rehash16_mul(const void *key, const uint64_t seed)
+{
+    const uint64_t prime = 1099511628211;
+    const uint64_t *p = (const uint64_t *)key;
+
+    uint64_t hash = seed;
+    hash = hash ^ p[0];
+    hash = rotl64(hash, 47);
+    hash = hash * prime;
+    hash = hash ^ p[1];
+    hash = rotl64(hash, 31);
+    hash = hash * prime;
+
+    return hash ^ (hash >> 32);
+}
+
+static uint64_t
+hash16_mul(const void *key)
+{
+    return rehash16_mul(key, 14695981039346656037LLU);
+}
+
 /*
  * Note: garbage collection during lookup strictly forbidden
  * insert_index points to a starting point and is updated.
@@ -78,7 +108,7 @@ llmsset_lookup(const llmsset_t dbs, const void* data)
 {
     LOCALIZE_THREAD_LOCAL(insert_index, uint64_t);
 
-    uint64_t hash_rehash = hash_mul(data);
+    uint64_t hash_rehash = hash16_mul(data);
     const uint64_t hash = hash_rehash & MASK_HASH;
     int i=0;
 
@@ -181,7 +211,7 @@ phase2_restart:
             }
         } while (probe_sequence_next(idx, last));
 
-        hash_rehash = rehash_mul(data, hash_rehash);
+        hash_rehash = rehash16_mul(data, hash_rehash);
     }
 
     return 0;
@@ -191,7 +221,7 @@ static inline int
 llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 {
     const uint8_t * const d_ptr = dbs->data + d_idx * 16;
-    uint64_t hash_rehash = hash_mul(d_ptr);
+    uint64_t hash_rehash = hash16_mul(d_ptr);
     uint64_t mask = (hash_rehash & MASK_HASH) | d_idx | HFILLED;
 
     int i;
@@ -212,7 +242,7 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
             if (cas(bucket, v, mask | (v&DFILLED))) return 1;
         } while (probe_sequence_next(idx, last));
 
-        hash_rehash = rehash_mul(d_ptr, hash_rehash);
+        hash_rehash = rehash16_mul(d_ptr, hash_rehash);
     }
 
     return 0;

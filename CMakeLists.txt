@@ -45,7 +45,6 @@ set(sylvan_sources
     src/llmsset.h
     src/lace.c
     src/lace.h
-    src/hash16.h
     src/getrss.h
     src/getrss.c
     src/sylvan_common.h
@@ -62,7 +61,7 @@ add_library(sylvan ${sylvan_sources})
 target_link_libraries(sylvan m pthread ${EXTRA_LIBS})
 
 install(TARGETS sylvan DESTINATION "lib")
-install(FILES src/sylvan.h src/sylvan_config.h src/lace.h src/atomics.h src/llmsset.h src/cache.h src/sylvan_bdd.h src/sylvan_ldd.h src/hash16.h DESTINATION "include")
+install(FILES src/sylvan.h src/sylvan_config.h src/lace.h src/atomics.h src/llmsset.h src/cache.h src/sylvan_bdd.h src/sylvan_ldd.h DESTINATION "include")
 
 add_executable(sylvan_test test/main.c)
 target_link_libraries(sylvan_test sylvan)

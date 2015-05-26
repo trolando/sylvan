@@ -27,7 +27,7 @@ rotl64(uint64_t x, int8_t r)
 }
 #endif
 
-uint64_t
+static uint64_t
 rehash16_mul(const void *key, const uint64_t seed)
 {
     const uint64_t prime = 1099511628211;
@@ -44,7 +44,7 @@ rehash16_mul(const void *key, const uint64_t seed)
     return hash ^ (hash >> 32);
 }
 
-uint64_t
+static uint64_t
 hash16_mul(const void *key)
 {
     return rehash16_mul(key, 14695981039346656037LLU);

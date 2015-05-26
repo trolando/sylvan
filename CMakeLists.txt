@@ -50,6 +50,7 @@ set(sylvan_sources
     src/sylvan_common.h
     src/sylvan_common.c
     src/cache.h
+    src/cache.c
     src/refs.h
     src/refs.c
     ${EXTRA_SRC}

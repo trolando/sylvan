@@ -1030,7 +1030,7 @@ TASK_IMPL_4(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
     /* Terminals */
     if (a == sylvan_true && b == sylvan_true) return sylvan_true;
     if (a == sylvan_false || b == sylvan_false) return sylvan_false;
-    if (vars == sylvan_false) return sylvan_and(a, b);
+    if (vars == sylvan_false) return a;
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test();
@@ -1057,7 +1057,7 @@ TASK_IMPL_4(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
             /* check if level < s/t */
             if (level < vars_node->level) break;
             vars = node_low(vars, vars_node);
-            if (sylvan_set_isempty(vars)) return sylvan_and(a, b);
+            if (sylvan_set_isempty(vars)) return a;
             vars_node = GETNODE(vars);
         }
     }
@@ -1138,6 +1138,7 @@ TASK_IMPL_4(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
         bdd_refs_pop(5);
         result = sylvan_makenode(s, c, d);
     } else {
+        /* Variable not in vars! Take a, quantify b */
         BDD a0, a1, b0, b1;
         if (na && na->level == level) {
             a0 = node_low(a, na);
@@ -1152,14 +1153,55 @@ TASK_IMPL_4(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
             b0 = b1 = b;
         }
 
-        bdd_refs_spawn(SPAWN(sylvan_relnext, a0, b0, vars, level));
-        bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b1, vars, level));
+        if (b0 != b1) {
+            if (a0 == a1) {
+                /* Quantify "b" variables */
+                bdd_refs_spawn(SPAWN(sylvan_relnext, a0, b0, vars, level));
+                bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b1, vars, level));
 
-        BDD r1 = bdd_refs_sync(SYNC(sylvan_relnext));
-        bdd_refs_push(r1);
-        BDD r0 = bdd_refs_sync(SYNC(sylvan_relnext));
-        bdd_refs_pop(1);
-        result = sylvan_makenode(level, r0, r1);
+                BDD r1 = bdd_refs_sync(SYNC(sylvan_relnext));
+                bdd_refs_push(r1);
+                BDD r0 = bdd_refs_sync(SYNC(sylvan_relnext));
+                bdd_refs_push(r0);
+                result = CALL(sylvan_ite, r0, sylvan_true, r1, 0);
+                bdd_refs_pop(2);
+            } else {
+                /* Quantify "b" variables, but keep "a" variables */
+                bdd_refs_spawn(SPAWN(sylvan_relnext, a0, b0, vars, level));
+                bdd_refs_spawn(SPAWN(sylvan_relnext, a0, b1, vars, level));
+                bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b0, vars, level));
+                bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b1, vars, level));
+
+                BDD r11 = bdd_refs_sync(SYNC(sylvan_relnext));
+                bdd_refs_push(r11);
+                BDD r10 = bdd_refs_sync(SYNC(sylvan_relnext));
+                bdd_refs_push(r10);
+                BDD r01 = bdd_refs_sync(SYNC(sylvan_relnext));
+                bdd_refs_push(r01);
+                BDD r00 = bdd_refs_sync(SYNC(sylvan_relnext));
+                bdd_refs_push(r00);
+
+                bdd_refs_spawn(SPAWN(sylvan_ite, r00, sylvan_true, r01, 0));
+                bdd_refs_spawn(SPAWN(sylvan_ite, r10, sylvan_true, r11, 0));
+
+                BDD r1 = bdd_refs_sync(SYNC(sylvan_ite));
+                bdd_refs_push(r1);
+                BDD r0 = bdd_refs_sync(SYNC(sylvan_ite));
+                bdd_refs_pop(5);
+
+                result = sylvan_makenode(level, r0, r1);
+            }
+        } else {
+            /* Keep "a" variables */
+            bdd_refs_spawn(SPAWN(sylvan_relnext, a0, b0, vars, level));
+            bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b1, vars, level));
+
+            BDD r1 = bdd_refs_sync(SYNC(sylvan_relnext));
+            bdd_refs_push(r1);
+            BDD r0 = bdd_refs_sync(SYNC(sylvan_relnext));
+            bdd_refs_pop(1);
+            result = sylvan_makenode(level, r0, r1);
+        }
     }
 
     if (cachenow) {
@@ -1180,7 +1222,7 @@ TASK_IMPL_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
     /* Terminals */
     if (a == sylvan_true && b == sylvan_true) return sylvan_true;
     if (a == sylvan_false || b == sylvan_false) return sylvan_false;
-    if (vars == sylvan_false) return sylvan_and(a, b);
+    if (vars == sylvan_false) return b;
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test();
@@ -1207,7 +1249,7 @@ TASK_IMPL_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
             /* check if level < s/t */
             if (level < vars_node->level) break;
             vars = node_low(vars, vars_node);
-            if (sylvan_set_isempty(vars)) return sylvan_and(a, b);
+            if (sylvan_set_isempty(vars)) return b;
             vars_node = GETNODE(vars);
         }
     }
@@ -1340,14 +1382,56 @@ TASK_IMPL_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
             b0 = b1 = b;
         }
 
-        bdd_refs_spawn(SPAWN(sylvan_relprev, a0, b0, vars, level));
-        bdd_refs_spawn(SPAWN(sylvan_relprev, a1, b1, vars, level));
+        if (a0 != a1) {
+            if (b0 == b1) {
+                /* Quantify "a" variables */
+                bdd_refs_spawn(SPAWN(sylvan_relprev, a0, b0, vars, level));
+                bdd_refs_spawn(SPAWN(sylvan_relprev, a1, b1, vars, level));
 
-        BDD r1 = bdd_refs_sync(SYNC(sylvan_relprev));
-        bdd_refs_push(r1);
-        BDD r0 = bdd_refs_sync(SYNC(sylvan_relprev));
-        bdd_refs_pop(1);
-        result = sylvan_makenode(level, r0, r1);
+                BDD r1 = bdd_refs_sync(SYNC(sylvan_relprev));
+                bdd_refs_push(r1);
+                BDD r0 = bdd_refs_sync(SYNC(sylvan_relprev));
+                bdd_refs_push(r0);
+                result = CALL(sylvan_ite, r0, sylvan_true, r1, 0);
+                bdd_refs_pop(2);
+
+            } else {
+                /* Quantify "a" variables, but keep "b" variables */
+                bdd_refs_spawn(SPAWN(sylvan_relnext, a0, b0, vars, level));
+                bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b0, vars, level));
+                bdd_refs_spawn(SPAWN(sylvan_relnext, a0, b1, vars, level));
+                bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b1, vars, level));
+
+                BDD r11 = bdd_refs_sync(SYNC(sylvan_relnext));
+                bdd_refs_push(r11);
+                BDD r01 = bdd_refs_sync(SYNC(sylvan_relnext));
+                bdd_refs_push(r01);
+                BDD r10 = bdd_refs_sync(SYNC(sylvan_relnext));
+                bdd_refs_push(r10);
+                BDD r00 = bdd_refs_sync(SYNC(sylvan_relnext));
+                bdd_refs_push(r00);
+
+                bdd_refs_spawn(SPAWN(sylvan_ite, r00, sylvan_true, r10, 0));
+                bdd_refs_spawn(SPAWN(sylvan_ite, r01, sylvan_true, r11, 0));
+
+                BDD r1 = bdd_refs_sync(SYNC(sylvan_ite));
+                bdd_refs_push(r1);
+                BDD r0 = bdd_refs_sync(SYNC(sylvan_ite));
+                bdd_refs_pop(5);
+
+                result = sylvan_makenode(level, r0, r1);
+            }
+        } else {
+            bdd_refs_spawn(SPAWN(sylvan_relprev, a0, b0, vars, level));
+            bdd_refs_spawn(SPAWN(sylvan_relprev, a1, b1, vars, level));
+
+            BDD r1 = bdd_refs_sync(SYNC(sylvan_relprev));
+            bdd_refs_push(r1);
+            BDD r0 = bdd_refs_sync(SYNC(sylvan_relprev));
+            bdd_refs_pop(1);
+            result = sylvan_makenode(level, r0, r1);
+        }
+
     }
 
     if (cachenow) {

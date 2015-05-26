@@ -114,7 +114,8 @@ TASK_DECL_4(BDD, sylvan_and_exists, BDD, BDD, BDDSET, BDDVAR);
  *      or R(s)   = \exists x: A(s,x) \and B(x)
  * Assumes s,t are interleaved with s odd and t even.
  * Parameter vars is the disjunction of all s and/or t variables.
- * For variables in A/B that are not in vars, relprev behaves as A \and B
+ * Other variables in A are "ignored" (existential quantification)
+ * Other variables in B are kept
  * Alternatively, vars=true means all variables are in vars
  *
  * Use this function to concatenate two relations   --> -->
@@ -128,7 +129,8 @@ TASK_DECL_4(BDD, sylvan_relprev, BDD, BDD, BDDSET, BDDVAR);
  * with support(result) = s, support(A) = s, support(B) = s+t
  * Assumes s,t are interleaved with s odd and t even.
  * Parameter vars is the disjunction of all s and/or t variables.
- * For variables in A/B that are not in vars, relnext behaves as A \and B
+ * Other variables in A are kept
+ * Other variables in B are "ignored" (existential quantification)
  * Alternatively, vars=true means all variables are in vars
  *
  * Use this function to take the 'next' of a set     S  -->

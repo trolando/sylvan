@@ -90,7 +90,7 @@ rel_load(FILE* f)
 }
 
 static void
-print_example(BDD example)
+print_example(BDD example, BDDSET variables)
 {
     char str[vector_size * bits_per_integer];
     size_t i, j;
@@ -98,7 +98,7 @@ print_example(BDD example)
     LACE_ME;
 
     if (example != sylvan_false) {
-        sylvan_sat_one(example, vector_variables, vector_size * bits_per_integer, str);
+        sylvan_sat_one(example, variables, str);
         printf("[");
         for (i=0; i<vector_size; i++) {
             uint32_t res = 0;
@@ -178,7 +178,7 @@ VOID_TASK_1(par, set_t, set)
             printf("found %zu deadlock states... ", (size_t)sylvan_satcount(deadlocks, set->variables));
             if (deadlocks != sylvan_false) {
                 printf("example: ");
-                print_example(deadlocks);
+                print_example(deadlocks, set->variables);
                 printf("... ");
                 check_deadlocks = 0;
             }
@@ -264,7 +264,7 @@ VOID_TASK_1(bfs, set_t, set)
             printf("found %zu deadlock states... ", (size_t)sylvan_satcount(deadlocks, set->variables));
             if (deadlocks != sylvan_false) {
                 printf("example: ");
-                print_example(deadlocks);
+                print_example(deadlocks, set->variables);
                 printf("... ");
                 check_deadlocks = 0;
             }

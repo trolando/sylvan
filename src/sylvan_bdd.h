@@ -348,8 +348,14 @@ void sylvan_serialize_totext(FILE *out);
 void sylvan_serialize_tofile(FILE *out);
 void sylvan_serialize_fromfile(FILE *in);
 
-/* For debugging: if the bdd is not a well-formed BDD, assertions fail. */
-void sylvan_test_isbdd(BDD bdd);
+/**
+ * For debugging
+ * if (part of) the BDD is not 'marked' in the nodes table, assertion fails
+ * if the BDD is not ordered, returns 0
+ * if nicely ordered, returns 1
+ */
+TASK_DECL_1(int, sylvan_test_isbdd, BDD);
+#define sylvan_test_isbdd(bdd) CALL(sylvan_test_isbdd, bdd)
 
 /* Infrastructure for internal markings */
 typedef struct bdd_refs_internal

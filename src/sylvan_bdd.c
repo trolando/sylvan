@@ -2654,26 +2654,39 @@ sylvan_getsha(BDD bdd, char *target)
  * Debug tool to check that a BDD is properly ordered.
  * Also that every BDD node is marked 'in-use' in the hash table.
  */
-static void
-sylvan_test_isbdd_rec(BDD bdd, BDDVAR parent)
+TASK_2(int, sylvan_test_isbdd_rec, BDD, bdd, BDDVAR, parent_var)
 {
-    if (bdd == sylvan_true) return;
-    if (bdd == sylvan_false) return;
+    if (bdd == sylvan_true || bdd == sylvan_false) return 1;
     assert(llmsset_is_marked(nodes, BDD_STRIPMARK(bdd)));
+
+    uint64_t result;
+    if (cache_get(BDD_SETDATA(bdd, CACHE_ISBDD), 0, 0, &result)) return result;
+
     bddnode_t n = GETNODE(bdd);
-    assert(parent < n->level);
-    sylvan_test_isbdd_rec(node_low(bdd, n), n->level);
-    sylvan_test_isbdd_rec(node_high(bdd, n), n->level);
+    BDDVAR var = n->level;
+    if (var <= parent_var) {
+        result = 0;
+    } else {
+        SPAWN(sylvan_test_isbdd_rec, node_low(bdd, n), var);
+        result = (uint64_t)CALL(sylvan_test_isbdd_rec, node_high(bdd, n), var);
+        if (!SYNC(sylvan_test_isbdd_rec)) result = 0;
+    }
+
+    cache_put(BDD_SETDATA(bdd, CACHE_ISBDD), 0, 0, result);
+    return result;
 }
 
-void
-sylvan_test_isbdd(BDD bdd)
+TASK_IMPL_1(int, sylvan_test_isbdd, BDD, bdd)
 {
-    if (bdd == sylvan_true) return;
-    if (bdd == sylvan_false) return;
-    assert(llmsset_is_marked(nodes, BDD_STRIPMARK(bdd)));
-    bddnode_t n = GETNODE(bdd);
-    sylvan_test_isbdd_rec(node_low(bdd, n), n->level);
-    sylvan_test_isbdd_rec(node_high(bdd, n), n->level);
-}
+    if (bdd == sylvan_true) return 1;
+    if (bdd == sylvan_false) return 1;
 
+    assert(llmsset_is_marked(nodes, BDD_STRIPMARK(bdd)));
+
+    bddnode_t n = GETNODE(bdd);
+    BDDVAR var = n->level;
+    SPAWN(sylvan_test_isbdd_rec, node_low(bdd, n), var);
+    int result = CALL(sylvan_test_isbdd_rec, node_high(bdd, n), var);
+    if (!SYNC(sylvan_test_isbdd_rec)) result = 0;
+    return result;
+}

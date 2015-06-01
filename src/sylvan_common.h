@@ -40,6 +40,7 @@ extern "C" {
 #define CACHE_RESTRICT        8
 #define CACHE_CONSTRAIN       9
 #define CACHE_CLOSURE         10
+#define CACHE_ISBDD           11
 
 // MDD operations
 #define CACHE_MDD_RELPROD     20

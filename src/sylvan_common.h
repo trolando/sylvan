@@ -41,6 +41,7 @@ extern "C" {
 #define CACHE_CONSTRAIN       9
 #define CACHE_CLOSURE         10
 #define CACHE_ISBDD           11
+#define CACHE_SUPPORT         12
 
 // MDD operations
 #define CACHE_MDD_RELPROD     20

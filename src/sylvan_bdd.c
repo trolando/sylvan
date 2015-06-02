@@ -2152,24 +2152,29 @@ sylvan_set_to_map(BDDSET set, BDD value)
 /**
  * Determine the support of a BDD (all variables used in the BDD)
  */
-
 TASK_IMPL_1(BDD, sylvan_support, BDD, bdd)
 {
-    if (!sylvan_isnode(bdd)) return sylvan_false;
+    if (bdd == sylvan_true || bdd == sylvan_false) return sylvan_false; // return empty set
+
+    BDD result;
+    if (cache_get(BDD_SETDATA(bdd, CACHE_SUPPORT), 0, 0, &result)) return result;
 
     bddnode_t n = GETNODE(bdd);
-    BDD high, low, set, result;
+    BDD high, low, set;
 
+    /* compute recursively */
     bdd_refs_spawn(SPAWN(sylvan_support, n->low));
-    high = CALL(sylvan_support, n->high);
-    bdd_refs_push(high);
-    low = bdd_refs_sync(SYNC(sylvan_support));
-    bdd_refs_push(low);
-    set = CALL(sylvan_ite, high, sylvan_true, low, 0);
-    bdd_refs_push(set);
-    result = CALL(sylvan_ite, sylvan_ithvar(n->level), sylvan_true, set, 0);
-    bdd_refs_pop(3);
+    high = bdd_refs_push(CALL(sylvan_support, n->high));
+    low = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_support)));
 
+    /* take union of support of low and support of high */
+    set = sylvan_or(low, high);
+    bdd_refs_pop(2);
+
+    /* add current level to set */
+    result = sylvan_makenode(n->level, set, sylvan_true);
+
+    cache_put(BDD_SETDATA(bdd, CACHE_SUPPORT), 0, 0, result);
     return result;
 }
 

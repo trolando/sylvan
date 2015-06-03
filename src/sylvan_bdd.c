@@ -1963,6 +1963,119 @@ TASK_IMPL_3(BDD, sylvan_union_cube, BDD, bdd, BDDSET, vars, char*, cube)
     return result;
 }
 
+struct bdd_path
+{
+    struct bdd_path *prev;
+    BDDVAR var;
+    int8_t val; // 0=false, 1=true, 2=both
+};
+
+VOID_TASK_5(sylvan_enum_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context, struct bdd_path*, path)
+{
+    if (bdd == sylvan_false) return;
+
+    if (vars == sylvan_false) {
+        /* bdd should now be true */
+        assert(bdd == sylvan_true);
+        /* compute length of path */
+        int i=0;
+        struct bdd_path *pp;
+        for (pp = path; pp != NULL; pp = pp->prev) i++;
+        /* if length is 0 (enum called with empty vars??), return */
+        if (i == 0) return;
+        /* fill cube and vars with trace */
+        char cube[i];
+        BDDVAR vars[i];
+        int j=0;
+        for (pp = path; pp != NULL; pp = pp->prev) {
+            cube[i-j-1] = pp->val;
+            vars[i-j-1] = pp->var;
+            j++;
+        }
+        /* call callback */
+        WRAP(cb, context, vars, cube, i);
+        return;
+    }
+
+    BDD var = sylvan_var(vars);
+    vars = sylvan_low(vars);
+    BDD bdd_var = sylvan_var(bdd);
+
+    /* assert var <= bdd_var */
+    if (var < bdd_var) {
+        struct bdd_path pp0 = (struct bdd_path){path, var, 0};
+        CALL(sylvan_enum_do, bdd, vars, cb, context, &pp0);
+        struct bdd_path pp1 = (struct bdd_path){path, var, 1};
+        CALL(sylvan_enum_do, bdd, vars, cb, context, &pp1);
+    } else if (var == bdd_var) {
+        struct bdd_path pp0 = (struct bdd_path){path, var, 0};
+        CALL(sylvan_enum_do, sylvan_low(bdd), vars, cb, context, &pp0);
+        struct bdd_path pp1 = (struct bdd_path){path, var, 1};
+        CALL(sylvan_enum_do, sylvan_high(bdd), vars, cb, context, &pp1);
+    } else {
+        assert(var <= bdd_var);
+    }
+}
+
+VOID_TASK_5(sylvan_enum_par_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context, struct bdd_path*, path)
+{
+    if (bdd == sylvan_false) return;
+
+    if (vars == sylvan_false) {
+        /* bdd should now be true */
+        assert(bdd == sylvan_true);
+        /* compute length of path */
+        int i=0;
+        struct bdd_path *pp;
+        for (pp = path; pp != NULL; pp = pp->prev) i++;
+        /* if length is 0 (enum called with empty vars??), return */
+        if (i == 0) return;
+        /* fill cube and vars with trace */
+        char cube[i];
+        BDDVAR vars[i];
+        int j=0;
+        for (pp = path; pp != NULL; pp = pp->prev) {
+            cube[i-j-1] = pp->val;
+            vars[i-j-1] = pp->var;
+            j++;
+        }
+        /* call callback */
+        WRAP(cb, context, vars, cube, i);
+        return;
+    }
+
+    BDD var = sylvan_var(vars);
+    vars = sylvan_low(vars);
+    BDD bdd_var = sylvan_var(bdd);
+
+    /* assert var <= bdd_var */
+    if (var < bdd_var) {
+        struct bdd_path pp1 = (struct bdd_path){path, var, 1};
+        SPAWN(sylvan_enum_par_do, bdd, vars, cb, context, &pp1);
+        struct bdd_path pp0 = (struct bdd_path){path, var, 0};
+        CALL(sylvan_enum_par_do, bdd, vars, cb, context, &pp0);
+        SYNC(sylvan_enum_par_do);
+    } else if (var == bdd_var) {
+        struct bdd_path pp1 = (struct bdd_path){path, var, 1};
+        SPAWN(sylvan_enum_par_do, sylvan_high(bdd), vars, cb, context, &pp1);
+        struct bdd_path pp0 = (struct bdd_path){path, var, 0};
+        CALL(sylvan_enum_par_do, sylvan_low(bdd), vars, cb, context, &pp0);
+        SYNC(sylvan_enum_par_do);
+    } else {
+        assert(var <= bdd_var);
+    }
+}
+
+VOID_TASK_IMPL_4(sylvan_enum, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context)
+{
+    CALL(sylvan_enum_do, bdd, vars, cb, context, 0);
+}
+
+VOID_TASK_IMPL_4(sylvan_enum_par, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context)
+{
+    CALL(sylvan_enum_par_do, bdd, vars, cb, context, 0);
+}
+
 /**
  * IMPLEMENTATION OF BDDSET
  */

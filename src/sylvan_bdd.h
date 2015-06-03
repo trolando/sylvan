@@ -316,6 +316,18 @@ int sylvan_sat_one(BDD bdd, BDDSET variables, char* str);
 BDD sylvan_sat_one_bdd(BDD bdd);
 #define sylvan_pick_cube sylvan_sat_one_bdd
 
+/**
+ * Enumerate all satisfying variable assignments from the given <bdd> using
+ * variables <vars>; calls <cb> with four parameters: a user-supplied context,
+ * the array of all BDDVAR variables in <vars> (ordered), the array of the cube
+ * with value 0 for "not <var>" and 1 for "<var>", and the length of the two arrays.
+ */
+LACE_TYPEDEF_CB(void, enum_cb, void*, BDDVAR*, char*, int);
+VOID_TASK_DECL_4(sylvan_enum, BDD, BDDSET, enum_cb, void*);
+#define sylvan_enum(bdd, vars, cb, context) CALL(sylvan_enum, bdd, vars, cb, context)
+VOID_TASK_DECL_4(sylvan_enum_par, BDD, BDDSET, enum_cb, void*);
+#define sylvan_enum_par(bdd, vars, cb, context) CALL(sylvan_enum_par, bdd, vars, cb, context)
+
 TASK_DECL_1(long double, sylvan_pathcount, BDD);
 #define sylvan_pathcount(bdd) (CALL(sylvan_pathcount, bdd))
 

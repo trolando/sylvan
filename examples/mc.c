@@ -26,8 +26,9 @@ typedef struct relation
     BDD variables; // all variables in the relation (used by relprod)
 } *rel_t;
 
-static size_t vector_size; // size of vector
-static size_t bits_per_integer; // number of bits per integer in the vector
+static int vector_size; // size of vector
+static int statebits; // number of bits for state
+static int bits_per_integer; // number of bits per integer in the vector
 BDDVAR* vector_variables; // maps variable index to BDD variable
 static int next_count; // number of partitions of the transition relation
 static rel_t *next; // each partition of the transition relation
@@ -46,8 +47,8 @@ static double t_start;
 #define Abort(...) { fprintf(stderr, __VA_ARGS__); exit(-1); }
 
 /* Load a set from file */
-static set_t
-set_load(FILE* f)
+#define set_load(f) CALL(set_load, f)
+TASK_1(set_t, set_load, FILE*, f)
 {
     sylvan_serialize_fromfile(f);
 
@@ -61,8 +62,6 @@ set_load(FILE* f)
     if (fread(vec_to_bddvar, sizeof(BDDVAR), bits_per_integer * vector_size, f) != bits_per_integer * vector_size)
         Abort("Invalid input file!\n");
 
-    LACE_ME;
-
     set_t set = (set_t)malloc(sizeof(struct set));
     set->bdd = sylvan_ref(sylvan_serialize_get_reversed(bdd));
     set->variables = sylvan_ref(sylvan_set_fromarray(vec_to_bddvar, bits_per_integer * vector_size));
@@ -71,8 +70,8 @@ set_load(FILE* f)
 }
 
 /* Load a relation from file */
-static rel_t
-rel_load(FILE* f)
+#define rel_load(f) CALL(rel_load, f)
+TASK_1(rel_t, rel_load, FILE*, f)
 {
     sylvan_serialize_fromfile(f);
 
@@ -88,8 +87,6 @@ rel_load(FILE* f)
     if (fread(prime_vec_to_bddvar, sizeof(BDDVAR), bits_per_integer * vector_size, f) != bits_per_integer * vector_size)
         Abort("Invalid input file!\n");
 
-    LACE_ME;
-
     rel_t rel = (rel_t)malloc(sizeof(struct relation));
     rel->bdd = sylvan_ref(sylvan_serialize_get_reversed(bdd));
     BDD x = sylvan_ref(sylvan_set_fromarray(vec_to_bddvar, bits_per_integer * vector_size));
@@ -101,20 +98,17 @@ rel_load(FILE* f)
     return rel;
 }
 
-static void
-print_example(BDD example, BDDSET variables)
+#define print_example(example, variables) CALL(print_example, example, variables)
+VOID_TASK_2(print_example, BDD, example, BDDSET, variables)
 {
     char str[vector_size * bits_per_integer];
-    size_t i, j;
-
-    LACE_ME;
 
     if (example != sylvan_false) {
         sylvan_sat_one(example, variables, str);
         printf("[");
-        for (i=0; i<vector_size; i++) {
+        for (int i=0; i<vector_size; i++) {
             uint32_t res = 0;
-            for (j=0; j<bits_per_integer; j++) {
+            for (int j=0; j<bits_per_integer; j++) {
                 if (str[bits_per_integer*i+j] == 1) res++;
                 res<<=1;
             }
@@ -316,19 +310,19 @@ main(int argc, char **argv)
 
     // Filename in argv[0]
     if (argc == 1) {
-        fprintf(stderr, "Usage: mc <filename>\n");
-        return -1;
+        Abort("Usage: mc <filename>\n");
     }
 
     FILE *f = fopen(argv[1], "r");
     if (f == NULL) {
-        fprintf(stderr, "Cannot open file '%s'!\n", argv[1]);
-        return -1;
+        Abort("Cannot open file '%s'!\n", argv[1]);
     }
 
     // Init Lace
     lace_init(0, 1000000); // auto-detect number of workers, use a 1,000,000 size task queue
     lace_startup(0, NULL, NULL); // auto-detect program stack, do not use a callback for startup
+
+    LACE_ME;
 
     // Init Sylvan
     // Nodes table size: 24 bytes * 2**N_nodes
@@ -338,12 +332,17 @@ main(int argc, char **argv)
     sylvan_init_bdd(6); // granularity 6 is decent default value - 1 means "use cache for every operation"
 
     // Read and report domain info (integers per vector and bits per integer)
-    if (fread(&vector_size, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
-    if (fread(&bits_per_integer, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
+    size_t vs, bpi;
+    if (fread(&vs, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
+    if (fread(&bpi, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
+    vector_size = (int)vs;
+    statebits = (int)bpi;
+    bits_per_integer = statebits;
+    statebits = vector_size * bits_per_integer;
 
     // Read mapping vector variable to BDD variable
     vector_variables = (BDDVAR*)malloc(sizeof(BDDVAR) * bits_per_integer * vector_size);
-    if (fread(vector_variables, sizeof(BDDVAR), bits_per_integer * vector_size, f) != bits_per_integer * vector_size)
+    if (fread(vector_variables, sizeof(BDDVAR), bits_per_integer * vector_size, f) != (size_t)statebits)
         Abort("Invalid input file!\n");
 
     // Skip some unnecessary data (mapping of primed vector variables to BDD variables)
@@ -366,14 +365,12 @@ main(int argc, char **argv)
 
     // Report statistics
     INFO("Read file '%s'\n", argv[1]);
-    INFO("%zu integers per state, %zu bits per integer, %d transition groups\n", vector_size, bits_per_integer, next_count);
+    INFO("%d integers per state, %d bits per integer, %d transition groups\n", vector_size, bits_per_integer, next_count);
     INFO("BDD nodes:\n");
     INFO("Initial states: %zu BDD nodes\n", sylvan_nodecount(states->bdd));
     for (i=0; i<next_count; i++) {
         INFO("Transition %d: %zu BDD nodes\n", i, sylvan_nodecount(next[i]->bdd));
     }
-
-    LACE_ME;
 
     if (run_par) {
         double t1 = wctime();
@@ -388,7 +385,7 @@ main(int argc, char **argv)
     }
 
     // Now we just have states
-    INFO("Final states: %0.0f states\n", sylvan_satcount_cached(states->bdd, states->variables));
+    INFO("Final states: %'0.0f states\n", sylvan_satcount_cached(states->bdd, states->variables));
     INFO("Final states: %zu BDD nodes\n", sylvan_nodecount(states->bdd));
 
     sylvan_report_stats();

@@ -8,10 +8,13 @@
 #include <llmsset.h>
 
 /* Configuration */
-static int report_levels = 0; // report states at start of every level
+static int report_levels = 0; // report states at end of every level
 static int report_table = 0; // report table size at end of every level
-static int run_par = 1; // set to 1 = use PAR strategy; set to 0 = use BFS strategy
-static int check_deadlocks = 1; // set to 1 to check for deadlocks
+static int report_nodes = 0; // report number of nodes of BDDs
+static int strategy = 1; // set to 1 = use PAR strategy; set to 0 = use BFS strategy
+static int check_deadlocks = 0; // set to 1 to check for deadlocks
+static int print_transition_matrix = 0; // print transition relation matrix
+static int workers = 0; // autodetect
 
 /* Globals */
 typedef struct set
@@ -288,6 +291,28 @@ VOID_TASK_1(bfs, set_t, set)
     set->bdd = visited;
 }
 
+static void
+print_matrix(BDD vars)
+{
+    for (int i=0; i<vector_size; i++) {
+        if (vars == sylvan_false) {
+            fprintf(stdout, "-");
+        } else {
+            BDDVAR next_s = 2*((i+1)*bits_per_integer);
+            if (sylvan_var(vars) < next_s) {
+                fprintf(stdout, "+");
+                for (;;) {
+                    vars = sylvan_low(vars);
+                    if (vars == sylvan_false) break;
+                    if (sylvan_var(vars) >= next_s) break;
+                }
+            } else {
+                fprintf(stdout, "-");
+            }
+        }
+    }
+}
+
 VOID_TASK_0(gc_start)
 {
     INFO("(GC) Starting garbage collection...\n");
@@ -315,7 +340,7 @@ main(int argc, char **argv)
     }
 
     // Init Lace
-    lace_init(0, 1000000); // auto-detect number of workers, use a 1,000,000 size task queue
+    lace_init(workers, 1000000); // auto-detect number of workers, use a 1,000,000 size task queue
     lace_startup(0, NULL, NULL); // auto-detect program stack, do not use a callback for startup
 
     LACE_ME;
@@ -354,16 +379,27 @@ main(int argc, char **argv)
     /* Done */
     fclose(f);
 
+    if (print_transition_matrix) {
+        for (i=0; i<next_count; i++) {
+            INFO("");
+            print_matrix(next[i]->variables);
+            fprintf(stdout, "\n");
+        }
+    }
+
     // Report statistics
     INFO("Read file '%s'\n", argv[1]);
     INFO("%d integers per state, %d bits per integer, %d transition groups\n", vector_size, bits_per_integer, next_count);
-    INFO("BDD nodes:\n");
-    INFO("Initial states: %zu BDD nodes\n", sylvan_nodecount(states->bdd));
-    for (i=0; i<next_count; i++) {
-        INFO("Transition %d: %zu BDD nodes\n", i, sylvan_nodecount(next[i]->bdd));
+
+    if (report_nodes) {
+        INFO("BDD nodes:\n");
+        INFO("Initial states: %zu BDD nodes\n", sylvan_nodecount(states->bdd));
+        for (i=0; i<next_count; i++) {
+            INFO("Transition %d: %zu BDD nodes\n", i, sylvan_nodecount(next[i]->bdd));
+        }
     }
 
-    if (run_par) {
+    if (strategy == 1) {
         double t1 = wctime();
         CALL(par, states);
         double t2 = wctime();
@@ -377,7 +413,9 @@ main(int argc, char **argv)
 
     // Now we just have states
     INFO("Final states: %'0.0f states\n", sylvan_satcount_cached(states->bdd, states->variables));
-    INFO("Final states: %zu BDD nodes\n", sylvan_nodecount(states->bdd));
+    if (report_nodes) {
+        INFO("Final states: %'zu BDD nodes\n", sylvan_nodecount(states->bdd));
+    }
 
     sylvan_report_stats();
 

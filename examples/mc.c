@@ -1,4 +1,5 @@
 #include <inttypes.h>
+#include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
@@ -31,6 +32,17 @@ BDDVAR* vector_variables; // maps variable index to BDD variable
 static int next_count; // number of partitions of the transition relation
 static rel_t *next; // each partition of the transition relation
 
+/* Obtain current wallclock time */
+static double
+wctime()
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (tv.tv_sec + 1E-6 * tv.tv_usec);
+}
+
+static double t_start;
+#define INFO(s, ...) fprintf(stdout, "[% 8.2f] " s, wctime()-t_start, ##__VA_ARGS__)
 #define Abort(...) { fprintf(stderr, __VA_ARGS__); exit(-1); }
 
 /* Load a set from file */
@@ -161,27 +173,22 @@ VOID_TASK_1(par, set_t, set)
 {
     BDD visited = set->bdd;
     BDD new = sylvan_ref(visited);
-    size_t counter = 1;
+    int iteration = 1;
     do {
-        printf("Level %zu... ", counter++);
-        if (report_levels) {
-            printf("%zu states... ", (size_t)sylvan_satcount(visited, set->variables));
-        }
-
         // calculate successors in parallel
         BDD cur = new;
         BDD deadlocks = cur;
         new = CALL(go_par, cur, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
         sylvan_deref(cur);
 
-        if (check_deadlocks) {
-            printf("found %zu deadlock states... ", (size_t)sylvan_satcount(deadlocks, set->variables));
+        if (check_deadlocks && deadlocks != sylvan_false) {
+            INFO("Found %zu deadlock states... ", (size_t)sylvan_satcount(deadlocks, set->variables));
             if (deadlocks != sylvan_false) {
                 printf("example: ");
                 print_example(deadlocks, set->variables);
-                printf("... ");
                 check_deadlocks = 0;
             }
+            printf("\n");
         }
 
         // visited = visited + new
@@ -189,13 +196,24 @@ VOID_TASK_1(par, set_t, set)
         visited = sylvan_ref(sylvan_or(visited, new));
         sylvan_deref(old_visited);
 
-        if (report_table) {
+        if (report_table && report_levels) {
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
-            printf("done, table: %0.1f%% full (%zu nodes).\n", 100.0*(double)filled/total, filled);
+            INFO("Level %d done, %'0.0f states explored, table: %0.1f%% full (%'zu nodes)\n",
+                iteration, sylvan_satcount_cached(visited, set->variables),
+                100.0*(double)filled/total, filled);
+        } else if (report_table) {
+            size_t filled, total;
+            sylvan_table_usage(&filled, &total);
+            INFO("Level %d done, table: %0.1f%% full (%'zu nodes)\n",
+                iteration,
+                100.0*(double)filled/total, filled);
+        } else if (report_levels) {
+            INFO("Level %d done, %'0.0f states explored\n", iteration, sylvan_satcount_cached(visited, set->variables));
         } else {
-            printf("done.\n");
+            INFO("Level %d done\n", iteration);
         }
+        iteration++;
     } while (new != sylvan_false);
     sylvan_deref(new);
     set->bdd = visited;
@@ -248,26 +266,18 @@ VOID_TASK_1(bfs, set_t, set)
 {
     BDD visited = set->bdd;
     BDD new = sylvan_ref(visited);
-    size_t counter = 1;
+    int iteration = 1;
     do {
-        printf("Level %zu... ", counter++);
-        if (report_levels) {
-            printf("%zu states... ", (size_t)sylvan_satcount(visited, set->variables));
-        }
-
         BDD cur = new;
         BDD deadlocks = cur;
         new = CALL(go_bfs, cur, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
         sylvan_deref(cur);
 
-        if (check_deadlocks) {
-            printf("found %zu deadlock states... ", (size_t)sylvan_satcount(deadlocks, set->variables));
-            if (deadlocks != sylvan_false) {
-                printf("example: ");
-                print_example(deadlocks, set->variables);
-                printf("... ");
-                check_deadlocks = 0;
-            }
+        if (check_deadlocks && deadlocks != sylvan_false) {
+            INFO("Found %zu deadlock states... ", (size_t)sylvan_satcount(deadlocks, set->variables));
+            printf("example: ");
+            print_example(deadlocks, set->variables);
+            printf("\n");
         }
 
         // visited = visited + new
@@ -275,30 +285,35 @@ VOID_TASK_1(bfs, set_t, set)
         visited = sylvan_ref(sylvan_or(visited, new));
         sylvan_deref(old_visited);
 
-        if (report_table) {
+        if (report_table && report_levels) {
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
-            printf("done, table: %0.1f%% full (%zu nodes).\n", 100.0*(double)filled/total, filled);
+            INFO("Level %d done, %'0.0f states explored, table: %0.1f%% full (%'zu nodes)\n",
+                iteration, sylvan_satcount_cached(visited, set->variables),
+                100.0*(double)filled/total, filled);
+        } else if (report_table) {
+            size_t filled, total;
+            sylvan_table_usage(&filled, &total);
+            INFO("Level %d done, table: %0.1f%% full (%'zu nodes)\n",
+                iteration,
+                100.0*(double)filled/total, filled);
+        } else if (report_levels) {
+            INFO("Level %d done, %'0.0f states explored\n", iteration, sylvan_satcount_cached(visited, set->variables));
         } else {
-            printf("done.\n");
+            INFO("Level %d done\n", iteration);
         }
+        iteration++;
     } while (new != sylvan_false);
     sylvan_deref(new);
     set->bdd = visited;
 }
 
-/* Obtain current wallclock time */
-static double
-wctime()
-{
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (tv.tv_sec + 1E-6 * tv.tv_usec);
-}
-
 int
 main(int argc, char **argv)
 {
+    setlocale(LC_NUMERIC, "en_US.utf-8");
+    t_start = wctime();
+
     // Filename in argv[0]
     if (argc == 1) {
         fprintf(stderr, "Usage: mc <filename>\n");
@@ -326,10 +341,6 @@ main(int argc, char **argv)
     if (fread(&vector_size, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
     if (fread(&bits_per_integer, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
 
-    printf("Vector size: %zu\n", vector_size);
-    printf("Bits per integer: %zu\n", bits_per_integer);
-    printf("Number of BDD variables: %zu\n", vector_size * bits_per_integer);
-
     // Read mapping vector variable to BDD variable
     vector_variables = (BDDVAR*)malloc(sizeof(BDDVAR) * bits_per_integer * vector_size);
     if (fread(vector_variables, sizeof(BDDVAR), bits_per_integer * vector_size, f) != bits_per_integer * vector_size)
@@ -339,33 +350,27 @@ main(int argc, char **argv)
     if (fseek(f, bits_per_integer * vector_size * sizeof(BDDVAR), SEEK_CUR) != 0) Abort("Invalid input file!\n");
 
     // Read initial state
-    printf("Loading initial state... ");
-    fflush(stdout);
     set_t states = set_load(f);
-    printf("done.\n");
 
     // Read transitions
     if (fread(&next_count, sizeof(int), 1, f) != 1) Abort("Invalid input file!\n");
     next = (rel_t*)malloc(sizeof(rel_t) * next_count);
 
-    printf("Loading transition relations... ");
-    fflush(stdout);
     int i;
     for (i=0; i<next_count; i++) {
         next[i] = rel_load(f);
-        printf("%d, ", i);
-        fflush(stdout);
     }
+
+    /* Done */
     fclose(f);
-    printf("done.\n");
 
     // Report statistics
-    printf("Read file '%s'\n", argv[1]);
-    printf("%zu integers per state, %zu bits per integer, %d transition groups\n", vector_size, bits_per_integer, next_count);
-    printf("BDD nodes:\n");
-    printf("Initial states: %zu BDD nodes\n", sylvan_nodecount(states->bdd));
+    INFO("Read file '%s'\n", argv[1]);
+    INFO("%zu integers per state, %zu bits per integer, %d transition groups\n", vector_size, bits_per_integer, next_count);
+    INFO("BDD nodes:\n");
+    INFO("Initial states: %zu BDD nodes\n", sylvan_nodecount(states->bdd));
     for (i=0; i<next_count; i++) {
-        printf("Transition %d: %zu BDD nodes\n", i, sylvan_nodecount(next[i]->bdd));
+        INFO("Transition %d: %zu BDD nodes\n", i, sylvan_nodecount(next[i]->bdd));
     }
 
     LACE_ME;
@@ -374,17 +379,17 @@ main(int argc, char **argv)
         double t1 = wctime();
         CALL(par, states);
         double t2 = wctime();
-        printf("PAR Time: %f\n", t2-t1);
+        INFO("PAR Time: %f\n", t2-t1);
     } else {
         double t1 = wctime();
         CALL(bfs, states);
         double t2 = wctime();
-        printf("BFS Time: %f\n", t2-t1);
+        INFO("BFS Time: %f\n", t2-t1);
     }
 
     // Now we just have states
-    printf("Final states: %zu states\n", (size_t)sylvan_satcount(states->bdd, states->variables));
-    printf("Final states: %zu BDD nodes\n", sylvan_nodecount(states->bdd));
+    INFO("Final states: %0.0f states\n", sylvan_satcount_cached(states->bdd, states->variables));
+    INFO("Final states: %zu BDD nodes\n", sylvan_nodecount(states->bdd));
 
     sylvan_report_stats();
 

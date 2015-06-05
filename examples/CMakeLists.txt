@@ -9,7 +9,7 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     set(ARGP_LIBS "argp")
 endif()
 
-set(CMAKE_C_FLAGS "-g -O3 -Wextra -Wall -Werror -fno-strict-aliasing -D${HWLOC_DEF}")
+set(CMAKE_C_FLAGS "-g -O3 -Wextra -Wall -Werror -fno-strict-aliasing -D${HWLOC_DEF} -std=gnu11")
 
 add_executable(mc mc.c)
 target_link_libraries(mc sylvan)

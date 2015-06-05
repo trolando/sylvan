@@ -27,9 +27,8 @@ typedef struct relation
 } *rel_t;
 
 static int vector_size; // size of vector
-static int statebits; // number of bits for state
+static int statebits, actionbits; // number of bits for state, number of bits for action
 static int bits_per_integer; // number of bits per integer in the vector
-BDDVAR* vector_variables; // maps variable index to BDD variable
 static int next_count; // number of partitions of the transition relation
 static rel_t *next; // each partition of the transition relation
 
@@ -52,19 +51,16 @@ TASK_1(set_t, set_load, FILE*, f)
 {
     sylvan_serialize_fromfile(f);
 
-    size_t bdd;
-    size_t vector_size;
-    
-    if (fread(&bdd, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
-    if (fread(&vector_size, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
-
-    BDDVAR vec_to_bddvar[bits_per_integer * vector_size];
-    if (fread(vec_to_bddvar, sizeof(BDDVAR), bits_per_integer * vector_size, f) != bits_per_integer * vector_size)
+    size_t set_bdd, set_vector_size, set_state_vars;
+    if ((fread(&set_bdd, sizeof(size_t), 1, f) != 1) ||
+        (fread(&set_vector_size, sizeof(size_t), 1, f) != 1) ||
+        (fread(&set_state_vars, sizeof(size_t), 1, f) != 1)) {
         Abort("Invalid input file!\n");
+    }
 
     set_t set = (set_t)malloc(sizeof(struct set));
-    set->bdd = sylvan_ref(sylvan_serialize_get_reversed(bdd));
-    set->variables = sylvan_ref(sylvan_set_fromarray(vec_to_bddvar, bits_per_integer * vector_size));
+    set->bdd = sylvan_ref(sylvan_serialize_get_reversed(set_bdd));
+    set->variables = sylvan_ref(sylvan_serialize_get_reversed(set_state_vars));
 
     return set;
 }
@@ -75,25 +71,15 @@ TASK_1(rel_t, rel_load, FILE*, f)
 {
     sylvan_serialize_fromfile(f);
 
-    size_t bdd;
-    size_t vector_size;
-    if (fread(&bdd, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
-    if (fread(&vector_size, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
-
-    BDDVAR vec_to_bddvar[bits_per_integer * vector_size];
-    BDDVAR prime_vec_to_bddvar[bits_per_integer * vector_size];
-    if (fread(vec_to_bddvar, sizeof(BDDVAR), bits_per_integer * vector_size, f) != bits_per_integer * vector_size)
+    size_t rel_bdd, rel_vars;
+    if ((fread(&rel_bdd, sizeof(size_t), 1, f) != 1) ||
+        (fread(&rel_vars, sizeof(size_t), 1, f) != 1)) {
         Abort("Invalid input file!\n");
-    if (fread(prime_vec_to_bddvar, sizeof(BDDVAR), bits_per_integer * vector_size, f) != bits_per_integer * vector_size)
-        Abort("Invalid input file!\n");
+    }
 
     rel_t rel = (rel_t)malloc(sizeof(struct relation));
-    rel->bdd = sylvan_ref(sylvan_serialize_get_reversed(bdd));
-    BDD x = sylvan_ref(sylvan_set_fromarray(vec_to_bddvar, bits_per_integer * vector_size));
-    BDD x2 = sylvan_ref(sylvan_set_fromarray(prime_vec_to_bddvar, bits_per_integer * vector_size));
-    rel->variables = sylvan_ref(sylvan_set_addall(x, x2));
-    sylvan_deref(x);
-    sylvan_deref(x2);
+    rel->bdd = sylvan_ref(sylvan_serialize_get_reversed(rel_bdd));
+    rel->variables = sylvan_ref(sylvan_serialize_get_reversed(rel_vars));
 
     return rel;
 }
@@ -343,22 +329,15 @@ main(int argc, char **argv)
     sylvan_gc_add_mark(0, TASK(gc_start));
     sylvan_gc_add_mark(40, TASK(gc_end));
 
-    // Read and report domain info (integers per vector and bits per integer)
-    size_t vs, bpi;
-    if (fread(&vs, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
-    if (fread(&bpi, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
-    vector_size = (int)vs;
-    statebits = (int)bpi;
-    bits_per_integer = statebits;
-    statebits = vector_size * bits_per_integer;
-
-    // Read mapping vector variable to BDD variable
-    vector_variables = (BDDVAR*)malloc(sizeof(BDDVAR) * bits_per_integer * vector_size);
-    if (fread(vector_variables, sizeof(BDDVAR), bits_per_integer * vector_size, f) != (size_t)statebits)
+    /* Load domain information */
+    if ((fread(&vector_size, sizeof(int), 1, f) != 1) ||
+        (fread(&statebits, sizeof(int), 1, f) != 1) ||
+        (fread(&actionbits, sizeof(int), 1, f) != 1)) {
         Abort("Invalid input file!\n");
+    }
 
-    // Skip some unnecessary data (mapping of primed vector variables to BDD variables)
-    if (fseek(f, bits_per_integer * vector_size * sizeof(BDDVAR), SEEK_CUR) != 0) Abort("Invalid input file!\n");
+    bits_per_integer = statebits;
+    statebits *= vector_size;
 
     // Read initial state
     set_t states = set_load(f);

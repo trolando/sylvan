@@ -302,6 +302,16 @@ VOID_TASK_1(bfs, set_t, set)
     set->bdd = visited;
 }
 
+VOID_TASK_0(gc_start)
+{
+    INFO("(GC) Starting garbage collection...\n");
+}
+
+VOID_TASK_0(gc_end)
+{
+    INFO("(GC) Garbage collection done.\n");
+}
+
 int
 main(int argc, char **argv)
 {
@@ -330,6 +340,8 @@ main(int argc, char **argv)
     // With: N_nodes=25, N_cache=24: 1.3 GB memory
     sylvan_init_package(1LL<<21, 1LL<<27, 1LL<<20, 1LL<<26);
     sylvan_init_bdd(6); // granularity 6 is decent default value - 1 means "use cache for every operation"
+    sylvan_gc_add_mark(0, TASK(gc_start));
+    sylvan_gc_add_mark(40, TASK(gc_end));
 
     // Read and report domain info (integers per vector and bits per integer)
     size_t vs, bpi;

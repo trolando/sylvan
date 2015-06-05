@@ -1,8 +1,14 @@
+#include <argp.h>
 #include <inttypes.h>
 #include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/time.h>
+
+#ifdef HAVE_PROFILER
+#include <gperftools/profiler.h>
+#endif
 
 #include <sylvan.h>
 #include <llmsset.h>
@@ -15,6 +21,69 @@ static int strategy = 1; // set to 1 = use PAR strategy; set to 0 = use BFS stra
 static int check_deadlocks = 0; // set to 1 to check for deadlocks
 static int print_transition_matrix = 0; // print transition relation matrix
 static int workers = 0; // autodetect
+static char* model_filename = NULL; // filename of model
+#ifdef HAVE_PROFILER
+static char* profile_filename = NULL; // filename for profiling
+#endif
+
+/* argp configuration */
+static struct argp_option options[] =
+{
+    {"workers", 'w', "<workers>", 0, "Number of workers (default=0: autodetect)", 0},
+    {"strategy", 's', "<bfs|par|sat>", 0, "Strategy for reachability (default=par)", 0},
+#ifdef HAVE_PROFILER
+    {"profiler", 'p', "<filename>", 0, "Filename for profiling", 0},
+#endif
+    {"deadlocks", 3, 0, 0, "Check for deadlocks", 1},
+    {"count-nodes", 5, 0, 0, "Report #nodes for BDDs", 1},
+    {"count-states", 1, 0, 0, "Report #states at each level", 1},
+    {"count-table", 2, 0, 0, "Report table usage at each level", 1},
+    {"print-matrix", 4, 0, 0, "Print transition matrix", 1},
+    {0, 0, 0, 0, 0, 0}
+};
+static error_t
+parse_opt(int key, char *arg, struct argp_state *state)
+{
+    switch (key) {
+    case 'w':
+        workers = atoi(arg);
+        break;
+    case 's':
+        if (strcmp(arg, "bfs")==0) strategy = 0;
+        else if (strcmp(arg, "par")==0) strategy = 1;
+        else if (strcmp(arg, "sat")==0) strategy = 2;
+        else argp_usage(state);
+        break;
+    case 4:
+        print_transition_matrix = 1;
+        break;
+    case 3:
+        check_deadlocks = 1;
+        break;
+    case 1:
+        report_levels = 1;
+        break;
+    case 2:
+        report_table = 1;
+        break;
+#ifdef HAVE_PROFILER
+    case 'p':
+        profile_filename = arg;
+        break;
+#endif
+    case ARGP_KEY_ARG:
+        if (state->arg_num >= 1) argp_usage(state);
+        model_filename = arg;
+        break;
+    case ARGP_KEY_END:
+        if (state->arg_num < 1) argp_usage(state);
+        break;
+    default:
+        return ARGP_ERR_UNKNOWN;
+    }
+    return 0;
+}
+static struct argp argp = { options, parse_opt, "<model>", 0, 0, 0, 0 };
 
 /* Globals */
 typedef struct set
@@ -326,17 +395,14 @@ VOID_TASK_0(gc_end)
 int
 main(int argc, char **argv)
 {
+    argp_parse(&argp, argc, argv, 0, 0, 0);
     setlocale(LC_NUMERIC, "en_US.utf-8");
     t_start = wctime();
 
-    // Filename in argv[0]
-    if (argc == 1) {
-        Abort("Usage: mc <filename>\n");
-    }
-
-    FILE *f = fopen(argv[1], "r");
+    FILE *f = fopen(model_filename, "r");
     if (f == NULL) {
-        Abort("Cannot open file '%s'!\n", argv[1]);
+        fprintf(stderr, "Cannot open file '%s'!\n", model_filename);
+        return -1;
     }
 
     // Init Lace
@@ -399,6 +465,9 @@ main(int argc, char **argv)
         }
     }
 
+#ifdef HAVE_PROFILER
+    if (profile_filename != NULL) ProfilerStart(profile_filename);
+#endif
     if (strategy == 1) {
         double t1 = wctime();
         CALL(par, states);
@@ -410,6 +479,9 @@ main(int argc, char **argv)
         double t2 = wctime();
         INFO("BFS Time: %f\n", t2-t1);
     }
+#ifdef HAVE_PROFILER
+    if (profile_filename != NULL) ProfilerStop();
+#endif
 
     // Now we just have states
     INFO("Final states: %'0.0f states\n", sylvan_satcount_cached(states->bdd, states->variables));

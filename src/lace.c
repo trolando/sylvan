@@ -79,18 +79,32 @@ lace_get_worker()
 Task*
 lace_get_head(WorkerP *self)
 {
-    Task *low = self->dq;
-    Task *high = self->end;
+    Task *dq = self->dq;
+    if (dq[0].thief == 0) return dq;
+    if (dq[1].thief == 0) return dq+1;
+    if (dq[2].thief == 0) return dq+2;
 
-    if (low->thief == 0) return low;
+    size_t low = 2;
+    size_t high = self->end - self->dq;
+
+    for (;;) {
+        if (low*2 >= high) {
+            break;
+        } else if (dq[low*2].thief == 0) {
+            high=low*2;
+            break;
+        } else {
+            low*=2;
+        }
+    }
 
     while (low < high) {
-        Task *mid = low + (high-low)/2;
-        if (mid->thief == 0) high = mid;
+        size_t mid = low + (high-low)/2;
+        if (dq[mid].thief == 0) high = mid;
         else low = mid + 1;
     }
 
-    return low;
+    return dq+low;
 }
 
 size_t

@@ -1,0 +1,35 @@
+lib_LTLIBRARIES = libsylvan.la
+
+libsylvan_la_CFLAGS = $(AM_CFLAGS) -fno-strict-aliasing
+
+libsylvan_la_SOURCES = \
+    atomics.h \
+    avl.h \
+    barrier.c \
+    barrier.h \
+    cache.h \
+    cache.c \
+    lace.c \
+    lace.h \
+    llmsset.c \
+    llmsset.h \
+    refs.h \
+    refs.c \
+    sha2.c \
+    sha2.h \
+    sylvan.h \
+    sylvan_config.h \
+    sylvan_bdd.h \
+    sylvan_bdd.c \
+    sylvan_ldd.h \
+    sylvan_ldd.c \
+    sylvan_common.c \
+    sylvan_common.h \
+    tls.h
+
+libsylvan_la_LIBADD = -lm
+
+if HAVE_LIBHWLOC
+libsylvan_la_LIBADD += -lhwloc
+libsylvan_la_CFLAGS += -DUSE_HWLOC=1
+endif

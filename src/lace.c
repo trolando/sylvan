@@ -385,7 +385,7 @@ pthread_barrier_wait(pthread_barrier_t *barrier)
 #endif // defined(__APPLE__) && !defined(pthread_barrier_t)
 
 static pthread_barrier_t suspend_barrier;
-static int must_suspend = 0;
+static volatile int must_suspend = 0;
 
 static inline void
 lace_go_suspend()

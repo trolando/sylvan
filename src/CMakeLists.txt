@@ -49,7 +49,9 @@ install(FILES
     lace.h
     llmsset.h
     sylvan.h
+    sylvan_common.h
     sylvan_config.h
     sylvan_bdd.h
     sylvan_ldd.h
+    tls.h
     DESTINATION "include")

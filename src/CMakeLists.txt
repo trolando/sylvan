@@ -28,6 +28,8 @@ add_library(sylvan
     sylvan_common.c
     sylvan_ldd.h
     sylvan_ldd.c
+    sylvan_mtbdd.h
+    sylvan_mtbdd.c
     sylvan_obj.hpp
     sylvan_obj.cpp
     tls.h
@@ -57,6 +59,7 @@ install(FILES
     sylvan_config.h
     sylvan_bdd.h
     sylvan_ldd.h
+    sylvan_mtbdd.h
     sylvan_obj.hpp
     tls.h
     DESTINATION "include")

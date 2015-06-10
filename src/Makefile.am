@@ -27,6 +27,8 @@ libsylvan_la_SOURCES = \
     sylvan_ldd.c \
     sylvan_common.c \
     sylvan_common.h \
+    sylvan_mtbdd.h \
+    sylvan_mtbdd.c \
     sylvan_obj.hpp \
     sylvan_obj.cpp \
     tls.h

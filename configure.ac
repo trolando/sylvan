@@ -5,6 +5,7 @@ AC_CONFIG_AUX_DIR([tools])
 AM_INIT_AUTOMAKE([foreign])
 
 AC_PROG_CC
+AC_PROG_CXX
 LT_INIT
 
 AC_CHECKING([for any suitable hwloc installation])

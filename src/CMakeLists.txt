@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.6)
-project(sylvan C)
+project(sylvan C CXX)
 
 set(CMAKE_C_FLAGS "-g -O3 -Wextra -Wall -Werror -fno-strict-aliasing -std=gnu11")
 
@@ -28,6 +28,8 @@ add_library(sylvan
     sylvan_common.c
     sylvan_ldd.h
     sylvan_ldd.c
+    sylvan_obj.hpp
+    sylvan_obj.cpp
     tls.h
 )
 
@@ -55,5 +57,6 @@ install(FILES
     sylvan_config.h
     sylvan_bdd.h
     sylvan_ldd.h
+    sylvan_obj.hpp
     tls.h
     DESTINATION "include")

@@ -132,7 +132,7 @@ TASK_1(set_t, set_load, FILE*, f)
 
     set_t set = (set_t)malloc(sizeof(struct set));
     set->bdd = sylvan_ref(sylvan_serialize_get_reversed(set_bdd));
-    set->variables = sylvan_ref(sylvan_serialize_get_reversed(set_state_vars));
+    set->variables = sylvan_ref(sylvan_support(sylvan_serialize_get_reversed(set_state_vars)));
 
     return set;
 }
@@ -151,7 +151,7 @@ TASK_1(rel_t, rel_load, FILE*, f)
 
     rel_t rel = (rel_t)malloc(sizeof(struct relation));
     rel->bdd = sylvan_ref(sylvan_serialize_get_reversed(rel_bdd));
-    rel->variables = sylvan_ref(sylvan_serialize_get_reversed(rel_vars));
+    rel->variables = sylvan_ref(sylvan_support(sylvan_serialize_get_reversed(rel_vars)));
 
     return rel;
 }

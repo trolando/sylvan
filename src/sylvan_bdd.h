@@ -108,7 +108,7 @@ TASK_DECL_3(BDD, sylvan_exists, BDD, BDD, BDDVAR);
 
 /**
  * Compute \exists v: A(...) \and B(...)
- * Parameter vars is the disjunction of all v variables.
+ * Parameter vars is the cube (conjunction) of all v variables.
  */
 TASK_DECL_4(BDD, sylvan_and_exists, BDD, BDD, BDDSET, BDDVAR);
 #define sylvan_and_exists(a,b,vars) CALL(sylvan_and_exists,a,b,vars,0)
@@ -117,10 +117,10 @@ TASK_DECL_4(BDD, sylvan_and_exists, BDD, BDD, BDDSET, BDDVAR);
  * Compute R(s,t) = \exists x: A(s,x) \and B(x,t)
  *      or R(s)   = \exists x: A(s,x) \and B(x)
  * Assumes s,t are interleaved with s odd and t even.
- * Parameter vars is the disjunction of all s and/or t variables.
+ * Parameter vars is the cube of all s and/or t variables.
  * Other variables in A are "ignored" (existential quantification)
  * Other variables in B are kept
- * Alternatively, vars=true means all variables are in vars
+ * Alternatively, vars=false means all variables are in vars
  *
  * Use this function to concatenate two relations   --> -->
  * or to take the 'previous' of a set               -->  S
@@ -132,10 +132,10 @@ TASK_DECL_4(BDD, sylvan_relprev, BDD, BDD, BDDSET, BDDVAR);
  * Compute R(s) = \exists x: A(x) \and B(x,s)
  * with support(result) = s, support(A) = s, support(B) = s+t
  * Assumes s,t are interleaved with s odd and t even.
- * Parameter vars is the disjunction of all s and/or t variables.
+ * Parameter vars is the cube of all s and/or t variables.
  * Other variables in A are kept
  * Other variables in B are "ignored" (existential quantification)
- * Alternatively, vars=true means all variables are in vars
+ * Alternatively, vars=false means all variables are in vars
  *
  * Use this function to take the 'next' of a set     S  -->
  */
@@ -189,26 +189,25 @@ void sylvan_reset_counters();
 void sylvan_report_stats();
 
 /**
- * A BDDSET, used by BDD functions.
- * Basically this is a union of all variables in the set in their positive form.
- * Note that you need to do external referencing manually.
- * If using this during your initialization, you could disable GC temporarily.
+ * A set of BDD variables is a cube (conjunction) of variables in their positive form.
+ * Note 2015-06-10: This used to be a union (disjunction) of variables in their positive form.
  */
 // empty bddset
-#define sylvan_set_empty() sylvan_false
-#define sylvan_set_isempty(set) (set == sylvan_false)
+#define sylvan_set_empty() sylvan_true
+#define sylvan_set_isempty(set) (set == sylvan_true)
 // add variables to the bddset
-#define sylvan_set_add(set, var) sylvan_or(set, sylvan_ithvar(var))
-#define sylvan_set_addall(set, set_to_add) sylvan_or(set, set_to_add)
+#define sylvan_set_add(set, var) sylvan_and(set, sylvan_ithvar(var))
+#define sylvan_set_addall(set, set_to_add) sylvan_and(set, set_to_add)
 // remove variables from the bddset
-#define sylvan_set_remove(set, var) sylvan_constrain(set, sylvan_nithvar(var))
-#define sylvan_set_removeall(set, set_to_remove) sylvan_constrain(set, sylvan_not(set_to_remove))
+#define sylvan_set_remove(set, var) sylvan_exists(set, var)
+#define sylvan_set_removeall(set, set_to_remove) sylvan_exists(set, set_to_remove)
 // iterate through all variables
 #define sylvan_set_var(set) (sylvan_var(set))
-#define sylvan_set_next(set) (sylvan_low(set))
+#define sylvan_set_next(set) (sylvan_high(set))
 int sylvan_set_in(BDDSET set, BDDVAR var);
 size_t sylvan_set_count(BDDSET set);
 void sylvan_set_toarray(BDDSET set, BDDVAR *arr);
+// variables in arr should be ordered
 TASK_DECL_2(BDDSET, sylvan_set_fromarray, BDDVAR*, size_t);
 #define sylvan_set_fromarray(arr, length) ( CALL(sylvan_set_fromarray, arr, length) )
 void sylvan_test_isset(BDDSET set);
@@ -225,7 +224,7 @@ BDDMAP sylvan_map_add(BDDMAP map, BDDVAR key, BDD value);
 BDDMAP sylvan_map_addall(BDDMAP map_1, BDDMAP map_2);
 // remove key-value pairs from the bddmap
 BDDMAP sylvan_map_remove(BDDMAP map, BDDVAR key);
-BDDMAP sylvan_map_removeall(BDDMAP map, BDDMAP toremove);
+BDDMAP sylvan_map_removeall(BDDMAP map, BDDSET toremove);
 // iterate through all pairs
 static inline BDDVAR sylvan_map_key(BDDMAP map) { return sylvan_var(map); }
 static inline BDD sylvan_map_value(BDDMAP map) { return sylvan_high(map); }
@@ -234,7 +233,7 @@ static inline BDDMAP sylvan_map_next(BDDMAP map) { return sylvan_low(map); }
 int sylvan_map_in(BDDMAP map, BDDVAR key);
 // count number of keys
 size_t sylvan_map_count(BDDMAP map);
-// convert a BDDSET (disjunction of variables) to a map, with all variables pointing on the value
+// convert a BDDSET (cube of variables) to a map, with all variables pointing on the value
 BDDMAP sylvan_set_to_map(BDDSET set, BDD value);
 
 /**
@@ -270,7 +269,6 @@ BDD sylvan_bdd_to_nocomp(BDD bdd);
 /**
  * Calculate number of satisfying variable assignments.
  * The set of variables must be >= the support of the BDD.
- * (i.e. all variables in the BDD must be in variables)
  * 
  * The cached version uses the operation cache, but is limited to 64-bit floating point numbers.
  */

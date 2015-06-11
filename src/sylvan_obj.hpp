@@ -25,12 +25,12 @@
 
 namespace sylvan {
 
-class Bdd;
 class BddMap;
 
 class Bdd {
     friend class Sylvan;
     friend class BddMap;
+    friend class Mtbdd;
 
 public:
     Bdd() { bdd = sylvan_false; sylvan_protect(&bdd); }
@@ -359,6 +359,294 @@ public:
     int isEmpty() const;
 };
 
+class MtbddMap;
+
+class Mtbdd {
+    friend class Sylvan;
+    friend class MtbddMap;
+
+public:
+    Mtbdd() { mtbdd = sylvan_false; mtbdd_protect(&mtbdd); }
+    Mtbdd(const MTBDD from) : mtbdd(from) { mtbdd_protect(&mtbdd); }
+    Mtbdd(const Mtbdd &from) : mtbdd(from.mtbdd) { mtbdd_protect(&mtbdd); }
+    Mtbdd(const Bdd &from) : mtbdd(from.bdd) { mtbdd_protect(&mtbdd); }
+    ~Mtbdd() { mtbdd_unprotect(&mtbdd); }
+
+    /**
+     * @brief Creates a Mtbdd leaf representing the uint64 value <value>
+     */
+    static Mtbdd uint64Terminal(uint64_t value);
+
+    /**
+     * @brief Creates a Mtbdd leaf representing the floating-point value <value>
+     */
+    static Mtbdd doubleTerminal(double value);
+
+    /**
+     * @brief Creates a Mtbdd leaf representing the fraction value <nominator>/<denominator>
+     * Internally, Sylvan uses 32-bit values and reports overflows to stderr.
+     */
+    static Mtbdd fractionTerminal(uint64_t nominator, uint64_t denominator);
+
+    /**
+     * @brief Creates a Mtbdd leaf of type <type> holding value <value>
+     * This is useful for custom Mtbdd types.
+     */
+    static Mtbdd terminal(uint32_t type, uint64_t value);
+
+    /**
+     * @brief Creates a Boolean Mtbdd representing jsut the variable index in its positive form
+     * The variable index must be 0<=index<=2^23 (Sylvan uses 24 bits internally)
+     */
+    static Mtbdd mtbddVar(uint32_t variable);
+
+    /**
+     * @brief Returns the Boolean Mtbdd representing "True"
+     */
+    static Mtbdd mtbddOne();
+
+    /**
+     * @brief Returns the Boolean Mtbdd representing "False"
+     */
+    static Mtbdd mtbddZero();
+
+    /**
+     * @brief Returns the Mtbdd representing a cube of variables, according to the given values.
+     * @param variables the variables that will be in the cube in their positive or negative form
+     * @param values a character array describing how the variables will appear in the result
+     * @param terminal the leaf of the cube
+     * The length of string must be equal to the number of variables in the cube.
+     * For every ith char in string, if it is 0, the corresponding variable will appear in its negative form,
+     * if it is 1, it will appear in its positive form, and if it is 2, it will appear as "any", thus it will
+     * be skipped.
+     */
+    static Mtbdd mtbddCube(const Mtbdd &variables, unsigned char *values, const Mtbdd &terminal);
+
+     /**
+     * @brief Returns the Mtbdd representing a cube of variables, according to the given values.
+     * @param variables the variables that will be in the cube in their positive or negative form
+     * @param values a character array describing how the variables will appear in the result
+     * @param terminal the leaf of the cube
+     * The length of string must be equal to the number of variables in the cube.
+     * For every ith char in string, if it is 0, the corresponding variable will appear in its negative form,
+     * if it is 1, it will appear in its positive form, and if it is 2, it will appear as "any", thus it will
+     * be skipped.
+     */
+    static Mtbdd mtbddCube(const Mtbdd &variables, std::vector<uint8_t> values, const Mtbdd &terminal);
+
+    int operator==(const Mtbdd& other) const;
+    int operator!=(const Mtbdd& other) const;
+    Mtbdd operator=(const Mtbdd& right);
+    Mtbdd operator!() const;
+    Mtbdd operator~() const;
+    Mtbdd operator*(const Mtbdd& other) const;
+    Mtbdd operator*=(const Mtbdd& other);
+    Mtbdd operator+(const Mtbdd& other) const;
+    Mtbdd operator+=(const Mtbdd& other);
+    Mtbdd operator-(const Mtbdd& other) const;
+    Mtbdd operator-=(const Mtbdd& other);
+
+    // not implemented (compared to Bdd): <=, >=, <, >, &, &=, |, |=, ^, ^=
+
+    /**
+     * @brief Returns non-zero if this Mtbdd is a leaf
+     */
+    int isTerminal() const;
+
+    /**
+     * @brief Returns non-zero if this Mtbdd is a leaf
+     */
+    int isLeaf() const;
+
+    /**
+     * @brief Returns non-zero if this Mtbdd is mtbddOne()
+     */
+    int isOne() const;
+
+    /**
+     * @brief Returns non-zero if this Mtbdd is mtbddZero()
+     */
+    int isZero() const;
+
+    /**
+     * @brief Returns the top variable index of this Mtbdd (the variable in the root node)
+     */
+    uint32_t TopVar() const;
+
+    /**
+     * @brief Follows the high edge ("then") of the root node of this Mtbdd
+     */
+    Mtbdd Then() const;
+
+    /**
+     * @brief Follows the low edge ("else") of the root node of this Mtbdd
+     */
+    Mtbdd Else() const;
+
+    /**
+     * @brief Returns the negation of the MTBDD
+     * For Boolean, this means "not", for floating-point and fractions, this means "negative"
+     */
+    Mtbdd Negate() const;
+
+    /**
+     * @brief Applies the binary operation <op>
+     */
+    Mtbdd Apply(const Mtbdd &other, mtbdd_apply_op op) const;
+
+    /**
+     * @brief Applies the unary operation <op> with parameter <param>
+     */
+    Mtbdd UApply(mtbdd_uapply_op op, size_t param) const;
+
+    /**
+     * @brief Computers the abstraction on variables <variables> using operator <op>.
+     * See also: AbstractPlus, AbstractTimes, AbstractMin, AbstractMax
+     */
+    Mtbdd Abstract(const Mtbdd &variables, mtbdd_abstract_op op) const;
+
+    /**
+     * @brief Computes if f then g else h
+     * This Mtbdd must be a Boolean Mtbdd
+     */
+    Mtbdd Ite(const Mtbdd &g, const Mtbdd &h) const;
+
+    /**
+     * @brief Computes f + g
+     */
+    Mtbdd Plus(const Mtbdd &other) const;
+
+    /**
+     * @brief Computes f * g
+     */
+    Mtbdd Times(const Mtbdd &other) const;
+
+    /**
+     * @brief Computes min(f, g)
+     */
+    Mtbdd Min(const Mtbdd &other) const;
+
+    /**
+     * @brief Computes max(f, g)
+     */
+    Mtbdd Max(const Mtbdd &other) const;
+
+    /**
+     * @brief Computes abstraction by summation (existential quantification)
+     */
+    Mtbdd AbstractPlus(const Mtbdd &variables) const;
+
+    /**
+     * @brief Computes abstraction by multiplication (universal quantification)
+     */
+    Mtbdd AbstractTimes(const Mtbdd &variables) const;
+
+    /**
+     * @brief Computes abstraction by minimum
+     */
+    Mtbdd AbstractMin(const Mtbdd &variables) const;
+
+    /**
+     * @brief Computes abstraction by maximum
+     */
+    Mtbdd AbstractMax(const Mtbdd &variables) const;
+
+    /**
+     * @brief Computes abstraction by summation of f \times g
+     */
+    Mtbdd AndExists(const Mtbdd &other, const Mtbdd &variables) const;
+
+    /**
+     * @brief Convert floating-point/fraction Mtbdd to a Boolean Mtbdd, leaf >= value ? true : false
+     */
+    Mtbdd MtbddThreshold(double value) const;
+
+    /**
+     * @brief Convert floating-point/fraction Mtbdd to a Boolean Mtbdd, leaf > value ? true : false
+     */
+    Mtbdd MtbddStrictThreshold(double value) const;
+
+    /**
+     * @brief Convert floating-point/fraction Mtbdd to a Boolean Mtbdd, leaf >= value ? true : false
+     * Same as MtbddThreshold (Bdd = Boolean Mtbdd)
+     */
+    Bdd BddThreshold(double value) const;
+
+    /**
+     * @brief Convert floating-point/fraction Mtbdd to a Boolean Mtbdd, leaf > value ? true : false
+     * Same as MtbddStrictThreshold (Bdd = Boolean Mtbdd)
+     */
+    Bdd BddStrictThreshold(double value) const;
+
+    /**
+     * @brief Computes the support of a Mtbdd.
+     */
+    Mtbdd Support() const;
+
+    /**
+     * @brief Gets the MTBDD of this Mtbdd (for C functions)
+     */
+    MTBDD GetMTBDD() const;
+
+    /**
+     * @brief Functional composition. Whenever a variable v in the map m is found in the MTBDD,
+     *        it is substituted by the associated function (which should be a Boolean MTBDD)
+     * You can also use this function to implement variable reordering.
+     */
+    Mtbdd Compose(MtbddMap &m) const;
+
+    /**
+     * @brief Compute the number of satisfying variable assignments, using variables in cube.
+     */
+    double SatCount(const Mtbdd &variables) const;
+
+    /**
+     * @brief Gets the number of nodes in this Bdd. Not thread-safe!
+     */
+    size_t NodeCount() const;
+
+private:
+    MTBDD mtbdd;
+};
+
+class MtbddMap
+{
+    friend class Mtbdd;
+    MTBDD mtbdd;
+    MtbddMap(MTBDD from) : mtbdd(from) { mtbdd_protect(&mtbdd); }
+    MtbddMap(Mtbdd &from) : mtbdd(from.mtbdd) { mtbdd_protect(&mtbdd); }
+public:
+    MtbddMap() : mtbdd(mtbdd_map_empty()) { mtbdd_protect(&mtbdd); }
+    ~MtbddMap() { mtbdd_unprotect(&mtbdd); }
+
+    MtbddMap(uint32_t key_variable, Mtbdd value);
+
+    MtbddMap operator+(const Mtbdd& other) const;
+    MtbddMap operator+=(const Mtbdd& other);
+    MtbddMap operator-(const Mtbdd& other) const;
+    MtbddMap operator-=(const Mtbdd& other);
+
+    /**
+     * @brief Adds a key-value pair to the map
+     */
+    void put(uint32_t key, Mtbdd value);
+
+    /**
+     * @brief Removes a key-value pair from the map
+     */
+    void removeKey(uint32_t key);
+
+    /**
+     * @brief Returns the number of key-value pairs in this map
+     */
+    size_t size();
+
+    /**
+     * @brief Returns non-zero when this map is empty
+     */
+    int isEmpty();
+};
+
 class Sylvan {
 public:
     /**
@@ -377,6 +665,11 @@ public:
      * A granularity of 1 means that every BDD operation will be cached at every variable level.
      */
     static void initBdd(int granularity);
+
+    /**
+     * @brief Initializes the MTBDD module of the Sylvan framework.
+     */
+    static void initMtbdd();
 
     /**
      * @brief Frees all memory in use by Sylvan.

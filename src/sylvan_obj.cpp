@@ -579,6 +579,406 @@ BddMap::isEmpty() const
     return sylvan_map_isempty(bdd);
 }
 
+
+/***
+ * Implementation of class Mtbdd
+ */
+
+Mtbdd
+Mtbdd::uint64Terminal(uint64_t value)
+{
+    return mtbdd_uint64(value);
+}
+
+Mtbdd
+Mtbdd::doubleTerminal(double value)
+{
+    return mtbdd_double(value);
+}
+
+Mtbdd
+Mtbdd::fractionTerminal(uint64_t nominator, uint64_t denominator)
+{
+    return mtbdd_fraction(nominator, denominator);
+}
+
+Mtbdd
+Mtbdd::terminal(uint32_t type, uint64_t value)
+{
+    return mtbdd_makeleaf(type, value);
+}
+
+Mtbdd
+Mtbdd::mtbddVar(uint32_t variable)
+{
+    return mtbdd_makenode(variable, mtbdd_false, mtbdd_true);
+}
+
+Mtbdd
+Mtbdd::mtbddOne()
+{
+    return mtbdd_true;
+}
+
+Mtbdd
+Mtbdd::mtbddZero()
+{
+    return mtbdd_false;
+}
+
+Mtbdd
+Mtbdd::mtbddCube(const Mtbdd &variables, uint8_t *values, const Mtbdd &terminal)
+{
+    LACE_ME;
+    return mtbdd_cube(variables.mtbdd, values, terminal.mtbdd);
+}
+
+Mtbdd
+Mtbdd::mtbddCube(const Mtbdd &variables, std::vector<uint8_t> values, const Mtbdd &terminal)
+{
+    LACE_ME;
+    uint8_t *data = values.data();
+    return mtbdd_cube(variables.mtbdd, data, terminal.mtbdd);
+}
+
+int
+Mtbdd::isTerminal() const
+{
+    return mtbdd_isleaf(mtbdd);
+}
+
+int
+Mtbdd::isLeaf() const
+{
+    return mtbdd_isleaf(mtbdd);
+}
+
+int
+Mtbdd::isOne() const
+{
+    return mtbdd == mtbdd_true;
+}
+
+int
+Mtbdd::isZero() const
+{
+    return mtbdd == mtbdd_false;
+}
+
+uint32_t
+Mtbdd::TopVar() const
+{
+    return mtbdd_getvar(mtbdd);
+}
+
+Mtbdd
+Mtbdd::Then() const
+{
+    return mtbdd_isnode(mtbdd) ? mtbdd_gethigh(mtbdd) : mtbdd;
+}
+
+Mtbdd
+Mtbdd::Else() const
+{
+    return mtbdd_isnode(mtbdd) ? mtbdd_getlow(mtbdd) : mtbdd;
+}
+
+Mtbdd
+Mtbdd::Negate() const
+{
+    return mtbdd_negate(mtbdd);
+}
+
+Mtbdd
+Mtbdd::Apply(const Mtbdd &other, mtbdd_apply_op op) const
+{
+    LACE_ME;
+    return mtbdd_apply(mtbdd, other.mtbdd, op);
+}
+
+Mtbdd
+Mtbdd::UApply(mtbdd_uapply_op op, size_t param) const
+{
+    LACE_ME;
+    return mtbdd_uapply(mtbdd, op, param);
+}
+
+Mtbdd
+Mtbdd::Abstract(const Mtbdd &variables, mtbdd_abstract_op op) const
+{
+    LACE_ME;
+    return mtbdd_abstract(mtbdd, variables.mtbdd, op);
+}
+
+Mtbdd
+Mtbdd::Ite(const Mtbdd &g, const Mtbdd &h) const
+{
+    LACE_ME;
+    return mtbdd_ite(mtbdd, g.mtbdd, h.mtbdd);
+}
+
+Mtbdd
+Mtbdd::Plus(const Mtbdd &other) const
+{
+    LACE_ME;
+    return mtbdd_plus(mtbdd, other.mtbdd);
+}
+
+Mtbdd
+Mtbdd::Times(const Mtbdd &other) const
+{
+    LACE_ME;
+    return mtbdd_times(mtbdd, other.mtbdd);
+}
+
+Mtbdd
+Mtbdd::Min(const Mtbdd &other) const
+{
+    LACE_ME;
+    return mtbdd_min(mtbdd, other.mtbdd);
+}
+
+Mtbdd
+Mtbdd::Max(const Mtbdd &other) const
+{
+    LACE_ME;
+    return mtbdd_max(mtbdd, other.mtbdd);
+}
+
+Mtbdd
+Mtbdd::AbstractPlus(const Mtbdd &variables) const
+{
+    LACE_ME;
+    return mtbdd_abstract_plus(mtbdd, variables.mtbdd);
+}
+
+Mtbdd
+Mtbdd::AbstractTimes(const Mtbdd &variables) const
+{
+    LACE_ME;
+    return mtbdd_abstract_times(mtbdd, variables.mtbdd);
+}
+
+Mtbdd
+Mtbdd::AbstractMin(const Mtbdd &variables) const
+{
+    LACE_ME;
+    return mtbdd_abstract_min(mtbdd, variables.mtbdd);
+}
+
+Mtbdd
+Mtbdd::AbstractMax(const Mtbdd &variables) const
+{
+    LACE_ME;
+    return mtbdd_abstract_max(mtbdd, variables.mtbdd);
+}
+
+Mtbdd
+Mtbdd::AndExists(const Mtbdd &other, const Mtbdd &variables) const
+{
+    LACE_ME;
+    return mtbdd_and_exists(mtbdd, other.mtbdd, variables.mtbdd);
+}
+
+int
+Mtbdd::operator==(const Mtbdd& other) const
+{
+    return mtbdd == other.mtbdd;
+}
+
+int
+Mtbdd::operator!=(const Mtbdd& other) const
+{
+    return mtbdd != other.mtbdd;
+}
+
+Mtbdd
+Mtbdd::operator=(const Mtbdd& right)
+{
+    mtbdd = right.mtbdd;
+    return *this;
+}
+
+Mtbdd
+Mtbdd::operator!() const
+{
+    return mtbdd_not(mtbdd);
+}
+
+Mtbdd
+Mtbdd::operator~() const
+{
+    return mtbdd_not(mtbdd);
+}
+
+Mtbdd
+Mtbdd::operator*(const Mtbdd& other) const
+{
+    LACE_ME;
+    return mtbdd_times(mtbdd, other.mtbdd);
+}
+
+Mtbdd
+Mtbdd::operator*=(const Mtbdd& other)
+{
+    LACE_ME;
+    mtbdd = mtbdd_times(mtbdd, other.mtbdd);
+    return *this;
+}
+
+Mtbdd
+Mtbdd::operator+(const Mtbdd& other) const
+{
+    LACE_ME;
+    return mtbdd_plus(mtbdd, other.mtbdd);
+}
+
+Mtbdd
+Mtbdd::operator+=(const Mtbdd& other)
+{
+    LACE_ME;
+    mtbdd = mtbdd_plus(mtbdd, other.mtbdd);
+    return *this;
+}
+
+Mtbdd
+Mtbdd::operator-(const Mtbdd& other) const
+{
+    LACE_ME;
+    return mtbdd_plus(mtbdd, mtbdd_negate(other.mtbdd));
+}
+
+Mtbdd
+Mtbdd::operator-=(const Mtbdd& other)
+{
+    LACE_ME;
+    mtbdd = mtbdd_plus(mtbdd, mtbdd_negate(other.mtbdd));
+    return *this;
+}
+
+Mtbdd
+Mtbdd::MtbddThreshold(double value) const
+{
+    LACE_ME;
+    return mtbdd_threshold_double(mtbdd, value);
+}
+
+Mtbdd
+Mtbdd::MtbddStrictThreshold(double value) const
+{
+    LACE_ME;
+    return mtbdd_strict_threshold_double(mtbdd, value);
+}
+
+Bdd
+Mtbdd::BddThreshold(double value) const
+{
+    LACE_ME;
+    return mtbdd_threshold_double(mtbdd, value);
+}
+
+Bdd
+Mtbdd::BddStrictThreshold(double value) const
+{
+    LACE_ME;
+    return mtbdd_strict_threshold_double(mtbdd, value);
+}
+
+Mtbdd
+Mtbdd::Support() const
+{
+    LACE_ME;
+    return mtbdd_support(mtbdd);
+}
+
+MTBDD
+Mtbdd::GetMTBDD() const
+{
+    return mtbdd;
+}
+
+Mtbdd
+Mtbdd::Compose(MtbddMap &m) const
+{
+    LACE_ME;
+    return mtbdd_compose(mtbdd, m.mtbdd);
+}
+
+double
+Mtbdd::SatCount(const Mtbdd &variables) const
+{
+    LACE_ME;
+    return mtbdd_satcount(mtbdd, variables.mtbdd);
+}
+
+size_t
+Mtbdd::NodeCount() const
+{
+    LACE_ME;
+    return mtbdd_nodecount(mtbdd);
+}
+
+
+/***
+ * Implementation of class MtbddMap
+ */
+
+MtbddMap::MtbddMap(uint32_t key_variable, Mtbdd value)
+{
+    mtbdd = mtbdd_map_add(mtbdd_map_empty(), key_variable, value.mtbdd);
+}
+
+MtbddMap
+MtbddMap::operator+(const Mtbdd& other) const
+{
+    return MtbddMap(mtbdd_map_addall(mtbdd, other.mtbdd));
+}
+
+MtbddMap
+MtbddMap::operator+=(const Mtbdd& other)
+{
+    mtbdd = mtbdd_map_addall(mtbdd, other.mtbdd);
+    return *this;
+}
+
+MtbddMap
+MtbddMap::operator-(const Mtbdd& other) const
+{
+    return MtbddMap(mtbdd_map_removeall(mtbdd, other.mtbdd));
+}
+
+MtbddMap
+MtbddMap::operator-=(const Mtbdd& other)
+{
+    mtbdd = mtbdd_map_removeall(mtbdd, other.mtbdd);
+    return *this;
+}
+
+void
+MtbddMap::put(uint32_t key, Mtbdd value)
+{
+    mtbdd = mtbdd_map_add(mtbdd, key, value.mtbdd);
+}
+
+void
+MtbddMap::removeKey(uint32_t key)
+{
+    mtbdd = mtbdd_map_remove(mtbdd, key);
+}
+
+size_t
+MtbddMap::size()
+{
+    return mtbdd_map_count(mtbdd);
+}
+
+int
+MtbddMap::isEmpty()
+{
+    return mtbdd_map_isempty(mtbdd);
+}
+
+
 /***
  * Implementation of class Sylvan
  */
@@ -593,6 +993,12 @@ void
 Sylvan::initBdd(int granularity)
 {
     sylvan_init_bdd(granularity);
+}
+
+void
+Sylvan::initMtbdd()
+{
+    sylvan_init_mtbdd();
 }
 
 void

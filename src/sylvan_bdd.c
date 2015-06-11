@@ -1618,46 +1618,9 @@ TASK_IMPL_3(BDD, sylvan_compose, BDD, a, BDDMAP, map, BDDVAR, prev_level)
     return result;
 }
 
-
-/**
- * Count number of nodes for each level
- */
-
-// TODO: use AVL
-
-void sylvan_nodecount_levels_do_1(BDD bdd, uint32_t *variables)
-{
-    if (!sylvan_isnode(bdd)) return;
-
-    bddnode_t na = GETNODE(bdd);
-    if (na->data & 1) return;
-    variables[na->level]++;
-    na->data |= 1; // mark
-    sylvan_nodecount_levels_do_1(na->low, variables);
-    sylvan_nodecount_levels_do_1(na->high, variables);
-}
-
-void sylvan_nodecount_levels_do_2(BDD bdd)
-{
-    if (!sylvan_isnode(bdd)) return;
-
-    bddnode_t na = GETNODE(bdd);
-    if (!(na->data & 1)) return;
-    na->data &= ~1; // unmark
-    sylvan_nodecount_levels_do_2(na->low);
-    sylvan_nodecount_levels_do_2(na->high);
-}
-
-void sylvan_nodecount_levels(BDD bdd, uint32_t *variables)
-{
-    sylvan_nodecount_levels_do_1(bdd, variables);
-    sylvan_nodecount_levels_do_2(bdd);
-}
-
 /**
  * Count number of nodes in BDD
  */
-
 uint64_t sylvan_nodecount_do_1(BDD a)
 {
     if (sylvan_isconst(a)) return 0;
@@ -1688,25 +1651,46 @@ size_t sylvan_nodecount(BDD a)
 }
 
 /**
- * CALCULATE NUMBER OF DISTINCT PATHS TO TRUE
+ * Calculate the number of distinct paths to True.
+ * TODO: use operation cache.
  */
-
-TASK_IMPL_1(long double, sylvan_pathcount, BDD, bdd)
+TASK_IMPL_2(double, sylvan_pathcount, BDD, bdd, BDDVAR, prev_level)
 {
+    /* Trivial cases */
     if (bdd == sylvan_false) return 0.0;
     if (bdd == sylvan_true) return 1.0;
-    SPAWN(sylvan_pathcount, sylvan_low(bdd));
-    SPAWN(sylvan_pathcount, sylvan_high(bdd));
-    long double res1 = SYNC(sylvan_pathcount);
+
+    /* Perhaps execute garbage collection */
+    sylvan_gc_test();
+
+    BDD level = sylvan_var(bdd);
+
+    /* Consult cache */
+    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
+    if (cachenow) {
+        double result;
+        if (cache_get(BDD_SETDATA(bdd, CACHE_PATHCOUNT), 0, 0, (uint64_t*)&result)) {
+            SV_CNT_CACHE(C_cache_reuse);
+            return result;
+        }
+    }
+
+    SPAWN(sylvan_pathcount, sylvan_low(bdd), level);
+    SPAWN(sylvan_pathcount, sylvan_high(bdd), level);
+    double res1 = SYNC(sylvan_pathcount);
     res1 += SYNC(sylvan_pathcount);
+
+    if (cachenow) {
+        cache_put(BDD_SETDATA(bdd, CACHE_PATHCOUNT), 0, 0, *(uint64_t*)&res1);
+    }
+
     return res1;
 }
 
 /**
- * CALCULATE NUMBER OF VAR ASSIGNMENTS THAT YIELD TRUE
+ * Calculate the number of satisfying variable assignments according to <variables>.
  */
-
-TASK_IMPL_3(sylvan_satcount_double_t, sylvan_satcount_cached, BDD, bdd, BDDSET, variables, BDDVAR, prev_level)
+TASK_IMPL_3(double, sylvan_satcount, BDD, bdd, BDDSET, variables, BDDVAR, prev_level)
 {
     /* Trivial cases */
     if (bdd == sylvan_false) return 0.0;
@@ -1727,11 +1711,8 @@ TASK_IMPL_3(sylvan_satcount_double_t, sylvan_satcount_cached, BDD, bdd, BDDSET, 
         set_node = GETNODE(variables);
     }
 
-    /* Count operation */
-    // SV_CNT_OP(C_satcount);
-    
     union {
-        sylvan_satcount_double_t d;
+        double d;
         uint64_t s;
     } hack;
 
@@ -1744,9 +1725,9 @@ TASK_IMPL_3(sylvan_satcount_double_t, sylvan_satcount_cached, BDD, bdd, BDDSET, 
         }
     }
 
-    SPAWN(sylvan_satcount_cached, sylvan_high(bdd), node_high(variables, set_node), var);
-    sylvan_satcount_double_t low = CALL(sylvan_satcount_cached, sylvan_low(bdd), node_high(variables, set_node), var);
-    sylvan_satcount_double_t result = (low + SYNC(sylvan_satcount_cached));
+    SPAWN(sylvan_satcount, sylvan_high(bdd), node_high(variables, set_node), var);
+    double low = CALL(sylvan_satcount, sylvan_low(bdd), node_high(variables, set_node), var);
+    double result = low + SYNC(sylvan_satcount);
 
     if (cachenow) {
         hack.d = result;
@@ -1758,48 +1739,6 @@ TASK_IMPL_3(sylvan_satcount_double_t, sylvan_satcount_cached, BDD, bdd, BDDSET, 
     }
 
     return result * powl(2.0L, skipped);
-}
-
-TASK_IMPL_2(long double, sylvan_satcount, BDD, bdd, BDD, variables)
-{
-    /* Trivial cases */
-    if (bdd == sylvan_false) return 0.0;
-    if (bdd == sylvan_true) return powl(2.0L, sylvan_set_count(variables));
-
-    /* Perhaps execute garbage collection */
-    sylvan_gc_test();
-
-    /* Count variables before var(bdd) */
-    size_t skipped = 0;
-    BDDVAR var = sylvan_var(bdd);
-    bddnode_t set_node = GETNODE(variables);
-    BDDVAR var_var = set_node->level;
-    while (var != var_var) {
-        if (var < var_var) {
-            fprintf(stderr, "sylvan_satcount: var %d is not in variables!\n", var);
-            assert(0);
-        }
-        skipped++;
-        variables = node_high(variables, set_node);
-        if (sylvan_set_isempty(variables)) {
-            fprintf(stderr, "sylvan_satcount: var %d is not in variables!\n", var);
-            assert(0);
-        }
-        set_node = GETNODE(variables);
-        if (var_var >= set_node->level) {
-            fprintf(stderr, "sylvan_satcount: bad order in variables! (%d >= %d)\n", var_var, set_node->level);
-            assert(0);
-        }
-        var_var = set_node->level;
-    }
-
-    /* Count operation */
-    // SV_CNT_OP(C_satcount);
-
-    SPAWN(sylvan_satcount, sylvan_high(bdd), node_high(variables, set_node));
-    long double low = CALL(sylvan_satcount, sylvan_low(bdd), node_high(variables, set_node));
-    long double result = (low + SYNC(sylvan_satcount)) * powl(2.0L, skipped);
-    return result;
 }
 
 int

@@ -273,15 +273,9 @@ BDD sylvan_bdd_to_nocomp(BDD bdd);
  * The cached version uses the operation cache, but is limited to 64-bit floating point numbers.
  */
 
-typedef double sylvan_satcount_double_t;
-// if this line below gives an error, modify the above typedef until fixed ;)
-typedef char __sylvan_check_double_is_8_bytes[(sizeof(sylvan_satcount_double_t) == sizeof(uint64_t))?1:-1];
-
-TASK_DECL_3(sylvan_satcount_double_t, sylvan_satcount_cached, BDD, BDDSET, BDDVAR);
-#define sylvan_satcount_cached(bdd, variables) CALL(sylvan_satcount_cached, bdd, variables, 0)
-
-TASK_DECL_2(long double, sylvan_satcount, BDD, BDDSET);
-#define sylvan_satcount(bdd, variables) CALL(sylvan_satcount, bdd, variables)
+TASK_DECL_3(double, sylvan_satcount, BDD, BDDSET, BDDVAR);
+#define sylvan_satcount(bdd, variables) CALL(sylvan_satcount, bdd, variables, 0)
+#define sylvan_satcount_cached(bdd, variables) CALL(sylvan_satcount, bdd, variables, 0)
 
 /**
  * Create a BDD cube representing the conjunction of variables in their positive or negative
@@ -326,12 +320,10 @@ VOID_TASK_DECL_4(sylvan_enum, BDD, BDDSET, enum_cb, void*);
 VOID_TASK_DECL_4(sylvan_enum_par, BDD, BDDSET, enum_cb, void*);
 #define sylvan_enum_par(bdd, vars, cb, context) CALL(sylvan_enum_par, bdd, vars, cb, context)
 
-TASK_DECL_1(long double, sylvan_pathcount, BDD);
-#define sylvan_pathcount(bdd) (CALL(sylvan_pathcount, bdd))
+TASK_DECL_2(double, sylvan_pathcount, BDD, BDDVAR);
+#define sylvan_pathcount(bdd) (CALL(sylvan_pathcount, bdd, 0))
 
-// TASK_DECL_1(size_t, sylvan_nodecount, BDD);
 size_t sylvan_nodecount(BDD a);
-void sylvan_nodecount_levels(BDD bdd, uint32_t *variables);
 
 /**
  * SAVING:

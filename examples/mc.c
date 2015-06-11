@@ -159,7 +159,7 @@ TASK_1(rel_t, rel_load, FILE*, f)
 #define print_example(example, variables) CALL(print_example, example, variables)
 VOID_TASK_2(print_example, BDD, example, BDDSET, variables)
 {
-    char str[vector_size * bits_per_integer];
+    uint8_t str[vector_size * bits_per_integer];
 
     if (example != sylvan_false) {
         sylvan_sat_one(example, variables, str);

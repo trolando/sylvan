@@ -1803,7 +1803,7 @@ TASK_IMPL_2(long double, sylvan_satcount, BDD, bdd, BDD, variables)
 }
 
 int
-sylvan_sat_one(BDD bdd, BDDSET vars, char *str)
+sylvan_sat_one(BDD bdd, BDDSET vars, uint8_t *str)
 {
     if (bdd == sylvan_false) return 0;
     if (str == NULL) return 0;
@@ -1812,29 +1812,20 @@ sylvan_sat_one(BDD bdd, BDDSET vars, char *str)
     for (;;) {
         bddnode_t n_vars = GETNODE(vars);
         if (bdd == sylvan_true) {
-            *str = 2;
+            *str = 0;
         } else {
             bddnode_t n_bdd = GETNODE(bdd);
             if (n_bdd->level != n_vars->level) {
-                *str = 2;
+                *str = 0;
             } else {
                 if (node_low(bdd, n_bdd) == sylvan_false) {
                     // take high edge
                     *str = 1;
                     bdd = node_high(bdd, n_bdd);
-                } else if (node_high(bdd, n_bdd) == sylvan_false) {
+                } else {
                     // take low edge
                     *str = 0;
                     bdd = node_low(bdd, n_bdd);
-                } else {
-                    // take random edge
-                    if (rand() & 1) {
-                        *str = 1;
-                        bdd = node_high(bdd, n_bdd);
-                    } else {
-                        *str = 0;
-                        bdd = node_low(bdd, n_bdd);
-                    }
                 }
             }
         }
@@ -1879,7 +1870,7 @@ sylvan_sat_one_bdd(BDD bdd)
 }
 
 BDD
-sylvan_cube(BDDSET vars, char *cube)
+sylvan_cube(BDDSET vars, uint8_t *cube)
 {
     if (sylvan_set_isempty(vars)) return sylvan_true;
 
@@ -1897,7 +1888,7 @@ sylvan_cube(BDDSET vars, char *cube)
     return result;
 }
 
-TASK_IMPL_3(BDD, sylvan_union_cube, BDD, bdd, BDDSET, vars, char*, cube)
+TASK_IMPL_3(BDD, sylvan_union_cube, BDD, bdd, BDDSET, vars, uint8_t *, cube)
 {
     /* Terminal cases */
     if (bdd == sylvan_true) return sylvan_true;
@@ -1984,7 +1975,7 @@ VOID_TASK_5(sylvan_enum_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context,
         /* if length is 0 (enum called with empty vars??), return */
         if (i == 0) return;
         /* fill cube and vars with trace */
-        char cube[i];
+        uint8_t cube[i];
         BDDVAR vars[i];
         int j=0;
         for (pp = path; pp != NULL; pp = pp->prev) {
@@ -2031,7 +2022,7 @@ VOID_TASK_5(sylvan_enum_par_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, cont
         /* if length is 0 (enum called with empty vars??), return */
         if (i == 0) return;
         /* fill cube and vars with trace */
-        char cube[i];
+        uint8_t cube[i];
         BDDVAR vars[i];
         int j=0;
         for (pp = path; pp != NULL; pp = pp->prev) {

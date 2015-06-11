@@ -288,8 +288,8 @@ TASK_DECL_2(long double, sylvan_satcount, BDD, BDDSET);
  * form depending on whether the cube[idx] equals 0 (negative), 1 (positive) or 2 (any).
  * CHANGED 2014/09/19: vars is now a BDDSET (ordered!)
  */
-BDD sylvan_cube(BDDSET variables, char *cube);
-TASK_DECL_3(BDD, sylvan_union_cube, BDD, BDDSET, char*);
+BDD sylvan_cube(BDDSET variables, uint8_t *cube);
+TASK_DECL_3(BDD, sylvan_union_cube, BDD, BDDSET, uint8_t*);
 #define sylvan_union_cube(bdd, variables, cube) CALL(sylvan_union_cube, bdd, variables, cube)
 
 /**
@@ -304,7 +304,7 @@ TASK_DECL_3(BDD, sylvan_union_cube, BDD, BDDSET, char*);
  *
  * Returns 1 when succesful, or 0 when no assignment is found (i.e. bdd==sylvan_false).
  */
-int sylvan_sat_one(BDD bdd, BDDSET variables, char* str);
+int sylvan_sat_one(BDD bdd, BDDSET variables, uint8_t* str);
 
 /**
  * Pick one satisfying variable assignment randomly from the given <bdd>.
@@ -320,7 +320,7 @@ BDD sylvan_sat_one_bdd(BDD bdd);
  * the array of all BDDVAR variables in <vars> (ordered), the array of the cube
  * with value 0 for "not <var>" and 1 for "<var>", and the length of the two arrays.
  */
-LACE_TYPEDEF_CB(void, enum_cb, void*, BDDVAR*, char*, int);
+LACE_TYPEDEF_CB(void, enum_cb, void*, BDDVAR*, uint8_t*, int);
 VOID_TASK_DECL_4(sylvan_enum, BDD, BDDSET, enum_cb, void*);
 #define sylvan_enum(bdd, vars, cb, context) CALL(sylvan_enum, bdd, vars, cb, context)
 VOID_TASK_DECL_4(sylvan_enum_par, BDD, BDDSET, enum_cb, void*);

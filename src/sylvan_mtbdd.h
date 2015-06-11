@@ -271,6 +271,28 @@ TASK_DECL_3(MTBDD, mtbdd_ite, MTBDD, MTBDD, MTBDD);
 #define mtbdd_ite(f, g, h) CALL(mtbdd_ite, f, g, h);
 
 /**
+ * Monad that converts double to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
+ */
+TASK_DECL_2(MTBDD, mtbdd_op_threshold_double, MTBDD, size_t)
+
+/**
+ * Monad that converts double to a Boolean MTBDD, translate terminals > value to 1 and to 0 otherwise;
+ */
+TASK_DECL_2(MTBDD, mtbdd_op_strict_threshold_double, MTBDD, size_t)
+
+/**
+ * Convert double to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
+ */
+TASK_DECL_2(MTBDD, mtbdd_threshold_double, MTBDD, double);
+#define mtbdd_threshold_double(dd, value) CALL(mtbdd_threshold_double, dd, value)
+
+/**
+ * Convert double to a Boolean MTBDD, translate terminals > value to 1 and to 0 otherwise;
+ */
+TASK_DECL_2(MTBDD, mtbdd_strict_threshold_double, MTBDD, double);
+#define mtbdd_strict_threshold_double(dd, value) CALL(mtbdd_strict_threshold_double, dd, value)
+
+/**
  * Write a DOT representation of a MTBDD
  * The callback function is required for custom terminals.
  */

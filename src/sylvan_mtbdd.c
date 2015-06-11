@@ -1210,6 +1210,56 @@ TASK_IMPL_3(MTBDD, mtbdd_ite, MTBDD, f, MTBDD, g, MTBDD, h)
 }
 
 /**
+ * Monad that converts double to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
+ */
+TASK_IMPL_2(MTBDD, mtbdd_op_threshold_double, MTBDD, a, size_t, svalue)
+{
+    /* We only expect "double" terminals, or false */
+    if (a == mtbdd_false) return mtbdd_false;
+    if (a == mtbdd_true) return mtbdd_invalid;
+
+    // a != constant
+    mtbddnode_t na = GETNODE(a);
+
+    if (mtbddnode_isleaf(na)) {
+        double value = *(double*)&svalue;
+        if (mtbddnode_gettype(na) == 1) return mtbdd_getdouble(a) >= value ? mtbdd_true : mtbdd_false;
+    }
+
+    return mtbdd_invalid;
+}
+
+/**
+ * Monad that converts double to a Boolean BDD, translate terminals > value to 1 and to 0 otherwise;
+ */
+TASK_IMPL_2(MTBDD, mtbdd_op_strict_threshold_double, MTBDD, a, size_t, svalue)
+{
+    /* We only expect "double" terminals, or false */
+    if (a == mtbdd_false) return mtbdd_false;
+    if (a == mtbdd_true) return mtbdd_invalid;
+
+    // a != constant
+    mtbddnode_t na = GETNODE(a);
+
+    if (mtbddnode_isleaf(na)) {
+        double value = *(double*)&svalue;
+        if (mtbddnode_gettype(na) == 1) return mtbdd_getdouble(a) > value ? mtbdd_true : mtbdd_false;
+    }
+
+    return mtbdd_invalid;
+}
+
+TASK_IMPL_2(MTBDD, mtbdd_threshold_double, MTBDD, dd, double, d)
+{
+    return mtbdd_uapply(dd, TASK(mtbdd_op_threshold_double), *(size_t*)&d);
+}
+
+TASK_IMPL_2(MTBDD, mtbdd_strict_threshold_double, MTBDD, dd, double, d)
+{
+    return mtbdd_uapply(dd, TASK(mtbdd_op_strict_threshold_double), *(size_t*)&d);
+}
+
+/**
  * Helper function for recursive unmarking
  */
 static void

@@ -84,6 +84,13 @@ VOID_TASK_DECL_1(sylvan_gc_mark_rec, BDD);
 /* Return the number of external references */
 size_t sylvan_count_refs();
 
+/* Add or remove BDD pointers to protect (indirect external references) */
+void sylvan_protect(BDD* ptr);
+void sylvan_unprotect(BDD* ptr);
+
+/* Return the number of protected BDD pointers */
+size_t sylvan_count_protected();
+
 /* Unary, binary and if-then-else operations */
 #define sylvan_not(a) (((BDD)a)^sylvan_complement)
 TASK_DECL_4(BDD, sylvan_ite, BDD, BDD, BDD, BDDVAR);

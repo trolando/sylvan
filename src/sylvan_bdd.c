@@ -131,6 +131,8 @@ VOID_TASK_IMPL_1(sylvan_gc_mark_rec, BDD, bdd)
  */
 
 refs_table_t bdd_refs;
+refs_table_t bdd_protected;
+static int bdd_protected_created = 0;
 
 BDD
 sylvan_ref(BDD a)
@@ -147,10 +149,33 @@ sylvan_deref(BDD a)
     refs_down(&bdd_refs, BDD_STRIPMARK(a));
 }
 
+void
+sylvan_protect(BDD *a)
+{
+    if (!bdd_protected_created) {
+        // In C++, sometimes sylvan_protect is called before Sylvan is initialized. Just create a table.
+        protect_create(&bdd_protected, 4096);
+        bdd_protected_created = 1;
+    }
+    protect_up(&bdd_protected, (size_t)a);
+}
+
+void
+sylvan_unprotect(BDD *a)
+{
+    protect_down(&bdd_protected, (size_t)a);
+}
+
 size_t
 sylvan_count_refs()
 {
     return refs_count(&bdd_refs);
+}
+
+size_t
+sylvan_count_protected()
+{
+    return protect_count(&bdd_protected);
 }
 
 /* Called during garbage collection */
@@ -162,6 +187,21 @@ VOID_TASK_0(sylvan_gc_mark_external_refs)
     while (it != NULL) {
         BDD to_mark = refs_next(&bdd_refs, &it, bdd_refs.refs_size);
         SPAWN(sylvan_gc_mark_rec, to_mark);
+        count++;
+    }
+    while (count--) {
+        SYNC(sylvan_gc_mark_rec);
+    }
+}
+
+VOID_TASK_0(sylvan_gc_mark_protected)
+{
+    // iterate through refs hash table, mark all found
+    size_t count=0;
+    uint64_t *it = protect_iter(&bdd_protected, 0, bdd_protected.refs_size);
+    while (it != NULL) {
+        BDD *to_mark = (BDD*)protect_next(&bdd_protected, &it, bdd_protected.refs_size);
+        SPAWN(sylvan_gc_mark_rec, *to_mark);
         count++;
     }
     while (count--) {
@@ -233,6 +273,10 @@ static void
 sylvan_quit_bdd()
 {
     refs_free(&bdd_refs);
+    if (bdd_protected_created) {
+        protect_free(&bdd_protected);
+        bdd_protected_created = 0;
+    }
 }
 
 void
@@ -240,6 +284,7 @@ sylvan_init_bdd(int _granularity)
 {
     sylvan_register_quit(sylvan_quit_bdd);
     sylvan_gc_add_mark(10, TASK(sylvan_gc_mark_external_refs));
+    sylvan_gc_add_mark(10, TASK(sylvan_gc_mark_protected));
 
     granularity = _granularity;
 
@@ -250,6 +295,10 @@ sylvan_init_bdd(int _granularity)
     }
 
     refs_create(&bdd_refs, 1024);
+    if (!bdd_protected_created) {
+        protect_create(&bdd_protected, 4096);
+        bdd_protected_created = 1;
+    }
 
     LACE_ME;
     CALL(bdd_refs_init);

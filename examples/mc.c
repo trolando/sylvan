@@ -131,8 +131,11 @@ TASK_1(set_t, set_load, FILE*, f)
     }
 
     set_t set = (set_t)malloc(sizeof(struct set));
-    set->bdd = sylvan_ref(sylvan_serialize_get_reversed(set_bdd));
-    set->variables = sylvan_ref(sylvan_support(sylvan_serialize_get_reversed(set_state_vars)));
+    set->bdd = sylvan_serialize_get_reversed(set_bdd);
+    set->variables = sylvan_support(sylvan_serialize_get_reversed(set_state_vars));
+
+    sylvan_protect(&set->bdd);
+    sylvan_protect(&set->variables);
 
     return set;
 }
@@ -150,8 +153,11 @@ TASK_1(rel_t, rel_load, FILE*, f)
     }
 
     rel_t rel = (rel_t)malloc(sizeof(struct relation));
-    rel->bdd = sylvan_ref(sylvan_serialize_get_reversed(rel_bdd));
-    rel->variables = sylvan_ref(sylvan_support(sylvan_serialize_get_reversed(rel_vars)));
+    rel->bdd = sylvan_serialize_get_reversed(rel_bdd);
+    rel->variables = sylvan_support(sylvan_serialize_get_reversed(rel_vars));
+
+    sylvan_protect(&rel->bdd);
+    sylvan_protect(&rel->variables);
 
     return rel;
 }
@@ -182,15 +188,17 @@ TASK_5(BDD, go_par, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, dea
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        BDD succ = sylvan_ref(sylvan_relnext(cur, next[from]->bdd, next[from]->variables));
+        BDD succ = sylvan_relnext(cur, next[from]->bdd, next[from]->variables);
+        bdd_refs_push(succ);
         if (deadlocks) {
             // check which BDDs in deadlocks do not have a successor in this relation
-            BDD anc = sylvan_ref(sylvan_relprev(next[from]->bdd, succ, next[from]->variables));
-            *deadlocks = sylvan_ref(sylvan_diff(*deadlocks, anc));
-            sylvan_deref(anc);
+            BDD anc = sylvan_relprev(next[from]->bdd, succ, next[from]->variables);
+            bdd_refs_push(anc);
+            *deadlocks = sylvan_diff(*deadlocks, anc);
+            bdd_refs_pop(1);
         }
-        BDD result = sylvan_ref(sylvan_diff(succ, visited));
-        sylvan_deref(succ);
+        BDD result = sylvan_diff(succ, visited);
+        bdd_refs_pop(1);
         return result;
     } else {
         BDD deadlocks_left;
@@ -198,22 +206,25 @@ TASK_5(BDD, go_par, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, dea
         if (deadlocks) {
             deadlocks_left = *deadlocks;
             deadlocks_right = *deadlocks;
+            sylvan_protect(&deadlocks_left);
+            sylvan_protect(&deadlocks_right);
         }
 
         // Recursively calculate left+right
-        SPAWN(go_par, cur, visited, from, (len+1)/2, deadlocks ? &deadlocks_left: NULL);
-        BDD right = CALL(go_par, cur, visited, from+(len+1)/2, len/2, deadlocks ? &deadlocks_right : NULL);
-        BDD left = SYNC(go_par);
+        bdd_refs_spawn(SPAWN(go_par, cur, visited, from, (len+1)/2, deadlocks ? &deadlocks_left: NULL));
+        BDD right = bdd_refs_push(CALL(go_par, cur, visited, from+(len+1)/2, len/2, deadlocks ? &deadlocks_right : NULL));
+        BDD left = bdd_refs_push(bdd_refs_sync(SYNC(go_par)));
 
         // Merge results of left+right
-        BDD result = sylvan_ref(sylvan_or(left, right));
-        sylvan_deref(left);
-        sylvan_deref(right);
+        BDD result = sylvan_or(left, right);
+        bdd_refs_pop(2);
 
         if (deadlocks) {
-            *deadlocks = sylvan_ref(sylvan_and(deadlocks_left, deadlocks_right));
-            sylvan_deref(deadlocks_left);
-            sylvan_deref(deadlocks_right);
+            bdd_refs_push(result);
+            *deadlocks = sylvan_and(deadlocks_left, deadlocks_right);
+            sylvan_unprotect(&deadlocks_left);
+            sylvan_unprotect(&deadlocks_right);
+            bdd_refs_pop(1);
         }
 
         return result;
@@ -224,17 +235,25 @@ TASK_5(BDD, go_par, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, dea
 VOID_TASK_1(par, set_t, set)
 {
     BDD visited = set->bdd;
-    BDD new = sylvan_ref(visited);
+    BDD next_level = visited;
+    BDD cur_level = sylvan_false;
+    BDD deadlocks = sylvan_false;
+
+    sylvan_protect(&visited);
+    sylvan_protect(&next_level);
+    sylvan_protect(&cur_level);
+    sylvan_protect(&deadlocks);
+
     int iteration = 1;
     do {
         // calculate successors in parallel
-        BDD cur = new;
-        BDD deadlocks = cur;
-        new = CALL(go_par, cur, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
-        sylvan_deref(cur);
+        cur_level = next_level;
+        deadlocks = cur_level;
+
+        next_level = CALL(go_par, cur_level, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
 
         if (check_deadlocks && deadlocks != sylvan_false) {
-            INFO("Found %zu deadlock states... ", (size_t)sylvan_satcount(deadlocks, set->variables));
+            INFO("Found %'0.0f deadlock states... ", sylvan_satcount(deadlocks, set->variables));
             if (deadlocks != sylvan_false) {
                 printf("example: ");
                 print_example(deadlocks, set->variables);
@@ -244,9 +263,7 @@ VOID_TASK_1(par, set_t, set)
         }
 
         // visited = visited + new
-        BDD old_visited = visited;
-        visited = sylvan_ref(sylvan_or(visited, new));
-        sylvan_deref(old_visited);
+        visited = sylvan_or(visited, next_level);
 
         if (report_table && report_levels) {
             size_t filled, total;
@@ -261,14 +278,19 @@ VOID_TASK_1(par, set_t, set)
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %'0.0f states explored\n", iteration, sylvan_satcount_cached(visited, set->variables));
+            INFO("Level %d done, %'0.0f states explored\n", iteration, sylvan_satcount(visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
         iteration++;
-    } while (new != sylvan_false);
-    sylvan_deref(new);
+    } while (next_level != sylvan_false);
+
     set->bdd = visited;
+
+    sylvan_unprotect(&visited);
+    sylvan_unprotect(&next_level);
+    sylvan_unprotect(&cur_level);
+    sylvan_unprotect(&deadlocks);
 }
 
 /* Sequential version of merge-reduction */
@@ -276,15 +298,17 @@ TASK_5(BDD, go_bfs, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, dea
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        BDD succ = sylvan_ref(sylvan_relnext(cur, next[from]->bdd, next[from]->variables));
+        BDD succ = sylvan_relnext(cur, next[from]->bdd, next[from]->variables);
+        bdd_refs_push(succ);
         if (deadlocks) {
             // check which BDDs in deadlocks do not have a successor in this relation
-            BDD anc = sylvan_ref(sylvan_relprev(next[from]->bdd, succ, next[from]->variables));
-            *deadlocks = sylvan_ref(sylvan_diff(*deadlocks, anc));
-            sylvan_deref(anc);
+            BDD anc = sylvan_relprev(next[from]->bdd, succ, next[from]->variables);
+            bdd_refs_push(anc);
+            *deadlocks = sylvan_diff(*deadlocks, anc);
+            bdd_refs_pop(1);
         }
-        BDD result = sylvan_ref(sylvan_diff(succ, visited));
-        sylvan_deref(succ);
+        BDD result = sylvan_diff(succ, visited);
+        bdd_refs_pop(1);
         return result;
     } else {
         BDD deadlocks_left;
@@ -292,21 +316,26 @@ TASK_5(BDD, go_bfs, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, dea
         if (deadlocks) {
             deadlocks_left = *deadlocks;
             deadlocks_right = *deadlocks;
+            sylvan_protect(&deadlocks_left);
+            sylvan_protect(&deadlocks_right);
         }
 
         // Recursively calculate left+right
         BDD left = CALL(go_bfs, cur, visited, from, (len+1)/2, deadlocks ? &deadlocks_left : NULL);
+        bdd_refs_push(left);
         BDD right = CALL(go_bfs, cur, visited, from+(len+1)/2, len/2, deadlocks ? &deadlocks_right : NULL);
+        bdd_refs_push(right);
 
         // Merge results of left+right
-        BDD result = sylvan_ref(sylvan_or(left, right));
-        sylvan_deref(left);
-        sylvan_deref(right);
+        BDD result = sylvan_or(left, right);
+        bdd_refs_pop(2);
 
         if (deadlocks) {
-            *deadlocks = sylvan_ref(sylvan_and(deadlocks_left, deadlocks_right));
-            sylvan_deref(deadlocks_left);
-            sylvan_deref(deadlocks_right);
+            bdd_refs_push(result);
+            *deadlocks = sylvan_and(deadlocks_left, deadlocks_right);
+            sylvan_unprotect(&deadlocks_left);
+            sylvan_unprotect(&deadlocks_right);
+            bdd_refs_pop(1);
         }
 
         return result;
@@ -317,25 +346,35 @@ TASK_5(BDD, go_bfs, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, dea
 VOID_TASK_1(bfs, set_t, set)
 {
     BDD visited = set->bdd;
-    BDD new = sylvan_ref(visited);
+    BDD next_level = visited;
+    BDD cur_level = sylvan_false;
+    BDD deadlocks = sylvan_false;
+
+    sylvan_protect(&visited);
+    sylvan_protect(&next_level);
+    sylvan_protect(&cur_level);
+    sylvan_protect(&deadlocks);
+
     int iteration = 1;
     do {
-        BDD cur = new;
-        BDD deadlocks = cur;
-        new = CALL(go_bfs, cur, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
-        sylvan_deref(cur);
+        // calculate successors in parallel
+        cur_level = next_level;
+        deadlocks = cur_level;
+
+        next_level = CALL(go_bfs, cur_level, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
 
         if (check_deadlocks && deadlocks != sylvan_false) {
-            INFO("Found %zu deadlock states... ", (size_t)sylvan_satcount(deadlocks, set->variables));
-            printf("example: ");
-            print_example(deadlocks, set->variables);
+            INFO("Found %'0.0f deadlock states... ", sylvan_satcount(deadlocks, set->variables));
+            if (deadlocks != sylvan_false) {
+                printf("example: ");
+                print_example(deadlocks, set->variables);
+                check_deadlocks = 0;
+            }
             printf("\n");
         }
 
         // visited = visited + new
-        BDD old_visited = visited;
-        visited = sylvan_ref(sylvan_or(visited, new));
-        sylvan_deref(old_visited);
+        visited = sylvan_or(visited, next_level);
 
         if (report_table && report_levels) {
             size_t filled, total;
@@ -350,14 +389,19 @@ VOID_TASK_1(bfs, set_t, set)
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %'0.0f states explored\n", iteration, sylvan_satcount_cached(visited, set->variables));
+            INFO("Level %d done, %'0.0f states explored\n", iteration, sylvan_satcount(visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
         iteration++;
-    } while (new != sylvan_false);
-    sylvan_deref(new);
+    } while (next_level != sylvan_false);
+
     set->bdd = visited;
+
+    sylvan_unprotect(&visited);
+    sylvan_unprotect(&next_level);
+    sylvan_unprotect(&cur_level);
+    sylvan_unprotect(&deadlocks);
 }
 
 static void

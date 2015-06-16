@@ -59,6 +59,15 @@ uint64_t refs_next(refs_table_t *tbl, uint64_t **bucket, size_t end);
 void refs_create(refs_table_t *tbl, size_t _refs_size);
 void refs_free(refs_table_t *tbl);
 
+// The same, but now for 64-bit values ("protect pointers")
+size_t protect_count(refs_table_t *tbl);
+void protect_up(refs_table_t *tbl, uint64_t a);
+void protect_down(refs_table_t *tbl, uint64_t a);
+uint64_t *protect_iter(refs_table_t *tbl, size_t first, size_t end);
+uint64_t protect_next(refs_table_t *tbl, uint64_t **bucket, size_t end);
+void protect_create(refs_table_t *tbl, size_t _refs_size);
+void protect_free(refs_table_t *tbl);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

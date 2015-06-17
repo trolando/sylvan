@@ -19,14 +19,7 @@
 #define SYLVAN_SIZE_FIBONACCI 0
 #endif
 
-/* For Sylvan BDD: keep statistics of operation cache use */
-#ifndef SYLVAN_CACHE_STATS
-#define SYLVAN_CACHE_STATS 0
+/* Enable/disable counters and timers */
+#ifndef SYLVAN_STATS
+#define SYLVAN_STATS 0
 #endif
-
-/* For Sylvan BDD: keep statistics of operations */
-#ifndef SYLVAN_OPERATION_STATS
-#define SYLVAN_OPERATION_STATS 0
-#endif
-
-

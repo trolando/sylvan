@@ -1,0 +1,168 @@
+/*
+ * Copyright 2011-2015 Formal Methods and Tools, University of Twente
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#ifndef SYLVAN_STATS_H
+#define SYLVAN_STATS_H
+
+#include <lace.h>
+#include <time.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
+typedef enum {
+    BDD_ITE,
+    BDD_EXISTS,
+    BDD_AND_EXISTS,
+    BDD_RELNEXT,
+    BDD_RELPREV,
+    BDD_SATCOUNT,
+    BDD_COMPOSE,
+    BDD_RESTRICT,
+    BDD_CONSTRAIN,
+    BDD_CLOSURE,
+    BDD_ISBDD,
+    BDD_SUPPORT,
+    BDD_PATHCOUNT,
+    BDD_ITE_CACHED,
+    BDD_EXISTS_CACHED,
+    BDD_AND_EXISTS_CACHED,
+    BDD_RELNEXT_CACHED,
+    BDD_RELPREV_CACHED,
+    BDD_SATCOUNT_CACHED,
+    BDD_COMPOSE_CACHED,
+    BDD_RESTRICT_CACHED,
+    BDD_CONSTRAIN_CACHED,
+    BDD_CLOSURE_CACHED,
+    BDD_ISBDD_CACHED,
+    BDD_SUPPORT_CACHED,
+    BDD_PATHCOUNT_CACHED,
+    BDD_NODES_CREATED,
+    BDD_NODES_REUSED,
+    SYLVAN_GC_COUNT,
+    SYLVAN_COUNTER_COUNTER
+} Sylvan_Counters;
+
+typedef enum
+{
+    SYLVAN_GC,
+    SYLVAN_TIMER_COUNTER
+} Sylvan_Timers;
+
+#define sylvan_stats_init() CALL(sylvan_stats_init)
+VOID_TASK_DECL_0(sylvan_stats_init)
+
+/**
+ * Reset all counters (for statistics)
+ */
+#define sylvan_stats_reset() CALL(sylvan_stats_reset)
+VOID_TASK_DECL_0(sylvan_stats_reset)
+
+/**
+ * Write statistic report to file (stdout, stderr, etc)
+ */
+void sylvan_stats_report(FILE* target, int color);
+
+/* Infrastructure for internal markings */
+typedef struct
+{
+    uint64_t counters[SYLVAN_COUNTER_COUNTER];
+    uint64_t timers[SYLVAN_TIMER_COUNTER];
+    uint64_t timers_startstop[SYLVAN_TIMER_COUNTER];
+} sylvan_stats_t;
+
+#if SYLVAN_STATS
+
+#ifdef __ELF__
+extern __thread sylvan_stats_t sylvan_stats;
+#else
+#include <pthread.h>
+extern pthread_key_t sylvan_stats_key;
+#endif
+
+static inline void
+sylvan_stats_count(size_t counter)
+{
+#ifdef __ELF__
+    sylvan_stats.counters[counter]++;
+#else
+    sylvan_stats_t *sylvan_stats = (sylvan_stats_t*)pthread_getspecific(sylvan_stats_key);
+    sylvan_stats->counters[counter]++;
+#endif
+}
+
+static inline void
+sylvan_timer_start(size_t timer)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    uint64_t t = ts.tv_sec;
+    t *= 1000000000UL;
+    t += ts.tv_nsec;
+
+#ifdef __ELF__
+    sylvan_stats.timers_startstop[timer] = t;
+#else
+    sylvan_stats_t *sylvan_stats = (sylvan_stats_t*)pthread_getspecific(sylvan_stats_key);
+    sylvan_stats->timers_startstop[timer] = t;
+#endif
+}
+
+static inline void
+sylvan_timer_stop(size_t timer)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    uint64_t t = ts.tv_sec;
+    t *= 1000000000UL;
+    t += ts.tv_nsec;
+
+#ifdef __ELF__
+    sylvan_stats.timers[timer] += (t - sylvan_stats.timers_startstop[timer]);
+#else
+    sylvan_stats_t *sylvan_stats = (sylvan_stats_t*)pthread_getspecific(sylvan_stats_key);
+    sylvan_stats->timers[timer] += (t - sylvan_stats->timers_startstop[timer]);
+#endif
+}
+
+#else
+
+static inline void
+sylvan_stats_count(size_t counter)
+{
+    (void)counter;
+}
+
+static inline void
+sylvan_timer_start(size_t timer)
+{
+    (void)timer;
+}
+
+static inline void
+sylvan_timer_stop(size_t timer)
+{
+    (void)timer;
+}
+
+#endif
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
+
+#endif

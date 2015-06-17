@@ -18,6 +18,8 @@ add_library(sylvan
     refs.c
     sha2.h
     sha2.c
+    stats.h
+    stats.c
     sylvan.h
     sylvan_bdd.h
     sylvan_bdd.c

@@ -43,6 +43,7 @@
 
 #include <cache.h>
 #include <llmsset.h>
+#include <stats.h>
 
 #ifndef SYLVAN_H
 #define SYLVAN_H

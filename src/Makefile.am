@@ -17,6 +17,8 @@ libsylvan_la_SOURCES = \
     refs.c \
     sha2.c \
     sha2.h \
+    stats.h \
+    stats.c \
     sylvan.h \
     sylvan_config.h \
     sylvan_bdd.h \

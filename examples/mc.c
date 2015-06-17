@@ -533,7 +533,7 @@ main(int argc, char **argv)
         INFO("Final states: %'zu BDD nodes\n", sylvan_nodecount(states->bdd));
     }
 
-    sylvan_report_stats();
+    sylvan_stats_report(stdout, 1);
 
     return 0;
 }

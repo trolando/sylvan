@@ -25,14 +25,6 @@
 extern "C" {
 #endif /* __cplusplus */
 
-#ifndef SYLVAN_CACHE_STATS
-#define SYLVAN_CACHE_STATS 0
-#endif
-
-#ifndef SYLVAN_OPERATION_STATS
-#define SYLVAN_OPERATION_STATS 0
-#endif
-
 typedef uint64_t BDD;       // low 40 bits used for index, highest bit for complement, rest 0
 // BDDSET uses the BDD node hash table. A BDDSET is an ordered BDD.
 typedef uint64_t BDDSET;    // encodes a set of variables (e.g. for exists etc.)
@@ -184,16 +176,6 @@ TASK_DECL_3(BDD, sylvan_compose, BDD, BDDMAP, BDDVAR);
  */
 TASK_DECL_1(BDD, sylvan_support, BDD);
 #define sylvan_support(bdd) (CALL(sylvan_support, bdd))
-
-/**
- * Reset all counters (for statistics)
- */
-void sylvan_reset_counters();
-
-/**
- * Write statistic report to stdout
- */
-void sylvan_report_stats();
 
 /**
  * A set of BDD variables is a cube (conjunction) of variables in their positive form.

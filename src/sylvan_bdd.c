@@ -276,7 +276,8 @@ sylvan_makenode(BDDVAR level, BDD low, BDD high)
     }
 
     BDD result;
-    uint64_t index = llmsset_lookup(nodes, &n);
+    int created;
+    uint64_t index = llmsset_lookup(nodes, &n, &created);
     if (index == 0) {
         LACE_ME;
 
@@ -289,12 +290,15 @@ sylvan_makenode(BDDVAR level, BDD low, BDD high)
         //size_t total = llmsset_get_size(nodes);
         //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
 
-        index = llmsset_lookup(nodes, &n);
+        index = llmsset_lookup(nodes, &n, &created);
         if (index == 0) {
             fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
             exit(1);
         }
     }
+
+    if (created) sylvan_stats_count(BDD_NODES_CREATED);
+    else sylvan_stats_count(BDD_NODES_REUSED);
 
     result = index;
     return mark ? result | sylvan_complement : result;
@@ -362,14 +366,15 @@ sylvan_makenode_nocomp(BDDVAR level, BDD low, BDD high)
 
     struct bddnode n = (struct bddnode){high, level, low, 0, 0};
 
-    uint64_t index = llmsset_lookup(nodes, &n);
+    int created;
+    uint64_t index = llmsset_lookup(nodes, &n, &created);
     if (index == 0) {
         LACE_ME;
         bdd_refs_push(low);
         bdd_refs_push(high);
         sylvan_gc();
         bdd_refs_pop(2);
-        index = llmsset_lookup(nodes, &n);
+        index = llmsset_lookup(nodes, &n, &created);
         if (index == 0) {
             fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
             exit(1);

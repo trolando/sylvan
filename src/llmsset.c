@@ -104,7 +104,7 @@ hash16_mul(const void *key)
  * insert_index points to a starting point and is updated.
  */
 uint64_t
-llmsset_lookup(const llmsset_t dbs, const void* data)
+llmsset_lookup(const llmsset_t dbs, const void* data, int* created)
 {
     LOCALIZE_THREAD_LOCAL(insert_index, uint64_t);
 
@@ -130,6 +130,7 @@ llmsset_lookup(const llmsset_t dbs, const void* data)
                 uint64_t d_idx = v & MASK_INDEX;
                 register uint8_t *d_ptr = dbs->data + d_idx * 16;
                 if (memcmp(d_ptr, data, 16) == 0) {
+                    *created = 0;
                     return d_idx;
                 }
             }
@@ -196,6 +197,7 @@ phase2_restart:
             if (!(v & HFILLED)) {
                 uint64_t new_v = (v&DFILLED) | mask;
                 if (!cas(bucket, v, new_v)) goto phase2_restart;
+                *created = 1;
                 return d_idx;
             }
 
@@ -206,6 +208,7 @@ phase2_restart:
                     volatile uint64_t *ptr = dbs->table + d_idx;
                     uint64_t h = *ptr;
                     while (!cas(ptr, h, h&~(DFILLED))) { h = *ptr; } // uninsert data
+                    *created = 0;
                     return d2_idx;
                 }
             }

@@ -23,3 +23,8 @@
 #ifndef SYLVAN_STATS
 #define SYLVAN_STATS 0
 #endif
+
+/* Aggressive or conservative resizing strategy */
+#ifndef SYLVAN_AGGRESSIVE_RESIZE
+#define SYLVAN_AGGRESSIVE_RESIZE 1
+#endif

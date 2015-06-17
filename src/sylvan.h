@@ -145,6 +145,20 @@ LACE_TYPEDEF_CB(void, gc_hook_cb);
 void sylvan_gc_set_hook(gc_hook_cb new_hook);
 
 /**
+ * One of the hooks for resizing behavior.
+ * Default if SYLVAN_AGGRESSIVE_RESIZE is set.
+ * Always double size on gc() until maximum reached.
+ */
+VOID_TASK_DECL_0(sylvan_gc_aggressive_resize);
+
+/**
+ * One of the hooks for resizing behavior.
+ * Default if SYLVAN_AGGRESSIVE_RESIZE is not set.
+ * Double size on gc() whenever >50% is used.
+ */
+VOID_TASK_DECL_0(sylvan_gc_default_hook);
+
+/**
  * Global variables (number of workers, nodes table)
  */
 

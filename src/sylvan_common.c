@@ -148,7 +148,26 @@ next_size(size_t n)
 #endif
 }
 
-VOID_TASK_0(sylvan_gc_default_hook)
+VOID_TASK_IMPL_0(sylvan_gc_aggressive_resize)
+{
+    /**
+     * Always resize when gc called
+     */
+    size_t max_size = llmsset_get_max_size(nodes);
+    size_t size = llmsset_get_size(nodes);
+    if (size < max_size) {
+        size_t new_size = next_size(size);
+        if (new_size > max_size) new_size = max_size;
+        llmsset_set_size(nodes, new_size);
+        if (cache_size < cache_max) {
+            new_size = next_size(cache_size);
+            if (new_size > cache_max) new_size = cache_max;
+            cache_size = new_size;
+        }
+    }
+}
+
+VOID_TASK_IMPL_0(sylvan_gc_default_hook)
 {
     /**
      * Default behavior:
@@ -234,7 +253,11 @@ sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize, size_t m
 
     gc = 0;
     barrier_init(&gcbar, lace_workers());
+#if SYLVAN_AGGRESSIVE_RESIZE
+    gc_hook = TASK(sylvan_gc_aggressive_resize);
+#else
     gc_hook = TASK(sylvan_gc_default_hook);
+#endif
     sylvan_gc_add_mark(10, TASK(sylvan_gc_mark_cache));
     sylvan_gc_add_mark(20, TASK(sylvan_gc_call_hook));
     sylvan_gc_add_mark(30, TASK(sylvan_gc_rehash));

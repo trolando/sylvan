@@ -149,6 +149,24 @@ sylvan_stats_report(FILE *target, int color)
     if (totals.counters[BDD_NODES_REUSED]) fprintf(target, "BDD Nodes reused: %'"PRIu64"\n", totals.counters[BDD_NODES_REUSED]);
 
     fprintf(target, "\n");
+    fprintf(target, NC ULINE "LDD operations count (cache reuse)\n" NC LBLUE);
+    if (totals.counters[LDD_UNION]) fprintf(target, "Union: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[LDD_UNION], totals.counters[LDD_UNION_CACHED]);
+    if (totals.counters[LDD_MINUS]) fprintf(target, "Minus: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[LDD_MINUS], totals.counters[LDD_MINUS_CACHED]);
+    if (totals.counters[LDD_INTERSECT]) fprintf(target, "Intersect: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[LDD_INTERSECT], totals.counters[LDD_INTERSECT_CACHED]);
+    if (totals.counters[LDD_RELPROD]) fprintf(target, "RelProd: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[LDD_RELPROD], totals.counters[LDD_RELPROD_CACHED]);
+    if (totals.counters[LDD_RELPREV]) fprintf(target, "RelPrev: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[LDD_RELPREV], totals.counters[LDD_RELPREV_CACHED]);
+    if (totals.counters[LDD_PROJECT]) fprintf(target, "Project: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[LDD_PROJECT], totals.counters[LDD_PROJECT_CACHED]);
+    if (totals.counters[LDD_JOIN]) fprintf(target, "Join: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[LDD_JOIN], totals.counters[LDD_JOIN_CACHED]);
+    if (totals.counters[LDD_MATCH]) fprintf(target, "Match: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[LDD_MATCH], totals.counters[LDD_MATCH_CACHED]);
+    if (totals.counters[LDD_SATCOUNT]) fprintf(target, "SatCount: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[LDD_SATCOUNT], totals.counters[LDD_SATCOUNT_CACHED]);
+    if (totals.counters[LDD_SATCOUNTL]) fprintf(target, "SatCountL: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[LDD_SATCOUNTL], totals.counters[LDD_SATCOUNTL_CACHED]);
+    if (totals.counters[LDD_ZIP]) fprintf(target, "Zip: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[LDD_ZIP], totals.counters[LDD_ZIP_CACHED]);
+    if (totals.counters[LDD_RELPROD_UNION]) fprintf(target, "RelProdUnion: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[LDD_RELPROD_UNION], totals.counters[LDD_RELPROD_UNION_CACHED]);
+    if (totals.counters[LDD_PROJECT_MINUS]) fprintf(target, "ProjectMinus: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[LDD_PROJECT_MINUS], totals.counters[LDD_PROJECT_MINUS_CACHED]);
+    if (totals.counters[LDD_NODES_CREATED]) fprintf(target, "LDD Nodes created: %'"PRIu64"\n", totals.counters[LDD_NODES_CREATED]);
+    if (totals.counters[LDD_NODES_REUSED]) fprintf(target, "LDD Nodes reused: %'"PRIu64"\n", totals.counters[LDD_NODES_REUSED]);
+
+    fprintf(target, "\n");
     fprintf(target, NC ULINE "Garbage collection\n" NC LBLUE);
     fprintf(target, "Number of GC executions: %'"PRIu64"\n", totals.counters[SYLVAN_GC_COUNT]);
     fprintf(target, "Total time spent: %'"PRIu64".%'"PRIu64" sec.\n", totals.timers[SYLVAN_GC]/1000000000UL, (totals.timers[SYLVAN_GC]%1000000000)/1000000);

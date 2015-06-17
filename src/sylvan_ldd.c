@@ -297,6 +297,9 @@ lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
         }
     }
 
+    if (created) sylvan_stats_count(LDD_NODES_CREATED);
+    else sylvan_stats_count(LDD_NODES_REUSED);
+
     return (MDD)index;
 }
 
@@ -324,6 +327,9 @@ lddmc_make_copynode(MDD ifeq, MDD ifneq)
             exit(1);
         }
     }
+
+    if (created) sylvan_stats_count(LDD_NODES_CREATED);
+    else sylvan_stats_count(LDD_NODES_REUSED);
 
     return (MDD)index;
 }
@@ -432,12 +438,17 @@ TASK_IMPL_2(MDD, lddmc_union, MDD, a, MDD, b)
     /* Test gc */
     sylvan_gc_test();
 
+    sylvan_stats_count(LDD_UNION);
+
     /* Improve cache behavior */
     if (a < b) { MDD tmp=b; b=a; a=tmp; }
 
     /* Access cache */
     MDD result;
-    if (cache_get(MDD_SETDATA(a, CACHE_MDD_UNION), b, 0, &result)) return result;
+    if (cache_get(MDD_SETDATA(a, CACHE_MDD_UNION), b, 0, &result)) {
+        sylvan_stats_count(LDD_UNION_CACHED);
+        return result;
+    }
 
     /* Get nodes */
     mddnode_t na = GETNODE(a);
@@ -495,9 +506,14 @@ TASK_IMPL_2(MDD, lddmc_minus, MDD, a, MDD, b)
     /* Test gc */
     sylvan_gc_test();
 
+    sylvan_stats_count(LDD_MINUS);
+
     /* Access cache */
     MDD result;
-    if (cache_get(MDD_SETDATA(a, CACHE_MDD_MINUS), b, 0, &result)) return result;
+    if (cache_get(MDD_SETDATA(a, CACHE_MDD_MINUS), b, 0, &result)) {
+        sylvan_stats_count(LDD_MINUS_CACHED);
+        return result;
+    }
 
     /* Get nodes */
     mddnode_t na = GETNODE(a);
@@ -548,10 +564,16 @@ TASK_IMPL_3(MDD, lddmc_zip, MDD, a, MDD, b, MDD*, res2)
     /* Test gc */
     sylvan_gc_test();
 
+    /* Maybe not the ideal way */
+    sylvan_stats_count(LDD_ZIP);
+
     /* Access cache */
     MDD result;
     if (cache_get(MDD_SETDATA(a, CACHE_MDD_UNION), b, 0, &result) &&
-        cache_get(MDD_SETDATA(b, CACHE_MDD_MINUS), a, 0, res2)) return result;
+        cache_get(MDD_SETDATA(b, CACHE_MDD_MINUS), a, 0, res2)) {
+        sylvan_stats_count(LDD_ZIP);
+        return result;
+    }
 
     /* Get nodes */
     mddnode_t na = GETNODE(a);
@@ -597,6 +619,8 @@ TASK_IMPL_2(MDD, lddmc_intersect, MDD, a, MDD, b)
     /* Test gc */
     sylvan_gc_test();
 
+    sylvan_stats_count(LDD_INTERSECT);
+
     /* Get nodes */
     mddnode_t na = GETNODE(a);
     mddnode_t nb = GETNODE(b);
@@ -621,7 +645,10 @@ TASK_IMPL_2(MDD, lddmc_intersect, MDD, a, MDD, b)
 
     /* Access cache */
     MDD result;
-    if (cache_get(MDD_SETDATA(a, CACHE_MDD_INTERSECT), b, 0, &result)) return result;
+    if (cache_get(MDD_SETDATA(a, CACHE_MDD_INTERSECT), b, 0, &result)) {
+        sylvan_stats_count(LDD_INTERSECT_CACHED);
+        return result;
+    }
 
     /* Perform recursive calculation */
     lddmc_refs_spawn(SPAWN(lddmc_intersect, mddnode_getright(na), mddnode_getright(nb)));
@@ -658,9 +685,14 @@ TASK_IMPL_3(MDD, lddmc_match, MDD, a, MDD, b, MDD, proj)
         if (!match_ldds(&a, &b)) return lddmc_false;
     }
 
+    sylvan_stats_count(LDD_MATCH);
+
     /* Access cache */
     MDD result;
-    if (cache_get(MDD_SETDATA(a, CACHE_MDD_MATCH), b, proj, &result)) return result;
+    if (cache_get(MDD_SETDATA(a, CACHE_MDD_MATCH), b, proj, &result)) {
+        sylvan_stats_count(LDD_MATCH_CACHED);
+        return result;
+    }
 
     /* Perform recursive calculation */
     mddnode_t na = GETNODE(a);
@@ -707,9 +739,17 @@ TASK_IMPL_3(MDD, lddmc_relprod, MDD, set, MDD, rel, MDD, meta)
         }
     }
 
+    /* Test gc */
+    sylvan_gc_test();
+
+    sylvan_stats_count(LDD_RELPROD);
+
     /* Access cache */
     MDD result;
-    if (cache_get(MDD_SETDATA(set, CACHE_MDD_RELPROD), rel, meta, &result)) return result;
+    if (cache_get(MDD_SETDATA(set, CACHE_MDD_RELPROD), rel, meta, &result)) {
+        sylvan_stats_count(LDD_RELPROD_CACHED);
+        return result;
+    }
 
     mddnode_t n_set = GETNODE(set);
     mddnode_t n_rel = GETNODE(rel);
@@ -899,12 +939,20 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
         }
     }
 
+    /* Test gc */
+    sylvan_gc_test();
+
+    sylvan_stats_count(LDD_RELPROD_UNION);
+
     /* Access cache */
     MDD result;
     const MDD c_a = MDD_SETDATA(set, CACHE_MDD_RELPROD);
     const MDD c_b = MDD_SETDATA(rel, (uint32_t)un); // store lower 22 bits in c_b
     const MDD c_c = MDD_SETDATA(meta, (uint32_t)(un>>22)); // store higher 20 bits in c_c
-    if (cache_get(c_a, c_b, c_c, &result)) return result;
+    if (cache_get(c_a, c_b, c_c, &result)) {
+        sylvan_stats_count(LDD_RELPROD_UNION_CACHED);
+        return result;
+    }
 
     /* Recursive operations */
     if (m_val == 0) { // not in rel
@@ -1203,12 +1251,20 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
         if (!match_ldds(&set, &rel)) return lddmc_false;
     }
 
+    /* Test gc */
+    sylvan_gc_test();
+
+    sylvan_stats_count(LDD_RELPREV);
+
     /* Access cache */
     MDD result;
     const MDD c_a = MDD_SETDATA(set, CACHE_MDD_RELPREV);
     const MDD c_b = MDD_SETDATA(rel, (uint32_t)uni); // store lower 22 bits in c_b
     const MDD c_c = MDD_SETDATA(meta, (uint32_t)(uni>>22)); // store higher 20 bits in c_c
-    if (cache_get(c_a, c_b, c_c, &result)) return result;
+    if (cache_get(c_a, c_b, c_c, &result)) {
+        sylvan_stats_count(LDD_RELPREV_CACHED);
+        return result;
+    }
 
     mddnode_t n_set = GETNODE(set);
     mddnode_t n_rel = GETNODE(rel);
@@ -1407,12 +1463,17 @@ TASK_IMPL_4(MDD, lddmc_join, MDD, a, MDD, b, MDD, a_proj, MDD, b_proj)
         if (!match_ldds(&a, &b)) return lddmc_false;
     }
 
+    sylvan_stats_count(LDD_JOIN);
+
     /* Access cache */
     MDD result;
     const MDD c_a = MDD_SETDATA(a, CACHE_MDD_JOIN);
     const MDD c_b = MDD_SETDATA(b, (uint32_t)a_proj); // store lower 22 bits in c_b
     const MDD c_c = MDD_SETDATA(b_proj, (uint32_t)(a_proj>>22)); // store higher 20 bits in c_c
-    if (cache_get(c_a, c_b, c_c, &result)) return result;
+    if (cache_get(c_a, c_b, c_c, &result)) {
+        sylvan_stats_count(LDD_JOIN_CACHED);
+        return result;
+    }
 
     /* Perform recursive calculation */
     const mddnode_t na = GETNODE(a);
@@ -1466,8 +1527,13 @@ TASK_IMPL_2(MDD, lddmc_project, const MDD, mdd, const MDD, proj)
 
     sylvan_gc_test();
 
+    sylvan_stats_count(LDD_PROJECT);
+
     MDD result;
-    if (cache_get(MDD_SETDATA(mdd, CACHE_MDD_PROJECT), proj, 0, &result)) return result;
+    if (cache_get(MDD_SETDATA(mdd, CACHE_MDD_PROJECT), proj, 0, &result)) {
+        sylvan_stats_count(LDD_PROJECT_CACHED);
+        return result;
+    }
 
     mddnode_t n = GETNODE(mdd);
 
@@ -1524,8 +1590,13 @@ TASK_IMPL_3(MDD, lddmc_project_minus, const MDD, mdd, const MDD, proj, MDD, avoi
 
     sylvan_gc_test();
 
+    sylvan_stats_count(LDD_PROJECT_MINUS);
+
     MDD result;
-    if (cache_get(MDD_SETDATA(mdd, CACHE_MDD_PROJECT), proj, avoid, &result)) return result;
+    if (cache_get(MDD_SETDATA(mdd, CACHE_MDD_PROJECT), proj, avoid, &result)) {
+        sylvan_stats_count(LDD_PROJECT_MINUS_CACHED);
+        return result;
+    }
 
     mddnode_t n = GETNODE(mdd);
 
@@ -1780,7 +1851,13 @@ TASK_IMPL_1(lddmc_satcount_double_t, lddmc_satcount_cached, MDD, mdd)
         uint64_t s;
     } hack;
 
-    if (cache_get(MDD_SETDATA(mdd, CACHE_MDD_SATCOUNT), 0, 0, &hack.s)) return hack.d;
+    sylvan_stats_count(LDD_SATCOUNT);
+
+    if (cache_get(MDD_SETDATA(mdd, CACHE_MDD_SATCOUNT), 0, 0, &hack.s)) {
+        sylvan_stats_count(LDD_SATCOUNT_CACHED);
+        return hack.d;
+    }
+
     mddnode_t n = GETNODE(mdd);
 
     SPAWN(lddmc_satcount_cached, mddnode_getdown(n));
@@ -1800,6 +1877,8 @@ TASK_IMPL_1(long double, lddmc_satcount, MDD, mdd)
     /* Perhaps execute garbage collection */
     sylvan_gc_test();
 
+    sylvan_stats_count(LDD_SATCOUNTL);
+
     union {
         long double d;
         struct {
@@ -1810,6 +1889,7 @@ TASK_IMPL_1(long double, lddmc_satcount, MDD, mdd)
 
     if (cache_get(MDD_SETDATA(mdd, CACHE_MDD_SATCOUNTL1), 0, 0, &hack.s.s1) &&
         cache_get(MDD_SETDATA(mdd, CACHE_MDD_SATCOUNTL2), 0, 0, &hack.s.s2)) {
+        sylvan_stats_count(LDD_SATCOUNTL_CACHED);
         return hack.d;
     }
 

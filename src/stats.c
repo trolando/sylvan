@@ -134,6 +134,7 @@ sylvan_stats_report(FILE *target, int color)
     fprintf(target, NC ULINE "BDD operations count (cache reuse)\n" NC LBLUE);
     if (totals.counters[BDD_ITE]) fprintf(target, "ITE: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_ITE], totals.counters[BDD_ITE_CACHED]);
     if (totals.counters[BDD_AND]) fprintf(target, "AND: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_AND], totals.counters[BDD_AND_CACHED]);
+    if (totals.counters[BDD_XOR]) fprintf(target, "XOR: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_XOR], totals.counters[BDD_XOR_CACHED]);
     if (totals.counters[BDD_EXISTS]) fprintf(target, "Exists: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_EXISTS], totals.counters[BDD_EXISTS_CACHED]);
     if (totals.counters[BDD_AND_EXISTS]) fprintf(target, "AndExists: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_AND_EXISTS], totals.counters[BDD_AND_EXISTS_CACHED]);
     if (totals.counters[BDD_RELNEXT]) fprintf(target, "RelNext: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_RELNEXT], totals.counters[BDD_RELNEXT_CACHED]);

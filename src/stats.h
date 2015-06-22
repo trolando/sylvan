@@ -27,6 +27,7 @@ extern "C" {
 typedef enum {
     BDD_ITE,
     BDD_AND,
+    BDD_XOR,
     BDD_EXISTS,
     BDD_AND_EXISTS,
     BDD_RELNEXT,
@@ -41,6 +42,7 @@ typedef enum {
     BDD_PATHCOUNT,
     BDD_ITE_CACHED,
     BDD_AND_CACHED,
+    BDD_XOR_CACHED,
     BDD_EXISTS_CACHED,
     BDD_AND_EXISTS_CACHED,
     BDD_RELNEXT_CACHED,

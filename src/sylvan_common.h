@@ -31,6 +31,7 @@ extern "C" {
 // BDD operations
 #define CACHE_ITE             0
 #define CACHE_AND             1
+#define CACHE_XOR             14
 #define CACHE_EXISTS          2
 #define CACHE_AND_EXISTS      3
 #define CACHE_RELNEXT         4

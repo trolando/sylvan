@@ -483,6 +483,77 @@ TASK_IMPL_3(BDD, sylvan_and, BDD, a, BDD, b, BDDVAR, prev_level)
     return result;
 }
 
+TASK_IMPL_3(BDD, sylvan_xor, BDD, a, BDD, b, BDDVAR, prev_level)
+{
+    /* Terminal cases */
+    if (a == sylvan_false) return b;
+    if (b == sylvan_false) return a;
+    if (a == sylvan_true) return sylvan_not(b);
+    if (b == sylvan_true) return sylvan_not(a);
+    if (a == b) return sylvan_false;
+    if (a == sylvan_not(b)) return sylvan_true;
+
+    sylvan_gc_test();
+
+    sylvan_stats_count(BDD_XOR);
+
+    /* Improve for caching */
+    if (BDD_STRIPMARK(a) > BDD_STRIPMARK(b)) {
+        BDD t = b;
+        b = a;
+        a = t;
+    }
+
+    // XOR(~A,B) => XOR(A,~B)
+    if (BDD_HASMARK(a)) {
+        a = BDD_STRIPMARK(a);
+        b = sylvan_not(b);
+    }
+
+    bddnode_t na = GETNODE(a);
+    bddnode_t nb = GETNODE(b);
+
+    BDDVAR level = na->level < nb->level ? na->level : nb->level;
+
+    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
+    if (cachenow) {
+        BDD result;
+        if (cache_get(BDD_SETDATA(a, CACHE_XOR), b, sylvan_false, &result)) {
+            sylvan_stats_count(BDD_XOR_CACHED);
+            return result;
+        }
+    }
+
+    // Get cofactors
+    BDD aLow = a, aHigh = a;
+    BDD bLow = b, bHigh = b;
+    if (level == na->level) {
+        aLow = node_low(a, na);
+        aHigh = node_high(a, na);
+    }
+    if (level == nb->level) {
+        bLow = node_low(b, nb);
+        bHigh = node_high(b, nb);
+    }
+
+    // Recursive computation
+    BDD low, high, result;
+
+    bdd_refs_spawn(SPAWN(sylvan_xor, aHigh, bHigh, level));
+    low = CALL(sylvan_xor, aLow, bLow, level);
+    bdd_refs_push(low);
+    high = bdd_refs_sync(SYNC(sylvan_xor));
+    bdd_refs_pop(1);
+
+    result = sylvan_makenode(level, low, high);
+
+    if (cachenow) {
+        cache_put(BDD_SETDATA(a, CACHE_XOR), b, sylvan_false, result);
+    }
+
+    return result;
+}
+
 
 TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 {
@@ -497,7 +568,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     if (b == sylvan_true && c == sylvan_false) return a;
     if (b == sylvan_false && c == sylvan_true) return sylvan_not(a);
 
-    /* Cases that reduce to AND */
+    /* Cases that reduce to AND and XOR */
 
     // ITE(A,B,0) => AND(A,B)
     if (c == sylvan_false) return CALL(sylvan_and, a, b, prev_level);
@@ -510,6 +581,9 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 
     // ITE(A,B,1) => ~AND(A,~B)
     if (c == sylvan_true) return sylvan_not(CALL(sylvan_and, a, sylvan_not(b), prev_level));
+
+    // ITE(A,B,~B) => XOR(A,~B)
+    if (b == sylvan_not(c)) return CALL(sylvan_xor, a, c, 0);
 
     /* At this point, there are no more terminals */
 

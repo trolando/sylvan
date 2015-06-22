@@ -171,7 +171,7 @@ sylvan_stats_report(FILE *target, int color)
     fprintf(target, "\n");
     fprintf(target, NC ULINE "Garbage collection\n" NC LBLUE);
     fprintf(target, "Number of GC executions: %'"PRIu64"\n", totals.counters[SYLVAN_GC_COUNT]);
-    fprintf(target, "Total time spent: %'"PRIu64".%'"PRIu64" sec.\n", totals.timers[SYLVAN_GC]/1000000000UL, (totals.timers[SYLVAN_GC]%1000000000)/1000000);
+    fprintf(target, "Total time spent: %'.6Lf sec.\n", (long double)totals.timers[SYLVAN_GC]/1000000000);
 
     fprintf(target, "\n");
     fprintf(target, "BDD Unique table: %zu of %zu buckets filled.\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));

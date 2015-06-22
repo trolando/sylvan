@@ -397,6 +397,92 @@ sylvan_bdd_to_nocomp(BDD bdd)
 /**
  * Implementation of unary, binary and if-then-else operators.
  */
+TASK_IMPL_3(BDD, sylvan_and, BDD, a, BDD, b, BDDVAR, prev_level)
+{
+    /* Terminal cases */
+    if (a == sylvan_true) return b;
+    if (b == sylvan_true) return a;
+    if (a == sylvan_false) return sylvan_false;
+    if (b == sylvan_false) return sylvan_false;
+
+    sylvan_gc_test();
+
+    sylvan_stats_count(BDD_AND);
+
+    /* Improve for caching */
+    if (BDD_STRIPMARK(a) > BDD_STRIPMARK(b)) {
+        BDD t = b;
+        b = a;
+        a = t;
+    }
+
+    bddnode_t na = GETNODE(a);
+    bddnode_t nb = GETNODE(b);
+
+    BDDVAR level = na->level < nb->level ? na->level : nb->level;
+
+    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
+    if (cachenow) {
+        BDD result;
+        if (cache_get(BDD_SETDATA(a, CACHE_AND), b, sylvan_false, &result)) {
+            sylvan_stats_count(BDD_AND_CACHED);
+            return result;
+        }
+    }
+
+    // Get cofactors
+    BDD aLow = a, aHigh = a;
+    BDD bLow = b, bHigh = b;
+    if (level == na->level) {
+        aLow = node_low(a, na);
+        aHigh = node_high(a, na);
+    }
+    if (level == nb->level) {
+        bLow = node_low(b, nb);
+        bHigh = node_high(b, nb);
+    }
+
+    // Recursive computation
+    BDD low=sylvan_invalid, high=sylvan_invalid, result;
+
+    int n=0;
+
+    if (aHigh == sylvan_true) {
+        high = bHigh;
+    } else if (aHigh == sylvan_false || bHigh == sylvan_false) {
+        high = sylvan_false;
+    } else if (bHigh == sylvan_true) {
+        high = aHigh;
+    } else {
+        bdd_refs_spawn(SPAWN(sylvan_and, aHigh, bHigh, level));
+        n=1;
+    }
+
+    if (aLow == sylvan_true) {
+        low = bLow;
+    } else if (aLow == sylvan_false || bLow == sylvan_false) {
+        low = sylvan_false;
+    } else if (bLow == sylvan_true) {
+        low = aLow;
+    } else {
+        low = CALL(sylvan_and, aLow, bLow, level);
+    }
+
+    if (n) {
+        bdd_refs_push(low);
+        high = bdd_refs_sync(SYNC(sylvan_and));
+        bdd_refs_pop(1);
+    }
+
+    result = sylvan_makenode(level, low, high);
+
+    if (cachenow) {
+        cache_put(BDD_SETDATA(a, CACHE_AND), b, sylvan_false, result);
+    }
+
+    return result;
+}
+
 
 TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 {
@@ -411,68 +497,25 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     if (b == sylvan_true && c == sylvan_false) return a;
     if (b == sylvan_false && c == sylvan_true) return sylvan_not(a);
 
-    /* End terminal cases. Apply rewrite rules to optimize cache use */
+    /* Cases that reduce to AND */
 
-    /* At this point, A is not a terminal, and at least either B or C is not a terminal. */
+    // ITE(A,B,0) => AND(A,B)
+    if (c == sylvan_false) return CALL(sylvan_and, a, b, prev_level);
 
-    if (sylvan_isconst(b) && BDD_STRIPMARK(c) < BDD_STRIPMARK(a)) {
-        if (b == sylvan_false) {
-            // ITE(A,F,C) = ITE(~C,F,~A)
-            //            = (A and F) or (~A and C)
-            //            = F or (~A and C)
-            //            = (~C and F) or (C and ~A)
-            //            = ITE(~C,F,~A)
-            BDD t = a;
-            a = sylvan_not(c);
-            c = sylvan_not(t);
-        } else {
-            // ITE(A,T,C) = ITE(C,T,A)
-            //            = (A and T) or (~A and C)
-            //            = A or (~A and C)
-            //            = C or (~C and A)
-            //            = (C and T) or (~C and A)
-            //            = ITE(C,T,A)
-            BDD t = a;
-            a = c;
-            c = t;
-        }
-    }
+    // ITE(A,1,C) => ~AND(~A,~C)
+    if (b == sylvan_true) return sylvan_not(CALL(sylvan_and, sylvan_not(a), sylvan_not(c), prev_level));
 
-    if (sylvan_isconst(c) && BDD_STRIPMARK(b) < BDD_STRIPMARK(a)) {
-        if (c == sylvan_false) {
-            // ITE(A,B,F) = ITE(B,A,F)
-            //            = (A and B) or (~A and F)
-            //            = (A and B) or F
-            //            = (B and A) or (~B and F)
-            BDD t = a;
-            a = b;
-            b = t;
-        } else {
-            // ITE(A,B,T) = ITE(~B,~A,T)
-            //            = (A and B) or (~A and T)
-            //            = (A and B) or ~A
-            //            = (~B and ~A) or B
-            //            = (~B and ~A) or (B and T)
-            //            = ITE(~B,~A,T)
-            BDD t = a;
-            a = sylvan_not(b);
-            b = sylvan_not(t);
-        }
-    }
+    // ITE(A,0,C) => AND(~A,C)
+    if (b == sylvan_false) return CALL(sylvan_and, sylvan_not(a), c, prev_level);
 
-    if (BDD_STRIPMARK(b) == BDD_STRIPMARK(c)) {
-        // At this point, B and C are not constants because that is a terminal case
-        // 1. if A then B else ~B = if B then A else ~A
-        // 2. if A then ~B else B = if ~B then A else ~A
-        if (BDD_STRIPMARK(a) > BDD_STRIPMARK(b)) {
-            // a > b, exchange:
-            b = a;
-            a = sylvan_not(c);
-            c = sylvan_not(b);
-        }
-    }
+    // ITE(A,B,1) => ~AND(A,~B)
+    if (c == sylvan_true) return sylvan_not(CALL(sylvan_and, a, sylvan_not(b), prev_level));
 
-    // ITE(~A,B,C) = ITE(A,C,B)
+    /* At this point, there are no more terminals */
+
+    /* Canonical for optimal cache use */
+
+    // ITE(~A,B,C) => ITE(A,C,B)
     if (BDD_HASMARK(a)) {
         a = BDD_STRIPMARK(a);
         BDD t = c;
@@ -480,17 +523,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
         b = t;
     }
 
-    /**
-     * Apply De Morgan: ITE(A,B,C) = ~ITE(A,~B,~C)
-     *
-     * Proof:
-     *   ITE(A,B,C) = (A and B) or (~A and C)
-     *              = (A or C) and (~A or B)
-     *              = ~(~(A or C) or ~(~A or B))
-     *              = ~((~A and ~C) or (A and ~B))
-     *              = ~((A and ~B) or (~A and ~C))
-     *              = ~ITE(A,~B,~C)
-     */
+    // ITE(A,~B,C) => ~ITE(A,B,~C)
     int mark = 0;
     if (BDD_HASMARK(b)) {
         b = sylvan_not(b);
@@ -502,16 +535,20 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 
     sylvan_stats_count(BDD_ITE);
 
-    // Again, a is a node, and at least b or c is also a node
-
     bddnode_t na = GETNODE(a);
-    bddnode_t nb = sylvan_isconst(b) ? 0 : GETNODE(b);
-    bddnode_t nc = sylvan_isconst(c) ? 0 : GETNODE(c);
+    bddnode_t nb = GETNODE(b);
+    bddnode_t nc = GETNODE(c);
 
     // Get lowest level
-    BDDVAR level = na->level;
-    if (nb && level > nb->level) level = nb->level;
-    if (nc && level > nc->level) level = nc->level;
+    BDDVAR level = nb->level < nc->level ? nb->level : nc->level;
+
+    // Fast case
+    if (na->level < level && node_low(a, na) == sylvan_false && node_high(a, na) == sylvan_true) {
+        BDD result = sylvan_makenode(na->level, c, b);
+        return mark ? sylvan_not(result) : result;
+    }
+
+    if (na->level < level) level = na->level;
 
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
@@ -530,17 +567,17 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
         aLow = node_low(a, na);
         aHigh = node_high(a, na);
     }
-    if (nb && level == nb->level) {
+    if (level == nb->level) {
         bLow = node_low(b, nb);
         bHigh = node_high(b, nb);
     }
-    if (nc && level == nc->level) {
+    if (level == nc->level) {
         cLow = node_low(c, nc);
         cHigh = node_high(c, nc);
     }
 
     // Recursive computation
-    BDD low, high, result;
+    BDD low=sylvan_invalid, high=sylvan_invalid, result;
 
     int n=0;
 

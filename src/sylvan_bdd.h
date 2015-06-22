@@ -87,11 +87,12 @@ size_t sylvan_count_protected();
 #define sylvan_not(a) (((BDD)a)^sylvan_complement)
 TASK_DECL_4(BDD, sylvan_ite, BDD, BDD, BDD, BDDVAR);
 #define sylvan_ite(a,b,c) (CALL(sylvan_ite,a,b,c,0))
+TASK_DECL_3(BDD, sylvan_and, BDD, BDD, BDDVAR);
+#define sylvan_and(a,b) (CALL(sylvan_and,a,b,0))
 /* Do not use nested calls for xor/equiv parameter b! */
 #define sylvan_xor(a,b) (CALL(sylvan_ite,a,sylvan_not(b),b,0))
 #define sylvan_equiv(a,b) (CALL(sylvan_ite,a,b,sylvan_not(b),0))
-#define sylvan_or(a,b) sylvan_ite(a, sylvan_true, b)
-#define sylvan_and(a,b) sylvan_ite(a,b,sylvan_false)
+#define sylvan_or(a,b) sylvan_not(sylvan_and(sylvan_not(a),sylvan_not(b)))
 #define sylvan_nand(a,b) sylvan_not(sylvan_and(a,b))
 #define sylvan_nor(a,b) sylvan_not(sylvan_or(a,b))
 #define sylvan_imp(a,b) sylvan_not(sylvan_and(a,sylvan_not(b)))

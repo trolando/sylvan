@@ -930,6 +930,7 @@ TASK_IMPL_4(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, v, BDDVAR, prev_leve
     if (a == sylvan_false) return sylvan_false;
     if (b == sylvan_false) return sylvan_false;
     if (a == sylvan_not(b)) return sylvan_false;
+    if (a == sylvan_true && b == sylvan_true) return sylvan_true;
 
     /* Cases that reduce to "exists" and "and" */
     if (a == sylvan_true) return CALL(sylvan_exists, b, v, 0);
@@ -996,11 +997,18 @@ TASK_IMPL_4(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, v, BDDVAR, prev_leve
         // level is in variable set, perform abstraction
         BDD _v = node_high(v, nv);
         BDD low = CALL(sylvan_and_exists, aLow, bLow, _v, level);
-        if (low == sylvan_true) {
-            result = sylvan_true;
+        if (low == sylvan_true || low == aHigh || low == bHigh) {
+            result = low;
         } else {
             bdd_refs_push(low);
-            BDD high = CALL(sylvan_and_exists, aHigh, bHigh, _v, level);
+            BDD high;
+            if (low == sylvan_not(aHigh)) {
+                high = CALL(sylvan_exists, bHigh, _v, 0);
+            } else if (low == sylvan_not(bHigh)) {
+                high = CALL(sylvan_exists, aHigh, _v, 0);
+            } else {
+                high = CALL(sylvan_and_exists, aHigh, bHigh, _v, level);
+            }
             if (high == sylvan_true) {
                 result = sylvan_true;
                 bdd_refs_pop(1);

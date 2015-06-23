@@ -77,6 +77,7 @@ cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
     // abort if different hash
     if ((s ^ (hash>>32)) & 0x7fff0000) return 0;
     // abort if key different
+    compiler_barrier();
 #if CACHE_MASK
     cache_entry_t bucket = cache_table + (hash & cache_mask);
 #else
@@ -103,7 +104,7 @@ cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
     if (s & 0x80000000) return 0;
     // abort if same hash
     const uint32_t hash_mask = (hash>>32) & 0x7fff0000;
-    if ((s & 0x7fff0000) == hash_mask) return 0;
+    // if ((s & 0x7fff0000) == hash_mask) return 0;
     // use cas to claim bucket
     const uint32_t new_s = ((s+1) & 0x0000ffff) | hash_mask;
     if (!cas(s_bucket, s, new_s | 0x80000000)) return 0;

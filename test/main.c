@@ -168,10 +168,7 @@ test_cube()
     BDD bdd = sylvan_cube(vars, cube);
 
     sylvan_sat_one(bdd, vars, check);
-    for (i=0; i<6;i++) assert(cube[i] == check[i]);
-
-    testEqual(sylvan_cube(vars, check), sylvan_sat_one_bdd(bdd));
-    assert(sylvan_cube(vars, check) == sylvan_sat_one_bdd(bdd));
+    for (i=0; i<6;i++) assert(cube[i] == check[i] || cube[i] == 2 && check[i] == 0);
 
     BDD picked = sylvan_pick_cube(bdd);
     assert(testEqual(sylvan_and(picked, bdd), picked));

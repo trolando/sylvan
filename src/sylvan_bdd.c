@@ -605,10 +605,6 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
         mark = 1;
     }
 
-    sylvan_gc_test();
-
-    sylvan_stats_count(BDD_ITE);
-
     bddnode_t na = GETNODE(a);
     bddnode_t nb = GETNODE(b);
     bddnode_t nc = GETNODE(c);
@@ -623,6 +619,10 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     }
 
     if (na->level < level) level = na->level;
+
+    sylvan_gc_test();
+
+    sylvan_stats_count(BDD_ITE);
 
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
@@ -852,24 +852,20 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
     if (a == sylvan_false) return sylvan_false;
     if (sylvan_set_isempty(variables)) return a;
 
-    sylvan_gc_test();
-
-    sylvan_stats_count(BDD_EXISTS);
-
     // a != constant
     bddnode_t na = GETNODE(a);
     BDDVAR level = na->level;
 
-    // Get cofactors
-    BDD aLow = node_low(a, na);
-    BDD aHigh = node_high(a, na);
-
-    while (!sylvan_set_isempty(variables) && sylvan_var(variables) < level) {
-        // Skip variables before x
-        variables = sylvan_set_next(variables);
+    bddnode_t nv = GETNODE(variables);
+    while (nv->level < level) {
+        variables = node_high(variables, nv);
+        if (sylvan_set_isempty(variables)) return a;
+        nv = GETNODE(variables);
     }
 
-    if (sylvan_set_isempty(variables)) return a; // nothing to quantify
+    sylvan_gc_test();
+
+    sylvan_stats_count(BDD_EXISTS);
 
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
@@ -880,27 +876,35 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
         }
     }
 
+    // Get cofactors
+    BDD aLow = node_low(a, na);
+    BDD aHigh = node_high(a, na);
+
     BDD result;
 
-    if (sylvan_set_var(variables) == level) {
+    if (nv->level == level) {
         // level is in variable set, perform abstraction
-        variables = sylvan_set_next(variables);
-        BDD low = CALL(sylvan_exists, aLow, variables, level);
-        if (low == sylvan_true) {
+        if (aLow == sylvan_true || aHigh == sylvan_true || aLow == sylvan_not(aHigh)) {
             result = sylvan_true;
         } else {
-            bdd_refs_push(low);
-            BDD high = CALL(sylvan_exists, aHigh, variables, level);
-            if (high == sylvan_true) {
+            BDD _v = sylvan_set_next(variables);
+            BDD low = CALL(sylvan_exists, aLow, _v, level);
+            if (low == sylvan_true) {
                 result = sylvan_true;
-                bdd_refs_pop(1);
-            } else if (low == sylvan_false && high == sylvan_false) {
-                result = sylvan_false;
-                bdd_refs_pop(1);
             } else {
-                bdd_refs_push(high);
-                result = CALL(sylvan_ite, low, sylvan_true, high, 0); // or
-                bdd_refs_pop(2);
+                bdd_refs_push(low);
+                BDD high = CALL(sylvan_exists, aHigh, _v, level);
+                if (high == sylvan_true) {
+                    result = sylvan_true;
+                    bdd_refs_pop(1);
+                } else if (low == sylvan_false && high == sylvan_false) {
+                    result = sylvan_false;
+                    bdd_refs_pop(1);
+                } else {
+                    bdd_refs_push(high);
+                    result = sylvan_or(low, high);
+                    bdd_refs_pop(2);
+                }
             }
         }
     } else {

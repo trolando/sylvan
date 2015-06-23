@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include <lace.h>
+#include <sylvan_config.h>
 
 #ifndef LLMSSET_H
 #define LLMSSET_H

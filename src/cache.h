@@ -1,5 +1,7 @@
 #include <stdint.h> // for uint32_t etc
 
+#include <sylvan_config.h>
+
 #ifndef CACHE_H
 #define CACHE_H
 

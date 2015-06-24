@@ -26,18 +26,6 @@
 llmsset_t nodes;
 
 /**
- * Variables for operation cache
- */
-
-size_t             cache_size;         // power of 2
-size_t             cache_max;          // power of 2
-#if CACHE_MASK
-size_t             cache_mask;         // cache_size-1
-#endif
-cache_entry_t      cache_table;
-uint32_t*          cache_status;
-
-/**
  * Retrieve nodes
  */
 
@@ -159,10 +147,12 @@ VOID_TASK_IMPL_0(sylvan_gc_aggressive_resize)
         size_t new_size = next_size(size);
         if (new_size > max_size) new_size = max_size;
         llmsset_set_size(nodes, new_size);
+        size_t cache_size = cache_getsize();
+        size_t cache_max = cache_getmaxsize();
         if (cache_size < cache_max) {
             new_size = next_size(cache_size);
             if (new_size > cache_max) new_size = cache_max;
-            cache_size = new_size;
+            cache_setsize(new_size);
         }
     }
 }
@@ -181,10 +171,12 @@ VOID_TASK_IMPL_0(sylvan_gc_default_hook)
             size_t new_size = next_size(size);
             if (new_size > max_size) new_size = max_size;
             llmsset_set_size(nodes, new_size);
+            size_t cache_size = cache_getsize();
+            size_t cache_max = cache_getmaxsize();
             if (cache_size < cache_max) {
                 new_size = next_size(cache_size);
                 if (new_size > cache_max) new_size = cache_max;
-                cache_size = new_size;
+                cache_setsize(new_size);
             }
         }
     }

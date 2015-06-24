@@ -188,3 +188,9 @@ cache_getused()
     }
     return result;
 }
+
+size_t
+cache_getmaxsize()
+{
+    return cache_max;
+}

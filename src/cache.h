@@ -31,6 +31,8 @@ size_t cache_getused();
 
 size_t cache_getsize();
 
+size_t cache_getmaxsize();
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

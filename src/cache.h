@@ -27,6 +27,10 @@ void cache_clear();
 
 void cache_setsize(size_t size);
 
+size_t cache_getused();
+
+size_t cache_getsize();
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

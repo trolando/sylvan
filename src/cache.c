@@ -50,7 +50,7 @@ static uint32_t*          cache_status;
 //         0x0000ffff - tag (every put increases tag field)
 
 /* Rotating 64-bit FNV-1a hash */
-uint64_t __attribute__((unused))
+static uint64_t
 cache_hash(uint64_t a, uint64_t b, uint64_t c)
 {
     const uint64_t prime = 1099511628211;
@@ -68,21 +68,18 @@ cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
     const uint64_t hash = cache_hash(a, b, c);
 #if CACHE_MASK
     volatile uint32_t *s_bucket = cache_status + (hash & cache_mask);
+    cache_entry_t bucket = cache_table + (hash & cache_mask);
 #else
     volatile uint32_t *s_bucket = cache_status + (hash % cache_size);
+    cache_entry_t bucket = cache_table + (hash % cache_size);
 #endif
     const uint32_t s = *s_bucket;
+    compiler_barrier();
     // abort if locked
     if (s & 0x80000000) return 0;
     // abort if different hash
     if ((s ^ (hash>>32)) & 0x7fff0000) return 0;
     // abort if key different
-    compiler_barrier();
-#if CACHE_MASK
-    cache_entry_t bucket = cache_table + (hash & cache_mask);
-#else
-    cache_entry_t bucket = cache_table + (hash % cache_size);
-#endif
     if (bucket->a != a || bucket->b != b || bucket->c != c) return 0;
     *res = bucket->res;
     compiler_barrier();
@@ -96,24 +93,19 @@ cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
     const uint64_t hash = cache_hash(a, b, c);
 #if CACHE_MASK
     volatile uint32_t *s_bucket = cache_status + (hash & cache_mask);
+    cache_entry_t bucket = cache_table + (hash & cache_mask);
 #else
     volatile uint32_t *s_bucket = cache_status + (hash % cache_size);
+    cache_entry_t bucket = cache_table + (hash % cache_size);
 #endif
     const uint32_t s = *s_bucket;
     // abort if locked
     if (s & 0x80000000) return 0;
-    // abort if same hash
-    const uint32_t hash_mask = (hash>>32) & 0x7fff0000;
-    // if ((s & 0x7fff0000) == hash_mask) return 0;
     // use cas to claim bucket
-    const uint32_t new_s = ((s+1) & 0x0000ffff) | hash_mask;
+    uint32_t new_s = (hash>>32) & 0x7fff0000;
+    new_s |= (s+1) & 0x0000ffff;
     if (!cas(s_bucket, s, new_s | 0x80000000)) return 0;
     // cas succesful: write data
-#if CACHE_MASK
-    cache_entry_t bucket = cache_table + (hash & cache_mask);
-#else
-    cache_entry_t bucket = cache_table + (hash % cache_size);
-#endif
     bucket->a = a;
     bucket->b = b;
     bucket->c = c;
@@ -140,6 +132,11 @@ cache_create(size_t _cache_size, size_t _max_size)
 #if CACHE_MASK
     cache_mask = cache_size - 1;
 #endif
+
+    if (cache_size > cache_max) {
+        fprintf(stderr, "cache: Table size must be <= max size!\n");
+        exit(1);
+    }
 
     cache_table = (cache_entry_t)mmap(0, cache_max * sizeof(struct cache_entry), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     cache_status = (uint32_t*)mmap(0, cache_max * sizeof(uint32_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
@@ -170,4 +167,24 @@ cache_setsize(size_t size)
     // easy solution
     cache_free();
     cache_create(size, cache_max);
+}
+
+size_t
+cache_getsize()
+{
+    return cache_size;
+}
+
+size_t
+cache_getused()
+{
+    size_t result = 0;
+    for (size_t i=0;i<cache_size;i++) {
+        uint32_t s = cache_status[i];
+        if (s & 0x80000000) {
+            fprintf(stdout, "Warning: cache in use during getused()\n");
+        }
+        if (s) result++;
+    }
+    return result;
 }

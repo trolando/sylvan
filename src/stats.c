@@ -174,6 +174,7 @@ sylvan_stats_report(FILE *target, int color)
     fprintf(target, "Total time spent: %'.6Lf sec.\n", (long double)totals.timers[SYLVAN_GC]/1000000000);
 
     fprintf(target, "\n");
-    fprintf(target, "BDD Unique table: %zu of %zu buckets filled.\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
+    fprintf(target, "BDD Unique table: %'zu of %'zu buckets filled.\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
+    fprintf(target, "Operation cache: %'zu of %'zu buckets filled.\n", cache_getused(), cache_getsize());
     fprintf(target, LRED  "****************" NC " \n");
 }

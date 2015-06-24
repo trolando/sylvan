@@ -131,22 +131,22 @@ sylvan_stats_report(FILE *target, int color)
     fprintf(target,      "****************\n");
     fprintf(target, "\n");
 
-    fprintf(target, NC ULINE "BDD operations count (cache reuse)\n" NC LBLUE);
-    if (totals.counters[BDD_ITE]) fprintf(target, "ITE: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_ITE], totals.counters[BDD_ITE_CACHED]);
-    if (totals.counters[BDD_AND]) fprintf(target, "AND: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_AND], totals.counters[BDD_AND_CACHED]);
-    if (totals.counters[BDD_XOR]) fprintf(target, "XOR: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_XOR], totals.counters[BDD_XOR_CACHED]);
-    if (totals.counters[BDD_EXISTS]) fprintf(target, "Exists: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_EXISTS], totals.counters[BDD_EXISTS_CACHED]);
-    if (totals.counters[BDD_AND_EXISTS]) fprintf(target, "AndExists: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_AND_EXISTS], totals.counters[BDD_AND_EXISTS_CACHED]);
-    if (totals.counters[BDD_RELNEXT]) fprintf(target, "RelNext: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_RELNEXT], totals.counters[BDD_RELNEXT_CACHED]);
-    if (totals.counters[BDD_RELPREV]) fprintf(target, "RelPrev: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_RELPREV], totals.counters[BDD_RELPREV_CACHED]);
-    if (totals.counters[BDD_CLOSURE]) fprintf(target, "Closure: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_CLOSURE], totals.counters[BDD_CLOSURE_CACHED]);
-    if (totals.counters[BDD_COMPOSE]) fprintf(target, "Compose: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_COMPOSE], totals.counters[BDD_COMPOSE_CACHED]);
-    if (totals.counters[BDD_RESTRICT]) fprintf(target, "Restrict: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_RESTRICT], totals.counters[BDD_RESTRICT_CACHED]);
-    if (totals.counters[BDD_CONSTRAIN]) fprintf(target, "Constrain: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_CONSTRAIN], totals.counters[BDD_CONSTRAIN_CACHED]);
-    if (totals.counters[BDD_SUPPORT]) fprintf(target, "Support: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_SUPPORT], totals.counters[BDD_SUPPORT_CACHED]);
-    if (totals.counters[BDD_SATCOUNT]) fprintf(target, "SatCount: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_SATCOUNT], totals.counters[BDD_SATCOUNT_CACHED]);
-    if (totals.counters[BDD_PATHCOUNT]) fprintf(target, "PathCount: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_PATHCOUNT], totals.counters[BDD_PATHCOUNT_CACHED]);
-    if (totals.counters[BDD_ISBDD]) fprintf(target, "IsBDD: %'"PRIu64 " (%'"PRIu64")\n", totals.counters[BDD_ISBDD], totals.counters[BDD_ISBDD_CACHED]);
+    fprintf(target, NC ULINE "BDD operations count (cache reuse, cache put)\n" NC LBLUE);
+    if (totals.counters[BDD_ITE]) fprintf(target, "ITE: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_ITE], totals.counters[BDD_ITE_CACHED], totals.counters[BDD_ITE_CACHEDPUT]);
+    if (totals.counters[BDD_AND]) fprintf(target, "AND: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_AND], totals.counters[BDD_AND_CACHED], totals.counters[BDD_AND_CACHEDPUT]);
+    if (totals.counters[BDD_XOR]) fprintf(target, "XOR: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_XOR], totals.counters[BDD_XOR_CACHED], totals.counters[BDD_XOR_CACHEDPUT]);
+    if (totals.counters[BDD_EXISTS]) fprintf(target, "Exists: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_EXISTS], totals.counters[BDD_EXISTS_CACHED], totals.counters[BDD_EXISTS_CACHEDPUT]);
+    if (totals.counters[BDD_AND_EXISTS]) fprintf(target, "AndExists: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_AND_EXISTS], totals.counters[BDD_AND_EXISTS_CACHED], totals.counters[BDD_AND_EXISTS_CACHEDPUT]);
+    if (totals.counters[BDD_RELNEXT]) fprintf(target, "RelNext: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_RELNEXT], totals.counters[BDD_RELNEXT_CACHED], totals.counters[BDD_RELNEXT_CACHEDPUT]);
+    if (totals.counters[BDD_RELPREV]) fprintf(target, "RelPrev: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_RELPREV], totals.counters[BDD_RELPREV_CACHED], totals.counters[BDD_RELPREV_CACHEDPUT]);
+    if (totals.counters[BDD_CLOSURE]) fprintf(target, "Closure: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_CLOSURE], totals.counters[BDD_CLOSURE_CACHED], totals.counters[BDD_CLOSURE_CACHEDPUT]);
+    if (totals.counters[BDD_COMPOSE]) fprintf(target, "Compose: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_COMPOSE], totals.counters[BDD_COMPOSE_CACHED], totals.counters[BDD_COMPOSE_CACHEDPUT]);
+    if (totals.counters[BDD_RESTRICT]) fprintf(target, "Restrict: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_RESTRICT], totals.counters[BDD_RESTRICT_CACHED], totals.counters[BDD_RESTRICT_CACHEDPUT]);
+    if (totals.counters[BDD_CONSTRAIN]) fprintf(target, "Constrain: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_CONSTRAIN], totals.counters[BDD_CONSTRAIN_CACHED], totals.counters[BDD_CONSTRAIN_CACHEDPUT]);
+    if (totals.counters[BDD_SUPPORT]) fprintf(target, "Support: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_SUPPORT], totals.counters[BDD_SUPPORT_CACHED], totals.counters[BDD_SUPPORT_CACHEDPUT]);
+    if (totals.counters[BDD_SATCOUNT]) fprintf(target, "SatCount: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_SATCOUNT], totals.counters[BDD_SATCOUNT_CACHED], totals.counters[BDD_SATCOUNT_CACHEDPUT]);
+    if (totals.counters[BDD_PATHCOUNT]) fprintf(target, "PathCount: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_PATHCOUNT], totals.counters[BDD_PATHCOUNT_CACHED], totals.counters[BDD_PATHCOUNT_CACHEDPUT]);
+    if (totals.counters[BDD_ISBDD]) fprintf(target, "IsBDD: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_ISBDD], totals.counters[BDD_ISBDD_CACHED], totals.counters[BDD_ISBDD_CACHEDPUT]);
     if (totals.counters[BDD_NODES_CREATED]) fprintf(target, "BDD Nodes created: %'"PRIu64"\n", totals.counters[BDD_NODES_CREATED]);
     if (totals.counters[BDD_NODES_REUSED]) fprintf(target, "BDD Nodes reused: %'"PRIu64"\n", totals.counters[BDD_NODES_REUSED]);
 

@@ -15,7 +15,6 @@
  */
 
 #include <lace.h>
-#include <time.h>
 #include <sylvan_config.h>
 
 #ifndef SYLVAN_STATS_H
@@ -137,6 +136,22 @@ typedef struct
 
 #if SYLVAN_STATS
 
+#ifdef __MACH__
+#include <mach/mach_time.h>
+#define getabstime() mach_absolute_time()
+#else
+#include <time.h>
+static uint64_t
+getabstime()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    uint64_t t = ts.tv_sec;
+    t *= 1000000000UL;
+    t += ts.tv_nsec;
+}
+#endif
+
 #ifdef __ELF__
 extern __thread sylvan_stats_t sylvan_stats;
 #else
@@ -158,11 +173,7 @@ sylvan_stats_count(size_t counter)
 static inline void
 sylvan_timer_start(size_t timer)
 {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    uint64_t t = ts.tv_sec;
-    t *= 1000000000UL;
-    t += ts.tv_nsec;
+    uint64_t t = getabstime();
 
 #ifdef __ELF__
     sylvan_stats.timers_startstop[timer] = t;
@@ -175,11 +186,7 @@ sylvan_timer_start(size_t timer)
 static inline void
 sylvan_timer_stop(size_t timer)
 {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    uint64_t t = ts.tv_sec;
-    t *= 1000000000UL;
-    t += ts.tv_nsec;
+    uint64_t t = getabstime();
 
 #ifdef __ELF__
     sylvan_stats.timers[timer] += (t - sylvan_stats.timers_startstop[timer]);

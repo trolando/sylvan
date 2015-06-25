@@ -38,7 +38,7 @@ VOID_TASK_0(sylvan_stats_reset_perthread)
 #else
     sylvan_stats_t *sylvan_stats = pthread_getspecific(sylvan_stats_key);
     if (sylvan_stats == NULL) {
-        mmap(sylvan_stats, sizeof(sylvan_stats_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+        sylvan_stats = mmap(0, sizeof(sylvan_stats_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
         // TODO: hwloc
         pthread_setspecific(sylvan_stats_key, sylvan_stats);
     }
@@ -114,8 +114,9 @@ sylvan_stats_report(FILE *target, int color)
 {
 #if !SYLVAN_STATS
     (void)target;
+    (void)color;
     return;
-#endif
+#else
     (void)color;
 
     sylvan_stats_t totals;
@@ -123,6 +124,14 @@ sylvan_stats_report(FILE *target, int color)
 
     LACE_ME;
     TOGETHER(sylvan_stats_sum, &totals);
+
+    // fix timers for MACH
+#ifdef __MACH__
+    mach_timebase_info_data_t timebase;
+    mach_timebase_info(&timebase);
+    uint64_t c = timebase.numer/timebase.denom;
+    for (int i=0;i<SYLVAN_TIMER_COUNTER;i++) totals.timers[i]*=c;
+#endif
 
     fprintf(target, LRED  "****************\n");
     fprintf(target,      "* ");
@@ -177,4 +186,5 @@ sylvan_stats_report(FILE *target, int color)
     fprintf(target, "BDD Unique table: %'zu of %'zu buckets filled.\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
     fprintf(target, "Operation cache: %'zu of %'zu buckets filled.\n", cache_getused(), cache_getsize());
     fprintf(target, LRED  "****************" NC " \n");
+#endif
 }

@@ -264,6 +264,13 @@ TASK_DECL_3(MTBDD, mtbdd_abstract_op_max, MTBDD, MTBDD, int);
 #define mtbdd_abstract_max(dd, v) mtbdd_abstract(dd, v, TASK(mtbdd_abstract_op_max))
 
 /**
+ * Compute IF <f> THEN <g> ELSE <h>.
+ * <f> must be a Boolean MTBDD (or standard BDD).
+ */
+TASK_DECL_3(MTBDD, mtbdd_ite, MTBDD, MTBDD, MTBDD);
+#define mtbdd_ite(f, g, h) CALL(mtbdd_ite, f, g, h);
+
+/**
  * Write a DOT representation of a MTBDD
  * The callback function is required for custom terminals.
  */

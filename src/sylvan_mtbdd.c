@@ -1154,6 +1154,62 @@ TASK_IMPL_2(MTBDD, mtbdd_op_max, MTBDD*, pa, MTBDD*, pb)
 }
 
 /**
+ * Compute IF <f> THEN <g> ELSE <h>.
+ * <f> must be a Boolean MTBDD (or standard BDD).
+ */
+TASK_IMPL_3(MTBDD, mtbdd_ite, MTBDD, f, MTBDD, g, MTBDD, h)
+{
+    /* Terminal cases */
+    if (f == mtbdd_true) return g;
+    if (f == mtbdd_false) return h;
+    if (g == h) return g;
+    if (g == mtbdd_true && h == mtbdd_false) return f;
+    if (h == mtbdd_true && g == mtbdd_false) return MTBDD_TOGGLEMARK(f);
+
+    // If all MTBDD's are Boolean, then there could be further optimizations (see sylvan_bdd.c)
+
+    /* Maybe perform garbage collection */
+    sylvan_gc_test();
+
+    /* Check cache */
+    MTBDD result;
+    if (cache_get(f | CACHE_MTBDD_ITE, g, h, &result)) return result;
+
+    /* Get top variable */
+    int lg = mtbdd_isleaf(g);
+    int lh = mtbdd_isleaf(h);
+    mtbddnode_t nf = GETNODE(f);
+    mtbddnode_t ng = lg ? 0 : GETNODE(g);
+    mtbddnode_t nh = lh ? 0 : GETNODE(h);
+    uint32_t vf = mtbddnode_getvariable(nf);
+    uint32_t vg = lg ? 0 : mtbddnode_getvariable(ng);
+    uint32_t vh = lh ? 0 : mtbddnode_getvariable(nh);
+    uint32_t v = vf;
+    if (!lg && vg < v) v = vg;
+    if (!lh && vh < v) v = vh;
+
+    /* Get cofactors */
+    MTBDD flow, fhigh, glow, ghigh, hlow, hhigh;
+    flow = (vf == v) ? node_getlow(f, nf) : f;
+    fhigh = (vf == v) ? node_gethigh(f, nf) : f;
+    glow = (!lg && vg == v) ? node_getlow(g, ng) : g;
+    ghigh = (!lg && vg == v) ? node_gethigh(g, ng) : g;
+    hlow = (!lh && vh == v) ? node_getlow(h, nh) : h;
+    hhigh = (!lh && vh == v) ? node_gethigh(h, nh) : h;
+
+    /* Recursive calls */
+    mtbdd_refs_spawn(SPAWN(mtbdd_ite, fhigh, ghigh, hhigh));
+    MTBDD low = mtbdd_refs_push(CALL(mtbdd_ite, flow, glow, hlow));
+    MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(SYNC(mtbdd_ite)));
+    result = mtbdd_makenode(v, low, high);
+    mtbdd_refs_pop(2);
+
+    /* Store in cache */
+    cache_put(f | CACHE_MTBDD_ITE, g, h, result);
+    return result;
+}
+
+/**
  * Helper function for recursive unmarking
  */
 static void

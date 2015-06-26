@@ -616,6 +616,192 @@ TASK_IMPL_4(MTBDD, mtbdd_union_cube, MTBDD, mtbdd, MTBDD, vars, uint8_t*, cube, 
 }
 
 /**
+ * Apply a binary operation <op> to <a> and <b>.
+ */
+TASK_IMPL_3(MTBDD, mtbdd_apply, MTBDD, a, MTBDD, b, mtbdd_apply_op, op)
+{
+    /* Check terminal case */
+    MTBDD result = WRAP(op, &a, &b);
+    if (result != mtbdd_invalid) return result;
+
+    /* Maybe perform garbage collection */
+    sylvan_gc_test();
+
+    /* Check cache */
+    if (cache_get(a | CACHE_MTBDD_APPLY, b, (size_t)op, &result)) return result;
+
+    /* Get top variable */
+    int la = mtbdd_isleaf(a);
+    int lb = mtbdd_isleaf(b);
+    mtbddnode_t na, nb;
+    uint32_t va, vb;
+    if (!la) {
+        na = GETNODE(a);
+        va = mtbddnode_getvariable(na);
+    } else {
+        na = 0;
+        va = 0xffffffff;
+    }
+    if (!lb) {
+        nb = GETNODE(b);
+        vb = mtbddnode_getvariable(nb);
+    } else {
+        nb = 0;
+        vb = 0xffffffff;
+    }
+    uint32_t v = va < vb ? va : vb;
+
+    /* Get cofactors */
+    MTBDD alow, ahigh, blow, bhigh;
+    if (!la && va == v) {
+        alow = node_getlow(a, na);
+        ahigh = node_gethigh(a, na);
+    } else {
+        alow = a;
+        ahigh = a;
+    }
+    if (!lb && vb == v) {
+        blow = node_getlow(b, nb);
+        bhigh = node_gethigh(b, nb);
+    } else {
+        blow = b;
+        bhigh = b;
+    }
+
+    /* Recursive */
+    mtbdd_refs_spawn(SPAWN(mtbdd_apply, ahigh, bhigh, op));
+    MTBDD low = mtbdd_refs_push(CALL(mtbdd_apply, alow, blow, op));
+    MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_apply));
+    result = mtbdd_makenode(v, low, high);
+    mtbdd_refs_pop(1);
+
+    /* Store in cache */
+    cache_put(a | CACHE_MTBDD_APPLY, b, (size_t)op, result);
+    return result;
+}
+
+/**
+ * Apply a unary operation <op> to <dd>.
+ */
+TASK_IMPL_3(MTBDD, mtbdd_uapply, MTBDD, dd, mtbdd_uapply_op, op, size_t, param)
+{
+    /* Maybe perform garbage collection */
+    sylvan_gc_test();
+
+    /* Check cache */
+    MTBDD result;
+    if (cache_get(dd | CACHE_MTBDD_UAPPLY, (size_t)op, param, &result)) return result;
+
+    /* Check terminal case */
+    result = WRAP(op, dd, param);
+    if (result != mtbdd_invalid) {
+        /* Store in cache */
+        cache_put(dd | CACHE_MTBDD_UAPPLY, (size_t)op, param, result);
+        return result;
+    }
+
+    /* Get cofactors */
+    mtbddnode_t ndd = GETNODE(dd);
+    MTBDD ddlow = node_getlow(dd, ndd);
+    MTBDD ddhigh = node_gethigh(dd, ndd);
+
+    /* Recursive */
+    mtbdd_refs_spawn(SPAWN(mtbdd_uapply, ddhigh, op, param));
+    MTBDD low = mtbdd_refs_push(CALL(mtbdd_uapply, ddlow, op, param));
+    MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_uapply));
+    result = mtbdd_makenode(mtbddnode_getvariable(ndd), low, high);
+    mtbdd_refs_pop(1);
+
+    /* Store in cache */
+    cache_put(dd | CACHE_MTBDD_UAPPLY, (size_t)op, param, result);
+    return result;
+}
+
+/**
+ * Abstract the variables in <v> from <a> using the operation <op>
+ */
+TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
+{
+    /* Check terminal case */
+    if (a == mtbdd_false) return mtbdd_false;
+    if (a == mtbdd_true) return mtbdd_true;
+    if (v == mtbdd_true) return a;
+
+    /* Maybe perform garbage collection */
+    sylvan_gc_test();
+
+    /* a != constant, v != constant */
+    mtbddnode_t na = GETNODE(a);
+
+    if (mtbddnode_isleaf(na)) {
+        /* Count number of variables */
+        uint64_t k = 0;
+        while (v != mtbdd_true) {
+            k++;
+            v = node_gethigh(v, GETNODE(v));
+        }
+
+        /* Check cache */
+        MTBDD result;
+        if (cache_get(a | CACHE_MTBDD_ABSTRACT, v | (k << 40), (size_t)op, &result)) return result;
+
+        /* Compute result */
+        result = WRAP(op, a, a, k);
+
+        /* Store in cache */
+        cache_put(a | CACHE_MTBDD_ABSTRACT, v | (k << 40), (size_t)op, result);
+        return result;
+    }
+
+    /* Possibly skip k variables */
+    mtbddnode_t nv = GETNODE(v);
+    uint32_t var_a = mtbddnode_getvariable(na);
+    uint32_t var_v = mtbddnode_getvariable(nv);
+    uint64_t k = 0;
+    while (var_v < var_a) {
+        k++;
+        v = node_gethigh(v, nv);
+        if (v == mtbdd_true) break;
+        nv = GETNODE(v);
+        var_v = mtbddnode_getvariable(nv);
+    }
+
+    /* Check cache */
+    MTBDD result;
+    if (cache_get(a | CACHE_MTBDD_ABSTRACT, v | (k << 40), (size_t)op, &result)) return result;
+
+    /* Recursive */
+    if (v == mtbdd_true) {
+        result = a;
+    } else if (var_a < var_v) {
+        SPAWN(mtbdd_abstract, node_gethigh(a, na), v, op);
+        MTBDD low = CALL(mtbdd_abstract, node_getlow(a, na), v, op);
+        mtbdd_refs_push(low);
+        MTBDD high = SYNC(mtbdd_abstract);
+        mtbdd_refs_pop(1);
+        result = mtbdd_makenode(var_a, low, high);
+    } else /* var_a == var_v */ {
+        SPAWN(mtbdd_abstract, node_gethigh(a, na), node_gethigh(v, nv), op);
+        MTBDD low = CALL(mtbdd_abstract, node_getlow(a, na), node_gethigh(v, nv), op);
+        mtbdd_refs_push(low);
+        MTBDD high = SYNC(mtbdd_abstract);
+        mtbdd_refs_push(high);
+        result = WRAP(op, low, high, 0);
+        mtbdd_refs_pop(2);
+    }
+
+    if (k) {
+        mtbdd_refs_push(result);
+        result = WRAP(op, result, result, k);
+        mtbdd_refs_pop(1);
+    }
+
+    /* Store in cache */
+    cache_put(a | CACHE_MTBDD_ABSTRACT, v | (k << 40), (size_t)op, result);
+    return result;
+}
+
+/**
  * Helper function for recursive unmarking
  */
 static void

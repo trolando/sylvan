@@ -57,6 +57,7 @@ typedef uint64_t MTBDD;
 #define mtbdd_complement    ((MTBDD)0x8000000000000000LL)
 #define mtbdd_false         ((MTBDD)0)
 #define mtbdd_true          (mtbdd_false|mtbdd_complement)
+#define mtbdd_invalid       ((MTBDD)0xffffffffffffffffLL)
 
 /**
  * Initialize MTBDD functionality.
@@ -142,6 +143,45 @@ TASK_DECL_4(BDD, mtbdd_union_cube, MTBDD, MTBDD, uint8_t*, MTBDD);
  * Count the number of MTBDD nodes and terminals (excluding mtbdd_false and mtbdd_true) in a MTBDD)
  */
 size_t mtbdd_nodecount(MTBDD mtbdd);
+
+/**
+ * Callback function types for binary ("dyadic") and unary ("monadic") operations.
+ * The callback function returns either the MTBDD that is the result of applying op to the MTBDDs,
+ * or mtbdd_invalid if op cannot be applied.
+ * The binary function may swap the two parameters (if commutative) to improve caching.
+ * The unary function is allowed an extra parameter (be careful of caching)
+ */
+LACE_TYPEDEF_CB(MTBDD, mtbdd_apply_op, MTBDD*, MTBDD*);
+LACE_TYPEDEF_CB(MTBDD, mtbdd_uapply_op, MTBDD, size_t);
+
+/**
+ * Apply a binary operation <op> to <a> and <b>.
+ * Callback <op> is consulted before the cache, thus the application to terminals is not cached.
+ */
+TASK_DECL_3(MTBDD, mtbdd_apply, MTBDD, MTBDD, mtbdd_apply_op);
+#define mtbdd_apply(a, b, op) CALL(mtbdd_apply, a, b, op)
+
+/**
+ * Apply a unary operation <op> to <dd>.
+ * Callback <op> is consulted after the cache, thus the application to a terminal is cached.
+ */
+TASK_DECL_3(MTBDD, mtbdd_uapply, MTBDD, mtbdd_uapply_op, size_t);
+#define mtbdd_uapply(dd, op, param) CALL(mtbdd_uapply, dd, op, param)
+
+/**
+ * Callback function types for abstraction.
+ * MTBDD mtbdd_abstract_op(MTBDD a, MTBDD b, int k).
+ * The function is either called with k==0 (apply to two arguments) or k>0 (k skipped BDD variables)
+ * k == 0  =>  res := apply op to a and b
+ * k  > 0  =>  res := apply op to op(a, a, k-1) and op(a, a, k-1)
+ */
+LACE_TYPEDEF_CB(MTBDD, mtbdd_abstract_op, MTBDD, MTBDD, int);
+
+/**
+ * Abstract the variables in <v> from <a> using the binary operation <op>.
+ */
+TASK_DECL_3(MTBDD, mtbdd_abstract, MTBDD, MTBDD, mtbdd_abstract_op);
+#define mtbdd_abstract(a, v, op) CALL(mtbdd_abstract, a, v, op)
 
 /**
  * Write a DOT representation of a MTBDD

@@ -717,6 +717,82 @@ TASK_IMPL_3(MTBDD, mtbdd_uapply, MTBDD, dd, mtbdd_uapply_op, op, size_t, param)
     return result;
 }
 
+TASK_2(MTBDD, mtbdd_uop_times_uint, MTBDD, a, size_t, k)
+{
+    if (a == mtbdd_false) return mtbdd_false;
+    if (a == mtbdd_true) return mtbdd_true;
+
+    // a != constant
+    mtbddnode_t na = GETNODE(a);
+
+    if (mtbddnode_isleaf(na)) {
+        if (mtbddnode_gettype(na) == 0) {
+            uint64_t v = mtbddnode_getvalue(na);
+            v *= k;
+            if (mtbdd_isnegated(a)) return mtbdd_negate(mtbdd_uint64(v));
+            else return mtbdd_uint64(v);
+        } else if (mtbddnode_gettype(na) == 1) {
+            double d = mtbdd_getdouble(a);
+            return mtbdd_double(d*k);
+        }
+    }
+
+    return mtbdd_invalid;
+}
+
+TASK_2(MTBDD, mtbdd_uop_pow_uint, MTBDD, a, size_t, k)
+{
+    if (a == mtbdd_false) return mtbdd_false;
+    if (a == mtbdd_true) return mtbdd_true;
+
+    // a != constant
+    mtbddnode_t na = GETNODE(a);
+
+    if (mtbddnode_isleaf(na)) {
+        if (mtbddnode_gettype(na) == 0) {
+            uint64_t v = mtbddnode_getvalue(na);
+            v = (uint64_t)pow(v, k);
+            if (mtbdd_isnegated(a) && (k & 1)) return mtbdd_negate(mtbdd_uint64(v));
+            else return mtbdd_uint64(v);
+        } else if (mtbddnode_gettype(na) == 1) {
+            double d = mtbdd_getdouble(a);
+            return mtbdd_double(pow(d, k));
+        }
+    }
+
+    return mtbdd_invalid;
+}
+
+TASK_IMPL_3(MTBDD, mtbdd_abstract_op_plus, MTBDD, a, MTBDD, b, int, k)
+{
+    if (k==0) {
+        return mtbdd_apply(a, b, TASK(mtbdd_op_plus));
+    } else {
+        uint64_t factor = 1ULL<<k; // skip 1,2,3,4: times 2,4,8,16
+        return mtbdd_uapply(a, TASK(mtbdd_uop_times_uint), factor);
+    }
+}
+
+TASK_IMPL_3(MTBDD, mtbdd_abstract_op_times, MTBDD, a, MTBDD, b, int, k)
+{
+    if (k==0) {
+        return mtbdd_apply(a, b, TASK(mtbdd_op_times));
+    } else {
+        uint64_t squares = 1ULL<<k; // square k times, ie res^(2^k): 2,4,8,16
+        return mtbdd_uapply(a, TASK(mtbdd_uop_pow_uint), squares);
+    }
+}
+
+TASK_IMPL_3(MTBDD, mtbdd_abstract_op_min, MTBDD, a, MTBDD, b, int, k)
+{
+    return k == 0 ? mtbdd_apply(a, b, TASK(mtbdd_op_min)) : a;
+}
+
+TASK_IMPL_3(MTBDD, mtbdd_abstract_op_max, MTBDD, a, MTBDD, b, int, k)
+{
+    return k == 0 ? mtbdd_apply(a, b, TASK(mtbdd_op_max)) : a;
+}
+
 /**
  * Abstract the variables in <v> from <a> using the operation <op>
  */
@@ -799,6 +875,282 @@ TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
     /* Store in cache */
     cache_put(a | CACHE_MTBDD_ABSTRACT, v | (k << 40), (size_t)op, result);
     return result;
+}
+
+/**
+ * Binary operation Plus (for MTBDDs of same type)
+ * Only for MTBDDs where either all leafs are Boolean, or Integer, or Double.
+ * For Integer/Double MTBDDs, mtbdd_false is interpreted as "0" or "0.0".
+ */
+TASK_IMPL_2(MTBDD, mtbdd_op_plus, MTBDD*, pa, MTBDD*, pb)
+{
+    MTBDD a = *pa, b = *pb;
+    if (a == mtbdd_false) return b;
+    if (b == mtbdd_false) return a;
+
+    // Handle Boolean MTBDDs: interpret as Or
+    if (a == mtbdd_true) return mtbdd_true;
+    if (b == mtbdd_true) return mtbdd_true;
+
+    mtbddnode_t na = GETNODE(a);
+    mtbddnode_t nb = GETNODE(b);
+
+    if (mtbddnode_isleaf(na) && mtbddnode_isleaf(nb)) {
+        uint64_t val_a = mtbddnode_getvalue(na);
+        uint64_t val_b = mtbddnode_getvalue(nb);
+        if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
+            // both uint64_t
+            if (val_a == 0) return b;
+            else if (val_b == 0) return a;
+            else {
+                int nega = mtbdd_isnegated(a);
+                int negb = mtbdd_isnegated(b);
+                if (nega) {
+                    if (negb) {
+                        // -a + -b = -(a+b)
+                        return mtbdd_negate(mtbdd_uint64(val_a + val_b));
+                    } else {
+                        // b - a
+                        if (val_b >= val_a) {
+                            return mtbdd_uint64(val_b - val_a);
+                        } else {
+                            return mtbdd_negate(mtbdd_uint64(val_a - val_b));
+                        }
+                    }
+                } else {
+                    if (negb) {
+                        // a - b
+                        if (val_a >= val_b) {
+                            return mtbdd_uint64(val_a - val_b);
+                        } else {
+                            return mtbdd_negate(mtbdd_uint64(val_b - val_a));
+                        }
+                    } else {
+                        // a + b
+                        return mtbdd_uint64(val_a + val_b);
+                    }
+                }
+            }
+        } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
+            // both double
+            double vval_a = *(double*)&val_a;
+            double vval_b = *(double*)&val_b;
+            if (vval_a == 0.0) return b;
+            else if (vval_b == 0.0) return a;
+            else {
+                int nega = mtbdd_isnegated(a);
+                int negb = mtbdd_isnegated(b);
+                if (nega) {
+                    if (negb) {
+                        // -a + -b = -(a+b)
+                        return mtbdd_negate(mtbdd_double(vval_a + vval_b));
+                    } else {
+                        // b - a
+                        if (val_b >= val_a) {
+                            return mtbdd_double(vval_b - vval_a);
+                        } else {
+                            return mtbdd_negate(mtbdd_double(vval_a - vval_b));
+                        }
+                    }
+                } else {
+                    if (negb) {
+                        // a - b
+                        if (val_a >= val_b) {
+                            return mtbdd_double(vval_a - vval_b);
+                        } else {
+                            return mtbdd_negate(mtbdd_double(vval_b - vval_a));
+                        }
+                    } else {
+                        // a + b
+                        return mtbdd_double(vval_a + vval_b);
+                    }
+                }
+            }
+        }
+    }
+
+    if (a < b) {
+        *pa = b;
+        *pb = a;
+    }
+
+    return mtbdd_invalid;
+}
+
+/**
+ * Binary operation Times (for MTBDDs of same type)
+ * Only for MTBDDs where either all leafs are Boolean, or Integer, or Double.
+ * For Integer/Double MTBDD, if either operand is mtbdd_false (not defined),
+ * then the result is mtbdd_false (i.e. not defined).
+ */
+TASK_IMPL_2(MTBDD, mtbdd_op_times, MTBDD*, pa, MTBDD*, pb)
+{
+    MTBDD a = *pa, b = *pb;
+    if (a == mtbdd_false || b == mtbdd_false) return mtbdd_false;
+
+    // Handle Boolean MTBDDs: interpret as And
+    if (a == mtbdd_true) return b;
+    if (b == mtbdd_true) return a;
+
+    mtbddnode_t na = GETNODE(a);
+    mtbddnode_t nb = GETNODE(b);
+
+    if (mtbddnode_isleaf(na) && mtbddnode_isleaf(nb)) {
+        uint64_t val_a = mtbddnode_getvalue(na);
+        uint64_t val_b = mtbddnode_getvalue(nb);
+        if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
+            // both uint64_t
+            if (val_a == 0) return a;
+            else if (val_b == 0) return b;
+            else {
+                MTBDD result;
+                if (val_a == 1) result = b;
+                else if (val_b == 1) result = a;
+                else result = mtbdd_uint64(val_a*val_b);
+                int nega = mtbdd_isnegated(a);
+                int negb = mtbdd_isnegated(b);
+                if (nega ^ negb) return mtbdd_negate(result);
+                else return result;
+            }
+        } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
+            // both double
+            double vval_a = *(double*)&val_a;
+            double vval_b = *(double*)&val_b;
+            if (vval_a == 0.0) return a;
+            else if (vval_b == 0.0) return b;
+            else {
+                MTBDD result;
+                if (vval_a == 1.0) result = b;
+                else if (vval_b == 1.0) result = a;
+                else result = mtbdd_double(vval_a*vval_b);
+                int nega = mtbdd_isnegated(a);
+                int negb = mtbdd_isnegated(b);
+                if (nega ^ negb) return mtbdd_negate(result);
+                else return result;
+            }
+        }
+    }
+
+    if (a < b) {
+        *pa = b;
+        *pb = a;
+    }
+
+    return mtbdd_invalid;
+}
+
+/**
+ * Binary operation Minimum (for MTBDDs of same type)
+ * Only for MTBDDs where either all leafs are Boolean, or Integer, or Double.
+ * For Integer/Double MTBDD, if either operand is mtbdd_false (not defined),
+ * then the result is the other operand.
+ */
+TASK_IMPL_2(MTBDD, mtbdd_op_min, MTBDD*, pa, MTBDD*, pb)
+{
+    MTBDD a = *pa, b = *pb;
+    if (a == mtbdd_true) return b;
+    if (b == mtbdd_true) return a;
+    if (a == b) return a;
+
+    // Special case where "false" indicates a partial function
+    if (a == mtbdd_false && b != mtbdd_false && mtbddnode_isleaf(GETNODE(b))) return b;
+    if (b == mtbdd_false && a != mtbdd_false && mtbddnode_isleaf(GETNODE(a))) return a;
+
+    mtbddnode_t na = GETNODE(a);
+    mtbddnode_t nb = GETNODE(b);
+
+    if (mtbddnode_isleaf(na) && mtbddnode_isleaf(nb)) {
+        uint64_t val_a = mtbddnode_getvalue(na);
+        uint64_t val_b = mtbddnode_getvalue(nb);
+        if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
+            // both uint64_t
+            int nega = mtbdd_isnegated(a);
+            int negb = mtbdd_isnegated(b);
+            if (nega) {
+                if (negb) return val_a > val_b ? a : b;
+                else return a;
+            } else {
+                if (negb) return b;
+                else return val_a < val_b ? a : b;
+            }
+        } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
+            // both double
+            double vval_a = *(double*)&val_a;
+            double vval_b = *(double*)&val_b;
+            int nega = mtbdd_isnegated(a);
+            int negb = mtbdd_isnegated(b);
+            if (nega) {
+                if (negb) return vval_a > vval_b ? a : b;
+                else return a;
+            } else {
+                if (negb) return b;
+                else return vval_a < vval_b ? a : b;
+            }
+        }
+    }
+
+    if (a < b) {
+        *pa = b;
+        *pb = a;
+    }
+
+    return mtbdd_invalid;
+}
+
+/**
+ * Binary operation Maximum (for MTBDDs of same type)
+ * Only for MTBDDs where either all leafs are Boolean, or Integer, or Double.
+ * For Integer/Double MTBDD, if either operand is mtbdd_false (not defined),
+ * then the result is the other operand.
+ */
+TASK_IMPL_2(MTBDD, mtbdd_op_max, MTBDD*, pa, MTBDD*, pb)
+{
+    MTBDD a = *pa, b = *pb;
+    if (a == mtbdd_true) return a;
+    if (b == mtbdd_true) return b;
+    if (a == mtbdd_false) return b;
+    if (b == mtbdd_false) return a;
+    if (a == b) return a;
+
+    mtbddnode_t na = GETNODE(a);
+    mtbddnode_t nb = GETNODE(b);
+
+    if (mtbddnode_isleaf(na) && mtbddnode_isleaf(nb)) {
+        uint64_t val_a = mtbddnode_getvalue(na);
+        uint64_t val_b = mtbddnode_getvalue(nb);
+        if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
+            // both uint64_t
+            int nega = mtbdd_isnegated(a);
+            int negb = mtbdd_isnegated(b);
+            if (nega) {
+                if (negb) return val_a < val_b ? a : b;
+                else return b;
+            } else {
+                if (negb) return a;
+                else return val_a > val_b ? a : b;
+            }
+        } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
+            // both double
+            double vval_a = *(double*)&val_a;
+            double vval_b = *(double*)&val_b;
+            int nega = mtbdd_isnegated(a);
+            int negb = mtbdd_isnegated(b);
+            if (nega) {
+                if (negb) return vval_a < vval_b ? a : b;
+                else return b;
+            } else {
+                if (negb) return a;
+                else return vval_a > vval_b ? a : b;
+            }
+        }
+    }
+
+    if (a < b) {
+        *pa = b;
+        *pb = a;
+    }
+
+    return mtbdd_invalid;
 }
 
 /**

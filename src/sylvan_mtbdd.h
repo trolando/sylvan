@@ -184,6 +184,86 @@ TASK_DECL_3(MTBDD, mtbdd_abstract, MTBDD, MTBDD, mtbdd_abstract_op);
 #define mtbdd_abstract(a, v, op) CALL(mtbdd_abstract, a, v, op)
 
 /**
+ * Binary operation Plus (for MTBDDs of same type)
+ * Only for MTBDDs where either all leafs are Boolean, or Integer, or Double.
+ * For Integer/Double MTBDDs, mtbdd_false is interpreted as "0" or "0.0".
+ */
+TASK_DECL_2(MTBDD, mtbdd_op_plus, MTBDD*, MTBDD*);
+TASK_DECL_3(MTBDD, mtbdd_abstract_op_plus, MTBDD, MTBDD, int);
+
+/**
+ * Binary operation Times (for MTBDDs of same type)
+ * Only for MTBDDs where either all leafs are Boolean, or Integer, or Double.
+ * For Integer/Double MTBDD, if either operand is mtbdd_false (not defined),
+ * then the result is mtbdd_false (i.e. not defined).
+ */
+TASK_DECL_2(MTBDD, mtbdd_op_times, MTBDD*, MTBDD*);
+TASK_DECL_3(MTBDD, mtbdd_abstract_op_times, MTBDD, MTBDD, int);
+
+/**
+ * Binary operation Minimum (for MTBDDs of same type)
+ * Only for MTBDDs where either all leafs are Boolean, or Integer, or Double.
+ * For Integer/Double MTBDD, if either operand is mtbdd_false (not defined),
+ * then the result is the other operand.
+ */
+TASK_DECL_2(MTBDD, mtbdd_op_min, MTBDD*, MTBDD*);
+TASK_DECL_3(MTBDD, mtbdd_abstract_op_min, MTBDD, MTBDD, int);
+
+/**
+ * Binary operation Maximum (for MTBDDs of same type)
+ * Only for MTBDDs where either all leafs are Boolean, or Integer, or Double.
+ * For Integer/Double MTBDD, if either operand is mtbdd_false (not defined),
+ * then the result is the other operand.
+ */
+TASK_DECL_2(MTBDD, mtbdd_op_max, MTBDD*, MTBDD*);
+TASK_DECL_3(MTBDD, mtbdd_abstract_op_max, MTBDD, MTBDD, int);
+
+/**
+ * Compute a + b
+ */
+#define mtbdd_plus(a, b) mtbdd_apply(a, b, TASK(mtbdd_op_plus))
+
+/**
+ * Compute a - b
+ */
+#define mtbdd_minus(a, b) mtbdd_plus(a, mtbdd_negate(minus))
+
+/**
+ * Compute a * b
+ */
+#define mtbdd_times(a, b) mtbdd_apply(a, b, TASK(mtbdd_op_times))
+
+/**
+ * Compute min(a, b)
+ */
+#define mtbdd_min(a, b) mtbdd_apply(a, b, TASK(mtbdd_op_min))
+
+/**
+ * Compute max(a, b)
+ */
+#define mtbdd_max(a, b) mtbdd_apply(a, b, TASK(mtbdd_op_max))
+
+/**
+ * Abstract the variables in <v> from <a> by taking the sum of all values
+ */
+#define mtbdd_abstract_plus(dd, v) mtbdd_abstract(dd, v, TASK(mtbdd_abstract_op_plus))
+
+/**
+ * Abstract the variables in <v> from <a> by taking the product of all values
+ */
+#define mtbdd_abstract_times(dd, v) mtbdd_abstract(dd, v, TASK(mtbdd_abstract_op_times))
+
+/**
+ * Abstract the variables in <v> from <a> by taking the minimum of all values
+ */
+#define mtbdd_abstract_min(dd, v) mtbdd_abstract(dd, v, TASK(mtbdd_abstract_op_min))
+
+/**
+ * Abstract the variables in <v> from <a> by taking the maximum of all values
+ */
+#define mtbdd_abstract_max(dd, v) mtbdd_abstract(dd, v, TASK(mtbdd_abstract_op_max))
+
+/**
  * Write a DOT representation of a MTBDD
  * The callback function is required for custom terminals.
  */

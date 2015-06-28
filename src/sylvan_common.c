@@ -194,6 +194,12 @@ VOID_TASK_0(sylvan_gc_rehash)
     llmsset_rehash(nodes);
 }
 
+VOID_TASK_0(sylvan_gc_notify)
+{
+    // notify callback for dead nodes
+    llmsset_notify_all(nodes);
+}
+
 VOID_TASK_0(sylvan_gc_go)
 {
     sylvan_stats_count(SYLVAN_GC_COUNT);
@@ -251,6 +257,7 @@ sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize, size_t m
     gc_hook = TASK(sylvan_gc_default_hook);
 #endif
     sylvan_gc_add_mark(10, TASK(sylvan_gc_mark_cache));
+    sylvan_gc_add_mark(19, TASK(sylvan_gc_notify));
     sylvan_gc_add_mark(20, TASK(sylvan_gc_call_hook));
     sylvan_gc_add_mark(30, TASK(sylvan_gc_rehash));
 

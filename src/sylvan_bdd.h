@@ -82,6 +82,9 @@ void sylvan_unprotect(BDD* ptr);
 /* Return the number of protected BDD pointers */
 size_t sylvan_count_protected();
 
+/* Mark BDD for "notify on dead" */
+#define sylvan_notify_ondead(bdd) llmsset_notify_ondead(nodes, bdd&~sylvan_complement)
+
 /* Unary, binary and if-then-else operations */
 #define sylvan_not(a) (((BDD)a)^sylvan_complement)
 TASK_DECL_4(BDD, sylvan_ite, BDD, BDD, BDD, BDDVAR);

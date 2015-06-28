@@ -159,6 +159,12 @@ VOID_TASK_DECL_0(sylvan_gc_aggressive_resize);
 VOID_TASK_DECL_0(sylvan_gc_default_hook);
 
 /**
+ * Set "notify on dead" callback for the nodes table.
+ * See also documentation in llmsset.h
+ */
+#define sylvan_set_ondead(cb, ctx) llmsset_set_ondead(nodes, cb, ctx)
+
+/**
  * Global variables (number of workers, nodes table)
  */
 

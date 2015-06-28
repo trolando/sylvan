@@ -30,7 +30,7 @@ extern "C" {
 #endif /* __cplusplus */
 
 #ifndef LLMSSET_MASK
-#define LLMSSET_MASK 1 // set to 1 to use bit mask instead of modulo
+#define LLMSSET_MASK 0 // set to 1 to use bit mask instead of modulo
 #endif
 
 /**
@@ -42,6 +42,13 @@ extern "C" {
  * During their execution, llmsset_lookup is not allowed.
  */
 
+/**
+ * Callback for "notify on dead".
+ * If the callback returns non-zero, then the node is marked for keeping (rehashing).
+ * The main purpose of the callback is to allow freeing allocated memory for custom terminal nodes.
+ */
+LACE_TYPEDEF_CB(int, llmsset_dead_cb, void*, uint64_t);
+
 typedef struct llmsset
 {
     uint64_t          *table;       // table with hashes
@@ -52,6 +59,8 @@ typedef struct llmsset
     size_t            mask;         // size-1
 #endif
     size_t            f_size;
+    llmsset_dead_cb   dead_cb;      // callback when certain nodes are dead
+    void*             dead_ctx;     // context for dead_cb
     int16_t           threshold;    // number of iterations for insertion until returning error
 } *llmsset_t;
 
@@ -153,6 +162,26 @@ VOID_TASK_DECL_1(llmsset_rehash, llmsset_t);
  */
 TASK_DECL_1(size_t, llmsset_count_marked, llmsset_t);
 #define llmsset_count_marked(dbs) CALL(llmsset_count_marked, dbs)
+
+/**
+ * Install callback function for nodes that are dead after garbage collection
+ * Only called for nodes for which llmsset_notify_ondead has been called
+ * NOTE: if you set a callback, then the garbage collection will be much slower!
+ */
+void llmsset_set_ondead(const llmsset_t dbs, llmsset_dead_cb cb, void* ctx);
+
+/**
+ * Mark a node that the ondead callback will be called if it is not marked during garbage collection,
+ * i.e. it is a dead node. This allows the user to either perform cleanup, or resurrect the node.
+ */
+void llmsset_notify_ondead(const llmsset_t dbs, uint64_t index);
+
+/**
+ * During garbage collection, this method calls the callback functions for all nodes
+ * for which llmsset_notify_ondead has been called and a callback function has been set.
+ */
+VOID_TASK_DECL_1(llmsset_notify_all, llmsset_t);
+#define llmsset_notify_all(dbs) CALL(llmsset_notify_all, dbs)
 
 #ifdef __cplusplus
 }

@@ -36,8 +36,9 @@
  */
 #define DFILLED    ((uint64_t)0x8000000000000000)
 #define HFILLED    ((uint64_t)0x4000000000000000)
+#define DNOTIFY    ((uint64_t)0x2000000000000000)
 #define MASK_INDEX ((uint64_t)0x000000ffffffffff)
-#define MASK_HASH  ((uint64_t)0x3fffff0000000000)
+#define MASK_HASH  ((uint64_t)0x1fffff0000000000)
 
 static const uint8_t  HASH_PER_CL = ((LINE_SIZE) / 8);
 static const uint64_t CL_MASK     = ~(((LINE_SIZE) / 8) - 1);
@@ -200,7 +201,7 @@ phase2_restart:
             v = *bucket;
 
             if (!(v & HFILLED)) {
-                uint64_t new_v = (v&DFILLED) | mask;
+                uint64_t new_v = (v&(DFILLED|DNOTIFY)) | mask;
                 if (!cas(bucket, v, new_v)) goto phase2_restart;
                 *created = 1;
                 return d_idx;
@@ -244,12 +245,12 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
         const uint64_t last = idx; // if next() sees idx again, stop.
 
         // no need for atomic restarts
-        // we can assume there are no collisions (GC rehash phase)
+        // we can assume there are no double inserts (GC rehash phase)
         do {
             volatile uint64_t *bucket = &dbs->table[idx];
             uint64_t v = *bucket;
             if (v & HFILLED) continue;
-            if (cas(bucket, v, mask | (v&DFILLED))) return 1;
+            if (cas(bucket, v, mask | (v&(DFILLED|DNOTIFY)))) return 1;
         } while (probe_sequence_next(idx, last));
 
         hash_rehash = rehash16_mul(d_ptr, hash_rehash);
@@ -301,6 +302,8 @@ llmsset_create(size_t initial_size, size_t max_size)
     dbs->data = (uint8_t*)mmap(0, dbs->max_size * 16, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (dbs->data == (uint8_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
 
+    dbs->dead_cb = NULL;
+
     LACE_ME;
     TOGETHER(llmsset_init_worker, dbs);
 
@@ -344,12 +347,32 @@ llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_workers, size_
     }
 }
 
+VOID_TASK_3(llmsset_clear_par, llmsset_t, dbs, size_t, first, size_t, count)
+{
+    if (count > 1024) {
+        SPAWN(llmsset_clear_par, dbs, first, count/2);
+        CALL(llmsset_clear_par, dbs, first+count/2, count-count/2);
+        SYNC(llmsset_clear_par);
+    } else {
+        uint64_t *ptr = dbs->table+first;
+        for (size_t k=0; k<count; k++) {
+            if (*ptr) *ptr &= DNOTIFY;
+            ptr++;
+        }
+    }
+}
+
 VOID_TASK_IMPL_1(llmsset_clear, llmsset_t, dbs)
 {
-    // a bit silly, but this works just fine, and does not require writing 0 everywhere...
-    munmap(dbs->table, dbs->max_size * sizeof(uint64_t));
-    dbs->table = (uint64_t*)mmap(0, dbs->max_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
-    if (dbs->table == (uint64_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
+    if (dbs->dead_cb != NULL) {
+        // slow clear
+        CALL(llmsset_clear_par, dbs, 0, dbs->table_size);
+    } else {
+        // a bit silly, but this works just fine, and does not require writing 0 everywhere...
+        munmap(dbs->table, dbs->max_size * sizeof(uint64_t));
+        dbs->table = (uint64_t*)mmap(0, dbs->max_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+        if (dbs->table == (uint64_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
+    }
 }
 
 int
@@ -364,7 +387,7 @@ llmsset_mark(const llmsset_t dbs, uint64_t index)
 {
     uint64_t v = dbs->table[index];
     if (v & DFILLED) return 0;
-    dbs->table[index] = DFILLED;
+    dbs->table[index] |= DFILLED;
     return 1;
 }
 
@@ -432,4 +455,52 @@ TASK_IMPL_1(size_t, llmsset_count_marked, llmsset_t, dbs)
         marked_count += SYNC(llmsset_count_marked_range);
     }
     return marked_count;
+}
+
+void
+llmsset_set_ondead(const llmsset_t dbs, llmsset_dead_cb cb, void* ctx)
+{
+    dbs->dead_cb = cb;
+    dbs->dead_ctx = ctx;
+}
+
+void
+llmsset_notify_ondead(const llmsset_t dbs, uint64_t index)
+{
+    for (;;) {
+        uint64_t v = dbs->table[index];
+        if (v & DNOTIFY) return;
+        if (cas(&dbs->table[index], v, v|DNOTIFY)) return;
+    }
+}
+
+VOID_TASK_3(llmsset_notify_par, llmsset_t, dbs, size_t, first, size_t, count)
+{
+    if (count > 1024) {
+        SPAWN(llmsset_notify_par, dbs, first, count/2);
+        CALL(llmsset_notify_par, dbs, first+count/2, count-count/2);
+        SYNC(llmsset_notify_par);
+    } else {
+        uint64_t *ptr = dbs->table+first;
+        for (size_t k=first; k<first+count; k++) {
+            uint64_t v = *ptr;
+            if (!(v & DFILLED)) {
+                if (v & DNOTIFY) {
+                    if (WRAP(dbs->dead_cb, dbs->dead_ctx, k)) {
+                        // mark it
+                        *ptr = DNOTIFY | DFILLED;
+                    } else {
+                        *ptr = 0;
+                    }
+                }
+            }
+            ptr++;
+        }
+    }
+}
+
+VOID_TASK_IMPL_1(llmsset_notify_all, llmsset_t, dbs)
+{
+    if (dbs->dead_cb == NULL) return;
+    CALL(llmsset_notify_par, dbs, 0, dbs->table_size);
 }

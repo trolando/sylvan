@@ -28,7 +28,7 @@
 #include <lace.h>
 
 #ifndef USE_HWLOC
-#define USE_HWLOC 1
+#define USE_HWLOC 0
 #endif
 
 #if USE_HWLOC

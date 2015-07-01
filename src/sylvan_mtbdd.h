@@ -271,6 +271,13 @@ TASK_DECL_3(MTBDD, mtbdd_ite, MTBDD, MTBDD, MTBDD);
 #define mtbdd_ite(f, g, h) CALL(mtbdd_ite, f, g, h);
 
 /**
+ * Multiply <a> and <b>, and abstract variables <vars> using summation.
+ * This is similar to the "and_exists" operation in BDDs.
+ */
+TASK_DECL_3(MTBDD, mtbdd_and_exists, MTBDD, MTBDD, MTBDD);
+#define mtbdd_and_exists(a, b, vars) CALL(mtbdd_and_exists, a, b, vars)
+
+/**
  * Monad that converts double to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
  */
 TASK_DECL_2(MTBDD, mtbdd_op_threshold_double, MTBDD, size_t)

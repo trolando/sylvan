@@ -1260,6 +1260,78 @@ TASK_IMPL_2(MTBDD, mtbdd_strict_threshold_double, MTBDD, dd, double, d)
 }
 
 /**
+ * Multiply <a> and <b>, and abstract variables <vars> using summation.
+ * This is similar to the "and_exists" operation in BDDs.
+ */
+TASK_IMPL_3(MTBDD, mtbdd_and_exists, MTBDD, a, MTBDD, b, MTBDD, v)
+{
+    /* Check terminal case */
+    if (v == mtbdd_true) return mtbdd_apply(a, b, TASK(mtbdd_op_times));
+    MTBDD result = CALL(mtbdd_op_times, &a, &b);
+    if (result != mtbdd_invalid) {
+        mtbdd_refs_push(result);
+        result = mtbdd_abstract(result, v, TASK(mtbdd_abstract_op_plus));
+        mtbdd_refs_pop(1);
+        return result;
+    }
+
+    /* Maybe perform garbage collection */
+    sylvan_gc_test();
+
+    /* Check cache */
+    if (cache_get(a | CACHE_MTBDD_AND_EXISTS, b, v, &result)) return result;
+
+    /* Now, v is not a constant, and either a or b is not a constant */
+
+    /* Get top variable */
+    int la = mtbdd_isleaf(a);
+    int lb = mtbdd_isleaf(b);
+    mtbddnode_t na = la ? 0 : GETNODE(a);
+    mtbddnode_t nb = lb ? 0 : GETNODE(b);
+    uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
+    uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
+    uint32_t var = va < vb ? va : vb;
+
+    mtbddnode_t nv = GETNODE(v);
+    uint32_t vv = mtbddnode_getvariable(nv);
+
+    if (vv < var) {
+        /* Recursive, then abstract result */
+        result = CALL(mtbdd_and_exists, a, b, node_gethigh(v, nv));
+        mtbdd_refs_push(result);
+        result = mtbdd_apply(result, result, TASK(mtbdd_op_plus));
+        mtbdd_refs_pop(1);
+    } else {
+        /* Get cofactors */
+        MTBDD alow, ahigh, blow, bhigh;
+        alow  = (!la && va == var) ? node_getlow(a, na)  : a;
+        ahigh = (!la && va == var) ? node_gethigh(a, na) : a;
+        blow  = (!lb && vb == var) ? node_getlow(b, nb)  : b;
+        bhigh = (!lb && vb == var) ? node_gethigh(b, nb) : b;
+
+        if (vv == var) {
+            /* Recursive, then abstract result */
+            mtbdd_refs_spawn(SPAWN(mtbdd_and_exists, ahigh, bhigh, node_gethigh(v, nv)));
+            MTBDD low = mtbdd_refs_push(CALL(mtbdd_and_exists, alow, blow, node_gethigh(v, nv)));
+            MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(SYNC(mtbdd_and_exists)));
+            result = CALL(mtbdd_apply, low, high, TASK(mtbdd_op_plus));
+            mtbdd_refs_pop(2);
+        } else /* vv > v */ {
+            /* Recursive, then create node */
+            mtbdd_refs_spawn(SPAWN(mtbdd_and_exists, ahigh, bhigh, v));
+            MTBDD low = mtbdd_refs_push(CALL(mtbdd_and_exists, alow, blow, v));
+            MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_and_exists));
+            mtbdd_refs_pop(1);
+            result = mtbdd_makenode(var, low, high);
+        }
+    }
+
+    /* Store in cache */
+    cache_put(a | CACHE_MTBDD_AND_EXISTS, b, v, result);
+    return result;
+}
+
+/**
  * Helper function for recursive unmarking
  */
 static void

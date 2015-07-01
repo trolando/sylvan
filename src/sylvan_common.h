@@ -64,6 +64,7 @@ extern "C" {
 #define CACHE_MTBDD_UAPPLY        (41LL<<40)
 #define CACHE_MTBDD_ABSTRACT      (42LL<<40)
 #define CACHE_MTBDD_ITE           (43LL<<40)
+#define CACHE_MTBDD_AND_EXISTS    (44LL<<40)
 
 /**
  * Registration of quit functions

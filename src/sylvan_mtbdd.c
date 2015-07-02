@@ -1332,6 +1332,79 @@ TASK_IMPL_3(MTBDD, mtbdd_and_exists, MTBDD, a, MTBDD, b, MTBDD, v)
 }
 
 /**
+ * Calculate the support of a MTBDD, i.e. the cube of all variables that appear in the MTBDD nodes.
+ */
+TASK_IMPL_1(MTBDD, mtbdd_support, MTBDD, dd)
+{
+    /* Terminal case */
+    if (mtbdd_isleaf(dd)) return mtbdd_true;
+
+    /* Maybe perform garbage collection */
+    sylvan_gc_test();
+
+    /* Check cache */
+    MTBDD result;
+    if (cache_get(dd | CACHE_MTBDD_SUPPORT, 0, 0, &result)) return result;
+
+    /* Recursive calls */
+    mtbddnode_t n = GETNODE(dd);
+    mtbdd_refs_spawn(SPAWN(mtbdd_support, node_getlow(dd, n)));
+    MTBDD high = mtbdd_refs_push(CALL(mtbdd_support, node_gethigh(dd, n)));
+    MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(SYNC(mtbdd_support)));
+
+    /* Compute result */
+    result = mtbdd_makenode(mtbddnode_getvariable(n), mtbdd_false, mtbdd_times(low, high));
+    mtbdd_refs_pop(2);
+
+    /* Write to cache */
+    cache_put(dd | CACHE_MTBDD_SUPPORT, 0, 0, result);
+    return result;
+}
+
+/**
+ * Function composition, for each node with variable <key> which has a <key,value> pair in <map>,
+ * replace the node by the result of mtbdd_ite(<value>, <low>, <high>).
+ * Each <value> in <map> must be a Boolean MTBDD.
+ */
+TASK_IMPL_2(MTBDD, mtbdd_compose, MTBDD, a, MTBDDMAP, map)
+{
+    /* Terminal case */
+    if (mtbdd_isleaf(a) || mtbdd_map_isempty(map)) return a;
+
+    /* Determine top level */
+    mtbddnode_t n = GETNODE(a);
+    uint32_t v = mtbddnode_getvariable(n);
+
+    /* Find in map */
+    while (mtbdd_map_key(map) < v) {
+        map = mtbdd_map_next(map);
+        if (mtbdd_map_isempty(map)) return a;
+    }
+
+    /* Perhaps execute garbage collection */
+    sylvan_gc_test();
+
+    /* Check cache */
+    MTBDD result;
+    if (cache_get(a | CACHE_MTBDD_COMPOSE, map, 0, &result)) return result;
+
+    /* Recursive calls */
+    mtbdd_refs_spawn(SPAWN(mtbdd_compose, node_getlow(a, n), map));
+    MTBDD high = mtbdd_refs_push(CALL(mtbdd_compose, node_gethigh(a, n), map));
+    MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(SYNC(mtbdd_compose)));
+
+    /* Calculate result */
+    MTBDD r = mtbdd_map_key(map) == v ? mtbdd_map_value(map) : mtbdd_makenode(v, mtbdd_false, mtbdd_true);
+    mtbdd_refs_push(r);
+    result = CALL(mtbdd_ite, r, high, low);
+    mtbdd_refs_pop(3);
+
+    /* Store in cache */
+    cache_put(a | CACHE_MTBDD_COMPOSE, map, 0, result);
+    return result;
+}
+
+/**
  * Helper function for recursive unmarking
  */
 static void
@@ -1428,4 +1501,134 @@ mtbdd_fprintdot(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
     mtbdd_unmark_rec(mtbdd);
 
     fprintf(out, "}\n");
+}
+
+/**
+ * Return 1 if the map contains the key, 0 otherwise.
+ */
+int
+mtbdd_map_contains(MTBDDMAP map, uint32_t key)
+{
+    while (!mtbdd_map_isempty(map)) {
+        mtbddnode_t n = GETNODE(map);
+        uint32_t k = mtbddnode_getvariable(n);
+        if (k == key) return 1;
+        if (k > key) return 0;
+        map = node_getlow(map, n);
+    }
+
+    return 0;
+}
+
+/**
+ * Retrieve the number of keys in the map.
+ */
+size_t
+mtbdd_map_count(MTBDDMAP map)
+{
+    size_t r = 0;
+
+    while (!mtbdd_map_isempty(map)) {
+        r++;
+        map = mtbdd_map_next(map);
+    }
+
+    return r;
+}
+
+/**
+ * Add the pair <key,value> to the map, overwrites if key already in map.
+ */
+MTBDDMAP
+mtbdd_map_add(MTBDDMAP map, uint32_t key, MTBDD value)
+{
+    if (mtbdd_map_isempty(map)) return mtbdd_makenode(key, mtbdd_map_empty(), value);
+
+    mtbddnode_t n = GETNODE(map);
+    uint32_t k = mtbddnode_getvariable(n);
+
+    if (k < key) {
+        // add recursively and rebuild tree
+        MTBDDMAP low = mtbdd_map_add(node_getlow(map, n), key, value);
+        return mtbdd_makenode(k, low, node_gethigh(map, n));
+    } else if (k > key) {
+        return mtbdd_makenode(key, map, value);
+    } else {
+        // replace old
+        return mtbdd_makenode(key, node_getlow(map, n), value);
+    }
+}
+
+/**
+ * Add all values from map2 to map1, overwrites if key already in map1.
+ */
+MTBDDMAP
+mtbdd_map_addall(MTBDDMAP map1, MTBDDMAP map2)
+{
+    if (mtbdd_map_isempty(map1)) return map2;
+    if (mtbdd_map_isempty(map2)) return map1;
+
+    mtbddnode_t n1 = GETNODE(map1);
+    mtbddnode_t n2 = GETNODE(map2);
+    uint32_t k1 = mtbddnode_getvariable(n1);
+    uint32_t k2 = mtbddnode_getvariable(n2);
+
+    MTBDDMAP result;
+    if (k1 < k2) {
+        MTBDDMAP low = mtbdd_map_addall(node_getlow(map1, n1), map2);
+        result = mtbdd_makenode(k1, low, node_gethigh(map1, n1));
+    } else if (k1 > k2) {
+        MTBDDMAP low = mtbdd_map_addall(map1, node_getlow(map2, n2));
+        result = mtbdd_makenode(k2, low, node_gethigh(map2, n2));
+    } else {
+        MTBDDMAP low = mtbdd_map_addall(node_getlow(map1, n1), node_getlow(map2, n2));
+        result = mtbdd_makenode(k2, low, node_gethigh(map2, n2));
+    }
+
+    return result;
+}
+
+/**
+ * Remove the key <key> from the map and return the result
+ */
+MTBDDMAP
+mtbdd_map_remove(MTBDDMAP map, uint32_t key)
+{
+    if (mtbdd_map_isempty(map)) return map;
+
+    mtbddnode_t n = GETNODE(map);
+    uint32_t k = mtbddnode_getvariable(n);
+
+    if (k < key) {
+        MTBDDMAP low = mtbdd_map_remove(node_getlow(map, n), key);
+        return mtbdd_makenode(k, low, node_gethigh(map, n));
+    } else if (k > key) {
+        return map;
+    } else {
+        return node_getlow(map, n);
+    }
+}
+
+/**
+ * Remove all keys in the cube <variables> from the map and return the result
+ */
+MTBDDMAP
+mtbdd_map_removeall(MTBDDMAP map, MTBDD variables)
+{
+    if (mtbdd_map_isempty(map)) return map;
+    if (variables == mtbdd_true) return map;
+
+    mtbddnode_t n1 = GETNODE(map);
+    mtbddnode_t n2 = GETNODE(variables);
+    uint32_t k1 = mtbddnode_getvariable(n1);
+    uint32_t k2 = mtbddnode_getvariable(n2);
+
+    if (k1 < k2) {
+        MTBDDMAP low = mtbdd_map_removeall(node_getlow(map, n1), variables);
+        return mtbdd_makenode(k1, low, node_gethigh(map, n1));
+    } else if (k1 > k2) {
+        return mtbdd_map_removeall(map, node_gethigh(variables, n2));
+    } else {
+        return mtbdd_map_removeall(node_getlow(map, n1), node_gethigh(variables, n2));
+    }
 }

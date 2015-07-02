@@ -50,6 +50,7 @@ extern "C" {
  * For Boolean MTBDDs, this means "not X", for Integer and Real MTBDDs, this means "-X".
  */
 typedef uint64_t MTBDD;
+typedef MTBDD MTBDDMAP;
 
 /**
  * mtbdd_true is only used in Boolean MTBDDs. mtbdd_false has multiple roles (see above).
@@ -300,12 +301,66 @@ TASK_DECL_2(MTBDD, mtbdd_strict_threshold_double, MTBDD, double);
 #define mtbdd_strict_threshold_double(dd, value) CALL(mtbdd_strict_threshold_double, dd, value)
 
 /**
+ * Calculate the support of a MTBDD, i.e. the cube of all variables that appear in the MTBDD nodes.
+ */
+TASK_DECL_1(MTBDD, mtbdd_support, MTBDD);
+#define mtbdd_support(dd) CALL(mtbdd_support, dd)
+
+/**
+ * Function composition, for each node with variable <key> which has a <key,value> pair in <map>,
+ * replace the node by the result of mtbdd_ite(<value>, <low>, <high>).
+ * Each <value> in <map> must be a Boolean MTBDD.
+ */
+TASK_DECL_2(MTBDD, mtbdd_compose, MTBDD, MTBDDMAP);
+#define mtbdd_compose(dd, map) CALL(mtbdd_compose, dd, map)
+
+/**
  * Write a DOT representation of a MTBDD
  * The callback function is required for custom terminals.
  */
 typedef void (*print_terminal_label_cb)(FILE *out, uint32_t type, uint64_t value);
 void mtbdd_fprintdot(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb);
 #define mtbdd_printdot(mtbdd, cb) mtbdd_fprintdot(stdout, mtbdd, cb)
+
+/**
+ * MTBDDMAP, maps uint32_t variables to MTBDDs.
+ * A MTBDDMAP node has variable level, low edge going to the next MTBDDMAP, high edge to the mapped MTBDD
+ */
+#define mtbdd_map_empty() mtbdd_false
+#define mtbdd_map_isempty(map) (map == mtbdd_false ? 1 : 0)
+#define mtbdd_map_key(map) mtbdd_getvar(map)
+#define mtbdd_map_value(map) mtbdd_gethigh(map)
+#define mtbdd_map_next(map) mtbdd_getlow(map)
+
+/**
+ * Return 1 if the map contains the key, 0 otherwise.
+ */
+int mtbdd_map_contains(MTBDDMAP map, uint32_t key);
+
+/**
+ * Retrieve the number of keys in the map.
+ */
+size_t mtbdd_map_count(MTBDDMAP map);
+
+/**
+ * Add the pair <key,value> to the map, overwrites if key already in map.
+ */
+MTBDDMAP mtbdd_map_add(MTBDDMAP map, uint32_t key, MTBDD value);
+
+/**
+ * Add all values from map2 to map1, overwrites if key already in map1.
+ */
+MTBDDMAP mtbdd_map_addall(MTBDDMAP map1, MTBDDMAP map2);
+
+/**
+ * Remove the key <key> from the map and return the result
+ */
+MTBDDMAP mtbdd_map_remove(MTBDDMAP map, uint32_t key);
+
+/**
+ * Remove all keys in the cube <variables> from the map and return the result
+ */
+MTBDDMAP mtbdd_map_removeall(MTBDDMAP map, MTBDD variables);
 
 /**
  * Garbage collection

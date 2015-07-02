@@ -162,6 +162,7 @@ getabstime()
     uint64_t t = ts.tv_sec;
     t *= 1000000000UL;
     t += ts.tv_nsec;
+    return t;
 }
 #endif
 

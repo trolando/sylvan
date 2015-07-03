@@ -115,6 +115,10 @@ typedef enum {
     LDD_NODES_CREATED,
     LDD_NODES_REUSED,
 
+    LLMSSET_PHASE1,
+    LLMSSET_PHASE2,
+    LLMSSET_PHASE3,
+
     SYLVAN_GC_COUNT,
     SYLVAN_COUNTER_COUNTER
 } Sylvan_Counters;
@@ -185,6 +189,17 @@ sylvan_stats_count(size_t counter)
 }
 
 static inline void
+sylvan_stats_add(size_t counter, size_t amount)
+{
+#ifdef __ELF__
+    sylvan_stats.counters[counter]+=amount;
+#else
+    sylvan_stats_t *sylvan_stats = (sylvan_stats_t*)pthread_getspecific(sylvan_stats_key);
+    sylvan_stats->counters[counter]+=amount;
+#endif
+}
+
+static inline void
 sylvan_timer_start(size_t timer)
 {
     uint64_t t = getabstime();
@@ -216,6 +231,13 @@ static inline void
 sylvan_stats_count(size_t counter)
 {
     (void)counter;
+}
+
+static inline void
+sylvan_stats_add(size_t counter, size_t amount)
+{
+    (void)counter;
+    (void)amount;
 }
 
 static inline void

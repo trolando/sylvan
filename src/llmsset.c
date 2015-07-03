@@ -25,6 +25,7 @@
 
 #include <atomics.h>
 #include <llmsset.h>
+#include <stats.h>
 #include <tls.h>
 
 /*
@@ -134,6 +135,8 @@ llmsset_lookup(const llmsset_t dbs, const void* data, int* created)
                     return d_idx;
                 }
             }
+
+            sylvan_stats_count(LLMSSET_PHASE1);
         } while (probe_sequence_next(idx, last));
 
         hash_rehash = rehash16_mul(data, hash_rehash);
@@ -176,6 +179,8 @@ phase2:
         }
     }
 
+    sylvan_stats_add(LLMSSET_PHASE2, count);
+
     // data has been inserted!
     uint64_t mask = hash | d_idx | HFILLED;
 
@@ -212,6 +217,8 @@ phase2_restart:
                     return d2_idx;
                 }
             }
+
+            sylvan_stats_count(LLMSSET_PHASE3);
         } while (probe_sequence_next(idx, last));
 
         hash_rehash = rehash16_mul(data, hash_rehash);

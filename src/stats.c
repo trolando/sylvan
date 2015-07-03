@@ -191,5 +191,12 @@ sylvan_stats_report(FILE *target, int color)
     if (color) fprintf(target, NC);
     fprintf(target, "Unique nodes table: %'zu of %'zu buckets filled.\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
     fprintf(target, "Operation cache: %'zu of %'zu buckets filled.\n", cache_getused(), cache_getsize());
+
+    if (color) fprintf(target, ULINE LBLUE);
+    fprintf(target, "\nUnique table\n");
+    if (color) fprintf(target, NC);
+    fprintf(target, "Phase 1 count: %'"PRIu64"\n", totals.counters[LLMSSET_PHASE1]);
+    fprintf(target, "Phase 2 count: %'"PRIu64"\n", totals.counters[LLMSSET_PHASE2]);
+    fprintf(target, "Phase 3 count: %'"PRIu64"\n", totals.counters[LLMSSET_PHASE3]);
 #endif
 }

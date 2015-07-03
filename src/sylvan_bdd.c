@@ -356,45 +356,6 @@ sylvan_high(BDD bdd)
 }
 
 /**
- * Debugging functionality that converts a BDD to one without complemented edges.
- */
-
-BDD
-sylvan_makenode_nocomp(BDDVAR level, BDD low, BDD high)
-{
-    if (low == high) return low;
-
-    struct bddnode n = (struct bddnode){high, level, low, 0, 0};
-
-    int created;
-    uint64_t index = llmsset_lookup(nodes, &n, &created);
-    if (index == 0) {
-        LACE_ME;
-        bdd_refs_push(low);
-        bdd_refs_push(high);
-        sylvan_gc();
-        bdd_refs_pop(2);
-        index = llmsset_lookup(nodes, &n, &created);
-        if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
-            exit(1);
-        }
-    }
-
-    return (BDD)index;
-}
-
-BDD
-sylvan_bdd_to_nocomp(BDD bdd)
-{
-    if (bdd == sylvan_true) return sylvan_true_nc;
-    if (bdd == sylvan_false) return sylvan_false;
-
-    bddnode_t n = GETNODE(bdd);
-    return sylvan_makenode_nocomp(n->level, sylvan_bdd_to_nocomp(node_low(bdd, n)), sylvan_bdd_to_nocomp(node_high(bdd, n)));
-}
-
-/**
  * Implementation of unary, binary and if-then-else operators.
  */
 TASK_IMPL_3(BDD, sylvan_and, BDD, a, BDD, b, BDDVAR, prev_level)
@@ -2412,87 +2373,6 @@ void
 sylvan_printdot(BDD bdd)
 {
     sylvan_fprintdot(stdout, bdd);
-}
-
-static void __attribute__((noinline))
-sylvan_dothelper_nocomp_register(avl_node_t **set, BDD bdd)
-{
-    struct level_to_nodeset s, *ss;
-    bddnode_t node = GETNODE(bdd);
-    s.level = node->level;
-    ss = level_to_nodeset_search(*set, &s);
-    if (ss == NULL) {
-        s.set = NULL;
-        ss = level_to_nodeset_put(set, &s, NULL);
-    }
-    assert(ss != NULL);
-    nodeset_insert(&ss->set, &bdd);
-}
-
-static void
-sylvan_fprintdot_nocomp_rec(FILE *out, BDD bdd, avl_node_t **levels)
-{
-    if (!sylvan_isnode(bdd)) return;
-
-    bddnode_t n = GETNODE(bdd);
-    if (!sylvan_mark(n, 1)) return;
-
-    sylvan_dothelper_nocomp_register(levels, bdd);
-
-    fprintf(out, "%" PRIu64 " [label=\"%d\"];\n", bdd, n->level);
-
-    sylvan_fprintdot_nocomp_rec(out, n->low, levels);
-    sylvan_fprintdot_nocomp_rec(out, n->high, levels);
-
-    fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=dashed];\n", bdd, (BDD)n->low);
-    fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=solid];\n", bdd, (BDD)n->high);
-}
-
-void
-sylvan_fprintdot_nocomp(FILE *out, BDD bdd)
-{
-    // Bye comp
-    bdd = sylvan_bdd_to_nocomp(bdd);
-
-    fprintf(out, "digraph \"DD\" {\n");
-    fprintf(out, "graph [dpi = 300];\n");
-    fprintf(out, "center = true;\n");
-    fprintf(out, "edge [dir = forward];\n");
-    if (bdd != sylvan_true_nc) fprintf(out, "0 [shape=box, label=\"0\", style=filled, shape=box, height=0.3, width=0.3];\n");
-    if (bdd != sylvan_false) fprintf(out, "%" PRIu64 " [shape=box, label=\"1\", style=filled, shape=box, height=0.3, width=0.3];\n", sylvan_true_nc);
-    fprintf(out, "root [style=invis];\n");
-    fprintf(out, "root -> %" PRIu64 " [style=solid];\n", bdd);
-
-    avl_node_t *levels = NULL;
-    sylvan_fprintdot_nocomp_rec(out, bdd, &levels);
-
-    if (levels != NULL) {
-        size_t levels_count = avl_count(levels);
-        struct level_to_nodeset *arr = level_to_nodeset_toarray(levels);
-        size_t i;
-        for (i=0;i<levels_count;i++) {
-            fprintf(out, "{ rank=same; ");
-            size_t node_count = avl_count(arr[i].set);
-            size_t j;
-            BDD *arr_j = nodeset_toarray(arr[i].set);
-            for (j=0;j<node_count;j++) {
-                fprintf(out, "%" PRIu64 "; ", arr_j[j]);
-            }
-            fprintf(out, "}\n");
-        }
-        level_to_nodeset_free(&levels);
-    }
-
-    if (!sylvan_isconst(bdd)) fprintf(out, "{ rank=same; 0; %" PRIu64 "; }\n", sylvan_true_nc);
-
-    fprintf(out, "}\n");
-    if (!sylvan_isconst(bdd)) sylvan_unmark_rec(GETNODE(bdd), 1);
-}
-
-void
-sylvan_printdot_nocomp(BDD bdd)
-{
-    sylvan_fprintdot_nocomp(stdout, bdd);
 }
 
 /**

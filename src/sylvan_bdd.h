@@ -35,11 +35,10 @@ typedef uint32_t BDDVAR;    // low 24 bits only
 #define sylvan_complement   ((uint64_t)0x8000000000000000)
 #define sylvan_false        ((BDD)0x0000000000000000)
 #define sylvan_true         (sylvan_false|sylvan_complement)
-#define sylvan_true_nc      ((BDD)0x000000ffffffffff)  // sylvan_true without complement edges
 #define sylvan_invalid      ((BDD)0x7fffffffffffffff)
 
-#define sylvan_isconst(a)   ( ((a&(~sylvan_complement)) == sylvan_false) || (a == sylvan_true_nc) )
-#define sylvan_isnode(a)    ( ((a&(~sylvan_complement)) != sylvan_false) && ((a&(~sylvan_complement)) < sylvan_true_nc) )
+#define sylvan_isconst(a)   ( ((a&(~sylvan_complement)) == sylvan_false) )
+#define sylvan_isnode(a)    ( ((a&(~sylvan_complement)) != sylvan_false) )
 
 /**
  * Initialize BDD functionality.
@@ -240,22 +239,12 @@ BDD sylvan_makenode(BDDVAR level, BDD low, BDD high);
 void sylvan_printdot(BDD bdd);
 void sylvan_fprintdot(FILE *out, BDD bdd);
 
-void sylvan_printdot_nocomp(BDD bdd);
-void sylvan_fprintdot_nocomp(FILE *out, BDD bdd);
-
 void sylvan_print(BDD bdd);
 void sylvan_fprint(FILE *f, BDD bdd);
 
 void sylvan_printsha(BDD bdd);
 void sylvan_fprintsha(FILE *f, BDD bdd);
 void sylvan_getsha(BDD bdd, char *target); // target must be at least 65 bytes...
-
-/**
- * Convert normal BDD to a BDD without complement edges
- * Also replaces sylvan_true by sylvan_true_nc
- * Function only meant for debugging purposes.
- */
-BDD sylvan_bdd_to_nocomp(BDD bdd);
 
 /**
  * Calculate number of satisfying variable assignments.

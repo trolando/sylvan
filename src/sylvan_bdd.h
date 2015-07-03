@@ -37,8 +37,8 @@ typedef uint32_t BDDVAR;    // low 24 bits only
 #define sylvan_true         (sylvan_false|sylvan_complement)
 #define sylvan_invalid      ((BDD)0x7fffffffffffffff)
 
-#define sylvan_isconst(a)   ( ((a&(~sylvan_complement)) == sylvan_false) )
-#define sylvan_isnode(a)    ( ((a&(~sylvan_complement)) != sylvan_false) )
+#define sylvan_isconst(bdd) (bdd == sylvan_true || bdd == sylvan_false)
+#define sylvan_isnode(bdd)  (bdd != sylvan_true && bdd != sylvan_false)
 
 /**
  * Initialize BDD functionality.

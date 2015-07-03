@@ -89,16 +89,15 @@ rotl64(uint64_t x, int8_t r)
 #endif
 
 static uint64_t
-rehash16_mul(const void *key, const uint64_t seed)
+rehash16_mul(const uint64_t a, const uint64_t b, const uint64_t seed)
 {
     const uint64_t prime = 1099511628211;
-    const uint64_t *p = (const uint64_t *)key;
 
     uint64_t hash = seed;
-    hash = hash ^ p[0];
+    hash = hash ^ a;
     hash = rotl64(hash, 47);
     hash = hash * prime;
-    hash = hash ^ p[1];
+    hash = hash ^ b;
     hash = rotl64(hash, 31);
     hash = hash * prime;
 
@@ -106,9 +105,9 @@ rehash16_mul(const void *key, const uint64_t seed)
 }
 
 static uint64_t
-hash16_mul(const void *key)
+hash16_mul(const uint64_t a, const uint64_t b)
 {
-    return rehash16_mul(key, 14695981039346656037LLU);
+    return rehash16_mul(a, b, 14695981039346656037LLU);
 }
 
 /*
@@ -116,11 +115,11 @@ hash16_mul(const void *key)
  * insert_index points to a starting point and is updated.
  */
 uint64_t
-llmsset_lookup(const llmsset_t dbs, const void* data, int* created)
+llmsset_lookup(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* created)
 {
     LOCALIZE_THREAD_LOCAL(insert_index, uint64_t);
 
-    uint64_t hash_rehash = hash16_mul(data);
+    uint64_t hash_rehash = hash16_mul(a, b);
     const uint64_t hash = hash_rehash & MASK_HASH;
     int i=0;
 
@@ -140,8 +139,8 @@ llmsset_lookup(const llmsset_t dbs, const void* data, int* created)
 
             if (hash == (v & MASK_HASH)) {
                 uint64_t d_idx = v & MASK_INDEX;
-                register uint8_t *d_ptr = dbs->data + d_idx * 16;
-                if (memcmp(d_ptr, data, 16) == 0) {
+                register uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
+                if (d_ptr[0] == a && d_ptr[1] == b) {
                     *created = 0;
                     return d_idx;
                 }
@@ -150,13 +149,13 @@ llmsset_lookup(const llmsset_t dbs, const void* data, int* created)
             sylvan_stats_count(LLMSSET_PHASE1);
         } while (probe_sequence_next(idx, last));
 
-        hash_rehash = rehash16_mul(data, hash_rehash);
+        hash_rehash = rehash16_mul(a, b, hash_rehash);
     }
 
     return 0; // failed to find empty spot
 
     uint64_t d_idx;
-    uint8_t *d_ptr;
+    uint64_t *d_ptr;
 phase2:
     d_idx = insert_index;
 
@@ -180,8 +179,9 @@ phase2:
                 d_idx++;
             }
         } else if (cas(ptr, h, h|DFILLED)) {
-            d_ptr = dbs->data + d_idx * 16;
-            memcpy(d_ptr, data, 16);
+            d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
+            d_ptr[0] = a;
+            d_ptr[1] = b;
             insert_index = d_idx;
             SET_THREAD_LOCAL(insert_index, insert_index);
             break;
@@ -219,11 +219,11 @@ phase2_restart:
 
             if (hash == (v & MASK_HASH)) {
                 uint64_t d2_idx = v & MASK_INDEX;
-                register uint8_t *d2_ptr = dbs->data + d2_idx * 16;
-                if (memcmp(d2_ptr, data, 16) == 0) {
+                register uint64_t *d2_ptr = ((uint64_t*)dbs->data) + 2*d2_idx;
+                if (d2_ptr[0] == a && d2_ptr[1] == b) {
                     volatile uint64_t *ptr = dbs->table + d_idx;
                     uint64_t h = *ptr;
-                    while (!cas(ptr, h, h&~(DFILLED))) { h = *ptr; } // uninsert data
+                    while (!cas(ptr, h, h&~(DFILLED|DNOTIFY))) { h = *ptr; } // uninsert data
                     *created = 0;
                     return d2_idx;
                 }
@@ -232,7 +232,7 @@ phase2_restart:
             sylvan_stats_count(LLMSSET_PHASE3);
         } while (probe_sequence_next(idx, last));
 
-        hash_rehash = rehash16_mul(data, hash_rehash);
+        hash_rehash = rehash16_mul(a, b, hash_rehash);
     }
 
     return 0;
@@ -241,8 +241,8 @@ phase2_restart:
 static inline int
 llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 {
-    const uint8_t * const d_ptr = dbs->data + d_idx * 16;
-    uint64_t hash_rehash = hash16_mul(d_ptr);
+    const uint64_t * const d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
+    uint64_t hash_rehash = hash16_mul(d_ptr[0], d_ptr[1]);
     uint64_t mask = (hash_rehash & MASK_HASH) | d_idx | HFILLED;
 
     int i;
@@ -263,7 +263,7 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
             if (cas(bucket, v, mask | (v&(DFILLED|DNOTIFY)))) return 1;
         } while (probe_sequence_next(idx, last));
 
-        hash_rehash = rehash16_mul(d_ptr, hash_rehash);
+        hash_rehash = rehash16_mul(d_ptr[0], d_ptr[1], hash_rehash);
     }
 
     return 0;

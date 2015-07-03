@@ -127,7 +127,7 @@ llmsset_set_size(llmsset_t dbs, size_t size)
  * Returns the unique 42-bit value associated with the data, or 0 when table is full.
  * Also, this value will never equal 0 or 1.
  */
-uint64_t llmsset_lookup(const llmsset_t dbs, const void *data, int *created);
+uint64_t llmsset_lookup(const llmsset_t dbs, const uint64_t a, const uint64_t b, int *created);
 
 /**
  * To perform garbage collection, the user is responsible that no lookups are performed during the process.

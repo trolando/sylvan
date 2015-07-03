@@ -279,7 +279,7 @@ lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
     mddnode_make(&n, value, ifneq, ifeq);
 
     int created;
-    uint64_t index = llmsset_lookup(nodes, &n, &created);
+    uint64_t index = llmsset_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
         //size_t before_gc = llmsset_count_marked(nodes);
         lddmc_refs_push(ifeq);
@@ -290,7 +290,7 @@ lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
         //size_t after_gc = llmsset_count_marked(nodes);
         //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
 
-        index = llmsset_lookup(nodes, &n, &created);
+        index = llmsset_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
             fprintf(stderr, "MDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
             exit(1);
@@ -310,7 +310,7 @@ lddmc_make_copynode(MDD ifeq, MDD ifneq)
     mddnode_makecopy(&n, ifneq, ifeq);
 
     int created;
-    uint64_t index = llmsset_lookup(nodes, &n, &created);
+    uint64_t index = llmsset_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
         //size_t before_gc = llmsset_count_marked(nodes);
         lddmc_refs_push(ifeq);
@@ -321,7 +321,7 @@ lddmc_make_copynode(MDD ifeq, MDD ifneq)
         //size_t after_gc = llmsset_count_marked(nodes);
         //fprintf(stderr, "GC: %.01f%% to %.01f%%\n", 100.0*(double)before_gc/total, 100.0*(double)after_gc/total);
 
-        index = llmsset_lookup(nodes, &n, &created);
+        index = llmsset_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
             fprintf(stderr, "MDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
             exit(1);

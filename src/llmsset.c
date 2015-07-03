@@ -28,6 +28,16 @@
 #include <stats.h>
 #include <tls.h>
 
+#ifndef USE_HWLOC
+#define USE_HWLOC 0
+#endif
+
+#if USE_HWLOC
+#include <hwloc.h>
+
+static hwloc_topology_t topo;
+#endif
+
 /*
  *  1 bit  for data-filled
  *  1 bit  for hash-filled
@@ -262,6 +272,11 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 llmsset_t
 llmsset_create(size_t initial_size, size_t max_size)
 {
+#if USE_HWLOC
+    hwloc_topology_init(&topo);
+    hwloc_topology_load(topo);
+#endif
+
     llmsset_t dbs = NULL;
     if (posix_memalign((void**)&dbs, LINE_SIZE, sizeof(struct llmsset)) != 0) {
         fprintf(stderr, "Unable to allocate memory!\n");
@@ -297,10 +312,15 @@ llmsset_create(size_t initial_size, size_t max_size)
     /* This implementation of "resizable hash table" allocates the max_size table in virtual memory,
        but only uses the "actual size" part in real memory */
 
+#if USE_HWLOC
+    dbs->table = (uint64_t*)hwloc_alloc_membind(topo, dbs->max_size * sizeof(uint64_t), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
+    dbs->data = (uint8_t*)hwloc_alloc_membind(topo, dbs->max_size * 2 * sizeof(uint64_t), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
+#else
     dbs->table = (uint64_t*)mmap(0, dbs->max_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (dbs->table == (uint64_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
     dbs->data = (uint8_t*)mmap(0, dbs->max_size * 16, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (dbs->data == (uint8_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
+#endif
 
     dbs->dead_cb = NULL;
 
@@ -324,8 +344,13 @@ llmsset_create(size_t initial_size, size_t max_size)
 void
 llmsset_free(llmsset_t dbs)
 {
+#if USE_HWLOC
+    hwloc_free(topo, dbs->table, dbs->max_size * sizeof(uint64_t));
+    hwloc_free(topo, dbs->data, dbs->max_size * 16);
+#else
     munmap(dbs->table, dbs->max_size * sizeof(uint64_t));
     munmap(dbs->data, dbs->max_size * 16);
+#endif
     free(dbs);
 }
 
@@ -369,8 +394,13 @@ VOID_TASK_IMPL_1(llmsset_clear, llmsset_t, dbs)
         CALL(llmsset_clear_par, dbs, 0, dbs->table_size);
     } else {
         // a bit silly, but this works just fine, and does not require writing 0 everywhere...
+#if USE_HWLOC
+        hwloc_free(topo, dbs->table, dbs->max_size * sizeof(uint64_t));
+        dbs->table = (uint64_t*)hwloc_alloc_membind(topo, dbs->max_size * sizeof(uint64_t), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
+#else
         munmap(dbs->table, dbs->max_size * sizeof(uint64_t));
         dbs->table = (uint64_t*)mmap(0, dbs->max_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+#endif
         if (dbs->table == (uint64_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
     }
 }

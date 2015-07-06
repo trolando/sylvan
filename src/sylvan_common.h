@@ -30,21 +30,21 @@ extern "C" {
 #define sylvan_gc_test() YIELD_NEWFRAME()
 
 // BDD operations
-#define CACHE_ITE             0
-#define CACHE_AND             1
-#define CACHE_XOR             14
-#define CACHE_EXISTS          2
-#define CACHE_AND_EXISTS      3
-#define CACHE_RELNEXT         4
-#define CACHE_RELPREV         5
-#define CACHE_SATCOUNT        6
-#define CACHE_COMPOSE         7
-#define CACHE_RESTRICT        8
-#define CACHE_CONSTRAIN       9
-#define CACHE_CLOSURE         10
-#define CACHE_ISBDD           11
-#define CACHE_SUPPORT         12
-#define CACHE_PATHCOUNT       13
+#define CACHE_BDD_ITE             (0LL<<40)
+#define CACHE_BDD_AND             (1LL<<40)
+#define CACHE_BDD_XOR             (2LL<<40)
+#define CACHE_BDD_EXISTS          (3LL<<40)
+#define CACHE_BDD_AND_EXISTS      (4LL<<40)
+#define CACHE_BDD_RELNEXT         (5LL<<40)
+#define CACHE_BDD_RELPREV         (6LL<<40)
+#define CACHE_BDD_SATCOUNT        (7LL<<40)
+#define CACHE_BDD_COMPOSE         (8LL<<40)
+#define CACHE_BDD_RESTRICT        (9LL<<40)
+#define CACHE_BDD_CONSTRAIN       (10LL<<40)
+#define CACHE_BDD_CLOSURE         (11LL<<40)
+#define CACHE_BDD_ISBDD           (12LL<<40)
+#define CACHE_BDD_SUPPORT         (13LL<<40)
+#define CACHE_BDD_PATHCOUNT       (14LL<<40)
 
 // MDD operations
 #define CACHE_MDD_RELPROD     20

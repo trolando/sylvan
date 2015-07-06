@@ -498,7 +498,7 @@ main(int argc, char **argv)
     }
 
     // Report statistics
-    INFO("Read file '%s'\n", argv[1]);
+    INFO("Read file '%s'\n", model_filename);
     INFO("%d integers per state, %d bits per integer, %d transition groups\n", vector_size, bits_per_integer, next_count);
 
     if (report_nodes) {

@@ -47,17 +47,17 @@ extern "C" {
 #define CACHE_BDD_PATHCOUNT       (14LL<<40)
 
 // MDD operations
-#define CACHE_MDD_RELPROD     20
-#define CACHE_MDD_MINUS       21
-#define CACHE_MDD_UNION       22
-#define CACHE_MDD_INTERSECT   23
-#define CACHE_MDD_PROJECT     24
-#define CACHE_MDD_JOIN        25
-#define CACHE_MDD_MATCH       26
-#define CACHE_MDD_RELPREV     27
-#define CACHE_MDD_SATCOUNT    28
-#define CACHE_MDD_SATCOUNTL1  29
-#define CACHE_MDD_SATCOUNTL2  30
+#define CACHE_MDD_RELPROD         (20LL<<40)
+#define CACHE_MDD_MINUS           (21LL<<40)
+#define CACHE_MDD_UNION           (22LL<<40)
+#define CACHE_MDD_INTERSECT       (23LL<<40)
+#define CACHE_MDD_PROJECT         (24LL<<40)
+#define CACHE_MDD_JOIN            (25LL<<40)
+#define CACHE_MDD_MATCH           (26LL<<40)
+#define CACHE_MDD_RELPREV         (27LL<<40)
+#define CACHE_MDD_SATCOUNT        (28LL<<40)
+#define CACHE_MDD_SATCOUNTL1      (29LL<<40)
+#define CACHE_MDD_SATCOUNTL2      (30LL<<40)
 
 /**
  * Registration of quit functions

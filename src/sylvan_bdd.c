@@ -78,7 +78,7 @@ bddnode_getvariable(bddnode_t n)
 static inline int
 bddnode_getmark(bddnode_t n)
 {
-    return n->a & 0x2000000000000000;
+    return n->a & 0x2000000000000000 ? 1 : 0;
 }
 
 static inline void
@@ -1290,7 +1290,7 @@ TASK_IMPL_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
             /* check if level < s/t */
             if (level < vv) break;
             vars = node_high(vars, nv); // get next in vars
-            if (sylvan_set_isempty(vars)) return a;
+            if (sylvan_set_isempty(vars)) return b;
             nv = GETNODE(vars);
         }
     }
@@ -1667,7 +1667,7 @@ void sylvan_nodecount_do_2(BDD a)
 {
     if (sylvan_isconst(a)) return;
     bddnode_t na = GETNODE(a);
-    if (bddnode_getmark(na)) return;
+    if (!bddnode_getmark(na)) return;
     bddnode_setmark(na, 0);
     sylvan_nodecount_do_2(bddnode_getlow(na));
     sylvan_nodecount_do_2(bddnode_gethigh(na));
@@ -1959,12 +1959,12 @@ VOID_TASK_5(sylvan_enum_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context,
         return;
     }
 
-    BDD var = sylvan_var(vars);
+    BDDVAR var = sylvan_var(vars);
     vars = sylvan_set_next(vars);
-    BDD bdd_var = sylvan_var(bdd);
+    BDDVAR bdd_var = sylvan_var(bdd);
 
     /* assert var <= bdd_var */
-    if (var < bdd_var) {
+    if (bdd == sylvan_true || var < bdd_var) {
         struct bdd_path pp0 = (struct bdd_path){path, var, 0};
         CALL(sylvan_enum_do, bdd, vars, cb, context, &pp0);
         struct bdd_path pp1 = (struct bdd_path){path, var, 1};
@@ -1975,6 +1975,7 @@ VOID_TASK_5(sylvan_enum_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context,
         struct bdd_path pp1 = (struct bdd_path){path, var, 1};
         CALL(sylvan_enum_do, sylvan_high(bdd), vars, cb, context, &pp1);
     } else {
+        printf("var %u not expected (expecting %u)!\n", bdd_var, var);
         assert(var <= bdd_var);
     }
 }

@@ -38,6 +38,10 @@
 static hwloc_topology_t topo;
 #endif
 
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS MAP_ANON
+#endif
+
 /*
  *  1 bit  for data-filled
  *  1 bit  for hash-filled
@@ -279,7 +283,7 @@ llmsset_create(size_t initial_size, size_t max_size)
 
     llmsset_t dbs = NULL;
     if (posix_memalign((void**)&dbs, LINE_SIZE, sizeof(struct llmsset)) != 0) {
-        fprintf(stderr, "Unable to allocate memory!\n");
+        fprintf(stderr, "llmsset_create: Unable to allocate memory!\n");
         exit(1);
     }
 
@@ -312,14 +316,20 @@ llmsset_create(size_t initial_size, size_t max_size)
     /* This implementation of "resizable hash table" allocates the max_size table in virtual memory,
        but only uses the "actual size" part in real memory */
 
+    dbs->table = (uint64_t*)mmap(0, dbs->max_size * 8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+    dbs->data = (uint8_t*)mmap(0, dbs->max_size * 16, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+    if (dbs->table == (uint64_t*)-1 || dbs->data == (uint8_t*)-1) {
+        fprintf(stderr, "llmsset_create: Unable to allocate memory!\n");
+        exit(1);
+    }
+
+#if defined(madvise) && defined(MADV_RANDOM)
+    madvise(dbs->table, dbs->max_size * 8, MADV_RANDOM);
+#endif
+
 #if USE_HWLOC
-    dbs->table = (uint64_t*)hwloc_alloc_membind(topo, dbs->max_size * sizeof(uint64_t), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
-    dbs->data = (uint8_t*)hwloc_alloc_membind(topo, dbs->max_size * 2 * sizeof(uint64_t), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
-#else
-    dbs->table = (uint64_t*)mmap(0, dbs->max_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
-    if (dbs->table == (uint64_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
-    dbs->data = (uint8_t*)mmap(0, dbs->max_size * 16, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
-    if (dbs->data == (uint8_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
+    hwloc_set_area_membind(topo, dbs->table, dbs->max_size * 8, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
+    hwloc_set_area_membind(topo, dbs->data, dbs->max_size * 16, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
 #endif
 
     dbs->dead_cb = NULL;
@@ -327,56 +337,23 @@ llmsset_create(size_t initial_size, size_t max_size)
     LACE_ME;
     TOGETHER(llmsset_init_worker, dbs);
 
-    /* self-test */
-    /* if (lace_workers() > 1) {
-        size_t first, count, expected=0, i;
-        for (i=0; i<lace_workers(); i++) {
-            llmsset_compute_multi(dbs, i, lace_workers(), &first, &count);
-            assert(expected == first);
-            expected += count;
-        }
-        assert(expected == dbs->table_size);
-    }*/
-
     return dbs;
 }
 
 void
 llmsset_free(llmsset_t dbs)
 {
-#if USE_HWLOC
-    hwloc_free(topo, dbs->table, dbs->max_size * sizeof(uint64_t));
-    hwloc_free(topo, dbs->data, dbs->max_size * 16);
-#else
-    munmap(dbs->table, dbs->max_size * sizeof(uint64_t));
+    munmap(dbs->table, dbs->max_size * 8);
     munmap(dbs->data, dbs->max_size * 16);
-#endif
     free(dbs);
-}
-
-static void
-llmsset_compute_multi(const llmsset_t dbs, size_t my_id, size_t n_workers, size_t *_first_entry, size_t *_entry_count)
-{
-    const size_t entries_total    = dbs->table_size;
-    const size_t cachelines_total = (entries_total * sizeof(uint64_t) + LINE_SIZE - 1) / LINE_SIZE;
-    const size_t cachelines_each  = (cachelines_total + n_workers - 1) / n_workers;
-    const size_t entries_each     = cachelines_each * LINE_SIZE / sizeof(uint64_t);
-    const size_t first_entry      = my_id * entries_each;
-    const size_t cap_total        = dbs->table_size - first_entry;
-    if (first_entry > dbs->table_size) {
-        *_first_entry = dbs->table_size;
-        *_entry_count = 0;
-    } else {
-        *_first_entry = first_entry;
-        *_entry_count = entries_each < cap_total ? entries_each : cap_total;
-    }
 }
 
 VOID_TASK_3(llmsset_clear_par, llmsset_t, dbs, size_t, first, size_t, count)
 {
     if (count > 1024) {
-        SPAWN(llmsset_clear_par, dbs, first, count/2);
-        CALL(llmsset_clear_par, dbs, first+count/2, count-count/2);
+        size_t split = (count/2+1023)&(~1023);
+        SPAWN(llmsset_clear_par, dbs, first, split);
+        CALL(llmsset_clear_par, dbs, first + split, count - split);
         SYNC(llmsset_clear_par);
     } else {
         uint64_t *ptr = dbs->table+first;
@@ -393,15 +370,18 @@ VOID_TASK_IMPL_1(llmsset_clear, llmsset_t, dbs)
         // slow clear
         CALL(llmsset_clear_par, dbs, 0, dbs->table_size);
     } else {
-        // a bit silly, but this works just fine, and does not require writing 0 everywhere...
-#if USE_HWLOC
-        hwloc_free(topo, dbs->table, dbs->max_size * sizeof(uint64_t));
-        dbs->table = (uint64_t*)hwloc_alloc_membind(topo, dbs->max_size * sizeof(uint64_t), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
-#else
-        munmap(dbs->table, dbs->max_size * sizeof(uint64_t));
-        dbs->table = (uint64_t*)mmap(0, dbs->max_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+        // just reallocate...
+        if (mmap(dbs->table, dbs->max_size * 8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) != (void*)-1) {
+#if defined(madvise) && defined(MADV_RANDOM)
+            madvise(dbs->table, sizeof(uint64_t[dbs->max_size]), MADV_RANDOM);
 #endif
-        if (dbs->table == (uint64_t*)-1) { fprintf(stderr, "Unable to allocate memory!"); exit(1); }
+#if USE_HWLOC
+            hwloc_set_area_membind(topo, dbs->table, sizeof(uint64_t[dbs->max_size]), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
+#endif
+        } else {
+            // reallocate failed... expensive fallback
+            memset(dbs->table, 0, dbs->max_size * 8);
+        }
     }
 }
 
@@ -421,39 +401,25 @@ llmsset_mark(const llmsset_t dbs, uint64_t index)
     return 1;
 }
 
-VOID_TASK_3(llmsset_rehash_range, llmsset_t, dbs, size_t, first, size_t, count)
+VOID_TASK_3(llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
 {
-    while (count--) {
-        if (dbs->table[first]&DFILLED) llmsset_rehash_bucket(dbs, first);
-        first++;
-    }
-}
-
-VOID_TASK_1(llmsset_rehash_task, llmsset_t, dbs)
-{
-    /* retrieve first entry and number of bucket */
-    size_t first, count;
-    llmsset_compute_multi(dbs, LACE_WORKER_ID, lace_workers(), &first, &count);
-
-    // now proceed in blocks of 1024 buckets
-    size_t spawn_count = 0;
-    while (count > 1024) {
-        SPAWN(llmsset_rehash_range, dbs, first, 1024);
-        first += 1024;
-        count -= 1024;
-        spawn_count++;
-    }
-    if (count > 0) {
-        CALL(llmsset_rehash_range, dbs, first, count);
-    }
-    while (spawn_count--) {
-        SYNC(llmsset_rehash_range);
+    if (count > 1024) {
+        size_t split = count/2;
+        SPAWN(llmsset_rehash_par, dbs, first, split);
+        CALL(llmsset_rehash_par, dbs, first + split, count - split);
+        SYNC(llmsset_rehash_par);
+    } else {
+        uint64_t *ptr = dbs->table+first;
+        for (size_t k=0; k<count; k++) {
+            if (*ptr & DFILLED) llmsset_rehash_bucket(dbs, first+k);
+            ptr++;
+        }
     }
 }
 
 VOID_TASK_IMPL_1(llmsset_rehash, llmsset_t, dbs)
 {
-    TOGETHER(llmsset_rehash_task, dbs);
+    CALL(llmsset_rehash_par, dbs, 0, dbs->table_size);
     /* for now, call init_worker to reset "insert_index" */
     TOGETHER(llmsset_init_worker, dbs);
 }
@@ -507,8 +473,9 @@ llmsset_notify_ondead(const llmsset_t dbs, uint64_t index)
 VOID_TASK_3(llmsset_notify_par, llmsset_t, dbs, size_t, first, size_t, count)
 {
     if (count > 1024) {
-        SPAWN(llmsset_notify_par, dbs, first, count/2);
-        CALL(llmsset_notify_par, dbs, first+count/2, count-count/2);
+        size_t split = count/2;
+        SPAWN(llmsset_notify_par, dbs, first, split);
+        CALL(llmsset_notify_par, dbs, first + split, count - split);
         SYNC(llmsset_notify_par);
     } else {
         uint64_t *ptr = dbs->table+first;

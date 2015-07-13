@@ -22,6 +22,10 @@
 #include <atomics.h>
 #include <cache.h>
 
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS MAP_ANON
+#endif
+
 /**
  * This cache is designed to store a,b,c->res, with a,b,c,res 64-bit integers.
  *
@@ -122,7 +126,7 @@ cache_create(size_t _cache_size, size_t _max_size)
 #if CACHE_MASK
     // Cache size must be a power of 2
     if (__builtin_popcountll(_cache_size) != 1 || __builtin_popcountll(_max_size) != 1) {
-        fprintf(stderr, "cache: Table size must be a power of 2!\n");
+        fprintf(stderr, "cache_create: Table size must be a power of 2!\n");
         exit(1);
     }
 #endif
@@ -134,14 +138,15 @@ cache_create(size_t _cache_size, size_t _max_size)
 #endif
 
     if (cache_size > cache_max) {
-        fprintf(stderr, "cache: Table size must be <= max size!\n");
+        fprintf(stderr, "cache_create: Table size must be <= max size!\n");
         exit(1);
     }
 
-    cache_table = (cache_entry_t)mmap(0, cache_max * sizeof(struct cache_entry), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
-    cache_status = (uint32_t*)mmap(0, cache_max * sizeof(uint32_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+    cache_table = (cache_entry_t)mmap(0, cache_max * sizeof(struct cache_entry), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+    cache_status = (uint32_t*)mmap(0, cache_max * sizeof(uint32_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+
     if (cache_table == (cache_entry_t)-1 || cache_status == (uint32_t*)-1) {
-        fprintf(stderr, "cache: Unable to allocate memory!\n");
+        fprintf(stderr, "cache_create: Unable to allocate memory!\n");
         exit(1);
     }
 }
@@ -181,9 +186,7 @@ cache_getused()
     size_t result = 0;
     for (size_t i=0;i<cache_size;i++) {
         uint32_t s = cache_status[i];
-        if (s & 0x80000000) {
-            fprintf(stdout, "Warning: cache in use during getused()\n");
-        }
+        if (s & 0x80000000) fprintf(stderr, "cache_getuser: cache in use during cache_getused()\n");
         if (s) result++;
     }
     return result;

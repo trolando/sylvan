@@ -222,13 +222,6 @@ void lace_init(int n_workers, size_t dqsize);
 void lace_startup(size_t stacksize, lace_startup_cb, void* arg);
 
 /**
- * Manually spawn worker <idx> with (optional) program stack size <stacksize>.
- * If fun,arg are set, overrides default startup method.
- * Typically: for workers 1...(n_workers-1): lace_spawn_worker(i, stack_size, 0, 0);
- */
-pthread_t lace_spawn_worker(int idx, size_t stacksize, void *(*fun)(void*), void* arg);
-
-/**
  * Initialize current thread as worker <idx> and allocate a deque with size <dqsize>.
  * Use this when manually creating worker threads.
  */

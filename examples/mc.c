@@ -11,14 +11,14 @@
 #endif
 
 #include <sylvan.h>
-#include <sylvan_table.h>
+#include <sylvan_int.h>
 
-/* Configuration */
+/* Configuration (via argp) */
 static int report_levels = 0; // report states at end of every level
 static int report_table = 0; // report table size at end of every level
 static int report_nodes = 0; // report number of nodes of BDDs
-static int strategy = 1; // set to 1 = use PAR strategy; set to 0 = use BFS strategy
-static int check_deadlocks = 0; // set to 1 to check for deadlocks
+static int strategy = 2; // 0 = BFS, 1 = PAR, 2 = SAT, 3 = CHAINING
+static int check_deadlocks = 0; // set to 1 to check for deadlocks (only bfs/par)
 static int merge_relations = 0; // merge relations to 1 relation
 static int print_transition_matrix = 0; // print transition relation matrix
 static int workers = 0; // autodetect
@@ -31,7 +31,7 @@ static char* profile_filename = NULL; // filename for profiling
 static struct argp_option options[] =
 {
     {"workers", 'w', "<workers>", 0, "Number of workers (default=0: autodetect)", 0},
-    {"strategy", 's', "<bfs|par|sat>", 0, "Strategy for reachability (default=par)", 0},
+    {"strategy", 's', "<bfs|par|sat|chaining>", 0, "Strategy for reachability (default=sat)", 0},
 #ifdef HAVE_PROFILER
     {"profiler", 'p', "<filename>", 0, "Filename for profiling", 0},
 #endif
@@ -54,6 +54,7 @@ parse_opt(int key, char *arg, struct argp_state *state)
         if (strcmp(arg, "bfs")==0) strategy = 0;
         else if (strcmp(arg, "par")==0) strategy = 1;
         else if (strcmp(arg, "sat")==0) strategy = 2;
+        else if (strcmp(arg, "chaining")==0) strategy = 3;
         else argp_usage(state);
         break;
     case 4:
@@ -93,7 +94,9 @@ parse_opt(int key, char *arg, struct argp_state *state)
 }
 static struct argp argp = { options, parse_opt, "<model>", 0, 0, 0, 0 };
 
-/* Globals */
+/**
+ * Types (set and relation)
+ */
 typedef struct set
 {
     BDD bdd;
@@ -106,13 +109,15 @@ typedef struct relation
     BDD variables; // all variables in the relation (used by relprod)
 } *rel_t;
 
-static int vector_size; // size of vector
+static int vector_size; // size of vector in integers
 static int statebits, actionbits; // number of bits for state, number of bits for action
 static int bits_per_integer; // number of bits per integer in the vector
 static int next_count; // number of partitions of the transition relation
 static rel_t *next; // each partition of the transition relation
 
-/* Obtain current wallclock time */
+/**
+ * Obtain current wallclock time
+ */
 static double
 wctime()
 {
@@ -125,7 +130,9 @@ static double t_start;
 #define INFO(s, ...) fprintf(stdout, "[% 8.2f] " s, wctime()-t_start, ##__VA_ARGS__)
 #define Abort(...) { fprintf(stderr, __VA_ARGS__); exit(-1); }
 
-/* Load a set from file */
+/**
+ * Load a set from file
+ */
 #define set_load(f) CALL(set_load, f)
 TASK_1(set_t, set_load, FILE*, f)
 {
@@ -148,7 +155,9 @@ TASK_1(set_t, set_load, FILE*, f)
     return set;
 }
 
-/* Load a relation from file */
+/**
+ * Load a relation from file
+ */
 #define rel_load(f) CALL(rel_load, f)
 TASK_1(rel_t, rel_load, FILE*, f)
 {
@@ -170,6 +179,9 @@ TASK_1(rel_t, rel_load, FILE*, f)
     return rel;
 }
 
+/**
+ * Print a single example of a set to stdout
+ */
 #define print_example(example, variables) CALL(print_example, example, variables)
 VOID_TASK_2(print_example, BDD, example, BDDSET, variables)
 {
@@ -191,7 +203,83 @@ VOID_TASK_2(print_example, BDD, example, BDDSET, variables)
     }
 }
 
-/* Straight-forward implementation of parallel reduction */
+/**
+ * Implementation of (parallel) saturation
+ * (assumes relations are ordered on first variable)
+ */
+TASK_2(BDD, go_sat, BDD, set, int, idx)
+{
+    /* Terminal cases */
+    if (set == sylvan_false) return sylvan_false;
+    if (idx == next_count) return set;
+
+    /* Consult the cache */
+    BDD result;
+    const BDD s = set;
+    if (cache_get3(200LL<<40, s, idx, 0, &result)) return result;
+    bdd_refs_pushptr(&s);
+
+    /**
+     * Possible improvement: cache more things (like intermediate results?)
+     *   and chain-apply more of the current level before going deeper?
+     */
+
+    /* Check if the relation should be applied */
+    BDDVAR var = sylvan_var(next[idx]->variables);
+    if (set == sylvan_true || var <= sylvan_var(set)) {
+        /* Count the number of relations starting here */
+        int count = idx+1;
+        while (count < next_count && var == sylvan_var(next[count]->variables)) count++;
+        count -= idx;
+        /*
+         * Compute until fixpoint:
+         * - SAT deeper
+         * - chain-apply all current level once
+         */
+        BDD prev = sylvan_false;
+        BDD step = sylvan_false;
+        bdd_refs_pushptr(&set);
+        bdd_refs_pushptr(&prev);
+        bdd_refs_pushptr(&step);
+        while (prev != set) {
+            prev = set;
+            // SAT deeper
+            set = CALL(go_sat, set, idx+count);
+            // chain-apply all current level once
+            for (int i=0;i<count;i++) {
+                step = sylvan_relnext(set, next[idx+i]->bdd, next[idx+i]->variables);
+                set = sylvan_or(set, step);
+                step = sylvan_false; // unset, for gc
+            }
+        }
+        bdd_refs_popptr(3);
+        result = set;
+    } else {
+        /* Recursive computation */
+        bdd_refs_spawn(SPAWN(go_sat, sylvan_low(set), idx));
+        BDD high = bdd_refs_push(CALL(go_sat, sylvan_high(set), idx));
+        BDD low = bdd_refs_sync(SYNC(go_sat));
+        bdd_refs_pop(1);
+        result = sylvan_makenode(sylvan_var(set), low, high);
+    }
+
+    bdd_refs_popptr(1);
+    cache_put3(200LL<<40, s, idx, 0, result);
+    return result;
+}
+
+/**
+ * Wrapper for the Saturation strategy
+ */
+VOID_TASK_1(sat, set_t, set)
+{
+    set->bdd = CALL(go_sat, set->bdd, 0);
+}
+
+/**
+ * Implement parallel strategy (that performs the relnext operations in parallel)
+ * This function does one level...
+ */
 TASK_5(BDD, go_par, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, deadlocks)
 {
     if (len == 1) {
@@ -239,7 +327,9 @@ TASK_5(BDD, go_par, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, dea
     }
 }
 
-/* PAR strategy, parallel strategy (operations called in parallel *and* parallelized by Sylvan) */
+/**
+ * Implementation of the PAR strategy
+ */
 VOID_TASK_1(par, set_t, set)
 {
     BDD visited = set->bdd;
@@ -301,7 +391,10 @@ VOID_TASK_1(par, set_t, set)
     sylvan_unprotect(&deadlocks);
 }
 
-/* Sequential version of merge-reduction */
+/**
+ * Implement sequential strategy (that performs the relnext operations one by one)
+ * This function does one level...
+ */
 TASK_5(BDD, go_bfs, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, deadlocks)
 {
     if (len == 1) {
@@ -350,7 +443,9 @@ TASK_5(BDD, go_bfs, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, dea
     }
 }
 
-/* BFS strategy, sequential strategy (but operations are parallelized by Sylvan) */
+/**
+ * Implementation of the BFS strategy
+ */
 VOID_TASK_1(bfs, set_t, set)
 {
     BDD visited = set->bdd;
@@ -413,6 +508,57 @@ VOID_TASK_1(bfs, set_t, set)
 }
 
 /**
+ * Implementation of the Chaining strategy (does not support deadlock detection)
+ */
+VOID_TASK_1(chaining, set_t, set)
+{
+    BDD visited = set->bdd;
+    BDD next_level = visited;
+    BDD succ = sylvan_false;
+
+    bdd_refs_pushptr(&visited);
+    bdd_refs_pushptr(&next_level);
+    bdd_refs_pushptr(&succ);
+
+    int iteration = 1;
+    do {
+        // calculate successors in parallel
+        for (int i=0; i<next_count; i++) {
+            succ = sylvan_relnext(next_level, next[i]->bdd, next[i]->variables);
+            next_level = sylvan_or(next_level, succ);
+            succ = sylvan_false; // reset, for gc
+        }
+
+        // new = new - visited
+        // visited = visited + new
+        next_level = sylvan_diff(next_level, visited);
+        visited = sylvan_or(visited, next_level);
+
+        if (report_table && report_levels) {
+            size_t filled, total;
+            sylvan_table_usage(&filled, &total);
+            INFO("Level %d done, %'0.0f states explored, table: %0.1f%% full (%'zu nodes)\n",
+                iteration, sylvan_satcount(visited, set->variables),
+                100.0*(double)filled/total, filled);
+        } else if (report_table) {
+            size_t filled, total;
+            sylvan_table_usage(&filled, &total);
+            INFO("Level %d done, table: %0.1f%% full (%'zu nodes)\n",
+                iteration,
+                100.0*(double)filled/total, filled);
+        } else if (report_levels) {
+            INFO("Level %d done, %'0.0f states explored\n", iteration, sylvan_satcount(visited, set->variables));
+        } else {
+            INFO("Level %d done\n", iteration);
+        }
+        iteration++;
+    } while (next_level != sylvan_false);
+
+    set->bdd = visited;
+    bdd_refs_popptr(3);
+}
+
+/**
  * Extend a transition relation to a larger domain (using s=s')
  */
 #define extend_relation(rel, vars) CALL(extend_relation, rel, vars)
@@ -463,8 +609,28 @@ TASK_2(BDD, big_union, int, first, int, count)
     return result;
 }
 
+void
+gnomesort_next()
+{
+    int i = 1, j = 2;
+    rel_t t;
+    while (i < next_count) {
+        rel_t *p = &next[i], *q = p-1;
+        if (sylvan_var((*q)->bdd) > sylvan_var((*p)->bdd)) {
+            t = *q;
+            *q = *p;
+            *p = t;
+            if (--i) continue;
+        }
+        i = j++;
+    }
+}
+
+/**
+ * Print one row of the transition matrix (for vars)
+ */
 static void
-print_matrix(BDD vars)
+print_matrix_row(BDD vars)
 {
     for (int i=0; i<vector_size; i++) {
         if (sylvan_set_isempty(vars)) {
@@ -542,18 +708,20 @@ main(int argc, char **argv)
     if (fread(&next_count, sizeof(int), 1, f) != 1) Abort("Invalid input file!\n");
     next = (rel_t*)malloc(sizeof(rel_t) * next_count);
 
-    int i;
-    for (i=0; i<next_count; i++) {
-        next[i] = rel_load(f);
-    }
+    for (int i=0; i<next_count; i++) next[i] = rel_load(f);
 
     /* Done */
     fclose(f);
 
+    if (strategy == 2 || strategy == 3) {
+        // sort the transition relations (gnome sort)
+        gnomesort_next();
+    }
+
     if (print_transition_matrix) {
-        for (i=0; i<next_count; i++) {
+        for (int i=0; i<next_count; i++) {
             INFO("");
-            print_matrix(next[i]->variables);
+            print_matrix_row(next[i]->variables);
             fprintf(stdout, "\n");
         }
     }
@@ -586,7 +754,7 @@ main(int argc, char **argv)
     if (report_nodes) {
         INFO("BDD nodes:\n");
         INFO("Initial states: %zu BDD nodes\n", sylvan_nodecount(states->bdd));
-        for (i=0; i<next_count; i++) {
+        for (int i=0; i<next_count; i++) {
             INFO("Transition %d: %zu BDD nodes\n", i, sylvan_nodecount(next[i]->bdd));
         }
     }
@@ -599,6 +767,16 @@ main(int argc, char **argv)
         CALL(par, states);
         double t2 = wctime();
         INFO("PAR Time: %f\n", t2-t1);
+    } else if (strategy == 2) {
+        double t1 = wctime();
+        CALL(sat, states);
+        double t2 = wctime();
+        INFO("SAT Time: %f\n", t2-t1);
+    } else if (strategy == 3) {
+        double t1 = wctime();
+        CALL(chaining, states);
+        double t2 = wctime();
+        INFO("CHAINING Time: %f\n", t2-t1);
     } else {
         double t1 = wctime();
         CALL(bfs, states);

@@ -408,16 +408,16 @@ static void
 print_matrix(BDD vars)
 {
     for (int i=0; i<vector_size; i++) {
-        if (vars == sylvan_false) {
+        if (sylvan_set_isempty(vars)) {
             fprintf(stdout, "-");
         } else {
             BDDVAR next_s = 2*((i+1)*bits_per_integer);
-            if (sylvan_var(vars) < next_s) {
+            if (sylvan_set_var(vars) < next_s) {
                 fprintf(stdout, "+");
                 for (;;) {
-                    vars = sylvan_low(vars);
-                    if (vars == sylvan_false) break;
-                    if (sylvan_var(vars) >= next_s) break;
+                    vars = sylvan_set_next(vars);
+                    if (sylvan_set_isempty(vars)) break;
+                    if (sylvan_set_var(vars) >= next_s) break;
                 }
             } else {
                 fprintf(stdout, "-");

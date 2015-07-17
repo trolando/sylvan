@@ -23,3 +23,6 @@ Makefile.in
 *.lo
 *.o
 *.la
+
+# MacOS
+.DS_Store

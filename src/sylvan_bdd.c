@@ -1879,7 +1879,7 @@ TASK_IMPL_3(BDD, sylvan_union_cube, BDD, bdd, BDDSET, vars, uint8_t *, cube)
     sylvan_gc_test();
 
     // missing: SV_CNT_OP
-    
+
     bddnode_t n = GETNODE(bdd);
     BDD result = bdd;
     BDDVAR v = bddnode_getvariable(nv);
@@ -2330,7 +2330,7 @@ sylvan_dothelper_register(avl_node_t **set, BDD bdd)
 }
 
 static void
-sylvan_fprintdot_rec(FILE *out, BDD bdd, avl_node_t **levels)
+sylvan_fprintdot_rec(FILE *out, BDD bdd, avl_node_t **levels, int inv)
 {
     if (!sylvan_isnode(bdd)) return;
 
@@ -2343,11 +2343,25 @@ sylvan_fprintdot_rec(FILE *out, BDD bdd, avl_node_t **levels)
 
     fprintf(out, "%" PRIu64 " [label=\"%d\"];\n", bdd, bddnode_getvariable(n));
 
-    sylvan_fprintdot_rec(out, bddnode_getlow(n), levels);
-    sylvan_fprintdot_rec(out, bddnode_gethigh(n), levels);
+    BDD lobdd = (BDD)bddnode_getlow(n);
+    BDD hibdd = (BDD)bddnode_gethigh(n);
 
-    fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=dashed];\n", bdd, (BDD)bddnode_getlow(n));
-    fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=solid dir=both arrowtail=%s];\n", bdd, (BDD)BDD_STRIPMARK(bddnode_gethigh(n)), BDD_HASMARK(bddnode_gethigh(n)) ? "dot" : "none");
+    sylvan_fprintdot_rec(out, lobdd, levels, inv);
+    sylvan_fprintdot_rec(out, hibdd, levels, inv ^ BDD_HASMARK(hibdd));
+
+    if (sylvan_isconst(lobdd)) {
+        fprintf(out, "%" PRIu64 " -> %c [style=dashed];\n", bdd, (lobdd == sylvan_false) ^ inv ? 'F' : 'T');
+    }
+    else {
+        fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=dashed];\n", bdd, lobdd);
+    }
+
+    if (sylvan_isconst(hibdd)) {
+        fprintf(out, "%" PRIu64 " -> %c [style=solid];\n", bdd, (hibdd == sylvan_false) ^ inv ? 'F' : 'T');
+    }
+    else {
+        fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=solid dir=both arrowtail=%s];\n", bdd, (BDD)BDD_STRIPMARK(hibdd), BDD_HASMARK(hibdd) ? "dot" : "none");
+    }
 }
 
 void
@@ -2357,12 +2371,13 @@ sylvan_fprintdot(FILE *out, BDD bdd)
     fprintf(out, "graph [dpi = 300];\n");
     fprintf(out, "center = true;\n");
     fprintf(out, "edge [dir = forward];\n");
-    fprintf(out, "0 [shape=box, label=\"0\", style=filled, shape=box, height=0.3, width=0.3];\n");
+    fprintf(out, "F [shape=box, label=\"F\", style=filled, shape=box, height=0.3, width=0.3];\n");
+    fprintf(out, "T [shape=box, label=\"T\", style=filled, shape=box, height=0.3, width=0.3];\n");
     fprintf(out, "root [style=invis];\n");
     fprintf(out, "root -> %" PRIu64 " [style=solid dir=both arrowtail=%s];\n", BDD_STRIPMARK(bdd), BDD_HASMARK(bdd) ? "dot" : "none");
 
     avl_node_t *levels = NULL;
-    sylvan_fprintdot_rec(out, bdd, &levels);
+    sylvan_fprintdot_rec(out, bdd, &levels, BDD_HASMARK(bdd));
 
     if (levels != NULL) {
         size_t levels_count = avl_count(levels);
@@ -2407,7 +2422,7 @@ AVL(sylvan_ser, struct sylvan_ser)
     return left->bdd - right->bdd;
 }
 
-// Define a AVL tree type with prefix 'sylvan_ser_reversed' holding 
+// Define a AVL tree type with prefix 'sylvan_ser_reversed' holding
 // nodes of struct sylvan_ser with the following compare() function...
 AVL(sylvan_ser_reversed, struct sylvan_ser)
 {

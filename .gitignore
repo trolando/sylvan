@@ -23,3 +23,10 @@ Makefile.in
 *.lo
 *.o
 *.la
+
+# output files
+examples/mc
+examples/lddmc
+test/sylvan_test
+test/test_cxx
+src/libsylvan.a

@@ -19,6 +19,7 @@ static int report_table = 0; // report table size at end of every level
 static int report_nodes = 0; // report number of nodes of BDDs
 static int strategy = 1; // set to 1 = use PAR strategy; set to 0 = use BFS strategy
 static int check_deadlocks = 0; // set to 1 to check for deadlocks
+static int merge_relations = 0; // merge relations to 1 relation
 static int print_transition_matrix = 0; // print transition relation matrix
 static int workers = 0; // autodetect
 static char* model_filename = NULL; // filename of model
@@ -38,6 +39,7 @@ static struct argp_option options[] =
     {"count-nodes", 5, 0, 0, "Report #nodes for BDDs", 1},
     {"count-states", 1, 0, 0, "Report #states at each level", 1},
     {"count-table", 2, 0, 0, "Report table usage at each level", 1},
+    {"merge-relations", 6, 0, 0, "Merge transition relations into one transition relation", 1},
     {"print-matrix", 4, 0, 0, "Print transition matrix", 1},
     {0, 0, 0, 0, 0, 0}
 };
@@ -65,6 +67,9 @@ parse_opt(int key, char *arg, struct argp_state *state)
         break;
     case 2:
         report_table = 1;
+        break;
+    case 6:
+        merge_relations = 1;
         break;
 #ifdef HAVE_PROFILER
     case 'p':
@@ -404,6 +409,57 @@ VOID_TASK_1(bfs, set_t, set)
     sylvan_unprotect(&deadlocks);
 }
 
+/**
+ * Extend a transition relation to a larger domain (using s=s')
+ */
+#define extend_relation(rel, vars) CALL(extend_relation, rel, vars)
+TASK_2(BDD, extend_relation, BDD, relation, BDDSET, variables)
+{
+    /* first determine which state BDD variables are in rel */
+    int has[statebits];
+    for (int i=0; i<statebits; i++) has[i] = 0;
+    BDDSET s = variables;
+    while (!sylvan_set_isempty(s)) {
+        BDDVAR v = sylvan_set_var(s);
+        if (v/2 >= (unsigned)statebits) break; // action labels
+        has[v/2] = 1;
+        s = sylvan_set_next(s);
+    }
+
+    /* create "s=s'" for all variables not in rel */
+    BDD eq = sylvan_true;
+    for (int i=statebits-1; i>=0; i--) {
+        if (has[i]) continue;
+        BDD low = sylvan_makenode(2*i+1, eq, sylvan_false);
+        bdd_refs_push(low);
+        BDD high = sylvan_makenode(2*i+1, sylvan_false, eq);
+        bdd_refs_pop(1);
+        eq = sylvan_makenode(2*i, low, high);
+    }
+
+    bdd_refs_push(eq);
+    BDD result = sylvan_and(relation, eq);
+    bdd_refs_pop(1);
+
+    return result;
+}
+
+/**
+ * Compute \BigUnion ( sets[i] )
+ */
+#define big_union(first, count) CALL(big_union, first, count)
+TASK_2(BDD, big_union, int, first, int, count)
+{
+    if (count == 1) return next[first]->bdd;
+
+    bdd_refs_spawn(SPAWN(big_union, first, count/2));
+    BDD right = bdd_refs_push(CALL(big_union, first+count/2, count-count/2));
+    BDD left = bdd_refs_push(bdd_refs_sync(SYNC(big_union)));
+    BDD result = sylvan_or(left, right);
+    bdd_refs_pop(2);
+    return result;
+}
+
 static void
 print_matrix(BDD vars)
 {
@@ -500,6 +556,27 @@ main(int argc, char **argv)
     // Report statistics
     INFO("Read file '%s'\n", model_filename);
     INFO("%d integers per state, %d bits per integer, %d transition groups\n", vector_size, bits_per_integer, next_count);
+
+    if (merge_relations) {
+        BDD prime_variables = sylvan_set_empty();
+        for (int i=statebits-1; i>=0; i--) {
+            bdd_refs_push(prime_variables);
+            prime_variables = sylvan_set_add(prime_variables, i*2+1);
+            bdd_refs_pop(1);
+        }
+
+        bdd_refs_push(prime_variables);
+
+        INFO("Extending transition relations to full domain.\n");
+        for (int i=0; i<next_count; i++) {
+            next[i]->bdd = extend_relation(next[i]->bdd, next[i]->variables);
+            next[i]->variables = prime_variables;
+        }
+
+        INFO("Taking union of all transition relations.\n");
+        next[0]->bdd = big_union(0, next_count);
+        next_count = 1;
+    }
 
     if (report_nodes) {
         INFO("BDD nodes:\n");

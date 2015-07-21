@@ -2340,12 +2340,16 @@ struct level_to_nodeset {
 
 AVL(level_to_nodeset, struct level_to_nodeset)
 {
-    return left->level - right->level;
+    if (left->level > right->level) return 1;
+    if (right->level > left->level) return -1;
+    return 0;
 }
 
 AVL(nodeset, BDD)
 {
-    return *left - *right;
+    if (*left > *right) return 1;
+    if (*right > *left) return -1;
+    return 0;
 }
 
 static void __attribute__((noinline))
@@ -2439,14 +2443,18 @@ struct sylvan_ser {
 // nodes of struct sylvan_ser with the following compare() function...
 AVL(sylvan_ser, struct sylvan_ser)
 {
-    return left->bdd - right->bdd;
+    if (left->bdd > right->bdd) return 1;
+    if (left->bdd < right->bdd) return -1;
+    return 0;
 }
 
 // Define a AVL tree type with prefix 'sylvan_ser_reversed' holding
 // nodes of struct sylvan_ser with the following compare() function...
 AVL(sylvan_ser_reversed, struct sylvan_ser)
 {
-    return left->assigned - right->assigned;
+    if (left->assigned > right->assigned) return 1;
+    if (left->assigned < right->assigned) return -1;
+    return 0;
 }
 
 // Initially, both sets are empty

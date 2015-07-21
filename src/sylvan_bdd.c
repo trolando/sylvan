@@ -2352,41 +2352,35 @@ AVL(nodeset, BDD)
     return 0;
 }
 
-static void __attribute__((noinline))
+/* returns 1 if inserted, 0 if already existed */
+static int __attribute__((noinline))
 sylvan_dothelper_register(avl_node_t **set, BDD bdd)
 {
     struct level_to_nodeset s, *ss;
-    bddnode_t node = GETNODE(bdd);
-    s.level = bddnode_getvariable(node);
+    s.level = sylvan_var(bdd);
     ss = level_to_nodeset_search(*set, &s);
     if (ss == NULL) {
         s.set = NULL;
         ss = level_to_nodeset_put(set, &s, NULL);
     }
     assert(ss != NULL);
-    bdd = BDD_STRIPMARK(bdd);
-    nodeset_insert(&ss->set, &bdd);
+    return nodeset_insert(&ss->set, &bdd);
 }
 
 static void
 sylvan_fprintdot_rec(FILE *out, BDD bdd, avl_node_t **levels)
 {
-    if (!sylvan_isnode(bdd)) return;
-
     bdd = BDD_STRIPMARK(bdd);
-    bddnode_t n = GETNODE(bdd);
-    if (bddnode_getmark(n)) return;
-    bddnode_setmark(n, 1);
+    if (bdd == sylvan_false) return;
+    if (!sylvan_dothelper_register(levels, bdd)) return;
 
-    sylvan_dothelper_register(levels, bdd);
-
-    fprintf(out, "%" PRIu64 " [label=\"%d\"];\n", bdd, bddnode_getvariable(n));
-
-    sylvan_fprintdot_rec(out, bddnode_getlow(n), levels);
-    sylvan_fprintdot_rec(out, bddnode_gethigh(n), levels);
-
-    fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=dashed];\n", bdd, (BDD)bddnode_getlow(n));
-    fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=solid dir=both arrowtail=%s];\n", bdd, (BDD)BDD_STRIPMARK(bddnode_gethigh(n)), BDD_HASMARK(bddnode_gethigh(n)) ? "dot" : "none");
+    BDD low = sylvan_low(bdd);
+    BDD high = sylvan_high(bdd);
+    fprintf(out, "%" PRIu64 " [label=\"%d\"];\n", bdd, sylvan_var(bdd));
+    fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=dashed];\n", bdd, low);
+    fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=solid dir=both arrowtail=%s];\n", bdd, BDD_STRIPMARK(high), BDD_HASMARK(high) ? "dot" : "none");
+    sylvan_fprintdot_rec(out, low, levels);
+    sylvan_fprintdot_rec(out, high, levels);
 }
 
 void
@@ -2421,13 +2415,68 @@ sylvan_fprintdot(FILE *out, BDD bdd)
     }
 
     fprintf(out, "}\n");
-    if (!sylvan_isconst(bdd)) sylvan_unmark_rec(GETNODE(bdd));
 }
 
 void
 sylvan_printdot(BDD bdd)
 {
     sylvan_fprintdot(stdout, bdd);
+}
+
+static void
+sylvan_fprintdot_nc_rec(FILE *out, BDD bdd, avl_node_t **levels)
+{
+    if (bdd == sylvan_true || bdd == sylvan_false) return;
+    if (!sylvan_dothelper_register(levels, bdd)) return;
+
+    BDD low = sylvan_low(bdd);
+    BDD high = sylvan_high(bdd);
+    fprintf(out, "%" PRIu64 " [label=\"%d\"];\n", bdd, sylvan_var(bdd));
+    fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=dashed];\n", bdd, low);
+    fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=solid];\n", bdd, high);
+    sylvan_fprintdot_nc_rec(out, low, levels);
+    sylvan_fprintdot_nc_rec(out, high, levels);
+}
+
+void
+sylvan_fprintdot_nc(FILE *out, BDD bdd)
+{
+    fprintf(out, "digraph \"DD\" {\n");
+    fprintf(out, "graph [dpi = 300];\n");
+    fprintf(out, "center = true;\n");
+    fprintf(out, "edge [dir = forward];\n");
+    fprintf(out, "%" PRIu64 " [shape=box, label=\"F\", style=filled, shape=box, height=0.3, width=0.3];\n", sylvan_false);
+    fprintf(out, "%" PRIu64 " [shape=box, label=\"T\", style=filled, shape=box, height=0.3, width=0.3];\n", sylvan_true);
+    fprintf(out, "root [style=invis];\n");
+    fprintf(out, "root -> %" PRIu64 " [style=solid];\n", bdd);
+
+    avl_node_t *levels = NULL;
+    sylvan_fprintdot_nc_rec(out, bdd, &levels);
+
+    if (levels != NULL) {
+        size_t levels_count = avl_count(levels);
+        struct level_to_nodeset *arr = level_to_nodeset_toarray(levels);
+        size_t i;
+        for (i=0;i<levels_count;i++) {
+            fprintf(out, "{ rank=same; ");
+            size_t node_count = avl_count(arr[i].set);
+            size_t j;
+            BDD *arr_j = nodeset_toarray(arr[i].set);
+            for (j=0;j<node_count;j++) {
+                fprintf(out, "%" PRIu64 "; ", arr_j[j]);
+            }
+            fprintf(out, "}\n");
+        }
+        level_to_nodeset_free(&levels);
+    }
+
+    fprintf(out, "}\n");
+}
+
+void
+sylvan_printdot_nc(BDD bdd)
+{
+    sylvan_fprintdot_nc(stdout, bdd);
 }
 
 /**

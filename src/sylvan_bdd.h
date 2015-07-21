@@ -246,6 +246,13 @@ BDD sylvan_makenode(BDDVAR level, BDD low, BDD high);
 void sylvan_printdot(BDD bdd);
 void sylvan_fprintdot(FILE *out, BDD bdd);
 
+/**
+ * Write a DOT representation of a BDD.
+ * This variant does not print complement edges.
+ */
+void sylvan_printdot_nc(BDD bdd);
+void sylvan_fprintdot_nc(FILE *out, BDD bdd);
+
 void sylvan_print(BDD bdd);
 void sylvan_fprint(FILE *f, BDD bdd);
 

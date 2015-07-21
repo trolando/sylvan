@@ -30,3 +30,6 @@ examples/lddmc
 test/sylvan_test
 test/test_cxx
 src/libsylvan.a
+
+# MacOS file
+.DS_Store

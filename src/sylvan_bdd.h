@@ -148,8 +148,12 @@ TASK_DECL_4(BDD, sylvan_relnext, BDD, BDD, BDDSET, BDDVAR);
 /**
  * Computes the transitive closure by traversing the BDD recursively.
  * See Y. Matsunaga, P. C. McGeer, R. K. Brayton
- *     On Computing the Transitive Closre of a State Transition Relation
+ *     On Computing the Transitive Closure of a State Transition Relation
  *     30th ACM Design Automation Conference, 1993.
+ *
+ * The input BDD must be a transition relation that only has levels of s,t
+ * with s,t interleaved with s odd and t even, i.e.
+ * s level 0,2,4 matches with t level 1,3,5 and so forth.
  */
 TASK_DECL_2(BDD, sylvan_closure, BDD, BDDVAR);
 #define sylvan_closure(a) CALL(sylvan_closure,a,0);

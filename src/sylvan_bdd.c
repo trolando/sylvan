@@ -1550,10 +1550,10 @@ TASK_IMPL_2(BDD, sylvan_closure, BDD, a, BDDVAR, prev_level)
 
     BDD u1 = CALL(sylvan_closure, a11, level);
     bdd_refs_push(u1);
-    /* u3 = */ bdd_refs_spawn(SPAWN(sylvan_relprev, a01, u1, sylvan_true, level));
-    BDD u2 = CALL(sylvan_relprev, u1, a10, sylvan_true, level);
+    /* u3 = */ bdd_refs_spawn(SPAWN(sylvan_relprev, a01, u1, sylvan_false, level));
+    BDD u2 = CALL(sylvan_relprev, u1, a10, sylvan_false, level);
     bdd_refs_push(u2);
-    BDD e = CALL(sylvan_relprev, a01, u2, sylvan_true, level);
+    BDD e = CALL(sylvan_relprev, a01, u2, sylvan_false, level);
     bdd_refs_push(e);
     e = CALL(sylvan_ite, a00, sylvan_true, e, level);
     bdd_refs_pop(1);
@@ -1561,13 +1561,13 @@ TASK_IMPL_2(BDD, sylvan_closure, BDD, a, BDDVAR, prev_level)
     e = CALL(sylvan_closure, e, level);
     bdd_refs_pop(1);
     bdd_refs_push(e);
-    BDD g = CALL(sylvan_relprev, u2, e, sylvan_true, level);
+    BDD g = CALL(sylvan_relprev, u2, e, sylvan_false, level);
     bdd_refs_push(g);
     BDD u3 = bdd_refs_sync(SYNC(sylvan_relprev));
     bdd_refs_push(u3);
-    BDD f = CALL(sylvan_relprev, e, u3, sylvan_true, level);
+    BDD f = CALL(sylvan_relprev, e, u3, sylvan_false, level);
     bdd_refs_push(f);
-    BDD h = CALL(sylvan_relprev, u2, f, sylvan_true, level);
+    BDD h = CALL(sylvan_relprev, u2, f, sylvan_false, level);
     bdd_refs_push(h);
     h = CALL(sylvan_ite, u1, sylvan_true, h, level);
     bdd_refs_pop(1);

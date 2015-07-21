@@ -1879,7 +1879,7 @@ TASK_IMPL_3(BDD, sylvan_union_cube, BDD, bdd, BDDSET, vars, uint8_t *, cube)
     sylvan_gc_test();
 
     // missing: SV_CNT_OP
-    
+
     bddnode_t n = GETNODE(bdd);
     BDD result = bdd;
     BDDVAR v = bddnode_getvariable(nv);
@@ -2407,7 +2407,7 @@ AVL(sylvan_ser, struct sylvan_ser)
     return left->bdd - right->bdd;
 }
 
-// Define a AVL tree type with prefix 'sylvan_ser_reversed' holding 
+// Define a AVL tree type with prefix 'sylvan_ser_reversed' holding
 // nodes of struct sylvan_ser with the following compare() function...
 AVL(sylvan_ser_reversed, struct sylvan_ser)
 {

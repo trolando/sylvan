@@ -265,7 +265,7 @@ MDD
 lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
 {
     if (ifeq == lddmc_false) return ifneq;
- 
+
     // check if correct (should be false, or next in value)
     assert(ifneq != lddmc_true);
     if (ifneq != lddmc_false) assert(value < mddnode_getvalue(GETNODE(ifneq)));
@@ -866,7 +866,7 @@ TASK_IMPL_3(MDD, lddmc_relprod, MDD, set, MDD, rel, MDD, meta)
             result = CALL(lddmc_union, result, result2);
             lddmc_refs_pop(2);
         }
-    } 
+    }
 
     /* Write to cache */
     if (cache_put(set | CACHE_MDD_RELPROD, rel, meta, result)) sylvan_stats_count(LDD_RELPROD_CACHEDPUT);
@@ -1443,7 +1443,7 @@ TASK_IMPL_4(MDD, lddmc_join, MDD, a, MDD, b, MDD, a_proj, MDD, b_proj)
     if (a_proj_val == (uint32_t)-2) return b; // no a left
     if (b_proj_val == (uint32_t)-2) return a; // no b left
     if (a_proj_val == (uint32_t)-1 && b_proj_val == (uint32_t)-1) return CALL(lddmc_intersect, a, b);
-    
+
     // At this point, only proj_val {-1, 0, 1}; max one with -1; max one with 0.
     const int keep_a = a_proj_val != 0;
     const int keep_b = b_proj_val != 0;

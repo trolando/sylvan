@@ -2298,14 +2298,18 @@ struct lddmc_ser {
 // nodes of struct lddmc_ser with the following compare() function...
 AVL(lddmc_ser, struct lddmc_ser)
 {
-    return left->mdd - right->mdd;
+    if (left->mdd > right->mdd) return 1;
+    if (left->mdd < right->mdd) return -1;
+    return 0;
 }
 
 // Define a AVL tree type with prefix 'lddmc_ser_reversed' holding
 // nodes of struct lddmc_ser with the following compare() function...
 AVL(lddmc_ser_reversed, struct lddmc_ser)
 {
-    return left->assigned - right->assigned;
+    if (left->assigned > right->assigned) return 1;
+    if (left->assigned < right->assigned) return -1;
+    return 0;
 }
 
 // Initially, both sets are empty

@@ -67,7 +67,7 @@ extern "C" {
    The value must be greater than or equal to the maximum size of your tasks.
    The task size is the maximum of the size of the result or of the sum of the parameter sizes. */
 #ifndef LACE_TASKSIZE
-#define LACE_TASKSIZE (5+1)*P_SZ
+#define LACE_TASKSIZE (6)*P_SZ
 #endif
 
 #if LACE_PIE_TIMES
@@ -601,7 +601,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head )                                 
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (unlikely(w->allstolen)) {                                                     \
         if (wt->movesplit) wt->movesplit = 0;                                         \
         head = __dq_head - w->dq;                                                     \
@@ -661,7 +661,7 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (wt->movesplit) {                                                              \
         Task *t = w->split;                                                           \
         size_t diff = __dq_head - t;                                                  \
@@ -685,7 +685,7 @@ RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                  
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    if (likely(0 == w->_public->movesplit)) {                                          \
+    if (likely(0 == w->_public->movesplit)) {                                         \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
             t->thief = THIEF_EMPTY;                                                   \
@@ -697,7 +697,7 @@ RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                  
 }                                                                                     \
                                                                                       \
                                                                                       \
- 
+
 #define TASK_IMPL_0(RTYPE, NAME)                                                      \
 void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
@@ -716,7 +716,7 @@ RTYPE NAME##_CALL(WorkerP *w, Task *__dq_head )                                 
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) )\
- 
+
 #define TASK_0(RTYPE, NAME) TASK_DECL_0(RTYPE, NAME) TASK_IMPL_0(RTYPE, NAME)
 
 #define VOID_TASK_DECL_0(NAME)                                                        \
@@ -754,7 +754,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head )                                 
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (unlikely(w->allstolen)) {                                                     \
         if (wt->movesplit) wt->movesplit = 0;                                         \
         head = __dq_head - w->dq;                                                     \
@@ -814,7 +814,7 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (wt->movesplit) {                                                              \
         Task *t = w->split;                                                           \
         size_t diff = __dq_head - t;                                                  \
@@ -838,7 +838,7 @@ void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                   
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    if (likely(0 == w->_public->movesplit)) {                                          \
+    if (likely(0 == w->_public->movesplit)) {                                         \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
             t->thief = THIEF_EMPTY;                                                   \
@@ -850,7 +850,7 @@ void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                   
 }                                                                                     \
                                                                                       \
                                                                                       \
- 
+
 #define VOID_TASK_IMPL_0(NAME)                                                        \
 void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
@@ -869,7 +869,7 @@ void NAME##_CALL(WorkerP *w, Task *__dq_head )                                  
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) )\
- 
+
 #define VOID_TASK_0(NAME) VOID_TASK_DECL_0(NAME) VOID_TASK_IMPL_0(NAME)
 
 
@@ -910,7 +910,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                  
      t->d.args.arg_1 = arg_1;                                                         \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (unlikely(w->allstolen)) {                                                     \
         if (wt->movesplit) wt->movesplit = 0;                                         \
         head = __dq_head - w->dq;                                                     \
@@ -970,7 +970,7 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (wt->movesplit) {                                                              \
         Task *t = w->split;                                                           \
         size_t diff = __dq_head - t;                                                  \
@@ -994,7 +994,7 @@ RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                  
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    if (likely(0 == w->_public->movesplit)) {                                          \
+    if (likely(0 == w->_public->movesplit)) {                                         \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
             t->thief = THIEF_EMPTY;                                                   \
@@ -1006,7 +1006,7 @@ RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                  
 }                                                                                     \
                                                                                       \
                                                                                       \
- 
+
 #define TASK_IMPL_1(RTYPE, NAME, ATYPE_1, ARG_1)                                      \
 void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
@@ -1025,7 +1025,7 @@ RTYPE NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                  
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1)\
- 
+
 #define TASK_1(RTYPE, NAME, ATYPE_1, ARG_1) TASK_DECL_1(RTYPE, NAME, ATYPE_1) TASK_IMPL_1(RTYPE, NAME, ATYPE_1, ARG_1)
 
 #define VOID_TASK_DECL_1(NAME, ATYPE_1)                                               \
@@ -1063,7 +1063,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                  
      t->d.args.arg_1 = arg_1;                                                         \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (unlikely(w->allstolen)) {                                                     \
         if (wt->movesplit) wt->movesplit = 0;                                         \
         head = __dq_head - w->dq;                                                     \
@@ -1123,7 +1123,7 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (wt->movesplit) {                                                              \
         Task *t = w->split;                                                           \
         size_t diff = __dq_head - t;                                                  \
@@ -1147,7 +1147,7 @@ void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                   
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    if (likely(0 == w->_public->movesplit)) {                                          \
+    if (likely(0 == w->_public->movesplit)) {                                         \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
             t->thief = THIEF_EMPTY;                                                   \
@@ -1159,7 +1159,7 @@ void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                   
 }                                                                                     \
                                                                                       \
                                                                                       \
- 
+
 #define VOID_TASK_IMPL_1(NAME, ATYPE_1, ARG_1)                                        \
 void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
@@ -1178,7 +1178,7 @@ void NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                   
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1)\
- 
+
 #define VOID_TASK_1(NAME, ATYPE_1, ARG_1) VOID_TASK_DECL_1(NAME, ATYPE_1) VOID_TASK_IMPL_1(NAME, ATYPE_1, ARG_1)
 
 
@@ -1219,7 +1219,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)   
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2;                                \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (unlikely(w->allstolen)) {                                                     \
         if (wt->movesplit) wt->movesplit = 0;                                         \
         head = __dq_head - w->dq;                                                     \
@@ -1279,7 +1279,7 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (wt->movesplit) {                                                              \
         Task *t = w->split;                                                           \
         size_t diff = __dq_head - t;                                                  \
@@ -1303,7 +1303,7 @@ RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                  
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    if (likely(0 == w->_public->movesplit)) {                                          \
+    if (likely(0 == w->_public->movesplit)) {                                         \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
             t->thief = THIEF_EMPTY;                                                   \
@@ -1315,7 +1315,7 @@ RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                  
 }                                                                                     \
                                                                                       \
                                                                                       \
- 
+
 #define TASK_IMPL_2(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2)                      \
 void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
@@ -1334,7 +1334,7 @@ RTYPE NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)   
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2)\
- 
+
 #define TASK_2(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2) TASK_DECL_2(RTYPE, NAME, ATYPE_1, ATYPE_2) TASK_IMPL_2(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2)
 
 #define VOID_TASK_DECL_2(NAME, ATYPE_1, ATYPE_2)                                      \
@@ -1372,7 +1372,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)   
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2;                                \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (unlikely(w->allstolen)) {                                                     \
         if (wt->movesplit) wt->movesplit = 0;                                         \
         head = __dq_head - w->dq;                                                     \
@@ -1432,7 +1432,7 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (wt->movesplit) {                                                              \
         Task *t = w->split;                                                           \
         size_t diff = __dq_head - t;                                                  \
@@ -1456,7 +1456,7 @@ void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                   
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    if (likely(0 == w->_public->movesplit)) {                                          \
+    if (likely(0 == w->_public->movesplit)) {                                         \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
             t->thief = THIEF_EMPTY;                                                   \
@@ -1468,7 +1468,7 @@ void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                   
 }                                                                                     \
                                                                                       \
                                                                                       \
- 
+
 #define VOID_TASK_IMPL_2(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2)                        \
 void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
@@ -1487,7 +1487,7 @@ void NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)    
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2)\
- 
+
 #define VOID_TASK_2(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2) VOID_TASK_DECL_2(NAME, ATYPE_1, ATYPE_2) VOID_TASK_IMPL_2(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2)
 
 
@@ -1528,7 +1528,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3;       \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (unlikely(w->allstolen)) {                                                     \
         if (wt->movesplit) wt->movesplit = 0;                                         \
         head = __dq_head - w->dq;                                                     \
@@ -1588,7 +1588,7 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (wt->movesplit) {                                                              \
         Task *t = w->split;                                                           \
         size_t diff = __dq_head - t;                                                  \
@@ -1612,7 +1612,7 @@ RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                  
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    if (likely(0 == w->_public->movesplit)) {                                          \
+    if (likely(0 == w->_public->movesplit)) {                                         \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
             t->thief = THIEF_EMPTY;                                                   \
@@ -1624,7 +1624,7 @@ RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                  
 }                                                                                     \
                                                                                       \
                                                                                       \
- 
+
 #define TASK_IMPL_3(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3)      \
 void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
@@ -1643,7 +1643,7 @@ RTYPE NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3)\
- 
+
 #define TASK_3(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3) TASK_DECL_3(RTYPE, NAME, ATYPE_1, ATYPE_2, ATYPE_3) TASK_IMPL_3(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3)
 
 #define VOID_TASK_DECL_3(NAME, ATYPE_1, ATYPE_2, ATYPE_3)                             \
@@ -1681,7 +1681,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3;       \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (unlikely(w->allstolen)) {                                                     \
         if (wt->movesplit) wt->movesplit = 0;                                         \
         head = __dq_head - w->dq;                                                     \
@@ -1741,7 +1741,7 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (wt->movesplit) {                                                              \
         Task *t = w->split;                                                           \
         size_t diff = __dq_head - t;                                                  \
@@ -1765,7 +1765,7 @@ void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                   
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    if (likely(0 == w->_public->movesplit)) {                                          \
+    if (likely(0 == w->_public->movesplit)) {                                         \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
             t->thief = THIEF_EMPTY;                                                   \
@@ -1777,7 +1777,7 @@ void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                   
 }                                                                                     \
                                                                                       \
                                                                                       \
- 
+
 #define VOID_TASK_IMPL_3(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3)        \
 void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
@@ -1796,7 +1796,7 @@ void NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3)\
- 
+
 #define VOID_TASK_3(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3) VOID_TASK_DECL_3(NAME, ATYPE_1, ATYPE_2, ATYPE_3) VOID_TASK_IMPL_3(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3)
 
 
@@ -1837,7 +1837,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4;\
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (unlikely(w->allstolen)) {                                                     \
         if (wt->movesplit) wt->movesplit = 0;                                         \
         head = __dq_head - w->dq;                                                     \
@@ -1897,7 +1897,7 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (wt->movesplit) {                                                              \
         Task *t = w->split;                                                           \
         size_t diff = __dq_head - t;                                                  \
@@ -1921,7 +1921,7 @@ RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                  
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    if (likely(0 == w->_public->movesplit)) {                                          \
+    if (likely(0 == w->_public->movesplit)) {                                         \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
             t->thief = THIEF_EMPTY;                                                   \
@@ -1933,7 +1933,7 @@ RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                  
 }                                                                                     \
                                                                                       \
                                                                                       \
- 
+
 #define TASK_IMPL_4(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4)\
 void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
@@ -1952,7 +1952,7 @@ RTYPE NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4)\
- 
+
 #define TASK_4(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4) TASK_DECL_4(RTYPE, NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4) TASK_IMPL_4(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4)
 
 #define VOID_TASK_DECL_4(NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4)                    \
@@ -1990,7 +1990,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4;\
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (unlikely(w->allstolen)) {                                                     \
         if (wt->movesplit) wt->movesplit = 0;                                         \
         head = __dq_head - w->dq;                                                     \
@@ -2050,7 +2050,7 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (wt->movesplit) {                                                              \
         Task *t = w->split;                                                           \
         size_t diff = __dq_head - t;                                                  \
@@ -2074,7 +2074,7 @@ void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                   
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    if (likely(0 == w->_public->movesplit)) {                                          \
+    if (likely(0 == w->_public->movesplit)) {                                         \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
             t->thief = THIEF_EMPTY;                                                   \
@@ -2086,7 +2086,7 @@ void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                   
 }                                                                                     \
                                                                                       \
                                                                                       \
- 
+
 #define VOID_TASK_IMPL_4(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4)\
 void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
@@ -2105,7 +2105,7 @@ void NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4)\
- 
+
 #define VOID_TASK_4(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4) VOID_TASK_DECL_4(NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4) VOID_TASK_IMPL_4(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4)
 
 
@@ -2146,7 +2146,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4; t->d.args.arg_5 = arg_5;\
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (unlikely(w->allstolen)) {                                                     \
         if (wt->movesplit) wt->movesplit = 0;                                         \
         head = __dq_head - w->dq;                                                     \
@@ -2206,7 +2206,7 @@ RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                             
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (wt->movesplit) {                                                              \
         Task *t = w->split;                                                           \
         size_t diff = __dq_head - t;                                                  \
@@ -2230,7 +2230,7 @@ RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                  
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    if (likely(0 == w->_public->movesplit)) {                                          \
+    if (likely(0 == w->_public->movesplit)) {                                         \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
             t->thief = THIEF_EMPTY;                                                   \
@@ -2242,7 +2242,7 @@ RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                  
 }                                                                                     \
                                                                                       \
                                                                                       \
- 
+
 #define TASK_IMPL_5(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5)\
 void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
@@ -2261,7 +2261,7 @@ RTYPE NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4, ATYPE_5 ARG_5)\
- 
+
 #define TASK_5(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5) TASK_DECL_5(RTYPE, NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4, ATYPE_5) TASK_IMPL_5(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5)
 
 #define VOID_TASK_DECL_5(NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4, ATYPE_5)           \
@@ -2299,7 +2299,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
      t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4; t->d.args.arg_5 = arg_5;\
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (unlikely(w->allstolen)) {                                                     \
         if (wt->movesplit) wt->movesplit = 0;                                         \
         head = __dq_head - w->dq;                                                     \
@@ -2359,7 +2359,7 @@ void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                              
                                                                                       \
     compiler_barrier();                                                               \
                                                                                       \
-    Worker *wt = w->_public;                                                           \
+    Worker *wt = w->_public;                                                          \
     if (wt->movesplit) {                                                              \
         Task *t = w->split;                                                           \
         size_t diff = __dq_head - t;                                                  \
@@ -2383,7 +2383,7 @@ void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                   
 {                                                                                     \
     /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
                                                                                       \
-    if (likely(0 == w->_public->movesplit)) {                                          \
+    if (likely(0 == w->_public->movesplit)) {                                         \
         if (likely(w->split <= __dq_head)) {                                          \
             TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
             t->thief = THIEF_EMPTY;                                                   \
@@ -2395,7 +2395,7 @@ void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                   
 }                                                                                     \
                                                                                       \
                                                                                       \
- 
+
 #define VOID_TASK_IMPL_5(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5)\
 void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
 {                                                                                     \
@@ -2414,15 +2414,323 @@ void NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATY
                                                                                       \
 static inline __attribute__((always_inline))                                          \
 void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4, ATYPE_5 ARG_5)\
- 
+
 #define VOID_TASK_5(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5) VOID_TASK_DECL_5(NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4, ATYPE_5) VOID_TASK_IMPL_5(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5)
+
+
+// Task macros for tasks of arity 6
+
+#define TASK_DECL_6(RTYPE, NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4, ATYPE_5, ATYPE_6)\
+                                                                                      \
+typedef struct _TD_##NAME {                                                           \
+  TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
+  union {                                                                             \
+    struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; ATYPE_4 arg_4; ATYPE_5 arg_5; ATYPE_6 arg_6; } args;\
+    RTYPE res;                                                                        \
+  } d;                                                                                \
+} TD_##NAME;                                                                          \
+                                                                                      \
+/* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
+typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##NAME)<=sizeof(Task)) ? 0 : -1];\
+                                                                                      \
+void NAME##_WRAP(WorkerP *, Task *, TD_##NAME *);                                     \
+RTYPE NAME##_CALL(WorkerP *, Task * , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5, ATYPE_6 arg_6);\
+static inline RTYPE NAME##_SYNC(WorkerP *, Task *);                                   \
+static RTYPE NAME##_SYNC_SLOW(WorkerP *, Task *);                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5, ATYPE_6 arg_6)\
+{                                                                                     \
+    PR_COUNTTASK(w);                                                                  \
+                                                                                      \
+    TD_##NAME *t;                                                                     \
+    TailSplit ts;                                                                     \
+    uint32_t head, split, newsplit;                                                   \
+                                                                                      \
+    /* assert(__dq_head < w->end); */ /* Assuming to be true */                       \
+                                                                                      \
+    t = (TD_##NAME *)__dq_head;                                                       \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4; t->d.args.arg_5 = arg_5; t->d.args.arg_6 = arg_6;\
+    compiler_barrier();                                                               \
+                                                                                      \
+    Worker *wt = w->_public;                                                          \
+    if (unlikely(w->allstolen)) {                                                     \
+        if (wt->movesplit) wt->movesplit = 0;                                         \
+        head = __dq_head - w->dq;                                                     \
+        ts = (TailSplit){{head,head+1}};                                              \
+        wt->ts.v = ts.v;                                                              \
+        compiler_barrier();                                                           \
+        wt->allstolen = 0;                                                            \
+        w->split = __dq_head+1;                                                       \
+        w->allstolen = 0;                                                             \
+    } else if (unlikely(wt->movesplit)) {                                             \
+        head = __dq_head - w->dq;                                                     \
+        split = w->split - w->dq;                                                     \
+        newsplit = (split + head + 2)/2;                                              \
+        wt->ts.ts.split = newsplit;                                                   \
+        w->split = w->dq + newsplit;                                                  \
+        compiler_barrier();                                                           \
+        wt->movesplit = 0;                                                            \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
+    }                                                                                 \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+RTYPE NAME##_NEWFRAME(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5, ATYPE_6 arg_6)\
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4; t->d.args.arg_5 = arg_5; t->d.args.arg_6 = arg_6;\
+                                                                                      \
+    lace_do_newframe(w, __dq_head, &_t);                                              \
+    return ((TD_##NAME *)t)->d.res;                                                   \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_TOGETHER(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5, ATYPE_6 arg_6)\
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4; t->d.args.arg_5 = arg_5; t->d.args.arg_6 = arg_6;\
+                                                                                      \
+    lace_do_together(w, __dq_head, &_t);                                              \
+}                                                                                     \
+                                                                                      \
+static __attribute__((noinline))                                                      \
+RTYPE NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                                   \
+{                                                                                     \
+    TD_##NAME *t;                                                                     \
+                                                                                      \
+    if ((w->allstolen) || (w->split > __dq_head && lace_shrink_shared(w))) {          \
+        lace_leapfrog(w, __dq_head);                                                  \
+        t = (TD_##NAME *)__dq_head;                                                   \
+        return ((TD_##NAME *)t)->d.res;                                               \
+    }                                                                                 \
+                                                                                      \
+    compiler_barrier();                                                               \
+                                                                                      \
+    Worker *wt = w->_public;                                                          \
+    if (wt->movesplit) {                                                              \
+        Task *t = w->split;                                                           \
+        size_t diff = __dq_head - t;                                                  \
+        diff = (diff + 1) / 2;                                                        \
+        w->split = t + diff;                                                          \
+        wt->ts.ts.split += diff;                                                      \
+        compiler_barrier();                                                           \
+        wt->movesplit = 0;                                                            \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
+    }                                                                                 \
+                                                                                      \
+    compiler_barrier();                                                               \
+                                                                                      \
+    t = (TD_##NAME *)__dq_head;                                                       \
+    t->thief = THIEF_EMPTY;                                                           \
+    return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4, t->d.args.arg_5, t->d.args.arg_6);\
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+RTYPE NAME##_SYNC(WorkerP *w, Task *__dq_head)                                        \
+{                                                                                     \
+    /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
+                                                                                      \
+    if (likely(0 == w->_public->movesplit)) {                                         \
+        if (likely(w->split <= __dq_head)) {                                          \
+            TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
+            t->thief = THIEF_EMPTY;                                                   \
+            return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4, t->d.args.arg_5, t->d.args.arg_6);\
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    return NAME##_SYNC_SLOW(w, __dq_head);                                            \
+}                                                                                     \
+                                                                                      \
+                                                                                      \
+
+#define TASK_IMPL_6(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5, ATYPE_6, ARG_6)\
+void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
+{                                                                                     \
+    t->d.res = NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4, t->d.args.arg_5, t->d.args.arg_6);\
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((always_inline))                                          \
+RTYPE NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head , ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4, ATYPE_5, ATYPE_6);\
+                                                                                      \
+/* NAME##_WORK is inlined in NAME##_CALL and the parameter __lace_in_task will disappear */\
+RTYPE NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5, ATYPE_6 arg_6)\
+{                                                                                     \
+    CHECKSTACK(w);                                                                    \
+    return NAME##_WORK(w, __dq_head , arg_1, arg_2, arg_3, arg_4, arg_5, arg_6);      \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((always_inline))                                          \
+RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4, ATYPE_5 ARG_5, ATYPE_6 ARG_6)\
+
+#define TASK_6(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5, ATYPE_6, ARG_6) TASK_DECL_6(RTYPE, NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4, ATYPE_5, ATYPE_6) TASK_IMPL_6(RTYPE, NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5, ATYPE_6, ARG_6)
+
+#define VOID_TASK_DECL_6(NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4, ATYPE_5, ATYPE_6)  \
+                                                                                      \
+typedef struct _TD_##NAME {                                                           \
+  TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
+  union {                                                                             \
+    struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; ATYPE_4 arg_4; ATYPE_5 arg_5; ATYPE_6 arg_6; } args;\
+                                                                                      \
+  } d;                                                                                \
+} TD_##NAME;                                                                          \
+                                                                                      \
+/* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
+typedef char assertion_failed_task_descriptor_out_of_bounds_##NAME[(sizeof(TD_##NAME)<=sizeof(Task)) ? 0 : -1];\
+                                                                                      \
+void NAME##_WRAP(WorkerP *, Task *, TD_##NAME *);                                     \
+void NAME##_CALL(WorkerP *, Task * , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5, ATYPE_6 arg_6);\
+static inline void NAME##_SYNC(WorkerP *, Task *);                                    \
+static void NAME##_SYNC_SLOW(WorkerP *, Task *);                                      \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5, ATYPE_6 arg_6)\
+{                                                                                     \
+    PR_COUNTTASK(w);                                                                  \
+                                                                                      \
+    TD_##NAME *t;                                                                     \
+    TailSplit ts;                                                                     \
+    uint32_t head, split, newsplit;                                                   \
+                                                                                      \
+    /* assert(__dq_head < w->end); */ /* Assuming to be true */                       \
+                                                                                      \
+    t = (TD_##NAME *)__dq_head;                                                       \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4; t->d.args.arg_5 = arg_5; t->d.args.arg_6 = arg_6;\
+    compiler_barrier();                                                               \
+                                                                                      \
+    Worker *wt = w->_public;                                                          \
+    if (unlikely(w->allstolen)) {                                                     \
+        if (wt->movesplit) wt->movesplit = 0;                                         \
+        head = __dq_head - w->dq;                                                     \
+        ts = (TailSplit){{head,head+1}};                                              \
+        wt->ts.v = ts.v;                                                              \
+        compiler_barrier();                                                           \
+        wt->allstolen = 0;                                                            \
+        w->split = __dq_head+1;                                                       \
+        w->allstolen = 0;                                                             \
+    } else if (unlikely(wt->movesplit)) {                                             \
+        head = __dq_head - w->dq;                                                     \
+        split = w->split - w->dq;                                                     \
+        newsplit = (split + head + 2)/2;                                              \
+        wt->ts.ts.split = newsplit;                                                   \
+        w->split = w->dq + newsplit;                                                  \
+        compiler_barrier();                                                           \
+        wt->movesplit = 0;                                                            \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
+    }                                                                                 \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_NEWFRAME(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5, ATYPE_6 arg_6)\
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4; t->d.args.arg_5 = arg_5; t->d.args.arg_6 = arg_6;\
+                                                                                      \
+    lace_do_newframe(w, __dq_head, &_t);                                              \
+    return ;                                                                          \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_TOGETHER(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5, ATYPE_6 arg_6)\
+{                                                                                     \
+    Task _t;                                                                          \
+    TD_##NAME *t = (TD_##NAME *)&_t;                                                  \
+    t->f = &NAME##_WRAP;                                                              \
+    t->thief = THIEF_TASK;                                                            \
+     t->d.args.arg_1 = arg_1; t->d.args.arg_2 = arg_2; t->d.args.arg_3 = arg_3; t->d.args.arg_4 = arg_4; t->d.args.arg_5 = arg_5; t->d.args.arg_6 = arg_6;\
+                                                                                      \
+    lace_do_together(w, __dq_head, &_t);                                              \
+}                                                                                     \
+                                                                                      \
+static __attribute__((noinline))                                                      \
+void NAME##_SYNC_SLOW(WorkerP *w, Task *__dq_head)                                    \
+{                                                                                     \
+    TD_##NAME *t;                                                                     \
+                                                                                      \
+    if ((w->allstolen) || (w->split > __dq_head && lace_shrink_shared(w))) {          \
+        lace_leapfrog(w, __dq_head);                                                  \
+        t = (TD_##NAME *)__dq_head;                                                   \
+        return ;                                                                      \
+    }                                                                                 \
+                                                                                      \
+    compiler_barrier();                                                               \
+                                                                                      \
+    Worker *wt = w->_public;                                                          \
+    if (wt->movesplit) {                                                              \
+        Task *t = w->split;                                                           \
+        size_t diff = __dq_head - t;                                                  \
+        diff = (diff + 1) / 2;                                                        \
+        w->split = t + diff;                                                          \
+        wt->ts.ts.split += diff;                                                      \
+        compiler_barrier();                                                           \
+        wt->movesplit = 0;                                                            \
+        PR_COUNTSPLITS(w, CTR_split_grow);                                            \
+    }                                                                                 \
+                                                                                      \
+    compiler_barrier();                                                               \
+                                                                                      \
+    t = (TD_##NAME *)__dq_head;                                                       \
+    t->thief = THIEF_EMPTY;                                                           \
+    return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4, t->d.args.arg_5, t->d.args.arg_6);\
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((unused))                                                 \
+void NAME##_SYNC(WorkerP *w, Task *__dq_head)                                         \
+{                                                                                     \
+    /* assert (__dq_head > 0); */  /* Commented out because we assume contract */     \
+                                                                                      \
+    if (likely(0 == w->_public->movesplit)) {                                         \
+        if (likely(w->split <= __dq_head)) {                                          \
+            TD_##NAME *t = (TD_##NAME *)__dq_head;                                    \
+            t->thief = THIEF_EMPTY;                                                   \
+            return NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4, t->d.args.arg_5, t->d.args.arg_6);\
+        }                                                                             \
+    }                                                                                 \
+                                                                                      \
+    return NAME##_SYNC_SLOW(w, __dq_head);                                            \
+}                                                                                     \
+                                                                                      \
+                                                                                      \
+
+#define VOID_TASK_IMPL_6(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5, ATYPE_6, ARG_6)\
+void NAME##_WRAP(WorkerP *w, Task *__dq_head, TD_##NAME *t __attribute__((unused)))   \
+{                                                                                     \
+     NAME##_CALL(w, __dq_head , t->d.args.arg_1, t->d.args.arg_2, t->d.args.arg_3, t->d.args.arg_4, t->d.args.arg_5, t->d.args.arg_6);\
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((always_inline))                                          \
+void NAME##_WORK(WorkerP *__lace_worker, Task *__lace_dq_head , ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4, ATYPE_5, ATYPE_6);\
+                                                                                      \
+/* NAME##_WORK is inlined in NAME##_CALL and the parameter __lace_in_task will disappear */\
+void NAME##_CALL(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, ATYPE_3 arg_3, ATYPE_4 arg_4, ATYPE_5 arg_5, ATYPE_6 arg_6)\
+{                                                                                     \
+    CHECKSTACK(w);                                                                    \
+    return NAME##_WORK(w, __dq_head , arg_1, arg_2, arg_3, arg_4, arg_5, arg_6);      \
+}                                                                                     \
+                                                                                      \
+static inline __attribute__((always_inline))                                          \
+void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq_head __attribute__((unused)) , ATYPE_1 ARG_1, ATYPE_2 ARG_2, ATYPE_3 ARG_3, ATYPE_4 ARG_4, ATYPE_5 ARG_5, ATYPE_6 ARG_6)\
+
+#define VOID_TASK_6(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5, ATYPE_6, ARG_6) VOID_TASK_DECL_6(NAME, ATYPE_1, ATYPE_2, ATYPE_3, ATYPE_4, ATYPE_5, ATYPE_6) VOID_TASK_IMPL_6(NAME, ATYPE_1, ARG_1, ATYPE_2, ARG_2, ATYPE_3, ARG_3, ATYPE_4, ARG_4, ATYPE_5, ARG_5, ATYPE_6, ARG_6)
 
 
 VOID_TASK_DECL_0(lace_steal_random);
 VOID_TASK_DECL_1(lace_steal_random_loop, int*);
 VOID_TASK_DECL_1(lace_steal_loop, int*);
 VOID_TASK_DECL_2(lace_steal_loop_root, Task *, int*);
-
 
 #ifdef __cplusplus
 }

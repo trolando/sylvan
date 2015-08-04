@@ -2376,9 +2376,9 @@ sylvan_fprintdot_rec(FILE *out, BDD bdd, avl_node_t **levels)
 
     BDD low = sylvan_low(bdd);
     BDD high = sylvan_high(bdd);
-    fprintf(out, "%" PRIu64 " [label=\"%d\"];\n", bdd, sylvan_var(bdd));
-    fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=dashed];\n", bdd, low);
-    fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=solid dir=both arrowtail=%s];\n", bdd, BDD_STRIPMARK(high), BDD_HASMARK(high) ? "dot" : "none");
+    fprintf(out, "\"%" PRIx64 "\" [label=\"%d\"];\n", bdd, sylvan_var(bdd));
+    fprintf(out, "\"%" PRIx64 "\" -> \"%" PRIx64 "\" [style=dashed];\n", bdd, low);
+    fprintf(out, "\"%" PRIx64 "\" -> \"%" PRIx64 "\" [style=solid dir=both arrowtail=%s];\n", bdd, BDD_STRIPMARK(high), BDD_HASMARK(high) ? "dot" : "none");
     sylvan_fprintdot_rec(out, low, levels);
     sylvan_fprintdot_rec(out, high, levels);
 }
@@ -2392,7 +2392,7 @@ sylvan_fprintdot(FILE *out, BDD bdd)
     fprintf(out, "edge [dir = forward];\n");
     fprintf(out, "0 [shape=box, label=\"0\", style=filled, shape=box, height=0.3, width=0.3];\n");
     fprintf(out, "root [style=invis];\n");
-    fprintf(out, "root -> %" PRIu64 " [style=solid dir=both arrowtail=%s];\n", BDD_STRIPMARK(bdd), BDD_HASMARK(bdd) ? "dot" : "none");
+    fprintf(out, "root -> \"%" PRIx64 "\" [style=solid dir=both arrowtail=%s];\n", BDD_STRIPMARK(bdd), BDD_HASMARK(bdd) ? "dot" : "none");
 
     avl_node_t *levels = NULL;
     sylvan_fprintdot_rec(out, bdd, &levels);
@@ -2407,7 +2407,7 @@ sylvan_fprintdot(FILE *out, BDD bdd)
             size_t j;
             BDD *arr_j = nodeset_toarray(arr[i].set);
             for (j=0;j<node_count;j++) {
-                fprintf(out, "%" PRIu64 "; ", arr_j[j]);
+                fprintf(out, "\"%" PRIx64 "\"; ", arr_j[j]);
             }
             fprintf(out, "}\n");
         }
@@ -2431,9 +2431,9 @@ sylvan_fprintdot_nc_rec(FILE *out, BDD bdd, avl_node_t **levels)
 
     BDD low = sylvan_low(bdd);
     BDD high = sylvan_high(bdd);
-    fprintf(out, "%" PRIu64 " [label=\"%d\"];\n", bdd, sylvan_var(bdd));
-    fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=dashed];\n", bdd, low);
-    fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=solid];\n", bdd, high);
+    fprintf(out, "\"%" PRIx64 " [label=\"%d\"];\n", bdd, sylvan_var(bdd));
+    fprintf(out, "\"%" PRIx64 "\" -> \"%" PRIx64 "\" [style=dashed];\n", bdd, low);
+    fprintf(out, "\"%" PRIx64 "\" -> \"%" PRIx64 "\" [style=solid];\n", bdd, high);
     sylvan_fprintdot_nc_rec(out, low, levels);
     sylvan_fprintdot_nc_rec(out, high, levels);
 }
@@ -2445,10 +2445,10 @@ sylvan_fprintdot_nc(FILE *out, BDD bdd)
     fprintf(out, "graph [dpi = 300];\n");
     fprintf(out, "center = true;\n");
     fprintf(out, "edge [dir = forward];\n");
-    fprintf(out, "%" PRIu64 " [shape=box, label=\"F\", style=filled, shape=box, height=0.3, width=0.3];\n", sylvan_false);
-    fprintf(out, "%" PRIu64 " [shape=box, label=\"T\", style=filled, shape=box, height=0.3, width=0.3];\n", sylvan_true);
+    fprintf(out, "\"%" PRIx64 "\" [shape=box, label=\"F\", style=filled, shape=box, height=0.3, width=0.3];\n", sylvan_false);
+    fprintf(out, "\"%" PRIx64 "\" [shape=box, label=\"T\", style=filled, shape=box, height=0.3, width=0.3];\n", sylvan_true);
     fprintf(out, "root [style=invis];\n");
-    fprintf(out, "root -> %" PRIu64 " [style=solid];\n", bdd);
+    fprintf(out, "root -> \"%" PRIx64 "\" [style=solid];\n", bdd);
 
     avl_node_t *levels = NULL;
     sylvan_fprintdot_nc_rec(out, bdd, &levels);
@@ -2463,7 +2463,7 @@ sylvan_fprintdot_nc(FILE *out, BDD bdd)
             size_t j;
             BDD *arr_j = nodeset_toarray(arr[i].set);
             for (j=0;j<node_count;j++) {
-                fprintf(out, "%" PRIu64 "; ", arr_j[j]);
+                fprintf(out, "\"%" PRIx64 "\"; ", arr_j[j]);
             }
             fprintf(out, "}\n");
         }

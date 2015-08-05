@@ -17,9 +17,11 @@
 #include <sylvan_config.h>
 
 #include <assert.h> // for assert
+#include <errno.h>  // for errno
 #include <stdio.h>  // for fprintf
 #include <stdint.h> // for uint32_t etc
 #include <stdlib.h> // for exit
+#include <string.h> // for strerror
 #include <sys/mman.h> // for mmap
 
 #include <refs.h>
@@ -136,7 +138,7 @@ refs_resize(refs_table_t *tbl)
     // allocate new table
     uint64_t *new_table = (uint64_t*)mmap(0, new_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (new_table == (uint64_t*)-1) {
-        fprintf(stderr, "refs: Unable to allocate memory!\n");
+        fprintf(stderr, "refs: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
     }
 
@@ -314,7 +316,7 @@ refs_create(refs_table_t *tbl, size_t _refs_size)
     tbl->refs_size = _refs_size;
     tbl->refs_table = (uint64_t*)mmap(0, tbl->refs_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (tbl->refs_table == (uint64_t*)-1) {
-        fprintf(stderr, "refs: Unable to allocate memory!\n");
+        fprintf(stderr, "refs: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
     }
 }
@@ -415,7 +417,7 @@ protect_resize(refs_table_t *tbl)
     // allocate new table
     uint64_t *new_table = (uint64_t*)mmap(0, new_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (new_table == (uint64_t*)-1) {
-        fprintf(stderr, "refs: Unable to allocate memory!\n");
+        fprintf(stderr, "refs: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
     }
 
@@ -583,7 +585,7 @@ protect_create(refs_table_t *tbl, size_t _refs_size)
     tbl->refs_size = _refs_size;
     tbl->refs_table = (uint64_t*)mmap(0, tbl->refs_size * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (tbl->refs_table == (uint64_t*)-1) {
-        fprintf(stderr, "refs: Unable to allocate memory!\n");
+        fprintf(stderr, "refs: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
     }
 }

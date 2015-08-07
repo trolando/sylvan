@@ -125,3 +125,7 @@ Resizing of nodes table and operation cache is currently not supported. In theor
 
 Please let us know if you need this functionality.
 
+Troubleshooting
+---------------
+### I am getting the error "unable to allocate memory: ...!"
+Sylvan allocates virtual memory using mmap. If you specify a combined size for the cache and node table larger than your actual available memory you may need to set `vm.overcommit_memory` to `1`. E.g. `echo 1 > /proc/sys/vm/overcommit_memory`. You can make this setting permanent with `echo "vm.overcommit_memory = 1" > /etc/sysctl.d/99-sylvan.conf`. You can verify the setting with `cat /proc/sys/vm/overcommit_memory`. It should report `1`.

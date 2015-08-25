@@ -1405,6 +1405,37 @@ TASK_IMPL_2(MTBDD, mtbdd_compose, MTBDD, a, MTBDDMAP, map)
 }
 
 /**
+ * Calculate the number of satisfying variable assignments according to <variables>.
+ */
+TASK_IMPL_2(double, mtbdd_satcount, MTBDD, dd, size_t, nvars)
+{
+    /* Trivial cases */
+    if (dd == mtbdd_false) return 0.0;
+    if (mtbdd_isleaf(dd)) return powl(2.0L, nvars);
+
+    /* Perhaps execute garbage collection */
+    sylvan_gc_test();
+
+    union {
+        double d;
+        uint64_t s;
+    } hack;
+
+    /* Consult cache */
+    if (cache_get(dd | CACHE_BDD_SATCOUNT, 0, nvars, &hack.s)) {
+        sylvan_stats_count(BDD_SATCOUNT_CACHED);
+        return hack.d;
+    }
+
+    SPAWN(mtbdd_satcount, mtbdd_gethigh(dd), nvars-1);
+    double low = CALL(mtbdd_satcount, mtbdd_getlow(dd), nvars-1);
+    hack.d = low + SYNC(mtbdd_satcount);
+
+    cache_put(dd | CACHE_BDD_SATCOUNT, 0, nvars, hack.s);
+    return hack.d;
+}
+
+/**
  * Helper function for recursive unmarking
  */
 static void

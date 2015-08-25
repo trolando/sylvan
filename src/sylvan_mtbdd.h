@@ -141,6 +141,12 @@ MTBDD mtbdd_cube(MTBDD variables, uint8_t *cube, MTBDD terminal);
 TASK_DECL_4(BDD, mtbdd_union_cube, MTBDD, MTBDD, uint8_t*, MTBDD);
 
 /**
+ * Count the number of satisfying assignments (minterms) leading to a non-false leaf
+ */
+TASK_DECL_2(double, mtbdd_satcount, MTBDD, size_t);
+#define mtbdd_satcount(dd, nvars) CALL(mtbdd_satcount, dd, nvars)
+
+/**
  * Count the number of MTBDD nodes and terminals (excluding mtbdd_false and mtbdd_true) in a MTBDD)
  */
 size_t mtbdd_nodecount(MTBDD mtbdd);

@@ -31,6 +31,7 @@
  * the function mtbdd_notify_ondead.
  *
  * Terminal type "0" is the Integer type, type "1" is the Real type.
+ * Type "2" is the Fraction type, consisting of two 32-bit integers (numerator and denominator)
  * For non-Boolean MTBDDs, mtbdd_false is used for partial functions, i.e. mtbdd_false
  * indicates that the function is not defined for a certain input.
  */
@@ -107,16 +108,19 @@ MTBDD mtbdd_gethigh(MTBDD node);
 #define mtbdd_not(dd) (dd ^ mtbdd_complement)
 
 /**
- * Create terminals representing uint64_t (type 0) and double (type 1) values
+ * Create terminals representing uint64_t (type 0), double (type 1), or fraction (type 2) values
  */
 MTBDD mtbdd_uint64(uint64_t value);
 MTBDD mtbdd_double(double value);
+MTBDD mtbdd_fraction(uint64_t numer, uint64_t denom);
 
 /**
  * Get the value of a terminal (for Integer and Real terminals, types 0 and 1)
  */
 #define mtbdd_getuint64(terminal) mtbdd_getvalue(terminal)
 double mtbdd_getdouble(MTBDD terminal);
+#define mtbdd_getnumer(terminal) ((uint32_t)(mtbdd_getvalue(terminal)>>32))
+#define mtbdd_getdenom(terminal) ((uint32_t)(mtbdd_getvalue(terminal)&0xffffffff))
 
 /**
  * Create the conjunction of variables in arr.

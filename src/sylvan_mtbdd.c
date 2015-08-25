@@ -449,6 +449,30 @@ mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high)
 /* Operations */
 
 /**
+ * Calculate greatest common divisor
+ * Source: http://lemire.me/blog/archives/2013/12/26/fastest-way-to-compute-the-greatest-common-divisor/
+ */
+uint32_t
+gcd(uint32_t u, uint32_t v)
+{
+    int shift;
+    if (u == 0) return v;
+    if (v == 0) return u;
+    shift = __builtin_ctz(u | v);
+    u >>= __builtin_ctz(u);
+    do {
+        v >>= __builtin_ctz(v);
+        if (u > v) {
+            unsigned int t = v;
+            v = u;
+            u = t;
+        }
+        v = v - u;
+    } while (v != 0);
+    return u << shift;
+}
+
+/**
  * Create leafs of unsigned/signed integers and doubles
  */
 
@@ -467,6 +491,17 @@ mtbdd_double(double value)
     } else {
         return mtbdd_makeleaf(1, *(uint64_t*)&value);
     }
+}
+
+MTBDD
+mtbdd_fraction(uint64_t nom, uint64_t denom)
+{
+    if (nom == 0) return mtbdd_makeleaf(2, 1);
+    uint32_t c = gcd(nom, denom);
+    nom /= c;
+    denom /= c;
+    if (nom > 0xffffffff || denom > 0xffffffff) fprintf(stderr, "mtbdd_fraction: fraction overflow\n");
+    return mtbdd_makeleaf(2, ((uint64_t)nom)<<32|denom);
 }
 
 /**
@@ -734,6 +769,14 @@ TASK_2(MTBDD, mtbdd_uop_times_uint, MTBDD, a, size_t, k)
         } else if (mtbddnode_gettype(na) == 1) {
             double d = mtbdd_getdouble(a);
             return mtbdd_double(d*k);
+        } else if (mtbddnode_gettype(na) == 2) {
+            if (k>0xffffffff) fprintf(stderr, "mtbdd_uop_times_uint: k is too big for fraction multiplication\n");
+            uint64_t v = mtbddnode_getvalue(na);
+            uint64_t n = v>>32;
+            uint32_t d = v;
+            uint32_t c = gcd(d, (uint32_t)k);
+            if (mtbdd_isnegated(a)) return mtbdd_negate(mtbdd_fraction(n*(k/c), d/c));
+            else return mtbdd_fraction(n*(k/c), d/c);
         }
     }
 
@@ -757,6 +800,13 @@ TASK_2(MTBDD, mtbdd_uop_pow_uint, MTBDD, a, size_t, k)
         } else if (mtbddnode_gettype(na) == 1) {
             double d = mtbdd_getdouble(a);
             return mtbdd_double(pow(d, k));
+        } else if (mtbddnode_gettype(na) == 2) {
+            uint64_t v = mtbddnode_getvalue(na);
+            uint64_t n = v>>32;
+            uint32_t d = v;
+            n = (uint64_t)pow(n, k);
+            if (mtbdd_isnegated(a)) return mtbdd_negate(mtbdd_fraction(n, d));
+            else return mtbdd_fraction(n, d);
         }
     }
 
@@ -966,6 +1016,32 @@ TASK_IMPL_2(MTBDD, mtbdd_op_plus, MTBDD*, pa, MTBDD*, pb)
                     }
                 }
             }
+        } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
+            // both fraction
+            uint64_t nom_a = val_a>>32;
+            uint64_t nom_b = val_b>>32;
+            uint64_t denom_a = val_a&0xffffffff;
+            uint64_t denom_b = val_b&0xffffffff;
+            // common cases
+            if (nom_a == 0) return b;
+            if (nom_b == 0) return a;
+            // equalize denominators
+            uint32_t c = gcd(denom_a, denom_b);
+            nom_a *= denom_b/c;
+            nom_b *= denom_a/c;
+            denom_a *= denom_b/c;
+            // add and/or subtract
+            int nega = mtbdd_isnegated(a);
+            int negb = mtbdd_isnegated(b);
+            if (nega) {
+                if (negb) return mtbdd_negate(mtbdd_fraction(nom_a+nom_b, denom_a));
+                else if (nom_b>=nom_a) return mtbdd_fraction(nom_b-nom_a, denom_a);
+                else return mtbdd_negate(mtbdd_fraction(nom_a-nom_b, denom_a));
+            } else {
+                if (!negb) return mtbdd_fraction(nom_a+nom_b, denom_a);
+                else if (nom_a>=nom_b) return mtbdd_fraction(nom_a-nom_b, denom_a);
+                else return mtbdd_negate(mtbdd_fraction(nom_b-nom_a, denom_a));
+            }
         }
     }
 
@@ -1028,6 +1104,25 @@ TASK_IMPL_2(MTBDD, mtbdd_op_times, MTBDD*, pa, MTBDD*, pb)
                 if (nega ^ negb) return mtbdd_negate(result);
                 else return result;
             }
+        } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
+            // both fraction
+            uint64_t nom_a = val_a>>32;
+            uint64_t nom_b = val_b>>32;
+            uint64_t denom_a = val_a&0xffffffff;
+            uint64_t denom_b = val_b&0xffffffff;
+            // multiply!
+            uint32_t c = gcd(nom_b, denom_a);
+            uint32_t d = gcd(nom_a, denom_b);
+            nom_a /= d;
+            denom_a /= c;
+            nom_a *= (nom_b/c);
+            denom_a *= (denom_b/d);
+            // compute result
+            int nega = mtbdd_isnegated(a);
+            int negb = mtbdd_isnegated(b);
+            MTBDD result = mtbdd_fraction(nom_a, denom_a);
+            if (nega ^ negb) return mtbdd_negate(result);
+            else return result;
         }
     }
 
@@ -1086,6 +1181,27 @@ TASK_IMPL_2(MTBDD, mtbdd_op_min, MTBDD*, pa, MTBDD*, pb)
                 if (negb) return b;
                 else return vval_a < vval_b ? a : b;
             }
+        } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
+            // both fraction
+            uint64_t nom_a = val_a>>32;
+            uint64_t nom_b = val_b>>32;
+            uint64_t denom_a = val_a&0xffffffff;
+            uint64_t denom_b = val_b&0xffffffff;
+            // equalize denominators
+            uint32_t c = gcd(denom_a, denom_b);
+            nom_a *= denom_b/c;
+            nom_b *= denom_a/c;
+            denom_a *= denom_b/c;
+            // compute lowest
+            int nega = mtbdd_isnegated(a);
+            int negb = mtbdd_isnegated(b);
+            if (nega) {
+                if (negb) return nom_a > nom_b ? a : b;
+                else return a;
+            } else {
+                if (negb) return b;
+                else return nom_a < nom_b ? a : b;
+            }
         }
     }
 
@@ -1141,6 +1257,27 @@ TASK_IMPL_2(MTBDD, mtbdd_op_max, MTBDD*, pa, MTBDD*, pb)
             } else {
                 if (negb) return a;
                 else return vval_a > vval_b ? a : b;
+            }
+        } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
+            // both fraction
+            uint64_t nom_a = val_a>>32;
+            uint64_t nom_b = val_b>>32;
+            uint64_t denom_a = val_a&0xffffffff;
+            uint64_t denom_b = val_b&0xffffffff;
+            // equalize denominators
+            uint32_t c = gcd(denom_a, denom_b);
+            nom_a *= denom_b/c;
+            nom_b *= denom_a/c;
+            denom_a *= denom_b/c;
+            // compute highest
+            int nega = mtbdd_isnegated(a);
+            int negb = mtbdd_isnegated(b);
+            if (nega) {
+                if (negb) return nom_a < nom_b ? a : b;
+                else return b;
+            } else {
+                if (negb) return a;
+                else return nom_a > nom_b ? a : b;
             }
         }
     }
@@ -1210,7 +1347,7 @@ TASK_IMPL_3(MTBDD, mtbdd_ite, MTBDD, f, MTBDD, g, MTBDD, h)
 }
 
 /**
- * Monad that converts double to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
+ * Monad that converts double/fraction to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
  */
 TASK_IMPL_2(MTBDD, mtbdd_op_threshold_double, MTBDD, a, size_t, svalue)
 {
@@ -1224,13 +1361,19 @@ TASK_IMPL_2(MTBDD, mtbdd_op_threshold_double, MTBDD, a, size_t, svalue)
     if (mtbddnode_isleaf(na)) {
         double value = *(double*)&svalue;
         if (mtbddnode_gettype(na) == 1) return mtbdd_getdouble(a) >= value ? mtbdd_true : mtbdd_false;
+        if (mtbddnode_gettype(na) == 2) {
+            double d = (double)mtbdd_getnumer(a);
+            d /= mtbdd_getdenom(a);
+            if (mtbdd_isnegated(a)) d = -d;
+            return d >= value ? mtbdd_true : mtbdd_false;
+        }
     }
 
     return mtbdd_invalid;
 }
 
 /**
- * Monad that converts double to a Boolean BDD, translate terminals > value to 1 and to 0 otherwise;
+ * Monad that converts double/fraction to a Boolean BDD, translate terminals > value to 1 and to 0 otherwise;
  */
 TASK_IMPL_2(MTBDD, mtbdd_op_strict_threshold_double, MTBDD, a, size_t, svalue)
 {
@@ -1244,6 +1387,12 @@ TASK_IMPL_2(MTBDD, mtbdd_op_strict_threshold_double, MTBDD, a, size_t, svalue)
     if (mtbddnode_isleaf(na)) {
         double value = *(double*)&svalue;
         if (mtbddnode_gettype(na) == 1) return mtbdd_getdouble(a) > value ? mtbdd_true : mtbdd_false;
+        if (mtbddnode_gettype(na) == 2) {
+            double d = (double)mtbdd_getnumer(a);
+            d /= mtbdd_getdenom(a);
+            if (mtbdd_isnegated(a)) d = -d;
+            return d > value ? mtbdd_true : mtbdd_false;
+        }
     }
 
     return mtbdd_invalid;
@@ -1496,6 +1645,9 @@ mtbdd_fprintdot_rec(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
             break;
         case 1:
             fprintf(out, "%f", *(double*)&value);
+            break;
+        case 2:
+            fprintf(out, "%u/%u", (uint32_t)(value>>32), (uint32_t)value);
             break;
         default:
             cb(out, type, value);

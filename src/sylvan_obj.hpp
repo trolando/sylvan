@@ -64,7 +64,7 @@ public:
      * if it is 1, it will appear in its positive form, and if it is 2, it will appear as "any", thus it will
      * be skipped.
      */
-    static Bdd bddCube(Bdd &variables, unsigned char *values);
+    static Bdd bddCube(const Bdd &variables, unsigned char *values);
 
     /**
      * @brief Returns the Bdd representing a cube of variables, according to the given values.
@@ -75,7 +75,7 @@ public:
      * if it is 1, it will appear in its positive form, and if it is 2, it will appear as "any", thus it will
      * be skipped.
      */
-    static Bdd bddCube(Bdd &variables, std::vector<uint8_t> values);
+    static Bdd bddCube(const Bdd &variables, std::vector<uint8_t> values);
 
     int operator==(const Bdd& other) const;
     int operator!=(const Bdd& other) const;
@@ -225,19 +225,19 @@ public:
     /**
      * @brief Computes the constrain f @ c
      */
-    Bdd Constrain(Bdd &c) const;
+    Bdd Constrain(const Bdd &c) const;
 
     /**
      * @brief Computes the BDD restrict according to Coudert and Madre's algorithm (ICCAD90).
      */
-    Bdd Restrict(Bdd &c) const;
+    Bdd Restrict(const Bdd &c) const;
 
     /**
      * @brief Functional composition. Whenever a variable v in the map m is found in the BDD,
      *        it is substituted by the associated function.
      * You can also use this function to implement variable reordering.
      */
-    Bdd Compose(BddMap &m) const;
+    Bdd Compose(const BddMap &m) const;
 
     /**
      * @brief Substitute all variables in the array from by the corresponding variables in to.
@@ -271,20 +271,20 @@ public:
     /**
      * @brief Computes the number of satisfying variable assignments, using variables in cube.
      */
-    double SatCount(Bdd &variables) const;
+    double SatCount(const Bdd &variables) const;
 
     /**
      * @brief Gets one satisfying assignment according to the variables.
      * @param variables The set of variables to be assigned, must include the support of the Bdd.
      */
-    void PickOneCube(Bdd &variables, uint8_t *string) const;
+    void PickOneCube(const Bdd &variables, uint8_t *string) const;
 
     /**
      * @brief Gets one satisfying assignment according to the variables.
      * @param variables The set of variables to be assigned, must include the support of the Bdd.
      * Returns an empty vector when either this Bdd equals bddZero() or the cube is empty.
      */
-    std::vector<bool> PickOneCube(Bdd &variables) const;
+    std::vector<bool> PickOneCube(const Bdd &variables) const;
 
     /**
      * @brief Gets a cube that satisfies this Bdd.
@@ -294,12 +294,12 @@ public:
     /**
      * @brief Faster version of: *this + Sylvan::bddCube(variables, values);
      */
-    Bdd UnionCube(Bdd &variables, uint8_t *values) const;
+    Bdd UnionCube(const Bdd &variables, uint8_t *values) const;
 
     /**
      * @brief Faster version of: *this + Sylvan::bddCube(variables, values);
      */
-    Bdd UnionCube(Bdd &variables, std::vector<uint8_t> values) const;
+    Bdd UnionCube(const Bdd &variables, std::vector<uint8_t> values) const;
 
     /**
      * @brief Generate a cube representing a set of variables
@@ -325,13 +325,13 @@ class BddMap
 {
     friend class Bdd;
     BDD bdd;
-    BddMap(BDD from) : bdd(from) { sylvan_protect(&bdd); }
-    BddMap(Bdd &from) : bdd(from.bdd) { sylvan_protect(&bdd); }
+    BddMap(const BDD from) : bdd(from) { sylvan_protect(&bdd); }
+    BddMap(const Bdd &from) : bdd(from.bdd) { sylvan_protect(&bdd); }
 public:
     BddMap() : bdd(sylvan_map_empty()) { sylvan_protect(&bdd); }
     ~BddMap() { sylvan_unprotect(&bdd); }
 
-    BddMap(uint32_t key_variable, Bdd value);
+    BddMap(uint32_t key_variable, const Bdd value);
 
     BddMap operator+(const Bdd& other) const;
     BddMap operator+=(const Bdd& other);
@@ -351,12 +351,12 @@ public:
     /**
      * @brief Returns the number of key-value pairs in this map
      */
-    size_t size();
+    size_t size() const;
 
     /**
      * @brief Returns non-zero when this map is empty
      */
-    int isEmpty();
+    int isEmpty() const;
 };
 
 class Sylvan {

@@ -272,21 +272,21 @@ Bdd::Closure() const
 }
 
 Bdd
-Bdd::Constrain(Bdd &c) const
+Bdd::Constrain(const Bdd &c) const
 {
     LACE_ME;
     return sylvan_constrain(bdd, c.bdd);
 }
 
 Bdd
-Bdd::Restrict(Bdd &c) const
+Bdd::Restrict(const Bdd &c) const
 {
     LACE_ME;
     return sylvan_restrict(bdd, c.bdd);
 }
 
 Bdd
-Bdd::Compose(BddMap &m) const
+Bdd::Compose(const BddMap &m) const
 {
     LACE_ME;
     return sylvan_compose(bdd, m.bdd);
@@ -340,21 +340,21 @@ Bdd::GetShaHash() const
 }
 
 double
-Bdd::SatCount(Bdd &variables) const
+Bdd::SatCount(const Bdd &variables) const
 {
     LACE_ME;
     return sylvan_satcount_cached(bdd, variables.bdd);
 }
 
 void
-Bdd::PickOneCube(Bdd &variables, uint8_t *values) const
+Bdd::PickOneCube(const Bdd &variables, uint8_t *values) const
 {
     LACE_ME;
     sylvan_sat_one(bdd, variables.bdd, values);
 }
 
 std::vector<bool>
-Bdd::PickOneCube(Bdd &variables) const
+Bdd::PickOneCube(const Bdd &variables) const
 {
     std::vector<bool> result = std::vector<bool>();
 
@@ -397,14 +397,14 @@ Bdd::PickOneCube() const
 }
 
 Bdd
-Bdd::UnionCube(Bdd &variables, uint8_t *values) const
+Bdd::UnionCube(const Bdd &variables, uint8_t *values) const
 {
     LACE_ME;
     return sylvan_union_cube(bdd, variables.bdd, values);
 }
 
 Bdd
-Bdd::UnionCube(Bdd &variables, std::vector<uint8_t> values) const
+Bdd::UnionCube(const Bdd &variables, std::vector<uint8_t> values) const
 {
     LACE_ME;
     uint8_t *data = values.data();
@@ -463,14 +463,14 @@ Bdd::bddVar(uint32_t index)
 }
 
 Bdd
-Bdd::bddCube(Bdd &variables, uint8_t *values)
+Bdd::bddCube(const Bdd &variables, uint8_t *values)
 {
     LACE_ME;
     return sylvan_cube(variables.bdd, values);
 }
 
 Bdd
-Bdd::bddCube(Bdd &variables, std::vector<uint8_t> values)
+Bdd::bddCube(const Bdd &variables, std::vector<uint8_t> values)
 {
     LACE_ME;
     uint8_t *data = values.data();
@@ -523,7 +523,7 @@ Bdd::Else() const
  * Implementation of class BddMap
  */
 
-BddMap::BddMap(uint32_t key_variable, Bdd value)
+BddMap::BddMap(uint32_t key_variable, const Bdd value)
 {
     bdd = sylvan_map_add(sylvan_map_empty(), key_variable, value.bdd);
 }
@@ -568,13 +568,13 @@ BddMap::removeKey(uint32_t key)
 }
 
 size_t
-BddMap::size()
+BddMap::size() const
 {
     return sylvan_map_count(bdd);
 }
 
 int
-BddMap::isEmpty()
+BddMap::isEmpty() const
 {
     return sylvan_map_isempty(bdd);
 }

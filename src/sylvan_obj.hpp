@@ -110,12 +110,12 @@ public:
     int isTerminal() const;
 
     /**
-     * @brief Returns non-zero if this Bdd is bddOne() or bddZero()
+     * @brief Returns non-zero if this Bdd is bddOne()
      */
     int isOne() const;
 
     /**
-     * @brief Returns non-zero if this Bdd is bddOne() or bddZero()
+     * @brief Returns non-zero if this Bdd is bddZero()
      */
     int isZero() const;
 

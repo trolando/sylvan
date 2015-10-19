@@ -49,6 +49,13 @@ extern "C" {
  */
 LACE_TYPEDEF_CB(int, llmsset_dead_cb, void*, uint64_t);
 
+/**
+ * hash(a, b, seed)
+ * equals(lhs_a, lhs_b, rhs_a, rhs_b)
+ */
+typedef uint64_t (*llmsset_hash_cb)(uint64_t, uint64_t, uint64_t);
+typedef int (*llmsset_equals_cb)(uint64_t, uint64_t, uint64_t, uint64_t);
+
 typedef struct llmsset
 {
     uint64_t          *table;       // table with hashes
@@ -56,6 +63,7 @@ typedef struct llmsset
     uint64_t          *bitmap1;     // ownership bitmap (per 512 buckets)
     uint64_t          *bitmap2;     // bitmap for "contains data"
     uint64_t          *bitmap3;     // bitmap for "notify on delete"
+    uint64_t          *bitmap4;     // bitmap for "custom hash/equals functions"
     size_t            max_size;     // maximum size of the hash table (for resizing)
     size_t            table_size;   // size of the hash table (number of slots) --> power of 2!
 #if LLMSSET_MASK
@@ -64,6 +72,8 @@ typedef struct llmsset
     size_t            f_size;
     llmsset_dead_cb   dead_cb;      // callback when certain nodes are dead
     void*             dead_ctx;     // context for dead_cb
+    llmsset_hash_cb   hash_cb;      // custom hash function
+    llmsset_equals_cb equals_cb;    // custom equals function
     int16_t           threshold;    // number of iterations for insertion until returning error
 } *llmsset_t;
 
@@ -133,6 +143,11 @@ llmsset_set_size(llmsset_t dbs, size_t size)
 uint64_t llmsset_lookup(const llmsset_t dbs, const uint64_t a, const uint64_t b, int *created);
 
 /**
+ * Same as lookup, but use the custom hash/equals function
+ */
+uint64_t llmsset_lookupc(const llmsset_t dbs, const uint64_t a, const uint64_t b, int *created);
+
+/**
  * To perform garbage collection, the user is responsible that no lookups are performed during the process.
  *
  * 1) call llmsset_clear 
@@ -185,6 +200,11 @@ void llmsset_notify_ondead(const llmsset_t dbs, uint64_t index);
  */
 VOID_TASK_DECL_1(llmsset_notify_all, llmsset_t);
 #define llmsset_notify_all(dbs) CALL(llmsset_notify_all, dbs)
+
+/**
+ * Set custom functions
+ */
+void llmsset_set_custom(const llmsset_t dbs, llmsset_hash_cb hash_cb, llmsset_equals_cb equals_cb);
 
 #ifdef __cplusplus
 }

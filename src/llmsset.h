@@ -53,6 +53,9 @@ typedef struct llmsset
 {
     uint64_t          *table;       // table with hashes
     uint8_t           *data;        // table with values
+    uint64_t          *bitmap1;     // ownership bitmap (per 512 buckets)
+    uint64_t          *bitmap2;     // bitmap for "contains data"
+    uint64_t          *bitmap3;     // bitmap for "notify on delete"
     size_t            max_size;     // maximum size of the hash table (for resizing)
     size_t            table_size;   // size of the hash table (number of slots) --> power of 2!
 #if LLMSSET_MASK

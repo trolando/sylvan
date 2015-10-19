@@ -43,16 +43,13 @@ static hwloc_topology_t topo;
 #endif
 
 /*
- *  1 bit  for data-filled
  *  1 bit  for hash-filled
  * 40 bits for the index
- * 22 bits for the hash
+ * 23 bits for the hash
  */
-#define DFILLED    ((uint64_t)0x8000000000000000)
-#define HFILLED    ((uint64_t)0x4000000000000000)
-#define DNOTIFY    ((uint64_t)0x2000000000000000)
+#define HFILLED    ((uint64_t)0x8000000000000000)
 #define MASK_INDEX ((uint64_t)0x000000ffffffffff)
-#define MASK_HASH  ((uint64_t)0x1fffff0000000000)
+#define MASK_HASH  ((uint64_t)0x7fffff0000000000)
 
 static const uint8_t  HASH_PER_CL = ((LINE_SIZE) / 8);
 static const uint64_t CL_MASK     = ~(((LINE_SIZE) / 8) - 1);
@@ -68,17 +65,22 @@ static const uint64_t CL_MASK_R   = ((LINE_SIZE) / 8) - 1;
 // Calculate next index on a cache line walk
 #define probe_sequence_next(cur, last) (((cur) = (((cur) & CL_MASK) | (((cur) + 1) & CL_MASK_R))) != (last))
 
-DECLARE_THREAD_LOCAL(insert_index, uint64_t);
+DECLARE_THREAD_LOCAL(my_region, uint64_t);
 
-VOID_TASK_1(llmsset_init_worker, llmsset_t, dbs)
+VOID_TASK_0(llmsset_reset_region)
+{
+    LOCALIZE_THREAD_LOCAL(my_region, uint64_t);
+    my_region = (uint64_t)-1; // no region
+    SET_THREAD_LOCAL(my_region, my_region);
+}
+
+VOID_TASK_0(llmsset_init_worker)
 {
     // yes, ugly. for now, we use a global thread-local value.
     // that is a problem with multiple tables.
-    INIT_THREAD_LOCAL(insert_index);
-    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t);
-    // take some start place
-    insert_index = (dbs->table_size * LACE_WORKER_ID)/lace_workers();
-    SET_THREAD_LOCAL(insert_index, insert_index);
+    // so, for now, do NOT use multiple tables!!
+    INIT_THREAD_LOCAL(my_region);
+    CALL(llmsset_reset_region);
 }
 
 /**
@@ -114,6 +116,63 @@ hash16_mul(const uint64_t a, const uint64_t b)
     return rehash16_mul(a, b, 14695981039346656037LLU);
 }
 
+static uint64_t
+claim_data_bucket(const llmsset_t dbs)
+{
+    LOCALIZE_THREAD_LOCAL(my_region, uint64_t);
+
+    for (;;) {
+        if (my_region != (uint64_t)-1) {
+            // find empty bucket in region <my_region>
+            uint64_t *ptr = dbs->bitmap2 + (my_region*8);
+            int i=0;
+            for (;i<8;) {
+                uint64_t v = *ptr;
+                if (v != 0xffffffffffffffffLL) {
+                    int j = __builtin_clzl(~v);
+                    *ptr |= (0x8000000000000000LL>>j);
+                    uint64_t index = (8 * my_region + i) * 64 + j;
+                    if (index <= 1) continue; // skip 0, 1
+                    return index;
+                }
+                i++;
+                ptr++;
+            }
+        }
+        // if we're here, we need a new region...
+        if (my_region == (uint64_t)-1) {
+            my_region += (lace_get_worker()->worker*(dbs->table_size/(64*8)))/lace_workers();
+        }
+        uint64_t count = 0;
+        for (;;) {
+            // check if table maybe full
+            if (count++ == dbs->table_size/(64*8)) return (uint64_t)-1;
+
+            my_region += 1;
+            if (my_region >= (dbs->table_size/(64*8))) my_region = 0;
+
+            // try to claim it
+            uint64_t *ptr = dbs->bitmap1 + (my_region/64);
+            uint64_t mask = 0x8000000000000000LL >> (my_region&63);
+            uint64_t v;
+restart:
+            v = *ptr;
+            if (v & mask) continue; // taken
+            if (cas(ptr, v, v|mask)) break;
+            else goto restart;
+        }
+        SET_THREAD_LOCAL(my_region, my_region);
+    }
+}
+
+static void
+release_data_bucket(const llmsset_t dbs, uint64_t index)
+{
+    uint64_t *ptr = dbs->bitmap2 + (index/64);
+    uint64_t mask = 0x8000000000000000LL >> (index&63);
+    *ptr &= ~mask;
+}
+
 /*
  * Note: garbage collection during lookup strictly forbidden
  * insert_index points to a starting point and is updated.
@@ -121,8 +180,6 @@ hash16_mul(const uint64_t a, const uint64_t b)
 uint64_t
 llmsset_lookup(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* created)
 {
-    LOCALIZE_THREAD_LOCAL(insert_index, uint64_t);
-
     uint64_t hash_rehash = hash16_mul(a, b);
     const uint64_t hash = hash_rehash & MASK_HASH;
     int i=0;
@@ -139,7 +196,7 @@ llmsset_lookup(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* cre
             volatile uint64_t *bucket = &dbs->table[idx];
             uint64_t v = *bucket;
 
-            if (!(v & HFILLED)) goto phase2;
+            if (v == 0) goto phase2;
 
             if (hash == (v & MASK_HASH)) {
                 uint64_t d_idx = v & MASK_INDEX;
@@ -156,48 +213,19 @@ llmsset_lookup(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* cre
         hash_rehash = rehash16_mul(a, b, hash_rehash);
     }
 
-    return 0; // failed to find empty spot
+    return 0; // failed to find empty spot in probe sequence
 
     uint64_t d_idx;
-    uint64_t *d_ptr;
 phase2:
-    d_idx = insert_index;
-
-    int count=0;
-    for (;;) {
-        if (count >= 2048) return 0; /* come on, just gc */
-#if LLMSSET_MASK
-        d_idx &= dbs->mask; // sanitize...
-#else
-        d_idx %= dbs->table_size; // sanitize...
-#endif
-        while (d_idx <= 1) d_idx++; // do not use bucket 0,1 for data
-        volatile uint64_t *ptr = dbs->table + d_idx;
-        uint64_t h = *ptr;
-        if (h & DFILLED) {
-            if ((++count & 127) == 0) {
-                // random d_idx (lcg, and a shift)
-                d_idx = 2862933555777941757ULL * d_idx + 3037000493ULL;
-                d_idx ^= d_idx >> 32;
-            } else {
-                d_idx++;
-            }
-        } else if (cas(ptr, h, h|DFILLED)) {
-            d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
-            d_ptr[0] = a;
-            d_ptr[1] = b;
-            insert_index = d_idx;
-            SET_THREAD_LOCAL(insert_index, insert_index);
-            break;
-        } else {
-            d_idx++;
-        }
+    d_idx = claim_data_bucket(dbs);
+    if (d_idx == (uint64_t)-1) {
+        return 0; // failed to claim a data bucket
     }
 
-    sylvan_stats_add(LLMSSET_PHASE2, count);
-
-    // data has been inserted!
-    uint64_t mask = hash | d_idx | HFILLED;
+    uint64_t *d_ptr;
+    d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
+    d_ptr[0] = a;
+    d_ptr[1] = b;
 
     // continue where we were...
     for (;i<dbs->threshold;i++) {
@@ -214,9 +242,8 @@ phase2:
 phase2_restart:
             v = *bucket;
 
-            if (!(v & HFILLED)) {
-                uint64_t new_v = (v&(DFILLED|DNOTIFY)) | mask;
-                if (!cas(bucket, v, new_v)) goto phase2_restart;
+            if (v == 0) {
+                if (!cas(bucket, 0, HFILLED | hash | d_idx)) goto phase2_restart;
                 *created = 1;
                 return d_idx;
             }
@@ -225,9 +252,7 @@ phase2_restart:
                 uint64_t d2_idx = v & MASK_INDEX;
                 register uint64_t *d2_ptr = ((uint64_t*)dbs->data) + 2*d2_idx;
                 if (d2_ptr[0] == a && d2_ptr[1] == b) {
-                    volatile uint64_t *ptr = dbs->table + d_idx;
-                    uint64_t h = *ptr;
-                    while (!cas(ptr, h, h&~(DFILLED|DNOTIFY))) { h = *ptr; } // uninsert data
+                    release_data_bucket(dbs, d_idx);
                     *created = 0;
                     return d2_idx;
                 }
@@ -247,7 +272,6 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 {
     const uint64_t * const d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
     uint64_t hash_rehash = hash16_mul(d_ptr[0], d_ptr[1]);
-    uint64_t mask = (hash_rehash & MASK_HASH) | d_idx | HFILLED;
 
     int i;
     for (i=0;i<dbs->threshold;i++) {
@@ -263,8 +287,8 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
         do {
             volatile uint64_t *bucket = &dbs->table[idx];
             uint64_t v = *bucket;
-            if (v & HFILLED) continue;
-            if (cas(bucket, v, mask | (v&(DFILLED|DNOTIFY)))) return 1;
+            uint64_t new_v = (hash_rehash & MASK_HASH) | d_idx | HFILLED;
+            if (v == 0 && cas(bucket, 0, new_v)) return 1;
         } while (probe_sequence_next(idx, last));
 
         hash_rehash = rehash16_mul(d_ptr[0], d_ptr[1], hash_rehash);
@@ -305,7 +329,9 @@ llmsset_create(size_t initial_size, size_t max_size)
         exit(1);
     }
 
-    if (initial_size < HASH_PER_CL) {
+    // minimum size is now 512 buckets (region size, but of course, n_workers * 512 is suggested as minimum)
+
+    if (initial_size < 512) {
         fprintf(stderr, "llmsset_create: initial_size too small!\n");
         exit(1);
     }
@@ -318,7 +344,17 @@ llmsset_create(size_t initial_size, size_t max_size)
 
     dbs->table = (uint64_t*)mmap(0, dbs->max_size * 8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
     dbs->data = (uint8_t*)mmap(0, dbs->max_size * 16, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
-    if (dbs->table == (uint64_t*)-1 || dbs->data == (uint8_t*)-1) {
+
+    /* Also allocate bitmaps. Each region is 64*8 = 512 buckets.
+       Overhead of bitmap1: 1 bit per 4096 bucket.
+       Overhead of bitmap2: 1 bit per bucket.
+       Overhead of bitmap3: 1 bit per bucket. */
+
+    dbs->bitmap1 = (uint64_t*)mmap(0, dbs->max_size / (512*8), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+    dbs->bitmap2 = (uint64_t*)mmap(0, dbs->max_size / 8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+    dbs->bitmap3 = (uint64_t*)mmap(0, dbs->max_size / 8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+
+    if (dbs->table == (uint64_t*)-1 || dbs->data == (uint8_t*)-1 || dbs->bitmap1 == (uint64_t*)-1 || dbs->bitmap2 == (uint64_t*)-1 || dbs->bitmap3 == (uint64_t*)-1) {
         fprintf(stderr, "llmsset_create: Unable to allocate memory!\n");
         exit(1);
     }
@@ -330,12 +366,15 @@ llmsset_create(size_t initial_size, size_t max_size)
 #if USE_HWLOC
     hwloc_set_area_membind(topo, dbs->table, dbs->max_size * 8, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
     hwloc_set_area_membind(topo, dbs->data, dbs->max_size * 16, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
+    hwloc_set_area_membind(topo, dbs->bitmap1, dbs->max_size / (512*8), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
+    hwloc_set_area_membind(topo, dbs->bitmap2, dbs->max_size / 8, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
+    hwloc_set_area_membind(topo, dbs->bitmap3, dbs->max_size / 8, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
 #endif
 
     dbs->dead_cb = NULL;
 
     LACE_ME;
-    TOGETHER(llmsset_init_worker, dbs);
+    TOGETHER(llmsset_init_worker);
 
     return dbs;
 }
@@ -345,60 +384,64 @@ llmsset_free(llmsset_t dbs)
 {
     munmap(dbs->table, dbs->max_size * 8);
     munmap(dbs->data, dbs->max_size * 16);
+    munmap(dbs->bitmap1, dbs->max_size / (512*8));
+    munmap(dbs->bitmap2, dbs->max_size / 8);
+    munmap(dbs->bitmap3, dbs->max_size / 8);
     free(dbs);
-}
-
-VOID_TASK_3(llmsset_clear_par, llmsset_t, dbs, size_t, first, size_t, count)
-{
-    if (count > 1024) {
-        size_t split = (count/2+1023)&(~1023);
-        SPAWN(llmsset_clear_par, dbs, first, split);
-        CALL(llmsset_clear_par, dbs, first + split, count - split);
-        SYNC(llmsset_clear_par);
-    } else {
-        uint64_t *ptr = dbs->table+first;
-        for (size_t k=0; k<count; k++) {
-            if (*ptr) *ptr &= DNOTIFY;
-            ptr++;
-        }
-    }
 }
 
 VOID_TASK_IMPL_1(llmsset_clear, llmsset_t, dbs)
 {
-    if (dbs->dead_cb != NULL) {
-        // slow clear
-        CALL(llmsset_clear_par, dbs, 0, dbs->table_size);
-    } else {
-        // just reallocate...
-        if (mmap(dbs->table, dbs->max_size * 8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) != (void*)-1) {
+    // just reallocate...
+    if (mmap(dbs->table, dbs->max_size * 8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) != (void*)-1) {
 #if defined(madvise) && defined(MADV_RANDOM)
-            madvise(dbs->table, sizeof(uint64_t[dbs->max_size]), MADV_RANDOM);
+        madvise(dbs->table, sizeof(uint64_t[dbs->max_size]), MADV_RANDOM);
 #endif
 #if USE_HWLOC
-            hwloc_set_area_membind(topo, dbs->table, sizeof(uint64_t[dbs->max_size]), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
+        hwloc_set_area_membind(topo, dbs->table, sizeof(uint64_t[dbs->max_size]), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
 #endif
-        } else {
-            // reallocate failed... expensive fallback
-            memset(dbs->table, 0, dbs->max_size * 8);
-        }
+    } else {
+        // reallocate failed... expensive fallback
+        memset(dbs->table, 0, dbs->max_size * 8);
     }
+
+    if (mmap(dbs->bitmap1, dbs->max_size / (512*8), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) != (void*)-1) {
+#if USE_HWLOC
+        hwloc_set_area_membind(topo, dbs->bitmap1, dbs->max_size / (512*8), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
+#endif
+    } else {
+        memset(dbs->bitmap1, 0, dbs->max_size / (512*8));
+    }
+
+    if (mmap(dbs->bitmap2, dbs->max_size / 8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) != (void*)-1) {
+#if USE_HWLOC
+        hwloc_set_area_membind(topo, dbs->bitmap2, dbs->max_size / 8, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
+#endif
+    } else {
+        memset(dbs->bitmap2, 0, dbs->max_size / 8);
+    }
+
+    TOGETHER(llmsset_reset_region);
 }
 
 int
 llmsset_is_marked(const llmsset_t dbs, uint64_t index)
 {
-    uint64_t v = dbs->table[index];
-    return v & DFILLED ? 1 : 0;
+    volatile uint64_t *ptr = dbs->bitmap2 + (index/64);
+    uint64_t mask = 0x8000000000000000LL >> (index&63);
+    return (*ptr & mask) ? 1 : 0;
 }
 
 int
 llmsset_mark(const llmsset_t dbs, uint64_t index)
 {
-    uint64_t v = dbs->table[index];
-    if (v & DFILLED) return 0;
-    dbs->table[index] |= DFILLED;
-    return 1;
+    volatile uint64_t *ptr = dbs->bitmap2 + (index/64);
+    uint64_t mask = 0x8000000000000000LL >> (index&63);
+    for (;;) {
+        uint64_t v = *ptr;
+        if (v & mask) return 0;
+        if (cas(ptr, v, v|mask)) return 1;
+    }
 }
 
 VOID_TASK_3(llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
@@ -409,10 +452,15 @@ VOID_TASK_3(llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
         CALL(llmsset_rehash_par, dbs, first + split, count - split);
         SYNC(llmsset_rehash_par);
     } else {
-        uint64_t *ptr = dbs->table+first;
+        uint64_t *ptr = dbs->bitmap2 + (first / 64);
+        uint64_t mask = 0x8000000000000000LL >> (first & 63);
         for (size_t k=0; k<count; k++) {
-            if (*ptr & DFILLED) llmsset_rehash_bucket(dbs, first+k);
-            ptr++;
+            if (*ptr & mask) llmsset_rehash_bucket(dbs, first+k);
+            mask >>= 1;
+            if (mask == 0) {
+                ptr++;
+                mask = 0x8000000000000000LL;
+            }
         }
     }
 }
@@ -420,37 +468,35 @@ VOID_TASK_3(llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
 VOID_TASK_IMPL_1(llmsset_rehash, llmsset_t, dbs)
 {
     CALL(llmsset_rehash_par, dbs, 0, dbs->table_size);
-    /* for now, call init_worker to reset "insert_index" */
-    TOGETHER(llmsset_init_worker, dbs);
 }
 
-TASK_3(size_t, llmsset_count_marked_range, llmsset_t, dbs, size_t, first, size_t, count)
+TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, count)
 {
-    size_t result = 0;
-    while (count--) {
-        if (dbs->table[first++] & DFILLED) result++;
+    if (count > 1024) {
+        size_t split = count/2;
+        SPAWN(llmsset_count_marked_par, dbs, first, split);
+        size_t right = CALL(llmsset_count_marked_par, dbs, first + split, count - split);
+        size_t left = SYNC(llmsset_count_marked_par);
+        return left + right;
+    } else {
+        size_t result = 0;
+        uint64_t *ptr = dbs->bitmap2 + (first / 64);
+        uint64_t mask = 0x8000000000000000LL >> (first & 63);
+        for (size_t k=0; k<count; k++) {
+            if (*ptr & mask) result += 1;
+            mask >>= 1;
+            if (mask == 0) {
+                ptr++;
+                mask = 0x8000000000000000LL;
+            }
+        }
+        return result;
     }
-    return result;
 }
 
 TASK_IMPL_1(size_t, llmsset_count_marked, llmsset_t, dbs)
 {
-    size_t spawn_count = 0;
-    size_t count = dbs->table_size, first=0;
-    while (count > 4096) {
-        SPAWN(llmsset_count_marked_range, dbs, first, 4096);
-        first += 4096;
-        count -= 4096;
-        spawn_count++;
-    }
-    size_t marked_count = 0;
-    if (count > 0) {
-        marked_count = CALL(llmsset_count_marked_range, dbs, first, count);
-    }
-    while (spawn_count--) {
-        marked_count += SYNC(llmsset_count_marked_range);
-    }
-    return marked_count;
+    return CALL(llmsset_count_marked_par, dbs, 0, dbs->table_size);
 }
 
 void
@@ -463,10 +509,12 @@ llmsset_set_ondead(const llmsset_t dbs, llmsset_dead_cb cb, void* ctx)
 void
 llmsset_notify_ondead(const llmsset_t dbs, uint64_t index)
 {
+    volatile uint64_t *ptr = dbs->bitmap3 + (index/64);
+    uint64_t mask = 0x8000000000000000LL >> (index&63);
     for (;;) {
-        uint64_t v = dbs->table[index];
-        if (v & DNOTIFY) return;
-        if (cas(&dbs->table[index], v, v|DNOTIFY)) return;
+        uint64_t v = *ptr;
+        if (v & mask) return;
+        if (cas(ptr, v, v|mask)) return;
     }
 }
 
@@ -478,20 +526,27 @@ VOID_TASK_3(llmsset_notify_par, llmsset_t, dbs, size_t, first, size_t, count)
         CALL(llmsset_notify_par, dbs, first + split, count - split);
         SYNC(llmsset_notify_par);
     } else {
-        uint64_t *ptr = dbs->table+first;
         for (size_t k=first; k<first+count; k++) {
-            uint64_t v = *ptr;
-            if (!(v & DFILLED)) {
-                if (v & DNOTIFY) {
-                    if (WRAP(dbs->dead_cb, dbs->dead_ctx, k)) {
-                        // mark it
-                        *ptr = DNOTIFY | DFILLED;
-                    } else {
-                        *ptr = 0;
+            volatile uint64_t *ptr2 = dbs->bitmap2 + (k/64);
+            volatile uint64_t *ptr3 = dbs->bitmap3 + (k/64);
+            uint64_t mask = 0x8000000000000000LL >> (k&63);
+
+            // if not filled but has notify
+            if ((*ptr2 & mask) == 0 && (*ptr3 & mask)) {
+                if (WRAP(dbs->dead_cb, dbs->dead_ctx, k)) {
+                    // keep it
+                    for (;;) {
+                        uint64_t v = *ptr2;
+                        if (cas(ptr2, v, v|mask)) break;
+                    }
+                } else {
+                    // unnotify it
+                    for (;;) {
+                        uint64_t v = *ptr3;
+                        if (cas(ptr3, v, v&(~mask))) break;
                     }
                 }
             }
-            ptr++;
         }
     }
 }

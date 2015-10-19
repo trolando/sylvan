@@ -105,9 +105,11 @@ cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
     const uint32_t s = *s_bucket;
     // abort if locked
     if (s & 0x80000000) return 0;
+    // abort if hash identical
+    const uint32_t hash_mask = (hash>>32) & 0x7fff0000;
+    if ((s & 0x7fff0000) == hash_mask) return 0;
     // use cas to claim bucket
-    uint32_t new_s = (hash>>32) & 0x7fff0000;
-    new_s |= (s+1) & 0x0000ffff;
+    const uint32_t new_s = ((s+1) & 0x0000ffff) | hash_mask;
     if (!cas(s_bucket, s, new_s | 0x80000000)) return 0;
     // cas succesful: write data
     bucket->a = a;

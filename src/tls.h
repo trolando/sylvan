@@ -5,6 +5,8 @@
  * A platform independant wrapper around thread-local storage. On platforms that don't support
  * __thread variables (e.g. Mac OS X), we have to use the pthreads library for thread-local storage
  */
+#include <assert.h>
+
 #ifndef TLS_H
 #define TLS_H
 

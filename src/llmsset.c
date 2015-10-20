@@ -16,11 +16,10 @@
 
 #include <sylvan_config.h>
 
-#include <assert.h> // for assert
 #include <stdint.h> // for uint64_t etc
 #include <stdio.h>  // for printf
 #include <stdlib.h>
-#include <string.h> // for memcopy
+#include <string.h> // memset
 #include <sys/mman.h> // for mmap
 
 #include <atomics.h>
@@ -43,13 +42,11 @@ static hwloc_topology_t topo;
 #endif
 
 /*
- *  1 bit  for hash-filled
- * 40 bits for the index
- * 23 bits for the hash
+ * 44 bits for the index
+ * 20 bits for the hash
  */
-#define HFILLED    ((uint64_t)0x8000000000000000)
-#define MASK_INDEX ((uint64_t)0x000000ffffffffff)
-#define MASK_HASH  ((uint64_t)0x7fffff0000000000)
+#define MASK_INDEX ((uint64_t)0x00000fffffffffff)
+#define MASK_HASH  ((uint64_t)0xfffff00000000000)
 
 static const uint8_t  HASH_PER_CL = ((LINE_SIZE) / 8);
 static const uint64_t CL_MASK     = ~(((LINE_SIZE) / 8) - 1);
@@ -61,9 +58,6 @@ static const uint64_t CL_MASK_R   = ((LINE_SIZE) / 8) - 1;
  * CL_MASK     = 0xFFFFFFFFFFFFFFF8
  * CL_MASK_R   = 0x0000000000000007
  */
-
-// Calculate next index on a cache line walk
-#define probe_sequence_next(cur, last) (((cur) = (((cur) & CL_MASK) | (((cur) + 1) & CL_MASK_R))) != (last))
 
 DECLARE_THREAD_LOCAL(my_region, uint64_t);
 
@@ -125,22 +119,19 @@ claim_data_bucket(const llmsset_t dbs)
                 if (v != 0xffffffffffffffffLL) {
                     int j = __builtin_clzl(~v);
                     *ptr |= (0x8000000000000000LL>>j);
-                    uint64_t index = (8 * my_region + i) * 64 + j;
-                    if (index <= 1) continue; // skip 0, 1
-                    return index;
+                    return (8 * my_region + i) * 64 + j;
                 }
                 i++;
                 ptr++;
             }
-        }
-        // if we're here, we need a new region...
-        if (my_region == (uint64_t)-1) {
+        } else {
+            // special case on startup or after garbage collection
             my_region += (lace_get_worker()->worker*(dbs->table_size/(64*8)))/lace_workers();
         }
-        uint64_t count = 0;
+        uint64_t count = dbs->table_size/(64*8);
         for (;;) {
             // check if table maybe full
-            if (count++ == dbs->table_size/(64*8)) return (uint64_t)-1;
+            if (count-- == 0) return (uint64_t)-1;
 
             my_region += 1;
             if (my_region >= (dbs->table_size/(64*8))) my_region = 0;
@@ -188,7 +179,8 @@ get_custom_bucket(const llmsset_t dbs, uint64_t index)
  * Note: garbage collection during lookup strictly forbidden
  * insert_index points to a starting point and is updated.
  */
-static uint64_t
+
+static inline uint64_t
 llmsset_lookup2(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* created, const int custom)
 {
     uint64_t hash_rehash = 14695981039346656037LLU;
@@ -196,108 +188,66 @@ llmsset_lookup2(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* cr
     else hash_rehash = rehash16_mul(a, b, hash_rehash);
 
     const uint64_t hash = hash_rehash & MASK_HASH;
+    uint64_t idx, last, cidx = 0;
     int i=0;
 
-    for (;i<dbs->threshold;i++) {
-#if LLMSSET_MASK
-        uint64_t idx = hash_rehash & dbs->mask;
-#else
-        uint64_t idx = hash_rehash % dbs->table_size;
-#endif
-        const uint64_t last = idx; // if next() sees idx again, stop.
+    if (LLMSSET_MASK) last = idx = hash_rehash & dbs->mask;
+    else last = idx = hash_rehash % dbs->table_size;
 
-        do {
-            volatile uint64_t *bucket = &dbs->table[idx];
-            uint64_t v = *bucket;
+    for (;;) {
+        volatile uint64_t *bucket = dbs->table + idx;
+        uint64_t v = *bucket;
 
-            if (v == 0) goto phase2;
-
-            if (hash == (v & MASK_HASH)) {
-                uint64_t d_idx = v & MASK_INDEX;
-                register uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
-                if (custom) {
-                    if (dbs->equals_cb(a, b, d_ptr[0], d_ptr[1])) {
-                        *created = 0;
-                        return d_idx;
-                    }
-                } else {
-                    if (d_ptr[0] == a && d_ptr[1] == b) {
-                        *created = 0;
-                        return d_idx;
-                    }
-                }
+        if (v == 0) {
+            if (cidx == 0) {
+                cidx = claim_data_bucket(dbs);
+                if (cidx == (uint64_t)-1) return 0; // failed to claim a data bucket
+                uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*cidx;
+                d_ptr[0] = a;
+                d_ptr[1] = b;
             }
-
-            sylvan_stats_count(LLMSSET_PHASE1);
-        } while (probe_sequence_next(idx, last));
-
-        if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
-        else hash_rehash = rehash16_mul(a, b, hash_rehash);
-    }
-
-    return 0; // failed to find empty spot in probe sequence
-
-    uint64_t d_idx;
-phase2:
-    d_idx = claim_data_bucket(dbs);
-    if (d_idx == (uint64_t)-1) {
-        return 0; // failed to claim a data bucket
-    }
-
-    uint64_t *d_ptr;
-    d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
-    d_ptr[0] = a;
-    d_ptr[1] = b;
-
-    if (custom || dbs->hash_cb != NULL) set_custom_bucket(dbs, d_idx, custom);
-
-    // continue where we were...
-    for (;i<dbs->threshold;i++) {
-#if LLMSSET_MASK
-        uint64_t idx = hash_rehash & dbs->mask;
-#else
-        uint64_t idx = hash_rehash % dbs->table_size;
-#endif
-        const uint64_t last = idx; // if next() sees idx again, stop.
-
-        do {
-            volatile uint64_t *bucket = dbs->table + idx;
-            uint64_t v;
-phase2_restart:
-            v = *bucket;
-
-            if (v == 0) {
-                if (!cas(bucket, 0, HFILLED | hash | d_idx)) goto phase2_restart;
+            if (cas(bucket, 0, hash | cidx)) {
+                if (custom || dbs->hash_cb != NULL) set_custom_bucket(dbs, cidx, custom);
                 *created = 1;
-                return d_idx;
+                return cidx;
+            } else {
+                v = *bucket;
             }
+        }
 
-            if (hash == (v & MASK_HASH)) {
-                uint64_t d2_idx = v & MASK_INDEX;
-                register uint64_t *d2_ptr = ((uint64_t*)dbs->data) + 2*d2_idx;
-                if (custom) {
-                    if (dbs->equals_cb(a, b, d2_ptr[0], d2_ptr[1])) {
-                        release_data_bucket(dbs, d_idx);
-                        *created = 0;
-                        return d2_idx;
-                    }
-                } else {
-                    if (d2_ptr[0] == a && d2_ptr[1] == b) {
-                        release_data_bucket(dbs, d_idx);
-                        *created = 0;
-                        return d2_idx;
-                    }
+        if (hash == (v & MASK_HASH)) {
+            uint64_t d_idx = v & MASK_INDEX;
+            uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
+            if (custom) {
+                if (dbs->equals_cb(a, b, d_ptr[0], d_ptr[1])) {
+                    if (cidx != 0) release_data_bucket(dbs, cidx);
+                    *created = 0;
+                    return d_idx;
+                }
+            } else {
+                if (d_ptr[0] == a && d_ptr[1] == b) {
+                    if (cidx != 0) release_data_bucket(dbs, cidx);
+                    *created = 0;
+                    return d_idx;
                 }
             }
+        }
 
-            sylvan_stats_count(LLMSSET_PHASE3);
-        } while (probe_sequence_next(idx, last));
+        sylvan_stats_count(LLMSSET_PHASE1);
 
-        if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
-        else hash_rehash = rehash16_mul(a, b, hash_rehash);
+        // find next idx on probe sequence
+        idx = (idx & CL_MASK) | ((idx+1) & CL_MASK_R);
+        if (idx == last) {
+            if (++i == dbs->threshold) return 0; // failed to find empty spot in probe sequence
+
+            // go to next cache line in probe sequence
+            if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
+            else hash_rehash = rehash16_mul(a, b, hash_rehash);
+
+            if (LLMSSET_MASK) last = idx = hash_rehash & dbs->mask;
+            else last = idx = hash_rehash % dbs->table_size;
+        }
     }
-
-    return 0;
 }
 
 uint64_t
@@ -316,35 +266,45 @@ static inline int
 llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 {
     const uint64_t * const d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
+    const uint64_t a = d_ptr[0];
+    const uint64_t b = d_ptr[1];
 
     uint64_t hash_rehash = 14695981039346656037LLU;
     const int custom = dbs->hash_cb != NULL && get_custom_bucket(dbs, d_idx) ? 1 : 0;
-    if (custom) hash_rehash = dbs->hash_cb(d_ptr[0], d_ptr[1], hash_rehash);
-    else hash_rehash = rehash16_mul(d_ptr[0], d_ptr[1], hash_rehash);
-    const uint64_t new_v = (hash_rehash & MASK_HASH) | d_idx | HFILLED;
+    if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
+    else hash_rehash = rehash16_mul(a, b, hash_rehash);
+    const uint64_t new_v = (hash_rehash & MASK_HASH) | d_idx;
+    int i=0;
 
-    int i;
-    for (i=0;i<dbs->threshold;i++) {
+    uint64_t idx, last;
 #if LLMSSET_MASK
-        uint64_t idx = hash_rehash & dbs->mask;
+    last = idx = hash_rehash & dbs->mask;
 #else
-        uint64_t idx = hash_rehash % dbs->table_size;
+    last = idx = hash_rehash % dbs->table_size;
 #endif
-        const uint64_t last = idx; // if next() sees idx again, stop.
 
+    for (;;) {
         // no need for atomic restarts
         // we can assume there are no double inserts (GC rehash phase)
-        do {
-            volatile uint64_t *bucket = &dbs->table[idx];
-            uint64_t v = *bucket;
-            if (v == 0 && cas(bucket, 0, new_v)) return 1;
-        } while (probe_sequence_next(idx, last));
+        volatile uint64_t *bucket = &dbs->table[idx];
+        if (*bucket == 0 && cas(bucket, 0, new_v)) return 1;
 
-        if (custom) hash_rehash = dbs->hash_cb(d_ptr[0], d_ptr[1], hash_rehash);
-        else hash_rehash = rehash16_mul(d_ptr[0], d_ptr[1], hash_rehash);
+        // find next idx on probe sequence
+        idx = (idx & CL_MASK) | ((idx+1) & CL_MASK_R);
+        if (idx == last) {
+            if (++i == dbs->threshold) return 0; // failed to find empty spot in probe sequence
+
+            // go to next cache line in probe sequence
+            if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
+            else hash_rehash = rehash16_mul(a, b, hash_rehash);
+
+#if LLMSSET_MASK
+            last = idx = hash_rehash & dbs->mask;
+#else
+            last = idx = hash_rehash % dbs->table_size;
+#endif
+        }
     }
-
-    return 0;
 }
 
 llmsset_t
@@ -424,6 +384,9 @@ llmsset_create(size_t initial_size, size_t max_size)
     hwloc_set_area_membind(topo, dbs->bitmap4, dbs->max_size / 8, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
 #endif
 
+    // forbid first two positions (index 0 and 1)
+    dbs->bitmap2[0] = 0xc000000000000000LL;
+
     dbs->dead_cb = NULL;
     dbs->hash_cb = NULL;
     dbs->equals_cb = NULL;
@@ -476,6 +439,9 @@ VOID_TASK_IMPL_1(llmsset_clear, llmsset_t, dbs)
     } else {
         memset(dbs->bitmap2, 0, dbs->max_size / 8);
     }
+
+    // forbid first two positions (index 0 and 1)
+    dbs->bitmap2[0] = 0xc000000000000000LL;
 
     TOGETHER(llmsset_reset_region);
 }

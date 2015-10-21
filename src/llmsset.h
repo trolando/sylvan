@@ -206,6 +206,11 @@ VOID_TASK_DECL_1(llmsset_notify_all, llmsset_t);
  */
 void llmsset_set_custom(const llmsset_t dbs, llmsset_hash_cb hash_cb, llmsset_equals_cb equals_cb);
 
+/**
+ * Default hashing function
+ */
+uint64_t llmsset_hash(const uint64_t a, const uint64_t b, const uint64_t seed);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

@@ -78,7 +78,7 @@ VOID_TASK_0(llmsset_init_worker)
 }
 
 /**
- * hash16
+ * hash
  */
 #ifndef rotl64
 static inline uint64_t
@@ -88,8 +88,8 @@ rotl64(uint64_t x, int8_t r)
 }
 #endif
 
-static uint64_t
-rehash16_mul(const uint64_t a, const uint64_t b, const uint64_t seed)
+uint64_t
+llmsset_hash(const uint64_t a, const uint64_t b, const uint64_t seed)
 {
     const uint64_t prime = 1099511628211;
 
@@ -185,7 +185,7 @@ llmsset_lookup2(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* cr
 {
     uint64_t hash_rehash = 14695981039346656037LLU;
     if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
-    else hash_rehash = rehash16_mul(a, b, hash_rehash);
+    else hash_rehash = llmsset_hash(a, b, hash_rehash);
 
     const uint64_t hash = hash_rehash & MASK_HASH;
     uint64_t idx, last, cidx = 0;
@@ -242,7 +242,7 @@ llmsset_lookup2(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* cr
 
             // go to next cache line in probe sequence
             if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
-            else hash_rehash = rehash16_mul(a, b, hash_rehash);
+            else hash_rehash = llmsset_hash(a, b, hash_rehash);
 
             if (LLMSSET_MASK) last = idx = hash_rehash & dbs->mask;
             else last = idx = hash_rehash % dbs->table_size;
@@ -272,7 +272,7 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
     uint64_t hash_rehash = 14695981039346656037LLU;
     const int custom = dbs->hash_cb != NULL && get_custom_bucket(dbs, d_idx) ? 1 : 0;
     if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
-    else hash_rehash = rehash16_mul(a, b, hash_rehash);
+    else hash_rehash = llmsset_hash(a, b, hash_rehash);
     const uint64_t new_v = (hash_rehash & MASK_HASH) | d_idx;
     int i=0;
 
@@ -296,7 +296,7 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 
             // go to next cache line in probe sequence
             if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
-            else hash_rehash = rehash16_mul(a, b, hash_rehash);
+            else hash_rehash = llmsset_hash(a, b, hash_rehash);
 
 #if LLMSSET_MASK
             last = idx = hash_rehash & dbs->mask;

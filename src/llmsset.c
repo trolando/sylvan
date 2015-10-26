@@ -161,9 +161,9 @@ llmsset_hash(const uint64_t a, const uint64_t b, const uint64_t seed)
 static const uint64_t CL_MASK     = ~(((LINE_SIZE) / 8) - 1);
 static const uint64_t CL_MASK_R   = ((LINE_SIZE) / 8) - 1;
 
-/* 44 bits for the index, 20 bits for the hash */
-#define MASK_INDEX ((uint64_t)0x00000fffffffffff)
-#define MASK_HASH  ((uint64_t)0xfffff00000000000)
+/* 40 bits for the index, 24 bits for the hash */
+#define MASK_INDEX ((uint64_t)0x000000ffffffffff)
+#define MASK_HASH  ((uint64_t)0xffffff0000000000)
 
 static inline uint64_t
 llmsset_lookup2(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* created, const int custom)

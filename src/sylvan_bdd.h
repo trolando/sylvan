@@ -303,10 +303,9 @@ BDD sylvan_sat_one_bdd(BDD bdd);
 #define sylvan_pick_cube sylvan_sat_one_bdd
 
 /**
- * Enumerate all satisfying variable assignments from the given <bdd> using
- * variables <vars>; calls <cb> with four parameters: a user-supplied context,
- * the array of all BDDVAR variables in <vars> (ordered), the array of the cube
- * with value 0 for "not <var>" and 1 for "<var>", and the length of the two arrays.
+ * Enumerate all satisfying variable assignments from the given <bdd> using variables <vars>.
+ * Calls <cb> with four parameters: a user-supplied context, the array of BDD variables in <vars>,
+ * the cube (array of values 0 and 1 for each variables in <vars>) and the length of the two arrays.
  */
 LACE_TYPEDEF_CB(void, enum_cb, void*, BDDVAR*, uint8_t*, int);
 VOID_TASK_DECL_4(sylvan_enum, BDD, BDDSET, enum_cb, void*);
@@ -314,9 +313,25 @@ VOID_TASK_DECL_4(sylvan_enum, BDD, BDDSET, enum_cb, void*);
 VOID_TASK_DECL_4(sylvan_enum_par, BDD, BDDSET, enum_cb, void*);
 #define sylvan_enum_par(bdd, vars, cb, context) CALL(sylvan_enum_par, bdd, vars, cb, context)
 
+/**
+ * Enumerate all satisfyable variable assignments of the given <bdd> using variables <vars>.
+ * Calls <cb> with two parameters: a user-supplied context and the cube (array of
+ * values 0 and 1 for each variable in <vars>).
+ * The BDD that <cb> returns is pair-wise merged (using or) and returned.
+ */
+LACE_TYPEDEF_CB(BDD, sylvan_collect_cb, void*, uint8_t*);
+TASK_DECL_4(BDD, sylvan_collect, BDD, BDDSET, sylvan_collect_cb, void*);
+#define sylvan_collect(bdd, vars, cb, context) CALL(sylvan_collect, bdd, vars, cb, context)
+
+/**
+ * Compute the number of distinct paths to sylvan_true in the BDD
+ */
 TASK_DECL_2(double, sylvan_pathcount, BDD, BDDVAR);
 #define sylvan_pathcount(bdd) (CALL(sylvan_pathcount, bdd, 0))
 
+/**
+ * Compute the number of BDD nodes in the BDD
+ */
 size_t sylvan_nodecount(BDD a);
 
 /**

@@ -2076,6 +2076,61 @@ VOID_TASK_IMPL_4(sylvan_enum_par, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, co
     CALL(sylvan_enum_par_do, bdd, vars, cb, context, 0);
 }
 
+TASK_5(BDD, sylvan_collect_do, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, void*, context, struct bdd_path*, path)
+{
+    if (bdd == sylvan_false) return sylvan_false;
+
+    if (sylvan_set_isempty(vars)) {
+        /* compute length of path */
+        int i=0;
+        struct bdd_path *pp;
+        for (pp = path; pp != NULL; pp = pp->prev) i++;
+        /* if length is 0 (enum called with empty vars??), return */
+        if (i == 0) return WRAP(cb, context, NULL);
+        /* fill cube and vars with trace */
+        uint8_t cube[i];
+        int j=0;
+        for (pp = path; pp != NULL; pp = pp->prev) {
+            cube[i-j-1] = pp->val;
+            j++;
+        }
+        /* call callback */
+        return WRAP(cb, context, cube);
+    } else {
+        BDD var = sylvan_var(vars);
+        vars = sylvan_set_next(vars);
+        BDD bdd_var = sylvan_var(bdd);
+
+        /* if fails, then <bdd> has variables not in <vars> */
+        assert(var <= bdd_var);
+
+        struct bdd_path pp1 = (struct bdd_path){path, var, 1};
+        struct bdd_path pp0 = (struct bdd_path){path, var, 0};
+        if (var < bdd_var) {
+            bdd_refs_spawn(SPAWN(sylvan_collect_do, bdd, vars, cb, context, &pp1));
+            BDD low = bdd_refs_push(CALL(sylvan_collect_do, bdd, vars, cb, context, &pp0));
+            BDD high = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_collect_do)));
+            BDD res = sylvan_or(low, high);
+            bdd_refs_pop(2);
+            return res;
+        } else if (var == bdd_var) {
+            bdd_refs_spawn(SPAWN(sylvan_collect_do, sylvan_high(bdd), vars, cb, context, &pp1));
+            BDD low = bdd_refs_push(CALL(sylvan_collect_do, sylvan_low(bdd), vars, cb, context, &pp0));
+            BDD high = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_collect_do)));
+            BDD res = sylvan_or(low, high);
+            bdd_refs_pop(2);
+            return res;
+        } else {
+            return sylvan_invalid; // unreachable
+        }
+    }
+}
+
+TASK_IMPL_4(BDD, sylvan_collect, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, void*, context)
+{
+    return CALL(sylvan_collect_do, bdd, vars, cb, context, 0);
+}
+
 /**
  * IMPLEMENTATION OF BDDSET
  */

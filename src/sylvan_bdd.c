@@ -388,6 +388,8 @@ TASK_IMPL_3(BDD, sylvan_and, BDD, a, BDD, b, BDDVAR, prev_level)
     if (b == sylvan_true) return a;
     if (a == sylvan_false) return sylvan_false;
     if (b == sylvan_false) return sylvan_false;
+    if (a == b) return a;
+    if (a == BDD_TOGGLEMARK(b)) return sylvan_false;
 
     sylvan_gc_test();
 

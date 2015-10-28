@@ -445,7 +445,7 @@ llmsset_mark(const llmsset_t dbs, uint64_t index)
 
 VOID_TASK_3(llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
 {
-    if (count > 1024) {
+    if (count > 512) {
         size_t split = count/2;
         SPAWN(llmsset_rehash_par, dbs, first, split);
         CALL(llmsset_rehash_par, dbs, first + split, count - split);
@@ -471,7 +471,7 @@ VOID_TASK_IMPL_1(llmsset_rehash, llmsset_t, dbs)
 
 TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, count)
 {
-    if (count > 1024) {
+    if (count > 512) {
         size_t split = count/2;
         SPAWN(llmsset_count_marked_par, dbs, first, split);
         size_t right = CALL(llmsset_count_marked_par, dbs, first + split, count - split);

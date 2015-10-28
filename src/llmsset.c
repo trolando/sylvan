@@ -72,7 +72,7 @@ claim_data_bucket(const llmsset_t dbs)
             for (;i<8;) {
                 uint64_t v = *ptr;
                 if (v != 0xffffffffffffffffLL) {
-                    int j = __builtin_clzl(~v);
+                    int j = __builtin_clzll(~v);
                     *ptr |= (0x8000000000000000LL>>j);
                     return (8 * my_region + i) * 64 + j;
                 }
@@ -480,13 +480,24 @@ TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, 
     } else {
         size_t result = 0;
         uint64_t *ptr = dbs->bitmap2 + (first / 64);
-        uint64_t mask = 0x8000000000000000LL >> (first & 63);
-        for (size_t k=0; k<count; k++) {
-            if (*ptr & mask) result += 1;
-            mask >>= 1;
-            if (mask == 0) {
-                ptr++;
-                mask = 0x8000000000000000LL;
+        if (count == 512) {
+            result += __builtin_popcountll(ptr[0]);
+            result += __builtin_popcountll(ptr[1]);
+            result += __builtin_popcountll(ptr[2]);
+            result += __builtin_popcountll(ptr[3]);
+            result += __builtin_popcountll(ptr[4]);
+            result += __builtin_popcountll(ptr[5]);
+            result += __builtin_popcountll(ptr[6]);
+            result += __builtin_popcountll(ptr[7]);
+        } else {
+            uint64_t mask = 0x8000000000000000LL >> (first & 63);
+            for (size_t k=0; k<count; k++) {
+                if (*ptr & mask) result += 1;
+                mask >>= 1;
+                if (mask == 0) {
+                    ptr++;
+                    mask = 0x8000000000000000LL;
+                }
             }
         }
         return result;

@@ -129,7 +129,7 @@ llmsset_set_size(llmsset_t dbs, size_t size)
         /* Warning: if size is not a power of two, you will get interesting behavior */
         dbs->mask = dbs->table_size - 1;
 #endif
-        dbs->threshold = (64 - __builtin_clzl(dbs->table_size)) + 4; // doubling table_size increases threshold by 1
+        dbs->threshold = (64 - __builtin_clzll(dbs->table_size)) + 4; // doubling table_size increases threshold by 1
     }
 }
 

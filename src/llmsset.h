@@ -41,18 +41,16 @@ extern "C" {
  */
 
 /**
- * Callback for "notify on dead".
- * If the callback returns non-zero, then the node is marked for keeping (rehashing).
- * The main purpose of the callback is to allow freeing allocated memory for custom terminal nodes.
- */
-LACE_TYPEDEF_CB(int, llmsset_dead_cb, void*, uint64_t);
-
-/**
  * hash(a, b, seed)
  * equals(lhs_a, lhs_b, rhs_a, rhs_b)
+ * create(a, b) -- with a,b pointers, allows changing pointers on create of node,
+ *                 but must keep hash/equals same!
+ * destroy(a, b)
  */
 typedef uint64_t (*llmsset_hash_cb)(uint64_t, uint64_t, uint64_t);
 typedef int (*llmsset_equals_cb)(uint64_t, uint64_t, uint64_t, uint64_t);
+typedef void (*llmsset_create_cb)(uint64_t *, uint64_t *);
+typedef void (*llmsset_destroy_cb)(uint64_t, uint64_t);
 
 typedef struct llmsset
 {
@@ -60,18 +58,17 @@ typedef struct llmsset
     uint8_t           *data;        // table with values
     uint64_t          *bitmap1;     // ownership bitmap (per 512 buckets)
     uint64_t          *bitmap2;     // bitmap for "contains data"
-    uint64_t          *bitmap3;     // bitmap for "notify on delete"
-    uint64_t          *bitmap4;     // bitmap for "custom hash/equals functions"
+    uint64_t          *bitmapc;     // bitmap for "use custom functions"
     size_t            max_size;     // maximum size of the hash table (for resizing)
     size_t            table_size;   // size of the hash table (number of slots) --> power of 2!
 #if LLMSSET_MASK
     size_t            mask;         // size-1
 #endif
     size_t            f_size;
-    llmsset_dead_cb   dead_cb;      // callback when certain nodes are dead
-    void*             dead_ctx;     // context for dead_cb
     llmsset_hash_cb   hash_cb;      // custom hash function
     llmsset_equals_cb equals_cb;    // custom equals function
+    llmsset_create_cb create_cb;    // custom create function
+    llmsset_destroy_cb destroy_cb;  // custom destroy function
     int16_t           threshold;    // number of iterations for insertion until returning error
 } *llmsset_t;
 
@@ -142,7 +139,7 @@ llmsset_set_size(llmsset_t dbs, size_t size)
 uint64_t llmsset_lookup(const llmsset_t dbs, const uint64_t a, const uint64_t b, int *created);
 
 /**
- * Same as lookup, but use the custom hash/equals function
+ * Same as lookup, but use the custom functions
  */
 uint64_t llmsset_lookupc(const llmsset_t dbs, const uint64_t a, const uint64_t b, int *created);
 
@@ -181,29 +178,16 @@ TASK_DECL_1(size_t, llmsset_count_marked, llmsset_t);
 #define llmsset_count_marked(dbs) CALL(llmsset_count_marked, dbs)
 
 /**
- * Install callback function for nodes that are dead after garbage collection
- * Only called for nodes for which llmsset_notify_ondead has been called
- * NOTE: if you set a callback, then the garbage collection will be much slower!
+ * During garbage collection, this method calls the destroy callback
+ * for all 'custom' data that is not kept.
  */
-void llmsset_set_ondead(const llmsset_t dbs, llmsset_dead_cb cb, void* ctx);
-
-/**
- * Mark a node that the ondead callback will be called if it is not marked during garbage collection,
- * i.e. it is a dead node. This allows the user to either perform cleanup, or resurrect the node.
- */
-void llmsset_notify_ondead(const llmsset_t dbs, uint64_t index);
-
-/**
- * During garbage collection, this method calls the callback functions for all nodes
- * for which llmsset_notify_ondead has been called and a callback function has been set.
- */
-VOID_TASK_DECL_1(llmsset_notify_all, llmsset_t);
-#define llmsset_notify_all(dbs) CALL(llmsset_notify_all, dbs)
+VOID_TASK_DECL_1(llmsset_destroy_unmarked, llmsset_t);
+#define llmsset_destroy_unmarked(dbs) CALL(llmsset_destroy_unmarked, dbs)
 
 /**
  * Set custom functions
  */
-void llmsset_set_custom(const llmsset_t dbs, llmsset_hash_cb hash_cb, llmsset_equals_cb equals_cb);
+void llmsset_set_custom(const llmsset_t dbs, llmsset_hash_cb hash_cb, llmsset_equals_cb equals_cb, llmsset_create_cb create_cb, llmsset_destroy_cb destroy_cb);
 
 /**
  * Default hashing function

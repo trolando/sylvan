@@ -116,7 +116,7 @@ release_data_bucket(const llmsset_t dbs, uint64_t index)
 static void
 set_custom_bucket(const llmsset_t dbs, uint64_t index, int on)
 {
-    uint64_t *ptr = dbs->bitmap2 + (index/64);
+    uint64_t *ptr = dbs->bitmapc + (index/64);
     uint64_t mask = 0x8000000000000000LL >> (index&63);
     if (on) *ptr |= mask;
     else *ptr &= ~mask;
@@ -125,7 +125,7 @@ set_custom_bucket(const llmsset_t dbs, uint64_t index, int on)
 static int
 get_custom_bucket(const llmsset_t dbs, uint64_t index)
 {
-    uint64_t *ptr = dbs->bitmap2 + (index/64);
+    uint64_t *ptr = dbs->bitmapc + (index/64);
     uint64_t mask = 0x8000000000000000LL >> (index&63);
     return (*ptr & mask) ? 1 : 0;
 }
@@ -166,7 +166,7 @@ static const uint64_t CL_MASK_R   = ((LINE_SIZE) / 8) - 1;
 #define MASK_HASH  ((uint64_t)0xffffff0000000000)
 
 static inline uint64_t
-llmsset_lookup2(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* created, const int custom)
+llmsset_lookup2(const llmsset_t dbs, uint64_t a, uint64_t b, int* created, const int custom)
 {
     uint64_t hash_rehash = 14695981039346656037LLU;
     if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
@@ -187,12 +187,13 @@ llmsset_lookup2(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* cr
             if (cidx == 0) {
                 cidx = claim_data_bucket(dbs);
                 if (cidx == (uint64_t)-1) return 0; // failed to claim a data bucket
+                if (custom) dbs->create_cb(&a, &b);
                 uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*cidx;
                 d_ptr[0] = a;
                 d_ptr[1] = b;
             }
             if (cas(bucket, 0, hash | cidx)) {
-                if (custom || dbs->hash_cb != NULL) set_custom_bucket(dbs, cidx, custom);
+                if (custom) set_custom_bucket(dbs, cidx, custom);
                 *created = 1;
                 return cidx;
             } else {
@@ -205,7 +206,10 @@ llmsset_lookup2(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* cr
             uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
             if (custom) {
                 if (dbs->equals_cb(a, b, d_ptr[0], d_ptr[1])) {
-                    if (cidx != 0) release_data_bucket(dbs, cidx);
+                    if (cidx != 0) {
+                        dbs->destroy_cb(a, b);
+                        release_data_bucket(dbs, cidx);
+                    }
                     *created = 0;
                     return d_idx;
                 }
@@ -255,7 +259,7 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
     const uint64_t b = d_ptr[1];
 
     uint64_t hash_rehash = 14695981039346656037LLU;
-    const int custom = dbs->hash_cb != NULL && get_custom_bucket(dbs, d_idx) ? 1 : 0;
+    const int custom = get_custom_bucket(dbs, d_idx) ? 1 : 0;
     if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
     else hash_rehash = llmsset_hash(a, b, hash_rehash);
     const uint64_t new_v = (hash_rehash & MASK_HASH) | d_idx;
@@ -335,15 +339,13 @@ llmsset_create(size_t initial_size, size_t max_size)
     /* Also allocate bitmaps. Each region is 64*8 = 512 buckets.
        Overhead of bitmap1: 1 bit per 4096 bucket.
        Overhead of bitmap2: 1 bit per bucket.
-       Overhead of bitmap3: 1 bit per bucket.
-       Overhead of bitmap4: 1 bit per bucket. */
+       Overhead of bitmapc: 1 bit per bucket. */
 
     dbs->bitmap1 = (uint64_t*)mmap(0, dbs->max_size / (512*8), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
     dbs->bitmap2 = (uint64_t*)mmap(0, dbs->max_size / 8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
-    dbs->bitmap3 = (uint64_t*)mmap(0, dbs->max_size / 8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
-    dbs->bitmap4 = (uint64_t*)mmap(0, dbs->max_size / 8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+    dbs->bitmapc = (uint64_t*)mmap(0, dbs->max_size / 8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
 
-    if (dbs->table == (uint64_t*)-1 || dbs->data == (uint8_t*)-1 || dbs->bitmap1 == (uint64_t*)-1 || dbs->bitmap2 == (uint64_t*)-1 || dbs->bitmap3 == (uint64_t*)-1 || dbs->bitmap4 == (uint64_t*)-1) {
+    if (dbs->table == (uint64_t*)-1 || dbs->data == (uint8_t*)-1 || dbs->bitmap1 == (uint64_t*)-1 || dbs->bitmap2 == (uint64_t*)-1 || dbs->bitmapc == (uint64_t*)-1) {
         fprintf(stderr, "llmsset_create: Unable to allocate memory!\n");
         exit(1);
     }
@@ -357,16 +359,16 @@ llmsset_create(size_t initial_size, size_t max_size)
     hwloc_set_area_membind(topo, dbs->data, dbs->max_size * 16, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
     hwloc_set_area_membind(topo, dbs->bitmap1, dbs->max_size / (512*8), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
     hwloc_set_area_membind(topo, dbs->bitmap2, dbs->max_size / 8, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
-    hwloc_set_area_membind(topo, dbs->bitmap3, dbs->max_size / 8, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
-    hwloc_set_area_membind(topo, dbs->bitmap4, dbs->max_size / 8, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
+    hwloc_set_area_membind(topo, dbs->bitmapc, dbs->max_size / 8, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
 #endif
 
     // forbid first two positions (index 0 and 1)
     dbs->bitmap2[0] = 0xc000000000000000LL;
 
-    dbs->dead_cb = NULL;
     dbs->hash_cb = NULL;
     dbs->equals_cb = NULL;
+    dbs->create_cb = NULL;
+    dbs->destroy_cb = NULL;
 
     LACE_ME;
     TOGETHER(llmsset_init_worker);
@@ -381,8 +383,7 @@ llmsset_free(llmsset_t dbs)
     munmap(dbs->data, dbs->max_size * 16);
     munmap(dbs->bitmap1, dbs->max_size / (512*8));
     munmap(dbs->bitmap2, dbs->max_size / 8);
-    munmap(dbs->bitmap3, dbs->max_size / 8);
-    munmap(dbs->bitmap4, dbs->max_size / 8);
+    munmap(dbs->bitmapc, dbs->max_size / 8);
     free(dbs);
 }
 
@@ -509,69 +510,42 @@ TASK_IMPL_1(size_t, llmsset_count_marked, llmsset_t, dbs)
     return CALL(llmsset_count_marked_par, dbs, 0, dbs->table_size);
 }
 
-void
-llmsset_set_ondead(const llmsset_t dbs, llmsset_dead_cb cb, void* ctx)
-{
-    dbs->dead_cb = cb;
-    dbs->dead_ctx = ctx;
-}
-
-void
-llmsset_notify_ondead(const llmsset_t dbs, uint64_t index)
-{
-    volatile uint64_t *ptr = dbs->bitmap3 + (index/64);
-    uint64_t mask = 0x8000000000000000LL >> (index&63);
-    for (;;) {
-        uint64_t v = *ptr;
-        if (v & mask) return;
-        if (cas(ptr, v, v|mask)) return;
-    }
-}
-
-VOID_TASK_3(llmsset_notify_par, llmsset_t, dbs, size_t, first, size_t, count)
+VOID_TASK_3(llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
 {
     if (count > 1024) {
         size_t split = count/2;
-        SPAWN(llmsset_notify_par, dbs, first, split);
-        CALL(llmsset_notify_par, dbs, first + split, count - split);
-        SYNC(llmsset_notify_par);
+        SPAWN(llmsset_destroy_par, dbs, first, split);
+        CALL(llmsset_destroy_par, dbs, first + split, count - split);
+        SYNC(llmsset_destroy_par);
     } else {
         for (size_t k=first; k<first+count; k++) {
             volatile uint64_t *ptr2 = dbs->bitmap2 + (k/64);
-            volatile uint64_t *ptr3 = dbs->bitmap3 + (k/64);
+            volatile uint64_t *ptrc = dbs->bitmapc + (k/64);
             uint64_t mask = 0x8000000000000000LL >> (k&63);
 
-            // if not filled but has notify
-            if ((*ptr2 & mask) == 0 && (*ptr3 & mask)) {
-                if (WRAP(dbs->dead_cb, dbs->dead_ctx, k)) {
-                    // keep it
-                    for (;;) {
-                        uint64_t v = *ptr2;
-                        if (cas(ptr2, v, v|mask)) break;
-                    }
-                } else {
-                    // unnotify it
-                    for (;;) {
-                        uint64_t v = *ptr3;
-                        if (cas(ptr3, v, v&(~mask))) break;
-                    }
-                }
+            // if not marked but is custom
+            if ((*ptr2 & mask) == 0 && (*ptrc & mask)) {
+                uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*k;
+                dbs->destroy_cb(d_ptr[0], d_ptr[1]);
+                *ptrc &= ~mask;
             }
         }
     }
 }
 
-VOID_TASK_IMPL_1(llmsset_notify_all, llmsset_t, dbs)
+VOID_TASK_IMPL_1(llmsset_destroy_unmarked, llmsset_t, dbs)
 {
-    if (dbs->dead_cb == NULL) return;
-    CALL(llmsset_notify_par, dbs, 0, dbs->table_size);
+    if (dbs->destroy_cb == NULL) return; // no custom function
+    CALL(llmsset_destroy_par, dbs, 0, dbs->table_size);
 }
 
 /**
  * Set custom functions
  */
-void llmsset_set_custom(const llmsset_t dbs, llmsset_hash_cb hash_cb, llmsset_equals_cb equals_cb)
+void llmsset_set_custom(const llmsset_t dbs, llmsset_hash_cb hash_cb, llmsset_equals_cb equals_cb, llmsset_create_cb create_cb, llmsset_destroy_cb destroy_cb)
 {
     dbs->hash_cb = hash_cb;
     dbs->equals_cb = equals_cb;
+    dbs->create_cb = create_cb;
+    dbs->destroy_cb = destroy_cb;
 }

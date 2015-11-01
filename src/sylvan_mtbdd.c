@@ -342,6 +342,90 @@ VOID_TASK_0(mtbdd_refs_init)
 }
 
 /**
+ * Handling of custom leaves "registry"
+ */
+
+typedef struct
+{
+    mtbdd_hash_cb hash_cb;
+    mtbdd_equals_cb equals_cb;
+    mtbdd_create_cb create_cb;
+    mtbdd_destroy_cb destroy_cb;
+} customleaf_t;
+
+static customleaf_t *cl_registry;
+static size_t cl_registry_count;
+
+static void
+_mtbdd_create_cb(uint64_t *a, uint64_t *b)
+{
+    // for leaf
+    if ((*a & 0x4000000000000000) == 0) return; // huh?
+    uint32_t type = *a & 0xffffffff;
+    if (type >= cl_registry_count) return; // not in registry
+    customleaf_t *c = cl_registry + type;
+    if (c->create_cb == NULL) return; // not in registry
+    c->create_cb(b);
+}
+
+static void
+_mtbdd_destroy_cb(uint64_t a, uint64_t b)
+{
+    // for leaf
+    if ((a & 0x4000000000000000) == 0) return; // huh?
+    uint32_t type = a & 0xffffffff;
+    if (type >= cl_registry_count) return; // not in registry
+    customleaf_t *c = cl_registry + type;
+    if (c->destroy_cb == NULL) return; // not in registry
+    c->destroy_cb(b);
+}
+
+static uint64_t
+_mtbdd_hash_cb(uint64_t a, uint64_t b, uint64_t seed)
+{
+    // for leaf
+    if ((a & 0x4000000000000000) == 0) return llmsset_hash(a, b, seed);
+    uint32_t type = a & 0xffffffff;
+    if (type >= cl_registry_count) return llmsset_hash(a, b, seed);
+    customleaf_t *c = cl_registry + type;
+    if (c->hash_cb == NULL) return llmsset_hash(a, b, seed);
+    return c->hash_cb(b, seed ^ a);
+}
+
+static int
+_mtbdd_equals_cb(uint64_t a, uint64_t b, uint64_t aa, uint64_t bb)
+{
+    // for leaf
+    if (a != aa) return 0;
+    if ((a & 0x4000000000000000) == 0) return b == bb ? 1 : 0;
+    if ((aa & 0x4000000000000000) == 0) return b == bb ? 1 : 0;
+    uint32_t type = a & 0xffffffff;
+    if (type >= cl_registry_count) return b == bb ? 1 : 0;
+    customleaf_t *c = cl_registry + type;
+    if (c->equals_cb == NULL) return b == b ? 1 : 0;
+    return c->equals_cb(b, bb);
+}
+
+void
+mtbdd_register_custom_leaf(uint32_t type, mtbdd_hash_cb hash_cb, mtbdd_equals_cb equals_cb, mtbdd_create_cb create_cb, mtbdd_destroy_cb destroy_cb)
+{
+    if (cl_registry == NULL) {
+        cl_registry = (customleaf_t *)calloc(sizeof(customleaf_t), (type+1));
+        cl_registry_count = type+1;
+        llmsset_set_custom(nodes, _mtbdd_hash_cb, _mtbdd_equals_cb, _mtbdd_create_cb, _mtbdd_destroy_cb);
+    } else if (cl_registry_count <= type) {
+        cl_registry = (customleaf_t *)realloc(cl_registry, sizeof(customleaf_t) * (type+1));
+        memset(cl_registry + cl_registry_count, 0, sizeof(customleaf_t) * (type+1-cl_registry_count));
+        cl_registry_count = type+1;
+    }
+    customleaf_t *c = cl_registry + type;
+    c->hash_cb = hash_cb;
+    c->equals_cb = equals_cb;
+    c->create_cb = create_cb;
+    c->destroy_cb = destroy_cb;
+}
+
+/**
  * Initialize and quit functions
  */
 
@@ -352,6 +436,11 @@ mtbdd_quit()
     if (mtbdd_protected_created) {
         protect_free(&mtbdd_protected);
         mtbdd_protected_created = 0;
+    }
+    if (cl_registry != NULL) {
+        free(cl_registry);
+        cl_registry = NULL;
+        cl_registry_count = 0;
     }
 }
 
@@ -376,6 +465,9 @@ sylvan_init_mtbdd()
 
     LACE_ME;
     CALL(mtbdd_refs_init);
+
+    cl_registry = NULL;
+    cl_registry_count = 0;
 }
 
 /**
@@ -387,14 +479,16 @@ mtbdd_makeleaf(uint32_t type, uint64_t value)
     struct mtbddnode n;
     mtbddnode_makeleaf(&n, type, value);
 
+    int custom = type < cl_registry_count && cl_registry[type].hash_cb != NULL ? 1 : 0;
+
     int created;
-    uint64_t index = llmsset_lookup(nodes, n.a, n.b, &created);
+    uint64_t index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
         LACE_ME;
 
         sylvan_gc();
 
-        index = llmsset_lookup(nodes, n.a, n.b, &created);
+        index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
             fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
             exit(1);

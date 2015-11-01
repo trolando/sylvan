@@ -373,6 +373,26 @@ MTBDDMAP mtbdd_map_remove(MTBDDMAP map, uint32_t key);
 MTBDDMAP mtbdd_map_removeall(MTBDDMAP map, MTBDD variables);
 
 /**
+ * Custom node types
+ * Overrides standard hash/equality/notify_on_dead behavior
+ * hash(value, seed) return hash version
+ * equals(value1, value2) return 1 if equal, 0 if not equal
+ * create(&value) replace value by new value for object allocation
+ * destroy(value)
+ * NOTE: equals(value1, value2) must imply: hash(value1, seed) == hash(value2,seed)
+ * NOTE: new value of create must imply: equals(old, new)
+ */
+typedef uint64_t (*mtbdd_hash_cb)(uint64_t, uint64_t);
+typedef int (*mtbdd_equals_cb)(uint64_t, uint64_t);
+typedef void (*mtbdd_create_cb)(uint64_t*);
+typedef void (*mtbdd_destroy_cb)(uint64_t);
+
+/**
+ * Registry callback handlers for <type>.
+ */
+void mtbdd_register_custom_leaf(uint32_t type, mtbdd_hash_cb hash_cb, mtbdd_equals_cb equals_cb, mtbdd_create_cb create_cb, mtbdd_destroy_cb destroy_cb);
+
+/**
  * Garbage collection
  * Sylvan supplies two default methods to handle references to nodes, but the user
  * is encouraged to implement custom handling. Simply add a handler using sylvan_gc_add_mark

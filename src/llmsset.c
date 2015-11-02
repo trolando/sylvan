@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2014 Formal Methods and Tools, University of Twente
+ * Copyright 2011-2015 Formal Methods and Tools, University of Twente
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,24 +41,6 @@ static hwloc_topology_t topo;
 #define MAP_ANONYMOUS MAP_ANON
 #endif
 
-/*
- * 44 bits for the index
- * 20 bits for the hash
- */
-#define MASK_INDEX ((uint64_t)0x00000fffffffffff)
-#define MASK_HASH  ((uint64_t)0xfffff00000000000)
-
-static const uint8_t  HASH_PER_CL = ((LINE_SIZE) / 8);
-static const uint64_t CL_MASK     = ~(((LINE_SIZE) / 8) - 1);
-static const uint64_t CL_MASK_R   = ((LINE_SIZE) / 8) - 1;
-
-/*
- * Example values with a LINE_SIZE of 64
- * HASH_PER_CL = 8
- * CL_MASK     = 0xFFFFFFFFFFFFFFF8
- * CL_MASK_R   = 0x0000000000000007
- */
-
 DECLARE_THREAD_LOCAL(my_region, uint64_t);
 
 VOID_TASK_0(llmsset_reset_region)
@@ -75,33 +57,6 @@ VOID_TASK_0(llmsset_init_worker)
     // so, for now, do NOT use multiple tables!!
     INIT_THREAD_LOCAL(my_region);
     CALL(llmsset_reset_region);
-}
-
-/**
- * hash
- */
-#ifndef rotl64
-static inline uint64_t
-rotl64(uint64_t x, int8_t r)
-{
-    return ((x<<r) | (x>>(64-r)));
-}
-#endif
-
-uint64_t
-llmsset_hash(const uint64_t a, const uint64_t b, const uint64_t seed)
-{
-    const uint64_t prime = 1099511628211;
-
-    uint64_t hash = seed;
-    hash = hash ^ a;
-    hash = rotl64(hash, 47);
-    hash = hash * prime;
-    hash = hash ^ b;
-    hash = rotl64(hash, 31);
-    hash = hash * prime;
-
-    return hash ^ (hash >> 32);
 }
 
 static uint64_t
@@ -175,10 +130,40 @@ get_custom_bucket(const llmsset_t dbs, uint64_t index)
     return (*ptr & mask) ? 1 : 0;
 }
 
+#ifndef rotl64
+static inline uint64_t
+rotl64(uint64_t x, int8_t r)
+{
+    return ((x<<r) | (x>>(64-r)));
+}
+#endif
+
+uint64_t
+llmsset_hash(const uint64_t a, const uint64_t b, const uint64_t seed)
+{
+    const uint64_t prime = 1099511628211;
+
+    uint64_t hash = seed;
+    hash = hash ^ a;
+    hash = rotl64(hash, 47);
+    hash = hash * prime;
+    hash = hash ^ b;
+    hash = rotl64(hash, 31);
+    hash = hash * prime;
+
+    return hash ^ (hash >> 32);
+}
+
 /*
- * Note: garbage collection during lookup strictly forbidden
- * insert_index points to a starting point and is updated.
+ * CL_MASK and CL_MASK_R are for the probe sequence calculation.
+ * With 64 bytes per cacheline, there are 8 64-bit values per cacheline.
  */
+static const uint64_t CL_MASK     = ~(((LINE_SIZE) / 8) - 1);
+static const uint64_t CL_MASK_R   = ((LINE_SIZE) / 8) - 1;
+
+/* 44 bits for the index, 20 bits for the hash */
+#define MASK_INDEX ((uint64_t)0x00000fffffffffff)
+#define MASK_HASH  ((uint64_t)0xfffff00000000000)
 
 static inline uint64_t
 llmsset_lookup2(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* created, const int custom)
@@ -233,7 +218,7 @@ llmsset_lookup2(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* cr
             }
         }
 
-        sylvan_stats_count(LLMSSET_PHASE1);
+        sylvan_stats_count(LLMSSET_LOOKUP);
 
         // find next idx on probe sequence
         idx = (idx & CL_MASK) | ((idx+1) & CL_MASK_R);
@@ -277,15 +262,10 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
     int i=0;
 
     uint64_t idx, last;
-#if LLMSSET_MASK
-    last = idx = hash_rehash & dbs->mask;
-#else
-    last = idx = hash_rehash % dbs->table_size;
-#endif
+    if (LLMSSET_MASK) last = idx = hash_rehash & dbs->mask;
+    else last = idx = hash_rehash % dbs->table_size;
 
     for (;;) {
-        // no need for atomic restarts
-        // we can assume there are no double inserts (GC rehash phase)
         volatile uint64_t *bucket = &dbs->table[idx];
         if (*bucket == 0 && cas(bucket, 0, new_v)) return 1;
 
@@ -298,11 +278,8 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
             if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
             else hash_rehash = llmsset_hash(a, b, hash_rehash);
 
-#if LLMSSET_MASK
-            last = idx = hash_rehash & dbs->mask;
-#else
-            last = idx = hash_rehash % dbs->table_size;
-#endif
+            if (LLMSSET_MASK) last = idx = hash_rehash & dbs->mask;
+            else last = idx = hash_rehash % dbs->table_size;
         }
     }
 }

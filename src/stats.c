@@ -195,8 +195,6 @@ sylvan_stats_report(FILE *target, int color)
     if (color) fprintf(target, ULINE LBLUE);
     fprintf(target, "\nUnique table\n");
     if (color) fprintf(target, NC);
-    fprintf(target, "Phase 1 count: %'"PRIu64"\n", totals.counters[LLMSSET_PHASE1]);
-    fprintf(target, "Phase 2 count: %'"PRIu64"\n", totals.counters[LLMSSET_PHASE2]);
-    fprintf(target, "Phase 3 count: %'"PRIu64"\n", totals.counters[LLMSSET_PHASE3]);
+    fprintf(target, "Number of lookup iterations: %'"PRIu64"\n", totals.counters[LLMSSET_LOOKUP]);
 #endif
 }

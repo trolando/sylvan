@@ -39,6 +39,7 @@
 
 #include <stdint.h>
 #include <stdio.h> // for FILE
+#include <stdlib.h>
 #include <lace.h> // for definitions
 
 #include <cache.h>

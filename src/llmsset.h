@@ -14,13 +14,11 @@
  * limitations under the License.
  */
 
+#include <sylvan_config.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
 
 #include <lace.h>
-#include <sylvan_config.h>
 
 #ifndef LLMSSET_H
 #define LLMSSET_H
@@ -139,6 +137,7 @@ llmsset_set_size(llmsset_t dbs, size_t size)
  * Core function: find existing data or add new.
  * Returns the unique 42-bit value associated with the data, or 0 when table is full.
  * Also, this value will never equal 0 or 1.
+ * Note: garbage collection during lookup strictly forbidden
  */
 uint64_t llmsset_lookup(const llmsset_t dbs, const uint64_t a, const uint64_t b, int *created);
 

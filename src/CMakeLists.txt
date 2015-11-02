@@ -30,6 +30,7 @@ add_library(sylvan
     sylvan_ldd.c
     sylvan_mtbdd.h
     sylvan_mtbdd.c
+    sylvan_mtbdd_int.h
     sylvan_obj.hpp
     sylvan_obj.cpp
     tls.h

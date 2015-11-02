@@ -31,98 +31,7 @@
 #include <sha2.h>
 #include <sylvan.h>
 #include <sylvan_common.h>
-
-/**
- * MTBDD node structure
- */
-typedef struct __attribute__((packed)) mtbddnode {
-    uint64_t a, b;
-} * mtbddnode_t; // 16 bytes
-
-#define GETNODE(mtbdd) ((mtbddnode_t)llmsset_index_to_ptr(nodes, mtbdd&0x000000ffffffffff))
-
-/**
- * Complement handling macros
- */
-#define MTBDD_HASMARK(s)              (s&mtbdd_complement?1:0)
-#define MTBDD_TOGGLEMARK(s)           (s^mtbdd_complement)
-#define MTBDD_STRIPMARK(s)            (s&~mtbdd_complement)
-#define MTBDD_TRANSFERMARK(from, to)  (to ^ (from & mtbdd_complement))
-// Equal under mark
-#define MTBDD_EQUALM(a, b)            ((((a)^(b))&(~mtbdd_complement))==0)
-
-// Leaf: a = L=1, M, type; b = value
-// Node: a = L=0, C, M, high; b = variable, low
-// Only complement edge on "high"
-
-static inline int
-mtbddnode_isleaf(mtbddnode_t n)
-{
-    return n->a & 0x4000000000000000 ? 1 : 0;
-}
-
-static inline uint32_t
-mtbddnode_gettype(mtbddnode_t n)
-{
-    return n->a & 0x00000000ffffffff;
-}
-
-static inline uint64_t
-mtbddnode_getvalue(mtbddnode_t n)
-{
-    return n->b;
-}
-
-static inline int
-mtbddnode_getcomp(mtbddnode_t n)
-{
-    return n->a & 0x8000000000000000 ? 1 : 0;
-}
-
-static inline uint64_t
-mtbddnode_getlow(mtbddnode_t n)
-{
-    return n->b & 0x000000ffffffffff; // 40 bits
-}
-
-static inline uint64_t
-mtbddnode_gethigh(mtbddnode_t n)
-{
-    return n->a & 0x800000ffffffffff; // 40 bits plus high bit of first
-}
-
-static inline uint32_t
-mtbddnode_getvariable(mtbddnode_t n)
-{
-    return (uint32_t)(n->b >> 40);
-}
-
-static inline int
-mtbddnode_getmark(mtbddnode_t n)
-{
-    return n->a & 0x2000000000000000 ? 1 : 0;
-}
-
-static inline void
-mtbddnode_setmark(mtbddnode_t n, int mark)
-{
-    if (mark) n->a |= 0x2000000000000000;
-    else n->a &= 0xdfffffffffffffff;
-}
-
-static inline void
-mtbddnode_makeleaf(mtbddnode_t n, uint32_t type, uint64_t value)
-{
-    n->a = 0x4000000000000000 | (uint64_t)type;
-    n->b = value;
-}
-
-static inline void
-mtbddnode_makenode(mtbddnode_t n, uint32_t var, uint64_t low, uint64_t high)
-{
-    n->a = high;
-    n->b = ((uint64_t)var)<<40 | low;
-}
+#include <sylvan_mtbdd_int.h>
 
 /* Primitives */
 int
@@ -137,18 +46,6 @@ uint32_t
 mtbdd_getvar(MTBDD node)
 {
     return mtbddnode_getvariable(GETNODE(node));
-}
-
-MTBDD
-node_getlow(MTBDD mtbdd, mtbddnode_t node)
-{
-    return MTBDD_TRANSFERMARK(mtbdd, mtbddnode_getlow(node));
-}
-
-MTBDD
-node_gethigh(MTBDD mtbdd, mtbddnode_t node)
-{
-    return MTBDD_TRANSFERMARK(mtbdd, mtbddnode_gethigh(node));
 }
 
 MTBDD

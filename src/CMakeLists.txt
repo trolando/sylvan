@@ -26,6 +26,8 @@ add_library(sylvan
     sylvan_config.h
     sylvan_common.h
     sylvan_common.c
+    sylvan_gmp.h
+    sylvan_gmp.c
     sylvan_ldd.h
     sylvan_ldd.c
     sylvan_mtbdd.h

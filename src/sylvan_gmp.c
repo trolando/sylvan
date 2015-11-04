@@ -106,6 +106,8 @@ gmp_destroy(uint64_t val)
     free((void*)val);
 }
 
+static uint32_t gmp_type;
+
 /**
  * Initialize gmp custom leaves
  */
@@ -113,7 +115,7 @@ void
 gmp_init()
 {
     /* Register custom leaf 3 */
-    mtbdd_register_custom_leaf(3, gmp_hash, gmp_equals, gmp_create, gmp_destroy);
+    gmp_type = mtbdd_register_custom_leaf(gmp_hash, gmp_equals, gmp_create, gmp_destroy);
 }
 
 /**
@@ -123,7 +125,7 @@ MTBDD
 mtbdd_gmp(mpq_t val)
 {
     mpq_canonicalize(val);
-    return mtbdd_makeleaf(3, (size_t)val);
+    return mtbdd_makeleaf(gmp_type, (size_t)val);
 }
 
 /**

@@ -390,7 +390,7 @@ typedef void (*mtbdd_destroy_cb)(uint64_t);
 /**
  * Registry callback handlers for <type>.
  */
-void mtbdd_register_custom_leaf(uint32_t type, mtbdd_hash_cb hash_cb, mtbdd_equals_cb equals_cb, mtbdd_create_cb create_cb, mtbdd_destroy_cb destroy_cb);
+uint32_t mtbdd_register_custom_leaf(mtbdd_hash_cb hash_cb, mtbdd_equals_cb equals_cb, mtbdd_create_cb create_cb, mtbdd_destroy_cb destroy_cb);
 
 /**
  * Garbage collection

@@ -303,9 +303,11 @@ _mtbdd_equals_cb(uint64_t a, uint64_t b, uint64_t aa, uint64_t bb)
     return c->equals_cb(b, bb);
 }
 
-void
-mtbdd_register_custom_leaf(uint32_t type, mtbdd_hash_cb hash_cb, mtbdd_equals_cb equals_cb, mtbdd_create_cb create_cb, mtbdd_destroy_cb destroy_cb)
+uint32_t
+mtbdd_register_custom_leaf(mtbdd_hash_cb hash_cb, mtbdd_equals_cb equals_cb, mtbdd_create_cb create_cb, mtbdd_destroy_cb destroy_cb)
 {
+    uint32_t type = cl_registry_count;
+    if (type == 0) type = 3;
     if (cl_registry == NULL) {
         cl_registry = (customleaf_t *)calloc(sizeof(customleaf_t), (type+1));
         cl_registry_count = type+1;
@@ -320,6 +322,7 @@ mtbdd_register_custom_leaf(uint32_t type, mtbdd_hash_cb hash_cb, mtbdd_equals_cb
     c->equals_cb = equals_cb;
     c->create_cb = create_cb;
     c->destroy_cb = destroy_cb;
+    return type;
 }
 
 /**

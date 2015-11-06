@@ -162,7 +162,7 @@ test_cube()
     LACE_ME;
     BDDSET vars = sylvan_set_fromarray(((BDDVAR[]){1,2,3,4,6,8}), 6);
 
-    char cube[6], check[6];
+    uint8_t cube[6], check[6];
     int i, j;
     for (i=0;i<6;i++) cube[i] = rng(0,3);
     BDD bdd = sylvan_cube(vars, cube);
@@ -173,13 +173,13 @@ test_cube()
     BDD picked = sylvan_pick_cube(bdd);
     assert(testEqual(sylvan_and(picked, bdd), picked));
 
-    BDD t1 = sylvan_cube(vars, ((char[]){1,1,2,2,0,0}));
-    BDD t2 = sylvan_cube(vars, ((char[]){1,1,1,0,0,2}));
-    assert(testEqual(sylvan_union_cube(t1, vars, ((char[]){1,1,1,0,0,2})), sylvan_or(t1, t2)));
-    t2 = sylvan_cube(vars, ((char[]){2,2,2,1,1,0}));
-    assert(testEqual(sylvan_union_cube(t1, vars, ((char[]){2,2,2,1,1,0})), sylvan_or(t1, t2)));
-    t2 = sylvan_cube(vars, ((char[]){1,1,1,0,0,0}));
-    assert(testEqual(sylvan_union_cube(t1, vars, ((char[]){1,1,1,0,0,0})), sylvan_or(t1, t2)));
+    BDD t1 = sylvan_cube(vars, ((uint8_t[]){1,1,2,2,0,0}));
+    BDD t2 = sylvan_cube(vars, ((uint8_t[]){1,1,1,0,0,2}));
+    assert(testEqual(sylvan_union_cube(t1, vars, ((uint8_t[]){1,1,1,0,0,2})), sylvan_or(t1, t2)));
+    t2 = sylvan_cube(vars, ((uint8_t[]){2,2,2,1,1,0}));
+    assert(testEqual(sylvan_union_cube(t1, vars, ((uint8_t[]){2,2,2,1,1,0})), sylvan_or(t1, t2)));
+    t2 = sylvan_cube(vars, ((uint8_t[]){1,1,1,0,0,0}));
+    assert(testEqual(sylvan_union_cube(t1, vars, ((uint8_t[]){1,1,1,0,0,0})), sylvan_or(t1, t2)));
 
     sylvan_gc_disable();
     bdd = make_random(1, 16);
@@ -285,14 +285,14 @@ test_relprod()
 
     // transition relation: 000 --> 111 and !000 --> 000
     t = sylvan_false;
-    t = sylvan_union_cube(t, all_vars_set, ((char[]){0,1,0,1,0,1}));
-    t = sylvan_union_cube(t, all_vars_set, ((char[]){1,0,2,0,2,0}));
-    t = sylvan_union_cube(t, all_vars_set, ((char[]){2,0,1,0,2,0}));
-    t = sylvan_union_cube(t, all_vars_set, ((char[]){2,0,2,0,1,0}));
+    t = sylvan_union_cube(t, all_vars_set, ((uint8_t[]){0,1,0,1,0,1}));
+    t = sylvan_union_cube(t, all_vars_set, ((uint8_t[]){1,0,2,0,2,0}));
+    t = sylvan_union_cube(t, all_vars_set, ((uint8_t[]){2,0,1,0,2,0}));
+    t = sylvan_union_cube(t, all_vars_set, ((uint8_t[]){2,0,2,0,1,0}));
 
-    s = sylvan_cube(vars_set, (char[]){0,0,1});
-    zeroes = sylvan_cube(vars_set, (char[]){0,0,0});
-    ones = sylvan_cube(vars_set, (char[]){1,1,1});
+    s = sylvan_cube(vars_set, (uint8_t[]){0,0,1});
+    zeroes = sylvan_cube(vars_set, (uint8_t[]){0,0,0});
+    ones = sylvan_cube(vars_set, (uint8_t[]){1,1,1});
 
     next = sylvan_relnext(s, t, all_vars_set);
     prev = sylvan_relprev(t, next, all_vars_set);
@@ -304,13 +304,13 @@ test_relprod()
     assert(next == ones);
     assert(prev == zeroes);
 
-    t = sylvan_cube(all_vars_set, (char[]){0,0,0,0,0,1});
+    t = sylvan_cube(all_vars_set, (uint8_t[]){0,0,0,0,0,1});
     assert(sylvan_relprev(t, s, all_vars_set) == zeroes);
     assert(sylvan_relprev(t, sylvan_not(s), all_vars_set) == sylvan_false);
     assert(sylvan_relnext(s, t, all_vars_set) == sylvan_false);
     assert(sylvan_relnext(zeroes, t, all_vars_set) == s);
 
-    t = sylvan_cube(all_vars_set, (char[]){0,0,0,0,0,2});
+    t = sylvan_cube(all_vars_set, (uint8_t[]){0,0,0,0,0,2});
     assert(sylvan_relprev(t, s, all_vars_set) == zeroes);
     assert(sylvan_relprev(t, zeroes, all_vars_set) == zeroes);
     assert(sylvan_relnext(sylvan_not(zeroes), t, all_vars_set) == sylvan_false);

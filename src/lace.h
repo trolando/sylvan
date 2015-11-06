@@ -571,7 +571,6 @@ void lace_drop(WorkerP *w, Task *__dq_head)
 typedef struct _TD_##NAME {                                                           \
   TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
   union {                                                                             \
-    struct {  } args;                                                                 \
     RTYPE res;                                                                        \
   } d;                                                                                \
 } TD_##NAME;                                                                          \
@@ -723,10 +722,6 @@ RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_d
                                                                                       \
 typedef struct _TD_##NAME {                                                           \
   TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
-  union {                                                                             \
-    struct {  } args;                                                                 \
-                                                                                      \
-  } d;                                                                                \
 } TD_##NAME;                                                                          \
                                                                                       \
 /* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\

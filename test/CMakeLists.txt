@@ -5,4 +5,4 @@ add_executable(sylvan_test main.c)
 target_link_libraries(sylvan_test sylvan)
 
 add_executable(test_cxx test_cxx.cpp)
-target_link_libraries(test_cxx sylvan)
+target_link_libraries(test_cxx sylvan stdc++)

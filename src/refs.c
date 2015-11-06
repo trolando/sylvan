@@ -255,8 +255,12 @@ refs_up(refs_table_t *tbl, uint64_t a)
 void
 refs_down(refs_table_t *tbl, uint64_t a)
 {
+#ifdef NDEBUG
+    refs_modify(tbl, a, -1);
+#else
     int res = refs_modify(tbl, a, -1);
     assert(res != 0);
+#endif
 }
 
 uint64_t*

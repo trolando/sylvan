@@ -299,7 +299,7 @@ _mtbdd_equals_cb(uint64_t a, uint64_t b, uint64_t aa, uint64_t bb)
     uint32_t type = a & 0xffffffff;
     if (type >= cl_registry_count) return b == bb ? 1 : 0;
     customleaf_t *c = cl_registry + type;
-    if (c->equals_cb == NULL) return b == b ? 1 : 0;
+    if (c->equals_cb == NULL) return b == bb ? 1 : 0;
     return c->equals_cb(b, bb);
 }
 

@@ -2454,11 +2454,19 @@ void
 lddmc_serialize_fromfile(FILE *in)
 {
     size_t count, i;
-    assert(fread(&count, sizeof(size_t), 1, in) == 1);
+    if (fread(&count, sizeof(size_t), 1, in) != 1) {
+        // TODO FIXME return error
+        printf("sylvan_serialize_fromfile: file format error, giving up\n");
+        exit(-1);
+    }
 
     for (i=1; i<=count; i++) {
         struct mddnode node;
-        assert(fread(&node, sizeof(struct mddnode), 1, in) == 1);
+        if (fread(&node, sizeof(struct mddnode), 1, in) != 1) {
+            // TODO FIXME return error
+            printf("sylvan_serialize_fromfile: file format error, giving up\n");
+            exit(-1);
+        }
 
         assert(mddnode_getright(&node) <= lddmc_ser_done+1);
         assert(mddnode_getdown(&node) <= lddmc_ser_done+1);
@@ -2518,6 +2526,7 @@ lddmc_getsha(MDD mdd, char *target)
     SHA256_End(&ctx, target);
 }
 
+#ifndef NDEBUG
 size_t
 lddmc_test_ismdd(MDD mdd)
 {
@@ -2525,7 +2534,6 @@ lddmc_test_ismdd(MDD mdd)
     if (mdd == lddmc_false) return 0;
 
     int first = 1;
-    uint32_t value = 0;
     size_t depth = 0;
 
     if (mdd != lddmc_false) {
@@ -2537,6 +2545,7 @@ lddmc_test_ismdd(MDD mdd)
         }
     }
 
+    uint32_t value = 0;
     while (mdd != lddmc_false) {
         assert(llmsset_is_marked(nodes, mdd));
 
@@ -2558,3 +2567,4 @@ lddmc_test_ismdd(MDD mdd)
 
     return 1 + depth;
 }
+#endif

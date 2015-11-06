@@ -67,7 +67,9 @@ size_t lddmc_count_refs();
 #define lddmc_notify_ondead(mdd) llmsset_notify_ondead(nodes, mdd)
 
 /* Sanity check - returns depth of MDD including 'true' terminal or 0 for empty set */
+#ifndef NDEBUG
 size_t lddmc_test_ismdd(MDD mdd);
+#endif
 
 /* Operations for model checking */
 TASK_DECL_2(MDD, lddmc_union, MDD, MDD);

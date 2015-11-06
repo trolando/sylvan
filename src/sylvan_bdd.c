@@ -51,7 +51,7 @@ typedef struct __attribute__((packed)) bddnode {
 
 #define GETNODE(bdd) ((bddnode_t)llmsset_index_to_ptr(nodes, bdd&0x000000ffffffffff))
 
-static inline int
+static inline int __attribute__((unused))
 bddnode_getcomp(bddnode_t n)
 {
     return n->a & 0x8000000000000000 ? 1 : 0;
@@ -2700,11 +2700,19 @@ void
 sylvan_serialize_fromfile(FILE *in)
 {
     size_t count, i;
-    assert(fread(&count, sizeof(size_t), 1, in) == 1);
+    if (fread(&count, sizeof(size_t), 1, in) != 1) {
+        // TODO FIXME return error
+        printf("sylvan_serialize_fromfile: file format error, giving up\n");
+        exit(-1);
+    }
 
     for (i=1; i<=count; i++) {
         struct bddnode node;
-        assert(fread(&node, sizeof(struct bddnode), 1, in) == 1);
+        if (fread(&node, sizeof(struct bddnode), 1, in) != 1) {
+            // TODO FIXME return error
+            printf("sylvan_serialize_fromfile: file format error, giving up\n");
+            exit(-1);
+        }
 
         BDD low = sylvan_serialize_get_reversed(bddnode_getlow(&node));
         BDD high = sylvan_serialize_get_reversed(bddnode_gethigh(&node));

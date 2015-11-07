@@ -1609,6 +1609,206 @@ TASK_IMPL_3(MTBDD, mtbdd_equal_norm_rel_d, MTBDD, a, MTBDD, b, double, d)
 }
 
 /**
+ * For two MTBDDs a, b, return mtbdd_true if all common assignments a(s) <= b(s), mtbdd_false otherwise.
+ * For domains not in a / b, assume True.
+ */
+TASK_3(MTBDD, mtbdd_leq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+{
+    /* Check short circuit */
+    if (*shortcircuit) return mtbdd_false;
+
+    /* Check terminal case */
+    if (a == b) return mtbdd_true;
+
+    /* For partial functions, just return true */
+    if (a == mtbdd_false) return mtbdd_true;
+    if (b == mtbdd_false) return mtbdd_true;
+
+    /* Maybe perform garbage collection */
+    sylvan_gc_test();
+
+    /* Check cache */
+    MTBDD result;
+    if (cache_get3(CACHE_MTBDD_LEQ, a, b, 0, &result)) return result;
+
+    mtbddnode_t na = GETNODE(a);
+    mtbddnode_t nb = GETNODE(b);
+    int la = mtbddnode_isleaf(na);
+    int lb = mtbddnode_isleaf(nb);
+
+    if (la && lb) {
+        int nega = mtbdd_isnegated(a);
+        int negb = mtbdd_isnegated(b);
+
+        uint64_t va = mtbddnode_getvalue(na);
+        uint64_t vb = mtbddnode_getvalue(nb);
+
+        if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
+            // type 0 = int64
+            if (va == 0 && vb == 0) result = mtbdd_true;
+            else if (nega && !negb) result = mtbdd_true;
+            else if (nega && negb && va > vb) result = mtbdd_true;
+            else if (!nega && !negb && va < vb) result = mtbdd_true;
+            else result = mtbdd_false;
+        } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
+            // type 1 = double
+            double vva = *(double*)&va;
+            double vvb = *(double*)&vb;
+            if (vva == 0.0 && vvb == 0.0) result = mtbdd_true;
+            else if (nega && !negb) result = mtbdd_true;
+            else if (nega && negb && vva > vvb) result = mtbdd_true;
+            else if (!nega && !negb && vva < vvb) result = mtbdd_true;
+            else result = mtbdd_false;
+        } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
+            // type 2 = fraction
+            uint64_t nom_a = va>>32;
+            uint64_t nom_b = vb>>32;
+            uint64_t da = va&0xffffffff;
+            uint64_t db = vb&0xffffffff;
+            // equalize denominators
+            uint32_t c = gcd(da, db);
+            nom_a *= db/c;
+            nom_b *= da/c;
+            if (nom_a == 0 && nom_b == 0) result = mtbdd_true;
+            else if (nega && !negb) result = mtbdd_true;
+            else if (nega && negb && nom_a > nom_b) result = mtbdd_true;
+            else if (!nega && !negb && nom_a < nom_b) result = mtbdd_true;
+            else result = mtbdd_false;
+        }
+    } else {
+        /* Get top variable */
+        uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
+        uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
+        uint32_t var = va < vb ? va : vb;
+
+        /* Get cofactors */
+        MTBDD alow, ahigh, blow, bhigh;
+        alow  = va == var ? node_getlow(a, na)  : a;
+        ahigh = va == var ? node_gethigh(a, na) : a;
+        blow  = vb == var ? node_getlow(b, nb)  : b;
+        bhigh = vb == var ? node_gethigh(b, nb) : b;
+
+        SPAWN(mtbdd_leq_rec, ahigh, bhigh, shortcircuit);
+        result = CALL(mtbdd_leq_rec, alow, blow, shortcircuit);
+        if (result != SYNC(mtbdd_leq_rec)) result = mtbdd_false;
+    }
+
+    if (result == mtbdd_false) *shortcircuit = 1;
+
+    /* Store in cache */
+    cache_put3(CACHE_MTBDD_LEQ, a, b, 0, result);
+    return result;
+}
+
+TASK_IMPL_2(MTBDD, mtbdd_leq, MTBDD, a, MTBDD, b)
+{
+    /* the implementation checks shortcircuit in every task and if the wo
+       MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
+    int shortcircuit = 0;
+    return CALL(mtbdd_leq_rec, a, b, &shortcircuit);
+}
+
+/**
+ * For two MTBDDs a, b, return mtbdd_true if all common assignments a(s) < b(s), mtbdd_false otherwise.
+ * For domains not in a / b, assume True.
+ */
+TASK_3(MTBDD, mtbdd_less_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+{
+    /* Check short circuit */
+    if (*shortcircuit) return mtbdd_false;
+
+    /* Check terminal case */
+    if (a == b) return mtbdd_false;
+
+    /* For partial functions, just return true */
+    if (a == mtbdd_false) return mtbdd_true;
+    if (b == mtbdd_false) return mtbdd_true;
+
+    /* Maybe perform garbage collection */
+    sylvan_gc_test();
+
+    /* Check cache */
+    MTBDD result;
+    if (cache_get3(CACHE_MTBDD_LESS, a, b, 0, &result)) return result;
+
+    mtbddnode_t na = GETNODE(a);
+    mtbddnode_t nb = GETNODE(b);
+    int la = mtbddnode_isleaf(na);
+    int lb = mtbddnode_isleaf(nb);
+
+    if (la && lb) {
+        int nega = mtbdd_isnegated(a);
+        int negb = mtbdd_isnegated(b);
+
+        uint64_t va = mtbddnode_getvalue(na);
+        uint64_t vb = mtbddnode_getvalue(nb);
+
+        if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
+            // type 0 = int64
+            if (va == 0 && vb == 0) result = mtbdd_false;
+            else if (nega && !negb) result = mtbdd_true;
+            else if (nega && negb && va > vb) result = mtbdd_true;
+            else if (!nega && !negb && va < vb) result = mtbdd_true;
+            else result = mtbdd_false;
+        } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
+            // type 1 = double
+            double vva = *(double*)&va;
+            double vvb = *(double*)&vb;
+            if (vva == 0.0 && vvb == 0.0) result = mtbdd_false;
+            else if (nega && !negb) result = mtbdd_true;
+            else if (nega && negb && vva > vvb) result = mtbdd_true;
+            else if (!nega && !negb && vva < vvb) result = mtbdd_true;
+            else result = mtbdd_false;
+        } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
+            // type 2 = fraction
+            uint64_t nom_a = va>>32;
+            uint64_t nom_b = vb>>32;
+            uint64_t da = va&0xffffffff;
+            uint64_t db = vb&0xffffffff;
+            // equalize denominators
+            uint32_t c = gcd(da, db);
+            nom_a *= db/c;
+            nom_b *= da/c;
+            if (nom_a == 0 && nom_b == 0) result = mtbdd_false;
+            else if (nega && !negb) result = mtbdd_true;
+            else if (nega && negb && nom_a > nom_b) result = mtbdd_true;
+            else if (!nega && !negb && nom_a < nom_b) result = mtbdd_true;
+            else result = mtbdd_false;
+        }
+    } else {
+        /* Get top variable */
+        uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
+        uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
+        uint32_t var = va < vb ? va : vb;
+
+        /* Get cofactors */
+        MTBDD alow, ahigh, blow, bhigh;
+        alow  = va == var ? node_getlow(a, na)  : a;
+        ahigh = va == var ? node_gethigh(a, na) : a;
+        blow  = vb == var ? node_getlow(b, nb)  : b;
+        bhigh = vb == var ? node_gethigh(b, nb) : b;
+
+        SPAWN(mtbdd_less_rec, ahigh, bhigh, shortcircuit);
+        result = CALL(mtbdd_less_rec, alow, blow, shortcircuit);
+        if (result != SYNC(mtbdd_less_rec)) result = mtbdd_false;
+    }
+
+    if (result == mtbdd_false) *shortcircuit = 1;
+
+    /* Store in cache */
+    cache_put3(CACHE_MTBDD_LESS, a, b, 0, result);
+    return result;
+}
+
+TASK_IMPL_2(MTBDD, mtbdd_less, MTBDD, a, MTBDD, b)
+{
+    /* the implementation checks shortcircuit in every task and if the wo
+       MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
+    int shortcircuit = 0;
+    return CALL(mtbdd_less_rec, a, b, &shortcircuit);
+}
+
+/**
  * Multiply <a> and <b>, and abstract variables <vars> using summation.
  * This is similar to the "and_exists" operation in BDDs.
  */
@@ -1750,6 +1950,150 @@ TASK_IMPL_2(MTBDD, mtbdd_compose, MTBDD, a, MTBDDMAP, map)
 
     /* Store in cache */
     cache_put3(CACHE_MTBDD_COMPOSE, a, map, 0, result);
+    return result;
+}
+
+/**
+ * Compute minimum leaf in the MTBDD (for Integer, Double, Rational MTBDDs)
+ */
+TASK_IMPL_1(MTBDD, mtbdd_minimum, MTBDD, a)
+{
+    /* Check terminal case */
+    if (a == mtbdd_false) return mtbdd_false;
+    mtbddnode_t na = GETNODE(a);
+    if (mtbddnode_isleaf(na)) return a;
+
+    /* Maybe perform garbage collection */
+    sylvan_gc_test();
+
+    /* Check cache */
+    MTBDD result;
+    if (cache_get3(CACHE_MTBDD_MINIMUM, a, 0, 0, &result)) return result;
+
+    /* Call recursive */
+    SPAWN(mtbdd_minimum, node_getlow(a, na));
+    MTBDD high = CALL(mtbdd_minimum, node_gethigh(a, na));
+    MTBDD low = SYNC(mtbdd_minimum);
+
+    /* Determine lowest */
+    int negl = mtbdd_isnegated(low);
+    int negh = mtbdd_isnegated(high);
+    if (negl && !negh) result = low;
+    else if (negh && !negl) result = high;
+    else {
+        mtbddnode_t nl = GETNODE(low);
+        mtbddnode_t nh = GETNODE(high);
+        uint64_t val_l = mtbddnode_getvalue(nl);
+        uint64_t val_h = mtbddnode_getvalue(nh);
+
+        if (mtbddnode_gettype(nl) == 0 && mtbddnode_gettype(nh) == 0) {
+            // type 0 = int64
+            if (negl) {
+                result = val_l < val_h ? high : low; // negative numbers!
+            } else {
+                result = val_l < val_h ? low : high;
+            }
+        } else if (mtbddnode_gettype(nl) == 1 && mtbddnode_gettype(nh) == 1) {
+            // type 1 = double
+            double vval_l = *(double*)&val_l;
+            double vval_h = *(double*)&val_h;
+            if (negl) {
+                result = vval_l < vval_h ? high : low; // negative numbers!
+            } else {
+                result = vval_l < vval_h ? low : high;
+            }
+        } else if (mtbddnode_gettype(nl) == 2 && mtbddnode_gettype(nh) == 2) {
+            // type 2 = fraction
+            uint64_t nom_l = val_l>>32;
+            uint64_t nom_h = val_h>>32;
+            uint64_t denom_l = val_l&0xffffffff;
+            uint64_t denom_h = val_h&0xffffffff;
+            // equalize denominators
+            uint32_t c = gcd(denom_l, denom_h);
+            nom_l *= denom_h/c;
+            nom_h *= denom_l/c;
+            if (negl) {
+                result = nom_l < nom_h ? high : low; // negative numbers!
+            } else {
+                result = nom_l < nom_h ? low : high;
+            }
+        }
+    }
+
+    /* Store in cache */
+    cache_put3(CACHE_MTBDD_MINIMUM, a, 0, 0, result);
+    return result;
+}
+
+/**
+ * Compute maximum leaf in the MTBDD (for Integer, Double, Rational MTBDDs)
+ */
+TASK_IMPL_1(MTBDD, mtbdd_maximum, MTBDD, a)
+{
+    /* Check terminal case */
+    if (a == mtbdd_false) return mtbdd_false;
+    mtbddnode_t na = GETNODE(a);
+    if (mtbddnode_isleaf(na)) return a;
+
+    /* Maybe perform garbage collection */
+    sylvan_gc_test();
+
+    /* Check cache */
+    MTBDD result;
+    if (cache_get3(CACHE_MTBDD_MAXIMUM, a, 0, 0, &result)) return result;
+
+    /* Call recursive */
+    SPAWN(mtbdd_maximum, node_getlow(a, na));
+    MTBDD high = CALL(mtbdd_maximum, node_gethigh(a, na));
+    MTBDD low = SYNC(mtbdd_maximum);
+
+    /* Determine highest */
+    int negl = mtbdd_isnegated(low);
+    int negh = mtbdd_isnegated(high);
+    if (negl && !negh) result = high;
+    else if (negh && !negl) result = low;
+    else {
+        mtbddnode_t nl = GETNODE(low);
+        mtbddnode_t nh = GETNODE(high);
+        uint64_t val_l = mtbddnode_getvalue(nl);
+        uint64_t val_h = mtbddnode_getvalue(nh);
+
+        if (mtbddnode_gettype(nl) == 0 && mtbddnode_gettype(nh) == 0) {
+            // type 0 = int64
+            if (negl) {
+                result = val_l < val_h ? low : high; // negative numbers!
+            } else {
+                result = val_l < val_h ? high : low;
+            }
+        } else if (mtbddnode_gettype(nl) == 1 && mtbddnode_gettype(nh) == 1) {
+            // type 1 = double
+            double vval_l = *(double*)&val_l;
+            double vval_h = *(double*)&val_h;
+            if (negl) {
+                result = vval_l < vval_h ? low : high; // negative numbers!
+            } else {
+                result = vval_l < vval_h ? high : low;
+            }
+        } else if (mtbddnode_gettype(nl) == 2 && mtbddnode_gettype(nh) == 2) {
+            // type 2 = fraction
+            uint64_t nom_l = val_l>>32;
+            uint64_t nom_h = val_h>>32;
+            uint64_t denom_l = val_l&0xffffffff;
+            uint64_t denom_h = val_h&0xffffffff;
+            // equalize denominators
+            uint32_t c = gcd(denom_l, denom_h);
+            nom_l *= denom_h/c;
+            nom_h *= denom_l/c;
+            if (negl) {
+                result = nom_l < nom_h ? low : high; // negative numbers!
+            } else {
+                result = nom_l < nom_h ? high : low;
+            }
+        }
+    }
+
+    /* Store in cache */
+    cache_put3(CACHE_MTBDD_MAXIMUM, a, 0, 0, result);
     return result;
 }
 

@@ -69,6 +69,10 @@ extern "C" {
 #define CACHE_MTBDD_COMPOSE       (46LL<<40)
 #define CACHE_MTBDD_EQUAL_NORM    (47LL<<40)
 #define CACHE_MTBDD_EQUAL_NORM_REL (48LL<<40)
+#define CACHE_MTBDD_MINIMUM       (49LL<<40)
+#define CACHE_MTBDD_MAXIMUM       (50LL<<40)
+#define CACHE_MTBDD_LEQ           (51LL<<40)
+#define CACHE_MTBDD_LESS          (52LL<<40)
 
 /**
  * Registration of quit functions

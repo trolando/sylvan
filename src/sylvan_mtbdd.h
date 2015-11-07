@@ -338,6 +338,20 @@ TASK_DECL_3(MTBDD, mtbdd_equal_norm_rel_d, MTBDD, MTBDD, double);
 #define mtbdd_equal_norm_rel_d(a, b, epsilon) CALL(mtbdd_equal_norm_rel_d, a, b, epsilon)
 
 /**
+ * For two MTBDDs a, b, return mtbdd_true if all common assignments a(s) <= b(s), mtbdd_false otherwise.
+ * For domains not in a / b, assume True.
+ */
+TASK_DECL_2(MTBDD, mtbdd_leq, MTBDD, MTBDD);
+#define mtbdd_leq(a, b) CALL(mtbdd_leq, a, b)
+
+/**
+ * For two MTBDDs a, b, return mtbdd_true if all common assignments a(s) < b(s), mtbdd_false otherwise.
+ * For domains not in a / b, assume True.
+ */
+TASK_DECL_2(MTBDD, mtbdd_less, MTBDD, MTBDD);
+#define mtbdd_less(a, b) CALL(mtbdd_less, a, b)
+
+/**
  * Calculate the support of a MTBDD, i.e. the cube of all variables that appear in the MTBDD nodes.
  */
 TASK_DECL_1(MTBDD, mtbdd_support, MTBDD);
@@ -350,6 +364,18 @@ TASK_DECL_1(MTBDD, mtbdd_support, MTBDD);
  */
 TASK_DECL_2(MTBDD, mtbdd_compose, MTBDD, MTBDDMAP);
 #define mtbdd_compose(dd, map) CALL(mtbdd_compose, dd, map)
+
+/**
+ * Compute minimal leaf in the MTBDD (for Integer, Double, Rational MTBDDs)
+ */
+TASK_DECL_1(MTBDD, mtbdd_minimum, MTBDD);
+#define mtbdd_minimum(dd) CALL(mtbdd_minimum, dd)
+
+/**
+ * Compute maximal leaf in the MTBDD (for Integer, Double, Rational MTBDDs)
+ */
+TASK_DECL_1(MTBDD, mtbdd_maximum, MTBDD);
+#define mtbdd_maximum(dd) CALL(mtbdd_maximum, dd)
 
 /**
  * Write a DOT representation of a MTBDD

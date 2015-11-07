@@ -163,6 +163,7 @@ size_t mtbdd_nodecount(MTBDD mtbdd);
  * The unary function is allowed an extra parameter (be careful of caching)
  */
 LACE_TYPEDEF_CB(MTBDD, mtbdd_apply_op, MTBDD*, MTBDD*);
+LACE_TYPEDEF_CB(MTBDD, mtbdd_applyp_op, MTBDD*, MTBDD*, size_t);
 LACE_TYPEDEF_CB(MTBDD, mtbdd_uapply_op, MTBDD, size_t);
 
 /**
@@ -171,6 +172,13 @@ LACE_TYPEDEF_CB(MTBDD, mtbdd_uapply_op, MTBDD, size_t);
  */
 TASK_DECL_3(MTBDD, mtbdd_apply, MTBDD, MTBDD, mtbdd_apply_op);
 #define mtbdd_apply(a, b, op) CALL(mtbdd_apply, a, b, op)
+
+/**
+ * Apply a binary operation <op> with id <opid> to <a> and <b> with parameter <p>
+ * Callback <op> is consulted before the cache, thus the application to terminals is not cached.
+ */
+TASK_DECL_5(MTBDD, mtbdd_applyp, MTBDD, MTBDD, size_t, mtbdd_applyp_op, uint64_t);
+#define mtbdd_applyp(a, b, p, op, opid) CALL(mtbdd_applyp, a, b, p, op, opid)
 
 /**
  * Apply a unary operation <op> to <dd>.

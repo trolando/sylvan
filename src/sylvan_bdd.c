@@ -412,7 +412,7 @@ TASK_IMPL_3(BDD, sylvan_and, BDD, a, BDD, b, BDDVAR, prev_level)
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
         BDD result;
-        if (cache_get(a | CACHE_BDD_AND, b, sylvan_false, &result)) {
+        if (cache_get3(CACHE_BDD_AND, a, b, sylvan_false, &result)) {
             sylvan_stats_count(BDD_AND_CACHED);
             return result;
         }
@@ -465,7 +465,7 @@ TASK_IMPL_3(BDD, sylvan_and, BDD, a, BDD, b, BDDVAR, prev_level)
     result = sylvan_makenode(level, low, high);
 
     if (cachenow) {
-        if (cache_put(a | CACHE_BDD_AND, b, sylvan_false, result)) sylvan_stats_count(BDD_AND_CACHEDPUT);
+        if (cache_put3(CACHE_BDD_AND, a, b, sylvan_false, result)) sylvan_stats_count(BDD_AND_CACHEDPUT);
     }
 
     return result;
@@ -508,7 +508,7 @@ TASK_IMPL_3(BDD, sylvan_xor, BDD, a, BDD, b, BDDVAR, prev_level)
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
         BDD result;
-        if (cache_get(a | CACHE_BDD_XOR, b, sylvan_false, &result)) {
+        if (cache_get3(CACHE_BDD_XOR, a, b, sylvan_false, &result)) {
             sylvan_stats_count(BDD_XOR_CACHED);
             return result;
         }
@@ -538,7 +538,7 @@ TASK_IMPL_3(BDD, sylvan_xor, BDD, a, BDD, b, BDDVAR, prev_level)
     result = sylvan_makenode(level, low, high);
 
     if (cachenow) {
-        if (cache_put(a | CACHE_BDD_XOR, b, sylvan_false, result)) sylvan_stats_count(BDD_XOR_CACHEDPUT);
+        if (cache_put3(CACHE_BDD_XOR, a, b, sylvan_false, result)) sylvan_stats_count(BDD_XOR_CACHEDPUT);
     }
 
     return result;
@@ -621,7 +621,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
         BDD result;
-        if (cache_get(a | CACHE_BDD_ITE, b, c, &result)) {
+        if (cache_get3(CACHE_BDD_ITE, a, b, c, &result)) {
             sylvan_stats_count(BDD_ITE_CACHED);
             return mark ? sylvan_not(result) : result;
         }
@@ -675,7 +675,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     result = sylvan_makenode(level, low, high);
 
     if (cachenow) {
-        if (cache_put(a | CACHE_BDD_ITE, b, c, result)) sylvan_stats_count(BDD_ITE_CACHEDPUT);
+        if (cache_put3(CACHE_BDD_ITE, a, b, c, result)) sylvan_stats_count(BDD_ITE_CACHEDPUT);
     }
 
     return mark ? sylvan_not(result) : result;
@@ -712,7 +712,7 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
         BDD result;
-        if (cache_get(a | CACHE_BDD_CONSTRAIN, b, 0, &result)) {
+        if (cache_get3(CACHE_BDD_CONSTRAIN, a, b, 0, &result)) {
             sylvan_stats_count(BDD_CONSTRAIN_CACHED);
             return result;
         }
@@ -764,7 +764,7 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
     }
 
     if (cachenow) {
-        if (cache_put(a | CACHE_BDD_CONSTRAIN, b, 0, result)) sylvan_stats_count(BDD_CONSTRAIN_CACHEDPUT);
+        if (cache_put3(CACHE_BDD_CONSTRAIN, a, b, 0, result)) sylvan_stats_count(BDD_CONSTRAIN_CACHEDPUT);
     }
 
     return result;
@@ -800,7 +800,7 @@ TASK_IMPL_3(BDD, sylvan_restrict, BDD, a, BDD, b, BDDVAR, prev_level)
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
         BDD result;
-        if (cache_get(a | CACHE_BDD_RESTRICT, b, 0, &result)) {
+        if (cache_get3(CACHE_BDD_RESTRICT, a, b, 0, &result)) {
             sylvan_stats_count(BDD_RESTRICT_CACHED);
             return result;
         }
@@ -834,7 +834,7 @@ TASK_IMPL_3(BDD, sylvan_restrict, BDD, a, BDD, b, BDDVAR, prev_level)
     }
 
     if (cachenow) {
-        if (cache_put(a | CACHE_BDD_RESTRICT, b, 0, result)) sylvan_stats_count(BDD_RESTRICT_CACHEDPUT);
+        if (cache_put3(CACHE_BDD_RESTRICT, a, b, 0, result)) sylvan_stats_count(BDD_RESTRICT_CACHEDPUT);
     }
 
     return result;
@@ -870,7 +870,7 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
         BDD result;
-        if (cache_get(a | CACHE_BDD_EXISTS, variables, 0, &result)) {
+        if (cache_get3(CACHE_BDD_EXISTS, a, variables, 0, &result)) {
             sylvan_stats_count(BDD_EXISTS_CACHED);
             return result;
         }
@@ -919,7 +919,7 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
     }
 
     if (cachenow) {
-        if (cache_put(a | CACHE_BDD_EXISTS, variables, 0, result)) sylvan_stats_count(BDD_EXISTS_CACHEDPUT);
+        if (cache_put3(CACHE_BDD_EXISTS, a, variables, 0, result)) sylvan_stats_count(BDD_EXISTS_CACHEDPUT);
     }
 
     return result;
@@ -978,7 +978,7 @@ TASK_IMPL_4(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, v, BDDVAR, prev_leve
 
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
-        if (cache_get(a | CACHE_BDD_AND_EXISTS, b, v, &result)) {
+        if (cache_get3(CACHE_BDD_AND_EXISTS, a, b, v, &result)) {
             sylvan_stats_count(BDD_AND_EXISTS_CACHED);
             return result;
         }
@@ -1043,7 +1043,7 @@ TASK_IMPL_4(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, v, BDDVAR, prev_leve
     }
 
     if (cachenow) {
-        if (cache_put(a | CACHE_BDD_AND_EXISTS, b, v, result)) sylvan_stats_count(BDD_AND_EXISTS_CACHEDPUT);
+        if (cache_put3(CACHE_BDD_AND_EXISTS, a, b, v, result)) sylvan_stats_count(BDD_AND_EXISTS_CACHEDPUT);
     }
 
     return result;
@@ -1103,7 +1103,7 @@ TASK_IMPL_4(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
         BDD result;
-        if (cache_get(a | CACHE_BDD_RELNEXT, b, vars, &result)) {
+        if (cache_get3(CACHE_BDD_RELNEXT, a, b, vars, &result)) {
             sylvan_stats_count(BDD_RELNEXT_CACHED);
             return result;
         }
@@ -1242,7 +1242,7 @@ TASK_IMPL_4(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
     }
 
     if (cachenow) {
-        if (cache_put(a | CACHE_BDD_RELNEXT, b, vars, result)) sylvan_stats_count(BDD_RELNEXT_CACHEDPUT);
+        if (cache_put3(CACHE_BDD_RELNEXT, a, b, vars, result)) sylvan_stats_count(BDD_RELNEXT_CACHEDPUT);
     }
 
     return result;
@@ -1301,7 +1301,7 @@ TASK_IMPL_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
         BDD result;
-        if (cache_get(a | CACHE_BDD_RELPREV, b, vars, &result)) {
+        if (cache_get3(CACHE_BDD_RELPREV, a, b, vars, &result)) {
             sylvan_stats_count(BDD_RELPREV_CACHED);
             return result;
         }
@@ -1512,7 +1512,7 @@ TASK_IMPL_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
     }
 
     if (cachenow) {
-        if (cache_put(a | CACHE_BDD_RELPREV, b, vars, result)) sylvan_stats_count(BDD_RELPREV_CACHEDPUT);
+        if (cache_put3(CACHE_BDD_RELPREV, a, b, vars, result)) sylvan_stats_count(BDD_RELPREV_CACHEDPUT);
     }
 
     return result;
@@ -1544,7 +1544,7 @@ TASK_IMPL_2(BDD, sylvan_closure, BDD, a, BDDVAR, prev_level)
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
         BDD result;
-        if (cache_get(a | CACHE_BDD_CLOSURE, 0, 0, &result)) {
+        if (cache_get3(CACHE_BDD_CLOSURE, a, 0, 0, &result)) {
             sylvan_stats_count(BDD_CLOSURE_CACHED);
             return result;
         }
@@ -1619,7 +1619,7 @@ TASK_IMPL_2(BDD, sylvan_closure, BDD, a, BDDVAR, prev_level)
     BDD result = sylvan_makenode(s, r0, r1);
 
     if (cachenow) {
-        if (cache_put(a | CACHE_BDD_CLOSURE, 0, 0, result)) sylvan_stats_count(BDD_CLOSURE_CACHEDPUT);
+        if (cache_put3(CACHE_BDD_CLOSURE, a, 0, 0, result)) sylvan_stats_count(BDD_CLOSURE_CACHEDPUT);
     }
 
     return result;
@@ -1659,7 +1659,7 @@ TASK_IMPL_3(BDD, sylvan_compose, BDD, a, BDDMAP, map, BDDVAR, prev_level)
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
         BDD result;
-        if (cache_get(a | CACHE_BDD_COMPOSE, map, 0, &result)) {
+        if (cache_get3(CACHE_BDD_COMPOSE, a, map, 0, &result)) {
             sylvan_stats_count(BDD_COMPOSE_CACHED);
             return result;
         }
@@ -1679,7 +1679,7 @@ TASK_IMPL_3(BDD, sylvan_compose, BDD, a, BDDMAP, map, BDDVAR, prev_level)
     bdd_refs_pop(3);
 
     if (cachenow) {
-        if (cache_put(a | CACHE_BDD_COMPOSE, map, 0, result)) sylvan_stats_count(BDD_COMPOSE_CACHEDPUT);
+        if (cache_put3(CACHE_BDD_COMPOSE, a, map, 0, result)) sylvan_stats_count(BDD_COMPOSE_CACHEDPUT);
     }
 
     return result;
@@ -1737,7 +1737,7 @@ TASK_IMPL_2(double, sylvan_pathcount, BDD, bdd, BDDVAR, prev_level)
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
         double result;
-        if (cache_get(bdd | CACHE_BDD_PATHCOUNT, 0, 0, (uint64_t*)&result)) {
+        if (cache_get3(CACHE_BDD_PATHCOUNT, bdd, 0, 0, (uint64_t*)&result)) {
             sylvan_stats_count(BDD_PATHCOUNT_CACHED);
             return result;
         }
@@ -1749,7 +1749,7 @@ TASK_IMPL_2(double, sylvan_pathcount, BDD, bdd, BDDVAR, prev_level)
     res1 += SYNC(sylvan_pathcount);
 
     if (cachenow) {
-        if (cache_put(bdd | CACHE_BDD_PATHCOUNT, 0, 0, *(uint64_t*)&res1)) sylvan_stats_count(BDD_PATHCOUNT_CACHEDPUT);
+        if (cache_put3(CACHE_BDD_PATHCOUNT, bdd, 0, 0, *(uint64_t*)&res1)) sylvan_stats_count(BDD_PATHCOUNT_CACHEDPUT);
     }
 
     return res1;
@@ -1791,7 +1791,7 @@ TASK_IMPL_3(double, sylvan_satcount, BDD, bdd, BDDSET, variables, BDDVAR, prev_l
     /* Consult cache */
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != var / granularity;
     if (cachenow) {
-        if (cache_get(bdd | CACHE_BDD_SATCOUNT, variables, 0, &hack.s)) {
+        if (cache_get3(CACHE_BDD_SATCOUNT, bdd, variables, 0, &hack.s)) {
             sylvan_stats_count(BDD_SATCOUNT_CACHED);
             return hack.d * powl(2.0L, skipped);
         }
@@ -1803,7 +1803,7 @@ TASK_IMPL_3(double, sylvan_satcount, BDD, bdd, BDDSET, variables, BDDVAR, prev_l
 
     if (cachenow) {
         hack.d = result;
-        if (cache_put(bdd | CACHE_BDD_SATCOUNT, variables, 0, hack.s)) sylvan_stats_count(BDD_SATCOUNT_CACHEDPUT);
+        if (cache_put3(CACHE_BDD_SATCOUNT, bdd, variables, 0, hack.s)) sylvan_stats_count(BDD_SATCOUNT_CACHEDPUT);
     }
 
     return result * powl(2.0L, skipped);
@@ -2331,7 +2331,7 @@ TASK_IMPL_1(BDD, sylvan_support, BDD, bdd)
     sylvan_stats_count(BDD_SUPPORT);
 
     BDD result;
-    if (cache_get(bdd | CACHE_BDD_SUPPORT, 0, 0, &result)) {
+    if (cache_get3(CACHE_BDD_SUPPORT, bdd, 0, 0, &result)) {
         sylvan_stats_count(BDD_SUPPORT_CACHED);
         return result;
     }
@@ -2351,7 +2351,7 @@ TASK_IMPL_1(BDD, sylvan_support, BDD, bdd)
     /* add current level to set */
     result = sylvan_makenode(bddnode_getvariable(n), sylvan_false, set);
 
-    if (cache_put(bdd | CACHE_BDD_SUPPORT, 0, 0, result)) sylvan_stats_count(BDD_SUPPORT_CACHEDPUT);
+    if (cache_put3(CACHE_BDD_SUPPORT, bdd, 0, 0, result)) sylvan_stats_count(BDD_SUPPORT_CACHEDPUT);
     return result;
 }
 
@@ -2786,7 +2786,7 @@ TASK_2(int, sylvan_test_isbdd_rec, BDD, bdd, BDDVAR, parent_var)
     sylvan_stats_count(BDD_ISBDD);
 
     uint64_t result;
-    if (cache_get(bdd | CACHE_BDD_ISBDD, 0, 0, &result)) {
+    if (cache_get3(CACHE_BDD_ISBDD, bdd, 0, 0, &result)) {
         sylvan_stats_count(BDD_ISBDD_CACHED);
         return result;
     }
@@ -2801,7 +2801,7 @@ TASK_2(int, sylvan_test_isbdd_rec, BDD, bdd, BDDVAR, parent_var)
         if (!SYNC(sylvan_test_isbdd_rec)) result = 0;
     }
 
-    if (cache_put(bdd | CACHE_BDD_ISBDD, 0, 0, result)) sylvan_stats_count(BDD_ISBDD_CACHEDPUT);
+    if (cache_put3(CACHE_BDD_ISBDD, bdd, 0, 0, result)) sylvan_stats_count(BDD_ISBDD_CACHEDPUT);
     return result;
 }
 

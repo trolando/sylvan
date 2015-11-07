@@ -434,7 +434,7 @@ TASK_IMPL_2(MDD, lddmc_union, MDD, a, MDD, b)
 
     /* Access cache */
     MDD result;
-    if (cache_get(a | CACHE_MDD_UNION, b, 0, &result)) {
+    if (cache_get3(CACHE_MDD_UNION, a, b, 0, &result)) {
         sylvan_stats_count(LDD_UNION_CACHED);
         return result;
     }
@@ -478,7 +478,7 @@ TASK_IMPL_2(MDD, lddmc_union, MDD, a, MDD, b)
     }
 
     /* Write to cache */
-    if (cache_put(a | CACHE_MDD_UNION, b, 0, result)) sylvan_stats_count(LDD_UNION_CACHEDPUT);
+    if (cache_put3(CACHE_MDD_UNION, a, b, 0, result)) sylvan_stats_count(LDD_UNION_CACHEDPUT);
 
     return result;
 }
@@ -499,7 +499,7 @@ TASK_IMPL_2(MDD, lddmc_minus, MDD, a, MDD, b)
 
     /* Access cache */
     MDD result;
-    if (cache_get(a | CACHE_MDD_MINUS, b, 0, &result)) {
+    if (cache_get3(CACHE_MDD_MINUS, a, b, 0, &result)) {
         sylvan_stats_count(LDD_MINUS_CACHED);
         return result;
     }
@@ -526,7 +526,7 @@ TASK_IMPL_2(MDD, lddmc_minus, MDD, a, MDD, b)
     }
 
     /* Write to cache */
-    if (cache_put(a | CACHE_MDD_MINUS, b, 0, result)) sylvan_stats_count(LDD_MINUS_CACHEDPUT);
+    if (cache_put3(CACHE_MDD_MINUS, a, b, 0, result)) sylvan_stats_count(LDD_MINUS_CACHEDPUT);
 
     return result;
 }
@@ -558,8 +558,8 @@ TASK_IMPL_3(MDD, lddmc_zip, MDD, a, MDD, b, MDD*, res2)
 
     /* Access cache */
     MDD result;
-    if (cache_get(a | CACHE_MDD_UNION, b, 0, &result) &&
-        cache_get(b | CACHE_MDD_MINUS, a, 0, res2)) {
+    if (cache_get3(CACHE_MDD_UNION, a, b, 0, &result) &&
+        cache_get3(CACHE_MDD_MINUS, b, a, 0, res2)) {
         sylvan_stats_count(LDD_ZIP);
         return result;
     }
@@ -592,8 +592,8 @@ TASK_IMPL_3(MDD, lddmc_zip, MDD, a, MDD, b, MDD*, res2)
     }
 
     /* Write to cache */
-    int c1 = cache_put(a | CACHE_MDD_UNION, b, 0, result);
-    int c2 = cache_put(b | CACHE_MDD_MINUS, a, 0, *res2);
+    int c1 = cache_put3(CACHE_MDD_UNION, a, b, 0, result);
+    int c2 = cache_put3(CACHE_MDD_MINUS, b, a, 0, *res2);
     if (c1 && c2) sylvan_stats_count(LDD_ZIP_CACHEDPUT);
 
     return result;
@@ -635,7 +635,7 @@ TASK_IMPL_2(MDD, lddmc_intersect, MDD, a, MDD, b)
 
     /* Access cache */
     MDD result;
-    if (cache_get(a | CACHE_MDD_INTERSECT, b, 0, &result)) {
+    if (cache_get3(CACHE_MDD_INTERSECT, a, b, 0, &result)) {
         sylvan_stats_count(LDD_INTERSECT_CACHED);
         return result;
     }
@@ -649,7 +649,7 @@ TASK_IMPL_2(MDD, lddmc_intersect, MDD, a, MDD, b)
     result = lddmc_makenode(na_value, down, right);
 
     /* Write to cache */
-    if (cache_put(a | CACHE_MDD_INTERSECT, b, 0, result)) sylvan_stats_count(LDD_INTERSECT_CACHEDPUT);
+    if (cache_put3(CACHE_MDD_INTERSECT, a, b, 0, result)) sylvan_stats_count(LDD_INTERSECT_CACHEDPUT);
 
     return result;
 }
@@ -679,7 +679,7 @@ TASK_IMPL_3(MDD, lddmc_match, MDD, a, MDD, b, MDD, proj)
 
     /* Access cache */
     MDD result;
-    if (cache_get(a | CACHE_MDD_MATCH, b, proj, &result)) {
+    if (cache_get3(CACHE_MDD_MATCH, a, b, proj, &result)) {
         sylvan_stats_count(LDD_MATCH_CACHED);
         return result;
     }
@@ -701,7 +701,7 @@ TASK_IMPL_3(MDD, lddmc_match, MDD, a, MDD, b, MDD, proj)
     result = lddmc_makenode(mddnode_getvalue(na), down, right);
 
     /* Write to cache */
-    if (cache_put(a | CACHE_MDD_MATCH, b, proj, result)) sylvan_stats_count(LDD_MATCH_CACHEDPUT);
+    if (cache_put3(CACHE_MDD_MATCH, a, b, proj, result)) sylvan_stats_count(LDD_MATCH_CACHEDPUT);
 
     return result;
 }
@@ -736,7 +736,7 @@ TASK_IMPL_3(MDD, lddmc_relprod, MDD, set, MDD, rel, MDD, meta)
 
     /* Access cache */
     MDD result;
-    if (cache_get(set | CACHE_MDD_RELPROD, rel, meta, &result)) {
+    if (cache_get3(CACHE_MDD_RELPROD, set, rel, meta, &result)) {
         sylvan_stats_count(LDD_RELPROD_CACHED);
         return result;
     }
@@ -869,7 +869,7 @@ TASK_IMPL_3(MDD, lddmc_relprod, MDD, set, MDD, rel, MDD, meta)
     }
 
     /* Write to cache */
-    if (cache_put(set | CACHE_MDD_RELPROD, rel, meta, result)) sylvan_stats_count(LDD_RELPROD_CACHEDPUT);
+    if (cache_put3(CACHE_MDD_RELPROD, set, rel, meta, result)) sylvan_stats_count(LDD_RELPROD_CACHEDPUT);
 
     return result;
 }
@@ -936,10 +936,7 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
 
     /* Access cache */
     MDD result;
-    const MDD c_a = set | CACHE_MDD_RELPROD;
-    const MDD c_b = rel | ((un&0x00000000003fffff) << 42); // store lower 22 bits in c_b
-    const MDD c_c = meta| ((un&0x000003ffffc00000) << 20); // store higher 20 bits in c_c
-    if (cache_get(c_a, c_b, c_c, &result)) {
+    if (cache_get4(CACHE_MDD_RELPROD, set, rel, meta, un, &result)) {
         sylvan_stats_count(LDD_RELPROD_UNION_CACHED);
         return result;
     }
@@ -1160,7 +1157,7 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
     }
 
     /* Write to cache */
-    if (cache_put(c_a, c_b, c_c, result)) sylvan_stats_count(LDD_RELPROD_UNION_CACHEDPUT);
+    if (cache_put4(CACHE_MDD_RELPROD, set, rel, meta, un, result)) sylvan_stats_count(LDD_RELPROD_UNION_CACHEDPUT);
 
     return result;
 }
@@ -1248,10 +1245,7 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
 
     /* Access cache */
     MDD result;
-    const MDD c_a = set | CACHE_MDD_RELPREV;
-    const MDD c_b = rel | ((uni&0x00000000003fffff) << 42); // store lower 22 bits in c_b
-    const MDD c_c = meta| ((uni&0x000003ffffc00000) << 20); // store higher 20 bits in c_c
-    if (cache_get(c_a, c_b, c_c, &result)) {
+    if (cache_get4(CACHE_MDD_RELPREV, set, rel, meta, uni, &result)) {
         sylvan_stats_count(LDD_RELPREV_CACHED);
         return result;
     }
@@ -1413,7 +1407,7 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
     }
 
     /* Write to cache */
-    if (cache_put(c_a, c_b, c_c, result)) sylvan_stats_count(LDD_RELPREV_CACHEDPUT);
+    if (cache_put4(CACHE_MDD_RELPREV, set, rel, meta, uni, result)) sylvan_stats_count(LDD_RELPREV_CACHEDPUT);
 
     return result;
 }
@@ -1457,10 +1451,7 @@ TASK_IMPL_4(MDD, lddmc_join, MDD, a, MDD, b, MDD, a_proj, MDD, b_proj)
 
     /* Access cache */
     MDD result;
-    const MDD c_a = a | CACHE_MDD_JOIN;
-    const MDD c_b = b | ((a_proj&0x00000000003fffff) << 42); // store lower 22 bits in c_b
-    const MDD c_c = b_proj | ((a_proj&0x000003ffffc00000) << 20); // store higher 20 bits in c_c
-    if (cache_get(c_a, c_b, c_c, &result)) {
+    if (cache_get4(CACHE_MDD_JOIN, a, b, a_proj, b_proj, &result)) {
         sylvan_stats_count(LDD_JOIN_CACHED);
         return result;
     }
@@ -1499,7 +1490,7 @@ TASK_IMPL_4(MDD, lddmc_join, MDD, a, MDD, b, MDD, a_proj, MDD, b_proj)
     result = lddmc_makenode(val, down, right);
 
     /* Write to cache */
-    if (cache_put(c_a, c_b, c_c, result)) sylvan_stats_count(LDD_JOIN_CACHEDPUT);
+    if (cache_put4(CACHE_MDD_JOIN, a, b, a_proj, b_proj, result)) sylvan_stats_count(LDD_JOIN_CACHEDPUT);
 
     return result;
 }
@@ -1520,7 +1511,7 @@ TASK_IMPL_2(MDD, lddmc_project, const MDD, mdd, const MDD, proj)
     sylvan_stats_count(LDD_PROJECT);
 
     MDD result;
-    if (cache_get(mdd | CACHE_MDD_PROJECT, proj, 0, &result)) {
+    if (cache_get3(CACHE_MDD_PROJECT, mdd, proj, 0, &result)) {
         sylvan_stats_count(LDD_PROJECT_CACHED);
         return result;
     }
@@ -1559,7 +1550,7 @@ TASK_IMPL_2(MDD, lddmc_project, const MDD, mdd, const MDD, proj)
         }
     }
 
-    if (cache_put(mdd | CACHE_MDD_PROJECT, proj, 0, result)) sylvan_stats_count(LDD_PROJECT_CACHEDPUT);
+    if (cache_put3(CACHE_MDD_PROJECT, mdd, proj, 0, result)) sylvan_stats_count(LDD_PROJECT_CACHEDPUT);
 
     return result;
 }
@@ -1583,7 +1574,7 @@ TASK_IMPL_3(MDD, lddmc_project_minus, const MDD, mdd, const MDD, proj, MDD, avoi
     sylvan_stats_count(LDD_PROJECT_MINUS);
 
     MDD result;
-    if (cache_get(mdd | CACHE_MDD_PROJECT, proj, avoid, &result)) {
+    if (cache_get3(CACHE_MDD_PROJECT, mdd, proj, avoid, &result)) {
         sylvan_stats_count(LDD_PROJECT_MINUS_CACHED);
         return result;
     }
@@ -1636,7 +1627,7 @@ TASK_IMPL_3(MDD, lddmc_project_minus, const MDD, mdd, const MDD, proj, MDD, avoi
         }
     }
 
-    if (cache_put(mdd | CACHE_MDD_PROJECT, proj, avoid, result)) sylvan_stats_count(LDD_PROJECT_MINUS_CACHEDPUT);
+    if (cache_put3(CACHE_MDD_PROJECT, mdd, proj, avoid, result)) sylvan_stats_count(LDD_PROJECT_MINUS_CACHEDPUT);
 
     return result;
 }
@@ -1843,7 +1834,7 @@ TASK_IMPL_1(lddmc_satcount_double_t, lddmc_satcount_cached, MDD, mdd)
 
     sylvan_stats_count(LDD_SATCOUNT);
 
-    if (cache_get(mdd | CACHE_MDD_SATCOUNT, 0, 0, &hack.s)) {
+    if (cache_get3(CACHE_MDD_SATCOUNT, mdd, 0, 0, &hack.s)) {
         sylvan_stats_count(LDD_SATCOUNT_CACHED);
         return hack.d;
     }
@@ -1854,7 +1845,7 @@ TASK_IMPL_1(lddmc_satcount_double_t, lddmc_satcount_cached, MDD, mdd)
     lddmc_satcount_double_t right = CALL(lddmc_satcount_cached, mddnode_getright(n));
     hack.d = right + SYNC(lddmc_satcount_cached);
 
-    if (cache_put(mdd | CACHE_MDD_SATCOUNT, 0, 0, hack.s)) sylvan_stats_count(LDD_SATCOUNT_CACHEDPUT);
+    if (cache_put3(CACHE_MDD_SATCOUNT, mdd, 0, 0, hack.s)) sylvan_stats_count(LDD_SATCOUNT_CACHEDPUT);
 
     return hack.d;
 }
@@ -1877,8 +1868,8 @@ TASK_IMPL_1(long double, lddmc_satcount, MDD, mdd)
         } s;
     } hack;
 
-    if (cache_get(mdd | CACHE_MDD_SATCOUNTL1, 0, 0, &hack.s.s1) &&
-        cache_get(mdd | CACHE_MDD_SATCOUNTL2, 0, 0, &hack.s.s2)) {
+    if (cache_get3(CACHE_MDD_SATCOUNTL1, mdd, 0, 0, &hack.s.s1) &&
+        cache_get3(CACHE_MDD_SATCOUNTL2, mdd, 0, 0, &hack.s.s2)) {
         sylvan_stats_count(LDD_SATCOUNTL_CACHED);
         return hack.d;
     }
@@ -1889,8 +1880,8 @@ TASK_IMPL_1(long double, lddmc_satcount, MDD, mdd)
     long double right = CALL(lddmc_satcount, mddnode_getright(n));
     hack.d = right + SYNC(lddmc_satcount);
 
-    int c1 = cache_put(mdd | CACHE_MDD_SATCOUNTL1, 0, 0, hack.s.s1);
-    int c2 = cache_put(mdd | CACHE_MDD_SATCOUNTL2, 0, 0, hack.s.s2);
+    int c1 = cache_put3(CACHE_MDD_SATCOUNTL1, mdd, 0, 0, hack.s.s1);
+    int c2 = cache_put3(CACHE_MDD_SATCOUNTL2, mdd, 0, 0, hack.s.s2);
     if (c1 && c2) sylvan_stats_count(LDD_SATCOUNTL_CACHEDPUT);
 
     return hack.d;

@@ -107,6 +107,7 @@ gmp_destroy(uint64_t val)
 }
 
 static uint32_t gmp_type;
+static uint64_t CACHE_GMP_AND_EXISTS;
 
 /**
  * Initialize gmp custom leaves
@@ -116,6 +117,7 @@ gmp_init()
 {
     /* Register custom leaf 3 */
     gmp_type = mtbdd_register_custom_leaf(gmp_hash, gmp_equals, gmp_create, gmp_destroy);
+    CACHE_GMP_AND_EXISTS = cache_next_opid();
 }
 
 /**
@@ -519,21 +521,28 @@ TASK_IMPL_2(MTBDD, gmp_op_strict_threshold, MTBDD*, pa, MTBDD*, pb)
  */
 TASK_IMPL_3(MTBDD, gmp_and_exists, MTBDD, a, MTBDD, b, MTBDD, v)
 {
-    /* Check terminal case */
+    /* Check terminal cases */
+
+    /* If v == true, then <vars> is an empty set */
     if (v == mtbdd_true) return mtbdd_apply(a, b, TASK(gmp_op_times));
+
+    /* Try the times operator on a and b */
     MTBDD result = CALL(gmp_op_times, &a, &b);
     if (result != mtbdd_invalid) {
+        /* Times operator successful, store reference (for garbage collection) */
         mtbdd_refs_push(result);
+        /* ... and perform abstraction */
         result = mtbdd_abstract(result, v, TASK(gmp_abstract_op_plus));
         mtbdd_refs_pop(1);
+        /* Note that the operation cache is used in mtbdd_abstract */
         return result;
     }
 
     /* Maybe perform garbage collection */
     sylvan_gc_test();
 
-    /* Check cache */
-    if (cache_get(a | CACHE_MTBDD_AND_EXISTS, b, v, &result)) return result;
+    /* Check cache. Note that we do this now, since the times operator might swap a and b (commutative) */
+    if (cache_get3(CACHE_GMP_AND_EXISTS, a, b, v, &result)) return result;
 
     /* Now, v is not a constant, and either a or b is not a constant */
 
@@ -581,6 +590,6 @@ TASK_IMPL_3(MTBDD, gmp_and_exists, MTBDD, a, MTBDD, b, MTBDD, v)
     }
 
     /* Store in cache */
-    cache_put(a | CACHE_MTBDD_AND_EXISTS, b, v, result);
+    cache_put3(CACHE_GMP_AND_EXISTS, a, b, v, result);
     return result;
 }

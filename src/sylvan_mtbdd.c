@@ -60,7 +60,7 @@ mtbdd_gethigh(MTBDD mtbdd)
     return node_gethigh(mtbdd, GETNODE(mtbdd));
 }
 
-// for leafs
+// for leaves
 uint32_t
 mtbdd_gettype(MTBDD leaf)
 {
@@ -467,7 +467,7 @@ gcd(uint32_t u, uint32_t v)
 }
 
 /**
- * Create leafs of unsigned/signed integers and doubles
+ * Create leaves of unsigned/signed integers and doubles
  */
 
 MTBDD
@@ -988,7 +988,7 @@ TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
 
 /**
  * Binary operation Plus (for MTBDDs of same type)
- * Only for MTBDDs where either all leafs are Boolean, or Integer, or Double.
+ * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
  * For Integer/Double MTBDDs, mtbdd_false is interpreted as "0" or "0.0".
  */
 TASK_IMPL_2(MTBDD, mtbdd_op_plus, MTBDD*, pa, MTBDD*, pb)
@@ -1114,7 +1114,7 @@ TASK_IMPL_2(MTBDD, mtbdd_op_plus, MTBDD*, pa, MTBDD*, pb)
 
 /**
  * Binary operation Times (for MTBDDs of same type)
- * Only for MTBDDs where either all leafs are Boolean, or Integer, or Double.
+ * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
  * For Integer/Double MTBDD, if either operand is mtbdd_false (not defined),
  * then the result is mtbdd_false (i.e. not defined).
  */
@@ -1195,7 +1195,7 @@ TASK_IMPL_2(MTBDD, mtbdd_op_times, MTBDD*, pa, MTBDD*, pb)
 
 /**
  * Binary operation Minimum (for MTBDDs of same type)
- * Only for MTBDDs where either all leafs are Boolean, or Integer, or Double.
+ * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
  * For Integer/Double MTBDD, if either operand is mtbdd_false (not defined),
  * then the result is the other operand.
  */
@@ -1274,7 +1274,7 @@ TASK_IMPL_2(MTBDD, mtbdd_op_min, MTBDD*, pa, MTBDD*, pb)
 
 /**
  * Binary operation Maximum (for MTBDDs of same type)
- * Only for MTBDDs where either all leafs are Boolean, or Integer, or Double.
+ * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
  * For Integer/Double MTBDD, if either operand is mtbdd_false (not defined),
  * then the result is the other operand.
  */

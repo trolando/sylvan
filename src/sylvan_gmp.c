@@ -142,7 +142,7 @@ TASK_IMPL_2(MTBDD, gmp_op_plus, MTBDD*, pa, MTBDD*, pb)
     if (a == mtbdd_false) return b;
     if (b == mtbdd_false) return a;
 
-    /* If both leafs, compute plus */
+    /* If both leaves, compute plus */
     if (mtbdd_isleaf(a) && mtbdd_isleaf(b)) {
         mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
@@ -176,7 +176,7 @@ TASK_IMPL_2(MTBDD, gmp_op_minus, MTBDD*, pa, MTBDD*, pb)
     if (a == mtbdd_false) return gmp_neg(b);
     if (b == mtbdd_false) return a;
 
-    /* If both leafs, compute plus */
+    /* If both leaves, compute plus */
     if (mtbdd_isleaf(a) && mtbdd_isleaf(b)) {
         mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
@@ -208,7 +208,7 @@ TASK_IMPL_2(MTBDD, gmp_op_times, MTBDD*, pa, MTBDD*, pb)
     if (a == mtbdd_true) return b;
     if (b == mtbdd_true) return a;
 
-    /* Handle multiplication of leafs */
+    /* Handle multiplication of leaves */
     if (mtbdd_isleaf(a) && mtbdd_isleaf(b)) {
         mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
@@ -242,7 +242,7 @@ TASK_IMPL_2(MTBDD, gmp_op_divide, MTBDD*, pa, MTBDD*, pb)
     /* Check for partial functions */
     if (a == mtbdd_false || b == mtbdd_false) return mtbdd_false;
 
-    /* Handle division of leafs */
+    /* Handle division of leaves */
     if (mtbdd_isleaf(a) && mtbdd_isleaf(b)) {
         mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
@@ -482,7 +482,7 @@ TASK_IMPL_2(MTBDD, gmp_op_threshold, MTBDD*, pa, MTBDD*, pb)
     /* Check for partial functions */
     if (a == mtbdd_false) return mtbdd_false;
 
-    /* Handle comparison of leafs */
+    /* Handle comparison of leaves */
     if (mtbdd_isleaf(a)) {
         mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
@@ -504,7 +504,7 @@ TASK_IMPL_2(MTBDD, gmp_op_strict_threshold, MTBDD*, pa, MTBDD*, pb)
     /* Check for partial functions */
     if (a == mtbdd_false) return mtbdd_false;
 
-    /* Handle comparison of leafs */
+    /* Handle comparison of leaves */
     if (mtbdd_isleaf(a)) {
         mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);

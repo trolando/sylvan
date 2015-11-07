@@ -156,7 +156,7 @@ TASK_DECL_2(double, mtbdd_satcount, MTBDD, size_t);
 size_t mtbdd_leafcount(MTBDD mtbdd);
 
 /**
- * Count the number of MTBDD nodes and terminals (excluding mtbdd_false and mtbdd_true) in a MTBDD)
+ * Count the number of MTBDD nodes and terminals (excluding mtbdd_false and mtbdd_true) in a MTBDD
  */
 size_t mtbdd_nodecount(MTBDD mtbdd);
 
@@ -209,7 +209,7 @@ TASK_DECL_3(MTBDD, mtbdd_abstract, MTBDD, MTBDD, mtbdd_abstract_op);
 
 /**
  * Binary operation Plus (for MTBDDs of same type)
- * Only for MTBDDs where either all leafs are Boolean, or Integer, or Double.
+ * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
  * For Integer/Double MTBDDs, mtbdd_false is interpreted as "0" or "0.0".
  */
 TASK_DECL_2(MTBDD, mtbdd_op_plus, MTBDD*, MTBDD*);
@@ -217,7 +217,7 @@ TASK_DECL_3(MTBDD, mtbdd_abstract_op_plus, MTBDD, MTBDD, int);
 
 /**
  * Binary operation Times (for MTBDDs of same type)
- * Only for MTBDDs where either all leafs are Boolean, or Integer, or Double.
+ * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
  * For Integer/Double MTBDD, if either operand is mtbdd_false (not defined),
  * then the result is mtbdd_false (i.e. not defined).
  */
@@ -226,7 +226,7 @@ TASK_DECL_3(MTBDD, mtbdd_abstract_op_times, MTBDD, MTBDD, int);
 
 /**
  * Binary operation Minimum (for MTBDDs of same type)
- * Only for MTBDDs where either all leafs are Boolean, or Integer, or Double.
+ * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
  * For Integer/Double MTBDD, if either operand is mtbdd_false (not defined),
  * then the result is the other operand.
  */
@@ -235,7 +235,7 @@ TASK_DECL_3(MTBDD, mtbdd_abstract_op_min, MTBDD, MTBDD, int);
 
 /**
  * Binary operation Maximum (for MTBDDs of same type)
- * Only for MTBDDs where either all leafs are Boolean, or Integer, or Double.
+ * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
  * For Integer/Double MTBDD, if either operand is mtbdd_false (not defined),
  * then the result is the other operand.
  */

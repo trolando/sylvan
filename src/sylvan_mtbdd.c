@@ -1468,6 +1468,147 @@ TASK_IMPL_2(MTBDD, mtbdd_strict_threshold_double, MTBDD, dd, double, d)
 }
 
 /**
+ * Compare two Double MTBDDs, returns Boolean True if they are equal within some value epsilon
+ */
+TASK_4(MTBDD, mtbdd_equal_norm_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, shortcircuit)
+{
+    /* Check short circuit */
+    if (*shortcircuit) return mtbdd_false;
+
+    /* Check terminal case */
+    if (a == b) return mtbdd_true;
+    if (a == mtbdd_false) return mtbdd_false;
+    if (b == mtbdd_false) return mtbdd_false;
+
+    mtbddnode_t na = GETNODE(a);
+    mtbddnode_t nb = GETNODE(b);
+    int la = mtbddnode_isleaf(na);
+    int lb = mtbddnode_isleaf(nb);
+
+    if (la && lb) {
+        // assume Double MTBDD
+        double va = mtbdd_getdouble(a);
+        if (mtbdd_isnegated(a)) va = -va;
+        double vb = mtbdd_getdouble(b);
+        if (mtbdd_isnegated(b)) vb = -vb;
+        va -= vb;
+        if (va < 0) va = -va;
+        return (va < *(double*)&svalue) ? mtbdd_true : mtbdd_false;
+    }
+
+    if (b < a) {
+        MTBDD t = a;
+        a = b;
+        b = t;
+    }
+
+    /* Maybe perform garbage collection */
+    sylvan_gc_test();
+
+    /* Check cache */
+    MTBDD result;
+    if (cache_get3(CACHE_MTBDD_EQUAL_NORM, a, b, svalue, &result)) return result;
+
+    /* Get top variable */
+    uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
+    uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
+    uint32_t var = va < vb ? va : vb;
+
+    /* Get cofactors */
+    MTBDD alow, ahigh, blow, bhigh;
+    alow  = va == var ? node_getlow(a, na)  : a;
+    ahigh = va == var ? node_gethigh(a, na) : a;
+    blow  = vb == var ? node_getlow(b, nb)  : b;
+    bhigh = vb == var ? node_gethigh(b, nb) : b;
+
+    SPAWN(mtbdd_equal_norm_d2, ahigh, bhigh, svalue, shortcircuit);
+    result = CALL(mtbdd_equal_norm_d2, alow, blow, svalue, shortcircuit);
+    if (result == mtbdd_false) *shortcircuit = 1;
+    if (result != SYNC(mtbdd_equal_norm_d2)) result = mtbdd_false;
+    if (result == mtbdd_false) *shortcircuit = 1;
+
+    /* Store in cache */
+    cache_put3(CACHE_MTBDD_EQUAL_NORM, a, b, svalue, result);
+    return result;
+}
+
+TASK_IMPL_3(MTBDD, mtbdd_equal_norm_d, MTBDD, a, MTBDD, b, double, d)
+{
+    /* the implementation checks shortcircuit in every task and if the wo
+       MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
+    int shortcircuit = 0;
+    return CALL(mtbdd_equal_norm_d2, a, b, *(size_t*)&d, &shortcircuit);
+}
+
+/**
+ * Compare two Double MTBDDs, returns Boolean True if they are equal within some value epsilon
+ */
+TASK_4(MTBDD, mtbdd_equal_norm_rel_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, shortcircuit)
+{
+    /* Check short circuit */
+    if (*shortcircuit) return mtbdd_false;
+
+    /* Check terminal case */
+    if (a == b) return mtbdd_true;
+    if (a == mtbdd_false) return mtbdd_false;
+    if (b == mtbdd_false) return mtbdd_false;
+
+    mtbddnode_t na = GETNODE(a);
+    mtbddnode_t nb = GETNODE(b);
+    int la = mtbddnode_isleaf(na);
+    int lb = mtbddnode_isleaf(nb);
+
+    if (la && lb) {
+        // assume Double MTBDD
+        double va = mtbdd_getdouble(a);
+        if (mtbdd_isnegated(a)) va = -va;
+        double vb = mtbdd_getdouble(b);
+        if (mtbdd_isnegated(b)) vb = -vb;
+        if (va == 0) return mtbdd_false;
+        va = (va - vb) / va;
+        if (va < 0) va = -va;
+        return (va < *(double*)&svalue) ? mtbdd_true : mtbdd_false;
+    }
+
+    /* Maybe perform garbage collection */
+    sylvan_gc_test();
+
+    /* Check cache */
+    MTBDD result;
+    if (cache_get3(CACHE_MTBDD_EQUAL_NORM_REL, a, b, svalue, &result)) return result;
+
+    /* Get top variable */
+    uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
+    uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
+    uint32_t var = va < vb ? va : vb;
+
+    /* Get cofactors */
+    MTBDD alow, ahigh, blow, bhigh;
+    alow  = va == var ? node_getlow(a, na)  : a;
+    ahigh = va == var ? node_gethigh(a, na) : a;
+    blow  = vb == var ? node_getlow(b, nb)  : b;
+    bhigh = vb == var ? node_gethigh(b, nb) : b;
+
+    SPAWN(mtbdd_equal_norm_rel_d2, ahigh, bhigh, svalue, shortcircuit);
+    result = CALL(mtbdd_equal_norm_rel_d2, alow, blow, svalue, shortcircuit);
+    if (result == mtbdd_false) *shortcircuit = 1;
+    if (result != SYNC(mtbdd_equal_norm_rel_d2)) result = mtbdd_false;
+    if (result == mtbdd_false) *shortcircuit = 1;
+
+    /* Store in cache */
+    cache_put3(CACHE_MTBDD_EQUAL_NORM_REL, a, b, svalue, result);
+    return result;
+}
+
+TASK_IMPL_3(MTBDD, mtbdd_equal_norm_rel_d, MTBDD, a, MTBDD, b, double, d)
+{
+    /* the implementation checks shortcircuit in every task and if the wo
+       MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
+    int shortcircuit = 0;
+    return CALL(mtbdd_equal_norm_rel_d2, a, b, *(size_t*)&d, &shortcircuit);
+}
+
+/**
  * Multiply <a> and <b>, and abstract variables <vars> using summation.
  * This is similar to the "and_exists" operation in BDDs.
  */

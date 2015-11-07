@@ -319,6 +319,20 @@ TASK_DECL_2(MTBDD, mtbdd_strict_threshold_double, MTBDD, double);
 #define mtbdd_strict_threshold_double(dd, value) CALL(mtbdd_strict_threshold_double, dd, value)
 
 /**
+ * For two Double MTBDDs, calculate whether they are equal module some value epsilon
+ * i.e. abs(a-b)<3
+ */
+TASK_DECL_3(MTBDD, mtbdd_equal_norm_d, MTBDD, MTBDD, double);
+#define mtbdd_equal_norm_d(a, b, epsilon) CALL(mtbdd_equal_norm_d, a, b, epsilon)
+
+/**
+ * For two Double MTBDDs, calculate whether they are relatively equal module some value epsilon
+ * i.e. abs((a-b)/a) < e
+ */
+TASK_DECL_3(MTBDD, mtbdd_equal_norm_rel_d, MTBDD, MTBDD, double);
+#define mtbdd_equal_norm_rel_d(a, b, epsilon) CALL(mtbdd_equal_norm_rel_d, a, b, epsilon)
+
+/**
  * Calculate the support of a MTBDD, i.e. the cube of all variables that appear in the MTBDD nodes.
  */
 TASK_DECL_1(MTBDD, mtbdd_support, MTBDD);

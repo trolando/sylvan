@@ -49,6 +49,14 @@ static size_t             cache_mask;         // cache_size-1
 static cache_entry_t      cache_table;
 static uint32_t*          cache_status;
 
+static uint64_t           next_opid;
+
+uint64_t
+cache_next_opid()
+{
+    return __sync_fetch_and_add(&next_opid, 1LL<<40);
+}
+
 // status: 0x80000000 - bitlock
 //         0x7fff0000 - hash (part of the 64-bit hash not used to position)
 //         0x0000ffff - tag (every put increases tag field)
@@ -151,6 +159,8 @@ cache_create(size_t _cache_size, size_t _max_size)
         fprintf(stderr, "cache_create: Unable to allocate memory!\n");
         exit(1);
     }
+
+    next_opid = 512LL << 40;
 }
 
 void

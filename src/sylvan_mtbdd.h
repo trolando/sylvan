@@ -151,6 +151,11 @@ TASK_DECL_2(double, mtbdd_satcount, MTBDD, size_t);
 #define mtbdd_satcount(dd, nvars) CALL(mtbdd_satcount, dd, nvars)
 
 /**
+ * Count the number of MTBDD leaves (excluding mtbdd_false and mtbdd_true) in the MTBDD
+ */
+size_t mtbdd_leafcount(MTBDD mtbdd);
+
+/**
  * Count the number of MTBDD nodes and terminals (excluding mtbdd_false and mtbdd_true) in a MTBDD)
  */
 size_t mtbdd_nodecount(MTBDD mtbdd);

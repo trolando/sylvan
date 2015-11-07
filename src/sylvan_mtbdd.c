@@ -1799,6 +1799,30 @@ mtbdd_unmark_rec(MTBDD mtbdd)
 }
 
 /**
+ * Count number of leaves in MTBDD
+ */
+
+static size_t
+mtbdd_leafcount_mark(MTBDD mtbdd)
+{
+    if (mtbdd == mtbdd_true) return 0; // do not count true/false leaf
+    if (mtbdd == mtbdd_false) return 0; // do not count true/false leaf
+    mtbddnode_t n = GETNODE(mtbdd);
+    if (mtbddnode_getmark(n)) return 0;
+    mtbddnode_setmark(n, 1);
+    if (mtbddnode_isleaf(n)) return 1; // count leaf as 1
+    return mtbdd_leafcount_mark(mtbddnode_getlow(n)) + mtbdd_leafcount_mark(mtbddnode_gethigh(n));
+}
+
+size_t
+mtbdd_leafcount(MTBDD mtbdd)
+{
+    size_t result = mtbdd_leafcount_mark(mtbdd);
+    mtbdd_unmark_rec(mtbdd);
+    return result;
+}
+
+/**
  * Count number of nodes in MTBDD
  */
 

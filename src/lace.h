@@ -1,5 +1,5 @@
 /* 
- * Copyright 2013-2014 Formal Methods and Tools, University of Twente
+ * Copyright 2013-2015 Formal Methods and Tools, University of Twente
  *
  * Licensed under the Apache License, Version 2.0 (the License);
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <atomics.h>
 #include <pthread.h> /* for pthread_t */
 
 #ifndef __LACE_H__
@@ -57,6 +56,11 @@ extern "C" {
 #define LACE_COUNT_EVENTS (LACE_PIE_TIMES || LACE_COUNT_TASKS || LACE_COUNT_STEALS || LACE_COUNT_SPLITS)
 #endif
 
+/* Typical cacheline size of system architectures */
+#ifndef LINE_SIZE
+#define LINE_SIZE 64
+#endif
+
 /* The size of a pointer, 8 bytes on a 64-bit architecture */
 #define P_SZ (sizeof(void *))
 
@@ -68,6 +72,24 @@ extern "C" {
    The task size is the maximum of the size of the result or of the sum of the parameter sizes. */
 #ifndef LACE_TASKSIZE
 #define LACE_TASKSIZE (6)*P_SZ
+#endif
+
+/* Some fences */
+#ifndef compiler_barrier
+#define compiler_barrier() { asm volatile("" ::: "memory"); }
+#endif
+
+#ifndef mfence
+#define mfence() { asm volatile("mfence" ::: "memory"); }
+#endif
+
+/* Compiler specific branch prediction optimization */
+#ifndef likely
+#define likely(x)       __builtin_expect((x),1)
+#endif
+
+#ifndef unlikely
+#define unlikely(x)     __builtin_expect((x),0)
 #endif
 
 #if LACE_PIE_TIMES
@@ -192,6 +214,7 @@ typedef struct _WorkerP {
     size_t stack_trigger; // for stack overflow detection
     int16_t worker;     // what is my worker id?
     uint8_t allstolen; // my allstolen
+    volatile int enabled; // if this worker is enabled
 
 #if LACE_COUNT_EVENTS
     uint64_t ctr[CTR_MAX]; // counters
@@ -204,6 +227,12 @@ typedef struct _WorkerP {
 
 #define LACE_TYPEDEF_CB(t, f, ...) typedef t (*f)(WorkerP *, Task *, ##__VA_ARGS__);
 LACE_TYPEDEF_CB(void, lace_startup_cb, void*);
+
+/**
+ * Set verbosity level (0 = no startup messages, 1 = startup messages)
+ * Default level: 0
+ */
+void lace_set_verbosity(int level);
 
 /**
  * Initialize master structures for Lace with <n_workers> workers
@@ -248,12 +277,27 @@ void lace_steal_random_CALL(WorkerP*, Task*);
 #define lace_steal_loop(quit) CALL(lace_steal_loop, quit)
 
 /**
+ * Barrier (all workers must enter it before progressing)
+ */
+void lace_barrier();
+
+/**
  * Suspend and resume all other workers.
- * Careful with usage. Only suspend when all other workers are idle.
- * Always use resume before exiting Lace.
+ * May only be used when all other workers are idle.
  */
 void lace_suspend();
 void lace_resume();
+
+/**
+ * When all tasks are suspended, workers can be temporarily disabled.
+ * With set_workers, all workers 0..(N-1) are enabled and N..max are disabled.
+ * You can never disable the current worker or reduce the number of workers below 1.
+ * You cannot add workers.
+ */
+void lace_disable_worker(int worker);
+void lace_enable_worker(int worker);
+void lace_set_workers(int workercount);
+int lace_enabled_workers();
 
 /**
  * Retrieve number of Lace workers
@@ -336,7 +380,7 @@ void lace_do_together(WorkerP *__lace_worker, Task *__lace_dq_head, Task *task);
 void lace_do_newframe(WorkerP *__lace_worker, Task *__lace_dq_head, Task *task);
 
 void lace_yield(WorkerP *__lace_worker, Task *__lace_dq_head);
-#define YIELD_NEWFRAME() { if (unlikely(ATOMIC_READ(lace_newframe.t) != NULL)) lace_yield(__lace_worker, __lace_dq_head); }
+#define YIELD_NEWFRAME() { if (unlikely((*(volatile Task**)&lace_newframe.t) != NULL)) lace_yield(__lace_worker, __lace_dq_head); }
 
 #if LACE_PIE_TIMES
 static void lace_time_event( WorkerP *w, int event )
@@ -443,7 +487,7 @@ lace_steal(WorkerP *self, Task *__dq_head, Worker *victim)
             register TailSplit ts_new;
             ts_new.v = ts.v;
             ts_new.ts.tail++;
-            if (cas(&victim->ts.v, ts.v, ts_new.v)) {
+            if (__sync_bool_compare_and_swap(&victim->ts.v, ts.v, ts_new.v)) {
                 // Stolen
                 Task *t = &victim->dq[ts.ts.tail];
                 t->thief = self->_public;
@@ -570,9 +614,7 @@ void lace_drop(WorkerP *w, Task *__dq_head)
                                                                                       \
 typedef struct _TD_##NAME {                                                           \
   TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
-  union {                                                                             \
-    RTYPE res;                                                                        \
-  } d;                                                                                \
+  union {  RTYPE res; } d;                                                            \
 } TD_##NAME;                                                                          \
                                                                                       \
 /* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
@@ -722,6 +764,7 @@ RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_d
                                                                                       \
 typedef struct _TD_##NAME {                                                           \
   TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
+                                                                                      \
 } TD_##NAME;                                                                          \
                                                                                       \
 /* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
@@ -874,10 +917,7 @@ void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq
                                                                                       \
 typedef struct _TD_##NAME {                                                           \
   TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
-  union {                                                                             \
-    struct {  ATYPE_1 arg_1; } args;                                                  \
-    RTYPE res;                                                                        \
-  } d;                                                                                \
+  union { struct {  ATYPE_1 arg_1; } args; RTYPE res; } d;                            \
 } TD_##NAME;                                                                          \
                                                                                       \
 /* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
@@ -1027,10 +1067,7 @@ RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_d
                                                                                       \
 typedef struct _TD_##NAME {                                                           \
   TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
-  union {                                                                             \
-    struct {  ATYPE_1 arg_1; } args;                                                  \
-                                                                                      \
-  } d;                                                                                \
+  union { struct {  ATYPE_1 arg_1; } args; } d;                                       \
 } TD_##NAME;                                                                          \
                                                                                       \
 /* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
@@ -1183,10 +1220,7 @@ void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq
                                                                                       \
 typedef struct _TD_##NAME {                                                           \
   TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
-  union {                                                                             \
-    struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; } args;                                   \
-    RTYPE res;                                                                        \
-  } d;                                                                                \
+  union { struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; } args; RTYPE res; } d;             \
 } TD_##NAME;                                                                          \
                                                                                       \
 /* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
@@ -1336,10 +1370,7 @@ RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_d
                                                                                       \
 typedef struct _TD_##NAME {                                                           \
   TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
-  union {                                                                             \
-    struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; } args;                                   \
-                                                                                      \
-  } d;                                                                                \
+  union { struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; } args; } d;                        \
 } TD_##NAME;                                                                          \
                                                                                       \
 /* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
@@ -1492,10 +1523,7 @@ void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq
                                                                                       \
 typedef struct _TD_##NAME {                                                           \
   TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
-  union {                                                                             \
-    struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; } args;                    \
-    RTYPE res;                                                                        \
-  } d;                                                                                \
+  union { struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; } args; RTYPE res; } d;\
 } TD_##NAME;                                                                          \
                                                                                       \
 /* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
@@ -1645,10 +1673,7 @@ RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_d
                                                                                       \
 typedef struct _TD_##NAME {                                                           \
   TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
-  union {                                                                             \
-    struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; } args;                    \
-                                                                                      \
-  } d;                                                                                \
+  union { struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; } args; } d;         \
 } TD_##NAME;                                                                          \
                                                                                       \
 /* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
@@ -1801,10 +1826,7 @@ void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq
                                                                                       \
 typedef struct _TD_##NAME {                                                           \
   TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
-  union {                                                                             \
-    struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; ATYPE_4 arg_4; } args;     \
-    RTYPE res;                                                                        \
-  } d;                                                                                \
+  union { struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; ATYPE_4 arg_4; } args; RTYPE res; } d;\
 } TD_##NAME;                                                                          \
                                                                                       \
 /* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
@@ -1954,10 +1976,7 @@ RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_d
                                                                                       \
 typedef struct _TD_##NAME {                                                           \
   TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
-  union {                                                                             \
-    struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; ATYPE_4 arg_4; } args;     \
-                                                                                      \
-  } d;                                                                                \
+  union { struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; ATYPE_4 arg_4; } args; } d;\
 } TD_##NAME;                                                                          \
                                                                                       \
 /* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
@@ -2110,10 +2129,7 @@ void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq
                                                                                       \
 typedef struct _TD_##NAME {                                                           \
   TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
-  union {                                                                             \
-    struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; ATYPE_4 arg_4; ATYPE_5 arg_5; } args;\
-    RTYPE res;                                                                        \
-  } d;                                                                                \
+  union { struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; ATYPE_4 arg_4; ATYPE_5 arg_5; } args; RTYPE res; } d;\
 } TD_##NAME;                                                                          \
                                                                                       \
 /* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
@@ -2263,10 +2279,7 @@ RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_d
                                                                                       \
 typedef struct _TD_##NAME {                                                           \
   TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
-  union {                                                                             \
-    struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; ATYPE_4 arg_4; ATYPE_5 arg_5; } args;\
-                                                                                      \
-  } d;                                                                                \
+  union { struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; ATYPE_4 arg_4; ATYPE_5 arg_5; } args; } d;\
 } TD_##NAME;                                                                          \
                                                                                       \
 /* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
@@ -2419,10 +2432,7 @@ void NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_dq
                                                                                       \
 typedef struct _TD_##NAME {                                                           \
   TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
-  union {                                                                             \
-    struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; ATYPE_4 arg_4; ATYPE_5 arg_5; ATYPE_6 arg_6; } args;\
-    RTYPE res;                                                                        \
-  } d;                                                                                \
+  union { struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; ATYPE_4 arg_4; ATYPE_5 arg_5; ATYPE_6 arg_6; } args; RTYPE res; } d;\
 } TD_##NAME;                                                                          \
                                                                                       \
 /* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\
@@ -2572,10 +2582,7 @@ RTYPE NAME##_WORK(WorkerP *__lace_worker __attribute__((unused)), Task *__lace_d
                                                                                       \
 typedef struct _TD_##NAME {                                                           \
   TASK_COMMON_FIELDS(_TD_##NAME)                                                      \
-  union {                                                                             \
-    struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; ATYPE_4 arg_4; ATYPE_5 arg_5; ATYPE_6 arg_6; } args;\
-                                                                                      \
-  } d;                                                                                \
+  union { struct {  ATYPE_1 arg_1; ATYPE_2 arg_2; ATYPE_3 arg_3; ATYPE_4 arg_4; ATYPE_5 arg_5; ATYPE_6 arg_6; } args; } d;\
 } TD_##NAME;                                                                          \
                                                                                       \
 /* If this line generates an error, please manually set the define LACE_TASKSIZE to a higher value */\

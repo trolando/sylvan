@@ -176,8 +176,11 @@ llmsset_lookup2(const llmsset_t dbs, uint64_t a, uint64_t b, int* created, const
     uint64_t idx, last, cidx = 0;
     int i=0;
 
-    if (LLMSSET_MASK) last = idx = hash_rehash & dbs->mask;
-    else last = idx = hash_rehash % dbs->table_size;
+#if LLMSSET_MASK
+    last = idx = hash_rehash & dbs->mask;
+#else
+    last = idx = hash_rehash % dbs->table_size;
+#endif
 
     for (;;) {
         volatile uint64_t *bucket = dbs->table + idx;
@@ -233,8 +236,11 @@ llmsset_lookup2(const llmsset_t dbs, uint64_t a, uint64_t b, int* created, const
             if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
             else hash_rehash = llmsset_hash(a, b, hash_rehash);
 
-            if (LLMSSET_MASK) last = idx = hash_rehash & dbs->mask;
-            else last = idx = hash_rehash % dbs->table_size;
+#if LLMSSET_MASK
+            last = idx = hash_rehash & dbs->mask;
+#else
+            last = idx = hash_rehash % dbs->table_size;
+#endif
         }
     }
 }
@@ -266,8 +272,11 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
     int i=0;
 
     uint64_t idx, last;
-    if (LLMSSET_MASK) last = idx = hash_rehash & dbs->mask;
-    else last = idx = hash_rehash % dbs->table_size;
+#if LLMSSET_MASK
+    last = idx = hash_rehash & dbs->mask;
+#else
+    last = idx = hash_rehash % dbs->table_size;
+#endif
 
     for (;;) {
         volatile uint64_t *bucket = &dbs->table[idx];
@@ -282,8 +291,11 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
             if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
             else hash_rehash = llmsset_hash(a, b, hash_rehash);
 
-            if (LLMSSET_MASK) last = idx = hash_rehash & dbs->mask;
-            else last = idx = hash_rehash % dbs->table_size;
+#if LLMSSET_MASK
+            last = idx = hash_rehash & dbs->mask;
+#else
+            last = idx = hash_rehash % dbs->table_size;
+#endif
         }
     }
 }

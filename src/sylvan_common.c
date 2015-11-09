@@ -16,7 +16,7 @@
 
 #include <sylvan_config.h>
 
-#include <barrier.h>
+#include <atomics.h>
 #include <sylvan_common.h>
 
 /**
@@ -49,8 +49,7 @@ VOID_TASK_IMPL_2(sylvan_table_usage, size_t*, filled, size_t*, total)
  * Implementation of garbage collection
  */
 static int gc_enabled = 1;
-static barrier_t gcbar; // gc in progress
-static volatile int gc; // barrier
+static volatile int gc; // variable used in cas switch to ensure only one gc at a time
 
 struct reg_gc_mark_entry
 {
@@ -249,7 +248,6 @@ sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize, size_t m
     cache_create(cachesize, max_cachesize);
 
     gc = 0;
-    barrier_init(&gcbar, lace_workers());
 #if SYLVAN_AGGRESSIVE_RESIZE
     gc_hook = TASK(sylvan_gc_aggressive_resize);
 #else
@@ -299,5 +297,4 @@ sylvan_quit()
 
     cache_free();
     llmsset_free(nodes);
-    barrier_destroy(&gcbar);
 }

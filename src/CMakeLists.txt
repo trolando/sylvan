@@ -6,8 +6,6 @@ set(CMAKE_C_FLAGS "-g -O3 -Wextra -Wall -Werror -fno-strict-aliasing -std=gnu11"
 add_library(sylvan
     atomics.h
     avl.h
-    barrier.h
-    barrier.c
     cache.h
     cache.c
     lace.h

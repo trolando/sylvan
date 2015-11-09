@@ -6,8 +6,6 @@ set(CMAKE_C_FLAGS "-g -O3 -Wextra -Wall -Werror -fno-strict-aliasing -std=gnu11"
 add_library(sylvan
     atomics.h
     avl.h
-    cache.h
-    cache.c
     lace.h
     lace.c
     llmsset.c
@@ -21,6 +19,8 @@ add_library(sylvan
     sylvan.h
     sylvan_bdd.h
     sylvan_bdd.c
+    sylvan_cache.h
+    sylvan_cache.c
     sylvan_config.h
     sylvan_common.h
     sylvan_common.c
@@ -52,10 +52,10 @@ install(TARGETS
 
 install(FILES 
     atomics.h
-    cache.h
     lace.h
     llmsset.h
     sylvan.h
+    sylvan_cache.h
     sylvan_common.h
     sylvan_config.h
     sylvan_bdd.h

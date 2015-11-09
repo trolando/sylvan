@@ -42,7 +42,7 @@
 #include <stdlib.h>
 #include <lace.h> // for definitions
 
-#include <cache.h>
+#include <sylvan_cache.h>
 #include <llmsset.h>
 #include <stats.h>
 

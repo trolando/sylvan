@@ -5,8 +5,6 @@ libsylvan_la_CFLAGS = $(AM_CFLAGS) -fno-strict-aliasing -std=gnu11
 libsylvan_la_SOURCES = \
     atomics.h \
     avl.h \
-    cache.h \
-    cache.c \
     lace.c \
     lace.h \
     llmsset.c \
@@ -23,6 +21,8 @@ libsylvan_la_SOURCES = \
     sylvan_bdd.c \
     sylvan_ldd.h \
     sylvan_ldd.c \
+    sylvan_cache.h \
+    sylvan_cache.c \
     sylvan_common.c \
     sylvan_common.h \
     sylvan_mtbdd.h \

@@ -20,7 +20,7 @@
 #include <sys/mman.h> // for mmap
 
 #include <atomics.h>
-#include <cache.h>
+#include <sylvan_cache.h>
 
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS MAP_ANON

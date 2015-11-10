@@ -25,7 +25,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <atomics.h>
 #include <avl.h>
 #include <refs.h>
 #include <sha2.h>
@@ -2330,8 +2329,6 @@ lddmc_serialize_assign_rec(MDD mdd)
         // first assign recursively
         lddmc_serialize_assign_rec(mddnode_getright(n));
         lddmc_serialize_assign_rec(mddnode_getdown(n));
-
-        compiler_barrier();
 
         // assign real value
         ss->assigned = lddmc_ser_counter++;

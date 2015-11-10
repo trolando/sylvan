@@ -25,8 +25,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <atomics.h>
-// #include <avl.h>
 #include <refs.h>
 #include <sha2.h>
 #include <sylvan.h>

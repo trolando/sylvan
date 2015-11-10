@@ -3,7 +3,6 @@ lib_LTLIBRARIES = libsylvan.la
 libsylvan_la_CFLAGS = $(AM_CFLAGS) -fno-strict-aliasing -std=gnu11
 
 libsylvan_la_SOURCES = \
-    atomics.h \
     avl.h \
     lace.c \
     lace.h \

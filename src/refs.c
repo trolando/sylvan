@@ -22,8 +22,15 @@
 #include <stdlib.h> // for exit
 #include <sys/mman.h> // for mmap
 
-#include <atomics.h>
 #include <refs.h>
+
+#ifndef compiler_barrier
+#define compiler_barrier() { asm volatile("" ::: "memory"); }
+#endif
+
+#ifndef cas
+#define cas(ptr, old, new) (__sync_bool_compare_and_swap((ptr),(old),(new)))
+#endif
 
 /**
  * Implementation of external references

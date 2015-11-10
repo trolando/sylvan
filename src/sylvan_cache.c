@@ -19,11 +19,18 @@
 #include <stdlib.h> // for exit
 #include <sys/mman.h> // for mmap
 
-#include <atomics.h>
 #include <sylvan_cache.h>
 
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS MAP_ANON
+#endif
+
+#ifndef compiler_barrier
+#define compiler_barrier() { asm volatile("" ::: "memory"); }
+#endif
+
+#ifndef cas
+#define cas(ptr, old, new) (__sync_bool_compare_and_swap((ptr),(old),(new)))
 #endif
 
 /**

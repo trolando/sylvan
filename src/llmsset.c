@@ -22,7 +22,6 @@
 #include <string.h> // memset
 #include <sys/mman.h> // for mmap
 
-#include <atomics.h>
 #include <llmsset.h>
 #include <stats.h>
 #include <tls.h>
@@ -39,6 +38,10 @@ static hwloc_topology_t topo;
 
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS MAP_ANON
+#endif
+
+#ifndef cas
+#define cas(ptr, old, new) (__sync_bool_compare_and_swap((ptr),(old),(new)))
 #endif
 
 DECLARE_THREAD_LOCAL(my_region, uint64_t);
@@ -158,6 +161,7 @@ llmsset_hash(const uint64_t a, const uint64_t b, const uint64_t seed)
  * CL_MASK and CL_MASK_R are for the probe sequence calculation.
  * With 64 bytes per cacheline, there are 8 64-bit values per cacheline.
  */
+// The LINE_SIZE is defined in lace.h
 static const uint64_t CL_MASK     = ~(((LINE_SIZE) / 8) - 1);
 static const uint64_t CL_MASK_R   = ((LINE_SIZE) / 8) - 1;
 

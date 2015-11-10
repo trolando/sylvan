@@ -4,7 +4,6 @@ project(sylvan C CXX)
 set(CMAKE_C_FLAGS "-g -O3 -Wextra -Wall -Werror -fno-strict-aliasing -std=gnu11")
 
 add_library(sylvan
-    atomics.h
     avl.h
     lace.h
     lace.c
@@ -51,7 +50,6 @@ install(TARGETS
     DESTINATION "lib")
 
 install(FILES 
-    atomics.h
     lace.h
     llmsset.h
     sylvan.h

@@ -16,8 +16,11 @@
 
 #include <sylvan_config.h>
 
-#include <atomics.h>
 #include <sylvan_common.h>
+
+#ifndef cas
+#define cas(ptr, old, new) (__sync_bool_compare_and_swap((ptr),(old),(new)))
+#endif
 
 /**
  * Static global variables
@@ -225,7 +228,7 @@ VOID_TASK_IMPL_0(sylvan_gc)
         gc = 0;
     } else {
         /* wait for new frame to appear */
-        while (ATOMIC_READ(lace_newframe.t) == 0) {}
+        while (*(Task* volatile*)&(lace_newframe.t) == 0) {}
         lace_yield(__lace_worker, __lace_dq_head);
     }
 }

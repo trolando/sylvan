@@ -73,6 +73,8 @@ extern "C" {
 #define CACHE_MTBDD_MAXIMUM       (50LL<<40)
 #define CACHE_MTBDD_LEQ           (51LL<<40)
 #define CACHE_MTBDD_LESS          (52LL<<40)
+#define CACHE_MTBDD_GEQ           (53LL<<40)
+#define CACHE_MTBDD_GREATER       (54LL<<40)
 
 /**
  * Registration of quit functions

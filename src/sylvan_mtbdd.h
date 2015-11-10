@@ -352,6 +352,20 @@ TASK_DECL_2(MTBDD, mtbdd_less, MTBDD, MTBDD);
 #define mtbdd_less(a, b) CALL(mtbdd_less, a, b)
 
 /**
+ * For two MTBDDs a, b, return mtbdd_true if all common assignments a(s) >= b(s), mtbdd_false otherwise.
+ * For domains not in a / b, assume True.
+ */
+TASK_DECL_2(MTBDD, mtbdd_geq, MTBDD, MTBDD);
+#define mtbdd_geq(a, b) CALL(mtbdd_geq, a, b)
+
+/**
+ * For two MTBDDs a, b, return mtbdd_true if all common assignments a(s) > b(s), mtbdd_false otherwise.
+ * For domains not in a / b, assume True.
+ */
+TASK_DECL_2(MTBDD, mtbdd_greater, MTBDD, MTBDD);
+#define mtbdd_greater(a, b) CALL(mtbdd_greater, a, b)
+
+/**
  * Calculate the support of a MTBDD, i.e. the cube of all variables that appear in the MTBDD nodes.
  */
 TASK_DECL_1(MTBDD, mtbdd_support, MTBDD);

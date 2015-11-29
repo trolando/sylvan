@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#include <stdint.h> // for uint32_t etc
 #include <sylvan_config.h>
+#include <stdint.h> // for uint32_t etc
 
 #ifndef REFS_INLINE_H
 #define REFS_INLINE_H

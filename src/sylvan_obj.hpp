@@ -25,10 +25,12 @@
 
 namespace sylvan {
 
+class BddSet;
 class BddMap;
 
 class Bdd {
     friend class Sylvan;
+    friend class BddSet;
     friend class BddMap;
     friend class Mtbdd;
 
@@ -324,6 +326,154 @@ public:
 
 private:
     BDD bdd;
+};
+
+class BddSet
+{
+    friend class Bdd;
+    Bdd set;
+
+public:
+    /**
+     * @brief Create a new empty set.
+     */
+    BddSet() : set(Bdd::bddOne()) {}
+
+    /**
+     * @brief Wrap the BDD cube <other> in a set.
+     */
+    BddSet(Bdd &other) : set(other) {}
+
+    /**
+     * @brief Create a copy of the set <other>.
+     */
+    BddSet(BddSet &other) : set(other.set) {}
+
+    /**
+     * @brief Add the variable <variable> to this set.
+     */
+    void add(uint32_t variable) {
+        set *= Bdd::bddVar(variable);
+    }
+
+    /**
+     * @brief Add all variables in the set <other> to this set.
+     */
+    void add(BddSet &other) {
+        set *= other.set;
+    }
+
+    /**
+     * @brief Remove the variable <variable> from this set.
+     */
+    void remove(uint32_t variable) {
+        set = set.ExistAbstract(Bdd::bddVar(variable));
+    }
+
+    /**
+     * @brief Remove all variables in the set <other> from this set.
+     */
+    void remove(BddSet &other) {
+        set = set.ExistAbstract(other.set);
+    }
+
+    /**
+     * @brief Retrieve the head of the set. (The first variable.)
+     */
+    uint32_t TopVar() const {
+        return set.TopVar();
+    }
+
+    /**
+     * @brief Retrieve the tail of the set. (The set containing all but the first variables.)
+     */
+    BddSet Next() const {
+        Bdd then = set.Then();
+        return BddSet(then);
+    }
+
+    /**
+     * @brief Return true if this set is empty, or false otherwise.
+     */
+    bool isEmpty() const {
+        return set.isOne();
+    }
+
+    /**
+     * @brief Return true if this set contains the variable <variable>, or false otherwise.
+     */
+    bool contains(uint32_t variable) const {
+        if (isEmpty()) return false;
+        else if (TopVar() == variable) return true;
+        else return Next().contains(variable);
+    }
+
+    /**
+     * @brief Return the number of variables in this set.
+     */
+    size_t size() const {
+        if (isEmpty()) return 0;
+        else return 1 + Next().size();
+    }
+
+    /**
+     * @brief Create a set containing the <length> variables in <arr>.
+     * It is advised to have the variables in <arr> in ascending order.
+     */
+    static BddSet fromArray(BDDVAR *arr, size_t length) {
+        BddSet set;
+        for (size_t i = 0; i < length; i++) {
+            set.add(arr[length-i-1]);
+        }
+    }
+
+    /**
+     * @brief Create a set containing the variables in <variables>.
+     * It is advised to have the variables in <arr> in ascending order.
+     */
+    static BddSet fromVector(const std::vector<Bdd> variables) {
+        BddSet set;
+        for (int i=variables.size()-1; i>=0; i--) {
+            set.set *= variables[i];
+        }
+        return set;
+    }
+
+    /**
+     * @brief Create a set containing the variables in <variables>.
+     * It is advised to have the variables in <arr> in ascending order.
+     */
+    static Bdd fromVector(const std::vector<uint32_t> variables) {
+        BddSet set;
+        for (int i=variables.size()-1; i>=0; i--) {
+            set.add(variables[i]);
+        }
+        return set;
+    }
+
+    /**
+     * @brief Write all variables in this set to <arr>.
+     * @param arr An array of at least size this.size().
+     */
+    void toArray(BDDVAR *arr) const {
+        if (!isEmpty()) {
+            *arr = TopVar();
+            Next().toArray(arr+1);
+        }
+    }
+
+    /**
+     * @brief Return the vector of all variables in this set.
+     */
+    std::vector<uint32_t> toVector() const {
+        std::vector<uint32_t> result;
+        Bdd x = set;
+        while (!x.isOne()) {
+            result.push_back(x.TopVar());
+            x = x.Then();
+        }
+        return result;
+    }
 };
 
 class BddMap

@@ -274,6 +274,11 @@ public:
     double SatCount(const Bdd &variables) const;
 
     /**
+     * @brief Compute the number of satisfying variable assignments, using the given number of variables.
+     */
+    double SatCount(const size_t nvars) const;
+
+    /**
      * @brief Gets one satisfying assignment according to the variables.
      * @param variables The set of variables to be assigned, must include the support of the Bdd.
      */

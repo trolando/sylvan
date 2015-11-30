@@ -346,6 +346,14 @@ Bdd::SatCount(const Bdd &variables) const
     return sylvan_satcount(bdd, variables.bdd);
 }
 
+double
+Bdd::SatCount(size_t nvars) const
+{
+    LACE_ME;
+    // Note: the mtbdd_satcount can be called without initializing the MTBDD module.
+    return mtbdd_satcount(bdd, nvars);
+}
+
 void
 Bdd::PickOneCube(const Bdd &variables, uint8_t *values) const
 {

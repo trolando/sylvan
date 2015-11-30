@@ -66,7 +66,7 @@ public:
      * if it is 1, it will appear in its positive form, and if it is 2, it will appear as "any", thus it will
      * be skipped.
      */
-    static Bdd bddCube(const Bdd &variables, unsigned char *values);
+    static Bdd bddCube(const BddSet &variables, unsigned char *values);
 
     /**
      * @brief Returns the Bdd representing a cube of variables, according to the given values.
@@ -77,7 +77,7 @@ public:
      * if it is 1, it will appear in its positive form, and if it is 2, it will appear as "any", thus it will
      * be skipped.
      */
-    static Bdd bddCube(const Bdd &variables, std::vector<uint8_t> values);
+    static Bdd bddCube(const BddSet &variables, std::vector<uint8_t> values);
 
     int operator==(const Bdd& other) const;
     int operator!=(const Bdd& other) const;
@@ -139,17 +139,17 @@ public:
     /**
      * @brief Computes \exists cube: f \and g
      */
-    Bdd AndAbstract(const Bdd& g, const Bdd& cube) const;
+    Bdd AndAbstract(const Bdd& g, const BddSet& cube) const;
 
     /**
      * @brief Computes \exists cube: f
      */
-    Bdd ExistAbstract(const Bdd& cube) const;
+    Bdd ExistAbstract(const BddSet& cube) const;
 
     /**
      * @brief Computes \forall cube: f
      */
-    Bdd UnivAbstract(const Bdd& cube) const;
+    Bdd UnivAbstract(const BddSet& cube) const;
 
     /**
      * @brief Computes if f then g else h
@@ -202,7 +202,7 @@ public:
      * Use this function to concatenate two relations   --> -->
      * or to take the 'previous' of a set               -->  S
      */
-    Bdd RelPrev(const Bdd& relation, const Bdd& cube) const;
+    Bdd RelPrev(const Bdd& relation, const BddSet& cube) const;
 
     /**
      * @brief Computes the application of a transition relation to this set.
@@ -214,7 +214,7 @@ public:
      *
      * Use this function to take the 'next' of a set     S  -->
      */
-    Bdd RelNext(const Bdd& relation, const Bdd& cube) const;
+    Bdd RelNext(const Bdd& relation, const BddSet& cube) const;
 
     /**
      * @brief Computes the transitive closure by traversing the BDD recursively.
@@ -244,7 +244,7 @@ public:
     /**
      * @brief Substitute all variables in the array from by the corresponding variables in to.
      */
-    Bdd Permute(const std::vector<Bdd>& from, const std::vector<Bdd>& to) const;
+    Bdd Permute(const std::vector<uint32_t>& from, const std::vector<uint32_t>& to) const;
 
     /**
      * @brief Computes the support of a Bdd.
@@ -273,7 +273,7 @@ public:
     /**
      * @brief Computes the number of satisfying variable assignments, using variables in cube.
      */
-    double SatCount(const Bdd &variables) const;
+    double SatCount(const BddSet &cube) const;
 
     /**
      * @brief Compute the number of satisfying variable assignments, using the given number of variables.
@@ -284,14 +284,14 @@ public:
      * @brief Gets one satisfying assignment according to the variables.
      * @param variables The set of variables to be assigned, must include the support of the Bdd.
      */
-    void PickOneCube(const Bdd &variables, uint8_t *string) const;
+    void PickOneCube(const BddSet &variables, uint8_t *string) const;
 
     /**
      * @brief Gets one satisfying assignment according to the variables.
      * @param variables The set of variables to be assigned, must include the support of the Bdd.
      * Returns an empty vector when either this Bdd equals bddZero() or the cube is empty.
      */
-    std::vector<bool> PickOneCube(const Bdd &variables) const;
+    std::vector<bool> PickOneCube(const BddSet &variables) const;
 
     /**
      * @brief Gets a cube that satisfies this Bdd.
@@ -301,12 +301,12 @@ public:
     /**
      * @brief Faster version of: *this + Sylvan::bddCube(variables, values);
      */
-    Bdd UnionCube(const Bdd &variables, uint8_t *values) const;
+    Bdd UnionCube(const BddSet &variables, uint8_t *values) const;
 
     /**
      * @brief Faster version of: *this + Sylvan::bddCube(variables, values);
      */
-    Bdd UnionCube(const Bdd &variables, std::vector<uint8_t> values) const;
+    Bdd UnionCube(const BddSet &variables, std::vector<uint8_t> values) const;
 
     /**
      * @brief Generate a cube representing a set of variables
@@ -331,6 +331,7 @@ private:
 class BddSet
 {
     friend class Bdd;
+    friend class Mtbdd;
     Bdd set;
 
 public:
@@ -342,12 +343,12 @@ public:
     /**
      * @brief Wrap the BDD cube <other> in a set.
      */
-    BddSet(Bdd &other) : set(other) {}
+    BddSet(const Bdd &other) : set(other) {}
 
     /**
      * @brief Create a copy of the set <other>.
      */
-    BddSet(BddSet &other) : set(other.set) {}
+    BddSet(const BddSet &other) : set(other.set) {}
 
     /**
      * @brief Add the variable <variable> to this set.
@@ -443,7 +444,7 @@ public:
      * @brief Create a set containing the variables in <variables>.
      * It is advised to have the variables in <arr> in ascending order.
      */
-    static Bdd fromVector(const std::vector<uint32_t> variables) {
+    static BddSet fromVector(const std::vector<uint32_t> variables) {
         BddSet set;
         for (int i=variables.size()-1; i>=0; i--) {
             set.add(variables[i]);
@@ -575,7 +576,7 @@ public:
      * if it is 1, it will appear in its positive form, and if it is 2, it will appear as "any", thus it will
      * be skipped.
      */
-    static Mtbdd mtbddCube(const Mtbdd &variables, unsigned char *values, const Mtbdd &terminal);
+    static Mtbdd mtbddCube(const BddSet &variables, unsigned char *values, const Mtbdd &terminal);
 
      /**
      * @brief Returns the Mtbdd representing a cube of variables, according to the given values.
@@ -587,7 +588,7 @@ public:
      * if it is 1, it will appear in its positive form, and if it is 2, it will appear as "any", thus it will
      * be skipped.
      */
-    static Mtbdd mtbddCube(const Mtbdd &variables, std::vector<uint8_t> values, const Mtbdd &terminal);
+    static Mtbdd mtbddCube(const BddSet &variables, std::vector<uint8_t> values, const Mtbdd &terminal);
 
     int operator==(const Mtbdd& other) const;
     int operator!=(const Mtbdd& other) const;
@@ -658,7 +659,7 @@ public:
      * @brief Computers the abstraction on variables <variables> using operator <op>.
      * See also: AbstractPlus, AbstractTimes, AbstractMin, AbstractMax
      */
-    Mtbdd Abstract(const Mtbdd &variables, mtbdd_abstract_op op) const;
+    Mtbdd Abstract(const BddSet &variables, mtbdd_abstract_op op) const;
 
     /**
      * @brief Computes if f then g else h
@@ -689,27 +690,27 @@ public:
     /**
      * @brief Computes abstraction by summation (existential quantification)
      */
-    Mtbdd AbstractPlus(const Mtbdd &variables) const;
+    Mtbdd AbstractPlus(const BddSet &variables) const;
 
     /**
      * @brief Computes abstraction by multiplication (universal quantification)
      */
-    Mtbdd AbstractTimes(const Mtbdd &variables) const;
+    Mtbdd AbstractTimes(const BddSet &variables) const;
 
     /**
      * @brief Computes abstraction by minimum
      */
-    Mtbdd AbstractMin(const Mtbdd &variables) const;
+    Mtbdd AbstractMin(const BddSet &variables) const;
 
     /**
      * @brief Computes abstraction by maximum
      */
-    Mtbdd AbstractMax(const Mtbdd &variables) const;
+    Mtbdd AbstractMax(const BddSet &variables) const;
 
     /**
      * @brief Computes abstraction by summation of f \times g
      */
-    Mtbdd AndExists(const Mtbdd &other, const Mtbdd &variables) const;
+    Mtbdd AndExists(const Mtbdd &other, const BddSet &variables) const;
 
     /**
      * @brief Convert floating-point/fraction Mtbdd to a Boolean Mtbdd, leaf >= value ? true : false
@@ -753,12 +754,12 @@ public:
     /**
      * @brief Substitute all variables in the array from by the corresponding variables in to.
      */
-    Mtbdd Permute(const std::vector<Mtbdd>& from, const std::vector<Mtbdd>& to) const;
+    Mtbdd Permute(const std::vector<uint32_t>& from, const std::vector<uint32_t>& to) const;
 
     /**
      * @brief Compute the number of satisfying variable assignments, using variables in cube.
      */
-    double SatCount(const Mtbdd &variables) const;
+    double SatCount(const BddSet &variables) const;
 
     /**
      * @brief Compute the number of satisfying variable assignments, using the given number of variables.

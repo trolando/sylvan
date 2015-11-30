@@ -596,9 +596,19 @@ public:
     Mtbdd Compose(MtbddMap &m) const;
 
     /**
+     * @brief Substitute all variables in the array from by the corresponding variables in to.
+     */
+    Mtbdd Permute(const std::vector<Mtbdd>& from, const std::vector<Mtbdd>& to) const;
+
+    /**
      * @brief Compute the number of satisfying variable assignments, using variables in cube.
      */
     double SatCount(const Mtbdd &variables) const;
+
+    /**
+     * @brief Compute the number of satisfying variable assignments, using the given number of variables.
+     */
+    double SatCount(const size_t nvars) const;
 
     /**
      * @brief Gets the number of nodes in this Bdd. Not thread-safe!

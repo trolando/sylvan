@@ -343,7 +343,7 @@ double
 Bdd::SatCount(const Bdd &variables) const
 {
     LACE_ME;
-    return sylvan_satcount_cached(bdd, variables.bdd);
+    return sylvan_satcount(bdd, variables.bdd);
 }
 
 void
@@ -904,11 +904,31 @@ Mtbdd::Compose(MtbddMap &m) const
     return mtbdd_compose(mtbdd, m.mtbdd);
 }
 
+Mtbdd
+Mtbdd::Permute(const std::vector<Mtbdd>& from, const std::vector<Mtbdd>& to) const
+{
+    LACE_ME;
+
+    /* Create a map */
+    MtbddMap map;
+    for (int i=from.size()-1; i>=0; i--) {
+        map.put(from[i].TopVar(), to[i]);
+    }
+
+    return mtbdd_compose(mtbdd, map.mtbdd);
+}
+
+double
+Mtbdd::SatCount(size_t nvars) const
+{
+    LACE_ME;
+    return mtbdd_satcount(mtbdd, nvars);
+}
+
 double
 Mtbdd::SatCount(const Mtbdd &variables) const
 {
-    LACE_ME;
-    return mtbdd_satcount(mtbdd, variables.mtbdd);
+    return SatCount(sylvan_set_count(variables.mtbdd));
 }
 
 size_t

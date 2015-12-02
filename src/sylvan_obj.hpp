@@ -195,7 +195,7 @@ public:
      * @brief Computes the reverse application of a transition relation to this set.
      * @param relation the transition relation to apply
      * @param cube the variables that are in the transition relation
-     * This function assumes that s,t are interleaved with s odd and t even.
+     * This function assumes that s,t are interleaved with s even and t odd (s+1).
      * Other variables in the relation are ignored (by existential quantification)
      * Set cube to "false" (illegal cube) to assume all encountered variables are in s,t
      *
@@ -208,7 +208,7 @@ public:
      * @brief Computes the application of a transition relation to this set.
      * @param relation the transition relation to apply
      * @param cube the variables that are in the transition relation
-     * This function assumes that s,t are interleaved with s odd and t even.
+     * This function assumes that s,t are interleaved with s even and t odd (s+1).
      * Other variables in the relation are ignored (by existential quantification)
      * Set cube to "false" (illegal cube) to assume all encountered variables are in s,t
      *

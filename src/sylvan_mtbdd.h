@@ -392,6 +392,23 @@ TASK_DECL_1(MTBDD, mtbdd_maximum, MTBDD);
 #define mtbdd_maximum(dd) CALL(mtbdd_maximum, dd)
 
 /**
+ * Enumeration. Get the next cube+terminal encoded by the MTBDD.
+ * The cube follows a variable assignment to each variable in the cube and
+ * ends with the terminal that the MTBDD assigns to that assignment.
+ * Terminal "false" is always skipped.
+ *
+ * Usage:
+ * MTBDD cube = mtbdd_enum_next(dd, variables, mtbdd_false, NULL);
+ * while (cube != mtbdd_false) {
+ *     ....
+ *     cube = mtbdd_enum_next(dd, variables, cube, NULL);
+ * }
+ * The callback is an optional function that returns 0 when the given terminal node should be skipped.
+ */
+typedef int (*mtbdd_enum_filter_cb)(MTBDD);
+MTBDD mtbdd_enum_next(MTBDD dd, MTBDD variables, MTBDD prev, mtbdd_enum_filter_cb filter_cb);
+
+/**
  * Write a DOT representation of a MTBDD
  * The callback function is required for custom terminals.
  */

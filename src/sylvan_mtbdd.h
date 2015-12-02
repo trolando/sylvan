@@ -250,7 +250,7 @@ TASK_DECL_3(MTBDD, mtbdd_abstract_op_max, MTBDD, MTBDD, int);
 /**
  * Compute a - b
  */
-#define mtbdd_minus(a, b) mtbdd_plus(a, mtbdd_negate(minus))
+#define mtbdd_minus(a, b) mtbdd_plus(a, mtbdd_negate(b))
 
 /**
  * Compute a * b

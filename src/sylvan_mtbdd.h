@@ -331,7 +331,7 @@ TASK_DECL_3(MTBDD, mtbdd_equal_norm_d, MTBDD, MTBDD, double);
 #define mtbdd_equal_norm_d(a, b, epsilon) CALL(mtbdd_equal_norm_d, a, b, epsilon)
 
 /**
- * For two Double MTBDDs, calculate whether they are relatively equal module some value epsilon
+ * For two Double MTBDDs, calculate whether they are equal modulo some value epsilon
  * i.e. abs((a-b)/a) < e
  */
 TASK_DECL_3(MTBDD, mtbdd_equal_norm_rel_d, MTBDD, MTBDD, double);

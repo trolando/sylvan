@@ -2326,51 +2326,8 @@ TASK_IMPL_2(double, mtbdd_satcount, MTBDD, dd, size_t, nvars)
     return hack.d;
 }
 
-static MTBDD
-mtbdd_enum_next_leaf(MTBDD dd, MTBDD variables, MTBDD prev)
-{
-    // dd is a leaf
-
-    if (variables == mtbdd_true) {
-        // if prev is not false, then it equals dd and we should return false (seen before)
-        if (prev != mtbdd_false) return mtbdd_false;
-        else return dd;
-    } else {
-        // get next variable from <variables>
-        uint32_t v = mtbdd_getvar(variables);
-        variables = mtbdd_gethigh(variables);
-
-        // if prev is not false, get plow and phigh (one of these leads to "false")
-        MTBDD plow, phigh;
-        if (prev != mtbdd_false) {
-            mtbddnode_t pn = GETNODE(prev);
-            assert(!mtbdd_isleaf(prev) && mtbddnode_getvariable(pn) == v);
-            plow = node_getlow(prev, pn);
-            phigh = node_gethigh(prev, pn);
-            assert(plow == mtbdd_false || phigh == mtbdd_false);
-        } else {
-            plow = phigh = mtbdd_false;
-        }
-
-        MTBDD sub;
-
-        // first maybe follow low
-        if (phigh == mtbdd_false) {
-            sub = mtbdd_enum_next_leaf(dd, variables, plow);
-            if (sub != mtbdd_false) return mtbdd_makenode(v, sub, mtbdd_false);
-        }
-
-        // if not low, try following high
-        sub = mtbdd_enum_next_leaf(dd, variables, phigh);
-        if (sub != mtbdd_false) return mtbdd_makenode(v,  mtbdd_false, sub);
-
-        // we've tried low and high, return false
-        return mtbdd_false;
-    }
-}
-
 MTBDD
-mtbdd_enum_next(MTBDD dd, MTBDD variables, MTBDD prev, mtbdd_enum_filter_cb filter_cb)
+mtbdd_enum_first(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb)
 {
     if (dd == mtbdd_false) {
         // the leaf dd is skipped
@@ -2379,55 +2336,83 @@ mtbdd_enum_next(MTBDD dd, MTBDD variables, MTBDD prev, mtbdd_enum_filter_cb filt
         // a leaf for which the filter returns 0 is skipped
         if (filter_cb != NULL && filter_cb(dd) == 0) return mtbdd_false;
         // ok, we have a leaf that is not skipped, go for it!
-        return mtbdd_enum_next_leaf(dd, variables, prev);
+        while (variables != mtbdd_true) {
+            *arr++ = 2;
+            variables = mtbdd_gethigh(variables);
+        }
+        return dd;
     } else {
         // if variables == true, then dd must be a leaf. But then this line is unreachable.
+        // if this assertion fails, then <variables> is not the support of <dd>.
         assert(variables != mtbdd_true);
 
         // get next variable from <variables>
         uint32_t v = mtbdd_getvar(variables);
         variables = mtbdd_gethigh(variables);
 
-        // if prev is not false, get plow and phigh (one of these leads to "false")
-        MTBDD plow, phigh;
-        if (prev != mtbdd_false) {
-            mtbddnode_t pn = GETNODE(prev);
-            assert(!mtbdd_isleaf(prev) && mtbddnode_getvariable(pn) == v);
-            plow = node_getlow(prev, pn);
-            phigh = node_gethigh(prev, pn);
-            assert(plow == mtbdd_false || phigh == mtbdd_false);
-        } else {
-            plow = phigh = mtbdd_false;
+        // check if MTBDD is on this variable
+        mtbddnode_t n = GETNODE(dd);
+        if (mtbddnode_getvariable(n) != v) {
+            *arr = 2;
+            return mtbdd_enum_first(dd, variables, arr+1, filter_cb);
         }
-
-        // get cofactors ddlow and ddhigh
-        MTBDD ddlow, ddhigh;
-        if (!mtbdd_isleaf(dd)) {
-            mtbddnode_t n = GETNODE(dd);
-            if (mtbddnode_getvariable(n) == v) {
-                ddlow = node_getlow(dd, n);
-                ddhigh = node_gethigh(dd, n);
-            } else {
-                ddlow = ddhigh = dd;
-            }
-        } else {
-            ddlow = ddhigh = dd;
-        }
-
-        MTBDD sub;
 
         // first maybe follow low
-        if (phigh == mtbdd_false) {
-            sub = mtbdd_enum_next(ddlow, variables, plow, filter_cb);
-            if (sub != mtbdd_false) return mtbdd_makenode(v, sub, mtbdd_false);
+        MTBDD res = mtbdd_enum_first(node_getlow(dd, n), variables, arr+1, filter_cb);
+        if (res != mtbdd_false) {
+            *arr = 0;
+            return res;
         }
 
         // if not low, try following high
-        sub = mtbdd_enum_next(ddhigh, variables, phigh, filter_cb);
-        if (sub != mtbdd_false) return mtbdd_makenode(v,  mtbdd_false, sub);
-
+        res = mtbdd_enum_first(node_gethigh(dd, n), variables, arr+1, filter_cb);
+        if (res != mtbdd_false) {
+            *arr = 1;
+            return res;
+        }
+        
         // we've tried low and high, return false
         return mtbdd_false;
+    }
+}
+
+MTBDD
+mtbdd_enum_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb)
+{
+    if (mtbdd_isleaf(dd)) {
+        // we find the leaf in 'enum_next', then we've seen it before...
+        return mtbdd_false;
+    } else {
+        // if variables == true, then dd must be a leaf. But then this line is unreachable.
+        // if this assertion fails, then <variables> is not the support of <dd>.
+        assert(variables != mtbdd_true);
+
+        variables = mtbdd_gethigh(variables);
+
+        if (*arr == 0) {
+            // previous was low
+            mtbddnode_t n = GETNODE(dd);
+            MTBDD res = mtbdd_enum_next(node_getlow(dd, n), variables, arr+1, filter_cb);
+            if (res != mtbdd_false) {
+                return res;
+            } else {
+                // try to find new in high branch
+                res = mtbdd_enum_first(node_gethigh(dd, n), variables, arr+1, filter_cb);
+                if (res != mtbdd_false) {
+                    *arr = 1;
+                    return res;
+                } else {
+                    return mtbdd_false;
+                }
+            }
+        } else if (*arr == 1) {
+            // previous was high
+            mtbddnode_t n = GETNODE(dd);
+            return mtbdd_enum_next(node_gethigh(dd, n), variables, arr+1, filter_cb);
+        } else {
+            // previous was either
+            return mtbdd_enum_next(dd, variables, arr+1, filter_cb);
+        }
     }
 }
 

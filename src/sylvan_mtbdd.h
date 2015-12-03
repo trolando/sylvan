@@ -392,21 +392,26 @@ TASK_DECL_1(MTBDD, mtbdd_maximum, MTBDD);
 #define mtbdd_maximum(dd) CALL(mtbdd_maximum, dd)
 
 /**
- * Enumeration. Get the next cube+terminal encoded by the MTBDD.
- * The cube follows a variable assignment to each variable in the cube and
- * ends with the terminal that the MTBDD assigns to that assignment.
- * Terminal "false" is always skipped.
+ * Given a MTBDD <dd> and a cube of variables <variables> expected in <dd>,
+ * mtbdd_enum_first and mtbdd_enum_next enumerates the unique paths in <dd> that lead to a non-False leaf.
+ * 
+ * The function returns the leaf (or mtbdd_false if no new path is found) and encodes the path
+ * in the supplied array <arr>: 0 for a low edge, 1 for a high edge, and 2 if the variable is skipped.
+ *
+ * The supplied array <arr> must be large enough for all variables in <variables>.
  *
  * Usage:
- * MTBDD cube = mtbdd_enum_next(dd, variables, mtbdd_false, NULL);
- * while (cube != mtbdd_false) {
- *     ....
- *     cube = mtbdd_enum_next(dd, variables, cube, NULL);
+ * MTBDD leaf = mtbdd_enum_first(dd, variables, arr, NULL);
+ * while (leaf != mtbdd_false) {
+ *     .... // do something with arr/leaf
+ *     leaf = mtbdd_enum_next(dd, variables, arr, NULL);
  * }
+ *
  * The callback is an optional function that returns 0 when the given terminal node should be skipped.
  */
 typedef int (*mtbdd_enum_filter_cb)(MTBDD);
-MTBDD mtbdd_enum_next(MTBDD dd, MTBDD variables, MTBDD prev, mtbdd_enum_filter_cb filter_cb);
+MTBDD mtbdd_enum_first(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb);
+MTBDD mtbdd_enum_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb);
 
 /**
  * Write a DOT representation of a MTBDD

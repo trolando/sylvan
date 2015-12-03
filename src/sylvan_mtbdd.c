@@ -699,8 +699,8 @@ TASK_IMPL_3(MTBDD, mtbdd_apply, MTBDD, a, MTBDD, b, mtbdd_apply_op, op)
     mtbdd_refs_spawn(SPAWN(mtbdd_apply, ahigh, bhigh, op));
     MTBDD low = mtbdd_refs_push(CALL(mtbdd_apply, alow, blow, op));
     MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_apply));
-    result = mtbdd_makenode(v, low, high);
     mtbdd_refs_pop(1);
+    result = mtbdd_makenode(v, low, high);
 
     /* Store in cache */
     cache_put3(CACHE_MTBDD_APPLY, a, b, (size_t)op, result);
@@ -764,8 +764,8 @@ TASK_IMPL_5(MTBDD, mtbdd_applyp, MTBDD, a, MTBDD, b, size_t, p, mtbdd_applyp_op,
     mtbdd_refs_spawn(SPAWN(mtbdd_applyp, ahigh, bhigh, p, op, opid));
     MTBDD low = mtbdd_refs_push(CALL(mtbdd_applyp, alow, blow, p, op, opid));
     MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_applyp));
-    result = mtbdd_makenode(v, low, high);
     mtbdd_refs_pop(1);
+    result = mtbdd_makenode(v, low, high);
 
     /* Store in cache */
     cache_put3(opid, a, b, p, result);
@@ -801,8 +801,8 @@ TASK_IMPL_3(MTBDD, mtbdd_uapply, MTBDD, dd, mtbdd_uapply_op, op, size_t, param)
     mtbdd_refs_spawn(SPAWN(mtbdd_uapply, ddhigh, op, param));
     MTBDD low = mtbdd_refs_push(CALL(mtbdd_uapply, ddlow, op, param));
     MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_uapply));
-    result = mtbdd_makenode(mtbddnode_getvariable(ndd), low, high);
     mtbdd_refs_pop(1);
+    result = mtbdd_makenode(mtbddnode_getvariable(ndd), low, high);
 
     /* Store in cache */
     cache_put3(CACHE_MTBDD_UAPPLY, dd, (size_t)op, param, result);
@@ -957,18 +957,15 @@ TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
     if (v == mtbdd_true) {
         result = a;
     } else if (var_a < var_v) {
-        SPAWN(mtbdd_abstract, node_gethigh(a, na), v, op);
-        MTBDD low = CALL(mtbdd_abstract, node_getlow(a, na), v, op);
-        mtbdd_refs_push(low);
-        MTBDD high = SYNC(mtbdd_abstract);
+        mtbdd_refs_spawn(SPAWN(mtbdd_abstract, node_gethigh(a, na), v, op));
+        MTBDD low = mtbdd_refs_push(CALL(mtbdd_abstract, node_getlow(a, na), v, op));
+        MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_abstract));
         mtbdd_refs_pop(1);
         result = mtbdd_makenode(var_a, low, high);
     } else /* var_a == var_v */ {
-        SPAWN(mtbdd_abstract, node_gethigh(a, na), node_gethigh(v, nv), op);
-        MTBDD low = CALL(mtbdd_abstract, node_getlow(a, na), node_gethigh(v, nv), op);
-        mtbdd_refs_push(low);
-        MTBDD high = SYNC(mtbdd_abstract);
-        mtbdd_refs_push(high);
+        mtbdd_refs_spawn(SPAWN(mtbdd_abstract, node_gethigh(a, na), node_gethigh(v, nv), op));
+        MTBDD low = mtbdd_refs_push(CALL(mtbdd_abstract, node_getlow(a, na), node_gethigh(v, nv), op));
+        MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(SYNC(mtbdd_abstract)));
         result = WRAP(op, low, high, 0);
         mtbdd_refs_pop(2);
     }
@@ -1394,9 +1391,9 @@ TASK_IMPL_3(MTBDD, mtbdd_ite, MTBDD, f, MTBDD, g, MTBDD, h)
     /* Recursive calls */
     mtbdd_refs_spawn(SPAWN(mtbdd_ite, fhigh, ghigh, hhigh));
     MTBDD low = mtbdd_refs_push(CALL(mtbdd_ite, flow, glow, hlow));
-    MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(SYNC(mtbdd_ite)));
+    MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_ite));
+    mtbdd_refs_pop(1);
     result = mtbdd_makenode(v, low, high);
-    mtbdd_refs_pop(2);
 
     /* Store in cache */
     cache_put3(CACHE_MTBDD_ITE, f, g, h, result);

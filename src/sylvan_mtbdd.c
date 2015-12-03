@@ -2478,6 +2478,73 @@ mtbdd_nodecount(MTBDD mtbdd)
     return result;
 }
 
+TASK_2(int, mtbdd_test_isvalid_rec, MTBDD, dd, uint32_t, parent_var)
+{
+    // check if True/False leaf
+    if (dd == mtbdd_true || dd == mtbdd_false) return 1;
+
+    // check if index is in array
+    uint64_t index = dd & (~mtbdd_complement);
+    assert(index > 1 && index < nodes->table_size);
+    if (index <= 1 || index >= nodes->table_size) return 0;
+
+    // check if marked
+    int marked = llmsset_is_marked(nodes, index);
+    assert(marked);
+    if (marked == 0) return 0;
+
+    // check if leaf
+    mtbddnode_t n = GETNODE(dd);
+    if (mtbddnode_isleaf(n)) return 1; // we're fine
+
+    // check variable order
+    uint32_t var = mtbddnode_getvariable(n);
+    assert(var > parent_var);
+    if (var <= parent_var) return 0;
+
+    // check cache
+    uint64_t result;
+    if (cache_get3(CACHE_BDD_ISBDD, dd, 0, 0, &result)) {
+        return result;
+    }
+
+    // check recursively
+    SPAWN(mtbdd_test_isvalid_rec, node_getlow(dd, n), var);
+    result = (uint64_t)CALL(mtbdd_test_isvalid_rec, node_gethigh(dd, n), var);
+    if (!SYNC(mtbdd_test_isvalid_rec)) result = 0;
+
+    // put in cache and return result
+    cache_put3(CACHE_BDD_ISBDD, dd, 0, 0, result);
+    return result;
+}
+
+TASK_IMPL_1(int, mtbdd_test_isvalid, MTBDD, dd)
+{
+    // check if True/False leaf
+    if (dd == mtbdd_true || dd == mtbdd_false) return 1;
+
+    // check if index is in array
+    uint64_t index = dd & (~mtbdd_complement);
+    assert(index > 1 && index < nodes->table_size);
+    if (index <= 1 || index >= nodes->table_size) return 0;
+
+    // check if marked
+    int marked = llmsset_is_marked(nodes, index);
+    assert(marked);
+    if (marked == 0) return 0;
+
+    // check if leaf
+    mtbddnode_t n = GETNODE(dd);
+    if (mtbddnode_isleaf(n)) return 1; // we're fine
+
+    // check recursively
+    uint32_t var = mtbddnode_getvariable(n);
+    SPAWN(mtbdd_test_isvalid_rec, node_getlow(dd, n), var);
+    int result = CALL(mtbdd_test_isvalid_rec, node_gethigh(dd, n), var);
+    if (!SYNC(mtbdd_test_isvalid_rec)) result = 0;
+    return result;
+}
+
 /**
  * Export to .dot file
  */

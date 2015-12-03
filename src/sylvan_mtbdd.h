@@ -414,6 +414,16 @@ MTBDD mtbdd_enum_first(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filte
 MTBDD mtbdd_enum_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb);
 
 /**
+ * For debugging.
+ * Tests if all nodes in the MTBDD are correctly ``marked'' in the nodes table.
+ * Tests if variables in the internal nodes appear in-order.
+ * In Debug mode, this will cause assertion failures instead of returning 0.
+ * Returns 1 if all is fine, or 0 otherwise.
+ */
+TASK_DECL_1(int, mtbdd_test_isvalid, MTBDD);
+#define mtbdd_test_isvalid(mtbdd) CALL(mtbdd_test_isvalid, mtbdd)
+
+/**
  * Write a DOT representation of a MTBDD
  * The callback function is required for custom terminals.
  */

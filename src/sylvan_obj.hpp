@@ -529,9 +529,9 @@ public:
     ~Mtbdd() { mtbdd_unprotect(&mtbdd); }
 
     /**
-     * @brief Creates a Mtbdd leaf representing the uint64 value <value>
+     * @brief Creates a Mtbdd leaf representing the int64 value <value>
      */
-    static Mtbdd uint64Terminal(uint64_t value);
+    static Mtbdd int64Terminal(int64_t value);
 
     /**
      * @brief Creates a Mtbdd leaf representing the floating-point value <value>
@@ -542,7 +542,7 @@ public:
      * @brief Creates a Mtbdd leaf representing the fraction value <nominator>/<denominator>
      * Internally, Sylvan uses 32-bit values and reports overflows to stderr.
      */
-    static Mtbdd fractionTerminal(uint64_t nominator, uint64_t denominator);
+    static Mtbdd fractionTerminal(int64_t nominator, uint64_t denominator);
 
     /**
      * @brief Creates a Mtbdd leaf of type <type> holding value <value>
@@ -640,8 +640,8 @@ public:
     Mtbdd Else() const;
 
     /**
-     * @brief Returns the negation of the MTBDD
-     * For Boolean, this means "not", for floating-point and fractions, this means "negative"
+     * @brief Returns the negation of the MTBDD (every terminal negative)
+     * Do not use this for Boolean MTBDDs, only for Integer/Double/Fraction MTBDDs.
      */
     Mtbdd Negate() const;
 

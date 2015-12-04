@@ -593,9 +593,9 @@ BddMap::isEmpty() const
  */
 
 Mtbdd
-Mtbdd::uint64Terminal(uint64_t value)
+Mtbdd::int64Terminal(int64_t value)
 {
-    return mtbdd_uint64(value);
+    return mtbdd_int64(value);
 }
 
 Mtbdd
@@ -605,7 +605,7 @@ Mtbdd::doubleTerminal(double value)
 }
 
 Mtbdd
-Mtbdd::fractionTerminal(uint64_t nominator, uint64_t denominator)
+Mtbdd::fractionTerminal(int64_t nominator, uint64_t denominator)
 {
     return mtbdd_fraction(nominator, denominator);
 }
@@ -694,6 +694,7 @@ Mtbdd::Else() const
 Mtbdd
 Mtbdd::Negate() const
 {
+    LACE_ME;
     return mtbdd_negate(mtbdd);
 }
 

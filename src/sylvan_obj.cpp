@@ -854,14 +854,14 @@ Mtbdd
 Mtbdd::operator-(const Mtbdd& other) const
 {
     LACE_ME;
-    return mtbdd_plus(mtbdd, mtbdd_negate(other.mtbdd));
+    return mtbdd_minus(mtbdd, other.mtbdd);
 }
 
 Mtbdd
 Mtbdd::operator-=(const Mtbdd& other)
 {
     LACE_ME;
-    mtbdd = mtbdd_plus(mtbdd, mtbdd_negate(other.mtbdd));
+    mtbdd = mtbdd_minus(mtbdd, other.mtbdd);
     return *this;
 }
 

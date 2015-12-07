@@ -2385,9 +2385,9 @@ mtbdd_fprintdot_rec(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
         mtbdd_fprintdot_rec(out, mtbddnode_gethigh(n), cb);
 
         fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=dashed];\n",
-                mtbdd, mtbddnode_getlow(n));
+                MTBDD_STRIPMARK(mtbdd), mtbddnode_getlow(n));
         fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=solid dir=both arrowtail=%s];\n",
-                mtbdd, MTBDD_STRIPMARK(mtbddnode_gethigh(n)),
+                MTBDD_STRIPMARK(mtbdd), MTBDD_STRIPMARK(mtbddnode_gethigh(n)),
                 mtbddnode_getcomp(n) ? "dot" : "none");
     }
 }

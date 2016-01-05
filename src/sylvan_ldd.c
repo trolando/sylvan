@@ -44,61 +44,61 @@ typedef struct __attribute__((packed)) mddnode {
 // Ensure our mddnode is 16 bytes
 typedef char __lddmc_check_mddnode_t_is_16_bytes[(sizeof(struct mddnode)==16) ? 1 : -1];
 
-inline uint32_t
+static inline uint32_t
 mddnode_getvalue(mddnode_t n)
 {
     return *(uint32_t*)((uint8_t*)n+6);
 }
 
-inline uint8_t
+static inline uint8_t
 mddnode_getmark(mddnode_t n)
 {
     return n->a & 1;
 }
 
-inline uint8_t
+static inline uint8_t
 mddnode_getcopy(mddnode_t n)
 {
     return n->b & 0x10000 ? 1 : 0;
 }
 
-inline uint64_t
+static inline uint64_t
 mddnode_getright(mddnode_t n)
 {
     return (n->a & 0x0000ffffffffffff) >> 1;
 }
 
-inline uint64_t
+static inline uint64_t
 mddnode_getdown(mddnode_t n)
 {
     return n->b >> 17;
 }
 
-inline void
+static inline void
 mddnode_setvalue(mddnode_t n, uint32_t value)
 {
     *(uint32_t*)((uint8_t*)n+6) = value;
 }
 
-inline void
+static inline void
 mddnode_setmark(mddnode_t n, uint8_t mark)
 {
     n->a = (n->a & 0xfffffffffffffffe) | (mark ? 1 : 0);
 }
 
-inline void
+static inline void
 mddnode_setright(mddnode_t n, uint64_t right)
 {
     n->a = (n->a & 0xffff000000000001) | (right << 1);
 }
 
-inline void
+static inline void
 mddnode_setdown(mddnode_t n, uint64_t down)
 {
     n->b = (n->b & 0x000000000001ffff) | (down << 16);
 }
 
-inline void
+static inline void
 mddnode_make(mddnode_t n, uint32_t value, uint64_t right, uint64_t down)
 {
     n->a = right << 1;
@@ -106,7 +106,7 @@ mddnode_make(mddnode_t n, uint32_t value, uint64_t right, uint64_t down)
     *(uint32_t*)((uint8_t*)n+6) = value;
 }
 
-inline void
+static inline void
 mddnode_makecopy(mddnode_t n, uint64_t right, uint64_t down)
 {
     n->a = right << 1;

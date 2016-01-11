@@ -584,7 +584,7 @@ lace_spawn_worker(int worker, size_t stacksize, void* (*fun)(void*), void* arg)
         exit(1);
     }
 #else
-    void *stack_location = mmap(NULL, stacksize + pagesize, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, 0, 0);
+    void *stack_location = mmap(NULL, stacksize + pagesize, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
     if (stack_location == MAP_FAILED) {
         fprintf(stderr, "Lace error: Cannot allocate program stack: %s!\n", strerror(errno));
         exit(1);

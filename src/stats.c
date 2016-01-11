@@ -38,7 +38,7 @@ VOID_TASK_0(sylvan_stats_reset_perthread)
 #else
     sylvan_stats_t *sylvan_stats = pthread_getspecific(sylvan_stats_key);
     if (sylvan_stats == NULL) {
-        sylvan_stats = mmap(0, sizeof(sylvan_stats_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
+        sylvan_stats = mmap(0, sizeof(sylvan_stats_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
         // TODO: hwloc
         pthread_setspecific(sylvan_stats_key, sylvan_stats);
     }

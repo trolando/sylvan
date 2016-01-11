@@ -37,12 +37,15 @@ add_library(sylvan
 
 target_link_libraries(sylvan m pthread)
 
-include(CheckIncludeFiles)
-check_include_files(hwloc.h HAVE_HWLOC)
+option(USE_HWLOC "Use HWLOC library if available" ON)
 
-if(HAVE_HWLOC)
-    set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "USE_HWLOC=1")
-    target_link_libraries(sylvan hwloc)
+if(USE_HWLOC)
+    include(CheckIncludeFiles)
+    check_include_files(hwloc.h HAVE_HWLOC)
+    if(HAVE_HWLOC)
+        set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "USE_HWLOC=1")
+        target_link_libraries(sylvan hwloc)
+    endif()
 endif()
 
 install(TARGETS

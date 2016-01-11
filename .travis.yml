@@ -1,0 +1,45 @@
+language: cpp
+sudo: false
+
+compiler:
+- clang
+- gcc
+
+os:
+- linux
+- osx
+
+env:
+  matrix:
+    - BUILD_TYPE="Debug" HWLOC="ON"
+    - BUILD_TYPE="Release" HWLOC="ON"
+    - BUILD_TYPE="Debug" HWLOC="OFF"
+    - BUILD_TYPE="Release" HWLOC="OFF"
+
+addons:
+  apt:
+    sources:
+    - ubuntu-toolchain-r-test
+    packages:
+    - gcc-4.8
+    - g++-4.8
+    - clang
+    - libstdc++-4.8-dev
+    - libgmp-dev
+    - cmake
+    - libhwloc-dev
+
+install:
+- if [ "$TRAVIS_OS_NAME" = "osx" ]; then brew update; fi
+- if [ "$TRAVIS_OS_NAME" = "osx" ]; then brew install argp-standalone; fi
+- if [ "$TRAVIS_OS_NAME" = "osx" ]; then brew install homebrew/science/hwloc; fi
+
+script:
+- export CMAKE_ARGS="-DCMAKE_BUILD_TYPE=$BUILD_TYPE -DUSE_HWLOC=$HWLOC"
+- if [ "$CC" = "gcc" ]; then cmake . -DCMAKE_CXX_COMPILER=g++-4.8 -DCMAKE_C_COMPILER=gcc-4.8 $CMAKE_ARGS; fi
+- if [ "$CC" = "clang" ]; then cmake . $CMAKE_ARGS; fi
+- make
+
+notifications:
+  email: false
+

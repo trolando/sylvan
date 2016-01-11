@@ -1,4 +1,4 @@
-Sylvan
+Sylvan [![Build Status](https://travis-ci.org/trolando/sylvan.svg?branch=master)](https://travis-ci.org/trolando/sylvan)
 ======
 Sylvan is a parallel (multi-core) BDD library in C. Sylvan allows both sequential and parallel BDD-based algorithms to benefit from parallelism. Sylvan uses the work-stealing framework Lace and a scalable lockless hashtable to implement scalable multi-core BDD operations.
 

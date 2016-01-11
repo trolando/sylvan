@@ -426,6 +426,7 @@ public:
         for (size_t i = 0; i < length; i++) {
             set.add(arr[length-i-1]);
         }
+        return set;
     }
 
     /**

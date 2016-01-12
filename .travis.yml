@@ -39,6 +39,7 @@ script:
 - if [ "$CC" = "gcc" ]; then cmake . -DCMAKE_CXX_COMPILER=g++-4.8 -DCMAKE_C_COMPILER=gcc-4.8 $CMAKE_ARGS; fi
 - if [ "$CC" = "clang" ]; then cmake . $CMAKE_ARGS; fi
 - make
+- make test
 
 notifications:
   email: false

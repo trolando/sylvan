@@ -276,6 +276,11 @@ lace_init_worker(int worker, size_t dq_size)
     w->split = w->dq;
     w->allstolen = 0;
     w->worker = worker;
+#if USE_HWLOC
+    w->pu = worker % n_pus;
+#else
+    w->pu = -1;
+#endif
     w->enabled = 1;
     if (workers_init[worker].stack != 0) {
         w->stack_trigger = ((size_t)workers_init[worker].stack) + workers_init[worker].stacksize/20;

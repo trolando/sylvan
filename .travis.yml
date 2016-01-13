@@ -11,10 +11,10 @@ os:
 
 env:
   matrix:
-    - BUILD_TYPE="Debug" HWLOC="ON"
-    - BUILD_TYPE="Release" HWLOC="ON"
-    - BUILD_TYPE="Debug" HWLOC="OFF"
-    - BUILD_TYPE="Release" HWLOC="OFF"
+    - BUILD_TYPE="Debug" HWLOC="ON" SYLVAN_STATS="ON"
+    - BUILD_TYPE="Release" HWLOC="ON" SYLVAN_STATS="ON"
+    - BUILD_TYPE="Debug" HWLOC="OFF" SYLVAN_STATS="OFF"
+    - BUILD_TYPE="Release" HWLOC="OFF" SYLVAN_STATS="OFF"
 
 addons:
   apt:

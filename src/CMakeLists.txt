@@ -48,6 +48,11 @@ if(USE_HWLOC)
     endif()
 endif()
 
+option(SYLVAN_STATS "Collect statistics" OFF)
+if(SYLVAN_STATS)
+    set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_STATS")
+endif()
+
 install(TARGETS
     sylvan
     DESTINATION "lib")

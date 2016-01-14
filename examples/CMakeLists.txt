@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 2.6)
-project(sylvan C)
+project(sylvan C CXX)
 
 set(CMAKE_C_FLAGS "-g -O3 -Wextra -Wall -Werror -fno-strict-aliasing -std=gnu11")
+set(CMAKE_CXX_FLAGS "-g -O3 -Wextra -Wall -Werror -fno-strict-aliasing -Wno-deprecated-register -std=gnu++11")
 
 include_directories(.)
 
@@ -10,6 +11,9 @@ target_link_libraries(mc sylvan)
 
 add_executable(lddmc lddmc.c getrss.h getrss.c)
 target_link_libraries(lddmc sylvan)
+
+add_executable(simple simple.cpp)
+target_link_libraries(simple sylvan stdc++)
 
 include(CheckIncludeFiles)
 check_include_files("gperftools/profiler.h" HAVE_PROFILER)

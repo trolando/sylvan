@@ -148,7 +148,7 @@ sylvan_protect(BDD *a)
 void
 sylvan_unprotect(BDD *a)
 {
-    protect_down(&bdd_protected, (size_t)a);
+    if (bdd_protected.refs_table != NULL) protect_down(&bdd_protected, (size_t)a);
 }
 
 size_t

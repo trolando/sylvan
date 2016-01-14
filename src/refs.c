@@ -594,4 +594,5 @@ void
 protect_free(refs_table_t *tbl)
 {
     munmap(tbl->refs_table, tbl->refs_size * sizeof(uint64_t));
+    tbl->refs_table = 0;
 }

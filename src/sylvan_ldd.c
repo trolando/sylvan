@@ -1461,6 +1461,8 @@ TASK_IMPL_4(MDD, lddmc_join, MDD, a, MDD, b, MDD, a_proj, MDD, b_proj)
     uint32_t val;
     MDD down;
 
+    // Make copies (for cache)
+    MDD _a_proj = a_proj, _b_proj = b_proj;
     if (keep_a) {
         if (keep_b) {
             val = mddnode_getvalue(nb);
@@ -1489,7 +1491,7 @@ TASK_IMPL_4(MDD, lddmc_join, MDD, a, MDD, b, MDD, a_proj, MDD, b_proj)
     result = lddmc_makenode(val, down, right);
 
     /* Write to cache */
-    if (cache_put4(CACHE_MDD_JOIN, a, b, a_proj, b_proj, result)) sylvan_stats_count(LDD_JOIN_CACHEDPUT);
+    if (cache_put4(CACHE_MDD_JOIN, a, b, _a_proj, _b_proj, result)) sylvan_stats_count(LDD_JOIN_CACHEDPUT);
 
     return result;
 }

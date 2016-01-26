@@ -37,6 +37,10 @@ add_library(sylvan
 
 target_link_libraries(sylvan m pthread)
 
+if(UNIX AND NOT APPLE)
+    target_link_libraries(sylvan rt)
+endif()
+
 option(USE_HWLOC "Use HWLOC library if available" ON)
 
 if(USE_HWLOC)

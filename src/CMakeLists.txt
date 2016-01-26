@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 2.6)
 project(sylvan C CXX)
 
-set(CMAKE_C_FLAGS "-g -O3 -Wextra -Wall -Werror -fno-strict-aliasing -std=gnu11")
-
 add_library(sylvan
     avl.h
     lace.h

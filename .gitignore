@@ -38,3 +38,6 @@ src/libsylvan.a
 .cproject
 .project
 .settings
+
+# coverage output
+coverage

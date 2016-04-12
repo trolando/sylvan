@@ -2487,7 +2487,7 @@ sylvan_fprintdot_nc_rec(FILE *out, BDD bdd, avl_node_t **levels)
 
     BDD low = sylvan_low(bdd);
     BDD high = sylvan_high(bdd);
-    fprintf(out, "\"%" PRIx64 " [label=\"%d\"];\n", bdd, sylvan_var(bdd));
+    fprintf(out, "\"%" PRIx64 "\" [label=\"%d\"];\n", bdd, sylvan_var(bdd));
     fprintf(out, "\"%" PRIx64 "\" -> \"%" PRIx64 "\" [style=dashed];\n", bdd, low);
     fprintf(out, "\"%" PRIx64 "\" -> \"%" PRIx64 "\" [style=solid];\n", bdd, high);
     sylvan_fprintdot_nc_rec(out, low, levels);

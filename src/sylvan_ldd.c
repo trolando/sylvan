@@ -95,7 +95,7 @@ mddnode_setright(mddnode_t n, uint64_t right)
 static inline void __attribute__((unused))
 mddnode_setdown(mddnode_t n, uint64_t down)
 {
-    n->b = (n->b & 0x000000000001ffff) | (down << 16);
+    n->b = (n->b & 0x000000000001ffff) | (down << 17);
 }
 
 static inline void __attribute__((unused))

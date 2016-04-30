@@ -484,6 +484,8 @@ mtbdd_int64(int64_t value)
 MTBDD
 mtbdd_double(double value)
 {
+    // normalize all 0.0 to 0.0
+    if (value == 0.0) value = 0.0;
     return mtbdd_makeleaf(1, *(uint64_t*)&value);
 }
 

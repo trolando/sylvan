@@ -1844,6 +1844,40 @@ sylvan_sat_one(BDD bdd, BDDSET vars, uint8_t *str)
 }
 
 BDD
+sylvan_sat_single(BDD bdd, BDDSET vars)
+{
+    if (bdd == sylvan_false) return sylvan_false;
+    if (sylvan_set_isempty(vars)) {
+        assert(bdd == sylvan_true);
+        return sylvan_true;
+    }
+
+    bddnode_t n_vars = GETNODE(vars);
+    uint32_t var = bddnode_getvariable(n_vars);
+    BDD next_vars = node_high(vars, n_vars);
+    if (bdd == sylvan_true) {
+        // take false
+        BDD res = sylvan_sat_single(bdd, next_vars);
+        return sylvan_makenode(var, res, sylvan_false);
+    }
+    bddnode_t n_bdd = GETNODE(bdd);
+    if (bddnode_getvariable(n_bdd) != var) {
+        assert(bddnode_getvariable(n_bdd)>var);
+        // take false
+        BDD res = sylvan_sat_single(bdd, next_vars);
+        return sylvan_makenode(var, res, sylvan_false);
+    }
+    if (node_high(bdd, n_bdd) == sylvan_false) {
+        // take false
+        BDD res = sylvan_sat_single(node_low(bdd, n_bdd), next_vars);
+        return sylvan_makenode(var, res, sylvan_false);
+    }
+    // take true
+    BDD res = sylvan_sat_single(node_high(bdd, n_bdd), next_vars);
+    return sylvan_makenode(var, sylvan_false, res);
+}
+
+BDD
 sylvan_sat_one_bdd(BDD bdd)
 {
     if (bdd == sylvan_false) return sylvan_false;

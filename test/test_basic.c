@@ -136,6 +136,10 @@ test_cube()
     sylvan_sat_one(bdd, vars, check);
     for (i=0; i<6;i++) test_assert(cube[i] == check[i] || (cube[i] == 2 && check[i] == 0));
 
+    BDD picked_single = sylvan_pick_single_cube(bdd, vars);
+    test_assert(testEqual(sylvan_and(picked_single, bdd), picked_single));
+    assert(sylvan_satcount(picked_single, vars)==1);
+
     BDD picked = sylvan_pick_cube(bdd);
     test_assert(testEqual(sylvan_and(picked, bdd), picked));
 

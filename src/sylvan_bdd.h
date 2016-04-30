@@ -299,6 +299,9 @@ int sylvan_sat_one(BDD bdd, BDDSET variables, uint8_t* str);
 BDD sylvan_sat_one_bdd(BDD bdd);
 #define sylvan_pick_cube sylvan_sat_one_bdd
 
+BDD sylvan_sat_single(BDD bdd, BDDSET vars);
+#define sylvan_pick_single_cube sylvan_sat_single
+
 /**
  * Enumerate all satisfying variable assignments from the given <bdd> using variables <vars>.
  * Calls <cb> with four parameters: a user-supplied context, the array of BDD variables in <vars>,

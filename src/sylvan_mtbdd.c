@@ -1096,16 +1096,30 @@ TASK_IMPL_2(MTBDD, mtbdd_op_times, MTBDD*, pa, MTBDD*, pb)
         uint64_t val_b = mtbddnode_getvalue(nb);
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
             // both integer
-            return mtbdd_int64(*(int64_t*)(&val_a) * *(int64_t*)(&val_b));
+            int64_t i_a = *(int64_t*)(&val_a);
+            int64_t i_b = *(int64_t*)(&val_b);
+            if (i_a == 0) return a;
+            if (i_b == 0) return b;
+            if (i_a == 1) return b;
+            if (i_b == 1) return a;
+            return mtbdd_int64(i_a * i_b);
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // both double
-            return mtbdd_double(*(double*)(&val_a) * *(double*)(&val_b));
+            double d_a = *(double*)(&val_a);
+            double d_b = *(double*)(&val_b);
+            if (d_a == 0.0) return a;
+            if (d_a == 1.0) return b;
+            if (d_b == 0.0) return b;
+            if (d_b == 1.0) return a;
+            return mtbdd_double(d_a * d_b);
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // both fraction
             int64_t nom_a = (int32_t)(val_a>>32);
             int64_t nom_b = (int32_t)(val_b>>32);
             uint64_t denom_a = val_a&0xffffffff;
             uint64_t denom_b = val_b&0xffffffff;
+            if (nom_a == 0) return a;
+            if (nom_b == 0) return b;
             // multiply!
             uint32_t c = gcd(nom_b < 0 ? -nom_b : nom_b, denom_a);
             uint32_t d = gcd(nom_a < 0 ? -nom_a : nom_a, denom_b);

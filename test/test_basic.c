@@ -73,6 +73,22 @@ make_random(int i, int j)
     return result;
 }
 
+static MDD
+make_random_ldd_set(int depth, int maxvalue, int elements)
+{
+    uint32_t values[depth];
+    MDD result = mtbdd_false; // empty set
+    for (int i=0; i<elements; i++) {
+        lddmc_refs_push(result);
+        for (int j=0; j<depth; j++) {
+            values[j] = rng(0, maxvalue);
+        }
+        result = lddmc_union_cube(result, values, depth);
+        lddmc_refs_pop(1);
+    }
+    return result;
+}
+
 int testEqual(BDD a, BDD b)
 {
 	if (a == b) return 1;
@@ -299,6 +315,103 @@ test_compose()
     return 0;
 }
 
+int
+test_ldd()
+{
+    // very basic testing of makenode
+    for (int i=0; i<10; i++) {
+        uint32_t value = rng(0, 100);
+        MDD m = lddmc_makenode(value, lddmc_true, lddmc_false);
+        test_assert(lddmc_getvalue(m) == value);
+        test_assert(lddmc_getdown(m) == lddmc_true);
+        test_assert(lddmc_getright(m) == lddmc_false);
+        test_assert(lddmc_iscopy(m) == 0);
+        test_assert(lddmc_follow(m, value) == lddmc_true);
+        for (int j=0; j<100; j++) {
+            uint32_t other_value = rng(0, 100);
+            if (value != other_value) test_assert(lddmc_follow(m, other_value) == lddmc_false);
+        }
+    }
+
+    // test handling of the copy node by primitives
+    MDD m = lddmc_make_copynode(lddmc_true, lddmc_false);
+    test_assert(lddmc_iscopy(m) == 1);
+    test_assert(lddmc_getvalue(m) == 0);
+    test_assert(lddmc_getdown(m) == lddmc_true);
+    test_assert(lddmc_getright(m) == lddmc_false);
+    m = lddmc_extendnode(m, 0, lddmc_true);
+    test_assert(lddmc_iscopy(m) == 1);
+    test_assert(lddmc_getvalue(m) == 0);
+    test_assert(lddmc_getdown(m) == lddmc_true);
+    test_assert(lddmc_getright(m) != lddmc_false);
+    test_assert(lddmc_follow(m, 0) == lddmc_true);
+    test_assert(lddmc_getvalue(lddmc_getright(m)) == 0);
+    test_assert(lddmc_iscopy(lddmc_getright(m)) == 0);
+    test_assert(lddmc_makenode(0, lddmc_true, lddmc_false) == lddmc_getright(m));
+
+    LACE_ME;
+    // test union_cube
+    for (int i=0; i<100; i++) {
+        int depth = rng(1, 6);
+        int elements = rng(1, 30);
+        m = make_random_ldd_set(depth, 10, elements);
+        assert(m != lddmc_true);
+        assert(m != lddmc_false);
+        assert(lddmc_satcount(m) <= elements);
+        assert(lddmc_satcount(m) >= 1);
+    }
+
+    // test simply transition relation
+    {
+        MDD states, rel, meta, expected;
+
+        // relation: (0,0) to (1,1)
+        rel = lddmc_cube((uint32_t[]){0,1,0,1}, 4);
+        test_assert(lddmc_satcount(rel) == 1);
+        // relation: (0,0) to (2,2)
+        rel = lddmc_union_cube(rel, (uint32_t[]){0,2,0,2}, 4);
+        test_assert(lddmc_satcount(rel) == 2);
+        // meta: read write read write
+        meta = lddmc_cube((uint32_t[]){1,2,1,2}, 4);
+        test_assert(lddmc_satcount(meta) == 1);
+        // initial state: (0,0)
+        states = lddmc_cube((uint32_t[]){0,0}, 2);
+        test_assert(lddmc_satcount(states) == 1);
+        // relprod should give two states
+        states = lddmc_relprod(states, rel, meta);
+        test_assert(lddmc_satcount(states) == 2);
+        // relprod should give states (1,1) and (2,2)
+        expected = lddmc_cube((uint32_t[]){1,1}, 2);
+        expected = lddmc_union_cube(expected, (uint32_t[]){2,2}, 2);
+        test_assert(states == expected);
+
+        // now test relprod union on the simple example
+        states = lddmc_cube((uint32_t[]){0,0}, 2);
+        states = lddmc_relprod_union(states, rel, meta, states);
+        test_assert(lddmc_satcount(states) == 3);
+        test_assert(states == lddmc_union(states, expected));
+
+        // now create transition (1,1) --> (1,1) (using copy nodes)
+        rel = lddmc_cube_copy((uint32_t[]){1,0,1,0}, (int[]){0,1,0,1}, 4);
+        states = lddmc_relprod(states, rel, meta);
+        // the result should be just state (1,1)
+        test_assert(states == lddmc_cube((uint32_t[]){1,1}, 2));
+
+        MDD statezero = lddmc_cube((uint32_t[]){0,0}, 2);
+        states = lddmc_union_cube(statezero, (uint32_t[]){1,1}, 2);
+        test_assert(lddmc_relprod_union(states, rel, meta, statezero) == states);
+
+        // now create transition (*,*) --> (*,*) (copy nodes)
+        rel = lddmc_cube_copy((uint32_t[]){0,0}, (int[]){1,1}, 2);
+        meta = lddmc_cube((uint32_t[]){4,4}, 2);
+        states = make_random_ldd_set(2, 10, 10);
+        MDD states2 = make_random_ldd_set(2, 10, 10);
+        test_assert(lddmc_union(states, states2) == lddmc_relprod_union(states, rel, meta, states2));
+    }
+
+    return 0;
+}
+
 int runtests()
 {
     // we are not testing garbage collection
@@ -309,6 +422,9 @@ int runtests()
     for (int j=0;j<10;j++) if (test_relprod()) return 1;
     for (int j=0;j<10;j++) if (test_compose()) return 1;
     for (int j=0;j<10;j++) if (test_operators()) return 1;
+
+    if (test_ldd()) return 1;
+
     return 0;
 }
 
@@ -318,9 +434,11 @@ int main()
 	lace_init(1, 0);
 	lace_startup(0, NULL, NULL);
 
-    // Simple Sylvan initialization, also initialize BDD support
+    // Simple Sylvan initialization, also initialize BDD, MTBDD and LDD support
 	sylvan_init_package(1LL<<20, 1LL<<20, 1LL<<16, 1LL<<16);
 	sylvan_init_bdd(1);
+    sylvan_init_mtbdd();
+    sylvan_init_ldd();
 
     int res = runtests();
 

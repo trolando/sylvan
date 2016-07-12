@@ -22,6 +22,10 @@ int runtest()
     Bdd v2 = Bdd::bddVar(2);
 
     Bdd t = v1 + v2;
+    Bdd u = v1;
+    u += v2;
+
+    test_assert(t == u);
 
     BddMap map;
     map.put(2, t);

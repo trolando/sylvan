@@ -81,7 +81,7 @@ public:
 
     int operator==(const Bdd& other) const;
     int operator!=(const Bdd& other) const;
-    Bdd operator=(const Bdd& right);
+    Bdd& operator=(const Bdd& right);
     int operator<=(const Bdd& other) const;
     int operator>=(const Bdd& other) const;
     int operator<(const Bdd& other) const;
@@ -89,17 +89,17 @@ public:
     Bdd operator!() const;
     Bdd operator~() const;
     Bdd operator*(const Bdd& other) const;
-    Bdd operator*=(const Bdd& other);
+    Bdd& operator*=(const Bdd& other);
     Bdd operator&(const Bdd& other) const;
-    Bdd operator&=(const Bdd& other);
+    Bdd& operator&=(const Bdd& other);
     Bdd operator+(const Bdd& other) const;
-    Bdd operator+=(const Bdd& other);
+    Bdd& operator+=(const Bdd& other);
     Bdd operator|(const Bdd& other) const;
-    Bdd operator|=(const Bdd& other);
+    Bdd& operator|=(const Bdd& other);
     Bdd operator^(const Bdd& other) const;
-    Bdd operator^=(const Bdd& other);
+    Bdd& operator^=(const Bdd& other);
     Bdd operator-(const Bdd& other) const;
-    Bdd operator-=(const Bdd& other);
+    Bdd& operator-=(const Bdd& other);
 
     /**
      * @brief Returns non-zero if this Bdd is bddOne() or bddZero()
@@ -491,9 +491,9 @@ public:
     BddMap(uint32_t key_variable, const Bdd value);
 
     BddMap operator+(const Bdd& other) const;
-    BddMap operator+=(const Bdd& other);
+    BddMap& operator+=(const Bdd& other);
     BddMap operator-(const Bdd& other) const;
-    BddMap operator-=(const Bdd& other);
+    BddMap& operator-=(const Bdd& other);
 
     /**
      * @brief Adds a key-value pair to the map
@@ -593,15 +593,15 @@ public:
 
     int operator==(const Mtbdd& other) const;
     int operator!=(const Mtbdd& other) const;
-    Mtbdd operator=(const Mtbdd& right);
+    Mtbdd& operator=(const Mtbdd& right);
     Mtbdd operator!() const;
     Mtbdd operator~() const;
     Mtbdd operator*(const Mtbdd& other) const;
-    Mtbdd operator*=(const Mtbdd& other);
+    Mtbdd& operator*=(const Mtbdd& other);
     Mtbdd operator+(const Mtbdd& other) const;
-    Mtbdd operator+=(const Mtbdd& other);
+    Mtbdd& operator+=(const Mtbdd& other);
     Mtbdd operator-(const Mtbdd& other) const;
-    Mtbdd operator-=(const Mtbdd& other);
+    Mtbdd& operator-=(const Mtbdd& other);
 
     // not implemented (compared to Bdd): <=, >=, <, >, &, &=, |, |=, ^, ^=
 
@@ -789,9 +789,9 @@ public:
     MtbddMap(uint32_t key_variable, Mtbdd value);
 
     MtbddMap operator+(const Mtbdd& other) const;
-    MtbddMap operator+=(const Mtbdd& other);
+    MtbddMap& operator+=(const Mtbdd& other);
     MtbddMap operator-(const Mtbdd& other) const;
-    MtbddMap operator-=(const Mtbdd& other);
+    MtbddMap& operator-=(const Mtbdd& other);
 
     /**
      * @brief Adds a key-value pair to the map

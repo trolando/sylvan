@@ -34,7 +34,7 @@ Bdd::operator!=(const Bdd& other) const
     return bdd != other.bdd;
 }
 
-Bdd
+Bdd&
 Bdd::operator=(const Bdd& right)
 {
     bdd = right.bdd;
@@ -88,7 +88,7 @@ Bdd::operator*(const Bdd& other) const
     return Bdd(sylvan_and(bdd, other.bdd));
 }
 
-Bdd
+Bdd&
 Bdd::operator*=(const Bdd& other)
 {
     LACE_ME;
@@ -103,7 +103,7 @@ Bdd::operator&(const Bdd& other) const
     return Bdd(sylvan_and(bdd, other.bdd));
 }
 
-Bdd
+Bdd&
 Bdd::operator&=(const Bdd& other)
 {
     LACE_ME;
@@ -118,7 +118,7 @@ Bdd::operator+(const Bdd& other) const
     return Bdd(sylvan_or(bdd, other.bdd));
 }
 
-Bdd
+Bdd&
 Bdd::operator+=(const Bdd& other)
 {
     LACE_ME;
@@ -133,7 +133,7 @@ Bdd::operator|(const Bdd& other) const
     return Bdd(sylvan_or(bdd, other.bdd));
 }
 
-Bdd
+Bdd&
 Bdd::operator|=(const Bdd& other)
 {
     LACE_ME;
@@ -148,7 +148,7 @@ Bdd::operator^(const Bdd& other) const
     return Bdd(sylvan_xor(bdd, other.bdd));
 }
 
-Bdd
+Bdd&
 Bdd::operator^=(const Bdd& other)
 {
     LACE_ME;
@@ -163,7 +163,7 @@ Bdd::operator-(const Bdd& other) const
     return Bdd(sylvan_and(bdd, sylvan_not(other.bdd)));
 }
 
-Bdd
+Bdd&
 Bdd::operator-=(const Bdd& other)
 {
     LACE_ME;
@@ -543,7 +543,7 @@ BddMap::operator+(const Bdd& other) const
     return BddMap(sylvan_map_addall(bdd, other.bdd));
 }
 
-BddMap
+BddMap&
 BddMap::operator+=(const Bdd& other)
 {
     bdd = sylvan_map_addall(bdd, other.bdd);
@@ -556,7 +556,7 @@ BddMap::operator-(const Bdd& other) const
     return BddMap(sylvan_map_removeall(bdd, other.bdd));
 }
 
-BddMap
+BddMap&
 BddMap::operator-=(const Bdd& other)
 {
     bdd = sylvan_map_removeall(bdd, other.bdd);
@@ -801,7 +801,7 @@ Mtbdd::operator!=(const Mtbdd& other) const
     return mtbdd != other.mtbdd;
 }
 
-Mtbdd
+Mtbdd&
 Mtbdd::operator=(const Mtbdd& right)
 {
     mtbdd = right.mtbdd;
@@ -827,7 +827,7 @@ Mtbdd::operator*(const Mtbdd& other) const
     return mtbdd_times(mtbdd, other.mtbdd);
 }
 
-Mtbdd
+Mtbdd&
 Mtbdd::operator*=(const Mtbdd& other)
 {
     LACE_ME;
@@ -842,7 +842,7 @@ Mtbdd::operator+(const Mtbdd& other) const
     return mtbdd_plus(mtbdd, other.mtbdd);
 }
 
-Mtbdd
+Mtbdd&
 Mtbdd::operator+=(const Mtbdd& other)
 {
     LACE_ME;
@@ -857,7 +857,7 @@ Mtbdd::operator-(const Mtbdd& other) const
     return mtbdd_minus(mtbdd, other.mtbdd);
 }
 
-Mtbdd
+Mtbdd&
 Mtbdd::operator-=(const Mtbdd& other)
 {
     LACE_ME;
@@ -963,7 +963,7 @@ MtbddMap::operator+(const Mtbdd& other) const
     return MtbddMap(mtbdd_map_addall(mtbdd, other.mtbdd));
 }
 
-MtbddMap
+MtbddMap&
 MtbddMap::operator+=(const Mtbdd& other)
 {
     mtbdd = mtbdd_map_addall(mtbdd, other.mtbdd);
@@ -976,7 +976,7 @@ MtbddMap::operator-(const Mtbdd& other) const
     return MtbddMap(mtbdd_map_removeall(mtbdd, other.mtbdd));
 }
 
-MtbddMap
+MtbddMap&
 MtbddMap::operator-=(const Mtbdd& other)
 {
     mtbdd = mtbdd_map_removeall(mtbdd, other.mtbdd);

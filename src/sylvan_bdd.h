@@ -210,28 +210,47 @@ TASK_DECL_2(BDDSET, sylvan_set_fromarray, BDDVAR*, size_t);
 void sylvan_test_isset(BDDSET set);
 
 /**
- * BDDMAP maps BDDVAR-->BDD, implemented using BDD nodes.
- * Based on disjunction of variables, but with high edges to BDDs instead of True terminals.
+ * BDDMAP maps uint32_t variables to BDDs.
+ * A BDDMAP node has variable level, low edge going to the next BDDMAP, high edge to the mapped BDD.
  */
-// empty bddmap
-static inline BDDMAP sylvan_map_empty() { return sylvan_false; }
-static inline int sylvan_map_isempty(BDDMAP map) { return map == sylvan_false ? 1 : 0; }
-// add key-value pairs to the bddmap
-BDDMAP sylvan_map_add(BDDMAP map, BDDVAR key, BDD value);
-BDDMAP sylvan_map_addall(BDDMAP map_1, BDDMAP map_2);
-// remove key-value pairs from the bddmap
-BDDMAP sylvan_map_remove(BDDMAP map, BDDVAR key);
-BDDMAP sylvan_map_removeall(BDDMAP map, BDDSET toremove);
-// iterate through all pairs
-static inline BDDVAR sylvan_map_key(BDDMAP map) { return sylvan_var(map); }
-static inline BDD sylvan_map_value(BDDMAP map) { return sylvan_high(map); }
-static inline BDDMAP sylvan_map_next(BDDMAP map) { return sylvan_low(map); }
-// is a key in the map
-int sylvan_map_in(BDDMAP map, BDDVAR key);
-// count number of keys
+#define sylvan_map_empty() sylvan_false
+#define sylvan_map_isempty(map) (map == sylvan_false ? 1 : 0)
+#define sylvan_map_key(map) sylvan_var(map)
+#define sylvan_map_value(map) sylvan_high(map)
+#define sylvan_map_next(map) sylvan_low(map)
+
+/**
+ * Return 1 if the map contains the key, 0 otherwise.
+ */
+int sylvan_map_contains(BDDMAP map, uint32_t key);
+
+/**
+ * Retrieve the number of keys in the map.
+ */
 size_t sylvan_map_count(BDDMAP map);
+
+/**
+ * Add the pair <key,value> to the map, overwrites if key already in map.
+ */
+BDDMAP sylvan_map_add(BDDMAP map, uint32_t key, BDD value);
+
+/**
+ * Add all values from map2 to map1, overwrites if key already in map1.
+ */
+BDDMAP sylvan_map_addall(BDDMAP map1, BDDMAP map2);
+
+/**
+ * Remove the key <key> from the map and return the result
+ */
+BDDMAP sylvan_map_remove(BDDMAP map, uint32_t key);
+
+/**
+ * Remove all keys in the cube <variables> from the map and return the result
+ */
+BDDMAP sylvan_map_removeall(BDDMAP map, BDD variables);
+
 // convert a BDDSET (cube of variables) to a map, with all variables pointing on the value
-BDDMAP sylvan_set_to_map(BDDSET set, BDD value);
+// BDDMAP sylvan_set_to_map(BDDSET set, BDD value);
 
 /**
  * Node creation primitive.

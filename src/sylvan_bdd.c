@@ -2225,20 +2225,55 @@ sylvan_test_isset(BDDSET set)
  * IMPLEMENTATION OF BDDMAP
  */
 
+/**
+ * Return 1 if the map contains the key, 0 otherwise.
+ */
+int
+sylvan_map_contains(BDDMAP map, uint32_t key)
+{
+    while (!sylvan_map_isempty(map)) {
+        bddnode_t n = GETNODE(map);
+        uint32_t k = bddnode_getvariable(n);
+        if (k == key) return 1;
+        if (k > key) return 0; // BDDs are ordered
+        map = node_low(map, n);
+    }
+
+    return 0;
+}
+
+/**
+ * Retrieve the number of keys in the map.
+ */
+size_t
+sylvan_map_count(BDDMAP map)
+{
+    size_t r=0;
+
+    while (!sylvan_map_isempty(map)) {
+        r++;
+        map = sylvan_map_next(map);
+    }
+
+    return r;
+}
+
+/**
+ * Add the pair <key,value> to the map, overwrites if key already in map.
+ */
 BDDMAP
-sylvan_map_add(BDDMAP map, BDDVAR key, BDD value)
+sylvan_map_add(BDDMAP map, uint32_t key, BDD value)
 {
     if (sylvan_map_isempty(map)) return _sylvan_makenode(key, sylvan_map_empty(), value);
 
     bddnode_t n = GETNODE(map);
-    BDDVAR key_m = bddnode_getvariable(n);
+    uint32_t k = bddnode_getvariable(n);
 
-    if (key_m < key) {
+    if (k < key) {
         // add recursively and rebuild tree
         BDDMAP low = sylvan_map_add(node_low(map, n), key, value);
-        BDDMAP result = _sylvan_makenode(key_m, low, node_high(map, n));
-        return result;
-    } else if (key_m > key) {
+        return _sylvan_makenode(k, low, node_high(map, n));
+    } else if (k > key) {
         return _sylvan_makenode(key, map, value);
     } else {
         // replace old
@@ -2246,108 +2281,79 @@ sylvan_map_add(BDDMAP map, BDDVAR key, BDD value)
     }
 }
 
+/**
+ * Add all values from map2 to map1, overwrites if key already in map1.
+ */
 BDDMAP
-sylvan_map_addall(BDDMAP map_1, BDDMAP map_2)
+sylvan_map_addall(BDDMAP map1, BDDMAP map2)
 {
     // one of the maps is empty
-    if (sylvan_map_isempty(map_1)) return map_2;
-    if (sylvan_map_isempty(map_2)) return map_1;
+    if (sylvan_map_isempty(map1)) return map2;
+    if (sylvan_map_isempty(map2)) return map1;
 
-    bddnode_t n_1 = GETNODE(map_1);
-    BDDVAR key_1 = bddnode_getvariable(n_1);
-
-    bddnode_t n_2 = GETNODE(map_2);
-    BDDVAR key_2 = bddnode_getvariable(n_2);
+    bddnode_t n1 = GETNODE(map1);
+    bddnode_t n2 = GETNODE(map2);
+    uint32_t k1 = bddnode_getvariable(n1);
+    uint32_t k2 = bddnode_getvariable(n2);
 
     BDDMAP result;
-    if (key_1 < key_2) {
-        // key_1, recurse on n_1->low, map_2
-        BDDMAP low = sylvan_map_addall(node_low(map_1, n_1), map_2);
-        result = _sylvan_makenode(key_1, low, node_high(map_1, n_1));
-    } else if (key_1 > key_2) {
-        // key_2, recurse on map_1, n_2->low
-        BDDMAP low = sylvan_map_addall(map_1, node_low(map_2, n_2));
-        result = _sylvan_makenode(key_2, low, node_high(map_2, n_2));
+    if (k1 < k2) {
+        BDDMAP low = sylvan_map_addall(node_low(map1, n1), map2);
+        result = _sylvan_makenode(k1, low, node_high(map1, n1));
+    } else if (k1 > k2) {
+        BDDMAP low = sylvan_map_addall(map1, node_low(map2, n2));
+        result = _sylvan_makenode(k2, low, node_high(map2, n2));
     } else {
-        // equal: key_2, recurse on n_1->low, n_2->low
-        BDDMAP low = sylvan_map_addall(node_low(map_1, n_1), node_low(map_2, n_2));
-        result = _sylvan_makenode(key_2, low, node_high(map_2, n_2));
+        BDDMAP low = sylvan_map_addall(node_low(map1, n1), node_low(map2, n2));
+        result = _sylvan_makenode(k2, low, node_high(map2, n2));
     }
     return result;
 }
 
+/**
+ * Remove the key <key> from the map and return the result
+ */
 BDDMAP
-sylvan_map_remove(BDDMAP map, BDDVAR key)
+sylvan_map_remove(BDDMAP map, uint32_t key)
 {
     if (sylvan_map_isempty(map)) return map;
 
     bddnode_t n = GETNODE(map);
-    BDDVAR key_m = bddnode_getvariable(n);
+    uint32_t k = bddnode_getvariable(n);
 
-    if (key_m < key) {
+    if (k < key) {
         BDDMAP low = sylvan_map_remove(node_low(map, n), key);
-        BDDMAP result = _sylvan_makenode(key_m, low, node_high(map, n));
+        BDDMAP result = _sylvan_makenode(k, low, node_high(map, n));
         return result;
-    } else if (key_m > key) {
+    } else if (k > key) {
         return map;
     } else {
         return node_low(map, n);
     }
 }
 
+/**
+ * Remove all keys in the cube <variables> from the map and return the result
+ */
 BDDMAP
-sylvan_map_removeall(BDDMAP map, BDDSET toremove)
+sylvan_map_removeall(BDDMAP map, MTBDD variables)
 {
     if (sylvan_map_isempty(map)) return map;
-    if (sylvan_set_isempty(toremove)) return map;
+    if (variables == sylvan_true) return map;
 
-    bddnode_t n_1 = GETNODE(map);
-    BDDVAR key_1 = bddnode_getvariable(n_1);
+    bddnode_t n1 = GETNODE(map);
+    bddnode_t n2 = GETNODE(variables);
+    uint32_t k1 = bddnode_getvariable(n1);
+    uint32_t k2 = bddnode_getvariable(n2);
 
-    bddnode_t n_2 = GETNODE(toremove);
-    BDDVAR key_2 = bddnode_getvariable(n_2);
-
-    if (key_1 < key_2) {
-        BDDMAP low = sylvan_map_removeall(node_low(map, n_1), toremove);
-        BDDMAP result = _sylvan_makenode(key_1, low, node_high(map, n_1));
-        return result;
-    } else if (key_1 > key_2) {
-        return sylvan_map_removeall(map, node_high(toremove, n_2));
+    if (k1 < k2) {
+        BDDMAP low = sylvan_map_removeall(node_low(map, n1), variables);
+        return _sylvan_makenode(k1, low, node_high(map, n1));
+    } else if (k1 > k2) {
+        return sylvan_map_removeall(map, node_high(variables, n2));
     } else {
-        return sylvan_map_removeall(node_low(map, n_1), node_high(toremove, n_2));
+        return sylvan_map_removeall(node_low(map, n1), node_high(variables, n2));
     }
-}
-
-int
-sylvan_map_in(BDDMAP map, BDDVAR key)
-{
-    while (!sylvan_map_isempty(map)) {
-        bddnode_t n = GETNODE(map);
-        BDDVAR n_level = bddnode_getvariable(n);
-        if (n_level == key) return 1;
-        if (n_level > key) return 0; // BDDs are ordered
-        map = node_low(map, n);
-    }
-
-    return 0;
-}
-
-size_t
-sylvan_map_count(BDDMAP map)
-{
-    size_t r=0;
-    while (!sylvan_map_isempty(map)) { r++; map=sylvan_map_next(map); }
-    return r;
-}
-
-BDDMAP
-sylvan_set_to_map(BDDSET set, BDD value)
-{
-    if (sylvan_set_isempty(set)) return sylvan_map_empty();
-    bddnode_t set_n = GETNODE(set);
-    BDD sub = sylvan_set_to_map(node_high(set, set_n), value);
-    BDD result = _sylvan_makenode(sub, bddnode_getvariable(set_n), value);
-    return result;
 }
 
 /**

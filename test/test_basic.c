@@ -316,6 +316,15 @@ test_compose()
     test_assert(testEqual(sylvan_or(one, two), sylvan_compose(a_or_b, map)));
 
     test_assert(testEqual(sylvan_and(one, two), sylvan_compose(sylvan_and(a, b), map)));
+
+    // test that composing [0:=true] on "0" yields true
+    map = sylvan_map_add(sylvan_map_empty(), 1, sylvan_true);
+    test_assert(testEqual(sylvan_compose(a, map), sylvan_true));
+
+    // test that composing [0:=false] on "0" yields false
+    map = sylvan_map_add(sylvan_map_empty(), 1, sylvan_false);
+    test_assert(testEqual(sylvan_compose(a, map), sylvan_false));
+
     return 0;
 }
 

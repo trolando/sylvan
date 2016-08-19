@@ -238,7 +238,8 @@ BDDMAP sylvan_set_to_map(BDDSET set, BDD value);
  * Careful: does not check ordering!
  * Preferably only use when debugging!
  */
-BDD sylvan_makenode(BDDVAR level, BDD low, BDD high);
+BDD _sylvan_makenode(BDDVAR level, BDD low, BDD high);
+static inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high) { return low == high ? low : _sylvan_makenode(level, low, high); }
 
 /**
  * Write a DOT representation of a BDD

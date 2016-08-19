@@ -75,7 +75,8 @@ MTBDD mtbdd_makeleaf(uint32_t type, uint64_t value);
  * Create an internal MTBDD node of Boolean variable <var>, with low edge <low> and high edge <high>.
  * <var> is a 24-bit integer.
  */
-MTBDD mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high);
+MTBDD _mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high);
+#define mtbdd_makenode(var, low, high) (low == high ? low : _mtbdd_makenode(var, low, high))
 
 /**
  * Returns 1 is the MTBDD is a terminal, or 0 otherwise.
@@ -449,7 +450,7 @@ void mtbdd_fprintdot(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb);
 
 /**
  * MTBDDMAP, maps uint32_t variables to MTBDDs.
- * A MTBDDMAP node has variable level, low edge going to the next MTBDDMAP, high edge to the mapped MTBDD
+ * A MTBDDMAP node has variable level, low edge going to the next MTBDDMAP, high edge to the mapped MTBDD.
  */
 #define mtbdd_map_empty() mtbdd_false
 #define mtbdd_map_isempty(map) (map == mtbdd_false ? 1 : 0)

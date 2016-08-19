@@ -15,6 +15,7 @@ target_sources(Sylvan
     sylvan_sl.c
     sylvan_stats.c
     sylvan_table.c
+    sylvan_zdd.c
   PUBLIC
     $<INSTALL_INTERFACE:include/lace.h>
     $<INSTALL_INTERFACE:include/sylvan.h>
@@ -34,6 +35,8 @@ target_sources(Sylvan
     $<INSTALL_INTERFACE:include/sylvan_stats.h>
     $<INSTALL_INTERFACE:include/sylvan_table.h>
     $<INSTALL_INTERFACE:include/sylvan_tls.h>
+    $<INSTALL_INTERFACE:include/sylvan_zdd.h>
+    $<INSTALL_INTERFACE:include/sylvan_zdd_int.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/lace.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_bdd.h>
@@ -52,6 +55,8 @@ target_sources(Sylvan
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_stats.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_table.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_tls.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_zdd.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_zdd_int.h>
 )
 
 target_compile_features(Sylvan PUBLIC c_std_11 cxx_std_11)

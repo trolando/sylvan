@@ -2450,7 +2450,7 @@ mtbdd_fprintdot_rec(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
             fprintf(out, "%u/%u", (uint32_t)(value>>32), (uint32_t)value);
             break;
         default:
-            cb(out, type, value);
+            cb(out, 0, type, value);
             break;
         }
         fprintf(out, "\"];\n");
@@ -2481,6 +2481,67 @@ mtbdd_fprintdot(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
             MTBDD_STRIPMARK(mtbdd), MTBDD_HASMARK(mtbdd) ? "dot" : "none");
 
     mtbdd_fprintdot_rec(out, mtbdd, cb);
+    mtbdd_unmark_rec(mtbdd);
+
+    fprintf(out, "}\n");
+}
+
+/**
+ * Export to .dot file, but do not display complement edges. Expand instead.
+ */
+
+static void
+mtbdd_fprintdot_nc_rec(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
+{
+    mtbddnode_t n = GETNODE(mtbdd); // also works for mtbdd_false
+    if (mtbddnode_getmark(n)) return;
+    mtbddnode_setmark(n, 1);
+
+    if (mtbdd == mtbdd_true) {
+        fprintf(out, "%" PRIu64 " [shape=box, style=filled, label=\"T\"];\n", mtbdd);
+    } else if (mtbdd == mtbdd_false) {
+        fprintf(out, "0 [shape=box, style=filled, label=\"F\"];\n");
+    } else if (mtbddnode_isleaf(n)) {
+        uint32_t type = mtbddnode_gettype(n);
+        uint64_t value = mtbddnode_getvalue(n);
+        fprintf(out, "%" PRIu64 " [shape=box, style=filled, label=\"", mtbdd);
+        switch (type) {
+        case 0:
+            fprintf(out, "%" PRIu64, value);
+            break;
+        case 1:
+            fprintf(out, "%f", *(double*)&value);
+            break;
+        case 2:
+            fprintf(out, "%u/%u", (uint32_t)(value>>32), (uint32_t)value);
+            break;
+        default:
+            cb(out, MTBDD_HASMARK(mtbdd), type, value);
+            break;
+        }
+        fprintf(out, "\"];\n");
+    } else {
+        fprintf(out, "%" PRIu64 " [label=\"%" PRIu32 "\"];\n", mtbdd, mtbddnode_getvariable(n));
+
+        mtbdd_fprintdot_rec(out, mtbddnode_getlow(n), cb);
+        mtbdd_fprintdot_rec(out, mtbddnode_gethigh(n), cb);
+
+        fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=dashed];\n", mtbdd, node_getlow(mtbdd, n));
+        fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=solid];\n", mtbdd, node_gethigh(mtbdd, n));
+    }
+}
+
+void
+mtbdd_fprintdot_nc(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
+{
+    fprintf(out, "digraph \"DD\" {\n");
+    fprintf(out, "graph [dpi = 300];\n");
+    fprintf(out, "center = true;\n");
+    fprintf(out, "edge [dir = forward];\n");
+    fprintf(out, "root [style=invis];\n");
+    fprintf(out, "root -> %" PRIu64 " [style=solid];\n", mtbdd);
+
+    mtbdd_fprintdot_nc_rec(out, mtbdd, cb);
     mtbdd_unmark_rec(mtbdd);
 
     fprintf(out, "}\n");

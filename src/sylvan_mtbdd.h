@@ -503,12 +503,22 @@ TASK_DECL_1(int, mtbdd_test_isvalid, MTBDD);
 #define mtbdd_test_isvalid(mtbdd) CALL(mtbdd_test_isvalid, mtbdd)
 
 /**
- * Write a DOT representation of a MTBDD
+ * Callback function for .dot writing.
+ */
+typedef void (*print_terminal_label_cb)(FILE *out, int complement, uint32_t type, uint64_t value);
+
+/**
+ * Write a .dot representation of a given MTBDD
  * The callback function is required for custom terminals.
  */
-typedef void (*print_terminal_label_cb)(FILE *out, uint32_t type, uint64_t value);
 void mtbdd_fprintdot(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb);
 #define mtbdd_printdot(mtbdd, cb) mtbdd_fprintdot(stdout, mtbdd, cb)
+
+/**
+ * Write a .dot representation of a given MTBDD, but without complement edges.
+ */
+void mtbdd_fprintdot_nc(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb);
+#define mtbdd_printdot_nc(mtbdd, cb) mtbdd_fprintdot_nc(stdout, mtbdd, cb)
 
 /**
  * MTBDDSET

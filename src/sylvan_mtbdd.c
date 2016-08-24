@@ -356,12 +356,6 @@ sylvan_init_mtbdd()
     sylvan_gc_add_mark(10, TASK(mtbdd_gc_mark_external_refs));
     sylvan_gc_add_mark(10, TASK(mtbdd_gc_mark_protected));
 
-    // Sanity check
-    if (sizeof(struct mtbddnode) != 16) {
-        fprintf(stderr, "Invalid size of mtbdd nodes: %ld\n", sizeof(struct mtbddnode));
-        exit(1);
-    }
-
     refs_create(&mtbdd_refs, 1024);
     if (!mtbdd_protected_created) {
         protect_create(&mtbdd_protected, 4096);

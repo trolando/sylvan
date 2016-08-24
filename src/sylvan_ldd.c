@@ -244,12 +244,6 @@ sylvan_init_ldd()
     sylvan_register_quit(lddmc_quit);
     sylvan_gc_add_mark(10, TASK(lddmc_gc_mark_external_refs));
 
-    // Sanity check
-    if (sizeof(struct mddnode) != 16) {
-        fprintf(stderr, "Invalid size of mdd nodes: %ld\n", sizeof(struct mddnode));
-        exit(1);
-    }
-
     refs_create(&mdd_refs, 1024);
 
     LACE_ME;

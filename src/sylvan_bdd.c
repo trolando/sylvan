@@ -212,12 +212,6 @@ sylvan_init_bdd(int _granularity)
 
     granularity = _granularity;
 
-    // Sanity check
-    if (sizeof(struct bddnode) != 16) {
-        fprintf(stderr, "Invalid size of bdd nodes: %ld\n", sizeof(struct bddnode));
-        exit(1);
-    }
-
     refs_create(&bdd_refs, 1024);
     if (!bdd_protected_created) {
         protect_create(&bdd_protected, 4096);

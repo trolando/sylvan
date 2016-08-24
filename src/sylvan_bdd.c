@@ -27,7 +27,6 @@
 
 #include <avl.h>
 #include <refs.h>
-#include <sha2.h>
 #include <sylvan.h>
 #include <sylvan_common.h>
 
@@ -1808,16 +1807,6 @@ TASK_IMPL_4(BDD, sylvan_collect, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, 
     return CALL(sylvan_collect_do, bdd, vars, cb, context, 0);
 }
 
-static void
-sylvan_unmark_rec(bddnode_t node)
-{
-    if (bddnode_getmark(node)) {
-        bddnode_setmark(node, 0);
-        if (!sylvan_isconst(bddnode_getlow(node))) sylvan_unmark_rec(GETNODE(bddnode_getlow(node)));
-        if (!sylvan_isconst(bddnode_gethigh(node))) sylvan_unmark_rec(GETNODE(bddnode_gethigh(node)));
-    }
-}
-
 /**
  * fprint, print
  */
@@ -2026,50 +2015,3 @@ sylvan_serialize_fromfile(FILE *in)
     }
 }
 
-/**
- * Generate SHA2 structural hashes.
- * Hashes are independent of location.
- * Mainly useful for debugging purposes.
- */
-static void
-sylvan_sha2_rec(BDD bdd, SHA256_CTX *ctx)
-{
-    if (bdd == sylvan_true || bdd == sylvan_false) {
-        SHA256_Update(ctx, (void*)&bdd, sizeof(BDD));
-        return;
-    }
-
-    bddnode_t node = GETNODE(bdd);
-    if (bddnode_getmark(node) == 0) {
-        bddnode_setmark(node, 1);
-        uint32_t level = bddnode_getvariable(node);
-        if (BDD_STRIPMARK(bddnode_gethigh(node))) level |= 0x80000000;
-        SHA256_Update(ctx, (void*)&level, sizeof(uint32_t));
-        sylvan_sha2_rec(bddnode_gethigh(node), ctx);
-        sylvan_sha2_rec(bddnode_getlow(node), ctx);
-    }
-}
-
-void
-sylvan_printsha(BDD bdd)
-{
-    sylvan_fprintsha(stdout, bdd);
-}
-
-void
-sylvan_fprintsha(FILE *f, BDD bdd)
-{
-    char buf[80];
-    sylvan_getsha(bdd, buf);
-    fprintf(f, "%s", buf);
-}
-
-void
-sylvan_getsha(BDD bdd, char *target)
-{
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    sylvan_sha2_rec(bdd, &ctx);
-    if (bdd != sylvan_true && bdd != sylvan_false) sylvan_unmark_rec(GETNODE(bdd));
-    SHA256_End(&ctx, target);
-}

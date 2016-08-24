@@ -138,10 +138,6 @@ TASK_DECL_3(BDD, sylvan_compose, BDD, BDDMAP, BDDVAR);
 void sylvan_print(BDD bdd);
 void sylvan_fprint(FILE *f, BDD bdd);
 
-void sylvan_printsha(BDD bdd);
-void sylvan_fprintsha(FILE *f, BDD bdd);
-void sylvan_getsha(BDD bdd, char *target); // target must be at least 65 bytes...
-
 /**
  * Calculate number of satisfying variable assignments.
  * The set of variables must be >= the support of the BDD.

@@ -114,6 +114,9 @@ typedef MTBDD MTBDDMAP;
 #define sylvan_nodecount        mtbdd_nodecount
 #define sylvan_printdot(bdd)    mtbdd_printdot(bdd, NULL)
 #define sylvan_fprintdot(out, bdd) mtbdd_fprintdot(out, bdd, NULL)
+#define sylvan_printsha         mtbdd_printsha
+#define sylvan_fprintsha        mtbdd_fprintsha
+#define sylvan_getsha           mtbdd_getsha
 
 /**
  * Initialize MTBDD functionality.
@@ -522,6 +525,27 @@ void mtbdd_fprintdot(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb);
  */
 void mtbdd_fprintdot_nc(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb);
 #define mtbdd_printdot_nc(mtbdd, cb) mtbdd_fprintdot_nc(stdout, mtbdd, cb)
+
+/**
+ * Some debugging functions that generate SHA2 hashes of MTBDDs.
+ * They are independent of where nodes are located in hash tables.
+ * Note that they are not "perfect", but they can be useful to run easy sanity checks.
+ */
+
+/**
+ * Print SHA2 hash to stdout.
+ */
+void mtbdd_printsha(MTBDD dd);
+
+/**
+ * Print SHA2 hash to given file.
+ */
+void mtbdd_fprintsha(FILE *f, MTBDD dd);
+
+/**
+ * Obtain SHA2 hash; target array must be at least 65 bytes long.
+ */
+void mtbdd_getsha(MTBDD dd, char *target);
 
 /**
  * MTBDDSET

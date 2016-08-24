@@ -2547,6 +2547,69 @@ mtbdd_fprintdot_nc(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
     fprintf(out, "}\n");
 }
 
+/**
+ * Generate SHA2 structural hashes.
+ * Hashes are independent of location.
+ * Mainly useful for debugging purposes.
+ */
+static void
+mtbdd_sha2_rec(MTBDD dd, SHA256_CTX *ctx)
+{
+    if (dd == mtbdd_true || dd == mtbdd_false) {
+        SHA256_Update(ctx, (void*)&dd, sizeof(MTBDD));
+        return;
+    }
+
+    mtbddnode_t node = GETNODE(dd);
+    if (mtbddnode_getmark(node) == 0) {
+        mtbddnode_setmark(node, 1);
+        if (mtbddnode_isleaf(node)) {
+            uint32_t type = mtbddnode_gettype(node);
+            SHA256_Update(ctx, (void*)&type, sizeof(uint32_t));
+            uint64_t value = mtbddnode_getvalue(node);
+            if (type < cl_registry_count) {
+                customleaf_t *c = cl_registry + type;
+                if (c->hash_cb != NULL) value = c->hash_cb(value, value);
+            }
+            SHA256_Update(ctx, (void*)&value, sizeof(uint64_t));
+        } else {
+            uint32_t level = mtbddnode_getvariable(node);
+            if (MTBDD_STRIPMARK(mtbddnode_gethigh(node))) level |= 0x80000000;
+            SHA256_Update(ctx, (void*)&level, sizeof(uint32_t));
+            mtbdd_sha2_rec(mtbddnode_gethigh(node), ctx);
+            mtbdd_sha2_rec(mtbddnode_getlow(node), ctx);
+        }
+    }
+}
+
+void
+mtbdd_printsha(MTBDD dd)
+{
+    mtbdd_fprintsha(stdout, dd);
+}
+
+void
+mtbdd_fprintsha(FILE *f, MTBDD dd)
+{
+    char buf[80];
+    mtbdd_getsha(dd, buf);
+    fprintf(f, "%s", buf);
+}
+
+void
+mtbdd_getsha(MTBDD dd, char *target)
+{
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+    mtbdd_sha2_rec(dd, &ctx);
+    if (dd != mtbdd_true && dd != mtbdd_false) mtbdd_unmark_rec(dd);
+    SHA256_End(&ctx, target);
+}
+
+/**
+ * Implementation of convenience functions for handling variable sets, i.e., cubes.
+ */
+
 int
 mtbdd_set_in(MTBDD set, uint32_t var)
 {
@@ -2574,8 +2637,8 @@ mtbdd_set_count(MTBDD set)
 void
 mtbdd_test_isset(MTBDD set)
 {
-    while (set != sylvan_true) {
-        assert(set != sylvan_false);
+    while (set != mtbdd_true) {
+        assert(set != mtbdd_false);
         assert(llmsset_is_marked(nodes, set));
         mtbddnode_t n = GETNODE(set);
         assert(node_getlow(set, n) == mtbdd_false);

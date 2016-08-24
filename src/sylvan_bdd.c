@@ -1808,24 +1808,6 @@ TASK_IMPL_4(BDD, sylvan_collect, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, 
 }
 
 /**
- * fprint, print
- */
-void
-sylvan_fprint(FILE *f, BDD bdd)
-{
-    sylvan_serialize_reset();
-    size_t v = sylvan_serialize_add(bdd);
-    fprintf(f, "%s%zu,", bdd&sylvan_complement?"!":"", v);
-    sylvan_serialize_totext(f);
-}
-
-void
-sylvan_print(BDD bdd)
-{
-    sylvan_fprint(stdout, bdd);
-}
-
-/**
  * SERIALIZATION
  */
 

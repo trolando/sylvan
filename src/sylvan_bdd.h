@@ -135,9 +135,6 @@ TASK_DECL_3(BDD, sylvan_restrict, BDD, BDD, BDDVAR);
 TASK_DECL_3(BDD, sylvan_compose, BDD, BDDMAP, BDDVAR);
 #define sylvan_compose(f,m) (CALL(sylvan_compose, (f), (m), 0))
 
-void sylvan_print(BDD bdd);
-void sylvan_fprint(FILE *f, BDD bdd);
-
 /**
  * Calculate number of satisfying variable assignments.
  * The set of variables must be >= the support of the BDD.
@@ -221,8 +218,6 @@ TASK_DECL_2(double, sylvan_pathcount, BDD, BDDVAR);
  * use sylvan_serialize_reset to free all allocated structures
  * use sylvan_serialize_totext to write a textual list of tuples of all BDDs.
  *         format: [(<key>,<level>,<key_low>,<key_high>,<complement_high>),...]
- *
- * for the old sylvan_print functions, use sylvan_serialize_totext
  */
 size_t sylvan_serialize_add(BDD bdd);
 size_t sylvan_serialize_get(BDD bdd);
@@ -231,6 +226,17 @@ void sylvan_serialize_reset();
 void sylvan_serialize_totext(FILE *out);
 void sylvan_serialize_tofile(FILE *out);
 void sylvan_serialize_fromfile(FILE *in);
+
+static void __attribute__((unused))
+sylvan_fprint(FILE *f, BDD bdd)
+{
+    sylvan_serialize_reset();
+    size_t v = sylvan_serialize_add(bdd);
+    fprintf(f, "%s%zu,", bdd&sylvan_complement?"!":"", v);
+    sylvan_serialize_totext(f);
+}
+
+#define sylvan_print(dd) sylvan_fprint(stdout, dd)
 
 #ifdef __cplusplus
 }

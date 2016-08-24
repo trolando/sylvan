@@ -401,6 +401,9 @@ mtbdd_makeleaf(uint32_t type, uint64_t value)
         }
     }
 
+    if (created) sylvan_stats_count(BDD_NODES_CREATED);
+    else sylvan_stats_count(BDD_NODES_REUSED);
+
     return (MTBDD)index;
 }
 
@@ -440,6 +443,9 @@ _mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high)
         }
     }
 
+    if (created) sylvan_stats_count(BDD_NODES_CREATED);
+    else sylvan_stats_count(BDD_NODES_REUSED);
+
     result = index;
     return mark ? result | mtbdd_complement : result;
 }
@@ -470,6 +476,9 @@ mtbdd_makemapnode(uint32_t var, MTBDD low, MTBDD high)
             exit(1);
         }
     }
+
+    if (created) sylvan_stats_count(BDD_NODES_CREATED);
+    else sylvan_stats_count(BDD_NODES_REUSED);
 
     return index;
 }

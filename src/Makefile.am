@@ -28,6 +28,8 @@ libsylvan_la_SOURCES = \
     sylvan_obj.cpp \
     sylvan_refs.h \
     sylvan_refs.c \
+    sylvan_sl.h \
+    sylvan_sl.c \
     sylvan_stats.h \
     sylvan_stats.c \
     tls.h

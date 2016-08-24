@@ -589,6 +589,48 @@ VOID_TASK_DECL_4(mtbdd_visit_par, MTBDD, mtbdd_visit_pre_cb, mtbdd_visit_post_cb
 #define mtbdd_visit_par(...) CALL(mtbdd_visit_par, __VA_ARGS__)
 
 /**
+ * Serialization routines
+ *
+ * The internal binary format is as follows, to store <count> decision diagrams...
+ * uint64_t: nodecount -- number of nodes
+ * <nodecount> times
+ *   uint128_t: each leaf/node
+ * <count> times
+ *   uint64_t: each stored decision diagram
+ *
+ * Every node in the decision diagram is stored a number from 1 to <nodecount>, such that
+ * reading and loading the nodes can be done in one pass.
+ *
+ * The text format writes in the same order as the binary format, except...
+ * [
+ *   node(id, var, low, high), -- for a normal node (no complement on high)
+ *   node(id, var, low, ~high), -- for a normal node (complement on high)
+ *   leaf(id, type, "value"), -- for a leaf (with value between "")
+ * ],[dd1, dd2, dd3, ...,] -- and each the stored decision diagram.
+ */
+
+/**
+ * Write <count> decision diagrams given in <dds> in ASCII form to <file>.
+ * Also supports custom leaves using the leaf_to_str callback.
+ */
+VOID_TASK_DECL_3(mtbdd_serialize_totext, FILE *, MTBDD *, int);
+#define mtbdd_serialize_totext(file, dds, count) CALL(mtbdd_serialize_totext, file, dds, count)
+
+/**
+ * Write <count> decision diagrams given in <dds> in internal binary form to <file>.
+ * Does not yet support custom leaves.
+ */
+VOID_TASK_DECL_3(mtbdd_serialize_tobinary, FILE *, MTBDD *, int);
+#define mtbdd_serialize_tobinary(file, dds, count) CALL(mtbdd_serialize_tobinary, file, dds, count)
+
+/**
+ * Read <count> decision diagrams to <dds> from <file> in internal binary form.
+ * Does not yet support custom leaves.
+ */
+TASK_DECL_3(int, mtbdd_serialize_frombinary, FILE*, MTBDD*, int);
+#define mtbdd_serialize_frombinary(file, dds, count) CALL(mtbdd_serialize_frombinary, file, dds, count)
+
+/**
  * MTBDDSET
  * Just some convenience functions for handling sets of variables represented as a 
  * cube (conjunction) of positive literals

@@ -30,6 +30,7 @@
 #include <sylvan_int.h>
 
 #include <sylvan_refs.h>
+#include <sylvan_sl.h>
 #include <sha2.h>
 
 /* Primitives */
@@ -2768,6 +2769,144 @@ VOID_TASK_IMPL_4(mtbdd_visit_par, MTBDD, dd, mtbdd_visit_pre_cb, pre_cb, mtbdd_v
         SYNC(mtbdd_visit_par);
     }
     if (post_cb != NULL) WRAP(post_cb, dd, ctx);
+}
+
+/**
+ * Serialization using a skiplist as a backend
+ *
+ * Call mtbdd_serialize_alloc to allocate the ser_data_t datastructure
+ * Then use mtbdd_serialize_add to add each MTBDD.
+ * Use mtbdd_serialize_get to convert each to internal id
+ */
+
+TASK_2(int, mtbdd_serialize_add_visitor_pre, MTBDD, dd, skiplist_t, sl)
+{
+    if (mtbdd_isleaf(dd)) return 0;
+    return skiplist_get(sl, MTBDD_STRIPMARK(dd)) == 0 ? 1 : 0;
+}
+
+VOID_TASK_2(mtbdd_serialize_add_visitor_post, MTBDD, dd, skiplist_t, sl)
+{
+    if (dd == mtbdd_true || dd == mtbdd_false) return;
+    skiplist_assign_next(sl, MTBDD_STRIPMARK(dd));
+}
+
+VOID_TASK_2(mtbdd_serialize_add, skiplist_t, sl, MTBDD, dd)
+{
+    mtbdd_visit_seq(dd, (mtbdd_visit_pre_cb)TASK(mtbdd_serialize_add_visitor_pre), (mtbdd_visit_post_cb)TASK(mtbdd_serialize_add_visitor_post), (void*)sl);
+}
+
+VOID_TASK_IMPL_3(mtbdd_serialize_tobinary, FILE *, out, MTBDD *, dds, int, count)
+{
+    size_t sl_size = nodes->table_size > 0x7fffffff ? 0x7fffffff : nodes->table_size;
+    skiplist_t sl = skiplist_alloc(sl_size);
+    for (int i=0; i<count; i++) {
+        CALL(mtbdd_serialize_add, sl, dds[i]);
+    }
+
+    size_t nodecount = skiplist_count(sl);
+    fwrite(&nodecount, sizeof(size_t), 1, out);
+    for (size_t i=1; i<=nodecount; i++) {
+        MTBDD dd = skiplist_getr(sl, i);
+
+        mtbddnode_t n = MTBDD_GETNODE(dd);
+        if (mtbddnode_isleaf(n)) {
+            /* serialize leaf, does not support customs yet */
+            fwrite(n, sizeof(struct mtbddnode), 1, out);
+        } else {
+            struct mtbddnode node;
+            MTBDD low = skiplist_get(sl, mtbddnode_getlow(n));
+            MTBDD high = mtbddnode_gethigh(n);
+            high = MTBDD_TRANSFERMARK(high, skiplist_get(sl, MTBDD_STRIPMARK(high)));
+            mtbddnode_makenode(&node, mtbddnode_getvariable(n), low, high);
+            fwrite(&node, sizeof(struct mtbddnode), 1, out);
+        }
+    }
+
+    for (int i=0; i<count; i++) {
+        uint64_t v = MTBDD_TRANSFERMARK(dds[i], skiplist_get(sl, MTBDD_STRIPMARK(dds[i])));
+        fwrite(&v, sizeof(uint64_t), 1, out);
+    }
+
+    skiplist_free(sl);
+}
+
+TASK_IMPL_3(int, mtbdd_serialize_frombinary, FILE*, in, MTBDD*, dds, int, count)
+{
+    size_t nodecount;
+    if (fread(&nodecount, sizeof(size_t), 1, in) != 1) {
+        return -1;
+    }
+
+    uint64_t *arr = malloc(sizeof(uint64_t)*(nodecount+1));
+    for (size_t i=1; i<=nodecount; i++) {
+        struct mtbddnode node;
+        if (fread(&node, sizeof(struct mtbddnode), 1, in) != 1) {
+            free(arr);
+            return -1;
+        }
+
+        if (mtbddnode_isleaf(&node)) {
+            /* serialize leaf, does not support customs yet */
+            arr[i] = mtbdd_makeleaf(mtbddnode_gettype(&node), mtbddnode_getvalue(&node));
+        } else {
+            MTBDD low = arr[mtbddnode_getlow(&node)];
+            MTBDD high = mtbddnode_gethigh(&node);
+            high = MTBDD_TRANSFERMARK(high, arr[MTBDD_STRIPMARK(high)]);
+            arr[i] = mtbdd_makenode(mtbddnode_getvariable(&node), low, high);
+        }
+    }
+
+    for (int i=0; i<count; i++) {
+        uint64_t v;
+        if (fread(&v, sizeof(uint64_t), 1, in) != 1) {
+            free(arr);
+            return -1;
+        }
+        dds[i] = MTBDD_TRANSFERMARK(v, arr[MTBDD_STRIPMARK(v)]);
+    }
+
+    free(arr);
+    return 0;
+}
+
+VOID_TASK_IMPL_3(mtbdd_serialize_totext, FILE *, out, MTBDD *, dds, int, count)
+{
+    size_t sl_size = nodes->table_size > 0x7fffffff ? 0x7fffffff : nodes->table_size;
+    skiplist_t sl = skiplist_alloc(sl_size);
+    for (int i=0; i<count; i++) {
+        CALL(mtbdd_serialize_add, sl, dds[i]);
+    }
+
+    fprintf(out, "[\n");
+    size_t nodecount = skiplist_count(sl);
+    for (size_t i=1; i<=nodecount; i++) {
+        MTBDD dd = skiplist_getr(sl, i);
+
+        mtbddnode_t n = MTBDD_GETNODE(dd);
+        if (mtbddnode_isleaf(n)) {
+            /* serialize leaf, does not support customs yet */
+            fprintf(out, "  leaf(%zu,%u,\"", i, mtbddnode_gettype(n));
+            mtbdd_fprint_leaf(out, MTBDD_STRIPMARK(dd));
+            fprintf(out, "\"),\n");
+        } else {
+            MTBDD low = skiplist_get(sl, mtbddnode_getlow(n));
+            MTBDD high = mtbddnode_gethigh(n);
+            high = MTBDD_TRANSFERMARK(high, skiplist_get(sl, MTBDD_STRIPMARK(high)));
+            fprintf(out, "  node(%zu,%u,%zu,%s%zu),\n", i, mtbddnode_getvariable(n), (size_t)low, MTBDD_HASMARK(high)?"~":"", (size_t)MTBDD_STRIPMARK(high));
+        }
+    }
+
+    fprintf(out, "],[");
+
+    for (int i=0; i<count; i++) {
+        uint64_t v = MTBDD_TRANSFERMARK(dds[i], skiplist_get(sl, MTBDD_STRIPMARK(dds[i])));
+        fprintf(out, "%s%zu,", MTBDD_HASMARK(v)?"~":"", (size_t)MTBDD_STRIPMARK(v));
+    }
+
+    fprintf(out, "]\n");
+
+    skiplist_free(sl);
 }
 
 /**

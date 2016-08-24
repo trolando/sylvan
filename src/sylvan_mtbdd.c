@@ -2005,9 +2005,15 @@ TASK_IMPL_1(MTBDD, mtbdd_support, MTBDD, dd)
     /* Maybe perform garbage collection */
     sylvan_gc_test();
 
+    /* Count operation */
+    sylvan_stats_count(BDD_SUPPORT);
+
     /* Check cache */
     MTBDD result;
-    if (cache_get3(CACHE_MTBDD_SUPPORT, dd, 0, 0, &result)) return result;
+    if (cache_get3(CACHE_MTBDD_SUPPORT, dd, 0, 0, &result)) {
+        sylvan_stats_count(BDD_SUPPORT_CACHED);
+        return result;
+    }
 
     /* Recursive calls */
     mtbddnode_t n = GETNODE(dd);
@@ -2016,11 +2022,14 @@ TASK_IMPL_1(MTBDD, mtbdd_support, MTBDD, dd)
     MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(SYNC(mtbdd_support)));
 
     /* Compute result */
-    result = mtbdd_makenode(mtbddnode_getvariable(n), mtbdd_false, mtbdd_times(low, high));
+    result = mtbdd_makenode(mtbddnode_getvariable(n), mtbdd_false, sylvan_and(low, high));
     mtbdd_refs_pop(2);
 
     /* Write to cache */
-    cache_put3(CACHE_MTBDD_SUPPORT, dd, 0, 0, result);
+    if (cache_put3(CACHE_MTBDD_SUPPORT, dd, 0, 0, result)) {
+        sylvan_stats_count(BDD_SUPPORT_CACHEDPUT);
+    }
+
     return result;
 }
 

@@ -329,7 +329,7 @@ int runtests(int threads)
     printf(NC "Testing garbage collection... ");
     fflush(stdout);
     sylvan_init_package(1LL<<14, 1LL<<14, 1LL<<20, 1LL<<20);
-    sylvan_init_bdd(1);
+    sylvan_init_bdd();
     sylvan_gc_enable();
     if (test_gc(threads)) return 1;
     sylvan_quit();

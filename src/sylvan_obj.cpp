@@ -1019,9 +1019,21 @@ Sylvan::initPackage(size_t initialTableSize, size_t maxTableSize, size_t initial
 }
 
 void
-Sylvan::initBdd(int granularity)
+Sylvan::setGranularity(int granularity)
 {
-    sylvan_init_bdd(granularity);
+    sylvan_set_granularity(granularity);
+}
+
+int
+Sylvan::getGranularity()
+{
+    return sylvan_get_granularity();
+}
+
+void
+Sylvan::initBdd()
+{
+    sylvan_init_bdd();
 }
 
 void

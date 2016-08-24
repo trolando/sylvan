@@ -51,7 +51,9 @@ typedef uint32_t BDDVAR;    // low 24 bits only
  *
  * A reasonable default is a granularity of 4-16, strongly depending on the structure of the BDDs.
  */
-void sylvan_init_bdd(int granularity);
+void sylvan_set_granularity(int granularity);
+int sylvan_get_granularity();
+void sylvan_init_bdd();
 
 /* Create a BDD representing just <var> or the negation of <var> */
 BDD sylvan_ithvar(BDDVAR var);

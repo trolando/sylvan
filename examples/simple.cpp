@@ -85,7 +85,7 @@ VOID_TASK_1(_main, void*, arg)
 
     // Initialize the BDD module with granularity 1 (cache every operation)
     // A higher granularity (e.g. 6) often results in better performance in practice
-    sylvan_init_bdd(1);
+    sylvan_init_bdd();
 
     // Now we can do some simple stuff using the C++ objects.
     CALL(simple_cxx);

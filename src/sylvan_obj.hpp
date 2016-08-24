@@ -826,12 +826,22 @@ public:
     static void initPackage(size_t initialTableSize, size_t maxTableSize, size_t initialCacheSize, size_t maxCacheSize);
 
     /**
-     * @brief Initializes the BDD module of the Sylvan framework.
+     * @brief Set the granularity for the BDD operations.
      * @param granularity determins operation cache behavior; for higher values (2+) it will use the operation cache less often.
      * Values of 3-7 may result in better performance, since occasionally not using the operation cache is fine in practice.
      * A granularity of 1 means that every BDD operation will be cached at every variable level.
      */
-    static void initBdd(int granularity);
+    static void setGranularity(int granularity);
+
+    /**
+     * @brief Retrieve the granularity for the BDD operations.
+     */
+    static int getGranularity();
+
+    /**
+     * @brief Initializes the BDD module of the Sylvan framework.
+     */
+    static void initBdd();
 
     /**
      * @brief Initializes the MTBDD module of the Sylvan framework.

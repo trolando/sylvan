@@ -193,6 +193,18 @@ VOID_TASK_0(bdd_refs_init)
 
 static int granularity = 1; // default
 
+void
+sylvan_set_granularity(int value)
+{
+    granularity = value;
+}
+
+int
+sylvan_get_granularity()
+{
+    return granularity;
+}
+
 static void
 sylvan_quit_bdd()
 {
@@ -204,13 +216,11 @@ sylvan_quit_bdd()
 }
 
 void
-sylvan_init_bdd(int _granularity)
+sylvan_init_bdd()
 {
     sylvan_register_quit(sylvan_quit_bdd);
     sylvan_gc_add_mark(10, TASK(sylvan_gc_mark_external_refs));
     sylvan_gc_add_mark(10, TASK(sylvan_gc_mark_protected));
-
-    granularity = _granularity;
 
     refs_create(&bdd_refs, 1024);
     if (!bdd_protected_created) {

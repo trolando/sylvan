@@ -44,7 +44,7 @@ int main()
 
     // Simple Sylvan initialization, also initialize BDD support
 	sylvan_init_package(1LL<<16, 1LL<<16, 1LL<<16, 1LL<<16);
-	sylvan_init_bdd(1);
+	sylvan_init_bdd();
 
     int res = runtest();
 

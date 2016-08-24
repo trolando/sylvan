@@ -516,7 +516,8 @@ main(int argc, char **argv)
     // Cache table size: 36 bytes * 2**N_cache
     // With: N_nodes=25, N_cache=24: 1.3 GB memory
     sylvan_init_package(1LL<<21, 1LL<<27, 1LL<<20, 1LL<<26);
-    sylvan_init_bdd(6); // granularity 6 is decent default value - 1 means "use cache for every operation"
+    sylvan_set_granularity(6); // granularity 6 is decent default value - 1 means "use cache for every operation"
+    sylvan_init_bdd();
     sylvan_gc_add_mark(0, TASK(gc_start));
     sylvan_gc_add_mark(40, TASK(gc_end));
 

@@ -107,6 +107,8 @@ typedef MTBDD MTBDDMAP;
 #define sylvan_var              mtbdd_getvar
 #define sylvan_low              mtbdd_getlow
 #define sylvan_high             mtbdd_gethigh
+#define sylvan_makenode         mtbdd_makenode
+#define sylvan_makemapnode      mtbdd_makemapnode
 
 /**
  * Initialize MTBDD functionality.
@@ -124,6 +126,7 @@ MTBDD mtbdd_makeleaf(uint32_t type, uint64_t value);
 /**
  * Create an internal MTBDD node of Boolean variable <var>, with low edge <low> and high edge <high>.
  * <var> is a 24-bit integer.
+ * Please note that this does NOT check variable ordering!
  */
 MTBDD _mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high);
 #define mtbdd_makenode(var, low, high) (low == high ? low : _mtbdd_makenode(var, low, high))

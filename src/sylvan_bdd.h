@@ -144,14 +144,6 @@ TASK_DECL_1(BDD, sylvan_support, BDD);
 #define sylvan_support(bdd) (CALL(sylvan_support, bdd))
 
 /**
- * Node creation primitive.
- * Careful: does not check ordering!
- * Preferably only use when debugging!
- */
-BDD _sylvan_makenode(BDDVAR level, BDD low, BDD high);
-static inline BDD sylvan_makenode(BDDVAR level, BDD low, BDD high) { return low == high ? low : _sylvan_makenode(level, low, high); }
-
-/**
  * Write a DOT representation of a BDD
  */
 void sylvan_printdot(BDD bdd);

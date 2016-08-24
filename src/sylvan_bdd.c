@@ -134,38 +134,6 @@ sylvan_ithvar(BDDVAR level)
     return sylvan_makenode(level, sylvan_false, sylvan_true);
 }
 
-BDDVAR
-sylvan_var(BDD bdd)
-{
-    return bddnode_getvariable(GETNODE(bdd));
-}
-
-static BDD
-node_low(BDD bdd, bddnode_t node)
-{
-    return BDD_TRANSFERMARK(bdd, bddnode_getlow(node));
-}
-
-static BDD
-node_high(BDD bdd, bddnode_t node)
-{
-    return BDD_TRANSFERMARK(bdd, bddnode_gethigh(node));
-}
-
-BDD
-sylvan_low(BDD bdd)
-{
-    if (sylvan_isconst(bdd)) return bdd;
-    return node_low(bdd, GETNODE(bdd));
-}
-
-BDD
-sylvan_high(BDD bdd)
-{
-    if (sylvan_isconst(bdd)) return bdd;
-    return node_high(bdd, GETNODE(bdd));
-}
-
 /**
  * Implementation of unary, binary and if-then-else operators.
  */

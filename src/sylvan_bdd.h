@@ -43,19 +43,7 @@ int sylvan_get_granularity();
 
 /* Create a BDD representing just <var> or the negation of <var> */
 BDD sylvan_ithvar(BDDVAR var);
-
-static inline BDD
-sylvan_nithvar(BDD var)
-{
-    return sylvan_ithvar(var) ^ sylvan_complement;
-}
-
-/* Retrieve the <var> of the BDD node <bdd> */
-BDDVAR sylvan_var(BDD bdd);
-
-/* Follow <low> and <high> edges */
-BDD sylvan_low(BDD bdd);
-BDD sylvan_high(BDD bdd);
+#define sylvan_nithvar(var) sylvan_not(sylvan_ithvar(var))
 
 /* Unary, binary and if-then-else operations */
 #define sylvan_not(a) (((BDD)a)^sylvan_complement)
@@ -65,7 +53,6 @@ TASK_DECL_3(BDD, sylvan_and, BDD, BDD, BDDVAR);
 #define sylvan_and(a,b) (CALL(sylvan_and,a,b,0))
 TASK_DECL_3(BDD, sylvan_xor, BDD, BDD, BDDVAR);
 #define sylvan_xor(a,b) (CALL(sylvan_xor,a,b,0))
-/* Do not use nested calls for xor/equiv parameter b! */
 #define sylvan_equiv(a,b) sylvan_not(sylvan_xor(a,b))
 #define sylvan_or(a,b) sylvan_not(sylvan_and(sylvan_not(a),sylvan_not(b)))
 #define sylvan_nand(a,b) sylvan_not(sylvan_and(a,b))
@@ -76,14 +63,13 @@ TASK_DECL_3(BDD, sylvan_xor, BDD, BDD, BDDVAR);
 #define sylvan_diff(a,b) sylvan_and(a,sylvan_not(b))
 #define sylvan_less(a,b) sylvan_and(sylvan_not(a),b)
 
-/* Existential and Universal quantifiers */
+/* Existential and universal quantification */
 TASK_DECL_3(BDD, sylvan_exists, BDD, BDD, BDDVAR);
 #define sylvan_exists(a, vars) (CALL(sylvan_exists, a, vars, 0))
 #define sylvan_forall(a, vars) (sylvan_not(CALL(sylvan_exists, sylvan_not(a), vars, 0)))
 
 /**
- * Compute \exists v: A(...) \and B(...)
- * Parameter vars is the cube (conjunction) of all v variables.
+ * Compute \exists <vars>: <a> \and <b>
  */
 TASK_DECL_4(BDD, sylvan_and_exists, BDD, BDD, BDDSET, BDDVAR);
 #define sylvan_and_exists(a,b,vars) CALL(sylvan_and_exists,a,b,vars,0)

@@ -161,6 +161,7 @@ mtbddnode_followhigh(MTBDD mtbdd, mtbddnode_t node)
 #define bddnode_makenode mtbddnode_makenode
 #define bddnode_makemapnode mtbddnode_makemapnode
 #define bddnode_ismapnode mtbddnode_ismapnode
-
+#define node_low node_getlow
+#define node_high node_gethigh
 
 #endif

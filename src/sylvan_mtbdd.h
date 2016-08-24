@@ -104,6 +104,9 @@ typedef MTBDD MTBDDMAP;
 #define sylvan_set_in           mtbdd_set_in
 #define sylvan_set_count        mtbdd_set_count
 #define sylvan_test_isset       mtbdd_test_isset
+#define sylvan_var              mtbdd_getvar
+#define sylvan_low              mtbdd_getlow
+#define sylvan_high             mtbdd_gethigh
 
 /**
  * Initialize MTBDD functionality.

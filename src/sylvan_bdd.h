@@ -136,14 +136,6 @@ TASK_DECL_3(BDD, sylvan_compose, BDD, BDDMAP, BDDVAR);
 #define sylvan_compose(f,m) (CALL(sylvan_compose, (f), (m), 0))
 
 /**
- * Calculate the support of a BDD.
- * A variable v is in the support of a Boolean function f iff f[v<-0] != f[v<-1]
- * It is also the set of all variables in the BDD nodes of the BDD.
- */
-TASK_DECL_1(BDD, sylvan_support, BDD);
-#define sylvan_support(bdd) (CALL(sylvan_support, bdd))
-
-/**
  * Write a DOT representation of a BDD
  */
 void sylvan_printdot(BDD bdd);

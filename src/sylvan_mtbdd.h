@@ -109,6 +109,7 @@ typedef MTBDD MTBDDMAP;
 #define sylvan_high             mtbdd_gethigh
 #define sylvan_makenode         mtbdd_makenode
 #define sylvan_makemapnode      mtbdd_makemapnode
+#define sylvan_support          mtbdd_support
 
 /**
  * Initialize MTBDD functionality.

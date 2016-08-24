@@ -1840,42 +1840,6 @@ TASK_IMPL_4(BDD, sylvan_collect, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, 
     return CALL(sylvan_collect_do, bdd, vars, cb, context, 0);
 }
 
-/**
- * Determine the support of a BDD (all variables used in the BDD)
- */
-TASK_IMPL_1(BDD, sylvan_support, BDD, bdd)
-{
-    if (bdd == sylvan_true || bdd == sylvan_false) return sylvan_set_empty(); // return empty set
-
-    sylvan_gc_test();
-
-    sylvan_stats_count(BDD_SUPPORT);
-
-    BDD result;
-    if (cache_get3(CACHE_BDD_SUPPORT, bdd, 0, 0, &result)) {
-        sylvan_stats_count(BDD_SUPPORT_CACHED);
-        return result;
-    }
-
-    bddnode_t n = GETNODE(bdd);
-    BDD high, low, set;
-
-    /* compute recursively */
-    bdd_refs_spawn(SPAWN(sylvan_support, bddnode_getlow(n)));
-    high = bdd_refs_push(CALL(sylvan_support, bddnode_gethigh(n)));
-    low = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_support)));
-
-    /* take intersection of support of low and support of high */
-    set = sylvan_and(low, high);
-    bdd_refs_pop(2);
-
-    /* add current level to set */
-    result = sylvan_makenode(bddnode_getvariable(n), sylvan_false, set);
-
-    if (cache_put3(CACHE_BDD_SUPPORT, bdd, 0, 0, result)) sylvan_stats_count(BDD_SUPPORT_CACHEDPUT);
-    return result;
-}
-
 static void
 sylvan_unmark_rec(bddnode_t node)
 {

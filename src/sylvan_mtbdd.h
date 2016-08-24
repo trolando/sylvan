@@ -548,6 +548,31 @@ void mtbdd_fprintsha(FILE *f, MTBDD dd);
 void mtbdd_getsha(MTBDD dd, char *target);
 
 /**
+ * Visitor functionality for MTBDDs.
+ * Visits internal nodes and leafs.
+ */
+
+/**
+ * pre_cb callback: given input MTBDD and context,
+ *                  return whether to visit children (if not leaf)
+ * post_cb callback: given input MTBDD and context
+ */
+LACE_TYPEDEF_CB(int, mtbdd_visit_pre_cb, MTBDD, void*);
+LACE_TYPEDEF_CB(void, mtbdd_visit_post_cb, MTBDD, void*);
+
+/**
+ * Sequential visit operation
+ */
+VOID_TASK_DECL_4(mtbdd_visit_seq, MTBDD, mtbdd_visit_pre_cb, mtbdd_visit_post_cb, void*);
+#define mtbdd_visit_seq(...) CALL(mtbdd_visit_seq, __VA_ARGS__)
+
+/**
+ * Parallel visit operation
+ */
+VOID_TASK_DECL_4(mtbdd_visit_par, MTBDD, mtbdd_visit_pre_cb, mtbdd_visit_post_cb, void*);
+#define mtbdd_visit_par(...) CALL(mtbdd_visit_par, __VA_ARGS__)
+
+/**
  * MTBDDSET
  * Just some convenience functions for handling sets of variables represented as a 
  * cube (conjunction) of positive literals

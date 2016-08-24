@@ -2607,6 +2607,33 @@ mtbdd_getsha(MTBDD dd, char *target)
 }
 
 /**
+ * Implementation of visitor operations
+ */
+
+VOID_TASK_IMPL_4(mtbdd_visit_seq, MTBDD, dd, mtbdd_visit_pre_cb, pre_cb, mtbdd_visit_post_cb, post_cb, void*, ctx)
+{
+    int children = 1;
+    if (pre_cb != NULL) children = WRAP(pre_cb, dd, ctx);
+    if (children && !mtbdd_isleaf(dd)) {
+        CALL(mtbdd_visit_seq, mtbdd_getlow(dd), pre_cb, post_cb, ctx);
+        CALL(mtbdd_visit_seq, mtbdd_gethigh(dd), pre_cb, post_cb, ctx);
+    }
+    if (post_cb != NULL) WRAP(post_cb, dd, ctx);
+}
+
+VOID_TASK_IMPL_4(mtbdd_visit_par, MTBDD, dd, mtbdd_visit_pre_cb, pre_cb, mtbdd_visit_post_cb, post_cb, void*, ctx)
+{
+    int children = 1;
+    if (pre_cb != NULL) children = WRAP(pre_cb, dd, ctx);
+    if (children && !mtbdd_isleaf(dd)) {
+        SPAWN(mtbdd_visit_par, mtbdd_getlow(dd), pre_cb, post_cb, ctx);
+        CALL(mtbdd_visit_par, mtbdd_gethigh(dd), pre_cb, post_cb, ctx);
+        SYNC(mtbdd_visit_par);
+    }
+    if (post_cb != NULL) WRAP(post_cb, dd, ctx);
+}
+
+/**
  * Implementation of convenience functions for handling variable sets, i.e., cubes.
  */
 

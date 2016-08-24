@@ -94,6 +94,19 @@ bddnode_makenode(bddnode_t n, uint32_t var, uint64_t low, uint64_t high)
     n->b = ((uint64_t)var)<<40 | low;
 }
 
+static inline void
+bddnode_makemapnode(bddnode_t n, uint32_t var, uint64_t low, uint64_t high)
+{
+    n->a = high | 0x1000000000000000;
+    n->b = ((uint64_t)var)<<40 | low;
+}
+
+static inline int
+bddnode_ismapnode(bddnode_t n)
+{
+    return n->a & 0x1000000000000000 ? 1 : 0;
+}
+
 /**
  * Implementation of garbage collection.
  */
@@ -335,6 +348,39 @@ _sylvan_makenode(BDDVAR level, BDD low, BDD high)
 
     result = index;
     return mark ? result | sylvan_complement : result;
+}
+
+BDD
+sylvan_makemapnode(BDDVAR level, BDD low, BDD high)
+{
+    struct bddnode n;
+    uint64_t index;
+    int created;
+
+    // in a BDDMAP, the low edges eventually lead to 0 and cannot have a low mark
+    assert(!BDD_HASMARK(low));
+
+    bddnode_makemapnode(&n, level, low, high);
+    index = llmsset_lookup(nodes, n.a, n.b, &created);
+    if (index == 0) {
+        LACE_ME;
+
+        bdd_refs_push(low);
+        bdd_refs_push(high);
+        sylvan_gc();
+        bdd_refs_pop(2);
+
+        index = llmsset_lookup(nodes, n.a, n.b, &created);
+        if (index == 0) {
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
+            exit(1);
+        }
+    }
+
+    if (created) sylvan_stats_count(BDD_NODES_CREATED);
+    else sylvan_stats_count(BDD_NODES_REUSED);
+
+    return index;
 }
 
 BDD
@@ -2264,7 +2310,7 @@ sylvan_map_count(BDDMAP map)
 BDDMAP
 sylvan_map_add(BDDMAP map, uint32_t key, BDD value)
 {
-    if (sylvan_map_isempty(map)) return _sylvan_makenode(key, sylvan_map_empty(), value);
+    if (sylvan_map_isempty(map)) return sylvan_makemapnode(key, sylvan_map_empty(), value);
 
     bddnode_t n = GETNODE(map);
     uint32_t k = bddnode_getvariable(n);
@@ -2272,12 +2318,12 @@ sylvan_map_add(BDDMAP map, uint32_t key, BDD value)
     if (k < key) {
         // add recursively and rebuild tree
         BDDMAP low = sylvan_map_add(node_low(map, n), key, value);
-        return _sylvan_makenode(k, low, node_high(map, n));
+        return sylvan_makemapnode(k, low, node_high(map, n));
     } else if (k > key) {
-        return _sylvan_makenode(key, map, value);
+        return sylvan_makemapnode(key, map, value);
     } else {
         // replace old
-        return _sylvan_makenode(key, node_low(map, n), value);
+        return sylvan_makemapnode(key, node_low(map, n), value);
     }
 }
 
@@ -2299,13 +2345,13 @@ sylvan_map_addall(BDDMAP map1, BDDMAP map2)
     BDDMAP result;
     if (k1 < k2) {
         BDDMAP low = sylvan_map_addall(node_low(map1, n1), map2);
-        result = _sylvan_makenode(k1, low, node_high(map1, n1));
+        result = sylvan_makemapnode(k1, low, node_high(map1, n1));
     } else if (k1 > k2) {
         BDDMAP low = sylvan_map_addall(map1, node_low(map2, n2));
-        result = _sylvan_makenode(k2, low, node_high(map2, n2));
+        result = sylvan_makemapnode(k2, low, node_high(map2, n2));
     } else {
         BDDMAP low = sylvan_map_addall(node_low(map1, n1), node_low(map2, n2));
-        result = _sylvan_makenode(k2, low, node_high(map2, n2));
+        result = sylvan_makemapnode(k2, low, node_high(map2, n2));
     }
     return result;
 }
@@ -2323,7 +2369,7 @@ sylvan_map_remove(BDDMAP map, uint32_t key)
 
     if (k < key) {
         BDDMAP low = sylvan_map_remove(node_low(map, n), key);
-        BDDMAP result = _sylvan_makenode(k, low, node_high(map, n));
+        BDDMAP result = sylvan_makemapnode(k, low, node_high(map, n));
         return result;
     } else if (k > key) {
         return map;
@@ -2348,7 +2394,7 @@ sylvan_map_removeall(BDDMAP map, MTBDD variables)
 
     if (k1 < k2) {
         BDDMAP low = sylvan_map_removeall(node_low(map, n1), variables);
-        return _sylvan_makenode(k1, low, node_high(map, n1));
+        return sylvan_makemapnode(k1, low, node_high(map, n1));
     } else if (k1 > k2) {
         return sylvan_map_removeall(map, node_high(variables, n2));
     } else {

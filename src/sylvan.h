@@ -41,6 +41,7 @@
 #include <stdio.h> // for FILE
 #include <stdlib.h>
 #include <lace.h> // for definitions
+#include <tls.h>
 
 #include <sylvan_cache.h>
 #include <llmsset.h>
@@ -175,8 +176,8 @@ extern llmsset_t nodes;
 }
 #endif /* __cplusplus */
 
+#include <sylvan_mtbdd.h>
 #include <sylvan_bdd.h>
 #include <sylvan_ldd.h>
-#include <sylvan_mtbdd.h>
 
 #endif

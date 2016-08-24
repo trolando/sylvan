@@ -58,6 +58,40 @@ typedef MTBDD MTBDDMAP;
 #define mtbdd_true          (mtbdd_false|mtbdd_complement)
 #define mtbdd_invalid       ((MTBDD)0xffffffffffffffffLL)
 
+/* Compatibility */
+#define BDD                     MTBDD
+#define BDDMAP                  MTBDDMAP
+#define BDDSET                  MTBDD
+#define BDDVAR                  uint32_t
+#define sylvan_complement       mtbdd_complement
+#define sylvan_false            mtbdd_false
+#define sylvan_true             mtbdd_true
+#define sylvan_invalid          mtbdd_invalid
+#define sylvan_init_bdd         sylvan_init_mtbdd
+#define sylvan_ref              mtbdd_ref
+#define sylvan_deref            mtbdd_deref
+#define sylvan_count_refs       mtbdd_count_refs
+#define sylvan_protect          mtbdd_protect
+#define sylvan_unprotect        mtbdd_unprotect
+#define sylvan_count_protected  mtbdd_count_protected
+#define sylvan_gc_mark_rec      mtbdd_gc_mark_rec
+#define sylvan_notify_ondead    mtbdd_notify_ondead
+#define bdd_refs_push           mtbdd_refs_push
+#define bdd_refs_pop            mtbdd_refs_pop
+#define bdd_refs_spawn          mtbdd_refs_spawn
+#define bdd_refs_sync           mtbdd_refs_sync
+#define sylvan_map_empty        mtbdd_map_empty
+#define sylvan_map_isempty      mtbdd_map_isempty
+#define sylvan_map_key          mtbdd_map_key
+#define sylvan_map_value        mtbdd_map_value
+#define sylvan_map_next         mtbdd_map_next
+#define sylvan_map_contains     mtbdd_map_contains
+#define sylvan_map_count        mtbdd_map_count
+#define sylvan_map_add          mtbdd_map_add
+#define sylvan_map_addall       mtbdd_map_addall
+#define sylvan_map_remove       mtbdd_map_remove
+#define sylvan_map_removeall    mtbdd_map_removeall
+
 /**
  * Initialize MTBDD functionality.
  * This initializes internal and external referencing datastructures,

@@ -16,7 +16,7 @@
 
 /* Do not include this file directly. Instead, include sylvan.h */
 
-#include <tls.h>
+//#include <tls.h>
 
 #ifndef SYLVAN_BDD_H
 #define SYLVAN_BDD_H
@@ -25,24 +25,11 @@
 extern "C" {
 #endif /* __cplusplus */
 
-typedef uint64_t BDD;       // low 40 bits used for index, highest bit for complement, rest 0
-// BDDSET uses the BDD node hash table. A BDDSET is an ordered BDD.
-typedef uint64_t BDDSET;    // encodes a set of variables (e.g. for exists etc.)
-// BDDMAP also uses the BDD node hash table. A BDDMAP is *not* an ordered BDD.
-typedef uint64_t BDDMAP;    // encodes a function of variable->BDD (e.g. for substitute)
-typedef uint32_t BDDVAR;    // low 24 bits only
-
-#define sylvan_complement   ((uint64_t)0x8000000000000000)
-#define sylvan_false        ((BDD)0x0000000000000000)
-#define sylvan_true         (sylvan_false|sylvan_complement)
-#define sylvan_invalid      ((BDD)0x7fffffffffffffff)
-
+/* For strictly non-MT BDDs */
 #define sylvan_isconst(bdd) (bdd == sylvan_true || bdd == sylvan_false)
 #define sylvan_isnode(bdd)  (bdd != sylvan_true && bdd != sylvan_false)
 
 /**
- * Initialize BDD functionality.
- * 
  * Granularity (BDD only) determines usage of operation cache. Smallest value is 1: use the operation cache always.
  * Higher values mean that the cache is used less often. Variables are grouped such that
  * the cache is used when going to the next group, i.e., with granularity=3, variables [0,1,2] are in the
@@ -53,11 +40,15 @@ typedef uint32_t BDDVAR;    // low 24 bits only
  */
 void sylvan_set_granularity(int granularity);
 int sylvan_get_granularity();
-void sylvan_init_bdd();
 
 /* Create a BDD representing just <var> or the negation of <var> */
 BDD sylvan_ithvar(BDDVAR var);
-static inline BDD sylvan_nithvar(BDD var) { return sylvan_ithvar(var) ^ sylvan_complement; }
+
+static inline BDD
+sylvan_nithvar(BDD var)
+{
+    return sylvan_ithvar(var) ^ sylvan_complement;
+}
 
 /* Retrieve the <var> of the BDD node <bdd> */
 BDDVAR sylvan_var(BDD bdd);
@@ -65,27 +56,6 @@ BDDVAR sylvan_var(BDD bdd);
 /* Follow <low> and <high> edges */
 BDD sylvan_low(BDD bdd);
 BDD sylvan_high(BDD bdd);
-
-/* Add or remove external reference to BDD */
-BDD sylvan_ref(BDD a); 
-void sylvan_deref(BDD a);
-
-/* For use in custom mark functions */
-VOID_TASK_DECL_1(sylvan_gc_mark_rec, BDD);
-#define sylvan_gc_mark_rec(mdd) CALL(sylvan_gc_mark_rec, mdd)
-
-/* Return the number of external references */
-size_t sylvan_count_refs();
-
-/* Add or remove BDD pointers to protect (indirect external references) */
-void sylvan_protect(BDD* ptr);
-void sylvan_unprotect(BDD* ptr);
-
-/* Return the number of protected BDD pointers */
-size_t sylvan_count_protected();
-
-/* Mark BDD for "notify on dead" */
-#define sylvan_notify_ondead(bdd) llmsset_notify_ondead(nodes, bdd&~sylvan_complement)
 
 /* Unary, binary and if-then-else operations */
 #define sylvan_not(a) (((BDD)a)^sylvan_complement)
@@ -210,49 +180,6 @@ void sylvan_set_toarray(BDDSET set, BDDVAR *arr);
 TASK_DECL_2(BDDSET, sylvan_set_fromarray, BDDVAR*, size_t);
 #define sylvan_set_fromarray(arr, length) ( CALL(sylvan_set_fromarray, arr, length) )
 void sylvan_test_isset(BDDSET set);
-
-/**
- * BDDMAP maps uint32_t variables to BDDs.
- * A BDDMAP node has variable level, low edge going to the next BDDMAP, high edge to the mapped BDD.
- */
-#define sylvan_map_empty() sylvan_false
-#define sylvan_map_isempty(map) (map == sylvan_false ? 1 : 0)
-#define sylvan_map_key(map) sylvan_var(map)
-#define sylvan_map_value(map) sylvan_high(map)
-#define sylvan_map_next(map) sylvan_low(map)
-
-/**
- * Return 1 if the map contains the key, 0 otherwise.
- */
-int sylvan_map_contains(BDDMAP map, uint32_t key);
-
-/**
- * Retrieve the number of keys in the map.
- */
-size_t sylvan_map_count(BDDMAP map);
-
-/**
- * Add the pair <key,value> to the map, overwrites if key already in map.
- */
-BDDMAP sylvan_map_add(BDDMAP map, uint32_t key, BDD value);
-
-/**
- * Add all values from map2 to map1, overwrites if key already in map1.
- */
-BDDMAP sylvan_map_addall(BDDMAP map1, BDDMAP map2);
-
-/**
- * Remove the key <key> from the map and return the result
- */
-BDDMAP sylvan_map_remove(BDDMAP map, uint32_t key);
-
-/**
- * Remove all keys in the cube <variables> from the map and return the result
- */
-BDDMAP sylvan_map_removeall(BDDMAP map, BDD variables);
-
-// convert a BDDSET (cube of variables) to a map, with all variables pointing on the value
-// BDDMAP sylvan_set_to_map(BDDSET set, BDD value);
 
 /**
  * Node creation primitive.
@@ -389,55 +316,6 @@ void sylvan_serialize_fromfile(FILE *in);
  */
 TASK_DECL_1(int, sylvan_test_isbdd, BDD);
 #define sylvan_test_isbdd(bdd) CALL(sylvan_test_isbdd, bdd)
-
-/* Infrastructure for internal markings */
-typedef struct bdd_refs_internal
-{
-    size_t r_size, r_count;
-    size_t s_size, s_count;
-    BDD *results;
-    Task **spawns;
-} *bdd_refs_internal_t;
-
-extern DECLARE_THREAD_LOCAL(bdd_refs_key, bdd_refs_internal_t);
-
-static inline BDD
-bdd_refs_push(BDD bdd)
-{
-    LOCALIZE_THREAD_LOCAL(bdd_refs_key, bdd_refs_internal_t);
-    if (bdd_refs_key->r_count >= bdd_refs_key->r_size) {
-        bdd_refs_key->r_size *= 2;
-        bdd_refs_key->results = (BDD*)realloc(bdd_refs_key->results, sizeof(BDD) * bdd_refs_key->r_size);
-    }
-    bdd_refs_key->results[bdd_refs_key->r_count++] = bdd;
-    return bdd;
-}
-
-static inline void
-bdd_refs_pop(int amount)
-{
-    LOCALIZE_THREAD_LOCAL(bdd_refs_key, bdd_refs_internal_t);
-    bdd_refs_key->r_count-=amount;
-}
-
-static inline void
-bdd_refs_spawn(Task *t)
-{
-    LOCALIZE_THREAD_LOCAL(bdd_refs_key, bdd_refs_internal_t);
-    if (bdd_refs_key->s_count >= bdd_refs_key->s_size) {
-        bdd_refs_key->s_size *= 2;
-        bdd_refs_key->spawns = (Task**)realloc(bdd_refs_key->spawns, sizeof(Task*) * bdd_refs_key->s_size);
-    }
-    bdd_refs_key->spawns[bdd_refs_key->s_count++] = t;
-}
-
-static inline BDD
-bdd_refs_sync(BDD result)
-{
-    LOCALIZE_THREAD_LOCAL(bdd_refs_key, bdd_refs_internal_t);
-    bdd_refs_key->s_count--;
-    return result;
-}
 
 #ifdef __cplusplus
 }

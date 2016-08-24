@@ -97,7 +97,7 @@ VOID_TASK_IMPL_1(mtbdd_gc_mark_rec, MDD, mtbdd)
     if (mtbdd == mtbdd_true) return;
     if (mtbdd == mtbdd_false) return;
 
-    if (llmsset_mark(nodes, mtbdd&(~mtbdd_complement))) {
+    if (llmsset_mark(nodes, MTBDD_STRIPMARK(mtbdd))) {
         mtbddnode_t n = GETNODE(mtbdd);
         if (!mtbddnode_isleaf(n)) {
             SPAWN(mtbdd_gc_mark_rec, mtbddnode_getlow(n));
@@ -119,7 +119,7 @@ MDD
 mtbdd_ref(MDD a)
 {
     if (a == mtbdd_true || a == mtbdd_false) return a;
-    refs_up(&mtbdd_refs, a);
+    refs_up(&mtbdd_refs, MTBDD_STRIPMARK(a));
     return a;
 }
 
@@ -127,7 +127,7 @@ void
 mtbdd_deref(MDD a)
 {
     if (a == mtbdd_true || a == mtbdd_false) return;
-    refs_down(&mtbdd_refs, a);
+    refs_down(&mtbdd_refs, MTBDD_STRIPMARK(a));
 }
 
 size_t

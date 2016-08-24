@@ -541,6 +541,20 @@ mtbdd_fromarray(uint32_t* arr, size_t length)
 }
 
 /**
+ * Given a cube of variables, write each variable to arr.
+ * WARNING: arr must be sufficiently long!
+ */
+void
+mtbdd_toarray(MTBDD set, uint32_t *arr)
+{
+    while (set != mtbdd_true) {
+        mtbddnode_t n = GETNODE(set);
+        *arr++ = mtbddnode_getvariable(n);
+        set = node_gethigh(set, n);
+    }
+}
+
+/**
  * Create a MTBDD cube representing the conjunction of variables in their positive or negative
  * form depending on whether the cube[idx] equals 0 (negative), 1 (positive) or 2 (any).
  * Use cube[idx]==3 for "s=s'" in interleaved variables (matches with next variable)
@@ -2452,6 +2466,42 @@ mtbdd_fprintdot(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
     mtbdd_unmark_rec(mtbdd);
 
     fprintf(out, "}\n");
+}
+
+int
+mtbdd_set_in(MTBDD set, uint32_t var)
+{
+    while (set != mtbdd_true) {
+        mtbddnode_t n = GETNODE(set);
+        uint32_t v = mtbddnode_getvariable(n);
+        if (v == var) return 1;
+        if (v > var) return 0;
+        set = node_gethigh(set, n);
+    }
+    return 0;
+}
+
+size_t
+mtbdd_set_count(MTBDD set)
+{
+    size_t result = 0;
+    while (set != mtbdd_true) {
+        result++;
+        set = mtbdd_gethigh(set);
+    }
+    return result;
+}
+
+void
+mtbdd_test_isset(MTBDD set)
+{
+    while (set != sylvan_true) {
+        assert(set != sylvan_false);
+        assert(llmsset_is_marked(nodes, set));
+        mtbddnode_t n = GETNODE(set);
+        assert(node_getlow(set, n) == mtbdd_false);
+        set = node_gethigh(set, n);
+    }
 }
 
 /**

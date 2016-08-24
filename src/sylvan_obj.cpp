@@ -372,7 +372,7 @@ Bdd::PickOneCube(const BddSet &variables) const
     if (bdd == sylvan_false) return result;
 
     for (; !sylvan_set_isempty(vars); vars = sylvan_set_next(vars)) {
-        uint32_t var = sylvan_set_var(vars);
+        uint32_t var = sylvan_set_first(vars);
         if (bdd == sylvan_true) {
             // pick 0
             result.push_back(false);

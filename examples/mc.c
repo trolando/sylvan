@@ -420,7 +420,7 @@ TASK_2(BDD, extend_relation, BDD, relation, BDDSET, variables)
     for (int i=0; i<statebits; i++) has[i] = 0;
     BDDSET s = variables;
     while (!sylvan_set_isempty(s)) {
-        BDDVAR v = sylvan_set_var(s);
+        BDDVAR v = sylvan_set_first(s);
         if (v/2 >= (unsigned)statebits) break; // action labels
         has[v/2] = 1;
         s = sylvan_set_next(s);
@@ -468,12 +468,12 @@ print_matrix(BDD vars)
             fprintf(stdout, "-");
         } else {
             BDDVAR next_s = 2*((i+1)*bits_per_integer);
-            if (sylvan_set_var(vars) < next_s) {
+            if (sylvan_set_first(vars) < next_s) {
                 fprintf(stdout, "+");
                 for (;;) {
                     vars = sylvan_set_next(vars);
                     if (sylvan_set_isempty(vars)) break;
-                    if (sylvan_set_var(vars) >= next_s) break;
+                    if (sylvan_set_first(vars) >= next_s) break;
                 }
             } else {
                 fprintf(stdout, "-");

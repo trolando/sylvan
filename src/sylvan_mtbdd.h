@@ -91,6 +91,19 @@ typedef MTBDD MTBDDMAP;
 #define sylvan_map_addall       mtbdd_map_addall
 #define sylvan_map_remove       mtbdd_map_remove
 #define sylvan_map_removeall    mtbdd_map_removeall
+#define sylvan_set_empty        mtbdd_set_empty
+#define sylvan_set_isempty      mtbdd_set_isempty
+#define sylvan_set_add          mtbdd_set_add
+#define sylvan_set_addall       mtbdd_set_addall
+#define sylvan_set_remove       mtbdd_set_remove
+#define sylvan_set_removeall    mtbdd_set_removeall
+#define sylvan_set_first        mtbdd_set_first
+#define sylvan_set_next         mtbdd_set_next
+#define sylvan_set_fromarray    mtbdd_set_fromarray
+#define sylvan_set_toarray      mtbdd_set_toarray
+#define sylvan_set_in           mtbdd_set_in
+#define sylvan_set_count        mtbdd_set_count
+#define sylvan_test_isset       mtbdd_test_isset
 
 /**
  * Initialize MTBDD functionality.
@@ -155,10 +168,17 @@ double mtbdd_getdouble(MTBDD terminal);
 #define mtbdd_getdenom(terminal) ((uint32_t)(mtbdd_getvalue(terminal)&0xffffffff))
 
 /**
- * Create the conjunction of variables in arr.
- * I.e. arr[0] \and arr[1] \and ... \and arr[length-1]
+ * Create the conjunction of variables in arr,
+ * i.e. arr[0] \and arr[1] \and ... \and arr[length-1]
+ * The variable in arr must be ordered.
  */
 MTBDD mtbdd_fromarray(uint32_t* arr, size_t length);
+
+/**
+ * Given a cube of variables, write each variable to arr.
+ * WARNING: arr must be sufficiently long!
+ */
+void mtbdd_toarray(MTBDD set, uint32_t *arr);
 
 /**
  * Create a MTBDD cube representing the conjunction of variables in their positive or negative
@@ -483,6 +503,25 @@ void mtbdd_fprintdot(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb);
 #define mtbdd_printdot(mtbdd, cb) mtbdd_fprintdot(stdout, mtbdd, cb)
 
 /**
+ * MTBDDSET
+ * Just some convenience functions for handling sets of variables represented as a 
+ * cube (conjunction) of positive literals
+ */
+#define mtbdd_set_empty()                   mtbdd_true
+#define mtbdd_set_isempty(set)              (set == mtbdd_true)
+#define mtbdd_set_add(set, var)             sylvan_and(set, sylvan_ithvar(var))
+#define mtbdd_set_addall(set, set2)         sylvan_and(set, set2)
+#define mtbdd_set_remove(set, var)          sylvan_exists(set, var)
+#define mtbdd_set_removeall(set, set2)      sylvan_exists(set, s2)
+#define mtbdd_set_first(set)                sylvan_var(set)
+#define mtbdd_set_next(set)                 sylvan_high(set)
+#define mtbdd_set_fromarray(arr, count)     mtbdd_fromarray(arr, count)
+#define mtbdd_set_toarray(set, arr)         mtbdd_toarray(set, arr)
+int mtbdd_set_in(BDDSET set, BDDVAR var);
+size_t mtbdd_set_count(BDDSET set);
+void mtbdd_test_isset(BDDSET set);
+
+/**
  * MTBDDMAP, maps uint32_t variables to MTBDDs.
  * A MTBDDMAP node has variable level, low edge going to the next MTBDDMAP, high edge to the mapped MTBDD.
  */
@@ -574,7 +613,7 @@ void mtbdd_unprotect(MTBDD* ptr);
 size_t mtbdd_count_protected();
 
 /**
- * If sylvan_set_ondead is set to a callback, then this function marks MTBDDs (terminals).
+ * If mtbdd_set_ondead is set to a callback, then this function marks MTBDDs (terminals).
  * When they are dead after the mark phase in garbage collection, the callback is called for marked MTBDDs.
  * The ondead callback can either perform cleanup or resurrect dead terminals.
  */

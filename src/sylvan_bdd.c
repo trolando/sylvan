@@ -1167,7 +1167,7 @@ TASK_IMPL_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
         BDD _vars;
         if (vars != sylvan_false) {
             _vars = node_high(vars, nv);
-            if (sylvan_set_var(_vars) == t) _vars = sylvan_set_next(_vars);
+            if (sylvan_set_first(_vars) == t) _vars = sylvan_set_next(_vars);
         } else {
             _vars = sylvan_false;
         }
@@ -1951,65 +1951,6 @@ TASK_5(BDD, sylvan_collect_do, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, vo
 TASK_IMPL_4(BDD, sylvan_collect, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, void*, context)
 {
     return CALL(sylvan_collect_do, bdd, vars, cb, context, 0);
-}
-
-/**
- * IMPLEMENTATION OF BDDSET
- */
-
-int
-sylvan_set_in(BDDSET set, BDDVAR level)
-{
-    while (!sylvan_set_isempty(set)) {
-        bddnode_t n = GETNODE(set);
-        BDDVAR n_level = bddnode_getvariable(n);
-        if (n_level == level) return 1;
-        if (n_level > level) return 0; // BDDs are ordered
-        set = node_high(set, n);
-    }
-
-    return 0;
-}
-
-size_t
-sylvan_set_count(BDDSET set)
-{
-    size_t result = 0;
-    for (;!sylvan_set_isempty(set);set = sylvan_set_next(set)) result++;
-    return result;
-}
-
-void
-sylvan_set_toarray(BDDSET set, BDDVAR *arr)
-{
-    size_t i = 0;
-    while (!sylvan_set_isempty(set)) {
-        bddnode_t n = GETNODE(set);
-        arr[i++] = bddnode_getvariable(n);
-        set = node_high(set, n);
-    }
-}
-
-TASK_IMPL_2(BDDSET, sylvan_set_fromarray, BDDVAR*, arr, size_t, length)
-{
-    if (length == 0) return sylvan_set_empty();
-    BDDSET sub = sylvan_set_fromarray(arr+1, length-1);
-    bdd_refs_push(sub);
-    BDDSET result = sylvan_set_add(sub, *arr);
-    bdd_refs_pop(1);
-    return result;
-}
-
-void
-sylvan_test_isset(BDDSET set)
-{
-    while (set != sylvan_false) {
-        assert(set != sylvan_true);
-        assert(llmsset_is_marked(nodes, set));
-        bddnode_t n = GETNODE(set);
-        assert(node_low(set, n) == sylvan_true);
-        set = node_high(set, n);
-    }
 }
 
 /**

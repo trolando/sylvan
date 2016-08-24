@@ -158,30 +158,6 @@ TASK_DECL_1(BDD, sylvan_support, BDD);
 #define sylvan_support(bdd) (CALL(sylvan_support, bdd))
 
 /**
- * A set of BDD variables is a cube (conjunction) of variables in their positive form.
- * Note 2015-06-10: This used to be a union (disjunction) of variables in their positive form.
- */
-// empty bddset
-#define sylvan_set_empty() sylvan_true
-#define sylvan_set_isempty(set) (set == sylvan_true)
-// add variables to the bddset
-#define sylvan_set_add(set, var) sylvan_and(set, sylvan_ithvar(var))
-#define sylvan_set_addall(set, set_to_add) sylvan_and(set, set_to_add)
-// remove variables from the bddset
-#define sylvan_set_remove(set, var) sylvan_exists(set, var)
-#define sylvan_set_removeall(set, set_to_remove) sylvan_exists(set, set_to_remove)
-// iterate through all variables
-#define sylvan_set_var(set) (sylvan_var(set))
-#define sylvan_set_next(set) (sylvan_high(set))
-int sylvan_set_in(BDDSET set, BDDVAR var);
-size_t sylvan_set_count(BDDSET set);
-void sylvan_set_toarray(BDDSET set, BDDVAR *arr);
-// variables in arr should be ordered
-TASK_DECL_2(BDDSET, sylvan_set_fromarray, BDDVAR*, size_t);
-#define sylvan_set_fromarray(arr, length) ( CALL(sylvan_set_fromarray, arr, length) )
-void sylvan_test_isset(BDDSET set);
-
-/**
  * Node creation primitive.
  * Careful: does not check ordering!
  * Preferably only use when debugging!

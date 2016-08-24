@@ -334,6 +334,8 @@ mtbdd_register_custom_leaf(mtbdd_hash_cb hash_cb, mtbdd_equals_cb equals_cb, mtb
  * Initialize and quit functions
  */
 
+static int mtbdd_initialized = 0;
+
 static void
 mtbdd_quit()
 {
@@ -347,11 +349,16 @@ mtbdd_quit()
         cl_registry = NULL;
         cl_registry_count = 0;
     }
+
+    mtbdd_initialized = 0;
 }
 
 void
 sylvan_init_mtbdd()
 {
+    if (mtbdd_initialized) return;
+    mtbdd_initialized = 1;
+
     sylvan_register_quit(mtbdd_quit);
     sylvan_gc_add_mark(10, TASK(mtbdd_gc_mark_external_refs));
     sylvan_gc_add_mark(10, TASK(mtbdd_gc_mark_protected));

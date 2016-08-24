@@ -113,6 +113,19 @@ mtbddnode_makenode(mtbddnode_t n, uint32_t var, uint64_t low, uint64_t high)
     n->b = ((uint64_t)var)<<40 | low;
 }
 
+static inline void
+mtbddnode_makemapnode(mtbddnode_t n, uint32_t var, uint64_t low, uint64_t high)
+{
+    n->a = high | 0x1000000000000000;
+    n->b = ((uint64_t)var)<<40 | low;
+}
+
+static inline int
+mtbddnode_ismapnode(mtbddnode_t n)
+{
+    return n->a & 0x1000000000000000 ? 1 : 0;
+}
+
 static MTBDD
 node_getlow(MTBDD mtbdd, mtbddnode_t node)
 {

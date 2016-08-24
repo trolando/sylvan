@@ -212,11 +212,6 @@ TASK_DECL_2(double, sylvan_pathcount, BDD, BDDVAR);
 #define sylvan_pathcount(bdd) (CALL(sylvan_pathcount, bdd, 0))
 
 /**
- * Compute the number of BDD nodes in the BDD
- */
-size_t sylvan_nodecount(BDD a);
-
-/**
  * SAVING:
  * use sylvan_serialize_add on every BDD you want to store
  * use sylvan_serialize_get to retrieve the key of every stored BDD

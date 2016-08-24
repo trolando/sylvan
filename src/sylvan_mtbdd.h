@@ -111,6 +111,7 @@ typedef MTBDD MTBDDMAP;
 #define sylvan_makemapnode      mtbdd_makemapnode
 #define sylvan_support          mtbdd_support
 #define sylvan_test_isbdd       mtbdd_test_isvalid
+#define sylvan_nodecount        mtbdd_nodecount
 #define sylvan_printdot(bdd)    mtbdd_printdot(bdd, NULL)
 #define sylvan_fprintdot(out, bdd) mtbdd_fprintdot(out, bdd, NULL)
 

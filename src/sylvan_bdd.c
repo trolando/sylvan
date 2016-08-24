@@ -1361,38 +1361,6 @@ TASK_IMPL_3(BDD, sylvan_compose, BDD, a, BDDMAP, map, BDDVAR, prev_level)
 }
 
 /**
- * Count number of nodes in BDD
- */
-uint64_t sylvan_nodecount_do_1(BDD a)
-{
-    if (sylvan_isconst(a)) return 0;
-    bddnode_t na = GETNODE(a);
-    if (bddnode_getmark(na)) return 0;
-    bddnode_setmark(na, 1);
-    uint64_t result = 1;
-    result += sylvan_nodecount_do_1(bddnode_getlow(na));
-    result += sylvan_nodecount_do_1(bddnode_gethigh(na));
-    return result;
-}
-
-void sylvan_nodecount_do_2(BDD a)
-{
-    if (sylvan_isconst(a)) return;
-    bddnode_t na = GETNODE(a);
-    if (!bddnode_getmark(na)) return;
-    bddnode_setmark(na, 0);
-    sylvan_nodecount_do_2(bddnode_getlow(na));
-    sylvan_nodecount_do_2(bddnode_gethigh(na));
-}
-
-size_t sylvan_nodecount(BDD a)
-{
-    uint32_t result = sylvan_nodecount_do_1(a);
-    sylvan_nodecount_do_2(a);
-    return result;
-}
-
-/**
  * Calculate the number of distinct paths to True.
  */
 TASK_IMPL_2(double, sylvan_pathcount, BDD, bdd, BDDVAR, prev_level)

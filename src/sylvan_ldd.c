@@ -114,7 +114,7 @@ mddnode_makecopy(mddnode_t n, uint64_t right, uint64_t down)
     n->b = ((down << 1) | 1) << 16;
 }
 
-#define GETNODE(mdd) ((mddnode_t)llmsset_index_to_ptr(nodes, mdd))
+#define LDD_GETNODE(mdd) ((mddnode_t)llmsset_index_to_ptr(nodes, mdd))
 
 /**
  * Implementation of garbage collection
@@ -126,7 +126,7 @@ VOID_TASK_IMPL_1(lddmc_gc_mark_rec, MDD, mdd)
     if (mdd <= lddmc_true) return;
 
     if (llmsset_mark(nodes, mdd)) {
-        mddnode_t n = GETNODE(mdd);
+        mddnode_t n = LDD_GETNODE(mdd);
         SPAWN(lddmc_gc_mark_rec, mddnode_getright(n));
         CALL(lddmc_gc_mark_rec, mddnode_getdown(n));
         SYNC(lddmc_gc_mark_rec);
@@ -262,7 +262,7 @@ lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
 
     // check if correct (should be false, or next in value)
     assert(ifneq != lddmc_true);
-    if (ifneq != lddmc_false) assert(value < mddnode_getvalue(GETNODE(ifneq)));
+    if (ifneq != lddmc_false) assert(value < mddnode_getvalue(LDD_GETNODE(ifneq)));
 
     struct mddnode n;
     mddnode_make(&n, value, ifneq, ifeq);
@@ -322,7 +322,7 @@ lddmc_extendnode(MDD mdd, uint32_t value, MDD ifeq)
 {
     if (mdd <= lddmc_true) return lddmc_makenode(value, ifeq, mdd);
 
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
     if (mddnode_getcopy(n)) return lddmc_make_copynode(mddnode_getdown(n), lddmc_extendnode(mddnode_getright(n), value, ifeq));
     uint32_t n_value = mddnode_getvalue(n);
     if (n_value < value) return lddmc_makenode(n_value, mddnode_getdown(n), lddmc_extendnode(mddnode_getright(n), value, ifeq));
@@ -333,19 +333,19 @@ lddmc_extendnode(MDD mdd, uint32_t value, MDD ifeq)
 uint32_t
 lddmc_getvalue(MDD mdd)
 {
-    return mddnode_getvalue(GETNODE(mdd));
+    return mddnode_getvalue(LDD_GETNODE(mdd));
 }
 
 MDD
 lddmc_getdown(MDD mdd)
 {
-    return mddnode_getdown(GETNODE(mdd));
+    return mddnode_getdown(LDD_GETNODE(mdd));
 }
 
 MDD
 lddmc_getright(MDD mdd)
 {
-    return mddnode_getright(GETNODE(mdd));
+    return mddnode_getright(LDD_GETNODE(mdd));
 }
 
 MDD
@@ -353,7 +353,7 @@ lddmc_follow(MDD mdd, uint32_t value)
 {
     for (;;) {
         if (mdd <= lddmc_true) return mdd;
-        const mddnode_t n = GETNODE(mdd);
+        const mddnode_t n = LDD_GETNODE(mdd);
         if (!mddnode_getcopy(n)) {
             const uint32_t v = mddnode_getvalue(n);
             if (v == value) return mddnode_getdown(n);
@@ -368,7 +368,7 @@ lddmc_iscopy(MDD mdd)
 {
     if (mdd <= lddmc_true) return 0;
 
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
     return mddnode_getcopy(n) ? 1 : 0;
 }
 
@@ -377,7 +377,7 @@ lddmc_followcopy(MDD mdd)
 {
     if (mdd <= lddmc_true) return lddmc_false;
 
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
     if (mddnode_getcopy(n)) return mddnode_getdown(n);
     else return lddmc_false;
 }
@@ -390,18 +390,18 @@ match_ldds(MDD *one, MDD *two)
 {
     MDD m1 = *one, m2 = *two;
     if (m1 == lddmc_false || m2 == lddmc_false) return 0;
-    mddnode_t n1 = GETNODE(m1), n2 = GETNODE(m2);
+    mddnode_t n1 = LDD_GETNODE(m1), n2 = LDD_GETNODE(m2);
     uint32_t v1 = mddnode_getvalue(n1), v2 = mddnode_getvalue(n2);
     while (v1 != v2) {
         if (v1 < v2) {
             m1 = mddnode_getright(n1);
             if (m1 == lddmc_false) return 0;
-            n1 = GETNODE(m1);
+            n1 = LDD_GETNODE(m1);
             v1 = mddnode_getvalue(n1);
         } else if (v1 > v2) {
             m2 = mddnode_getright(n2);
             if (m2 == lddmc_false) return 0;
-            n2 = GETNODE(m2);
+            n2 = LDD_GETNODE(m2);
             v2 = mddnode_getvalue(n2);
         }
     }
@@ -434,8 +434,8 @@ TASK_IMPL_2(MDD, lddmc_union, MDD, a, MDD, b)
     }
 
     /* Get nodes */
-    mddnode_t na = GETNODE(a);
-    mddnode_t nb = GETNODE(b);
+    mddnode_t na = LDD_GETNODE(a);
+    mddnode_t nb = LDD_GETNODE(b);
 
     const int na_copy = mddnode_getcopy(na) ? 1 : 0;
     const int nb_copy = mddnode_getcopy(nb) ? 1 : 0;
@@ -499,8 +499,8 @@ TASK_IMPL_2(MDD, lddmc_minus, MDD, a, MDD, b)
     }
 
     /* Get nodes */
-    mddnode_t na = GETNODE(a);
-    mddnode_t nb = GETNODE(b);
+    mddnode_t na = LDD_GETNODE(a);
+    mddnode_t nb = LDD_GETNODE(b);
     uint32_t na_value = mddnode_getvalue(na);
     uint32_t nb_value = mddnode_getvalue(nb);
 
@@ -559,8 +559,8 @@ TASK_IMPL_3(MDD, lddmc_zip, MDD, a, MDD, b, MDD*, res2)
     }
 
     /* Get nodes */
-    mddnode_t na = GETNODE(a);
-    mddnode_t nb = GETNODE(b);
+    mddnode_t na = LDD_GETNODE(a);
+    mddnode_t nb = LDD_GETNODE(b);
     uint32_t na_value = mddnode_getvalue(na);
     uint32_t nb_value = mddnode_getvalue(nb);
 
@@ -606,8 +606,8 @@ TASK_IMPL_2(MDD, lddmc_intersect, MDD, a, MDD, b)
     sylvan_stats_count(LDD_INTERSECT);
 
     /* Get nodes */
-    mddnode_t na = GETNODE(a);
-    mddnode_t nb = GETNODE(b);
+    mddnode_t na = LDD_GETNODE(a);
+    mddnode_t nb = LDD_GETNODE(b);
     uint32_t na_value = mddnode_getvalue(na);
     uint32_t nb_value = mddnode_getvalue(nb);
 
@@ -616,13 +616,13 @@ TASK_IMPL_2(MDD, lddmc_intersect, MDD, a, MDD, b)
         if (na_value < nb_value) {
             a = mddnode_getright(na);
             if (a == lddmc_false) return lddmc_false;
-            na = GETNODE(a);
+            na = LDD_GETNODE(a);
             na_value = mddnode_getvalue(na);
         }
         if (nb_value < na_value) {
             b = mddnode_getright(nb);
             if (b == lddmc_false) return lddmc_false;
-            nb = GETNODE(b);
+            nb = LDD_GETNODE(b);
             nb_value = mddnode_getvalue(nb);
         }
     }
@@ -654,7 +654,7 @@ TASK_IMPL_3(MDD, lddmc_match, MDD, a, MDD, b, MDD, proj)
     if (a == b) return a;
     if (a == lddmc_false || b == lddmc_false) return lddmc_false;
 
-    mddnode_t p_node = GETNODE(proj);
+    mddnode_t p_node = LDD_GETNODE(proj);
     uint32_t p_val = mddnode_getvalue(p_node);
     if (p_val == (uint32_t)-1) return a;
 
@@ -679,10 +679,10 @@ TASK_IMPL_3(MDD, lddmc_match, MDD, a, MDD, b, MDD, proj)
     }
 
     /* Perform recursive calculation */
-    mddnode_t na = GETNODE(a);
+    mddnode_t na = LDD_GETNODE(a);
     MDD down;
     if (p_val == 1) {
-        mddnode_t nb = GETNODE(b);
+        mddnode_t nb = LDD_GETNODE(b);
         /* right = */ lddmc_refs_spawn(SPAWN(lddmc_match, mddnode_getright(na), mddnode_getright(nb), proj));
         down = CALL(lddmc_match, mddnode_getdown(na), mddnode_getdown(nb), mddnode_getdown(p_node));
     } else {
@@ -713,7 +713,7 @@ TASK_IMPL_3(MDD, lddmc_relprod, MDD, set, MDD, rel, MDD, meta)
     if (rel == lddmc_false) return lddmc_false;
     if (meta == lddmc_true) return set; // we assume that if meta is finished, then the rest is not in rel
 
-    mddnode_t n_meta = GETNODE(meta);
+    mddnode_t n_meta = LDD_GETNODE(meta);
     uint32_t m_val = mddnode_getvalue(n_meta);
 
     // if meta is -1, then no other variables are in the transition relation
@@ -723,7 +723,7 @@ TASK_IMPL_3(MDD, lddmc_relprod, MDD, set, MDD, rel, MDD, meta)
     if (m_val != 0) assert(set != lddmc_true && rel != lddmc_true);
 
     /* Skip nodes if possible */
-    if (!mddnode_getcopy(GETNODE(rel))) {
+    if (!mddnode_getcopy(LDD_GETNODE(rel))) {
         // if we "read" or "only-read", then match LDDs set and rel
         // if no match, then return the empty set
         if (m_val == 1 || m_val == 3) {
@@ -744,8 +744,8 @@ TASK_IMPL_3(MDD, lddmc_relprod, MDD, set, MDD, rel, MDD, meta)
         return result;
     }
 
-    mddnode_t n_set = GETNODE(set);
-    mddnode_t n_rel = GETNODE(rel);
+    mddnode_t n_set = LDD_GETNODE(set);
+    mddnode_t n_rel = LDD_GETNODE(rel);
 
     /* Recursive operations */
     if (m_val == 0) { // not in rel
@@ -769,7 +769,7 @@ TASK_IMPL_3(MDD, lddmc_relprod, MDD, set, MDD, rel, MDD, meta)
                 count++;
                 set = mddnode_getright(n_set);
                 if (set == lddmc_false) break;
-                n_set = GETNODE(set);
+                n_set = LDD_GETNODE(set);
             }
 
             // sync+union (one by one)
@@ -804,7 +804,7 @@ TASK_IMPL_3(MDD, lddmc_relprod, MDD, set, MDD, rel, MDD, meta)
                 count++;
                 set = mddnode_getright(n_set);
                 if (set == lddmc_false) break;
-                n_set = GETNODE(set);
+                n_set = LDD_GETNODE(set);
             }
 
             // sync+union (one by one)
@@ -852,7 +852,7 @@ TASK_IMPL_3(MDD, lddmc_relprod, MDD, set, MDD, rel, MDD, meta)
             count++;
             rel = mddnode_getright(n_rel);
             if (rel == lddmc_false) break;
-            n_rel = GETNODE(rel);
+            n_rel = LDD_GETNODE(rel);
         }
 
         // sync+union (one by one)
@@ -894,7 +894,7 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
     if (un == lddmc_false) return CALL(lddmc_relprod, set, rel, meta);
     if (meta == lddmc_true) return CALL(lddmc_union, set, un);
 
-    mddnode_t n_meta = GETNODE(meta);
+    mddnode_t n_meta = LDD_GETNODE(meta);
     uint32_t m_val = mddnode_getvalue(n_meta);
     if (m_val == (uint32_t)-1) return CALL(lddmc_union, set, un);
 
@@ -902,7 +902,7 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
     if (m_val != 0) assert(set != lddmc_true && rel != lddmc_true && un != lddmc_true);
 
     /* Skip nodes if possible */
-    if (!mddnode_getcopy(GETNODE(rel))) {
+    if (!mddnode_getcopy(LDD_GETNODE(rel))) {
         // if we "read" or "only-read", then match LDDs set and rel
         // if no match, then return un (the empty set union un)
         if (m_val == 1 || m_val == 3) {
@@ -924,9 +924,9 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
     }
 
     /* Get nodes */
-    mddnode_t n_set = GETNODE(set);
-    mddnode_t n_rel = GETNODE(rel);
-    mddnode_t n_un = GETNODE(un);
+    mddnode_t n_set = LDD_GETNODE(set);
+    mddnode_t n_rel = LDD_GETNODE(rel);
+    mddnode_t n_un = LDD_GETNODE(un);
 
     /* Now check the special cases where we can determine that un.value < result.value */
     if (m_val == 0 || m_val == 3) {
@@ -991,7 +991,7 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
                 count++;
                 set = mddnode_getright(n_set);
                 if (set == lddmc_false) break;
-                n_set = GETNODE(set);
+                n_set = LDD_GETNODE(set);
             }
 
             // sync+union (one by one)
@@ -1039,7 +1039,7 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
                         result = CALL(lddmc_relprod, set, rel, meta);
                         break;
                     }
-                    n_un = GETNODE(un);
+                    n_un = LDD_GETNODE(un);
                 } else if (un_value > set_value) {
                     // this is a bit tricky because the SYNC assumes we SPAWN a relprod_union_help
                     // the result of this will simply be a normal relprod
@@ -1051,7 +1051,7 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
                         result = un;
                         break;
                     }
-                    n_set = GETNODE(set);
+                    n_set = LDD_GETNODE(set);
                 } else /* un_value == set_value */ {
                     lddmc_refs_spawn(SPAWN(lddmc_relprod_union_help, set_value, mddnode_getdown(n_set), mddnode_getdown(n_rel), mddnode_getdown(n_meta), mddnode_getdown(n_un)));
                     count++;
@@ -1066,8 +1066,8 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
                         result = CALL(lddmc_relprod, set, rel, meta);
                         break;
                     }
-                    n_set = GETNODE(set);
-                    n_un = GETNODE(un);
+                    n_set = LDD_GETNODE(set);
+                    n_un = LDD_GETNODE(un);
                 }
             }
 
@@ -1132,7 +1132,7 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
                     result = CALL(lddmc_relprod, set, rel, meta);
                     break;
                 }
-                n_un = GETNODE(un);
+                n_un = LDD_GETNODE(un);
             } else if (un_value > value) {
                 lddmc_refs_spawn(SPAWN(lddmc_relprod_union_help, value, mddnode_getdown(n_set), mddnode_getdown(n_rel), mddnode_getdown(n_meta), lddmc_false));
                 count++;
@@ -1141,7 +1141,7 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
                     result = un;
                     break;
                 }
-                n_rel = GETNODE(rel);
+                n_rel = LDD_GETNODE(rel);
             } else /* un_value == value */ {
                 lddmc_refs_spawn(SPAWN(lddmc_relprod_union_help, value, mddnode_getdown(n_set), mddnode_getdown(n_rel), mddnode_getdown(n_meta), mddnode_getdown(n_un)));
                 count++;
@@ -1154,8 +1154,8 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
                     result = CALL(lddmc_relprod, set, rel, meta);
                     break;
                 }
-                n_rel = GETNODE(rel);
-                n_un = GETNODE(un);
+                n_rel = LDD_GETNODE(rel);
+                n_un = LDD_GETNODE(un);
             }
         }
 
@@ -1200,7 +1200,7 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
     if (rel == lddmc_false) return lddmc_false;
     if (uni == lddmc_false) return lddmc_false;
 
-    mddnode_t n_meta = GETNODE(meta);
+    mddnode_t n_meta = LDD_GETNODE(meta);
     uint32_t m_val = mddnode_getvalue(n_meta);
     if (m_val == (uint32_t)-1) {
         if (set == uni) return set;
@@ -1213,7 +1213,7 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
     if (m_val == 0) {
         // not in rel: match set and uni ('intersect')
         if (!match_ldds(&set, &uni)) return lddmc_false;
-    } else if (mddnode_getcopy(GETNODE(rel))) {
+    } else if (mddnode_getcopy(LDD_GETNODE(rel))) {
         // read+copy: no matching (pre is everything in uni)
         // write+copy: no matching (match after split: set and uni)
         // only-read+copy: match set and uni
@@ -1229,9 +1229,9 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
         if (!match_ldds(&set, &rel)) return lddmc_false;
     } else if (m_val == 3) {
         // only-read: match uni and set and rel
-        mddnode_t n_set = GETNODE(set);
-        mddnode_t n_rel = GETNODE(rel);
-        mddnode_t n_uni = GETNODE(uni);
+        mddnode_t n_set = LDD_GETNODE(set);
+        mddnode_t n_rel = LDD_GETNODE(rel);
+        mddnode_t n_uni = LDD_GETNODE(uni);
         uint32_t n_set_value = mddnode_getvalue(n_set);
         uint32_t n_rel_value = mddnode_getvalue(n_rel);
         uint32_t n_uni_value = mddnode_getvalue(n_uni);
@@ -1239,19 +1239,19 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
             if (n_uni_value < n_rel_value || n_uni_value < n_set_value) {
                 uni = mddnode_getright(n_uni);
                 if (uni == lddmc_false) return lddmc_false;
-                n_uni = GETNODE(uni);
+                n_uni = LDD_GETNODE(uni);
                 n_uni_value = mddnode_getvalue(n_uni);
             }
             if (n_set_value < n_rel_value || n_set_value < n_uni_value) {
                 set = mddnode_getright(n_set);
                 if (set == lddmc_false) return lddmc_false;
-                n_set = GETNODE(set);
+                n_set = LDD_GETNODE(set);
                 n_set_value = mddnode_getvalue(n_set);
             }
             if (n_rel_value < n_set_value || n_rel_value < n_uni_value) {
                 rel = mddnode_getright(n_rel);
                 if (rel == lddmc_false) return lddmc_false;
-                n_rel = GETNODE(rel);
+                n_rel = LDD_GETNODE(rel);
                 n_rel_value = mddnode_getvalue(n_rel);
             }
         }
@@ -1273,9 +1273,9 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
         return result;
     }
 
-    mddnode_t n_set = GETNODE(set);
-    mddnode_t n_rel = GETNODE(rel);
-    mddnode_t n_uni = GETNODE(uni);
+    mddnode_t n_set = LDD_GETNODE(set);
+    mddnode_t n_rel = LDD_GETNODE(rel);
+    mddnode_t n_uni = LDD_GETNODE(uni);
 
     /* Recursive operations */
     if (m_val == 0) { // not in rel
@@ -1299,7 +1299,7 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
                 count++;
                 uni = mddnode_getright(n_uni);
                 if (uni == lddmc_false) break;
-                n_uni = GETNODE(uni);
+                n_uni = LDD_GETNODE(uni);
             }
 
             // sync+union (one by one)
@@ -1333,8 +1333,8 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
                 count++;
                 uni = mddnode_getright(n_uni);
                 if (!match_ldds(&set, &uni)) break;
-                n_set = GETNODE(set);
-                n_uni = GETNODE(uni);
+                n_set = LDD_GETNODE(set);
+                n_uni = LDD_GETNODE(uni);
             }
 
             // sync+union (one by one)
@@ -1385,8 +1385,8 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
             int count = 0;
             for (;;) {
                 if (!match_ldds(&set, &uni)) break;
-                n_set = GETNODE(set);
-                n_uni = GETNODE(uni);
+                n_set = LDD_GETNODE(set);
+                n_uni = LDD_GETNODE(uni);
                 lddmc_refs_spawn(SPAWN(lddmc_relprev_help, mddnode_getvalue(n_uni), mddnode_getdown(n_set), mddnode_getdown(n_rel), mddnode_getdown(n_meta), mddnode_getdown(n_uni)));
                 count++;
                 uni = mddnode_getright(n_uni);
@@ -1409,7 +1409,7 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
                 count++;
                 uni = mddnode_getright(n_uni);
                 if (uni == lddmc_false) break;
-                n_uni = GETNODE(uni);
+                n_uni = LDD_GETNODE(uni);
             }
 
             // sync+union (one by one)
@@ -1443,16 +1443,16 @@ TASK_IMPL_4(MDD, lddmc_join, MDD, a, MDD, b, MDD, a_proj, MDD, b_proj)
     /* Test gc */
     sylvan_gc_test();
 
-    mddnode_t n_a_proj = GETNODE(a_proj);
-    mddnode_t n_b_proj = GETNODE(b_proj);
+    mddnode_t n_a_proj = LDD_GETNODE(a_proj);
+    mddnode_t n_b_proj = LDD_GETNODE(b_proj);
     uint32_t a_proj_val = mddnode_getvalue(n_a_proj);
     uint32_t b_proj_val = mddnode_getvalue(n_b_proj);
 
     while (a_proj_val == 0 && b_proj_val == 0) {
         a_proj = mddnode_getdown(n_a_proj);
         b_proj = mddnode_getdown(n_b_proj);
-        n_a_proj = GETNODE(a_proj);
-        n_b_proj = GETNODE(b_proj);
+        n_a_proj = LDD_GETNODE(a_proj);
+        n_b_proj = LDD_GETNODE(b_proj);
         a_proj_val = mddnode_getvalue(n_a_proj);
         b_proj_val = mddnode_getvalue(n_b_proj);
     }
@@ -1480,8 +1480,8 @@ TASK_IMPL_4(MDD, lddmc_join, MDD, a, MDD, b, MDD, a_proj, MDD, b_proj)
     }
 
     /* Perform recursive calculation */
-    const mddnode_t na = GETNODE(a);
-    const mddnode_t nb = GETNODE(b);
+    const mddnode_t na = LDD_GETNODE(a);
+    const mddnode_t nb = LDD_GETNODE(b);
     uint32_t val;
     MDD down;
 
@@ -1526,7 +1526,7 @@ TASK_IMPL_2(MDD, lddmc_project, const MDD, mdd, const MDD, proj)
     if (mdd == lddmc_false) return lddmc_false; // projection of empty is empty
     if (mdd == lddmc_true) return lddmc_true; // projection of universe is universe...
 
-    mddnode_t p_node = GETNODE(proj);
+    mddnode_t p_node = LDD_GETNODE(proj);
     uint32_t p_val = mddnode_getvalue(p_node);
     if (p_val == (uint32_t)-1) return mdd;
     if (p_val == (uint32_t)-2) return lddmc_true; // because we always end with true.
@@ -1541,7 +1541,7 @@ TASK_IMPL_2(MDD, lddmc_project, const MDD, mdd, const MDD, proj)
         return result;
     }
 
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
 
     if (p_val == 1) { // keep
         lddmc_refs_spawn(SPAWN(lddmc_project, mddnode_getright(n), proj));
@@ -1562,7 +1562,7 @@ TASK_IMPL_2(MDD, lddmc_project, const MDD, mdd, const MDD, proj)
                 _mdd = mddnode_getright(n);
                 assert(_mdd != lddmc_true);
                 if (_mdd == lddmc_false) break;
-                n = GETNODE(_mdd);
+                n = LDD_GETNODE(_mdd);
             }
             result = lddmc_false;
             while (count--) {
@@ -1589,7 +1589,7 @@ TASK_IMPL_3(MDD, lddmc_project_minus, const MDD, mdd, const MDD, proj, MDD, avoi
     if (mdd == lddmc_false) return lddmc_false; // projection of empty is empty
     if (mdd == lddmc_true) return lddmc_true; // avoid != lddmc_true
 
-    mddnode_t p_node = GETNODE(proj);
+    mddnode_t p_node = LDD_GETNODE(proj);
     uint32_t p_val = mddnode_getvalue(p_node);
     if (p_val == (uint32_t)-1) return lddmc_minus(mdd, avoid);
     if (p_val == (uint32_t)-2) return lddmc_true;
@@ -1604,14 +1604,14 @@ TASK_IMPL_3(MDD, lddmc_project_minus, const MDD, mdd, const MDD, proj, MDD, avoi
         return result;
     }
 
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
 
     if (p_val == 1) { // keep
         // move 'avoid' until it matches
         uint32_t val = mddnode_getvalue(n);
         MDD a_down = lddmc_false;
         while (avoid != lddmc_false) {
-            mddnode_t a_node = GETNODE(avoid);
+            mddnode_t a_node = LDD_GETNODE(avoid);
             uint32_t a_val = mddnode_getvalue(a_node);
             if (a_val > val) {
                 break;
@@ -1639,7 +1639,7 @@ TASK_IMPL_3(MDD, lddmc_project_minus, const MDD, mdd, const MDD, proj, MDD, avoi
                 _mdd = mddnode_getright(n);
                 assert(_mdd != lddmc_true);
                 if (_mdd == lddmc_false) break;
-                n = GETNODE(_mdd);
+                n = LDD_GETNODE(_mdd);
             }
             result = lddmc_false;
             while (count--) {
@@ -1667,7 +1667,7 @@ lddmc_union_cube(MDD a, uint32_t* values, size_t count)
     }
     assert(count != 0);
 
-    mddnode_t na = GETNODE(a);
+    mddnode_t na = LDD_GETNODE(a);
     uint32_t na_value = mddnode_getvalue(na);
 
     /* Only create a new node if something actually changed */
@@ -1695,7 +1695,7 @@ lddmc_union_cube_copy(MDD a, uint32_t* values, int* copy, size_t count)
     }
     assert(count != 0);
 
-    mddnode_t na = GETNODE(a);
+    mddnode_t na = LDD_GETNODE(a);
 
     /* Only create a new node if something actually changed */
 
@@ -1778,7 +1778,7 @@ static void
 lddmc_nodecount_levels_mark(MDD mdd, size_t *variables)
 {
     if (mdd <= lddmc_true) return;
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
     if (!mddnode_getmark(n)) {
         mddnode_setmark(n, 1);
         (*variables) += 1;
@@ -1791,7 +1791,7 @@ static void
 lddmc_nodecount_levels_unmark(MDD mdd)
 {
     if (mdd <= lddmc_true) return;
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
     if (mddnode_getmark(n)) {
         mddnode_setmark(n, 0);
         lddmc_nodecount_levels_unmark(mddnode_getright(n));
@@ -1814,7 +1814,7 @@ static size_t
 lddmc_nodecount_mark(MDD mdd)
 {
     if (mdd <= lddmc_true) return 0;
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
     if (mddnode_getmark(n)) return 0;
     mddnode_setmark(n, 1);
     return 1 + lddmc_nodecount_mark(mddnode_getdown(n)) + lddmc_nodecount_mark(mddnode_getright(n));
@@ -1824,7 +1824,7 @@ static void
 lddmc_nodecount_unmark(MDD mdd)
 {
     if (mdd <= lddmc_true) return;
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
     if (mddnode_getmark(n)) {
         mddnode_setmark(n, 0);
         lddmc_nodecount_unmark(mddnode_getright(n));
@@ -1864,7 +1864,7 @@ TASK_IMPL_1(lddmc_satcount_double_t, lddmc_satcount_cached, MDD, mdd)
         return hack.d;
     }
 
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
 
     SPAWN(lddmc_satcount_cached, mddnode_getdown(n));
     lddmc_satcount_double_t right = CALL(lddmc_satcount_cached, mddnode_getright(n));
@@ -1899,7 +1899,7 @@ TASK_IMPL_1(long double, lddmc_satcount, MDD, mdd)
         return hack.d;
     }
 
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
 
     SPAWN(lddmc_satcount, mddnode_getdown(n));
     long double right = CALL(lddmc_satcount, mddnode_getright(n));
@@ -1919,7 +1919,7 @@ TASK_IMPL_5(MDD, lddmc_collect, MDD, mdd, lddmc_collect_cb, cb, void*, context, 
         return WRAP(cb, values, count, context);
     }
 
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
 
     lddmc_refs_spawn(SPAWN(lddmc_collect, mddnode_getright(n), cb, context, values, count));
 
@@ -1955,7 +1955,7 @@ VOID_TASK_5(_lddmc_sat_all_nopar, MDD, mdd, lddmc_enum_cb, cb, void*, context, u
         return;
     }
 
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
     values[count] = mddnode_getvalue(n);
     CALL(_lddmc_sat_all_nopar, mddnode_getdown(n), cb, context, values, count+1);
     CALL(_lddmc_sat_all_nopar, mddnode_getright(n), cb, context, values, count);
@@ -1967,7 +1967,7 @@ VOID_TASK_IMPL_3(lddmc_sat_all_nopar, MDD, mdd, lddmc_enum_cb, cb, void*, contex
     size_t count=0;
     MDD _mdd = mdd;
     while (_mdd > lddmc_true) {
-        _mdd = mddnode_getdown(GETNODE(_mdd));
+        _mdd = mddnode_getdown(LDD_GETNODE(_mdd));
         assert(_mdd != lddmc_false);
         count++;
     }
@@ -1984,7 +1984,7 @@ VOID_TASK_IMPL_5(lddmc_sat_all_par, MDD, mdd, lddmc_enum_cb, cb, void*, context,
         return;
     }
 
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
 
     SPAWN(lddmc_sat_all_par, mddnode_getright(n), cb, context, values, count);
 
@@ -2018,7 +2018,7 @@ VOID_TASK_3(lddmc_match_sat, struct lddmc_match_sat_info *, info, lddmc_enum_cb,
         return;
     }
 
-    mddnode_t p_node = GETNODE(proj);
+    mddnode_t p_node = LDD_GETNODE(proj);
     uint32_t p_val = mddnode_getvalue(p_node);
     if (p_val == (uint32_t)-1) {
         assert(b == lddmc_true);
@@ -2027,8 +2027,8 @@ VOID_TASK_3(lddmc_match_sat, struct lddmc_match_sat_info *, info, lddmc_enum_cb,
     }
 
     /* Get nodes */
-    mddnode_t na = GETNODE(a);
-    mddnode_t nb = GETNODE(b);
+    mddnode_t na = LDD_GETNODE(a);
+    mddnode_t nb = LDD_GETNODE(b);
     uint32_t na_value = mddnode_getvalue(na);
     uint32_t nb_value = mddnode_getvalue(nb);
 
@@ -2038,13 +2038,13 @@ VOID_TASK_3(lddmc_match_sat, struct lddmc_match_sat_info *, info, lddmc_enum_cb,
             if (na_value < nb_value) {
                 a = mddnode_getright(na);
                 if (a == lddmc_false) return;
-                na = GETNODE(a);
+                na = LDD_GETNODE(a);
                 na_value = mddnode_getvalue(na);
             }
             if (nb_value < na_value) {
                 b = mddnode_getright(nb);
                 if (b == lddmc_false) return;
-                nb = GETNODE(b);
+                nb = LDD_GETNODE(b);
                 nb_value = mddnode_getvalue(nb);
             }
         }
@@ -2086,7 +2086,7 @@ lddmc_sat_one(MDD mdd, uint32_t* values, size_t count)
     if (mdd == lddmc_false) return 0;
     if (mdd == lddmc_true) return 1;
     assert(count != 0);
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
     *values = mddnode_getvalue(n);
     return lddmc_sat_one(mddnode_getdown(n), values+1, count-1);
 }
@@ -2096,7 +2096,7 @@ lddmc_sat_one_mdd(MDD mdd)
 {
     if (mdd == lddmc_false) return lddmc_false;
     if (mdd == lddmc_true) return lddmc_true;
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
     MDD down = lddmc_sat_one_mdd(mddnode_getdown(n));
     return lddmc_makenode(mddnode_getvalue(n), down, lddmc_false);
 }
@@ -2106,7 +2106,7 @@ TASK_IMPL_4(MDD, lddmc_compose, MDD, mdd, lddmc_compose_cb, cb, void*, context, 
     if (depth == 0 || mdd == lddmc_false || mdd == lddmc_true) {
         return WRAP(cb, mdd, context);
     } else {
-        mddnode_t n = GETNODE(mdd);
+        mddnode_t n = LDD_GETNODE(mdd);
         lddmc_refs_spawn(SPAWN(lddmc_compose, mddnode_getright(n), cb, context, depth));
         MDD down = lddmc_compose(mddnode_getdown(n), cb, context, depth-1);
         lddmc_refs_push(down);
@@ -2125,8 +2125,8 @@ VOID_TASK_IMPL_4(lddmc_visit_seq, MDD, mdd, lddmc_visit_callbacks_t*, cbs, size_
     WRAP(cbs->lddmc_visit_init_context, context_down, context, 1);
     WRAP(cbs->lddmc_visit_init_context, context_right, context, 0);
 
-    CALL(lddmc_visit_seq, mddnode_getdown(GETNODE(mdd)), cbs, ctx_size, context_down);
-    CALL(lddmc_visit_seq, mddnode_getright(GETNODE(mdd)), cbs, ctx_size, context_right);
+    CALL(lddmc_visit_seq, mddnode_getdown(LDD_GETNODE(mdd)), cbs, ctx_size, context_down);
+    CALL(lddmc_visit_seq, mddnode_getright(LDD_GETNODE(mdd)), cbs, ctx_size, context_right);
 
     WRAP(cbs->lddmc_visit_post, mdd, context);
 }
@@ -2140,8 +2140,8 @@ VOID_TASK_IMPL_4(lddmc_visit_par, MDD, mdd, lddmc_visit_callbacks_t*, cbs, size_
     WRAP(cbs->lddmc_visit_init_context, context_down, context, 1);
     WRAP(cbs->lddmc_visit_init_context, context_right, context, 0);
 
-    SPAWN(lddmc_visit_par, mddnode_getdown(GETNODE(mdd)), cbs, ctx_size, context_down);
-    CALL(lddmc_visit_par, mddnode_getright(GETNODE(mdd)), cbs, ctx_size, context_right);
+    SPAWN(lddmc_visit_par, mddnode_getdown(LDD_GETNODE(mdd)), cbs, ctx_size, context_down);
+    CALL(lddmc_visit_par, mddnode_getright(LDD_GETNODE(mdd)), cbs, ctx_size, context_right);
     SYNC(lddmc_visit_par);
 
     WRAP(cbs->lddmc_visit_post, mdd, context);
@@ -2175,9 +2175,9 @@ lddmc_unmark_rec(mddnode_t node)
 {
     if (lddmc_unmark(node)) {
         MDD node_right = mddnode_getright(node);
-        if (node_right > lddmc_true) lddmc_unmark_rec(GETNODE(node_right));
+        if (node_right > lddmc_true) lddmc_unmark_rec(LDD_GETNODE(node_right));
         MDD node_down = mddnode_getdown(node);
-        if (node_down > lddmc_true) lddmc_unmark_rec(GETNODE(node_down));
+        if (node_down > lddmc_true) lddmc_unmark_rec(LDD_GETNODE(node_down));
     }
 }
 
@@ -2191,7 +2191,7 @@ lddmc_fprintdot_rec(FILE* out, MDD mdd)
     // assert(mdd > lddmc_true);
 
     // check mark
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
     if (mddnode_getmark(n)) return;
     mddnode_setmark(n, 1);
 
@@ -2202,7 +2202,7 @@ lddmc_fprintdot_rec(FILE* out, MDD mdd)
     else fprintf(out, "<%u> %u", val, val);
     MDD right = mddnode_getright(n);
     while (right != lddmc_false) {
-        mddnode_t n2 = GETNODE(right);
+        mddnode_t n2 = LDD_GETNODE(right);
         uint32_t val2 = mddnode_getvalue(n2);
         fprintf(out, "|<%u> %u", val2, val2);
         right = mddnode_getright(n2);
@@ -2221,15 +2221,15 @@ lddmc_fprintdot_rec(FILE* out, MDD mdd)
             } else {
                 fprintf(out, "%" PRIu64 ":%u -> ", mdd, mddnode_getvalue(n));
             }
-            if (mddnode_getcopy(GETNODE(down))) {
+            if (mddnode_getcopy(LDD_GETNODE(down))) {
                 fprintf(out, "%" PRIu64 ":c [style=solid];\n", down);
             } else {
-                fprintf(out, "%" PRIu64 ":%u [style=solid];\n", down, mddnode_getvalue(GETNODE(down)));
+                fprintf(out, "%" PRIu64 ":%u [style=solid];\n", down, mddnode_getvalue(LDD_GETNODE(down)));
             }
         }
         MDD right = mddnode_getright(n);
         if (right == lddmc_false) break;
-        n = GETNODE(right);
+        n = LDD_GETNODE(right);
     }
 }
 
@@ -2237,14 +2237,14 @@ static void
 lddmc_fprintdot_unmark(MDD mdd)
 {
     if (mdd <= lddmc_true) return;
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
     if (mddnode_getmark(n)) {
         mddnode_setmark(n, 0);
         for (;;) {
             lddmc_fprintdot_unmark(mddnode_getdown(n));
             mdd = mddnode_getright(n);
             if (mdd == lddmc_false) return;
-            n = GETNODE(mdd);
+            n = LDD_GETNODE(mdd);
         }
     }
 }
@@ -2342,7 +2342,7 @@ lddmc_serialize_assign_rec(MDD mdd)
 {
     if (mdd <= lddmc_true) return mdd;
 
-    mddnode_t n = GETNODE(mdd);
+    mddnode_t n = LDD_GETNODE(mdd);
 
     struct lddmc_ser s, *ss;
     s.mdd = mdd;
@@ -2412,7 +2412,7 @@ lddmc_serialize_totext(FILE *out)
     fprintf(out, "[");
     while ((s=lddmc_ser_reversed_iter_next(it))) {
         MDD mdd = s->mdd;
-        mddnode_t n = GETNODE(mdd);
+        mddnode_t n = LDD_GETNODE(mdd);
         fprintf(out, "(%zu,v=%u,d=%zu,r=%zu),", s->assigned,
                                                 mddnode_getvalue(n),
                                                 lddmc_serialize_get(mddnode_getdown(n)),
@@ -2446,7 +2446,7 @@ lddmc_serialize_tofile(FILE *out)
         assert(s->assigned == index+2);
         index++;
 
-        mddnode_t n = GETNODE(s->mdd);
+        mddnode_t n = LDD_GETNODE(s->mdd);
 
         struct mddnode node;
         uint64_t right = lddmc_serialize_get(mddnode_getright(n));
@@ -2507,7 +2507,7 @@ lddmc_sha2_rec(MDD mdd, SHA256_CTX *ctx)
         return;
     }
 
-    mddnode_t node = GETNODE(mdd);
+    mddnode_t node = LDD_GETNODE(mdd);
     if (lddmc_mark(node)) {
         uint32_t val = mddnode_getvalue(node);
         SHA256_Update(ctx, (void*)&val, sizeof(uint32_t));
@@ -2536,7 +2536,7 @@ lddmc_getsha(MDD mdd, char *target)
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
     lddmc_sha2_rec(mdd, &ctx);
-    if (mdd > lddmc_true) lddmc_unmark_rec(GETNODE(mdd));
+    if (mdd > lddmc_true) lddmc_unmark_rec(LDD_GETNODE(mdd));
     SHA256_End(&ctx, target);
 }
 
@@ -2551,7 +2551,7 @@ lddmc_test_ismdd(MDD mdd)
     size_t depth = 0;
 
     if (mdd != lddmc_false) {
-        mddnode_t n = GETNODE(mdd);
+        mddnode_t n = LDD_GETNODE(mdd);
         if (mddnode_getcopy(n)) {
             mdd = mddnode_getright(n);
             depth = lddmc_test_ismdd(mddnode_getdown(n));
@@ -2563,7 +2563,7 @@ lddmc_test_ismdd(MDD mdd)
     while (mdd != lddmc_false) {
         assert(llmsset_is_marked(nodes, mdd));
 
-        mddnode_t n = GETNODE(mdd);
+        mddnode_t n = LDD_GETNODE(mdd);
         uint32_t next_value = mddnode_getvalue(n);
         assert(mddnode_getcopy(n) == 0);
         if (first) {

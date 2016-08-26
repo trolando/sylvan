@@ -17,8 +17,6 @@
 
 /* Do not include this file directly. Instead, include sylvan.h */
 
-//#include <tls.h>
-
 #ifndef SYLVAN_BDD_H
 #define SYLVAN_BDD_H
 
@@ -31,13 +29,16 @@ extern "C" {
 #define sylvan_isnode(bdd)  (bdd != sylvan_true && bdd != sylvan_false)
 
 /**
- * Granularity (BDD only) determines usage of operation cache. Smallest value is 1: use the operation cache always.
- * Higher values mean that the cache is used less often. Variables are grouped such that
- * the cache is used when going to the next group, i.e., with granularity=3, variables [0,1,2] are in the
- * first group, [3,4,5] in the next, etc. Then no caching occur between 0->1, 1->2, 0->2. Caching occurs
- * on 0->3, 1->4, 2->3, etc.
+ * Granularity (BDD only) determines usage of operation cache.
+ * The smallest value is 1: use the operation cache always.
+ * Higher values mean that the cache is used less often. Variables are grouped
+ * such that the cache is used when going to the next group, i.e., with
+ * granularity=3, variables [0,1,2] are in the first group, [3,4,5] in the next, etc.
+ * Then no caching occur between 0->1, 1->2, 0->2. Caching occurs on 0->3, 1->4, 2->3, etc.
  *
- * A reasonable default is a granularity of 4-16, strongly depending on the structure of the BDDs.
+ * The appropriate value depends on the number of variables and the structure of
+ * the decision diagrams. When in doubt, choose a low value (1-5). The performance
+ * gain can be around 0-10%, so it is not extremely important.
  */
 void sylvan_set_granularity(int granularity);
 int sylvan_get_granularity();
@@ -46,7 +47,10 @@ int sylvan_get_granularity();
 BDD sylvan_ithvar(BDDVAR var);
 #define sylvan_nithvar(var) sylvan_not(sylvan_ithvar(var))
 
-/* Unary, binary and if-then-else operations */
+/*
+ * Unary, binary and if-then-else operations.
+ * These operations are all implemented by NOT, AND and XOR.
+ */
 #define sylvan_not(a) (((BDD)a)^sylvan_complement)
 TASK_DECL_4(BDD, sylvan_ite, BDD, BDD, BDD, BDDVAR);
 #define sylvan_ite(a,b,c) (CALL(sylvan_ite,a,b,c,0))
@@ -64,7 +68,9 @@ TASK_DECL_3(BDD, sylvan_xor, BDD, BDD, BDDVAR);
 #define sylvan_diff(a,b) sylvan_and(a,sylvan_not(b))
 #define sylvan_less(a,b) sylvan_and(sylvan_not(a),b)
 
-/* Existential and universal quantification */
+/**
+ * Existential and universal quantification.
+ */
 TASK_DECL_3(BDD, sylvan_exists, BDD, BDD, BDDVAR);
 #define sylvan_exists(a, vars) (CALL(sylvan_exists, a, vars, 0))
 #define sylvan_forall(a, vars) (sylvan_not(CALL(sylvan_exists, sylvan_not(a), vars, 0)))
@@ -133,6 +139,11 @@ TASK_DECL_3(BDD, sylvan_constrain, BDD, BDD, BDDVAR);
 TASK_DECL_3(BDD, sylvan_restrict, BDD, BDD, BDDVAR);
 #define sylvan_restrict(f,c) (CALL(sylvan_restrict, (f), (c), 0))
 
+/**
+ * Function composition.
+ * For each node with variable <key> which has a <key,value> pair in <map>,
+ * replace the node by the result of sylvan_ite(<value>, <low>, <high>).
+ */
 TASK_DECL_3(BDD, sylvan_compose, BDD, BDDMAP, BDDVAR);
 #define sylvan_compose(f,m) (CALL(sylvan_compose, (f), (m), 0))
 

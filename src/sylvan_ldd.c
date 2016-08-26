@@ -26,11 +26,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <sylvan.h>
+#include <sylvan_int.h>
+
 #include <avl.h>
 #include <sylvan_refs.h>
 #include <sha2.h>
-#include <sylvan.h>
-#include <sylvan_common.h>
 
 /**
  * MDD node structure

@@ -43,15 +43,27 @@ extern "C" {
 void sylvan_init_package(size_t initial_tablesize, size_t max_tablesize, size_t initial_cachesize, size_t max_cachesize);
 
 /**
- * Frees all Sylvan data (also calls the quit() functions of BDD/MDD parts)
+ * Frees all Sylvan data (also calls the quit() functions of BDD/LDD parts)
  */
 void sylvan_quit();
+
+/**
+ * Registers a hook callback called during sylvan_quit()
+ */
+typedef void (*quit_cb)();
+void sylvan_register_quit(quit_cb cb);
+
 
 /**
  * Return number of occupied buckets in nodes table and total number of buckets.
  */
 VOID_TASK_DECL_2(sylvan_table_usage, size_t*, size_t*);
 #define sylvan_table_usage(filled, total) (CALL(sylvan_table_usage, filled, total))
+
+/**
+ * Write statistic report to file (stdout, stderr, etc)
+ */
+void sylvan_stats_report(FILE* target, int color);
 
 /**
  * Perform garbage collection.
@@ -69,6 +81,10 @@ VOID_TASK_DECL_2(sylvan_table_usage, size_t*, size_t*);
  * The behavior of garbage collection can be customized by adding "mark" callbacks and
  * replacing the "hook" callback.
  */
+
+/**
+ * Trigger garbage collection manually.
+ */
 VOID_TASK_DECL_0(sylvan_gc);
 #define sylvan_gc() (CALL(sylvan_gc))
 
@@ -77,9 +93,17 @@ VOID_TASK_DECL_0(sylvan_gc);
  *
  * This affects both automatic and manual garbage collection, i.e.,
  * calling sylvan_gc() while garbage collection is disabled does not have any effect.
+ * If no new nodes can be added, Sylvan will write an error and abort.
  */
 void sylvan_gc_enable();
 void sylvan_gc_disable();
+
+/**
+ * Test if garbage collection must happen now.
+ * This is just a call to the Lace framework to see if NEWFRAME has been used.
+ * Before calling this, make sure all BDDs etc are referenced.
+ */
+#define sylvan_gc_test() YIELD_NEWFRAME()
 
 /**
  * Add a "mark" callback to the list of callbacks.
@@ -120,74 +144,6 @@ VOID_TASK_DECL_0(sylvan_gc_aggressive_resize);
  * Double size on gc() whenever >50% is used.
  */
 VOID_TASK_DECL_0(sylvan_gc_default_hook);
-
-/**
- * Set "notify on dead" callback for the nodes table.
- * See also documentation in llmsset.h
- */
-#define sylvan_set_ondead(cb, ctx) llmsset_set_ondead(nodes, cb, ctx)
-
-/**
- * Global variables (number of workers, nodes table)
- */
-
-extern llmsset_t nodes;
-
-/* Garbage collection test task - t */
-#define sylvan_gc_test() YIELD_NEWFRAME()
-
-// BDD operations
-#define CACHE_BDD_ITE             (0LL<<40)
-#define CACHE_BDD_AND             (1LL<<40)
-#define CACHE_BDD_XOR             (2LL<<40)
-#define CACHE_BDD_EXISTS          (3LL<<40)
-#define CACHE_BDD_AND_EXISTS      (4LL<<40)
-#define CACHE_BDD_RELNEXT         (5LL<<40)
-#define CACHE_BDD_RELPREV         (6LL<<40)
-#define CACHE_BDD_SATCOUNT        (7LL<<40)
-#define CACHE_BDD_COMPOSE         (8LL<<40)
-#define CACHE_BDD_RESTRICT        (9LL<<40)
-#define CACHE_BDD_CONSTRAIN       (10LL<<40)
-#define CACHE_BDD_CLOSURE         (11LL<<40)
-#define CACHE_BDD_ISBDD           (12LL<<40)
-#define CACHE_BDD_SUPPORT         (13LL<<40)
-#define CACHE_BDD_PATHCOUNT       (14LL<<40)
-
-// MDD operations
-#define CACHE_MDD_RELPROD         (20LL<<40)
-#define CACHE_MDD_MINUS           (21LL<<40)
-#define CACHE_MDD_UNION           (22LL<<40)
-#define CACHE_MDD_INTERSECT       (23LL<<40)
-#define CACHE_MDD_PROJECT         (24LL<<40)
-#define CACHE_MDD_JOIN            (25LL<<40)
-#define CACHE_MDD_MATCH           (26LL<<40)
-#define CACHE_MDD_RELPREV         (27LL<<40)
-#define CACHE_MDD_SATCOUNT        (28LL<<40)
-#define CACHE_MDD_SATCOUNTL1      (29LL<<40)
-#define CACHE_MDD_SATCOUNTL2      (30LL<<40)
-
-// MTBDD operations
-#define CACHE_MTBDD_APPLY         (40LL<<40)
-#define CACHE_MTBDD_UAPPLY        (41LL<<40)
-#define CACHE_MTBDD_ABSTRACT      (42LL<<40)
-#define CACHE_MTBDD_ITE           (43LL<<40)
-#define CACHE_MTBDD_AND_EXISTS    (44LL<<40)
-#define CACHE_MTBDD_SUPPORT       (45LL<<40)
-#define CACHE_MTBDD_COMPOSE       (46LL<<40)
-#define CACHE_MTBDD_EQUAL_NORM    (47LL<<40)
-#define CACHE_MTBDD_EQUAL_NORM_REL (48LL<<40)
-#define CACHE_MTBDD_MINIMUM       (49LL<<40)
-#define CACHE_MTBDD_MAXIMUM       (50LL<<40)
-#define CACHE_MTBDD_LEQ           (51LL<<40)
-#define CACHE_MTBDD_LESS          (52LL<<40)
-#define CACHE_MTBDD_GEQ           (53LL<<40)
-#define CACHE_MTBDD_GREATER       (54LL<<40)
-
-/**
- * Registration of quit functions
- */
-typedef void (*quit_cb)();
-void sylvan_register_quit(quit_cb cb);
 
 #ifdef __cplusplus
 }

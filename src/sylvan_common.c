@@ -15,24 +15,11 @@
  * limitations under the License.
  */
 
-#include <sylvan_config.h>
-
-#include <sylvan.h>
-#include <sylvan_common.h>
+#include <sylvan_int.h>
 
 #ifndef cas
 #define cas(ptr, old, new) (__sync_bool_compare_and_swap((ptr),(old),(new)))
 #endif
-
-/**
- * Calculate table usage (in parallel)
- */
-VOID_TASK_IMPL_2(sylvan_table_usage, size_t*, filled, size_t*, total)
-{
-    size_t tot = llmsset_get_size(nodes);
-    if (filled != NULL) *filled = llmsset_count_marked(nodes);
-    if (total != NULL) *total = tot;
-}
 
 /**
  * Implementation of garbage collection
@@ -229,11 +216,12 @@ VOID_TASK_IMPL_0(sylvan_gc)
 llmsset_t nodes;
 
 /**
- * Package init and quit functions
+ * Initializes Sylvan.
  */
 void
 sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize, size_t max_cachesize)
 {
+    /* Some sanity checks */
     if (tablesize > maxsize) tablesize = maxsize;
     if (cachesize > max_cachesize) cachesize = max_cachesize;
 
@@ -242,9 +230,11 @@ sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize, size_t m
         exit(1);
     }
 
+    /* Create tables */
     nodes = llmsset_create(tablesize, maxsize);
     cache_create(cachesize, max_cachesize);
 
+    /* Initialize garbage collection */
     gc = 0;
 #if SYLVAN_AGGRESSIVE_RESIZE
     gc_hook = TASK(sylvan_gc_aggressive_resize);
@@ -296,3 +286,15 @@ sylvan_quit()
     cache_free();
     llmsset_free(nodes);
 }
+
+/**
+ * Calculate table usage (in parallel)
+ */
+VOID_TASK_IMPL_2(sylvan_table_usage, size_t*, filled, size_t*, total)
+{
+    size_t tot = llmsset_get_size(nodes);
+    if (filled != NULL) *filled = llmsset_count_marked(nodes);
+    if (total != NULL) *total = tot;
+}
+
+

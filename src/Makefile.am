@@ -14,6 +14,7 @@ libsylvan_la_SOURCES = \
     sylvan_config.h \
     sylvan_bdd.h \
     sylvan_bdd.c \
+    sylvan_int.h \
     sylvan_ldd.h \
     sylvan_ldd.c \
     sylvan_cache.h \

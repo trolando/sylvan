@@ -16,37 +16,22 @@
  */
 
 /**
- * Sylvan: parallel BDD/ListDD package.
+ * Sylvan: parallel MTBDD/ListDD package.
  *
- * This is a multi-core implementation of BDDs with complement edges.
+ * This is a multi-core implementation of MTBDDs with complement edges.
  *
  * This package requires parallel the work-stealing framework Lace.
  * Lace must be initialized before initializing Sylvan
- *
- * This package uses explicit referencing.
- * Use sylvan_ref and sylvan_deref to manage external references.
- *
- * Garbage collection requires all workers to cooperate. Garbage collection is either initiated
- * by the user (calling sylvan_gc) or when the nodes table is full. All Sylvan operations
- * check whether they need to cooperate on garbage collection. Garbage collection cannot occur
- * otherwise. This means that it is perfectly fine to do this:
- *              BDD a = sylvan_ref(sylvan_and(b, c));
- * since it is not possible that garbage collection occurs between the two calls.
- *
- * To temporarily disable garbage collection, use sylvan_gc_disable() and sylvan_gc_enable().
  */
 
 #include <sylvan_config.h>
 
 #include <stdint.h>
 #include <stdio.h> // for FILE
-#include <stdlib.h>
-#include <lace.h> // for definitions
-#include <tls.h>
+#include <stdlib.h> // for realloc
 
-#include <sylvan_cache.h>
-#include <llmsset.h>
-#include <sylvan_stats.h>
+#include <lace.h>
+#include <tls.h>
 
 #include <sylvan_common.h>
 #include <sylvan_mtbdd.h>

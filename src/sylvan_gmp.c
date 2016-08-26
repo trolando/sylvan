@@ -15,19 +15,12 @@
  * limitations under the License.
  */
 
-#include <sylvan_config.h>
+#include <sylvan_int.h>
 
 #include <assert.h>
-#include <inttypes.h>
 #include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
-#include <sylvan.h>
-#include <sylvan_common.h>
-#include <sylvan_mtbdd_int.h>
 #include <sylvan_gmp.h>
 #include <gmp.h>
 

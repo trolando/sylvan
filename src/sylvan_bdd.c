@@ -26,12 +26,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <avl.h>
-#include <sylvan_refs.h>
 #include <sylvan.h>
-#include <sylvan_common.h>
+#include <sylvan_int.h>
 
-#include <sylvan_mtbdd_int.h>
+#include <avl.h>
 
 static int granularity = 1; // default
 

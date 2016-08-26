@@ -20,7 +20,8 @@
 #include <sylvan_stats.h>
 #include <sys/mman.h>
 #include <inttypes.h>
-#include <sylvan.h> // for nodes table
+
+#include <sylvan_int.h>
 
 #if SYLVAN_STATS
 

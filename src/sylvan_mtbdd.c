@@ -26,11 +26,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <sylvan.h>
+#include <sylvan_int.h>
+
 #include <sylvan_refs.h>
 #include <sha2.h>
-#include <sylvan.h>
-#include <sylvan_common.h>
-#include <sylvan_mtbdd_int.h>
 
 /* Primitives */
 int

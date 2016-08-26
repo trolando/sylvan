@@ -254,7 +254,7 @@ llmsset_lookupc(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* cr
     return llmsset_lookup2(dbs, a, b, created, 1);
 }
 
-static inline int
+int
 llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 {
     const uint64_t * const d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
@@ -467,30 +467,33 @@ llmsset_mark(const llmsset_t dbs, uint64_t index)
     }
 }
 
-VOID_TASK_3(llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
+TASK_3(int, llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
 {
     if (count > 512) {
-        size_t split = count/2;
-        SPAWN(llmsset_rehash_par, dbs, first, split);
-        CALL(llmsset_rehash_par, dbs, first + split, count - split);
-        SYNC(llmsset_rehash_par);
+        SPAWN(llmsset_rehash_par, dbs, first, count/2);
+        int bad = CALL(llmsset_rehash_par, dbs, first + count/2, count - count/2);
+        return bad + SYNC(llmsset_rehash_par);
     } else {
+        int bad = 0;
         uint64_t *ptr = dbs->bitmap2 + (first / 64);
         uint64_t mask = 0x8000000000000000LL >> (first & 63);
         for (size_t k=0; k<count; k++) {
-            if (*ptr & mask) llmsset_rehash_bucket(dbs, first+k);
+            if (*ptr & mask) {
+                if (llmsset_rehash_bucket(dbs, first+k) == 0) bad++;
+            }
             mask >>= 1;
             if (mask == 0) {
                 ptr++;
                 mask = 0x8000000000000000LL;
             }
         }
+        return bad;
     }
 }
 
-VOID_TASK_IMPL_1(llmsset_rehash, llmsset_t, dbs)
+TASK_IMPL_1(int, llmsset_rehash, llmsset_t, dbs)
 {
-    CALL(llmsset_rehash_par, dbs, 0, dbs->table_size);
+    return CALL(llmsset_rehash_par, dbs, 0, dbs->table_size);
 }
 
 TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, count)

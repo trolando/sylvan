@@ -179,9 +179,16 @@ int llmsset_mark(const llmsset_t dbs, uint64_t index);
 
 /**
  * Rehash all marked buckets.
+ * Returns 0 if successful, or the number of buckets not rehashed if not.
  */
-VOID_TASK_DECL_1(llmsset_rehash, llmsset_t);
+TASK_DECL_1(int, llmsset_rehash, llmsset_t);
 #define llmsset_rehash(dbs) CALL(llmsset_rehash, dbs)
+
+/**
+ * Rehash a single bucket.
+ * Returns 0 if successful, or 1 if not.
+ */
+int llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx);
 
 /**
  * Retrieve number of marked buckets.

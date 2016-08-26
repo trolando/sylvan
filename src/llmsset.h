@@ -16,6 +16,7 @@
  */
 
 #include <sylvan_config.h>
+
 #include <stdint.h>
 #include <unistd.h>
 
@@ -39,6 +40,10 @@ extern "C" {
  * The set has support for stop-the-world garbage collection.
  * Methods llmsset_clear, llmsset_mark and llmsset_rehash implement garbage collection.
  * During their execution, llmsset_lookup is not allowed.
+ *
+ * WARNING: Originally, this table is designed to allow multiple tables.
+ * However, this is not compatible with thread local storage for now.
+ * Do not use multiple tables.
  */
 
 /**
@@ -153,6 +158,12 @@ uint64_t llmsset_lookupc(const llmsset_t dbs, const uint64_t a, const uint64_t b
  */
 VOID_TASK_DECL_1(llmsset_clear, llmsset_t);
 #define llmsset_clear(dbs) CALL(llmsset_clear, dbs)
+
+VOID_TASK_DECL_1(llmsset_clear_data, llmsset_t);
+#define llmsset_clear_data(dbs) CALL(llmsset_clear_data, dbs)
+
+VOID_TASK_DECL_1(llmsset_clear_hashes, llmsset_t);
+#define llmsset_clear_hashes(dbs) CALL(llmsset_clear_hashes, dbs)
 
 /**
  * Check if a certain data bucket is marked (in use).

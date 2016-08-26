@@ -403,19 +403,12 @@ llmsset_free(llmsset_t dbs)
 
 VOID_TASK_IMPL_1(llmsset_clear, llmsset_t, dbs)
 {
-    // just reallocate...
-    if (mmap(dbs->table, dbs->max_size * 8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) != (void*)-1) {
-#if defined(madvise) && defined(MADV_RANDOM)
-        madvise(dbs->table, sizeof(uint64_t[dbs->max_size]), MADV_RANDOM);
-#endif
-#if USE_HWLOC
-        hwloc_set_area_membind(topo, dbs->table, sizeof(uint64_t[dbs->max_size]), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
-#endif
-    } else {
-        // reallocate failed... expensive fallback
-        memset(dbs->table, 0, dbs->max_size * 8);
-    }
+    CALL(llmsset_clear_data, dbs);
+    CALL(llmsset_clear_hashes, dbs);
+}
 
+VOID_TASK_IMPL_1(llmsset_clear_data, llmsset_t, dbs)
+{
     if (mmap(dbs->bitmap1, dbs->max_size / (512*8), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) != (void*)-1) {
 #if USE_HWLOC
         hwloc_set_area_membind(topo, dbs->bitmap1, dbs->max_size / (512*8), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
@@ -436,6 +429,22 @@ VOID_TASK_IMPL_1(llmsset_clear, llmsset_t, dbs)
     dbs->bitmap2[0] = 0xc000000000000000LL;
 
     TOGETHER(llmsset_reset_region);
+}
+
+VOID_TASK_IMPL_1(llmsset_clear_hashes, llmsset_t, dbs)
+{
+    // just reallocate...
+    if (mmap(dbs->table, dbs->max_size * 8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) != (void*)-1) {
+#if defined(madvise) && defined(MADV_RANDOM)
+        madvise(dbs->table, sizeof(uint64_t[dbs->max_size]), MADV_RANDOM);
+#endif
+#if USE_HWLOC
+        hwloc_set_area_membind(topo, dbs->table, sizeof(uint64_t[dbs->max_size]), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
+#endif
+    } else {
+        // reallocate failed... expensive fallback
+        memset(dbs->table, 0, dbs->max_size * 8);
+    }
 }
 
 int

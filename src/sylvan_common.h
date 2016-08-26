@@ -146,7 +146,7 @@ VOID_TASK_DECL_0(sylvan_gc_aggressive_resize);
  * Default if SYLVAN_AGGRESSIVE_RESIZE is not set.
  * Double size on gc() whenever >50% is used.
  */
-VOID_TASK_DECL_0(sylvan_gc_default_hook);
+VOID_TASK_DECL_0(sylvan_gc_normal_resize);
 
 #ifdef __cplusplus
 }

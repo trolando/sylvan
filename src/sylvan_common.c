@@ -109,57 +109,67 @@ VOID_TASK_0(sylvan_gc_mark_cache)
 
 /* Default hook */
 
+/**
+ * Logic for resizing the nodes table and operation cache
+ */
+
+/**
+ * Helper routine to compute the next size....
+ */
 size_t
-next_size(size_t n)
+next_size(size_t current_size)
 {
 #if SYLVAN_SIZE_FIBONACCI
     size_t f1=1, f2=1;
     for (;;) {
         f2 += f1;
-        if (f2 > n) return f2;
+        if (f2 > current_size) return f2;
         f1 += f2;
-        if (f1 > n) return f1;
+        if (f1 > current_size) return f1;
     }
 #else
-    return n*2;
+    return current_size*2;
 #endif
 }
 
+/**
+ * Resizing heuristic that always doubles the tables when running gc (until max).
+ * The nodes table and operation cache are both resized until their maximum size.
+ */
 VOID_TASK_IMPL_0(sylvan_gc_aggressive_resize)
 {
-    /**
-     * Always resize when gc called
-     */
-    size_t max_size = llmsset_get_max_size(nodes);
-    size_t size = llmsset_get_size(nodes);
-    if (size < max_size) {
-        size_t new_size = next_size(size);
-        if (new_size > max_size) new_size = max_size;
+    size_t nodes_size = llmsset_get_size(nodes);
+    size_t nodes_max = llmsset_get_max_size(nodes);
+    if (nodes_size < nodes_max) {
+        size_t new_size = next_size(nodes_size);
+        if (new_size > nodes_max) new_size = nodes_max;
         llmsset_set_size(nodes, new_size);
-        size_t cache_size = cache_getsize();
-        size_t cache_max = cache_getmaxsize();
-        if (cache_size < cache_max) {
-            new_size = next_size(cache_size);
-            if (new_size > cache_max) new_size = cache_max;
-            cache_setsize(new_size);
-        }
+    }
+    size_t cache_size = cache_getsize();
+    size_t cache_max = cache_getmaxsize();
+    if (cache_size < cache_max) {
+        size_t new_size = next_size(cache_size);
+        if (new_size > cache_max) new_size = cache_max;
+        cache_setsize(new_size);
     }
 }
 
-VOID_TASK_IMPL_0(sylvan_gc_default_hook)
+/**
+ * Resizing heuristic that only resizes when more than 50% is marked.
+ * The operation cache is only resized if the nodes table is resized.
+ */
+VOID_TASK_IMPL_0(sylvan_gc_normal_resize)
 {
-    /**
-     * Default behavior:
-     * if we can resize the nodes set, and if we use more than 50%, then increase size
-     */
-    size_t max_size = llmsset_get_max_size(nodes);
-    size_t size = llmsset_get_size(nodes);
-    if (size < max_size) {
+    size_t nodes_size = llmsset_get_size(nodes);
+    size_t nodes_max = llmsset_get_max_size(nodes);
+    if (nodes_size < nodes_max) {
         size_t marked = llmsset_count_marked(nodes);
-        if (marked*2 > size) {
-            size_t new_size = next_size(size);
-            if (new_size > max_size) new_size = max_size;
+        if (marked*2 > nodes_size) {
+            size_t new_size = next_size(nodes_size);
+            if (new_size > nodes_max) new_size = nodes_max;
             llmsset_set_size(nodes, new_size);
+
+            // also increase the operation cache
             size_t cache_size = cache_getsize();
             size_t cache_max = cache_getmaxsize();
             if (cache_size < cache_max) {
@@ -217,14 +227,15 @@ VOID_TASK_0(sylvan_gc_go)
  */
 VOID_TASK_IMPL_0(sylvan_gc)
 {
-    if (!gc_enabled) return;
-    if (cas(&gc, 0, 1)) {
-        NEWFRAME(sylvan_gc_go);
-        gc = 0;
-    } else {
-        /* wait for new frame to appear */
-        while (*(Task* volatile*)&(lace_newframe.t) == 0) {}
-        lace_yield(__lace_worker, __lace_dq_head);
+    if (gc_enabled) {
+        if (cas(&gc, 0, 1)) {
+            NEWFRAME(sylvan_gc_go);
+            gc = 0;
+        } else {
+            /* wait for new frame to appear */
+            while (*(Task* volatile*)&(lace_newframe.t) == 0) {}
+            lace_yield(__lace_worker, __lace_dq_head);
+        }
     }
 }
 
@@ -258,7 +269,7 @@ sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize, size_t m
 #if SYLVAN_AGGRESSIVE_RESIZE
     gc_hook = TASK(sylvan_gc_aggressive_resize);
 #else
-    gc_hook = TASK(sylvan_gc_default_hook);
+    gc_hook = TASK(sylvan_gc_normal_resize);
 #endif
     sylvan_gc_add_mark(10, TASK(sylvan_gc_mark_cache));
     sylvan_gc_add_mark(19, TASK(sylvan_gc_destroy_unmarked));

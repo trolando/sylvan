@@ -25,7 +25,7 @@
 #include <sys/mman.h> // for mmap
 
 #include <llmsset.h>
-#include <stats.h>
+#include <sylvan_stats.h>
 #include <tls.h>
 
 #ifndef USE_HWLOC

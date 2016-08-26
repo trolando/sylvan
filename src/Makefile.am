@@ -8,12 +8,8 @@ libsylvan_la_SOURCES = \
     lace.h \
     llmsset.c \
     llmsset.h \
-    refs.h \
-    refs.c \
     sha2.c \
     sha2.h \
-    stats.h \
-    stats.c \
     sylvan.h \
     sylvan_config.h \
     sylvan_bdd.h \
@@ -29,6 +25,10 @@ libsylvan_la_SOURCES = \
     sylvan_mtbdd_int.h \
     sylvan_obj.hpp \
     sylvan_obj.cpp \
+    sylvan_refs.h \
+    sylvan_refs.c \
+    sylvan_stats.h \
+    sylvan_stats.c \
     tls.h
 
 libsylvan_la_LIBADD = -lm

@@ -17,7 +17,7 @@
 
 #include <errno.h>  // for errno
 #include <string.h> // memset
-#include <stats.h>
+#include <sylvan_stats.h>
 #include <sys/mman.h>
 #include <inttypes.h>
 #include <sylvan.h> // for nodes table

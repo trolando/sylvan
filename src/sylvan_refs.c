@@ -25,7 +25,7 @@
 #include <string.h> // for strerror
 #include <sys/mman.h> // for mmap
 
-#include <refs.h>
+#include <sylvan_refs.h>
 
 #ifndef compiler_barrier
 #define compiler_barrier() { asm volatile("" ::: "memory"); }

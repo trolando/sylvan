@@ -7,12 +7,8 @@ add_library(sylvan
     lace.c
     llmsset.c
     llmsset.h
-    refs.h
-    refs.c
     sha2.h
     sha2.c
-    stats.h
-    stats.c
     sylvan.h
     sylvan_bdd.h
     sylvan_bdd.c
@@ -30,6 +26,10 @@ add_library(sylvan
     sylvan_mtbdd_int.h
     sylvan_obj.hpp
     sylvan_obj.cpp
+    sylvan_refs.h
+    sylvan_refs.c
+    sylvan_stats.h
+    sylvan_stats.c
     tls.h
 )
 

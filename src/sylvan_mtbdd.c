@@ -26,7 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <refs.h>
+#include <sylvan_refs.h>
 #include <sha2.h>
 #include <sylvan.h>
 #include <sylvan_common.h>

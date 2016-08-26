@@ -27,7 +27,7 @@
 #include <string.h>
 
 #include <avl.h>
-#include <refs.h>
+#include <sylvan_refs.h>
 #include <sylvan.h>
 #include <sylvan_common.h>
 

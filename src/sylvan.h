@@ -46,7 +46,7 @@
 
 #include <sylvan_cache.h>
 #include <llmsset.h>
-#include <stats.h>
+#include <sylvan_stats.h>
 
 #ifndef SYLVAN_H
 #define SYLVAN_H

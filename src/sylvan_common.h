@@ -53,7 +53,6 @@ void sylvan_quit();
 typedef void (*quit_cb)();
 void sylvan_register_quit(quit_cb cb);
 
-
 /**
  * Return number of occupied buckets in nodes table and total number of buckets.
  */
@@ -80,6 +79,10 @@ void sylvan_stats_report(FILE* target, int color);
  *
  * The behavior of garbage collection can be customized by adding "mark" callbacks and
  * replacing the "hook" callback.
+ */
+
+/**
+ * Trigger garbage collection manually.
  */
 
 /**

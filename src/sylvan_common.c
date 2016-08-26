@@ -24,8 +24,34 @@
 /**
  * Implementation of garbage collection
  */
+
+/**
+ * Whether garbage collection is enabled or not.
+ */
 static int gc_enabled = 1;
-static volatile int gc; // variable used in cas switch to ensure only one gc at a time
+
+/**
+ * Enable garbage collection (both automatic and manual).
+ */
+void
+sylvan_gc_enable()
+{
+    gc_enabled = 1;
+}
+
+/**
+ * Disable garbage collection (both automatic and manual).
+ */
+void
+sylvan_gc_disable()
+{
+    gc_enabled = 0;
+}
+
+/**
+ * This variable is used for a cas flag so only one gc runs at one time
+ */
+static volatile int gc;
 
 struct reg_gc_mark_entry
 {
@@ -69,18 +95,6 @@ void
 sylvan_gc_set_hook(gc_hook_cb new_hook)
 {
     gc_hook = new_hook;
-}
-
-void
-sylvan_gc_enable()
-{
-    gc_enabled = 1;
-}
-
-void
-sylvan_gc_disable()
-{
-    gc_enabled = 0;
 }
 
 /* Mark hook for cache */
@@ -177,6 +191,9 @@ VOID_TASK_0(sylvan_gc_destroy_unmarked)
     llmsset_destroy_unmarked(nodes);
 }
 
+/**
+ * Actual implementation of garbage collection
+ */
 VOID_TASK_0(sylvan_gc_go)
 {
     sylvan_stats_count(SYLVAN_GC_COUNT);
@@ -195,7 +212,9 @@ VOID_TASK_0(sylvan_gc_go)
     sylvan_timer_stop(SYLVAN_GC);
 }
 
-/* Perform garbage collection */
+/**
+ * Perform garbage collection
+ */
 VOID_TASK_IMPL_0(sylvan_gc)
 {
     if (!gc_enabled) return;

@@ -195,7 +195,10 @@ VOID_TASK_0(sylvan_gc_call_hook)
 VOID_TASK_0(sylvan_gc_rehash)
 {
     // rehash marked nodes
-    llmsset_rehash(nodes);
+    if (llmsset_rehash(nodes) != 0) {
+        fprintf(stderr, "sylvan_gc_rehash error: not all nodes could be rehashed!\n");
+        exit(1);
+    }
 }
 
 VOID_TASK_0(sylvan_gc_destroy_unmarked)

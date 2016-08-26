@@ -109,8 +109,7 @@ VOID_TASK_2(gctest_fill, int, levels, int, width)
 
 void report_table()
 {
-    llmsset_t __sylvan_get_internal_data();
-    llmsset_t tbl = __sylvan_get_internal_data();
+    llmsset_t tbl = nodes;
     LACE_ME;
     size_t filled = llmsset_count_marked(tbl);
     size_t total = llmsset_get_size(tbl);

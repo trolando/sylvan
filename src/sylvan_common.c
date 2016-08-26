@@ -25,22 +25,6 @@
 #endif
 
 /**
- * Static global variables
- */
-
-llmsset_t nodes;
-
-/**
- * Retrieve nodes
- */
-
-llmsset_t
-__sylvan_get_internal_data()
-{
-    return nodes;
-}
-
-/**
  * Calculate table usage (in parallel)
  */
 VOID_TASK_IMPL_2(sylvan_table_usage, size_t*, filled, size_t*, total)
@@ -237,6 +221,12 @@ VOID_TASK_IMPL_0(sylvan_gc)
         lace_yield(__lace_worker, __lace_dq_head);
     }
 }
+
+/**
+ * The unique table
+ */
+
+llmsset_t nodes;
 
 /**
  * Package init and quit functions

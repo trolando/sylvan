@@ -241,7 +241,7 @@ VOID_TASK_0(mtbdd_refs_init)
 {
     INIT_THREAD_LOCAL(mtbdd_refs_key);
     TOGETHER(mtbdd_refs_init_task);
-    sylvan_gc_add_mark(10, TASK(mtbdd_refs_mark));
+    sylvan_gc_add_mark(TASK(mtbdd_refs_mark));
 }
 
 /**
@@ -361,8 +361,8 @@ sylvan_init_mtbdd()
     mtbdd_initialized = 1;
 
     sylvan_register_quit(mtbdd_quit);
-    sylvan_gc_add_mark(10, TASK(mtbdd_gc_mark_external_refs));
-    sylvan_gc_add_mark(10, TASK(mtbdd_gc_mark_protected));
+    sylvan_gc_add_mark(TASK(mtbdd_gc_mark_external_refs));
+    sylvan_gc_add_mark(TASK(mtbdd_gc_mark_protected));
 
     refs_create(&mtbdd_refs, 1024);
     if (!mtbdd_protected_created) {

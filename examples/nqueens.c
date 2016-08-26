@@ -126,8 +126,8 @@ main(int argc, char** argv)
     sylvan_init_bdd(3); // granularity 3 is decent value for this small problem - 1 means "use cache for every operation"
 
     // Before and after garbage collection, call gc_start and gc_end
-    sylvan_gc_add_mark(0, TASK(gc_start));
-    sylvan_gc_add_mark(40, TASK(gc_end));
+    sylvan_gc_hook_pregc(TASK(gc_start));
+    sylvan_gc_hook_postgc(TASK(gc_end));
 
 #ifdef HAVE_PROFILER
     if (profile_filename != NULL) ProfilerStart(profile_filename);

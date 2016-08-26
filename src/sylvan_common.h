@@ -65,20 +65,35 @@ VOID_TASK_DECL_2(sylvan_table_usage, size_t*, size_t*);
 void sylvan_stats_report(FILE* target, int color);
 
 /**
- * Perform garbage collection.
+ * GARBAGE COLLECTION
  *
  * Garbage collection is performed in a new Lace frame, interrupting all ongoing work
  * until garbage collection is completed.
  *
- * Garbage collection procedure:
- * 1) The operation cache is cleared and the hash table is reset.
- * 2) All live nodes are marked (to be rehashed). This is done by the "mark" callbacks.
- * 3) The "hook" callback is called.
- *    By default, this doubles the hash table size when it is >50% full.
- * 4) All live nodes are rehashed into the hash table.
+ * By default, garbage collection is triggered when no new nodes can be added to the nodes table.
+ * This is detected when there are no more available buckets in the bounded probe sequence.
+ * Garbage collection can also be triggered manually with sylvan_gc()
  *
- * The behavior of garbage collection can be customized by adding "mark" callbacks and
- * replacing the "hook" callback.
+ * Garbage collection procedure:
+ * 1) All installed pre_gc hooks are called.
+ *    See sylvan_gc_hook_pre to add hooks.
+ * 2) The operation cache is cleared.
+ * 3) The nodes table (data part) is cleared.
+ * 4) All nodes are marked (to be rehashed) using the various marking callbacks.
+ *    See sylvan_gc_add_mark to add marking callbacks.
+ *    Afterwards, the ondead hook is called for all now-dead nodes with the custom flag set.
+ * 5) The main gc hook is called. The function of this hook is to perform resizing.
+ *    The default implementation doubles the nodes table and operation cache sizes.
+ *    See sylvan_gc_hook_main to set the hook.
+ * 5) The nodes table (hash part) is cleared.
+ * 6) All marked nodes are rehashed.
+ * 7) All installed post_gc hooks are called.
+ *    See sylvan_gc_hook_post to add hooks.
+ *
+ * For parts of the garbage collection process, specific methods exist.
+ * - sylvan_clear_cache() clears the operation cache (step 2)
+ * - sylvan_clear_and_mark() performs steps 3 and 4.
+ * - sylvan_rehash_all() performs steps 5 and 6.
  */
 
 /**
@@ -104,40 +119,66 @@ void sylvan_gc_disable();
 /**
  * Test if garbage collection must happen now.
  * This is just a call to the Lace framework to see if NEWFRAME has been used.
- * Before calling this, make sure all BDDs etc are referenced.
+ * Before calling this, make sure all used BDDs are referenced.
  */
 #define sylvan_gc_test() YIELD_NEWFRAME()
 
 /**
- * Add a "mark" callback to the list of callbacks.
- *
- * These are called during garbage collection to recursively mark nodes.
- *
- * Default "mark" functions that mark external references (via sylvan_ref) and internal
- * references (inside operations) are added by sylvan_init_bdd/sylvan_init_bdd.
- *
- * Functions are called in order.
- * level 10: marking functions of Sylvan (external/internal references)
- * level 20: call the hook function (for resizing)
- * level 30: rehashing
+ * Clear the operation cache.
  */
-LACE_TYPEDEF_CB(void, gc_mark_cb);
-void sylvan_gc_add_mark(int order, gc_mark_cb callback);
+VOID_TASK_DECL_0(sylvan_clear_cache);
+#define sylvan_clear_cache() CALL(sylvan_clear_cache)
 
 /**
- * Set "hook" callback. There can be only one.
- *
- * The hook is called after the "mark" phase and before the "rehash" phase.
- * This allows users to perform certain actions, such as resizing the nodes table
- * and the operation cache. Also, dynamic resizing could be performed then.
+ * Clear the nodes table (data part) and mark all nodes with the marking mechanisms.
+ */
+VOID_TASK_DECL_0(sylvan_clear_and_mark);
+#define sylvan_clear_and_mark() CALL(sylvan_clear_and_mark)
+
+/**
+ * Clear the nodes table (hash part) and rehash all marked nodes.
+ */
+VOID_TASK_DECL_0(sylvan_rehash_all);
+#define sylvan_rehash_all() CALL(sylvan_rehash_all)
+
+/**
+ * Callback type
  */
 LACE_TYPEDEF_CB(void, gc_hook_cb);
-void sylvan_gc_set_hook(gc_hook_cb new_hook);
+
+/**
+ * Add a hook that is called before garbage collection begins.
+ */
+void sylvan_gc_hook_pregc(gc_hook_cb callback);
+
+/**
+ * Add a hook that is called after garbage collection is finished.
+ */
+void sylvan_gc_hook_postgc(gc_hook_cb callback);
+
+/**
+ * Replace the hook called between node marking and rehashing.
+ * Typically, the hook resizes the hash table and operation cache according to some heuristic.
+ */
+void sylvan_gc_hook_main(gc_hook_cb callback);
+
+/**
+ * Add a marking mechanism.
+ *
+ * The mark_cb callback is called during garbage collection and should call the
+ * appropriate recursive marking functions for the decision diagram nodes, for example
+ * mtbdd_gc_mark_rec() for MTBDDs or lddmc_gc_mark_rec() for LDDs.
+ *
+ * The sylvan_count_refs() function uses the count_cb callbacks to compute the number
+ * of references.
+ */
+void sylvan_gc_add_mark(gc_hook_cb mark_cb);
 
 /**
  * One of the hooks for resizing behavior.
  * Default if SYLVAN_AGGRESSIVE_RESIZE is set.
  * Always double size on gc() until maximum reached.
+ * Use sylvan_gc_hook_main() to set this heuristic.
  */
 VOID_TASK_DECL_0(sylvan_gc_aggressive_resize);
 
@@ -145,6 +186,7 @@ VOID_TASK_DECL_0(sylvan_gc_aggressive_resize);
  * One of the hooks for resizing behavior.
  * Default if SYLVAN_AGGRESSIVE_RESIZE is not set.
  * Double size on gc() whenever >50% is used.
+ * Use sylvan_gc_hook_main() to set this heuristic.
  */
 VOID_TASK_DECL_0(sylvan_gc_normal_resize);
 

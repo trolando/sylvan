@@ -53,61 +53,93 @@ sylvan_gc_disable()
  */
 static volatile int gc;
 
-struct reg_gc_mark_entry
+/**
+ * Structures for the marking mechanisms
+ */
+typedef struct gc_hook_entry
 {
-    struct reg_gc_mark_entry *next;
-    gc_mark_cb cb;
-    int order;
-};
+    struct gc_hook_entry *next;
+    gc_hook_cb cb;
+} * gc_hook_entry_t;
 
-static struct reg_gc_mark_entry *gc_mark_register = NULL;
+static gc_hook_entry_t mark_list;
+static gc_hook_entry_t pregc_list;
+static gc_hook_entry_t postgc_list;
+static gc_hook_cb main_hook;
 
 void
-sylvan_gc_add_mark(int order, gc_mark_cb cb)
+sylvan_gc_hook_pregc(gc_hook_cb callback)
 {
-    struct reg_gc_mark_entry *e = (struct reg_gc_mark_entry*)malloc(sizeof(struct reg_gc_mark_entry));
-    e->cb = cb;
-    e->order = order;
-    if (gc_mark_register == NULL || gc_mark_register->order>order) {
-        e->next = gc_mark_register;
-        gc_mark_register = e;
-        return;
-    }
-    struct reg_gc_mark_entry *f = gc_mark_register;
-    for (;;) {
-        if (f->next == NULL) {
-            e->next = NULL;
-            f->next = e;
-            return;
-        }
-        if (f->next->order > order) {
-            e->next = f->next;
-            f->next = e;
-            return;
-        }
-        f = f->next;
-    }
+    gc_hook_entry_t e = (gc_hook_entry_t)malloc(sizeof(struct gc_hook_entry));
+    e->cb = callback;
+    e->next = pregc_list;
+    pregc_list = e;
 }
-
-static gc_hook_cb gc_hook;
 
 void
-sylvan_gc_set_hook(gc_hook_cb new_hook)
+sylvan_gc_hook_postgc(gc_hook_cb callback)
 {
-    gc_hook = new_hook;
+    gc_hook_entry_t e = (gc_hook_entry_t)malloc(sizeof(struct gc_hook_entry));
+    e->cb = callback;
+    e->next = postgc_list;
+    postgc_list = e;
 }
 
-/* Mark hook for cache */
-VOID_TASK_0(sylvan_gc_mark_cache)
+void
+sylvan_gc_add_mark(gc_hook_cb callback)
 {
-    /* We simply clear the cache.
-     * Alternatively, we could implement for example some strategy
-     * where part of the cache is cleared and part is marked
-     */
-    cache_clear();
+    gc_hook_entry_t e = (gc_hook_entry_t)malloc(sizeof(struct gc_hook_entry));
+    e->cb = callback;
+    e->next = mark_list;
+    mark_list = e;
 }
 
-/* Default hook */
+void
+sylvan_gc_hook_main(gc_hook_cb callback)
+{
+    main_hook = callback;
+}
+
+/**
+ * Clear the operation cache.
+ */
+VOID_TASK_IMPL_0(sylvan_clear_cache)
+{
+   cache_clear();
+}
+
+/**
+ * Clear the nodes table and mark all referenced nodes.
+ *
+ * This does not clear the hash data or rehash the nodes.
+ * After marking, the "destroy" hooks are called for all unmarked nodes,
+ * for example to free data of custom MTBDD leaves.
+ */
+VOID_TASK_IMPL_0(sylvan_clear_and_mark)
+{
+    llmsset_clear_data(nodes);
+
+    for (gc_hook_entry_t e = mark_list; e != NULL; e = e->next) {
+        WRAP(e->cb);
+    }
+
+    llmsset_destroy_unmarked(nodes);
+}
+
+/**
+ * Clear the hash array of the nodes table and rehash all marked buckets.
+ */
+VOID_TASK_IMPL_0(sylvan_rehash_all)
+{
+    // clear hash array
+    llmsset_clear_hashes(nodes);
+
+    // rehash marked nodes
+    if (llmsset_rehash(nodes) != 0) {
+        fprintf(stderr, "sylvan_gc_rehash error: not all nodes could be rehashed!\n");
+        exit(1);
+    }
+}
 
 /**
  * Logic for resizing the nodes table and operation cache
@@ -181,26 +213,6 @@ VOID_TASK_IMPL_0(sylvan_gc_normal_resize)
     }
 }
 
-VOID_TASK_0(sylvan_gc_call_hook)
-{
-    // call hook function (resizing, reordering, etc)
-    WRAP(gc_hook);
-}
-
-VOID_TASK_0(sylvan_gc_rehash)
-{
-    // rehash marked nodes
-    if (llmsset_rehash(nodes) != 0) {
-        fprintf(stderr, "sylvan_gc_rehash error: not all nodes could be rehashed!\n");
-        exit(1);
-    }
-}
-
-VOID_TASK_0(sylvan_gc_destroy_unmarked)
-{
-    llmsset_destroy_unmarked(nodes);
-}
-
 /**
  * Actual implementation of garbage collection
  */
@@ -209,14 +221,28 @@ VOID_TASK_0(sylvan_gc_go)
     sylvan_stats_count(SYLVAN_GC_COUNT);
     sylvan_timer_start(SYLVAN_GC);
 
-    // clear hash array
-    llmsset_clear(nodes);
-
-    // call mark functions, hook and rehash
-    struct reg_gc_mark_entry *e = gc_mark_register;
-    while (e != NULL) {
+    // call pre gc hooks
+    for (gc_hook_entry_t e = pregc_list; e != NULL; e = e->next) {
         WRAP(e->cb);
-        e = e->next;
+    }
+
+    /*
+     * This simply clears the cache.
+     * Alternatively, we could implement for example some strategy
+     * where part of the cache is cleared and part is marked
+     */
+    CALL(sylvan_clear_cache);
+
+    CALL(sylvan_clear_and_mark);
+
+    // call hooks for resizing and all that
+    WRAP(main_hook);
+
+    CALL(sylvan_rehash_all);
+
+    // call post gc hooks
+    for (gc_hook_entry_t e = postgc_list; e != NULL; e = e->next) {
+        WRAP(e->cb);
     }
 
     sylvan_timer_stop(SYLVAN_GC);
@@ -267,14 +293,10 @@ sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize, size_t m
     /* Initialize garbage collection */
     gc = 0;
 #if SYLVAN_AGGRESSIVE_RESIZE
-    gc_hook = TASK(sylvan_gc_aggressive_resize);
+    main_hook = TASK(sylvan_gc_aggressive_resize);
 #else
-    gc_hook = TASK(sylvan_gc_normal_resize);
+    main_hook = TASK(sylvan_gc_normal_resize);
 #endif
-    sylvan_gc_add_mark(10, TASK(sylvan_gc_mark_cache));
-    sylvan_gc_add_mark(19, TASK(sylvan_gc_destroy_unmarked));
-    sylvan_gc_add_mark(20, TASK(sylvan_gc_call_hook));
-    sylvan_gc_add_mark(30, TASK(sylvan_gc_rehash));
 
     LACE_ME;
     sylvan_stats_init();
@@ -307,9 +329,21 @@ sylvan_quit()
         free(e);
     }
 
-    while (gc_mark_register != NULL) {
-        struct reg_gc_mark_entry *e = gc_mark_register;
-        gc_mark_register = e->next;
+    while (pregc_list != NULL) {
+        gc_hook_entry_t e = pregc_list;
+        pregc_list = e->next;
+        free(e);
+    }
+
+    while (postgc_list != NULL) {
+        gc_hook_entry_t e = postgc_list;
+        postgc_list = e->next;
+        free(e);
+    }
+
+    while (mark_list != NULL) {
+        gc_hook_entry_t e = mark_list;
+        mark_list = e->next;
         free(e);
     }
 

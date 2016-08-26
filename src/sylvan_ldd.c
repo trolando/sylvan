@@ -227,7 +227,7 @@ VOID_TASK_0(lddmc_refs_init)
 {
     INIT_THREAD_LOCAL(lddmc_refs_key);
     TOGETHER(lddmc_refs_init_task);
-    sylvan_gc_add_mark(10, TASK(lddmc_refs_mark));
+    sylvan_gc_add_mark(TASK(lddmc_refs_mark));
 }
 
 /**
@@ -244,7 +244,7 @@ void
 sylvan_init_ldd()
 {
     sylvan_register_quit(lddmc_quit);
-    sylvan_gc_add_mark(10, TASK(lddmc_gc_mark_external_refs));
+    sylvan_gc_add_mark(TASK(lddmc_gc_mark_external_refs));
 
     refs_create(&mdd_refs, 1024);
 

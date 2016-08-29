@@ -113,8 +113,8 @@ typedef MTBDD MTBDDMAP;
 #define sylvan_support          mtbdd_support
 #define sylvan_test_isbdd       mtbdd_test_isvalid
 #define sylvan_nodecount        mtbdd_nodecount
-#define sylvan_printdot(bdd)    mtbdd_printdot(bdd, NULL)
-#define sylvan_fprintdot(out, bdd) mtbdd_fprintdot(out, bdd, NULL)
+#define sylvan_printdot         mtbdd_printdot
+#define sylvan_fprintdot        mtbdd_fprintdot
 #define sylvan_printsha         mtbdd_printsha
 #define sylvan_fprintsha        mtbdd_fprintsha
 #define sylvan_getsha           mtbdd_getsha
@@ -513,22 +513,34 @@ TASK_DECL_1(int, mtbdd_test_isvalid, MTBDD);
 #define mtbdd_test_isvalid(mtbdd) CALL(mtbdd_test_isvalid, mtbdd)
 
 /**
- * Callback function for .dot writing.
- */
-typedef void (*print_terminal_label_cb)(FILE *out, int complement, uint32_t type, uint64_t value);
-
-/**
  * Write a .dot representation of a given MTBDD
  * The callback function is required for custom terminals.
  */
-void mtbdd_fprintdot(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb);
-#define mtbdd_printdot(mtbdd, cb) mtbdd_fprintdot(stdout, mtbdd, cb)
+void mtbdd_fprintdot(FILE *out, MTBDD mtbdd);
+#define mtbdd_printdot(mtbdd, cb) mtbdd_fprintdot(stdout, mtbdd)
 
 /**
  * Write a .dot representation of a given MTBDD, but without complement edges.
  */
-void mtbdd_fprintdot_nc(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb);
-#define mtbdd_printdot_nc(mtbdd, cb) mtbdd_fprintdot_nc(stdout, mtbdd, cb)
+void mtbdd_fprintdot_nc(FILE *out, MTBDD mtbdd);
+#define mtbdd_printdot_nc(mtbdd, cb) mtbdd_fprintdot_nc(stdout, mtbdd)
+
+/**
+ * Write a text representation of a leaf to the given file.
+ */
+void mtbdd_fprint_leaf(FILE *out, MTBDD leaf);
+
+/**
+ * Write a text representation of a leaf to stdout.
+ */
+void mtbdd_print_leaf(MTBDD leaf);
+
+/**
+ * Obtain the textual representation of a leaf.
+ * The returned result is either equal to the given <buf> (if the results fits)
+ * or to a newly allocated array (with malloc).
+ */
+char *mtbdd_leaf_to_str(MTBDD leaf, char *buf, size_t buflen);
 
 /**
  * Some debugging functions that generate SHA2 hashes of MTBDDs.
@@ -644,16 +656,18 @@ MTBDDMAP mtbdd_map_removeall(MTBDDMAP map, MTBDD variables);
  * destroy(value)
  * NOTE: equals(value1, value2) must imply: hash(value1, seed) == hash(value2,seed)
  * NOTE: new value of create must imply: equals(old, new)
+ * For the to_str callback, see the mtbdd_leaf_to_str method.
  */
 typedef uint64_t (*mtbdd_hash_cb)(uint64_t, uint64_t);
 typedef int (*mtbdd_equals_cb)(uint64_t, uint64_t);
 typedef void (*mtbdd_create_cb)(uint64_t*);
 typedef void (*mtbdd_destroy_cb)(uint64_t);
+typedef char* (*leaf_to_str_cb)(int, uint64_t, char*, size_t);
 
 /**
  * Registry callback handlers for <type>.
  */
-uint32_t mtbdd_register_custom_leaf(mtbdd_hash_cb hash_cb, mtbdd_equals_cb equals_cb, mtbdd_create_cb create_cb, mtbdd_destroy_cb destroy_cb);
+uint32_t mtbdd_register_custom_leaf(mtbdd_hash_cb hash_cb, mtbdd_equals_cb equals_cb, mtbdd_create_cb create_cb, mtbdd_destroy_cb destroy_cb, leaf_to_str_cb to_str_cb);
 
 /**
  * Garbage collection

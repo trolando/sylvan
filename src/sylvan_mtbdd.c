@@ -254,6 +254,7 @@ typedef struct
     mtbdd_equals_cb equals_cb;
     mtbdd_create_cb create_cb;
     mtbdd_destroy_cb destroy_cb;
+    leaf_to_str_cb to_str_cb;
 } customleaf_t;
 
 static customleaf_t *cl_registry;
@@ -310,7 +311,7 @@ _mtbdd_equals_cb(uint64_t a, uint64_t b, uint64_t aa, uint64_t bb)
 }
 
 uint32_t
-mtbdd_register_custom_leaf(mtbdd_hash_cb hash_cb, mtbdd_equals_cb equals_cb, mtbdd_create_cb create_cb, mtbdd_destroy_cb destroy_cb)
+mtbdd_register_custom_leaf(mtbdd_hash_cb hash_cb, mtbdd_equals_cb equals_cb, mtbdd_create_cb create_cb, mtbdd_destroy_cb destroy_cb, leaf_to_str_cb to_str_cb)
 {
     uint32_t type = cl_registry_count;
     if (type == 0) type = 3;
@@ -328,6 +329,7 @@ mtbdd_register_custom_leaf(mtbdd_hash_cb hash_cb, mtbdd_equals_cb equals_cb, mtb
     c->equals_cb = equals_cb;
     c->create_cb = create_cb;
     c->destroy_cb = destroy_cb;
+    c->to_str_cb = to_str_cb;
     return type;
 }
 
@@ -2518,11 +2520,81 @@ TASK_IMPL_1(int, mtbdd_test_isvalid, MTBDD, dd)
 }
 
 /**
+ * Write a text representation of a leaf to the given file.
+ */
+void
+mtbdd_fprint_leaf(FILE *out, MTBDD leaf)
+{
+    char buf[64];
+    char *ptr = mtbdd_leaf_to_str(leaf, buf, 64);
+    if (ptr != NULL) {
+        fputs(ptr, out);
+        if (ptr != buf) free(ptr);
+    }
+}
+
+/**
+ * Write a text representation of a leaf to stdout.
+ */
+void
+mtbdd_print_leaf(MTBDD leaf)
+{
+    mtbdd_fprint_leaf(stdout, leaf);
+}
+
+/**
+ * Obtain the textual representation of a leaf.
+ * The returned result is either equal to the given <buf> (if the results fits)
+ * or to a newly allocated array (with malloc).
+ */
+char *
+mtbdd_leaf_to_str(MTBDD leaf, char *buf, size_t buflen)
+{
+    mtbddnode_t n = MTBDD_GETNODE(leaf);
+    uint32_t type = mtbddnode_gettype(n);
+    uint64_t value = mtbddnode_getvalue(n);
+    int complement = MTBDD_HASMARK(leaf) ? 1 : 0;
+
+    if (type == 0) {
+        char *ptr = buf;
+        if (buflen < 32) {
+            ptr = malloc(32);
+            buflen = 32;
+        }
+        snprintf(ptr, buflen, "%" PRId64, (int64_t)value);
+        return ptr;
+    } else if (type == 1) {
+        char *ptr = buf;
+        if (buflen < 32) {
+            ptr = malloc(32);
+            buflen = 32;
+        }
+        snprintf(ptr, buflen, "%f", *(double*)&value);
+        return ptr;
+    } else if (type == 2) {
+        char *ptr = buf;
+        if (buflen < 32) {
+            ptr = malloc(32);
+            buflen = 32;
+        }
+        int32_t num = (int32_t)(value>>32);
+        uint32_t denom = value&0xffffffff;
+        snprintf(ptr, buflen, "%" PRId32 "/%" PRIu32, num, denom);
+        return ptr;
+    } else if (type < cl_registry_count) {
+        customleaf_t *c = cl_registry + type;
+        if (c->to_str_cb != NULL) return c->to_str_cb(complement, value, buf, buflen);
+    }
+
+    return NULL;
+}
+
+/**
  * Export to .dot file
  */
 
 static void
-mtbdd_fprintdot_rec(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
+mtbdd_fprintdot_rec(FILE *out, MTBDD mtbdd)
 {
     mtbddnode_t n = MTBDD_GETNODE(mtbdd); // also works for mtbdd_false
     if (mtbddnode_getmark(n)) return;
@@ -2531,30 +2603,15 @@ mtbdd_fprintdot_rec(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
     if (mtbdd == mtbdd_true || mtbdd == mtbdd_false) {
         fprintf(out, "0 [shape=box, style=filled, label=\"F\"];\n");
     } else if (mtbddnode_isleaf(n)) {
-        uint32_t type = mtbddnode_gettype(n);
-        uint64_t value = mtbddnode_getvalue(n);
         fprintf(out, "%" PRIu64 " [shape=box, style=filled, label=\"", MTBDD_STRIPMARK(mtbdd));
-        switch (type) {
-        case 0:
-            fprintf(out, "%" PRIu64, value);
-            break;
-        case 1:
-            fprintf(out, "%f", *(double*)&value);
-            break;
-        case 2:
-            fprintf(out, "%u/%u", (uint32_t)(value>>32), (uint32_t)value);
-            break;
-        default:
-            cb(out, 0, type, value);
-            break;
-        }
+        mtbdd_fprint_leaf(out, mtbdd);
         fprintf(out, "\"];\n");
     } else {
         fprintf(out, "%" PRIu64 " [label=\"%" PRIu32 "\"];\n",
                 MTBDD_STRIPMARK(mtbdd), mtbddnode_getvariable(n));
 
-        mtbdd_fprintdot_rec(out, mtbddnode_getlow(n), cb);
-        mtbdd_fprintdot_rec(out, mtbddnode_gethigh(n), cb);
+        mtbdd_fprintdot_rec(out, mtbddnode_getlow(n));
+        mtbdd_fprintdot_rec(out, mtbddnode_gethigh(n));
 
         fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=dashed];\n",
                 MTBDD_STRIPMARK(mtbdd), mtbddnode_getlow(n));
@@ -2565,7 +2622,7 @@ mtbdd_fprintdot_rec(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
 }
 
 void
-mtbdd_fprintdot(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
+mtbdd_fprintdot(FILE *out, MTBDD mtbdd)
 {
     fprintf(out, "digraph \"DD\" {\n");
     fprintf(out, "graph [dpi = 300];\n");
@@ -2575,7 +2632,7 @@ mtbdd_fprintdot(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
     fprintf(out, "root -> %" PRIu64 " [style=solid dir=both arrowtail=%s];\n",
             MTBDD_STRIPMARK(mtbdd), MTBDD_HASMARK(mtbdd) ? "dot" : "none");
 
-    mtbdd_fprintdot_rec(out, mtbdd, cb);
+    mtbdd_fprintdot_rec(out, mtbdd);
     mtbdd_unmark_rec(mtbdd);
 
     fprintf(out, "}\n");
@@ -2586,7 +2643,7 @@ mtbdd_fprintdot(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
  */
 
 static void
-mtbdd_fprintdot_nc_rec(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
+mtbdd_fprintdot_nc_rec(FILE *out, MTBDD mtbdd)
 {
     mtbddnode_t n = MTBDD_GETNODE(mtbdd); // also works for mtbdd_false
     if (mtbddnode_getmark(n)) return;
@@ -2597,29 +2654,14 @@ mtbdd_fprintdot_nc_rec(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
     } else if (mtbdd == mtbdd_false) {
         fprintf(out, "0 [shape=box, style=filled, label=\"F\"];\n");
     } else if (mtbddnode_isleaf(n)) {
-        uint32_t type = mtbddnode_gettype(n);
-        uint64_t value = mtbddnode_getvalue(n);
         fprintf(out, "%" PRIu64 " [shape=box, style=filled, label=\"", mtbdd);
-        switch (type) {
-        case 0:
-            fprintf(out, "%" PRIu64, value);
-            break;
-        case 1:
-            fprintf(out, "%f", *(double*)&value);
-            break;
-        case 2:
-            fprintf(out, "%u/%u", (uint32_t)(value>>32), (uint32_t)value);
-            break;
-        default:
-            cb(out, MTBDD_HASMARK(mtbdd), type, value);
-            break;
-        }
+        mtbdd_fprint_leaf(out, mtbdd);
         fprintf(out, "\"];\n");
     } else {
         fprintf(out, "%" PRIu64 " [label=\"%" PRIu32 "\"];\n", mtbdd, mtbddnode_getvariable(n));
 
-        mtbdd_fprintdot_rec(out, mtbddnode_getlow(n), cb);
-        mtbdd_fprintdot_rec(out, mtbddnode_gethigh(n), cb);
+        mtbdd_fprintdot_nc_rec(out, mtbddnode_getlow(n));
+        mtbdd_fprintdot_nc_rec(out, mtbddnode_gethigh(n));
 
         fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=dashed];\n", mtbdd, node_getlow(mtbdd, n));
         fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=solid];\n", mtbdd, node_gethigh(mtbdd, n));
@@ -2627,7 +2669,7 @@ mtbdd_fprintdot_nc_rec(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
 }
 
 void
-mtbdd_fprintdot_nc(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
+mtbdd_fprintdot_nc(FILE *out, MTBDD mtbdd)
 {
     fprintf(out, "digraph \"DD\" {\n");
     fprintf(out, "graph [dpi = 300];\n");
@@ -2636,7 +2678,7 @@ mtbdd_fprintdot_nc(FILE *out, MTBDD mtbdd, print_terminal_label_cb cb)
     fprintf(out, "root [style=invis];\n");
     fprintf(out, "root -> %" PRIu64 " [style=solid];\n", mtbdd);
 
-    mtbdd_fprintdot_nc_rec(out, mtbdd, cb);
+    mtbdd_fprintdot_nc_rec(out, mtbdd);
     mtbdd_unmark_rec(mtbdd);
 
     fprintf(out, "}\n");

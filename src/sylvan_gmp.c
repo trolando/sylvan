@@ -100,6 +100,16 @@ gmp_destroy(uint64_t val)
     free((void*)val);
 }
 
+static char*
+gmp_to_str(int comp, uint64_t val, char *buf, size_t buflen)
+{
+    mpq_ptr op = (mpq_ptr)val;
+    size_t minsize = mpz_sizeinbase(mpq_numref(op), 10) + mpz_sizeinbase (mpq_denref(op), 10) + 3;
+    if (buflen >= minsize) return mpq_get_str(buf, 10, op);
+    else return mpq_get_str(NULL, 10, op);
+    (void)comp;
+}
+
 static uint32_t gmp_type;
 static uint64_t CACHE_GMP_AND_EXISTS;
 
@@ -110,7 +120,7 @@ void
 gmp_init()
 {
     /* Register custom leaf 3 */
-    gmp_type = mtbdd_register_custom_leaf(gmp_hash, gmp_equals, gmp_create, gmp_destroy);
+    gmp_type = mtbdd_register_custom_leaf(gmp_hash, gmp_equals, gmp_create, gmp_destroy, gmp_to_str);
     CACHE_GMP_AND_EXISTS = cache_next_opid();
 }
 

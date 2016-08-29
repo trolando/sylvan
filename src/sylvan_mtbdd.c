@@ -2294,6 +2294,100 @@ mtbdd_enum_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb fi
     }
 }
 
+MTBDD
+mtbdd_enum_all_first(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb)
+{
+    if (dd == mtbdd_false) {
+        // the leaf dd is skipped
+        return mtbdd_false;
+    } else if (mtbdd_isleaf(dd)) {
+        // a leaf for which the filter returns 0 is skipped
+        if (filter_cb != NULL && filter_cb(dd) == 0) return mtbdd_false;
+        // ok, we have a leaf that is not skipped, go for it!
+        while (variables != mtbdd_true) {
+            *arr++ = 0;
+            variables = mtbdd_gethigh(variables);
+        }
+        return dd;
+    } else {
+        // if variables == true, then dd must be a leaf. But then this line is unreachable.
+        // if this assertion fails, then <variables> is not the support of <dd>.
+        assert(variables != mtbdd_true);
+
+        // get next variable from <variables>
+        uint32_t v = mtbdd_getvar(variables);
+        variables = mtbdd_gethigh(variables);
+
+        // check if MTBDD is on this variable
+        mtbddnode_t n = MTBDD_GETNODE(dd);
+        if (mtbddnode_getvariable(n) != v) {
+            *arr = 0;
+            return mtbdd_enum_all_first(dd, variables, arr+1, filter_cb);
+        }
+
+        // first maybe follow low
+        MTBDD res = mtbdd_enum_all_first(node_getlow(dd, n), variables, arr+1, filter_cb);
+        if (res != mtbdd_false) {
+            *arr = 0;
+            return res;
+        }
+
+        // if not low, try following high
+        res = mtbdd_enum_all_first(node_gethigh(dd, n), variables, arr+1, filter_cb);
+        if (res != mtbdd_false) {
+            *arr = 1;
+            return res;
+        }
+
+        // we've tried low and high, return false
+        return mtbdd_false;
+    }
+}
+
+MTBDD
+mtbdd_enum_all_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb)
+{
+    if (mtbdd_isleaf(dd)) {
+        // we find the leaf in 'enum_next', then we've seen it before...
+        return mtbdd_false;
+    } else {
+        // if variables == true, then dd must be a leaf. But then this line is unreachable.
+        // if this assertion fails, then <variables> is not the support of <dd>.
+        assert(variables != mtbdd_true);
+
+        uint32_t v = mtbdd_getvar(variables);
+        variables = mtbdd_gethigh(variables);
+
+        if (*arr == 0) {
+            // previous was low
+            mtbddnode_t n = MTBDD_GETNODE(dd);
+            MTBDD low = v == mtbddnode_getvariable(n) ? node_getlow(dd, n) : dd;
+            MTBDD res = mtbdd_enum_all_next(low, variables, arr+1, filter_cb);
+            if (res != mtbdd_false) {
+                return res;
+            } else {
+                // try to find new in high branch
+                MTBDD high = v == mtbddnode_getvariable(n) ? node_gethigh(dd, n) : dd;
+                res = mtbdd_enum_all_first(high, variables, arr+1, filter_cb);
+                if (res != mtbdd_false) {
+                    *arr = 1;
+                    return res;
+                } else {
+                    return mtbdd_false;
+                }
+            }
+        } else if (*arr == 1) {
+            // previous was high
+            mtbddnode_t n = MTBDD_GETNODE(dd);
+            MTBDD high = v == mtbddnode_getvariable(n) ? node_gethigh(dd, n) : dd;
+            return mtbdd_enum_all_next(high, variables, arr+1, filter_cb);
+        } else {
+            // previous was either
+            return mtbdd_enum_all_next(dd, variables, arr+1, filter_cb);
+        }
+    }
+}
+
 /**
  * Helper function for recursive unmarking
  */

@@ -225,7 +225,8 @@ static void
 lace_barrier_destroy()
 {
     // wait for all to exit
-    for (int i=0; i<n_workers; i++) {
+    int i;
+    for (i=0; i<n_workers; i++) {
         while (1 == lace_bar.entered[i].val) {}
     }
 }
@@ -287,6 +288,7 @@ lace_init_worker(int worker, size_t dq_size)
     } else {
         w->stack_trigger = 0;
     }
+    w->rng = (((uint64_t)rand())<<32 | rand());
 
 #if LACE_COUNT_EVENTS
     // Reset counters
@@ -433,7 +435,8 @@ lace_set_workers(int workercount)
     enabled_workers = workercount;
     int self = lace_get_worker()->worker;
     if (self >= workercount) workercount--;
-    for (int i=0; i<n_workers; i++) {
+    int i;
+    for (i=0; i<n_workers; i++) {
         workers_p[i]->enabled = (i < workercount || i == self) ? 1 : 0;
     }
 }
@@ -971,7 +974,7 @@ lace_sync_and_exec(WorkerP *__lace_worker, Task *__lace_dq_head, Task *root)
 
     // one worker sets t to 0 again
     if (LACE_WORKER_ID == 0) lace_newframe.t = 0;
-    // else while (*(volatile Task**)&lace_newframe.t != 0) {}
+    // else while (*(Task* volatile *)&lace_newframe.t != 0) {}
 
     // the above line is commented out since lace_exec_in_new_frame includes
     // a lace_barrier before the task is executed
@@ -991,7 +994,7 @@ lace_yield(WorkerP *__lace_worker, Task *__lace_dq_head)
 
     // one worker sets t to 0 again
     if (LACE_WORKER_ID == 0) lace_newframe.t = 0;
-    // else while (*(volatile Task**)&lace_newframe.t != 0) {}
+    // else while (*(Task* volatile *)&lace_newframe.t != 0) {}
 
     // the above line is commented out since lace_exec_in_new_frame includes
     // a lace_barrier before the task is executed

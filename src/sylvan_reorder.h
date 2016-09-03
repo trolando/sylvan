@@ -116,6 +116,9 @@ TASK_DECL_2(int, sylvan_varswap, uint32_t, int);
 TASK_DECL_1(int, sylvan_simple_varswap, uint32_t);
 #define sylvan_simple_varswap(var) CALL(sylvan_simple_varswap, var)
 
+TASK_DECL_2(int, sylvan_sifting, uint32_t, uint32_t);
+#define sylvan_sifting(low, high) CALL(sylvan_sifting, low, high)
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

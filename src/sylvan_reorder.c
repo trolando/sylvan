@@ -570,3 +570,40 @@ TASK_IMPL_1(int, sylvan_simple_varswap, uint32_t, var)
     sylvan_rehash_all(); // this will abort on failure...
     return 1;
 }
+
+
+/**
+ * Count the number of nodes per variable level.
+ *
+ * To make this somewhat scalable, we use a standard binary reduction pattern with local arrays...
+ * Fortunately, we only do this once per call to dynamic variable reordering.
+ */
+VOID_TASK_3(sylvan_count_nodes, size_t*, arr, size_t, first, size_t, count)
+{
+    if (count > 4096) {
+        /* 4096, because that is not very small, and not very large */
+        /* typical kind of parameter that is open to tweaking, though I don't expect it matters so much */
+        /* too small is bad for the atomic operations, too large is bad for work-stealing */
+        /* with 2^20 - 2^25 nodes table size, this is 256 - 8192 tasks */
+        SPAWN(sylvan_count_nodes, arr, first, count/2);
+        CALL(sylvan_count_nodes, arr, first+count/2, count-count/2);
+        SYNC(sylvan_count_nodes);
+    } else {
+        size_t tmp[levels_count], i;
+        for (i=0; i<levels_count; i++) tmp[i] = 0;
+
+        mtbddnode_t node = MTBDD_GETNODE(first);
+        const size_t end = first + count;
+
+        for (; first < end; node++, first++) {
+            /* skip unused buckets */
+            if (!llmsset_is_marked(nodes, first)) continue;
+            if (mtbddnode_isleaf(node)) continue;
+            tmp[mtbddnode_getvariable(node)]++;
+        }
+
+        /* these are atomic operations on a hot location with false sharing inside another
+           thread's program stack... can't get much worse! */
+        for (i=0; i<levels_count; i++) __sync_add_and_fetch(&arr[i], tmp[i]);
+    }
+}

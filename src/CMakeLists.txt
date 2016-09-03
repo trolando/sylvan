@@ -12,6 +12,7 @@ target_sources(Sylvan
     sylvan_mtbdd.c
     sylvan_obj.cpp
     sylvan_refs.c
+    sylvan_reorder.c
     sylvan_sl.c
     sylvan_stats.c
     sylvan_table.c
@@ -31,6 +32,7 @@ target_sources(Sylvan
     $<INSTALL_INTERFACE:include/sylvan_mtbdd.h>
     $<INSTALL_INTERFACE:include/sylvan_mtbdd_int.h>
     $<INSTALL_INTERFACE:include/sylvan_obj.hpp>
+    $<INSTALL_INTERFACE:include/sylvan_reorder.h>
     $<INSTALL_INTERFACE:include/sylvan_stats.h>
     $<INSTALL_INTERFACE:include/sylvan_table.h>
     $<INSTALL_INTERFACE:include/sylvan_tls.h>
@@ -49,6 +51,7 @@ target_sources(Sylvan
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_mtbdd.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_mtbdd_int.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_obj.hpp>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_reorder.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_stats.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_table.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_tls.h>

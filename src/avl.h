@@ -283,7 +283,7 @@ NAME##_put(avl_node_t **root, TYPE *data, int *inserted)                        
 static __attribute__((unused)) int                                                          \
 NAME##_insert(avl_node_t **root, TYPE *data)                                                \
 {                                                                                           \
-    int inserted;                                                                           \
+    int inserted = 0;                                                                       \
     NAME##_put(root, data, &inserted);                                                      \
     return inserted;                                                                        \
 }                                                                                           \

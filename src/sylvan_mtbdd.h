@@ -138,7 +138,10 @@ MTBDD mtbdd_makeleaf(uint32_t type, uint64_t value);
  * Please note that this does NOT check variable ordering!
  */
 MTBDD _mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high);
-#define mtbdd_makenode(var, low, high) (low == high ? low : _mtbdd_makenode(var, low, high))
+static inline MTBDD mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high)
+{
+    return low == high ? low : _mtbdd_makenode(var, low, high);
+}
 
 /**
  * Returns 1 is the MTBDD is a terminal, or 0 otherwise.

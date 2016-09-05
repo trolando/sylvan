@@ -640,7 +640,7 @@ TASK_DECL_3(int, mtbdd_serialize_frombinary, FILE*, MTBDD*, int);
 #define mtbdd_set_add(set, var)             sylvan_and(set, sylvan_ithvar(var))
 #define mtbdd_set_addall(set, set2)         sylvan_and(set, set2)
 #define mtbdd_set_remove(set, var)          sylvan_exists(set, var)
-#define mtbdd_set_removeall(set, set2)      sylvan_exists(set, s2)
+#define mtbdd_set_removeall(set, set2)      sylvan_exists(set, set2)
 #define mtbdd_set_first(set)                sylvan_var(set)
 #define mtbdd_set_next(set)                 sylvan_high(set)
 #define mtbdd_set_fromarray(arr, count)     mtbdd_fromarray(arr, count)

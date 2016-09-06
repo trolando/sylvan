@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-#include <stdint.h>
-#include <sylvan.h>
-
 #ifndef SYLVAN_SKIPLIST_H
 #define SYLVAN_SKIPLIST_H
 
@@ -31,40 +28,40 @@ extern "C" {
  * Each bucket takes 32 bytes.
  */
 
-typedef struct skiplist *skiplist_t;
+typedef struct sylvan_skiplist *sylvan_skiplist_t;
 
 /**
  * Allocate a new skiplist of maximum size <size>.
  * Only supports at most 0x7fffffff (max int32) buckets
  */
-skiplist_t skiplist_alloc(size_t size);
+sylvan_skiplist_t sylvan_skiplist_alloc(size_t size);
 
 /**
  * Free the given skiplist.
  */
-void skiplist_free(skiplist_t sl);
+void sylvan_skiplist_free(sylvan_skiplist_t sl);
 
 /**
  * Get the number assigned to the given node <dd>.
  * Returns 0 if no number was assigned.
  */
-uint64_t skiplist_get(skiplist_t sl, MTBDD dd);
+uint64_t sylvan_skiplist_get(sylvan_skiplist_t sl, MTBDD dd);
 
 /**
  * Assign the next number (starting at 1) to the given node <dd>.
  */
-VOID_TASK_DECL_2(skiplist_assign_next, skiplist_t, MTBDD);
-#define skiplist_assign_next(sl, dd) CALL(skiplist_assign_next, sl, dd)
+VOID_TASK_DECL_2(sylvan_skiplist_assign_next, sylvan_skiplist_t, MTBDD);
+#define sylvan_skiplist_assign_next(sl, dd) CALL(sylvan_skiplist_assign_next, sl, dd)
 
 /**
  * Give the number of assigned nodes. (numbers 1,2,...,N)
  */
-size_t skiplist_count(skiplist_t sl);
+size_t sylvan_skiplist_count(sylvan_skiplist_t sl);
 
 /**
  * Get the MTBDD assigned to the number <index>, with the index 1,...,count.
  */
-MTBDD skiplist_getr(skiplist_t sl, uint64_t index);
+MTBDD sylvan_skiplist_getr(sylvan_skiplist_t sl, uint64_t index);
 
 #ifdef __cplusplus
 }

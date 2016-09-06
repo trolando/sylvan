@@ -29,7 +29,7 @@ typedef struct
     uint32_t next[SL_DEPTH];
 } sl_bucket;
 
-struct skiplist
+struct sylvan_skiplist
 {
     sl_bucket *buckets;
     size_t size;
@@ -40,14 +40,14 @@ struct skiplist
 #define cas(ptr, old, new) (__sync_bool_compare_and_swap((ptr),(old),(new)))
 #endif
 
-skiplist_t
-skiplist_alloc(size_t size)
+sylvan_skiplist_t
+sylvan_skiplist_alloc(size_t size)
 {
     if (size >= 0x80000000) {
         fprintf(stderr, "sylvan: Trying to allocate a skiplist >= 0x80000000 buckets!\n");
         exit(1);
     }
-    skiplist_t l = malloc(sizeof(struct skiplist));
+    sylvan_skiplist_t l = malloc(sizeof(struct sylvan_skiplist));
     l->buckets = (sl_bucket*)mmap(0, sizeof(sl_bucket)*size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
     if (l->buckets == (sl_bucket*)-1) {
         fprintf(stderr, "sylvan: Unable to allocate virtual memory (%'zu bytes) for the skiplist!\n", size*sizeof(sl_bucket));
@@ -59,7 +59,7 @@ skiplist_alloc(size_t size)
 }
 
 void
-skiplist_free(skiplist_t l)
+sylvan_skiplist_free(sylvan_skiplist_t l)
 {
     munmap(l->buckets, sizeof(sl_bucket)*l->size);
     free(l);
@@ -70,7 +70,7 @@ skiplist_free(skiplist_t l)
  * or 0 if not found.
  */
 uint64_t
-skiplist_get(skiplist_t l, MTBDD dd)
+sylvan_skiplist_get(sylvan_skiplist_t l, MTBDD dd)
 {
     if (dd == mtbdd_false || dd == mtbdd_true) return 0;
 
@@ -95,7 +95,7 @@ skiplist_get(skiplist_t l, MTBDD dd)
     }
 }
 
-VOID_TASK_IMPL_2(skiplist_assign_next, skiplist_t, l, MTBDD, dd)
+VOID_TASK_IMPL_2(sylvan_skiplist_assign_next, sylvan_skiplist_t, l, MTBDD, dd)
 {
     if (dd == mtbdd_false || dd == mtbdd_true) return;
 
@@ -158,13 +158,13 @@ VOID_TASK_IMPL_2(skiplist_assign_next, skiplist_t, l, MTBDD, dd)
 }
 
 size_t
-skiplist_count(skiplist_t l)
+sylvan_skiplist_count(sylvan_skiplist_t l)
 {
     return l->next - 1;
 }
 
 MTBDD
-skiplist_getr(skiplist_t l, uint64_t index)
+sylvan_skiplist_getr(sylvan_skiplist_t l, uint64_t index)
 {
     return l->buckets[index].dd;
 }

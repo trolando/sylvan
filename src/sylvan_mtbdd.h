@@ -594,7 +594,28 @@ VOID_TASK_DECL_4(mtbdd_visit_par, MTBDD, mtbdd_visit_pre_cb, mtbdd_visit_post_cb
 #define mtbdd_visit_par(...) CALL(mtbdd_visit_par, __VA_ARGS__)
 
 /**
- * Serialization routines
+ * Writing MTBDDs to file.
+ *
+ * Every node that is to be written is assigned a number, starting from 1,
+ * such that reading the result in the future can be done in one pass.
+ *
+ * We use a skiplist to store the assignment.
+ *
+ * The functions mtbdd_writer_tobinary and mtbdd_writer_totext can be used to
+ * store an array of MTBDDs to binary format or text format.
+ *
+ * One could also do the procedure manually instead.
+ * - call mtbdd_writer_start to allocate the skiplist.
+ * - call mtbdd_writer_add to add a given MTBDD to the skiplist
+ * - call mtbdd_writer_writebinary to write all added nodes to a file
+ * - OR:  mtbdd_writer_writetext to write all added nodes in text format
+ * - call mtbdd_writer_get to obtain the MTBDD identifier as stored in the skiplist
+ * - call mtbdd_writer_end to free the skiplist
+ */
+
+/**
+ * Write <count> decision diagrams given in <dds> in ASCII form to <file>.
+ * Also supports custom leaves using the leaf_to_str callback.
  *
  * The internal binary format is as follows, to store <count> decision diagrams...
  * uint64_t: nodecount -- number of nodes
@@ -602,9 +623,14 @@ VOID_TASK_DECL_4(mtbdd_visit_par, MTBDD, mtbdd_visit_pre_cb, mtbdd_visit_post_cb
  *   uint128_t: each leaf/node
  * <count> times
  *   uint64_t: each stored decision diagram
- *
- * Every node in the decision diagram is stored a number from 1 to <nodecount>, such that
- * reading and loading the nodes can be done in one pass.
+ */
+
+VOID_TASK_DECL_3(mtbdd_writer_totext, FILE *, MTBDD *, int);
+#define mtbdd_writer_totext(file, dds, count) CALL(mtbdd_writer_totext, file, dds, count)
+
+/**
+ * Write <count> decision diagrams given in <dds> in internal binary form to <file>.
+ * Does not yet support custom leaves.
  *
  * The text format writes in the same order as the binary format, except...
  * [
@@ -613,27 +639,48 @@ VOID_TASK_DECL_4(mtbdd_visit_par, MTBDD, mtbdd_visit_pre_cb, mtbdd_visit_post_cb
  *   leaf(id, type, "value"), -- for a leaf (with value between "")
  * ],[dd1, dd2, dd3, ...,] -- and each the stored decision diagram.
  */
+VOID_TASK_DECL_3(mtbdd_writer_tobinary, FILE *, MTBDD *, int);
+#define mtbdd_writer_tobinary(file, dds, count) CALL(mtbdd_writer_tobinary, file, dds, count)
 
 /**
- * Write <count> decision diagrams given in <dds> in ASCII form to <file>.
- * Also supports custom leaves using the leaf_to_str callback.
+ * Skeleton typedef for the skiplist
  */
-VOID_TASK_DECL_3(mtbdd_serialize_totext, FILE *, MTBDD *, int);
-#define mtbdd_serialize_totext(file, dds, count) CALL(mtbdd_serialize_totext, file, dds, count)
+typedef struct sylvan_skiplist *sylvan_skiplist_t;
 
 /**
- * Write <count> decision diagrams given in <dds> in internal binary form to <file>.
- * Does not yet support custom leaves.
+ * Allocate a skiplist for writing an MTBDD.
  */
-VOID_TASK_DECL_3(mtbdd_serialize_tobinary, FILE *, MTBDD *, int);
-#define mtbdd_serialize_tobinary(file, dds, count) CALL(mtbdd_serialize_tobinary, file, dds, count)
+sylvan_skiplist_t mtbdd_writer_start();
+
+/**
+ * Add the given MTBDD to the skiplist.
+ */
+VOID_TASK_DECL_2(mtbdd_writer_add, sylvan_skiplist_t, MTBDD);
+#define mtbdd_writer_add(sl, dd) CALL(mtbdd_writer_add, sl, dd)
+
+/**
+ * Write all assigned MTBDD nodes in binary format to the file.
+ * Custom leaves are not yet supported.
+ */
+void mtbdd_writer_writebinary(FILE *out, sylvan_skiplist_t sl);
+
+/**
+ * Retrieve the identifier of the given stored MTBDD.
+ * This is useful if you want to be able to retrieve the stored MTBDD later.
+ */
+uint64_t mtbdd_writer_get(sylvan_skiplist_t sl, MTBDD dd);
+
+/**
+ * Free the allocated skiplist.
+ */
+void mtbdd_writer_end(sylvan_skiplist_t sl);
 
 /**
  * Read <count> decision diagrams to <dds> from <file> in internal binary form.
  * Does not yet support custom leaves.
  */
-TASK_DECL_3(int, mtbdd_serialize_frombinary, FILE*, MTBDD*, int);
-#define mtbdd_serialize_frombinary(file, dds, count) CALL(mtbdd_serialize_frombinary, file, dds, count)
+TASK_DECL_3(int, mtbdd_reader_frombinary, FILE*, MTBDD*, int);
+#define mtbdd_reader_frombinary(file, dds, count) CALL(mtbdd_reader_frombinary, file, dds, count)
 
 /**
  * MTBDDSET

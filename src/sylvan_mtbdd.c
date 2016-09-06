@@ -2422,10 +2422,11 @@ mtbdd_leafcount_mark(MTBDD mtbdd)
 }
 
 size_t
-mtbdd_leafcount(MTBDD mtbdd)
+mtbdd_leafcount_more(const MTBDD *mtbdds, size_t count)
 {
-    size_t result = mtbdd_leafcount_mark(mtbdd);
-    mtbdd_unmark_rec(mtbdd);
+    size_t result = 0, i;
+    for (i=0; i<count; i++) result += mtbdd_leafcount_mark(mtbdds[i]);
+    for (i=0; i<count; i++) mtbdd_unmark_rec(mtbdds[i]);
     return result;
 }
 
@@ -2446,10 +2447,11 @@ mtbdd_nodecount_mark(MTBDD mtbdd)
 }
 
 size_t
-mtbdd_nodecount(MTBDD mtbdd)
+mtbdd_nodecount_more(const MTBDD *mtbdds, size_t count)
 {
-    size_t result = mtbdd_nodecount_mark(mtbdd);
-    mtbdd_unmark_rec(mtbdd);
+    size_t result = 0, i;
+    for (i=0; i<count; i++) result += mtbdd_nodecount_mark(mtbdds[i]);
+    for (i=0; i<count; i++) mtbdd_unmark_rec(mtbdds[i]);
     return result;
 }
 

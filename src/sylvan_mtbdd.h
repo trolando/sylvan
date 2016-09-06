@@ -221,14 +221,16 @@ TASK_DECL_2(double, mtbdd_satcount, MTBDD, size_t);
 #define mtbdd_satcount(dd, nvars) CALL(mtbdd_satcount, dd, nvars)
 
 /**
- * Count the number of MTBDD leaves (excluding mtbdd_false and mtbdd_true) in the MTBDD
+ * Count the number of MTBDD leaves (excluding mtbdd_false and mtbdd_true) in the given <count> MTBDDs
  */
-size_t mtbdd_leafcount(MTBDD mtbdd);
+size_t mtbdd_leafcount_more(const MTBDD *mtbdds, size_t count);
+#define mtbdd_leafcount(dd) mtbdd_leafcount_more(&dd, 1)
 
 /**
- * Count the number of MTBDD nodes and terminals (excluding mtbdd_false and mtbdd_true) in a MTBDD
+ * Count the number of MTBDD nodes and terminals (excluding mtbdd_false and mtbdd_true) in the given <count> MTBDDs
  */
-size_t mtbdd_nodecount(MTBDD mtbdd);
+size_t mtbdd_nodecount_more(const MTBDD *mtbdds, size_t count);
+#define mtbdd_nodecount(dd) mtbdd_nodecount_more(&dd, 1)
 
 /**
  * Callback function types for binary ("dyadic") and unary ("monadic") operations.

@@ -355,16 +355,17 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 }
 
 /**
- * Calculate constrain a @ c
+ * Compute constrain f@c, also called the generalized co-factor.
+ * c is the "care function" - f@c equals f when c evaluates to True.
  */
-TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
+TASK_IMPL_3(BDD, sylvan_constrain, BDD, f, BDD, c, BDDVAR, prev_level)
 {
     /* Trivial cases */
-    if (b == sylvan_true) return a;
-    if (b == sylvan_false) return sylvan_false;
-    if (sylvan_isconst(a)) return a;
-    if (a == b) return sylvan_true;
-    if (a == sylvan_not(b)) return sylvan_false;
+    if (c == sylvan_true) return f;
+    if (c == sylvan_false) return sylvan_false;
+    if (sylvan_isconst(f)) return f;
+    if (f == c) return sylvan_true;
+    if (f == sylvan_not(c)) return sylvan_false;
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test();
@@ -372,75 +373,79 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, a, BDD, b, BDDVAR, prev_level)
     /* Count operation */
     sylvan_stats_count(BDD_CONSTRAIN);
 
-    // a != constant and b != constant
-    bddnode_t na = MTBDD_GETNODE(a);
-    bddnode_t nb = MTBDD_GETNODE(b);
+    bddnode_t nf = MTBDD_GETNODE(f);
+    bddnode_t nc = MTBDD_GETNODE(c);
 
-    BDDVAR va = bddnode_getvariable(na);
-    BDDVAR vb = bddnode_getvariable(nb);
-    BDDVAR level = va < vb ? va : vb;
+    BDDVAR vf = bddnode_getvariable(nf);
+    BDDVAR vc = bddnode_getvariable(nc);
+    BDDVAR level = vf < vc ? vf : vc;
 
-    // CONSULT CACHE
+    /* Make canonical */
+    int mark = 0;
+    if (BDD_HASMARK(f)) {
+        f = BDD_STRIPMARK(f);
+        mark = 1;
+    }
 
+    /* Consult cache */
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
         BDD result;
-        if (cache_get3(CACHE_BDD_CONSTRAIN, a, b, 0, &result)) {
+        if (cache_get3(CACHE_BDD_CONSTRAIN, f, c, 0, &result)) {
             sylvan_stats_count(BDD_CONSTRAIN_CACHED);
-            return result;
+            return mark ? sylvan_not(result) : result;
         }
     }
 
-    // DETERMINE TOP BDDVAR AND COFACTORS
+    BDD fLow, fHigh, cLow, cHigh;
 
-    BDD aLow, aHigh, bLow, bHigh;
-
-    if (level == va) {
-        aLow = node_low(a, na);
-        aHigh = node_high(a, na);
+    if (level == vf) {
+        fLow = node_low(f, nf);
+        fHigh = node_high(f, nf);
     } else {
-        aLow = aHigh = a;
+        fLow = fHigh = f;
     }
 
-    if (level == vb) {
-        bLow = node_low(b, nb);
-        bHigh = node_high(b, nb);
+    if (level == vc) {
+        cLow = node_low(c, nc);
+        cHigh = node_high(c, nc);
     } else {
-        bLow = bHigh = b;
+        cLow = cHigh = c;
     }
 
     BDD result;
 
-    BDD low=sylvan_invalid, high=sylvan_invalid;
-    if (bLow == sylvan_false) return CALL(sylvan_constrain, aHigh, bHigh, level);
-    if (bLow == sylvan_true) {
-        if (bHigh == sylvan_false) return aLow;
-        if (bHigh == sylvan_true) {
-            result = sylvan_makenode(level, aLow, bHigh);
-        } else {
-            high = CALL(sylvan_constrain, aHigh, bHigh, level);
-            result = sylvan_makenode(level, aLow, high);
-        }
+    if (cLow == sylvan_false) {
+        /* cLow is False, so result equals fHigh @ cHigh */
+        if (cHigh == sylvan_true) result = fHigh;
+        else result = CALL(sylvan_constrain, fHigh, cHigh, level);
+    } else if (cHigh == sylvan_false) {
+        /* cHigh is False, so result equals fLow @ cLow */
+        if (cLow == sylvan_true) result = fLow;
+        else result = CALL(sylvan_constrain, fLow, cLow, level);
+    } else if (cLow == sylvan_true) {
+        /* cLow is True, so low result equals fLow */
+        BDD high = CALL(sylvan_constrain, fHigh, cHigh, level);
+        result = sylvan_makenode(level, fLow, high);
+    } else if (cHigh == sylvan_true) {
+        /* cHigh is True, so high result equals fHigh */
+        BDD low = CALL(sylvan_constrain, fLow, cLow, level);
+        result = sylvan_makenode(level, low, fHigh);
     } else {
-        if (bHigh == sylvan_false) return CALL(sylvan_constrain, aLow, bLow, level);
-        if (bHigh == sylvan_true) {
-            low = CALL(sylvan_constrain, aLow, bLow, level);
-            result = sylvan_makenode(level, low, bHigh);
-        } else {
-            bdd_refs_spawn(SPAWN(sylvan_constrain, aLow, bLow, level));
-            high = CALL(sylvan_constrain, aHigh, bHigh, level);
-            bdd_refs_push(high);
-            low = bdd_refs_sync(SYNC(sylvan_constrain));
-            bdd_refs_pop(1);
-            result = sylvan_makenode(level, low, high);
-        }
+        /* cLow and cHigh are not constrants... normal parallel recursion */
+        bdd_refs_spawn(SPAWN(sylvan_constrain, fLow, cLow, level));
+        BDD high = CALL(sylvan_constrain, fHigh, cHigh, level);
+        bdd_refs_push(high);
+        BDD low = bdd_refs_sync(SYNC(sylvan_constrain));
+        bdd_refs_pop(1);
+        result = sylvan_makenode(level, low, high);
     }
 
     if (cachenow) {
-        if (cache_put3(CACHE_BDD_CONSTRAIN, a, b, 0, result)) sylvan_stats_count(BDD_CONSTRAIN_CACHEDPUT);
+        if (cache_put3(CACHE_BDD_CONSTRAIN, f, c, 0, result)) sylvan_stats_count(BDD_CONSTRAIN_CACHEDPUT);
     }
 
-    return result;
+    return mark ? sylvan_not(result) : result;
 }
 
 /**

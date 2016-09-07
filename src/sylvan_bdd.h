@@ -124,17 +124,18 @@ TASK_DECL_2(BDD, sylvan_closure, BDD, BDDVAR);
 #define sylvan_closure(a) CALL(sylvan_closure,a,0);
 
 /**
- * Calculate a@b (a constrain b), such that (b -> a@b) = (b -> a)
+ * Compute f@c (f constrain c), such that f and f@c are the same when c is true
+ * The BDD c is also called the "care function"
  * Special cases:
- *   - a@0 = 0
- *   - a@1 = f
- *   - 0@b = 0
- *   - 1@b = 1
- *   - a@a = 1
- *   - a@not(a) = 0
+ *   - f@0 = 0
+ *   - f@1 = f
+ *   - 0@c = 0
+ *   - 1@c = 1
+ *   - f@f = 1
+ *   - f@not(f) = 0
  */
 TASK_DECL_3(BDD, sylvan_constrain, BDD, BDD, BDDVAR);
-#define sylvan_constrain(f,c) (CALL(sylvan_constrain, (f), (c), 0))
+#define sylvan_constrain(f,c) (CALL(sylvan_constrain, f, c, 0))
 
 TASK_DECL_3(BDD, sylvan_restrict, BDD, BDD, BDDVAR);
 #define sylvan_restrict(f,c) (CALL(sylvan_restrict, (f), (c), 0))

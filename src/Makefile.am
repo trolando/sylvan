@@ -11,16 +11,16 @@ libsylvan_la_SOURCES = \
     sha2.c \
     sha2.h \
     sylvan.h \
-    sylvan_config.h \
     sylvan_bdd.h \
     sylvan_bdd.c \
+    sylvan_cache.h \
+    sylvan_cache.c \
+    sylvan_config.h \
+    sylvan_common.c \
+    sylvan_common.h \
     sylvan_int.h \
     sylvan_ldd.h \
     sylvan_ldd.c \
-    sylvan_cache.h \
-    sylvan_cache.c \
-    sylvan_common.c \
-    sylvan_common.h \
     sylvan_mtbdd.h \
     sylvan_mtbdd.c \
     sylvan_mtbdd_int.h \

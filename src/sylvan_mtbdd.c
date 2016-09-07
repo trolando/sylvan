@@ -2904,13 +2904,16 @@ VOID_TASK_IMPL_3(mtbdd_writer_totext, FILE *, out, MTBDD *, dds, int, count)
 }
 
 /**
- * Reading a file earlier written with mtbdd_writer_tobinary
+ * Reading a file earlier written with mtbdd_writer_writebinary
+ * Returns an array with the conversion from stored identifier to MTBDD
+ * This array is allocated with malloc and must be freed afterwards.
+ * This method does not support custom leaves.
  */
-TASK_IMPL_3(int, mtbdd_reader_frombinary, FILE*, in, MTBDD*, dds, int, count)
+TASK_IMPL_1(uint64_t*, mtbdd_reader_readbinary, FILE*, in)
 {
     size_t nodecount;
     if (fread(&nodecount, sizeof(size_t), 1, in) != 1) {
-        return -1;
+        return NULL;
     }
 
     uint64_t *arr = malloc(sizeof(uint64_t)*(nodecount+1));
@@ -2918,7 +2921,7 @@ TASK_IMPL_3(int, mtbdd_reader_frombinary, FILE*, in, MTBDD*, dds, int, count)
         struct mtbddnode node;
         if (fread(&node, sizeof(struct mtbddnode), 1, in) != 1) {
             free(arr);
-            return -1;
+            return NULL;
         }
 
         if (mtbddnode_isleaf(&node)) {
@@ -2932,27 +2935,59 @@ TASK_IMPL_3(int, mtbdd_reader_frombinary, FILE*, in, MTBDD*, dds, int, count)
         }
     }
 
+    return arr;
+}
+
+/**
+ * Retrieve the MTBDD of the given stored identifier.
+ */
+MTBDD
+mtbdd_reader_get(uint64_t* arr, uint64_t identifier)
+{
+    return MTBDD_TRANSFERMARK(identifier, arr[MTBDD_STRIPMARK(identifier)]);
+}
+
+/**
+ * Free the allocated translation array
+ */
+void
+mtbdd_reader_end(uint64_t *arr)
+{
+    free(arr);
+}
+
+/**
+ * Reading a file earlier written with mtbdd_writer_tobinary
+ */
+TASK_IMPL_3(int, mtbdd_reader_frombinary, FILE*, in, MTBDD*, dds, int, count)
+{
+    uint64_t *arr = CALL(mtbdd_reader_readbinary, in);
+    if (arr == NULL) return -1;
+
+    /* Read stored count */
     int actual_count;
     if (fread(&actual_count, sizeof(int), 1, in) != 1) {
-        free(arr);
+        mtbdd_reader_end(arr);
         return -1;
     }
 
+    /* If actual count does not agree with given count, abort */
     if (actual_count != count) {
-        free(arr);
+        mtbdd_reader_end(arr);
         return -1;
     }
-
+    
+    /* Read every stored identifier, and translate to MTBDD */
     for (int i=0; i<count; i++) {
         uint64_t v;
         if (fread(&v, sizeof(uint64_t), 1, in) != 1) {
-            free(arr);
+            mtbdd_reader_end(arr);
             return -1;
         }
-        dds[i] = MTBDD_TRANSFERMARK(v, arr[MTBDD_STRIPMARK(v)]);
+        dds[i] = mtbdd_reader_get(arr, v);
     }
 
-    free(arr);
+    mtbdd_reader_end(arr);
     return 0;
 }
 

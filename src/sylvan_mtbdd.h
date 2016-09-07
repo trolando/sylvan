@@ -614,23 +614,21 @@ VOID_TASK_DECL_4(mtbdd_visit_par, MTBDD, mtbdd_visit_pre_cb, mtbdd_visit_post_cb
  */
 
 /**
- * Write <count> decision diagrams given in <dds> in ASCII form to <file>.
- * Also supports custom leaves using the leaf_to_str callback.
+ * Write <count> decision diagrams given in <dds> in internal binary form to <file>.
+ * Does not yet support custom leaves.
  *
  * The internal binary format is as follows, to store <count> decision diagrams...
  * uint64_t: nodecount -- number of nodes
- * <nodecount> times
- *   uint128_t: each leaf/node
- * <count> times
- *   uint64_t: each stored decision diagram
+ * <nodecount> times uint128_t: each leaf/node
+ * uint64_t: count -- number of stored decision diagrams
+ * <count> times uint64_t: each stored decision diagram
  */
-
-VOID_TASK_DECL_3(mtbdd_writer_totext, FILE *, MTBDD *, int);
-#define mtbdd_writer_totext(file, dds, count) CALL(mtbdd_writer_totext, file, dds, count)
+VOID_TASK_DECL_3(mtbdd_writer_tobinary, FILE *, MTBDD *, int);
+#define mtbdd_writer_tobinary(file, dds, count) CALL(mtbdd_writer_tobinary, file, dds, count)
 
 /**
- * Write <count> decision diagrams given in <dds> in internal binary form to <file>.
- * Does not yet support custom leaves.
+ * Write <count> decision diagrams given in <dds> in ASCII form to <file>.
+ * Also supports custom leaves using the leaf_to_str callback.
  *
  * The text format writes in the same order as the binary format, except...
  * [
@@ -639,8 +637,9 @@ VOID_TASK_DECL_3(mtbdd_writer_totext, FILE *, MTBDD *, int);
  *   leaf(id, type, "value"), -- for a leaf (with value between "")
  * ],[dd1, dd2, dd3, ...,] -- and each the stored decision diagram.
  */
-VOID_TASK_DECL_3(mtbdd_writer_tobinary, FILE *, MTBDD *, int);
-#define mtbdd_writer_tobinary(file, dds, count) CALL(mtbdd_writer_tobinary, file, dds, count)
+
+VOID_TASK_DECL_3(mtbdd_writer_totext, FILE *, MTBDD *, int);
+#define mtbdd_writer_totext(file, dds, count) CALL(mtbdd_writer_totext, file, dds, count)
 
 /**
  * Skeleton typedef for the skiplist
@@ -676,11 +675,42 @@ uint64_t mtbdd_writer_get(sylvan_skiplist_t sl, MTBDD dd);
 void mtbdd_writer_end(sylvan_skiplist_t sl);
 
 /**
+ * Reading MTBDDs from file.
+ *
+ * The function mtbdd_reader_frombinary is basically the reverse of mtbdd_writer_tobinary.
+ *
+ * One can also perform the procedure manually.
+ * - call mtbdd_reader_readbinary to read the nodes from file
+ * - call mtbdd_reader_get to obtain the MTBDD for the given identifier as stored in the file.
+ * - call mtbdd_reader_end to free the array returned by mtbdd_reader_readbinary
+ */
+
+/*
  * Read <count> decision diagrams to <dds> from <file> in internal binary form.
  * Does not yet support custom leaves.
  */
 TASK_DECL_3(int, mtbdd_reader_frombinary, FILE*, MTBDD*, int);
 #define mtbdd_reader_frombinary(file, dds, count) CALL(mtbdd_reader_frombinary, file, dds, count)
+
+/**
+ * Reading a file earlier written with mtbdd_writer_writebinary
+ * Returns an array with the conversion from stored identifier to MTBDD
+ * This array is allocated with malloc and must be freed afterwards.
+ * This method does not support custom leaves.
+ */
+
+TASK_DECL_1(uint64_t*, mtbdd_reader_readbinary, FILE*);
+#define mtbdd_reader_readbinary(file) CALL(mtbdd_reader_readbinary, file)
+
+/**
+ * Retrieve the MTBDD of the given stored identifier.
+ */
+MTBDD mtbdd_reader_get(uint64_t* arr, uint64_t identifier);
+
+/**
+ * Free the allocated translation array
+ */
+void mtbdd_reader_end(uint64_t *arr);
 
 /**
  * MTBDDSET

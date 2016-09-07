@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 2.8)
 project(sylvan C CXX)
 
 add_library(sylvan
@@ -66,12 +66,16 @@ install(FILES
     lace.h
     llmsset.h
     sylvan.h
+    sylvan_bdd.h
     sylvan_cache.h
     sylvan_common.h
     sylvan_config.h
-    sylvan_bdd.h
+    sylvan_gmp.h
+    sylvan_int.h
     sylvan_ldd.h
     sylvan_mtbdd.h
+    sylvan_mtbdd_int.h
     sylvan_obj.hpp
+    sylvan_stats.h
     tls.h
     DESTINATION "include")

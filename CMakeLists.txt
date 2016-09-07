@@ -1,6 +1,5 @@
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 2.8)
 project(sylvan C CXX)
-enable_testing()
 
 set(CMAKE_C_FLAGS "-O3 -Wextra -Wall -Werror -fno-strict-aliasing -std=gnu11")
 set(CMAKE_CXX_FLAGS "-O3 -Wextra -Wall -Werror -fno-strict-aliasing -Wno-deprecated-register -std=gnu++11")
@@ -28,18 +27,25 @@ if(WITH_COVERAGE)
     )
 endif()
 
-include_directories(src)
+include_directories(${CMAKE_SOURCE_DIR}/src)
 
+enable_testing()
 add_subdirectory(src)
-
-option(SYLVAN_BUILD_TEST "Build test programs" ON)
-
-if(SYLVAN_BUILD_TEST)
-    add_subdirectory(test)
-endif()
+add_subdirectory(test)
 
 option(SYLVAN_BUILD_EXAMPLES "Build example tools" ON)
-
 if(SYLVAN_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
+
+set(CPACK_GENERATOR "DEB")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Multi-core implementation of decision diagrams")
+set(CPACK_PACKAGE_VENDOR "Tom van Dijk")
+set(CPACK_PACKAGE_CONTACT "Tom van Dijk <tom@tvandijk.nl>")
+set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_SOURCE_DIR}/README.md")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
+set(CPACK_PACKAGE_VERSION "1.0.0")
+set(CPACK_PACKAGE_VERSION_MAJOR "1")
+set(CPACK_PACKAGE_VERSION_MINOR "0")
+set(CPACK_PACKAGE_VERSION_PATCH "0")
+include(CPack)

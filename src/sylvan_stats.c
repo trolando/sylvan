@@ -40,6 +40,63 @@ pthread_key_t sylvan_stats_key;
 static hwloc_topology_t topo;
 #endif
 
+/**
+ * Instructions for sylvan_stats_report
+ */
+struct
+{
+    int type; /* 0 for print line, 1 for simple counter, 2 for operation with CACHED and CACHEDPUT */
+              /* 3 for timer, 4 for report table data */
+    int id;
+    const char *key;
+} sylvan_report_info[] =
+{
+    {0, 0, "Tables"},
+    {1, BDD_NODES_CREATED, "MTBDD nodes created"},
+    {1, BDD_NODES_REUSED, "MTBDD nodes reused"},
+    {1, LDD_NODES_CREATED, "LDD nodes created"},
+    {1, LDD_NODES_REUSED, "LDD nodes reused"},
+    {1, LLMSSET_LOOKUP, "Lookup iterations"},
+    {4, 0, NULL}, /* trigger to report unique nodes and operation cache */
+
+    {0, 0, "Operation            Count            Cache get        Cache put"},
+    {2, BDD_AND, "BDD and"},
+    {2, BDD_XOR, "BDD xor"},
+    {2, BDD_ITE, "BDD ite"},
+    {2, BDD_EXISTS, "BDD exists"},
+    {2, BDD_AND_EXISTS, "BDD andexists"},
+    {2, BDD_RELNEXT, "BDD relnext"},
+    {2, BDD_RELPREV, "BDD relprev"},
+    {2, BDD_CLOSURE, "BDD closure"},
+    {2, BDD_COMPOSE, "BDD compose"},
+    {2, BDD_RESTRICT, "BDD restrict"},
+    {2, BDD_CONSTRAIN, "BDD constrain"},
+    {2, BDD_SUPPORT, "BDD support"},
+    {2, BDD_SATCOUNT, "BDD satcount"},
+    {2, BDD_PATHCOUNT, "BDD pathcount"},
+    {2, BDD_ISBDD, "BDD isbdd"},
+
+    {2, LDD_UNION, "LDD union"},
+    {2, LDD_MINUS, "LDD minus"},
+    {2, LDD_INTERSECT, "LDD intersect"},
+    {2, LDD_RELPROD, "LDD relprod"},
+    {2, LDD_RELPREV, "LDD relprev"},
+    {2, LDD_PROJECT, "LDD project"},
+    {2, LDD_JOIN, "LDD join"},
+    {2, LDD_MATCH, "LDD match"},
+    {2, LDD_SATCOUNT, "LDD satcount"},
+    {2, LDD_SATCOUNTL, "LDD satcountl"},
+    {2, LDD_ZIP, "LDD zip"},
+    {2, LDD_RELPROD_UNION, "LDD relprod_union"},
+    {2, LDD_PROJECT_MINUS, "LDD project_minus"},
+
+    {0, 0, "Garbage collection"},
+    {1, SYLVAN_GC_COUNT, "GC executions"},
+    {3, SYLVAN_GC, "Total time spent"},
+
+    {-1, -1, NULL},
+};
+
 VOID_TASK_0(sylvan_stats_reset_perthread)
 {
 #ifdef __ELF__
@@ -93,26 +150,6 @@ VOID_TASK_IMPL_0(sylvan_stats_reset)
     TOGETHER(sylvan_stats_reset_perthread);
 }
 
-#define BLACK "\33[22;30m"
-#define GRAY "\33[01;30m"
-#define RED "\33[22;31m"
-#define LRED "\33[01;31m"
-#define GREEN "\33[22;32m"
-#define LGREEN "\33[01;32m"
-#define BLUE "\33[22;34m"
-#define LBLUE "\33[01;34m"
-#define BROWN "\33[22;33m"
-#define YELLOW "\33[01;33m"
-#define CYAN "\33[22;36m"
-#define LCYAN "\33[22;36m"
-#define MAGENTA "\33[22;35m"
-#define LMAGENTA "\33[01;35m"
-#define NC "\33[0m"
-#define BOLD "\33[1m"
-#define ULINE "\33[4m" //underline
-#define BLINK "\33[5m"
-#define INVERT "\33[7m"
-
 VOID_TASK_1(sylvan_stats_sum, sylvan_stats_t*, target)
 {
 #ifdef __ELF__
@@ -135,16 +172,40 @@ VOID_TASK_1(sylvan_stats_sum, sylvan_stats_t*, target)
 #endif
 }
 
+#define BLACK "\33[22;30m"
+#define GRAY "\33[1;30m"
+#define RED "\33[22;31m"
+#define LRED "\33[1;31m"
+#define GREEN "\33[22;32m"
+#define LGREEN "\33[1;32m"
+#define BROWN "\33[22;33m"
+#define YELLOW "\33[1;33m"
+#define BLUE "\33[22;34m"
+#define LBLUE "\33[1;34m"
+#define MAGENTA "\33[22;35m"
+#define LMAGENTA "\33[1;35m"
+#define CYAN "\33[22;36m"
+#define LCYAN "\33[1;36m"
+#define LGRAY "\33[22;37m"
+#define WHITE "\33[1;37m"
+#define NC "\33[m"
+#define BOLD "\33[1m"
+#define ULINE "\33[4m"
+#define PINK "\33[38;5;200m"
+
+static char*
+to_h(double size, char *buf)
+{
+    const char* units[] = {"B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"};
+    int i = 0;
+    for (;size>1024;size/=1024) i++;
+    sprintf(buf, "%.*f %s", i, size, units[i]);
+    return buf;
+}
+
 void
 sylvan_stats_report(FILE *target, int color)
 {
-#if !SYLVAN_STATS
-    (void)target;
-    (void)color;
-    return;
-#else
-    (void)color;
-
     sylvan_stats_t totals;
     memset(&totals, 0, sizeof(sylvan_stats_t));
 
@@ -159,70 +220,42 @@ sylvan_stats_report(FILE *target, int color)
     for (int i=0;i<SYLVAN_TIMER_COUNTER;i++) totals.timers[i]*=c;
 #endif
 
-    if (color) fprintf(target, LRED  "*** " BOLD "Sylvan stats" NC LRED " ***" NC);
-    else fprintf(target, "*** Sylvan stats ***");
+    if (color) fprintf(target, ULINE WHITE "Sylvan statistics\n" NC);
+    else fprintf(target, "Sylvan statistics\n");
 
-    if (totals.counters[BDD_NODES_CREATED]) {
-        if (color) fprintf(target, ULINE LBLUE);
-        fprintf(target, "\nBDD operations count (cache reuse, cache put)\n");
-        if (color) fprintf(target, NC);
-        if (totals.counters[BDD_ITE]) fprintf(target, "ITE: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_ITE], totals.counters[BDD_ITE_CACHED], totals.counters[BDD_ITE_CACHEDPUT]);
-        if (totals.counters[BDD_AND]) fprintf(target, "AND: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_AND], totals.counters[BDD_AND_CACHED], totals.counters[BDD_AND_CACHEDPUT]);
-        if (totals.counters[BDD_XOR]) fprintf(target, "XOR: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_XOR], totals.counters[BDD_XOR_CACHED], totals.counters[BDD_XOR_CACHEDPUT]);
-        if (totals.counters[BDD_EXISTS]) fprintf(target, "Exists: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_EXISTS], totals.counters[BDD_EXISTS_CACHED], totals.counters[BDD_EXISTS_CACHEDPUT]);
-        if (totals.counters[BDD_AND_EXISTS]) fprintf(target, "AndExists: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_AND_EXISTS], totals.counters[BDD_AND_EXISTS_CACHED], totals.counters[BDD_AND_EXISTS_CACHEDPUT]);
-        if (totals.counters[BDD_RELNEXT]) fprintf(target, "RelNext: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_RELNEXT], totals.counters[BDD_RELNEXT_CACHED], totals.counters[BDD_RELNEXT_CACHEDPUT]);
-        if (totals.counters[BDD_RELPREV]) fprintf(target, "RelPrev: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_RELPREV], totals.counters[BDD_RELPREV_CACHED], totals.counters[BDD_RELPREV_CACHEDPUT]);
-        if (totals.counters[BDD_CLOSURE]) fprintf(target, "Closure: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_CLOSURE], totals.counters[BDD_CLOSURE_CACHED], totals.counters[BDD_CLOSURE_CACHEDPUT]);
-        if (totals.counters[BDD_COMPOSE]) fprintf(target, "Compose: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_COMPOSE], totals.counters[BDD_COMPOSE_CACHED], totals.counters[BDD_COMPOSE_CACHEDPUT]);
-        if (totals.counters[BDD_RESTRICT]) fprintf(target, "Restrict: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_RESTRICT], totals.counters[BDD_RESTRICT_CACHED], totals.counters[BDD_RESTRICT_CACHEDPUT]);
-        if (totals.counters[BDD_CONSTRAIN]) fprintf(target, "Constrain: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_CONSTRAIN], totals.counters[BDD_CONSTRAIN_CACHED], totals.counters[BDD_CONSTRAIN_CACHEDPUT]);
-        if (totals.counters[BDD_SUPPORT]) fprintf(target, "Support: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_SUPPORT], totals.counters[BDD_SUPPORT_CACHED], totals.counters[BDD_SUPPORT_CACHEDPUT]);
-        if (totals.counters[BDD_SATCOUNT]) fprintf(target, "SatCount: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_SATCOUNT], totals.counters[BDD_SATCOUNT_CACHED], totals.counters[BDD_SATCOUNT_CACHEDPUT]);
-        if (totals.counters[BDD_PATHCOUNT]) fprintf(target, "PathCount: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_PATHCOUNT], totals.counters[BDD_PATHCOUNT_CACHED], totals.counters[BDD_PATHCOUNT_CACHEDPUT]);
-        if (totals.counters[BDD_ISBDD]) fprintf(target, "IsBDD: %'"PRIu64 " (%'"PRIu64", %'"PRIu64 ")\n", totals.counters[BDD_ISBDD], totals.counters[BDD_ISBDD_CACHED], totals.counters[BDD_ISBDD_CACHEDPUT]);
-        fprintf(target, "BDD Nodes created: %'"PRIu64"\n", totals.counters[BDD_NODES_CREATED]);
-        fprintf(target, "BDD Nodes reused: %'"PRIu64"\n", totals.counters[BDD_NODES_REUSED]);
+    int i=0;
+    for (;;) {
+        if (sylvan_report_info[i].id == -1) break;
+        int id = sylvan_report_info[i].id;
+        int type = sylvan_report_info[i].type;
+        if (type == 0) {
+            if (color) fprintf(target, WHITE "\n%s\n" NC, sylvan_report_info[i].key);
+            else fprintf(target, "\n%s\n", sylvan_report_info[i].key);
+        } else if (type == 1) {
+            if (totals.counters[id] > 0) {
+                fprintf(target, "%-20s %'-16"PRIu64"\n", sylvan_report_info[i].key, totals.counters[id]);
+            }
+        } else if (type == 2) {
+            if (totals.counters[id] > 0) {
+                fprintf(target, "%-20s %'-16"PRIu64 " %'-16"PRIu64" %'-16"PRIu64 "\n", sylvan_report_info[i].key, totals.counters[id], totals.counters[id+1], totals.counters[id+2]);
+            }
+        } else if (type == 3) {
+            if (totals.timers[id] > 0) {
+                fprintf(target, "%-20s %'.6Lf sec.\n", sylvan_report_info[i].key, (long double)totals.timers[id]/1000000000);
+            }
+        } else if (type == 4) {
+            fprintf(target, "%-20s %'zu of %'zu buckets filled.\n", "Unique nodes table", llmsset_count_marked(nodes), llmsset_get_size(nodes));
+            fprintf(target, "%-20s %'zu of %'zu buckets filled.\n", "Operation cache", cache_getused(), cache_getsize());
+            char buf[64], buf2[64];
+            to_h(24ULL * llmsset_get_size(nodes), buf);
+            to_h(24ULL * llmsset_get_max_size(nodes), buf2);
+            fprintf(target, "%-20s %s (max real) of %s (allocated virtual memory).\n", "Memory (nodes)", buf, buf2);
+            to_h(36ULL * cache_getsize(), buf);
+            to_h(36ULL * cache_getmaxsize(), buf2);
+            fprintf(target, "%-20s %s (max real) of %s (allocated virtual memory).\n", "Memory (cache)", buf, buf2);
+        }
+        i++;
     }
-
-    if (totals.counters[LDD_NODES_CREATED]) {
-        if (color) fprintf(target, ULINE LBLUE);
-        fprintf(target, "\nLDD operations count (cache reuse, cache put)\n");
-        if (color) fprintf(target, NC);
-        if (totals.counters[LDD_UNION]) fprintf(target, "Union: %'"PRIu64 " (%'"PRIu64", %"PRIu64")\n", totals.counters[LDD_UNION], totals.counters[LDD_UNION_CACHED], totals.counters[LDD_UNION_CACHEDPUT]);
-        if (totals.counters[LDD_MINUS]) fprintf(target, "Minus: %'"PRIu64 " (%'"PRIu64", %"PRIu64")\n", totals.counters[LDD_MINUS], totals.counters[LDD_MINUS_CACHED], totals.counters[LDD_MINUS_CACHEDPUT]);
-        if (totals.counters[LDD_INTERSECT]) fprintf(target, "Intersect: %'"PRIu64 " (%'"PRIu64", %"PRIu64")\n", totals.counters[LDD_INTERSECT], totals.counters[LDD_INTERSECT_CACHED], totals.counters[LDD_INTERSECT_CACHEDPUT]);
-        if (totals.counters[LDD_RELPROD]) fprintf(target, "RelProd: %'"PRIu64 " (%'"PRIu64", %"PRIu64")\n", totals.counters[LDD_RELPROD], totals.counters[LDD_RELPROD_CACHED], totals.counters[LDD_RELPROD_CACHEDPUT]);
-        if (totals.counters[LDD_RELPREV]) fprintf(target, "RelPrev: %'"PRIu64 " (%'"PRIu64", %"PRIu64")\n", totals.counters[LDD_RELPREV], totals.counters[LDD_RELPREV_CACHED], totals.counters[LDD_RELPREV_CACHEDPUT]);
-        if (totals.counters[LDD_PROJECT]) fprintf(target, "Project: %'"PRIu64 " (%'"PRIu64", %"PRIu64")\n", totals.counters[LDD_PROJECT], totals.counters[LDD_PROJECT_CACHED], totals.counters[LDD_PROJECT_CACHEDPUT]);
-        if (totals.counters[LDD_JOIN]) fprintf(target, "Join: %'"PRIu64 " (%'"PRIu64", %"PRIu64")\n", totals.counters[LDD_JOIN], totals.counters[LDD_JOIN_CACHED], totals.counters[LDD_JOIN_CACHEDPUT]);
-        if (totals.counters[LDD_MATCH]) fprintf(target, "Match: %'"PRIu64 " (%'"PRIu64", %"PRIu64")\n", totals.counters[LDD_MATCH], totals.counters[LDD_MATCH_CACHED], totals.counters[LDD_MATCH_CACHEDPUT]);
-        if (totals.counters[LDD_SATCOUNT]) fprintf(target, "SatCount: %'"PRIu64 " (%'"PRIu64", %"PRIu64")\n", totals.counters[LDD_SATCOUNT], totals.counters[LDD_SATCOUNT_CACHED], totals.counters[LDD_SATCOUNT_CACHEDPUT]);
-        if (totals.counters[LDD_SATCOUNTL]) fprintf(target, "SatCountL: %'"PRIu64 " (%'"PRIu64", %"PRIu64")\n", totals.counters[LDD_SATCOUNTL], totals.counters[LDD_SATCOUNTL_CACHED], totals.counters[LDD_SATCOUNTL_CACHEDPUT]);
-        if (totals.counters[LDD_ZIP]) fprintf(target, "Zip: %'"PRIu64 " (%'"PRIu64", %"PRIu64")\n", totals.counters[LDD_ZIP], totals.counters[LDD_ZIP_CACHED], totals.counters[LDD_ZIP_CACHEDPUT]);
-        if (totals.counters[LDD_RELPROD_UNION]) fprintf(target, "RelProdUnion: %'"PRIu64 " (%'"PRIu64", %"PRIu64")\n", totals.counters[LDD_RELPROD_UNION], totals.counters[LDD_RELPROD_UNION_CACHED], totals.counters[LDD_RELPROD_UNION_CACHEDPUT]);
-        if (totals.counters[LDD_PROJECT_MINUS]) fprintf(target, "ProjectMinus: %'"PRIu64 " (%'"PRIu64", %"PRIu64")\n", totals.counters[LDD_PROJECT_MINUS], totals.counters[LDD_PROJECT_MINUS_CACHED], totals.counters[LDD_PROJECT_MINUS_CACHEDPUT]);
-        fprintf(target, "LDD Nodes created: %'"PRIu64"\n", totals.counters[LDD_NODES_CREATED]);
-        fprintf(target, "LDD Nodes reused: %'"PRIu64"\n", totals.counters[LDD_NODES_REUSED]);
-    }
-
-    if (color) fprintf(target, ULINE LBLUE);
-    fprintf(target, "\nGarbage collection\n");
-    if (color) fprintf(target, NC);
-    fprintf(target, "Number of GC executions: %'"PRIu64"\n", totals.counters[SYLVAN_GC_COUNT]);
-    fprintf(target, "Total time spent: %'.6Lf sec.\n", (long double)totals.timers[SYLVAN_GC]/1000000000);
-
-    if (color) fprintf(target, ULINE LBLUE);
-    fprintf(target, "\nTables\n");
-    if (color) fprintf(target, NC);
-    fprintf(target, "Unique nodes table: %'zu of %'zu buckets filled.\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
-    fprintf(target, "Operation cache: %'zu of %'zu buckets filled.\n", cache_getused(), cache_getsize());
-
-    if (color) fprintf(target, ULINE LBLUE);
-    fprintf(target, "\nUnique table\n");
-    if (color) fprintf(target, NC);
-    fprintf(target, "Number of lookup iterations: %'"PRIu64"\n", totals.counters[LLMSSET_LOOKUP]);
-#endif
 }
 
 #else
@@ -241,7 +274,5 @@ sylvan_stats_report(FILE* target, int color)
     (void)target;
     (void)color;
 }
-
-
 
 #endif

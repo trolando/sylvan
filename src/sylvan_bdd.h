@@ -137,8 +137,12 @@ TASK_DECL_2(BDD, sylvan_closure, BDD, BDDVAR);
 TASK_DECL_3(BDD, sylvan_constrain, BDD, BDD, BDDVAR);
 #define sylvan_constrain(f,c) (CALL(sylvan_constrain, f, c, 0))
 
+/**
+ * Compute restrict f@c, which uses a heuristic to try and minimize a BDD f with respect to a care function c
+ * Similar to constrain, but avoids introducing variables from c into f.
+ */
 TASK_DECL_3(BDD, sylvan_restrict, BDD, BDD, BDDVAR);
-#define sylvan_restrict(f,c) (CALL(sylvan_restrict, (f), (c), 0))
+#define sylvan_restrict(f,c) (CALL(sylvan_restrict, f, c, 0))
 
 /**
  * Function composition.

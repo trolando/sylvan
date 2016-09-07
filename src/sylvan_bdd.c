@@ -449,16 +449,16 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, f, BDD, c, BDDVAR, prev_level)
 }
 
 /**
- * Calculate restrict a @ b
+ * Compute restrict f@c, which uses a heuristic to try and minimize a BDD f with respect to a care function c
  */
-TASK_IMPL_3(BDD, sylvan_restrict, BDD, a, BDD, b, BDDVAR, prev_level)
+TASK_IMPL_3(BDD, sylvan_restrict, BDD, f, BDD, c, BDDVAR, prev_level)
 {
     /* Trivial cases */
-    if (b == sylvan_true) return a;
-    if (b == sylvan_false) return sylvan_false;
-    if (sylvan_isconst(a)) return a;
-    if (a == b) return sylvan_true;
-    if (a == sylvan_not(b)) return sylvan_false;
+    if (c == sylvan_true) return f;
+    if (c == sylvan_false) return sylvan_false;
+    if (sylvan_isconst(f)) return f;
+    if (f == c) return sylvan_true;
+    if (f == sylvan_not(c)) return sylvan_false;
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test();
@@ -466,44 +466,57 @@ TASK_IMPL_3(BDD, sylvan_restrict, BDD, a, BDD, b, BDDVAR, prev_level)
     /* Count operation */
     sylvan_stats_count(BDD_RESTRICT);
 
-    // a != constant and b != constant
-    bddnode_t na = MTBDD_GETNODE(a);
-    bddnode_t nb = MTBDD_GETNODE(b);
+    bddnode_t nf = MTBDD_GETNODE(f);
+    bddnode_t nc = MTBDD_GETNODE(c);
 
-    BDDVAR va = bddnode_getvariable(na);
-    BDDVAR vb = bddnode_getvariable(nb);
-    BDDVAR level = va < vb ? va : vb;
+    BDDVAR vf = bddnode_getvariable(nf);
+    BDDVAR vc = bddnode_getvariable(nc);
+    BDDVAR level = vf < vc ? vf : vc;
+
+    /* Make canonical */
+    int mark = 0;
+    if (BDD_HASMARK(f)) {
+        f = BDD_STRIPMARK(f);
+        mark = 1;
+    }
 
     /* Consult cache */
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
     if (cachenow) {
         BDD result;
-        if (cache_get3(CACHE_BDD_RESTRICT, a, b, 0, &result)) {
+        if (cache_get3(CACHE_BDD_RESTRICT, f, c, 0, &result)) {
             sylvan_stats_count(BDD_RESTRICT_CACHED);
-            return result;
+            return mark ? sylvan_not(result) : result;
         }
     }
 
     BDD result;
 
-    if (vb < va) {
-        BDD c = CALL(sylvan_ite, node_low(b,nb), sylvan_true, node_high(b,nb), 0);
-        bdd_refs_push(c);
-        result = CALL(sylvan_restrict, a, c, level);
+    if (vc < vf) {
+        /* f is independent of c, so result is f @ (cLow \/ cHigh) */
+        BDD new_c = sylvan_or(node_low(c, nc), node_high(c, nc));
+        bdd_refs_push(new_c);
+        result = CALL(sylvan_restrict, f, new_c, level);
         bdd_refs_pop(1);
     } else {
-        BDD aLow=node_low(a,na),aHigh=node_high(a,na),bLow=b,bHigh=b;
-        if (va == vb) {
-            bLow = node_low(b,nb);
-            bHigh = node_high(b,nb);
-        }
-        if (bLow == sylvan_false) {
-            result = CALL(sylvan_restrict, aHigh, bHigh, level);
-        } else if (bHigh == sylvan_false) {
-            result = CALL(sylvan_restrict, aLow, bLow, level);
+        BDD fLow = node_low(f,nf), fHigh = node_high(f,nf);
+        BDD cLow, cHigh;
+        if (vf == vc) {
+            cLow = node_low(c, nc);
+            cHigh = node_high(c, nc);
         } else {
-            bdd_refs_spawn(SPAWN(sylvan_restrict, aLow, bLow, level));
-            BDD high = CALL(sylvan_restrict, aHigh, bHigh, level);
+            cLow = cHigh = c;
+        }
+        if (cLow == sylvan_false) {
+            /* sibling-substitution */
+            result = CALL(sylvan_restrict, fHigh, cHigh, level);
+        } else if (cHigh == sylvan_false) {
+            /* sibling-substitution */
+            result = CALL(sylvan_restrict, fLow, cLow, level);
+        } else {
+            /* parallel recursion */
+            bdd_refs_spawn(SPAWN(sylvan_restrict, fLow, cLow, level));
+            BDD high = CALL(sylvan_restrict, fHigh, cHigh, level);
             bdd_refs_push(high);
             BDD low = bdd_refs_sync(SYNC(sylvan_restrict));
             bdd_refs_pop(1);
@@ -512,10 +525,10 @@ TASK_IMPL_3(BDD, sylvan_restrict, BDD, a, BDD, b, BDDVAR, prev_level)
     }
 
     if (cachenow) {
-        if (cache_put3(CACHE_BDD_RESTRICT, a, b, 0, result)) sylvan_stats_count(BDD_RESTRICT_CACHEDPUT);
+        if (cache_put3(CACHE_BDD_RESTRICT, f, c, 0, result)) sylvan_stats_count(BDD_RESTRICT_CACHEDPUT);
     }
 
-    return result;
+    return mark ? sylvan_not(result) : result;
 }
 
 /**

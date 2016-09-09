@@ -6,10 +6,10 @@ Sylvan is developed (&copy; 2011-2016) by the [Formal Methods and Tools](http://
 
 You can contact the main author of Sylvan at <t.vandijk@utwente.nl>. Please let us know if you use Sylvan in your projects.
 
-Sylvan is available at: https://github.com/utwente-fmt/sylvan
-Java/JNI bindings: https://github.com/trolando/jsylvan
-Haskell bindings: https://github.com/adamwalker/sylvan-haskell
-Python bindings: https://github.com/johnyf/dd
+- Sylvan is available at: https://github.com/utwente-fmt/sylvan
+- Java/JNI bindings: https://github.com/trolando/jsylvan
+- Haskell bindings: https://github.com/adamwalker/sylvan-haskell
+- Python bindings: https://github.com/johnyf/dd
 
 Publications
 ------------

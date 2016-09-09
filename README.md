@@ -9,6 +9,7 @@ You can contact the main author of Sylvan at <t.vandijk@utwente.nl>. Please let 
 Sylvan is available at: https://github.com/utwente-fmt/sylvan
 Java/JNI bindings: https://github.com/trolando/jsylvan
 Haskell bindings: https://github.com/adamwalker/sylvan-haskell
+Python bindings: https://github.com/johnyf/dd
 
 Publications
 ------------

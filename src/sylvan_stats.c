@@ -172,6 +172,12 @@ VOID_TASK_1(sylvan_stats_sum, sylvan_stats_t*, target)
 #endif
 }
 
+VOID_TASK_IMPL_1(sylvan_stats_snapshot, sylvan_stats_t*, target)
+{
+    memset(target, 0, sizeof(sylvan_stats_t));
+    TOGETHER(sylvan_stats_sum, target);
+}
+
 #define BLACK "\33[22;30m"
 #define GRAY "\33[1;30m"
 #define RED "\33[22;31m"
@@ -206,11 +212,9 @@ to_h(double size, char *buf)
 void
 sylvan_stats_report(FILE *target, int color)
 {
-    sylvan_stats_t totals;
-    memset(&totals, 0, sizeof(sylvan_stats_t));
-
     LACE_ME;
-    TOGETHER(sylvan_stats_sum, &totals);
+    sylvan_stats_t totals;
+    sylvan_stats_snapshot(&totals);
 
     // fix timers for MACH
 #ifdef __MACH__

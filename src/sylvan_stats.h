@@ -79,17 +79,32 @@ typedef enum
     SYLVAN_TIMER_COUNTER
 } Sylvan_Timers;
 
+typedef struct
+{
+    uint64_t counters[SYLVAN_COUNTER_COUNTER];
+    /* the timers are in ns */
+    uint64_t timers[SYLVAN_TIMER_COUNTER];
+    /* startstop is for internal use */
+    uint64_t timers_startstop[SYLVAN_TIMER_COUNTER];
+} sylvan_stats_t;
+
 /**
  * Initialize stats system (done by sylvan_init_package)
  */
+VOID_TASK_DECL_0(sylvan_stats_init);
 #define sylvan_stats_init() CALL(sylvan_stats_init)
-VOID_TASK_DECL_0(sylvan_stats_init)
 
 /**
  * Reset all counters (for statistics)
  */
+VOID_TASK_DECL_0(sylvan_stats_reset);
 #define sylvan_stats_reset() CALL(sylvan_stats_reset)
-VOID_TASK_DECL_0(sylvan_stats_reset)
+
+/**
+ * Obtain current counts (this stops the world during counting)
+ */
+VOID_TASK_DECL_1(sylvan_stats_snapshot, sylvan_stats_t*);
+#define sylvan_stats_snapshot(target) CALL(sylvan_stats_snapshot, target)
 
 /**
  * Write statistic report to file (stdout, stderr, etc)
@@ -97,14 +112,6 @@ VOID_TASK_DECL_0(sylvan_stats_reset)
 void sylvan_stats_report(FILE* target, int color);
 
 #if SYLVAN_STATS
-
-/* Infrastructure for internal markings */
-typedef struct
-{
-    uint64_t counters[SYLVAN_COUNTER_COUNTER];
-    uint64_t timers[SYLVAN_TIMER_COUNTER];
-    uint64_t timers_startstop[SYLVAN_TIMER_COUNTER];
-} sylvan_stats_t;
 
 #ifdef __MACH__
 #include <mach/mach_time.h>

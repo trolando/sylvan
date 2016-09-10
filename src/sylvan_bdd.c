@@ -66,6 +66,7 @@ TASK_IMPL_3(BDD, sylvan_and, BDD, a, BDD, b, BDDVAR, prev_level)
 
     sylvan_gc_test();
 
+    /* Count operation */
     sylvan_stats_count(BDD_AND);
 
     /* Improve for caching */
@@ -156,6 +157,7 @@ TASK_IMPL_3(BDD, sylvan_xor, BDD, a, BDD, b, BDDVAR, prev_level)
 
     sylvan_gc_test();
 
+    /* Count operation */
     sylvan_stats_count(BDD_XOR);
 
     /* Improve for caching */
@@ -289,6 +291,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 
     sylvan_gc_test();
 
+    /* Count operation */
     sylvan_stats_count(BDD_ITE);
 
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
@@ -556,6 +559,7 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
 
     sylvan_gc_test();
 
+    /* Count operation */
     sylvan_stats_count(BDD_EXISTS);
 
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
@@ -645,6 +649,7 @@ TASK_IMPL_4(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, v, BDDVAR, prev_leve
     /* Maybe perform garbage collection */
     sylvan_gc_test();
 
+    /* Count operation */
     sylvan_stats_count(BDD_AND_EXISTS);
 
     // a != constant
@@ -1388,6 +1393,7 @@ TASK_IMPL_2(double, sylvan_pathcount, BDD, bdd, BDDVAR, prev_level)
     /* Perhaps execute garbage collection */
     sylvan_gc_test();
 
+    /* Count operation */
     sylvan_stats_count(BDD_PATHCOUNT);
 
     BDD level = sylvan_var(bdd);
@@ -1426,6 +1432,7 @@ TASK_IMPL_3(double, sylvan_satcount, BDD, bdd, BDDSET, variables, BDDVAR, prev_l
     /* Perhaps execute garbage collection */
     sylvan_gc_test();
 
+    /* Count operation */
     sylvan_stats_count(BDD_SATCOUNT);
 
     /* Count variables before var(bdd) */

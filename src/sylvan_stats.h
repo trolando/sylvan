@@ -109,7 +109,7 @@ VOID_TASK_DECL_1(sylvan_stats_snapshot, sylvan_stats_t*);
 /**
  * Write statistic report to file (stdout, stderr, etc)
  */
-void sylvan_stats_report(FILE* target, int color);
+void sylvan_stats_report(FILE* target);
 
 #if SYLVAN_STATS
 

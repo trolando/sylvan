@@ -91,7 +91,7 @@ VOID_TASK_1(_main, void*, arg)
     CALL(simple_cxx);
 
     // Report statistics (if SYLVAN_STATS is 1 in the configuration)
-    sylvan_stats_report(stdout, 1);
+    sylvan_stats_report(stdout);
 
     // And quit, freeing memory
     sylvan_quit();

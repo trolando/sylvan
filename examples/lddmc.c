@@ -493,7 +493,7 @@ main(int argc, char **argv)
     printf("Final states: %zu states\n", (size_t)lddmc_satcount_cached(states->mdd));
     printf("Final states: %zu MDD nodes\n", lddmc_nodecount(states->mdd));
 
-    sylvan_stats_report(stdout, 1);
+    sylvan_stats_report(stdout);
 
     return 0;
 }

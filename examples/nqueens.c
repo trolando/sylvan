@@ -318,7 +318,7 @@ main(int argc, char** argv)
     INFO("Computation time: %f sec.\n", t2-t1);
 
     if (report_stats) {
-        sylvan_stats_report(stdout, 1);
+        sylvan_stats_report(stdout);
     }
 
     sylvan_quit();

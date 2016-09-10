@@ -60,11 +60,6 @@ VOID_TASK_DECL_2(sylvan_table_usage, size_t*, size_t*);
 #define sylvan_table_usage(filled, total) (CALL(sylvan_table_usage, filled, total))
 
 /**
- * Write statistic report to file (stdout, stderr, etc)
- */
-void sylvan_stats_report(FILE* target, int color);
-
-/**
  * GARBAGE COLLECTION
  *
  * Garbage collection is performed in a new Lace frame, interrupting all ongoing work

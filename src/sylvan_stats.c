@@ -210,7 +210,7 @@ to_h(double size, char *buf)
 }
 
 void
-sylvan_stats_report(FILE *target, int color)
+sylvan_stats_report(FILE *target)
 {
     LACE_ME;
     sylvan_stats_t totals;
@@ -224,6 +224,7 @@ sylvan_stats_report(FILE *target, int color)
     for (int i=0;i<SYLVAN_TIMER_COUNTER;i++) totals.timers[i]*=c;
 #endif
 
+    int color = isatty(fileno(target)) ? 1 : 0;
     if (color) fprintf(target, ULINE WHITE "Sylvan statistics\n" NC);
     else fprintf(target, "Sylvan statistics\n");
 
@@ -272,11 +273,15 @@ VOID_TASK_IMPL_0(sylvan_stats_reset)
 {
 }
 
+VOID_TASK_IMPL_1(sylvan_stats_snapshot, sylvan_stats_t*, target)
+{
+    memset(target, 0, sizeof(sylvan_stats_t));
+}
+
 void
-sylvan_stats_report(FILE* target, int color)
+sylvan_stats_report(FILE* target)
 {
     (void)target;
-    (void)color;
 }
 
 #endif

@@ -726,6 +726,7 @@ TASK_IMPL_3(MTBDD, mtbdd_apply, MTBDD, a, MTBDD, b, mtbdd_apply_op, op)
     /* Get top variable */
     int la = mtbdd_isleaf(a);
     int lb = mtbdd_isleaf(b);
+    assert(!la || !lb);
     mtbddnode_t na, nb;
     uint32_t va, vb;
     if (!la) {
@@ -920,6 +921,8 @@ TASK_2(MTBDD, mtbdd_uop_times_uint, MTBDD, a, size_t, k)
             uint32_t d = v;
             uint32_t c = gcd(d, (uint32_t)k);
             return mtbdd_fraction(n*(k/c), d/c);
+        } else {
+            assert(0); // failure
         }
     }
 
@@ -944,6 +947,8 @@ TASK_2(MTBDD, mtbdd_uop_pow_uint, MTBDD, a, size_t, k)
         } else if (mtbddnode_gettype(na) == 2) {
             uint64_t v = mtbddnode_getvalue(na);
             return mtbdd_fraction(pow((int32_t)(v>>32), k), (uint32_t)v);
+        } else {
+            assert(0); // failure
         }
     }
 
@@ -1119,6 +1124,8 @@ TASK_IMPL_2(MTBDD, mtbdd_op_plus, MTBDD*, pa, MTBDD*, pb)
             denom_a *= denom_b/c;
             // add
             return mtbdd_fraction(nom_a + nom_b, denom_a);
+        } else {
+            assert(0); // failure
         }
     }
 
@@ -1168,6 +1175,8 @@ TASK_IMPL_2(MTBDD, mtbdd_op_minus, MTBDD*, pa, MTBDD*, pb)
             denom_a *= denom_b/c;
             // subtract
             return mtbdd_fraction(nom_a - nom_b, denom_a);
+        } else {
+            assert(0); // failure
         }
     }
 
@@ -1229,6 +1238,8 @@ TASK_IMPL_2(MTBDD, mtbdd_op_times, MTBDD*, pa, MTBDD*, pb)
             nom_a *= (nom_b/c);
             denom_a *= (denom_b/d);
             return mtbdd_fraction(nom_a, denom_a);
+        } else {
+            assert(0); // failure
         }
     }
 
@@ -1285,6 +1296,8 @@ TASK_IMPL_2(MTBDD, mtbdd_op_min, MTBDD*, pa, MTBDD*, pb)
             nom_b *= denom_a/c;
             // compute lowest
             return nom_a < nom_b ? a : b;
+        } else {
+            assert(0); // failure
         }
     }
 
@@ -1339,6 +1352,8 @@ TASK_IMPL_2(MTBDD, mtbdd_op_max, MTBDD*, pa, MTBDD*, pb)
             nom_b *= denom_a/c;
             // compute highest
             return nom_a > nom_b ? a : b;
+        } else {
+            assert(0); // failure
         }
     }
 
@@ -1368,6 +1383,8 @@ TASK_IMPL_2(MTBDD, mtbdd_op_negate, MTBDD, a, size_t, k)
         } else if (mtbddnode_gettype(na) == 2) {
             uint64_t v = mtbddnode_getvalue(na);
             return mtbdd_fraction(-(int32_t)(v>>32), (uint32_t)v);
+        } else {
+            assert(0); // failure
         }
     }
 
@@ -1460,6 +1477,8 @@ TASK_IMPL_2(MTBDD, mtbdd_op_threshold_double, MTBDD, a, size_t, svalue)
             double d = (double)mtbdd_getnumer(a);
             d /= mtbdd_getdenom(a);
             return d >= value ? mtbdd_true : mtbdd_false;
+        } else {
+            assert(0); // failure
         }
     }
 
@@ -1486,6 +1505,8 @@ TASK_IMPL_2(MTBDD, mtbdd_op_strict_threshold_double, MTBDD, a, size_t, svalue)
             double d = (double)mtbdd_getnumer(a);
             d /= mtbdd_getdenom(a);
             return d > value ? mtbdd_true : mtbdd_false;
+        } else {
+            assert(0); // failure
         }
     }
 
@@ -1715,6 +1736,8 @@ TASK_3(MTBDD, mtbdd_leq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
             nom_a *= db/c;
             nom_b *= da/c;
             result = nom_a <= nom_b ? mtbdd_true : mtbdd_false;
+        } else {
+            assert(0); // failure
         }
     } else {
         /* Get top variable */
@@ -1809,6 +1832,8 @@ TASK_3(MTBDD, mtbdd_less_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
             nom_a *= db/c;
             nom_b *= da/c;
             result = nom_a < nom_b ? mtbdd_true : mtbdd_false;
+        } else {
+            assert(0); // failure
         }
     } else {
         /* Get top variable */
@@ -1903,6 +1928,8 @@ TASK_3(MTBDD, mtbdd_geq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
             nom_a *= db/c;
             nom_b *= da/c;
             result = nom_a >= nom_b ? mtbdd_true : mtbdd_false;
+        } else {
+            assert(0); // failure
         }
     } else {
         /* Get top variable */
@@ -1997,6 +2024,8 @@ TASK_3(MTBDD, mtbdd_greater_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
             nom_a *= db/c;
             nom_b *= da/c;
             result = nom_a > nom_b ? mtbdd_true : mtbdd_false;
+        } else {
+            assert(0); // failure
         }
     } else {
         /* Get top variable */
@@ -2333,6 +2362,8 @@ TASK_IMPL_1(MTBDD, mtbdd_minimum, MTBDD, a)
         nom_l *= denom_h/c;
         nom_h *= denom_l/c;
         result = nom_l < nom_h ? low : high;
+    } else {
+        assert(0); // failure
     }
 
     /* Store in cache */
@@ -2390,6 +2421,8 @@ TASK_IMPL_1(MTBDD, mtbdd_maximum, MTBDD, a)
         nom_l *= denom_h/c;
         nom_h *= denom_l/c;
         result = nom_l > nom_h ? low : high;
+    } else {
+        assert(0); // failure
     }
 
     /* Store in cache */

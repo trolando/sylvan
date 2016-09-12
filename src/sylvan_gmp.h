@@ -147,8 +147,15 @@ TASK_DECL_2(MTBDD, gmp_op_abs, MTBDD, size_t);
  * Multiply <a> and <b>, and abstract variables <vars> using summation.
  * This is similar to the "and_exists" operation in BDDs.
  */
-TASK_DECL_3(MTBDD, gmp_and_exists, MTBDD, MTBDD, MTBDD);
-#define gmp_and_exists(a, b, vars) CALL(gmp_and_exists, a, b, vars)
+TASK_DECL_3(MTBDD, gmp_and_abstract_plus, MTBDD, MTBDD, MTBDD);
+#define gmp_and_abstract_plus(a, b, vars) CALL(gmp_and_abstract_plus, a, b, vars)
+#define gmp_and_exists gmp_and_abstract_plus
+
+/**
+ * Multiply <a> and <b>, and abstract variables <vars> by taking the maximum.
+ */
+TASK_DECL_3(MTBDD, gmp_and_abstract_max, MTBDD, MTBDD, MTBDD);
+#define gmp_and_abstract_max(a, b, vars) CALL(gmp_and_abstract_max, a, b, vars)
 
 /**
  * Convert to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;

@@ -148,6 +148,8 @@ TASK_IMPL_2(MTBDD, gmp_op_plus, MTBDD*, pa, MTBDD*, pb)
 
     /* If both leaves, compute plus */
     if (mtbdd_isleaf(a) && mtbdd_isleaf(b)) {
+        assert(mtbdd_gettype(a) == gmp_type && mtbdd_gettype(b) == gmp_type);
+
         mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
 
@@ -182,6 +184,8 @@ TASK_IMPL_2(MTBDD, gmp_op_minus, MTBDD*, pa, MTBDD*, pb)
 
     /* If both leaves, compute plus */
     if (mtbdd_isleaf(a) && mtbdd_isleaf(b)) {
+        assert(mtbdd_gettype(a) == gmp_type && mtbdd_gettype(b) == gmp_type);
+
         mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
 
@@ -214,6 +218,8 @@ TASK_IMPL_2(MTBDD, gmp_op_times, MTBDD*, pa, MTBDD*, pb)
 
     /* Handle multiplication of leaves */
     if (mtbdd_isleaf(a) && mtbdd_isleaf(b)) {
+        assert(mtbdd_gettype(a) == gmp_type && mtbdd_gettype(b) == gmp_type);
+
         mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
 
@@ -248,6 +254,8 @@ TASK_IMPL_2(MTBDD, gmp_op_divide, MTBDD*, pa, MTBDD*, pb)
 
     /* Handle division of leaves */
     if (mtbdd_isleaf(a) && mtbdd_isleaf(b)) {
+        assert(mtbdd_gettype(a) == gmp_type && mtbdd_gettype(b) == gmp_type);
+
         mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
 
@@ -279,6 +287,8 @@ TASK_IMPL_2(MTBDD, gmp_op_min, MTBDD*, pa, MTBDD*, pb)
 
     /* Compute result for leaves */
     if (mtbdd_isleaf(a) && mtbdd_isleaf(b)) {
+        assert(mtbdd_gettype(a) == gmp_type && mtbdd_gettype(b) == gmp_type);
+
         mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
         int cmp = mpq_cmp(ma, mb);
@@ -310,6 +320,8 @@ TASK_IMPL_2(MTBDD, gmp_op_max, MTBDD*, pa, MTBDD*, pb)
 
     /* Compute result for leaves */
     if (mtbdd_isleaf(a) && mtbdd_isleaf(b)) {
+        assert(mtbdd_gettype(a) == gmp_type && mtbdd_gettype(b) == gmp_type);
+
         mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
         int cmp = mpq_cmp(ma, mb);
@@ -335,6 +347,8 @@ TASK_IMPL_2(MTBDD, gmp_op_neg, MTBDD, dd, size_t, p)
 
     /* Compute result for leaf */
     if (mtbdd_isleaf(dd)) {
+        assert(mtbdd_gettype(dd) == gmp_type);
+
         mpq_ptr m = (mpq_ptr)mtbdd_getvalue(dd);
 
         mpq_t mres;
@@ -359,6 +373,8 @@ TASK_IMPL_2(MTBDD, gmp_op_abs, MTBDD, dd, size_t, p)
 
     /* Compute result for leaf */
     if (mtbdd_isleaf(dd)) {
+        assert(mtbdd_gettype(dd) == gmp_type);
+
         mpq_ptr m = (mpq_ptr)mtbdd_getvalue(dd);
 
         mpq_t mres;
@@ -439,6 +455,8 @@ TASK_2(MTBDD, gmp_op_threshold_d, MTBDD, a, size_t, svalue)
 
     /* Compute result */
     if (mtbdd_isleaf(a)) {
+        assert(mtbdd_gettype(a) == gmp_type);
+
         double value = *(double*)&svalue;
         mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
         return mpq_get_d(ma) >= value ? mtbdd_true : mtbdd_false;
@@ -457,6 +475,8 @@ TASK_2(MTBDD, gmp_op_strict_threshold_d, MTBDD, a, size_t, svalue)
 
     /* Compute result */
     if (mtbdd_isleaf(a)) {
+        assert(mtbdd_gettype(a) == gmp_type);
+
         double value = *(double*)&svalue;
         mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
         return mpq_get_d(ma) > value ? mtbdd_true : mtbdd_false;
@@ -488,6 +508,8 @@ TASK_IMPL_2(MTBDD, gmp_op_threshold, MTBDD*, pa, MTBDD*, pb)
 
     /* Handle comparison of leaves */
     if (mtbdd_isleaf(a)) {
+        assert(mtbdd_gettype(a) == gmp_type);
+
         mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
         int cmp = mpq_cmp(ma, mb);
@@ -510,6 +532,8 @@ TASK_IMPL_2(MTBDD, gmp_op_strict_threshold, MTBDD*, pa, MTBDD*, pb)
 
     /* Handle comparison of leaves */
     if (mtbdd_isleaf(a)) {
+        assert(mtbdd_gettype(a) == gmp_type);
+
         mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
         int cmp = mpq_cmp(ma, mb);

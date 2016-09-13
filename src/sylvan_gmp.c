@@ -24,6 +24,7 @@
 #include <sylvan_gmp.h>
 #include <gmp.h>
 
+static uint32_t gmp_type;
 
 /**
  * helper function for hash
@@ -110,7 +111,45 @@ gmp_to_str(int comp, uint64_t val, char *buf, size_t buflen)
     (void)comp;
 }
 
-static uint32_t gmp_type;
+static int
+gmp_write_binary(FILE* out, uint64_t val)
+{
+    mpq_ptr op = (mpq_ptr)val;
+
+    mpz_t i;
+    mpz_init(i);
+    mpq_get_num(i, op);
+    if (mpz_out_raw(out, i) != 0) return -1;
+    mpq_get_den(i, op);
+    if (mpz_out_raw(out, i) != 0) return -1;
+    mpz_clear(i);
+
+    return 0;
+}
+
+static int
+gmp_read_binary(FILE* in, uint32_t type, uint64_t val, MTBDD *dd_ptr)
+{
+    assert(type == gmp_type);
+    if (type != gmp_type) return -1;
+
+    mpq_t mres;
+    mpq_init(mres);
+
+    mpz_t i;
+    mpz_init(i);
+    if (mpz_inp_raw(i, in) == 0) return -1;
+    mpq_set_num(mres, i);
+    if (mpz_inp_raw(i, in) == 0) return -1;
+    mpq_set_den(mres, i);
+    mpz_clear(i);
+
+    *dd_ptr = mtbdd_gmp(mres);
+    mpq_clear(mres);
+
+    return 0;
+    (void)val;
+}
 
 /**
  * Initialize gmp custom leaves
@@ -125,6 +164,8 @@ gmp_init()
     mtbdd_custom_set_create(gmp_type, gmp_create);
     mtbdd_custom_set_destroy(gmp_type, gmp_destroy);
     mtbdd_custom_set_leaf_to_str(gmp_type, gmp_to_str);
+    mtbdd_custom_set_write_binary(gmp_type, gmp_write_binary);
+    mtbdd_custom_set_read_binary(gmp_type, gmp_read_binary);
 }
 
 /**

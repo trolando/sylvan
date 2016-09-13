@@ -60,7 +60,7 @@ int cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res);
 /**
  * Helper function to get next 'operation id' (during initialization of modules)
  */
-uint64_t cache_next_opid();
+uint64_t cache_next_opid(void);
 
 /**
  * dd must be MTBDD, d2/d3 can be anything
@@ -111,17 +111,17 @@ cache_put4(uint64_t opid, uint64_t dd, uint64_t dd2, uint64_t dd3, uint64_t dd4,
 
 void cache_create(size_t _cache_size, size_t _max_size);
 
-void cache_free();
+void cache_free(void);
 
-void cache_clear();
+void cache_clear(void);
 
 void cache_setsize(size_t size);
 
-size_t cache_getused();
+size_t cache_getused(void);
 
-size_t cache_getsize();
+size_t cache_getsize(void);
 
-size_t cache_getmaxsize();
+size_t cache_getmaxsize(void);
 
 #ifdef __cplusplus
 }

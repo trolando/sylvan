@@ -32,7 +32,7 @@ extern "C" {
 /**
  * Initialize GMP custom leaves
  */
-void gmp_init();
+void gmp_init(void);
 
 /**
  * Create MPQ leaf

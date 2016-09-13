@@ -136,7 +136,7 @@ void sylvan_stats_report(FILE* target);
 #else
 #include <time.h>
 static uint64_t
-getabstime()
+getabstime(void)
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);

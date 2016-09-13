@@ -45,12 +45,12 @@ void sylvan_init_package(size_t initial_tablesize, size_t max_tablesize, size_t 
 /**
  * Frees all Sylvan data (also calls the quit() functions of BDD/LDD parts)
  */
-void sylvan_quit();
+void sylvan_quit(void);
 
 /**
  * Registers a hook callback called during sylvan_quit()
  */
-typedef void (*quit_cb)();
+typedef void (*quit_cb)(void);
 void sylvan_register_quit(quit_cb cb);
 
 /**
@@ -108,8 +108,8 @@ VOID_TASK_DECL_0(sylvan_gc);
  * calling sylvan_gc() while garbage collection is disabled does not have any effect.
  * If no new nodes can be added, Sylvan will write an error and abort.
  */
-void sylvan_gc_enable();
-void sylvan_gc_disable();
+void sylvan_gc_enable(void);
+void sylvan_gc_disable(void);
 
 /**
  * Test if garbage collection must happen now.

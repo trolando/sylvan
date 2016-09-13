@@ -123,7 +123,8 @@ main(int argc, char** argv)
     // With 2^20 nodes and 2^18 cache entries, that's 33 MB
     // With 2^24 nodes and 2^22 cache entries, that's 528 MB
     sylvan_init_package(1LL<<20, 1LL<<24, 1LL<<18, 1LL<<22);
-    sylvan_init_bdd(3); // granularity 3 is decent value for this small problem - 1 means "use cache for every operation"
+    sylvan_set_granularity(3); // granularity 3 is decent value for this small problem - 1 means "use cache for every operation"
+    sylvan_init_bdd();
 
     // Before and after garbage collection, call gc_start and gc_end
     sylvan_gc_hook_pregc(TASK(gc_start));

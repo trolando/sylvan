@@ -124,7 +124,7 @@ typedef MTBDD MTBDDMAP;
  * This initializes internal and external referencing datastructures,
  * and registers them in the garbage collection framework.
  */
-void sylvan_init_mtbdd();
+void sylvan_init_mtbdd(void);
 
 /**
  * Create a MTBDD terminal of type <type> and value <value>.
@@ -655,7 +655,7 @@ typedef struct sylvan_skiplist *sylvan_skiplist_t;
 /**
  * Allocate a skiplist for writing an MTBDD.
  */
-sylvan_skiplist_t mtbdd_writer_start();
+sylvan_skiplist_t mtbdd_writer_start(void);
 
 /**
  * Add the given MTBDD to the skiplist.
@@ -857,7 +857,7 @@ VOID_TASK_DECL_1(mtbdd_gc_mark_rec, MTBDD);
  */
 MTBDD mtbdd_ref(MTBDD a);
 void mtbdd_deref(MTBDD a);
-size_t mtbdd_count_refs();
+size_t mtbdd_count_refs(void);
 
 /**
  * Default external pointer referencing. During garbage collection, the pointers are followed and the MTBDD
@@ -865,7 +865,7 @@ size_t mtbdd_count_refs();
  */
 void mtbdd_protect(MTBDD* ptr);
 void mtbdd_unprotect(MTBDD* ptr);
-size_t mtbdd_count_protected();
+size_t mtbdd_count_protected(void);
 
 /**
  * If mtbdd_set_ondead is set to a callback, then this function marks MTBDDs (terminals).

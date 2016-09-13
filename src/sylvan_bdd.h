@@ -41,7 +41,7 @@ extern "C" {
  * gain can be around 0-10%, so it is not extremely important.
  */
 void sylvan_set_granularity(int granularity);
-int sylvan_get_granularity();
+int sylvan_get_granularity(void);
 
 /* Create a BDD representing just <var> or the negation of <var> */
 BDD sylvan_ithvar(BDDVAR var);
@@ -239,7 +239,7 @@ TASK_DECL_2(double, sylvan_pathcount, BDD, BDDVAR);
 size_t sylvan_serialize_add(BDD bdd);
 size_t sylvan_serialize_get(BDD bdd);
 BDD sylvan_serialize_get_reversed(size_t value);
-void sylvan_serialize_reset();
+void sylvan_serialize_reset(void);
 void sylvan_serialize_totext(FILE *out);
 void sylvan_serialize_tofile(FILE *out);
 void sylvan_serialize_fromfile(FILE *in);

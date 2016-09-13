@@ -3115,8 +3115,16 @@ mtbdd_writer_writebinary(FILE *out, sylvan_skiplist_t sl)
 
         mtbddnode_t n = MTBDD_GETNODE(dd);
         if (mtbddnode_isleaf(n)) {
-            /* serialize leaf, does not support customs yet */
+            /* write leaf */
             fwrite(n, sizeof(struct mtbddnode), 1, out);
+            uint32_t type = mtbddnode_gettype(n);
+            uint64_t value = mtbddnode_getvalue(n);
+            if (type >= 3 && type < cl_registry_count) {
+                customleaf_t *c = cl_registry + type;
+                if (c->write_binary_cb != NULL) {
+                    if (c->write_binary_cb(out, value) != 0) return; /* todo: report error */
+                }
+            }
         } else {
             struct mtbddnode node;
             MTBDD low = sylvan_skiplist_get(sl, mtbddnode_getlow(n));
@@ -3229,8 +3237,19 @@ TASK_IMPL_1(uint64_t*, mtbdd_reader_readbinary, FILE*, in)
         }
 
         if (mtbddnode_isleaf(&node)) {
-            /* serialize leaf, does not support customs yet */
-            arr[i] = mtbdd_makeleaf(mtbddnode_gettype(&node), mtbddnode_getvalue(&node));
+            /* serialize leaf */
+            uint32_t type = mtbddnode_gettype(&node);
+            uint64_t value = mtbddnode_getvalue(&node);
+            if (type >= 3 && type < cl_registry_count) {
+                customleaf_t *c = cl_registry + type;
+                if (c->read_binary_cb != NULL) {
+                    if (c->read_binary_cb(in, type, value, &arr[i]) != 0) return NULL;
+                } else {
+                    arr[i] = mtbdd_makeleaf(type, value);
+                }
+            } else {
+                arr[i] = mtbdd_makeleaf(type, value);
+            }
         } else {
             MTBDD low = arr[mtbddnode_getlow(&node)];
             MTBDD high = mtbddnode_gethigh(&node);

@@ -622,7 +622,6 @@ VOID_TASK_DECL_4(mtbdd_visit_par, MTBDD, mtbdd_visit_pre_cb, mtbdd_visit_post_cb
 
 /**
  * Write <count> decision diagrams given in <dds> in internal binary form to <file>.
- * Does not yet support custom leaves.
  *
  * The internal binary format is as follows, to store <count> decision diagrams...
  * uint64_t: nodecount -- number of nodes
@@ -666,7 +665,6 @@ VOID_TASK_DECL_2(mtbdd_writer_add, sylvan_skiplist_t, MTBDD);
 
 /**
  * Write all assigned MTBDD nodes in binary format to the file.
- * Custom leaves are not yet supported.
  */
 void mtbdd_writer_writebinary(FILE *out, sylvan_skiplist_t sl);
 
@@ -694,7 +692,6 @@ void mtbdd_writer_end(sylvan_skiplist_t sl);
 
 /*
  * Read <count> decision diagrams to <dds> from <file> in internal binary form.
- * Does not yet support custom leaves.
  */
 TASK_DECL_3(int, mtbdd_reader_frombinary, FILE*, MTBDD*, int);
 #define mtbdd_reader_frombinary(file, dds, count) CALL(mtbdd_reader_frombinary, file, dds, count)
@@ -703,7 +700,6 @@ TASK_DECL_3(int, mtbdd_reader_frombinary, FILE*, MTBDD*, int);
  * Reading a file earlier written with mtbdd_writer_writebinary
  * Returns an array with the conversion from stored identifier to MTBDD
  * This array is allocated with malloc and must be freed afterwards.
- * This method does not support custom leaves.
  */
 
 TASK_DECL_1(uint64_t*, mtbdd_reader_readbinary, FILE*);

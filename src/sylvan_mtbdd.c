@@ -255,7 +255,9 @@ typedef struct
     mtbdd_equals_cb equals_cb;
     mtbdd_create_cb create_cb;
     mtbdd_destroy_cb destroy_cb;
-    leaf_to_str_cb to_str_cb;
+    mtbdd_leaf_to_str_cb to_str_cb;
+    mtbdd_write_binary_cb write_binary_cb;
+    mtbdd_read_binary_cb read_binary_cb;
 } customleaf_t;
 
 static customleaf_t *cl_registry;
@@ -312,7 +314,7 @@ _mtbdd_equals_cb(uint64_t a, uint64_t b, uint64_t aa, uint64_t bb)
 }
 
 uint32_t
-mtbdd_register_custom_leaf(mtbdd_hash_cb hash_cb, mtbdd_equals_cb equals_cb, mtbdd_create_cb create_cb, mtbdd_destroy_cb destroy_cb, leaf_to_str_cb to_str_cb)
+mtbdd_register_custom_leaf()
 {
     uint32_t type = cl_registry_count;
     if (type == 0) type = 3;
@@ -326,12 +328,50 @@ mtbdd_register_custom_leaf(mtbdd_hash_cb hash_cb, mtbdd_equals_cb equals_cb, mtb
         cl_registry_count = type+1;
     }
     customleaf_t *c = cl_registry + type;
-    c->hash_cb = hash_cb;
-    c->equals_cb = equals_cb;
-    c->create_cb = create_cb;
-    c->destroy_cb = destroy_cb;
-    c->to_str_cb = to_str_cb;
+    memset(c, 0, sizeof(customleaf_t));
     return type;
+}
+
+void mtbdd_custom_set_hash(uint32_t type, mtbdd_hash_cb hash_cb)
+{
+    customleaf_t *c = cl_registry + type;
+    c->hash_cb = hash_cb;
+}
+
+void mtbdd_custom_set_equals(uint32_t type, mtbdd_equals_cb equals_cb)
+{
+    customleaf_t *c = cl_registry + type;
+    c->equals_cb = equals_cb;
+}
+
+void mtbdd_custom_set_create(uint32_t type, mtbdd_create_cb create_cb)
+{
+    customleaf_t *c = cl_registry + type;
+    c->create_cb = create_cb;
+}
+
+void mtbdd_custom_set_destroy(uint32_t type, mtbdd_destroy_cb destroy_cb)
+{
+    customleaf_t *c = cl_registry + type;
+    c->destroy_cb = destroy_cb;
+}
+
+void mtbdd_custom_set_leaf_to_str(uint32_t type, mtbdd_leaf_to_str_cb to_str_cb)
+{
+    customleaf_t *c = cl_registry + type;
+    c->to_str_cb = to_str_cb;
+}
+
+void mtbdd_custom_set_write_binary(uint32_t type, mtbdd_write_binary_cb write_binary_cb)
+{
+    customleaf_t *c = cl_registry + type;
+    c->write_binary_cb = write_binary_cb;
+}
+
+void mtbdd_custom_set_read_binary(uint32_t type, mtbdd_read_binary_cb read_binary_cb)
+{
+    customleaf_t *c = cl_registry + type;
+    c->read_binary_cb = read_binary_cb;
 }
 
 /**

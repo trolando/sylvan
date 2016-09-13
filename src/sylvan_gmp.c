@@ -118,8 +118,13 @@ static uint32_t gmp_type;
 void
 gmp_init()
 {
-    /* Register custom leaf 3 */
-    gmp_type = mtbdd_register_custom_leaf(gmp_hash, gmp_equals, gmp_create, gmp_destroy, gmp_to_str);
+    /* Register custom leaf */
+    gmp_type = mtbdd_register_custom_leaf();
+    mtbdd_custom_set_hash(gmp_type, gmp_hash);
+    mtbdd_custom_set_equals(gmp_type, gmp_equals);
+    mtbdd_custom_set_create(gmp_type, gmp_create);
+    mtbdd_custom_set_destroy(gmp_type, gmp_destroy);
+    mtbdd_custom_set_leaf_to_str(gmp_type, gmp_to_str);
 }
 
 /**

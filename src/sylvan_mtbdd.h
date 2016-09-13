@@ -780,6 +780,7 @@ MTBDDMAP mtbdd_map_removeall(MTBDDMAP map, MTBDD variables);
 
 /**
  * Custom node types
+ *
  * Overrides standard hash/equality/notify_on_dead behavior
  * hash(value, seed) return hash version
  * equals(value1, value2) return 1 if equal, 0 if not equal
@@ -787,18 +788,57 @@ MTBDDMAP mtbdd_map_removeall(MTBDDMAP map, MTBDD variables);
  * destroy(value)
  * NOTE: equals(value1, value2) must imply: hash(value1, seed) == hash(value2,seed)
  * NOTE: new value of create must imply: equals(old, new)
+ * 
  * For the to_str callback, see the mtbdd_leaf_to_str method.
+ * write_binary writes a given leaf to file, return 0 if successful
+ * read_binary reads a leaf from file, return 0 if successful
  */
 typedef uint64_t (*mtbdd_hash_cb)(uint64_t, uint64_t);
 typedef int (*mtbdd_equals_cb)(uint64_t, uint64_t);
 typedef void (*mtbdd_create_cb)(uint64_t*);
 typedef void (*mtbdd_destroy_cb)(uint64_t);
-typedef char* (*leaf_to_str_cb)(int, uint64_t, char*, size_t);
 
 /**
- * Registry callback handlers for <type>.
+ * Writer/reader callbacks.
+ *
+ * leaf_to_string(complemented, value, buf, bufsize)
+ * - write a textual representation of leaf <value> (possible complemented) to <buf>
+ * - if <buf> is too small, allocate a new char array with malloc
+ * - return a pointer to either <buf> or the new char array.
+ *
+ * write_binary(file, value)
+ * - called after the writer writes the leaf with <type> and <value>
+ * - type and value is always stored, even if it is e.g. a pointer
+ * - write a binary representation of leaf <value> to <file>
+ *   (only if <value> is not a good representation)
+ * - return 0 on success
+ *
+ * read_binary(file, type, value, mtbdd_ptr)
+ * - read a binary representation of the leaf from <file>
+ * - the given <type> and <value> are obtained from the stored leaf
+ * - create or obtain the MTBDD of the leaf, for example using mtbdd_makeleaf with
+ *   the given <type> (this is the id of the custom type, for convenience)
+ * - write the new MTBDD to the address <mtbdd_ptr>
  */
-uint32_t mtbdd_register_custom_leaf(mtbdd_hash_cb hash_cb, mtbdd_equals_cb equals_cb, mtbdd_create_cb create_cb, mtbdd_destroy_cb destroy_cb, leaf_to_str_cb to_str_cb);
+typedef char* (*mtbdd_leaf_to_str_cb)(int, uint64_t, char*, size_t);
+typedef int (*mtbdd_write_binary_cb)(FILE*, uint64_t);
+typedef int (*mtbdd_read_binary_cb)(FILE*, uint32_t, uint64_t, MTBDD*);
+
+/**
+ * Register new leaf type.
+ */
+uint32_t mtbdd_register_custom_leaf(void);
+
+/**
+ * Set the callback handlers for <type>
+ */
+void mtbdd_custom_set_hash(uint32_t type, mtbdd_hash_cb hash_cb);
+void mtbdd_custom_set_equals(uint32_t type, mtbdd_equals_cb equals_cb);
+void mtbdd_custom_set_create(uint32_t type, mtbdd_create_cb create_cb);
+void mtbdd_custom_set_destroy(uint32_t type, mtbdd_destroy_cb destroy_cb);
+void mtbdd_custom_set_leaf_to_str(uint32_t type, mtbdd_leaf_to_str_cb to_str_cb);
+void mtbdd_custom_set_write_binary(uint32_t type, mtbdd_write_binary_cb write_binary_cb);
+void mtbdd_custom_set_read_binary(uint32_t type, mtbdd_read_binary_cb read_binary_cb);
 
 /**
  * Garbage collection

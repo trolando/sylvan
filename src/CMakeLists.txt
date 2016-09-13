@@ -36,18 +36,20 @@ add_library(sylvan
     tls.h
 )
 
-target_link_libraries(sylvan m pthread)
+target_link_libraries(sylvan m pthread gmp)
 
 if(UNIX AND NOT APPLE)
     target_link_libraries(sylvan rt)
 endif()
 
+find_package(GMP REQUIRED)
+
 option(USE_HWLOC "Use HWLOC library if available" ON)
 
 if(USE_HWLOC)
     include(CheckIncludeFiles)
-    check_include_files(hwloc.h HAVE_HWLOC)
-    if(HAVE_HWLOC)
+    check_include_files(hwloc.h HAVE_HWLOC_H)
+    if(HAVE_HWLOC_H)
         set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "USE_HWLOC=1")
         target_link_libraries(sylvan hwloc)
     endif()

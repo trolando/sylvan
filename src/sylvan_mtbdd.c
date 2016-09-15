@@ -2601,42 +2601,46 @@ MTBDD
 mtbdd_enum_all_first(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb)
 {
     if (dd == mtbdd_false) {
-        // the leaf dd is skipped
+        // the leaf False is skipped
         return mtbdd_false;
+    } else if (variables == mtbdd_true) {
+        // if this assertion fails, then <variables> is not the support of <dd>.
+        assert(mtbdd_isleaf(dd));
+        // for _first, just return the leaf; there is nothing to set, though.
+        return dd;
     } else if (mtbdd_isleaf(dd)) {
         // a leaf for which the filter returns 0 is skipped
         if (filter_cb != NULL && filter_cb(dd) == 0) return mtbdd_false;
-        // ok, we have a leaf that is not skipped, go for it!
+        // for all remaining variables, set to 0
         while (variables != mtbdd_true) {
             *arr++ = 0;
             variables = mtbdd_gethigh(variables);
         }
         return dd;
     } else {
-        // if variables == true, then dd must be a leaf. But then this line is unreachable.
-        // if this assertion fails, then <variables> is not the support of <dd>.
-        assert(variables != mtbdd_true);
-
         // get next variable from <variables>
-        uint32_t v = mtbdd_getvar(variables);
-        variables = mtbdd_gethigh(variables);
+        mtbddnode_t nv = MTBDD_GETNODE(variables);
+        variables = node_gethigh(variables, nv);
 
-        // check if MTBDD is on this variable
-        mtbddnode_t n = MTBDD_GETNODE(dd);
-        if (mtbddnode_getvariable(n) != v) {
-            *arr = 0;
-            return mtbdd_enum_all_first(dd, variables, arr+1, filter_cb);
+        // get cofactors
+        mtbddnode_t ndd = MTBDD_GETNODE(dd);
+        MTBDD low, high;
+        if (mtbddnode_getvariable(ndd) == mtbddnode_getvariable(nv)) {
+            low = node_getlow(dd, ndd);
+            high = node_gethigh(dd, ndd);
+        } else {
+            low = high = dd;
         }
 
         // first maybe follow low
-        MTBDD res = mtbdd_enum_all_first(node_getlow(dd, n), variables, arr+1, filter_cb);
+        MTBDD res = mtbdd_enum_all_first(low, variables, arr+1, filter_cb);
         if (res != mtbdd_false) {
             *arr = 0;
             return res;
         }
 
         // if not low, try following high
-        res = mtbdd_enum_all_first(node_gethigh(dd, n), variables, arr+1, filter_cb);
+        res = mtbdd_enum_all_first(high, variables, arr+1, filter_cb);
         if (res != mtbdd_false) {
             *arr = 1;
             return res;
@@ -2650,44 +2654,53 @@ mtbdd_enum_all_first(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_
 MTBDD
 mtbdd_enum_all_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb)
 {
-    if (mtbdd_isleaf(dd)) {
-        // we find the leaf in 'enum_next', then we've seen it before...
+    if (dd == mtbdd_false) {
+        // the leaf False is skipped
+        return mtbdd_false;
+    } else if (variables == mtbdd_true) {
+        // if this assertion fails, then <variables> is not the support of <dd>.
+        assert(mtbdd_isleaf(dd));
+        // no next if there are no variables
         return mtbdd_false;
     } else {
-        // if variables == true, then dd must be a leaf. But then this line is unreachable.
-        // if this assertion fails, then <variables> is not the support of <dd>.
-        assert(variables != mtbdd_true);
+        // get next variable from <variables>
+        mtbddnode_t nv = MTBDD_GETNODE(variables);
+        variables = node_gethigh(variables, nv);
 
-        uint32_t v = mtbdd_getvar(variables);
-        variables = mtbdd_gethigh(variables);
+        // try recursive next first
+        MTBDD res = mtbdd_enum_all_next(dd, variables, arr+1, filter_cb);
+        if (res != mtbdd_false) return res;
 
-        if (*arr == 0) {
-            // previous was low
-            mtbddnode_t n = MTBDD_GETNODE(dd);
-            MTBDD low = v == mtbddnode_getvariable(n) ? node_getlow(dd, n) : dd;
-            MTBDD res = mtbdd_enum_all_next(low, variables, arr+1, filter_cb);
-            if (res != mtbdd_false) {
-                return res;
-            } else {
-                // try to find new in high branch
-                MTBDD high = v == mtbddnode_getvariable(n) ? node_gethigh(dd, n) : dd;
-                res = mtbdd_enum_all_first(high, variables, arr+1, filter_cb);
-                if (res != mtbdd_false) {
-                    *arr = 1;
-                    return res;
-                } else {
-                    return mtbdd_false;
-                }
-            }
-        } else if (*arr == 1) {
-            // previous was high
-            mtbddnode_t n = MTBDD_GETNODE(dd);
-            MTBDD high = v == mtbddnode_getvariable(n) ? node_gethigh(dd, n) : dd;
-            return mtbdd_enum_all_next(high, variables, arr+1, filter_cb);
+        // not recursive... if *arr was 1 then we are done
+        if (*arr == 1) return mtbdd_false;
+
+        // check if *arr is 0 (if not, the array is invalid...)
+        assert(*arr == 0);
+        if (*arr != 0) return mtbdd_invalid; // in Release mode, the assertion is empty code
+
+        // filter leaf (if leaf) or get cofactors (if not leaf)
+        MTBDD high;
+        if (mtbdd_isleaf(dd)) {
+            // a leaf for which the filter returns 0 is skipped
+            if (filter_cb != NULL && filter_cb(dd) == 0) return mtbdd_false;
+            high = dd;
         } else {
-            // previous was either
-            return mtbdd_enum_all_next(dd, variables, arr+1, filter_cb);
+            // get cofactors
+            mtbddnode_t ndd = MTBDD_GETNODE(dd);
+            if (mtbddnode_getvariable(ndd) == mtbddnode_getvariable(nv)) {
+                high = node_gethigh(dd, ndd);
+            } else {
+                high = dd;
+            }
         }
+
+        // previous was low, try following high
+        res = mtbdd_enum_all_first(high, variables, arr+1, filter_cb);
+        if (res == mtbdd_false) return mtbdd_false;
+
+        // succesful, set arr
+        *arr = 1;
+        return res;
     }
 }
 

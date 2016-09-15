@@ -126,7 +126,7 @@ int
 test_cube()
 {
     LACE_ME;
-    BDDSET vars = sylvan_set_fromarray(((BDDVAR[]){1,2,3,4,6,8}), 6);
+    const BDDSET vars = sylvan_set_fromarray(((BDDVAR[]){1,2,3,4,6,8}), 6);
 
     uint8_t cube[6], check[6];
     int i, j;
@@ -162,6 +162,34 @@ test_cube()
         picked = sylvan_pick_cube(bdd);
         test_assert(testEqual(sylvan_and(picked, bdd), picked));
     }
+
+    // simple test for mtbdd_enum_all
+    uint8_t arr[6];
+    MTBDD leaf = mtbdd_enum_all_first(mtbdd_true, vars, arr, NULL);
+    test_assert(leaf == mtbdd_true);
+    test_assert(mtbdd_enum_all_first(mtbdd_true, vars, arr, NULL) == mtbdd_true);
+    test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 0 && arr[4] == 0 && arr[5] == 0);
+    test_assert(mtbdd_enum_all_next(mtbdd_true, vars, arr, NULL) == mtbdd_true);
+    test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 0 && arr[4] == 0 && arr[5] == 1);
+    test_assert(mtbdd_enum_all_next(mtbdd_true, vars, arr, NULL) == mtbdd_true);
+    test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 0 && arr[4] == 1 && arr[5] == 0);
+    test_assert(mtbdd_enum_all_next(mtbdd_true, vars, arr, NULL) == mtbdd_true);
+    test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 0 && arr[4] == 1 && arr[5] == 1);
+    test_assert(mtbdd_enum_all_next(mtbdd_true, vars, arr, NULL) == mtbdd_true);
+    test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 1 && arr[4] == 0 && arr[5] == 0);
+    test_assert(mtbdd_enum_all_next(mtbdd_true, vars, arr, NULL) == mtbdd_true);
+    test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 1 && arr[4] == 0 && arr[5] == 1);
+    test_assert(mtbdd_enum_all_next(mtbdd_true, vars, arr, NULL) == mtbdd_true);
+    test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 1 && arr[4] == 1 && arr[5] == 0);
+
+    mtbdd_enum_all_first(mtbdd_true, vars, arr, NULL);
+    size_t count = 1;
+    while (mtbdd_enum_all_next(mtbdd_true, vars, arr, NULL) != mtbdd_false) {
+        test_assert(count < 64);
+        count++;
+    }
+    test_assert(count == 64);
+
     return 0;
 }
 

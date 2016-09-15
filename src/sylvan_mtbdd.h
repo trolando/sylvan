@@ -230,7 +230,11 @@ size_t mtbdd_leafcount_more(const MTBDD *mtbdds, size_t count);
  * Count the number of MTBDD nodes and terminals (excluding mtbdd_false and mtbdd_true) in the given <count> MTBDDs
  */
 size_t mtbdd_nodecount_more(const MTBDD *mtbdds, size_t count);
-#define mtbdd_nodecount(dd) mtbdd_nodecount_more(&dd, 1)
+
+static inline size_t
+mtbdd_nodecount(const MTBDD dd) {
+    return mtbdd_nodecount_more(&dd, 1);
+}
 
 /**
  * Callback function types for binary ("dyadic") and unary ("monadic") operations.

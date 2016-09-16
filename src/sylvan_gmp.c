@@ -119,9 +119,9 @@ gmp_write_binary(FILE* out, uint64_t val)
     mpz_t i;
     mpz_init(i);
     mpq_get_num(i, op);
-    if (mpz_out_raw(out, i) != 0) return -1;
+    if (mpz_out_raw(out, i) == 0) return -1;
     mpq_get_den(i, op);
-    if (mpz_out_raw(out, i) != 0) return -1;
+    if (mpz_out_raw(out, i) == 0) return -1;
     mpz_clear(i);
 
     return 0;

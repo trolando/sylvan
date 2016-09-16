@@ -692,6 +692,8 @@ void mtbdd_writer_end(sylvan_skiplist_t sl);
  * - call mtbdd_reader_readbinary to read the nodes from file
  * - call mtbdd_reader_get to obtain the MTBDD for the given identifier as stored in the file.
  * - call mtbdd_reader_end to free the array returned by mtbdd_reader_readbinary
+ *
+ * Returns 0 if successful, -1 otherwise.
  */
 
 /*
@@ -704,6 +706,7 @@ TASK_DECL_3(int, mtbdd_reader_frombinary, FILE*, MTBDD*, int);
  * Reading a file earlier written with mtbdd_writer_writebinary
  * Returns an array with the conversion from stored identifier to MTBDD
  * This array is allocated with malloc and must be freed afterwards.
+ * Returns NULL if there was an error.
  */
 
 TASK_DECL_1(uint64_t*, mtbdd_reader_readbinary, FILE*);

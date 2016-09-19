@@ -2667,35 +2667,38 @@ mtbdd_enum_all_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_c
         mtbddnode_t nv = MTBDD_GETNODE(variables);
         variables = node_gethigh(variables, nv);
 
-        // try recursive next first
-        MTBDD res = mtbdd_enum_all_next(dd, variables, arr+1, filter_cb);
-        if (res != mtbdd_false) return res;
-
-        // not recursive... if *arr was 1 then we are done
-        if (*arr == 1) return mtbdd_false;
-
-        // check if *arr is 0 (if not, the array is invalid...)
-        assert(*arr == 0);
-        if (*arr != 0) return mtbdd_invalid; // in Release mode, the assertion is empty code
-
         // filter leaf (if leaf) or get cofactors (if not leaf)
-        MTBDD high;
+        mtbddnode_t ndd = MTBDD_GETNODE(dd);
+        MTBDD low, high;
         if (mtbdd_isleaf(dd)) {
             // a leaf for which the filter returns 0 is skipped
             if (filter_cb != NULL && filter_cb(dd) == 0) return mtbdd_false;
-            high = dd;
+            low = high = dd;
         } else {
             // get cofactors
-            mtbddnode_t ndd = MTBDD_GETNODE(dd);
             if (mtbddnode_getvariable(ndd) == mtbddnode_getvariable(nv)) {
+                low = node_getlow(dd, ndd);
                 high = node_gethigh(dd, ndd);
             } else {
-                high = dd;
+                low = high = dd;
             }
         }
 
+        // try recursive next first
+        if (*arr == 0) {
+            MTBDD res = mtbdd_enum_all_next(low, variables, arr+1, filter_cb);
+            if (res != mtbdd_false) return res;
+        } else if (*arr == 1) {
+            return mtbdd_enum_all_next(high, variables, arr+1, filter_cb);
+            // if *arr was 1 and _next returns False, return False
+        } else {
+            // the array is invalid...
+            assert(*arr == 0 || *arr == 1);
+            return mtbdd_invalid;  // in Release mode, the assertion is empty code
+        }
+
         // previous was low, try following high
-        res = mtbdd_enum_all_first(high, variables, arr+1, filter_cb);
+        MTBDD res = mtbdd_enum_all_first(high, variables, arr+1, filter_cb);
         if (res == mtbdd_false) return mtbdd_false;
 
         // succesful, set arr

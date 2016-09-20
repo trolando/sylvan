@@ -515,6 +515,25 @@ typedef int (*mtbdd_enum_filter_cb)(MTBDD);
 MTBDD mtbdd_enum_first(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb);
 MTBDD mtbdd_enum_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb);
 
+/**
+ * Given an MTBDD <dd> and a cube of variables <variables> expected in <dd>,
+ * mtbdd_enum_all_first and mtbdd_enum_all_next enumerate all satisfying assignments in <dd> that lead
+ * to a non-False leaf.
+ *
+ * The functions return the leaf (or mtbdd_false if no new satisfying assignment is found) and encodes
+ * the assignment in the supplied array <arr>, 0 for False and 1 for True.
+ *
+ * The supplied array <arr> must be large enough for all variables in <variables>.
+ *
+ * Usage:
+ * MTBDD leaf = mtbdd_enum_first(dd, variables, arr, NULL);
+ * while (leaf != mtbdd_false) {
+ *     .... // do something with arr/leaf
+ *     leaf = mtbdd_enum_next(dd, variables, arr, NULL);
+ * }
+ *
+ * The callback is an optional function that returns 0 when the given terminal node should be skipped.
+ */
 MTBDD mtbdd_enum_all_first(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb);
 MTBDD mtbdd_enum_all_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb);
 

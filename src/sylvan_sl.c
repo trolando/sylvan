@@ -21,7 +21,9 @@
 #include <sylvan.h>
 #include <sylvan_sl.h>
 
-#define SL_DEPTH 6
+/* A SL_DEPTH of 6 means 32 bytes per bucket, of 14 means 64 bytes per bucket.
+   However, there is a very large performance drop with only 6 levels. */
+#define SL_DEPTH 14
 
 typedef struct
 {

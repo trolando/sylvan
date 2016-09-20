@@ -538,6 +538,21 @@ MTBDD mtbdd_enum_all_first(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_f
 MTBDD mtbdd_enum_all_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb);
 
 /**
+ * Function composition after partial evaluation.
+ *
+ * Given a function F(X) = f, compute the composition F'(X) = g(f) for every assignment to X.
+ * All variables X in <vars> must appear before all variables in f and g(f).
+ *
+ * Usage:
+ * TASK_1(MTBDD, g, MTBDD, in) { ... return g of <in> ... }
+ * MTBDD x_vars = ...;  // the cube of variables x
+ * MTBDD result = mtbdd_eval_compose(dd, x_vars, TASK(g));
+ */
+LACE_TYPEDEF_CB(MTBDD, mtbdd_eval_compose_cb, MTBDD);
+TASK_DECL_3(MTBDD, mtbdd_eval_compose, MTBDD, MTBDD, mtbdd_eval_compose_cb);
+#define mtbdd_eval_compose(dd, vars, cb) CALL(mtbdd_eval_compose, dd, vars, cb)
+
+/**
  * For debugging.
  * Tests if all nodes in the MTBDD are correctly ``marked'' in the nodes table.
  * Tests if variables in the internal nodes appear in-order.

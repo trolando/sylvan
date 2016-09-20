@@ -88,6 +88,7 @@ extern llmsset_t nodes;
 #define CACHE_MTBDD_LESS                (53LL<<40)
 #define CACHE_MTBDD_GEQ                 (54LL<<40)
 #define CACHE_MTBDD_GREATER             (55LL<<40)
+#define CACHE_MTBDD_EVAL_COMPOSE        (56LL<<40)
 
 #ifdef __cplusplus
 }

@@ -91,6 +91,7 @@ struct
     {2, MTBDD_COMPOSE, "MTBDD compose"},
     {2, MTBDD_MINIMUM, "MTBDD minimum"},
     {2, MTBDD_MAXIMUM, "MTBDD maximum"},
+    {2, MTBDD_EVAL_COMPOSE, "MTBDD eval_compose"},
 
     {2, LDD_UNION, "LDD union"},
     {2, LDD_MINUS, "LDD minus"},

@@ -2708,6 +2708,83 @@ mtbdd_enum_all_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_c
 }
 
 /**
+ * Function composition after partial evaluation.
+ *
+ * Given a function F(X) = f, compute the composition F'(X) = g(f) for every assignment to X.
+ * All variables X in <vars> must appear before all variables in f and g(f).
+ *
+ * Usage:
+ * TASK_1(MTBDD, g, MTBDD, in) { ... return g of <in> ... }
+ * MTBDD x_vars = ...;  // the cube of variables x
+ * MTBDD result = mtbdd_eval_compose(dd, x_vars, TASK(g));
+ */
+TASK_IMPL_3(MTBDD, mtbdd_eval_compose, MTBDD, dd, MTBDD, vars, mtbdd_eval_compose_cb, cb)
+{
+    /* Maybe perform garbage collection */
+    sylvan_gc_test();
+
+    /* Count operation */
+    sylvan_stats_count(MTBDD_EVAL_COMPOSE);
+
+    /* Check cache */
+    MTBDD result;
+    if (cache_get3(CACHE_MTBDD_EVAL_COMPOSE, dd, vars, (size_t)cb, &result)) {
+        sylvan_stats_count(MTBDD_EVAL_COMPOSE_CACHED);
+        return result;
+    }
+
+    if (mtbdd_isleaf(dd) || vars == mtbdd_true) {
+        /* Apply */
+        result = WRAP(cb, dd);
+    } else {
+        /* Get top variable in dd */
+        mtbddnode_t ndd = MTBDD_GETNODE(dd);
+        uint32_t var = mtbddnode_getvariable(ndd);
+
+        /* Check if <var> is in <vars> */
+        mtbddnode_t nvars = MTBDD_GETNODE(vars);
+        uint32_t vv = mtbddnode_getvariable(nvars);
+
+        /* Search/forward <vars> */
+        MTBDD _vars = vars;
+        while (vv < var) {
+            _vars = node_gethigh(_vars, nvars);
+            if (_vars == mtbdd_true) break;
+            nvars = MTBDD_GETNODE(_vars);
+            vv = mtbddnode_getvariable(nvars);
+        }
+
+        if (_vars == mtbdd_true) {
+            /* Apply */
+            result = WRAP(cb, dd);
+        } else {
+            /* If this fails, then there are variables in f/g BEFORE vars, which breaks functionality. */
+            assert(vv == var);
+            if (vv != var) return mtbdd_invalid;
+
+            /* Get cofactors */
+            MTBDD ddlow = node_getlow(dd, ndd);
+            MTBDD ddhigh = node_gethigh(dd, ndd);
+
+            /* Recursive */
+            _vars = node_gethigh(_vars, nvars);
+            mtbdd_refs_spawn(SPAWN(mtbdd_eval_compose, ddhigh, _vars, cb));
+            MTBDD low = mtbdd_refs_push(CALL(mtbdd_eval_compose, ddlow, _vars, cb));
+            MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_eval_compose));
+            mtbdd_refs_pop(1);
+            result = mtbdd_makenode(var, low, high);
+        }
+    }
+
+    /* Store in cache */
+    if (cache_put3(CACHE_MTBDD_EVAL_COMPOSE, dd, vars, (size_t)cb, result)) {
+        sylvan_stats_count(MTBDD_EVAL_COMPOSE_CACHEDPUT);
+    }
+
+    return result;
+}
+
+/**
  * Helper function for recursive unmarking
  */
 static void

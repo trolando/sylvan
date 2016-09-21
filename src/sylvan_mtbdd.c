@@ -2708,6 +2708,35 @@ mtbdd_enum_all_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_c
 }
 
 /**
+ * Given a MTBDD <dd>, call <cb> with context <context> for every unique path in <dd> ending in leaf <leaf>.
+ *
+ * Usage:
+ * VOID_TASK_3(cb, mtbdd_enum_trace_t, trace, MTBDD, leaf, void*, context) { ... do something ... }
+ * mtbdd_enum_par(dd, cb, context);
+ */
+VOID_TASK_4(mtbdd_enum_par_do, MTBDD, dd, mtbdd_enum_cb, cb, void*, context, mtbdd_enum_trace_t, trace)
+{
+    if (mtbdd_isleaf(dd)) {
+        WRAP(cb, trace, dd, context);
+        return;
+    }
+
+    mtbddnode_t ndd = MTBDD_GETNODE(dd);
+    uint32_t var = mtbddnode_getvariable(ndd);
+
+    struct mtbdd_enum_trace t0 = (struct mtbdd_enum_trace){trace, var, 0};
+    struct mtbdd_enum_trace t1 = (struct mtbdd_enum_trace){trace, var, 1};
+    SPAWN(mtbdd_enum_par_do, node_getlow(dd, ndd), cb, context, &t0);
+    CALL(mtbdd_enum_par_do, node_gethigh(dd, ndd), cb, context, &t1);
+    SYNC(mtbdd_enum_par_do);
+}
+
+VOID_TASK_IMPL_3(mtbdd_enum_par, MTBDD, dd, mtbdd_enum_cb, cb, void*, context)
+{
+    CALL(mtbdd_enum_par_do, dd, cb, context, NULL);
+}
+
+/**
  * Function composition after partial evaluation.
  *
  * Given a function F(X) = f, compute the composition F'(X) = g(f) for every assignment to X.

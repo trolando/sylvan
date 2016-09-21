@@ -2714,7 +2714,7 @@ mtbdd_enum_all_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_c
  * All variables X in <vars> must appear before all variables in f and g(f).
  *
  * Usage:
- * TASK_1(MTBDD, g, MTBDD, in) { ... return g of <in> ... }
+ * TASK_2(MTBDD, g, MTBDD, in) { ... return g of <in> ... }
  * MTBDD x_vars = ...;  // the cube of variables x
  * MTBDD result = mtbdd_eval_compose(dd, x_vars, TASK(g));
  */

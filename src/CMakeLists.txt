@@ -33,6 +33,9 @@ add_library(sylvan
     sylvan_sl.c
     sylvan_stats.h
     sylvan_stats.c
+    sylvan_tzdd.h
+    sylvan_tzdd.c
+    sylvan_tzdd_int.h
     tls.h
 )
 

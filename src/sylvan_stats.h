@@ -31,6 +31,8 @@ typedef enum {
     /* Creating nodes */
     BDD_NODES_CREATED,
     BDD_NODES_REUSED,
+    TZDD_NODES_CREATED,
+    TZDD_NODES_REUSED,
     LDD_NODES_CREATED,
     LDD_NODES_REUSED,
 

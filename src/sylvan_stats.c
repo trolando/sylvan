@@ -54,6 +54,8 @@ struct
     {0, 0, "Tables"},
     {1, BDD_NODES_CREATED, "MTBDD nodes created"},
     {1, BDD_NODES_REUSED, "MTBDD nodes reused"},
+    {1, TZDD_NODES_CREATED, "TZDD nodes created"},
+    {1, TZDD_NODES_REUSED, "TZDD nodes reused"},
     {1, LDD_NODES_CREATED, "LDD nodes created"},
     {1, LDD_NODES_REUSED, "LDD nodes reused"},
     {1, LLMSSET_LOOKUP, "Lookup iterations"},

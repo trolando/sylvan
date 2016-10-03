@@ -95,5 +95,6 @@ extern llmsset_t nodes;
 #endif /* __cplusplus */
 
 #include <sylvan_mtbdd_int.h>
+#include <sylvan_ldd_int.h>
 
 #endif

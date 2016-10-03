@@ -622,7 +622,7 @@ TASK_4(MDD, lddmc_relprod_help, uint32_t, val, MDD, set, MDD, rel, MDD, proj)
     return lddmc_makenode(val, CALL(lddmc_relprod, set, rel, proj), lddmc_false);
 }
 
-// meta: -1 (end; rest not in rel), 0 (not in rel), 1 (read), 2 (write), 3 (only-read), 4 (only-write)
+// meta: -1 (end; rest not in rel), 0 (not in rel), 1 (read), 2 (write), 3 (only-read), 4 (only-write), 5 (action label)
 TASK_IMPL_3(MDD, lddmc_relprod, MDD, set, MDD, rel, MDD, meta)
 {
     // for an empty set of source states, or an empty transition relation, return the empty set
@@ -637,7 +637,7 @@ TASK_IMPL_3(MDD, lddmc_relprod, MDD, set, MDD, rel, MDD, meta)
     if (m_val == (uint32_t)-1) return set;
 
     // if meta is not 0, then both set and rel must be an internal LDD node
-    if (m_val != 0) assert(set != lddmc_true && rel != lddmc_true);
+    if (m_val != 0 && m_val != 5) assert(set != lddmc_true && rel != lddmc_true);
 
     /* Skip nodes if possible */
     if (!mddnode_getcopy(LDD_GETNODE(rel))) {
@@ -672,6 +672,14 @@ TASK_IMPL_3(MDD, lddmc_relprod, MDD, set, MDD, rel, MDD, meta)
         MDD right = lddmc_refs_sync(SYNC(lddmc_relprod));
         lddmc_refs_pop(1);
         result = lddmc_makenode(mddnode_getvalue(n_set), down, right);
+    } else if (m_val == 5) { // action label
+        lddmc_refs_spawn(SPAWN(lddmc_relprod, set, mddnode_getright(n_rel), meta));
+        MDD down = CALL(lddmc_relprod, set, mddnode_getdown(n_rel), mddnode_getdown(n_meta));
+        lddmc_refs_push(down);
+        MDD right = lddmc_refs_sync(SYNC(lddmc_relprod));
+        lddmc_refs_push(right);
+        result = CALL(lddmc_union, down, right);
+        lddmc_refs_pop(2);
     } else if (m_val == 1) { // read
         // read layer: if not copy, then set&rel are already matched
         lddmc_refs_spawn(SPAWN(lddmc_relprod, set, mddnode_getright(n_rel), meta)); // spawn next read in list
@@ -816,7 +824,7 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
     if (m_val == (uint32_t)-1) return CALL(lddmc_union, set, un);
 
     // check depths (this triggers on logic error)
-    if (m_val != 0) assert(set != lddmc_true && rel != lddmc_true && un != lddmc_true);
+    if (m_val != 0 && m_val != 5) assert(set != lddmc_true && rel != lddmc_true && un != lddmc_true);
 
     /* Skip nodes if possible */
     if (!mddnode_getcopy(LDD_GETNODE(rel))) {
@@ -894,6 +902,14 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
             if (right == mddnode_getright(n_un) && down == mddnode_getdown(n_un)) result = un;
             else result = lddmc_makenode(mddnode_getvalue(n_set), down, right);
         }
+    } else if (m_val == 5) {
+        lddmc_refs_spawn(SPAWN(lddmc_relprod_union, set, mddnode_getright(n_rel), meta, un));
+        MDD down = CALL(lddmc_relprod_union, set, mddnode_getdown(n_rel), mddnode_getdown(n_meta), un);
+        lddmc_refs_push(down);
+        MDD right = lddmc_refs_sync(SYNC(lddmc_relprod_union));
+        lddmc_refs_push(right);
+        result = CALL(lddmc_union, down, right);
+        lddmc_refs_pop(2);
     } else if (m_val == 1) {
         // First we also spawn for the next read value, and merge results after
         lddmc_refs_spawn(SPAWN(lddmc_relprod_union, set, mddnode_getright(n_rel), meta, un));
@@ -1109,7 +1125,7 @@ TASK_5(MDD, lddmc_relprev_help, uint32_t, val, MDD, set, MDD, rel, MDD, proj, MD
 /**
  * Calculate all predecessors to a in uni according to rel[meta]
  * <meta> follows the same semantics as relprod
- * i.e. 0 (not in rel), 1 (read), 2 (write), 3 (only-read), 4 (only-write), -1 (end; rest=0)
+ * i.e. 0 (not in rel), 1 (read), 2 (write), 3 (only-read), 4 (only-write), -1 (end; rest=0), 5 (action label)
  */
 TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
 {
@@ -1203,6 +1219,14 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
         MDD right = lddmc_refs_sync(SYNC(lddmc_relprev));
         lddmc_refs_pop(1);
         result = lddmc_makenode(mddnode_getvalue(n_set), down, right);
+    } else if (m_val == 5) {
+        lddmc_refs_spawn(SPAWN(lddmc_relprev, set, mddnode_getright(n_rel), meta, uni));
+        MDD down = CALL(lddmc_relprev, set, mddnode_getdown(n_rel), mddnode_getdown(n_meta), uni);
+        lddmc_refs_push(down);
+        MDD right = lddmc_refs_sync(SYNC(lddmc_relprev));
+        lddmc_refs_push(right);
+        result = CALL(lddmc_union, down, right);
+        lddmc_refs_pop(2);
     } else if (m_val == 1) { // read level
         // result value is in case of copy: everything in uni!
         // result value is in case of not-copy: match uni and rel!

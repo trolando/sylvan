@@ -68,6 +68,9 @@ parse_opt(int key, char *arg, struct argp_state *state)
     case 2:
         report_table = 1;
         break;
+    case 5:
+        report_nodes = 1;
+        break;
     case 6:
         merge_relations = 1;
         break;

@@ -282,7 +282,11 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
         // find next idx on probe sequence
         idx = (idx & CL_MASK) | ((idx+1) & CL_MASK_R);
         if (idx == last) {
-            if (++i == dbs->threshold) return 0; // failed to find empty spot in probe sequence
+            if (++i == *(volatile int16_t*)&dbs->threshold) {
+                // failed to find empty spot in probe sequence
+                // solution: increase probe sequence length...
+                __sync_fetch_and_add(&dbs->threshold, 1);
+            }
 
             // go to next cache line in probe sequence
             if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);

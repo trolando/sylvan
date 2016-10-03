@@ -125,6 +125,7 @@ main(int argc, char** argv)
     sylvan_init_package(1LL<<20, 1LL<<24, 1LL<<18, 1LL<<22);
     sylvan_set_granularity(3); // granularity 3 is decent value for this small problem - 1 means "use cache for every operation"
     sylvan_init_bdd();
+    sylvan_init_tbdd();
 
     // Before and after garbage collection, call gc_start and gc_end
     sylvan_gc_hook_pregc(TASK(gc_start));
@@ -317,6 +318,10 @@ main(int argc, char** argv)
     INFO("Result: NQueens(%zu) has %.0f solutions.\n", size, sylvan_satcount(res, vars));
     INFO("Result BDD has %zu nodes.\n", sylvan_nodecount(res));
     INFO("Computation time: %f sec.\n", t2-t1);
+
+    /* convert to TBDD */
+    TBDD tbdd_res = tbdd_from_mtbdd(res, vars);
+    INFO("Result TBDD has %zu nodes.\n", tbdd_nodecount(tbdd_res));
 
     if (report_stats) {
         sylvan_stats_report(stdout);

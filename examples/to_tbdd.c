@@ -6,10 +6,6 @@
 #include <string.h>
 #include <sys/time.h>
 
-#ifdef HAVE_PROFILER
-#include <gperftools/profiler.h>
-#endif
-
 #include <sylvan.h>
 #include <sylvan_int.h>
 

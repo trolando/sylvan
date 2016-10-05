@@ -146,6 +146,8 @@ VOID_TASK_0(lddmc_refs_init)
     sylvan_gc_add_mark(TASK(lddmc_refs_mark));
 }
 
+VOID_TASK_DECL_0(lddmc_gc_mark_serialize);
+
 /**
  * Initialize and quit functions
  */
@@ -161,6 +163,7 @@ sylvan_init_ldd()
 {
     sylvan_register_quit(lddmc_quit);
     sylvan_gc_add_mark(TASK(lddmc_gc_mark_external_refs));
+    sylvan_gc_add_mark(TASK(lddmc_gc_mark_serialize));
 
     refs_create(&mdd_refs, 1024);
 
@@ -2437,6 +2440,17 @@ lddmc_serialize_fromfile(FILE *in)
 
         lddmc_ser_insert(&lddmc_ser_set, &s);
         lddmc_ser_reversed_insert(&lddmc_ser_reversed_set, &s);
+    }
+}
+
+VOID_TASK_IMPL_0(lddmc_gc_mark_serialize)
+{
+    struct lddmc_ser *s;
+    avl_iter_t *it = lddmc_ser_iter(lddmc_ser_set);
+
+    /* Iterate through nodes in serialization */
+    while ((s=lddmc_ser_iter_next(it))) {
+        CALL(lddmc_gc_mark_rec, s->mdd);
     }
 }
 

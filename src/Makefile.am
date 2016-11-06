@@ -21,6 +21,7 @@ libsylvan_la_SOURCES = \
     sylvan_int.h \
     sylvan_ldd.h \
     sylvan_ldd.c \
+    sylvan_ldd_int.h \
     sylvan_mtbdd.h \
     sylvan_mtbdd.c \
     sylvan_mtbdd_int.h \

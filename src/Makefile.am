@@ -37,6 +37,7 @@ libsylvan_la_SOURCES = \
 libsylvan_la_LIBADD = -lm
 
 if HAVE_LIBHWLOC
-libsylvan_la_LIBADD += -lhwloc
+libsylvan_la_LIBADD += $(HWLOC_LIBS)
+libsylvan_la_CFLAGS += $(HWLOC_CFLAGS)
 libsylvan_la_CFLAGS += -DUSE_HWLOC=1
 endif

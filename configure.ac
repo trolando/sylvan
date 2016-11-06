@@ -12,8 +12,8 @@ LT_INIT
 PKG_PROG_PKG_CONFIG
 m4_pattern_forbid([^PKG_[A-Z_]+$], [missing some pkg-config macros (pkg-config package)])
 
-AC_CHECKING([for any suitable hwloc installation])
-AC_CHECK_LIB([hwloc], [hwloc_topology_init], [AC_CHECK_HEADER([hwloc.h], [hwloc=yes])])
+PKG_CHECK_MODULES([HWLOC], [hwloc], [hwloc=yes],
+    [AC_MSG_WARN(No suitable hwloc installation found)])
 AM_CONDITIONAL([HAVE_LIBHWLOC], [test "$hwloc" = "yes"])
 
 AC_CANONICAL_HOST

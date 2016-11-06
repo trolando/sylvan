@@ -9,6 +9,9 @@ AX_CHECK_COMPILE_FLAG([-std=c11],,[AC_MSG_FAILURE([no acceptable C11 compiler fo
 AC_PROG_CXX
 LT_INIT
 
+PKG_PROG_PKG_CONFIG
+m4_pattern_forbid([^PKG_[A-Z_]+$], [missing some pkg-config macros (pkg-config package)])
+
 AC_CHECKING([for any suitable hwloc installation])
 AC_CHECK_LIB([hwloc], [hwloc_topology_init], [AC_CHECK_HEADER([hwloc.h], [hwloc=yes])])
 AM_CONDITIONAL([HAVE_LIBHWLOC], [test "$hwloc" = "yes"])

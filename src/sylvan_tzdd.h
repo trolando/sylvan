@@ -80,6 +80,13 @@ TZDD tzdd_getneg(TZDD node);
 TZDD tzdd_getzero(TZDD node);
 
 /**
+ * Add a clause to the clause database
+ * Assumes literals are in correct order, and terminated by 0
+ */
+TASK_DECL_1(TZDD, tzdd_make_clause, int32_t*);
+TASK_DECL_2(TZDD, tzdd_add_clause, TZDD, int32_t*);
+
+/**
  * Count the number of TZDD nodes and terminals (excluding tzdd_false and tzdd_true) in the given <count> TZDDs
  */
 size_t tzdd_nodecount_more(const TZDD *tzdds, size_t count);

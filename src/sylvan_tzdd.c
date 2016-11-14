@@ -368,6 +368,109 @@ tzdd_makemapnode(uint32_t var, TZDD pos, TZDD neg)
     return (TZDD)index;
 }
 
+TASK_IMPL_1(TZDD, tzdd_make_clause, int32_t*, literals)
+{
+    if (*literals == 0) return tzdd_true; // empty clause
+    TZDD rec = CALL(tzdd_make_clause, literals+1);
+    int32_t lit = *literals;
+    if (lit<0) {
+        return tzdd_makenode(-lit, tzdd_false, rec, tzdd_false);
+    } else {
+        return tzdd_makenode(lit, rec, tzdd_false, tzdd_false);
+    }
+}
+
+/**
+ * Add a clause to the clause database
+ * Assumes literals are in correct order, and terminated by 0
+ */
+TASK_IMPL_2(TZDD, tzdd_add_clause, TZDD, db, int32_t*, literals)
+{
+    /*
+     * false means clause not in db // empty set
+     * true means clause in db // empty clause
+     */
+    
+    /*
+     * add(1, ...) = 1
+     * add(X, "0") = 1 // add empty clause to db, subume res
+     * add([v, A, B, C], 0) = ...
+     */
+
+    /* Terminal cases that immediately return */
+    if (db == tzdd_true) {
+        return tzdd_true;
+    } else if (db == tzdd_false) {
+        return CALL(tzdd_make_clause, literals);
+    } else if (*literals == 0) {
+        // union 'true' + db
+        // if we are not adding the empty clause, then upstream we already have stuff going on...
+        // so auto-subsume
+        return tzdd_true;
+    }
+
+    /* Check cache (maybe) */
+    sylvan_gc_test();
+    /* missing: op counter */
+
+    int32_t lit = *literals;
+    int32_t var = (lit > 0) ? lit : -lit;
+
+    tzddnode_t ndb = TZDD_GETNODE(db);
+    int32_t vardb = tzddnode_getvariable(ndb);
+
+    TZDD result;
+
+    if (vardb < var) {
+        TZDD zero = tzddnode_getpos(ndb);
+        TZDD rec = CALL(tzdd_add_clause, zero, literals);
+        if (rec == zero) {
+            /* db didnt change */
+            result = db;
+        } else {
+            TZDD pos = tzddnode_getpos(ndb);
+            TZDD neg = tzddnode_getpos(ndb);
+            result = tzdd_makenode(var, pos, neg, rec);
+        }
+    } else if (vardb == var) {
+        if (lit > 0) {
+            TZDD pos = tzddnode_getpos(ndb);
+            TZDD rec = CALL(tzdd_add_clause, pos, literals+1);
+            if (pos == rec) {
+                /* db didnt change */
+                result = db;
+            } else {
+                TZDD neg = tzddnode_getpos(ndb);
+                TZDD zero = tzddnode_getpos(ndb);
+                result = tzdd_makenode(var, rec, neg, zero);
+            }
+        } else {
+            TZDD neg = tzddnode_getpos(ndb);
+            TZDD rec = CALL(tzdd_add_clause, neg, literals+1);
+            if (neg == rec) {
+                /* db didnt change */
+                result = db;
+            } else {
+                TZDD pos = tzddnode_getpos(ndb);
+                TZDD zero = tzddnode_getpos(ndb);
+                result = tzdd_makenode(var, pos, rec, zero);
+            }
+        }
+    } else /* vardb > var */ {
+        TZDD rec = CALL(tzdd_make_clause, literals+1);
+        if (lit > 0) {
+            result = tzdd_makenode(var, rec, tzdd_false, db);
+        } else {
+            result = tzdd_makenode(var, tzdd_false, rec, db);
+        }
+    }
+
+    /* Write to cache (maybe) */
+
+    /* Return result */
+    return result;
+}
+
 /**
  * Helper function for recursive unmarking
  */

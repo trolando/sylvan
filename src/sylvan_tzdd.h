@@ -80,12 +80,6 @@ TZDD tzdd_getneg(TZDD node);
 TZDD tzdd_getzero(TZDD node);
 
 /**
- * Convert an MTBDD to a TZDD.
- */
-// TASK_DECL_2(TZDD, tzdd_from_mtbdd, MTBDD, MTBDD);
-// #define tzdd_from_mtbdd(dd, domain) CALL(tzdd_from_mtbdd, dd, domain)
-
-/**
  * Count the number of TZDD nodes and terminals (excluding tzdd_false and tzdd_true) in the given <count> TZDDs
  */
 size_t tzdd_nodecount_more(const TZDD *tzdds, size_t count);

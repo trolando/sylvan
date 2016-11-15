@@ -91,7 +91,7 @@ tzddnode_getneg(tzddnode_t n)
 static inline uint64_t __attribute__((unused))
 tzddnode_getzero(tzddnode_t n)
 {
-    return (uint32_t)(n->a >> 32);
+    return (uint32_t)(n->b >> 32);
 }
 
 static inline uint32_t __attribute__((unused))

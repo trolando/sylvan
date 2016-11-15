@@ -393,24 +393,32 @@ TASK_IMPL_2(TZDD, tzdd_add_clause, TZDD, db, int32_t*, literals)
     
     /*
      * add(1, ...) = 1
-     * add(X, "0") = 1 // add empty clause to db, subume res
+     * add(X, "0") = 1 // add empty clause to db, subsume res
      * add([v, A, B, C], 0) = ...
      */
 
     /* Terminal cases that immediately return */
     if (db == tzdd_true) {
+        // Add clause to TZDD "true" (empty clause)
+        // Subsume... 
+        if (*literals != 0) printf("empty clause db subsumption\n");
+        assert(0);
         return tzdd_true;
     } else if (db == tzdd_false) {
+        // Add clause to TZDD "false" (empty set)
         return CALL(tzdd_make_clause, literals);
     } else if (*literals == 0) {
-        // union 'true' + db
-        // if we are not adding the empty clause, then upstream we already have stuff going on...
-        // so auto-subsume
+        // Add empty clause to TZDD
+        // Subsume...
+        printf("empty clause subsumption\n");
         return tzdd_true;
     }
 
-    /* Check cache (maybe) */
+    /* At this point, the TZDD is not a leaf and the literals array is not empty */
+
     sylvan_gc_test();
+
+    /* Check cache (maybe later) */
     /* missing: op counter */
 
     int32_t lit = *literals;
@@ -422,37 +430,40 @@ TASK_IMPL_2(TZDD, tzdd_add_clause, TZDD, db, int32_t*, literals)
     TZDD result;
 
     if (vardb < var) {
-        TZDD zero = tzddnode_getpos(ndb);
+        /* recursively compute for "literal not in clause" (zero) */
+        TZDD zero = tzddnode_getzero(ndb);
         TZDD rec = CALL(tzdd_add_clause, zero, literals);
         if (rec == zero) {
             /* db didnt change */
             result = db;
         } else {
             TZDD pos = tzddnode_getpos(ndb);
-            TZDD neg = tzddnode_getpos(ndb);
-            result = tzdd_makenode(var, pos, neg, rec);
+            TZDD neg = tzddnode_getneg(ndb);
+            result = tzdd_makenode(vardb, pos, neg, rec);
         }
     } else if (vardb == var) {
         if (lit > 0) {
+            /* literal in positive form */
             TZDD pos = tzddnode_getpos(ndb);
             TZDD rec = CALL(tzdd_add_clause, pos, literals+1);
             if (pos == rec) {
                 /* db didnt change */
                 result = db;
             } else {
-                TZDD neg = tzddnode_getpos(ndb);
-                TZDD zero = tzddnode_getpos(ndb);
+                TZDD neg = tzddnode_getneg(ndb);
+                TZDD zero = tzddnode_getzero(ndb);
                 result = tzdd_makenode(var, rec, neg, zero);
             }
         } else {
-            TZDD neg = tzddnode_getpos(ndb);
+            /* literal in negative form */
+            TZDD neg = tzddnode_getneg(ndb);
             TZDD rec = CALL(tzdd_add_clause, neg, literals+1);
             if (neg == rec) {
                 /* db didnt change */
                 result = db;
             } else {
                 TZDD pos = tzddnode_getpos(ndb);
-                TZDD zero = tzddnode_getpos(ndb);
+                TZDD zero = tzddnode_getzero(ndb);
                 result = tzdd_makenode(var, pos, rec, zero);
             }
         }
@@ -511,3 +522,72 @@ tzdd_nodecount_more(const TZDD *tzdds, size_t count)
     return result;
 }
 
+/**
+ * Count the number of clauses in the TZDD
+ */
+TASK_IMPL_1(long double, tzdd_clause_count, TZDD, db)
+{
+    /*
+     * false means clause not in db // empty set
+     * true means clause in db // empty clause
+     */
+
+    if (db == tzdd_true) return 1; // the empty clause
+    if (db == tzdd_false) return 0; // empty set
+
+    /* TODO add cache */
+
+    tzddnode_t n = TZDD_GETNODE(db);
+    TZDD pos = tzddnode_getpos(n);
+    TZDD neg = tzddnode_getneg(n);
+    TZDD zero = tzddnode_getzero(n);
+    SPAWN(tzdd_clause_count, pos);
+    SPAWN(tzdd_clause_count, neg);
+    long double res = CALL(tzdd_clause_count, zero);
+    res += SYNC(tzdd_clause_count);
+    res += SYNC(tzdd_clause_count);
+    return res;
+}
+
+struct enum_path
+{
+    struct enum_path *prev;
+    int lit;
+};
+
+VOID_TASK_4(tzdd_enum_seq_do, TZDD, db, tzdd_enum_cb, cb, void*, context, struct enum_path*, path)
+{
+    if (db == tzdd_false) return;
+    if (db == tzdd_true) {
+        /* compute length of path */
+        int len=0;
+        struct enum_path *pp;
+        for (pp = path; pp != NULL; pp = pp->prev) len++;
+        
+        /* fill array */
+        int lits[len];
+        int j=0;
+        for (pp = path; pp != NULL; pp = pp->prev) {
+            lits[len-j-1] = pp->lit;
+            j++;
+        }
+
+        /* call callback */
+        WRAP(cb, context, lits, len);
+        return;
+    }
+
+    tzddnode_t n = TZDD_GETNODE(db);
+    int var = tzddnode_getvariable(n);
+
+    struct enum_path pp1 = (struct enum_path){path, var};
+    struct enum_path pp0 = (struct enum_path){path, -var};
+    CALL(tzdd_enum_seq_do, tzddnode_getpos(n), cb, context, &pp1);
+    CALL(tzdd_enum_seq_do, tzddnode_getneg(n), cb, context, &pp0);
+    CALL(tzdd_enum_seq_do, tzddnode_getzero(n), cb, context, path);
+}
+
+VOID_TASK_IMPL_3(tzdd_enum_seq, TZDD, db, tzdd_enum_cb, cb, void*, context)
+{
+    CALL(tzdd_enum_seq_do, db, cb, context, NULL);
+}

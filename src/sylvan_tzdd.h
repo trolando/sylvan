@@ -97,6 +97,23 @@ tzdd_nodecount(const TZDD dd) {
 }
 
 /**
+ * Count the number of clauses in the TZDD
+ */
+TASK_DECL_1(long double, tzdd_clause_count, TZDD);
+
+/**
+ * Sequential enumeration of clauses
+ */
+LACE_TYPEDEF_CB(void, tzdd_enum_cb, void*, int*, int);
+VOID_TASK_DECL_3(tzdd_enum_seq, TZDD, tzdd_enum_cb, void*);
+#define tzdd_enum_seq(db, cb, context) CALL(tzdd_enum_seq, db, cb, context)
+
+// ENUMerate clauses to callback
+// PRINT out the DOT file
+// COUNT number of occurences of each variable in the database (to find highest)
+// The three cofactors, with v pos, with v neg, with v zero
+
+/**
  * Garbage collection
  * Sylvan supplies two default methods to handle references to nodes, but the user
  * is encouraged to implement custom handling. Simply add a handler using sylvan_gc_add_mark

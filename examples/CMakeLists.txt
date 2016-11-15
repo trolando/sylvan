@@ -12,6 +12,9 @@ target_link_libraries(lddmc sylvan)
 add_executable(ldd2bdd ldd2bdd.c)
 target_link_libraries(ldd2bdd sylvan)
 
+add_executable(satdd satdd.c)
+target_link_libraries(satdd sylvan)
+
 add_executable(nqueens nqueens.c)
 target_link_libraries(nqueens sylvan)
 
@@ -37,6 +40,7 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     target_link_libraries(mc argp)
     target_link_libraries(lddmc argp)
     target_link_libraries(ldd2bdd argp)
+    target_link_libraries(satdd argp)
     target_link_libraries(nqueens argp)
 endif()
 

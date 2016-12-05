@@ -1143,7 +1143,7 @@ TASK_IMPL_4(MDD, lddmc_relprev, MDD, set, MDD, rel, MDD, meta, MDD, uni)
         else return lddmc_intersect(set, uni);
     }
 
-    if (m_val != 0) assert(set != lddmc_true && rel != lddmc_true && uni != lddmc_true);
+    if (m_val != 0 && m_val != 5) assert(set != lddmc_true && rel != lddmc_true && uni != lddmc_true);
 
     /* Skip nodes if possible */
     if (m_val == 0) {

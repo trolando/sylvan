@@ -27,6 +27,9 @@ if(MEDDLY_FOUND)
     set_target_properties(medmc PROPERTIES COMPILE_OPTIONS "-Wno-unused")
 endif()
 
+add_executable(bdd2tbdd bdd2tbdd.c getrss.h getrss.c)
+target_link_libraries(bdd2tbdd sylvan)
+
 include(CheckIncludeFiles)
 check_include_files("gperftools/profiler.h" HAVE_PROFILER)
 
@@ -50,6 +53,7 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
         target_link_libraries(ldd2meddly argp)
     endif()
     target_link_libraries(ldd2bdd argp)
+    target_link_libraries(bdd2tbdd argp)
     target_link_libraries(nqueens argp)
 endif()
 

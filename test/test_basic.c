@@ -12,6 +12,7 @@
 #include "llmsset.h"
 #include "sylvan.h"
 #include "test_assert.h"
+#include "sylvan_int.h"
 
 __thread uint64_t seed = 1;
 
@@ -37,6 +38,42 @@ int
 rng(int low, int high)
 {
     return low + uniform_deviate(xorshift_rand()) * (high-low);
+}
+
+static int
+test_cache()
+{
+    test_assert(cache_getused() == 0);
+
+    /**
+     * Test cache for large number of random entries
+     */
+
+    size_t number_add = 4000000;
+    uint64_t *arr = (uint64_t*)malloc(sizeof(uint64_t)*4*number_add);
+    for (size_t i=0; i<number_add*4; i++) arr[i] = xorshift_rand();
+    for (size_t i=0; i<number_add; i++) {
+        test_assert(cache_put(arr[4*i], arr[4*i+1], arr[4*i+2], arr[4*i+3]));
+        uint64_t val;
+        int res = cache_get(arr[4*i], arr[4*i+1], arr[4*i+2], &val);
+        test_assert(res == 1);
+        test_assert(val == arr[4*i+3]);
+    }
+    size_t count = 0;
+    for (size_t i=0; i<number_add; i++) {
+        uint64_t val;
+        int res = cache_get(arr[4*i], arr[4*i+1], arr[4*i+2], &val);
+        test_assert(res == 0 || val == arr[4*i+3]);
+        if (res) count++;
+    }
+    test_assert(count == cache_getused());
+
+    /**
+     * TODO: multithreaded test
+     */
+
+    free(arr);
+    return 0;
 }
 
 static inline BDD
@@ -458,6 +495,7 @@ int runtests()
     // we are not testing garbage collection
     sylvan_gc_disable();
 
+    if (test_cache()) return 1;
     if (test_bdd()) return 1;
     for (int j=0;j<10;j++) if (test_cube()) return 1;
     for (int j=0;j<10;j++) if (test_relprod()) return 1;

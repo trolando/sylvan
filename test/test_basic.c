@@ -69,6 +69,33 @@ test_cache()
     test_assert(count == cache_getused());
 
     /**
+     * Now also test for double entries
+     */
+
+    for (size_t i=0; i<number_add/2; i++) {
+        test_assert(cache_put6(arr[8*i], arr[8*i+1], arr[8*i+2], arr[8*i+3], arr[8*i+4], arr[8*i+5], arr[8*i+6], arr[8*i+7]));
+        uint64_t val1, val2;
+        int res = cache_get6(arr[8*i], arr[8*i+1], arr[8*i+2], arr[8*i+3], arr[8*i+4], arr[8*i+5], &val1, &val2);
+        test_assert(res == 1);
+        test_assert(val1 == arr[8*i+6]);
+        test_assert(val2 == arr[8*i+7]);
+    }
+    for (size_t i=0; i<number_add/2; i++) {
+        uint64_t val1, val2;
+        int res = cache_get6(arr[8*i], arr[8*i+1], arr[8*i+2], arr[8*i+3], arr[8*i+4], arr[8*i+5], &val1, &val2);
+        test_assert(res == 0 || (val1 == arr[8*i+6] && val2 == arr[8*i+7]));
+    }
+
+    /**
+     * And test that single entries are not corrupted
+     */
+    for (size_t i=0; i<number_add; i++) {
+        uint64_t val;
+        int res = cache_get(arr[4*i], arr[4*i+1], arr[4*i+2], &val);
+        test_assert(res == 0 || val == arr[4*i+3]);
+    }
+
+    /**
      * TODO: multithreaded test
      */
 

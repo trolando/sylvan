@@ -58,6 +58,12 @@ int cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res);
 int cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res);
 
 /**
+ * Primitives for cache get/put that use two buckets
+ */
+int cache_get6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t f, uint64_t *res1, uint64_t *res2);
+int cache_put6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t f, uint64_t res1, uint64_t res2);
+
+/**
  * Helper function to get next 'operation id' (during initialization of modules)
  */
 uint64_t cache_next_opid(void);

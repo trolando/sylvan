@@ -1,6 +1,3 @@
-cmake_minimum_required(VERSION 2.6)
-project(sylvan C CXX)
-
 include_directories(.)
 
 add_executable(mc mc.c getrss.h getrss.c)

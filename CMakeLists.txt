@@ -1,10 +1,30 @@
-cmake_minimum_required(VERSION 2.8)
-project(sylvan C CXX)
+cmake_minimum_required(VERSION 3.1)
+
+project(sylvan VERSION 1.0.0)
+
+set(PROJECT_DESCRIPTION "Sylvan, a parallel decision diagram library")
+set(PROJECT_URL "https://github.com/trolando/sylvan")
+
+message(STATUS "CMake build configuration for Sylvan ${PROJECT_VERSION}")
+enable_language(C CXX)
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel." FORCE)
+ENDIF(NOT CMAKE_BUILD_TYPE)
+
+# Some info
+message(STATUS "OS: ${CMAKE_SYSTEM_NAME}")
+message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID}")
 
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/")
 
-set(CMAKE_C_FLAGS "-O3 -Wextra -Wall -Werror -fno-strict-aliasing -std=gnu11")
-set(CMAKE_CXX_FLAGS "-O3 -Wextra -Wall -Werror -fno-strict-aliasing -Wno-deprecated-register -std=gnu++11")
+set(CMAKE_C_FLAGS "-O2 -Wextra -Wall -Werror -fno-strict-aliasing ${CMAKE_C_FLAGS}")
+set(CMAKE_CXX_FLAGS "-O2 -Wextra -Wall -Werror -fno-strict-aliasing -Wno-deprecated ${CMAKE_CXX_FLAGS}")
 
 option(WITH_COVERAGE "Add generation of test coverage" OFF)
 if(WITH_COVERAGE)
@@ -30,8 +50,8 @@ if(WITH_COVERAGE)
 endif()
 
 include_directories(${CMAKE_SOURCE_DIR}/src)
+include(GNUInstallDirs)
 
-enable_testing()
 add_subdirectory(src)
 add_subdirectory(test)
 
@@ -46,8 +66,12 @@ set(CPACK_PACKAGE_VENDOR "Tom van Dijk")
 set(CPACK_PACKAGE_CONTACT "Tom van Dijk <tom@tvandijk.nl>")
 set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_SOURCE_DIR}/README.md")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
-set(CPACK_PACKAGE_VERSION "1.0.0")
-set(CPACK_PACKAGE_VERSION_MAJOR "1")
-set(CPACK_PACKAGE_VERSION_MINOR "0")
-set(CPACK_PACKAGE_VERSION_PATCH "0")
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_MAJOR_VERSION})
+set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_MINOR_VERSION})
+set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_PATCH_VERSION})
 include(CPack)
+
+# pkg-config
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sylvan.pc.cmake.in" "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc" @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc" DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")

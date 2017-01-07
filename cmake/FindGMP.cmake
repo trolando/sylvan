@@ -1,19 +1,24 @@
-# Try to find the GMP librairies
-# GMP_FOUND - system has GMP lib
-# GMP_INCLUDE_DIR - the GMP include directory
-# GMP_LIBRARIES - Libraries needed to use GMP
+# Try to find GMP
+# Once done this will define:
+# - GMP_FOUND - True if the system has GMP
+# - GMP_INCLUDE_DIRS - include directories for compiling
+# - GMP_LIBRARIES - libraries for linking
+# - GMP_DEFINITIONS - cflags suggested by pkg-config
 
-if (GMP_INCLUDE_DIR AND GMP_LIBRARIES)
-    # Already in cache, be silent
-    set(GMP_FIND_QUIETLY TRUE)
-endif (GMP_INCLUDE_DIR AND GMP_LIBRARIES)
+find_package(PkgConfig)
+pkg_check_modules(PC_GMP QUIET gmp)
 
-find_path(GMP_INCLUDE_DIR NAMES gmp.h )
-find_library(GMP_LIBRARIES NAMES gmp libgmp )
-find_library(GMPXX_LIBRARIES NAMES gmpxx libgmpxx )
-MESSAGE(STATUS "GMP libs: " ${GMP_LIBRARIES} " " ${GMPXX_LIBRARIES} )
+set(GMP_DEFINITIONS ${PC_GMP_CFLAGS_OTHER})
+
+find_path(GMP_INCLUDE_DIR gmp.h
+          HINTS ${PC_GMP_INCLUDEDIR} ${PC_GMP_INCLUDE_DIRS})
+
+find_library(GMP_LIBRARIES NAMES gmp libgmp
+             HINTS ${PC_GMP_LIBDIR} ${PC_GMP_LIBRARY_DIRS})
 
 include(FindPackageHandleStandardArgs)
-FIND_PACKAGE_HANDLE_STANDARD_ARGS(GMP DEFAULT_MSG GMP_INCLUDE_DIR GMP_LIBRARIES)
+# handle the QUIETLY and REQUIRED arguments and set GMP_FOUND to TRUE
+# if all listed variables are TRUE
+find_package_handle_standard_args(GMP DEFAULT_MSG GMP_LIBRARIES GMP_INCLUDE_DIR)
 
 mark_as_advanced(GMP_INCLUDE_DIR GMP_LIBRARIES)

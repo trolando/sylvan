@@ -37,4 +37,5 @@
 #include <sylvan_stats.h>
 #include <sylvan_mtbdd.h>
 #include <sylvan_bdd.h>
+#include <sylvan_tbdd.h>
 #include <sylvan_ldd.h>

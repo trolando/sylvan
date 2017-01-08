@@ -516,6 +516,696 @@ test_ldd()
     return 0;
 }
 
+uint8_t **enum_arrs;
+size_t enum_len;
+int enum_idx;
+int enum_max;
+
+VOID_TASK_3(test_tbdd_enum_cb, void*, ctx, uint8_t*, arr, size_t, len)
+{
+    assert(len == enum_len);
+    assert(enum_idx != enum_max);
+    assert(memcmp(arr, enum_arrs[enum_idx++], len) == 0);
+    (void)ctx;
+    (void)arr;
+    (void)len;
+}
+
+TASK_0(int, test_tbdd_eval)
+{
+    /**
+     * Test tbdd_from_mtbdd
+     */
+
+    BDD dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4,5,6}, 7);
+    BDD dd = mtbdd_cube(dom, (uint8_t[]){0,0,2,2,0,2,0}, mtbdd_true);
+    TBDD tbdd = tbdd_from_mtbdd(dd, dom);
+
+    test_assert(tbdd_from_mtbdd(dom, dom) == tbdd_from_array((uint32_t[]){0,1,2,3,4,5,6}, 7));
+
+    /**
+     * We should now have:
+     * Edge tagged 0 to node X
+     * Node X with variable 2 and two edges tagged 4 to node Y
+     * Node Y with variable 5 and two edges tagged 6, high to False, low to True
+     */
+
+    /**
+     * We just test if it evaluates correctly.
+     */
+
+    test_assert(tbdd_eval(tbdd, 0, 1, 1) == tbdd_false);
+    test_assert(tbdd_eval(tbdd, 0, 0, 1) != tbdd_false);
+    tbdd = tbdd_eval(tbdd, 0, 0, 1);
+    test_assert(tbdd_eval(tbdd, 1, 1, 2) == tbdd_false);
+    test_assert(tbdd_eval(tbdd, 1, 0, 2) != tbdd_false);
+    tbdd = tbdd_eval(tbdd, 1, 0, 2);
+    test_assert(tbdd_eval(tbdd, 2, 1,3 ) == tbdd_eval(tbdd, 2, 0, 3));
+    tbdd = tbdd_eval(tbdd, 2, 0, 3);
+    test_assert(tbdd_eval(tbdd, 3, 1,4 ) == tbdd_eval(tbdd, 3, 0, 4));
+    tbdd = tbdd_eval(tbdd, 3, 1, 4);
+    test_assert(tbdd_eval(tbdd, 4, 1, 5) == tbdd_false);
+    test_assert(tbdd_eval(tbdd, 4, 0, 5) != tbdd_false);
+    tbdd = tbdd_eval(tbdd, 4, 0, 5);
+    test_assert(tbdd_eval(tbdd, 5, 1, 6) == tbdd_eval(tbdd, 5, 0, 6));
+    tbdd = tbdd_eval(tbdd, 5, 0, 6);
+    test_assert(tbdd_eval(tbdd, 6, 1, 0xfffff) == tbdd_false);
+    test_assert(tbdd_eval(tbdd, 6, 0, 0xfffff) != tbdd_false);
+
+    /**
+     * Test that makenode correctly creates a (k,k) node
+     */
+    TBDD a = tbdd_ithvar(8);
+    a = tbdd_makenode(3, a, tbdd_false, 7);
+    test_assert(tbdd_eval(a, 3, 1, 4) == tbdd_false);
+    test_assert(tbdd_eval(a, 3, 0, 4) != tbdd_false);
+    test_assert(tbdd_getvar(a) == 7);
+    test_assert(tbdd_getlow(a) == tbdd_gethigh(a));
+
+    return 0;
+}
+
+TASK_0(int, test_tbdd_ithvar)
+{
+    /**
+     * Test tbdd_ithvar
+     */
+
+    uint32_t var = rng(0, 0xffffe);
+    TBDD a = tbdd_makenode(var, tbdd_false, tbdd_true, 0xfffff);
+    test_assert(a == tbdd_ithvar(var));
+    test_assert(a == tbdd_from_mtbdd(sylvan_ithvar(var), sylvan_ithvar(var)));
+
+    return 0;
+}
+
+TASK_0(int, test_tbdd_from_mtbdd)
+{
+    /**
+     * Test tbdd_from_mtbdd and tbdd_to_mtbdd with random sets
+     */
+
+    BDD bdd_dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+    TBDD tbdd_dom = tbdd_from_array((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+
+    test_assert(tbdd_from_mtbdd(bdd_dom, bdd_dom) == tbdd_dom);
+
+    int count = rng(0,100);
+    for (int i=0; i<count; i++) {
+        uint8_t arr[8];
+        for (int j=0; j<8; j++) arr[j] = rng(0, 2);
+        BDD bdd_set = sylvan_cube(bdd_dom, arr);
+        TBDD tbdd_set = tbdd_cube(tbdd_dom, arr);
+        TBDD tbdd_test = tbdd_from_mtbdd(bdd_set, bdd_dom);
+        test_assert(tbdd_test == tbdd_set);
+        test_assert(tbdd_to_mtbdd(tbdd_test, tbdd_dom) == bdd_set);
+    }
+
+    return 0;
+}
+
+TASK_0(int, test_tbdd_merge_domains)
+{
+    /*
+     * Test tbdd_merge_domains with random sets
+     */
+
+    // Create random domain of 6..14 variables
+    int nvars = rng(20,50);
+
+    // Create random subdomain 1
+    uint32_t subdom1_arr[nvars];
+    int nsub1 = 0;
+    for (int i=0; i<nvars; i++) if (rng(0,2)) subdom1_arr[nsub1++] = i;
+    BDD bdd_subdom1 = mtbdd_fromarray(subdom1_arr, nsub1);
+    TBDD tbdd_subdom1 = tbdd_from_array(subdom1_arr, nsub1);
+    test_assert(tbdd_subdom1 == tbdd_from_mtbdd(bdd_subdom1, bdd_subdom1));
+
+    // Create random subdomain 2
+    uint32_t subdom2_arr[nvars];
+    int nsub2 = 0;
+    for (int i=0; i<nvars; i++) if (rng(0,2)) subdom2_arr[nsub2++] = i;
+    BDD bdd_subdom2 = mtbdd_fromarray(subdom2_arr, nsub2);
+    TBDD tbdd_subdom2 = tbdd_from_array(subdom2_arr, nsub2);
+    test_assert(tbdd_subdom2 == tbdd_from_mtbdd(bdd_subdom2, bdd_subdom2));
+
+    // combine subdomains
+    BDD bdd_subdom = sylvan_and(bdd_subdom1, bdd_subdom2);
+    TBDD tbdd_subdom = tbdd_merge_domains(tbdd_subdom1, tbdd_subdom2);
+    test_assert(tbdd_subdom == tbdd_from_mtbdd(bdd_subdom, bdd_subdom));
+
+    return 0;
+}
+
+TASK_0(int, test_tbdd_extend_domain)
+{
+    /**
+     * Test tbdd_extend_domain with random sets
+     */
+
+    // Create random domain of 6..14 variables
+    int nvars = rng(6,14);
+    uint32_t dom_arr[nvars];
+    for (int i=0; i<nvars; i++) dom_arr[i] = i;
+    BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
+    TBDD tbdd_dom = tbdd_from_array(dom_arr, nvars);
+    test_assert(tbdd_dom == tbdd_from_mtbdd(bdd_dom, bdd_dom));
+
+    // Create random subdomain
+    uint32_t subdom_arr[nvars];
+    int nsub = 0;
+    for (int i=0; i<nvars; i++) if (rng(0,2)) subdom_arr[nsub++] = i;
+    BDD bdd_subdom = mtbdd_fromarray(subdom_arr, nsub);
+    TBDD tbdd_subdom = tbdd_from_array(subdom_arr, nsub);
+    test_assert(tbdd_subdom == tbdd_from_mtbdd(bdd_subdom, bdd_subdom));
+
+    // Create random set on subdomain
+    BDD bdd_set = sylvan_false;
+    TBDD tbdd_set = tbdd_false;
+    {
+        int count = rng(10,200);
+        for (int i=0; i<count; i++) {
+            uint8_t arr[nsub];
+            for (int j=0; j<nsub; j++) arr[j] = rng(0, 2);
+            bdd_set = sylvan_union_cube(bdd_set, bdd_subdom, arr);
+            tbdd_set = tbdd_union_cube(tbdd_set, tbdd_subdom, arr);
+        }
+    }
+    test_assert(tbdd_set == tbdd_from_mtbdd(bdd_set, bdd_subdom));
+
+    TBDD tbdd_test_result = tbdd_extend_domain(tbdd_set, tbdd_subdom, tbdd_dom);
+    test_assert(tbdd_test_result == tbdd_from_mtbdd(bdd_set, bdd_dom));
+
+    return 0;
+}
+
+TASK_0(int, test_tbdd_cube)
+{
+    /**
+     * Test tbdd_cube with random sets
+     * This also tests tbdd_from_mtbdd...
+     */
+
+    BDD bdd_dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+    TBDD tbdd_dom = tbdd_from_array((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+
+    test_assert(tbdd_from_mtbdd(bdd_dom, bdd_dom) == tbdd_dom);
+
+    int count = rng(0,100);
+    for (int i=0; i<count; i++) {
+        uint8_t arr[8];
+        for (int j=0; j<8; j++) arr[j] = rng(0, 3);
+        BDD bdd_set = sylvan_cube(bdd_dom, arr);
+        TBDD tbdd_set = tbdd_cube(tbdd_dom, arr);
+        test_assert(tbdd_from_mtbdd(bdd_set, bdd_dom) == tbdd_set);
+    }
+
+    return 0;
+}
+
+TASK_0(int, test_tbdd_union_cube)
+{
+    /**
+     * Test tbdd_union_cube with random sets
+     * This also tests tbdd_from_mtbdd...
+     */
+
+    BDD bdd_dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+    TBDD tbdd_dom = tbdd_from_array((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+
+    test_assert(tbdd_from_mtbdd(bdd_dom, bdd_dom) == tbdd_dom);
+
+    BDD bdd_set = sylvan_false;
+    TBDD tbdd_set = tbdd_false;
+    int count = rng(0,40);
+    for (int i=0; i<count; i++) {
+        uint8_t arr[8];
+        for (int j=0; j<8; j++) arr[j] = rng(0, 3);
+        bdd_set = sylvan_union_cube(bdd_set, bdd_dom, arr);
+        tbdd_set = tbdd_union_cube(tbdd_set, tbdd_dom, arr);
+        test_assert(tbdd_from_mtbdd(bdd_set, bdd_dom) == tbdd_set);
+    }
+
+    return 0;
+}
+
+TASK_0(int, test_tbdd_satcount)
+{
+    /**
+     * Test tbdd_satcount with random sets
+     * This also tests tbdd_from_mtbdd...
+     */
+
+    BDD bdd_dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+
+    int count = rng(0,100);
+    BDD bdd_set = sylvan_false;
+    for (int i=0; i<count; i++) {
+        uint8_t arr[8];
+        for (int j=0; j<8; j++) arr[j] = rng(0, 2);
+        bdd_set = sylvan_union_cube(bdd_set, bdd_dom, arr);
+    }
+
+    TBDD tbdd_set = tbdd_from_mtbdd(bdd_set, bdd_dom);
+    TBDD tbdd_dom = tbdd_from_mtbdd(bdd_dom, bdd_dom);
+
+    test_assert((size_t)mtbdd_satcount(bdd_set, 8) == (size_t)tbdd_satcount(tbdd_set, tbdd_dom));
+
+    return 0;
+}
+
+TASK_0(int, test_tbdd_enum)
+{
+    /**
+     * Test tbdd_enum with random sets
+     */
+    int nvars = rng(8,12);
+
+    // Create random source set
+    uint32_t dom_arr[nvars];
+    for (int i=0; i<nvars; i++) dom_arr[i] = i*2;
+    TBDD tbdd_dom = tbdd_from_array(dom_arr, nvars);
+
+    TBDD tbdd_set = tbdd_false;
+    int count = rng(4,100);
+    for (int i=0; i<count; i++) {
+        uint8_t arr[nvars];
+        for (int j=0; j<nvars; j++) arr[j] = rng(0, 2);
+        tbdd_set = tbdd_union_cube(tbdd_set, tbdd_dom, arr);
+    }
+
+    enum_max = tbdd_satcount(tbdd_set, tbdd_dom);
+    enum_len = nvars;
+    enum_idx = 0;
+
+    uint8_t arr[nvars];
+    enum_arrs = malloc(sizeof(uint8_t*[enum_max]));
+    TBDD res = tbdd_enum_first(tbdd_set, tbdd_dom, arr);
+    for (int i=0; i<enum_max; i++) {
+        test_assert(res != tbdd_false);
+        enum_arrs[i] = malloc(sizeof(uint8_t[nvars]));
+        memcpy(enum_arrs[i], arr, nvars);
+        res = tbdd_enum_next(tbdd_set, tbdd_dom, arr);
+    }
+    assert(res == tbdd_false);
+
+    tbdd_enum_seq(tbdd_set, tbdd_dom, TASK(test_tbdd_enum_cb), NULL);
+    for (int i=0; i<enum_max; i++) free(enum_arrs[i]);
+    free(enum_arrs);
+
+    return 0;
+}
+
+TASK_0(int, test_tbdd_and)
+{
+    /**
+     * Test tbdd_and with random sets
+     */
+
+    // Create random domain of 6..14 variables
+    int nvars = rng(6,14);
+    uint32_t dom_arr[nvars];
+    for (int i=0; i<nvars; i++) dom_arr[i] = i;
+    BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
+
+    BDD bdd_set_a = sylvan_false;
+    BDD bdd_set_b = sylvan_false;
+
+    int count = rng(0,100);
+    for (int i=0; i<count; i++) {
+        uint8_t arr[nvars];
+        for (int j=0; j<nvars; j++) arr[j] = rng(0, 2);
+        bdd_set_a = sylvan_union_cube(bdd_set_a, bdd_dom, arr);
+        for (int j=0; j<nvars; j++) arr[j] = rng(0, 2);
+        bdd_set_b = sylvan_union_cube(bdd_set_b, bdd_dom, arr);
+    }
+
+    BDD bdd_set = sylvan_and(bdd_set_a, bdd_set_b);
+
+    TBDD tbdd_set_a = tbdd_from_mtbdd(bdd_set_a, bdd_dom);
+    TBDD tbdd_set_b = tbdd_from_mtbdd(bdd_set_b, bdd_dom);
+    TBDD tbdd_set = tbdd_from_mtbdd(bdd_set, bdd_dom);
+    TBDD tbdd_dom = tbdd_from_mtbdd(bdd_dom, bdd_dom);
+
+    TBDD tbdd_test_result = tbdd_and(tbdd_set_a, tbdd_set_b, tbdd_dom);
+    
+    test_assert(tbdd_set == tbdd_test_result);
+
+    return 0;
+}
+
+TASK_0(int, test_tbdd_or)
+{
+    /**
+     * Test tbdd_or with random sets
+     */
+
+    // Create random domain of 6..14 variables
+    int nvars = rng(6,14);
+    uint32_t dom_arr[nvars];
+    for (int i=0; i<nvars; i++) dom_arr[i] = i;
+    BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
+
+    BDD bdd_set_a = sylvan_false;
+    BDD bdd_set_b = sylvan_false;
+
+    int count = rng(0,100);
+    for (int i=0; i<count; i++) {
+        uint8_t arr[nvars];
+        for (int j=0; j<nvars; j++) arr[j] = rng(0, 2);
+        bdd_set_a = sylvan_union_cube(bdd_set_a, bdd_dom, arr);
+        for (int j=0; j<nvars; j++) arr[j] = rng(0, 2);
+        bdd_set_b = sylvan_union_cube(bdd_set_b, bdd_dom, arr);
+    }
+
+    BDD bdd_set = sylvan_or(bdd_set_a, bdd_set_b);
+
+    TBDD tbdd_set_a = tbdd_from_mtbdd(bdd_set_a, bdd_dom);
+    TBDD tbdd_set_b = tbdd_from_mtbdd(bdd_set_b, bdd_dom);
+    TBDD tbdd_set = tbdd_from_mtbdd(bdd_set, bdd_dom);
+    TBDD tbdd_dom = tbdd_from_mtbdd(bdd_dom, bdd_dom);
+
+    TBDD tbdd_test_result = tbdd_or(tbdd_set_a, tbdd_set_b, tbdd_dom);
+
+    test_assert(tbdd_set == tbdd_test_result);
+
+    return 0;
+}
+
+TASK_0(int, test_tbdd_not)
+{
+    /**
+     * Test negation with tbdd_ite
+     */
+
+    BDD bdd_dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+
+    int count = rng(0,100);
+    BDD bdd_set = sylvan_false;
+    for (int i=0; i<count; i++) {
+        uint8_t arr[8];
+        for (int j=0; j<8; j++) arr[j] = rng(0, 2);
+        bdd_set = sylvan_union_cube(bdd_set, bdd_dom, arr);
+    }
+
+    TBDD tbdd_set = tbdd_from_mtbdd(bdd_set, bdd_dom);
+    TBDD tbdd_set_inv = tbdd_from_mtbdd(sylvan_not(bdd_set), bdd_dom);
+    TBDD tbdd_dom = tbdd_from_mtbdd(bdd_dom, bdd_dom);
+
+    test_assert((size_t)mtbdd_satcount(sylvan_not(bdd_set), 8) == (size_t)tbdd_satcount(tbdd_set_inv, tbdd_dom));
+    test_assert(tbdd_set_inv == tbdd_ite(tbdd_set, tbdd_false, tbdd_true, tbdd_dom));
+    test_assert(tbdd_set_inv == tbdd_not(tbdd_set, tbdd_dom));
+
+    return 0;
+}
+
+TASK_0(int, test_tbdd_ite)
+{
+    /**
+     * Test tbdd_ite, first by comparing with tbdd_and
+     */
+
+    BDD bdd_dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4,5}, 6);
+
+    BDD bdd_set_a = sylvan_false;
+    BDD bdd_set_b = sylvan_false;
+
+    int count = rng(0,100);
+    for (int i=0; i<count; i++) {
+        uint8_t arr[6];
+        for (int j=0; j<6; j++) arr[j] = rng(0, 2);
+        bdd_set_a = sylvan_union_cube(bdd_set_a, bdd_dom, arr);
+        for (int j=0; j<6; j++) arr[j] = rng(0, 2);
+        bdd_set_b = sylvan_union_cube(bdd_set_b, bdd_dom, arr);
+    }
+
+    BDD bdd_set = sylvan_and(bdd_set_a, bdd_set_b);
+
+    TBDD tbdd_set_a = tbdd_from_mtbdd(bdd_set_a, bdd_dom);
+    TBDD tbdd_set_b = tbdd_from_mtbdd(bdd_set_b, bdd_dom);
+    TBDD tbdd_set = tbdd_from_mtbdd(bdd_set, bdd_dom);
+    TBDD tbdd_dom = tbdd_from_mtbdd(bdd_dom, bdd_dom);
+
+    TBDD tbdd_test_result = tbdd_ite(tbdd_set_a, tbdd_set_b, tbdd_false, tbdd_dom);
+    test_assert(tbdd_set == tbdd_test_result);
+    tbdd_test_result = tbdd_ite(tbdd_set_b, tbdd_set_a, tbdd_false, tbdd_dom);
+    test_assert(tbdd_set == tbdd_test_result);
+
+    return 0;
+}
+
+TASK_0(int, test_tbdd_exists)
+{
+    /**
+     * Test tbdd_exists with random sets
+     */
+
+    // Create random domain of 6..14 variables
+    int nvars = rng(3,4);
+    uint32_t dom_arr[nvars];
+    for (int i=0; i<nvars; i++) dom_arr[i] = i;
+    BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
+    TBDD tbdd_dom = tbdd_from_array(dom_arr, nvars);
+    test_assert(tbdd_dom == tbdd_from_mtbdd(bdd_dom, bdd_dom));
+
+    // Create random subdomain
+    uint32_t subdom_arr[nvars], q_arr[nvars];
+    int nsub = 0, nq = 0;
+    for (int i=0; i<nvars; i++) {
+        if (rng(0,2)) subdom_arr[nsub++] = i;
+        else q_arr[nq++] = i;
+    }
+    BDD bdd_subdom = mtbdd_fromarray(subdom_arr, nsub);
+    TBDD tbdd_subdom = tbdd_from_array(subdom_arr, nsub);
+    BDD bdd_qdom = mtbdd_fromarray(q_arr, nq);
+    TBDD tbdd_qdom = tbdd_from_array(q_arr, nq);
+    test_assert(tbdd_subdom == tbdd_from_mtbdd(bdd_subdom, bdd_subdom));
+    test_assert(tbdd_qdom == tbdd_from_mtbdd(bdd_qdom, bdd_qdom));
+
+    // Create random set on subdomain
+    BDD bdd_set = sylvan_false;
+    TBDD tbdd_set = tbdd_false;
+    {
+        int count = rng(10,200);
+        for (int i=0; i<count; i++) {
+            uint8_t arr[nvars];
+            for (int j=0; j<nvars; j++) arr[j] = rng(0, 2);
+            bdd_set = sylvan_union_cube(bdd_set, bdd_dom, arr);
+            tbdd_set = tbdd_union_cube(tbdd_set, tbdd_dom, arr);
+        }
+    }
+    test_assert(tbdd_set == tbdd_from_mtbdd(bdd_set, bdd_dom));
+
+    BDD bdd_qset = sylvan_exists(bdd_set, bdd_qdom);
+    TBDD tbdd_test_result = tbdd_exists(tbdd_set, tbdd_qdom, tbdd_dom);
+    TBDD tbdd_test_result2 = tbdd_exists_dom(tbdd_set, tbdd_subdom);
+    test_assert(tbdd_test_result == tbdd_from_mtbdd(bdd_qset, bdd_dom));
+    test_assert(tbdd_test_result2 == tbdd_from_mtbdd(bdd_qset, bdd_subdom));
+
+    return 0;
+}
+
+TASK_0(int, test_tbdd_relnext)
+{
+    /**
+     * Test tbdd_relnext with random sets
+     */
+    int nvars = rng(8,12);
+
+    // Create random source set
+    uint32_t dom_arr[nvars];
+    for (int i=0; i<nvars; i++) dom_arr[i] = i*2;
+    BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
+    TBDD tbdd_dom = tbdd_from_array(dom_arr, nvars);
+
+    BDD bdd_set = sylvan_false;
+    TBDD tbdd_set = tbdd_false;
+    {
+        int count = rng(4,100);
+        for (int i=0; i<count; i++) {
+            uint8_t arr[nvars];
+            for (int j=0; j<nvars; j++) arr[j] = rng(0, 2);
+            bdd_set = sylvan_union_cube(bdd_set, bdd_dom, arr);
+            tbdd_set = tbdd_union_cube(tbdd_set, tbdd_dom, arr);
+        }
+    }
+    test_assert(tbdd_set == tbdd_from_mtbdd(bdd_set, bdd_dom));
+
+    // Create random transition relation domain
+    BDD bdd_vars;
+    TBDD tbdd_vars;
+    uint32_t vars_arr[2*nvars];
+    int len = 0;
+    {
+        int _vars = rng(1, 256);
+        for (int i=0; i<nvars; i++) {
+            if (_vars & (1<<i)) {
+                vars_arr[len++] = i*2;
+                vars_arr[len++] = i*2+1;
+            }
+        }
+        bdd_vars = mtbdd_fromarray(vars_arr, len);
+        tbdd_vars = tbdd_from_array(vars_arr, len);
+    }
+    test_assert(tbdd_vars == tbdd_from_mtbdd(bdd_vars, bdd_vars));
+
+    // Create random transitions
+    BDD bdd_rel = sylvan_false;
+    TBDD tbdd_rel = tbdd_false;
+    {
+        int count = rng(100, 200);
+        for (int i=0; i<count; i++) {
+            uint8_t arr[len];
+            for (int j=0; j<len; j++) arr[j] = rng(0, 2);
+            bdd_rel = sylvan_union_cube(bdd_rel, bdd_vars, arr);
+            tbdd_rel = tbdd_union_cube(tbdd_rel, tbdd_vars, arr);
+        }
+    }
+    test_assert(tbdd_rel == tbdd_from_mtbdd(bdd_rel, bdd_vars));
+
+    // Check if sat counts are the same
+    test_assert(sylvan_satcount(bdd_set, bdd_dom) == tbdd_satcount(tbdd_set, tbdd_dom));
+    test_assert(sylvan_satcount(bdd_rel, bdd_vars) == tbdd_satcount(tbdd_rel, tbdd_vars));
+
+    BDD bdd_succ = sylvan_relnext(bdd_set, bdd_rel, bdd_vars);
+    TBDD tbdd_succ = tbdd_relnext(tbdd_set, tbdd_rel, tbdd_vars, tbdd_dom);
+
+    test_assert(tbdd_succ == tbdd_from_mtbdd(bdd_succ, bdd_dom));
+
+    return 0;
+}
+
+TASK_0(int, test_tbdd_and_dom)
+{
+    /**
+     * Test tbdd_and_dom with random sets
+     */
+
+    // Create random domain of 6..14 variables
+    int nvars = rng(6,14);
+    uint32_t dom_arr[nvars];
+    for (int i=0; i<nvars; i++) dom_arr[i] = i;
+    BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
+    TBDD tbdd_dom = tbdd_from_array(dom_arr, nvars);
+    test_assert(tbdd_dom == tbdd_from_mtbdd(bdd_dom, bdd_dom));
+
+    // Create random subdomain 1
+    uint32_t subdom1_arr[nvars];
+    int nsub1 = 0;
+    for (int i=0; i<nvars; i++) if (rng(0,2)) subdom1_arr[nsub1++] = i;
+    BDD bdd_subdom1 = mtbdd_fromarray(subdom1_arr, nsub1);
+    TBDD tbdd_subdom1 = tbdd_from_array(subdom1_arr, nsub1);
+    test_assert(tbdd_subdom1 == tbdd_from_mtbdd(bdd_subdom1, bdd_subdom1));
+
+    // Create random subdomain 2
+    uint32_t subdom2_arr[nvars];
+    int nsub2 = 0;
+    for (int i=0; i<nvars; i++) if (rng(0,2)) subdom2_arr[nsub2++] = i;
+    BDD bdd_subdom2 = mtbdd_fromarray(subdom2_arr, nsub2);
+    TBDD tbdd_subdom2 = tbdd_from_array(subdom2_arr, nsub2);
+    test_assert(tbdd_subdom2 == tbdd_from_mtbdd(bdd_subdom2, bdd_subdom2));
+
+    // Create random set on subdomain 1
+    BDD bdd_set1 = sylvan_false;
+    TBDD tbdd_set1 = tbdd_false;
+    {
+        int count = rng(10,200);
+        for (int i=0; i<count; i++) {
+            uint8_t arr[nsub1];
+            for (int j=0; j<nsub1; j++) arr[j] = rng(0, 2);
+            bdd_set1 = sylvan_union_cube(bdd_set1, bdd_subdom1, arr);
+            tbdd_set1 = tbdd_union_cube(tbdd_set1, tbdd_subdom1, arr);
+        }
+    }
+    test_assert(tbdd_set1 == tbdd_from_mtbdd(bdd_set1, bdd_subdom1));
+
+    // Create random set on subdomain 2
+    BDD bdd_set2 = sylvan_false;
+    TBDD tbdd_set2 = tbdd_false;
+    {
+        int count = rng(10,200);
+        for (int i=0; i<count; i++) {
+            uint8_t arr[nsub2];
+            for (int j=0; j<nsub2; j++) arr[j] = rng(0, 2);
+            bdd_set2 = sylvan_union_cube(bdd_set2, bdd_subdom2, arr);
+            tbdd_set2 = tbdd_union_cube(tbdd_set2, tbdd_subdom2, arr);
+        }
+    }
+    test_assert(tbdd_set2 == tbdd_from_mtbdd(bdd_set2, bdd_subdom2));
+
+    BDD bdd_set = sylvan_and(bdd_set1, bdd_set2);
+    BDD bdd_subdom = sylvan_and(bdd_subdom1, bdd_subdom2);
+    TBDD tbdd_set = tbdd_and_dom(tbdd_set1, tbdd_subdom1, tbdd_set2, tbdd_subdom2);
+    test_assert(tbdd_set == tbdd_from_mtbdd(bdd_set, bdd_subdom));
+
+    return 0;
+}
+
+TASK_0(int, test_tbdd_read_write)
+{
+    /**
+     * Test reading/writing with random sets
+     */
+    int nvars = rng(8,12);
+
+    // Create random source sets
+    uint32_t dom_arr[nvars];
+    for (int i=0; i<nvars; i++) dom_arr[i] = i*2;
+    TBDD tbdd_dom = tbdd_from_array(dom_arr, nvars);
+
+    int set_count = rng(1,10);
+    TBDD tbdd_set[set_count];
+    for (int k=0; k<set_count; k++) {
+        tbdd_set[k] = tbdd_false;
+        int count = rng(4,100);
+        for (int i=0; i<count; i++) {
+            uint8_t arr[nvars];
+            for (int j=0; j<nvars; j++) arr[j] = rng(0, 2);
+            tbdd_set[k] = tbdd_union_cube(tbdd_set[k], tbdd_dom, arr);
+        }
+    }
+
+    FILE *f = tmpfile();
+    tbdd_writer_tobinary(f, tbdd_set, set_count);
+    rewind(f);
+    TBDD test[set_count];
+    test_assert(tbdd_reader_frombinary(f, test, set_count) == 0);
+    for (int i=0; i<set_count; i++) test_assert(test[i] == tbdd_set[i]);
+
+    return 0;
+}
+
+int
+test_tbdd()
+{
+    LACE_ME;
+
+    int test_iterations = 1000;
+
+    for (int i=0; i<test_iterations; i++) if (CALL(test_tbdd_eval)) return 1;
+    for (int i=0; i<test_iterations; i++) if (CALL(test_tbdd_ithvar)) return 1;
+    for (int k=0; k<test_iterations; k++) if (CALL(test_tbdd_from_mtbdd)) return 1;
+    for (int k=0; k<test_iterations; k++) if (CALL(test_tbdd_cube)) return 1;
+    for (int k=0; k<test_iterations; k++) if (CALL(test_tbdd_satcount)) return 1;
+    for (int k=0; k<test_iterations; k++) if (CALL(test_tbdd_merge_domains)) return 1;
+    for (int k=0; k<test_iterations; k++) if (CALL(test_tbdd_enum)) return 1;
+    for (int k=0; k<test_iterations; k++) if (CALL(test_tbdd_ite)) return 1;
+         /**
+         * TODO Test tbdd_ite with random sets vs BDD
+         */
+    for (int k=0; k<test_iterations; k++) if (CALL(test_tbdd_and)) return 1;
+    for (int k=0; k<test_iterations; k++) if (CALL(test_tbdd_or)) return 1;
+    for (int k=0; k<test_iterations; k++) if (CALL(test_tbdd_not)) return 1;
+    for (int k=0; k<test_iterations; k++) if (CALL(test_tbdd_exists)) return 1;
+    for (int k=0; k<test_iterations; k++) if (CALL(test_tbdd_relnext)) return 1;
+    for (int k=0; k<test_iterations; k++) if (CALL(test_tbdd_and_dom)) return 1;
+    for (int k=0; k<test_iterations; k++) if (CALL(test_tbdd_read_write)) return 1;
+    for (int k=0; k<test_iterations; k++) if (CALL(test_tbdd_extend_domain)) return 1;
+    for (int k=0; k<test_iterations; k++) if (CALL(test_tbdd_union_cube)) return 1;
+
+    return 0;
+}
+
 int runtests()
 {
     // we are not testing garbage collection
@@ -529,6 +1219,7 @@ int runtests()
     for (int j=0;j<10;j++) if (test_operators()) return 1;
 
     if (test_ldd()) return 1;
+    if (test_tbdd()) return 1;
 
     return 0;
 }
@@ -540,11 +1231,12 @@ int main()
     lace_startup(0, NULL, NULL);
 
     // Simple Sylvan initialization, also initialize BDD, MTBDD and LDD support
-    sylvan_set_sizes(1LL<<20, 1LL<<20, 1LL<<16, 1LL<<16);
+    sylvan_set_sizes(1LL<<26, 1LL<<26, 1LL<<20, 1LL<<20);
     sylvan_init_package();
     sylvan_init_bdd();
     sylvan_init_mtbdd();
     sylvan_init_ldd();
+    sylvan_init_tbdd();
 
     int res = runtests();
 

@@ -1,7 +1,7 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
-## [Unreleased]
+## [1.1.0] - 2017-01-09
 ### Added
 - This CHANGELOG file.
 - Custom leaves can now implement custom callbacks for writing/reading to/from files.

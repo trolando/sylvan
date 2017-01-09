@@ -30,7 +30,7 @@ set(HEADERS
     sylvan_mtbdd_int.h
     sylvan_obj.hpp
     sylvan_stats.h
-    tls.h
+    sylvan_tls.h
 )
 
 add_library(sylvan STATIC ${SOURCES})

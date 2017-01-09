@@ -26,7 +26,7 @@
 
 #include <llmsset.h>
 #include <sylvan_stats.h>
-#include <tls.h>
+#include <sylvan_tls.h>
 
 #ifndef USE_HWLOC
 #define USE_HWLOC 0

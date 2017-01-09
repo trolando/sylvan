@@ -31,7 +31,7 @@
 #include <stdlib.h> // for realloc
 
 #include <lace.h>
-#include <tls.h>
+#include <sylvan_tls.h>
 
 #include <sylvan_common.h>
 #include <sylvan_stats.h>

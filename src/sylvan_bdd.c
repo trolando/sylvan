@@ -1778,57 +1778,65 @@ VOID_TASK_IMPL_4(sylvan_enum_par, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, co
 
 TASK_5(BDD, sylvan_collect_do, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, void*, context, struct bdd_path*, path)
 {
-    if (bdd == sylvan_false) return sylvan_false;
-
-    if (sylvan_set_isempty(vars)) {
-        /* compute length of path */
-        int i=0;
-        struct bdd_path *pp;
-        for (pp = path; pp != NULL; pp = pp->prev) i++;
-        /* if length is 0 (enum called with empty vars??), return */
-        if (i == 0) return WRAP(cb, context, NULL);
-        /* fill cube and vars with trace */
-        uint8_t cube[i];
-        int j=0;
-        for (pp = path; pp != NULL; pp = pp->prev) {
-            cube[i-j-1] = pp->val;
-            j++;
+    if (bdd == sylvan_false) {
+         return sylvan_false;
+    } else if (sylvan_set_isempty(vars)) {
+        /**
+         * Compute trace length
+         */
+        size_t len = 0;
+        struct bdd_path *p = path;
+        while (p != NULL) {
+            len++;
+            p = p->prev;
         }
-        /* call callback */
-        return WRAP(cb, context, cube);
+        /**
+         * Fill array
+         */
+        uint8_t arr[len];
+        for (size_t i=0; i<len; i++) {
+            arr[len-i-1] = path->val;
+            path = path->prev;
+        }
+        /**
+         * Call callback
+         */
+        return WRAP(cb, context, arr);
     } else {
-        BDD var = sylvan_var(vars);
-        vars = sylvan_set_next(vars);
-        BDD bdd_var = sylvan_var(bdd);
-
-        /* if fails, then <bdd> has variables not in <vars> */
-        assert(var <= bdd_var);
-
-        struct bdd_path pp1 = (struct bdd_path){path, var, 1};
-        struct bdd_path pp0 = (struct bdd_path){path, var, 0};
-        if (var < bdd_var) {
-            bdd_refs_spawn(SPAWN(sylvan_collect_do, bdd, vars, cb, context, &pp1));
-            BDD low = bdd_refs_push(CALL(sylvan_collect_do, bdd, vars, cb, context, &pp0));
-            BDD high = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_collect_do)));
-            BDD res = sylvan_or(low, high);
-            bdd_refs_pop(2);
-            return res;
-        } else if (var == bdd_var) {
-            bdd_refs_spawn(SPAWN(sylvan_collect_do, sylvan_high(bdd), vars, cb, context, &pp1));
-            BDD low = bdd_refs_push(CALL(sylvan_collect_do, sylvan_low(bdd), vars, cb, context, &pp0));
-            BDD high = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_collect_do)));
-            BDD res = sylvan_or(low, high);
-            bdd_refs_pop(2);
-            return res;
+        /**
+         * Obtain domain variable
+         */
+        const BDD dom_var = sylvan_var(vars);
+        const BDD dom_next = sylvan_set_next(vars);
+        /**
+         * Obtain cofactors
+         */
+        const BDD bdd_var = sylvan_var(bdd);
+        assert(dom_var <= bdd_var);
+        BDD bdd0, bdd1;
+        if (dom_var < bdd_var) {
+            bdd0 = bdd1 = bdd;
         } else {
-            return sylvan_invalid; // unreachable
+            bdd0 = sylvan_low(bdd);
+            bdd1 = sylvan_high(bdd);
         }
+        /**
+         * Call recursive functions
+         */
+        struct bdd_path p0 = (struct bdd_path){path, dom_var, 0};
+        struct bdd_path p1 = (struct bdd_path){path, dom_var, 1};
+        bdd_refs_spawn(SPAWN(sylvan_collect_do, bdd1, dom_next, cb, context, &p1));
+        BDD low = bdd_refs_push(CALL(sylvan_collect_do, bdd0, dom_next, cb, context, &p0));
+        BDD high = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_collect_do)));
+        BDD res = sylvan_or(low, high);
+        bdd_refs_pop(2);
+        return res;
     }
 }
 
 TASK_IMPL_4(BDD, sylvan_collect, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, void*, context)
 {
-    return CALL(sylvan_collect_do, bdd, vars, cb, context, 0);
+    return CALL(sylvan_collect_do, bdd, vars, cb, context, NULL);
 }
 
 /**

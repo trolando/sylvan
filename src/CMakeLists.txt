@@ -1,6 +1,5 @@
 set(SOURCES
     lace.c
-    llmsset.c
     sha2.c
     sylvan_bdd.c
     sylvan_cache.c
@@ -12,11 +11,11 @@ set(SOURCES
     sylvan_refs.c
     sylvan_sl.c
     sylvan_stats.c
+    sylvan_table.c
 )
 
 set(HEADERS
     lace.h
-    llmsset.h
     sylvan.h
     sylvan_bdd.h
     sylvan_cache.h
@@ -30,6 +29,7 @@ set(HEADERS
     sylvan_mtbdd_int.h
     sylvan_obj.hpp
     sylvan_stats.h
+    sylvan_table.h
     sylvan_tls.h
 )
 

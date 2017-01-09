@@ -24,7 +24,7 @@
 #include <string.h> // memset
 #include <sys/mman.h> // for mmap
 
-#include <llmsset.h>
+#include <sylvan_table.h>
 #include <sylvan_stats.h>
 #include <sylvan_tls.h>
 

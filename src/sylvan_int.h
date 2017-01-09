@@ -22,7 +22,7 @@
 #include <sylvan.h>
 
 #include <sylvan_cache.h>
-#include <llmsset.h>
+#include <sylvan_table.h>
 #include <sylvan_stats.h>
 
 #ifndef SYLVAN_INT_H

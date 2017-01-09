@@ -16,7 +16,7 @@
 #endif
 
 #include <sylvan.h>
-#include <llmsset.h>
+#include <sylvan_table.h>
 
 /* Configuration */
 static int report_minterms = 0; // report minterms at every major step

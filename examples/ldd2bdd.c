@@ -7,7 +7,6 @@
 #include <sys/time.h>
 
 #include <sylvan_int.h>
-#include <llmsset.h>
 
 /* Configuration */
 static int workers = 0; // autodetect

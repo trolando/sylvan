@@ -11,7 +11,7 @@
 #endif
 
 #include <sylvan.h>
-#include <llmsset.h>
+#include <sylvan_table.h>
 
 /* Configuration */
 static int report_levels = 0; // report states at end of every level

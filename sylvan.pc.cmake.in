@@ -1,10 +1,12 @@
 libdir=@CMAKE_INSTALL_FULL_LIBDIR@
 includedir=@CMAKE_INSTALL_FULL_INCLUDEDIR@
 
+Requires:hwloc
+
 Name: Sylvan
 Description: @PROJECT_DESCRIPTION@
 URL: @PROJECT_URL@
 Version: @PROJECT_VERSION@
 Cflags: -I${includedir}
 Libs: -L${libdir} -lsylvan
-Libs.private: -lpthread -lm -lgmp -lhwloc
+Libs.private: -lpthread -lm -lgmp

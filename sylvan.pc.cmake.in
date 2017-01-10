@@ -7,4 +7,5 @@ URL: @PROJECT_URL@
 Version: @PROJECT_VERSION@
 Cflags: -I${includedir}
 Libs: -L${libdir} -lsylvan
-Libs.private: -lpthread -lm -lgmp -lhwloc
+Libs.private: -lpthread -lm -lgmp
+Requires: hwloc

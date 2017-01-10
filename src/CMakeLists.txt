@@ -33,30 +33,26 @@ set(HEADERS
     sylvan_tls.h
 )
 
-add_library(sylvan STATIC ${SOURCES})
-add_library(sylvan_shared SHARED ${SOURCES})
-set_target_properties(sylvan_shared PROPERTIES OUTPUT_NAME sylvan)
+option(BUILD_SHARED_LIBS "Enable/disable creation of shared libraries" ON)
+option(BUILD_STATIC_LIBS "Enable/disable creation of static libraries" ON)
+
+add_library(sylvan ${SOURCES})
 
 find_package(GMP REQUIRED)
 find_package(Hwloc REQUIRED)
 
 target_link_libraries(sylvan m pthread ${GMP_LIBRARIES} ${HWLOC_LIBRARIES})
-target_link_libraries(sylvan_shared m pthread ${GMP_LIBRARIES} ${HWLOC_LIBRARIES})
 
 if(UNIX AND NOT APPLE)
     target_link_libraries(sylvan rt)
-    target_link_libraries(sylvan_shared rt)
 endif()
 
 set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "USE_HWLOC=1")
-set_target_properties(sylvan_shared PROPERTIES COMPILE_DEFINITIONS "USE_HWLOC=1")
 
 option(SYLVAN_STATS "Collect statistics" OFF)
 if(SYLVAN_STATS)
     set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_STATS")
-    set_target_properties(sylvan_shared PROPERTIES COMPILE_DEFINITIONS "SYLVAN_STATS")
 endif()
 
 install(TARGETS sylvan DESTINATION "${CMAKE_INSTALL_LIBDIR}")
-install(TARGETS sylvan_shared DESTINATION "${CMAKE_INSTALL_LIBDIR}")
 install(FILES ${HEADERS} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")

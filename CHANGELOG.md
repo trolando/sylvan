@@ -1,7 +1,12 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
-## [1.1.1] - 2017-01-11
+## [1.1.2] - 2017-01-11
+### Fixed
+- The pkg-config file is slightly improved.
+- A critical bug in `sylvan_collect` has been fixed.
+
+## [1.1.1] - 2017-01-10
 ### Fixed
 - The pkg-config file now includes hwloc as a requirement
 

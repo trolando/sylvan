@@ -18,6 +18,9 @@ target_link_libraries(simple sylvan stdc++)
 add_executable(to_tbdd to_tbdd.c)
 target_link_libraries(to_tbdd sylvan)
 
+add_executable(analyse analyse.c)
+target_link_libraries(analyse sylvan)
+
 include(CheckIncludeFiles)
 check_include_files("gperftools/profiler.h" HAVE_PROFILER)
 

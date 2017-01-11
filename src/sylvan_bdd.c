@@ -1806,20 +1806,24 @@ TASK_5(BDD, sylvan_collect_do, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, vo
         /**
          * Obtain domain variable
          */
-        const BDD dom_var = sylvan_var(vars);
+        const uint32_t dom_var = sylvan_var(vars);
         const BDD dom_next = sylvan_set_next(vars);
         /**
          * Obtain cofactors
          */
-        const BDD bdd_var = sylvan_var(bdd);
-        assert(dom_var <= bdd_var);
         BDD bdd0, bdd1;
-        if (dom_var < bdd_var) {
+        if (bdd == sylvan_true) {
             bdd0 = bdd1 = bdd;
         } else {
-            bdd0 = sylvan_low(bdd);
-            bdd1 = sylvan_high(bdd);
-        }
+            const uint32_t bdd_var = sylvan_var(bdd);
+            assert(dom_var <= bdd_var);
+            if (dom_var < bdd_var) {
+                bdd0 = bdd1 = bdd;
+            } else {
+                bdd0 = sylvan_low(bdd);
+                bdd1 = sylvan_high(bdd);
+            }
+       }
         /**
          * Call recursive functions
          */

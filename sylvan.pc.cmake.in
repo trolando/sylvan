@@ -6,6 +6,5 @@ Description: @PROJECT_DESCRIPTION@
 URL: @PROJECT_URL@
 Version: @PROJECT_VERSION@
 Cflags: -I${includedir}
-Libs: -L${libdir} -lsylvan
-Libs.private: -lpthread -lm -lgmp
+Libs: -L${libdir} -lsylvan -lgmp -lpthread -lm
 Requires: hwloc

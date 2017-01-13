@@ -42,7 +42,7 @@ if(WITH_COVERAGE)
         COMMAND make test
         # Capture counters
         COMMAND ${LCOV_PATH} --gcov-tool ${GCOV_PATH} --directory . --capture --output-file coverage.info
-        COMMAND ${LCOV_PATH} --remove coverage.info 'test/*' '/usr/*' 'examples/*' 'src/sylvan_mtbdd*' 'src/lace*' 'src/sylvan_ldd*' 'src/avl.h' 'src/sha2.c' --output-file coverage.info.cleaned
+        COMMAND ${LCOV_PATH} --remove coverage.info 'test/*' '/usr/*' 'examples/*' 'src/lace*' 'src/sha2.c' --output-file coverage.info.cleaned
         COMMAND ${GENHTML_PATH} -o coverage coverage.info.cleaned
         COMMAND ${CMAKE_COMMAND} -E remove coverage.info coverage.info.cleaned
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
@@ -51,6 +51,7 @@ endif()
 
 include_directories(${CMAKE_SOURCE_DIR}/src)
 include(GNUInstallDirs)
+include(CTest)
 
 add_subdirectory(src)
 add_subdirectory(test)

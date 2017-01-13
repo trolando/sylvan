@@ -21,29 +21,17 @@ matrix:
         packages: ["gcc-6", "g++-6", "libgmp-dev", "cmake", "cmake-data", "libhwloc-dev"]
         sources: ["ubuntu-toolchain-r-test", "george-edison55-precise-backports"]
   - os: linux
-    env: TOOLSET=gcc CC=gcc-5 CXX=g++-5 BUILD_TYPE="Debug" SYLVAN_STATS="ON"
+    env: TOOLSET=gcc CC=gcc-6 CXX=g++-6 BUILD_TYPE="Debug" SYLVAN_STATS="ON"
     addons:
       apt:
         packages: ["gcc-5", "g++-5", "libgmp-dev", "cmake", "cmake-data", "libhwloc-dev"]
         sources: ["ubuntu-toolchain-r-test", "george-edison55-precise-backports"]
   - os: linux
-    env: TOOLSET=gcc CC=gcc-5 CXX=g++-5 BUILD_TYPE="Release"  SYLVAN_STATS="OFF"
+    env: TOOLSET=gcc CC=gcc-6 CXX=g++-6 BUILD_TYPE="Release"  SYLVAN_STATS="OFF"
     addons:
       apt:
         packages: ["gcc-5", "g++-5", "libgmp-dev", "cmake", "cmake-data", "libhwloc-dev"]
         sources: ["ubuntu-toolchain-r-test", "george-edison55-precise-backports"]
-  - os: linux
-    env: TOOLSET=gcc CC=gcc-5 CXX=g++-5 BUILD_TYPE="Release" SYLVAN_STATS="ON" VARIANT="coverage"
-    addons:
-      apt:
-        packages: ["gcc-5", "g++-5", "libgmp-dev", "cmake", "cmake-data", "libhwloc-dev"]
-        sources: ["ubuntu-toolchain-r-test", "george-edison55-precise-backports"]
-  - os: linux
-    env: TOOLSET=clang CC=clang-3.6 CXX=clang++-3.6 BUILD_TYPE="Release" SYLVAN_STATS="ON"
-    addons:
-      apt:
-        packages: ["clang-3.6", "libstdc++-5-dev", "libgmp-dev", "cmake", "cmake-data", "libhwloc-dev"]
-        sources: ["ubuntu-toolchain-r-test", "llvm-toolchain-precise-3.6", "george-edison55-precise-backports"]
   - os: linux
     env: TOOLSET=clang CC=clang-3.7 CXX=clang++-3.7 BUILD_TYPE="Release" SYLVAN_STATS="ON"
     addons:
@@ -60,12 +48,6 @@ matrix:
     env: TOOLSET=clang CC=clang CXX=clang++ BUILD_TYPE="Debug" SYLVAN_STATS="ON"
   - os: osx
     env: TOOLSET=clang CC=clang CXX=clang++ BUILD_TYPE="Release" SYLVAN_STATS="OFF"
-  - os: osx
-    env: TOOLSET=gcc CC=gcc-4.9 CXX=g++-4.9 BUILD_TYPE="Debug" SYLVAN_STATS="OFF"
-  - os: osx
-    env: TOOLSET=gcc CC=gcc-4.9 CXX=g++-4.9 BUILD_TYPE="Release" SYLVAN_STATS="OFF"
-  - os: osx
-    env: TOOLSET=gcc CC=gcc-5 CXX=g++-5 BUILD_TYPE="Debug" SYLVAN_STATS="OFF"
   - os: osx
     env: TOOLSET=gcc CC=gcc-5 CXX=g++-5 BUILD_TYPE="Release" SYLVAN_STATS="OFF"
 

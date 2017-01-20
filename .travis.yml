@@ -24,13 +24,13 @@ matrix:
     env: TOOLSET=gcc CC=gcc-6 CXX=g++-6 BUILD_TYPE="Debug" SYLVAN_STATS="ON"
     addons:
       apt:
-        packages: ["gcc-5", "g++-5", "libgmp-dev", "cmake", "cmake-data", "libhwloc-dev"]
+        packages: ["gcc-6", "g++-6", "libgmp-dev", "cmake", "cmake-data", "libhwloc-dev"]
         sources: ["ubuntu-toolchain-r-test", "george-edison55-precise-backports"]
   - os: linux
     env: TOOLSET=gcc CC=gcc-6 CXX=g++-6 BUILD_TYPE="Release"  SYLVAN_STATS="OFF"
     addons:
       apt:
-        packages: ["gcc-5", "g++-5", "libgmp-dev", "cmake", "cmake-data", "libhwloc-dev"]
+        packages: ["gcc-6", "g++-6", "libgmp-dev", "cmake", "cmake-data", "libhwloc-dev"]
         sources: ["ubuntu-toolchain-r-test", "george-edison55-precise-backports"]
   - os: linux
     env: TOOLSET=clang CC=clang-3.7 CXX=clang++-3.7 BUILD_TYPE="Release" SYLVAN_STATS="ON"

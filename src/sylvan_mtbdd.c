@@ -3351,6 +3351,7 @@ TASK_IMPL_1(uint64_t*, mtbdd_reader_readbinary, FILE*, in)
     }
 
     uint64_t *arr = malloc(sizeof(uint64_t)*(nodecount+1));
+    arr[0] = 0;
     for (size_t i=1; i<=nodecount; i++) {
         struct mtbddnode node;
         if (fread(&node, sizeof(struct mtbddnode), 1, in) != 1) {

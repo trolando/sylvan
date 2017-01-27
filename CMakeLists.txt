@@ -66,6 +66,9 @@ if(SYLVAN_BUILD_DOCS)
     configure_file("docs/conf.py.in" "docs/conf.py" @ONLY)
     find_package(Sphinx REQUIRED)
     Sphinx_add_targets(sylvan ${CMAKE_CURRENT_BINARY_DIR}/docs ${CMAKE_CURRENT_SOURCE_DIR}/docs ${CMAKE_CURRENT_BINARY_DIR})
+    add_custom_target(update_gh_pages
+        COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_MODULE_PATH}/UpdateGHPages.cmake")
+    add_dependencies(update_gh_pages sylvan_html)
 endif()
 
 set(CPACK_GENERATOR "DEB")

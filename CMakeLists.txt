@@ -61,6 +61,13 @@ if(SYLVAN_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
+option(SYLVAN_BUILD_DOCS "Build documentation" ON)
+if(SYLVAN_BUILD_DOCS)
+    configure_file("docs/conf.py.in" "docs/conf.py" @ONLY)
+    find_package(Sphinx REQUIRED)
+    Sphinx_add_targets(sylvan ${CMAKE_CURRENT_BINARY_DIR}/docs ${CMAKE_CURRENT_SOURCE_DIR}/docs ${CMAKE_CURRENT_BINARY_DIR})
+endif()
+
 set(CPACK_GENERATOR "DEB")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Multi-core implementation of decision diagrams")
 set(CPACK_PACKAGE_VENDOR "Tom van Dijk")

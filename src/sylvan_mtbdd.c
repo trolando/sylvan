@@ -3366,13 +3366,10 @@ TASK_IMPL_1(uint64_t*, mtbdd_reader_readbinary, FILE*, in)
             if (type >= 3 && type < cl_registry_count) {
                 customleaf_t *c = cl_registry + type;
                 if (c->read_binary_cb != NULL) {
-                    if (c->read_binary_cb(in, type, value, &arr[i]) != 0) return NULL;
-                } else {
-                    arr[i] = mtbdd_makeleaf(type, value);
+                    if (c->read_binary_cb(in, &value) != 0) return NULL;
                 }
-            } else {
-                arr[i] = mtbdd_makeleaf(type, value);
             }
+            arr[i] = mtbdd_makeleaf(type, value);
         } else {
             MTBDD low = arr[mtbddnode_getlow(&node)];
             MTBDD high = mtbddnode_gethigh(&node);

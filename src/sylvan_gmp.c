@@ -128,12 +128,9 @@ gmp_write_binary(FILE* out, uint64_t val)
 }
 
 static int
-gmp_read_binary(FILE* in, uint32_t type, uint64_t val, MTBDD *dd_ptr)
+gmp_read_binary(FILE* in, uint64_t *val)
 {
-    assert(type == gmp_type);
-    if (type != gmp_type) return -1;
-
-    mpq_t mres;
+    mpq_ptr mres = (mpq_ptr)malloc(sizeof(__mpq_struct));
     mpq_init(mres);
 
     mpz_t i;
@@ -144,11 +141,9 @@ gmp_read_binary(FILE* in, uint32_t type, uint64_t val, MTBDD *dd_ptr)
     mpq_set_den(mres, i);
     mpz_clear(i);
 
-    *dd_ptr = mtbdd_gmp(mres);
-    mpq_clear(mres);
+    *(mpq_ptr*)val = mres;
 
     return 0;
-    (void)val;
 }
 
 /**

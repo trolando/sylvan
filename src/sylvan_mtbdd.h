@@ -861,22 +861,22 @@ typedef void (*mtbdd_destroy_cb)(uint64_t);
  * - return a pointer to either <buf> or the new char array.
  *
  * write_binary(file, value)
- * - called after the writer writes the leaf with <type> and <value>
- * - type and value is always stored, even if it is e.g. a pointer
+ * - called after writing the leaf with value <value>
+ * - implement this if additional data must be written...
  * - write a binary representation of leaf <value> to <file>
- *   (only if <value> is not a good representation)
  * - return 0 on success
  *
- * read_binary(file, type, value, mtbdd_ptr)
+ * read_binary(file, value_ptr)
+ * - called after reading the leaf with value <*value_ptr>
+ * - implement this if additional data must be read...
  * - read a binary representation of the leaf from <file>
- * - the given <type> and <value> are obtained from the stored leaf
- * - create or obtain the MTBDD of the leaf, for example using mtbdd_makeleaf with
- *   the given <type> (this is the id of the custom type, for convenience)
- * - write the new MTBDD to the address <mtbdd_ptr>
+ * - if necessary, allocate an object like create
+ * - write the result to the address <value_ptr>
+ * - return 0 on success
  */
 typedef char* (*mtbdd_leaf_to_str_cb)(int, uint64_t, char*, size_t);
 typedef int (*mtbdd_write_binary_cb)(FILE*, uint64_t);
-typedef int (*mtbdd_read_binary_cb)(FILE*, uint32_t, uint64_t, MTBDD*);
+typedef int (*mtbdd_read_binary_cb)(FILE*, uint64_t*);
 
 /**
  * Register new leaf type.

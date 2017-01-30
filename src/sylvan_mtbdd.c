@@ -246,135 +246,6 @@ VOID_TASK_0(mtbdd_refs_init)
 }
 
 /**
- * Handling of custom leaves "registry"
- */
-
-typedef struct
-{
-    mtbdd_hash_cb hash_cb;
-    mtbdd_equals_cb equals_cb;
-    mtbdd_create_cb create_cb;
-    mtbdd_destroy_cb destroy_cb;
-    mtbdd_leaf_to_str_cb to_str_cb;
-    mtbdd_write_binary_cb write_binary_cb;
-    mtbdd_read_binary_cb read_binary_cb;
-} customleaf_t;
-
-static customleaf_t *cl_registry;
-static size_t cl_registry_count;
-
-static void
-_mtbdd_create_cb(uint64_t *a, uint64_t *b)
-{
-    // for leaf
-    if ((*a & 0x4000000000000000) == 0) return; // huh?
-    uint32_t type = *a & 0xffffffff;
-    if (type >= cl_registry_count) return; // not in registry
-    customleaf_t *c = cl_registry + type;
-    if (c->create_cb == NULL) return; // not in registry
-    c->create_cb(b);
-}
-
-static void
-_mtbdd_destroy_cb(uint64_t a, uint64_t b)
-{
-    // for leaf
-    if ((a & 0x4000000000000000) == 0) return; // huh?
-    uint32_t type = a & 0xffffffff;
-    if (type >= cl_registry_count) return; // not in registry
-    customleaf_t *c = cl_registry + type;
-    if (c->destroy_cb == NULL) return; // not in registry
-    c->destroy_cb(b);
-}
-
-static uint64_t
-_mtbdd_hash_cb(uint64_t a, uint64_t b, uint64_t seed)
-{
-    // for leaf
-    if ((a & 0x4000000000000000) == 0) return llmsset_hash(a, b, seed);
-    uint32_t type = a & 0xffffffff;
-    if (type >= cl_registry_count) return llmsset_hash(a, b, seed);
-    customleaf_t *c = cl_registry + type;
-    if (c->hash_cb == NULL) return llmsset_hash(a, b, seed);
-    return c->hash_cb(b, seed ^ a);
-}
-
-static int
-_mtbdd_equals_cb(uint64_t a, uint64_t b, uint64_t aa, uint64_t bb)
-{
-    // for leaf
-    if (a != aa) return 0;
-    if ((a & 0x4000000000000000) == 0) return b == bb ? 1 : 0;
-    if ((aa & 0x4000000000000000) == 0) return b == bb ? 1 : 0;
-    uint32_t type = a & 0xffffffff;
-    if (type >= cl_registry_count) return b == bb ? 1 : 0;
-    customleaf_t *c = cl_registry + type;
-    if (c->equals_cb == NULL) return b == bb ? 1 : 0;
-    return c->equals_cb(b, bb);
-}
-
-uint32_t
-mtbdd_register_custom_leaf()
-{
-    uint32_t type = cl_registry_count;
-    if (type == 0) type = 3;
-    if (cl_registry == NULL) {
-        cl_registry = (customleaf_t *)calloc(sizeof(customleaf_t), (type+1));
-        cl_registry_count = type+1;
-        llmsset_set_custom(nodes, _mtbdd_hash_cb, _mtbdd_equals_cb, _mtbdd_create_cb, _mtbdd_destroy_cb);
-    } else if (cl_registry_count <= type) {
-        cl_registry = (customleaf_t *)realloc(cl_registry, sizeof(customleaf_t) * (type+1));
-        memset(cl_registry + cl_registry_count, 0, sizeof(customleaf_t) * (type+1-cl_registry_count));
-        cl_registry_count = type+1;
-    }
-    customleaf_t *c = cl_registry + type;
-    memset(c, 0, sizeof(customleaf_t));
-    return type;
-}
-
-void mtbdd_custom_set_hash(uint32_t type, mtbdd_hash_cb hash_cb)
-{
-    customleaf_t *c = cl_registry + type;
-    c->hash_cb = hash_cb;
-}
-
-void mtbdd_custom_set_equals(uint32_t type, mtbdd_equals_cb equals_cb)
-{
-    customleaf_t *c = cl_registry + type;
-    c->equals_cb = equals_cb;
-}
-
-void mtbdd_custom_set_create(uint32_t type, mtbdd_create_cb create_cb)
-{
-    customleaf_t *c = cl_registry + type;
-    c->create_cb = create_cb;
-}
-
-void mtbdd_custom_set_destroy(uint32_t type, mtbdd_destroy_cb destroy_cb)
-{
-    customleaf_t *c = cl_registry + type;
-    c->destroy_cb = destroy_cb;
-}
-
-void mtbdd_custom_set_leaf_to_str(uint32_t type, mtbdd_leaf_to_str_cb to_str_cb)
-{
-    customleaf_t *c = cl_registry + type;
-    c->to_str_cb = to_str_cb;
-}
-
-void mtbdd_custom_set_write_binary(uint32_t type, mtbdd_write_binary_cb write_binary_cb)
-{
-    customleaf_t *c = cl_registry + type;
-    c->write_binary_cb = write_binary_cb;
-}
-
-void mtbdd_custom_set_read_binary(uint32_t type, mtbdd_read_binary_cb read_binary_cb)
-{
-    customleaf_t *c = cl_registry + type;
-    c->read_binary_cb = read_binary_cb;
-}
-
-/**
  * Initialize and quit functions
  */
 
@@ -388,11 +259,6 @@ mtbdd_quit()
         protect_free(&mtbdd_protected);
         mtbdd_protected_created = 0;
     }
-    if (cl_registry != NULL) {
-        free(cl_registry);
-        cl_registry = NULL;
-        cl_registry_count = 0;
-    }
 
     mtbdd_initialized = 0;
 }
@@ -400,6 +266,8 @@ mtbdd_quit()
 void
 sylvan_init_mtbdd()
 {
+    sylvan_init_mt();
+
     if (mtbdd_initialized) return;
     mtbdd_initialized = 1;
 
@@ -415,9 +283,6 @@ sylvan_init_mtbdd()
 
     LACE_ME;
     CALL(mtbdd_refs_init);
-
-    cl_registry = NULL;
-    cl_registry_count = 0;
 }
 
 /**
@@ -429,7 +294,7 @@ mtbdd_makeleaf(uint32_t type, uint64_t value)
     struct mtbddnode n;
     mtbddnode_makeleaf(&n, type, value);
 
-    int custom = type < cl_registry_count && cl_registry[type].hash_cb != NULL ? 1 : 0;
+    int custom = sylvan_mt_has_custom_hash(type);
 
     int created;
     uint64_t index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
@@ -2984,38 +2849,7 @@ mtbdd_leaf_to_str(MTBDD leaf, char *buf, size_t buflen)
     uint64_t value = mtbddnode_getvalue(n);
     int complement = MTBDD_HASMARK(leaf) ? 1 : 0;
 
-    if (type == 0) {
-        char *ptr = buf;
-        if (buflen < 32) {
-            ptr = malloc(32);
-            buflen = 32;
-        }
-        snprintf(ptr, buflen, "%" PRId64, (int64_t)value);
-        return ptr;
-    } else if (type == 1) {
-        char *ptr = buf;
-        if (buflen < 32) {
-            ptr = malloc(32);
-            buflen = 32;
-        }
-        snprintf(ptr, buflen, "%f", *(double*)&value);
-        return ptr;
-    } else if (type == 2) {
-        char *ptr = buf;
-        if (buflen < 32) {
-            ptr = malloc(32);
-            buflen = 32;
-        }
-        int32_t num = (int32_t)(value>>32);
-        uint32_t denom = value&0xffffffff;
-        snprintf(ptr, buflen, "%" PRId32 "/%" PRIu32, num, denom);
-        return ptr;
-    } else if (type < cl_registry_count) {
-        customleaf_t *c = cl_registry + type;
-        if (c->to_str_cb != NULL) return c->to_str_cb(complement, value, buf, buflen);
-    }
-
-    return NULL;
+    return sylvan_mt_to_str(complement, type, value, buf, buflen);
 }
 
 /**
@@ -3133,10 +2967,7 @@ mtbdd_sha2_rec(MTBDD dd, SHA256_CTX *ctx)
             uint32_t type = mtbddnode_gettype(node);
             SHA256_Update(ctx, (void*)&type, sizeof(uint32_t));
             uint64_t value = mtbddnode_getvalue(node);
-            if (type < cl_registry_count) {
-                customleaf_t *c = cl_registry + type;
-                if (c->hash_cb != NULL) value = c->hash_cb(value, value);
-            }
+            value = sylvan_mt_hash(type, value, value);
             SHA256_Update(ctx, (void*)&value, sizeof(uint64_t));
         } else {
             uint32_t level = mtbddnode_getvariable(node);
@@ -3241,12 +3072,7 @@ mtbdd_writer_writebinary(FILE *out, sylvan_skiplist_t sl)
             fwrite(n, sizeof(struct mtbddnode), 1, out);
             uint32_t type = mtbddnode_gettype(n);
             uint64_t value = mtbddnode_getvalue(n);
-            if (type >= 3 && type < cl_registry_count) {
-                customleaf_t *c = cl_registry + type;
-                if (c->write_binary_cb != NULL) {
-                    if (c->write_binary_cb(out, value) != 0) return; /* todo: report error */
-                }
-            }
+            sylvan_mt_write_binary(type, value, out);
         } else {
             struct mtbddnode node;
             MTBDD low = sylvan_skiplist_get(sl, mtbddnode_getlow(n));
@@ -3363,12 +3189,7 @@ TASK_IMPL_1(uint64_t*, mtbdd_reader_readbinary, FILE*, in)
             /* serialize leaf */
             uint32_t type = mtbddnode_gettype(&node);
             uint64_t value = mtbddnode_getvalue(&node);
-            if (type >= 3 && type < cl_registry_count) {
-                customleaf_t *c = cl_registry + type;
-                if (c->read_binary_cb != NULL) {
-                    if (c->read_binary_cb(in, &value) != 0) return NULL;
-                }
-            }
+            sylvan_mt_read_binary(type, &value, in);
             arr[i] = mtbdd_makeleaf(type, value);
         } else {
             MTBDD low = arr[mtbddnode_getlow(&node)];

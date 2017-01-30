@@ -153,14 +153,14 @@ void
 gmp_init()
 {
     /* Register custom leaf */
-    gmp_type = mtbdd_register_custom_leaf();
-    mtbdd_custom_set_hash(gmp_type, gmp_hash);
-    mtbdd_custom_set_equals(gmp_type, gmp_equals);
-    mtbdd_custom_set_create(gmp_type, gmp_create);
-    mtbdd_custom_set_destroy(gmp_type, gmp_destroy);
-    mtbdd_custom_set_leaf_to_str(gmp_type, gmp_to_str);
-    mtbdd_custom_set_write_binary(gmp_type, gmp_write_binary);
-    mtbdd_custom_set_read_binary(gmp_type, gmp_read_binary);
+    gmp_type = sylvan_mt_create_type();
+    sylvan_mt_set_hash(gmp_type, gmp_hash);
+    sylvan_mt_set_equals(gmp_type, gmp_equals);
+    sylvan_mt_set_create(gmp_type, gmp_create);
+    sylvan_mt_set_destroy(gmp_type, gmp_destroy);
+    sylvan_mt_set_to_str(gmp_type, gmp_to_str);
+    sylvan_mt_set_write_binary(gmp_type, gmp_write_binary);
+    sylvan_mt_set_read_binary(gmp_type, gmp_read_binary);
 }
 
 /**

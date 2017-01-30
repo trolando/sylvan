@@ -39,6 +39,8 @@
 #ifndef SYLVAN_MTBDD_H
 #define SYLVAN_MTBDD_H
 
+#include <sylvan_mt.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
@@ -831,68 +833,6 @@ MTBDDMAP mtbdd_map_remove(MTBDDMAP map, uint32_t key);
  * Remove all keys in the cube <variables> from the map and return the result
  */
 MTBDDMAP mtbdd_map_removeall(MTBDDMAP map, MTBDD variables);
-
-/**
- * Custom node types
- *
- * Overrides standard hash/equality/notify_on_dead behavior
- * hash(value, seed) return hash version
- * equals(value1, value2) return 1 if equal, 0 if not equal
- * create(&value) replace value by new value for object allocation
- * destroy(value)
- * NOTE: equals(value1, value2) must imply: hash(value1, seed) == hash(value2,seed)
- * NOTE: new value of create must imply: equals(old, new)
- * 
- * For the to_str callback, see the mtbdd_leaf_to_str method.
- * write_binary writes a given leaf to file, return 0 if successful
- * read_binary reads a leaf from file, return 0 if successful
- */
-typedef uint64_t (*mtbdd_hash_cb)(uint64_t, uint64_t);
-typedef int (*mtbdd_equals_cb)(uint64_t, uint64_t);
-typedef void (*mtbdd_create_cb)(uint64_t*);
-typedef void (*mtbdd_destroy_cb)(uint64_t);
-
-/**
- * Writer/reader callbacks.
- *
- * leaf_to_string(complemented, value, buf, bufsize)
- * - write a textual representation of leaf <value> (possible complemented) to <buf>
- * - if <buf> is too small, allocate a new char array with malloc
- * - return a pointer to either <buf> or the new char array.
- *
- * write_binary(file, value)
- * - called after writing the leaf with value <value>
- * - implement this if additional data must be written...
- * - write a binary representation of leaf <value> to <file>
- * - return 0 on success
- *
- * read_binary(file, value_ptr)
- * - called after reading the leaf with value <*value_ptr>
- * - implement this if additional data must be read...
- * - read a binary representation of the leaf from <file>
- * - if necessary, allocate an object like create
- * - write the result to the address <value_ptr>
- * - return 0 on success
- */
-typedef char* (*mtbdd_leaf_to_str_cb)(int, uint64_t, char*, size_t);
-typedef int (*mtbdd_write_binary_cb)(FILE*, uint64_t);
-typedef int (*mtbdd_read_binary_cb)(FILE*, uint64_t*);
-
-/**
- * Register new leaf type.
- */
-uint32_t mtbdd_register_custom_leaf(void);
-
-/**
- * Set the callback handlers for <type>
- */
-void mtbdd_custom_set_hash(uint32_t type, mtbdd_hash_cb hash_cb);
-void mtbdd_custom_set_equals(uint32_t type, mtbdd_equals_cb equals_cb);
-void mtbdd_custom_set_create(uint32_t type, mtbdd_create_cb create_cb);
-void mtbdd_custom_set_destroy(uint32_t type, mtbdd_destroy_cb destroy_cb);
-void mtbdd_custom_set_leaf_to_str(uint32_t type, mtbdd_leaf_to_str_cb to_str_cb);
-void mtbdd_custom_set_write_binary(uint32_t type, mtbdd_write_binary_cb write_binary_cb);
-void mtbdd_custom_set_read_binary(uint32_t type, mtbdd_read_binary_cb read_binary_cb);
 
 /**
  * Garbage collection

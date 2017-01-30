@@ -6,6 +6,7 @@ set(SOURCES
     sylvan_common.c
     sylvan_gmp.c
     sylvan_ldd.c
+    sylvan_mt.c
     sylvan_mtbdd.c
     sylvan_obj.cpp
     sylvan_refs.c
@@ -25,6 +26,7 @@ set(HEADERS
     sylvan_int.h
     sylvan_ldd.h
     sylvan_ldd_int.h
+    sylvan_mt.h
     sylvan_mtbdd.h
     sylvan_mtbdd_int.h
     sylvan_obj.hpp

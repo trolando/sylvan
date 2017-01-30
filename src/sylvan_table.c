@@ -119,7 +119,7 @@ set_custom_bucket(const llmsset_t dbs, uint64_t index, int on)
 }
 
 static int
-get_custom_bucket(const llmsset_t dbs, uint64_t index)
+is_custom_bucket(const llmsset_t dbs, uint64_t index)
 {
     uint64_t *ptr = dbs->bitmapc + (index/64);
     uint64_t mask = 0x8000000000000000LL >> (index&63);
@@ -204,7 +204,7 @@ llmsset_lookup2(const llmsset_t dbs, uint64_t a, uint64_t b, int* created, const
         if (hash == (v & MASK_HASH)) {
             uint64_t d_idx = v & MASK_INDEX;
             uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
-            if (custom) {
+            if (custom && is_custom_bucket(dbs, d_idx)) {
                 if (dbs->equals_cb(a, b, d_ptr[0], d_ptr[1])) {
                     if (cidx != 0) {
                         dbs->destroy_cb(a, b);
@@ -262,7 +262,7 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
     const uint64_t b = d_ptr[1];
 
     uint64_t hash_rehash = 14695981039346656037LLU;
-    const int custom = get_custom_bucket(dbs, d_idx) ? 1 : 0;
+    const int custom = is_custom_bucket(dbs, d_idx) ? 1 : 0;
     if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
     else hash_rehash = llmsset_hash(a, b, hash_rehash);
     const uint64_t new_v = (hash_rehash & MASK_HASH) | d_idx;

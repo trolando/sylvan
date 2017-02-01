@@ -31,14 +31,8 @@ __thread sylvan_stats_t sylvan_stats;
 pthread_key_t sylvan_stats_key;
 #endif
 
-#ifndef USE_HWLOC
-#define USE_HWLOC 0
-#endif
-
-#if USE_HWLOC
 #include <hwloc.h>
 static hwloc_topology_t topo;
-#endif
 
 /**
  * Instructions for sylvan_stats_report
@@ -131,11 +125,9 @@ VOID_TASK_0(sylvan_stats_reset_perthread)
             fprintf(stderr, "sylvan_stats: Unable to allocate memory: %s!\n", strerror(errno));
             exit(1);
         }
-#if USE_HWLOC
         // Ensure the stats object is on our pu
         hwloc_obj_t pu = hwloc_get_obj_by_type(topo, HWLOC_OBJ_PU, LACE_WORKER_PU);
         hwloc_set_area_membind(topo, sylvan_stats, sizeof(sylvan_stats_t), pu->cpuset, HWLOC_MEMBIND_BIND, 0);
-#endif
         pthread_setspecific(sylvan_stats_key, sylvan_stats);
     }
     for (int i=0; i<SYLVAN_COUNTER_COUNTER; i++) {
@@ -152,10 +144,8 @@ VOID_TASK_IMPL_0(sylvan_stats_init)
 #ifndef __ELF__
     pthread_key_create(&sylvan_stats_key, NULL);
 #endif
-#if USE_HWLOC
     hwloc_topology_init(&topo);
     hwloc_topology_load(topo);
-#endif
     TOGETHER(sylvan_stats_reset_perthread);
 }
 

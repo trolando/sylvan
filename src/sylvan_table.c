@@ -28,15 +28,9 @@
 #include <sylvan_stats.h>
 #include <sylvan_tls.h>
 
-#ifndef USE_HWLOC
-#define USE_HWLOC 0
-#endif
-
-#if USE_HWLOC
 #include <hwloc.h>
 
 static hwloc_topology_t topo;
-#endif
 
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS MAP_ANON
@@ -304,10 +298,8 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 llmsset_t
 llmsset_create(size_t initial_size, size_t max_size)
 {
-#if USE_HWLOC
     hwloc_topology_init(&topo);
     hwloc_topology_load(topo);
-#endif
 
     llmsset_t dbs = NULL;
     if (posix_memalign((void**)&dbs, LINE_SIZE, sizeof(struct llmsset)) != 0) {
@@ -367,13 +359,11 @@ llmsset_create(size_t initial_size, size_t max_size)
     madvise(dbs->table, dbs->max_size * 8, MADV_RANDOM);
 #endif
 
-#if USE_HWLOC
     hwloc_set_area_membind(topo, dbs->table, dbs->max_size * 8, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
     hwloc_set_area_membind(topo, dbs->data, dbs->max_size * 16, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
     hwloc_set_area_membind(topo, dbs->bitmap1, dbs->max_size / (512*8), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
     hwloc_set_area_membind(topo, dbs->bitmap2, dbs->max_size / 8, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
     hwloc_set_area_membind(topo, dbs->bitmapc, dbs->max_size / 8, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
-#endif
 
     // forbid first two positions (index 0 and 1)
     dbs->bitmap2[0] = 0xc000000000000000LL;
@@ -414,17 +404,13 @@ VOID_TASK_IMPL_1(llmsset_clear, llmsset_t, dbs)
 VOID_TASK_IMPL_1(llmsset_clear_data, llmsset_t, dbs)
 {
     if (mmap(dbs->bitmap1, dbs->max_size / (512*8), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) != (void*)-1) {
-#if USE_HWLOC
         hwloc_set_area_membind(topo, dbs->bitmap1, dbs->max_size / (512*8), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
-#endif
     } else {
         memset(dbs->bitmap1, 0, dbs->max_size / (512*8));
     }
 
     if (mmap(dbs->bitmap2, dbs->max_size / 8, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) != (void*)-1) {
-#if USE_HWLOC
         hwloc_set_area_membind(topo, dbs->bitmap2, dbs->max_size / 8, hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_FIRSTTOUCH, 0);
-#endif
     } else {
         memset(dbs->bitmap2, 0, dbs->max_size / 8);
     }
@@ -442,9 +428,7 @@ VOID_TASK_IMPL_1(llmsset_clear_hashes, llmsset_t, dbs)
 #if defined(madvise) && defined(MADV_RANDOM)
         madvise(dbs->table, sizeof(uint64_t[dbs->max_size]), MADV_RANDOM);
 #endif
-#if USE_HWLOC
         hwloc_set_area_membind(topo, dbs->table, sizeof(uint64_t[dbs->max_size]), hwloc_topology_get_allowed_cpuset(topo), HWLOC_MEMBIND_INTERLEAVE, 0);
-#endif
     } else {
         // reallocate failed... expensive fallback
         memset(dbs->table, 0, dbs->max_size * 8);

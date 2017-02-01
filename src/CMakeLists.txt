@@ -49,8 +49,6 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(sylvan rt)
 endif()
 
-set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "USE_HWLOC=1")
-
 option(SYLVAN_STATS "Collect statistics" OFF)
 if(SYLVAN_STATS)
     set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_STATS")

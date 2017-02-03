@@ -1,6 +1,18 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [1.2.0] - 2017-02-03
+### Added
+- Added documentation in the docs directory using Sphinx. Some documentation is removed from the README.md file.
+
+### Changed
+- The custom terminal/leaf API is slightly modified. The `read_binary_cb` has a different signature to remove the dependency upon MTBDD functionality.
+- The custom terminal/leaf API functions have been renamed and moved to a separate file.
+- Lace has been updated with a new version. The new version has rewritten the hardware locality code that pins worker threads and memory.
+
+### Fixed
+- A bug in `mtbdd_reader_readbinary` has been fixed.
+
 ## [1.1.2] - 2017-01-11
 ### Fixed
 - The pkg-config file is slightly improved.

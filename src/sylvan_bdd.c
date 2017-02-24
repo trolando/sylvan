@@ -620,6 +620,96 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
     return result;
 }
 
+
+/**
+ * Calculate projection of <a> unto <v>
+ * (Expects Boolean <a>)
+ */
+TASK_IMPL_2(MTBDD, sylvan_project, MTBDD, a, MTBDD, v)
+{
+    /**
+     * Terminal cases
+     */
+    if (a == sylvan_false) return sylvan_false;
+    if (a == sylvan_true) return sylvan_true;
+    if (sylvan_set_isempty(v)) return sylvan_true;
+
+    /**
+     * Obtain variables
+     */
+    const mtbddnode_t a_node = MTBDD_GETNODE(a);
+    const uint32_t a_var = mtbddnode_getvariable(a_node);
+
+    /**
+     * Skip <vars>
+     */
+    mtbddnode_t v_node = MTBDD_GETNODE(v);
+    uint32_t v_var = mtbddnode_getvariable(v_node);
+    MTBDD v_next = mtbddnode_followhigh(v, v_node);
+
+    while (v_var < a_var) {
+        if (sylvan_set_isempty(v_next)) return sylvan_true;
+        v = v_next;
+        v_node = MTBDD_GETNODE(v);
+        v_var = mtbddnode_getvariable(v_node);
+        v_next = mtbddnode_followhigh(v, v_node);
+    }
+
+    /**
+     * Maybe perform garbage collection
+     */
+    sylvan_gc_test();
+
+    /**
+     * Count operation
+     */
+    sylvan_stats_count(BDD_PROJECT);
+
+    /**
+     * Check the cache
+     */
+    MTBDD result;
+    if (cache_get3(CACHE_BDD_PROJECT, a, 0, v, &result)) {
+        sylvan_stats_count(BDD_PROJECT_CACHED);
+        return result;
+    }
+
+    /**
+     * Get cofactors
+     */
+    const MTBDD a0 = mtbddnode_followlow(a, a_node);
+    const MTBDD a1 = mtbddnode_followhigh(a, a_node);
+
+    /**
+     * Compute recursive result
+     */
+    if (v_var == a_var) {
+        // variable in projection variables
+        mtbdd_refs_spawn(SPAWN(sylvan_project, a0, v_next));
+        const MTBDD high = mtbdd_refs_push(sylvan_project(a1, v_next));
+        const MTBDD low = mtbdd_refs_sync(SYNC(sylvan_project));
+        mtbdd_refs_pop(1);
+        result = mtbdd_makenode(a_var, low, high);
+    } else {
+        // variable not in projection variables
+        mtbdd_refs_spawn(SPAWN(sylvan_project, a0, v));
+        const MTBDD high = mtbdd_refs_push(sylvan_project(a1, v));
+        const MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(SYNC(sylvan_project)));
+        result = sylvan_or(low, high);
+        mtbdd_refs_pop(2);
+    }
+
+    /**
+     * Put in cache
+     */
+    if (cache_put3(CACHE_BDD_PROJECT, a, 0, v, result)) {
+        sylvan_stats_count(BDD_PROJECT_CACHEDPUT);
+    }
+
+    return result;
+}
+
+
 /**
  * Calculate exists(a AND b, v)
  */
@@ -740,6 +830,116 @@ TASK_IMPL_4(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, v, BDDVAR, prev_leve
 
     if (cachenow) {
         if (cache_put3(CACHE_BDD_AND_EXISTS, a, b, v, result)) sylvan_stats_count(BDD_AND_EXISTS_CACHEDPUT);
+    }
+
+    return result;
+}
+
+
+/**
+ * Calculate projection of (<a> AND <b>) unto <v>
+ * (Expects Boolean <a> and <b>)
+ */
+TASK_IMPL_3(MTBDD, sylvan_and_project, MTBDD, a, MTBDD, b, MTBDD, v)
+{
+    /**
+     * Terminal cases
+     */
+    if (a == sylvan_false) return sylvan_false;
+    if (b == sylvan_false) return sylvan_false;
+    if (a == sylvan_not(b)) return sylvan_false;
+    if (a == sylvan_true && b == sylvan_true) return sylvan_true;
+    if (sylvan_set_isempty(v)) return sylvan_true;
+
+    /**
+     * Cases that reduce to sylvan_project
+     */
+    if (a == sylvan_true || b == sylvan_true || a == b) return sylvan_project(b, v);
+
+    /**
+     * Normalization (only for caching)
+     */
+    if (BDD_STRIPMARK(a) > BDD_STRIPMARK(b)) {
+        BDD t = b;
+        b = a;
+        a = t;
+    }
+
+    /**
+     * Maybe perform garbage collection
+     */
+    sylvan_gc_test();
+
+    /**
+     * Count operation
+     */
+    sylvan_stats_count(BDD_AND_PROJECT);
+
+    /**
+     * Obtain variables
+     */
+    const mtbddnode_t a_node = MTBDD_GETNODE(a);
+    const mtbddnode_t b_node = MTBDD_GETNODE(b);
+    const uint32_t a_var = mtbddnode_getvariable(a_node);
+    const uint32_t b_var = mtbddnode_getvariable(b_node);
+    const uint32_t minvar = a_var < b_var ? a_var : b_var;
+
+    /**
+     * Skip <vars>
+     */
+    mtbddnode_t v_node = MTBDD_GETNODE(v);
+    uint32_t v_var = mtbddnode_getvariable(v_node);
+    MTBDD v_next = mtbddnode_followhigh(v, v_node);
+
+    while (v_var < minvar) {
+        if (sylvan_set_isempty(v_next)) return sylvan_true;
+        v = v_next;
+        v_node = MTBDD_GETNODE(v);
+        v_var = mtbddnode_getvariable(v_node);
+        v_next = mtbddnode_followhigh(v, v_node);
+    }
+
+    /**
+     * Check the cache
+     */
+    MTBDD result;
+    if (cache_get3(CACHE_BDD_AND_PROJECT, a, b, v, &result)) {
+        sylvan_stats_count(BDD_AND_PROJECT_CACHED);
+        return result;
+    }
+
+    /**
+     * Get cofactors
+     */
+    const MTBDD a0 = a_var == minvar ? mtbddnode_followlow(a, a_node) : a;
+    const MTBDD a1 = a_var == minvar ? mtbddnode_followhigh(a, a_node) : a;
+    const MTBDD b0 = b_var == minvar ? mtbddnode_followlow(b, b_node) : b;
+    const MTBDD b1 = b_var == minvar ? mtbddnode_followhigh(b, b_node) : b;
+
+    /**
+     * Compute recursive result
+     */
+    if (v_var == minvar) {
+        // variable in projection variables
+        mtbdd_refs_spawn(SPAWN(sylvan_and_project, a0, b0, v_next));
+        const MTBDD high = mtbdd_refs_push(sylvan_and_project(a1, b1, v_next));
+        const MTBDD low = mtbdd_refs_sync(SYNC(sylvan_and_project));
+        mtbdd_refs_pop(1);
+        result = mtbdd_makenode(minvar, low, high);
+    } else {
+        // variable not in projection variables
+        mtbdd_refs_spawn(SPAWN(sylvan_and_project, a0, b0, v));
+        const MTBDD high = mtbdd_refs_push(sylvan_and_project(a1, b1, v));
+        const MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(SYNC(sylvan_and_project)));
+        result = sylvan_or(low, high);
+        mtbdd_refs_pop(2);
+    }
+
+    /**
+     * Put in cache
+     */
+    if (cache_put3(CACHE_BDD_AND_PROJECT, a, b, v, result)) {
+        sylvan_stats_count(BDD_AND_PROJECT_CACHEDPUT);
     }
 
     return result;

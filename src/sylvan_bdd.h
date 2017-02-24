@@ -76,10 +76,22 @@ TASK_DECL_3(BDD, sylvan_exists, BDD, BDD, BDDVAR);
 #define sylvan_forall(a, vars) (sylvan_not(CALL(sylvan_exists, sylvan_not(a), vars, 0)))
 
 /**
+ * Projection. (Same as existential quantification, but <vars> contains variables to keep.
+ */
+TASK_DECL_2(BDD, sylvan_project, BDD, BDD);
+#define sylvan_project(a, vars) CALL(sylvan_project, a, vars)
+
+/**
  * Compute \exists <vars>: <a> \and <b>
  */
 TASK_DECL_4(BDD, sylvan_and_exists, BDD, BDD, BDDSET, BDDVAR);
 #define sylvan_and_exists(a,b,vars) CALL(sylvan_and_exists,a,b,vars,0)
+
+/**
+ * Compute and_exists, but as a projection (only keep given variables)
+ */
+TASK_DECL_3(BDD, sylvan_and_project, BDD, BDD, BDDSET);
+#define sylvan_and_project(a,b,vars) CALL(sylvan_and_project,a,b,vars)
 
 /**
  * Compute R(s,t) = \exists x: A(s,x) \and B(x,t)

@@ -505,7 +505,8 @@ main(int argc, char **argv)
     LACE_ME;
 
     // Init Sylvan
-    sylvan_init_package(1LL<<21, 1LL<<27, 1LL<<20, 1LL<<26);
+    sylvan_set_sizes(1LL<<21, 1LL<<27, 1LL<<20, 1LL<<26);
+    sylvan_init_package();
     sylvan_init_ldd();
     sylvan_init_mtbdd();
     sylvan_gc_hook_pregc(TASK(gc_start));

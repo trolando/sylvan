@@ -154,24 +154,24 @@ make_random_ldd_set(int depth, int maxvalue, int elements)
 
 int testEqual(BDD a, BDD b)
 {
-	if (a == b) return 1;
+    if (a == b) return 1;
 
-	if (a == sylvan_invalid) {
-		fprintf(stderr, "a is invalid!\n");
-		return 0;
-	}
+    if (a == sylvan_invalid) {
+        fprintf(stderr, "a is invalid!\n");
+        return 0;
+    }
 
-	if (b == sylvan_invalid) {
-		fprintf(stderr, "b is invalid!\n");
-		return 0;
-	}
+    if (b == sylvan_invalid) {
+        fprintf(stderr, "b is invalid!\n");
+        return 0;
+    }
 
     fprintf(stderr, "a and b are not equal!\n");
 
     sylvan_fprint(stderr, a);fprintf(stderr, "\n");
     sylvan_fprint(stderr, b);fprintf(stderr, "\n");
 
-	return 0;
+    return 0;
 }
 
 int
@@ -536,12 +536,13 @@ int runtests()
 int main()
 {
     // Standard Lace initialization with 1 worker
-	lace_init(1, 0);
-	lace_startup(0, NULL, NULL);
+    lace_init(1, 0);
+    lace_startup(0, NULL, NULL);
 
     // Simple Sylvan initialization, also initialize BDD, MTBDD and LDD support
-	sylvan_init_package(1LL<<20, 1LL<<20, 1LL<<16, 1LL<<16);
-	sylvan_init_bdd();
+    sylvan_set_sizes(1LL<<20, 1LL<<20, 1LL<<16, 1LL<<16);
+    sylvan_init_package();
+    sylvan_init_bdd();
     sylvan_init_mtbdd();
     sylvan_init_ldd();
 

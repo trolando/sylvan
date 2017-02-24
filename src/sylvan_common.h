@@ -25,22 +25,47 @@ extern "C" {
 /**
  * Initialize the Sylvan parallel decision diagrams package.
  *
- * After initialization, call sylvan_init_bdd and/or sylvan_init_ldd if you want to use
- * the BDD and/or LDD functionality.
+ * First, Sylvan must know how big the nodes table and cache may be.
+ * Either use sylvan_set_sizes to explicitly set the table sizes, or use sylvan_set_limits
+ * to let Sylvan compute the sizes for you.
  *
- * BDDs and LDDs share a common node table and operations cache.
+ * Then, call sylvan_init_package. This allocates the tables and other support structures.
+ * Sylvan allocates virtual memory to accomodate the maximum sizes of both tables.
+ * Initially, Sylvan only uses the minimum sizes.
+ * During garbage collection, table sizes may be doubled until the maximum size is reached.
  *
- * The node table is resizable.
- * The table is resized automatically when >50% of the table is filled during garbage collection.
- * This behavior can be customized by overriding the gc hook.
- * 
+ * Then, call initialization functions for the MTBDD/LDD modules like sylvan_init_mtbdd
+ * and sylvan_init_ldd.
+ *
  * Memory usage:
- * Every node requires 24 bytes memory. (16 bytes data + 8 bytes overhead)
- * Every operation cache entry requires 36 bytes memory. (32 bytes data + 4 bytes overhead)
- *
- * Reasonable defaults: datasize of 1L<<26 (2048 MB), cachesize of 1L<<25 (1152 MB)
+ * Every node requires 24 bytes memory. (16 bytes data + 8 bytes table overhead)
+ * Every operation cache entry requires 36 bytes memory. (32 bytes data + 4 bytes table overhead)
  */
-void sylvan_init_package(size_t initial_tablesize, size_t max_tablesize, size_t initial_cachesize, size_t max_cachesize);
+void sylvan_init_package(void);
+
+/**
+ * Explicitly set the sizes of the nodes table and the operation cache.
+ * The sizes are in bytes, but they must be powers of two.
+ * The minimum size is the size initially used.
+ * The maximum size is the size allocated in virtual memory.
+ */
+void sylvan_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cachesize, size_t max_cachesize);
+
+/**
+ * Implicitly compute and set the sizes of the nodes table and the operation cache.
+ *
+ * This function computes max_tablesize and max_cachesize to fit the memory cap.
+ * The memory cap is in bytes.
+ *
+ * The parameter table_ratio controls the ratio between the nodes table and the cache.
+ * For the value 0, both tables are of the same size.
+ * For values 1, 2, 3 ... the nodes table will be 2x, 4x, 8x ... as big as the cache
+ * For values -1, -2, -3 ... the cache will be 2x, 4x, 8x ... as big as the nodes table
+ *
+ * The parameter initial_ratio controls how much smaller the initial table sizes are.
+ * For values of 1, 2, 3, 4 the tables will initially be 2, 4, 8, 16 times smaller.
+ */
+void sylvan_set_limits(size_t memory_cap, int table_ratio, int initial_ratio);
 
 /**
  * Frees all Sylvan data (also calls the quit() functions of BDD/LDD parts)

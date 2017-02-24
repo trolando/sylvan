@@ -271,24 +271,97 @@ VOID_TASK_IMPL_0(sylvan_gc)
 
 llmsset_t nodes;
 
+static size_t table_min = 0, table_max = 0, cache_min = 0, cache_max = 0;
+
+static int
+is_power_of_two(size_t size)
+{
+    return __builtin_popcount(size) == 1 ? 1 : 0;
+}
+
+void
+sylvan_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cachesize, size_t max_cachesize)
+{
+    /* Some sanity checks */
+    if (min_tablesize > max_tablesize) min_tablesize = max_tablesize;
+    if (min_cachesize > max_cachesize) min_cachesize = max_cachesize;
+
+    if (!is_power_of_two(min_tablesize) || !is_power_of_two(max_tablesize) ||
+        !is_power_of_two(min_cachesize) || !is_power_of_two(max_cachesize)) {
+        fprintf(stderr, "sylvan_set_sizes error: parameters not powers of 2!\n");
+        exit(1);
+    }
+
+    if (max_tablesize > 0x0000040000000000) {
+        fprintf(stderr, "sylvan_set_sizes error: tablesize must be <= 42 bits!\n");
+        exit(1);
+    }
+
+    table_min = min_tablesize;
+    table_max = max_tablesize;
+    cache_min = min_cachesize;
+    cache_max = max_cachesize;
+}
+
+void
+sylvan_set_limits(size_t memorycap, int table_ratio, int initial_ratio)
+{
+    if (table_ratio > 10 && table_ratio < 10) {
+        fprintf(stderr, "sylvan_set_limits: table_ratio unreasonable (between -10 and 10)\n");
+        exit(1);
+    }
+
+    size_t max_t = 1;
+    size_t max_c = 1;
+    if (table_ratio > 0) {
+        max_t <<= table_ratio;
+    } else {
+        max_c <<= -table_ratio;
+    }
+
+    size_t cur = max_t * 24 + max_c * 36;
+    if (cur > memorycap) {
+        fprintf(stderr, "sylvan_set_limits: memory cap incompatible with requested table ratio\n");
+    }
+
+    while (2*cur < memorycap && max_t < 0x0000040000000000) {
+        max_t *= 2;
+        max_c *= 2;
+        cur *= 2;
+    }
+
+    if (initial_ratio < 0) {
+        fprintf(stderr, "sylvan_set_limits: initial_ratio unreasonable (may not be negative)\n");
+        exit(1);
+    }
+
+    size_t min_t = max_t, min_c = max_c;
+    while (initial_ratio > 0 && min_t > 0x1000 && min_c > 0x1000) {
+        min_t >>= 1;
+        min_c >>= 1;
+        initial_ratio--;
+    }
+
+    table_min = min_t;
+    table_max = max_t;
+    cache_min = min_c;
+    cache_max = max_c;
+}
+
 /**
  * Initializes Sylvan.
  */
 void
-sylvan_init_package(size_t tablesize, size_t maxsize, size_t cachesize, size_t max_cachesize)
+sylvan_init_package(void)
 {
-    /* Some sanity checks */
-    if (tablesize > maxsize) tablesize = maxsize;
-    if (cachesize > max_cachesize) cachesize = max_cachesize;
-
-    if (maxsize > 0x000003ffffffffff) {
-        fprintf(stderr, "sylvan_init_package error: tablesize must be <= 42 bits!\n");
+    if (table_max == 0) {
+        fprintf(stderr, "sylvan_init_package error: table sizes not set (sylvan_set_sizes or sylvan_set_limits)!");
         exit(1);
     }
 
     /* Create tables */
-    nodes = llmsset_create(tablesize, maxsize);
-    cache_create(cachesize, max_cachesize);
+    nodes = llmsset_create(table_min, table_max);
+    cache_create(cache_min, cache_max);
 
     /* Initialize garbage collection */
     gc = 0;

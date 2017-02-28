@@ -1,6 +1,14 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [Unreleased]
+### Added
+- The embedded work-stealing framework now explicitly checks for stack overflows and aborts with an appropriate error message written to stderr.
+- New functions `sylvan_project` and `sylvan_and_project` for BDDs, a dual of existential quantification, where instead of the variables to remove, the given set of variables are the variables to keep.
+
+### Changed
+- Rewritten initialization of Sylvan. Before the call to `sylvan_init_package`, table sizes must be initialized either using `sylvan_set_sizes` or with the new function `sylvan_set_limits`. This new function allows the user to set a maximum number of bytes allocated for the nodes table and for the operation cache.
+
 ## [1.2.0] - 2017-02-03
 ### Added
 - Added documentation in the docs directory using Sphinx. Some documentation is removed from the README.md file.

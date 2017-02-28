@@ -34,7 +34,7 @@ extern "C" {
 #endif
 
 #ifndef LACE_LEAP_RANDOM /* Use random leaping when leapfrogging fails */
-#define LACE_LEAP_RANDOM 1
+#define LACE_LEAP_RANDOM 0
 #endif
 
 #ifndef LACE_PIE_TIMES /* Record time spent stealing and leapfrogging */
@@ -383,6 +383,8 @@ static inline void CHECKSTACK(WorkerP *w)
 #define CHECKSTACK(w) {}
 #endif
 
+void lace_abort_stack_overflow(void) __attribute__((noreturn));
+
 typedef struct
 {
     Task *t;
@@ -673,7 +675,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head )                                 
     TailSplit ts;                                                                     \
     uint32_t head, split, newsplit;                                                   \
                                                                                       \
-    /* assert(__dq_head < w->end); */ /* Assuming to be true */                       \
+    if (__dq_head == w->end) lace_abort_stack_overflow();                             \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
@@ -823,7 +825,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head )                                 
     TailSplit ts;                                                                     \
     uint32_t head, split, newsplit;                                                   \
                                                                                       \
-    /* assert(__dq_head < w->end); */ /* Assuming to be true */                       \
+    if (__dq_head == w->end) lace_abort_stack_overflow();                             \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
@@ -976,7 +978,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                  
     TailSplit ts;                                                                     \
     uint32_t head, split, newsplit;                                                   \
                                                                                       \
-    /* assert(__dq_head < w->end); */ /* Assuming to be true */                       \
+    if (__dq_head == w->end) lace_abort_stack_overflow();                             \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
@@ -1126,7 +1128,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1)                  
     TailSplit ts;                                                                     \
     uint32_t head, split, newsplit;                                                   \
                                                                                       \
-    /* assert(__dq_head < w->end); */ /* Assuming to be true */                       \
+    if (__dq_head == w->end) lace_abort_stack_overflow();                             \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
@@ -1279,7 +1281,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)   
     TailSplit ts;                                                                     \
     uint32_t head, split, newsplit;                                                   \
                                                                                       \
-    /* assert(__dq_head < w->end); */ /* Assuming to be true */                       \
+    if (__dq_head == w->end) lace_abort_stack_overflow();                             \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
@@ -1429,7 +1431,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2)   
     TailSplit ts;                                                                     \
     uint32_t head, split, newsplit;                                                   \
                                                                                       \
-    /* assert(__dq_head < w->end); */ /* Assuming to be true */                       \
+    if (__dq_head == w->end) lace_abort_stack_overflow();                             \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
@@ -1582,7 +1584,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
     TailSplit ts;                                                                     \
     uint32_t head, split, newsplit;                                                   \
                                                                                       \
-    /* assert(__dq_head < w->end); */ /* Assuming to be true */                       \
+    if (__dq_head == w->end) lace_abort_stack_overflow();                             \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
@@ -1732,7 +1734,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
     TailSplit ts;                                                                     \
     uint32_t head, split, newsplit;                                                   \
                                                                                       \
-    /* assert(__dq_head < w->end); */ /* Assuming to be true */                       \
+    if (__dq_head == w->end) lace_abort_stack_overflow();                             \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
@@ -1885,7 +1887,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
     TailSplit ts;                                                                     \
     uint32_t head, split, newsplit;                                                   \
                                                                                       \
-    /* assert(__dq_head < w->end); */ /* Assuming to be true */                       \
+    if (__dq_head == w->end) lace_abort_stack_overflow();                             \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
@@ -2035,7 +2037,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
     TailSplit ts;                                                                     \
     uint32_t head, split, newsplit;                                                   \
                                                                                       \
-    /* assert(__dq_head < w->end); */ /* Assuming to be true */                       \
+    if (__dq_head == w->end) lace_abort_stack_overflow();                             \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
@@ -2188,7 +2190,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
     TailSplit ts;                                                                     \
     uint32_t head, split, newsplit;                                                   \
                                                                                       \
-    /* assert(__dq_head < w->end); */ /* Assuming to be true */                       \
+    if (__dq_head == w->end) lace_abort_stack_overflow();                             \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
@@ -2338,7 +2340,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
     TailSplit ts;                                                                     \
     uint32_t head, split, newsplit;                                                   \
                                                                                       \
-    /* assert(__dq_head < w->end); */ /* Assuming to be true */                       \
+    if (__dq_head == w->end) lace_abort_stack_overflow();                             \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
@@ -2491,7 +2493,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
     TailSplit ts;                                                                     \
     uint32_t head, split, newsplit;                                                   \
                                                                                       \
-    /* assert(__dq_head < w->end); */ /* Assuming to be true */                       \
+    if (__dq_head == w->end) lace_abort_stack_overflow();                             \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \
@@ -2641,7 +2643,7 @@ void NAME##_SPAWN(WorkerP *w, Task *__dq_head , ATYPE_1 arg_1, ATYPE_2 arg_2, AT
     TailSplit ts;                                                                     \
     uint32_t head, split, newsplit;                                                   \
                                                                                       \
-    /* assert(__dq_head < w->end); */ /* Assuming to be true */                       \
+    if (__dq_head == w->end) lace_abort_stack_overflow();                             \
                                                                                       \
     t = (TD_##NAME *)__dq_head;                                                       \
     t->f = &NAME##_WRAP;                                                              \

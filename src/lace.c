@@ -1102,3 +1102,10 @@ lace_do_newframe(WorkerP *__lace_worker, Task *__lace_dq_head, Task *t)
     while (!cas(&lace_newframe.t, 0, &_s)) lace_yield(__lace_worker, __lace_dq_head);
     lace_sync_and_exec(__lace_worker, __lace_dq_head, &_t2);
 }
+
+void
+lace_abort_stack_overflow(void)
+{
+    fprintf(stderr, "Lace fatal error: Task stack overflow! Aborting.\n");
+    exit(-1);
+}

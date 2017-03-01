@@ -873,58 +873,48 @@ size_t mtbdd_count_protected(void);
 #define mtbdd_notify_ondead(dd) llmsset_notify_ondead(nodes, dd&~mtbdd_complement)
 
 /**
- * Infrastructure for internal references (per-thread, e.g. during MTBDD operations)
- * Use mtbdd_refs_push and mtbdd_refs_pop to put MTBDDs on a thread-local reference stack.
- * Use mtbdd_refs_spawn and mtbdd_refs_sync around SPAWN and SYNC operations when the result
- * of the spawned Task is a MTBDD that must be kept during garbage collection.
+ * Infrastructure for internal references.
+ * Every thread has its own reference stacks. There are three stacks: pointer, values, tasks stack.
+ * The pointers stack contains pointers to MTBDD variables, manipulated with pushptr and popptr.
+ * The values stack contains MTBDDs, manipulated with push and pop.
+ * The tasks stack contains Lace tasks (that return MTBDDs), manipulated with spawn and sync.
+ *
+ * It is recommended to use the pointers stack for local variables and the tasks stack for tasks.
  */
-typedef struct mtbdd_refs_internal
-{
-    size_t r_size, r_count;
-    size_t s_size, s_count;
-    MTBDD *results;
-    Task **spawns;
-} *mtbdd_refs_internal_t;
 
-extern DECLARE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
+/**
+ * Push a MTBDD variable to the pointer reference stack.
+ * During garbage collection the variable will be inspected and the contents will be marked.
+ */
+void mtbdd_refs_pushptr(MTBDD *ptr);
 
-static inline MTBDD
-mtbdd_refs_push(MTBDD mtbdd)
-{
-    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
-    if (mtbdd_refs_key->r_count >= mtbdd_refs_key->r_size) {
-        mtbdd_refs_key->r_size *= 2;
-        mtbdd_refs_key->results = (MTBDD*)realloc(mtbdd_refs_key->results, sizeof(MTBDD) * mtbdd_refs_key->r_size);
-    }
-    mtbdd_refs_key->results[mtbdd_refs_key->r_count++] = mtbdd;
-    return mtbdd;
-}
+/**
+ * Pop the last <amount> MTBDD variables from the pointer reference stack.
+ */
+void mtbdd_refs_popptr(size_t amount);
 
-static inline void
-mtbdd_refs_pop(int amount)
-{
-    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
-    mtbdd_refs_key->r_count-=amount;
-}
+/**
+ * Push an MTBDD to the values reference stack.
+ * During garbage collection the references MTBDD will be marked.
+ */
+MTBDD mtbdd_refs_push(MTBDD mtbdd);
 
-static inline void
-mtbdd_refs_spawn(Task *t)
-{
-    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
-    if (mtbdd_refs_key->s_count >= mtbdd_refs_key->s_size) {
-        mtbdd_refs_key->s_size *= 2;
-        mtbdd_refs_key->spawns = (Task**)realloc(mtbdd_refs_key->spawns, sizeof(Task*) * mtbdd_refs_key->s_size);
-    }
-    mtbdd_refs_key->spawns[mtbdd_refs_key->s_count++] = t;
-}
+/**
+ * Pop the last <amount> MTBDDs from the values reference stack.
+ */
+void mtbdd_refs_pop(long amount);
 
-static inline MTBDD
-mtbdd_refs_sync(MTBDD result)
-{
-    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
-    mtbdd_refs_key->s_count--;
-    return result;
-}
+/**
+ * Push a Task that returns an MTBDD to the tasks reference stack.
+ * Usage: mtbdd_refs_spawn(SPAWN(function, ...));
+ */
+void mtbdd_refs_spawn(Task *t);
+
+/**
+ * Pop a Task from the task reference stack.
+ * Usage: MTBDD result = mtbdd_refs_sync(SYNC(function));
+ */
+MTBDD mtbdd_refs_sync(MTBDD mtbdd);
 
 #ifdef __cplusplus
 }

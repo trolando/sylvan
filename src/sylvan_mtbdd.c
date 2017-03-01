@@ -192,33 +192,70 @@ VOID_TASK_0(mtbdd_gc_mark_protected)
 }
 
 /* Infrastructure for internal markings */
+typedef struct mtbdd_refs_internal
+{
+    MTBDD **pbegin, **pend, **pcur;
+    MTBDD *rbegin, *rend, *rcur;
+    Task **sbegin, **send, **scur;
+} *mtbdd_refs_internal_t;
+
 DECLARE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
+
+VOID_TASK_2(mtbdd_refs_mark_p_par, MTBDD**, begin, size_t, count)
+{
+    if (count < 32) {
+        while (count) {
+            mtbdd_gc_mark_rec(**(begin++));
+            count--;
+        }
+    } else {
+        SPAWN(mtbdd_refs_mark_p_par, begin, count / 2);
+        CALL(mtbdd_refs_mark_p_par, begin + (count / 2), count - count / 2);
+        SYNC(mtbdd_refs_mark_p_par);
+    }
+}
+
+VOID_TASK_2(mtbdd_refs_mark_r_par, MTBDD*, begin, size_t, count)
+{
+    if (count < 32) {
+        while (count) {
+            mtbdd_gc_mark_rec(*begin++);
+            count--;
+        }
+    } else {
+        SPAWN(mtbdd_refs_mark_r_par, begin, count / 2);
+        CALL(mtbdd_refs_mark_r_par, begin + (count / 2), count - count / 2);
+        SYNC(mtbdd_refs_mark_r_par);
+    }
+}
+
+VOID_TASK_2(mtbdd_refs_mark_s_par, Task**, begin, size_t, count)
+{
+    if (count < 32) {
+        while (count) {
+            Task *t = *begin++;
+            if (!TASK_IS_STOLEN(t)) return;
+            if (TASK_IS_COMPLETED(t)) {
+                mtbdd_gc_mark_rec(*(BDD*)TASK_RESULT(t));
+            }
+            count--;
+        }
+    } else {
+        if (!TASK_IS_STOLEN((*begin))) return;
+        SPAWN(mtbdd_refs_mark_s_par, begin, count / 2);
+        CALL(mtbdd_refs_mark_s_par, begin + (count / 2), count - count / 2);
+        SYNC(mtbdd_refs_mark_s_par);
+    }
+}
 
 VOID_TASK_0(mtbdd_refs_mark_task)
 {
     LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
-    size_t i, j=0;
-    for (i=0; i<mtbdd_refs_key->r_count; i++) {
-        if (j >= 40) {
-            while (j--) SYNC(mtbdd_gc_mark_rec);
-            j=0;
-        }
-        SPAWN(mtbdd_gc_mark_rec, mtbdd_refs_key->results[i]);
-        j++;
-    }
-    for (i=0; i<mtbdd_refs_key->s_count; i++) {
-        Task *t = mtbdd_refs_key->spawns[i];
-        if (!TASK_IS_STOLEN(t)) break;
-        if (TASK_IS_COMPLETED(t)) {
-            if (j >= 40) {
-                while (j--) SYNC(mtbdd_gc_mark_rec);
-                j=0;
-            }
-            SPAWN(mtbdd_gc_mark_rec, *(BDD*)TASK_RESULT(t));
-            j++;
-        }
-    }
-    while (j--) SYNC(mtbdd_gc_mark_rec);
+    SPAWN(mtbdd_refs_mark_p_par, mtbdd_refs_key->pbegin, mtbdd_refs_key->pcur-mtbdd_refs_key->pbegin);
+    SPAWN(mtbdd_refs_mark_r_par, mtbdd_refs_key->rbegin, mtbdd_refs_key->rcur-mtbdd_refs_key->rbegin);
+    CALL(mtbdd_refs_mark_s_par, mtbdd_refs_key->sbegin, mtbdd_refs_key->scur-mtbdd_refs_key->sbegin);
+    SYNC(mtbdd_refs_mark_r_par);
+    SYNC(mtbdd_refs_mark_p_par);
 }
 
 VOID_TASK_0(mtbdd_refs_mark)
@@ -229,12 +266,12 @@ VOID_TASK_0(mtbdd_refs_mark)
 VOID_TASK_0(mtbdd_refs_init_task)
 {
     mtbdd_refs_internal_t s = (mtbdd_refs_internal_t)malloc(sizeof(struct mtbdd_refs_internal));
-    s->r_size = 128;
-    s->r_count = 0;
-    s->s_size = 128;
-    s->s_count = 0;
-    s->results = (BDD*)malloc(sizeof(BDD) * 128);
-    s->spawns = (Task**)malloc(sizeof(Task*) * 128);
+    s->pcur = s->pbegin = (MTBDD**)malloc(sizeof(MTBDD*) * 1024);
+    s->pend = s->pbegin + 1024;
+    s->rcur = s->rbegin = (MTBDD*)malloc(sizeof(MTBDD) * 1024);
+    s->rend = s->rbegin + 1024;
+    s->scur = s->sbegin = (Task**)malloc(sizeof(Task*) * 1024);
+    s->send = s->sbegin + 1024;
     SET_THREAD_LOCAL(mtbdd_refs_key, s);
 }
 
@@ -243,6 +280,82 @@ VOID_TASK_0(mtbdd_refs_init)
     INIT_THREAD_LOCAL(mtbdd_refs_key);
     TOGETHER(mtbdd_refs_init_task);
     sylvan_gc_add_mark(TASK(mtbdd_refs_mark));
+}
+
+void
+mtbdd_refs_ptrs_up(mtbdd_refs_internal_t mtbdd_refs_key)
+{
+    size_t cur = mtbdd_refs_key->pcur - mtbdd_refs_key->pbegin;
+    size_t size = mtbdd_refs_key->pend - mtbdd_refs_key->pbegin;
+    mtbdd_refs_key->pbegin = (MTBDD**)realloc(mtbdd_refs_key->pbegin, sizeof(MTBDD*) * size*2);
+    mtbdd_refs_key->pcur = mtbdd_refs_key->pbegin + cur;
+    mtbdd_refs_key->pend = mtbdd_refs_key->pend + size * 2;
+}
+
+MTBDD __attribute__((noinline))
+mtbdd_refs_refs_up(mtbdd_refs_internal_t mtbdd_refs_key, MTBDD res)
+{
+    long size = mtbdd_refs_key->rend - mtbdd_refs_key->rbegin;
+    mtbdd_refs_key->rbegin = (MTBDD*)realloc(mtbdd_refs_key->rbegin, sizeof(MTBDD) * size * 2);
+    mtbdd_refs_key->rcur = mtbdd_refs_key->rbegin + size;
+    mtbdd_refs_key->rend = mtbdd_refs_key->rbegin + (size * 2);
+    return res;
+}
+
+void __attribute__((noinline))
+mtbdd_refs_tasks_up(mtbdd_refs_internal_t mtbdd_refs_key)
+{
+    long size = mtbdd_refs_key->send - mtbdd_refs_key->sbegin;
+    mtbdd_refs_key->sbegin = (Task**)realloc(mtbdd_refs_key->sbegin, sizeof(Task*) * size * 2);
+    mtbdd_refs_key->scur = mtbdd_refs_key->sbegin + size;
+    mtbdd_refs_key->send = mtbdd_refs_key->sbegin + (size * 2);
+}
+
+void __attribute__((unused))
+mtbdd_refs_pushptr(MTBDD *ptr)
+{
+    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
+    *mtbdd_refs_key->pcur++ = ptr;
+    if (mtbdd_refs_key->pcur == mtbdd_refs_key->pend) mtbdd_refs_ptrs_up(mtbdd_refs_key);
+}
+
+void __attribute__((unused))
+mtbdd_refs_popptr(size_t amount)
+{
+    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
+    mtbdd_refs_key->pcur -= amount;
+}
+
+MTBDD __attribute__((unused))
+mtbdd_refs_push(MTBDD mtbdd)
+{
+    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
+    *(mtbdd_refs_key->rcur++) = mtbdd;
+    if (mtbdd_refs_key->rcur == mtbdd_refs_key->rend) return mtbdd_refs_refs_up(mtbdd_refs_key, mtbdd);
+    else return mtbdd;
+}
+
+void __attribute__((unused))
+mtbdd_refs_pop(long amount)
+{
+    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
+    mtbdd_refs_key->rcur -= amount;
+}
+
+void __attribute__((unused))
+mtbdd_refs_spawn(Task *t)
+{
+    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
+    *(mtbdd_refs_key->scur++) = t;
+    if (mtbdd_refs_key->scur == mtbdd_refs_key->send) mtbdd_refs_tasks_up(mtbdd_refs_key);
+}
+
+MTBDD __attribute__((unused))
+mtbdd_refs_sync(MTBDD result)
+{
+    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
+    mtbdd_refs_key->scur -= 1;
+    return result;
 }
 
 /**

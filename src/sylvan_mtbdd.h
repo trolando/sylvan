@@ -78,7 +78,6 @@ typedef MTBDD MTBDDMAP;
 #define sylvan_unprotect        mtbdd_unprotect
 #define sylvan_count_protected  mtbdd_count_protected
 #define sylvan_gc_mark_rec      mtbdd_gc_mark_rec
-#define sylvan_notify_ondead    mtbdd_notify_ondead
 #define bdd_refs_push           mtbdd_refs_push
 #define bdd_refs_pop            mtbdd_refs_pop
 #define bdd_refs_spawn          mtbdd_refs_spawn
@@ -870,7 +869,6 @@ size_t mtbdd_count_protected(void);
  * When they are dead after the mark phase in garbage collection, the callback is called for marked MTBDDs.
  * The ondead callback can either perform cleanup or resurrect dead terminals.
  */
-#define mtbdd_notify_ondead(dd) llmsset_notify_ondead(nodes, dd&~mtbdd_complement)
 
 /**
  * Infrastructure for internal references.

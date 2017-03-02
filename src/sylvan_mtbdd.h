@@ -78,6 +78,8 @@ typedef MTBDD MTBDDMAP;
 #define sylvan_unprotect        mtbdd_unprotect
 #define sylvan_count_protected  mtbdd_count_protected
 #define sylvan_gc_mark_rec      mtbdd_gc_mark_rec
+#define bdd_refs_pushptr        mtbdd_refs_pushptr
+#define bdd_refs_popptr         mtbdd_refs_popptr
 #define bdd_refs_push           mtbdd_refs_push
 #define bdd_refs_pop            mtbdd_refs_pop
 #define bdd_refs_spawn          mtbdd_refs_spawn
@@ -848,34 +850,49 @@ VOID_TASK_DECL_1(mtbdd_gc_mark_rec, MTBDD);
 #define mtbdd_gc_mark_rec(mtbdd) CALL(mtbdd_gc_mark_rec, mtbdd)
 
 /**
- * Default external referencing. During garbage collection, MTBDDs marked with mtbdd_ref will
- * be kept in the forest.
- * It is recommended to prefer mtbdd_protect and mtbdd_unprotect.
+ * Infrastructure for external references using a hash table.
+ * Two hash tables store external references: a pointers table and a values table.
+ * The pointers table stores pointers to MTBDD variables, manipulated with protect and unprotect.
+ * The values table stores MTBDDs, manipulated with ref and deref.
+ * We strongly recommend using the pointers table whenever possible.
  */
-MTBDD mtbdd_ref(MTBDD a);
-void mtbdd_deref(MTBDD a);
-size_t mtbdd_count_refs(void);
 
 /**
- * Default external pointer referencing. During garbage collection, the pointers are followed and the MTBDD
- * that they refer to are kept in the forest.
+ * Store the pointer <ptr> in the pointers table.
  */
 void mtbdd_protect(MTBDD* ptr);
+
+/**
+ * Delete the pointer <ptr> from the pointers table.
+ */
 void mtbdd_unprotect(MTBDD* ptr);
+
+/**
+ * Compute the number of pointers in the pointers table.
+ */
 size_t mtbdd_count_protected(void);
 
 /**
- * If mtbdd_set_ondead is set to a callback, then this function marks MTBDDs (terminals).
- * When they are dead after the mark phase in garbage collection, the callback is called for marked MTBDDs.
- * The ondead callback can either perform cleanup or resurrect dead terminals.
+ * Store the MTBDD <dd> in the values table.
  */
+MTBDD mtbdd_ref(MTBDD dd);
+
+/**
+ * Delete the MTBDD <dd> from the values table.
+ */
+void mtbdd_deref(MTBDD dd);
+
+/**
+ * Compute the number of values in the values table.
+ */
+size_t mtbdd_count_refs(void);
 
 /**
  * Infrastructure for internal references.
  * Every thread has its own reference stacks. There are three stacks: pointer, values, tasks stack.
- * The pointers stack contains pointers to MTBDD variables, manipulated with pushptr and popptr.
- * The values stack contains MTBDDs, manipulated with push and pop.
- * The tasks stack contains Lace tasks (that return MTBDDs), manipulated with spawn and sync.
+ * The pointers stack stores pointers to MTBDD variables, manipulated with pushptr and popptr.
+ * The values stack stores MTBDDs, manipulated with push and pop.
+ * The tasks stack stores Lace tasks (that return MTBDDs), manipulated with spawn and sync.
  *
  * It is recommended to use the pointers stack for local variables and the tasks stack for tasks.
  */

@@ -146,6 +146,8 @@ MTBDD variables.
         free(my_var);
     }
 
+If you use ``mtbdd_protect`` you do not need to update the reference every time the value changes.
+
 The *mtbdd* subpackage also implements thread-local stacks to temporarily store pointers and results of tasks:
 
 .. code:: c
@@ -168,8 +170,14 @@ It is recommended to use the thread-local stacks for local variables, and to use
 functions for other variables. Every SPAWN and SYNC of a Lace task that returns an MTBDD must be decorated with
 ``mtbdd_refs_stack`` and ``mtbdd_refs_sync`` as in the above example.
 
-**Warning**: Sylvan is a multi-threaded library and all workers must cooperate for garbage collection. If you use
-locking mechanisms in your code, beware of deadlocks!
+References to decision diagrams must be added before a worker may cooperate on garbage collection.
+Workers can cooperate on garbage collection during ``SYNC`` and when functions create nodes or use ``sylvan_gc_test`` to test whether to assist in garbage collection.
+Functions for adding or removing references never perform garbage collection.
+Furthermore, only the ``mtbdd_makenode`` function (and other node making primitives) implicitly reference their parameters; all other functions do not reference their parameters.
+Nesting Sylvan functions (including ``sylvan_ithvar``) is bad practice and should be avoided.
+
+**Warning**: Sylvan is a multi-threaded library and all workers must cooperate for garbage collection. If you use locking mechanisms in your code, beware of deadlocks!
+You can explicitly cooperate on garbage collection with ``sylvan_gc_test()``.
 
 Basic BDD/MTBDD functionality
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -325,10 +325,6 @@ Workers can cooperate on garbage collection during <code class="docutils literal
 Functions for adding or removing references never perform garbage collection.
 Furthermore, only the <code class="docutils literal"><span class="pre">mtbdd_makenode</span></code> function (and other node making primitives) implicitly reference their parameters; all other functions do not reference their parameters.
 Nesting Sylvan functions (including <code class="docutils literal"><span class="pre">sylvan_ithvar</span></code>) is bad practice and should be avoided.</p>
-<p>To manually trigger garbage collection, call <code class="docutils literal"><span class="pre">sylvan_gc</span></code>.
-You can use <code class="docutils literal"><span class="pre">sylvan_gc_disable</span></code> and <code class="docutils literal"><span class="pre">sylvan_gc_enable</span></code> to disable garbage collection or
-enable it again. If garbage collection is disabled, the program will abort when the nodes table
-is full.</p>
 <p><strong>Warning</strong>: Sylvan is a multi-threaded library and all workers must cooperate for garbage collection. If you use locking mechanisms in your code, beware of deadlocks!
 You can explicitly cooperate on garbage collection with <code class="docutils literal"><span class="pre">sylvan_gc_test()</span></code>.</p>
 </div>

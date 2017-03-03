@@ -176,11 +176,6 @@ Functions for adding or removing references never perform garbage collection.
 Furthermore, only the ``mtbdd_makenode`` function (and other node making primitives) implicitly reference their parameters; all other functions do not reference their parameters.
 Nesting Sylvan functions (including ``sylvan_ithvar``) is bad practice and should be avoided.
 
-To manually trigger garbage collection, call ``sylvan_gc``.
-You can use ``sylvan_gc_disable`` and ``sylvan_gc_enable`` to disable garbage collection or
-enable it again. If garbage collection is disabled, the program will abort when the nodes table
-is full.
-
 **Warning**: Sylvan is a multi-threaded library and all workers must cooperate for garbage collection. If you use locking mechanisms in your code, beware of deadlocks!
 You can explicitly cooperate on garbage collection with ``sylvan_gc_test()``.
 

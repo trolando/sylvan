@@ -300,6 +300,7 @@ MTBDD variables.</p>
 <span class="p">}</span>
 </pre></div>
 </div>
+<p>If you use <code class="docutils literal"><span class="pre">sylvan_protect</span></code> you do not need to update the reference every time the value changes.</p>
 <p>The <em>mtbdd</em> subpackage also implements thread-local stacks to temporarily store pointers and results of tasks:</p>
 <div class="code c highlight-default"><div class="highlight"><pre><span></span><span class="n">MTBDD</span> <span class="n">some_thing</span> <span class="o">=</span> <span class="o">...</span><span class="p">;</span>
 <span class="n">mtbdd_refs_pushptr</span><span class="p">(</span><span class="o">&amp;</span><span class="n">some_thing</span><span class="p">);</span>
@@ -319,8 +320,17 @@ MTBDD variables.</p>
 <p>It is recommended to use the thread-local stacks for local variables, and to use the <code class="docutils literal"><span class="pre">protect</span></code> and <code class="docutils literal"><span class="pre">unprotect</span></code>
 functions for other variables. Every SPAWN and SYNC of a Lace task that returns an MTBDD must be decorated with
 <code class="docutils literal"><span class="pre">mtbdd_refs_stack</span></code> and <code class="docutils literal"><span class="pre">mtbdd_refs_sync</span></code> as in the above example.</p>
-<p><strong>Warning</strong>: Sylvan is a multi-threaded library and all workers must cooperate for garbage collection. If you use
-locking mechanisms in your code, beware of deadlocks!</p>
+<p>References to decision diagrams must be added before a worker may cooperate on garbage collection.
+Workers can cooperate on garbage collection during <code class="docutils literal"><span class="pre">SYNC</span></code> and when functions create nodes or use <code class="docutils literal"><span class="pre">sylvan_gc_test</span></code> to test whether to assist in garbage collection.
+Functions for adding or removing references never perform garbage collection.
+Furthermore, only the <code class="docutils literal"><span class="pre">mtbdd_makenode</span></code> function (and other node making primitives) implicitly reference their parameters; all other functions do not reference their parameters.
+Nesting Sylvan functions (including <code class="docutils literal"><span class="pre">sylvan_ithvar</span></code>) is bad practice and should be avoided.</p>
+<p>To manually trigger garbage collection, call <code class="docutils literal"><span class="pre">sylvan_gc</span></code>.
+You can use <code class="docutils literal"><span class="pre">sylvan_gc_disable</span></code> and <code class="docutils literal"><span class="pre">sylvan_gc_enable</span></code> to disable garbage collection or
+enable it again. If garbage collection is disabled, the program will abort when the nodes table
+is full.</p>
+<p><strong>Warning</strong>: Sylvan is a multi-threaded library and all workers must cooperate for garbage collection. If you use locking mechanisms in your code, beware of deadlocks!
+You can explicitly cooperate on garbage collection with <code class="docutils literal"><span class="pre">sylvan_gc_test()</span></code>.</p>
 </div>
 <div class="section" id="basic-bdd-mtbdd-functionality">
 <h3>Basic BDD/MTBDD functionality<a class="headerlink" href="#basic-bdd-mtbdd-functionality" title="Permalink to this headline">¶</a></h3>

@@ -1,0 +1,244 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Sylvan &#8212; Sylvan 1.1.2 documentation</title>
+    
+    <link rel="stylesheet" href="_static/classic.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '1.1.2',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" /> 
+  </head>
+  <body role="document">
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="nav-item nav-item-0"><a href="index.html">Sylvan 1.1.2 documentation</a> &#187;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="sylvan-build-status">
+<h1>Sylvan <a class="reference external" href="https://travis-ci.org/utwente-fmt/sylvan"><img alt="Build Status" src="https://travis-ci.org/utwente-fmt/sylvan.svg?branch=master" /></a><a class="headerlink" href="#sylvan-build-status" title="Permalink to this headline">¶</a></h1>
+<p>Sylvan is a parallel (multi-core) MTBDD library written in C. Sylvan
+implements parallelized operations on BDDs, MTBDDs and LDDs. Both
+sequential and parallel BDD-based algorithms can benefit from
+parallelism. Sylvan uses the work-stealing framework Lace and parallel
+datastructures to implement scalable multi-core operations on decision
+diagrams.</p>
+<p>Sylvan is developed (© 2011-2016) by the <a class="reference external" href="http://fmt.ewi.utwente.nl/">Formal Methods and
+Tools</a> group at the University of Twente
+as part of the MaDriD project, which is funded by NWO, and the <a class="reference external" href="http://fmv.jku.at/">Formal
+Methods and Verification</a> group at the Johannes
+Kepler University Linz as part of the RiSE project. Sylvan is licensed
+with the Apache 2.0 license.</p>
+<p>You can contact the main author of Sylvan at <a class="reference external" href="mailto:tom&#37;&#52;&#48;tvandijk&#46;nl">tom<span>&#64;</span>tvandijk<span>&#46;</span>nl</a>. Please let
+us know if you use Sylvan in your projects.</p>
+<ul class="simple">
+<li>Sylvan is available at: <a class="reference external" href="https://github.com/utwente-fmt/sylvan">https://github.com/utwente-fmt/sylvan</a></li>
+<li>Java/JNI bindings: <a class="reference external" href="https://github.com/utwente-fmt/jsylvan">https://github.com/utwente-fmt/jsylvan</a></li>
+<li>Haskell bindings: <a class="reference external" href="https://github.com/adamwalker/sylvan-haskell">https://github.com/adamwalker/sylvan-haskell</a></li>
+<li>Python bindings: <a class="reference external" href="https://github.com/johnyf/dd">https://github.com/johnyf/dd</a></li>
+</ul>
+<div class="section" id="publications">
+<h2>Publications<a class="headerlink" href="#publications" title="Permalink to this headline">¶</a></h2>
+<p>T. van Dijk (2016) <a class="reference external" href="http://dx.doi.org/10.3990/1.9789036541602">Sylvan: Multi-core Decision
+Diagrams</a>. PhD Thesis.</p>
+<p>T. van Dijk and J. van de Pol (2015) <a class="reference external" href="http://dx.doi.org/10.1007/978-3-662-46681-0_60">Sylvan: Multi-core Decision
+Diagrams</a>. In: TACAS
+2015, LNCS 9035. Springer.</p>
+<p>T. van Dijk and A.W. Laarman and J. van de Pol (2012) <a class="reference external" href="http://eprints.eemcs.utwente.nl/22166/">Multi-Core BDD
+Operations for Symbolic
+Reachability</a>. In: PDMC 2012,
+ENTCS. Elsevier.</p>
+</div>
+<div class="section" id="usage">
+<h2>Usage<a class="headerlink" href="#usage" title="Permalink to this headline">¶</a></h2>
+<p>Simple examples can be found in the <code class="docutils literal"><span class="pre">examples</span></code> subdirectory. The file
+<code class="docutils literal"><span class="pre">simple.cpp</span></code> contains a toy program that uses the C++ objects to
+perform basic BDD manipulation. The <code class="docutils literal"><span class="pre">mc.c</span></code> and <code class="docutils literal"><span class="pre">lddmc.c</span></code> programs
+are more advanced examples of symbolic model checking (with example
+models in the <code class="docutils literal"><span class="pre">models</span></code> subdirectory).</p>
+<p>Sylvan depends on the <a class="reference external" href="http://fmt.ewi.utwente.nl/tools/lace">work-stealing framework
+Lace</a> for its implementation.
+Lace is embedded in the Sylvan distribution. To use Sylvan, Lace must be
+initialized first. See the example in <code class="docutils literal"><span class="pre">simple.cpp</span></code> and the comments in
+<code class="docutils literal"><span class="pre">src/sylvan.h</span></code>.</p>
+<div class="section" id="basic-functionality">
+<h3>Basic functionality<a class="headerlink" href="#basic-functionality" title="Permalink to this headline">¶</a></h3>
+<p>To create new BDDs, you can use: - <code class="docutils literal"><span class="pre">sylvan_true</span></code>: representation of
+constant <code class="docutils literal"><span class="pre">true</span></code>. - <code class="docutils literal"><span class="pre">sylvan_false</span></code>: representation of constant
+<code class="docutils literal"><span class="pre">false</span></code>. - <code class="docutils literal"><span class="pre">sylvan_ithvar(var)</span></code>: representation of literal &lt;var&gt;
+(negated: <code class="docutils literal"><span class="pre">sylvan_nithvar(var)</span></code>)</p>
+<p>To follow the BDD edges and obtain the variable at the root of a BDD,
+you can use: - <code class="docutils literal"><span class="pre">sylvan_var(bdd)</span></code>: obtain variable of the root node of
+&lt;bdd&gt; - requires that &lt;bdd&gt; is not constant <code class="docutils literal"><span class="pre">true</span></code> or <code class="docutils literal"><span class="pre">false</span></code>. -
+<code class="docutils literal"><span class="pre">sylvan_high(bdd)</span></code>: follow high edge of &lt;bdd&gt;. - <code class="docutils literal"><span class="pre">sylvan_low(bdd)</span></code>:
+follow low edge of &lt;bdd&gt;.</p>
+<p>You need to manually reference BDDs that you want to keep during garbage
+collection: - <code class="docutils literal"><span class="pre">sylvan_ref(bdd)</span></code>: add reference to &lt;bdd&gt;. -
+<code class="docutils literal"><span class="pre">sylvan_deref(bdd)</span></code>: remove reference to &lt;bdd&gt;. -
+<code class="docutils literal"><span class="pre">sylvan_protect(bddptr)</span></code>: add a pointer reference to the BDD variable
+&lt;bddptr&gt; - <code class="docutils literal"><span class="pre">sylvan_unprotect(bddptr)</span></code>: remove a pointer reference to
+the BDD variable &lt;bddptr&gt;</p>
+<p>It is recommended to use <code class="docutils literal"><span class="pre">sylvan_protect</span></code> and <code class="docutils literal"><span class="pre">sylvan_unprotect</span></code>.
+The C++ objects handle this automatically.</p>
+<p>The following &#8216;primitives&#8217; are implemented: - <code class="docutils literal"><span class="pre">sylvan_not(bdd)</span></code>:
+negation of &lt;bdd&gt;. - <code class="docutils literal"><span class="pre">sylvan_ite(a,b,c)</span></code>: calculate &#8216;if &lt;a&gt; then &lt;b&gt;
+else &lt;c&gt;&#8217;. - <code class="docutils literal"><span class="pre">sylvan_and(a,</span> <span class="pre">b)</span></code>: calculate a and b -
+<code class="docutils literal"><span class="pre">sylvan_or(a,</span> <span class="pre">b)</span></code>: calculate a or b - <code class="docutils literal"><span class="pre">sylvan_nand(a,</span> <span class="pre">b)</span></code>: calculate
+not (a and b) - <code class="docutils literal"><span class="pre">sylvan_nor(a,</span> <span class="pre">b)</span></code>: calculate not (a or b) -
+<code class="docutils literal"><span class="pre">sylvan_imp(a,</span> <span class="pre">b)</span></code>: calculate a implies b - <code class="docutils literal"><span class="pre">sylvan_invimp(a,</span> <span class="pre">b)</span></code>:
+calculate implies a - <code class="docutils literal"><span class="pre">sylvan_xor(a,</span> <span class="pre">b)</span></code>: calculate a xor b -
+<code class="docutils literal"><span class="pre">sylvan_equiv(a,</span> <span class="pre">b)</span></code>: calculate a = b - <code class="docutils literal"><span class="pre">sylvan_diff(a,</span> <span class="pre">b)</span></code>:
+calculate a and not b - <code class="docutils literal"><span class="pre">sylvan_less(a,</span> <span class="pre">b)</span></code>: calculate b and not a -
+<code class="docutils literal"><span class="pre">sylvan_exists(bdd,</span> <span class="pre">vars)</span></code>: existential quantification of &lt;bdd&gt; with
+respect to variables &lt;vars&gt;. Here, &lt;vars&gt; is a conjunction of literals.
+- <code class="docutils literal"><span class="pre">sylvan_forall(bdd,</span> <span class="pre">vars)</span></code>: universal quantification of &lt;bdd&gt; with
+respect to variables &lt;vars&gt;. Here, &lt;vars&gt; is a conjunction of literals.</p>
+</div>
+<div class="section" id="other-bdd-operations">
+<h3>Other BDD operations<a class="headerlink" href="#other-bdd-operations" title="Permalink to this headline">¶</a></h3>
+<p>See <code class="docutils literal"><span class="pre">src/sylvan_bdd.h</span></code>, <code class="docutils literal"><span class="pre">src/sylvan_mtbdd.h</span></code> and
+<code class="docutils literal"><span class="pre">src/sylvan_ldd.h</span></code> for other implemented operations. See
+<code class="docutils literal"><span class="pre">src/sylvan_obj.hpp</span></code> for the C++ interface.</p>
+</div>
+<div class="section" id="garbage-collection">
+<h3>Garbage collection<a class="headerlink" href="#garbage-collection" title="Permalink to this headline">¶</a></h3>
+<p>Garbage collection is triggered when trying to insert a new node and no
+new bucket can be found within a reasonable upper bound. Garbage
+collection is stop-the-world and all workers must cooperate on garbage
+collection. (Beware of deadlocks if you use Sylvan operations in
+critical sections!) - <code class="docutils literal"><span class="pre">sylvan_gc()</span></code>: manually trigger garbage
+collection. - <code class="docutils literal"><span class="pre">sylvan_gc_enable()</span></code>: enable garbage collection. -
+<code class="docutils literal"><span class="pre">sylvan_gc_disable()</span></code>: disable garbage collection.</p>
+</div>
+<div class="section" id="table-resizing">
+<h3>Table resizing<a class="headerlink" href="#table-resizing" title="Permalink to this headline">¶</a></h3>
+<p>During garbage collection, it is possible to resize the nodes table and
+the cache. Sylvan provides two default implementations: an agressive
+version that resizes every time garbage collection is performed, and a
+less agressive version that only resizes when at least half the table is
+full. This can be configured in <code class="docutils literal"><span class="pre">src/sylvan_config.h</span></code> It is not
+possible to decrease the size of the nodes table and the cache.</p>
+</div>
+<div class="section" id="dynamic-reordering">
+<h3>Dynamic reordering<a class="headerlink" href="#dynamic-reordering" title="Permalink to this headline">¶</a></h3>
+<p>Dynamic reordening is currently not supported. For now, we suggest users
+find a good static variable ordering.</p>
+</div>
+</div>
+<div class="section" id="troubleshooting">
+<h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permalink to this headline">¶</a></h2>
+<p>Sylvan may require a larger than normal program stack. You may need to
+increase the program stack size on your system using <code class="docutils literal"><span class="pre">ulimit</span> <span class="pre">-s</span></code>.
+Segmentation faults on large computations typically indicate a program
+stack overflow.</p>
+<div class="section" id="i-am-getting-the-error-unable-to-allocate-memory">
+<h3>I am getting the error &#8220;unable to allocate memory: ...!&#8221;<a class="headerlink" href="#i-am-getting-the-error-unable-to-allocate-memory" title="Permalink to this headline">¶</a></h3>
+<p>Sylvan allocates virtual memory using mmap. If you specify a combined
+size for the cache and node table larger than your actual available
+memory you may need to set <code class="docutils literal"><span class="pre">vm.overcommit_memory</span></code> to <code class="docutils literal"><span class="pre">1</span></code>. E.g.
+<code class="docutils literal"><span class="pre">echo</span> <span class="pre">1</span> <span class="pre">&gt;</span> <span class="pre">/proc/sys/vm/overcommit_memory</span></code>. You can make this setting
+permanent with
+<code class="docutils literal"><span class="pre">echo</span> <span class="pre">&quot;vm.overcommit_memory</span> <span class="pre">=</span> <span class="pre">1&quot;</span> <span class="pre">&gt;</span> <span class="pre">/etc/sysctl.d/99-sylvan.conf</span></code>. You
+can verify the setting with <code class="docutils literal"><span class="pre">cat</span> <span class="pre">/proc/sys/vm/overcommit_memory</span></code>. It
+should report <code class="docutils literal"><span class="pre">1</span></code>.</p>
+</div>
+<div class="section" id="i-get-errors-about-lace-worker-and-lace-dq-head">
+<h3>I get errors about <code class="docutils literal"><span class="pre">__lace_worker</span></code> and <code class="docutils literal"><span class="pre">__lace_dq_head</span></code><a class="headerlink" href="#i-get-errors-about-lace-worker-and-lace-dq-head" title="Permalink to this headline">¶</a></h3>
+<p>Many Sylvan operations are implemented as Lace tasks. To call a Lace
+task, the variables <code class="docutils literal"><span class="pre">__lace_worker</span></code> and <code class="docutils literal"><span class="pre">__lace_dq_head</span></code> must be
+initialized. Use the macro <code class="docutils literal"><span class="pre">LACE_ME</span></code> to do this.</p>
+</div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Sylvan </a><ul>
+<li><a class="reference internal" href="#publications">Publications</a></li>
+<li><a class="reference internal" href="#usage">Usage</a><ul>
+<li><a class="reference internal" href="#basic-functionality">Basic functionality</a></li>
+<li><a class="reference internal" href="#other-bdd-operations">Other BDD operations</a></li>
+<li><a class="reference internal" href="#garbage-collection">Garbage collection</a></li>
+<li><a class="reference internal" href="#table-resizing">Table resizing</a></li>
+<li><a class="reference internal" href="#dynamic-reordering">Dynamic reordering</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#troubleshooting">Troubleshooting</a><ul>
+<li><a class="reference internal" href="#i-am-getting-the-error-unable-to-allocate-memory">I am getting the error &#8220;unable to allocate memory: ...!&#8221;</a></li>
+<li><a class="reference internal" href="#i-get-errors-about-lace-worker-and-lace-dq-head">I get errors about <code class="docutils literal"><span class="pre">__lace_worker</span></code> and <code class="docutils literal"><span class="pre">__lace_dq_head</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/README.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="nav-item nav-item-0"><a href="index.html">Sylvan 1.1.2 documentation</a> &#187;</li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2017, Tom van Dijk.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.2.
+    </div>
+  </body>
+</html>

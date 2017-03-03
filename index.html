@@ -42,6 +42,7 @@
 
 <body class="wy-body-for-nav" role="document">
 
+   
   <div class="wy-grid-for-nav">
 
     
@@ -90,10 +91,11 @@
 <li><a class="reference internal" href="#using-sylvan">Using Sylvan</a><ul>
 <li><a class="reference internal" href="#the-lace-framework">The Lace framework</a></li>
 <li><a class="reference internal" href="#garbage-collection-and-referencing-nodes">Garbage collection and referencing nodes</a></li>
-<li><a class="reference internal" href="#basic-bdd-functionality">Basic BDD functionality</a></li>
-<li><a class="reference internal" href="#other-bdd-operations">Other BDD operations</a></li>
-<li><a class="reference internal" href="#basic-mtbdd-functionality">Basic MTBDD functionality</a></li>
-<li><a class="reference internal" href="#basic-ldd-functionality">Basic LDD functionality</a></li>
+<li><a class="reference internal" href="#basic-bdd-mtbdd-functionality">Basic BDD/MTBDD functionality</a></li>
+<li><a class="reference internal" href="#custom-leaves">Custom leaves</a></li>
+<li><a class="reference internal" href="#custom-decision-diagram-operations">Custom decision diagram operations</a></li>
+<li><a class="reference internal" href="#list-decision-diagrams">List decision diagrams</a></li>
+<li><a class="reference internal" href="#file-i-o">File I/O</a></li>
 <li><a class="reference internal" href="#support-for-c">Support for C++</a></li>
 <li><a class="reference internal" href="#table-resizing">Table resizing</a></li>
 <li><a class="reference internal" href="#dynamic-reordering">Dynamic reordering</a></li>
@@ -120,8 +122,10 @@
 
       
       <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
-        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-        <a href="#">Sylvan</a>
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="#">Sylvan</a>
+        
       </nav>
 
 
@@ -130,23 +134,40 @@
         <div class="rst-content">
           
 
- 
+
+
+
+
+
+
+
+
+
+
+
 
 
 
 <div role="navigation" aria-label="breadcrumbs navigation">
+
   <ul class="wy-breadcrumbs">
-    <li><a href="#">Docs</a> &raquo;</li>
-      
-    <li>Sylvan</li>
+    
+      <li><a href="#">Docs</a> &raquo;</li>
+        
+      <li>Sylvan</li>
+    
+    
       <li class="wy-breadcrumbs-aside">
         
-          
+            
             <a href="_sources/index.rst.txt" rel="nofollow"> View page source</a>
           
         
       </li>
+    
   </ul>
+
+  
   <hr/>
 </div>
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
@@ -180,20 +201,24 @@ mirror is available at <a class="reference external" href="https://github.com/ut
 </ul>
 <div class="section" id="dependencies">
 <h2>Dependencies<a class="headerlink" href="#dependencies" title="Permalink to this headline">¶</a></h2>
-<p>Sylvan has the following required dependencies:</p>
+<p>Sylvan has the following dependencies:</p>
 <ul class="simple">
 <li><strong>CMake</strong> for compiling.</li>
 <li><strong>gmp</strong> (<code class="docutils literal"><span class="pre">libgmp-dev</span></code>) for the GMP leaves in MTBDDs.</li>
-<li><strong>hwloc</strong> (<code class="docutils literal"><span class="pre">libhwloc-dev</span></code>) for pinning worker threads to processors.</li>
+<li><strong>Sphinx</strong> if you want to build the documentation.</li>
 </ul>
 <p>Sylvan depends on the <a class="reference external" href="http://fmt.ewi.utwente.nl/tools/lace">work-stealing framework
 Lace</a> for its implementation.
-Lace is embedded in the Sylvan distribution.</p>
+Lace is embedded in the Sylvan distribution.
+Lace requires one additional library:</p>
+<ul class="simple">
+<li><strong>hwloc</strong> (<code class="docutils literal"><span class="pre">libhwloc-dev</span></code>) for pinning worker threads to processors.</li>
+</ul>
 </div>
 <div class="section" id="building">
 <h2>Building<a class="headerlink" href="#building" title="Permalink to this headline">¶</a></h2>
 <p>It is recommended to build Sylvan in a separate build directory:</p>
-<div class="code bash highlight-default"><div class="highlight"><pre><span class="n">mkdir</span> <span class="n">build</span>
+<div class="code bash highlight-default"><div class="highlight"><pre><span></span><span class="n">mkdir</span> <span class="n">build</span>
 <span class="n">cd</span> <span class="n">build</span>
 <span class="n">cmake</span> <span class="o">..</span>
 <span class="n">make</span> <span class="o">&amp;&amp;</span> <span class="n">make</span> <span class="n">test</span> <span class="o">&amp;&amp;</span> <span class="n">make</span> <span class="n">install</span>
@@ -206,21 +231,19 @@ statistics gathering and whether you want a <code class="docutils literal"><span
 <div class="section" id="using-sylvan">
 <h2>Using Sylvan<a class="headerlink" href="#using-sylvan" title="Permalink to this headline">¶</a></h2>
 <p>To use Sylvan, the library and its dependency Lace must be initialized:</p>
-<div class="code c highlight-default"><div class="highlight"><pre><span class="c1">#include &lt;sylvan.h&gt;</span>
+<div class="code c highlight-default"><div class="highlight"><pre><span></span><span class="c1">#include &lt;sylvan.h&gt;</span>
 
 <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
     <span class="nb">int</span> <span class="n">n_workers</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="o">//</span> <span class="n">auto</span><span class="o">-</span><span class="n">detect</span>
     <span class="n">lace_init</span><span class="p">(</span><span class="n">n_workers</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
     <span class="n">lace_startup</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">NULL</span><span class="p">,</span> <span class="n">NULL</span><span class="p">);</span>
 
-    <span class="n">size_t</span> <span class="n">nodes_minsize</span> <span class="o">=</span> <span class="mi">1</span><span class="n">LL</span><span class="o">&lt;&lt;</span><span class="mi">22</span><span class="p">;</span>
-    <span class="n">size_t</span> <span class="n">nodes_maxsize</span> <span class="o">=</span> <span class="mi">1</span><span class="n">LL</span><span class="o">&lt;&lt;</span><span class="mi">26</span><span class="p">;</span>
-    <span class="n">size_t</span> <span class="n">cache_minsize</span> <span class="o">=</span> <span class="mi">1</span><span class="n">LL</span><span class="o">&lt;&lt;</span><span class="mi">23</span><span class="p">;</span>
-    <span class="n">size_t</span> <span class="n">cache_maxsize</span> <span class="o">=</span> <span class="mi">1</span><span class="n">LL</span><span class="o">&lt;&lt;</span><span class="mi">27</span><span class="p">;</span>
-    <span class="n">sylvan_init_package</span><span class="p">(</span><span class="n">nodes_minsize</span><span class="p">,</span> <span class="n">nodes_maxsize</span><span class="p">,</span> <span class="n">cache_minsize</span><span class="p">,</span> <span class="n">cache_maxsize</span><span class="p">);</span>
+    <span class="o">//</span> <span class="n">use</span> <span class="n">at</span> <span class="n">most</span> <span class="mi">512</span> <span class="n">MB</span><span class="p">,</span> <span class="n">nodes</span><span class="p">:</span><span class="n">cache</span> <span class="n">ratio</span> <span class="mi">2</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span> <span class="n">initial</span> <span class="n">size</span> <span class="mi">1</span><span class="o">/</span><span class="mi">32</span> <span class="n">of</span> <span class="n">maximum</span>
+    <span class="n">sylvan_set_limits</span><span class="p">(</span><span class="mi">512</span><span class="o">*</span><span class="mi">1024</span><span class="o">*</span><span class="mi">1024</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">);</span>
+    <span class="n">sylvan_init_package</span><span class="p">();</span>
     <span class="n">sylvan_init_mtbdd</span><span class="p">();</span>
 
-    <span class="o">...</span>
+    <span class="o">/*</span> <span class="o">...</span> <span class="n">do</span> <span class="n">stuff</span> <span class="o">...</span> <span class="o">*/</span>
 
     <span class="n">sylvan_stats_report</span><span class="p">(</span><span class="n">stdout</span><span class="p">);</span>
     <span class="n">sylvan_quit</span><span class="p">();</span>
@@ -232,23 +255,24 @@ statistics gathering and whether you want a <code class="docutils literal"><span
 for work-stealing. The parameter <code class="docutils literal"><span class="pre">n_workers</span></code> can be set to 0 for auto-detection. The
 function <code class="docutils literal"><span class="pre">lace_startup</span></code> then creates all other worker threads. The worker threads run
 until <code class="docutils literal"><span class="pre">lace_exit</span></code> is called. Lace must be started before Sylvan can be initialized.</p>
-<p>Sylvan is initialized with a call to <code class="docutils literal"><span class="pre">sylvan_init_package</span></code>. Here we choose the initial
-and maximum sizes of the nodes table and the operation cache. In the example, we choose a maximum
-nodes table size of 2^26 and a maximum cache size of 2^27. The initial sizes are
-set to 2^22 and 2^23, respectively. The sizes must be powers of 2.
-Sylvan allocates memory for the maximum sizes <em>in virtual memory</em> but only uses the space
-needed for the initial sizes. The sizes are doubled during garbage collection, until the maximum
-size has been reached.</p>
-<p>After <code class="docutils literal"><span class="pre">sylvan_init_package</span></code>, the subpackages <code class="docutils literal"><span class="pre">mtbdd</span></code> and <code class="docutils literal"><span class="pre">ldd</span></code> can be initialized with
-<code class="docutils literal"><span class="pre">sylvan_init_mtbdd</span></code> and <code class="docutils literal"><span class="pre">sylvan_init_ldd</span></code>. This mainly allocates auxiliary datastructures for
-garbage collection.</p>
-<p>If you enable statistics generation (via CMake) then you can use <code class="docutils literal"><span class="pre">sylvan_stats_report</span></code> to report
+<p>Sylvan is initialized with a call to <code class="docutils literal"><span class="pre">sylvan_init_package</span></code>. Before this call, Sylvan needs to know
+how much memory to allocate for the nodes table and the operation cache. In this example, we use the
+<code class="docutils literal"><span class="pre">sylvan_set_limits</span></code> function to tell Sylvan that it may allocate at most 512 MB for these tables.
+The second parameter indicates the ratio of the nodes table and the operation cache, with each
+higher number doubling the size of the nodes table. Negative numbers double the size of the operation
+cache instead. In the example, we want the nodes table to be twice as big as the operation cache.
+The third parameter controls how often garbage collection doubles the table sizes before
+their maximum size is reached. The value 5 means that the initial tables are 32x as small as the maximum size.
+By default, every execution of garbage collection doubles the table sizes.</p>
+<p>After <code class="docutils literal"><span class="pre">sylvan_init_package</span></code>, subpackages like <code class="docutils literal"><span class="pre">mtbdd</span></code> and <code class="docutils literal"><span class="pre">ldd</span></code> can be initialized with
+<code class="docutils literal"><span class="pre">sylvan_init_mtbdd</span></code> and <code class="docutils literal"><span class="pre">sylvan_init_ldd</span></code>. This allocates auxiliary datastructures.</p>
+<p>If you enabled statistics generation (via CMake), then you can use <code class="docutils literal"><span class="pre">sylvan_stats_report</span></code> to report
 the obtained statistics to a given <code class="docutils literal"><span class="pre">FILE*</span></code>.</p>
 <div class="section" id="the-lace-framework">
 <h3>The Lace framework<a class="headerlink" href="#the-lace-framework" title="Permalink to this headline">¶</a></h3>
 <p>Sylvan uses the Lace framework to offer &#8216;automatic&#8217; parallelization of decision diagram operations.
 Many functions in Sylvan are Lace tasks. To call a Lace task, the variables
-<code class="docutils literal"><span class="pre">__lace_worker</span></code> and <code class="docutils literal"><span class="pre">__lace_dq_head</span></code> must be initialized <strong>locally</strong>.
+<code class="docutils literal"><span class="pre">__lace_worker</span></code> and <code class="docutils literal"><span class="pre">__lace_dq_head</span></code> must be initialized as <strong>local</strong> variables of the current function.
 Use the macro <code class="docutils literal"><span class="pre">LACE_ME</span></code> to initialize the variables in every function that calls Sylvan functions
 and is not itself a Lace task.</p>
 </div>
@@ -257,77 +281,174 @@ and is not itself a Lace task.</p>
 <p>Like all decision diagram implementations, Sylvan performs garbage collection.
 Garbage collection is triggered when trying to insert a new node and no
 empty space can be found in the table within a reasonable upper bound.</p>
+<p>Garbage collection can be disabled with <code class="docutils literal"><span class="pre">sylvan_gc_disable</span></code> and enabled again with <code class="docutils literal"><span class="pre">sylvan_gc_enable</span></code>.
+Call <code class="docutils literal"><span class="pre">sylvan_gc</span></code> to manually trigger garbage collection.</p>
 <p>To ensure that no decision diagram nodes are overwritten, you must ensure that
 Sylvan knows which decision diagrams you care about.
-The easiest way to do this is with <code class="docutils literal"><span class="pre">sylvan_protect</span></code> and <code class="docutils literal"><span class="pre">sylvan_unprotect</span></code> to protect
-a given pointer.
-These functions protect the decision diagram referenced to by that pointer at the time
-that garbage collection is performed.
-Unlike some other implementations of decision diagrams,
-you can modify the variable between the calls to <code class="docutils literal"><span class="pre">sylvan_protect</span></code> and <code class="docutils literal"><span class="pre">sylvan_unprotect</span></code>
-without explicitly changing the reference.</p>
-<p>To manually trigger garbage collection, call <code class="docutils literal"><span class="pre">sylvan_gc</span></code>.
-You can use <code class="docutils literal"><span class="pre">sylvan_gc_disable</span></code> and <code class="docutils literal"><span class="pre">sylvan_gc_enable</span></code> to disable garbage collection or
-enable it again. If garbage collection is disabled, the program will abort when the nodes table
-is full.
-<strong>Warning</strong>: Sylvan is a multi-threaded library and all workers must cooperate for garbage collection. If you use locking mechanisms in your code, beware of deadlocks!</p>
+Each subpackage implements mechanisms to store references to decision diagrams that must be kept.
+For example, the <em>mtbdd</em> subpackage implements <code class="docutils literal"><span class="pre">mtbdd_protect</span></code> and <code class="docutils literal"><span class="pre">mtbdd_unprotect</span></code> to store pointers to
+MTBDD variables.</p>
+<div class="code c highlight-default"><div class="highlight"><pre><span></span><span class="n">MTBDD</span><span class="o">*</span> <span class="n">allocate_var</span><span class="p">()</span> <span class="p">{</span>
+    <span class="n">MTBDD</span><span class="o">*</span> <span class="n">my_var</span> <span class="o">=</span> <span class="p">(</span><span class="n">MTBDD</span><span class="o">*</span><span class="p">)</span><span class="n">calloc</span><span class="p">(</span><span class="n">sizeof</span><span class="p">(</span><span class="n">MTBDD</span><span class="p">),</span> <span class="mi">1</span><span class="p">);</span>
+    <span class="n">mtbdd_protect</span><span class="p">(</span><span class="n">my_var</span><span class="p">);</span>
+    <span class="k">return</span> <span class="n">my_var</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="n">free_var</span><span class="p">(</span><span class="n">MTBDD</span><span class="o">*</span> <span class="n">my_var</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">mtbdd_unprotect</span><span class="p">(</span><span class="n">my_var</span><span class="p">);</span>
+    <span class="n">free</span><span class="p">(</span><span class="n">my_var</span><span class="p">);</span>
+<span class="p">}</span>
+</pre></div>
 </div>
-<div class="section" id="basic-bdd-functionality">
-<h3>Basic BDD functionality<a class="headerlink" href="#basic-bdd-functionality" title="Permalink to this headline">¶</a></h3>
+<p>The <em>mtbdd</em> subpackage also implements thread-local stacks to temporarily store pointers and results of tasks:</p>
+<div class="code c highlight-default"><div class="highlight"><pre><span></span><span class="n">MTBDD</span> <span class="n">some_thing</span> <span class="o">=</span> <span class="o">...</span><span class="p">;</span>
+<span class="n">mtbdd_refs_pushptr</span><span class="p">(</span><span class="o">&amp;</span><span class="n">some_thing</span><span class="p">);</span>
+<span class="n">MTBDD</span> <span class="n">result_param1</span> <span class="o">=</span> <span class="n">mtbdd_false</span><span class="p">,</span> <span class="n">result_param2</span> <span class="o">=</span> <span class="n">mtbdd_false</span><span class="p">;</span>
+<span class="n">mtbdd_refs_pushptr</span><span class="p">(</span><span class="o">&amp;</span><span class="n">result_param1</span><span class="p">);</span>
+<span class="n">mtbdd_refs_pushptr</span><span class="p">(</span><span class="o">&amp;</span><span class="n">result_param2</span><span class="p">);</span>
+<span class="k">while</span> <span class="p">(</span><span class="n">some_condition</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">mtbdd_refs_spawn</span><span class="p">(</span><span class="n">SPAWN</span><span class="p">(</span><span class="n">an_operation</span><span class="p">,</span> <span class="n">some_thing</span><span class="p">,</span> <span class="n">param1</span><span class="p">));</span>
+    <span class="n">result_param2</span> <span class="o">=</span> <span class="n">CALL</span><span class="p">(</span><span class="n">an_operation</span><span class="p">,</span> <span class="n">some_thing</span><span class="p">,</span> <span class="n">param2</span><span class="p">);</span>
+    <span class="n">result_param1</span> <span class="o">=</span> <span class="n">mtbdd_refs_sync</span><span class="p">(</span><span class="n">SYNC</span><span class="p">(</span><span class="n">an_operation</span><span class="p">));</span>
+    <span class="n">some_thing</span> <span class="o">=</span> <span class="n">CALL</span><span class="p">(</span><span class="n">another_operation</span><span class="p">,</span> <span class="n">result1</span><span class="p">,</span> <span class="n">result2</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="n">mtbdd_refs_popptr</span><span class="p">(</span><span class="mi">3</span><span class="p">);</span>
+<span class="k">return</span> <span class="n">some_thing</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>It is recommended to use the thread-local stacks for local variables, and to use the <code class="docutils literal"><span class="pre">protect</span></code> and <code class="docutils literal"><span class="pre">unprotect</span></code>
+functions for other variables. Every SPAWN and SYNC of a Lace task that returns an MTBDD must be decorated with
+<code class="docutils literal"><span class="pre">mtbdd_refs_stack</span></code> and <code class="docutils literal"><span class="pre">mtbdd_refs_sync</span></code> as in the above example.</p>
+<p><strong>Warning</strong>: Sylvan is a multi-threaded library and all workers must cooperate for garbage collection. If you use
+locking mechanisms in your code, beware of deadlocks!</p>
+</div>
+<div class="section" id="basic-bdd-mtbdd-functionality">
+<h3>Basic BDD/MTBDD functionality<a class="headerlink" href="#basic-bdd-mtbdd-functionality" title="Permalink to this headline">¶</a></h3>
+<p>In Sylvan, BDDs are special cases of MTBDDs.
+Several functions are specific for BDDs and they start with <code class="docutils literal"><span class="pre">sylvan_</span></code>, whereas generic MTBDD functions start
+with <code class="docutils literal"><span class="pre">mtbdd_</span></code>.</p>
 <p>To create new BDDs, you can use:</p>
 <ul class="simple">
-<li><code class="docutils literal"><span class="pre">sylvan_true</span></code>: representation of constant <code class="docutils literal"><span class="pre">true</span></code>.</li>
-<li><code class="docutils literal"><span class="pre">sylvan_false</span></code>: representation of constant <code class="docutils literal"><span class="pre">false</span></code>.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_true</span></code>: representation of constant <code class="docutils literal"><span class="pre">true</span></code>.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_false</span></code>: representation of constant <code class="docutils literal"><span class="pre">false</span></code>.</li>
 <li><code class="docutils literal"><span class="pre">sylvan_ithvar(var)</span></code>: representation of literal &lt;var&gt; (negated: <code class="docutils literal"><span class="pre">sylvan_nithvar(var)</span></code>)</li>
 </ul>
 <p>To follow the BDD edges and obtain the variable at the root of a BDD,
-you can use (only for internal nodes, not for leaves <code class="docutils literal"><span class="pre">sylvan_true</span></code> and <code class="docutils literal"><span class="pre">sylvan_false</span></code>):</p>
+you can use (only for internal nodes, not for leaves <code class="docutils literal"><span class="pre">mtbdd_true</span></code> and <code class="docutils literal"><span class="pre">mtbdd_false</span></code>):</p>
 <ul class="simple">
-<li><code class="docutils literal"><span class="pre">sylvan_var(bdd)</span></code>: obtain the variable of the root node of &lt;bdd&gt;.</li>
-<li><code class="docutils literal"><span class="pre">sylvan_high(bdd)</span></code>: follow the high edge of &lt;bdd&gt;.</li>
-<li><code class="docutils literal"><span class="pre">sylvan_low(bdd)</span></code>: follow the low edge of &lt;bdd&gt;.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_getvar(bdd)</span></code>: obtain the variable of the root node of &lt;bdd&gt;.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_gethigh(bdd)</span></code>: follow the high edge of &lt;bdd&gt;.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_getlow(bdd)</span></code>: follow the low edge of &lt;bdd&gt;.</li>
 </ul>
 <p>You need to manually reference BDDs that you want to keep during garbage
-collection:</p>
+collection (see the above explanation):</p>
 <ul class="simple">
-<li><code class="docutils literal"><span class="pre">sylvan_protect(bddptr)</span></code>: add a pointer reference to &lt;bddptr&gt;.</li>
-<li><code class="docutils literal"><span class="pre">sylvan_unprotect(bddptr)</span></code>: remove a pointer reference to &lt;bddptr&gt;.</li>
-<li><code class="docutils literal"><span class="pre">sylvan_ref(bdd)</span></code>: add a reference to &lt;bdd&gt;.</li>
-<li><code class="docutils literal"><span class="pre">sylvan_deref(bdd)</span></code>: remove a reference to &lt;bdd&gt;.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_protect(bddptr)</span></code>: add a pointer reference to &lt;bddptr&gt;.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_unprotect(bddptr)</span></code>: remove a pointer reference to &lt;bddptr&gt;.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_refs_pushptr(bddptr)</span></code>: add a local pointer reference to &lt;bddptr&gt;.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_refs_popptr(amount)</span></code>: remove the last &lt;amount&gt; local pointer references.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_refs_spawn(SPAWN(...))</span></code>: spawn a task that returns a BDD/MTBDD.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_refs_sync(SYNC(...))</span></code>: sync a task that returns a BDD/MTBDD.</li>
 </ul>
-<p>It is recommended to use <code class="docutils literal"><span class="pre">sylvan_protect</span></code> and <code class="docutils literal"><span class="pre">sylvan_unprotect</span></code>.
-The C++ objects (defined in <code class="docutils literal"><span class="pre">sylvan_obj.hpp</span></code>) handle this automatically.</p>
-<p>The following basic operations are implemented:</p>
+<p>It is recommended to use <code class="docutils literal"><span class="pre">mtbdd_protect</span></code> and <code class="docutils literal"><span class="pre">mtbdd_unprotect</span></code>.
+The C++ objects (defined in <code class="docutils literal"><span class="pre">sylvan_obj.hpp</span></code>) handle this automatically.
+For local variables, we recommend <code class="docutils literal"><span class="pre">mtbdd_refs_pushptr</span></code> and <code class="docutils literal"><span class="pre">mtbdd_refs_popptr</span></code>.</p>
+<p>The following basic BDD operations are implemented:</p>
 <ul class="simple">
 <li><code class="docutils literal"><span class="pre">sylvan_not(bdd)</span></code>: compute the negation of &lt;bdd&gt;.</li>
 <li><code class="docutils literal"><span class="pre">sylvan_ite(a,b,c)</span></code>: compute &#8216;if &lt;a&gt; then &lt;b&gt; else &lt;c&gt;&#8217;.</li>
-<li><code class="docutils literal"><span class="pre">sylvan_and(a,</span> <span class="pre">b)</span></code>: compute &#8216;&lt;a&gt; and &lt;b&gt;&#8217;</li>
-<li><code class="docutils literal"><span class="pre">sylvan_or(a,</span> <span class="pre">b)</span></code>: compute &#8216;&lt;a&gt; or &lt;b&gt;&#8217;</li>
-<li><code class="docutils literal"><span class="pre">sylvan_nand(a,</span> <span class="pre">b)</span></code>: compute &#8216;not (&lt;a&gt; and &lt;b&gt;)&#8217;</li>
-<li><code class="docutils literal"><span class="pre">sylvan_nor(a,</span> <span class="pre">b)</span></code>: compute &#8216;not (&lt;a&gt; or &lt;b&gt;)&#8217;</li>
-<li><code class="docutils literal"><span class="pre">sylvan_imp(a,</span> <span class="pre">b)</span></code>: compute &#8216;&lt;a&gt; then &lt;b&gt;&#8217;</li>
-<li><code class="docutils literal"><span class="pre">sylvan_invimp(a,</span> <span class="pre">b)</span></code>: compute &#8216;&lt;b&gt; then &lt;a&gt;&#8217;</li>
-<li><code class="docutils literal"><span class="pre">sylvan_xor(a,</span> <span class="pre">b)</span></code>: compute &#8216;&lt;a&gt; xor &lt;b&gt;&#8217;</li>
-<li><code class="docutils literal"><span class="pre">sylvan_equiv(a,</span> <span class="pre">b)</span></code>: compute &#8216;&lt;a&gt; = &lt;b&gt;&#8217;</li>
-<li><code class="docutils literal"><span class="pre">sylvan_diff(a,</span> <span class="pre">b)</span></code>: compute &#8216;&lt;a&gt; and not &lt;b&gt;&#8217;</li>
-<li><code class="docutils literal"><span class="pre">sylvan_less(a,</span> <span class="pre">b)</span></code>: compute &#8216;&lt;b&gt; and not &lt;a&gt;&#8217;</li>
+<li><code class="docutils literal"><span class="pre">sylvan_and(a,</span> <span class="pre">b)</span></code>: compute &#8216;&lt;a&gt; and &lt;b&gt;&#8217;.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_or(a,</span> <span class="pre">b)</span></code>: compute &#8216;&lt;a&gt; or &lt;b&gt;&#8217;.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_nand(a,</span> <span class="pre">b)</span></code>: compute &#8216;not (&lt;a&gt; and &lt;b&gt;)&#8217;.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_nor(a,</span> <span class="pre">b)</span></code>: compute &#8216;not (&lt;a&gt; or &lt;b&gt;)&#8217;.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_imp(a,</span> <span class="pre">b)</span></code>: compute &#8216;&lt;a&gt; then &lt;b&gt;&#8217;.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_invimp(a,</span> <span class="pre">b)</span></code>: compute &#8216;&lt;b&gt; then &lt;a&gt;&#8217;.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_xor(a,</span> <span class="pre">b)</span></code>: compute &#8216;&lt;a&gt; xor &lt;b&gt;&#8217;.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_equiv(a,</span> <span class="pre">b)</span></code>: compute &#8216;&lt;a&gt; = &lt;b&gt;&#8217;.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_diff(a,</span> <span class="pre">b)</span></code>: compute &#8216;&lt;a&gt; and not &lt;b&gt;&#8217;.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_less(a,</span> <span class="pre">b)</span></code>: compute &#8216;&lt;b&gt; and not &lt;a&gt;&#8217;.</li>
 <li><code class="docutils literal"><span class="pre">sylvan_exists(bdd,</span> <span class="pre">vars)</span></code>: existential quantification of &lt;bdd&gt; with respect to variables &lt;vars&gt;.</li>
 <li><code class="docutils literal"><span class="pre">sylvan_forall(bdd,</span> <span class="pre">vars)</span></code>: universal quantification of &lt;bdd&gt; with respect to variables &lt;vars&gt;.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_project(bdd,</span> <span class="pre">vars)</span></code>: the dual of <code class="docutils literal"><span class="pre">sylvan_exists</span></code>, projects the &lt;bdd&gt; to the variable domain &lt;vars&gt;.</li>
 </ul>
-<p>A set of variables (like &lt;vars&gt; above) is a BDD representing the conjunction of the variables.</p>
+<p>A set of variables (like &lt;vars&gt; above) is a BDD representing the conjunction of the variables.
+A number of convencience functions are defined to manipulate sets of variables:</p>
+<ul class="simple">
+<li><code class="docutils literal"><span class="pre">mtbdd_set_empty()</span></code>: obtain an empty set.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_set_isempty(set)</span></code>: compute whether the set is empty.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_set_first(set)</span></code>: obtain the first variable of the set.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_set_next(set)</span></code>: obtain the subset without the first variable.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_set_from_array(arr,</span> <span class="pre">len)</span></code>: create a set from a given array.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_set_to_array(set,</span> <span class="pre">arr)</span></code>: write the set to the given array.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_set_add(set,</span> <span class="pre">var)</span></code>: compute the set plus the variable.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_set_union(set1,</span> <span class="pre">set2)</span></code>: compute the union of two sets.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_set_remove(set,</span> <span class="pre">var)</span></code>: compute the set minus the variable.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_set_minus(set1,</span> <span class="pre">set2)</span></code>: compute the set &lt;set1&gt; minus the variables in &lt;set2&gt;.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_set_count(set)</span></code>: compute the number of variables in the set.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_set_contains(set,</span> <span class="pre">var)</span></code>: compute whether the set contains the variable.</li>
+</ul>
+<p>Sylvan also implements composition and substitution/variable renaming using a &#8220;MTBDD map&#8221;. An MTBDD map is a special structure
+implemented with special MTBDD nodes to store a mapping from variables (uint32_t) to MTBDDs. Like sets of variables and MTBDDs, MTBDD maps must
+also be referenced for garbage collection. The following functions are related to MTBDD maps:</p>
+<ul class="simple">
+<li><code class="docutils literal"><span class="pre">mtbdd_compose(dd,</span> <span class="pre">map)</span></code>: apply the map to the given decision diagram, transforming every node with a variable that is associated with some function F in the map by <code class="docutils literal"><span class="pre">if</span> <span class="pre">&lt;F&gt;</span> <span class="pre">then</span> <span class="pre">&lt;high&gt;</span> <span class="pre">else</span> <span class="pre">&lt;low&gt;</span></code>.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_compose(dd,</span> <span class="pre">map)</span></code>: same as <code class="docutils literal"><span class="pre">mtbdd_compose</span></code>, but assumes the decision diagram only has Boolean leaves.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_map_empty()</span></code>: obtain an empty map.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_map_isempty(map)</span></code>: compute whether the map is empty.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_map_key(map)</span></code>: obtain the key of the first pair of the map.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_map_value(map)</span></code>: obtain the value of the first pair of the map.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_map_next(map)</span></code>: obtain the submap without the first pair.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_map_add(map,</span> <span class="pre">key,</span> <span class="pre">value)</span></code>: compute the map plus the given key-value pair.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_map_update(map1,</span> <span class="pre">map2)</span></code>: compute the union of two maps, with priority to map2 if both maps share variables.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_map_remove(map,</span> <span class="pre">var)</span></code>: compute the map minus the variable.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_map_removeall(map,</span> <span class="pre">set)</span></code>: compute the map minus the given variables.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_map_count(set)</span></code>: compute the number of pairs in the map.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_map_contains(map,</span> <span class="pre">var)</span></code>: compute whether the map contains the variable.</li>
+</ul>
+<p>Sylvan implements a number of counting operations:</p>
+<ul class="simple">
+<li><code class="docutils literal"><span class="pre">mtbdd_satcount(bdd,</span> <span class="pre">number_of_vars)</span></code>: compute the number of minterms (assignments that lead to True) for a function with &lt;number_of_vars&gt; variables; we don&#8217;t need to know the exact variables that may be in the BDD, just how many there are.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_pathcount(bdd)</span></code>: compute the number of distinct paths to True.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_nodecount(bdd)</span></code>: compute the number of nodes (and leaves) in the BDD.</li>
+<li><code class="docutils literal"><span class="pre">mtbdd_nodecount_more(array,</span> <span class="pre">length)</span></code>: compute the number of nodes (and leaves) in the array of BDDs.</li>
+</ul>
+<p>Sylvan implements various advanced operations:</p>
+<ul class="simple">
+<li><code class="docutils literal"><span class="pre">sylvan_and_exists(bdd_a,</span> <span class="pre">bdd_b,</span> <span class="pre">vars)</span></code>: compute <code class="docutils literal"><span class="pre">sylvan_exists(sylvan_and(bdd_a,</span> <span class="pre">bdd_b),</span> <span class="pre">vars)</span></code> in one step.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_and_project(bdd_a,</span> <span class="pre">bdd_b,</span> <span class="pre">vars)</span></code>: compute <code class="docutils literal"><span class="pre">sylvan_project(sylvan_and(bdd_a,</span> <span class="pre">bdd_b),</span> <span class="pre">vars)</span></code> in one step.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_cube(vars,</span> <span class="pre">values)</span></code>: compute a cube (to leaf True) of the given variables, where the array values indicates for each variable whether to use it in negative form (value 0) or positive form (value 1) or to skip it (as dont-care, value 2).</li>
+<li><code class="docutils literal"><span class="pre">sylvan_union_cube(set,</span> <span class="pre">vars,</span> <span class="pre">values)</span></code>: compute <code class="docutils literal"><span class="pre">sylvan_or(set,</span> <span class="pre">sylvan_cube(vars,</span> <span class="pre">values))</span></code> in one step.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_constrain(bdd_f,</span> <span class="pre">bdd_c)</span></code>: compute the generic cofactor of F constrained by C, i.e, set F to False for all assignments not in C.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_restrict(bdd_f,</span> <span class="pre">bdd_c)</span></code>: compute Coudert and Madre&#8217;s restrict algorithm, which tries to minimize bdd_f according to a care set C using sibling substitution; the invariant is <code class="docutils literal"><span class="pre">restrict(f,</span> <span class="pre">c)</span> <span class="pre">\and</span> <span class="pre">c</span> <span class="pre">==</span> <span class="pre">f</span> <span class="pre">\and</span> <span class="pre">c</span></code>; the result of this algorithm is often but not always smaller than the original.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_pick_cube(bdd)</span></code> or <code class="docutils literal"><span class="pre">sylvan_sat_one_bdd(bdd)</span></code>: extract a single path to True from the BDD (returns the BDD of this path)</li>
+<li><code class="docutils literal"><span class="pre">sylvan_pick_single_cube(bdd,</span> <span class="pre">vars)</span></code> or <code class="docutils literal"><span class="pre">sylvan_sat_single(bdd,</span> <span class="pre">vars)</span></code> extracts a single minterm from the BDD (returns the BDD of this assignment)</li>
+<li><code class="docutils literal"><span class="pre">sylvan_sat_one(bdd,</span> <span class="pre">vars,</span> <span class="pre">array)</span></code>: extract a single minterm from the BDD given the set of variables and write the values of the variables in order to the given array, with 0 when it is negative, 1 when it is positive, and 2 when it is dontcare.</li>
+</ul>
+<p>Sylvan implements several operations for transition systems. These operations assume an interleaved variable ordering, such that <em>source</em> or <em>unprimed</em> variables have even parity (0, 2, 4...) and matching <em>target</em> or <em>primed</em> variables have odd parity (1, 3, 5...).
+The transition relations may be partial transition relations that only manipulate a subset of variables; hence, the operations also require the set of variables.</p>
+<ul class="simple">
+<li><code class="docutils literal"><span class="pre">sylvan_relnext(set,</span> <span class="pre">relation,</span> <span class="pre">vars)</span></code>: apply the (partial) relation on the given variables to the set.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_relprev(relation,</span> <span class="pre">set,</span> <span class="pre">vars)</span></code>: apply the (partial) relation in reverse to the set; this computes predecessors but can also concatenate relations as follows: <code class="docutils literal"><span class="pre">sylvan_relprev(rel1,</span> <span class="pre">rel2,</span> <span class="pre">rel1_vars)</span></code>.</li>
+<li><code class="docutils literal"><span class="pre">sylvan_closure(relation)</span></code>: compute the transitive closure of the given set recursively (see Matsunaga et al, DAC 1993)</li>
+</ul>
+<p>See <code class="docutils literal"><span class="pre">src/sylvan_bdd.h</span></code> and <code class="docutils literal"><span class="pre">src/mtbdd.h</span></code> for other operations on BDDs and MTBDDs.</p>
 </div>
-<div class="section" id="other-bdd-operations">
-<h3>Other BDD operations<a class="headerlink" href="#other-bdd-operations" title="Permalink to this headline">¶</a></h3>
-<p>See <code class="docutils literal"><span class="pre">src/sylvan_bdd.h</span></code> for other operations on BDDs, especially operations
-that are relevant for model checking.</p>
+<div class="section" id="custom-leaves">
+<h3>Custom leaves<a class="headerlink" href="#custom-leaves" title="Permalink to this headline">¶</a></h3>
+<p>See <code class="docutils literal"><span class="pre">src/sylvan_mt.h</span></code> and the example in <code class="docutils literal"><span class="pre">src/sylvan_gmp.h</span></code> and <code class="docutils literal"><span class="pre">src/sylvan_gmp.c</span></code> for custom leaves in MTBDDs.</p>
 </div>
-<div class="section" id="basic-mtbdd-functionality">
-<h3>Basic MTBDD functionality<a class="headerlink" href="#basic-mtbdd-functionality" title="Permalink to this headline">¶</a></h3>
-<p>See <code class="docutils literal"><span class="pre">src/sylvan_mtbdd.h</span></code> for operations on multi-terminal BDDs.</p>
+<div class="section" id="custom-decision-diagram-operations">
+<h3>Custom decision diagram operations<a class="headerlink" href="#custom-decision-diagram-operations" title="Permalink to this headline">¶</a></h3>
+<p>Adding custom decision diagram operations is easy. Include <code class="docutils literal"><span class="pre">sylvan_int.h</span></code> for the internal functions. See <code class="docutils literal"><span class="pre">sylvan_cache.h</span></code>
+for how to use the operation cache.</p>
 </div>
-<div class="section" id="basic-ldd-functionality">
-<h3>Basic LDD functionality<a class="headerlink" href="#basic-ldd-functionality" title="Permalink to this headline">¶</a></h3>
-<p>See <code class="docutils literal"><span class="pre">src/sylvan_ldd.h</span></code> for operations on List DDs.</p>
+<div class="section" id="list-decision-diagrams">
+<h3>List decision diagrams<a class="headerlink" href="#list-decision-diagrams" title="Permalink to this headline">¶</a></h3>
+<p>See <code class="docutils literal"><span class="pre">src/sylvan_ldd.h</span></code> for operations on list decision diagrams.</p>
+</div>
+<div class="section" id="file-i-o">
+<h3>File I/O<a class="headerlink" href="#file-i-o" title="Permalink to this headline">¶</a></h3>
+<p>You can store and load BDDs using a number of methods, which are documented in the header files <code class="docutils literal"><span class="pre">sylvan_mtbdd.h</span></code> and <code class="docutils literal"><span class="pre">sylvan_ldd.h</span></code>.</p>
 </div>
 <div class="section" id="support-for-c">
 <h3>Support for C++<a class="headerlink" href="#support-for-c" title="Permalink to this headline">¶</a></h3>
@@ -336,8 +457,8 @@ that are relevant for model checking.</p>
 <div class="section" id="table-resizing">
 <h3>Table resizing<a class="headerlink" href="#table-resizing" title="Permalink to this headline">¶</a></h3>
 <p>During garbage collection, it is possible to resize the nodes table and
-the cache. Sylvan provides two default implementations: an aggressive
-version that resizes every time garbage collection is performed, and a
+the cache. By default, Sylvan doubles the table sizes during every garbage
+collection until the maximum table size has been reached. There is also a
 less aggressive version that only resizes when at least half the table is
 full. This can be configured in <code class="docutils literal"><span class="pre">src/sylvan_config.h</span></code>. It is not
 possible to decrease the size of the nodes table and the cache.</p>
@@ -400,6 +521,9 @@ ENTCS. Elsevier.</p>
 
 
            </div>
+           <div class="articleComments">
+            
+           </div>
           </div>
           <footer>
   
@@ -433,7 +557,8 @@ ENTCS. Elsevier.</p>
             VERSION:'1.2.0',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
-            HAS_SOURCE:  true
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
         };
     </script>
       <script type="text/javascript" src="_static/jquery.js"></script>

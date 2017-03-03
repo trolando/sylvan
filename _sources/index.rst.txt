@@ -146,7 +146,7 @@ MTBDD variables.
         free(my_var);
     }
 
-If you use ``sylvan_protect`` you do not need to update the reference every time the value changes.
+If you use ``mtbdd_protect`` you do not need to update the reference every time the value changes.
 
 The *mtbdd* subpackage also implements thread-local stacks to temporarily store pointers and results of tasks:
 

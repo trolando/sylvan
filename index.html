@@ -300,7 +300,7 @@ MTBDD variables.</p>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p>If you use <code class="docutils literal"><span class="pre">sylvan_protect</span></code> you do not need to update the reference every time the value changes.</p>
+<p>If you use <code class="docutils literal"><span class="pre">mtbdd_protect</span></code> you do not need to update the reference every time the value changes.</p>
 <p>The <em>mtbdd</em> subpackage also implements thread-local stacks to temporarily store pointers and results of tasks:</p>
 <div class="code c highlight-default"><div class="highlight"><pre><span></span><span class="n">MTBDD</span> <span class="n">some_thing</span> <span class="o">=</span> <span class="o">...</span><span class="p">;</span>
 <span class="n">mtbdd_refs_pushptr</span><span class="p">(</span><span class="o">&amp;</span><span class="n">some_thing</span><span class="p">);</span>

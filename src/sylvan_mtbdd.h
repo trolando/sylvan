@@ -48,20 +48,30 @@ extern "C" {
 /**
  * An MTBDD is a 64-bit value. The low 40 bits are an index into the unique table.
  * The highest 1 bit is the complement edge, indicating negation.
- * For Boolean MTBDDs, this means "not X", for Integer and Real MTBDDs, this means "-X".
+ *
+ * Currently, negation using complement edges is only implemented for Boolean MTBDDs.
+ * For Integer/Real MTBDDs, negation is not well-defined, as "-0" = "0".
+ *
+ * A MTBDD node has 24 bits for the variable.
+ * A set of MTBDD variables is represented by the MTBDD of the conjunction of these variables.
+ * A MTBDDMAP uses special "MAP" nodes in the MTBDD nodes table.
  */
 typedef uint64_t MTBDD;
 typedef MTBDD MTBDDMAP;
 
 /**
- * mtbdd_true is only used in Boolean MTBDDs. mtbdd_false has multiple roles (see above).
+ * mtbdd_true and mtbdd_false are the Boolean leaves representing True and False.
+ * False is also used in Integer/Real/Fraction MTBDDs for partially defined functions.
  */
 #define mtbdd_complement    ((MTBDD)0x8000000000000000LL)
 #define mtbdd_false         ((MTBDD)0)
 #define mtbdd_true          (mtbdd_false|mtbdd_complement)
 #define mtbdd_invalid       ((MTBDD)0xffffffffffffffffLL)
 
-/* Compatibility */
+/**
+ * Definitions for backward compatibility...
+ * We now consider BDDs to be a special case of MTBDDs.
+ */
 #define BDD                     MTBDD
 #define BDDMAP                  MTBDDMAP
 #define BDDSET                  MTBDD
@@ -147,59 +157,152 @@ static inline MTBDD mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high)
 }
 
 /**
- * Returns 1 is the MTBDD is a terminal, or 0 otherwise.
+ * Return 1 if the MTBDD is a terminal, or 0 otherwise.
  */
 int mtbdd_isleaf(MTBDD mtbdd);
-#define mtbdd_isnode(mtbdd) (mtbdd_isleaf(mtbdd) ? 0 : 1)
 
 /**
- * For MTBDD terminals, returns <type> and <value>
+ * Return 1 if the MTBDD is an internal node, or 0 otherwise.
  */
-uint32_t mtbdd_gettype(MTBDD terminal);
-uint64_t mtbdd_getvalue(MTBDD terminal);
+static inline int mtbdd_isnode(MTBDD mtbdd) { return mtbdd_isleaf(mtbdd) ? 0 : 1; }
 
 /**
- * For internal MTBDD nodes, returns <var>, <low> and <high>
+ * Return the <type> field of the given leaf.
+ */
+uint32_t mtbdd_gettype(MTBDD leaf);
+
+/**
+ * Return the <value> field of the given leaf.
+ */
+uint64_t mtbdd_getvalue(MTBDD leaf);
+
+/**
+ * Return the variable field of the given internal node.
  */
 uint32_t mtbdd_getvar(MTBDD node);
+
+/**
+ * Follow the low/false edge of the given internal node.
+ * Also takes complement edges into account.
+ */
 MTBDD mtbdd_getlow(MTBDD node);
+
+/**
+ * Follow the high/true edge of the given internal node.
+ * Also takes complement edges into account.
+ */
 MTBDD mtbdd_gethigh(MTBDD node);
 
 /**
- * Compute the complement of the MTBDD.
- * For Boolean MTBDDs, this means "not X".
+ * Obtain the complement of the MTBDD.
+ * This is only valid for Boolean MTBDDs or custom implementations that support it.
  */
 #define mtbdd_hascomp(dd) ((dd & mtbdd_complement) ? 1 : 0)
 #define mtbdd_comp(dd) (dd ^ mtbdd_complement)
 #define mtbdd_not(dd) (dd ^ mtbdd_complement)
 
 /**
- * Create terminals representing int64_t (type 0), double (type 1), or fraction (type 2) values
+ * Create an Integer leaf with the given value.
  */
 MTBDD mtbdd_int64(int64_t value);
+
+/**
+ * Create a Real leaf with the given value.
+ */
 MTBDD mtbdd_double(double value);
+
+/**
+ * Create a Fraction leaf with the given numerator and denominator.
+ */
 MTBDD mtbdd_fraction(int64_t numer, uint64_t denom);
 
 /**
- * Get the value of a terminal (for Integer, Real and Fraction terminals, types 0, 1 and 2)
+ * Obtain the value of an Integer leaf.
  */
 int64_t mtbdd_getint64(MTBDD terminal);
+
+/**
+ * Obtain the value of a Real leaf.
+ */
 double mtbdd_getdouble(MTBDD terminal);
+
+/**
+ * Obtain the numerator of a Fraction leaf.
+ */
 #define mtbdd_getnumer(terminal) ((int32_t)(mtbdd_getvalue(terminal)>>32))
+
+/**
+ * Obtain the denominator of a Fraction leaf.
+ */
 #define mtbdd_getdenom(terminal) ((uint32_t)(mtbdd_getvalue(terminal)&0xffffffff))
 
 /**
- * Create the conjunction of variables in arr,
- * i.e. arr[0] \and arr[1] \and ... \and arr[length-1]
- * The variable in arr must be ordered.
+ * Functions to manipulate sets of MTBDD variables.
+ *
+ * A set of variables is represented by a cube/conjunction of (positive) variables.
  */
-MTBDD mtbdd_fromarray(uint32_t* arr, size_t length);
+#define mtbdd_set_empty()                   mtbdd_true
+#define mtbdd_set_isempty(set)              (set == mtbdd_true)
+#define mtbdd_set_first(set)                mtbdd_getvar(set)
+#define mtbdd_set_next(set)                 mtbdd_gethigh(set)
 
 /**
- * Given a cube of variables, write each variable to arr.
- * WARNING: arr must be sufficiently long!
+ * Create a set of variables, represented as the conjunction of (positive) variables.
  */
-void mtbdd_toarray(MTBDD set, uint32_t *arr);
+MTBDD mtbdd_set_from_array(uint32_t* arr, size_t length);
+
+/**
+ * Write all variables in a variable set to the given array.
+ * The array must be sufficiently large.
+ */
+void mtbdd_set_to_array(MTBDD set, uint32_t *arr);
+
+/**
+ * Compute the number of variables in a given set of variables.
+ */
+size_t mtbdd_set_count(MTBDD set);
+
+/**
+ * Compute the union of <set1> and <set2>
+ */
+#define mtbdd_set_union(set1, set2) sylvan_and(set1, set2)
+
+/**
+ * Remove variables in <set2> from <set1>
+ */
+#define mtbdd_set_minus(set1, set2) CALL(mtbdd_set_minus, set1, set2)
+TASK_DECL_2(MTBDD, mtbdd_set_minus, MTBDD, MTBDD);
+
+/**
+ * Return 1 if <set> contains <var>, 0 otherwise.
+ */
+int mtbdd_set_contains(MTBDD set, uint32_t var);
+
+/**
+ * Add the variable <var> to <set>.
+ */
+MTBDD mtbdd_set_add(MTBDD set, uint32_t var);
+
+/**
+ * Remove the variable <var> from <set>.
+ */
+MTBDD mtbdd_set_remove(MTBDD set, uint32_t var);
+
+/**
+ * Sanity check if the given MTBDD is a conjunction of positive variables,
+ * and if all nodes are marked in the nodes table (detects violations after garbage collection).
+ */
+void mtbdd_test_isset(MTBDD set);
+
+/**
+ * Definitions for backwards compatibility
+ */
+#define mtbdd_fromarray mtbdd_set_from_array
+#define mtbdd_set_fromarray mtbdd_set_from_array
+#define mtbdd_set_toarray mtbdd_set_to_array
+#define mtbdd_set_addall mtbdd_set_union
+#define mtbdd_set_removeall mtbdd_set_minus
+#define mtbdd_set_in mtbdd_set_contains
 
 /**
  * Create a MTBDD cube representing the conjunction of variables in their positive or negative
@@ -775,25 +878,6 @@ MTBDD mtbdd_reader_get(uint64_t* arr, uint64_t identifier);
  * Free the allocated translation array
  */
 void mtbdd_reader_end(uint64_t *arr);
-
-/**
- * MTBDDSET
- * Just some convenience functions for handling sets of variables represented as a 
- * cube (conjunction) of positive literals
- */
-#define mtbdd_set_empty()                   mtbdd_true
-#define mtbdd_set_isempty(set)              (set == mtbdd_true)
-#define mtbdd_set_add(set, var)             sylvan_and(set, sylvan_ithvar(var))
-#define mtbdd_set_addall(set, set2)         sylvan_and(set, set2)
-#define mtbdd_set_remove(set, var)          sylvan_exists(set, var)
-#define mtbdd_set_removeall(set, set2)      sylvan_exists(set, set2)
-#define mtbdd_set_first(set)                sylvan_var(set)
-#define mtbdd_set_next(set)                 sylvan_high(set)
-#define mtbdd_set_fromarray(arr, count)     mtbdd_fromarray(arr, count)
-#define mtbdd_set_toarray(set, arr)         mtbdd_toarray(set, arr)
-int mtbdd_set_in(BDDSET set, BDDVAR var);
-size_t mtbdd_set_count(BDDSET set);
-void mtbdd_test_isset(BDDSET set);
 
 /**
  * MTBDDMAP, maps uint32_t variables to MTBDDs.

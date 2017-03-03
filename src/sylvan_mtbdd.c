@@ -561,31 +561,6 @@ mtbdd_fraction(int64_t nom, uint64_t denom)
 }
 
 /**
- * Create the cube of variables in arr.
- */
-MTBDD
-mtbdd_fromarray(uint32_t* arr, size_t length)
-{
-    if (length == 0) return mtbdd_true;
-    else if (length == 1) return mtbdd_makenode(*arr, mtbdd_false, mtbdd_true);
-    else return mtbdd_makenode(*arr, mtbdd_false, mtbdd_fromarray(arr+1, length-1));
-}
-
-/**
- * Given a cube of variables, write each variable to arr.
- * WARNING: arr must be sufficiently long!
- */
-void
-mtbdd_toarray(MTBDD set, uint32_t *arr)
-{
-    while (set != mtbdd_true) {
-        mtbddnode_t n = MTBDD_GETNODE(set);
-        *arr++ = mtbddnode_getvariable(n);
-        set = node_gethigh(set, n);
-    }
-}
-
-/**
  * Create a MTBDD cube representing the conjunction of variables in their positive or negative
  * form depending on whether the cube[idx] equals 0 (negative), 1 (positive) or 2 (any).
  * Use cube[idx]==3 for "s=s'" in interleaved variables (matches with next variable)
@@ -3369,11 +3344,107 @@ TASK_IMPL_3(int, mtbdd_reader_frombinary, FILE*, in, MTBDD*, dds, int, count)
 }
 
 /**
- * Implementation of convenience functions for handling variable sets, i.e., cubes.
+ * Implementation of variable sets, i.e., cubes of (positive) variables.
  */
 
+/**
+ * Create a set of variables, represented as the conjunction of (positive) variables.
+ */
+MTBDD
+mtbdd_set_from_array(uint32_t* arr, size_t length)
+{
+    if (length == 0) return mtbdd_true;
+    else if (length == 1) return mtbdd_makenode(*arr, mtbdd_false, mtbdd_true);
+    else return mtbdd_set_add(mtbdd_fromarray(arr+1, length-1), *arr);
+}
+
+/**
+ * Write all variables in a variable set to the given array.
+ * The array must be sufficiently large.
+ */
+void
+mtbdd_set_to_array(MTBDD set, uint32_t *arr)
+{
+    while (set != mtbdd_true) {
+        mtbddnode_t n = MTBDD_GETNODE(set);
+        *arr++ = mtbddnode_getvariable(n);
+        set = node_gethigh(set, n);
+    }
+}
+
+/**
+ * Add the variable <var> to <set>.
+ */
+MTBDD
+mtbdd_set_add(MTBDD set, uint32_t var)
+{
+    if (set == mtbdd_true) return mtbdd_makenode(var, mtbdd_false, mtbdd_true);
+
+    mtbddnode_t set_node = MTBDD_GETNODE(set);
+    uint32_t set_var = mtbddnode_getvariable(set_node);
+    if (var < set_var) return mtbdd_makenode(var, mtbdd_false, set);
+    else if (set_var == var) return set;
+    else {
+        MTBDD sub = mtbddnode_followhigh(set, set_node);
+        MTBDD res = mtbdd_set_add(sub, var);
+        res = sub == res ? set : mtbdd_makenode(set_var, mtbdd_false, res);
+        return res;
+    }
+}
+
+/**
+ * Remove the variable <var> from <set>.
+ */
+MTBDD
+mtbdd_set_remove(MTBDD set, uint32_t var)
+{
+    if (set == mtbdd_true) return mtbdd_true;
+
+    mtbddnode_t set_node = MTBDD_GETNODE(set);
+    uint32_t set_var = mtbddnode_getvariable(set_node);
+    if (var < set_var) return set;
+    else if (set_var == var) return mtbddnode_followhigh(set, set_node);
+    else {
+        MTBDD sub = mtbddnode_followhigh(set, set_node);
+        MTBDD res = mtbdd_set_remove(sub, var);
+        res = sub == res ? set : mtbdd_makenode(set_var, mtbdd_false, res);
+        return res;
+    }
+}
+
+/**
+ * Remove variables in <set2> from <set1>.
+ */
+TASK_IMPL_2(MTBDD, mtbdd_set_minus, MTBDD, set1, MTBDD, set2)
+{
+    if (set1 == mtbdd_true) return mtbdd_true;
+    if (set2 == mtbdd_true) return set1;
+    if (set1 == set2) return mtbdd_true;
+
+    mtbddnode_t set1_node = MTBDD_GETNODE(set1);
+    mtbddnode_t set2_node = MTBDD_GETNODE(set2);
+    uint32_t set1_var = mtbddnode_getvariable(set1_node);
+    uint32_t set2_var = mtbddnode_getvariable(set2_node);
+
+    if (set1_var == set2_var) {
+        return mtbdd_set_minus(mtbddnode_followhigh(set1, set1_node), mtbddnode_followhigh(set2, set2_node));
+    }
+
+    if (set1_var > set2_var) {
+        return mtbdd_set_minus(set1, mtbddnode_followhigh(set2, set2_node));
+    }
+
+    /* set1_var < set2_var */
+    MTBDD sub = mtbddnode_followhigh(set1, set1_node);
+    MTBDD res = mtbdd_set_minus(sub, set2);
+    return res == sub ? set1 : mtbdd_makenode(set1_var, mtbdd_false, res);
+}
+
+/**
+ * Return 1 if <set> contains <var>, 0 otherwise.
+ */
 int
-mtbdd_set_in(MTBDD set, uint32_t var)
+mtbdd_set_contains(MTBDD set, uint32_t var)
 {
     while (set != mtbdd_true) {
         mtbddnode_t n = MTBDD_GETNODE(set);
@@ -3385,6 +3456,9 @@ mtbdd_set_in(MTBDD set, uint32_t var)
     return 0;
 }
 
+/**
+ * Compute the number of variables in a given set of variables.
+ */
 size_t
 mtbdd_set_count(MTBDD set)
 {
@@ -3396,6 +3470,10 @@ mtbdd_set_count(MTBDD set)
     return result;
 }
 
+/**
+ * Sanity check if the given MTBDD is a conjunction of positive variables,
+ * and if all nodes are marked in the nodes table (detects violations after garbage collection).
+ */
 void
 mtbdd_test_isset(MTBDD set)
 {

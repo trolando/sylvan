@@ -2812,8 +2812,6 @@ mtbdd_leafcount_more(const MTBDD *mtbdds, size_t count)
 static size_t
 mtbdd_nodecount_mark(MTBDD mtbdd)
 {
-    if (mtbdd == mtbdd_true) return 0; // do not count true/false leaf
-    if (mtbdd == mtbdd_false) return 0; // do not count true/false leaf
     mtbddnode_t n = MTBDD_GETNODE(mtbdd);
     if (mtbddnode_getmark(n)) return 0;
     mtbddnode_setmark(n, 1);

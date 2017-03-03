@@ -907,7 +907,8 @@ MTBDDMAP mtbdd_map_add(MTBDDMAP map, uint32_t key, MTBDD value);
 /**
  * Add all values from map2 to map1, overwrites if key already in map1.
  */
-MTBDDMAP mtbdd_map_addall(MTBDDMAP map1, MTBDDMAP map2);
+MTBDDMAP mtbdd_map_update(MTBDDMAP map1, MTBDDMAP map2);
+#define mtbdd_map_addall mtbdd_map_update
 
 /**
  * Remove the key <key> from the map and return the result

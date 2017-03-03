@@ -3544,7 +3544,7 @@ mtbdd_map_add(MTBDDMAP map, uint32_t key, MTBDD value)
  * Add all values from map2 to map1, overwrites if key already in map1.
  */
 MTBDDMAP
-mtbdd_map_addall(MTBDDMAP map1, MTBDDMAP map2)
+mtbdd_map_update(MTBDDMAP map1, MTBDDMAP map2)
 {
     if (mtbdd_map_isempty(map1)) return map2;
     if (mtbdd_map_isempty(map2)) return map1;
@@ -3556,13 +3556,13 @@ mtbdd_map_addall(MTBDDMAP map1, MTBDDMAP map2)
 
     MTBDDMAP result;
     if (k1 < k2) {
-        MTBDDMAP low = mtbdd_map_addall(node_getlow(map1, n1), map2);
+        MTBDDMAP low = mtbdd_map_update(node_getlow(map1, n1), map2);
         result = mtbdd_makemapnode(k1, low, node_gethigh(map1, n1));
     } else if (k1 > k2) {
-        MTBDDMAP low = mtbdd_map_addall(map1, node_getlow(map2, n2));
+        MTBDDMAP low = mtbdd_map_update(map1, node_getlow(map2, n2));
         result = mtbdd_makemapnode(k2, low, node_gethigh(map2, n2));
     } else {
-        MTBDDMAP low = mtbdd_map_addall(node_getlow(map1, n1), node_getlow(map2, n2));
+        MTBDDMAP low = mtbdd_map_update(node_getlow(map1, n1), node_getlow(map2, n2));
         result = mtbdd_makemapnode(k2, low, node_gethigh(map2, n2));
     }
 

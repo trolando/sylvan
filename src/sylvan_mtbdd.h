@@ -986,7 +986,7 @@ size_t mtbdd_count_refs(void);
  * Push a MTBDD variable to the pointer reference stack.
  * During garbage collection the variable will be inspected and the contents will be marked.
  */
-void mtbdd_refs_pushptr(MTBDD *ptr);
+void mtbdd_refs_pushptr(const MTBDD *ptr);
 
 /**
  * Pop the last <amount> MTBDD variables from the pointer reference stack.

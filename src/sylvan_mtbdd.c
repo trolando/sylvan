@@ -194,14 +194,14 @@ VOID_TASK_0(mtbdd_gc_mark_protected)
 /* Infrastructure for internal markings */
 typedef struct mtbdd_refs_internal
 {
-    MTBDD **pbegin, **pend, **pcur;
+    const MTBDD **pbegin, **pend, **pcur;
     MTBDD *rbegin, *rend, *rcur;
     Task **sbegin, **send, **scur;
 } *mtbdd_refs_internal_t;
 
 DECLARE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
 
-VOID_TASK_2(mtbdd_refs_mark_p_par, MTBDD**, begin, size_t, count)
+VOID_TASK_2(mtbdd_refs_mark_p_par, const MTBDD**, begin, size_t, count)
 {
     if (count < 32) {
         while (count) {
@@ -266,7 +266,7 @@ VOID_TASK_0(mtbdd_refs_mark)
 VOID_TASK_0(mtbdd_refs_init_task)
 {
     mtbdd_refs_internal_t s = (mtbdd_refs_internal_t)malloc(sizeof(struct mtbdd_refs_internal));
-    s->pcur = s->pbegin = (MTBDD**)malloc(sizeof(MTBDD*) * 1024);
+    s->pcur = s->pbegin = (const MTBDD**)malloc(sizeof(MTBDD*) * 1024);
     s->pend = s->pbegin + 1024;
     s->rcur = s->rbegin = (MTBDD*)malloc(sizeof(MTBDD) * 1024);
     s->rend = s->rbegin + 1024;
@@ -287,7 +287,7 @@ mtbdd_refs_ptrs_up(mtbdd_refs_internal_t mtbdd_refs_key)
 {
     size_t cur = mtbdd_refs_key->pcur - mtbdd_refs_key->pbegin;
     size_t size = mtbdd_refs_key->pend - mtbdd_refs_key->pbegin;
-    mtbdd_refs_key->pbegin = (MTBDD**)realloc(mtbdd_refs_key->pbegin, sizeof(MTBDD*) * size*2);
+    mtbdd_refs_key->pbegin = (const MTBDD**)realloc(mtbdd_refs_key->pbegin, sizeof(MTBDD*) * size*2);
     mtbdd_refs_key->pcur = mtbdd_refs_key->pbegin + cur;
     mtbdd_refs_key->pend = mtbdd_refs_key->pend + size * 2;
 }
@@ -312,7 +312,7 @@ mtbdd_refs_tasks_up(mtbdd_refs_internal_t mtbdd_refs_key)
 }
 
 void __attribute__((unused))
-mtbdd_refs_pushptr(MTBDD *ptr)
+mtbdd_refs_pushptr(const MTBDD *ptr)
 {
     LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
     *mtbdd_refs_key->pcur++ = ptr;

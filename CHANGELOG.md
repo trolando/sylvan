@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [1.3.1] - 2017-05-22
+### Fixed
+- A bug in `mtbdd_refs_ptrs_up` caused a segfault. This has been fixed.
+
 ## [1.3.0] - 2017-05-16
 ### Added
 - The embedded work-stealing framework now explicitly checks for stack overflows and aborts with an appropriate error message written to stderr.

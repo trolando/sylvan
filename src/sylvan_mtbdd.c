@@ -287,9 +287,9 @@ mtbdd_refs_ptrs_up(mtbdd_refs_internal_t mtbdd_refs_key)
 {
     size_t cur = mtbdd_refs_key->pcur - mtbdd_refs_key->pbegin;
     size_t size = mtbdd_refs_key->pend - mtbdd_refs_key->pbegin;
-    mtbdd_refs_key->pbegin = (const MTBDD**)realloc(mtbdd_refs_key->pbegin, sizeof(MTBDD*) * size*2);
+    mtbdd_refs_key->pbegin = (const MTBDD**)realloc(mtbdd_refs_key->pbegin, sizeof(MTBDD*) * size * 2);
     mtbdd_refs_key->pcur = mtbdd_refs_key->pbegin + cur;
-    mtbdd_refs_key->pend = mtbdd_refs_key->pend + size * 2;
+    mtbdd_refs_key->pend = mtbdd_refs_key->pbegin + (size * 2);
 }
 
 MTBDD __attribute__((noinline))

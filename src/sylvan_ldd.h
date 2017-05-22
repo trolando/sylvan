@@ -53,16 +53,49 @@ MDD lddmc_make_copynode(MDD ifeq, MDD ifneq);
 int lddmc_iscopy(MDD mdd);
 MDD lddmc_followcopy(MDD mdd);
 
-/* Add or remove external reference to MDD */
-MDD lddmc_ref(MDD a);
-void lddmc_deref(MDD a);
+/**
+ * Infrastructure for external references using a hash table.
+ * Two hash tables store external references: a pointers table and a values table.
+ * The pointers table stores pointers to MDD variables, manipulated with protect and unprotect.
+ * The values table stores MDD, manipulated with ref and deref.
+ * We strongly recommend using the pointers table whenever possible.
+ */
 
-/* For use in custom mark functions */
+/**
+ * Store the pointer <ptr> in the pointers table.
+ */
+void lddmc_protect(MDD* ptr);
+
+/**
+ * Delete the pointer <ptr> from the pointers table.
+ */
+void lddmc_unprotect(MDD* ptr);
+
+/**
+ * Compute the number of pointers in the pointers table.
+ */
+size_t lddmc_count_protected(void);
+
+/**
+ * Store the MDD <dd> in the values table.
+ */
+MDD lddmc_ref(MDD dd);
+
+/**
+ * Delete the MDD <dd> from the values table.
+ */
+void lddmc_deref(MDD dd);
+
+/**
+ * Compute the number of values in the values table.
+ */
+size_t lddmc_count_refs(void);
+
+/**
+ * Call mtbdd_gc_mark_rec for every mtbdd you want to keep in your custom mark functions.
+ */
 VOID_TASK_DECL_1(lddmc_gc_mark_rec, MDD)
 #define lddmc_gc_mark_rec(mdd) CALL(lddmc_gc_mark_rec, mdd)
-
-/* Return the number of external references */
-size_t lddmc_count_refs(void);
 
 /* Sanity check - returns depth of MDD including 'true' terminal or 0 for empty set */
 #ifndef NDEBUG

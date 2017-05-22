@@ -54,13 +54,15 @@ VOID_TASK_IMPL_1(lddmc_gc_mark_rec, MDD, mdd)
  * External references
  */
 
-refs_table_t mdd_refs;
+refs_table_t lddmc_refs;
+refs_table_t lddmc_protected;
+static int lddmc_protected_created = 0;
 
 MDD
 lddmc_ref(MDD a)
 {
     if (a == lddmc_true || a == lddmc_false) return a;
-    refs_up(&mdd_refs, a);
+    refs_up(&lddmc_refs, a);
     return a;
 }
 
@@ -68,13 +70,36 @@ void
 lddmc_deref(MDD a)
 {
     if (a == lddmc_true || a == lddmc_false) return;
-    refs_down(&mdd_refs, a);
+    refs_down(&lddmc_refs, a);
 }
 
 size_t
 lddmc_count_refs()
 {
-    return refs_count(&mdd_refs);
+    return refs_count(&lddmc_refs);
+}
+
+void
+lddmc_protect(MDD *a)
+{
+    if (!lddmc_protected_created) {
+        // In C++, sometimes lddmc_protect is called before Sylvan is initialized. Just create a table.
+        protect_create(&lddmc_protected, 4096);
+        lddmc_protected_created = 1;
+    }
+    protect_up(&lddmc_protected, (size_t)a);
+}
+
+void
+lddmc_unprotect(MDD *a)
+{
+    if (lddmc_protected.refs_table != NULL) protect_down(&lddmc_protected, (size_t)a);
+}
+
+size_t
+lddmc_count_protected(void)
+{
+    return protect_count(&lddmc_protected);
 }
 
 /* Called during garbage collection */
@@ -82,9 +107,24 @@ VOID_TASK_0(lddmc_gc_mark_external_refs)
 {
     // iterate through refs hash table, mark all found
     size_t count=0;
-    uint64_t *it = refs_iter(&mdd_refs, 0, mdd_refs.refs_size);
+    uint64_t *it = refs_iter(&lddmc_refs, 0, lddmc_refs.refs_size);
     while (it != NULL) {
-        SPAWN(lddmc_gc_mark_rec, refs_next(&mdd_refs, &it, mdd_refs.refs_size));
+        SPAWN(lddmc_gc_mark_rec, refs_next(&lddmc_refs, &it, lddmc_refs.refs_size));
+        count++;
+    }
+    while (count--) {
+        SYNC(lddmc_gc_mark_rec);
+    }
+}
+
+VOID_TASK_0(lddmc_gc_mark_protected)
+{
+    // iterate through refs hash table, mark all found
+    size_t count=0;
+    uint64_t *it = protect_iter(&lddmc_protected, 0, lddmc_protected.refs_size);
+    while (it != NULL) {
+        MDD *to_mark = (MDD*)protect_next(&lddmc_protected, &it, lddmc_protected.refs_size);
+        SPAWN(lddmc_gc_mark_rec, *to_mark);
         count++;
     }
     while (count--) {
@@ -267,7 +307,7 @@ VOID_TASK_DECL_0(lddmc_gc_mark_serialize);
 static void
 lddmc_quit()
 {
-    refs_free(&mdd_refs);
+    refs_free(&lddmc_refs);
 }
 
 void
@@ -275,9 +315,14 @@ sylvan_init_ldd()
 {
     sylvan_register_quit(lddmc_quit);
     sylvan_gc_add_mark(TASK(lddmc_gc_mark_external_refs));
+    sylvan_gc_add_mark(TASK(lddmc_gc_mark_protected));
     sylvan_gc_add_mark(TASK(lddmc_gc_mark_serialize));
 
-    refs_create(&mdd_refs, 1024);
+    refs_create(&lddmc_refs, 1024);
+    if (!lddmc_protected_created) {
+        protect_create(&lddmc_protected, 4096);
+        lddmc_protected_created = 1;
+    }
 
     LACE_ME;
     CALL(lddmc_refs_init);

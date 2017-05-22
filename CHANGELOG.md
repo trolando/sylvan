@@ -1,7 +1,11 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
-## [Unreleased]
+## [1.3.2] - 2017-05-23
+### Added
+- Now implements `lddmc_protect` and `lddmc_unprotect` for external pointer references.
+- Now implements `lddmc_refs_pushptr` and `lddmc_refs_popptr` for internal pointer references
+
 ### Changed
 - New version of Lace has slightly different API for manually created threads.
 

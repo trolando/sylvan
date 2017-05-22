@@ -230,54 +230,49 @@ void lddmc_serialize_totext(FILE *out);
 void lddmc_serialize_tofile(FILE *out);
 void lddmc_serialize_fromfile(FILE *in);
 
-/* Infrastructure for internal markings */
-typedef struct lddmc_refs_internal
-{
-    size_t r_size, r_count;
-    size_t s_size, s_count;
-    MDD *results;
-    Task **spawns;
-} *lddmc_refs_internal_t;
+/**
+ * Infrastructure for internal references.
+ * Every thread has its own reference stacks. There are three stacks: pointer, values, tasks stack.
+ * The pointers stack stores pointers to LDD variables, manipulated with pushptr and popptr.
+ * The values stack stores LDD, manipulated with push and pop.
+ * The tasks stack stores Lace tasks (that return LDD), manipulated with spawn and sync.
+ *
+ * It is recommended to use the pointers stack for local variables and the tasks stack for tasks.
+ */
 
-extern DECLARE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
+/**
+ * Push a LDD variable to the pointer reference stack.
+ * During garbage collection the variable will be inspected and the contents will be marked.
+ */
+void lddmc_refs_pushptr(const MDD *ptr);
 
-static inline MDD
-lddmc_refs_push(MDD ldd)
-{
-    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
-    if (lddmc_refs_key->r_count >= lddmc_refs_key->r_size) {
-        lddmc_refs_key->r_size *= 2;
-        lddmc_refs_key->results = (MDD*)realloc(lddmc_refs_key->results, sizeof(MDD) * lddmc_refs_key->r_size);
-    }
-    lddmc_refs_key->results[lddmc_refs_key->r_count++] = ldd;
-    return ldd;
-}
+/**
+ * Pop the last <amount> LDD variables from the pointer reference stack.
+ */
+void lddmc_refs_popptr(size_t amount);
 
-static inline void
-lddmc_refs_pop(int amount)
-{
-    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
-    lddmc_refs_key->r_count-=amount;
-}
+/**
+ * Push an LDD to the values reference stack.
+ * During garbage collection the references LDD will be marked.
+ */
+MDD lddmc_refs_push(MDD dd);
 
-static inline void
-lddmc_refs_spawn(Task *t)
-{
-    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
-    if (lddmc_refs_key->s_count >= lddmc_refs_key->s_size) {
-        lddmc_refs_key->s_size *= 2;
-        lddmc_refs_key->spawns = (Task**)realloc(lddmc_refs_key->spawns, sizeof(Task*) * lddmc_refs_key->s_size);
-    }
-    lddmc_refs_key->spawns[lddmc_refs_key->s_count++] = t;
-}
+/**
+ * Pop the last <amount> LDD from the values reference stack.
+ */
+void lddmc_refs_pop(long amount);
 
-static inline MDD
-lddmc_refs_sync(MDD result)
-{
-    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
-    lddmc_refs_key->s_count--;
-    return result;
-}
+/**
+ * Push a Task that returns an LDD to the tasks reference stack.
+ * Usage: lddmc_refs_spawn(SPAWN(function, ...));
+ */
+void lddmc_refs_spawn(Task *t);
+
+/**
+ * Pop a Task from the task reference stack.
+ * Usage: MDD result = lddmc_refs_sync(SYNC(function));
+ */
+MDD lddmc_refs_sync(MDD dd);
 
 #ifdef __cplusplus
 }

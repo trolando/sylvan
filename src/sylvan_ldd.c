@@ -93,33 +93,70 @@ VOID_TASK_0(lddmc_gc_mark_external_refs)
 }
 
 /* Infrastructure for internal markings */
+typedef struct lddmc_refs_internal
+{
+    const MDD **pbegin, **pend, **pcur;
+    MDD *rbegin, *rend, *rcur;
+    Task **sbegin, **send, **scur;
+} *lddmc_refs_internal_t;
+
 DECLARE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
+
+VOID_TASK_2(lddmc_refs_mark_p_par, const MDD**, begin, size_t, count)
+{
+    if (count < 32) {
+        while (count) {
+            lddmc_gc_mark_rec(**(begin++));
+            count--;
+        }
+    } else {
+        SPAWN(lddmc_refs_mark_p_par, begin, count / 2);
+        CALL(lddmc_refs_mark_p_par, begin + (count / 2), count - count / 2);
+        SYNC(lddmc_refs_mark_p_par);
+    }
+}
+
+VOID_TASK_2(lddmc_refs_mark_r_par, MDD*, begin, size_t, count)
+{
+    if (count < 32) {
+        while (count) {
+            lddmc_gc_mark_rec(*begin++);
+            count--;
+        }
+    } else {
+        SPAWN(lddmc_refs_mark_r_par, begin, count / 2);
+        CALL(lddmc_refs_mark_r_par, begin + (count / 2), count - count / 2);
+        SYNC(lddmc_refs_mark_r_par);
+    }
+}
+
+VOID_TASK_2(lddmc_refs_mark_s_par, Task**, begin, size_t, count)
+{
+    if (count < 32) {
+        while (count) {
+            Task *t = *begin++;
+            if (!TASK_IS_STOLEN(t)) return;
+            if (TASK_IS_COMPLETED(t)) {
+                lddmc_gc_mark_rec(*(BDD*)TASK_RESULT(t));
+            }
+            count--;
+        }
+    } else {
+        if (!TASK_IS_STOLEN((*begin))) return;
+        SPAWN(lddmc_refs_mark_s_par, begin, count / 2);
+        CALL(lddmc_refs_mark_s_par, begin + (count / 2), count - count / 2);
+        SYNC(lddmc_refs_mark_s_par);
+    }
+}
 
 VOID_TASK_0(lddmc_refs_mark_task)
 {
     LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
-    size_t i, j=0;
-    for (i=0; i<lddmc_refs_key->r_count; i++) {
-        if (j >= 40) {
-            while (j--) SYNC(lddmc_gc_mark_rec);
-            j=0;
-        }
-        SPAWN(lddmc_gc_mark_rec, lddmc_refs_key->results[i]);
-        j++;
-    }
-    for (i=0; i<lddmc_refs_key->s_count; i++) {
-        Task *t = lddmc_refs_key->spawns[i];
-        if (!TASK_IS_STOLEN(t)) break;
-        if (TASK_IS_COMPLETED(t)) {
-            if (j >= 40) {
-                while (j--) SYNC(lddmc_gc_mark_rec);
-                j=0;
-            }
-            SPAWN(lddmc_gc_mark_rec, *(BDD*)TASK_RESULT(t));
-            j++;
-        }
-    }
-    while (j--) SYNC(lddmc_gc_mark_rec);
+    SPAWN(lddmc_refs_mark_p_par, lddmc_refs_key->pbegin, lddmc_refs_key->pcur-lddmc_refs_key->pbegin);
+    SPAWN(lddmc_refs_mark_r_par, lddmc_refs_key->rbegin, lddmc_refs_key->rcur-lddmc_refs_key->rbegin);
+    CALL(lddmc_refs_mark_s_par, lddmc_refs_key->sbegin, lddmc_refs_key->scur-lddmc_refs_key->sbegin);
+    SYNC(lddmc_refs_mark_r_par);
+    SYNC(lddmc_refs_mark_p_par);
 }
 
 VOID_TASK_0(lddmc_refs_mark)
@@ -130,12 +167,12 @@ VOID_TASK_0(lddmc_refs_mark)
 VOID_TASK_0(lddmc_refs_init_task)
 {
     lddmc_refs_internal_t s = (lddmc_refs_internal_t)malloc(sizeof(struct lddmc_refs_internal));
-    s->r_size = 128;
-    s->r_count = 0;
-    s->s_size = 128;
-    s->s_count = 0;
-    s->results = (BDD*)malloc(sizeof(BDD) * 128);
-    s->spawns = (Task**)malloc(sizeof(Task*) * 128);
+    s->pcur = s->pbegin = (const MDD**)malloc(sizeof(MDD*) * 1024);
+    s->pend = s->pbegin + 1024;
+    s->rcur = s->rbegin = (MDD*)malloc(sizeof(MDD) * 1024);
+    s->rend = s->rbegin + 1024;
+    s->scur = s->sbegin = (Task**)malloc(sizeof(Task*) * 1024);
+    s->send = s->sbegin + 1024;
     SET_THREAD_LOCAL(lddmc_refs_key, s);
 }
 
@@ -144,6 +181,81 @@ VOID_TASK_0(lddmc_refs_init)
     INIT_THREAD_LOCAL(lddmc_refs_key);
     TOGETHER(lddmc_refs_init_task);
     sylvan_gc_add_mark(TASK(lddmc_refs_mark));
+}
+
+void
+lddmc_refs_ptrs_up(lddmc_refs_internal_t lddmc_refs_key)
+{
+    size_t size = lddmc_refs_key->pend - lddmc_refs_key->pbegin;
+    lddmc_refs_key->pbegin = (const MDD**)realloc(lddmc_refs_key->pbegin, sizeof(MDD*) * size * 2);
+    lddmc_refs_key->pcur = lddmc_refs_key->pbegin + size;
+    lddmc_refs_key->pend = lddmc_refs_key->pbegin + (size * 2);
+}
+
+MDD __attribute__((noinline))
+lddmc_refs_refs_up(lddmc_refs_internal_t lddmc_refs_key, MDD res)
+{
+    long size = lddmc_refs_key->rend - lddmc_refs_key->rbegin;
+    lddmc_refs_key->rbegin = (MDD*)realloc(lddmc_refs_key->rbegin, sizeof(MDD) * size * 2);
+    lddmc_refs_key->rcur = lddmc_refs_key->rbegin + size;
+    lddmc_refs_key->rend = lddmc_refs_key->rbegin + (size * 2);
+    return res;
+}
+
+void __attribute__((noinline))
+lddmc_refs_tasks_up(lddmc_refs_internal_t lddmc_refs_key)
+{
+    long size = lddmc_refs_key->send - lddmc_refs_key->sbegin;
+    lddmc_refs_key->sbegin = (Task**)realloc(lddmc_refs_key->sbegin, sizeof(Task*) * size * 2);
+    lddmc_refs_key->scur = lddmc_refs_key->sbegin + size;
+    lddmc_refs_key->send = lddmc_refs_key->sbegin + (size * 2);
+}
+
+void __attribute__((unused))
+lddmc_refs_pushptr(const MDD *ptr)
+{
+    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
+    *lddmc_refs_key->pcur++ = ptr;
+    if (lddmc_refs_key->pcur == lddmc_refs_key->pend) lddmc_refs_ptrs_up(lddmc_refs_key);
+}
+
+void __attribute__((unused))
+lddmc_refs_popptr(size_t amount)
+{
+    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
+    lddmc_refs_key->pcur -= amount;
+}
+
+MDD __attribute__((unused))
+lddmc_refs_push(MDD lddmc)
+{
+    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
+    *(lddmc_refs_key->rcur++) = lddmc;
+    if (lddmc_refs_key->rcur == lddmc_refs_key->rend) return lddmc_refs_refs_up(lddmc_refs_key, lddmc);
+    else return lddmc;
+}
+
+void __attribute__((unused))
+lddmc_refs_pop(long amount)
+{
+    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
+    lddmc_refs_key->rcur -= amount;
+}
+
+void __attribute__((unused))
+lddmc_refs_spawn(Task *t)
+{
+    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
+    *(lddmc_refs_key->scur++) = t;
+    if (lddmc_refs_key->scur == lddmc_refs_key->send) lddmc_refs_tasks_up(lddmc_refs_key);
+}
+
+MDD __attribute__((unused))
+lddmc_refs_sync(MDD result)
+{
+    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
+    lddmc_refs_key->scur -= 1;
+    return result;
 }
 
 VOID_TASK_DECL_0(lddmc_gc_mark_serialize);

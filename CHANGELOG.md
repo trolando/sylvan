@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [Unreleased]
+### Changed
+- New version of Lace has slightly different API for manually created threads.
+
 ## [1.3.1] - 2017-05-22
 ### Fixed
 - A bug in `mtbdd_refs_ptrs_up` caused a segfault. This has been fixed.

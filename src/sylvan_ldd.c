@@ -2157,7 +2157,7 @@ VOID_TASK_3(lddmc_match_sat, struct lddmc_match_sat_info *, info, lddmc_enum_cb,
     ri->mdd = mddnode_getright(na);
     di->mdd = mddnode_getdown(na);
     ri->match = b;
-    di->match = mddnode_getdown(nb);
+    di->match = p_val == 1 ? mddnode_getdown(nb) : b;
     ri->proj = proj;
     di->proj = mddnode_getdown(p_node);
     ri->count = info->count;

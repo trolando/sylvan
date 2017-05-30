@@ -616,7 +616,7 @@ gnomesort_next()
     rel_t t;
     while (i < next_count) {
         rel_t *p = &next[i], *q = p-1;
-        if (sylvan_var((*q)->bdd) > sylvan_var((*p)->bdd)) {
+        if (sylvan_var((*q)->variables) > sylvan_var((*p)->variables)) {
             t = *q;
             *q = *p;
             *p = t;

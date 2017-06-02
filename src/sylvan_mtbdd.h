@@ -88,6 +88,7 @@ typedef MTBDD MTBDDMAP;
 #define sylvan_unprotect        mtbdd_unprotect
 #define sylvan_count_protected  mtbdd_count_protected
 #define sylvan_gc_mark_rec      mtbdd_gc_mark_rec
+#define sylvan_ithvar           mtbdd_ithvar
 #define bdd_refs_pushptr        mtbdd_refs_pushptr
 #define bdd_refs_popptr         mtbdd_refs_popptr
 #define bdd_refs_push           mtbdd_refs_push
@@ -235,6 +236,11 @@ double mtbdd_getdouble(MTBDD terminal);
  * Obtain the denominator of a Fraction leaf.
  */
 #define mtbdd_getdenom(terminal) ((uint32_t)(mtbdd_getvalue(terminal)&0xffffffff))
+
+/**
+ * Create the Boolean MTBDD representing "if <var> then True else False"
+ */
+MTBDD mtbdd_ithvar(uint32_t var);
 
 /**
  * Functions to manipulate sets of MTBDD variables.

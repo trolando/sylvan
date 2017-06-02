@@ -45,12 +45,6 @@ sylvan_get_granularity()
     return granularity;
 }
 
-BDD
-sylvan_ithvar(BDDVAR level)
-{
-    return sylvan_makenode(level, sylvan_false, sylvan_true);
-}
-
 /**
  * Implementation of unary, binary and if-then-else operators.
  */

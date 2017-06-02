@@ -44,7 +44,6 @@ void sylvan_set_granularity(int granularity);
 int sylvan_get_granularity(void);
 
 /* Create a BDD representing just <var> or the negation of <var> */
-BDD sylvan_ithvar(BDDVAR var);
 #define sylvan_nithvar(var) sylvan_not(sylvan_ithvar(var))
 
 /*

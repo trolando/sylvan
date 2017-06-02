@@ -505,6 +505,12 @@ mtbdd_makemapnode(uint32_t var, MTBDD low, MTBDD high)
     return index;
 }
 
+MTBDD
+mtbdd_ithvar(uint32_t var)
+{
+    return mtbdd_makenode(var, mtbdd_false, mtbdd_true);
+}
+
 /* Operations */
 
 /**

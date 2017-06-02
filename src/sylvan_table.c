@@ -247,6 +247,7 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
     const int custom = is_custom_bucket(dbs, d_idx) ? 1 : 0;
     if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
     else hash_rehash = llmsset_hash(a, b, hash_rehash);
+    const uint64_t step = (((hash_rehash >> 20) | 1) << 3);
     const uint64_t new_v = (hash_rehash & MASK_HASH) | d_idx;
     int i=0;
 
@@ -271,8 +272,7 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
             }
 
             // go to next cache line in probe sequence
-            if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
-            else hash_rehash = llmsset_hash(a, b, hash_rehash);
+            hash_rehash += step;
 
 #if LLMSSET_MASK
             last = idx = hash_rehash & dbs->mask;

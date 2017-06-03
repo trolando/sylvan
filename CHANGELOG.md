@@ -1,6 +1,15 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [1.3.3] - 2016-06-03
+### Changed
+- Changed file format for .bdd files in the MC example.
+
+### Fixed
+- A major bug in `lddmc_match_sat_par` has been fixed.
+- A bug in the saturation algorithm in the model checking example has been fixed.
+- A major bug in the hash table rehashing implementation has been fixed.
+
 ## [1.3.2] - 2017-05-23
 ### Added
 - Now implements `lddmc_protect` and `lddmc_unprotect` for external pointer references.

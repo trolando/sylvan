@@ -92,6 +92,8 @@ typedef enum {
     SYLVAN_COUNTER_COUNTER
 } Sylvan_Counters;
 
+#undef OPCOUNTER
+
 typedef enum
 {
     SYLVAN_GC,

@@ -61,23 +61,23 @@ typedef MTBDD MTBDDMAP;
  * mtbdd_true and mtbdd_false are the Boolean leaves representing True and False.
  * False is also used in Integer/Real/Fraction MTBDDs for partially defined functions.
  */
-#define mtbdd_complement    ((MTBDD)0x8000000000000000LL)
-#define mtbdd_false         ((MTBDD)0)
-#define mtbdd_true          (mtbdd_false|mtbdd_complement)
-#define mtbdd_invalid       ((MTBDD)0xffffffffffffffffLL)
+static const MTBDD mtbdd_complement = 0x8000000000000000LL;
+static const MTBDD mtbdd_false      = 0;
+static const MTBDD mtbdd_true       = 0x8000000000000000LL;
+static const MTBDD mtbdd_invalid    = 0xffffffffffffffffLL;
 
 /**
  * Definitions for backward compatibility...
  * We now consider BDDs to be a special case of MTBDDs.
  */
-#define BDD                     MTBDD
-#define BDDMAP                  MTBDDMAP
-#define BDDSET                  MTBDD
-#define BDDVAR                  uint32_t
-#define sylvan_complement       mtbdd_complement
-#define sylvan_false            mtbdd_false
-#define sylvan_true             mtbdd_true
-#define sylvan_invalid          mtbdd_invalid
+typedef MTBDD BDD;
+typedef MTBDDMAP BDDMAP;
+typedef MTBDD BDDSET;
+typedef uint32_t BDDVAR;
+static const MTBDD sylvan_complement = 0x8000000000000000LL;
+static const MTBDD sylvan_false      = 0;
+static const MTBDD sylvan_true       = 0x8000000000000000LL;
+static const MTBDD sylvan_invalid    = 0xffffffffffffffffLL;
 #define sylvan_init_bdd         sylvan_init_mtbdd
 #define sylvan_ref              mtbdd_ref
 #define sylvan_deref            mtbdd_deref
@@ -196,9 +196,24 @@ MTBDD mtbdd_gethigh(MTBDD node);
  * Obtain the complement of the MTBDD.
  * This is only valid for Boolean MTBDDs or custom implementations that support it.
  */
-#define mtbdd_hascomp(dd) ((dd & mtbdd_complement) ? 1 : 0)
-#define mtbdd_comp(dd) (dd ^ mtbdd_complement)
-#define mtbdd_not(dd) (dd ^ mtbdd_complement)
+
+static inline int
+mtbdd_hascomp(MTBDD dd)
+{
+    return (dd & mtbdd_complement) ? 1 : 0;
+}
+
+static inline MTBDD
+mtbdd_comp(MTBDD dd)
+{
+    return dd ^ mtbdd_complement;
+}
+
+static inline MTBDD
+mtbdd_not(MTBDD dd)
+{
+    return dd ^ mtbdd_complement;
+}
 
 /**
  * Create an Integer leaf with the given value.
@@ -228,12 +243,20 @@ double mtbdd_getdouble(MTBDD terminal);
 /**
  * Obtain the numerator of a Fraction leaf.
  */
-#define mtbdd_getnumer(terminal) ((int32_t)(mtbdd_getvalue(terminal)>>32))
+static inline int32_t
+mtbdd_getnumer(MTBDD terminal)
+{
+    return (int32_t)(mtbdd_getvalue(terminal)>>32);
+}
 
 /**
  * Obtain the denominator of a Fraction leaf.
  */
-#define mtbdd_getdenom(terminal) ((uint32_t)(mtbdd_getvalue(terminal)&0xffffffff))
+static inline uint32_t
+mtbdd_getdenom(MTBDD terminal)
+{
+    return (uint32_t)(mtbdd_getvalue(terminal)&0xffffffff);
+}
 
 /**
  * Create the Boolean MTBDD representing "if <var> then True else False"
@@ -245,10 +268,29 @@ MTBDD mtbdd_ithvar(uint32_t var);
  *
  * A set of variables is represented by a cube/conjunction of (positive) variables.
  */
-#define mtbdd_set_empty()                   mtbdd_true
-#define mtbdd_set_isempty(set)              (set == mtbdd_true)
-#define mtbdd_set_first(set)                mtbdd_getvar(set)
-#define mtbdd_set_next(set)                 mtbdd_gethigh(set)
+static inline MTBDD
+mtbdd_set_empty()
+{
+    return mtbdd_true;
+}
+
+static inline int
+mtbdd_set_isempty(MTBDD set)
+{
+    return (set == mtbdd_true) ? 1 : 0;
+}
+
+static inline uint32_t
+mtbdd_set_first(MTBDD set)
+{
+    return mtbdd_getvar(set);
+}
+
+static inline MTBDD
+mtbdd_set_next(MTBDD set)
+{
+    return mtbdd_gethigh(set);
+}
 
 /**
  * Create a set of variables, represented as the conjunction of (positive) variables.
@@ -901,11 +943,35 @@ void mtbdd_reader_end(uint64_t *arr);
  * MTBDDMAP, maps uint32_t variables to MTBDDs.
  * A MTBDDMAP node has variable level, low edge going to the next MTBDDMAP, high edge to the mapped MTBDD.
  */
-#define mtbdd_map_empty() mtbdd_false
-#define mtbdd_map_isempty(map) (map == mtbdd_false ? 1 : 0)
-#define mtbdd_map_key(map) mtbdd_getvar(map)
-#define mtbdd_map_value(map) mtbdd_gethigh(map)
-#define mtbdd_map_next(map) mtbdd_getlow(map)
+static inline MTBDD
+mtbdd_map_empty()
+{
+    return mtbdd_false;
+}
+
+static inline int
+mtbdd_map_isempty(MTBDD map)
+{
+    return (map == mtbdd_false) ? 1 : 0;
+}
+
+static inline uint32_t
+mtbdd_map_key(MTBDD map)
+{
+    return mtbdd_getvar(map);
+}
+
+static inline MTBDD
+mtbdd_map_value(MTBDD map)
+{
+    return mtbdd_gethigh(map);
+}
+
+static inline MTBDD
+mtbdd_map_next(MTBDD map)
+{
+    return mtbdd_getlow(map);
+}
 
 /**
  * Return 1 if the map contains the key, 0 otherwise.

@@ -24,10 +24,6 @@
 extern "C" {
 #endif /* __cplusplus */
 
-#ifndef CACHE_MASK
-#define CACHE_MASK 1
-#endif
-
 /**
  * Operation cache
  *

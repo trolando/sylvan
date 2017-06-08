@@ -25,8 +25,17 @@ extern "C" {
 #endif /* __cplusplus */
 
 /* For strictly non-MT BDDs */
-#define sylvan_isconst(bdd) (bdd == sylvan_true || bdd == sylvan_false)
-#define sylvan_isnode(bdd)  (bdd != sylvan_true && bdd != sylvan_false)
+static inline int
+sylvan_isconst(MTBDD bdd)
+{
+    return bdd == mtbdd_true || bdd == mtbdd_false ? 1 : 0;
+}
+
+static inline int
+sylvan_isnode(MTBDD bdd)
+{
+    return bdd != mtbdd_true && bdd != mtbdd_false ? 1 : 0;
+}
 
 /**
  * Granularity (BDD only) determines usage of operation cache.
@@ -43,14 +52,16 @@ extern "C" {
 void sylvan_set_granularity(int granularity);
 int sylvan_get_granularity(void);
 
-/* Create a BDD representing just <var> or the negation of <var> */
-#define sylvan_nithvar(var) sylvan_not(sylvan_ithvar(var))
-
 /*
  * Unary, binary and if-then-else operations.
  * These operations are all implemented by NOT, AND and XOR.
  */
-#define sylvan_not(a) (((BDD)a)^sylvan_complement)
+static inline BDD
+sylvan_not(BDD a)
+{
+    return a ^ sylvan_complement;
+}
+
 TASK_DECL_4(BDD, sylvan_ite, BDD, BDD, BDD, BDDVAR);
 #define sylvan_ite(a,b,c) (CALL(sylvan_ite,a,b,c,0))
 TASK_DECL_3(BDD, sylvan_and, BDD, BDD, BDDVAR);
@@ -66,6 +77,13 @@ TASK_DECL_3(BDD, sylvan_xor, BDD, BDD, BDDVAR);
 #define sylvan_biimp sylvan_equiv
 #define sylvan_diff(a,b) sylvan_and(a,sylvan_not(b))
 #define sylvan_less(a,b) sylvan_and(sylvan_not(a),b)
+
+/* Create a BDD representing just <var> or the negation of <var> */
+static inline BDD
+sylvan_nithvar(uint32_t var)
+{
+    return sylvan_not(sylvan_ithvar(var));
+}
 
 /**
  * Existential and universal quantification.
@@ -264,7 +282,11 @@ sylvan_fprint(FILE *f, BDD bdd)
     sylvan_serialize_totext(f);
 }
 
-#define sylvan_print(dd) sylvan_fprint(stdout, dd)
+static void __attribute__((unused))
+sylvan_print(BDD bdd)
+{
+    return sylvan_fprint(stdout, bdd);
+}
 
 #ifdef __cplusplus
 }

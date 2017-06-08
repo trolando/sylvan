@@ -24,11 +24,10 @@
 extern "C" {
 #endif /* __cplusplus */
 
-
 typedef uint64_t MDD;       // Note: low 40 bits only
 
-#define lddmc_false         ((MDD)0)
-#define lddmc_true          ((MDD)1)
+static const MDD lddmc_false = 0;
+static const MDD lddmc_true = 1;
 
 /* Initialize LDD functionality */
 void sylvan_init_ldd(void);

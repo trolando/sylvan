@@ -25,6 +25,10 @@
 #define MAP_ANONYMOUS MAP_ANON
 #endif
 
+#ifndef CACHE_MASK
+#define CACHE_MASK 1
+#endif
+
 #ifndef compiler_barrier
 #define compiler_barrier() { asm volatile("" ::: "memory"); }
 #endif

@@ -34,7 +34,11 @@ typedef struct __attribute__((packed)) mddnode {
     uint64_t a, b;
 } * mddnode_t; // 16 bytes
 
-#define LDD_GETNODE(mdd) ((mddnode_t)llmsset_index_to_ptr(nodes, mdd))
+static inline mddnode_t
+LDD_GETNODE(MDD mdd)
+{
+    return ((mddnode_t)llmsset_index_to_ptr(nodes, mdd));
+}
 
 static inline uint32_t __attribute__((unused))
 mddnode_getvalue(mddnode_t n)

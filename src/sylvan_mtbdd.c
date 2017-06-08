@@ -3570,7 +3570,9 @@ mtbdd_map_count(MTBDDMAP map)
 MTBDDMAP
 mtbdd_map_add(MTBDDMAP map, uint32_t key, MTBDD value)
 {
-    if (mtbdd_map_isempty(map)) return mtbdd_makemapnode(key, mtbdd_map_empty(), value);
+    if (mtbdd_map_isempty(map)) {
+        return mtbdd_makemapnode(key, mtbdd_map_empty(), value);
+    }
 
     mtbddnode_t n = MTBDD_GETNODE(map);
     uint32_t k = mtbddnode_getvariable(n);

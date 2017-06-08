@@ -24,10 +24,6 @@
 extern "C" {
 #endif /* __cplusplus */
 
-#ifndef LLMSSET_MASK
-#define LLMSSET_MASK 0 // set to 1 to use bit mask instead of modulo
-#endif
-
 /**
  * Lockless hash table (set) to store 16-byte keys.
  * Each unique key is associated with a 42-bit number.
@@ -212,6 +208,5 @@ uint64_t llmsset_hash(const uint64_t a, const uint64_t b, const uint64_t seed);
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
-
 
 #endif

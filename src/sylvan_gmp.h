@@ -26,6 +26,7 @@
 #define SYLVAN_GMP_H
 
 #ifdef __cplusplus
+namespace sylvan {
 extern "C" {
 #endif /* __cplusplus */
 
@@ -184,6 +185,7 @@ TASK_DECL_2(MTBDD, gmp_strict_threshold_d, MTBDD, double);
 #define gmp_strict_threshold_d(dd, value) CALL(gmp_strict_threshold_d, dd, value)
 
 #ifdef __cplusplus
+}
 }
 #endif /* __cplusplus */
 

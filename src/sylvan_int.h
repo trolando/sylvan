@@ -22,6 +22,14 @@
 
 #include <sylvan.h>
 
+#ifdef __cplusplus
+namespace sylvan {
+#endif
+
+/**
+ * Sylvan internal header files inside the namespace
+ */
+
 #include <sylvan_cache.h>
 #include <sylvan_table.h>
 
@@ -98,5 +106,9 @@ static const uint64_t CACHE_MTBDD_EVAL_COMPOSE      = (56LL<<40);
 
 #include <sylvan_mtbdd_int.h>
 #include <sylvan_ldd_int.h>
+
+#ifdef __cplusplus
+} /* namespace */
+#endif
 
 #endif

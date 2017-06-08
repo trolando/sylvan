@@ -4,6 +4,8 @@ set(SOURCES
     sylvan_bdd.c
     sylvan_cache.c
     sylvan_common.c
+    sylvan_cudd.c
+    sylvan_cuddObj.cpp
     sylvan_gmp.c
     sylvan_ldd.c
     sylvan_mt.c
@@ -22,6 +24,8 @@ set(HEADERS
     sylvan_cache.h
     sylvan_config.h
     sylvan_common.h
+    sylvan_cudd.h
+    sylvan_cuddObj.hpp
     sylvan_gmp.h
     sylvan_int.h
     sylvan_ldd.h

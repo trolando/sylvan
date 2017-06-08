@@ -2478,7 +2478,17 @@ TASK_IMPL_2(double, mtbdd_satcount, MTBDD, dd, size_t, nvars)
 {
     /* Trivial cases */
     if (dd == mtbdd_false) return 0.0;
-    if (mtbdd_isleaf(dd)) return powl(2.0L, nvars);
+
+    if (mtbdd_isleaf(dd)) {
+        // test if 0
+        mtbddnode_t dd_node = MTBDD_GETNODE(dd);
+        if (dd != mtbdd_true) {
+            if (mtbddnode_gettype(dd_node) == 0 && mtbdd_getint64(dd) == 0) return 0.0;
+            else if (mtbddnode_gettype(dd_node) == 1 && mtbdd_getdouble(dd) == 0.0) return 0.0;
+            else if (mtbddnode_gettype(dd_node) == 2 && mtbdd_getvalue(dd) == 1) return 0.0;
+        }
+        return powl(2.0L, nvars);
+    }
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test();

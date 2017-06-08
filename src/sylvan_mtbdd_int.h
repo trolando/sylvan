@@ -15,6 +15,8 @@
  * limitations under the License.
  */
 
+/* Do not include this file directly. Instead, include sylvan_int.h */
+
 /**
  * Internals for MTBDDs
  */

@@ -15,15 +15,10 @@
  * limitations under the License.
  */
 
-#include <sylvan_config.h>
+/* Do not include this file directly. Instead, include sylvan_int.h */
 
-#include <stdint.h>
-#include <unistd.h>
-
-#include <lace.h>
-
-#ifndef LLMSSET_H
-#define LLMSSET_H
+#ifndef SYLVAN_TABLE_H
+#define SYLVAN_TABLE_H
 
 #ifdef __cplusplus
 extern "C" {

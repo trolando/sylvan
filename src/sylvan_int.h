@@ -16,14 +16,14 @@
  */
 
 /**
- * Internals of Sylvan
+ * Sylvan: parallel MTBDD/ListDD package.
+ * Include this file for access to internals.
  */
 
 #include <sylvan.h>
 
 #include <sylvan_cache.h>
 #include <sylvan_table.h>
-#include <sylvan_stats.h>
 
 #ifndef SYLVAN_INT_H
 #define SYLVAN_INT_H

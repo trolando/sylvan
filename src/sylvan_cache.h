@@ -15,12 +15,10 @@
  * limitations under the License.
  */
 
-#include <sylvan_config.h>
+/* Do not include this file directly. Instead, include sylvan_int.h */
 
-#include <stdint.h> // for uint32_t etc
-
-#ifndef CACHE_H
-#define CACHE_H
+#ifndef SYLVAN_CACHE_H
+#define SYLVAN_CACHE_H
 
 #ifdef __cplusplus
 extern "C" {

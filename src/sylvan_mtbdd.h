@@ -39,8 +39,6 @@
 #ifndef SYLVAN_MTBDD_H
 #define SYLVAN_MTBDD_H
 
-#include <sylvan_mt.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */

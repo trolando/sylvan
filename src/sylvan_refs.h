@@ -15,8 +15,7 @@
  * limitations under the License.
  */
 
-#include <sylvan_config.h>
-#include <stdint.h> // for uint32_t etc
+/* Do not include this file directly. Instead, include sylvan.h */
 
 #ifndef REFS_INLINE_H
 #define REFS_INLINE_H

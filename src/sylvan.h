@@ -17,24 +17,33 @@
 
 /**
  * Sylvan: parallel MTBDD/ListDD package.
- *
- * This is a multi-core implementation of MTBDDs with complement edges.
- *
- * This package requires parallel the work-stealing framework Lace.
- * Lace must be initialized before initializing Sylvan
+ * Include this file.
  */
 
 #include <sylvan_config.h>
 
+#include <assert.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h> // for FILE
 #include <stdlib.h> // for realloc
+#include <unistd.h>
+#include <pthread.h>
+
+#if SYLVAN_STATS
+#ifdef __MACH__
+#include <mach/mach_time.h>
+#else
+#include <time.h>
+#endif
+#endif
 
 #include <lace.h>
 #include <sylvan_tls.h>
 
 #include <sylvan_common.h>
 #include <sylvan_stats.h>
+#include <sylvan_mt.h>
 #include <sylvan_mtbdd.h>
 #include <sylvan_bdd.h>
 #include <sylvan_ldd.h>

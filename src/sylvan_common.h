@@ -15,6 +15,8 @@
  * limitations under the License.
  */
 
+/* Do not include this file directly. Instead, include sylvan.h */
+
 #ifndef SYLVAN_COMMON_H
 #define SYLVAN_COMMON_H
 

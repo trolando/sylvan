@@ -15,18 +15,11 @@
  * limitations under the License.
  */
 
-#include <sylvan_config.h>
+#include <sylvan_int.h>
 
 #include <errno.h>  // for errno
-#include <stdint.h> // for uint64_t etc
-#include <stdio.h>  // for printf
-#include <stdlib.h>
 #include <string.h> // memset
 #include <sys/mman.h> // for mmap
-
-#include <sylvan_table.h>
-#include <sylvan_stats.h>
-#include <sylvan_tls.h>
 
 #include <hwloc.h>
 

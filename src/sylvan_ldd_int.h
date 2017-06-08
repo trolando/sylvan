@@ -15,24 +15,7 @@
  * limitations under the License.
  */
 
-/*#include <sylvan_config.h>
-
-#include <assert.h>
-#include <inttypes.h>
-#include <math.h>
-#include <pthread.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include <sylvan.h>
-#include <sylvan_int.h>
-
-#include <avl.h>
-#include <sylvan_refs.h>
-#include <sha2.h>
-*/
+/* Do not include this file directly. Instead, include sylvan_int.h */
 
 /**
  * Internals for LDDs

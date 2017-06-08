@@ -15,14 +15,11 @@
  * limitations under the License.
  */
 
+#include <sylvan_int.h>
+
 #include <errno.h>  // for errno
-#include <stdio.h>  // for fprintf
-#include <stdint.h> // for uint32_t etc
-#include <stdlib.h> // for exit
 #include <string.h> // for strerror
 #include <sys/mman.h> // for mmap
-
-#include <sylvan_cache.h>
 
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS MAP_ANON

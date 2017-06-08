@@ -15,17 +15,12 @@
  * limitations under the License.
  */
 
-#include <sylvan_config.h>
+#include <sylvan.h>
+#include <sylvan_refs.h>
 
-#include <assert.h> // for assert
 #include <errno.h>  // for errno
-#include <stdio.h>  // for fprintf
-#include <stdint.h> // for uint32_t etc
-#include <stdlib.h> // for exit
 #include <string.h> // for strerror
 #include <sys/mman.h> // for mmap
-
-#include <sylvan_refs.h>
 
 #ifndef compiler_barrier
 #define compiler_barrier() { asm volatile("" ::: "memory"); }

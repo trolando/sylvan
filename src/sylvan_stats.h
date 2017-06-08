@@ -15,8 +15,7 @@
  * limitations under the License.
  */
 
-#include <sylvan_config.h>
-#include <lace.h>
+/* Do not include this file directly. Instead, include sylvan.h */
 
 #ifndef SYLVAN_STATS_H
 #define SYLVAN_STATS_H
@@ -134,10 +133,8 @@ void sylvan_stats_report(FILE* target);
 #if SYLVAN_STATS
 
 #ifdef __MACH__
-#include <mach/mach_time.h>
 #define getabstime() mach_absolute_time()
 #else
-#include <time.h>
 static uint64_t
 getabstime(void)
 {
@@ -153,7 +150,6 @@ getabstime(void)
 #ifdef __ELF__
 extern __thread sylvan_stats_t sylvan_stats;
 #else
-#include <pthread.h>
 extern pthread_key_t sylvan_stats_key;
 #endif
 

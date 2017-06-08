@@ -1373,6 +1373,36 @@ TASK_IMPL_2(MTBDD, mtbdd_op_max, MTBDD*, pa, MTBDD*, pb)
     return mtbdd_invalid;
 }
 
+TASK_IMPL_2(MTBDD, mtbdd_op_cmpl, MTBDD, a, size_t, k)
+{
+    // if a is false, then it is a partial function. Keep partial!
+    if (a == mtbdd_false) return mtbdd_false;
+
+    // a != constant
+    mtbddnode_t na = MTBDD_GETNODE(a);
+
+    if (mtbddnode_isleaf(na)) {
+        if (mtbddnode_gettype(na) == 0) {
+            int64_t v = mtbdd_getint64(a);
+            if (v == 0) return mtbdd_int64(1);
+            else return mtbdd_int64(0);
+        } else if (mtbddnode_gettype(na) == 1) {
+            double d = mtbdd_getdouble(a);
+            if (d == 0.0) return mtbdd_double(1.0);
+            else return mtbdd_double(0.0);
+        } else if (mtbddnode_gettype(na) == 2) {
+            uint64_t v = mtbddnode_getvalue(na);
+            if (v == 1) return mtbdd_fraction(1, 1);
+            else return mtbdd_fraction(0, 1);
+        } else {
+            assert(0); // failure
+        }
+    }
+
+    return mtbdd_invalid;
+    (void)k; // unused variable
+}
+
 TASK_IMPL_2(MTBDD, mtbdd_op_negate, MTBDD, a, size_t, k)
 {
     // if a is false, then it is a partial function. Keep partial!

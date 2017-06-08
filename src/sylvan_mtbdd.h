@@ -402,6 +402,12 @@ TASK_DECL_3(MTBDD, mtbdd_abstract, MTBDD, MTBDD, mtbdd_abstract_op);
 TASK_DECL_2(MTBDD, mtbdd_op_negate, MTBDD, size_t);
 
 /**
+ * Unary opeation Complement.
+ * Supported domains: Integer, Real, Fraction
+ */
+TASK_DECL_2(MTBDD, mtbdd_op_cmpl, MTBDD, size_t);
+
+/**
  * Binary operation Plus (for MTBDDs of same type)
  * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
  * For Integer/Double MTBDDs, mtbdd_false is interpreted as "0" or "0.0".
@@ -445,8 +451,16 @@ TASK_DECL_3(MTBDD, mtbdd_abstract_op_max, MTBDD, MTBDD, int);
 
 /**
  * Compute -a
+ * (negation, where 0 stays 0, and x into -x)
  */
 #define mtbdd_negate(a) mtbdd_uapply(a, TASK(mtbdd_op_negate), 0)
+
+/**
+ * Compute ~a for partial MTBDDs.
+ * Does not negate Boolean True/False.
+ * (complement, where 0 is turned into 1, and non-0 into 0)
+ */
+#define mtbdd_cmpl(a) mtbdd_uapply(a, TASK(mtbdd_op_cmpl), 0)
 
 /**
  * Compute a + b

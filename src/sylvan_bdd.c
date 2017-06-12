@@ -1828,10 +1828,10 @@ TASK_IMPL_3(BDD, sylvan_union_cube, BDD, bdd, BDDSET, vars, uint8_t *, cube)
     } else if (v > n_level) {
         BDD high = node_high(bdd, n);
         BDD low = node_low(bdd, n);
-        SPAWN(sylvan_union_cube, high, vars, cube);
+        bdd_refs_spawn(SPAWN(sylvan_union_cube, high, vars, cube));
         BDD new_low = sylvan_union_cube(low, vars, cube);
         bdd_refs_push(new_low);
-        BDD new_high = SYNC(sylvan_union_cube);
+        BDD new_high = bdd_refs_sync(SYNC(sylvan_union_cube));
         bdd_refs_pop(1);
         if (new_low != low || new_high != high) {
             result = sylvan_makenode(n_level, new_low, new_high);

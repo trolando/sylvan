@@ -639,10 +639,10 @@ TASK_IMPL_4(MTBDD, mtbdd_union_cube, MTBDD, mtbdd, MTBDD, vars, uint8_t*, cube, 
     if (va < v) {
         MTBDD low = node_getlow(mtbdd, na);
         MTBDD high = node_gethigh(mtbdd, na);
-        SPAWN(mtbdd_union_cube, high, vars, cube, terminal);
+        mtbdd_refs_spawn(SPAWN(mtbdd_union_cube, high, vars, cube, terminal));
         BDD new_low = mtbdd_union_cube(low, vars, cube, terminal);
         mtbdd_refs_push(new_low);
-        BDD new_high = SYNC(mtbdd_union_cube);
+        BDD new_high = mtbdd_refs_sync(SYNC(mtbdd_union_cube));
         mtbdd_refs_pop(1);
         if (new_low != low || new_high != high) return mtbdd_makenode(va, new_low, new_high);
         else return mtbdd;
@@ -664,10 +664,10 @@ TASK_IMPL_4(MTBDD, mtbdd_union_cube, MTBDD, mtbdd, MTBDD, vars, uint8_t*, cube, 
         }
         case 2:
         {
-            SPAWN(mtbdd_union_cube, high, node_gethigh(vars, nv), cube+1, terminal);
+            mtbdd_refs_spawn(SPAWN(mtbdd_union_cube, high, node_gethigh(vars, nv), cube+1, terminal));
             MTBDD new_low = mtbdd_union_cube(low, node_gethigh(vars, nv), cube+1, terminal);
             mtbdd_refs_push(new_low);
-            MTBDD new_high = SYNC(mtbdd_union_cube);
+            MTBDD new_high = mtbdd_refs_sync(SYNC(mtbdd_union_cube));
             mtbdd_refs_pop(1);
             if (new_low != low || new_high != high) return mtbdd_makenode(v, new_low, new_high);
             return mtbdd;
@@ -693,10 +693,10 @@ TASK_IMPL_4(MTBDD, mtbdd_union_cube, MTBDD, mtbdd, MTBDD, vars, uint8_t*, cube, 
         }
         case 2:
         {
-            SPAWN(mtbdd_union_cube, mtbdd, node_gethigh(vars, nv), cube+1, terminal);
+            mtbdd_refs_spawn(SPAWN(mtbdd_union_cube, mtbdd, node_gethigh(vars, nv), cube+1, terminal));
             MTBDD new_low = mtbdd_union_cube(mtbdd, node_gethigh(vars, nv), cube+1, terminal);
             mtbdd_refs_push(new_low);
-            MTBDD new_high = SYNC(mtbdd_union_cube);
+            MTBDD new_high = mtbdd_refs_sync(SYNC(mtbdd_union_cube));
             mtbdd_refs_pop(1);
             return mtbdd_makenode(v, new_low, new_high);
         }

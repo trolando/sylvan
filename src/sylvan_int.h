@@ -114,6 +114,20 @@ static const uint64_t CACHE_ZDD_NOT                 = (88LL<<40);
 static const uint64_t CACHE_ZDD_DIFF                = (89LL<<40);
 static const uint64_t CACHE_ZDD_EXISTS              = (90LL<<40);
 static const uint64_t CACHE_ZDD_PROJECT             = (91LL<<40);
+static const uint64_t CACHE_ZDD_CLAUSE_ENVIRONMENT  = (92LL<<40);
+static const uint64_t CACHE_ZDD_CLAUSE_SAT          = (93LL<<40);
+static const uint64_t CACHE_ZDD_CLAUSE_SUPPORT      = (94LL<<40);
+static const uint64_t CACHE_ZDD_CLAUSE_ISOC         = (95LL<<40);
+static const uint64_t CACHE_ZDD_CLAUSE_UP           = (96LL<<40);
+static const uint64_t CACHE_ZDD_CLAUSE_EXPAND       = (97LL<<40);
+static const uint64_t CACHE_ZDD_CLAUSE_SUBSUME      = (98LL<<40);
+static const uint64_t CACHE_ZDD_CLAUSE_SELF_SUBSUME = (99LL<<40);
+static const uint64_t CACHE_ZDD_CLAUSE_OR           = (100LL<<40);
+static const uint64_t CACHE_ZDD_CLAUSE_UNION        = (101LL<<40);
+static const uint64_t CACHE_ZDD_CLAUSE_DISTRIBUTION = (102LL<<40);
+static const uint64_t CACHE_ZDD_CLAUSE_INTERSECT    = (103LL<<40);
+static const uint64_t CACHE_ZDD_CLAUSE_COF          = (104LL<<40);
+static const uint64_t CACHE_ZDD_CLAUSE_QMC          = (105LL<<40);
 
 #ifdef __cplusplus
 }

@@ -209,6 +209,127 @@ TASK_DECL_4(ZDD, zdd_union_cube, ZDD, ZDD, uint8_t*, ZDD);
 #define zdd_union_cube(set, variables, values, leaf) RUN(zdd_union_cube, set, variables, values, leaf)
 
 /**
+ * zdd_cube, but for clauses...
+ * Add a clause, using a standard encoding: -1, 1, -2, 2, -3, 3, starting from 2n, 2n+1
+ * Literals must be ordered by variable, no variable twice, ending with 0
+ */
+ZDD zdd_clause(int32_t* clause);
+
+/**
+ * zdd_union_cube, but for clauses...
+ */
+TASK_DECL_2(ZDD, zdd_add_clause, ZDD, int32_t*);
+#define zdd_add_clause(set, clause) CALL(zdd_add_clause, set, clause)
+
+/**
+ * zdd_union_cube, but for clauses...
+ * subsumption-free
+ */
+TASK_DECL_2(ZDD, zdd_add_clause_sf, ZDD, int32_t*);
+#define zdd_add_clause_sf(set, clause) CALL(zdd_add_clause_sf, set, clause)
+
+/**
+ */
+TASK_DECL_2(ZDD, zdd_clause_subsume, ZDD, ZDD);
+#define zdd_clause_subsume(a, b) CALL(zdd_clause_subsume, a, b)
+
+/**
+ */
+TASK_DECL_1(ZDD, zdd_clause_self_subsume, ZDD);
+#define zdd_clause_self_subsume(set) CALL(zdd_clause_self_subsume, set)
+
+/**
+ * Return all clauses that have at least one of the (ZDD) variables in the given set
+ */
+TASK_DECL_2(ZDD, zdd_clause_environment, ZDD, ZDD);
+#define zdd_clause_environment(set, vars) CALL(zdd_clause_environment, set, vars)
+
+/**
+ * Propagate units (simple version)
+ */
+TASK_DECL_2(ZDD, zdd_clause_up, ZDD, ZDD);
+#define zdd_clause_up(set, cube) CALL(zdd_clause_up, set, cube)
+
+/**
+ * Compute the BDD of all assignments that match the given clauses,
+ * given an invariant (default True)
+ */
+TASK_DECL_2(MTBDD, zdd_clause_sat, ZDD, MTBDD);
+#define zdd_clause_sat(set, inv) CALL(zdd_clause_sat, set, inv)
+
+/**
+ * Compute the irredundant set of clauses for given lower and upper bounds
+ */
+TASK_DECL_3(ZDD, zdd_clause_isoc, MTBDD, MTBDD, MTBDD*);
+#define zdd_clause_isoc(lower, upper, resultptr) CALL(zdd_clause_isoc, lower, upper, resultptr)
+
+/**
+ * Blow up clause set
+ */
+TASK_DECL_1(ZDD, zdd_clause_expand, ZDD);
+#define zdd_clause_expand(set) CALL(zdd_clause_expand, set)
+
+/**
+ * Extract all unit clauses from a set of clauses into literal cube
+ */
+TASK_DECL_1(ZDD, zdd_clause_units, ZDD);
+#define zdd_clause_units(set) CALL(zdd_clause_units, set)
+
+/**
+ * Compute logical OR of <a> and <b> for clauses.
+ */
+TASK_DECL_2(ZDD, zdd_clause_or, ZDD, ZDD);
+#define zdd_clause_or(a, b) CALL(zdd_clause_or, a, b)
+
+
+TASK_DECL_2(ZDD, zdd_clause_union, ZDD, ZDD);
+#define zdd_clause_union(a, b) CALL(zdd_clause_union, a, b)
+
+TASK_DECL_2(ZDD, zdd_clause_distribution, ZDD, ZDD);
+#define zdd_clause_distribution(a, b) CALL(zdd_clause_distribution, a, b)
+
+/**
+ * Implementation of the AND operator for Boolean ZDDs
+ */
+TASK_DECL_2(ZDD, zdd_clause_intersect, ZDD, ZDD);
+#define zdd_clause_intersect(a, b) CALL(zdd_clause_intersect, a, b)
+
+TASK_DECL_2(ZDD, zdd_clause_cof, ZDD, uint32_t);
+#define zdd_clause_cof(dd, var) CALL(zdd_clause_cof, dd, var)
+
+/**
+ * Quine-McCluskey style resolution...
+ * (merge all clauses of the form C,x C,!x)
+ */
+TASK_DECL_1(ZDD, zdd_clause_qmc, ZDD);
+#define zdd_clause_qmc(a) CALL(zdd_clause_qmc, a)
+
+/**
+ * Check whether the set of literals contains a contradiction, i.e.,
+ * both the negative and positive literal of a variable.
+ * Returns 1 if this is the case, 0 otherwise.
+ */
+int zdd_clause_units_contradict(ZDD set);
+
+/**
+ * Enumerate clauses
+ * <arr> must be a sufficiently large pre-allocated array
+ */
+ZDD zdd_clause_enum_first(ZDD dd, int32_t *arr);
+ZDD zdd_clause_enum_next(ZDD dd, int32_t *arr);
+
+/**
+ * Compute the set of variables involved in a set of clauses
+ */
+TASK_DECL_1(ZDD, zdd_clause_support, ZDD);
+#define zdd_clause_support(set) CALL(zdd_clause_support, set)
+
+/**
+ * Given the support (zdd_support) of a set of clauses, compute the pure literals
+ */
+ZDD zdd_clause_pure(ZDD support);
+
+/**
  * Extend the domain of a ZDD, such that all new variables take the given value.
  * The given value can be 0 (always negative), 1 (always positive), 2 (always dontcare)
  */

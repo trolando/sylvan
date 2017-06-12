@@ -237,6 +237,35 @@ TASK_0(int, test_zdd_union_cube)
     return 0;
 }
 
+TASK_0(int, test_zdd_add_clause)
+{
+    /**
+     * Test zdd_add_clause with random clauses
+     */
+
+    int nmax = rng(10, 25); // random max variables
+    int32_t arr[nmax+1];
+
+    ZDD set = zdd_false; // start with empty set
+    int count = rng(200, 500); // random number of clauses
+    for (int i=0; i<count; i++) {
+        int n = 0;
+        for (int j=1; j<nmax; j++) {
+            int v = rng(0, 6);
+            if (v == 0) arr[n++] = -j;
+            else if (v == 1) arr[n++] = j;
+        }
+        assert(n <= nmax);
+        arr[n++] = 0;
+        ZDD clause = zdd_clause(arr);
+        ZDD test = zdd_or(set, clause);
+        set = zdd_add_clause(set, arr);
+        test_assert(test == set);
+    }
+
+    return 0;
+}
+
 TASK_0(int, test_zdd_satcount)
 {
     /**
@@ -712,6 +741,8 @@ TASK_0(int, runtests)
     printf("test_zdd_read_write...\n");
     for (int k=0; k<test_iterations; k++) if (CALL(test_zdd_read_write)) return 1;
     // for (int k=0; k<test_iterations; k++) if (CALL(test_zdd_extend_domain)) return 1;
+    printf("test_zdd_add_clause...\n");
+    for (int k=0; k<test_iterations; k++) if (CALL(test_zdd_add_clause)) return 1;
 
     return 0;
 }

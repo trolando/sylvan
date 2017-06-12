@@ -133,11 +133,17 @@ VOID_TASK_0(lddmc_gc_mark_protected)
 }
 
 /* Infrastructure for internal markings */
+typedef struct lddmc_refs_task
+{
+    Task *t;
+    void *f;
+} *lddmc_refs_task_t;
+
 typedef struct lddmc_refs_internal
 {
     const MDD **pbegin, **pend, **pcur;
     MDD *rbegin, *rend, *rcur;
-    Task **sbegin, **send, **scur;
+    lddmc_refs_task_t sbegin, send, scur;
 } *lddmc_refs_internal_t;
 
 DECLARE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
@@ -170,19 +176,20 @@ VOID_TASK_2(lddmc_refs_mark_r_par, MDD*, begin, size_t, count)
     }
 }
 
-VOID_TASK_2(lddmc_refs_mark_s_par, Task**, begin, size_t, count)
+VOID_TASK_2(lddmc_refs_mark_s_par, lddmc_refs_task_t, begin, size_t, count)
 {
     if (count < 32) {
         while (count) {
-            Task *t = *begin++;
+            Task *t = begin->t;
             if (!TASK_IS_STOLEN(t)) return;
-            if (TASK_IS_COMPLETED(t)) {
+            if (t->f == begin->f && TASK_IS_COMPLETED(t)) {
                 lddmc_gc_mark_rec(*(BDD*)TASK_RESULT(t));
             }
-            count--;
+            begin += 1;
+            count -= 1;
         }
     } else {
-        if (!TASK_IS_STOLEN((*begin))) return;
+        if (!TASK_IS_STOLEN(begin->t)) return;
         SPAWN(lddmc_refs_mark_s_par, begin, count / 2);
         CALL(lddmc_refs_mark_s_par, begin + (count / 2), count - count / 2);
         SYNC(lddmc_refs_mark_s_par);
@@ -211,7 +218,7 @@ VOID_TASK_0(lddmc_refs_init_task)
     s->pend = s->pbegin + 1024;
     s->rcur = s->rbegin = (MDD*)malloc(sizeof(MDD) * 1024);
     s->rend = s->rbegin + 1024;
-    s->scur = s->sbegin = (Task**)malloc(sizeof(Task*) * 1024);
+    s->scur = s->sbegin = (lddmc_refs_task_t)malloc(sizeof(struct lddmc_refs_task) * 1024);
     s->send = s->sbegin + 1024;
     SET_THREAD_LOCAL(lddmc_refs_key, s);
 }
@@ -246,7 +253,7 @@ void __attribute__((noinline))
 lddmc_refs_tasks_up(lddmc_refs_internal_t lddmc_refs_key)
 {
     long size = lddmc_refs_key->send - lddmc_refs_key->sbegin;
-    lddmc_refs_key->sbegin = (Task**)realloc(lddmc_refs_key->sbegin, sizeof(Task*) * size * 2);
+    lddmc_refs_key->sbegin = (lddmc_refs_task_t)realloc(lddmc_refs_key->sbegin, sizeof(struct lddmc_refs_task) * size * 2);
     lddmc_refs_key->scur = lddmc_refs_key->sbegin + size;
     lddmc_refs_key->send = lddmc_refs_key->sbegin + (size * 2);
 }
@@ -286,7 +293,9 @@ void __attribute__((unused))
 lddmc_refs_spawn(Task *t)
 {
     LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
-    *(lddmc_refs_key->scur++) = t;
+    lddmc_refs_key->scur->t = t;
+    lddmc_refs_key->scur->f = t->f;
+    lddmc_refs_key->scur += 1;
     if (lddmc_refs_key->scur == lddmc_refs_key->send) lddmc_refs_tasks_up(lddmc_refs_key);
 }
 

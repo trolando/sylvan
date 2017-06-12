@@ -192,11 +192,17 @@ VOID_TASK_0(mtbdd_gc_mark_protected)
 }
 
 /* Infrastructure for internal markings */
+typedef struct mtbdd_refs_task
+{
+    Task *t;
+    void *f;
+} *mtbdd_refs_task_t;
+
 typedef struct mtbdd_refs_internal
 {
     const MTBDD **pbegin, **pend, **pcur;
     MTBDD *rbegin, *rend, *rcur;
-    Task **sbegin, **send, **scur;
+    mtbdd_refs_task_t sbegin, send, scur;
 } *mtbdd_refs_internal_t;
 
 DECLARE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
@@ -229,19 +235,20 @@ VOID_TASK_2(mtbdd_refs_mark_r_par, MTBDD*, begin, size_t, count)
     }
 }
 
-VOID_TASK_2(mtbdd_refs_mark_s_par, Task**, begin, size_t, count)
+VOID_TASK_2(mtbdd_refs_mark_s_par, mtbdd_refs_task_t, begin, size_t, count)
 {
     if (count < 32) {
-        while (count) {
-            Task *t = *begin++;
+        while (count > 0) {
+            Task *t = begin->t;
             if (!TASK_IS_STOLEN(t)) return;
-            if (TASK_IS_COMPLETED(t)) {
-                mtbdd_gc_mark_rec(*(BDD*)TASK_RESULT(t));
+            if (t->f == begin->f && TASK_IS_COMPLETED(t)) {
+                mtbdd_gc_mark_rec(*(MTBDD*)TASK_RESULT(t));
             }
-            count--;
+            begin += 1;
+            count -= 1;
         }
     } else {
-        if (!TASK_IS_STOLEN((*begin))) return;
+        if (!TASK_IS_STOLEN(begin->t)) return;
         SPAWN(mtbdd_refs_mark_s_par, begin, count / 2);
         CALL(mtbdd_refs_mark_s_par, begin + (count / 2), count - count / 2);
         SYNC(mtbdd_refs_mark_s_par);
@@ -270,7 +277,7 @@ VOID_TASK_0(mtbdd_refs_init_task)
     s->pend = s->pbegin + 1024;
     s->rcur = s->rbegin = (MTBDD*)malloc(sizeof(MTBDD) * 1024);
     s->rend = s->rbegin + 1024;
-    s->scur = s->sbegin = (Task**)malloc(sizeof(Task*) * 1024);
+    s->scur = s->sbegin = (mtbdd_refs_task_t)malloc(sizeof(struct mtbdd_refs_task) * 1024);
     s->send = s->sbegin + 1024;
     SET_THREAD_LOCAL(mtbdd_refs_key, s);
 }
@@ -306,7 +313,7 @@ void __attribute__((noinline))
 mtbdd_refs_tasks_up(mtbdd_refs_internal_t mtbdd_refs_key)
 {
     long size = mtbdd_refs_key->send - mtbdd_refs_key->sbegin;
-    mtbdd_refs_key->sbegin = (Task**)realloc(mtbdd_refs_key->sbegin, sizeof(Task*) * size * 2);
+    mtbdd_refs_key->sbegin = (mtbdd_refs_task_t)realloc(mtbdd_refs_key->sbegin, sizeof(struct mtbdd_refs_task) * size * 2);
     mtbdd_refs_key->scur = mtbdd_refs_key->sbegin + size;
     mtbdd_refs_key->send = mtbdd_refs_key->sbegin + (size * 2);
 }
@@ -342,15 +349,17 @@ mtbdd_refs_pop(long amount)
     mtbdd_refs_key->rcur -= amount;
 }
 
-void __attribute__((unused))
+void
 mtbdd_refs_spawn(Task *t)
 {
     LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
-    *(mtbdd_refs_key->scur++) = t;
+    mtbdd_refs_key->scur->t = t;
+    mtbdd_refs_key->scur->f = t->f;
+    mtbdd_refs_key->scur += 1;
     if (mtbdd_refs_key->scur == mtbdd_refs_key->send) mtbdd_refs_tasks_up(mtbdd_refs_key);
 }
 
-MTBDD __attribute__((unused))
+MTBDD
 mtbdd_refs_sync(MTBDD result)
 {
     LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);

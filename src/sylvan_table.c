@@ -121,7 +121,7 @@ llmsset_hash(const uint64_t a, const uint64_t b, const uint64_t seed)
     uint64_t hash = seed;
     hash = (hash ^ a) * prime;
     hash = (hash ^ b) * prime;
-    return hash;
+    return hash ^ (hash>>32);
 }
 
 /*

@@ -303,6 +303,16 @@ sylvan_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cachesiz
     cache_max = max_cachesize;
 }
 
+static char*
+to_h(double size, char *buf)
+{
+    const char* units[] = {"B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"};
+    int i = 0;
+    for (;size>1024;size/=1024) i++;
+    sprintf(buf, "%.*f %s", i, size, units[i]);
+    return buf;
+}
+
 void
 sylvan_set_limits(size_t memorycap, int table_ratio, int initial_ratio)
 {
@@ -354,6 +364,15 @@ sylvan_set_limits(size_t memorycap, int table_ratio, int initial_ratio)
     table_max = max_t;
     cache_min = min_c;
     cache_max = max_c;
+
+    // Report table sizes
+    if (1) {
+        char buf[32];
+        to_h(max_t*24+max_c*36, buf);
+        fprintf(stderr, "Sylvan allocates %s virtual memory for nodes table and operation cache.\n", buf);
+        to_h(min_t*24+min_c*36, buf);
+        fprintf(stderr, "Initial nodes table and operation cache requires %s.\n", buf);
+    }
 }
 
 /**

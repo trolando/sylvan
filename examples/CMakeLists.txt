@@ -37,6 +37,12 @@ target_link_libraries(satdd PRIVATE Sylvan::Sylvan)
 target_compile_features(satdd PRIVATE c_std_11)
 target_compile_options(satdd PRIVATE -Wall -Wextra -Werror -Wno-deprecated)
 
+add_executable(dddrat)
+target_sources(dddrat PRIVATE dddrat.c)
+target_link_libraries(dddrat PRIVATE Sylvan::Sylvan)
+target_compile_features(dddrat PRIVATE c_std_11)
+target_compile_options(dddrat PRIVATE -Wall -Wextra -Werror -Wno-deprecated)
+
 # Check if we have Meddly
 find_library(MEDDLY_FOUND meddly)
 if(MEDDLY_FOUND)
@@ -57,6 +63,7 @@ endif()
 
 # Add profiler to some of the examples, if available
 # In the future, maybe not use gperftools anymore, just Linux perf...
+
 include(CheckIncludeFiles)
 check_include_files("gperftools/profiler.h" HAVE_PROFILER)
 
@@ -84,6 +91,7 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     target_link_libraries(ldd2bdd PRIVATE ${ARGP_LIBRARIES})
     target_link_libraries(nqueens PRIVATE ${ARGP_LIBRARIES})
     target_link_libraries(satdd PRIVATE ${ARGP_LIBRARIES})
+    target_link_libraries(dddrat PRIVATE ${ARGP_LIBRARIES})
 endif()
 
 

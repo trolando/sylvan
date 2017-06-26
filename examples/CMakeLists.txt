@@ -43,6 +43,13 @@ target_link_libraries(dddrat PRIVATE Sylvan::Sylvan)
 target_compile_features(dddrat PRIVATE c_std_11)
 target_compile_options(dddrat PRIVATE -Wall -Wextra -Werror -Wno-deprecated)
 
+add_executable(satve)
+target_sources(satve PRIVATE satve.c getrss.c getrss.h)
+target_include_directories(satve PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(satve PRIVATE Sylvan::Sylvan)
+target_compile_features(satve PRIVATE c_std_11)
+target_compile_options(satve PRIVATE -Wall -Wextra -Werror -Wno-deprecated)
+
 # Check if we have Meddly
 find_library(MEDDLY_FOUND meddly)
 if(MEDDLY_FOUND)
@@ -91,6 +98,7 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     target_link_libraries(ldd2bdd PRIVATE ${ARGP_LIBRARIES})
     target_link_libraries(nqueens PRIVATE ${ARGP_LIBRARIES})
     target_link_libraries(satdd PRIVATE ${ARGP_LIBRARIES})
+    target_link_libraries(satve PRIVATE ${ARGP_LIBRARIES})
     target_link_libraries(dddrat PRIVATE ${ARGP_LIBRARIES})
 endif()
 

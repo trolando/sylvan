@@ -619,10 +619,8 @@ main(int argc, char **argv)
         INFO("After initial unit propagation: %.0lf clauses using %zu nodes.\n", n_clauses, n_nodes);
     }
 
-    ZDD q_isoc = zdd_false;
-    ZDD dist = zdd_false;
-    zdd_refs_pushptr(&q_isoc);
-    zdd_refs_pushptr(&dist);
+    ZDD reduced = zdd_false;
+    zdd_refs_pushptr(&reduced);
 
     ZDD old_db = zdd_false;
     zdd_refs_pushptr(&old_db);
@@ -632,6 +630,97 @@ main(int argc, char **argv)
 
     const double orig_db_clauses = db_clauses;
     const size_t orig_db_nodes = db_nodes;
+
+
+
+    /**
+     * This is of course a totally strange thing
+     */
+
+    for (;;) {
+        ZDD bucket = zdd_false; // empty
+        zdd_refs_pushptr(&bucket);
+
+        for (int i=1; i<=nvars; i++) {
+            /**
+             * Compute the environment of the current variable
+             */
+            ZDD lits = zdd_set_from_array((uint32_t[]){2*i, 2*i+1}, 2);
+            zdd_refs_push(lits);
+            ZDD env = zdd_clause_environment(db, lits);
+            zdd_refs_push(env);
+
+            if (env == zdd_false) {
+                zdd_refs_pop(2);
+                continue;
+            }
+
+            if (useisoc) {
+                /**
+                 * Compute the satisfying assignments for the current environment
+                 */
+                MTBDD sat = zdd_clause_sat(env, mtbdd_true);
+                mtbdd_refs_push(sat);
+
+                /**
+                 * Eliminate variable
+                 */
+                MTBDD quantified = sylvan_exists(sat, sylvan_ithvar(i));
+                mtbdd_refs_push(quantified);
+
+                MTBDD q_check;
+                reduced = zdd_clause_isoc(quantified, quantified, &q_check);
+
+                assert(q_check == quantified);
+                mtbdd_refs_pop(2);
+            } else {
+                ZDD cof_n = zdd_clause_cof(env, 2*i);
+                zdd_refs_push(cof_n);
+                ZDD cof_p = zdd_clause_cof(env, 2*i+1);
+                zdd_refs_push(cof_p);
+                reduced = zdd_clause_distribution(cof_n, cof_p);
+                zdd_refs_pop(2);
+            }
+
+            /**
+             * Add to bucket
+             */
+            bucket = zdd_clause_union(bucket, reduced);
+            zdd_refs_pop(2); // lits, env
+
+            /**
+             * Report
+             */
+            //double bucket_clauses = zdd_satcount(bucket);
+            //size_t bucket_nodes = zdd_nodecount(&bucket, 1);
+            //INFO("\033[1;36mUpdated\033[m var %d/%d %.0f clauses (%zd nodes)\n", i, nvars, bucket_clauses, bucket_nodes);
+        }
+
+        /**
+         * Report
+         */
+        double bucket_clauses = zdd_satcount(bucket);
+        size_t bucket_nodes = zdd_nodecount(&bucket, 1);
+        INFO("After sweep: %.0f clauses (%zd nodes)\n", bucket_clauses, bucket_nodes);
+
+        /**
+         * Make Quine Free
+         */
+
+        db = zdd_clause_union(db, bucket);
+        zdd_refs_popptr(1);
+        INFO("After union: %.0f clauses (%zd nodes)\n", zdd_satcount(db), zdd_nodecount(&db, 1));
+
+        db = zdd_clause_qmc(db);
+        INFO("After QMC-style resolution: %.0f clauses (%zd nodes)\n", zdd_satcount(db), zdd_nodecount(&db, 1));
+    }
+
+
+
+
+
+
+
 
     size_t last_qmc_size = db_nodes;
 
@@ -673,10 +762,10 @@ main(int argc, char **argv)
                 mtbdd_refs_push(quantified);
 
                 MTBDD q_check;
-                q_isoc = zdd_clause_isoc(quantified, quantified, &q_check);
+                reduced = zdd_clause_isoc(quantified, quantified, &q_check);
 
                 if (q_check != quantified) {
-                    MTBDD what = zdd_clause_sat(q_isoc, mtbdd_true);
+                    MTBDD what = zdd_clause_sat(reduced, mtbdd_true);
                     ZDD env_vars = zdd_clause_support(env);
                     zdd_refs_push(env_vars);
                     int n_env_vars = zdd_set_count(env_vars);
@@ -690,12 +779,12 @@ main(int argc, char **argv)
                 zdd_refs_push(cof_n);
                 ZDD cof_p = zdd_clause_cof(env, 2*i+1);
                 zdd_refs_push(cof_p);
-                dist = zdd_clause_distribution(cof_n, cof_p);
+                reduced = zdd_clause_distribution(cof_n, cof_p);
                 zdd_refs_pop(2);
 
                 if (verbose) {
                     //double env_before = zdd_satcount(env);
-                    //double env_after = (useisoc) ? zdd_satcount(q_isoc) : zdd_satcount(dist);
+                    //double env_after = (useisoc) ? zdd_satcount(reduced) : zdd_satcount(reduced);
                     // INFO("From %f (%f X %f) to %f\n.", env_before, zdd_satcount(cof_n), zdd_satcount(cof_p), env_after);
                 }
             }
@@ -705,8 +794,8 @@ main(int argc, char **argv)
              */
             old_db = db;
             db = zdd_diff(db, env);
-            //db = zdd_or(db, useisoc ? q_isoc : dist);
-            db = zdd_clause_union(db, useisoc ? q_isoc : dist);
+            //db = zdd_or(db, reduced);
+            db = zdd_clause_union(db, reduced);
 
             zdd_refs_pop(2); // lits, env
 

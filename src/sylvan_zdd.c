@@ -300,6 +300,7 @@ void __attribute__((noinline))
 zdd_refs_tasks_up(zdd_refs_internal_t zdd_refs_key)
 {
     long size = zdd_refs_key->send - zdd_refs_key->sbegin;
+    printf("up with size %ld\n", size);
     zdd_refs_key->sbegin = (zdd_refs_task_t)realloc(zdd_refs_key->sbegin, sizeof(struct zdd_refs_task) * size * 2);
     zdd_refs_key->scur = zdd_refs_key->sbegin + size;
     zdd_refs_key->send = zdd_refs_key->sbegin + (size * 2);

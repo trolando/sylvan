@@ -15,11 +15,17 @@ static int verbose = 0;
 static int parsetobdd = 0;
 static int tobdd = 0;
 static int useisoc = 0;
-static int qmc = 0;
+static int qmc = -1;
 static int memory = 2048;
+static int bound = 0;
+static int death_threshold = 100;
+static int nodebound = 0;
+static int clausebound = 0;
 static char* cnf_filename = NULL; // filename of CNF
 static char* out_filename = NULL; // filename of output
 static char* dot_filename = NULL; // filename of DOT file
+
+// TODO load/save variable elimination order
 
 /* argp configuration */
 static struct argp_option options[] =
@@ -32,6 +38,8 @@ static struct argp_option options[] =
     {"tobdd", 2, 0, 0, "After parsing CNF, convert to BDD", 0},
     {"isoc", 3, 0, 0, "Use BDD into ISOC to compute variable elimination", 0},
     {"qmc", 4, "<factor>", 0, "Use QMC resolution whenever the ZDD has grown by <factor>", 0},
+    {"nodebound", 5, 0, 0, "Bounded VE based on #nodes", 0},
+    {"clausebound", 6, 0, 0, "Bounded VE based on #clauses", 0},
     {"memory", 'm', "<megabytes>", 0, "How many MB memory for nodes+operations", 0},
     {0, 0, 0, 0, 0, 0}
 };
@@ -66,6 +74,12 @@ parse_opt(int key, char *arg, struct argp_state *state)
         break;
     case 4:
         qmc = atoi(arg);
+        break;
+    case 5:
+        nodebound = 1;
+        break;
+    case 6:
+        clausebound = 1;
         break;
     case ARGP_KEY_ARG:
         if (state->arg_num == 0) cnf_filename = arg;
@@ -155,6 +169,8 @@ TASK_1(ZDD, parse_cnf_file, FILE*, file)
     int last_literal = 0;
     nlits = 0;
 
+    double last_report = 0;
+
     while (1) {
         int ch = fgetc(file);
         /* skip whitespace */
@@ -210,6 +226,16 @@ TASK_1(ZDD, parse_cnf_file, FILE*, file)
             /* increase number of read clauses and reset literal count */
             read_clauses++;
             lits_count = 0;
+            /* report? */
+            if (verbose) {
+                double perc = 100.0*read_clauses/nclauses;
+                // every 5%
+                if ((int)(perc/1) > (int)(last_report/1)) {
+                    INFO("%.2f%% %zu nodes %d clauses\n", perc, zdd_nodecount(&db, 1), read_clauses);
+                    last_report = perc;
+                }
+                (void)last_report;
+            }
         }
         /* set last literal and continue loop */
         last_literal = lit;
@@ -598,126 +624,246 @@ main(int argc, char **argv)
     zdd_refs_pushptr(&q_isoc);
     zdd_refs_pushptr(&dist);
 
-    size_t db_clauses = zdd_satcount(db);
+    ZDD old_db = zdd_false;
+    zdd_refs_pushptr(&old_db);
+
+    double db_clauses = zdd_satcount(db);
     size_t db_nodes = zdd_nodecount(&db, 1);
+
+    const double orig_db_clauses = db_clauses;
+    const size_t orig_db_nodes = db_nodes;
 
     size_t last_qmc_size = db_nodes;
 
-    for (int i=1; i<=nvars; i++) {
-        /**
-         * Compute the environment of the current variable
-         */
-        ZDD lits = zdd_set_from_array((uint32_t[]){2*i, 2*i+1}, 2);
-        zdd_refs_push(lits);
-        ZDD env = zdd_clause_environment(db, lits);
-        zdd_refs_push(env);
+    int elim_total = 0;
+    int i = 1;
 
-        if (useisoc) {
-            /**
-             * Compute the satisfying assignments for the current environment
-             */
-            MTBDD sat = zdd_clause_sat(env, mtbdd_true);
-            mtbdd_refs_push(sat);
+    for (;;) {
+        int minbound = -1;
+        int mini = 1;
+        int elim=0;
 
-            /**
-             * Eliminate variable
-             */
-            MTBDD quantified = sylvan_exists(sat, sylvan_ithvar(i));
-            mtbdd_refs_push(quantified);
-
-            MTBDD q_check;
-            q_isoc = zdd_clause_isoc(quantified, quantified, &q_check);
-
-            if (q_check != quantified) {
-                MTBDD what = zdd_clause_sat(q_isoc, mtbdd_true);
-                ZDD env_vars = zdd_clause_support(env);
-                zdd_refs_push(env_vars);
-                int n_env_vars = zdd_set_count(env_vars);
-                printf("uh oh %zx %zx %zx\n", q_check, what, quantified);
-                printf("qcheck/what has %f, quantified %f minterms", mtbdd_satcount(what, n_env_vars), mtbdd_satcount(quantified, n_env_vars));
-                assert(q_check == quantified);
-            }
-            mtbdd_refs_pop(2);
-        } else {
-            ZDD cof_n = zdd_clause_cof(env, 2*i);
-            zdd_refs_push(cof_n);
-            ZDD cof_p = zdd_clause_cof(env, 2*i+1);
-            zdd_refs_push(cof_p);
-            dist = zdd_clause_distribution(cof_n, cof_p);
-            zdd_refs_pop(2);
+        if (bound != 0) {
+            if (clausebound) INFO("Running loop with clause bound=%d\n", bound);
+            else if (nodebound) INFO("Running loop with node bound=%d\n", bound);
         }
 
-        /**
-         * Now replace clauses
-         */
-        db = zdd_diff(db, env);
-        if (useisoc) db = zdd_or(db, q_isoc);
-        else db = zdd_or(db, dist);
+        for (; i<=nvars; i++) {
+            /**
+             * Compute the environment of the current variable
+             */
+            ZDD lits = zdd_set_from_array((uint32_t[]){2*i, 2*i+1}, 2);
+            zdd_refs_push(lits);
+            ZDD env = zdd_clause_environment(db, lits);
+            zdd_refs_push(env);
 
-        zdd_refs_pop(2); // lits, env
+            if (env == zdd_false) continue; // TODO: not ideal, remember
 
-        // Find all unit clauses in the clause database
-        units = zdd_clause_units(db);
-        if (units == zdd_false) {
-            Abort("The empty clause has been found!\n");
-        }
+            if (useisoc) {
+                /**
+                 * Compute the satisfying assignments for the current environment
+                 */
+                MTBDD sat = zdd_clause_sat(env, mtbdd_true);
+                mtbdd_refs_push(sat);
 
-        /**
-         * Propagate units
-         */
-        if (units != zdd_true) {
-            // Repeat until no more new units are found
-            while (units != zdd_true) {
-                if (verbose) INFO("Found %zu new units!\n", zdd_set_count(units));
-                // Add the new units to all_units and check for contradictions
-                all_units = zdd_set_union(all_units, units);
-                if (zdd_clause_units_contradict(all_units)) {
-                    Abort("Units contradict! Aborting. (UNSAT)\n");
+                /**
+                 * Eliminate variable
+                 */
+                MTBDD quantified = sylvan_exists(sat, sylvan_ithvar(i));
+                mtbdd_refs_push(quantified);
+
+                MTBDD q_check;
+                q_isoc = zdd_clause_isoc(quantified, quantified, &q_check);
+
+                if (q_check != quantified) {
+                    MTBDD what = zdd_clause_sat(q_isoc, mtbdd_true);
+                    ZDD env_vars = zdd_clause_support(env);
+                    zdd_refs_push(env_vars);
+                    int n_env_vars = zdd_set_count(env_vars);
+                    printf("uh oh %zx %zx %zx\n", q_check, what, quantified);
+                    printf("qcheck/what has %f, quantified %f minterms", mtbdd_satcount(what, n_env_vars), mtbdd_satcount(quantified, n_env_vars));
+                    assert(q_check == quantified);
                 }
-                // Then perform unit propagation of the new units
-                db = zdd_clause_up(db, units);
-                // See if there are new units now
-                units = zdd_clause_units(db);
-                if (units == zdd_false) {
-                    Abort("The empty clause has been found! Aborting. (UNSAT)\n");
+                mtbdd_refs_pop(2);
+            } else {
+                ZDD cof_n = zdd_clause_cof(env, 2*i);
+                zdd_refs_push(cof_n);
+                ZDD cof_p = zdd_clause_cof(env, 2*i+1);
+                zdd_refs_push(cof_p);
+                dist = zdd_clause_distribution(cof_n, cof_p);
+                zdd_refs_pop(2);
+
+                if (verbose) {
+                    //double env_before = zdd_satcount(env);
+                    //double env_after = (useisoc) ? zdd_satcount(q_isoc) : zdd_satcount(dist);
+                    // INFO("From %f (%f X %f) to %f\n.", env_before, zdd_satcount(cof_n), zdd_satcount(cof_p), env_after);
                 }
             }
-        }
 
-        size_t old_db_clauses = db_clauses, old_db_nodes = db_nodes;
-        db_clauses = zdd_satcount(db);
-        db_nodes = zdd_nodecount(&db, 1);
+            /**
+             * Now replace clauses but only if within bound
+             */
+            old_db = db;
+            db = zdd_diff(db, env);
+            //db = zdd_or(db, useisoc ? q_isoc : dist);
+            db = zdd_clause_union(db, useisoc ? q_isoc : dist);
 
-        INFO("Eliminated % 4d of % 4d from %zd to %zd clauses (%zd to %zd nodes)\n", i, nvars, old_db_clauses, db_clauses, old_db_nodes, db_nodes);
+            zdd_refs_pop(2); // lits, env
 
-        /**
-         * Make quine Free
-         */
+            // Find all unit clauses in the clause database
+            units = zdd_clause_units(db);
+            if (units == zdd_false) {
+                Abort("The empty clause has been found!\n");
+            }
 
-        (void)last_qmc_size;
-        if (1) {//qmc && (last_qmc_size*qmc < db_nodes)) {
-            db = zdd_clause_qmc(db);
-            old_db_clauses = db_clauses;
-            old_db_nodes = db_nodes;
+            /**
+             * Propagate units
+             */
+            if (units != zdd_true) {
+                // Repeat until no more new units are found
+                while (units != zdd_true) {
+                    if (verbose) INFO("Found %zu new units!\n", zdd_set_count(units));
+                    // Add the new units to all_units and check for contradictions
+                    all_units = zdd_set_union(all_units, units);
+                    if (zdd_clause_units_contradict(all_units)) {
+                        Abort("Units contradict! Aborting. (UNSAT)\n");
+                    }
+                    // Then perform unit propagation of the new units
+                    db = zdd_clause_up(db, units);
+                    // See if there are new units now
+                    units = zdd_clause_units(db);
+                    if (units == zdd_false) {
+                        Abort("The empty clause has been found! Aborting. (UNSAT)\n");
+                    }
+                }
+            }
+
+            /**
+             * Make Quine Free
+             */
+
+            (void)last_qmc_size;
+            if (qmc != -1 && (last_qmc_size*qmc < db_nodes)) {
+                ZDD older_db = db;
+                db = zdd_clause_qmc(db);
+                double new_db_clauses = zdd_satcount(db);
+                size_t new_db_nodes = zdd_nodecount(&db, 1);
+
+                if (db_nodes < new_db_nodes ){
+                    if (verbose) INFO("Skip QMC-style resolution (%.0f to %.0f clauses, %zd to %zd nodes).\n", db_clauses, new_db_clauses, db_nodes, new_db_nodes);
+                    db = older_db;
+                } else if (db_clauses != new_db_clauses || db_nodes != new_db_nodes) {
+                    if (verbose) INFO("After QMC-style resolution: from %.0f to %.0f clauses (%zd to %zd nodes)\n", db_clauses, new_db_clauses, db_nodes, new_db_nodes);
+                } else {
+                    if (verbose) INFO("Skip QMC-style resolution (no change).\n");
+                }
+
+                last_qmc_size = db_nodes;
+            }
+
+            double old_db_clauses = db_clauses;
+            size_t old_db_nodes = db_nodes;
             db_clauses = zdd_satcount(db);
             db_nodes = zdd_nodecount(&db, 1);
 
-            if (old_db_clauses != db_clauses || old_db_nodes != db_nodes) {
-                INFO("After QMC-style resolution: from %zd to %zd clauses (%zd to %zd nodes)\n", old_db_clauses, db_clauses, old_db_nodes, db_nodes);
+            /**
+             * Test bound
+             */
+            if (clausebound && (db_clauses > old_db_clauses && (int)(db_clauses - old_db_clauses) > bound)) {
+                db = old_db;
+                if (verbose) INFO("Skipped (bound=%d) % 4d of % 4d from %.0f to %.0f clauses (%zd to %zd nodes)\n", bound, i, nvars, old_db_clauses, db_clauses, old_db_nodes, db_nodes);
+                if (minbound == -1 || minbound > (int)(db_clauses-old_db_clauses)) {
+                    minbound = db_clauses-old_db_clauses;
+                    mini = i;
+                }
+                old_db = zdd_false; // deref
+                db_clauses = old_db_clauses;
+                db_nodes = old_db_nodes;
+                continue;
+            } else if (nodebound && (db_nodes > old_db_nodes && (int)(db_nodes - old_db_nodes) > bound)) {
+                db = old_db;
+                if (verbose) INFO("Skipped (bound=%d) % 4d of % 4d from %.0f to %.0f clauses (%zd to %zd nodes)\n", bound, i, nvars, old_db_clauses, db_clauses, old_db_nodes, db_nodes);
+                if (minbound == -1 || minbound > (int)(db_nodes-old_db_nodes)) {
+                    minbound = db_nodes-old_db_nodes;
+                    mini = i;
+                }
+                old_db = zdd_false; // deref
+                db_clauses = old_db_clauses;
+                db_nodes = old_db_nodes;
+                continue;
             } else {
-                INFO("After QMC-style resolution: no change\n");
+                INFO("\033[1;36mEliminated\033[m var %d (%d/%d) from %g to %g clauses (%zd to %zd nodes)\n", i, elim_total+1, nvars, old_db_clauses, db_clauses, old_db_nodes, db_nodes);
+                old_db = zdd_false; // deref
+                elim++;
+                elim_total++;
             }
 
-            last_qmc_size = db_nodes;
+            /**
+             * Make Quine Free
+             */
+
+            /*
+            (void)last_qmc_size;
+            if (1){//qmc && (last_qmc_size*qmc < db_nodes)) {
+                old_db = db;
+                db = zdd_clause_qmc(db);
+                old_db_clauses = db_clauses;
+                old_db_nodes = db_nodes;
+                db_clauses = zdd_satcount(db);
+                db_nodes = zdd_nodecount(&db, 1);
+
+                if (old_db_nodes < db_nodes ){
+                    INFO("After QMC-style resolution: skip from %f to %f clauses, %zd to %zd nodes.\n", old_db_clauses, db_clauses, old_db_nodes, db_nodes);
+                    db = old_db;
+                    db_clauses = old_db_clauses;
+                    db_nodes = old_db_nodes;
+                } else if (old_db_clauses != db_clauses || old_db_nodes != db_nodes) {
+                    INFO("After QMC-style resolution: from %f to %f clauses (%zd to %zd nodes)\n", old_db_clauses, db_clauses, old_db_nodes, db_nodes);
+                } else {
+                    INFO("After QMC-style resolution: no change\n");
+                }
+
+                old_db = zdd_false;
+
+                last_qmc_size = db_nodes;
+            }*/
+
+            if (verbose) print_memory_usage();
+
+            /**
+             * Check death condition
+             */
+            // if (orig_db_clauses * death_threshold < db_clauses) Abort("Reached %zu > %d*%zu (total elim=%d)\n", db_clauses, death_threshold, orig_db_clauses, elim_total);
+            (void)death_threshold;
+
+            if (1) break;
         }
 
-        if (verbose) print_memory_usage();
+        if (db == zdd_true) {
+            INFO("Empty clause!\n");
+            break;
+        }
+
+        assert(elim != 0 || minbound != -1);
+
+        if (!elim) {
+            bound = minbound;
+            i = mini;
+        } else {
+            bound = 0;
+            i = 1;
+        }
+
+        assert(bound >= 0);
     }
 
     // Report Sylvan statistics (if SYLVAN_STATS is set)
     if (verbose) sylvan_stats_report(stdout);
 
     zdd_refs_popptr(5);
+
+    (void)orig_db_nodes;
+    (void)orig_db_clauses;
 
     return 0;
 }

@@ -8,6 +8,7 @@
 
 #include <getrss.h>
 #include <sylvan_int.h>
+#include <sylvan_sl.h>
 
 /**
  * TODO
@@ -34,6 +35,7 @@ static char* out_filename = NULL; // filename of output
 static char* dot_filename = NULL; // filename of DOT file
 static char* trace_filename = NULL; // filename of trace file
 static char* tracein_filename = NULL; // filename of trace file
+static char* enc_filename = NULL; // re-encode CNF from ZDD
 
 /* argp configuration */
 static struct argp_option options[] =
@@ -56,6 +58,7 @@ static struct argp_option options[] =
     {"trace", 't', "<trace file>", 0, "Write action trace to file", 4},
     {"tracein", 'i', "<trace file>", 0, "Read action trace from file", 4},
     {"output", 'o', "<output file>", 0, "Write result to CNF", 4},
+    {"reencode", 'r', "<reencode file>", 0, "After preprocessing, re-encode CNF from ZDD", 4},
     {0, 0, 0, 0, 0, 0}
 };
 
@@ -83,6 +86,9 @@ parse_opt(int key, char *arg, struct argp_state *state)
         break;
     case 'i':
         tracein_filename =arg;
+        break;
+    case 'r':
+        enc_filename = arg;
         break;
     case 1:
         parsetobdd = 1;
@@ -874,6 +880,49 @@ main(int argc, char **argv)
         db = zdd_clause_qmc(db);
         INFO("After QMC-style resolution: %.0f clauses (%zd nodes)\n", zdd_satcount(db), zdd_nodecount(&db, 1));
     }
+    
+    /**
+     * After inflation, maybe write the ZDD-CNF encoding?
+     * There are <nvars> (1..2..n)
+     * Encode "false" with variable n+1
+     * Encode "true" with variable n+2
+     */
+    if (enc_filename) {
+        FILE* f = fopen(enc_filename, "w");
+        // get number of nodes...
+        size_t n_nodes = zdd_nodecount(&db, 1);
+        sylvan_skiplist_t sl = sylvan_skiplist_alloc(n_nodes);
+        zdd_writer_add(sl, db);
+        size_t sl_count = sylvan_skiplist_count(sl);
+        // number of clauses is 3 + 2*sl_count
+        // number of variables is nvars + sl_count + 2
+        fprintf(f, "p cnf %zu %zu\n", nvars+sl_count+2, 3+2*sl_count);
+        // encode root
+        fprintf(f, "%d 0\n", nvars + 2 + (int)sylvan_skiplist_get(sl, db));
+        // encode false as positive <nvars+1>
+        fprintf(f, "%d 0\n", nvars + 1);
+        // encode true as negative <nvars+2>
+        fprintf(f, "%d 0\n", -(nvars + 2));
+        // encode each node
+        // THEN as -<node> <lit> <thennode>
+        // ELSE as -<node> <elsenode>
+        for (size_t i=1; i<=sl_count; i++) {
+            ZDD dd = sylvan_skiplist_getr(sl, i);
+            int nodevar = nvars + 2 + i;
+            int cnfvar = zdd_getvar(dd);
+            cnfvar = (cnfvar&1) ? cnfvar/2+1 : -1*(cnfvar/2+1);
+            ZDD dd1 = zdd_gethigh(dd);
+            ZDD dd0 = zdd_getlow(dd);
+            int thennodevar = dd1 == zdd_false ? nvars+1 : dd1 == zdd_true ? nvars+2 : nvars + 2 + (int)sylvan_skiplist_get(sl, dd1);
+            int elsenodevar = dd0 == zdd_false ? nvars+1 : dd0 == zdd_true ? nvars+2 : nvars + 2 + (int)sylvan_skiplist_get(sl, dd0);
+            fprintf(f, "%d %d %d 0\n", -nodevar, cnfvar, thennodevar);
+            fprintf(f, "%d %d 0\n", -nodevar, elsenodevar);
+        }
+        sylvan_skiplist_free(sl);
+        fclose(f);
+        INFO("Re-encoded ZDD to CNF %s\n", enc_filename);
+        return 0;
+    }
 
     size_t last_qmc_size = db_nodes;
 
@@ -885,12 +934,11 @@ main(int argc, char **argv)
         if (fin == NULL) Abort("cannot read tracein file");
         while (!feof(fin)) {
             int i = 0;
-            char ch;
-            while (!feof(fin)) {
-                ch = fgetc(fin);
+            int ch;
+            while ((ch = fgetc(fin)) != EOF) {
                 if (ch != ' ' && ch != '\n') break;
             }
-            if (feof(fin)) break;
+            if (ch == EOF) break;
             if (ch == 'q') {
                 db = zdd_clause_qmc(db);
                 db_clauses = zdd_satcount(db);

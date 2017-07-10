@@ -41,9 +41,8 @@ option(BUILD_STATIC_LIBS "Enable/disable creation of static libraries" ON)
 add_library(sylvan ${SOURCES})
 
 find_package(GMP REQUIRED)
-find_package(Hwloc REQUIRED)
 
-target_link_libraries(sylvan m pthread ${GMP_LIBRARIES} ${HWLOC_LIBRARIES})
+target_link_libraries(sylvan m pthread ${GMP_LIBRARIES})
 
 if(UNIX AND NOT APPLE)
     target_link_libraries(sylvan rt)

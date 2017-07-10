@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+#define _GNU_SOURCE
 #include <errno.h> // for errno
 #include <sched.h> // for sched_getaffinity
 #include <stdio.h>  // for fprintf
@@ -27,7 +28,16 @@
 #include <assert.h>
 
 #include <lace.h>
+
+#if LACE_USE_HWLOC
 #include <hwloc.h>
+
+/**
+ * HWLOC information
+ */
+static hwloc_topology_t topo;
+static unsigned int n_nodes, n_cores, n_pus;
+#endif
 
 /**
  * (public) Worker data
@@ -39,12 +49,6 @@ static Worker **workers = NULL;
  */
 static size_t default_stacksize = 0; // 0 means "set by lace_init"
 static size_t default_dqsize = 100000;
-
-/**
- * HWLOC information
- */
-static hwloc_topology_t topo;
-static unsigned int n_nodes, n_cores, n_pus;
 
 /**
  * Verbosity flag, set with lace_set_verbosity
@@ -278,9 +282,10 @@ lace_barrier_destroy()
 /**
  * For debugging purposes, check if memory is allocated on the correct memory nodes.
  */
-static void
+static void __attribute__((unused))
 lace_check_memory(void)
 {
+#if LACE_USE_HWLOC
     // get our current worker
     WorkerP *w = lace_get_worker();
     void* mem = workers_memory[w->worker];
@@ -326,11 +331,13 @@ lace_check_memory(void)
     hwloc_bitmap_free(cpuset);
     hwloc_bitmap_free(cpunodes);
     hwloc_bitmap_free(memlocation);
+#endif
 }
 
 void
 lace_pin_worker(void)
 {
+#if LACE_USE_HWLOC
     // Get our worker
     unsigned int worker = lace_get_worker()->worker;
 
@@ -382,6 +389,7 @@ lace_pin_worker(void)
 
     // Check if everything is on the correct node
     lace_check_memory();
+#endif
 }
 
 void
@@ -416,7 +424,11 @@ lace_init_worker(unsigned int worker)
     w->split = w->dq;
     w->allstolen = 0;
     w->worker = worker;
+#if LACE_USE_HWLOC
     w->pu = worker % n_cores;
+#else
+    w->pu = -1;
+#endif
     w->enabled = 1;
     if (workers_init[worker].stack != 0) {
         w->stack_trigger = ((size_t)workers_init[worker].stack) + workers_init[worker].stacksize/20;
@@ -754,6 +766,7 @@ lace_spawn_worker(int worker, size_t stacksize, void* (*fun)(void*), void* arg)
     size_t pagesize = sysconf(_SC_PAGESIZE);
     stacksize = (stacksize + pagesize - 1) & ~(pagesize - 1); // ceil(stacksize, pagesize)
 
+#if LACE_USE_HWLOC
     // Get our logical processor
     hwloc_obj_t pu = hwloc_get_obj_by_type(topo, HWLOC_OBJ_PU, worker % n_pus);
 
@@ -763,6 +776,9 @@ lace_spawn_worker(int worker, size_t stacksize, void* (*fun)(void*), void* arg)
         fprintf(stderr, "Lace error: Unable to allocate memory for the pthread stack!\n");
         exit(1);
     }
+#else
+    void *stack_location = mmap(NULL, stacksize+  pagesize, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+#endif
 
     if (0 != mprotect(stack_location, pagesize, PROT_NONE)) {
         fprintf(stderr, "Lace error: Unable to protect the allocated program stack with a guard page!\n");
@@ -803,6 +819,7 @@ lace_set_verbosity(int level)
 void
 lace_init(unsigned int _n_workers, size_t dqsize)
 {
+#if LACE_USE_HWLOC
     // Initialize topology and information about cpus
     hwloc_topology_init(&topo);
     hwloc_topology_load(topo);
@@ -810,6 +827,14 @@ lace_init(unsigned int _n_workers, size_t dqsize)
     n_nodes = hwloc_get_nbobjs_by_type(topo, HWLOC_OBJ_NODE);
     n_cores = hwloc_get_nbobjs_by_type(topo, HWLOC_OBJ_CORE);
     n_pus = hwloc_get_nbobjs_by_type(topo, HWLOC_OBJ_PU);
+#elif defined(sched_getaffinity)
+    cpu_set_t cs;
+    CPU_ZERO(&cs);
+    sched_getaffinity(0, sizeof(cs), &cs);
+    unsigned int n_pus = CPU_COUNT(&cs);
+#else
+    unsigned int n_pus = sysconf(_SC_NPROCESSORS_ONLN);
+#endif
 
     // Initialize globals
     n_workers = _n_workers == 0 ? n_pus : _n_workers;
@@ -853,7 +878,11 @@ lace_init(unsigned int _n_workers, size_t dqsize)
     }
 
     if (verbosity) {
+#if LACE_USE_HWLOC
         fprintf(stderr, "Initializing Lace, %u nodes, %u cores, %u logical processors, %d workers.\n", n_nodes, n_cores, n_pus, n_workers);
+#else
+        fprintf(stderr, "Initializing Lace, %u available cores, %d workers.\n", n_pus, n_workers);
+#endif
     }
 
     // Prepare lace_init structure

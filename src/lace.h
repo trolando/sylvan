@@ -23,6 +23,18 @@
 #ifndef __LACE_H__
 #define __LACE_H__
 
+#ifdef __has_include
+#  if __has_include("lace_config.h")
+#    include <lace_config.h>
+#  else
+#    define LACE_PIE_TIMES     0
+#    define LACE_COUNT_TASKS   0
+#    define LACE_COUNT_STEALS  0
+#    define LACE_COUNT_SPLITS  0
+#    define LACE_USE_HWLOC     0
+#  endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
@@ -275,23 +287,7 @@ void lace_yield(WorkerP *__lace_worker, Task *__lace_dq_head);
 #endif
 
 #ifndef LACE_LEAP_RANDOM /* Use random leaping when leapfrogging fails */
-#define LACE_LEAP_RANDOM 0
-#endif
-
-#ifndef LACE_PIE_TIMES /* Record time spent stealing and leapfrogging */
-#define LACE_PIE_TIMES 0
-#endif
-
-#ifndef LACE_COUNT_TASKS /* Count number of tasks executed */
-#define LACE_COUNT_TASKS 0
-#endif
-
-#ifndef LACE_COUNT_STEALS /* Count number of steals performed */
-#define LACE_COUNT_STEALS 0
-#endif
-
-#ifndef LACE_COUNT_SPLITS /* Count number of times the split point is moved */
-#define LACE_COUNT_SPLITS 0
+#define LACE_LEAP_RANDOM 1
 #endif
 
 #ifndef LACE_COUNT_EVENTS

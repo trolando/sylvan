@@ -201,9 +201,19 @@ VOID_TASK_DECL_1(llmsset_destroy_unmarked, llmsset_t);
 void llmsset_set_custom(const llmsset_t dbs, llmsset_hash_cb hash_cb, llmsset_equals_cb equals_cb, llmsset_create_cb create_cb, llmsset_destroy_cb destroy_cb);
 
 /**
- * Default hashing function
+ * Default hashing functions.
  */
-uint64_t llmsset_hash(const uint64_t a, const uint64_t b, const uint64_t seed);
+#define llmsset_hash llmsset_tabhash
+
+/**
+ * FNV-1a hash
+ */
+uint64_t llmsset_fnvhash(uint64_t a, uint64_t b, uint64_t seed);
+
+/**
+ * Twisted tabulation hash
+ */
+uint64_t llmsset_tabhash(uint64_t a, uint64_t b, uint64_t seed);
 
 #ifdef __cplusplus
 }

@@ -109,8 +109,81 @@ is_custom_bucket(const llmsset_t dbs, uint64_t index)
     return (*ptr & mask) ? 1 : 0;
 }
 
+/**
+ * This tricks the compiler into generating the bit-wise rotation instruction
+ */
+static uint64_t
+rotr64 (uint64_t n, unsigned int c)
+{
+    return (n >> c) | (n << (64-c));
+}
+
+/**
+ * Pseudo-RNG for initializing the hashtab tables.
+ * Implementation of xorshift128+ by Vigna 2016, which is
+ * based on "Xorshift RNGs", Marsaglia 2003
+ */
+static uint64_t
+xor64(void)
+{
+    // For the initial state of s, we select two numbers:
+    // - the initializer of Marsaglia's original xorshift
+    // - the FNV-1a 64-bit offset basis
+    static uint64_t s[2] = {88172645463325252LLU, 14695981039346656037LLU};
+
+    uint64_t s1 = s[0];
+    const uint64_t s0 = s[1];
+    const uint64_t result = s0 + s1;
+    s[0] = s0;
+    s1 ^= s1 << 23; // a
+    s[1] = s1 ^ s0 ^ (s1 >> 18) ^ (s0 >> 5); // b, c
+    return result;
+}
+
+/**
+ * The table for tabulation hashing
+ */
+static uint64_t hashtab[256*16];
+
+/**
+ * Implementation of (almost) twisted tabulation.
+ * Proposed by e.g. Thorup 2017 "Fast and Powerful Hashing using Tabulation"
+ */
 uint64_t
-llmsset_hash(const uint64_t a, const uint64_t b, const uint64_t seed)
+llmsset_tabhash(uint64_t a, uint64_t b, uint64_t seed)
+{
+    // we use the seed as base
+    uint64_t *t = hashtab;
+    for (int i=0; i<7; i++) {
+        seed ^= t[(uint8_t)a];
+        t += 256; // next table
+        a >>= 8;
+    }
+    a ^= seed; // twist
+    seed ^= t[(uint8_t)a];
+    seed = rotr64(seed, 32); // and rotate
+    t += 256; // next table
+    for (int i=0; i<7; i++) {
+        seed ^= t[(uint8_t)b];
+        t += 256; // next table
+        b >>= 8;
+    }
+    b ^= seed; // twist again
+    seed ^= t[(uint8_t)b];
+    seed = rotr64(seed, 32); // and rotate again
+    return seed;
+}
+
+/**
+ * The well-known FNV-1a hash for 64 bits.
+ * Typical seed value (base offset) is 14695981039346656037LLU.
+ *
+ * NOTE: this particular hash is bad for certain nodes, resulting in
+ * early garbage collection and failure. We xor with shifted hash which
+ * suffices as a band-aid, but this is obviously not an ideal solution.
+ */
+uint64_t
+llmsset_fnvhash(const uint64_t a, const uint64_t b, const uint64_t seed)
 {
     // The FNV-1a hash for 64 bits
     const uint64_t prime = 1099511628211;
@@ -348,6 +421,9 @@ llmsset_create(size_t initial_size, size_t max_size)
     LACE_ME;
     INIT_THREAD_LOCAL(my_region);
     TOGETHER(llmsset_reset_region);
+
+    // initialize hashtab
+    for (int i=0; i<256*16; i++) hashtab[i] = xor64();
 
     return dbs;
 }

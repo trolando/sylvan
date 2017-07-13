@@ -1,8 +1,12 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [Unreleased]
+### Changed
+- We now implement twisted tabulation as the hash function for the nodes table. The old hash function is still available and the default behavior can be changed in `sylvan_table.h`.
+
 ## [1.4.0] - 2017-07-12
-###
+### Added
 - Function `mtbdd_cmpl` that computes the complement for MTBDDs. (0 becomes 1, non-0 becomes 0)
 
 ### Changed

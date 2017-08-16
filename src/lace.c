@@ -17,7 +17,9 @@
 
 #define _GNU_SOURCE
 #include <errno.h> // for errno
-#include <sched.h> // for sched_getaffinity
+#ifdef __linux__
+#   include <sched.h> // for sched_getaffinity
+#endif
 #include <stdio.h>  // for fprintf
 #include <stdlib.h> // for memalign, malloc
 #include <string.h> // for memset
@@ -827,7 +829,7 @@ lace_init(unsigned int _n_workers, size_t dqsize)
     n_nodes = hwloc_get_nbobjs_by_type(topo, HWLOC_OBJ_NODE);
     n_cores = hwloc_get_nbobjs_by_type(topo, HWLOC_OBJ_CORE);
     n_pus = hwloc_get_nbobjs_by_type(topo, HWLOC_OBJ_PU);
-#elif defined(sched_getaffinity)
+#elif defined(__linux__)
     cpu_set_t cs;
     CPU_ZERO(&cs);
     sched_getaffinity(0, sizeof(cs), &cs);

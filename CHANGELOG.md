@@ -1,9 +1,12 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
-## [Unreleased]
+## [1.4.1] -2018-06-14
 ### Changed
 - We now implement twisted tabulation as the hash function for the nodes table. The old hash function is still available and the default behavior can be changed in `sylvan_table.h`.
+
+### Removed
+- Removed dependency on hwloc
 
 ## [1.4.0] - 2017-07-12
 ### Added

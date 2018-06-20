@@ -42,6 +42,13 @@ static unsigned int n_nodes, n_cores, n_pus;
 #endif
 
 /**
+ * define MAP_ANONYMOUS on OSx
+ */
+#ifndef MAP_ANONYMOUS
+#   define MAP_ANONYMOUS MAP_ANON
+#endif
+
+/**
  * (public) Worker data
  */
 static Worker **workers = NULL;

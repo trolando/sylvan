@@ -52,7 +52,7 @@ matrix:
     env: TOOLSET=gcc CC=gcc-5 CXX=g++-5 BUILD_TYPE="Release" SYLVAN_STATS="OFF" SYLVAN_BUILD_DOCS="OFF"
 
 install:
-- if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update; brew install argp-standalone homebrew/science/hwloc; fi
+- if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update; brew install argp-standalone hwloc; fi
 - if [[ "$TRAVIS_OS_NAME" == "osx" && "$CC" == "gcc-5" ]]; then brew install homebrew/versions/gcc5; fi
 
 script:

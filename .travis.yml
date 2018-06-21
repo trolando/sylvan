@@ -53,7 +53,7 @@ matrix:
 
 install:
 - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update; brew install argp-standalone hwloc; fi
-- if [[ "$TRAVIS_OS_NAME" == "osx" && "$CC" == "gcc-5" ]]; then brew install homebrew/versions/gcc5; fi
+- if [[ "$TRAVIS_OS_NAME" == "osx" && "$CC" == "gcc-5" ]]; then brew install gcc5 || brew link --overwrite gcc5; fi
 
 script:
 - ${CC} --version

@@ -2295,7 +2295,7 @@ TASK_IMPL_1(MTBDD, mtbdd_support, MTBDD, dd)
 
 /**
  * Function composition, for each node with variable <key> which has a <key,value> pair in <map>,
- * replace the node by the result of mtbdd_ite(<value>, <low>, <high>).
+ * replace the node by the result of mtbdd_ite(<value>, <high>, <low>).
  * Each <value> in <map> must be a Boolean MTBDD.
  */
 TASK_IMPL_2(MTBDD, mtbdd_compose, MTBDD, a, MTBDDMAP, map)

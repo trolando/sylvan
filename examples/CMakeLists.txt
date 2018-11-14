@@ -6,7 +6,7 @@ target_link_libraries(bddmc sylvan)
 add_executable(lddmc lddmc.c getrss.h getrss.c)
 target_link_libraries(lddmc sylvan)
 
-add_executable(ldd2bdd ldd2bdd.c)
+add_executable(ldd2bdd ldd2bdd.c getrss.c)
 target_link_libraries(ldd2bdd sylvan)
 
 add_executable(nqueens nqueens.c)

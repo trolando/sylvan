@@ -7,6 +7,7 @@
 #include <sys/time.h>
 
 #include <sylvan_int.h>
+#include <getrss.h>
 
 /* Configuration */
 static int workers = 0; // autodetect
@@ -505,6 +506,15 @@ VOID_TASK_0(gc_end)
     printf("Garbage collection done\n");
 }
 
+void
+print_h(double size)
+{
+    const char* units[] = {"B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"};
+    int i = 0;
+    for (;size>1024;size/=1024) i++;
+    printf("%.*f %s", i, size, units[i]);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -515,8 +525,14 @@ main(int argc, char **argv)
     lace_startup(0, NULL, NULL); // auto-detect program stack, do not use a callback for startup
     LACE_ME;
 
+    size_t max = 16LL<<30;
+    if (max > getMaxMemory()) max = getMaxMemory()/10*9;
+    printf("Setting Sylvan main tables memory to ");
+    print_h(max);
+    printf(" max.\n");
+
     // Init Sylvan
-    sylvan_set_limits(1LL<<30, 1, 10);
+    sylvan_set_limits(max, 1, 10);
     sylvan_init_package();
     sylvan_init_ldd();
     sylvan_init_mtbdd();

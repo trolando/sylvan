@@ -692,6 +692,15 @@ VOID_TASK_0(gc_end)
     INFO("(GC) Garbage collection done.       (rss: %s)\n", buf);
 }
 
+void
+print_h(double size)
+{
+    const char* units[] = {"B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"};
+    int i = 0;
+    for (;size>1024;size/=1024) i++;
+    printf("%.*f %s", i, size, units[i]);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -722,7 +731,14 @@ main(int argc, char **argv)
      * Second: initialize package and subpackages
      * Third: add hooks to report garbage collection
      */
-    sylvan_set_limits(2LL<<30, 1, 6);
+
+    size_t max = 16LL<<30;
+    if (max > getMaxMemory()) max = getMaxMemory()/10*9;
+    printf("Setting Sylvan main tables memory to ");
+    print_h(max);
+    printf(" max.\n");
+
+    sylvan_set_limits(max, 1, 6);
     sylvan_init_package();
     sylvan_init_ldd();
     sylvan_gc_hook_pregc(TASK(gc_start));

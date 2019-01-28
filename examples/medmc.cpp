@@ -83,6 +83,13 @@ void run()
         sizes[i] = s.get_integer();
     }
 
+    const int blocks = (next_count+999)/1000;
+    int have_block[blocks];
+    for (int b=0; b<blocks; b++) {
+        s.stripWS();
+        have_block[b] = s.get_integer();
+    }
+
     s.stripWS();
     s.consumeKeyword("ledom");
 
@@ -98,17 +105,20 @@ void run()
     dd_edge m_next[next_count];
     dd_edge m_sets[2];
 
-    // Due to a bug in Meddly, we read in blocks of 1000
-    {
-        int64_t rem = next_count;
-        while (rem) {
-            int64_t offset = next_count-rem;
-            if (rem > 1000) {
-                mxd->readEdges(s, m_next+offset, 1000);
-                rem -= 1000;
-            } else {
-                mxd->readEdges(s, m_next+offset, rem);
-                rem = 0;
+    // Due to a bug in Meddly, we can't use next_count if next_count > 1024
+    // Due to another bug, we have a workaround if all MDDs in a block are False
+    dd_edge false_edge(mxd);
+    false_edge.set(((expert_forest*)mxd)->handleForValue(false));
+
+    for (int b=0; b<blocks; b++) {
+        int64_t offset = 1000*b;
+        int cnt = next_count - b*1000;
+        if (cnt > 1000) cnt = 1000;
+        if (have_block[b]) {
+            mxd->readEdges(s, m_next+offset, cnt);
+        } else {
+            for (int c=0; c<cnt; c++) {
+                m_next[offset+c] = false_edge;
             }
         }
     }

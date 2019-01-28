@@ -409,7 +409,6 @@ ldd_rel_to_meddly(const MDD dd, const MDD meta, expert_forest *F, const int leve
         for (int i=0; i<len; i++) {
             nb->i_ref(i) = lddmc_getvalue(x);
             int m_d = ldd_rel_to_meddly(lddmc_getdown(x), next_meta, F, level-1);
-            // printf("REC %zu.%d => %d\n", inp, lddmc_getvalue(x), m_d);
             nb->d_ref(i) = F->linkNode(m_d);
             x = lddmc_getright(x);
         }
@@ -451,8 +450,6 @@ ldd_to_meddly(MDD inp, expert_forest *F, int level)
         len++;
         x = lddmc_getright(x);
     }
-
-    // printf("%zu len %d\n", inp, len);
 
     unpacked_node* nb = unpacked_node::newSparse(F, level, len);
     x = inp;
@@ -694,20 +691,35 @@ void run()
 
         fprintf(out, "model %d %d\n\t", vector_size, next_count);
         for (int i=0; i<vector_size; i++) fprintf(out, "%d ", sizes[i]);
-        fprintf(out, "\nledom\n");
+        fprintf(out, "\n\t");
 
-        // Due to a bug in Meddley, we can't use next_count if next_count > 1024
-        {
-            int64_t rem = next_count;
-            while (rem) {
-                int64_t offset = next_count-rem;
-                if (rem > 1000) {
-                    mxd->writeEdges(m_out, m_next+offset, 1000);
-                    rem -= 1000;
-                } else {
-                    mxd->writeEdges(m_out, m_next+offset, rem);
-                    rem = 0;
+        // Workaround for a bug in Meddly, where if we send _only_ empty
+        // MDDs to store, the library crashes. So we just store whether we have each block
+        const int blocks = (next_count+999)/1000;
+        int have_block[blocks];
+        for (int b=0; b<blocks; b++) {
+            have_block[b] = 0;
+            int cnt = next_count - b*1000;
+            if (cnt > 1000) cnt = 1000;
+            for (int c=0; c<cnt; c++) {
+                if (next[1000*b+c]->dd != lddmc_false) {
+                    have_block[b] = 1;
+                    break;
                 }
+            }
+            fprintf(out, "%d ", have_block[b]);
+        }
+
+        fprintf(out, "\n");
+        fprintf(out, "ledom\n");
+
+        // Due to a bug in Meddly, we can't use next_count if next_count > 1024
+        for (int b=0; b<blocks; b++) {
+            if (have_block[b]) {
+                int64_t offset = 1000*b;
+                int cnt = next_count - b*1000;
+                if (cnt > 1000) cnt = 1000;
+                mxd->writeEdges(m_out, m_next+offset, cnt);
             }
         }
 

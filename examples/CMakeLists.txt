@@ -31,6 +31,12 @@ target_link_libraries(simple PRIVATE Sylvan::Sylvan)
 target_compile_features(simple PRIVATE c_std_11 cxx_std_11)
 target_compile_options(simple PRIVATE -Wall -Wextra -Werror -Wno-deprecated)
 
+add_executable(aigsynt)
+target_sources(aigsynt PRIVATE aigsynt.cpp)
+target_link_libraries(aigsynt PRIVATE Sylvan::Sylvan)
+target_compile_features(aigsynt PRIVATE c_std_11 cxx_std_11)
+target_compile_options(aigsynt PRIVATE -Wall -Wextra -Werror -Wno-deprecated)
+
 # Check if we have Meddly
 find_library(MEDDLY_FOUND meddly)
 if(MEDDLY_FOUND)
@@ -77,6 +83,7 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     endif()
     target_link_libraries(ldd2bdd PRIVATE ${ARGP_LIBRARIES})
     target_link_libraries(nqueens PRIVATE ${ARGP_LIBRARIES})
+    target_link_libraries(aagsynt PRIVATE ${ARGP_LIBRARIES})
 endif()
 
 

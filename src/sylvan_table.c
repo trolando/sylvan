@@ -224,15 +224,21 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
     }
 }
 
-#if 0
 /**
- * Remove a single BDD from the table (do not run parallel with lookup!!!)
+ * Remove a single hash from the table
+ * (do not run parallel with lookup!!!)
  * (for dynamic variable reordering)
  */
 int
 llmsset_clear_one(const llmsset_t dbs, uint64_t didx)
 {
-    uint64_t *dptr = ((uint64_t*)dbs->data) + 3*didx;
+    volatile uint64_t *dptr = ((uint64_t*)dbs->data) + 3*didx;
+
+    uint64_t d = *dptr;
+    while (!cas(dptr, d, (uint64_t)-1)) {
+        d = *dptr;
+    }
+    d &= MASK_INDEX; // <d> now contains the next bucket in the chain
 
     const uint64_t hash = is_custom_bucket(dbs, didx) ?
         dbs->hash_cb(dptr[1], dptr[2], 14695981039346656037LLU) :
@@ -244,39 +250,31 @@ llmsset_clear_one(const llmsset_t dbs, uint64_t didx)
     volatile uint64_t *fptr = &dbs->table[hash % dbs->table_size];
 #endif
 
-    uint64_t frst = *fptr;
-    uint64_t cidx = 0; // stores where the new data [will be] stored
-    uint64_t *cptr = 0;
-
-    uint64_t idx = frst, end = 0;
-
-    // stop when we encounter <end>
-
     for (;;) {
-        if (idx == end) {
-            return 0; // wasn't in???
+        uint64_t idx = *fptr;
+
+        if (idx == didx) { // we are head
+            *fptr = d;
+            return 1;
         }
 
-        uint64_t *ptr = ((uint64_t*)dbs->data) + 3*idx;
-        if (*ptr 
-        uint64_t v = *dptr;
+        for (;;) {
+            if (idx == 0) return 0; // wasn't in???
 
-        idx = v & MASK_INDEX; // next
+            uint64_t *ptr = ((uint64_t*)dbs->data) + 3*idx;
+            uint64_t v = *ptr;
 
-        sylvan_stats_count(LLMSSET_LOOKUP);
-    }
+            if (v == (uint64_t)-1) break; // found delete-in-progress, restart
 
-    // AFTER CHANGE, check if >>my<< next has changed!!
-
-    for (;;) {
-        uint64_t frst = *fptr;
-        if (cas(fptr, frst, d_idx)) {
-            *dptr = (hash & MASK_HASH) | frst;
-            return 1;
+            if ((v & MASK_INDEX) == didx) { // found our predecessor
+                if (!cas(ptr, v, (v & MASK_HASH) | d)) break; // restart
+                return 1;
+            } else {
+                idx = v & MASK_INDEX; // next
+            }
         }
     }
 }
-#endif
 
 llmsset_t
 llmsset_create(size_t initial_size, size_t max_size)

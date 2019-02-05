@@ -679,16 +679,20 @@ VOID_TASK_1(chaining, set_t, set)
 
 VOID_TASK_0(gc_start)
 {
+    size_t used, total;
+    sylvan_table_usage(&used, &total);
     char buf[32];
     to_h(getCurrentRSS(), buf);
-    INFO("(GC) Starting garbage collection... (rss: %s)\n", buf);
+    INFO("Starting garbage collection of %zu/%zu size (rss: %s)\n", used, total, buf);
 }
 
 VOID_TASK_0(gc_end)
 {
+    size_t used, total;
+    sylvan_table_usage(&used, &total);
     char buf[32];
     to_h(getCurrentRSS(), buf);
-    INFO("(GC) Garbage collection done.       (rss: %s)\n", buf);
+    INFO("Garbage collection done of %zu/%zu size     (rss: %s)\n", used, total, buf);
 }
 
 void

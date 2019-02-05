@@ -203,17 +203,8 @@ void llmsset_set_custom(const llmsset_t dbs, llmsset_hash_cb hash_cb, llmsset_eq
 /**
  * Default hashing functions.
  */
-#define llmsset_hash llmsset_tabhash
-
-/**
- * FNV-1a hash
- */
-uint64_t llmsset_fnvhash(uint64_t a, uint64_t b, uint64_t seed);
-
-/**
- * Twisted tabulation hash
- */
-uint64_t llmsset_tabhash(uint64_t a, uint64_t b, uint64_t seed);
+#define llmsset_hash sylvan_tabhash16
+#define llmsset_fnvhash sylvan_fnvhash16
 
 #ifdef __cplusplus
 }

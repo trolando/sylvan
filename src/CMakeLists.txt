@@ -5,6 +5,7 @@ set(SOURCES
     sylvan_cache.c
     sylvan_common.c
     sylvan_gmp.c
+    sylvan_hash.c
     sylvan_ldd.c
     sylvan_mt.c
     sylvan_mtbdd.c
@@ -23,6 +24,7 @@ set(HEADERS
     sylvan_config.h
     sylvan_common.h
     sylvan_gmp.h
+    sylvan_hash.h
     sylvan_int.h
     sylvan_ldd.h
     sylvan_ldd_int.h

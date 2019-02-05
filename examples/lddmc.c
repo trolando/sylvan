@@ -738,7 +738,7 @@ main(int argc, char **argv)
     print_h(max);
     printf(" max.\n");
 
-    sylvan_set_limits(max, 1, 6);
+    sylvan_set_limits(max, 1, 16);
     sylvan_init_package();
     sylvan_init_ldd();
     sylvan_gc_hook_pregc(TASK(gc_start));

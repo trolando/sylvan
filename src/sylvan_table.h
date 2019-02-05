@@ -66,7 +66,6 @@ typedef struct llmsset
     llmsset_equals_cb equals_cb;    // custom equals function
     llmsset_create_cb create_cb;    // custom create function
     llmsset_destroy_cb destroy_cb;  // custom destroy function
-    int16_t           threshold;    // number of iterations for insertion until returning error
 } *llmsset_t;
 
 /**
@@ -75,7 +74,7 @@ typedef struct llmsset
 static inline void*
 llmsset_index_to_ptr(const llmsset_t dbs, size_t index)
 {
-    return dbs->data + index * 16;
+    return dbs->data + index * 24 + 8;
 }
 
 /**
@@ -121,10 +120,8 @@ llmsset_set_size(llmsset_t dbs, size_t size)
         dbs->table_size = size;
 #if LLMSSET_MASK
         /* Warning: if size is not a power of two, you will get interesting behavior */
-        dbs->mask = dbs->table_size - 1;
+        dbs->mask = dbs->table_size/2 - 1;
 #endif
-        /* Set threshold: number of cache lines to probe before giving up on node insertion */
-        dbs->threshold = 192 - 2 * __builtin_clzll(dbs->table_size);
     }
 }
 
@@ -181,6 +178,11 @@ TASK_DECL_1(int, llmsset_rehash, llmsset_t);
  * Returns 0 if successful, or 1 if not.
  */
 int llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx);
+
+/**
+ * Remove a single BDD from the table
+ */
+int llmsset_clear_one(const llmsset_t dbs, uint64_t index);
 
 /**
  * Retrieve number of marked buckets.

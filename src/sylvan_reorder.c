@@ -191,11 +191,13 @@ TASK_IMPL_2(int, sylvan_varswap, uint32_t, var, int, recovery)
     CALL(sylvan_varswap_p0, var, 0, nodes->table_size);
     // handle all trivial cases, mark cases that are not trivial
     uint64_t marked_count = CALL(sylvan_varswap_p1, var, 0, nodes->table_size);
-    if (marked_count == 0) return 0;
-    // do the not so trivial cases (creates new nodes)
-    int flag_full = 0;
-    CALL(sylvan_varswap_p2, var, 0, nodes->table_size, &flag_full);
-    return flag_full ? -1 : 0;
+    if (marked_count != 0) {
+        // do the not so trivial cases (creates new nodes)
+        int flag_full = 0;
+        CALL(sylvan_varswap_p2, var, 0, nodes->table_size, &flag_full);
+        if (flag_full) return -1;
+    }
+    return 0;
     (void)recovery;
 }
 
@@ -219,6 +221,7 @@ TASK_IMPL_1(int, sylvan_simple_varswap, uint32_t, var)
         int flag_full = 0;
         CALL(sylvan_varswap_p2, var, 0, nodes->table_size, &flag_full);
         if (flag_full) {
+            printf("Recovery time!\n");
             // clear hashes again of nodes with <var> and <var+1>
             CALL(sylvan_varswap_p0, var, 0, nodes->table_size);
             // handle all trivial cases, mark cases that are not trivial
@@ -233,6 +236,7 @@ TASK_IMPL_1(int, sylvan_simple_varswap, uint32_t, var)
                     exit(-1);
                 }
             }
+            printf("Recovery good.\n");
             return 1;
         }
     }
@@ -330,7 +334,14 @@ VOID_TASK_IMPL_3(sylvan_varswap_p0, uint32_t, var, size_t, first, size_t, count)
         mtbddnode_t node = MTBDD_GETNODE(first);
         if (mtbddnode_isleaf(node)) continue; // a leaf
         uint32_t nvar = mtbddnode_getvariable(node);
-        if (nvar == var || nvar == (var+1)) llmsset_clear_one(nodes, first);
+        if (nvar == var || nvar == (var+1)) {
+            // printf("clearing node %zu with var %u\n", first, nvar);
+            if (!llmsset_clear_one(nodes, first)) {
+                // fprintf(stderr, "sylvan: varswap clear_one failed!\n");
+                // exit(-1);
+                // it can fail in recovery time
+            }
+        }
     }
 }
 
@@ -371,7 +382,7 @@ TASK_IMPL_3(uint64_t, sylvan_varswap_p1, uint32_t, var, size_t, first, size_t, c
         mtbddnode_t node = MTBDD_GETNODE(first);
         if (mtbddnode_isleaf(node)) continue; // a leaf
         uint32_t nvar = mtbddnode_getvariable(node);
-        if (nvar != (var+1)) {
+        if (nvar == (var+1)) {
             // if <var+1>, then replace with <var> and rehash
             mtbddnode_setvariable(node, var);
             llmsset_rehash_bucket(nodes, first);
@@ -542,16 +553,13 @@ VOID_TASK_3(sylvan_count_nodes, size_t*, arr, size_t, first, size_t, count)
         size_t tmp[levels_count], i;
         for (i=0; i<levels_count; i++) tmp[i] = 0;
 
-        mtbddnode_t node = MTBDD_GETNODE(first);
         const size_t end = first + count;
 
-        for (; first < end; node++, first++) {
-            /* skip unused buckets */
-            if (!llmsset_is_marked(nodes, first)) continue;
-            /* skip leaves */
-            if (mtbddnode_isleaf(node)) continue;
-            /* update on real variable */
-            tmp[mtbddnode_getvariable(node)]++;
+        for (; first < end; first++) {
+            if (!llmsset_is_marked(nodes, first)) continue; // unused bucket
+            mtbddnode_t node = MTBDD_GETNODE(first);
+            if (mtbddnode_isleaf(node)) continue; // a leaf
+            tmp[mtbddnode_getvariable(node)]++; // update the variable
         }
 
         /* these are atomic operations on a hot location with false sharing inside another
@@ -643,8 +651,8 @@ TASK_IMPL_2(int, sylvan_sifting, uint32_t, low, uint32_t, high)
 
         for (; pos<high; pos++) {
             if (CALL(sylvan_simple_varswap, pos) != 0) {
-                printf("UH OH\n");
-                exit(-1);
+                // failed, table full. TODO garbage collect.
+                break;
             }
             size_t after = llmsset_count_marked(nodes);
             // printf("swap(DN): from %zu to %zu\n", cursize, after);
@@ -653,12 +661,14 @@ TASK_IMPL_2(int, sylvan_sifting, uint32_t, low, uint32_t, high)
                 bestsize = cursize;
                 bestpos = pos;
             }
-            if (cursize >= 2*bestsize) break;
+            if (cursize >= 2*bestsize) {
+                pos++;
+                break;
+            }
         }
         for (; pos>low; pos--) {
             if (CALL(sylvan_simple_varswap, pos-1) != 0) {
-                printf("UH OH\n");
-                exit(-1);
+                break;
             }
             size_t after = llmsset_count_marked(nodes);
             // printf("swap(UP): from %zu to %zu\n", cursize, after);
@@ -667,7 +677,10 @@ TASK_IMPL_2(int, sylvan_sifting, uint32_t, low, uint32_t, high)
                 bestsize = cursize;
                 bestpos = pos;
             }
-            if (cursize >= 2*bestsize) break;
+            if (cursize >= 2*bestsize) {
+                pos--;
+                break;
+            }
         }
         printf("best: %zu (old %zu) at %zu (old %zu)\n", bestpos, oldpos, bestsize, oldsize);
         for (; pos<bestpos; pos++) {

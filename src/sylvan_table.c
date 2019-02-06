@@ -228,6 +228,7 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
  * Remove a single hash from the table
  * (do not run parallel with lookup!!!)
  * (for dynamic variable reordering)
+ * (lock-free, but not wait-free)
  */
 int
 llmsset_clear_one(const llmsset_t dbs, uint64_t didx)
@@ -235,10 +236,14 @@ llmsset_clear_one(const llmsset_t dbs, uint64_t didx)
     volatile uint64_t *dptr = ((uint64_t*)dbs->data) + 3*didx;
 
     uint64_t d = *dptr;
-    while (!cas(dptr, d, (uint64_t)-1)) {
-        d = *dptr;
+    if (d & MASK_INDEX) {
+        while (!cas(dptr, d, (uint64_t)-1)) {
+            d = *dptr;
+        }
+        d &= MASK_INDEX; // <d> now contains the next bucket in the chain
+    } else {
+        d = 0; // nothing after us, so we don't need to make a -1
     }
-    d &= MASK_INDEX; // <d> now contains the next bucket in the chain
 
     const uint64_t hash = is_custom_bucket(dbs, didx) ?
         dbs->hash_cb(dptr[1], dptr[2], 14695981039346656037LLU) :

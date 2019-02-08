@@ -45,11 +45,11 @@ if(WITH_COVERAGE)
         COMMAND ${LCOV_PATH} --remove coverage.info 'test/*' '/usr/*' 'examples/*' 'src/lace*' 'src/sha2.c' --output-file coverage.info.cleaned
         COMMAND ${GENHTML_PATH} -o coverage coverage.info.cleaned
         COMMAND ${CMAKE_COMMAND} -E remove coverage.info coverage.info.cleaned
-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     )
 endif()
 
-include_directories(${CMAKE_SOURCE_DIR}/src)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 include(GNUInstallDirs)
 include(CTest)
 
@@ -75,8 +75,8 @@ set(CPACK_GENERATOR "DEB")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Multi-core implementation of decision diagrams")
 set(CPACK_PACKAGE_VENDOR "Tom van Dijk")
 set(CPACK_PACKAGE_CONTACT "Tom van Dijk <tom@tvandijk.nl>")
-set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_SOURCE_DIR}/README.md")
-set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
+set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
 set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_MAJOR_VERSION})
 set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_MINOR_VERSION})

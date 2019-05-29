@@ -16,6 +16,12 @@
 
 #include <sylvan_int.h>
 
+/*
+ * TODO
+ *
+ * check if variables are "interacting" to make it a biiiit faster...
+ */
+
 /**
  * Block size tunes the granularity of the parallel distribution
  */
@@ -247,6 +253,12 @@ TASK_IMPL_1(int, sylvan_simple_varswap, uint32_t, var)
     uint32_t save = var_to_level[var];
     var_to_level[var] = var_to_level[var+1];
     var_to_level[var+1] = save;
+
+
+    // do some kind of clear-and-mark ???
+    sylvan_clear_and_mark();
+    sylvan_rehash_all();
+
     return 0;
 }
 
@@ -581,10 +593,11 @@ VOID_TASK_3(sylvan_count_nodes, size_t*, arr, size_t, first, size_t, count)
  * Parameters
  * - siftMaxVar - maximum number of vars sifted
  *     default: 1000
- * - siftMaxSwap - maximum number of swaps
+ * - siftMaxSwap - maximum number of swaps (total)
  *     default: 2000000
  * - double maxGrowth - some maximum % growth (from the start of a sift of a part. variable)
  *     default: 1.2
+ * - timeLimit - [[util_cpu_time]] table->timeLimit (actually turns off dyn reord)
  * if a lower size is found, the limitSize is updated...
  */
 
@@ -648,6 +661,9 @@ TASK_IMPL_2(int, sylvan_sifting, uint32_t, low, uint32_t, high)
 
         size_t bestsize = cursize, bestpos = pos;
         size_t oldsize = cursize, oldpos = pos;
+
+        // TODO: if pos < low or pos > high, bye
+        if (pos < low || pos > high) continue; // nvm.
 
         for (; pos<high; pos++) {
             if (CALL(sylvan_simple_varswap, pos) != 0) {

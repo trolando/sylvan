@@ -1,12 +1,22 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
-## [1.4.1] -2018-06-14
+## [1.5.0] - 2019-09-05
+### Added
+- New tools `ldd2meddly` and `medmc` as part of research comparing the saturation algorithm in Sylvan to the one in Meddly.
+
+### Changed
+- Renamed the `mc` example program to `bccmc`.
+
+### Fixed
+- A bug in the GMP handling was fixed.
+
+## [1.4.1] - 2018-06-14
 ### Changed
 - We now implement twisted tabulation as the hash function for the nodes table. The old hash function is still available and the default behavior can be changed in `sylvan_table.h`.
 
 ### Removed
-- Removed dependency on hwloc
+- Removed dependency on hwloc.
 
 ## [1.4.0] - 2017-07-12
 ### Added

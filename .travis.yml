@@ -55,11 +55,17 @@ matrix:
   - os: osx
     env: TOOLSET=clang CC=clang CXX=clang++ BUILD_TYPE="Release" SYLVAN_STATS="OFF" SYLVAN_BUILD_DOCS="OFF"
   - os: osx
-    env: TOOLSET=gcc CC=gcc-5 CXX=g++-5 BUILD_TYPE="Release" SYLVAN_STATS="OFF" SYLVAN_BUILD_DOCS="OFF"
+    env: TOOLSET=gcc CC=gcc-6 CXX=g++-6 BUILD_TYPE="Release" SYLVAN_STATS="OFF" SYLVAN_BUILD_DOCS="OFF"
+  - os: osx
+    env: TOOLSET=gcc CC=gcc-7 CXX=g++-7 BUILD_TYPE="Release" SYLVAN_STATS="OFF" SYLVAN_BUILD_DOCS="OFF"
+  - os: osx
+    env: TOOLSET=gcc CC=gcc-8 CXX=g++-8 BUILD_TYPE="Release" SYLVAN_STATS="OFF" SYLVAN_BUILD_DOCS="OFF"
 
 install:
 - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update; brew install argp-standalone hwloc; fi
-- if [[ "$TRAVIS_OS_NAME" == "osx" && "$CC" == "gcc-5" ]]; then brew install gcc5 || brew link --overwrite gcc5; fi
+- if [[ "$TRAVIS_OS_NAME" == "osx" && "$CC" == "gcc-6" ]]; then brew install gcc6 && brew link --overwrite gcc6; fi
+- if [[ "$TRAVIS_OS_NAME" == "osx" && "$CC" == "gcc-7" ]]; then brew install gcc7 && brew link --overwrite gcc7; fi
+- if [[ "$TRAVIS_OS_NAME" == "osx" && "$CC" == "gcc-8" ]]; then brew install gcc8 && brew link --overwrite gcc8; fi
 
 script:
 - ${CC} --version

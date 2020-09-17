@@ -36,6 +36,12 @@ int runtest()
     return 0;
 }
 
+void test6()
+{
+    BddMap m1;
+    BddMap m2(m1);  // this triggers an assertion
+}
+
 int main()
 {
     // Standard Lace initialization with 1 worker
@@ -46,6 +52,8 @@ int main()
     sylvan_set_sizes(1LL<<16, 1LL<<16, 1LL<<16, 1LL<<16);
     sylvan_init_package();
     sylvan_init_bdd();
+
+    test6();
 
     int res = runtest();
 

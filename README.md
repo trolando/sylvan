@@ -1,6 +1,10 @@
 Sylvan [![Build Status](https://travis-ci.org/trolando/sylvan.svg?branch=master)](https://travis-ci.org/trolando/sylvan)
 ======
 Sylvan is a parallel (multi-core) multi-terminal binary decision diagram library written in C.
+Sylvan implements typical binary decision diagram operations also found in libraries like CUDD,
+but provides scalable parallel execution of these operations and is more versatile thanks to
+supporting custom decision diagram terminal types.
+
 Sylvan implements parallelized operations on binary decision diagrams supporting any kind of
 terminal, including standard Booleans, integers, floating points and any user-defined types.
 Sylvan also implements operations on specialized list decision diagrams for model-checking.
@@ -8,7 +12,7 @@ Both sequential and parallel BDD-based algorithms can benefit from parallelism.
 Sylvan uses the work-stealing framework Lace and parallel datastructures to implement scalable
 multi-core operations on decision diagrams.
 
-Sylvan was initially developed by the [Formal Methods and Tools](http://fmt.ewi.utwente.nl/)
+Sylvan was initially developed at the [Formal Methods and Tools](http://fmt.ewi.utwente.nl/)
 group at the University of Twente as part of the MaDriD project, which
 was funded by NWO, and further by the [Formal Methods and Verification](http://fmv.jku.at/)
 group at the Johannes Kepler University Linz as part of the RiSE project.

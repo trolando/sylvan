@@ -485,6 +485,7 @@ class BddMap
     BddMap(const BDD from) : bdd(from) { sylvan_protect(&bdd); }
     BddMap(const Bdd &from) : bdd(from.bdd) { sylvan_protect(&bdd); }
 public:
+    BddMap(const BddMap& from) : bdd(from.bdd) { sylvan_protect(&bdd); }
     BddMap() : bdd(sylvan_map_empty()) { sylvan_protect(&bdd); }
     ~BddMap() { sylvan_unprotect(&bdd); }
 

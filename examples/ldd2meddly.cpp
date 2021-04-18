@@ -92,7 +92,7 @@ static int has_actions = 0;
 #define Abort(...) { fprintf(stderr, __VA_ARGS__); fprintf(stderr, "Abort at line %d!\n", __LINE__); exit(-1); }
 
 /* Load a set from file */
-#define set_load(f) CALL(set_load, f)
+#define set_load(f) RUN(set_load, f)
 TASK_1(set_t, set_load, FILE*, f)
 {
     set_t set = (set_t)malloc(sizeof(struct set));
@@ -111,7 +111,7 @@ TASK_1(set_t, set_load, FILE*, f)
 }
 
 /* Load a relation from file */
-#define rel_load_proj(f) CALL(rel_load_proj, f)
+#define rel_load_proj(f) RUN(rel_load_proj, f)
 TASK_1(rel_t, rel_load_proj, FILE*, f)
 {
     int r_k, w_k;
@@ -165,7 +165,7 @@ TASK_1(rel_t, rel_load_proj, FILE*, f)
     return rel;
 }
 
-#define rel_load(f, rel) CALL(rel_load, f, rel)
+#define rel_load(f, rel) RUN(rel_load, f, rel)
 VOID_TASK_2(rel_load, FILE*, f, rel_t, rel)
 {
     lddmc_serialize_fromfile(f);
@@ -179,7 +179,7 @@ VOID_TASK_2(rel_load, FILE*, f, rel_t, rel)
  * This method is called for the set of reachable states.
  */
 static uint64_t compute_highest_id;
-#define compute_highest(dd, arr) CALL(compute_highest, dd, arr)
+#define compute_highest(dd, arr) RUN(compute_highest, dd, arr)
 VOID_TASK_2(compute_highest, MDD, dd, uint32_t*, arr)
 {
     if (dd == lddmc_true || dd == lddmc_false) return;
@@ -208,7 +208,7 @@ VOID_TASK_2(compute_highest, MDD, dd, uint32_t*, arr)
  * Removes the action labels
  */
 static uint64_t strip_actions_cache_id;
-#define strip_actions(dd, meta) CALL(strip_actions, dd, meta)
+#define strip_actions(dd, meta) RUN(strip_actions, dd, meta)
 TASK_2(MDD, strip_actions, MDD, dd, MDD, meta)
 {
     if (dd == lddmc_false) return lddmc_false;
@@ -512,9 +512,7 @@ print_matrix(size_t size, MDD meta)
 void run()
 {
     // Init Lace with only 1 worker
-    lace_init(1, 1000000); // auto-detect number of workers, use a 1,000,000 size task queue
-    lace_startup(0, NULL, NULL); // auto-detect program stack, do not use a callback for startup
-    LACE_ME;
+    lace_start(1, 1000000); // auto-detect number of workers, use a 1,000,000 size task queue
 
     // Init Sylvan
     sylvan_set_limits(2LL<<30, 1, 10);
@@ -735,7 +733,7 @@ void run()
     // Report Sylvan statistics (if SYLVAN_STATS is set)
     if (verbose) sylvan_stats_report(stdout);
     sylvan_quit();
-    lace_exit();
+    lace_stop();
 
     printf("Testing correctness by running event-saturation on the result...\n");
 

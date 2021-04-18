@@ -334,7 +334,6 @@ llmsset_create(size_t initial_size, size_t max_size)
     // that is a problem with multiple tables.
     // so, for now, do NOT use multiple tables!!
 
-    LACE_ME;
     INIT_THREAD_LOCAL(my_region);
     TOGETHER(llmsset_reset_region);
 

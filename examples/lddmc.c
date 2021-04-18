@@ -169,7 +169,7 @@ set_save(FILE* f, set_t set)
 /**
  * Load a relation from file
  */
-#define rel_load_proj(f) CALL(rel_load_proj, f)
+#define rel_load_proj(f) RUN(rel_load_proj, f)
 TASK_1(rel_t, rel_load_proj, FILE*, f)
 {
     int r_k, w_k;
@@ -229,7 +229,7 @@ TASK_1(rel_t, rel_load_proj, FILE*, f)
     return rel;
 }
 
-#define rel_load(f, rel) CALL(rel_load, f, rel)
+#define rel_load(f, rel) RUN(rel_load, f, rel)
 VOID_TASK_2(rel_load, FILE*, f, rel_t, rel)
 {
     lddmc_serialize_fromfile(f);
@@ -306,7 +306,6 @@ static void
 print_example(MDD example)
 {
     if (example != lddmc_false) {
-        LACE_ME;
         uint32_t vec[vector_size];
         lddmc_sat_one(example, vec, vector_size);
 
@@ -718,9 +717,7 @@ main(int argc, char **argv)
      * Second: start all worker threads with default settings.
      * Third: setup local variables using the LACE_ME macro.
      */
-    lace_init(workers, 1000000);
-    lace_startup(0, NULL, NULL);
-    LACE_ME;
+    lace_start(workers, 1000000);
 
     /**
      * Initialize Sylvan.
@@ -812,22 +809,22 @@ main(int argc, char **argv)
 
     if (strategy == 0) {
         double t1 = wctime();
-        CALL(bfs, states);
+        RUN(bfs, states);
         double t2 = wctime();
         INFO("BFS Time: %f\n", t2-t1);
     } else if (strategy == 1) {
         double t1 = wctime();
-        CALL(par, states);
+        RUN(par, states);
         double t2 = wctime();
         INFO("PAR Time: %f\n", t2-t1);
     } else if (strategy == 2) {
         double t1 = wctime();
-        CALL(sat, states);
+        RUN(sat, states);
         double t2 = wctime();
         INFO("SAT Time: %f\n", t2-t1);
     } else if (strategy == 3) {
         double t1 = wctime();
-        CALL(chaining, states);
+        RUN(chaining, states);
         double t2 = wctime();
         INFO("CHAINING Time: %f\n", t2-t1);
     } else {
@@ -875,6 +872,8 @@ main(int argc, char **argv)
 
     print_memory_usage();
     sylvan_stats_report(stdout);
+
+    lace_stop();
 
     return 0;
 }

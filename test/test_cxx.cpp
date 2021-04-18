@@ -45,8 +45,7 @@ void test6()
 int main()
 {
     // Standard Lace initialization with 1 worker
-    lace_init(1, 0);
-    lace_startup(0, NULL, NULL);
+    lace_start(1, 0);
 
     // Simple Sylvan initialization, also initialize BDD support
     sylvan_set_sizes(1LL<<16, 1LL<<16, 1LL<<16, 1LL<<16);
@@ -58,7 +57,7 @@ int main()
     int res = runtest();
 
     sylvan_quit();
-    lace_exit();
+    lace_stop();
 
     return res;
 }

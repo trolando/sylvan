@@ -371,7 +371,6 @@ sylvan_init_package(void)
     main_hook = TASK(sylvan_gc_normal_resize);
 #endif
 
-    LACE_ME;
     sylvan_stats_init();
 }
 

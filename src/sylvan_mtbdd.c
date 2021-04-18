@@ -262,7 +262,8 @@ VOID_TASK_0(mtbdd_refs_mark)
     TOGETHER(mtbdd_refs_mark_task);
 }
 
-VOID_TASK_0(mtbdd_refs_init_task)
+void
+mtbdd_refs_init_key(void)
 {
     mtbdd_refs_internal_t s = (mtbdd_refs_internal_t)malloc(sizeof(struct mtbdd_refs_internal));
     s->pcur = s->pbegin = (const MTBDD**)malloc(sizeof(MTBDD*) * 1024);
@@ -272,6 +273,11 @@ VOID_TASK_0(mtbdd_refs_init_task)
     s->scur = s->sbegin = (mtbdd_refs_task_t)malloc(sizeof(struct mtbdd_refs_task) * 1024);
     s->send = s->sbegin + 1024;
     SET_THREAD_LOCAL(mtbdd_refs_key, s);
+}
+
+VOID_TASK_0(mtbdd_refs_init_task)
+{
+    mtbdd_refs_init_key();
 }
 
 VOID_TASK_0(mtbdd_refs_init)
@@ -314,8 +320,13 @@ void __attribute__((unused))
 mtbdd_refs_pushptr(const MTBDD *ptr)
 {
     LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
-    *mtbdd_refs_key->pcur++ = ptr;
-    if (mtbdd_refs_key->pcur == mtbdd_refs_key->pend) mtbdd_refs_ptrs_up(mtbdd_refs_key);
+    if (mtbdd_refs_key == 0) {
+        mtbdd_refs_init_key();
+        mtbdd_refs_pushptr(ptr);
+    } else {
+        *mtbdd_refs_key->pcur++ = ptr;
+        if (mtbdd_refs_key->pcur == mtbdd_refs_key->pend) mtbdd_refs_ptrs_up(mtbdd_refs_key);
+    }
 }
 
 void __attribute__((unused))
@@ -329,9 +340,14 @@ MTBDD __attribute__((unused))
 mtbdd_refs_push(MTBDD mtbdd)
 {
     LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
-    *(mtbdd_refs_key->rcur++) = mtbdd;
-    if (mtbdd_refs_key->rcur == mtbdd_refs_key->rend) return mtbdd_refs_refs_up(mtbdd_refs_key, mtbdd);
-    else return mtbdd;
+    if (mtbdd_refs_key == 0) {
+        mtbdd_refs_init_key();
+        return mtbdd_refs_push(mtbdd);
+    } else {
+        *(mtbdd_refs_key->rcur++) = mtbdd;
+        if (mtbdd_refs_key->rcur == mtbdd_refs_key->rend) return mtbdd_refs_refs_up(mtbdd_refs_key, mtbdd);
+        else return mtbdd;
+    }
 }
 
 void __attribute__((unused))
@@ -395,8 +411,7 @@ sylvan_init_mtbdd()
         mtbdd_protected_created = 1;
     }
 
-    LACE_ME;
-    CALL(mtbdd_refs_init);
+    RUN(mtbdd_refs_init);
 }
 
 /**
@@ -413,9 +428,7 @@ mtbdd_makeleaf(uint32_t type, uint64_t value)
     int created;
     uint64_t index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
-        LACE_ME;
-
-        sylvan_gc();
+        RUN(sylvan_gc);
 
         index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
@@ -452,11 +465,9 @@ _mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high)
     MTBDD result;
     uint64_t index = llmsset_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
-        LACE_ME;
-
         mtbdd_refs_push(low);
         mtbdd_refs_push(high);
-        sylvan_gc();
+        RUN(sylvan_gc);
         mtbdd_refs_pop(2);
 
         index = llmsset_lookup(nodes, n.a, n.b, &created);
@@ -486,11 +497,9 @@ mtbdd_makemapnode(uint32_t var, MTBDD low, MTBDD high)
     mtbddnode_makemapnode(&n, var, low, high);
     index = llmsset_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
-        LACE_ME;
-
         mtbdd_refs_push(low);
         mtbdd_refs_push(high);
-        sylvan_gc();
+        RUN(sylvan_gc);
         mtbdd_refs_pop(2);
 
         index = llmsset_lookup(nodes, n.a, n.b, &created);

@@ -23,7 +23,19 @@
 #include <string.h> // for memset
 #include <sys/time.h> // for gettimeofday
 #include <pthread.h> // for POSIX threading
+
+#if defined(__APPLE__)
+/* Mac OS X defines sem_init but actually does not implement them */
+#include <mach/mach.h>
+
+typedef semaphore_t sem_t;
+#define sem_init(sem, x, value)	semaphore_create(mach_task_self(), sem, SYNC_POLICY_FIFO, value)
+#define sem_wait(sem)           semaphore_wait(*sem)
+#define sem_post(sem)           semaphore_signal(*sem)
+#define sem_destroy(sem)        semaphore_destroy(mach_task_self(), *sem)
+#else
 #include <semaphore.h> // for sem_*
+#endif
 
 #include <lace.h>
 
@@ -655,6 +667,20 @@ lace_set_stacksize(size_t new_stacksize)
     stacksize = new_stacksize;
 }
 
+unsigned int
+lace_get_pu_count(void)
+{
+#if defined(sched_getaffinity)
+    cpu_set_t cs;
+    CPU_ZERO(&cs);
+    sched_getaffinity(0, sizeof(cs), &cs);
+    unsigned int n_pus = CPU_COUNT(&cs);
+#else
+    unsigned int n_pus = sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+    return n_pus;
+}
+
 /**
  * Initialize Lace for work-stealing with <n> workers, where
  * each worker gets a task deque with <dqsize> elements.
@@ -670,13 +696,8 @@ lace_start(unsigned int _n_workers, size_t dqsize)
     n_nodes = hwloc_get_nbobjs_by_type(topo, HWLOC_OBJ_NODE);
     n_cores = hwloc_get_nbobjs_by_type(topo, HWLOC_OBJ_CORE);
     n_pus = hwloc_get_nbobjs_by_type(topo, HWLOC_OBJ_PU);
-#elif defined(sched_getaffinity)
-    cpu_set_t cs;
-    CPU_ZERO(&cs);
-    sched_getaffinity(0, sizeof(cs), &cs);
-    unsigned int n_pus = CPU_COUNT(&cs);
 #else
-    unsigned int n_pus = sysconf(_SC_NPROCESSORS_ONLN);
+    unsigned int n_pus = lace_get_pu_count();
 #endif
 
     // Initialize globals
@@ -910,7 +931,7 @@ void lace_stop()
     lace_barrier_destroy();
     sem_destroy(&suspend_semaphore);
 #ifndef __linux__
-    pthread_key_delete(&worker_key);
+    pthread_key_delete(worker_key);
 #endif
 
     for (unsigned int i=0; i<n_workers; i++) {

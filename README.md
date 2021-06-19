@@ -1,4 +1,4 @@
-Sylvan [![Build Status](https://travis-ci.org/trolando/sylvan.svg?branch=master)](https://travis-ci.org/trolando/sylvan)
+Sylvan [![Build Status](https://travis-ci.com/trolando/sylvan.svg?branch=master)](https://travis-ci.com/trolando/sylvan)
 ======
 Sylvan is a parallel (multi-core) multi-terminal binary decision diagram library written in C.
 Sylvan implements typical binary decision diagram operations also found in libraries like CUDD,
@@ -31,7 +31,7 @@ Bindings for other languages than C/C++ also exist:
 -  Haskell bindings: https://github.com/adamwalker/sylvan-haskell
 -  Python bindings: https://github.com/johnyf/dd
 
-**Documentation** is available [at GitHub Pages](https://trolando.github.com/sylvan).
+**Documentation** is available [at GitHub Pages](https://trolando.github.io/sylvan).
 
 Publications
 ------------

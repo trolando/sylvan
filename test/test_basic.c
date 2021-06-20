@@ -509,7 +509,7 @@ test_ldd()
     return 0;
 }
 
-int runtests()
+TASK_0(int, runtests)
 {
     // we are not testing garbage collection
     sylvan_gc_disable();
@@ -547,7 +547,7 @@ int main()
 
     printf("Sylvan initialization complete.\n");
 
-    int res = runtests();
+    int res = RUN(runtests);
 
     sylvan_quit();
     lace_stop();

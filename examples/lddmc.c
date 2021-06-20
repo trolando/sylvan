@@ -700,47 +700,8 @@ print_h(double size)
     printf("%.*f %s", i, size, units[i]);
 }
 
-int
-main(int argc, char **argv)
+TASK_0(int, run)
 {
-    /**
-     * Parse command line, set locale, set startup time for INFO messages.
-     */
-    argp_parse(&argp, argc, argv, 0, 0, 0);
-    setlocale(LC_NUMERIC, "en_US.utf-8");
-    t_start = wctime();
-
-    /**
-     * Initialize Lace.
-     *
-     * First: setup with given number of workers (0 for autodetect) and some large size task queue.
-     * Second: start all worker threads with default settings.
-     * Third: setup local variables using the LACE_ME macro.
-     */
-    lace_start(workers, 1000000);
-
-    /**
-     * Initialize Sylvan.
-     *
-     * First: set memory limits
-     * - 2 GB memory, nodes table twice as big as cache, initial size halved 6x
-     *   (that means it takes 6 garbage collections to get to the maximum nodes&cache size)
-     * Second: initialize package and subpackages
-     * Third: add hooks to report garbage collection
-     */
-
-    size_t max = 16LL<<30;
-    if (max > getMaxMemory()) max = getMaxMemory()/10*9;
-    printf("Setting Sylvan main tables memory to ");
-    print_h(max);
-    printf(" max.\n");
-
-    sylvan_set_limits(max, 1, 16);
-    sylvan_init_package();
-    sylvan_init_ldd();
-    sylvan_gc_hook_pregc(TASK(gc_start));
-    sylvan_gc_hook_postgc(TASK(gc_end));
-
     /**
      * Read the model from file
      */
@@ -870,10 +831,56 @@ main(int argc, char **argv)
         fclose(f);
     }
 
+    return 0;
+}
+
+int
+main(int argc, char **argv)
+{
+    /**
+     * Parse command line, set locale, set startup time for INFO messages.
+     */
+    argp_parse(&argp, argc, argv, 0, 0, 0);
+    setlocale(LC_NUMERIC, "en_US.utf-8");
+    t_start = wctime();
+
+    /**
+     * Initialize Lace.
+     *
+     * First: setup with given number of workers (0 for autodetect) and some large size task queue.
+     * Second: start all worker threads with default settings.
+     * Third: setup local variables using the LACE_ME macro.
+     */
+    lace_start(workers, 1000000);
+
+    /**
+     * Initialize Sylvan.
+     *
+     * First: set memory limits
+     * - 2 GB memory, nodes table twice as big as cache, initial size halved 6x
+     *   (that means it takes 6 garbage collections to get to the maximum nodes&cache size)
+     * Second: initialize package and subpackages
+     * Third: add hooks to report garbage collection
+     */
+
+    size_t max = 16LL<<30;
+    if (max > getMaxMemory()) max = getMaxMemory()/10*9;
+    printf("Setting Sylvan main tables memory to ");
+    print_h(max);
+    printf(" max.\n");
+
+    sylvan_set_limits(max, 1, 16);
+    sylvan_init_package();
+    sylvan_init_ldd();
+    sylvan_gc_hook_pregc(TASK(gc_start));
+    sylvan_gc_hook_postgc(TASK(gc_end));
+
+    int res = RUN(run);
+
     print_memory_usage();
     sylvan_stats_report(stdout);
 
     lace_stop();
 
-    return 0;
+    return res;
 }

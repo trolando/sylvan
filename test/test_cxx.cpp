@@ -10,7 +10,7 @@
 
 using namespace sylvan;
 
-int runtest()
+TASK_0(int, runtest)
 {
     Bdd one = Bdd::bddOne();
     Bdd zero = Bdd::bddZero();
@@ -54,7 +54,7 @@ int main()
 
     test6();
 
-    int res = runtest();
+    int res = RUN(runtest);
 
     sylvan_quit();
     lace_stop();

@@ -1,0 +1,50 @@
+name: MacOS-build
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+
+jobs:
+  build:
+    name: ${{ matrix.config.name }} stats=${{ matrix.sylvan_stats}} ${{ matrix.build_type}}
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        config:
+        - {
+            name: "Clang", artifact: "macOS.tar.xz",
+            cc: "clang", cxx: "clang++"
+          }
+        sylvan_stats:
+        - ON
+        - OFF
+        build_type:
+        - RelWithDebInfo
+        - Debug
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: true
+
+    - name: Install prerequisites
+      run: |
+        brew install argp-standalone
+
+    - name: Configure CMake
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DSYLVAN_STATS=${{matrix.sylvan_stats}} -DSYLVAN_BUILD_EXAMPLES=ON
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{matrix.build_type}}
+
+    - name: Test
+      working-directory: ${{github.workspace}}/build
+      run:  |
+        ctest -C ${{ matrix.build_type }} -VV
+        examples/simple
+        examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee /dev/fd/2 | grep -q "1,570,340"
+        examples/lddmc ../models/blocks.2.ldd -w 2 | tee /dev/fd/2 | grep -q "7,057 states"
+      
+

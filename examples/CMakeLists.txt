@@ -27,7 +27,7 @@ target_compile_options(nqueens PRIVATE -Wall -Wextra -Werror -Wno-deprecated)
 
 add_executable(simple)
 target_sources(simple PRIVATE simple.cpp)
-target_link_libraries(simple PRIVATE Sylvan::Sylvan) # stdc++)
+target_link_libraries(simple PRIVATE Sylvan::Sylvan)
 target_compile_features(simple PRIVATE c_std_11 cxx_std_11)
 target_compile_options(simple PRIVATE -Wall -Wextra -Werror -Wno-deprecated)
 
@@ -50,6 +50,7 @@ if(MEDDLY_FOUND)
 endif()
 
 # Add profiler to some of the examples, if available
+# In the future, maybe not use gperftools anymore, just Linux perf...
 include(CheckIncludeFiles)
 check_include_files("gperftools/profiler.h" HAVE_PROFILER)
 

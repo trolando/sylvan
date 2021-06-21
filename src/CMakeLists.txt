@@ -65,8 +65,8 @@ target_include_directories(Sylvan
 
 target_link_libraries(Sylvan PUBLIC m pthread)
 
-# We only want to include the custom MTBDD type GMP if we actually have the GMP library
 
+# We only want to include the custom MTBDD type GMP if we actually have the GMP library
 find_package(GMP)
 if(GMP_FOUND)
   target_sources(Sylvan 
@@ -80,17 +80,17 @@ if(GMP_FOUND)
   target_link_libraries(Sylvan PUBLIC ${GMP_LIBRARIES})
 endif()
 
-# Do we want to collect BDD statistics?
 
+# Do we want to collect BDD statistics?
 option(SYLVAN_STATS "Collect statistics" OFF)
 if(SYLVAN_STATS)
   set_target_properties(Sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_STATS")
 endif()
 
+
 get_target_property(Sylvan_PUBLIC_HEADERS Sylvan INTERFACE_SOURCES)
 set_target_properties(Sylvan PROPERTIES PUBLIC_HEADER "${Sylvan_PUBLIC_HEADERS}")
 
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sylvan.pc.cmake.in" "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc" @ONLY)
 
 if(NOT subproject)
   include(GNUInstallDirs)
@@ -104,5 +104,6 @@ if(NOT subproject)
     INCLUDES DESTINATION "${CMAKE_INSTALL_LIBDIR}"
   )
   install(EXPORT sylvan-export NAMESPACE Sylvan:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan)
+  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sylvan.pc.cmake.in" "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc" @ONLY)
   install(FILES "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc" DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
 endif()

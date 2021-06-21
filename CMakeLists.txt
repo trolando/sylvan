@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/")
 
+
 # Check if we are solo or as part of a larger project
 # If we're a subproject, disable testing/benchmark tools
 if(DEFINED PROJECT_NAME)
@@ -9,6 +10,7 @@ else()
   set(subproject OFF)
 endif()
 
+
 project(Sylvan
     VERSION 1.6.1
     DESCRIPTION "Sylvan, a parallel decision diagram library"
@@ -16,45 +18,55 @@ project(Sylvan
     LANGUAGES C CXX
 )
 
-# Some info
+
+# Print some info
 message(STATUS "CMake build configuration for Sylvan ${PROJECT_VERSION}")
 message(STATUS "OS: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID}")
 
+
+# Include a few useful CMake functionality
 include(CheckSymbolExists)
 include(CMakeDependentOption)
 
+
+# By default, build as RelWithDebInfo
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel." FORCE)
 ENDIF(NOT CMAKE_BUILD_TYPE)
 
+
+# Make shared library or static library?
+option(BUILD_SHARED_LIBS "Enable/disable creation of shared libraries" OFF)
 if (DEFINED Sylvan_SHARED_LIBS)
     set(BUILD_SHARED_LIBS "${Sylvan_SHARED_LIBS}")
 endif ()
 
-option(BUILD_SHARED_LIBS "Enable/disable creation of shared libraries" OFF)
-# option(BUILD_STATIC_LIBS "Enable/disable creation of static libraries" ON)
 
+# === #
+# Add code coverage if we are the main project
+# === #
 if(NOT subproject)
     include(code-coverage)
     add_code_coverage()
 endif()
 
+
+# Set up the target library
 add_library(Sylvan)
 add_library(Sylvan::Sylvan ALIAS Sylvan)
 set_target_properties(Sylvan PROPERTIES VERSION ${Sylvan_VERSION} SOVERSION ${Sylvan_VERSION_MAJOR})
 add_subdirectory(src)
 
-if(NOT subproject)
-    include(CTest)
-    add_subdirectory(test)
-endif()
 
+# Maybe make the examples?
 cmake_dependent_option(SYLVAN_BUILD_EXAMPLES "Build example tools" OFF "NOT subproject" OFF)
 if(SYLVAN_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
+
+# Maybe make documentation?
 cmake_dependent_option(SYLVAN_BUILD_DOCS "Build documentation" OFF "NOT subproject" OFF)
 if(SYLVAN_BUILD_DOCS)
     configure_file("docs/conf.py.in" "docs/conf.py" @ONLY)
@@ -65,6 +77,14 @@ if(SYLVAN_BUILD_DOCS)
     add_dependencies(update_gh_pages sylvan_html)
 endif()
 
+
+# Maybe add tests?
+if(NOT subproject)
+    add_subdirectory(test)
+endif()
+
+
+# Maybe setup CPack?
 if(NOT subproject)
     # Setup basic CPack support
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${PROJECT_DESCRIPTION})

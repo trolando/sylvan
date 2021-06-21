@@ -1,3 +1,5 @@
+include(CTest)
+
 add_executable(test_basic)
 target_sources(test_basic PRIVATE test_basic.c)
 target_link_libraries(test_basic PRIVATE Sylvan::Sylvan)

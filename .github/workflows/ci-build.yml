@@ -1,0 +1,116 @@
+name: CI testing 
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  linux-build:
+    name: 'Linux ${{matrix.cc.cc}}-${{ matrix.cc.v}} ${{matrix.build_type}}'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type:
+        - RelWithDebInfo
+        - Debug
+        sylvan_stats:
+        - ON
+        - OFF
+        cc:
+        - { cc: gcc, v: 7, cxx: g++}
+        - { cc: gcc, v: 9, cxx: g++}
+        - { cc: gcc, v: 11, cxx: g++}
+        - { cc: clang, v: 7, cxx: clang++ }
+        - { cc: clang, v: 11, cxx: clang++ }
+    env:
+      cc: ${{matrix.cc.cc}}-${{matrix.cc.v}}
+      cxx: ${{matrix.cc.cxx}}-${{matrix.cc.v}}
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install packages
+      run: |
+        sudo apt update
+        sudo apt install cmake cmake-data build-essential
+        if [ "${{ matrix.cc.cc }}" == "gcc" ] ;
+        then
+          sudo apt install ${{matrix.cc.cc}}-${{matrix.cc.v}} ${{matrix.cc.cxx}}-${{matrix.cc.v}}
+        else
+          sudo apt install ${{matrix.cc.cc}}-${{matrix.cc.v}}
+        fi
+        sudo apt install libgmp-dev
+
+    - name: CMake Build
+      run: |
+        export CC=${{env.cc}}
+        export CXX=${{env.cxx}}
+        cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DSYLVAN_STATS=${{matrix.sylvan_stats}} -DSYLVAN_BUILD_EXAMPLES=ON
+        cmake --build ${{github.workspace}}/build --config ${{matrix.build_type}}
+
+    - name: Test
+      working-directory: ${{github.workspace}}/build
+      run:  |
+        ctest -C ${{ matrix.build_type }} -VV --timeout 30
+        examples/simple
+        examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee /dev/fd/2 | grep -q "1,570,340"
+        examples/lddmc ../models/blocks.2.ldd -w 2 | tee /dev/fd/2 | grep -q "7,057 states"
+
+  macos-build:
+    name: 'OSX ${{matrix.cc.cc}}@${{matrix.cc.v || matrix.cc.xcode}} ${{matrix.build_type}}'
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type:
+        - RelWithDebInfo
+        - Debug
+        sylvan_stats:
+        - ON
+        - OFF
+        cc:
+        #- { cc: gcc, v: 7, cxx: g++, xcode: latest }
+        - { cc: gcc, v: 11, cxx: g++, xcode: latest }
+        - { cc: clang, cxx: clang++, xcode: 10.0 }
+        #- { cc: clang, cxx: clang++, xcode: 11.0 }
+        - { cc: clang, cxx: clang++, xcode: 12.0 }
+    env:
+      cc: ${{matrix.cc.cc}}-${{matrix.cc.v}}
+      cxx: ${{matrix.cc.cxx}}-${{matrix.cc.v}}
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install packages
+      run: |
+        brew update
+        if ["${{matrix.cc.cc}}" == "gcc"];
+        then
+          brew install ${{matrix.cc.cc}}@${{matrix.cc.v}}
+        fi
+        brew install gawk
+        brew install argp-standalone
+
+    - name: CMake Build
+      run: |
+        if [ "${{ matrix.cc.cc }}" == "gcc" ] ;
+        then
+          export CC=/usr/bin/${{matrix.cc.cc}}
+          export CXX=/usr/bin/${{matrix.cc.cxx}}
+        else
+          export CC=${{matrix.cc.cc}}
+          export CXX=${{matrix.cc.cxx}}
+        fi
+        cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DSYLVAN_STATS=${{matrix.sylvan_stats}} -DSYLVAN_BUILD_EXAMPLES=ON
+        cmake --build ${{github.workspace}}/build --config ${{matrix.build_type}}
+
+    - name: Test
+      working-directory: ${{github.workspace}}/build
+      run:  |
+        ctest -C ${{ matrix.build_type }} -VV --timeout 30
+        examples/simple
+        examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee /dev/fd/2 | grep -q "1,570,340"
+        examples/lddmc ../models/blocks.2.ldd -w 2 | tee /dev/fd/2 | grep -q "7,057 states"

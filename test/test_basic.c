@@ -30,7 +30,7 @@ xorshift_rand(void)
 double
 uniform_deviate(uint64_t seed)
 {
-    return seed * (1.0 / (0xffffffffffffffffL + 1.0));
+    return seed * (1.0 / ((double)(UINT64_MAX) + 1.0));
 }
 
 int

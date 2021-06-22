@@ -16,24 +16,24 @@ target_sources(Sylvan
     sylvan_stats.c
     sylvan_table.c
   PUBLIC
-    $<INSTALL_INTERFACE:lace.h>
-    $<INSTALL_INTERFACE:sylvan.h>
-    $<INSTALL_INTERFACE:sylvan_bdd.h>
-    $<INSTALL_INTERFACE:sylvan_cache.h>
-    $<INSTALL_INTERFACE:sylvan_config.h>
-    $<INSTALL_INTERFACE:sylvan_common.h>
-    $<INSTALL_INTERFACE:sylvan_gmp.h>
-    $<INSTALL_INTERFACE:sylvan_hash.h>
-    $<INSTALL_INTERFACE:sylvan_int.h>
-    $<INSTALL_INTERFACE:sylvan_ldd.h>
-    $<INSTALL_INTERFACE:sylvan_ldd_int.h>
-    $<INSTALL_INTERFACE:sylvan_mt.h>
-    $<INSTALL_INTERFACE:sylvan_mtbdd.h>
-    $<INSTALL_INTERFACE:sylvan_mtbdd_int.h>
-    $<INSTALL_INTERFACE:sylvan_obj.hpp>
-    $<INSTALL_INTERFACE:sylvan_stats.h>
-    $<INSTALL_INTERFACE:sylvan_table.h>
-    $<INSTALL_INTERFACE:sylvan_tls.h>
+    $<INSTALL_INTERFACE:include/lace.h>
+    $<INSTALL_INTERFACE:include/sylvan.h>
+    $<INSTALL_INTERFACE:include/sylvan_bdd.h>
+    $<INSTALL_INTERFACE:include/sylvan_cache.h>
+    $<INSTALL_INTERFACE:include/sylvan_config.h>
+    $<INSTALL_INTERFACE:include/sylvan_common.h>
+    $<INSTALL_INTERFACE:include/sylvan_gmp.h>
+    $<INSTALL_INTERFACE:include/sylvan_hash.h>
+    $<INSTALL_INTERFACE:include/sylvan_int.h>
+    $<INSTALL_INTERFACE:include/sylvan_ldd.h>
+    $<INSTALL_INTERFACE:include/sylvan_ldd_int.h>
+    $<INSTALL_INTERFACE:include/sylvan_mt.h>
+    $<INSTALL_INTERFACE:include/sylvan_mtbdd.h>
+    $<INSTALL_INTERFACE:include/sylvan_mtbdd_int.h>
+    $<INSTALL_INTERFACE:include/sylvan_obj.hpp>
+    $<INSTALL_INTERFACE:include/sylvan_stats.h>
+    $<INSTALL_INTERFACE:include/sylvan_table.h>
+    $<INSTALL_INTERFACE:include/sylvan_tls.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/lace.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_bdd.h>
@@ -73,7 +73,7 @@ if(GMP_FOUND)
     PRIVATE
       sylvan_gmp.c
     PUBLIC
-      $<INSTALL_INTERFACE:sylvan_gmp.h>
+      $<INSTALL_INTERFACE:include/sylvan_gmp.h>
       $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_gmp.h>
   )
   target_include_directories(Sylvan PRIVATE ${GMP_INCLUDE_DIR})
@@ -96,14 +96,23 @@ if(NOT subproject)
   include(GNUInstallDirs)
   include(CMakePackageConfigHelpers)
 
-  install(TARGETS Sylvan
+  install(
+    TARGETS Sylvan
     EXPORT sylvan-export
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
-    INCLUDES DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
   )
-  install(EXPORT sylvan-export NAMESPACE Sylvan:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan)
+  install(
+    EXPORT sylvan-export
+    FILE SylvanTargets.cmake
+    NAMESPACE Sylvan::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
+  )
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sylvan.pc.cmake.in" "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc" @ONLY)
-  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc" DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
+  install(
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig"
+  )
 endif()

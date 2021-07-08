@@ -20,7 +20,13 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <pthread.h> /* for pthread_t */
-
+#ifdef __cplusplus
+#include <thread>
+using std::atomic_thread_fence;
+using std::memory_order_seq_cst;
+#else
+#include <stdatomic.h>
+#endif
 #ifndef __LACE_H__
 #define __LACE_H__
 
@@ -297,7 +303,7 @@ void lace_yield(WorkerP *__lace_worker, Task *__lace_dq_head);
 #endif
 
 #ifndef mfence
-#define mfence() { asm volatile("mfence" ::: "memory"); }
+#define mfence() { atomic_thread_fence(memory_order_seq_cst); }
 #endif
 
 /* Compiler specific branch prediction optimization */

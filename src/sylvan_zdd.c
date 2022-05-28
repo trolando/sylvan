@@ -2113,3 +2113,248 @@ TASK_IMPL_3(int, zdd_reader_frombinary, FILE*, in, ZDD*, dds, int, count)
     zdd_reader_end(arr);
     return 0;
 }
+
+/**
+ * ISOP algorithm based on the implementation in CuDD
+ * Given lower bound L and upper bound U as BDDs, compute a cover and BDD...
+ * Returns ZDD true for MTBDD true, and ZDD false for MTBDD false.
+ */
+TASK_IMPL_3(ZDD, zdd_isop, MTBDD, L, MTBDD, U, MTBDD*, bddresptr)
+{
+    if (L == mtbdd_false) {
+        if (bddresptr != NULL) *bddresptr = mtbdd_false;
+        return zdd_false;
+    }
+
+    if (U == mtbdd_true) {
+        if (bddresptr != NULL) *bddresptr = mtbdd_true;
+        return zdd_true;
+    }
+
+    /**
+     * Test for garbage collection
+     */
+    sylvan_gc_test();
+
+    /**
+     * Count operation
+     */
+    sylvan_stats_count(ZDD_ISOP);
+
+    /**
+     * Check the cache
+     */
+    ZDD result;
+    MTBDD bddres;
+    if (cache_get6(CACHE_ZDD_ISOP, L, U, 0, 0, 0, &result, &bddres)) {
+        sylvan_stats_count(ZDD_ISOP_CACHED);
+        if (bddresptr != NULL) *bddresptr = bddres;
+        return result;
+    }
+
+    /**
+     * Compute variable and cofactors
+     */
+    const mtbddnode_t L_node = MTBDD_GETNODE(L);
+    const mtbddnode_t U_node = MTBDD_GETNODE(U);
+    const uint32_t L_var = mtbddnode_getvariable(L_node);
+    const uint32_t U_var = mtbddnode_getvariable(U_node);
+    const uint32_t minvar = L_var < U_var ? L_var : U_var;
+
+    const MTBDD Lnv = minvar == L_var ? mtbddnode_followlow(L, L_node) : L;
+    const MTBDD Lv = minvar == L_var ? mtbddnode_followhigh(L, L_node) : L;
+    const MTBDD Unv = minvar == U_var ? mtbddnode_followlow(U, U_node) : U;
+    const MTBDD Uv = minvar == U_var ? mtbddnode_followhigh(U, U_node) : U;
+
+    // spawn Ud computation ahead of time...
+    mtbdd_refs_spawn(SPAWN(sylvan_and, Unv, Uv, 0));
+
+    /**
+     * Compute Lsub0 and Lsub1
+     * Lsub0 := Lnv && !Uv
+     * Lsub1 := Lv && !Unv
+     */
+    MTBDD Lsub0, Lsub1;
+    mtbdd_refs_spawn(SPAWN(sylvan_and, Lnv, sylvan_not(Uv), 0));
+    Lsub1 = mtbdd_refs_push(sylvan_and(Lv, sylvan_not(Unv)));
+    Lsub0 = mtbdd_refs_push(mtbdd_refs_sync(SYNC(sylvan_and)));
+
+    /**
+     * Compute recursive results for sub0 and sub1
+     */
+    MTBDD I0 = mtbdd_false;
+    MTBDD I1 = mtbdd_false;
+    mtbdd_refs_pushptr(&I0);
+    mtbdd_refs_pushptr(&I1);
+    zdd_refs_spawn(SPAWN(zdd_isop, Lsub0, Unv, &I0));
+    ZDD Z1 = zdd_refs_push(zdd_isop(Lsub1, Uv, &I1));
+    ZDD Z0 = zdd_refs_push(zdd_refs_sync(SYNC(zdd_isop)));
+    mtbdd_refs_pop(2); // Lsub0, Lsub1
+
+    /**
+     * Compute Lsuper0 and Lsuper1 and Ld and Ud
+     * Lsuper0 := Lnv && !I0
+     * Lsuper1 := Lv && !I1
+     * Ld = Lsuper0 || Lsuper1
+     * Ud = Usuper0 && Usuper1  (computation spawned ahead of time)
+     */
+    mtbdd_refs_spawn(SPAWN(sylvan_and, Lnv, sylvan_not(I0), 0));
+    MTBDD Lsuper1 = mtbdd_refs_push(sylvan_and(Lv, sylvan_not(I1)));
+    MTBDD Lsuper0 = mtbdd_refs_push(mtbdd_refs_sync(SYNC(sylvan_and)));
+    MTBDD Ld = mtbdd_refs_push(sylvan_or(Lsuper0, Lsuper1));
+    MTBDD Ud = mtbdd_refs_push(mtbdd_refs_sync(SYNC(sylvan_and)));
+
+    /**
+     * Compute recursive result for dontcare
+     */
+    MTBDD Id = mtbdd_false;
+    mtbdd_refs_pushptr(&Id);
+    ZDD Zd = zdd_refs_push(zdd_isop(Ld, Ud, &Id));
+    mtbdd_refs_pop(4); // Ld, Ud, Lsuper0, Lsuper1
+
+    /**
+     * Now we have: I0, I1, ID and Z0, Z1, Zd
+     */
+    MTBDD x = mtbdd_refs_push(mtbdd_makenode(minvar, I0, I1));
+    bddres = sylvan_or(x, Id);
+    mtbdd_refs_pop(1); // x
+    mtbdd_refs_popptr(3); // Id, I0, I1
+    mtbdd_refs_push(bddres);
+
+    ZDD z = zdd_makenode(2*minvar + 1, Zd, Z0);
+    result = zdd_makenode(2*minvar, z, Z1);
+    zdd_refs_pop(3); // Z0, Z1, Zd
+
+    /**
+     * Put in cache
+     */
+    if (cache_put6(CACHE_ZDD_ISOP, L, U, 0, 0, 0, result, bddres)) {
+        sylvan_stats_count(ZDD_ISOP_CACHEDPUT);
+    }
+
+    if (bddresptr != NULL) *bddresptr = bddres;
+    return result;
+}
+
+/**
+ * Compute the BDD from a ZDD cover
+ */
+TASK_IMPL_1(MTBDD, zdd_cover_to_bdd, ZDD, zdd)
+{
+    if (zdd == zdd_true) return mtbdd_true;
+    if (zdd == zdd_false) return mtbdd_false;
+
+    /**
+     * Test for garbage collection
+     */
+    sylvan_gc_test();
+
+    /**
+     * Count operation
+     */
+    sylvan_stats_count(ZDD_COVER_TO_BDD);
+
+    /**
+     * Check the cache
+     */
+    MTBDD result;
+    if (cache_get3(CACHE_ZDD_COVER_TO_BDD, zdd, 0, 0, &result)) {
+        sylvan_stats_count(ZDD_COVER_TO_BDD_CACHED);
+        return result;
+    }
+
+    const zddnode_t zdd_node = ZDD_GETNODE(zdd);
+    const uint32_t zdd_var = zddnode_getvariable(zdd_node);
+    const uint32_t pv = zdd_var & ~1;
+    const uint32_t nv = pv + 1;
+    const uint32_t v = pv/2;
+
+    /**
+     * Compute cofactors zdd_nv, zdd_pv, zdd_dc
+     */
+    ZDD zdd_nv, zdd_pv, zdd_dc;
+    if (zdd_var == pv) {
+        zdd_pv = zddnode_high(zdd, zdd_node);
+        const ZDD zdd2 = zddnode_low(zdd, zdd_node);
+        if (zdd2 == zdd_false) {
+            zdd_nv = zdd_false;
+            zdd_dc = zdd_false;
+        } else if (zdd2 == zdd_true) {
+            // um? this should not even happen?
+            zdd_nv = zdd_false;
+            zdd_dc = zdd_true;
+        } else {
+            const zddnode_t zdd2_node = ZDD_GETNODE(zdd2);
+            if (zddnode_getvariable(zdd2_node) == nv) {
+                zdd_nv = zddnode_high(zdd2, zdd2_node);
+                zdd_dc = zddnode_low(zdd2, zdd2_node);
+            } else {
+                zdd_nv = zdd_false;
+                zdd_dc = zdd2;
+            }
+        }
+    } else {
+        zdd_pv = zdd_false;
+        zdd_nv = zddnode_high(zdd, zdd_node);
+        zdd_dc = zddnode_low(zdd, zdd_node);
+    }
+
+    mtbdd_refs_spawn(SPAWN(zdd_cover_to_bdd, zdd_pv));
+    mtbdd_refs_spawn(SPAWN(zdd_cover_to_bdd, zdd_nv));
+    MTBDD Fdc = mtbdd_refs_push(zdd_cover_to_bdd(zdd_dc));
+    MTBDD Fnv = mtbdd_refs_push(mtbdd_refs_sync(SYNC(zdd_cover_to_bdd)));
+    MTBDD Fpv = mtbdd_refs_push(mtbdd_refs_sync(SYNC(zdd_cover_to_bdd)));
+
+    result = mtbdd_makenode(v, Fnv, Fpv);
+    mtbdd_refs_pop(2); // Fnv, Fpv
+    mtbdd_refs_push(result);
+
+    result = sylvan_or(result, Fdc);
+    mtbdd_refs_pop(2); // Fdc, previous result
+
+    if (cache_put3(CACHE_ZDD_COVER_TO_BDD, zdd, 0, 0, result)) {
+        sylvan_stats_count(ZDD_COVER_TO_BDD_CACHEDPUT);
+    }
+
+    return result;
+ }
+
+
+ ZDD
+zdd_cover_enum_first(ZDD dd, int32_t *arr)
+{
+    if (dd == zdd_false) {
+        return zdd_false;
+    } else if (dd == zdd_true) {
+        *arr = -1;
+        return zdd_true;
+    } else {
+        const zddnode_t dd_node = ZDD_GETNODE(dd);
+        const uint32_t dd_var = zddnode_getvariable(dd_node);
+
+        ZDD res = zdd_cover_enum_first(zddnode_high(dd, dd_node), arr+1);
+        // this cannot return False; following high edges must always lead to zdd_true!
+        assert(res != zdd_false);
+
+        *arr = dd_var;
+        return res;
+    }
+}
+
+ZDD
+zdd_cover_enum_next(ZDD dd, int32_t *arr)
+{
+    if (dd == zdd_true) return zdd_false; // only find a leaf in enum_first
+
+    const zddnode_t dd_node = ZDD_GETNODE(dd);
+    const uint32_t dd_var = zddnode_getvariable(dd_node);
+
+    if (*arr == (int32_t) dd_var) {
+        // We followed this one previously
+        ZDD res = zdd_cover_enum_next(zddnode_high(dd, dd_node), arr+1);
+        if (res != zdd_false) return res;
+        else return zdd_cover_enum_first(zddnode_low(dd, dd_node), arr);
+    } else {
+        return zdd_cover_enum_next(zddnode_low(dd, dd_node), arr);
+    }
+}

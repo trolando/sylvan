@@ -112,6 +112,8 @@ struct
     {2, ZDD_DIFF, "ZDD diff" },
     {2, ZDD_EXISTS, "ZDD exists" },
     {2, ZDD_PROJECT, "ZDD project" },
+    {2, ZDD_ISOP, "zdd isop"},
+    {2, ZDD_COVER_TO_BDD, "zdd cover_to_bdd"},
 
     {0, 0, "Garbage collection"},
     {1, SYLVAN_GC_COUNT, "GC executions"},

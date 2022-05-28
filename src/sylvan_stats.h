@@ -101,6 +101,8 @@ typedef enum {
     OPCOUNTER(ZDD_DIFF),
     OPCOUNTER(ZDD_EXISTS),
     OPCOUNTER(ZDD_PROJECT),
+    OPCOUNTER(ZDD_ISOP),
+    OPCOUNTER(ZDD_COVER_TO_BDD),
 
     /* Other counters */
     SYLVAN_GC_COUNT,

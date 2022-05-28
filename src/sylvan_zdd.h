@@ -209,6 +209,28 @@ TASK_DECL_4(ZDD, zdd_union_cube, ZDD, ZDD, uint8_t*, ZDD);
 #define zdd_union_cube(set, variables, values, leaf) RUN(zdd_union_cube, set, variables, values, leaf)
 
 /**
+ * Compute the irredundant sum of products given lower and upper bounds as BDDs.
+ * Returns a ZDD cover between the two bounds; if given bddresptr pointer, then that will have the BDD.
+ */
+TASK_DECL_3(ZDD, zdd_isop, MTBDD, MTBDD, MTBDD*);
+#define zdd_isop(L, U, bddresptr) RUN(zdd_isop, L, U, bddresptr)
+
+/**
+ * Compute the BDD representation of a given ZDD cover.
+ */
+TASK_DECL_1(MTBDD, zdd_cover_to_bdd, ZDD);
+#define zdd_cover_to_bdd(zdd) RUN(zdd_cover_to_bdd, zdd)
+
+/**
+ * Enumerate the cubes of a ZDD cover
+ * <arr> must be a sufficiently large pre-allocated array, i.e., 1 + number_of_bdd_variables
+ * Returns zdd_true on success or zdd_false if no more cubes in the cover.
+ * The array will be filled with even (positive) and odd (negative) cover variables, ending with -1.
+ */
+ZDD zdd_cover_enum_first(ZDD dd, int32_t *arr);
+ZDD zdd_cover_enum_next(ZDD dd, int32_t *arr);
+
+/**
  * Extend the domain of a ZDD, such that all new variables take the given value.
  * The given value can be 0 (always negative), 1 (always positive), 2 (always dontcare)
  */
@@ -676,6 +698,8 @@ void zdd_refs_spawn(Task *t);
  * Usage: ZDD result = zdd_refs_sync(SYNC(function));
  */
 ZDD zdd_refs_sync(ZDD mtbdd);
+
+
 
 #ifdef __cplusplus
 }

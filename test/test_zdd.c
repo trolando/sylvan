@@ -642,6 +642,75 @@ TASK_0(int, test_zdd_exists)
 //     return 0;
 // }
 
+/**
+ * Basic test for ISOP on a known small case.
+ */
+TASK_0(int, test_zdd_isop_basic)
+{
+    BDD a = sylvan_ithvar(1);
+    BDD b = sylvan_ithvar(2);
+
+    BDD a_and_b = sylvan_and(a, b);
+    BDD aNot_and_b = sylvan_and(sylvan_not(a), b);
+    BDD redundant_b = sylvan_or(a_and_b, aNot_and_b);
+
+    // ab + ~ab == b
+
+    MTBDD bddres;
+    ZDD isop_zdd = zdd_isop(redundant_b, redundant_b, &bddres);
+    MTBDD bdd2 = zdd_cover_to_bdd(isop_zdd);
+
+    test_assert(bddres == redundant_b);
+    test_assert(bdd2 == redundant_b);
+    test_assert(zdd_getvar(isop_zdd) == 4);
+    test_assert(zdd_gethigh(isop_zdd) == zdd_true); 
+    test_assert(zdd_getlow(isop_zdd) == zdd_false);
+    return 0;
+}
+
+TASK_0(int, test_zdd_isop_random)
+{
+    BDD bdd_dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4,5,6,7,8,9,10,11}, 12);
+
+    for (int i=0; i<10; i++) {
+        // create a random BDD
+        MTBDD bdd_set = mtbdd_false;
+        int cubecount = rng(10,200);
+        for (int j=0; j<cubecount; j++) {
+            uint8_t arr[11];
+            for (int j=0; j<11; j++) arr[j] = rng(0, 2);
+            bdd_set = sylvan_or(bdd_set, sylvan_cube(bdd_dom, arr));
+        }
+
+        // convert to ISOP cover
+        MTBDD isop_bdd;
+        ZDD isop_zdd = zdd_isop(bdd_set, bdd_set, &isop_bdd);
+        MTBDD remade_bdd = zdd_cover_to_bdd(isop_zdd);
+
+        // manually count cubes
+        int arr[12];
+        ZDD res = zdd_cover_enum_first(isop_zdd, arr);
+        int count1 = 0;
+        while (res != zdd_false) {
+            res = zdd_cover_enum_next(isop_zdd, arr);
+            count1++;
+        }
+
+        // count cubes by counting paths
+        long zdd_cubes = zdd_pathcount(isop_zdd);
+
+        // printf("%6d cubes, %6ld PIs\n", cubecount, zdd_cubes);
+
+        // check if all is right
+        test_assert(isop_bdd == bdd_set);
+        test_assert(remade_bdd == bdd_set);
+        test_assert(count1 <= cubecount);
+        test_assert(count1 == zdd_cubes);
+    }
+
+    return 0;
+}
+
 TASK_0(int, test_zdd_read_write)
 {
     /**
@@ -712,6 +781,10 @@ TASK_0(int, runtests)
     printf("test_zdd_read_write...\n");
     for (int k=0; k<test_iterations; k++) if (CALL(test_zdd_read_write)) return 1;
     // for (int k=0; k<test_iterations; k++) if (CALL(test_zdd_extend_domain)) return 1;
+    printf("test_zdd_isop_basic...\n");
+    if (CALL(test_zdd_isop_basic)) return 1;
+    printf("test_zdd_isop_random...\n");
+    for (int k=0; k<test_iterations; k++) if (CALL(test_zdd_isop_random)) return 1;
 
     return 0;
 }

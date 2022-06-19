@@ -11,7 +11,7 @@ else()
 endif()
 
 
-project(Sylvan
+project(sylvan
     VERSION 1.6.1
     DESCRIPTION "Sylvan, a parallel decision diagram library"
     HOMEPAGE_URL "https://github.com/trolando/sylvan"
@@ -46,9 +46,9 @@ endif()
 
 
 # Set up the target library
-add_library(Sylvan STATIC)
-add_library(Sylvan::Sylvan ALIAS Sylvan)
-set_target_properties(Sylvan PROPERTIES VERSION ${Sylvan_VERSION} SOVERSION ${Sylvan_VERSION_MAJOR})
+add_library(sylvan STATIC)
+add_library(sylvan::sylvan ALIAS sylvan)
+set_target_properties(sylvan PROPERTIES VERSION ${sylvan_VERSION} SOVERSION ${sylvan_VERSION_MAJOR})
 add_subdirectory(src)
 
 

@@ -1,4 +1,4 @@
-target_sources(Sylvan 
+target_sources(sylvan
   PRIVATE
     lace.c
     sha2.c
@@ -54,42 +54,42 @@ target_sources(Sylvan
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_tls.h>
 )
 
-target_compile_features(Sylvan PUBLIC c_std_11 cxx_std_11)
-target_compile_options(Sylvan PRIVATE -Wall -Wextra -Werror -fno-strict-aliasing -Wno-deprecated)
+target_compile_features(sylvan PUBLIC c_std_11 cxx_std_11)
+target_compile_options(sylvan PRIVATE -Wall -Wextra -Werror -fno-strict-aliasing -Wno-deprecated)
 
-target_include_directories(Sylvan
+target_include_directories(sylvan
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>
     $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(Sylvan PUBLIC m pthread)
+target_link_libraries(sylvan PUBLIC m pthread)
 
 
 # We only want to include the custom MTBDD type GMP if we actually have the GMP library
 find_package(GMP)
 if(GMP_FOUND)
-  target_sources(Sylvan 
+  target_sources(sylvan 
     PRIVATE
       sylvan_gmp.c
     PUBLIC
       $<INSTALL_INTERFACE:include/sylvan_gmp.h>
       $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_gmp.h>
   )
-  target_include_directories(Sylvan PRIVATE ${GMP_INCLUDE_DIR})
-  target_link_libraries(Sylvan PUBLIC ${GMP_LIBRARIES})
+  target_include_directories(sylvan PRIVATE ${GMP_INCLUDE_DIR})
+  target_link_libraries(sylvan PUBLIC ${GMP_LIBRARIES})
 endif()
 
 
 # Do we want to collect BDD statistics?
 option(SYLVAN_STATS "Collect statistics" OFF)
 if(SYLVAN_STATS)
-  set_target_properties(Sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_STATS")
+  set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_STATS")
 endif()
 
 
-get_target_property(Sylvan_PUBLIC_HEADERS Sylvan INTERFACE_SOURCES)
-set_target_properties(Sylvan PROPERTIES PUBLIC_HEADER "${Sylvan_PUBLIC_HEADERS}")
+get_target_property(sylvan_PUBLIC_HEADERS sylvan INTERFACE_SOURCES)
+set_target_properties(sylvan PROPERTIES PUBLIC_HEADER "${sylvan_PUBLIC_HEADERS}")
 
 
 if(NOT subproject)
@@ -97,7 +97,7 @@ if(NOT subproject)
   include(CMakePackageConfigHelpers)
 
   install(
-    TARGETS Sylvan
+    TARGETS sylvan
     EXPORT sylvan-export
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
@@ -106,8 +106,8 @@ if(NOT subproject)
   )
   install(
     EXPORT sylvan-export
-    FILE SylvanTargets.cmake
-    NAMESPACE Sylvan::
+    FILE sylvanTargets.cmake
+    NAMESPACE sylvan::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
   )
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sylvan.pc.cmake.in" "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc" @ONLY)

@@ -2224,6 +2224,7 @@ TASK_IMPL_3(ZDD, zdd_isop, MTBDD, L, MTBDD, U, MTBDD*, bddresptr)
     ZDD z = zdd_makenode(2*minvar + 1, Zd, Z0);
     result = zdd_makenode(2*minvar, z, Z1);
     zdd_refs_pop(3); // Z0, Z1, Zd
+    mtbdd_refs_pop(1); // bddres
 
     /**
      * Put in cache

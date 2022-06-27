@@ -5,7 +5,6 @@ target_sources(sylvan
     sylvan_bdd.c
     sylvan_cache.c
     sylvan_common.c
-    sylvan_gmp.c
     sylvan_hash.c
     sylvan_ldd.c
     sylvan_mt.c
@@ -23,7 +22,6 @@ target_sources(sylvan
     $<INSTALL_INTERFACE:include/sylvan_cache.h>
     $<INSTALL_INTERFACE:include/sylvan_config.h>
     $<INSTALL_INTERFACE:include/sylvan_common.h>
-    $<INSTALL_INTERFACE:include/sylvan_gmp.h>
     $<INSTALL_INTERFACE:include/sylvan_hash.h>
     $<INSTALL_INTERFACE:include/sylvan_int.h>
     $<INSTALL_INTERFACE:include/sylvan_ldd.h>
@@ -43,7 +41,6 @@ target_sources(sylvan
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_cache.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_config.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_common.h>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_gmp.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_hash.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_int.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_ldd.h>
@@ -71,18 +68,19 @@ target_include_directories(sylvan
 target_link_libraries(sylvan PUBLIC m pthread)
 
 
-# We only want to include the custom MTBDD type GMP if we actually have the GMP library
-find_package(GMP)
-if(GMP_FOUND)
-  target_sources(sylvan 
-    PRIVATE
-      sylvan_gmp.c
-    PUBLIC
-      $<INSTALL_INTERFACE:include/sylvan_gmp.h>
-      $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_gmp.h>
-  )
-  target_include_directories(sylvan PRIVATE ${GMP_INCLUDE_DIR})
-  target_link_libraries(sylvan PUBLIC ${GMP_LIBRARIES})
+option(SYLVAN_GMP "Include custom MTBDD type GMP")
+if(SYLVAN_GMP)
+    # We only want to include the custom MTBDD type GMP if we actually have the GMP library
+    find_package(GMP REQUIRED)
+    target_sources(sylvan
+            PRIVATE
+            sylvan_gmp.c
+            PUBLIC
+            $<INSTALL_INTERFACE:include/sylvan_gmp.h>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_gmp.h>
+            )
+    target_include_directories(sylvan PRIVATE ${GMP_INCLUDE_DIR})
+    target_link_libraries(sylvan PUBLIC ${GMP_LIBRARIES})
 endif()
 
 

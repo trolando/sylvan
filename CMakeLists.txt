@@ -12,7 +12,7 @@ endif()
 
 
 project(sylvan
-    VERSION 1.6.1
+    VERSION 1.7.0
     DESCRIPTION "Sylvan, a parallel decision diagram library"
     HOMEPAGE_URL "https://github.com/trolando/sylvan"
     LANGUAGES C CXX

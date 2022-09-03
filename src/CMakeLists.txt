@@ -1,6 +1,5 @@
 target_sources(sylvan
   PRIVATE
-    lace.c
     sha2.c
     sylvan_bdd.c
     sylvan_cache.c
@@ -16,7 +15,6 @@ target_sources(sylvan
     sylvan_table.c
     sylvan_zdd.c
   PUBLIC
-    $<INSTALL_INTERFACE:include/lace.h>
     $<INSTALL_INTERFACE:include/sylvan.h>
     $<INSTALL_INTERFACE:include/sylvan_bdd.h>
     $<INSTALL_INTERFACE:include/sylvan_cache.h>
@@ -35,7 +33,6 @@ target_sources(sylvan
     $<INSTALL_INTERFACE:include/sylvan_tls.h>
     $<INSTALL_INTERFACE:include/sylvan_zdd.h>
     $<INSTALL_INTERFACE:include/sylvan_zdd_int.h>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/lace.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_bdd.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/sylvan_cache.h>
@@ -87,7 +84,7 @@ endif()
 # Do we want to collect BDD statistics?
 option(SYLVAN_STATS "Collect statistics" OFF)
 if(SYLVAN_STATS)
-  set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_STATS")
+    set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_STATS")
 endif()
 
 
@@ -96,26 +93,26 @@ set_target_properties(sylvan PROPERTIES PUBLIC_HEADER "${sylvan_PUBLIC_HEADERS}"
 
 
 if(NOT subproject)
-  include(GNUInstallDirs)
-  include(CMakePackageConfigHelpers)
+    include(GNUInstallDirs)
+    include(CMakePackageConfigHelpers)
 
-  install(
-    TARGETS sylvan
-    EXPORT sylvan-export
-    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-    PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
-    INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
-  )
-  install(
-    EXPORT sylvan-export
-    FILE sylvanTargets.cmake
-    NAMESPACE sylvan::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
-  )
-  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sylvan.pc.cmake.in" "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc" @ONLY)
-  install(
-    FILES "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc"
-    DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig"
-  )
+    install(
+        TARGETS sylvan
+        EXPORT sylvan-export
+        ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        PUBLIC_HEADER DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+        INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+    )
+    install(
+        EXPORT sylvan-export
+        FILE sylvanTargets.cmake
+        NAMESPACE sylvan::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
+    )
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sylvan.pc.cmake.in" "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc" @ONLY)
+    install(
+        FILES "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig"
+    )
 endif()

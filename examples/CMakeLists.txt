@@ -49,22 +49,6 @@ if(MEDDLY_FOUND)
     target_compile_options(medmc PRIVATE -Wall -Wextra -Werror -Wno-deprecated)
 endif()
 
-# Add profiler to some of the examples, if available
-# In the future, maybe not use gperftools anymore, just Linux perf...
-include(CheckIncludeFiles)
-check_include_files("gperftools/profiler.h" HAVE_PROFILER)
-
-if(HAVE_PROFILER)
-    set_target_properties(bddmc PROPERTIES COMPILE_DEFINITIONS "HAVE_PROFILER")
-    target_link_libraries(bddmc PRIVATE profiler)
-
-    set_target_properties(lddmc PROPERTIES COMPILE_DEFINITIONS "HAVE_PROFILER")
-    target_link_libraries(lddmc PRIVATE profiler)
-
-    set_target_properties(nqueens PROPERTIES COMPILE_DEFINITIONS "HAVE_PROFILER")
-    target_link_libraries(nqueens PRIVATE profiler)
-endif()
-
 if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     # add argp library for OSX
     find_package(Argp REQUIRED)

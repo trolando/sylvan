@@ -36,15 +36,6 @@ if(NOT CMAKE_BUILD_TYPE)
 ENDIF(NOT CMAKE_BUILD_TYPE)
 
 
-# === #
-# Add code coverage if we are the main project
-# === #
-if(NOT subproject)
-    include(code-coverage)
-    add_code_coverage()
-endif()
-
-
 # Set up the target library
 add_library(sylvan STATIC)
 add_library(sylvan::sylvan ALIAS sylvan)

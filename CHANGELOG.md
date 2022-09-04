@@ -2,6 +2,15 @@
 All notable changes to Sylvan will be documented in this file.
 
 
+## [1.7.1] - 2022-09-04
+### Added
+- Now complains when certain Sylvan functions are used outside a Lace worker thread.
+
+### Changed
+- Slightly streamlined `mtbdd_makenode` to generate more optimal code.
+- Lace is now a dependency of Sylvan instead of included in the source code.
+
+
 ## [1.7.0] - 2022-09-03
 ### Added
 - Rudimentary support for zero-suppressed decision diagrams (ZDDs). 

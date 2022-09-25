@@ -15,7 +15,7 @@ by the `Formal Methods and Verification <http://fmv.jku.at/>`__ group at
 the Johannes Kepler University Linz as part of the RiSE project. Sylvan
 is licensed with the Apache 2.0 license.
 The main author of the project is Tom van Dijk who can be reached via
-tom@tvandijk.nl.  
+tom@tvandijk.nl.
 Please let us know if you use Sylvan in your projects and if you need
 decision diagram operations that are currently not implemented in Sylvan.
 
@@ -55,11 +55,11 @@ It is recommended to build Sylvan in a separate build directory:
     mkdir build
     cd build
     cmake ..
-    make && make test && make install
+    make && make test
 
-It is recommended to use ``ccmake`` to configure the build settings of Sylvan. For example,
-you can choose whether you want shared/static libraries, whether you want to enable
-statistics gathering and whether you want a ``Debug`` or a ``Release`` build.
+It is recommended to use ``ccmake`` to configure the build settings of Sylvan. These include, e.g.,
+enabling gathering of statistics and selecting whether you want a ``Debug`` or a ``Release`` build.
+The resulting artifact is a static library residing at ``build/src/libsylvan.a``.
 
 Using Sylvan
 ------------
@@ -72,8 +72,7 @@ To use Sylvan, the library and its dependency Lace must be initialized:
 
     main() {
         int n_workers = 0; // auto-detect
-        lace_init(n_workers, 0);
-        lace_startup(0, NULL, NULL);
+        lace_start(n_workers, 0);
 
         // use at most 512 MB, nodes:cache ratio 2:1, initial size 1/32 of maximum
         sylvan_set_limits(512*1024*1024, 1, 5);
@@ -84,13 +83,17 @@ To use Sylvan, the library and its dependency Lace must be initialized:
 
         sylvan_stats_report(stdout);
         sylvan_quit();
-        lace_exit();
+        lace_stop();
     }
 
-The call to ``lace_init`` initializes the Lace framework, which sets up the data structures
-for work-stealing. The parameter ``n_workers`` can be set to 0 for auto-detection. The
-function ``lace_startup`` then creates all other worker threads. The worker threads run
-until ``lace_exit`` is called. Lace must be started before Sylvan can be initialized.
+The call to ``lace_start`` initializes the Lace framework, setting up the necessary data structures
+for work-stealing. The function also spawns ``n_workers`` worker threads that will execute all
+Sylvan tasks. Setting ``n_workers`` to 0 means that the number of workers will be auto-detected.
+Lace must be started before Sylvan can be initialized. The worker threads will busy-wait until a
+task is offered, e.g. `mtbdd_applyp` is called, from a non-worker (main) thread. The worker threads
+can be suspended by calling ``lace_suspend``, preventing high CPU utilization when the application
+using Sylvan has no \*BDD-related work to do. The worker threads can be later resumed by calling
+``lace_resume``.  Calling ``lace_stop`` terminates all the worker threads.
 
 Sylvan is initialized with a call to ``sylvan_init_package``. Before this call, Sylvan needs to know
 how much memory to allocate for the nodes table and the operation cache. In this example, we use the
@@ -112,10 +115,10 @@ The Lace framework
 ~~~~~~~~~~~~~~~~~~
 
 Sylvan uses the Lace framework to offer 'automatic' parallelization of decision diagram operations.
-Many functions in Sylvan are Lace tasks. To call a Lace task, the variables 
-``__lace_worker`` and ``__lace_dq_head`` must be initialized as **local** variables of the current function.
-Use the macro ``LACE_ME`` to initialize the variables in every function that calls Sylvan functions
-and is not itself a Lace task.
+Many functions in Sylvan are Lace tasks that can be executed only from lace (worker) threads.
+Functions provided by Sylvan are internally wrapped in a ``RUN`` macro that will offer a task to
+lace workers and block the execution of the thread calling the function, thus, no special handling
+is required when calling Sylvan functions.
 
 Garbage collection and referencing nodes
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

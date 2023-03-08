@@ -103,6 +103,7 @@ typedef enum {
     OPCOUNTER(ZDD_PROJECT),
     OPCOUNTER(ZDD_ISOP),
     OPCOUNTER(ZDD_COVER_TO_BDD),
+    OPCOUNTER(ZDD_EVAL),
 
     /* Other counters */
     SYLVAN_GC_COUNT,

@@ -14,35 +14,38 @@ jobs:
       fail-fast: false
       matrix:
         build_type:
-        - RelWithDebInfo
+        - Release
         - Debug
         sylvan_stats:
         - ON
         - OFF
         cc:
-        - { cc: gcc, v: 8, cxx: g++}
-        - { cc: gcc, v: 10, cxx: g++}
-        - { cc: gcc, v: 11, cxx: g++}
-        - { cc: clang, v: 10, cxx: clang++ }
-        - { cc: clang, v: 12, cxx: clang++ }
+        - { cc: gcc, v: 9, cxx: g++}
+        - { cc: gcc, v: 12, cxx: g++}
+        - { cc: clang, v: 11, cxx: clang++ }
+        - { cc: clang, v: 15, cxx: clang++ }
     env:
       cc: ${{matrix.cc.cc}}-${{matrix.cc.v}}
       cxx: ${{matrix.cc.cxx}}-${{matrix.cc.v}}
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Install packages
       run: |
         sudo apt update
         sudo apt install cmake cmake-data build-essential
-        if [ "${{ matrix.cc.cc }}" == "gcc" ] ;
-        then
-          sudo apt install ${{matrix.cc.cc}}-${{matrix.cc.v}} ${{matrix.cc.cxx}}-${{matrix.cc.v}}
-        else
-          sudo apt install ${{matrix.cc.cc}}-${{matrix.cc.v}}
-        fi
         sudo apt install libgmp-dev
+
+    - name: Install CLang
+      if: matrix.cc.cc == 'clang'
+      run: |
+        sudo apt install clang-${{matrix.cc.v}}
+
+    - name: Install GCC
+      if: matrix.cc.cc == 'gcc'
+      run: |
+        sudo apt install gcc-${{matrix.cc.v}} g++-${{matrix.cc.v}}
 
     - name: CMake Build
       run: |
@@ -56,6 +59,7 @@ jobs:
       run:  |
         ctest -C ${{ matrix.build_type }} -VV --timeout 30
         examples/simple
+        examples/nqueens -w 2 9 | tee /dev/fd/2 | grep -q "352 solutions"
         examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee /dev/fd/2 | grep -q "1,570,340"
         examples/lddmc ../models/blocks.2.ldd -w 2 | tee /dev/fd/2 | grep -q "7,057 states"
 
@@ -66,7 +70,7 @@ jobs:
       fail-fast: false
       matrix:
         build_type:
-        - RelWithDebInfo
+        - Release
         - Debug
         sylvan_stats:
         - ON
@@ -80,7 +84,7 @@ jobs:
       cxx: ${{matrix.cc.cxx}}-${{matrix.cc.v}}
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Install packages
       run: |
@@ -110,5 +114,58 @@ jobs:
       run:  |
         ctest -C ${{ matrix.build_type }} -VV --timeout 30
         examples/simple
+        examples/nqueens -w 2 9 | tee /dev/fd/2 | grep -q "352 solutions"
         examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee /dev/fd/2 | grep -q "1,570,340"
         examples/lddmc ../models/blocks.2.ldd -w 2 | tee /dev/fd/2 | grep -q "7,057 states"
+
+  windows-build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # - { icon: '⬛', sys: mingw32 }
+          - { icon: '🟦', sys: mingw64 }
+          - { icon: '🟨', sys: ucrt64  }
+          - { icon: '🟧', sys: clang64 }
+    name: 🚧${{ matrix.icon }} ${{ matrix.sys }}
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+
+    - name: '🧰 Checkout'
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: '${{ matrix.icon }} Setup MSYS2'
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: ${{matrix.sys}}
+        update: true
+        install: >-
+          git
+          make
+          gmp
+          libargp-devel
+        pacboy: >-
+          toolchain:p
+          cmake:p
+          ninja:p
+
+    - name: '🚧 Build TOOL'
+      run: |
+        cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+        cmake --build build
+
+    - name: Test
+      working-directory: ${{github.workspace}}/build
+      run:  |
+        ctest -C ${{ matrix.build_type }} -VV --timeout 30
+        examples/simple
+        examples/nqueens -w 2 9 | tee >(cat 1>&2) | grep -q "352 solutions"
+        examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee >(cat 1>&2) | grep -q "1,570,340"
+        examples/lddmc ../models/blocks.2.ldd -w 2 | tee >(cat 1>&2) | grep -q "7,057 states"
+
+

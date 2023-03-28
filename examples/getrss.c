@@ -6,7 +6,7 @@
  */
 
 /*
- * Modified by Tom van Dijk to remove WIN32 and solaris code
+ * Modified by Tom van Dijk to remove solaris code
  */
 
 #if defined(__APPLE__) && defined(__MACH__)
@@ -17,6 +17,9 @@
 #include <unistd.h>
 #include <sys/resource.h>
 #include <stdio.h>
+#elif defined(_WIN32)
+#include <windows.h>
+#include <psapi.h>
 #else
 #error "Cannot define getPeakRSS( ) or getCurrentRSS( ) for an unknown OS."
 #endif
@@ -29,12 +32,18 @@
 size_t
 getPeakRSS()
 {
+#if defined(_WIN32)
+	PROCESS_MEMORY_COUNTERS info;
+	GetProcessMemoryInfo( GetCurrentProcess( ), &info, sizeof(info) );
+	return (size_t)info.PeakWorkingSetSize;
+#else
     struct rusage rusage;
     getrusage(RUSAGE_SELF, &rusage);
 #if defined(__APPLE__) && defined(__MACH__)
     return (size_t)rusage.ru_maxrss;
 #else
     return (size_t)(rusage.ru_maxrss * 1024L);
+#endif
 #endif
 }
 
@@ -52,6 +61,11 @@ getCurrentRSS()
     if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &infoCount) != KERN_SUCCESS)
         return (size_t)0L;      /* Can't access? */
     return (size_t)info.resident_size;
+#elif defined(_WIN32)
+	/* Windows -------------------------------------------------- */
+	PROCESS_MEMORY_COUNTERS info;
+	GetProcessMemoryInfo( GetCurrentProcess( ), &info, sizeof(info) );
+	return (size_t)info.WorkingSetSize;
 #else
     /* Linux ---------------------------------------------------- */
     long rss = 0L;
@@ -71,7 +85,14 @@ getCurrentRSS()
 size_t
 getMaxMemory()
 {
+#if defined(_WIN32)
+    MEMORYSTATUSEX status;
+    status.dwLength = sizeof(status);
+    GlobalMemoryStatusEx(&status);
+    return status.ullTotalPhys;
+#else
     long pages = sysconf(_SC_PHYS_PAGES);
     long page_size = sysconf(_SC_PAGE_SIZE);
     return pages * page_size;
+#endif
 }

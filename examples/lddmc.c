@@ -1,4 +1,4 @@
-#include <argp.h>
+#include <getopt.h>
 #include <inttypes.h>
 #include <locale.h>
 #include <stdio.h>
@@ -10,7 +10,7 @@
 
 #include <sylvan_int.h>
 
-/* Configuration (via argp) */
+/* Configuration */
 static int report_levels = 0; // report states at start of every level
 static int report_table = 0; // report table size at end of every level
 static int report_nodes = 0; // report number of nodes of LDDs
@@ -21,63 +21,93 @@ static int workers = 0; // autodetect
 static char* model_filename = NULL; // filename of model
 static char* out_filename = NULL; // filename of output
 
-/* argp configuration */
-static struct argp_option options[] =
+static void
+print_usage()
 {
-    {"workers", 'w', "<workers>", 0, "Number of workers (default=0: autodetect)", 0},
-    {"strategy", 's', "<bfs|par|sat|chaining>", 0, "Strategy for reachability (default=par)", 0},
-    {"deadlocks", 3, 0, 0, "Check for deadlocks", 1},
-    {"count-nodes", 5, 0, 0, "Report #nodes for LDDs", 1},
-    {"count-states", 1, 0, 0, "Report #states at each level", 1},
-    {"count-table", 2, 0, 0, "Report table usage at each level", 1},
-    {"print-matrix", 4, 0, 0, "Print transition matrix", 1},
-    {0, 0, 0, 0, 0, 0}
-};
-
-static error_t
-parse_opt(int key, char *arg, struct argp_state *state)
-{
-    switch (key) {
-    case 'w':
-        workers = atoi(arg);
-        break;
-    case 's':
-        if (strcmp(arg, "bfs")==0) strategy = 0;
-        else if (strcmp(arg, "par")==0) strategy = 1;
-        else if (strcmp(arg, "sat")==0) strategy = 2;
-        else if (strcmp(arg, "chaining")==0) strategy = 3;
-        else argp_usage(state);
-        break;
-    case 4:
-        print_transition_matrix = 1;
-        break;
-    case 3:
-        check_deadlocks = 1;
-        break;
-    case 1:
-        report_levels = 1;
-        break;
-    case 2:
-        report_table = 1;
-        break;
-    case 5:
-        report_nodes = 1;
-        break;
-    case ARGP_KEY_ARG:
-        if (state->arg_num == 0) model_filename = arg;
-        if (state->arg_num == 1) out_filename = arg;
-        if (state->arg_num >= 2) argp_usage(state);
-        break; 
-    case ARGP_KEY_END:
-        if (state->arg_num < 1) argp_usage(state);
-        break;
-    default:
-        return ARGP_ERR_UNKNOWN;
-    }
-    return 0;
+    printf("Usage: lddmc [-h] [-s <bfs|par|sat|chaining>] [-w <workers>]\n");
+    printf("            [--strategy=<bfs|par|sat|chaining>] [--workers=<workers>]\n");
+    printf("            [--count-nodes] [--count-states] [--count-table] [--deadlocks]\n");
+    printf("            [--print-matrix] [--help] [--usage] <model> [<output-bdd>]\n");
 }
 
-static struct argp argp = { options, parse_opt, "<model> [<output-bdd>]", 0, 0, 0, 0 };
+static void
+print_help()
+{
+    printf("Usage: lddmc [OPTION...] <model> [<output-bdd>]\n\n");
+    printf("  -s, --strategy=<bfs|par|sat|chaining>\n");
+    printf("                             Strategy for reachability (default=par)\n");
+    printf("  -w, --workers=<workers>    Number of workers (default=0: autodetect)\n");
+    printf("      --count-nodes          Report #nodes for LDDs\n");
+    printf("      --count-states         Report #states at each level\n");
+    printf("      --count-table          Report table usage at each level\n");
+    printf("      --deadlocks            Check for deadlocks\n");
+    printf("      --print-matrix         Print transition matrix\n");
+    printf("  -h, --help                 Give this help list\n");
+    printf("      --usage                Give a short usage message\n");
+}
+
+static void
+parse_args(int argc, char **argv)
+{
+    static const struct option longopts[] = {
+        {.name = "workers", .val = 'w', .has_arg = required_argument},
+        {.name = "strategy", .val = 's', .has_arg = required_argument},
+        {.name = "deadlocks", .val = 3, .has_arg = no_argument},
+        {.name = "count-nodes", .val = 5, .has_arg = no_argument},
+        {.name = "count-states", .val = 1, .has_arg = no_argument},
+        {.name = "count-table", .val = 2, .has_arg = no_argument},
+        {.name = "print-matrix", .val = 4, .has_arg = no_argument},
+        {.name = "help", .val = 'h', .has_arg = no_argument},
+        {.name = "usage", .val = 99, .has_arg = no_argument},
+        {},
+    };
+    int key = 0;
+    int long_index = 0;
+    while ((key = getopt_long(argc, argv, "w:s:h", longopts, &long_index)) != -1) {
+        switch (key) {
+            case 'w':
+                workers = atoi(optarg);
+                break;
+            case 's':
+                if (strcmp(optarg, "bfs")==0) strategy = 0;
+                else if (strcmp(optarg, "par")==0) strategy = 1;
+                else if (strcmp(optarg, "sat")==0) strategy = 2;
+                else if (strcmp(optarg, "chaining")==0) strategy = 3;
+                else {
+                    print_usage();
+                    exit(0);
+                }
+                break;
+            case 4:
+                print_transition_matrix = 1;
+                break;
+            case 3:
+                check_deadlocks = 1;
+                break;
+            case 1:
+                report_levels = 1;
+                break;
+            case 2:
+                report_table = 1;
+                break;
+            case 5:
+                report_nodes = 1;
+                break;
+            case 99:
+                print_usage();
+                exit(0);
+            case 'h':
+                print_help();
+                exit(0);
+        }
+    }
+    if (optind >= argc) {
+        print_usage();
+        exit(0);
+    }
+    model_filename = argv[optind];
+    if (optind + 1 < argc) out_filename = argv[optind + 1];
+}
 
 /**
  * Types (set and relation)
@@ -817,7 +847,7 @@ main(int argc, char **argv)
     /**
      * Parse command line, set locale, set startup time for INFO messages.
      */
-    argp_parse(&argp, argc, argv, 0, 0, 0);
+    parse_args(argc, argv);
     setlocale(LC_NUMERIC, "en_US.utf-8");
     t_start = wctime();
 
@@ -852,12 +882,10 @@ main(int argc, char **argv)
     sylvan_gc_hook_pregc(TASK(gc_start));
     sylvan_gc_hook_postgc(TASK(gc_end));
 
-    int res = RUN(run);
+    RUN(run);
 
     print_memory_usage();
     sylvan_stats_report(stdout);
 
     lace_stop();
-
-    return res;
 }

@@ -1,4 +1,4 @@
-#include <argp.h>
+#include <getopt.h>
 #include <assert.h>
 #include <inttypes.h>
 #include <math.h>
@@ -19,44 +19,63 @@ static char* model_filename = NULL; // filename of model
 static char* out_filename = NULL; // filename of output BDD
 static int no_reachable = 0;
 
-/* argp configuration */
-static struct argp_option options[] =
+static void
+print_usage()
 {
-    {"no-reachable", 1, 0, 0, "Do not write reachabile states", 0},
-    {"verbose", 'v', 0, 0, "Set verbose", 0},
-    {0, 0, 0, 0, 0, 0}
-};
+    printf("Usage: ldd2meddly [-vh] [--no-reachable] [--verbose] [--help] [--usage]\n");
+    printf("            <model> [<output-bdd>]\n");
+}
+
+static void
+print_help()
+{
+    printf("Usage: ldd2meddly [OPTION...] <model> [<output-bdd>]\n\n");
+    printf("      --no-reachable         Do not write reachabile states\n");
+    printf("  -v, --verbose              Set verbose\n");
+    printf("  -h, --help                 Give this help list\n");
+    printf("      --usage                Give a short usage message\n");
+}
+
+static void
+parse_args(int argc, char **argv)
+{
+    static const option longopts[] = {
+        {"no-reachable", no_argument, nullptr, 1},
+        {"verbose", no_argument, nullptr, 'v'},
+        {"help", no_argument, nullptr, 'h'},
+        {"usage", no_argument, nullptr, 99},
+        {nullptr, no_argument, nullptr, 0},
+    };
+    int key = 0;
+    int long_index = 0;
+    while ((key = getopt_long(argc, argv, "vh", longopts, &long_index)) != -1) {
+        switch (key) {
+            case 'v':
+                verbose = 1;
+                break;
+            case 1:
+                no_reachable = 1;
+                break;
+            case 99:
+                print_usage();
+                exit(0);
+            case 'h':
+                print_help();
+                exit(0);
+        }
+    }
+    if (optind + 1 >= argc) {
+        print_usage();
+        exit(0);
+    }
+    model_filename = argv[optind];
+    out_filename = argv[optind + 1];
+}
 
 using namespace sylvan;
 using namespace MEDDLY;
 
 FILE_output meddlyout(stdout);
-
-static error_t
-parse_opt(int key, char *arg, struct argp_state *state)
-{
-    switch (key) {
-    case 'v':
-        verbose = 1;
-        break;
-    case 1:
-        no_reachable = 1;
-        break;
-    case ARGP_KEY_ARG:
-        if (state->arg_num == 0) model_filename = arg;
-        if (state->arg_num == 1) out_filename = arg;
-        if (state->arg_num >= 2) argp_usage(state);
-        break; 
-    case ARGP_KEY_END:
-        if (state->arg_num < 1) argp_usage(state);
-        break;
-    default:
-        return ARGP_ERR_UNKNOWN;
-    }
-    return 0;
-}
-
-static struct argp argp = { options, parse_opt, "<model> [<output-bdd>]", 0, 0, 0, 0 };
 
 /**
  * Obtain current wallclock time
@@ -780,7 +799,7 @@ void run()
 int
 main(int argc, char **argv)
 {
-    argp_parse(&argp, argc, argv, 0, 0, 0);
+    parse_args(argc, argv);
 
     try {
         run();

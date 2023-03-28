@@ -3,7 +3,7 @@
  * Based on work by Robert Meolic, released by him into the public domain.
  */
 
-#include <argp.h>
+#include <getopt.h>
 #include <inttypes.h>
 #include <locale.h>
 #include <stdio.h>
@@ -21,44 +21,69 @@ static int report_stats = 0; // report stats at end
 static int workers = 0; // autodetect number of workers by default
 static size_t size = 0; // will be set by caller
 
-/* argp configuration */
-static struct argp_option options[] =
+/* getopt configuration */
+
+static void
+print_usage()
 {
-    {"workers", 'w', "<workers>", 0, "Number of workers (default=0: autodetect)", 0},
-    {"report-minterms", 1, 0, 0, "Report #minterms at every major step", 1},
-    {"report-minor", 2, 0, 0, "Report minor steps", 1},
-    {"report-stats", 3, 0, 0, "Report statistics at end", 1},
-    {0, 0, 0, 0, 0, 0}
-};
-static error_t
-parse_opt(int key, char *arg, struct argp_state *state)
-{
-    switch (key) {
-    case 'w':
-        workers = atoi(arg);
-        break;
-    case 1:
-        report_minterms = 1;
-        break;
-    case 2:
-        report_minor = 1;
-        break;
-    case 3:
-        report_stats = 1;
-        break;
-    case ARGP_KEY_ARG:
-        if (state->arg_num >= 1) argp_usage(state);
-        size = atoi(arg);
-        break;
-    case ARGP_KEY_END:
-        if (state->arg_num < 1) argp_usage(state);
-        break;
-    default:
-        return ARGP_ERR_UNKNOWN;
-    }
-    return 0;
+    printf("Usage: nqueens [-h] [-w <workers>] [--workers <workers>] [--report-minor]\n");
+    printf("            [--report-minterms] [--report-stats] [--help] [--usage] <size>\n");
 }
-static struct argp argp = { options, parse_opt, "<size>", 0, 0, 0, 0 };
+
+static void
+print_help()
+{
+    printf("Usage: nqueens [OPTION...] <size>\n\n");
+    printf("  -w, --workers <workers>    Number of workers (default = 0: autodetect)\n");
+    printf("      --report-minor         Report minor steps\n");
+    printf("      --report-minterms      Report #minterms at every major step\n");
+    printf("      --report-stats         Report statistics at end\n");
+    printf("  -h, --help                 Give this help list\n");
+    printf("      --usage                Give a short usage message\n");
+}
+
+static void
+parse_args(int argc, char **argv)
+{
+    static const struct option longopts[] = {
+        {.name = "workers", .val = 'w', .has_arg = required_argument},
+        {.name = "report-minterms", .val = 1, .has_arg = no_argument},
+        {.name = "report-minor", .val = 2, .has_arg = no_argument},
+        {.name = "report-stats", .val = 3, .has_arg = no_argument},
+        {.name = "usage", .val = 99, .has_arg = no_argument},
+        {.name = "help", .val = 'h', .has_arg = no_argument},
+        {},
+    };
+    int key = 0;
+    int long_index = 0;
+    while ((key = getopt_long(argc, argv, "w:h", longopts, &long_index)) != -1) {
+        switch (key) {
+        case 'w':
+            workers = atoi(optarg);
+            break;
+        case 1:
+            report_minterms = 1;
+            break;
+        case 2:
+            report_minor = 1;
+            break;
+        case 3:
+            report_stats = 1;
+            break;
+        case 99:
+            print_usage();
+            exit(0);
+        case 'h':
+            print_help();
+            exit(0);
+        }
+    }
+    if (optind >= argc) {
+        printf("missing required parameter <size>\n");
+        exit(-1);
+    }
+    size = atoi(argv[optind]);
+}
 
 /* Obtain current wallclock time */
 static double
@@ -86,34 +111,8 @@ VOID_TASK_0(gc_end)
     INFO("(GC) Garbage collection done.\n");
 }
 
-int
-main(int argc, char** argv)
+VOID_TASK_0(run)
 {
-    argp_parse(&argp, argc, argv, 0, 0, 0);
-    setlocale(LC_NUMERIC, "en_US.utf-8");
-    t_start = wctime();
-
-    // Init Lace
-    lace_start(workers, 1000000); // auto-detect number of workers, use a 1,000,000 size task queue
-
-    // Lace is initialized, now set local variables
-
-    // Init Sylvan
-    // Nodes table size of 1LL<<20 is 1048576 entries
-    // Cache size of 1LL<<18 is 262144 entries
-    // Nodes table size: 24 bytes * nodes
-    // Cache table size: 36 bytes * cache entries
-    // With 2^20 nodes and 2^18 cache entries, that's 33 MB
-    // With 2^24 nodes and 2^22 cache entries, that's 528 MB
-    sylvan_set_sizes(1LL<<20, 1LL<<24, 1LL<<18, 1LL<<22);
-    sylvan_init_package();
-    sylvan_set_granularity(3); // granularity 3 is decent value for this small problem - 1 means "use cache for every operation"
-    sylvan_init_bdd();
-
-    // Before and after garbage collection, call gc_start and gc_end
-    sylvan_gc_hook_pregc(TASK(gc_start));
-    sylvan_gc_hook_postgc(TASK(gc_end));
-
     double t1 = wctime();
 
     BDD zero = sylvan_false;
@@ -295,6 +294,37 @@ main(int argc, char** argv)
     INFO("Result: NQueens(%zu) has %.0f solutions.\n", size, sylvan_satcount(res, vars));
     INFO("Result BDD has %zu nodes.\n", sylvan_nodecount(res));
     INFO("Computation time: %f sec.\n", t2-t1);
+}
+
+int
+main(int argc, char** argv)
+{
+    parse_args(argc, argv);
+    setlocale(LC_NUMERIC, "en_US.utf-8");
+    t_start = wctime();
+
+    // Init Lace
+    lace_start(workers, 1000000); // auto-detect number of workers, use a 1,000,000 size task queue
+
+    // Lace is initialized, now set local variables
+
+    // Init Sylvan
+    // Nodes table size of 1LL<<20 is 1048576 entries
+    // Cache size of 1LL<<18 is 262144 entries
+    // Nodes table size: 24 bytes * nodes
+    // Cache table size: 36 bytes * cache entries
+    // With 2^20 nodes and 2^18 cache entries, that's 33 MB
+    // With 2^24 nodes and 2^22 cache entries, that's 528 MB
+    sylvan_set_sizes(1LL<<20, 1LL<<24, 1LL<<18, 1LL<<22);
+    sylvan_init_package();
+    sylvan_set_granularity(3); // granularity 3 is decent value for this small problem - 1 means "use cache for every operation"
+    sylvan_init_bdd();
+
+    // Before and after garbage collection, call gc_start and gc_end
+    sylvan_gc_hook_pregc(TASK(gc_start));
+    sylvan_gc_hook_postgc(TASK(gc_end));
+
+    RUN(run);
 
     if (report_stats) {
         sylvan_stats_report(stdout);
@@ -303,3 +333,4 @@ main(int argc, char** argv)
     sylvan_quit();
     lace_stop();
 }
+

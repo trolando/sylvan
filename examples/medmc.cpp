@@ -1,4 +1,4 @@
-#include <argp.h>
+#include <getopt.h>
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
@@ -15,34 +15,51 @@
 static int verbose = 0;
 static char* model_filename = NULL; // filename of model
 
-/* argp configuration */
-static struct argp_option options[] =
+static void
+print_usage()
 {
-    {"verbose", 'v', 0, 0, "Set verbose", 0},
-    {0, 0, 0, 0, 0, 0}
-};
-
-static error_t
-parse_opt(int key, char *arg, struct argp_state *state)
-{
-    switch (key) {
-    case 'v':
-        verbose = 1;
-        break;
-    case ARGP_KEY_ARG:
-        if (state->arg_num == 0) model_filename = arg;
-        if (state->arg_num >= 2) argp_usage(state);
-        break; 
-    case ARGP_KEY_END:
-        if (state->arg_num < 1) argp_usage(state);
-        break;
-    default:
-        return ARGP_ERR_UNKNOWN;
-    }
-    return 0;
+    printf("Usage: medmc [-vh] [--verbose] [--help] [--usage] <model>\n");
 }
 
-static struct argp argp = { options, parse_opt, "<model> [<output-bdd>]", 0, 0, 0, 0 };
+static void
+print_help()
+{
+    printf("Usage: medmc [OPTION...] <model>\n\n");
+    printf("  -v, --verbose              Set verbose\n");
+    printf("  -h, --help                 Give this help list\n");
+    printf("      --usage                Give a short usage message\n");
+}
+
+static void
+parse_args(int argc, char **argv)
+{
+    static const option longopts[] = {
+        {"verbose", no_argument, nullptr, 'v'},
+        {"help", no_argument, nullptr, 'h'},
+        {"usage", no_argument, nullptr, 99},
+        {nullptr, no_argument, nullptr, 0},
+    };
+    int key = 0;
+    int long_index = 0;
+    while ((key = getopt_long(argc, argv, "vh", longopts, &long_index)) != -1) {
+        switch (key) {
+            case 'v':
+                verbose = 1;
+                break;
+            case 99:
+                print_usage();
+                exit(0);
+            case 'h':
+                print_help();
+                exit(0);
+        }
+    }
+    if (optind >= argc) {
+        print_usage();
+        exit(0);
+    }
+    model_filename = argv[optind];
+}
 
 /**
  * Obtain current wallclock time
@@ -190,7 +207,7 @@ void run()
 int
 main(int argc, char **argv)
 {
-    argp_parse(&argp, argc, argv, 0, 0, 0);
+    parse_args(argc, argv);
 
     try {
         run();

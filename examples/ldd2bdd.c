@@ -1,5 +1,5 @@
-#include <argp.h>
 #include <assert.h>
+#include <getopt.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,47 +17,69 @@ static char* bdd_filename = NULL; // filename of output BDD
 static int check_results = 0;
 static int no_reachable = 0;
 
-/* argp configuration */
-static struct argp_option options[] =
+static void
+print_usage()
 {
-    {"workers", 'w', "<workers>", 0, "Number of workers (default=0: autodetect)", 0},
-    {"check-results", 2, 0, 0, "Check new transition relations", 0},
-    {"no-reachable", 1, 0, 0, "Do not write reachabile states", 0},
-    {"verbose", 'v', 0, 0, "Set verbose", 0},
-    {0, 0, 0, 0, 0, 0}
-};
-
-static error_t
-parse_opt(int key, char *arg, struct argp_state *state)
-{
-    switch (key) {
-    case 'w':
-        workers = atoi(arg);
-        break;
-    case 'v':
-        verbose = 1;
-        break;
-    case 1:
-        no_reachable = 1;
-        break;
-    case 2:
-        check_results = 1;
-        break;
-    case ARGP_KEY_ARG:
-        if (state->arg_num == 0) model_filename = arg;
-        if (state->arg_num == 1) bdd_filename = arg;
-        if (state->arg_num >= 2) argp_usage(state);
-        break; 
-    case ARGP_KEY_END:
-        if (state->arg_num < 2) argp_usage(state);
-        break;
-    default:
-        return ARGP_ERR_UNKNOWN;
-    }
-    return 0;
+    printf("Usage: ldd2bdd [-vh] [-w <workers>] [--check-results] [--no-reachable]\n");
+    printf("            [--verbose] [--workers=<workers>] [--help] [--usage]\n");
+    printf("            <input-ldd> <output-bdd>\n");
 }
 
-static struct argp argp = { options, parse_opt, "<model> [<output-bdd>]", 0, 0, 0, 0 };
+static void
+print_help()
+{
+    printf("Usage: ldd2bdd [OPTION...] <input-ldd> <output-bdd>\n\n");
+    printf("      --check-results        Check new transition relations\n");
+    printf("      --no-reachable         Do not write reachabile states\n");
+    printf("  -v, --verbose              Set verbose\n");
+    printf("  -w, --workers=<workers>    Number of workers (default=0: autodetect)\n");
+    printf("  -h, --help                 Give this help list\n");
+    printf("      --usage                Give a short usage message\n");
+}
+
+static void
+parse_args(int argc, char **argv)
+{
+    static const struct option longopts[] = {
+        {.name = "workers", .val = 'w', .has_arg = required_argument},
+        {.name = "check-results", .val = 2, .has_arg = no_argument},
+        {.name = "no-reachable", .val = 1, .has_arg = no_argument},
+        {.name = "verbose", .val = 'v', .has_arg = no_argument},
+        {.name = "help", .val = 'h', .has_arg = no_argument},
+        {.name = "usage", .val = 99, .has_arg = no_argument},
+        {}
+    };
+    int key = 0;
+    int long_index = 0;
+    while ((key = getopt_long(argc, argv, "w:vh", longopts, &long_index)) != -1) {
+        switch (key) {
+            case 'w':
+                workers = atoi(optarg);
+                break;
+            case 'v':
+                verbose = 1;
+                break;
+            case 1:
+                no_reachable = 1;
+                break;
+            case 2:
+                check_results = 1;
+                break;
+            case 99:
+                print_usage();
+                exit(0);
+            case 'h':
+                print_help();
+                exit(0);
+        }
+    }
+    if (optind + 1 >= argc) {
+        print_usage();
+        exit(0);
+    }
+    model_filename = argv[optind];
+    bdd_filename = argv[optind + 1];
+}
 
 /**
  * Types (set and relation)
@@ -515,34 +537,8 @@ print_h(double size)
     printf("%.*f %s", i, size, units[i]);
 }
 
-int
-main(int argc, char **argv)
+VOID_TASK_0(run)
 {
-    argp_parse(&argp, argc, argv, 0, 0, 0);
-
-    // Init Lace
-    lace_start(workers, 1000000); // auto-detect number of workers, use a 1,000,000 size task queue
-
-    size_t max = 16LL<<30;
-    if (max > getMaxMemory()) max = getMaxMemory()/10*9;
-    printf("Setting Sylvan main tables memory to ");
-    print_h(max);
-    printf(" max.\n");
-
-    // Init Sylvan
-    sylvan_set_limits(max, 1, 10);
-    sylvan_init_package();
-    sylvan_init_ldd();
-    sylvan_init_mtbdd();
-    sylvan_gc_hook_pregc(TASK(gc_start));
-    sylvan_gc_hook_postgc(TASK(gc_end));
-
-    // Obtain operation ids for the operation cache
-    compute_highest_id = cache_next_opid();
-    compute_highest_action_id = cache_next_opid();
-    bdd_from_ldd_id = cache_next_opid();
-    bdd_from_ldd_rel_id = cache_next_opid();
-
     // Open file
     FILE *f = fopen(model_filename, "rb");
     if (f == NULL) Abort("Cannot open file '%s'!\n", model_filename);
@@ -591,7 +587,7 @@ main(int argc, char **argv)
     fclose(f);
 
     // Report that we have read the input file
-    printf("Read file %s.\n", argv[1]);
+    printf("Read file %s.\n", model_filename);
 
     // Report statistics
     if (verbose) {
@@ -763,6 +759,37 @@ main(int argc, char **argv)
 
     // Report to the user
     printf("Written file %s.\n", bdd_filename);
+}
+
+int
+main(int argc, char **argv)
+{
+    parse_args(argc, argv);
+
+    // Init Lace
+    lace_start(workers, 1000000); // auto-detect number of workers, use a 1,000,000 size task queue
+
+    size_t max = 16LL<<30;
+    if (max > getMaxMemory()) max = getMaxMemory()/10*9;
+    printf("Setting Sylvan main tables memory to ");
+    print_h(max);
+    printf(" max.\n");
+
+    // Init Sylvan
+    sylvan_set_limits(max, 1, 10);
+    sylvan_init_package();
+    sylvan_init_ldd();
+    sylvan_init_mtbdd();
+    sylvan_gc_hook_pregc(TASK(gc_start));
+    sylvan_gc_hook_postgc(TASK(gc_end));
+
+    // Obtain operation ids for the operation cache
+    compute_highest_id = cache_next_opid();
+    compute_highest_action_id = cache_next_opid();
+    bdd_from_ldd_id = cache_next_opid();
+    bdd_from_ldd_rel_id = cache_next_opid();
+
+    RUN(run);
 
     // Report Sylvan statistics (if SYLVAN_STATS is set)
     if (verbose) sylvan_stats_report(stdout);

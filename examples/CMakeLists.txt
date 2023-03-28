@@ -34,18 +34,3 @@ if(MEDDLY_FOUND)
     target_link_libraries(medmc PRIVATE stdc++ meddly)
 endif()
 
-if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-    # add argp library for OSX
-    find_package(Argp REQUIRED)
-    include_directories(${ARGP_INCLUDE_PATH})
-    target_link_libraries(bddmc PRIVATE ${ARGP_LIBRARIES})
-    target_link_libraries(lddmc PRIVATE ${ARGP_LIBRARIES})
-    target_link_libraries(ldd2bdd PRIVATE ${ARGP_LIBRARIES})
-    target_link_libraries(nqueens PRIVATE ${ARGP_LIBRARIES})
-    if(MEDDLY_FOUND)
-        target_link_libraries(medmc PRIVATE ${ARGP_LIBRARIES})
-        target_link_libraries(ldd2meddly PRIVATE ${ARGP_LIBRARIES})
-    endif()
-endif()
-
-

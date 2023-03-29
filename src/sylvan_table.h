@@ -51,22 +51,22 @@ typedef void (*llmsset_destroy_cb)(uint64_t, uint64_t);
 
 typedef struct llmsset
 {
-    uint64_t          *table;       // table with hashes
-    uint8_t           *data;        // table with values
-    uint64_t          *bitmap1;     // ownership bitmap (per 512 buckets)
-    uint64_t          *bitmap2;     // bitmap for "contains data"
-    uint64_t          *bitmapc;     // bitmap for "use custom functions"
-    size_t            max_size;     // maximum size of the hash table (for resizing)
-    size_t            table_size;   // size of the hash table (number of slots) --> power of 2!
+    _Atomic(uint64_t)* table;        // table with hashes
+    uint8_t*           data;         // table with values
+    _Atomic(uint64_t)* bitmap1;      // ownership bitmap (per 512 buckets)
+    _Atomic(uint64_t)* bitmap2;      // bitmap for "contains data"
+    uint64_t*          bitmapc;      // bitmap for "use custom functions"
+    size_t             max_size;     // maximum size of the hash table (for resizing)
+    size_t             table_size;   // size of the hash table (number of slots) --> power of 2!
 #if LLMSSET_MASK
-    size_t            mask;         // size-1
+    size_t             mask;         // size-1
 #endif
-    size_t            f_size;
-    llmsset_hash_cb   hash_cb;      // custom hash function
-    llmsset_equals_cb equals_cb;    // custom equals function
-    llmsset_create_cb create_cb;    // custom create function
-    llmsset_destroy_cb destroy_cb;  // custom destroy function
-    int16_t           threshold;    // number of iterations for insertion until returning error
+    size_t             f_size;
+    llmsset_hash_cb    hash_cb;      // custom hash function
+    llmsset_equals_cb  equals_cb;    // custom equals function
+    llmsset_create_cb  create_cb;    // custom create function
+    llmsset_destroy_cb destroy_cb;   // custom destroy function
+    _Atomic(int16_t)   threshold;    // number of iterations for insertion until returning error
 } *llmsset_t;
 
 /**

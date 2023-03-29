@@ -44,6 +44,18 @@ target_compile_options(sylvan PRIVATE -Wall -Wextra -Werror -fno-strict-aliasing
 target_include_directories(sylvan PUBLIC ${CMAKE_CURRENT_LIST_DIR})
 target_link_libraries(sylvan PUBLIC m pthread lace)
 
+option(SYLVAN_USE_MMAP "Let Sylvan use mmap to allocate (virtual) memory" ON)
+if(SYLVAN_USE_MMAP)
+    include(CheckSymbolExists)
+    check_symbol_exists(mmap "sys/mman.h" HAVE_MMAP)
+    if(NOT HAVE_MMAP)
+        message(WARNING " mmap not found: disabling mmap support")
+        set(SYLVAN_USE_MMAP OFF)
+    else()
+        set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_USE_MMAP")
+    endif()
+endif()
+
 option(SYLVAN_GMP "Include custom MTBDD type GMP")
 if(SYLVAN_GMP)
     # We only want to include the custom MTBDD type GMP if we actually have the GMP library

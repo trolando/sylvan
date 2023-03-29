@@ -60,8 +60,8 @@ jobs:
         ctest -C ${{ matrix.build_type }} -VV --timeout 30
         examples/simple
         examples/nqueens -w 2 9 | tee /dev/fd/2 | grep -q "352 solutions"
-        examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee /dev/fd/2 | grep -q "1,570,340"
-        examples/lddmc ../models/blocks.2.ldd -w 2 | tee /dev/fd/2 | grep -q "7,057 states"
+        examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee /dev/fd/2 | grep -q "1570340"
+        examples/lddmc ../models/blocks.2.ldd -w 2 | tee /dev/fd/2 | grep -q "7057 states"
 
   macos-build:
     name: 'OSX ${{matrix.cc.cc}}@${{matrix.cc.v || matrix.cc.xcode}} ${{matrix.build_type}}'
@@ -115,8 +115,8 @@ jobs:
         ctest -C ${{ matrix.build_type }} -VV --timeout 30
         examples/simple
         examples/nqueens -w 2 9 | tee /dev/fd/2 | grep -q "352 solutions"
-        examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee /dev/fd/2 | grep -q "1,570,340"
-        examples/lddmc ../models/blocks.2.ldd -w 2 | tee /dev/fd/2 | grep -q "7,057 states"
+        examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee /dev/fd/2 | grep -q "1570340"
+        examples/lddmc ../models/blocks.2.ldd -w 2 | tee /dev/fd/2 | grep -q "7057 states"
 
   windows-build:
     runs-on: windows-latest
@@ -165,7 +165,7 @@ jobs:
         ctest -C ${{ matrix.build_type }} -VV --timeout 30
         examples/simple
         examples/nqueens -w 2 9 | tee >(cat 1>&2) | grep -q "352 solutions"
-        examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee >(cat 1>&2) | grep -q "1,570,340"
-        examples/lddmc ../models/blocks.2.ldd -w 2 | tee >(cat 1>&2) | grep -q "7,057 states"
+        examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee >(cat 1>&2) | grep -q "1570340"
+        examples/lddmc ../models/blocks.2.ldd -w 2 | tee >(cat 1>&2) | grep -q "7057 states"
 
 

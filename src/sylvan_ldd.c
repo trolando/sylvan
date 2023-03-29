@@ -2449,7 +2449,7 @@ static avl_node_t *lddmc_ser_set = NULL;
 static avl_node_t *lddmc_ser_reversed_set = NULL;
 
 // Start counting (assigning numbers to MDDs) at 2
-static volatile size_t lddmc_ser_counter = 2;
+static size_t lddmc_ser_counter = 2;
 static size_t lddmc_ser_done = 0;
 
 // Given a MDD, assign unique numbers to all nodes

@@ -17,10 +17,6 @@
 
 #include <sylvan_int.h>
 
-#ifndef cas
-#define cas(ptr, old, new) (__sync_bool_compare_and_swap((ptr),(old),(new)))
-#endif
-
 /**
  * Implementation of garbage collection
  */
@@ -51,7 +47,7 @@ sylvan_gc_disable()
 /**
  * This variable is used for a cas flag so only one gc runs at one time
  */
-static volatile int gc;
+static _Atomic(int) gc;
 
 /**
  * Structures for the marking mechanisms
@@ -254,12 +250,13 @@ VOID_TASK_0(sylvan_gc_go)
 VOID_TASK_IMPL_0(sylvan_gc)
 {
     if (gc_enabled) {
-        if (cas(&gc, 0, 1)) {
+        int zero = 0;
+        if (atomic_compare_exchange_strong(&gc, &zero, 1)) {
             NEWFRAME(sylvan_gc_go);
             gc = 0;
         } else {
             /* wait for new frame to appear */
-            while (*(Task* volatile*)&(lace_newframe.t) == 0) {}
+            while (atomic_load_explicit(&lace_newframe.t, memory_order_relaxed) == 0) {}
             lace_yield(__lace_worker, __lace_dq_head);
         }
     }

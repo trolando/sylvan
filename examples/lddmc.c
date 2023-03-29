@@ -432,7 +432,7 @@ VOID_TASK_1(par, set_t, set)
             lddmc_refs_popptr(1);
 
             if (deadlocks != lddmc_false) {
-                INFO("Found %'0.0f deadlock states... ", lddmc_satcount_cached(deadlocks));
+                INFO("Found %0.0f deadlock states... ", lddmc_satcount_cached(deadlocks));
                 printf("example: ");
                 print_example(deadlocks);
                 printf("\n");
@@ -448,12 +448,12 @@ VOID_TASK_1(par, set_t, set)
 
         INFO("Level %d done", iteration);
         if (report_levels) {
-            printf(", %'0.0f states explored", lddmc_satcount_cached(visited));
+            printf(", %0.0f states explored", lddmc_satcount_cached(visited));
         }
         if (report_table) {
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
-            printf(", table: %0.1f%% full (%'zu nodes)", 100.0*(double)filled/total, filled);
+            printf(", table: %0.1f%% full (%zu nodes)", 100.0*(double)filled/total, filled);
         }
         char buf[32];
         to_h(getCurrentRSS(), buf);
@@ -543,7 +543,7 @@ VOID_TASK_1(bfs, set_t, set)
             lddmc_refs_popptr(1);
 
             if (deadlocks != lddmc_false) {
-                INFO("Found %'0.0f deadlock states... ", lddmc_satcount_cached(deadlocks));
+                INFO("Found %0.0f deadlock states... ", lddmc_satcount_cached(deadlocks));
                 printf("example: ");
                 print_example(deadlocks);
                 printf("\n");
@@ -559,12 +559,12 @@ VOID_TASK_1(bfs, set_t, set)
 
         INFO("Level %d done", iteration);
         if (report_levels) {
-            printf(", %'0.0f states explored", lddmc_satcount_cached(visited));
+            printf(", %0.0f states explored", lddmc_satcount_cached(visited));
         }
         if (report_table) {
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
-            printf(", table: %0.1f%% full (%'zu nodes)", 100.0*(double)filled/total, filled);
+            printf(", table: %0.1f%% full (%zu nodes)", 100.0*(double)filled/total, filled);
         }
         char buf[32];
         to_h(getCurrentRSS(), buf);
@@ -675,12 +675,12 @@ VOID_TASK_1(chaining, set_t, set)
 
         INFO("Level %d done", iteration);
         if (report_levels) {
-            printf(", %'0.0f states explored", lddmc_satcount_cached(visited));
+            printf(", %0.0f states explored", lddmc_satcount_cached(visited));
         }
         if (report_table) {
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
-            printf(", table: %0.1f%% full (%'zu nodes)", 100.0*(double)filled/total, filled);
+            printf(", table: %0.1f%% full (%zu nodes)", 100.0*(double)filled/total, filled);
         }
         char buf[32];
         to_h(getCurrentRSS(), buf);
@@ -804,9 +804,9 @@ TASK_0(int, run)
     }
 
     // Now we just have states
-    INFO("Final states: %'0.0f states\n", lddmc_satcount_cached(states->dd));
+    INFO("Final states: %0.0f states\n", lddmc_satcount_cached(states->dd));
     if (report_nodes) {
-        INFO("Final states: %'zu MDD nodes\n", lddmc_nodecount(states->dd));
+        INFO("Final states: %zu MDD nodes\n", lddmc_nodecount(states->dd));
     }
 
     if (out_filename != NULL) {

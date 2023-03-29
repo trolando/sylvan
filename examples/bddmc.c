@@ -472,7 +472,7 @@ VOID_TASK_1(par, set_t, set)
         next_level = CALL(go_par, cur_level, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
 
         if (check_deadlocks && deadlocks != sylvan_false) {
-            INFO("Found %'0.0f deadlock states... ", sylvan_satcount(deadlocks, set->variables));
+            INFO("Found %0.0f deadlock states... ", sylvan_satcount(deadlocks, set->variables));
             if (deadlocks != sylvan_false) {
                 printf("example: ");
                 print_example(deadlocks, set->variables);
@@ -487,17 +487,17 @@ VOID_TASK_1(par, set_t, set)
         if (report_table && report_levels) {
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
-            INFO("Level %d done, %'0.0f states explored, table: %0.1f%% full (%'zu nodes)\n",
+            INFO("Level %d done, %0.0f states explored, table: %0.1f%% full (%zu nodes)\n",
                 iteration, sylvan_satcount(visited, set->variables),
                 100.0*(double)filled/total, filled);
         } else if (report_table) {
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
-            INFO("Level %d done, table: %0.1f%% full (%'zu nodes)\n",
+            INFO("Level %d done, table: %0.1f%% full (%zu nodes)\n",
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %'0.0f states explored\n", iteration, sylvan_satcount(visited, set->variables));
+            INFO("Level %d done, %0.0f states explored\n", iteration, sylvan_satcount(visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
@@ -588,7 +588,7 @@ VOID_TASK_1(bfs, set_t, set)
         next_level = CALL(go_bfs, cur_level, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
 
         if (check_deadlocks && deadlocks != sylvan_false) {
-            INFO("Found %'0.0f deadlock states... ", sylvan_satcount(deadlocks, set->variables));
+            INFO("Found %0.0f deadlock states... ", sylvan_satcount(deadlocks, set->variables));
             if (deadlocks != sylvan_false) {
                 printf("example: ");
                 print_example(deadlocks, set->variables);
@@ -603,17 +603,17 @@ VOID_TASK_1(bfs, set_t, set)
         if (report_table && report_levels) {
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
-            INFO("Level %d done, %'0.0f states explored, table: %0.1f%% full (%'zu nodes)\n",
+            INFO("Level %d done, %0.0f states explored, table: %0.1f%% full (%zu nodes)\n",
                 iteration, sylvan_satcount(visited, set->variables),
                 100.0*(double)filled/total, filled);
         } else if (report_table) {
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
-            INFO("Level %d done, table: %0.1f%% full (%'zu nodes)\n",
+            INFO("Level %d done, table: %0.1f%% full (%zu nodes)\n",
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %'0.0f states explored\n", iteration, sylvan_satcount(visited, set->variables));
+            INFO("Level %d done, %0.0f states explored\n", iteration, sylvan_satcount(visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
@@ -658,17 +658,17 @@ VOID_TASK_1(chaining, set_t, set)
         if (report_table && report_levels) {
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
-            INFO("Level %d done, %'0.0f states explored, table: %0.1f%% full (%'zu nodes)\n",
+            INFO("Level %d done, %0.0f states explored, table: %0.1f%% full (%zu nodes)\n",
                 iteration, sylvan_satcount(visited, set->variables),
                 100.0*(double)filled/total, filled);
         } else if (report_table) {
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
-            INFO("Level %d done, table: %0.1f%% full (%'zu nodes)\n",
+            INFO("Level %d done, table: %0.1f%% full (%zu nodes)\n",
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %'0.0f states explored\n", iteration, sylvan_satcount(visited, set->variables));
+            INFO("Level %d done, %0.0f states explored\n", iteration, sylvan_satcount(visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
@@ -905,9 +905,9 @@ VOID_TASK_0(run)
     }
 
     // Now we just have states
-    INFO("Final states: %'0.0f states\n", sylvan_satcount(states->bdd, states->variables));
+    INFO("Final states: %0.0f states\n", sylvan_satcount(states->bdd, states->variables));
     if (report_nodes) {
-        INFO("Final states: %'zu BDD nodes\n", sylvan_nodecount(states->bdd));
+        INFO("Final states: %zu BDD nodes\n", sylvan_nodecount(states->bdd));
     }
 }
 

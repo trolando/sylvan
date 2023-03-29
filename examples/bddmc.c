@@ -789,7 +789,7 @@ main(int argc, char **argv)
      */
 
     /* Open the file */
-    FILE *f = fopen(model_filename, "r");
+    FILE *f = fopen(model_filename, "rb");
     if (f == NULL) Abort("Cannot open file '%s'!\n", model_filename);
 
     /* Read domain data */

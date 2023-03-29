@@ -544,7 +544,7 @@ main(int argc, char **argv)
     bdd_from_ldd_rel_id = cache_next_opid();
 
     // Open file
-    FILE *f = fopen(model_filename, "r");
+    FILE *f = fopen(model_filename, "rb");
     if (f == NULL) Abort("Cannot open file '%s'!\n", model_filename);
 
     // Read integers per vector

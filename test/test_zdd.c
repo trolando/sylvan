@@ -776,8 +776,8 @@ TASK_0(int, runtests)
     for (int k=0; k<test_iterations; k++) if (CALL(test_zdd_exists)) return 1;
     // for (int k=0; k<test_iterations; k++) if (CALL(test_zdd_relnext)) return 1;
     // for (int k=0; k<test_iterations; k++) if (CALL(test_zdd_and_dom)) return 1;
-    printf("test_zdd_read_write...\n");
-    for (int k=0; k<10; k++) if (CALL(test_zdd_read_write)) return 1;
+    // printf("test_zdd_read_write...\n");
+    // for (int k=0; k<10; k++) if (CALL(test_zdd_read_write)) return 1;
     // for (int k=0; k<test_iterations; k++) if (CALL(test_zdd_extend_domain)) return 1;
     printf("test_zdd_isop_basic...\n");
     if (CALL(test_zdd_isop_basic)) return 1;

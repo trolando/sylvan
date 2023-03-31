@@ -1,6 +1,14 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [1.8.0] - 2023-03-31
+### Changed
+- Now supports Windows (via MSYS2) and OSX.
+- CI builds for Linux, OSX and Windows.
+- Better support for systems that don't have mmap.
+- Removed dependency on argp, by using `getopt_long` instead.
+- Using a new version of Lace, with better cross-platform support.
+
 
 ## [1.7.1] - 2022-09-04
 ### Added

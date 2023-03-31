@@ -9,12 +9,12 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'Sylvan'
-copyright = '2017, Tom van Dijk'
+copyright = '2023, University of Twente'
 author = 'Tom van Dijk'
 version = '@PROJECT_VERSION@'
 release = '@PROJECT_VERSION@'
 
-language = None
+language = 'en'
 exclude_patterns = ['Thumbs.db', '.DS_Store']
 
 # The name of the Pygments (syntax highlighting) style to use.

@@ -20,6 +20,9 @@
 
 #if SYLVAN_USE_MMAP
 #include <sys/mman.h> // for mmap
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS 0x1000  /* allocated from memory, swap space */
+#endif
 #endif
 
 #ifndef SYLVAN_ALIGN_H

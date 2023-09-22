@@ -17,6 +17,8 @@ target_sources(sylvan
     sylvan_stats.c
     sylvan_zdd.c
     sylvan_bitmap.c
+    roaring.c
+    roaring.h
   PUBLIC
     sylvan.h
     sylvan_bdd.h

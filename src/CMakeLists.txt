@@ -15,8 +15,16 @@ target_sources(sylvan
     sylvan_refs.c
     sylvan_sl.c
     sylvan_stats.c
-    sylvan_table.c
     sylvan_zdd.c
+    sylvan_bitmap.c
+    roaring.c
+    roaring.h
+    sylvan_mrc.c
+    sylvan_reorder_int.c
+    sylvan_varswap.c
+    sylvan_levels.c
+    sylvan_reorder.c
+    sylvan_interact.c
   PUBLIC
     sylvan.h
     sylvan_bdd.h
@@ -36,6 +44,14 @@ target_sources(sylvan
     sylvan_tls.h
     sylvan_zdd.h
     sylvan_zdd_int.h
+    libpopcnt.h
+    sylvan_bitmap.h
+    sylvan_mrc.h
+    sylvan_reorder_int.h
+    sylvan_varswap.h
+    sylvan_levels.h
+    sylvan_reorder.h
+    sylvan_interact.h
 )
 
 set_target_properties(sylvan PROPERTIES VERSION ${sylvan_VERSION} SOVERSION ${sylvan_VERSION_MAJOR})
@@ -70,3 +86,12 @@ option(SYLVAN_STATS "Let Sylvan collect statistics at runtime" OFF)
 if(SYLVAN_STATS)
     set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_STATS")
 endif()
+
+# Do we want to use chaining implementation or linear probing implementation?
+option(SYLVAN_USE_LINEAR_PROBING "Let Sylvan use chaining instead of probing" OFF)
+if (SYLVAN_USE_LINEAR_PROBING)
+    set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_USE_LINEAR_PROBING")
+    target_sources(sylvan PRIVATE sylvan_table.c)
+else ()
+    target_sources(sylvan PRIVATE sylvan_table_chaining.c)
+endif ()

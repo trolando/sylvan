@@ -975,3 +975,43 @@ Sylvan::quitPackage()
 {
     sylvan_quit();
 }
+
+void Sylvan::initReorder()
+{
+    sylvan_init_reorder();
+}
+
+void Sylvan::setReorderThreshold(uint32_t threshold)
+{
+    sylvan_set_reorder_nodes_threshold(threshold);
+}
+
+void Sylvan::setReorderMaxGrowth(float max_growth)
+{
+    sylvan_set_reorder_maxgrowth(max_growth);
+}
+
+void Sylvan::setReorderMaxSwap(uint32_t max_swap)
+{
+    sylvan_set_reorder_maxswap(max_swap);
+}
+
+void Sylvan::setReorderMaxVar(uint32_t max_var)
+{
+    sylvan_set_reorder_maxvar(max_var);
+}
+
+void Sylvan::setReorderTimeLimit(double time_limit)
+{
+    sylvan_set_reorder_timelimit_ms(time_limit);
+}
+
+void Sylvan::reduceHeap()
+{
+    return sylvan_reduce_heap(SYLVAN_REORDER_BOUNDED_SIFT);
+}
+
+reorder_result_t Sylvan::reorderPerm(const std::vector<uint32_t> &perm)
+{
+    return sylvan_reorder_perm(perm.data());
+}

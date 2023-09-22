@@ -263,6 +263,11 @@ VOID_TASK_IMPL_0(sylvan_gc)
 }
 
 /**
+ * The reorder table used with dynamic variable reordering.
+ */
+reorder_db_t reorder_db;
+
+/**
  * The unique table
  */
 

@@ -123,8 +123,10 @@ llmsset_set_size(llmsset_t dbs, size_t size)
         /* Warning: if size is not a power of two, you will get interesting behavior */
         dbs->mask = dbs->table_size - 1;
 #endif
+#if SYLVAN_USE_LINEAR_PROBING
         /* Set threshold: number of cache lines to probe before giving up on node insertion */
         dbs->threshold = 192 - 2 * __builtin_clzll(dbs->table_size);
+#endif
     }
 }
 
@@ -181,6 +183,21 @@ TASK_DECL_1(int, llmsset_rehash, llmsset_t);
  * Returns 0 if successful, or 1 if not.
  */
 int llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx);
+
+#if !SYLVAN_USE_LINEAR_PROBING
+VOID_TASK_DECL_0(llmsset_reset_all_regions)
+#define llmsset_reset_all_regions() RUN(llmsset_reset_all_regions)
+
+/**
+ * Clear a single bucket (hash part).
+ */
+int llmsset_clear_one_hash(llmsset_t dbs, uint64_t index);
+
+/**
+ * Clear a single bucket (data part).
+ */
+void llmsset_clear_one_data(llmsset_t dbs, uint64_t index);
+#endif
 
 /**
  * Retrieve number of marked buckets.

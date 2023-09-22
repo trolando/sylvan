@@ -70,7 +70,7 @@ int64_t
 mtbdd_getint64(MTBDD leaf)
 {
     uint64_t value = mtbdd_getvalue(leaf);
-    return *(int64_t*)&value;
+    return *(int64_t *) &value;
 }
 
 // for leaf type 1 (double)
@@ -78,7 +78,7 @@ double
 mtbdd_getdouble(MTBDD leaf)
 {
     uint64_t value = mtbdd_getvalue(leaf);
-    return *(double*)&value;
+    return *(double *) &value;
 }
 
 /**
@@ -109,6 +109,32 @@ refs_table_t mtbdd_refs;
 refs_table_t mtbdd_protected;
 static int mtbdd_protected_created = 0;
 
+/* Called during dynamic variable reordering */
+VOID_TASK_IMPL_1(mtbdd_re_mark_external_refs, _Atomic (uint64_t)*, bitmap)
+{
+    uint64_t *it = refs_iter(&mtbdd_refs, 0, mtbdd_refs.refs_size);
+    while (it != NULL) {
+        MTBDD dd = refs_next(&mtbdd_refs, &it, mtbdd_refs.refs_size);
+        size_t index = (dd & SYLVAN_TABLE_MASK_INDEX);
+        _Atomic (uint64_t) *ptr = bitmap + BUCKET_OFFSET(index);
+        uint64_t mask = BIT_MASK(index);
+        atomic_fetch_or_explicit(ptr, mask, memory_order_relaxed);
+    }
+}
+
+/* Called during dynamic variable reordering */
+VOID_TASK_IMPL_1(mtbdd_re_mark_protected, _Atomic (uint64_t)*, bitmap)
+{
+    uint64_t *it = protect_iter(&mtbdd_protected, 0, mtbdd_protected.refs_size);
+    while (it != NULL) {
+        BDD *dd = (BDD *) protect_next(&mtbdd_protected, &it, mtbdd_protected.refs_size);
+        size_t index = (*dd & SYLVAN_TABLE_MASK_INDEX);
+        _Atomic (uint64_t) *ptr = bitmap + BUCKET_OFFSET(index);
+        uint64_t mask = BIT_MASK(index);
+        atomic_fetch_or_explicit(ptr, mask, memory_order_relaxed);
+    }
+}
+
 MDD
 mtbdd_ref(MDD a)
 {
@@ -138,13 +164,13 @@ mtbdd_protect(MTBDD *a)
         protect_create(&mtbdd_protected, 4096);
         mtbdd_protected_created = 1;
     }
-    protect_up(&mtbdd_protected, (size_t)a);
+    protect_up(&mtbdd_protected, (size_t) a);
 }
 
 void
 mtbdd_unprotect(MTBDD *a)
 {
-    if (mtbdd_protected.refs_table != NULL) protect_down(&mtbdd_protected, (size_t)a);
+    if (mtbdd_protected.refs_table != NULL) protect_down(&mtbdd_protected, (size_t) a);
 }
 
 size_t
@@ -157,7 +183,7 @@ mtbdd_count_protected()
 VOID_TASK_0(mtbdd_gc_mark_external_refs)
 {
     // iterate through refs hash table, mark all found
-    size_t count=0;
+    size_t count = 0;
     uint64_t *it = refs_iter(&mtbdd_refs, 0, mtbdd_refs.refs_size);
     while (it != NULL) {
         SPAWN(mtbdd_gc_mark_rec, refs_next(&mtbdd_refs, &it, mtbdd_refs.refs_size));
@@ -171,10 +197,10 @@ VOID_TASK_0(mtbdd_gc_mark_external_refs)
 VOID_TASK_0(mtbdd_gc_mark_protected)
 {
     // iterate through refs hash table, mark all found
-    size_t count=0;
+    size_t count = 0;
     uint64_t *it = protect_iter(&mtbdd_protected, 0, mtbdd_protected.refs_size);
     while (it != NULL) {
-        BDD *to_mark = (BDD*)protect_next(&mtbdd_protected, &it, mtbdd_protected.refs_size);
+        BDD *to_mark = (BDD *) protect_next(&mtbdd_protected, &it, mtbdd_protected.refs_size);
         SPAWN(mtbdd_gc_mark_rec, *to_mark);
         count++;
     }
@@ -234,7 +260,7 @@ VOID_TASK_2(mtbdd_refs_mark_s_par, mtbdd_refs_task_t, begin, size_t, count)
             Task *t = begin->t;
             if (!TASK_IS_STOLEN(t)) return;
             if (t->f == begin->f && TASK_IS_COMPLETED(t)) {
-                mtbdd_gc_mark_rec(*(MTBDD*)TASK_RESULT(t));
+                mtbdd_gc_mark_rec(*(MTBDD *) TASK_RESULT(t));
             }
             begin += 1;
             count -= 1;
@@ -250,9 +276,9 @@ VOID_TASK_2(mtbdd_refs_mark_s_par, mtbdd_refs_task_t, begin, size_t, count)
 VOID_TASK_0(mtbdd_refs_mark_task)
 {
     LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
-    SPAWN(mtbdd_refs_mark_p_par, mtbdd_refs_key->pbegin, mtbdd_refs_key->pcur-mtbdd_refs_key->pbegin);
-    SPAWN(mtbdd_refs_mark_r_par, mtbdd_refs_key->rbegin, mtbdd_refs_key->rcur-mtbdd_refs_key->rbegin);
-    CALL(mtbdd_refs_mark_s_par, mtbdd_refs_key->sbegin, mtbdd_refs_key->scur-mtbdd_refs_key->sbegin);
+    SPAWN(mtbdd_refs_mark_p_par, mtbdd_refs_key->pbegin, mtbdd_refs_key->pcur - mtbdd_refs_key->pbegin);
+    SPAWN(mtbdd_refs_mark_r_par, mtbdd_refs_key->rbegin, mtbdd_refs_key->rcur - mtbdd_refs_key->rbegin);
+    CALL(mtbdd_refs_mark_s_par, mtbdd_refs_key->sbegin, mtbdd_refs_key->scur - mtbdd_refs_key->sbegin);
     SYNC(mtbdd_refs_mark_r_par);
     SYNC(mtbdd_refs_mark_p_par);
 }
@@ -266,12 +292,12 @@ void
 mtbdd_refs_init_key(void)
 {
     assert(lace_is_worker()); // only use inside Lace workers
-    mtbdd_refs_internal_t s = (mtbdd_refs_internal_t)malloc(sizeof(struct mtbdd_refs_internal));
-    s->pcur = s->pbegin = (const MTBDD**)malloc(sizeof(MTBDD*) * 1024);
+    mtbdd_refs_internal_t s = (mtbdd_refs_internal_t) malloc(sizeof(struct mtbdd_refs_internal));
+    s->pcur = s->pbegin = (const MTBDD **) malloc(sizeof(MTBDD *) * 1024);
     s->pend = s->pbegin + 1024;
-    s->rcur = s->rbegin = (MTBDD*)malloc(sizeof(MTBDD) * 1024);
+    s->rcur = s->rbegin = (MTBDD *) malloc(sizeof(MTBDD) * 1024);
     s->rend = s->rbegin + 1024;
-    s->scur = s->sbegin = (mtbdd_refs_task_t)malloc(sizeof(struct mtbdd_refs_task) * 1024);
+    s->scur = s->sbegin = (mtbdd_refs_task_t) malloc(sizeof(struct mtbdd_refs_task) * 1024);
     s->send = s->sbegin + 1024;
     SET_THREAD_LOCAL(mtbdd_refs_key, s);
 }
@@ -293,7 +319,7 @@ mtbdd_refs_ptrs_up(mtbdd_refs_internal_t mtbdd_refs_key)
 {
     size_t cur = mtbdd_refs_key->pcur - mtbdd_refs_key->pbegin;
     size_t size = mtbdd_refs_key->pend - mtbdd_refs_key->pbegin;
-    mtbdd_refs_key->pbegin = (const MTBDD**)realloc(mtbdd_refs_key->pbegin, sizeof(MTBDD*) * size * 2);
+    mtbdd_refs_key->pbegin = (const MTBDD **) realloc(mtbdd_refs_key->pbegin, sizeof(MTBDD *) * size * 2);
     mtbdd_refs_key->pcur = mtbdd_refs_key->pbegin + cur;
     mtbdd_refs_key->pend = mtbdd_refs_key->pbegin + (size * 2);
 }
@@ -302,7 +328,7 @@ MTBDD __attribute__((noinline))
 mtbdd_refs_refs_up(mtbdd_refs_internal_t mtbdd_refs_key, MTBDD res)
 {
     long size = mtbdd_refs_key->rend - mtbdd_refs_key->rbegin;
-    mtbdd_refs_key->rbegin = (MTBDD*)realloc(mtbdd_refs_key->rbegin, sizeof(MTBDD) * size * 2);
+    mtbdd_refs_key->rbegin = (MTBDD *) realloc(mtbdd_refs_key->rbegin, sizeof(MTBDD) * size * 2);
     mtbdd_refs_key->rcur = mtbdd_refs_key->rbegin + size;
     mtbdd_refs_key->rend = mtbdd_refs_key->rbegin + (size * 2);
     return res;
@@ -312,7 +338,8 @@ void __attribute__((noinline))
 mtbdd_refs_tasks_up(mtbdd_refs_internal_t mtbdd_refs_key)
 {
     long size = mtbdd_refs_key->send - mtbdd_refs_key->sbegin;
-    mtbdd_refs_key->sbegin = (mtbdd_refs_task_t)realloc(mtbdd_refs_key->sbegin, sizeof(struct mtbdd_refs_task) * size * 2);
+    mtbdd_refs_key->sbegin = (mtbdd_refs_task_t) realloc(mtbdd_refs_key->sbegin,
+                                                         sizeof(struct mtbdd_refs_task) * size * 2);
     mtbdd_refs_key->scur = mtbdd_refs_key->sbegin + size;
     mtbdd_refs_key->send = mtbdd_refs_key->sbegin + (size * 2);
 }
@@ -433,7 +460,8 @@ mtbdd_makeleaf(uint32_t type, uint64_t value)
 
         index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes),
+                    llmsset_get_size(nodes));
             exit(1);
         }
     }
@@ -441,7 +469,7 @@ mtbdd_makeleaf(uint32_t type, uint64_t value)
     if (created) sylvan_stats_count(BDD_NODES_CREATED);
     else sylvan_stats_count(BDD_NODES_REUSED);
 
-    return (MTBDD)index;
+    return (MTBDD) index;
 }
 
 void
@@ -458,8 +486,34 @@ void
 __attribute__ ((noinline))
 _mtbdd_makenode_exit(void)
 {
-    fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
+    fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes),
+            llmsset_get_size(nodes));
     exit(1);
+}
+
+MTBDD
+_mtbdd_varswap_makenode(BDDVAR var, MTBDD low, MTBDD high, int *created)
+{
+    // Normalization to keep canonicity
+    // low will have no mark
+    MTBDD result = low & mtbdd_complement;
+    low ^= result;
+    high ^= result;
+
+    struct mtbddnode n;
+    mtbddnode_makenode(&n, var, low, high);
+
+    uint64_t index = llmsset_lookup(nodes, n.a, n.b, created);
+    if (index == 0) {
+        return mtbdd_invalid;
+    }
+
+
+    if (created) sylvan_stats_count(BDD_NODES_CREATED);
+    else sylvan_stats_count(BDD_NODES_REUSED);
+
+    result |= index;
+    return result;
 }
 
 MTBDD
@@ -490,6 +544,31 @@ _mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high)
     return result;
 }
 
+/**
+ * Custom makemapnode that doesn't trigger garbage collection.
+ * Instead, returns mtbdd_invalid if we can't create the node.
+ */
+MTBDD
+mtbdd_varswap_makemapnode(BDDVAR var, MTBDD low, MTBDD high, int *created)
+{
+    struct mtbddnode n;
+    uint64_t index;
+    created = 0;
+
+    // in an MTBDDMAP, the low edges eventually lead to 0 and cannot have a low mark
+    assert(!MTBDD_HASMARK(low));
+
+    mtbddnode_makemapnode(&n, var, low, high);
+
+    index = llmsset_lookup(nodes, n.a, n.b, created);
+    if (index == 0) return mtbdd_invalid;
+
+    if (created) sylvan_stats_count(BDD_NODES_CREATED);
+    else sylvan_stats_count(BDD_NODES_REUSED);
+
+    return index;
+}
+
 MTBDD
 mtbdd_makemapnode(uint32_t var, MTBDD low, MTBDD high)
 {
@@ -510,7 +589,8 @@ mtbdd_makemapnode(uint32_t var, MTBDD low, MTBDD high)
 
         index = llmsset_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes),
+                    llmsset_get_size(nodes));
             exit(1);
         }
     }
@@ -524,7 +604,11 @@ mtbdd_makemapnode(uint32_t var, MTBDD low, MTBDD high)
 MTBDD
 mtbdd_ithvar(uint32_t var)
 {
-    return mtbdd_makenode(var, mtbdd_false, mtbdd_true);
+    if (reorder_db != NULL && reorder_db->is_initialised) {
+        return levels_ithlevel(&reorder_db->levels, var);
+    } else {
+        return mtbdd_makenode(var, mtbdd_false, mtbdd_true);
+    }
 }
 
 /* Operations */
@@ -560,7 +644,7 @@ gcd(uint32_t u, uint32_t v)
 MTBDD
 mtbdd_int64(int64_t value)
 {
-    return mtbdd_makeleaf(0, *(uint64_t*)&value);
+    return mtbdd_makeleaf(0, *(uint64_t *) &value);
 }
 
 MTBDD
@@ -568,7 +652,7 @@ mtbdd_double(double value)
 {
     // normalize all 0.0 to 0.0
     if (value == 0.0) value = 0.0;
-    return mtbdd_makeleaf(1, *(uint64_t*)&value);
+    return mtbdd_makeleaf(1, *(uint64_t *) &value);
 }
 
 MTBDD
@@ -578,8 +662,9 @@ mtbdd_fraction(int64_t nom, uint64_t denom)
     uint32_t c = gcd(nom < 0 ? -nom : nom, denom);
     nom /= c;
     denom /= c;
-    if (nom > 2147483647 || nom < -2147483647 || denom > 4294967295) fprintf(stderr, "mtbdd_fraction: fraction overflow\n");
-    return mtbdd_makeleaf(2, (nom<<32)|denom);
+    if (nom > 2147483647 || nom < -2147483647 || denom > 4294967295)
+        fprintf(stderr, "mtbdd_fraction: fraction overflow\n");
+    return mtbdd_makeleaf(2, (nom << 32) | denom);
 }
 
 /**
@@ -596,31 +681,30 @@ mtbdd_cube(MTBDD variables, uint8_t *cube, MTBDD terminal)
 
     BDD result;
     switch (*cube) {
-    case 0:
-        result = mtbdd_cube(node_gethigh(variables, n), cube+1, terminal);
-        result = mtbdd_makenode(mtbddnode_getvariable(n), result, mtbdd_false);
-        return result;
-    case 1:
-        result = mtbdd_cube(node_gethigh(variables, n), cube+1, terminal);
-        result = mtbdd_makenode(mtbddnode_getvariable(n), mtbdd_false, result);
-        return result;
-    case 2:
-        return mtbdd_cube(node_gethigh(variables, n), cube+1, terminal);
-    case 3:
-    {
-        MTBDD variables2 = node_gethigh(variables, n);
-        mtbddnode_t n2 = MTBDD_GETNODE(variables2);
-        uint32_t var2 = mtbddnode_getvariable(n2);
-        result = mtbdd_cube(node_gethigh(variables2, n2), cube+2, terminal);
-        BDD low = mtbdd_makenode(var2, result, mtbdd_false);
-        mtbdd_refs_push(low);
-        BDD high = mtbdd_makenode(var2, mtbdd_false, result);
-        mtbdd_refs_pop(1);
-        result = mtbdd_makenode(mtbddnode_getvariable(n), low, high);
-        return result;
-    }
-    default:
-        return mtbdd_false; // ?
+        case 0:
+            result = mtbdd_cube(node_gethigh(variables, n), cube + 1, terminal);
+            result = mtbdd_makenode(mtbddnode_getvariable(n), result, mtbdd_false);
+            return result;
+        case 1:
+            result = mtbdd_cube(node_gethigh(variables, n), cube + 1, terminal);
+            result = mtbdd_makenode(mtbddnode_getvariable(n), mtbdd_false, result);
+            return result;
+        case 2:
+            return mtbdd_cube(node_gethigh(variables, n), cube + 1, terminal);
+        case 3: {
+            MTBDD variables2 = node_gethigh(variables, n);
+            mtbddnode_t n2 = MTBDD_GETNODE(variables2);
+            uint32_t var2 = mtbddnode_getvariable(n2);
+            result = mtbdd_cube(node_gethigh(variables2, n2), cube + 2, terminal);
+            BDD low = mtbdd_makenode(var2, result, mtbdd_false);
+            mtbdd_refs_push(low);
+            BDD high = mtbdd_makenode(var2, mtbdd_false, result);
+            mtbdd_refs_pop(1);
+            result = mtbdd_makenode(mtbddnode_getvariable(n), low, high);
+            return result;
+        }
+        default:
+            return mtbdd_false; // ?
     }
 }
 
@@ -657,62 +741,54 @@ TASK_IMPL_4(MTBDD, mtbdd_union_cube, MTBDD, mtbdd, MTBDD, vars, uint8_t*, cube, 
         MTBDD low = node_getlow(mtbdd, na);
         MTBDD high = node_gethigh(mtbdd, na);
         switch (*cube) {
-        case 0:
-        {
-            MTBDD new_low = mtbdd_union_cube(low, node_gethigh(vars, nv), cube+1, terminal);
-            if (new_low != low) return mtbdd_makenode(v, new_low, high);
-            else return mtbdd;
-        }
-        case 1:
-        {
-            MTBDD new_high = mtbdd_union_cube(high, node_gethigh(vars, nv), cube+1, terminal);
-            if (new_high != high) return mtbdd_makenode(v, low, new_high);
-            return mtbdd;
-        }
-        case 2:
-        {
-            mtbdd_refs_spawn(SPAWN(mtbdd_union_cube, high, node_gethigh(vars, nv), cube+1, terminal));
-            MTBDD new_low = mtbdd_union_cube(low, node_gethigh(vars, nv), cube+1, terminal);
-            mtbdd_refs_push(new_low);
-            MTBDD new_high = mtbdd_refs_sync(SYNC(mtbdd_union_cube));
-            mtbdd_refs_pop(1);
-            if (new_low != low || new_high != high) return mtbdd_makenode(v, new_low, new_high);
-            return mtbdd;
-        }
-        case 3:
-        {
-            return mtbdd_false; // currently not implemented
-        }
-        default:
-            return mtbdd_false;
+            case 0: {
+                MTBDD new_low = mtbdd_union_cube(low, node_gethigh(vars, nv), cube + 1, terminal);
+                if (new_low != low) return mtbdd_makenode(v, new_low, high);
+                else return mtbdd;
+            }
+            case 1: {
+                MTBDD new_high = mtbdd_union_cube(high, node_gethigh(vars, nv), cube + 1, terminal);
+                if (new_high != high) return mtbdd_makenode(v, low, new_high);
+                return mtbdd;
+            }
+            case 2: {
+                mtbdd_refs_spawn(SPAWN(mtbdd_union_cube, high, node_gethigh(vars, nv), cube + 1, terminal));
+                MTBDD new_low = mtbdd_union_cube(low, node_gethigh(vars, nv), cube + 1, terminal);
+                mtbdd_refs_push(new_low);
+                MTBDD new_high = mtbdd_refs_sync(SYNC(mtbdd_union_cube));
+                mtbdd_refs_pop(1);
+                if (new_low != low || new_high != high) return mtbdd_makenode(v, new_low, new_high);
+                return mtbdd;
+            }
+            case 3: {
+                return mtbdd_false; // currently not implemented
+            }
+            default:
+                return mtbdd_false;
         }
     } else /* va > v */ {
         switch (*cube) {
-        case 0:
-        {
-            MTBDD new_low = mtbdd_union_cube(mtbdd, node_gethigh(vars, nv), cube+1, terminal);
-            return mtbdd_makenode(v, new_low, mtbdd_false);
-        }
-        case 1:
-        {
-            MTBDD new_high = mtbdd_union_cube(mtbdd, node_gethigh(vars, nv), cube+1, terminal);
-            return mtbdd_makenode(v, mtbdd_false, new_high);
-        }
-        case 2:
-        {
-            mtbdd_refs_spawn(SPAWN(mtbdd_union_cube, mtbdd, node_gethigh(vars, nv), cube+1, terminal));
-            MTBDD new_low = mtbdd_union_cube(mtbdd, node_gethigh(vars, nv), cube+1, terminal);
-            mtbdd_refs_push(new_low);
-            MTBDD new_high = mtbdd_refs_sync(SYNC(mtbdd_union_cube));
-            mtbdd_refs_pop(1);
-            return mtbdd_makenode(v, new_low, new_high);
-        }
-        case 3:
-        {
-            return mtbdd_false; // currently not implemented
-        }
-        default:
-            return mtbdd_false;
+            case 0: {
+                MTBDD new_low = mtbdd_union_cube(mtbdd, node_gethigh(vars, nv), cube + 1, terminal);
+                return mtbdd_makenode(v, new_low, mtbdd_false);
+            }
+            case 1: {
+                MTBDD new_high = mtbdd_union_cube(mtbdd, node_gethigh(vars, nv), cube + 1, terminal);
+                return mtbdd_makenode(v, mtbdd_false, new_high);
+            }
+            case 2: {
+                mtbdd_refs_spawn(SPAWN(mtbdd_union_cube, mtbdd, node_gethigh(vars, nv), cube + 1, terminal));
+                MTBDD new_low = mtbdd_union_cube(mtbdd, node_gethigh(vars, nv), cube + 1, terminal);
+                mtbdd_refs_push(new_low);
+                MTBDD new_high = mtbdd_refs_sync(SYNC(mtbdd_union_cube));
+                mtbdd_refs_pop(1);
+                return mtbdd_makenode(v, new_low, new_high);
+            }
+            case 3: {
+                return mtbdd_false; // currently not implemented
+            }
+            default:
+                return mtbdd_false;
         }
     }
 }
@@ -733,7 +809,7 @@ TASK_IMPL_3(MTBDD, mtbdd_apply, MTBDD, a, MTBDD, b, mtbdd_apply_op, op)
     sylvan_stats_count(MTBDD_APPLY);
 
     /* Check cache */
-    if (cache_get3(CACHE_MTBDD_APPLY, a, b, (size_t)op, &result)) {
+    if (cache_get3(CACHE_MTBDD_APPLY, a, b, (size_t) op, &result)) {
         sylvan_stats_count(MTBDD_APPLY_CACHED);
         return result;
     }
@@ -785,7 +861,7 @@ TASK_IMPL_3(MTBDD, mtbdd_apply, MTBDD, a, MTBDD, b, mtbdd_apply_op, op)
     result = mtbdd_makenode(v, low, high);
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_APPLY, a, b, (size_t)op, result)) {
+    if (cache_put3(CACHE_MTBDD_APPLY, a, b, (size_t) op, result)) {
         sylvan_stats_count(MTBDD_APPLY_CACHEDPUT);
     }
 
@@ -879,7 +955,7 @@ TASK_IMPL_3(MTBDD, mtbdd_uapply, MTBDD, dd, mtbdd_uapply_op, op, size_t, param)
 
     /* Check cache */
     MTBDD result;
-    if (cache_get3(CACHE_MTBDD_UAPPLY, dd, (size_t)op, param, &result)) {
+    if (cache_get3(CACHE_MTBDD_UAPPLY, dd, (size_t) op, param, &result)) {
         sylvan_stats_count(MTBDD_UAPPLY_CACHED);
         return result;
     }
@@ -888,7 +964,7 @@ TASK_IMPL_3(MTBDD, mtbdd_uapply, MTBDD, dd, mtbdd_uapply_op, op, size_t, param)
     result = WRAP(op, dd, param);
     if (result != mtbdd_invalid) {
         /* Store in cache */
-        if (cache_put3(CACHE_MTBDD_UAPPLY, dd, (size_t)op, param, result)) {
+        if (cache_put3(CACHE_MTBDD_UAPPLY, dd, (size_t) op, param, result)) {
             sylvan_stats_count(MTBDD_UAPPLY_CACHEDPUT);
         }
 
@@ -908,7 +984,7 @@ TASK_IMPL_3(MTBDD, mtbdd_uapply, MTBDD, dd, mtbdd_uapply_op, op, size_t, param)
     result = mtbdd_makenode(mtbddnode_getvariable(ndd), low, high);
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_UAPPLY, dd, (size_t)op, param, result)) {
+    if (cache_put3(CACHE_MTBDD_UAPPLY, dd, (size_t) op, param, result)) {
         sylvan_stats_count(MTBDD_UAPPLY_CACHEDPUT);
     }
 
@@ -926,16 +1002,16 @@ TASK_2(MTBDD, mtbdd_uop_times_uint, MTBDD, a, size_t, k)
     if (mtbddnode_isleaf(na)) {
         if (mtbddnode_gettype(na) == 0) {
             int64_t v = mtbdd_getint64(a);
-            return mtbdd_int64(v*k);
+            return mtbdd_int64(v * k);
         } else if (mtbddnode_gettype(na) == 1) {
             double d = mtbdd_getdouble(a);
-            return mtbdd_double(d*k);
+            return mtbdd_double(d * k);
         } else if (mtbddnode_gettype(na) == 2) {
             uint64_t v = mtbddnode_getvalue(na);
-            int64_t n = (int32_t)(v>>32);
+            int64_t n = (int32_t) (v >> 32);
             uint32_t d = v;
-            uint32_t c = gcd(d, (uint32_t)k);
-            return mtbdd_fraction(n*(k/c), d/c);
+            uint32_t c = gcd(d, (uint32_t) k);
+            return mtbdd_fraction(n * (k / c), d / c);
         } else {
             assert(0); // failure
         }
@@ -961,7 +1037,7 @@ TASK_2(MTBDD, mtbdd_uop_pow_uint, MTBDD, a, size_t, k)
             return mtbdd_double(pow(d, k));
         } else if (mtbddnode_gettype(na) == 2) {
             uint64_t v = mtbddnode_getvalue(na);
-            return mtbdd_fraction(pow((int32_t)(v>>32), k), (uint32_t)v);
+            return mtbdd_fraction(pow((int32_t) (v >> 32), k), (uint32_t) v);
         } else {
             assert(0); // failure
         }
@@ -972,20 +1048,20 @@ TASK_2(MTBDD, mtbdd_uop_pow_uint, MTBDD, a, size_t, k)
 
 TASK_IMPL_3(MTBDD, mtbdd_abstract_op_plus, MTBDD, a, MTBDD, b, int, k)
 {
-    if (k==0) {
+    if (k == 0) {
         return mtbdd_apply(a, b, TASK(mtbdd_op_plus));
     } else {
-        uint64_t factor = 1ULL<<k; // skip 1,2,3,4: times 2,4,8,16
+        uint64_t factor = 1ULL << k; // skip 1,2,3,4: times 2,4,8,16
         return mtbdd_uapply(a, TASK(mtbdd_uop_times_uint), factor);
     }
 }
 
 TASK_IMPL_3(MTBDD, mtbdd_abstract_op_times, MTBDD, a, MTBDD, b, int, k)
 {
-    if (k==0) {
+    if (k == 0) {
         return mtbdd_apply(a, b, TASK(mtbdd_op_times));
     } else {
-        uint64_t squares = 1ULL<<k; // square k times, ie res^(2^k): 2,4,8,16
+        uint64_t squares = 1ULL << k; // square k times, ie res^(2^k): 2,4,8,16
         return mtbdd_uapply(a, TASK(mtbdd_uop_pow_uint), squares);
     }
 }
@@ -1029,7 +1105,7 @@ TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
 
         /* Check cache */
         MTBDD result;
-        if (cache_get3(CACHE_MTBDD_ABSTRACT, a, v | (k << 40), (size_t)op, &result)) {
+        if (cache_get3(CACHE_MTBDD_ABSTRACT, a, v | (k << 40), (size_t) op, &result)) {
             sylvan_stats_count(MTBDD_ABSTRACT_CACHED);
             return result;
         }
@@ -1038,7 +1114,7 @@ TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
         result = WRAP(op, a, a, k);
 
         /* Store in cache */
-        if (cache_put3(CACHE_MTBDD_ABSTRACT, a, v | (k << 40), (size_t)op, result)) {
+        if (cache_put3(CACHE_MTBDD_ABSTRACT, a, v | (k << 40), (size_t) op, result)) {
             sylvan_stats_count(MTBDD_ABSTRACT_CACHEDPUT);
         }
 
@@ -1060,7 +1136,7 @@ TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
 
     /* Check cache */
     MTBDD result;
-    if (cache_get3(CACHE_MTBDD_ABSTRACT, a, v | (k << 40), (size_t)op, &result)) {
+    if (cache_get3(CACHE_MTBDD_ABSTRACT, a, v | (k << 40), (size_t) op, &result)) {
         sylvan_stats_count(MTBDD_ABSTRACT_CACHED);
         return result;
     }
@@ -1089,7 +1165,7 @@ TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
     }
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_ABSTRACT, a, v | (k << 40), (size_t)op, result)) {
+    if (cache_put3(CACHE_MTBDD_ABSTRACT, a, v | (k << 40), (size_t) op, result)) {
         sylvan_stats_count(MTBDD_ABSTRACT_CACHEDPUT);
     }
 
@@ -1119,24 +1195,24 @@ TASK_IMPL_2(MTBDD, mtbdd_op_plus, MTBDD*, pa, MTBDD*, pb)
         uint64_t val_b = mtbddnode_getvalue(nb);
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
             // both integer
-            return mtbdd_int64(*(int64_t*)(&val_a) + *(int64_t*)(&val_b));
+            return mtbdd_int64(*(int64_t *) (&val_a) + *(int64_t *) (&val_b));
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // both double
-            return mtbdd_double(*(double*)(&val_a) + *(double*)(&val_b));
+            return mtbdd_double(*(double *) (&val_a) + *(double *) (&val_b));
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // both fraction
-            int64_t nom_a = (int32_t)(val_a>>32);
-            int64_t nom_b = (int32_t)(val_b>>32);
-            uint64_t denom_a = val_a&0xffffffff;
-            uint64_t denom_b = val_b&0xffffffff;
+            int64_t nom_a = (int32_t) (val_a >> 32);
+            int64_t nom_b = (int32_t) (val_b >> 32);
+            uint64_t denom_a = val_a & 0xffffffff;
+            uint64_t denom_b = val_b & 0xffffffff;
             // common cases
             if (nom_a == 0) return b;
             if (nom_b == 0) return a;
             // equalize denominators
             uint32_t c = gcd(denom_a, denom_b);
-            nom_a *= denom_b/c;
-            nom_b *= denom_a/c;
-            denom_a *= denom_b/c;
+            nom_a *= denom_b / c;
+            nom_b *= denom_a / c;
+            denom_a *= denom_b / c;
             // add
             return mtbdd_fraction(nom_a + nom_b, denom_a);
         } else {
@@ -1171,23 +1247,23 @@ TASK_IMPL_2(MTBDD, mtbdd_op_minus, MTBDD*, pa, MTBDD*, pb)
         uint64_t val_b = mtbddnode_getvalue(nb);
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
             // both integer
-            return mtbdd_int64(*(int64_t*)(&val_a) - *(int64_t*)(&val_b));
+            return mtbdd_int64(*(int64_t *) (&val_a) - *(int64_t *) (&val_b));
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // both double
-            return mtbdd_double(*(double*)(&val_a) - *(double*)(&val_b));
+            return mtbdd_double(*(double *) (&val_a) - *(double *) (&val_b));
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // both fraction
-            int64_t nom_a = (int32_t)(val_a>>32);
-            int64_t nom_b = (int32_t)(val_b>>32);
-            uint64_t denom_a = val_a&0xffffffff;
-            uint64_t denom_b = val_b&0xffffffff;
+            int64_t nom_a = (int32_t) (val_a >> 32);
+            int64_t nom_b = (int32_t) (val_b >> 32);
+            uint64_t denom_a = val_a & 0xffffffff;
+            uint64_t denom_b = val_b & 0xffffffff;
             // common cases
             if (nom_b == 0) return a;
             // equalize denominators
             uint32_t c = gcd(denom_a, denom_b);
-            nom_a *= denom_b/c;
-            nom_b *= denom_a/c;
-            denom_a *= denom_b/c;
+            nom_a *= denom_b / c;
+            nom_b *= denom_a / c;
+            denom_a *= denom_b / c;
             // subtract
             return mtbdd_fraction(nom_a - nom_b, denom_a);
         } else {
@@ -1221,8 +1297,8 @@ TASK_IMPL_2(MTBDD, mtbdd_op_times, MTBDD*, pa, MTBDD*, pb)
         uint64_t val_b = mtbddnode_getvalue(nb);
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
             // both integer
-            int64_t i_a = *(int64_t*)(&val_a);
-            int64_t i_b = *(int64_t*)(&val_b);
+            int64_t i_a = *(int64_t *) (&val_a);
+            int64_t i_b = *(int64_t *) (&val_b);
             if (i_a == 0) return a;
             if (i_b == 0) return b;
             if (i_a == 1) return b;
@@ -1230,8 +1306,8 @@ TASK_IMPL_2(MTBDD, mtbdd_op_times, MTBDD*, pa, MTBDD*, pb)
             return mtbdd_int64(i_a * i_b);
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // both double
-            double d_a = *(double*)(&val_a);
-            double d_b = *(double*)(&val_b);
+            double d_a = *(double *) (&val_a);
+            double d_b = *(double *) (&val_b);
             if (d_a == 0.0) return a;
             if (d_a == 1.0) return b;
             if (d_b == 0.0) return b;
@@ -1239,10 +1315,10 @@ TASK_IMPL_2(MTBDD, mtbdd_op_times, MTBDD*, pa, MTBDD*, pb)
             return mtbdd_double(d_a * d_b);
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // both fraction
-            int64_t nom_a = (int32_t)(val_a>>32);
-            int64_t nom_b = (int32_t)(val_b>>32);
-            uint64_t denom_a = val_a&0xffffffff;
-            uint64_t denom_b = val_b&0xffffffff;
+            int64_t nom_a = (int32_t) (val_a >> 32);
+            int64_t nom_b = (int32_t) (val_b >> 32);
+            uint64_t denom_a = val_a & 0xffffffff;
+            uint64_t denom_b = val_b & 0xffffffff;
             if (nom_a == 0) return a;
             if (nom_b == 0) return b;
             // multiply!
@@ -1250,8 +1326,8 @@ TASK_IMPL_2(MTBDD, mtbdd_op_times, MTBDD*, pa, MTBDD*, pb)
             uint32_t d = gcd(nom_a < 0 ? -nom_a : nom_a, denom_b);
             nom_a /= d;
             denom_a /= c;
-            nom_a *= (nom_b/c);
-            denom_a *= (denom_b/d);
+            nom_a *= (nom_b / c);
+            denom_a *= (denom_b / d);
             return mtbdd_fraction(nom_a, denom_a);
         } else {
             assert(0); // failure
@@ -1291,24 +1367,24 @@ TASK_IMPL_2(MTBDD, mtbdd_op_min, MTBDD*, pa, MTBDD*, pb)
         uint64_t val_b = mtbddnode_getvalue(nb);
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
             // both integer
-            int64_t va = *(int64_t*)(&val_a);
-            int64_t vb = *(int64_t*)(&val_b);
+            int64_t va = *(int64_t *) (&val_a);
+            int64_t vb = *(int64_t *) (&val_b);
             return va < vb ? a : b;
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // both double
-            double va = *(double*)&val_a;
-            double vb = *(double*)&val_b;
+            double va = *(double *) &val_a;
+            double vb = *(double *) &val_b;
             return va < vb ? a : b;
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // both fraction
-            int64_t nom_a = (int32_t)(val_a>>32);
-            int64_t nom_b = (int32_t)(val_b>>32);
-            uint64_t denom_a = val_a&0xffffffff;
-            uint64_t denom_b = val_b&0xffffffff;
+            int64_t nom_a = (int32_t) (val_a >> 32);
+            int64_t nom_b = (int32_t) (val_b >> 32);
+            uint64_t denom_a = val_a & 0xffffffff;
+            uint64_t denom_b = val_b & 0xffffffff;
             // equalize denominators
             uint32_t c = gcd(denom_a, denom_b);
-            nom_a *= denom_b/c;
-            nom_b *= denom_a/c;
+            nom_a *= denom_b / c;
+            nom_b *= denom_a / c;
             // compute lowest
             return nom_a < nom_b ? a : b;
         } else {
@@ -1347,24 +1423,24 @@ TASK_IMPL_2(MTBDD, mtbdd_op_max, MTBDD*, pa, MTBDD*, pb)
         uint64_t val_b = mtbddnode_getvalue(nb);
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
             // both integer
-            int64_t va = *(int64_t*)(&val_a);
-            int64_t vb = *(int64_t*)(&val_b);
+            int64_t va = *(int64_t *) (&val_a);
+            int64_t vb = *(int64_t *) (&val_b);
             return va > vb ? a : b;
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // both double
-            double vval_a = *(double*)&val_a;
-            double vval_b = *(double*)&val_b;
+            double vval_a = *(double *) &val_a;
+            double vval_b = *(double *) &val_b;
             return vval_a > vval_b ? a : b;
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // both fraction
-            int64_t nom_a = (int32_t)(val_a>>32);
-            int64_t nom_b = (int32_t)(val_b>>32);
-            uint64_t denom_a = val_a&0xffffffff;
-            uint64_t denom_b = val_b&0xffffffff;
+            int64_t nom_a = (int32_t) (val_a >> 32);
+            int64_t nom_b = (int32_t) (val_b >> 32);
+            uint64_t denom_a = val_a & 0xffffffff;
+            uint64_t denom_b = val_b & 0xffffffff;
             // equalize denominators
             uint32_t c = gcd(denom_a, denom_b);
-            nom_a *= denom_b/c;
-            nom_b *= denom_a/c;
+            nom_a *= denom_b / c;
+            nom_b *= denom_a / c;
             // compute highest
             return nom_a > nom_b ? a : b;
         } else {
@@ -1407,7 +1483,7 @@ TASK_IMPL_2(MTBDD, mtbdd_op_cmpl, MTBDD, a, size_t, k)
     }
 
     return mtbdd_invalid;
-    (void)k; // unused variable
+    (void) k; // unused variable
 }
 
 TASK_IMPL_2(MTBDD, mtbdd_op_negate, MTBDD, a, size_t, k)
@@ -1427,14 +1503,14 @@ TASK_IMPL_2(MTBDD, mtbdd_op_negate, MTBDD, a, size_t, k)
             return mtbdd_double(-d);
         } else if (mtbddnode_gettype(na) == 2) {
             uint64_t v = mtbddnode_getvalue(na);
-            return mtbdd_fraction(-(int32_t)(v>>32), (uint32_t)v);
+            return mtbdd_fraction(-(int32_t) (v >> 32), (uint32_t) v);
         } else {
             assert(0); // failure
         }
     }
 
     return mtbdd_invalid;
-    (void)k; // unused variable
+    (void) k; // unused variable
 }
 
 /**
@@ -1515,11 +1591,11 @@ TASK_IMPL_2(MTBDD, mtbdd_op_threshold_double, MTBDD, a, size_t, svalue)
     mtbddnode_t na = MTBDD_GETNODE(a);
 
     if (mtbddnode_isleaf(na)) {
-        double value = *(double*)&svalue;
+        double value = *(double *) &svalue;
         if (mtbddnode_gettype(na) == 1) {
             return mtbdd_getdouble(a) >= value ? mtbdd_true : mtbdd_false;
         } else if (mtbddnode_gettype(na) == 2) {
-            double d = (double)mtbdd_getnumer(a);
+            double d = (double) mtbdd_getnumer(a);
             d /= mtbdd_getdenom(a);
             return d >= value ? mtbdd_true : mtbdd_false;
         } else {
@@ -1543,11 +1619,11 @@ TASK_IMPL_2(MTBDD, mtbdd_op_strict_threshold_double, MTBDD, a, size_t, svalue)
     mtbddnode_t na = MTBDD_GETNODE(a);
 
     if (mtbddnode_isleaf(na)) {
-        double value = *(double*)&svalue;
+        double value = *(double *) &svalue;
         if (mtbddnode_gettype(na) == 1) {
             return mtbdd_getdouble(a) > value ? mtbdd_true : mtbdd_false;
         } else if (mtbddnode_gettype(na) == 2) {
-            double d = (double)mtbdd_getnumer(a);
+            double d = (double) mtbdd_getnumer(a);
             d /= mtbdd_getdenom(a);
             return d > value ? mtbdd_true : mtbdd_false;
         } else {
@@ -1560,12 +1636,12 @@ TASK_IMPL_2(MTBDD, mtbdd_op_strict_threshold_double, MTBDD, a, size_t, svalue)
 
 TASK_IMPL_2(MTBDD, mtbdd_threshold_double, MTBDD, dd, double, d)
 {
-    return mtbdd_uapply(dd, TASK(mtbdd_op_threshold_double), *(size_t*)&d);
+    return mtbdd_uapply(dd, TASK(mtbdd_op_threshold_double), *(size_t *) &d);
 }
 
 TASK_IMPL_2(MTBDD, mtbdd_strict_threshold_double, MTBDD, dd, double, d)
 {
-    return mtbdd_uapply(dd, TASK(mtbdd_op_strict_threshold_double), *(size_t*)&d);
+    return mtbdd_uapply(dd, TASK(mtbdd_op_strict_threshold_double), *(size_t *) &d);
 }
 
 /**
@@ -1592,7 +1668,7 @@ TASK_4(MTBDD, mtbdd_equal_norm_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, sho
         double vb = mtbdd_getdouble(b);
         va -= vb;
         if (va < 0) va = -va;
-        return (va < *(double*)&svalue) ? mtbdd_true : mtbdd_false;
+        return (va < *(double *) &svalue) ? mtbdd_true : mtbdd_false;
     }
 
     if (b < a) {
@@ -1621,9 +1697,9 @@ TASK_4(MTBDD, mtbdd_equal_norm_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, sho
 
     /* Get cofactors */
     MTBDD alow, ahigh, blow, bhigh;
-    alow  = va == var ? node_getlow(a, na)  : a;
+    alow = va == var ? node_getlow(a, na) : a;
     ahigh = va == var ? node_gethigh(a, na) : a;
-    blow  = vb == var ? node_getlow(b, nb)  : b;
+    blow = vb == var ? node_getlow(b, nb) : b;
     bhigh = vb == var ? node_gethigh(b, nb) : b;
 
     SPAWN(mtbdd_equal_norm_d2, ahigh, bhigh, svalue, shortcircuit);
@@ -1645,7 +1721,7 @@ TASK_IMPL_3(MTBDD, mtbdd_equal_norm_d, MTBDD, a, MTBDD, b, double, d)
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
     int shortcircuit = 0;
-    return CALL(mtbdd_equal_norm_d2, a, b, *(size_t*)&d, &shortcircuit);
+    return CALL(mtbdd_equal_norm_d2, a, b, *(size_t *) &d, &shortcircuit);
 }
 
 /**
@@ -1674,7 +1750,7 @@ TASK_4(MTBDD, mtbdd_equal_norm_rel_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*,
         if (va == 0) return mtbdd_false;
         va = (va - vb) / va;
         if (va < 0) va = -va;
-        return (va < *(double*)&svalue) ? mtbdd_true : mtbdd_false;
+        return (va < *(double *) &svalue) ? mtbdd_true : mtbdd_false;
     }
 
     /* Maybe perform garbage collection */
@@ -1697,9 +1773,9 @@ TASK_4(MTBDD, mtbdd_equal_norm_rel_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*,
 
     /* Get cofactors */
     MTBDD alow, ahigh, blow, bhigh;
-    alow  = va == var ? node_getlow(a, na)  : a;
+    alow = va == var ? node_getlow(a, na) : a;
     ahigh = va == var ? node_gethigh(a, na) : a;
-    blow  = vb == var ? node_getlow(b, nb)  : b;
+    blow = vb == var ? node_getlow(b, nb) : b;
     bhigh = vb == var ? node_gethigh(b, nb) : b;
 
     SPAWN(mtbdd_equal_norm_rel_d2, ahigh, bhigh, svalue, shortcircuit);
@@ -1721,7 +1797,7 @@ TASK_IMPL_3(MTBDD, mtbdd_equal_norm_rel_d, MTBDD, a, MTBDD, b, double, d)
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
     int shortcircuit = 0;
-    return CALL(mtbdd_equal_norm_rel_d2, a, b, *(size_t*)&d, &shortcircuit);
+    return CALL(mtbdd_equal_norm_rel_d2, a, b, *(size_t *) &d, &shortcircuit);
 }
 
 /**
@@ -1764,22 +1840,22 @@ TASK_3(MTBDD, mtbdd_leq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
             // type 0 = integer
-            result = *(int64_t*)(&va) <= *(int64_t*)(&vb) ? mtbdd_true : mtbdd_false;
+            result = *(int64_t *) (&va) <= *(int64_t *) (&vb) ? mtbdd_true : mtbdd_false;
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // type 1 = double
-            double vva = *(double*)&va;
-            double vvb = *(double*)&vb;
+            double vva = *(double *) &va;
+            double vvb = *(double *) &vb;
             result = vva <= vvb ? mtbdd_true : mtbdd_false;
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // type 2 = fraction
-            int64_t nom_a = (int32_t)(va>>32);
-            int64_t nom_b = (int32_t)(vb>>32);
-            uint64_t da = va&0xffffffff;
-            uint64_t db = vb&0xffffffff;
+            int64_t nom_a = (int32_t) (va >> 32);
+            int64_t nom_b = (int32_t) (vb >> 32);
+            uint64_t da = va & 0xffffffff;
+            uint64_t db = vb & 0xffffffff;
             // equalize denominators
             uint32_t c = gcd(da, db);
-            nom_a *= db/c;
-            nom_b *= da/c;
+            nom_a *= db / c;
+            nom_b *= da / c;
             result = nom_a <= nom_b ? mtbdd_true : mtbdd_false;
         } else {
             assert(0); // failure
@@ -1792,9 +1868,9 @@ TASK_3(MTBDD, mtbdd_leq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
         /* Get cofactors */
         MTBDD alow, ahigh, blow, bhigh;
-        alow  = va == var ? node_getlow(a, na)  : a;
+        alow = va == var ? node_getlow(a, na) : a;
         ahigh = va == var ? node_gethigh(a, na) : a;
-        blow  = vb == var ? node_getlow(b, nb)  : b;
+        blow = vb == var ? node_getlow(b, nb) : b;
         bhigh = vb == var ? node_gethigh(b, nb) : b;
 
         SPAWN(mtbdd_leq_rec, ahigh, bhigh, shortcircuit);
@@ -1860,22 +1936,22 @@ TASK_3(MTBDD, mtbdd_less_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
             // type 0 = integer
-            result = *(int64_t*)(&va) < *(int64_t*)(&vb) ? mtbdd_true : mtbdd_false;
+            result = *(int64_t *) (&va) < *(int64_t *) (&vb) ? mtbdd_true : mtbdd_false;
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // type 1 = double
-            double vva = *(double*)&va;
-            double vvb = *(double*)&vb;
+            double vva = *(double *) &va;
+            double vvb = *(double *) &vb;
             result = vva < vvb ? mtbdd_true : mtbdd_false;
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // type 2 = fraction
-            int64_t nom_a = (int32_t)(va>>32);
-            int64_t nom_b = (int32_t)(vb>>32);
-            uint64_t da = va&0xffffffff;
-            uint64_t db = vb&0xffffffff;
+            int64_t nom_a = (int32_t) (va >> 32);
+            int64_t nom_b = (int32_t) (vb >> 32);
+            uint64_t da = va & 0xffffffff;
+            uint64_t db = vb & 0xffffffff;
             // equalize denominators
             uint32_t c = gcd(da, db);
-            nom_a *= db/c;
-            nom_b *= da/c;
+            nom_a *= db / c;
+            nom_b *= da / c;
             result = nom_a < nom_b ? mtbdd_true : mtbdd_false;
         } else {
             assert(0); // failure
@@ -1888,9 +1964,9 @@ TASK_3(MTBDD, mtbdd_less_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
         /* Get cofactors */
         MTBDD alow, ahigh, blow, bhigh;
-        alow  = va == var ? node_getlow(a, na)  : a;
+        alow = va == var ? node_getlow(a, na) : a;
         ahigh = va == var ? node_gethigh(a, na) : a;
-        blow  = vb == var ? node_getlow(b, nb)  : b;
+        blow = vb == var ? node_getlow(b, nb) : b;
         bhigh = vb == var ? node_gethigh(b, nb) : b;
 
         SPAWN(mtbdd_less_rec, ahigh, bhigh, shortcircuit);
@@ -1956,22 +2032,22 @@ TASK_3(MTBDD, mtbdd_geq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
             // type 0 = integer
-            result = *(int64_t*)(&va) >= *(int64_t*)(&vb) ? mtbdd_true : mtbdd_false;
+            result = *(int64_t *) (&va) >= *(int64_t *) (&vb) ? mtbdd_true : mtbdd_false;
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // type 1 = double
-            double vva = *(double*)&va;
-            double vvb = *(double*)&vb;
+            double vva = *(double *) &va;
+            double vvb = *(double *) &vb;
             result = vva >= vvb ? mtbdd_true : mtbdd_false;
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // type 2 = fraction
-            int64_t nom_a = (int32_t)(va>>32);
-            int64_t nom_b = (int32_t)(vb>>32);
-            uint64_t da = va&0xffffffff;
-            uint64_t db = vb&0xffffffff;
+            int64_t nom_a = (int32_t) (va >> 32);
+            int64_t nom_b = (int32_t) (vb >> 32);
+            uint64_t da = va & 0xffffffff;
+            uint64_t db = vb & 0xffffffff;
             // equalize denominators
             uint32_t c = gcd(da, db);
-            nom_a *= db/c;
-            nom_b *= da/c;
+            nom_a *= db / c;
+            nom_b *= da / c;
             result = nom_a >= nom_b ? mtbdd_true : mtbdd_false;
         } else {
             assert(0); // failure
@@ -1984,9 +2060,9 @@ TASK_3(MTBDD, mtbdd_geq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
         /* Get cofactors */
         MTBDD alow, ahigh, blow, bhigh;
-        alow  = va == var ? node_getlow(a, na)  : a;
+        alow = va == var ? node_getlow(a, na) : a;
         ahigh = va == var ? node_gethigh(a, na) : a;
-        blow  = vb == var ? node_getlow(b, nb)  : b;
+        blow = vb == var ? node_getlow(b, nb) : b;
         bhigh = vb == var ? node_gethigh(b, nb) : b;
 
         SPAWN(mtbdd_geq_rec, ahigh, bhigh, shortcircuit);
@@ -2052,22 +2128,22 @@ TASK_3(MTBDD, mtbdd_greater_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
             // type 0 = integer
-            result = *(int64_t*)(&va) > *(int64_t*)(&vb) ? mtbdd_true : mtbdd_false;
+            result = *(int64_t *) (&va) > *(int64_t *) (&vb) ? mtbdd_true : mtbdd_false;
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // type 1 = double
-            double vva = *(double*)&va;
-            double vvb = *(double*)&vb;
+            double vva = *(double *) &va;
+            double vvb = *(double *) &vb;
             result = vva > vvb ? mtbdd_true : mtbdd_false;
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // type 2 = fraction
-            int64_t nom_a = (int32_t)(va>>32);
-            int64_t nom_b = (int32_t)(vb>>32);
-            uint64_t da = va&0xffffffff;
-            uint64_t db = vb&0xffffffff;
+            int64_t nom_a = (int32_t) (va >> 32);
+            int64_t nom_b = (int32_t) (vb >> 32);
+            uint64_t da = va & 0xffffffff;
+            uint64_t db = vb & 0xffffffff;
             // equalize denominators
             uint32_t c = gcd(da, db);
-            nom_a *= db/c;
-            nom_b *= da/c;
+            nom_a *= db / c;
+            nom_b *= da / c;
             result = nom_a > nom_b ? mtbdd_true : mtbdd_false;
         } else {
             assert(0); // failure
@@ -2080,9 +2156,9 @@ TASK_3(MTBDD, mtbdd_greater_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
         /* Get cofactors */
         MTBDD alow, ahigh, blow, bhigh;
-        alow  = va == var ? node_getlow(a, na)  : a;
+        alow = va == var ? node_getlow(a, na) : a;
         ahigh = va == var ? node_gethigh(a, na) : a;
-        blow  = vb == var ? node_getlow(b, nb)  : b;
+        blow = vb == var ? node_getlow(b, nb) : b;
         bhigh = vb == var ? node_gethigh(b, nb) : b;
 
         SPAWN(mtbdd_greater_rec, ahigh, bhigh, shortcircuit);
@@ -2159,9 +2235,9 @@ TASK_IMPL_3(MTBDD, mtbdd_and_abstract_plus, MTBDD, a, MTBDD, b, MTBDD, v)
     } else {
         /* Get cofactors */
         MTBDD alow, ahigh, blow, bhigh;
-        alow  = (!la && va == var) ? node_getlow(a, na)  : a;
+        alow = (!la && va == var) ? node_getlow(a, na) : a;
         ahigh = (!la && va == var) ? node_gethigh(a, na) : a;
-        blow  = (!lb && vb == var) ? node_getlow(b, nb)  : b;
+        blow = (!lb && vb == var) ? node_getlow(b, nb) : b;
         bhigh = (!lb && vb == var) ? node_gethigh(b, nb) : b;
 
         if (vv == var) {
@@ -2240,9 +2316,9 @@ TASK_IMPL_3(MTBDD, mtbdd_and_abstract_max, MTBDD, a, MTBDD, b, MTBDD, v)
 
     /* Get cofactors */
     MTBDD alow, ahigh, blow, bhigh;
-    alow  = (!la && va == var) ? node_getlow(a, na)  : a;
+    alow = (!la && va == var) ? node_getlow(a, na) : a;
     ahigh = (!la && va == var) ? node_gethigh(a, na) : a;
-    blow  = (!lb && vb == var) ? node_getlow(b, nb)  : b;
+    blow = (!lb && vb == var) ? node_getlow(b, nb) : b;
     bhigh = (!lb && vb == var) ? node_gethigh(b, nb) : b;
 
     if (vv == var) {
@@ -2404,8 +2480,8 @@ TASK_IMPL_1(MTBDD, mtbdd_minimum, MTBDD, a)
         uint64_t denom_h = mtbdd_getdenom(high);
         // equalize denominators
         uint32_t c = gcd(denom_l, denom_h);
-        nom_l *= denom_h/c;
-        nom_h *= denom_l/c;
+        nom_l *= denom_h / c;
+        nom_h *= denom_l / c;
         result = nom_l < nom_h ? low : high;
     } else {
         assert(0); // failure
@@ -2463,8 +2539,8 @@ TASK_IMPL_1(MTBDD, mtbdd_maximum, MTBDD, a)
         uint64_t denom_h = mtbdd_getdenom(high);
         // equalize denominators
         uint32_t c = gcd(denom_l, denom_h);
-        nom_l *= denom_h/c;
-        nom_h *= denom_l/c;
+        nom_l *= denom_h / c;
+        nom_h *= denom_l / c;
         result = nom_l > nom_h ? low : high;
     } else {
         assert(0); // failure
@@ -2500,7 +2576,8 @@ TASK_IMPL_2(double, mtbdd_satcount, MTBDD, dd, size_t, nvars)
     /* Perhaps execute garbage collection */
     sylvan_gc_test();
 
-    union {
+    union
+    {
         double d;
         uint64_t s;
     } hack;
@@ -2511,8 +2588,8 @@ TASK_IMPL_2(double, mtbdd_satcount, MTBDD, dd, size_t, nvars)
         return hack.d;
     }
 
-    SPAWN(mtbdd_satcount, mtbdd_gethigh(dd), nvars-1);
-    double low = CALL(mtbdd_satcount, mtbdd_getlow(dd), nvars-1);
+    SPAWN(mtbdd_satcount, mtbdd_gethigh(dd), nvars - 1);
+    double low = CALL(mtbdd_satcount, mtbdd_getlow(dd), nvars - 1);
     hack.d = low + SYNC(mtbdd_satcount);
 
     if (cache_put3(CACHE_BDD_SATCOUNT, dd, 0, nvars, hack.s)) {
@@ -2554,23 +2631,23 @@ mtbdd_enum_first(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb f
         mtbddnode_t n = MTBDD_GETNODE(dd);
         if (mtbddnode_getvariable(n) != v) {
             *arr = 2;
-            return mtbdd_enum_first(dd, variables, arr+1, filter_cb);
+            return mtbdd_enum_first(dd, variables, arr + 1, filter_cb);
         }
 
         // first maybe follow low
-        MTBDD res = mtbdd_enum_first(node_getlow(dd, n), variables, arr+1, filter_cb);
+        MTBDD res = mtbdd_enum_first(node_getlow(dd, n), variables, arr + 1, filter_cb);
         if (res != mtbdd_false) {
             *arr = 0;
             return res;
         }
 
         // if not low, try following high
-        res = mtbdd_enum_first(node_gethigh(dd, n), variables, arr+1, filter_cb);
+        res = mtbdd_enum_first(node_gethigh(dd, n), variables, arr + 1, filter_cb);
         if (res != mtbdd_false) {
             *arr = 1;
             return res;
         }
-        
+
         // we've tried low and high, return false
         return mtbdd_false;
     }
@@ -2595,12 +2672,12 @@ mtbdd_enum_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb fi
         if (*arr == 0) {
             // previous was low
             mtbddnode_t n = MTBDD_GETNODE(dd);
-            MTBDD res = mtbdd_enum_next(node_getlow(dd, n), variables, arr+1, filter_cb);
+            MTBDD res = mtbdd_enum_next(node_getlow(dd, n), variables, arr + 1, filter_cb);
             if (res != mtbdd_false) {
                 return res;
             } else {
                 // try to find new in high branch
-                res = mtbdd_enum_first(node_gethigh(dd, n), variables, arr+1, filter_cb);
+                res = mtbdd_enum_first(node_gethigh(dd, n), variables, arr + 1, filter_cb);
                 if (res != mtbdd_false) {
                     *arr = 1;
                     return res;
@@ -2611,10 +2688,10 @@ mtbdd_enum_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb fi
         } else if (*arr == 1) {
             // previous was high
             mtbddnode_t n = MTBDD_GETNODE(dd);
-            return mtbdd_enum_next(node_gethigh(dd, n), variables, arr+1, filter_cb);
+            return mtbdd_enum_next(node_gethigh(dd, n), variables, arr + 1, filter_cb);
         } else {
             // previous was either
-            return mtbdd_enum_next(dd, variables, arr+1, filter_cb);
+            return mtbdd_enum_next(dd, variables, arr + 1, filter_cb);
         }
     }
 }
@@ -2657,14 +2734,14 @@ mtbdd_enum_all_first(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_
         }
 
         // first maybe follow low
-        MTBDD res = mtbdd_enum_all_first(low, variables, arr+1, filter_cb);
+        MTBDD res = mtbdd_enum_all_first(low, variables, arr + 1, filter_cb);
         if (res != mtbdd_false) {
             *arr = 0;
             return res;
         }
 
         // if not low, try following high
-        res = mtbdd_enum_all_first(high, variables, arr+1, filter_cb);
+        res = mtbdd_enum_all_first(high, variables, arr + 1, filter_cb);
         if (res != mtbdd_false) {
             *arr = 1;
             return res;
@@ -2711,10 +2788,10 @@ mtbdd_enum_all_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_c
 
         // try recursive next first
         if (*arr == 0) {
-            MTBDD res = mtbdd_enum_all_next(low, variables, arr+1, filter_cb);
+            MTBDD res = mtbdd_enum_all_next(low, variables, arr + 1, filter_cb);
             if (res != mtbdd_false) return res;
         } else if (*arr == 1) {
-            return mtbdd_enum_all_next(high, variables, arr+1, filter_cb);
+            return mtbdd_enum_all_next(high, variables, arr + 1, filter_cb);
             // if *arr was 1 and _next returns False, return False
         } else {
             // the array is invalid...
@@ -2723,7 +2800,7 @@ mtbdd_enum_all_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_c
         }
 
         // previous was low, try following high
-        MTBDD res = mtbdd_enum_all_first(high, variables, arr+1, filter_cb);
+        MTBDD res = mtbdd_enum_all_first(high, variables, arr + 1, filter_cb);
         if (res == mtbdd_false) return mtbdd_false;
 
         // succesful, set arr
@@ -2749,8 +2826,8 @@ VOID_TASK_4(mtbdd_enum_par_do, MTBDD, dd, mtbdd_enum_cb, cb, void*, context, mtb
     mtbddnode_t ndd = MTBDD_GETNODE(dd);
     uint32_t var = mtbddnode_getvariable(ndd);
 
-    struct mtbdd_enum_trace t0 = (struct mtbdd_enum_trace){trace, var, 0};
-    struct mtbdd_enum_trace t1 = (struct mtbdd_enum_trace){trace, var, 1};
+    struct mtbdd_enum_trace t0 = (struct mtbdd_enum_trace) {trace, var, 0};
+    struct mtbdd_enum_trace t1 = (struct mtbdd_enum_trace) {trace, var, 1};
     SPAWN(mtbdd_enum_par_do, node_getlow(dd, ndd), cb, context, &t0);
     CALL(mtbdd_enum_par_do, node_gethigh(dd, ndd), cb, context, &t1);
     SYNC(mtbdd_enum_par_do);
@@ -2782,7 +2859,7 @@ TASK_IMPL_3(MTBDD, mtbdd_eval_compose, MTBDD, dd, MTBDD, vars, mtbdd_eval_compos
 
     /* Check cache */
     MTBDD result;
-    if (cache_get3(CACHE_MTBDD_EVAL_COMPOSE, dd, vars, (size_t)cb, &result)) {
+    if (cache_get3(CACHE_MTBDD_EVAL_COMPOSE, dd, vars, (size_t) cb, &result)) {
         sylvan_stats_count(MTBDD_EVAL_COMPOSE_CACHED);
         return result;
     }
@@ -2831,7 +2908,7 @@ TASK_IMPL_3(MTBDD, mtbdd_eval_compose, MTBDD, dd, MTBDD, vars, mtbdd_eval_compos
     }
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_EVAL_COMPOSE, dd, vars, (size_t)cb, result)) {
+    if (cache_put3(CACHE_MTBDD_EVAL_COMPOSE, dd, vars, (size_t) cb, result)) {
         sylvan_stats_count(MTBDD_EVAL_COMPOSE_CACHEDPUT);
     }
 
@@ -2872,8 +2949,8 @@ size_t
 mtbdd_leafcount_more(const MTBDD *mtbdds, size_t count)
 {
     size_t result = 0, i;
-    for (i=0; i<count; i++) result += mtbdd_leafcount_mark(mtbdds[i]);
-    for (i=0; i<count; i++) mtbdd_unmark_rec(mtbdds[i]);
+    for (i = 0; i < count; i++) result += mtbdd_leafcount_mark(mtbdds[i]);
+    for (i = 0; i < count; i++) mtbdd_unmark_rec(mtbdds[i]);
     return result;
 }
 
@@ -2895,8 +2972,8 @@ size_t
 mtbdd_nodecount_more(const MTBDD *mtbdds, size_t count)
 {
     size_t result = 0, i;
-    for (i=0; i<count; i++) result += mtbdd_nodecount_mark(mtbdds[i]);
-    for (i=0; i<count; i++) mtbdd_unmark_rec(mtbdds[i]);
+    for (i = 0; i < count; i++) result += mtbdd_nodecount_mark(mtbdds[i]);
+    for (i = 0; i < count; i++) mtbdd_unmark_rec(mtbdds[i]);
     return result;
 }
 
@@ -2933,7 +3010,7 @@ TASK_2(int, mtbdd_test_isvalid_rec, MTBDD, dd, uint32_t, parent_var)
 
     // check recursively
     SPAWN(mtbdd_test_isvalid_rec, node_getlow(dd, n), var);
-    result = (uint64_t)CALL(mtbdd_test_isvalid_rec, node_gethigh(dd, n), var);
+    result = (uint64_t) CALL(mtbdd_test_isvalid_rec, node_gethigh(dd, n), var);
     if (!SYNC(mtbdd_test_isvalid_rec)) result = 0;
 
     // put in cache and return result
@@ -3114,7 +3191,7 @@ static void
 mtbdd_sha2_rec(MTBDD dd, SHA256_CTX *ctx)
 {
     if (dd == mtbdd_true || dd == mtbdd_false) {
-        SHA256_Update(ctx, (void*)&dd, sizeof(MTBDD));
+        SHA256_Update(ctx, (void *) &dd, sizeof(MTBDD));
         return;
     }
 
@@ -3123,14 +3200,14 @@ mtbdd_sha2_rec(MTBDD dd, SHA256_CTX *ctx)
         mtbddnode_setmark(node, 1);
         if (mtbddnode_isleaf(node)) {
             uint32_t type = mtbddnode_gettype(node);
-            SHA256_Update(ctx, (void*)&type, sizeof(uint32_t));
+            SHA256_Update(ctx, (void *) &type, sizeof(uint32_t));
             uint64_t value = mtbddnode_getvalue(node);
             value = sylvan_mt_hash(type, value, value);
-            SHA256_Update(ctx, (void*)&value, sizeof(uint64_t));
+            SHA256_Update(ctx, (void *) &value, sizeof(uint64_t));
         } else {
             uint32_t level = mtbddnode_getvariable(node);
             if (MTBDD_STRIPMARK(mtbddnode_gethigh(node))) level |= 0x80000000;
-            SHA256_Update(ctx, (void*)&level, sizeof(uint32_t));
+            SHA256_Update(ctx, (void *) &level, sizeof(uint32_t));
             mtbdd_sha2_rec(mtbddnode_gethigh(node), ctx);
             mtbdd_sha2_rec(mtbddnode_getlow(node), ctx);
         }
@@ -3213,7 +3290,8 @@ mtbdd_writer_start()
 
 VOID_TASK_IMPL_2(mtbdd_writer_add, sylvan_skiplist_t, sl, MTBDD, dd)
 {
-    mtbdd_visit_seq(dd, (mtbdd_visit_pre_cb)TASK(mtbdd_writer_add_visitor_pre), (mtbdd_visit_post_cb)TASK(mtbdd_writer_add_visitor_post), (void*)sl);
+    mtbdd_visit_seq(dd, (mtbdd_visit_pre_cb) TASK(mtbdd_writer_add_visitor_pre),
+                    (mtbdd_visit_post_cb) TASK(mtbdd_writer_add_visitor_post), (void *) sl);
 }
 
 void
@@ -3221,7 +3299,7 @@ mtbdd_writer_writebinary(FILE *out, sylvan_skiplist_t sl)
 {
     size_t nodecount = sylvan_skiplist_count(sl);
     fwrite(&nodecount, sizeof(size_t), 1, out);
-    for (size_t i=1; i<=nodecount; i++) {
+    for (size_t i = 1; i <= nodecount; i++) {
         MTBDD dd = sylvan_skiplist_getr(sl, i);
 
         mtbddnode_t n = MTBDD_GETNODE(dd);
@@ -3258,15 +3336,15 @@ VOID_TASK_IMPL_3(mtbdd_writer_tobinary, FILE *, out, MTBDD *, dds, int, count)
 {
     sylvan_skiplist_t sl = mtbdd_writer_start();
 
-    for (int i=0; i<count; i++) {
+    for (int i = 0; i < count; i++) {
         CALL(mtbdd_writer_add, sl, dds[i]);
     }
 
     mtbdd_writer_writebinary(out, sl);
 
     fwrite(&count, sizeof(int), 1, out);
-    
-    for (int i=0; i<count; i++) {
+
+    for (int i = 0; i < count; i++) {
         uint64_t v = mtbdd_writer_get(sl, dds[i]);
         fwrite(&v, sizeof(uint64_t), 1, out);
     }
@@ -3279,7 +3357,7 @@ mtbdd_writer_writetext(FILE *out, sylvan_skiplist_t sl)
 {
     fprintf(out, "[\n");
     size_t nodecount = sylvan_skiplist_count(sl);
-    for (size_t i=1; i<=nodecount; i++) {
+    for (size_t i = 1; i <= nodecount; i++) {
         MTBDD dd = sylvan_skiplist_getr(sl, i);
 
         mtbddnode_t n = MTBDD_GETNODE(dd);
@@ -3292,7 +3370,8 @@ mtbdd_writer_writetext(FILE *out, sylvan_skiplist_t sl)
             MTBDD low = sylvan_skiplist_get(sl, mtbddnode_getlow(n));
             MTBDD high = mtbddnode_gethigh(n);
             high = MTBDD_TRANSFERMARK(high, sylvan_skiplist_get(sl, MTBDD_STRIPMARK(high)));
-            fprintf(out, "  node(%zu,%u,%zu,%s%zu),\n", i, mtbddnode_getvariable(n), (size_t)low, MTBDD_HASMARK(high)?"~":"", (size_t)MTBDD_STRIPMARK(high));
+            fprintf(out, "  node(%zu,%u,%zu,%s%zu),\n", i, mtbddnode_getvariable(n), (size_t) low,
+                    MTBDD_HASMARK(high) ? "~" : "", (size_t) MTBDD_STRIPMARK(high));
         }
     }
 
@@ -3303,17 +3382,17 @@ VOID_TASK_IMPL_3(mtbdd_writer_totext, FILE *, out, MTBDD *, dds, int, count)
 {
     sylvan_skiplist_t sl = mtbdd_writer_start();
 
-    for (int i=0; i<count; i++) {
+    for (int i = 0; i < count; i++) {
         CALL(mtbdd_writer_add, sl, dds[i]);
     }
 
     mtbdd_writer_writetext(out, sl);
 
     fprintf(out, ",[");
-    
-    for (int i=0; i<count; i++) {
+
+    for (int i = 0; i < count; i++) {
         uint64_t v = mtbdd_writer_get(sl, dds[i]);
-        fprintf(out, "%s%zu,", MTBDD_HASMARK(v)?"~":"", (size_t)MTBDD_STRIPMARK(v));
+        fprintf(out, "%s%zu,", MTBDD_HASMARK(v) ? "~" : "", (size_t) MTBDD_STRIPMARK(v));
     }
 
     fprintf(out, "]\n");
@@ -3334,9 +3413,9 @@ TASK_IMPL_1(uint64_t*, mtbdd_reader_readbinary, FILE*, in)
         return NULL;
     }
 
-    uint64_t *arr = malloc(sizeof(uint64_t)*(nodecount+1));
+    uint64_t *arr = malloc(sizeof(uint64_t) * (nodecount + 1));
     arr[0] = 0;
-    for (size_t i=1; i<=nodecount; i++) {
+    for (size_t i = 1; i <= nodecount; i++) {
         struct mtbddnode node;
         if (fread(&node, sizeof(struct mtbddnode), 1, in) != 1) {
             free(arr);
@@ -3364,7 +3443,7 @@ TASK_IMPL_1(uint64_t*, mtbdd_reader_readbinary, FILE*, in)
  * Retrieve the MTBDD of the given stored identifier.
  */
 MTBDD
-mtbdd_reader_get(uint64_t* arr, uint64_t identifier)
+mtbdd_reader_get(uint64_t *arr, uint64_t identifier)
 {
     return MTBDD_TRANSFERMARK(identifier, arr[MTBDD_STRIPMARK(identifier)]);
 }
@@ -3398,9 +3477,9 @@ TASK_IMPL_3(int, mtbdd_reader_frombinary, FILE*, in, MTBDD*, dds, int, count)
         mtbdd_reader_end(arr);
         return -1;
     }
-    
+
     /* Read every stored identifier, and translate to MTBDD */
-    for (int i=0; i<count; i++) {
+    for (int i = 0; i < count; i++) {
         uint64_t v;
         if (fread(&v, sizeof(uint64_t), 1, in) != 1) {
             mtbdd_reader_end(arr);
@@ -3421,11 +3500,11 @@ TASK_IMPL_3(int, mtbdd_reader_frombinary, FILE*, in, MTBDD*, dds, int, count)
  * Create a set of variables, represented as the conjunction of (positive) variables.
  */
 MTBDD
-mtbdd_set_from_array(uint32_t* arr, size_t length)
+mtbdd_set_from_array(uint32_t *arr, size_t length)
 {
     if (length == 0) return mtbdd_true;
     else if (length == 1) return mtbdd_makenode(*arr, mtbdd_false, mtbdd_true);
-    else return mtbdd_set_add(mtbdd_fromarray(arr+1, length-1), *arr);
+    else return mtbdd_set_add(mtbdd_fromarray(arr + 1, length - 1), *arr);
 }
 
 /**

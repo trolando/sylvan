@@ -33,3 +33,8 @@
 #ifndef SYLVAN_AGGRESSIVE_RESIZE
 #define SYLVAN_AGGRESSIVE_RESIZE 1
 #endif
+
+/* Either use chaining or linear implementation as a hash collision strategy */
+#ifndef SYLVAN_USE_LINEAR_PROBING
+#define SYLVAN_USE_LINEAR_PROBING 0
+#endif

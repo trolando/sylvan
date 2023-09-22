@@ -15,7 +15,6 @@ target_sources(sylvan
     sylvan_refs.c
     sylvan_sl.c
     sylvan_stats.c
-    sylvan_table.c
     sylvan_zdd.c
   PUBLIC
     sylvan.h
@@ -70,3 +69,12 @@ option(SYLVAN_STATS "Let Sylvan collect statistics at runtime" OFF)
 if(SYLVAN_STATS)
     set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_STATS")
 endif()
+
+# Do we want to use chaining implementation or linear probing implementation?
+option(SYLVAN_USE_LINEAR_PROBING "Let Sylvan use chaining instead of probing" OFF)
+if (SYLVAN_USE_LINEAR_PROBING)
+    set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_USE_LINEAR_PROBING")
+    target_sources(sylvan PRIVATE sylvan_table.c)
+else ()
+    target_sources(sylvan PRIVATE sylvan_table_chaining.c)
+endif ()

@@ -30,6 +30,7 @@ namespace sylvan {
  * Sylvan internal header files inside the namespace
  */
 
+#include <sylvan_bitmap.h>
 #include <sylvan_cache.h>
 #include <sylvan_table.h>
 #include <sylvan_hash.h>

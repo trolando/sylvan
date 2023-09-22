@@ -1,0 +1,234 @@
+aag 161 30 2 1 129
+2
+4
+6
+8
+10
+12
+14
+16
+18
+20
+22
+24
+26
+28
+30
+32
+34
+36
+38
+40
+42
+44
+46
+48
+50
+52
+54
+56
+58
+60
+62 1
+64 323
+66
+66 64 62
+68 58 38
+70 56 36
+72 54 34
+74 52 32
+76 50 30
+78 48 28
+80 46 26
+82 44 24
+84 42 22
+86 45 25
+88 87 84
+90 89 83
+92 47 27
+94 93 91
+96 95 81
+98 49 29
+100 99 97
+102 101 79
+104 51 31
+106 105 103
+108 107 77
+110 53 33
+112 111 109
+114 113 75
+116 55 35
+118 117 115
+120 119 73
+122 57 37
+124 123 121
+126 125 71
+128 59 39
+130 129 127
+132 131 69
+134 133 60
+136 132 61
+138 137 135
+140 139 41
+142 138 40
+144 143 141
+146 144 21
+148 145 20
+150 149 147
+152 58 39
+154 59 38
+156 155 153
+158 157 127
+160 156 126
+162 161 159
+164 162 19
+166 163 18
+168 167 165
+170 56 37
+172 57 36
+174 173 171
+176 175 121
+178 174 120
+180 179 177
+182 180 17
+184 181 16
+186 185 183
+188 54 35
+190 55 34
+192 191 189
+194 193 115
+196 192 114
+198 197 195
+200 198 15
+202 199 14
+204 203 201
+206 52 33
+208 53 32
+210 209 207
+212 211 109
+214 210 108
+216 215 213
+218 216 13
+220 217 12
+222 221 219
+224 50 31
+226 51 30
+228 227 225
+230 229 103
+232 228 102
+234 233 231
+236 234 11
+238 235 10
+240 239 237
+242 48 29
+244 49 28
+246 245 243
+248 247 97
+250 246 96
+252 251 249
+254 252 9
+256 253 8
+258 257 255
+260 46 27
+262 47 26
+264 263 261
+266 265 91
+268 264 90
+270 269 267
+272 270 7
+274 271 6
+276 275 273
+278 43 23
+280 279 85
+282 280 3
+284 281 2
+286 285 283
+288 44 25
+290 45 24
+292 291 289
+294 292 84
+296 293 85
+298 297 295
+300 299 5
+302 298 4
+304 303 301
+306 304 286
+308 306 276
+310 308 258
+312 310 240
+314 312 222
+316 314 204
+318 316 186
+320 318 168
+322 320 150
+i0 controllable_c<0>
+i1 controllable_c<1>
+i2 controllable_c<2>
+i3 controllable_c<3>
+i4 controllable_c<4>
+i5 controllable_c<5>
+i6 controllable_c<6>
+i7 controllable_c<7>
+i8 controllable_c<8>
+i9 controllable_c<9>
+i10 a<0>
+i11 a<1>
+i12 a<2>
+i13 a<3>
+i14 a<4>
+i15 a<5>
+i16 a<6>
+i17 a<7>
+i18 a<8>
+i19 a<9>
+i20 b<0>
+i21 b<1>
+i22 b<2>
+i23 b<3>
+i24 b<4>
+i25 b<5>
+i26 b<6>
+i27 b<7>
+i28 b<8>
+i29 b<9>
+l0 n63
+l1 err_out
+o0 err
+c
+bench
+This file was written by ABC on Sat Aug 31 20:25:02 2013
+For information about AIGER format, refer to http://fmv.jku.at/aiger
+-------------------------------
+This AIGER file has been created by the following sequence of commands:
+> vl2mv add10.v   ---gives--> add10.mv
+> abc -c "read_blif_mv add10.mv; strash; refactor; rewrite; dfraig; rewrite; dfraig; write_aiger -s add10y.aig"   ---gives--> add10y.aig
+> aigtoaig add10y.aig add10y.aag   ---gives--> add10y.aag (this file)
+Content of add10.v:
+// realizable
+module bench(clk, a, b, controllable_c, err);
+  input clk;
+  input [9:0] a;
+  input [9:0] b;
+  input [9:0] controllable_c;
+  output err;
+  reg err;
+
+  initial
+  begin
+    err = 1'b0;
+  end
+
+  always @ (posedge clk)
+  begin
+    if(controllable_c == a + b)
+         err = 1'b0;
+      else
+         err = 1'b1;
+   end
+endmodule
+-------------------------------
+#!SYNTCOMP
+STATUS : realizable
+SOLVED_BY : 7/8 [SYNTCOMP2014-RealSeq]
+SOLVED_IN : 0.008 [SYNTCOMP2014-RealSeq]
+#.

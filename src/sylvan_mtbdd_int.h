@@ -134,6 +134,12 @@ mtbddnode_setmark(mtbddnode_t n, int mark)
 }
 
 static inline void __attribute__((unused))
+mtbddnode_setvariable(mtbddnode_t n, uint32_t newvar)
+{
+    n->b = ((uint64_t)newvar)<<40 | (n->b & 0x000000ffffffffff);
+}
+
+static inline void __attribute__((unused))
 mtbddnode_makeleaf(mtbddnode_t n, uint32_t type, uint64_t value)
 {
     n->a = 0x4000000000000000 | (uint64_t)type;

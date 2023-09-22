@@ -131,6 +131,10 @@ static const MTBDD sylvan_invalid    = 0xffffffffffffffffLL;
 #define sylvan_fprintsha        mtbdd_fprintsha
 #define sylvan_getsha           mtbdd_getsha
 
+#define sylvan_level_to_order(x)    levels_level_to_order(&reorder_db->levels, x)
+#define sylvan_order_to_level(x)    levels_order_to_level(&reorder_db->levels, x)
+#define sylvan_levels_count()       levels_get_count(&reorder_db->levels)
+
 /**
  * Initialize MTBDD functionality.
  * This initializes internal and external referencing datastructures,
@@ -154,6 +158,28 @@ static inline MTBDD mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high)
 {
     return low == high ? low : _mtbdd_makenode(var, low, high);
 }
+
+ /**
+ * Create an internal MTBDD node of Boolean variable <var>, with low edge <low> and high edge <high>
+  * that doesn't trigger garbage collection. Instead, returns mtbdd_invalid if we can't create the node.
+  * <var> is a 24-bit integer.
+  * Please note that this does NOT check variable ordering!
+ */
+ MTBDD _mtbdd_varswap_makenode(uint32_t var, MTBDD low, MTBDD high, int* created);
+static inline MTBDD mtbdd_varswap_makenode(BDDVAR var, MTBDD low, MTBDD high, int* created)
+{
+    *created = 0;
+    return low == high ? low : _mtbdd_varswap_makenode(var, low, high, created);
+}
+
+/**
+ * Create an internal MTBDD map node of Boolean variable <var>, with low edge <low> and high edge <high>.
+ * that doesn't trigger garbage collection. Instead, returns mtbdd_invalid if we can't create the node.
+ * <var> is a 24-bit integer.
+ * Please note that this does NOT check variable ordering!
+ */
+MTBDD mtbdd_varswap_makemapnode(uint32_t var, MTBDD low, MTBDD high, int* created);
+
 
 /**
  * Return 1 if the MTBDD is a terminal, or 0 otherwise.
@@ -1017,6 +1043,12 @@ MTBDDMAP mtbdd_map_removeall(MTBDDMAP map, MTBDD variables);
  */
 VOID_TASK_DECL_1(mtbdd_gc_mark_rec, MTBDD);
 #define mtbdd_gc_mark_rec(mtbdd) RUN(mtbdd_gc_mark_rec, mtbdd)
+
+VOID_TASK_DECL_1(mtbdd_re_mark_external_refs, _Atomic(uint64_t)*);
+#define mtbdd_re_mark_external_refs(bitmap) RUN(mtbdd_re_mark_external_refs, bitmap)
+
+VOID_TASK_DECL_1(mtbdd_re_mark_protected, _Atomic(uint64_t)*);
+#define mtbdd_re_mark_protected(bitmap) RUN(mtbdd_re_mark_protected, bitmap)
 
 /**
  * Infrastructure for external references using a hash table.

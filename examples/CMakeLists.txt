@@ -3,7 +3,7 @@ macro(set_compilation_settings NAME)
     target_include_directories(${NAME} PRIVATE ${CMAKE_CURRENT_LIST_DIR})
     target_link_libraries(${NAME} PRIVATE sylvan::sylvan)
     target_compile_features(${NAME} PRIVATE c_std_11 cxx_std_11)
-    target_compile_options(${NAME} PRIVATE -Wall -Wextra -Werror -Wno-deprecated)
+    target_compile_options(${NAME} PRIVATE -Wall -Wextra -Werror -Wno-deprecated -Wno-unused-parameter)
 endmacro(set_compilation_settings)
 
 macro(add_example NAME SOURCE)
@@ -23,6 +23,16 @@ target_sources(ldd2bdd PRIVATE getrss.c getrss.h)
 add_example(nqueens nqueens.c)
 
 add_example(simple simple.cpp)
+
+add_example(aigsynt aigsynt.cpp)
+target_sources(aigsynt PRIVATE aag.h)
+
+# Check if we have Boost
+find_package(Boost 1.71.0)
+if(Boost_FOUND)
+    include_directories(${Boost_INCLUDE_DIRS})
+    target_link_libraries(aigsynt ${Boost_LIBRARIES})
+endif()
 
 # Check if we have Meddly
 find_library(MEDDLY_FOUND meddly)

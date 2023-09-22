@@ -34,6 +34,10 @@ namespace sylvan {
 #include <sylvan_cache.h>
 #include <sylvan_table.h>
 #include <sylvan_hash.h>
+#include <sylvan_varswap.h>
+#include <sylvan_mrc.h>
+#include <sylvan_interact.h>
+#include <sylvan_reorder_int.h>
 
 #ifndef SYLVAN_INT_H
 #define SYLVAN_INT_H
@@ -41,6 +45,15 @@ namespace sylvan {
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
+
+/* 40 bits for the index, 24 bits for the hash */
+#define SYLVAN_TABLE_MASK_INDEX ((uint64_t)0x000000ffffffffff)
+#define SYLVAN_TABLE_MASK_HASH  ((uint64_t)0xffffff0000000000)
+
+/**
+ * The reorder table used with dynamic variable reordering.
+ */
+extern reorder_db_t reorder_db;
 
 /**
  * Nodes table.

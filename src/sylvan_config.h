@@ -38,3 +38,16 @@
 #ifndef SYLVAN_USE_LINEAR_PROBING
 #define SYLVAN_USE_LINEAR_PROBING 0
 #endif
+
+// Variable ordering default parameter values
+#define SYLVAN_REORDER_MAX_VAR		    100
+#define SYLVAN_REORDER_MAX_SWAPS	    10000
+#define SYLVAN_REORDER_GROWTH	        1.2f
+#define SYLVAN_REORDER_NODES_THRESHOLD	1
+#define SYLVAN_REORDER_TIME_LIMIT_MS	(10000 * 60 * 1000)
+#define SYLVAN_REORDER_SIZE_THRESHOLD	4000
+#define SYLVAN_REORDER_SIZE_RATIO	    (2)
+#define SYLVAN_REORDER_LIMIT	        10                              // maximum number of reordering calls allowed
+#define SYLVAN_REORDER_TYPE_DEFAULT     SYLVAN_REORDER_BOUNDED_SIFT
+#define SYLVAN_REORDER_PRINT_STAT       0
+#define SYLVAN_REORDER_MIN_MEM_REQ      (0.9f)

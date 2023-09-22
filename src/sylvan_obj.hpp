@@ -17,844 +17,1032 @@
 #ifndef SYLVAN_OBJ_H
 #define SYLVAN_OBJ_H
 
+#include <iostream>
 #include <string>
 #include <vector>
 
 #include <lace.h>
 #include <sylvan.h>
 
-namespace sylvan {
-
-class BddSet;
-class BddMap;
-
-class Bdd {
-    friend class Sylvan;
-    friend class BddSet;
-    friend class BddMap;
-    friend class Mtbdd;
-
-public:
-    Bdd() { bdd = sylvan_false; sylvan_protect(&bdd); }
-    Bdd(const BDD from) : bdd(from) { sylvan_protect(&bdd); }
-    Bdd(const Bdd &from) : bdd(from.bdd) { sylvan_protect(&bdd); }
-    Bdd(const uint32_t var) { bdd = sylvan_ithvar(var); sylvan_protect(&bdd); }
-    ~Bdd() { sylvan_unprotect(&bdd); }
-
-    /**
-     * @brief Creates a Bdd representing just the variable index in its positive form
-     * The variable index must be a 0<=index<=2^23 (we use 24 bits internally)
-     */
-    static Bdd bddVar(uint32_t index);
-
-    /**
-     * @brief Returns the Bdd representing "True"
-     */
-    static Bdd bddOne();
-
-    /**
-     * @brief Returns the Bdd representing "False"
-     */
-    static Bdd bddZero();
-
-    /**
-     * @brief Returns the Bdd representing a cube of variables, according to the given values.
-     * @param variables the variables that will be in the cube in their positive or negative form
-     * @param values a character array describing how the variables will appear in the result
-     * The length of string must be equal to the number of variables in the cube.
-     * For every ith char in string, if it is 0, the corresponding variable will appear in its negative form,
-     * if it is 1, it will appear in its positive form, and if it is 2, it will appear as "any", thus it will
-     * be skipped.
-     */
-    static Bdd bddCube(const BddSet &variables, unsigned char *values);
-
-    /**
-     * @brief Returns the Bdd representing a cube of variables, according to the given values.
-     * @param variables the variables that will be in the cube in their positive or negative form
-     * @param string a character array describing how the variables will appear in the result
-     * The length of string must be equal to the number of variables in the cube.
-     * For every ith char in string, if it is 0, the corresponding variable will appear in its negative form,
-     * if it is 1, it will appear in its positive form, and if it is 2, it will appear as "any", thus it will
-     * be skipped.
-     */
-    static Bdd bddCube(const BddSet &variables, std::vector<uint8_t> values);
-
-    bool operator==(const Bdd& other) const;
-    bool operator!=(const Bdd& other) const;
-    Bdd& operator=(const Bdd& right);
-    bool operator<=(const Bdd& other) const;
-    bool operator>=(const Bdd& other) const;
-    bool operator<(const Bdd& other) const;
-    bool operator>(const Bdd& other) const;
-    Bdd operator!() const;
-    Bdd operator~() const;
-    Bdd operator*(const Bdd& other) const;
-    Bdd& operator*=(const Bdd& other);
-    Bdd operator&(const Bdd& other) const;
-    Bdd& operator&=(const Bdd& other);
-    Bdd operator+(const Bdd& other) const;
-    Bdd& operator+=(const Bdd& other);
-    Bdd operator|(const Bdd& other) const;
-    Bdd& operator|=(const Bdd& other);
-    Bdd operator^(const Bdd& other) const;
-    Bdd& operator^=(const Bdd& other);
-    Bdd operator-(const Bdd& other) const;
-    Bdd& operator-=(const Bdd& other);
-
-    /**
-     * @brief Returns non-zero if this Bdd is bddOne() or bddZero()
-     */
-    bool isConstant() const;
-
-    /**
-     * @brief Returns non-zero if this Bdd is bddOne() or bddZero()
-     */
-    bool isTerminal() const;
-
-    /**
-     * @brief Returns non-zero if this Bdd is bddOne()
-     */
-    bool isOne() const;
-
-    /**
-     * @brief Returns non-zero if this Bdd is bddZero()
-     */
-    bool isZero() const;
-
-    /**
-     * @brief Returns the top variable index of this Bdd (the variable in the root node)
-     */
-    uint32_t TopVar() const;
-
-    /**
-     * @brief Follows the high edge ("then") of the root node of this Bdd
-     */
-    Bdd Then() const;
-
-    /**
-     * @brief Follows the low edge ("else") of the root node of this Bdd
-     */
-    Bdd Else() const;
-
-    /**
-     * @brief Computes \exists cube: f \and g
-     */
-    Bdd AndAbstract(const Bdd& g, const BddSet& cube) const;
-
-    /**
-     * @brief Computes \exists cube: f
-     */
-    Bdd ExistAbstract(const BddSet& cube) const;
-
-    /**
-     * @brief Computes \forall cube: f
-     */
-    Bdd UnivAbstract(const BddSet& cube) const;
-
-    /**
-     * @brief Computes if f then g else h
-     */
-    Bdd Ite(const Bdd& g, const Bdd& h) const;
-
-    /**
-     * @brief Computes f \and g
-     */
-    Bdd And(const Bdd& g) const;
-
-    /**
-     * @brief Computes f \or g
-     */
-    Bdd Or(const Bdd& g) const;
-
-    /**
-     * @brief Computes \not (f \and g)
-     */
-    Bdd Nand(const Bdd& g) const;
-
-    /**
-     * @brief Computes \not (f \or g)
-     */
-    Bdd Nor(const Bdd& g) const;
-
-    /**
-     * @brief Computes f \xor g
-     */
-    Bdd Xor(const Bdd& g) const;
-
-    /**
-     * @brief Computes \not (f \xor g), i.e. f \equiv g
-     */
-    Bdd Xnor(const Bdd& g) const;
-
-    /**
-     * @brief Returns whether all elements in f are also in g
-     */
-    bool Leq(const Bdd& g) const;
-
-    /**
-     * @brief Computes the reverse application of a transition relation to this set.
-     * @param relation the transition relation to apply
-     * @param cube the variables that are in the transition relation
-     * This function assumes that s,t are interleaved with s even and t odd (s+1).
-     * Other variables in the relation are ignored (by existential quantification)
-     * Set cube to "false" (illegal cube) to assume all encountered variables are in s,t
-     *
-     * Use this function to concatenate two relations   --> -->
-     * or to take the 'previous' of a set               -->  S
-     */
-    Bdd RelPrev(const Bdd& relation, const BddSet& cube) const;
-
-    /**
-     * @brief Computes the application of a transition relation to this set.
-     * @param relation the transition relation to apply
-     * @param cube the variables that are in the transition relation
-     * This function assumes that s,t are interleaved with s even and t odd (s+1).
-     * Other variables in the relation are ignored (by existential quantification)
-     * Set cube to "false" (illegal cube) to assume all encountered variables are in s,t
-     *
-     * Use this function to take the 'next' of a set     S  -->
-     */
-    Bdd RelNext(const Bdd& relation, const BddSet& cube) const;
-
-    /**
-     * @brief Computes the transitive closure by traversing the BDD recursively.
-     * See Y. Matsunaga, P. C. McGeer, R. K. Brayton
-     *     On Computing the Transitive Closre of a State Transition Relation
-     *     30th ACM Design Automation Conference, 1993.
-     */
-    Bdd Closure() const;
-
-    /**
-     * @brief Computes the constrain f @ c
-     */
-    Bdd Constrain(const Bdd &c) const;
-
-    /**
-     * @brief Computes the BDD restrict according to Coudert and Madre's algorithm (ICCAD90).
-     */
-    Bdd Restrict(const Bdd &c) const;
-
-    /**
-     * @brief Functional composition. Whenever a variable v in the map m is found in the BDD,
-     *        it is substituted by the associated function.
-     * You can also use this function to implement variable reordering.
-     */
-    Bdd Compose(const BddMap &m) const;
-
-    /**
-     * @brief Substitute all variables in the array from by the corresponding variables in to.
-     */
-    Bdd Permute(const std::vector<uint32_t>& from, const std::vector<uint32_t>& to) const;
-
-    /**
-     * @brief Computes the support of a Bdd.
-     */
-    Bdd Support() const;
-
-    /**
-     * @brief Gets the BDD of this Bdd (for C functions)
-     */
-    BDD GetBDD() const;
-
-    /**
-     * @brief Writes .dot file of this Bdd. Not thread-safe!
-     */
-    void PrintDot(FILE *out) const;
-
-    /**
-     * @brief Gets a SHA2 hash that describes the structure of this Bdd.
-     * @param string a character array of at least 65 characters (includes zero-termination)
-     * This hash is 64 characters long and is independent of the memory locations of BDD nodes.
-     */
-    void GetShaHash(char *string) const;
-
-    std::string GetShaHash() const;
-
-    /**
-     * @brief Computes the number of satisfying variable assignments, using variables in cube.
-     */
-    double SatCount(const BddSet &cube) const;
-
-    /**
-     * @brief Compute the number of satisfying variable assignments, using the given number of variables.
-     */
-    double SatCount(const size_t nvars) const;
-
-    /**
-     * @brief Gets one satisfying assignment according to the variables.
-     * @param variables The set of variables to be assigned, must include the support of the Bdd.
-     */
-    void PickOneCube(const BddSet &variables, uint8_t *string) const;
-
-    /**
-     * @brief Gets one satisfying assignment according to the variables.
-     * @param variables The set of variables to be assigned, must include the support of the Bdd.
-     * Returns an empty vector when either this Bdd equals bddZero() or the cube is empty.
-     */
-    std::vector<bool> PickOneCube(const BddSet &variables) const;
-
-    /**
-     * @brief Gets a cube that satisfies this Bdd.
-     */
-    Bdd PickOneCube() const;
-
-    /**
-     * @brief Faster version of: *this + Sylvan::bddCube(variables, values);
-     */
-    Bdd UnionCube(const BddSet &variables, uint8_t *values) const;
-
-    /**
-     * @brief Faster version of: *this + Sylvan::bddCube(variables, values);
-     */
-    Bdd UnionCube(const BddSet &variables, std::vector<uint8_t> values) const;
-
-    /**
-     * @brief Generate a cube representing a set of variables
-     */
-    static Bdd VectorCube(const std::vector<Bdd> variables);
-
-    /**
-     * @brief Generate a cube representing a set of variables
-     * @param variables An sorted set of variable indices
-     */
-    static Bdd VariablesCube(const std::vector<uint32_t> variables);
-
-    /**
-     * @brief Gets the number of nodes in this Bdd. Not thread-safe!
-     */
-    size_t NodeCount() const;
-
-private:
-    BDD bdd;
-};
-
-class BddSet
+namespace sylvan
 {
-    friend class Bdd;
-    friend class Mtbdd;
-    Bdd set;
 
-public:
-    /**
-     * @brief Create a new empty set.
-     */
-    BddSet() : set(Bdd::bddOne()) {}
+    class BddSet;
 
-    /**
-     * @brief Wrap the BDD cube <other> in a set.
-     */
-    BddSet(const Bdd &other) : set(other) {}
+    class BddMap;
 
-    /**
-     * @brief Create a copy of the set <other>.
-     */
-    BddSet(const BddSet &other) : set(other.set) {}
+    class Bdd
+    {
+        friend class Sylvan;
 
-    /**
-     * @brief Add the variable <variable> to this set.
-     */
-    void add(uint32_t variable) {
-        set *= Bdd::bddVar(variable);
-    }
+        friend class BddSet;
 
-    /**
-     * @brief Add all variables in the set <other> to this set.
-     */
-    void add(BddSet &other) {
-        set *= other.set;
-    }
+        friend class BddMap;
 
-    /**
-     * @brief Remove the variable <variable> from this set.
-     */
-    void remove(uint32_t variable) {
-        set = set.ExistAbstract(Bdd::bddVar(variable));
-    }
+        friend class Mtbdd;
 
-    /**
-     * @brief Remove all variables in the set <other> from this set.
-     */
-    void remove(BddSet &other) {
-        set = set.ExistAbstract(other.set);
-    }
-
-    /**
-     * @brief Retrieve the head of the set. (The first variable.)
-     */
-    uint32_t TopVar() const {
-        return set.TopVar();
-    }
-
-    /**
-     * @brief Retrieve the tail of the set. (The set containing all but the first variables.)
-     */
-    BddSet Next() const {
-        Bdd then = set.Then();
-        return BddSet(then);
-    }
-
-    /**
-     * @brief Return true if this set is empty, or false otherwise.
-     */
-    bool isEmpty() const {
-        return set.isOne();
-    }
-
-    /**
-     * @brief Return true if this set contains the variable <variable>, or false otherwise.
-     */
-    bool contains(uint32_t variable) const {
-        if (isEmpty()) return false;
-        else if (TopVar() == variable) return true;
-        else return Next().contains(variable);
-    }
-
-    /**
-     * @brief Return the number of variables in this set.
-     */
-    size_t size() const {
-        if (isEmpty()) return 0;
-        else return 1 + Next().size();
-    }
-
-    /**
-     * @brief Create a set containing the <length> variables in <arr>.
-     * It is advised to have the variables in <arr> in ascending order.
-     */
-    static BddSet fromArray(BDDVAR *arr, size_t length) {
-        BddSet set;
-        for (size_t i = 0; i < length; i++) {
-            set.add(arr[length-i-1]);
+    public:
+        Bdd()
+        {
+            bdd = sylvan_false;
+            sylvan_protect(&bdd);
         }
-        return set;
-    }
 
-    /**
-     * @brief Create a set containing the variables in <variables>.
-     * It is advised to have the variables in <arr> in ascending order.
-     */
-    static BddSet fromVector(const std::vector<Bdd> variables) {
-        BddSet set;
-        for (int i=variables.size()-1; i>=0; i--) {
-            set.set *= variables[i];
+        Bdd(const BDD from) : bdd(from)
+        { sylvan_protect(&bdd); }
+
+        Bdd(const Bdd &from) : bdd(from.bdd)
+        { sylvan_protect(&bdd); }
+
+        Bdd(const uint32_t var)
+        {
+            bdd = sylvan_ithvar(var);
+            sylvan_protect(&bdd);
         }
-        return set;
-    }
 
-    /**
-     * @brief Create a set containing the variables in <variables>.
-     * It is advised to have the variables in <arr> in ascending order.
-     */
-    static BddSet fromVector(const std::vector<uint32_t> variables) {
-        BddSet set;
-        for (int i=variables.size()-1; i>=0; i--) {
-            set.add(variables[i]);
+        ~Bdd()
+        { sylvan_unprotect(&bdd); }
+
+        /**
+         * @brief Creates a Bdd representing just the variable index in its positive form
+         * The variable index must be a 0<=index<=2^23 (we use 24 bits internally)
+         */
+        static Bdd bddVar(uint32_t index);
+
+        /**
+         * @brief Get a MTBDD representing just the level index in its positive form
+         */
+        static Bdd bddLevel(uint32_t index);
+
+        /**
+         * @brief  Get the level of the given variable label
+         */
+        static uint32_t bddVarToLevel(uint32_t index);
+
+        /**
+         * @brief Returns the Bdd representing "True"
+         */
+        static Bdd bddOne();
+
+        /**
+         * @brief Returns the Bdd representing "False"
+         */
+        static Bdd bddZero();
+
+        /**
+         * @brief Returns the Bdd representing a cube of variables, according to the given values.
+         * @param variables the variables that will be in the cube in their positive or negative form
+         * @param values a character array describing how the variables will appear in the result
+         * The length of string must be equal to the number of variables in the cube.
+         * For every ith char in string, if it is 0, the corresponding variable will appear in its negative form,
+         * if it is 1, it will appear in its positive form, and if it is 2, it will appear as "any", thus it will
+         * be skipped.
+         */
+        static Bdd bddCube(const BddSet &variables, unsigned char *values);
+
+        /**
+         * @brief Returns the Bdd representing a cube of variables, according to the given values.
+         * @param variables the variables that will be in the cube in their positive or negative form
+         * @param string a character array describing how the variables will appear in the result
+         * The length of string must be equal to the number of variables in the cube.
+         * For every ith char in string, if it is 0, the corresponding variable will appear in its negative form,
+         * if it is 1, it will appear in its positive form, and if it is 2, it will appear as "any", thus it will
+         * be skipped.
+         */
+        static Bdd bddCube(const BddSet &variables, std::vector<uint8_t> values);
+
+        bool operator==(const Bdd &other) const;
+
+        bool operator!=(const Bdd &other) const;
+
+        Bdd &operator=(const Bdd &right);
+
+        bool operator<=(const Bdd &other) const;
+
+        bool operator>=(const Bdd &other) const;
+
+        bool operator<(const Bdd &other) const;
+
+        bool operator>(const Bdd &other) const;
+
+        Bdd operator!() const;
+
+        Bdd operator~() const;
+
+        Bdd operator*(const Bdd &other) const;
+
+        Bdd &operator*=(const Bdd &other);
+
+        Bdd operator&(const Bdd &other) const;
+
+        Bdd &operator&=(const Bdd &other);
+
+        Bdd operator+(const Bdd &other) const;
+
+        Bdd &operator+=(const Bdd &other);
+
+        Bdd operator|(const Bdd &other) const;
+
+        Bdd &operator|=(const Bdd &other);
+
+        Bdd operator^(const Bdd &other) const;
+
+        Bdd &operator^=(const Bdd &other);
+
+        Bdd operator-(const Bdd &other) const;
+
+        Bdd &operator-=(const Bdd &other);
+
+        /**
+         * @brief Returns non-zero if this Bdd is bddOne() or bddZero()
+         */
+        bool isConstant() const;
+
+        /**
+         * @brief Returns non-zero if this Bdd is bddOne() or bddZero()
+         */
+        bool isTerminal() const;
+
+        /**
+         * @brief Returns non-zero if this Bdd is bddOne()
+         */
+        bool isOne() const;
+
+        /**
+         * @brief Returns non-zero if this Bdd is bddZero()
+         */
+        bool isZero() const;
+
+        /**
+         * @brief Returns the top variable index of this Bdd (the variable in the root node)
+         */
+        uint32_t TopVar() const;
+
+        /**
+         * @brief Follows the high edge ("then") of the root node of this Bdd
+         */
+        Bdd Then() const;
+
+        /**
+         * @brief Follows the low edge ("else") of the root node of this Bdd
+         */
+        Bdd Else() const;
+
+        /**
+         * @brief Computes \exists cube: f \and g
+         */
+        Bdd AndAbstract(const Bdd &g, const BddSet &cube) const;
+
+        /**
+         * @brief Computes \exists cube: f
+         */
+        Bdd ExistAbstract(const BddSet &cube) const;
+
+        /**
+         * @brief Computes \forall cube: f
+         */
+        Bdd UnivAbstract(const BddSet &cube) const;
+
+        /**
+         * @brief Computes if f then g else h
+         */
+        Bdd Ite(const Bdd &g, const Bdd &h) const;
+
+        /**
+         * @brief Computes f \and g
+         */
+        Bdd And(const Bdd &g) const;
+
+        /**
+         * @brief Computes f \or g
+         */
+        Bdd Or(const Bdd &g) const;
+
+        /**
+         * @brief Computes \not (f \and g)
+         */
+        Bdd Nand(const Bdd &g) const;
+
+        /**
+         * @brief Computes \not (f \or g)
+         */
+        Bdd Nor(const Bdd &g) const;
+
+        /**
+         * @brief Computes f \xor g
+         */
+        Bdd Xor(const Bdd &g) const;
+
+        /**
+         * @brief Computes \not (f \xor g), i.e. f \equiv g
+         */
+        Bdd Xnor(const Bdd &g) const;
+
+        /**
+         * @brief Returns whether all elements in f are also in g
+         */
+        bool Leq(const Bdd &g) const;
+
+        /**
+         * @brief Computes the reverse application of a transition relation to this set.
+         * @param relation the transition relation to apply
+         * @param cube the variables that are in the transition relation
+         * This function assumes that s,t are interleaved with s even and t odd (s+1).
+         * Other variables in the relation are ignored (by existential quantification)
+         * Set cube to "false" (illegal cube) to assume all encountered variables are in s,t
+         *
+         * Use this function to concatenate two relations   --> -->
+         * or to take the 'previous' of a set               -->  S
+         */
+        Bdd RelPrev(const Bdd &relation, const BddSet &cube) const;
+
+        /**
+         * @brief Computes the application of a transition relation to this set.
+         * @param relation the transition relation to apply
+         * @param cube the variables that are in the transition relation
+         * This function assumes that s,t are interleaved with s even and t odd (s+1).
+         * Other variables in the relation are ignored (by existential quantification)
+         * Set cube to "false" (illegal cube) to assume all encountered variables are in s,t
+         *
+         * Use this function to take the 'next' of a set     S  -->
+         */
+        Bdd RelNext(const Bdd &relation, const BddSet &cube) const;
+
+        /**
+         * @brief Computes the transitive closure by traversing the BDD recursively.
+         * See Y. Matsunaga, P. C. McGeer, R. K. Brayton
+         *     On Computing the Transitive Closre of a State Transition Relation
+         *     30th ACM Design Automation Conference, 1993.
+         */
+        Bdd Closure() const;
+
+        /**
+         * @brief Computes the constrain f @ c
+         */
+        Bdd Constrain(const Bdd &c) const;
+
+        /**
+         * @brief Computes the BDD restrict according to Coudert and Madre's algorithm (ICCAD90).
+         */
+        Bdd Restrict(const Bdd &c) const;
+
+        /**
+         * @brief Functional composition. Whenever a variable v in the map m is found in the BDD,
+         *        it is substituted by the associated function.
+         * You can also use this function to implement variable reordering.
+         */
+        Bdd Compose(const BddMap &m) const;
+
+        /**
+         * @brief Substitute all variables in the array from by the corresponding variables in to.
+         */
+        Bdd Permute(const std::vector<uint32_t> &from, const std::vector<uint32_t> &to) const;
+
+        /**
+         * @brief Computes the support of a Bdd.
+         */
+        Bdd Support() const;
+
+        /**
+         * @brief Gets the BDD of this Bdd (for C functions)
+         */
+        BDD GetBDD() const;
+
+        /**
+         * @brief Writes .dot file of this Bdd. Not thread-safe!
+         */
+        void PrintDot(FILE *out) const;
+
+        /**
+         * @brief Gets a SHA2 hash that describes the structure of this Bdd.
+         * @param string a character array of at least 65 characters (includes zero-termination)
+         * This hash is 64 characters long and is independent of the memory locations of BDD nodes.
+         */
+        void GetShaHash(char *string) const;
+
+        std::string GetShaHash() const;
+
+        /**
+         * @brief Computes the number of satisfying variable assignments, using variables in cube.
+         */
+        double SatCount(const BddSet &cube) const;
+
+        /**
+         * @brief Compute the number of satisfying variable assignments, using the given number of variables.
+         */
+        double SatCount(const size_t nvars) const;
+
+        /**
+         * @brief Gets one satisfying assignment according to the variables.
+         * @param variables The set of variables to be assigned, must include the support of the Bdd.
+         */
+        void PickOneCube(const BddSet &variables, uint8_t *string) const;
+
+        /**
+         * @brief Gets one satisfying assignment according to the variables.
+         * @param variables The set of variables to be assigned, must include the support of the Bdd.
+         * Returns an empty vector when either this Bdd equals bddZero() or the cube is empty.
+         */
+        std::vector<bool> PickOneCube(const BddSet &variables) const;
+
+        /**
+         * @brief Gets a cube that satisfies this Bdd.
+         */
+        Bdd PickOneCube() const;
+
+        /**
+         * @brief Faster version of: *this + Sylvan::bddCube(variables, values);
+         */
+        Bdd UnionCube(const BddSet &variables, uint8_t *values) const;
+
+        /**
+         * @brief Faster version of: *this + Sylvan::bddCube(variables, values);
+         */
+        Bdd UnionCube(const BddSet &variables, std::vector<uint8_t> values) const;
+
+        /**
+         * @brief Generate a cube representing a set of variables
+         */
+        static Bdd VectorCube(const std::vector<Bdd> variables);
+
+        /**
+         * @brief Generate a cube representing a set of variables
+         * @param variables An sorted set of variable indices
+         */
+        static Bdd VariablesCube(const std::vector<uint32_t> variables);
+
+        /**
+         * @brief Gets the number of nodes in this Bdd. Not thread-safe!
+         */
+        size_t NodeCount() const;
+
+    private:
+        BDD bdd;
+    };
+
+    class BddSet
+    {
+        friend class Bdd;
+
+        friend class Mtbdd;
+
+        Bdd set;
+
+    public:
+        /**
+         * @brief Create a new empty set.
+         */
+        BddSet() : set(Bdd::bddOne())
+        {}
+
+        /**
+         * @brief Wrap the BDD cube <other> in a set.
+         */
+        BddSet(const Bdd &other) : set(other)
+        {}
+
+        /**
+         * @brief Create a copy of the set <other>.
+         */
+        BddSet(const BddSet &other) : set(other.set)
+        {}
+
+        /**
+         * @brief Add the variable <variable> to this set.
+         */
+        void add(uint32_t variable)
+        {
+            set *= Bdd::bddVar(variable);
         }
-        return set;
-    }
 
-    /**
-     * @brief Write all variables in this set to <arr>.
-     * @param arr An array of at least size this.size().
-     */
-    void toArray(BDDVAR *arr) const {
-        if (!isEmpty()) {
-            *arr = TopVar();
-            Next().toArray(arr+1);
+        /**
+         * @brief Add all variables in the set <other> to this set.
+         */
+        void add(BddSet &other)
+        {
+            set *= other.set;
         }
-    }
 
-    /**
-     * @brief Return the vector of all variables in this set.
-     */
-    std::vector<uint32_t> toVector() const {
-        std::vector<uint32_t> result;
-        Bdd x = set;
-        while (!x.isOne()) {
-            result.push_back(x.TopVar());
-            x = x.Then();
+        /**
+         * @brief Remove the variable <variable> from this set.
+         */
+        void remove(uint32_t variable)
+        {
+            set = set.ExistAbstract(Bdd::bddVar(variable));
         }
-        return result;
-    }
-};
-
-class BddMap
-{
-    friend class Bdd;
-    BDD bdd;
-    BddMap(const BDD from) : bdd(from) { sylvan_protect(&bdd); }
-    BddMap(const Bdd &from) : bdd(from.bdd) { sylvan_protect(&bdd); }
-public:
-    BddMap(const BddMap& from) : bdd(from.bdd) { sylvan_protect(&bdd); }
-    BddMap() : bdd(sylvan_map_empty()) { sylvan_protect(&bdd); }
-    ~BddMap() { sylvan_unprotect(&bdd); }
-
-    BddMap(uint32_t key_variable, const Bdd value);
-
-    BddMap operator+(const Bdd& other) const;
-    BddMap& operator+=(const Bdd& other);
-    BddMap operator-(const Bdd& other) const;
-    BddMap& operator-=(const Bdd& other);
-
-    /**
-     * @brief Adds a key-value pair to the map
-     */
-    void put(uint32_t key, Bdd value);
-
-    /**
-     * @brief Removes a key-value pair from the map
-     */
-    void removeKey(uint32_t key);
-
-    /**
-     * @brief Returns the number of key-value pairs in this map
-     */
-    size_t size() const;
-
-    /**
-     * @brief Returns non-zero when this map is empty
-     */
-    bool isEmpty() const;
-};
-
-class MtbddMap;
-
-class Mtbdd {
-    friend class Sylvan;
-    friend class MtbddMap;
-
-public:
-    Mtbdd() { mtbdd = sylvan_false; mtbdd_protect(&mtbdd); }
-    Mtbdd(const MTBDD from) : mtbdd(from) { mtbdd_protect(&mtbdd); }
-    Mtbdd(const Mtbdd &from) : mtbdd(from.mtbdd) { mtbdd_protect(&mtbdd); }
-    Mtbdd(const Bdd &from) : mtbdd(from.bdd) { mtbdd_protect(&mtbdd); }
-    ~Mtbdd() { mtbdd_unprotect(&mtbdd); }
-
-    /**
-     * @brief Creates a Mtbdd leaf representing the int64 value <value>
-     */
-    static Mtbdd int64Terminal(int64_t value);
-
-    /**
-     * @brief Creates a Mtbdd leaf representing the floating-point value <value>
-     */
-    static Mtbdd doubleTerminal(double value);
-
-    /**
-     * @brief Creates a Mtbdd leaf representing the fraction value <nominator>/<denominator>
-     * Internally, Sylvan uses 32-bit values and reports overflows to stderr.
-     */
-    static Mtbdd fractionTerminal(int64_t nominator, uint64_t denominator);
-
-    /**
-     * @brief Creates a Mtbdd leaf of type <type> holding value <value>
-     * This is useful for custom Mtbdd types.
-     */
-    static Mtbdd terminal(uint32_t type, uint64_t value);
-
-    /**
-     * @brief Creates a Boolean Mtbdd representing jsut the variable index in its positive form
-     * The variable index must be 0<=index<=2^23 (Sylvan uses 24 bits internally)
-     */
-    static Mtbdd mtbddVar(uint32_t variable);
-
-    /**
-     * @brief Returns the Boolean Mtbdd representing "True"
-     */
-    static Mtbdd mtbddOne();
-
-    /**
-     * @brief Returns the Boolean Mtbdd representing "False"
-     */
-    static Mtbdd mtbddZero();
-
-    /**
-     * @brief Returns the Mtbdd representing a cube of variables, according to the given values.
-     * @param variables the variables that will be in the cube in their positive or negative form
-     * @param values a character array describing how the variables will appear in the result
-     * @param terminal the leaf of the cube
-     * The length of string must be equal to the number of variables in the cube.
-     * For every ith char in string, if it is 0, the corresponding variable will appear in its negative form,
-     * if it is 1, it will appear in its positive form, and if it is 2, it will appear as "any", thus it will
-     * be skipped.
-     */
-    static Mtbdd mtbddCube(const BddSet &variables, unsigned char *values, const Mtbdd &terminal);
-
-     /**
-     * @brief Returns the Mtbdd representing a cube of variables, according to the given values.
-     * @param variables the variables that will be in the cube in their positive or negative form
-     * @param values a character array describing how the variables will appear in the result
-     * @param terminal the leaf of the cube
-     * The length of string must be equal to the number of variables in the cube.
-     * For every ith char in string, if it is 0, the corresponding variable will appear in its negative form,
-     * if it is 1, it will appear in its positive form, and if it is 2, it will appear as "any", thus it will
-     * be skipped.
-     */
-    static Mtbdd mtbddCube(const BddSet &variables, std::vector<uint8_t> values, const Mtbdd &terminal);
-
-    bool operator==(const Mtbdd& other) const;
-    bool operator!=(const Mtbdd& other) const;
-    Mtbdd& operator=(const Mtbdd& right);
-    Mtbdd operator!() const;
-    Mtbdd operator~() const;
-    Mtbdd operator*(const Mtbdd& other) const;
-    Mtbdd& operator*=(const Mtbdd& other);
-    Mtbdd operator+(const Mtbdd& other) const;
-    Mtbdd& operator+=(const Mtbdd& other);
-    Mtbdd operator-(const Mtbdd& other) const;
-    Mtbdd& operator-=(const Mtbdd& other);
-
-    // not implemented (compared to Bdd): <=, >=, <, >, &, &=, |, |=, ^, ^=
-
-    /**
-     * @brief Returns non-zero if this Mtbdd is a leaf
-     */
-    bool isTerminal() const;
-
-    /**
-     * @brief Returns non-zero if this Mtbdd is a leaf
-     */
-    bool isLeaf() const;
-
-    /**
-     * @brief Returns non-zero if this Mtbdd is mtbddOne()
-     */
-    bool isOne() const;
-
-    /**
-     * @brief Returns non-zero if this Mtbdd is mtbddZero()
-     */
-    bool isZero() const;
-
-    /**
-     * @brief Returns the top variable index of this Mtbdd (the variable in the root node)
-     */
-    uint32_t TopVar() const;
-
-    /**
-     * @brief Follows the high edge ("then") of the root node of this Mtbdd
-     */
-    Mtbdd Then() const;
-
-    /**
-     * @brief Follows the low edge ("else") of the root node of this Mtbdd
-     */
-    Mtbdd Else() const;
-
-    /**
-     * @brief Returns the negation of the MTBDD (every terminal negative)
-     * Do not use this for Boolean MTBDDs, only for Integer/Double/Fraction MTBDDs.
-     */
-    Mtbdd Negate() const;
-
-    /**
-     * @brief Applies the binary operation <op>
-     */
-    Mtbdd Apply(const Mtbdd &other, mtbdd_apply_op op) const;
-
-    /**
-     * @brief Applies the unary operation <op> with parameter <param>
-     */
-    Mtbdd UApply(mtbdd_uapply_op op, size_t param) const;
-
-    /**
-     * @brief Computers the abstraction on variables <variables> using operator <op>.
-     * See also: AbstractPlus, AbstractTimes, AbstractMin, AbstractMax
-     */
-    Mtbdd Abstract(const BddSet &variables, mtbdd_abstract_op op) const;
-
-    /**
-     * @brief Computes if f then g else h
-     * This Mtbdd must be a Boolean Mtbdd
-     */
-    Mtbdd Ite(const Mtbdd &g, const Mtbdd &h) const;
-
-    /**
-     * @brief Computes f + g
-     */
-    Mtbdd Plus(const Mtbdd &other) const;
-
-    /**
-     * @brief Computes f * g
-     */
-    Mtbdd Times(const Mtbdd &other) const;
-
-    /**
-     * @brief Computes min(f, g)
-     */
-    Mtbdd Min(const Mtbdd &other) const;
-
-    /**
-     * @brief Computes max(f, g)
-     */
-    Mtbdd Max(const Mtbdd &other) const;
-
-    /**
-     * @brief Computes abstraction by summation (existential quantification)
-     */
-    Mtbdd AbstractPlus(const BddSet &variables) const;
-
-    /**
-     * @brief Computes abstraction by multiplication (universal quantification)
-     */
-    Mtbdd AbstractTimes(const BddSet &variables) const;
-
-    /**
-     * @brief Computes abstraction by minimum
-     */
-    Mtbdd AbstractMin(const BddSet &variables) const;
-
-    /**
-     * @brief Computes abstraction by maximum
-     */
-    Mtbdd AbstractMax(const BddSet &variables) const;
-
-    /**
-     * @brief Computes abstraction by summation of f \times g
-     */
-    Mtbdd AndExists(const Mtbdd &other, const BddSet &variables) const;
-
-    /**
-     * @brief Convert floating-point/fraction Mtbdd to a Boolean Mtbdd, leaf >= value ? true : false
-     */
-    Mtbdd MtbddThreshold(double value) const;
-
-    /**
-     * @brief Convert floating-point/fraction Mtbdd to a Boolean Mtbdd, leaf > value ? true : false
-     */
-    Mtbdd MtbddStrictThreshold(double value) const;
-
-    /**
-     * @brief Convert floating-point/fraction Mtbdd to a Boolean Mtbdd, leaf >= value ? true : false
-     * Same as MtbddThreshold (Bdd = Boolean Mtbdd)
-     */
-    Bdd BddThreshold(double value) const;
-
-    /**
-     * @brief Convert floating-point/fraction Mtbdd to a Boolean Mtbdd, leaf > value ? true : false
-     * Same as MtbddStrictThreshold (Bdd = Boolean Mtbdd)
-     */
-    Bdd BddStrictThreshold(double value) const;
-
-    /**
-     * @brief Computes the support of a Mtbdd.
-     */
-    Mtbdd Support() const;
-
-    /**
-     * @brief Gets the MTBDD of this Mtbdd (for C functions)
-     */
-    MTBDD GetMTBDD() const;
-
-    /**
-     * @brief Functional composition. Whenever a variable v in the map m is found in the MTBDD,
-     *        it is substituted by the associated function (which should be a Boolean MTBDD)
-     * You can also use this function to implement variable reordering.
-     */
-    Mtbdd Compose(MtbddMap &m) const;
-
-    /**
-     * @brief Substitute all variables in the array from by the corresponding variables in to.
-     */
-    Mtbdd Permute(const std::vector<uint32_t>& from, const std::vector<uint32_t>& to) const;
-
-    /**
-     * @brief Compute the number of satisfying variable assignments, using variables in cube.
-     */
-    double SatCount(const BddSet &variables) const;
-
-    /**
-     * @brief Compute the number of satisfying variable assignments, using the given number of variables.
-     */
-    double SatCount(const size_t nvars) const;
-
-    /**
-     * @brief Gets the number of nodes in this Bdd. Not thread-safe!
-     */
-    size_t NodeCount() const;
-
-private:
-    MTBDD mtbdd;
-};
-
-class MtbddMap
-{
-    friend class Mtbdd;
-    MTBDD mtbdd;
-    MtbddMap(MTBDD from) : mtbdd(from) { mtbdd_protect(&mtbdd); }
-    MtbddMap(Mtbdd &from) : mtbdd(from.mtbdd) { mtbdd_protect(&mtbdd); }
-public:
-    MtbddMap() : mtbdd(mtbdd_map_empty()) { mtbdd_protect(&mtbdd); }
-    ~MtbddMap() { mtbdd_unprotect(&mtbdd); }
-
-    MtbddMap(uint32_t key_variable, Mtbdd value);
-
-    MtbddMap operator+(const Mtbdd& other) const;
-    MtbddMap& operator+=(const Mtbdd& other);
-    MtbddMap operator-(const Mtbdd& other) const;
-    MtbddMap& operator-=(const Mtbdd& other);
-
-    /**
-     * @brief Adds a key-value pair to the map
-     */
-    void put(uint32_t key, Mtbdd value);
-
-    /**
-     * @brief Removes a key-value pair from the map
-     */
-    void removeKey(uint32_t key);
-
-    /**
-     * @brief Returns the number of key-value pairs in this map
-     */
-    size_t size();
-
-    /**
-     * @brief Returns non-zero when this map is empty
-     */
-    bool isEmpty();
-};
-
-class Sylvan {
-public:
-    /**
-     * @brief Initializes the Sylvan framework, call this only once in your program.
-     * @param initialTableSize The initial size of the nodes table. Must be a power of two.
-     * @param maxTableSize The maximum size of the nodes table. Must be a power of two.
-     * @param initialCacheSize The initial size of the operation cache. Must be a power of two.
-     * @param maxCacheSize The maximum size of the operation cache. Must be a power of two.
-     */
-    static void initPackage(size_t initialTableSize, size_t maxTableSize, size_t initialCacheSize, size_t maxCacheSize);
-
-    /**
-     * @brief Set the granularity for the BDD operations.
-     * @param granularity determins operation cache behavior; for higher values (2+) it will use the operation cache less often.
-     * Values of 3-7 may result in better performance, since occasionally not using the operation cache is fine in practice.
-     * A granularity of 1 means that every BDD operation will be cached at every variable level.
-     */
-    static void setGranularity(int granularity);
-
-    /**
-     * @brief Retrieve the granularity for the BDD operations.
-     */
-    static int getGranularity();
-
-    /**
-     * @brief Initializes the BDD module of the Sylvan framework.
-     */
-    static void initBdd();
-
-    /**
-     * @brief Initializes the MTBDD module of the Sylvan framework.
-     */
-    static void initMtbdd();
-
-    /**
-     * @brief Frees all memory in use by Sylvan.
-     * Warning: if you have any Bdd objects which are not bddZero() or bddOne() after this, your program may crash!
-     */
-    static void quitPackage();
-};
+
+        /**
+         * @brief Remove all variables in the set <other> from this set.
+         */
+        void remove(BddSet &other)
+        {
+            set = set.ExistAbstract(other.set);
+        }
+
+        /**
+         * @brief Retrieve the head of the set. (The first variable.)
+         */
+        uint32_t TopVar() const
+        {
+            return set.TopVar();
+        }
+
+        /**
+         * @brief Retrieve the tail of the set. (The set containing all but the first variables.)
+         */
+        BddSet Next() const
+        {
+            Bdd then = set.Then();
+            return BddSet(then);
+        }
+
+        /**
+         * @brief Return true if this set is empty, or false otherwise.
+         */
+        bool isEmpty() const
+        {
+            return set.isOne();
+        }
+
+        /**
+         * @brief Return true if this set contains the variable <variable>, or false otherwise.
+         */
+        bool contains(uint32_t variable) const
+        {
+            if (isEmpty()) return false;
+            else if (TopVar() == variable) return true;
+            else return Next().contains(variable);
+        }
+
+        /**
+         * @brief Return the number of variables in this set.
+         */
+        size_t size() const
+        {
+            if (isEmpty()) return 0;
+            else return 1 + Next().size();
+        }
+
+        /**
+         * @brief Create a set containing the <length> variables in <arr>.
+         * It is advised to have the variables in <arr> in ascending order.
+         */
+        static BddSet fromArray(BDDVAR *arr, size_t length)
+        {
+            BddSet set;
+            for (size_t i = 0; i < length; i++) {
+                set.add(arr[length - i - 1]);
+            }
+            return set;
+        }
+
+        /**
+         * @brief Create a set containing the variables in <variables>.
+         * It is advised to have the variables in <arr> in ascending order.
+         */
+        static BddSet fromVector(const std::vector<Bdd> variables)
+        {
+            BddSet set;
+            for (int i = variables.size() - 1; i >= 0; i--) {
+                set.set *= variables[i];
+            }
+            return set;
+        }
+
+        /**
+         * @brief Create a set containing the variables in <variables>.
+         * It is advised to have the variables in <arr> in ascending order.
+         */
+        static BddSet fromVector(const std::vector<uint32_t> variables)
+        {
+            BddSet set;
+            for (int i = variables.size() - 1; i >= 0; i--) {
+                set.add(variables[i]);
+            }
+            return set;
+        }
+
+        /**
+         * @brief Write all variables in this set to <arr>.
+         * @param arr An array of at least size this.size().
+         */
+        void toArray(BDDVAR *arr) const
+        {
+            if (!isEmpty()) {
+                *arr = TopVar();
+                Next().toArray(arr + 1);
+            }
+        }
+
+        /**
+         * @brief Return the vector of all variables in this set.
+         */
+        std::vector<uint32_t> toVector() const
+        {
+            std::vector<uint32_t> result;
+            Bdd x = set;
+            while (!x.isOne()) {
+                result.push_back(x.TopVar());
+                x = x.Then();
+            }
+            return result;
+        }
+    };
+
+    class BddMap
+    {
+        friend class Bdd;
+
+        BDD bdd;
+
+        BddMap(const BDD from) : bdd(from)
+        { sylvan_protect(&bdd); }
+
+        BddMap(const Bdd &from) : bdd(from.bdd)
+        { sylvan_protect(&bdd); }
+
+    public:
+        BddMap(const BddMap &from) : bdd(from.bdd)
+        { sylvan_protect(&bdd); }
+
+        BddMap() : bdd(sylvan_map_empty())
+        { sylvan_protect(&bdd); }
+
+        ~BddMap()
+        { sylvan_unprotect(&bdd); }
+
+        BddMap(uint32_t key_variable, const Bdd value);
+
+        BddMap operator+(const Bdd &other) const;
+
+        BddMap &operator+=(const Bdd &other);
+
+        BddMap operator-(const Bdd &other) const;
+
+        BddMap &operator-=(const Bdd &other);
+
+        /**
+         * @brief Adds a key-value pair to the map
+         */
+        void put(uint32_t key, Bdd value);
+
+        /**
+         * @brief Removes a key-value pair from the map
+         */
+        void removeKey(uint32_t key);
+
+        /**
+         * @brief Returns the number of key-value pairs in this map
+         */
+        size_t size() const;
+
+        /**
+         * @brief Returns non-zero when this map is empty
+         */
+        bool isEmpty() const;
+    };
+
+    class MtbddMap;
+
+    class Mtbdd
+    {
+        friend class Sylvan;
+
+        friend class MtbddMap;
+
+    public:
+        Mtbdd()
+        {
+            mtbdd = sylvan_false;
+            mtbdd_protect(&mtbdd);
+        }
+
+        Mtbdd(const MTBDD from) : mtbdd(from)
+        { mtbdd_protect(&mtbdd); }
+
+        Mtbdd(const Mtbdd &from) : mtbdd(from.mtbdd)
+        { mtbdd_protect(&mtbdd); }
+
+        Mtbdd(const Bdd &from) : mtbdd(from.bdd)
+        { mtbdd_protect(&mtbdd); }
+
+        ~Mtbdd()
+        { mtbdd_unprotect(&mtbdd); }
+
+        /**
+         * @brief Creates a Mtbdd leaf representing the int64 value <value>
+         */
+        static Mtbdd int64Terminal(int64_t value);
+
+        /**
+         * @brief Creates a Mtbdd leaf representing the floating-point value <value>
+         */
+        static Mtbdd doubleTerminal(double value);
+
+        /**
+         * @brief Creates a Mtbdd leaf representing the fraction value <nominator>/<denominator>
+         * Internally, Sylvan uses 32-bit values and reports overflows to stderr.
+         */
+        static Mtbdd fractionTerminal(int64_t nominator, uint64_t denominator);
+
+        /**
+         * @brief Creates a Mtbdd leaf of type <type> holding value <value>
+         * This is useful for custom Mtbdd types.
+         */
+        static Mtbdd terminal(uint32_t type, uint64_t value);
+
+        /**
+         * @brief Creates a Boolean Mtbdd representing jsut the variable index in its positive form
+         * The variable index must be 0<=index<=2^23 (Sylvan uses 24 bits internally)
+         */
+        static Mtbdd mtbddVar(uint32_t variable);
+
+        /**
+         * @brief Returns the Boolean Mtbdd representing "True"
+         */
+        static Mtbdd mtbddOne();
+
+        /**
+         * @brief Returns the Boolean Mtbdd representing "False"
+         */
+        static Mtbdd mtbddZero();
+
+        /**
+         * @brief Returns the Mtbdd representing a cube of variables, according to the given values.
+         * @param variables the variables that will be in the cube in their positive or negative form
+         * @param values a character array describing how the variables will appear in the result
+         * @param terminal the leaf of the cube
+         * The length of string must be equal to the number of variables in the cube.
+         * For every ith char in string, if it is 0, the corresponding variable will appear in its negative form,
+         * if it is 1, it will appear in its positive form, and if it is 2, it will appear as "any", thus it will
+         * be skipped.
+         */
+        static Mtbdd mtbddCube(const BddSet &variables, unsigned char *values, const Mtbdd &terminal);
+
+        /**
+        * @brief Returns the Mtbdd representing a cube of variables, according to the given values.
+        * @param variables the variables that will be in the cube in their positive or negative form
+        * @param values a character array describing how the variables will appear in the result
+        * @param terminal the leaf of the cube
+        * The length of string must be equal to the number of variables in the cube.
+        * For every ith char in string, if it is 0, the corresponding variable will appear in its negative form,
+        * if it is 1, it will appear in its positive form, and if it is 2, it will appear as "any", thus it will
+        * be skipped.
+        */
+        static Mtbdd mtbddCube(const BddSet &variables, std::vector<uint8_t> values, const Mtbdd &terminal);
+
+        bool operator==(const Mtbdd &other) const;
+
+        bool operator!=(const Mtbdd &other) const;
+
+        Mtbdd &operator=(const Mtbdd &right);
+
+        Mtbdd operator!() const;
+
+        Mtbdd operator~() const;
+
+        Mtbdd operator*(const Mtbdd &other) const;
+
+        Mtbdd &operator*=(const Mtbdd &other);
+
+        Mtbdd operator+(const Mtbdd &other) const;
+
+        Mtbdd &operator+=(const Mtbdd &other);
+
+        Mtbdd operator-(const Mtbdd &other) const;
+
+        Mtbdd &operator-=(const Mtbdd &other);
+
+        // not implemented (compared to Bdd): <=, >=, <, >, &, &=, |, |=, ^, ^=
+
+        /**
+         * @brief Returns non-zero if this Mtbdd is a leaf
+         */
+        bool isTerminal() const;
+
+        /**
+         * @brief Returns non-zero if this Mtbdd is a leaf
+         */
+        bool isLeaf() const;
+
+        /**
+         * @brief Returns non-zero if this Mtbdd is mtbddOne()
+         */
+        bool isOne() const;
+
+        /**
+         * @brief Returns non-zero if this Mtbdd is mtbddZero()
+         */
+        bool isZero() const;
+
+        /**
+         * @brief Returns the top variable index of this Mtbdd (the variable in the root node)
+         */
+        uint32_t TopVar() const;
+
+        /**
+         * @brief Follows the high edge ("then") of the root node of this Mtbdd
+         */
+        Mtbdd Then() const;
+
+        /**
+         * @brief Follows the low edge ("else") of the root node of this Mtbdd
+         */
+        Mtbdd Else() const;
+
+        /**
+         * @brief Returns the negation of the MTBDD (every terminal negative)
+         * Do not use this for Boolean MTBDDs, only for Integer/Double/Fraction MTBDDs.
+         */
+        Mtbdd Negate() const;
+
+        /**
+         * @brief Applies the binary operation <op>
+         */
+        Mtbdd Apply(const Mtbdd &other, mtbdd_apply_op op) const;
+
+        /**
+         * @brief Applies the unary operation <op> with parameter <param>
+         */
+        Mtbdd UApply(mtbdd_uapply_op op, size_t param) const;
+
+        /**
+         * @brief Computers the abstraction on variables <variables> using operator <op>.
+         * See also: AbstractPlus, AbstractTimes, AbstractMin, AbstractMax
+         */
+        Mtbdd Abstract(const BddSet &variables, mtbdd_abstract_op op) const;
+
+        /**
+         * @brief Computes if f then g else h
+         * This Mtbdd must be a Boolean Mtbdd
+         */
+        Mtbdd Ite(const Mtbdd &g, const Mtbdd &h) const;
+
+        /**
+         * @brief Computes f + g
+         */
+        Mtbdd Plus(const Mtbdd &other) const;
+
+        /**
+         * @brief Computes f * g
+         */
+        Mtbdd Times(const Mtbdd &other) const;
+
+        /**
+         * @brief Computes min(f, g)
+         */
+        Mtbdd Min(const Mtbdd &other) const;
+
+        /**
+         * @brief Computes max(f, g)
+         */
+        Mtbdd Max(const Mtbdd &other) const;
+
+        /**
+         * @brief Computes abstraction by summation (existential quantification)
+         */
+        Mtbdd AbstractPlus(const BddSet &variables) const;
+
+        /**
+         * @brief Computes abstraction by multiplication (universal quantification)
+         */
+        Mtbdd AbstractTimes(const BddSet &variables) const;
+
+        /**
+         * @brief Computes abstraction by minimum
+         */
+        Mtbdd AbstractMin(const BddSet &variables) const;
+
+        /**
+         * @brief Computes abstraction by maximum
+         */
+        Mtbdd AbstractMax(const BddSet &variables) const;
+
+        /**
+         * @brief Computes abstraction by summation of f \times g
+         */
+        Mtbdd AndExists(const Mtbdd &other, const BddSet &variables) const;
+
+        /**
+         * @brief Convert floating-point/fraction Mtbdd to a Boolean Mtbdd, leaf >= value ? true : false
+         */
+        Mtbdd MtbddThreshold(double value) const;
+
+        /**
+         * @brief Convert floating-point/fraction Mtbdd to a Boolean Mtbdd, leaf > value ? true : false
+         */
+        Mtbdd MtbddStrictThreshold(double value) const;
+
+        /**
+         * @brief Convert floating-point/fraction Mtbdd to a Boolean Mtbdd, leaf >= value ? true : false
+         * Same as MtbddThreshold (Bdd = Boolean Mtbdd)
+         */
+        Bdd BddThreshold(double value) const;
+
+        /**
+         * @brief Convert floating-point/fraction Mtbdd to a Boolean Mtbdd, leaf > value ? true : false
+         * Same as MtbddStrictThreshold (Bdd = Boolean Mtbdd)
+         */
+        Bdd BddStrictThreshold(double value) const;
+
+        /**
+         * @brief Computes the support of a Mtbdd.
+         */
+        Mtbdd Support() const;
+
+        /**
+         * @brief Gets the MTBDD of this Mtbdd (for C functions)
+         */
+        MTBDD GetMTBDD() const;
+
+        /**
+         * @brief Functional composition. Whenever a variable v in the map m is found in the MTBDD,
+         *        it is substituted by the associated function (which should be a Boolean MTBDD)
+         * You can also use this function to implement variable reordering.
+         */
+        Mtbdd Compose(MtbddMap &m) const;
+
+        /**
+         * @brief Substitute all variables in the array from by the corresponding variables in to.
+         */
+        Mtbdd Permute(const std::vector<uint32_t> &from, const std::vector<uint32_t> &to) const;
+
+        /**
+         * @brief Compute the number of satisfying variable assignments, using variables in cube.
+         */
+        double SatCount(const BddSet &variables) const;
+
+        /**
+         * @brief Compute the number of satisfying variable assignments, using the given number of variables.
+         */
+        double SatCount(const size_t nvars) const;
+
+        /**
+         * @brief Gets the number of nodes in this Bdd. Not thread-safe!
+         */
+        size_t NodeCount() const;
+
+    private:
+        MTBDD mtbdd;
+    };
+
+    class MtbddMap
+    {
+        friend class Mtbdd;
+
+        MTBDD mtbdd;
+
+        MtbddMap(MTBDD from) : mtbdd(from)
+        { mtbdd_protect(&mtbdd); }
+
+        MtbddMap(Mtbdd &from) : mtbdd(from.mtbdd)
+        { mtbdd_protect(&mtbdd); }
+
+    public:
+        MtbddMap() : mtbdd(mtbdd_map_empty())
+        { mtbdd_protect(&mtbdd); }
+
+        ~MtbddMap()
+        { mtbdd_unprotect(&mtbdd); }
+
+        MtbddMap(uint32_t key_variable, Mtbdd value);
+
+        MtbddMap operator+(const Mtbdd &other) const;
+
+        MtbddMap &operator+=(const Mtbdd &other);
+
+        MtbddMap operator-(const Mtbdd &other) const;
+
+        MtbddMap &operator-=(const Mtbdd &other);
+
+        /**
+         * @brief Adds a key-value pair to the map
+         */
+        void put(uint32_t key, Mtbdd value);
+
+        /**
+         * @brief Removes a key-value pair from the map
+         */
+        void removeKey(uint32_t key);
+
+        /**
+         * @brief Returns the number of key-value pairs in this map
+         */
+        size_t size();
+
+        /**
+         * @brief Returns non-zero when this map is empty
+         */
+        bool isEmpty();
+    };
+
+    class Sylvan
+    {
+    public:
+        /**
+         * @brief Initializes the Sylvan framework, call this only once in your program.
+         * @param initialTableSize The initial size of the nodes table. Must be a power of two.
+         * @param maxTableSize The maximum size of the nodes table. Must be a power of two.
+         * @param initialCacheSize The initial size of the operation cache. Must be a power of two.
+         * @param maxCacheSize The maximum size of the operation cache. Must be a power of two.
+         */
+        static void
+        initPackage(size_t initialTableSize, size_t maxTableSize, size_t initialCacheSize, size_t maxCacheSize);
+
+        /**
+         * @brief Set the granularity for the BDD operations.
+         * @param granularity determins operation cache behavior; for higher values (2+) it will use the operation cache less often.
+         * Values of 3-7 may result in better performance, since occasionally not using the operation cache is fine in practice.
+         * A granularity of 1 means that every BDD operation will be cached at every variable level.
+         */
+        static void setGranularity(int granularity);
+
+        /**
+         * @brief Retrieve the granularity for the BDD operations.
+         */
+        static int getGranularity();
+
+        /**
+         * @brief Initializes the BDD module of the Sylvan framework.
+         */
+        static void initBdd();
+
+        /**
+         * @brief Initializes the MTBDD module of the Sylvan framework.
+         */
+        static void initMtbdd();
+
+        /**
+         * @brief Initializes the Dynamic variable reordering module of the Sylvan framework.
+         */
+        static void initReorder();
+
+        /**
+         * @brief Set threshold for the number of nodes per level to consider during the reordering.
+         * @details If the number of nodes per level is less than the threshold, the level is skipped during the reordering.
+         *         The default value is 32.
+         * @param threshold The threshold for the number of nodes per level.
+        */
+        static void setReorderThreshold(uint32_t threshold);
+
+        /**
+         * @brief Set the maximum growth coefficient.
+         * @details The maximum growth coefficient is used to calculate the maximum growth of the number of nodes during the reordering.
+         *        If the number of nodes grows more than the maximum growth coefficient , sift up/down is terminated.
+        */
+        static void setReorderMaxGrowth(float max_growth);
+
+        /**
+         * @brief Set the maximum number of swaps per sifting.
+        */
+        static void setReorderMaxSwap(uint32_t max_swap);
+
+        /**
+         * @brief Set the maximum number of vars swapped per sifting.
+        */
+        static void setReorderMaxVar(uint32_t max_var);
+
+        /**
+         * @brief Set the time limit for the reordering.
+        */
+        static void setReorderTimeLimit(double time_limit);
+
+        /**
+          @brief Reduce the heap size in the entire forest.
+
+          @details Implementation of Rudell's sifting algorithm.
+            <ol>
+            <li> Order all the variables according to the number of entries
+            in each unique table.
+            <li> Sift the variable up and down, remembering each time the
+            total size of the bdd size.
+            <li> Select the best permutation.
+            <li> Repeat 2 and 3 for all variables in given range.
+            </ol>
+        */
+        static void reduceHeap();
+
+        /**
+          @brief Reorder the variables in the BDDs according to the given permutation.
+
+          @details The permutation is an array of BDD labels, where the i-th element is the label
+          of the variable that should be moved to position i. The size
+          of the array should be equal or greater to the number of variables
+          currently in use and and should be less or equal to the number of levels.
+         */
+        static reorder_result_t reorderPerm(const std::vector<uint32_t> &perm);
+
+        /**
+         * @brief Get the number of created levels
+         */
+        static uint32_t getLevelsCount();
+
+        /**
+         * @brief Frees all memory in use by Sylvan.
+         * Warning: if you have any Bdd objects which are not bddZero() or bddOne() after this, your program may crash!
+         */
+        static void quitPackage();
+    };
 
 }
 

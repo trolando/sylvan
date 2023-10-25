@@ -13,7 +13,7 @@ include(FetchContent)
 FetchContent_Declare(
     lace
     GIT_REPOSITORY https://github.com/trolando/lace.git
-    GIT_TAG        v1.4.0
+    GIT_TAG        v1.4.1
     FIND_PACKAGE_ARGS
 )
 FetchContent_MakeAvailable(lace)

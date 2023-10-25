@@ -1,23 +1,7 @@
 add_library(sylvan STATIC)
 add_library(sylvan::sylvan ALIAS sylvan)
 
-target_sources(sylvan
-  PRIVATE
-    sha2.c
-    sylvan_bdd.c
-    sylvan_cache.c
-    sylvan_common.c
-    sylvan_hash.c
-    sylvan_ldd.c
-    sylvan_mt.c
-    sylvan_mtbdd.c
-    sylvan_obj.cpp
-    sylvan_refs.c
-    sylvan_sl.c
-    sylvan_stats.c
-    sylvan_table.c
-    sylvan_zdd.c
-  PUBLIC
+set(SYLVAN_HDRS
     sylvan.h
     sylvan_bdd.h
     sylvan_cache.h
@@ -38,10 +22,43 @@ target_sources(sylvan
     sylvan_zdd_int.h
 )
 
+target_sources(sylvan
+  PRIVATE
+    sha2.c
+    sylvan_bdd.c
+    sylvan_cache.c
+    sylvan_common.c
+    sylvan_hash.c
+    sylvan_ldd.c
+    sylvan_mt.c
+    sylvan_mtbdd.c
+    sylvan_obj.cpp
+    sylvan_refs.c
+    sylvan_sl.c
+    sylvan_stats.c
+    sylvan_table.c
+    sylvan_zdd.c
+    ${SYLVAN_HDRS}
+)
+
 set_target_properties(sylvan PROPERTIES VERSION ${sylvan_VERSION} SOVERSION ${sylvan_VERSION_MAJOR})
+set_target_properties(sylvan PROPERTIES PUBLIC_HEADER "${SYLVAN_HDRS}")
+
 target_compile_features(sylvan PUBLIC c_std_11 cxx_std_11)
-target_compile_options(sylvan PRIVATE -Wall -Wextra -Werror -fno-strict-aliasing -Wno-deprecated)
-target_include_directories(sylvan PUBLIC ${CMAKE_CURRENT_LIST_DIR})
+
+target_compile_options(sylvan PRIVATE
+    $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:GNU>>:
+        -pipe -march=native
+        $<$<CONFIG:Debug>:-O0 -Wall -Wextra>>
+    $<$<CXX_COMPILER_ID:MSVC>:
+        $<$<CONFIG:Debug>:/Od /Wall /Zi>>
+)
+
+target_include_directories(sylvan PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
+
 target_link_libraries(sylvan PUBLIC m pthread lace)
 
 option(SYLVAN_USE_MMAP "Let Sylvan use mmap to allocate (virtual) memory" ON)
@@ -70,3 +87,53 @@ option(SYLVAN_STATS "Let Sylvan collect statistics at runtime" OFF)
 if(SYLVAN_STATS)
     set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_STATS")
 endif()
+
+set_target_properties(sylvan PROPERTIES
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin
+)
+
+include(GNUInstallDirs)
+
+install(TARGETS sylvan
+    EXPORT sylvan-targets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+install(EXPORT sylvan-targets
+    FILE sylvan-targets.cmake
+    NAMESPACE sylvan::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
+)
+
+include(CMakePackageConfigHelpers)
+
+configure_package_config_file(
+    ${CMAKE_SOURCE_DIR}/cmake/sylvan-config.cmake.in
+    ${CMAKE_BINARY_DIR}/cmake/sylvan-config.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
+)
+
+write_basic_package_version_file(
+    ${CMAKE_BINARY_DIR}/cmake/sylvan-config-version.cmake
+    VERSION ${SYLVAN_VERSION}
+    COMPATIBILITY SameMinorVersion
+)
+    
+install(
+    FILES
+        ${CMAKE_BINARY_DIR}/cmake/sylvan-config.cmake
+        ${CMAKE_BINARY_DIR}/cmake/sylvan-config-version.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
+)
+
+export(EXPORT sylvan-targets
+    FILE ${CMAKE_BINARY_DIR}/cmake/sylvan-targets.cmake
+    NAMESPACE sylvan::
+)
+

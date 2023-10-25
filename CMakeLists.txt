@@ -8,11 +8,13 @@ project(sylvan
 )
 
 # Dependencies
+# Lace is only downloaded if it is not already installed
 include(FetchContent)
 FetchContent_Declare(
     lace
     GIT_REPOSITORY https://github.com/trolando/lace.git
     GIT_TAG        v1.4.0
+    FIND_PACKAGE_ARGS
 )
 FetchContent_MakeAvailable(lace)
 

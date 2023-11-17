@@ -119,12 +119,12 @@ include(CMakePackageConfigHelpers)
 
 configure_package_config_file(
     ${CMAKE_SOURCE_DIR}/cmake/sylvan-config.cmake.in
-    ${CMAKE_BINARY_DIR}/cmake/sylvan-config.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
 )
 
 write_basic_package_version_file(
-    ${CMAKE_BINARY_DIR}/cmake/sylvan-config-version.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config-version.cmake
     VERSION ${SYLVAN_VERSION}
     COMPATIBILITY SameMinorVersion
 )
@@ -133,8 +133,8 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sylvan.pc.in" "${CMAKE_CURRENT_BINAR
     
 install(
     FILES
-        ${CMAKE_BINARY_DIR}/cmake/sylvan-config.cmake
-        ${CMAKE_BINARY_DIR}/cmake/sylvan-config-version.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config-version.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
 )
 
@@ -145,7 +145,7 @@ install(
 )
 
 export(EXPORT sylvan-targets
-    FILE ${CMAKE_BINARY_DIR}/cmake/sylvan-targets.cmake
+    FILE ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-targets.cmake
     NAMESPACE sylvan::
 )
 

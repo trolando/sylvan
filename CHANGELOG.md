@@ -1,6 +1,11 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [1.8.1] - 2023-11-17
+### Added
+- Added CMake scripts for installing again.
+
+
 ## [1.8.0] - 2023-03-31
 ### Changed
 - Now supports Windows (via MSYS2) and OSX.

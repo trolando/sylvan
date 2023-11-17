@@ -41,6 +41,19 @@ target_sources(sylvan
     ${SYLVAN_HDRS}
 )
 
+option(SYLVAN_GMP "Include custom MTBDD type GMP")
+if(SYLVAN_GMP)
+    # We only want to include the custom MTBDD type GMP if we actually have the GMP library
+    find_package(GMP REQUIRED)
+    set(SYLVAN_HDRS ${SYLVAN_HDRS} sylvan_gmp.h)
+    target_sources(sylvan PRIVATE sylvan_gmp.c sylvan_gmp.h)
+    target_include_directories(sylvan PRIVATE ${GMP_INCLUDE_DIR})
+    target_link_libraries(sylvan PUBLIC ${GMP_LIBRARIES})
+    set(PKGC_LINK_GMP -lgmp)
+else()
+    set(PKGC_LINK_GMP "")
+endif()
+
 set_target_properties(sylvan PROPERTIES VERSION ${sylvan_VERSION} SOVERSION ${sylvan_VERSION_MAJOR})
 set_target_properties(sylvan PROPERTIES PUBLIC_HEADER "${SYLVAN_HDRS}")
 
@@ -71,15 +84,6 @@ if(SYLVAN_USE_MMAP)
     else()
         set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_USE_MMAP")
     endif()
-endif()
-
-option(SYLVAN_GMP "Include custom MTBDD type GMP")
-if(SYLVAN_GMP)
-    # We only want to include the custom MTBDD type GMP if we actually have the GMP library
-    find_package(GMP REQUIRED)
-    target_sources(sylvan PRIVATE sylvan_gmp.c PUBLIC sylvan_gmp.h)
-    target_include_directories(sylvan PRIVATE ${GMP_INCLUDE_DIR})
-    target_link_libraries(sylvan PUBLIC ${GMP_LIBRARIES})
 endif()
 
 # Do we want to collect BDD statistics?
@@ -124,12 +128,20 @@ write_basic_package_version_file(
     VERSION ${SYLVAN_VERSION}
     COMPATIBILITY SameMinorVersion
 )
+
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sylvan.pc.in" "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc" @ONLY)
     
 install(
     FILES
         ${CMAKE_BINARY_DIR}/cmake/sylvan-config.cmake
         ${CMAKE_BINARY_DIR}/cmake/sylvan-config-version.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
+)
+
+install(
+    FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
 )
 
 export(EXPORT sylvan-targets

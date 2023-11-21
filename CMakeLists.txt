@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.18)
 
 project(sylvan
     VERSION 1.8.1
@@ -7,19 +7,28 @@ project(sylvan
     LANGUAGES C CXX
 )
 
-# Dependencies
-# Lace is only downloaded if it is not already installed
-include(FetchContent)
-FetchContent_Declare(
-    lace
-    GIT_REPOSITORY https://github.com/trolando/lace.git
-    GIT_TAG        v1.4.1
-    FIND_PACKAGE_ARGS
-)
-FetchContent_MakeAvailable(lace)
-
 # Add CMake modules path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/")
+
+# Dependencies
+# with CMake >= 3.24, Lace is only downloaded if it is not already installed
+# with CMake <= 3.23, Lace is always downloaded
+include(FetchContent)
+if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.24")
+    FetchContent_Declare(
+        lace
+        GIT_REPOSITORY https://github.com/trolando/lace.git
+        GIT_TAG        v1.4.1
+        FIND_PACKAGE_ARGS
+    )
+else()
+    FetchContent_Declare(
+        lace
+        GIT_REPOSITORY https://github.com/trolando/lace.git
+        GIT_TAG        v1.4.1
+    )
+endif()
+FetchContent_MakeAvailable(lace)
 
 # Add the Sylvan library target
 add_subdirectory(src)

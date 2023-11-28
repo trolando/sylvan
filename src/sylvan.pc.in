@@ -7,4 +7,4 @@ URL: @PROJECT_HOMEPAGE_URL@
 Version: @PROJECT_VERSION@
 Cflags: -I${includedir}
 Libs: -L${libdir} -lsylvan @PKGC_LINK_GMP@
-Requires: lace>=1.4.2
+Requires: lace >= 1.4.2

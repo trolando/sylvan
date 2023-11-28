@@ -18,14 +18,14 @@ if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.24")
     FetchContent_Declare(
         lace
         GIT_REPOSITORY https://github.com/trolando/lace.git
-        GIT_TAG        v1.4.1
+        GIT_TAG        v1.4.2
         FIND_PACKAGE_ARGS
     )
 else()
     FetchContent_Declare(
         lace
         GIT_REPOSITORY https://github.com/trolando/lace.git
-        GIT_TAG        v1.4.1
+        GIT_TAG        v1.4.2
     )
 endif()
 FetchContent_MakeAvailable(lace)

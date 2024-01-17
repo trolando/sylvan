@@ -118,7 +118,7 @@ install(EXPORT sylvan-targets
 include(CMakePackageConfigHelpers)
 
 configure_package_config_file(
-    ${CMAKE_SOURCE_DIR}/cmake/sylvan-config.cmake.in
+    ${PROJECT_SOURCE_DIR}/cmake/sylvan-config.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
 )

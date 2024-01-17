@@ -33,7 +33,7 @@ FetchContent_MakeAvailable(lace)
 # Add the Sylvan library target
 add_subdirectory(src)
 
-if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+if(PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     # If we are in the root, add some options to build examples/tests
     option(SYLVAN_BUILD_EXAMPLES "Build example tools" ON)
     option(SYLVAN_BUILD_DOCS "Build documentation" OFF)

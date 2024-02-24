@@ -78,6 +78,10 @@ TASK_DECL_3(BDD, sylvan_xor, BDD, BDD, BDDVAR);
 #define sylvan_diff(a,b) sylvan_and(a,sylvan_not(b))
 #define sylvan_less(a,b) sylvan_and(sylvan_not(a),b)
 
+TASK_DECL_3(char, sylvan_disjoint, BDD, BDD, BDDVAR);
+#define sylvan_disjoint(a,b) (RUN(sylvan_disjoint,a,b,0))
+#define sylvan_subset(a,b) (RUN(sylvan_disjoint,a,sylvan_not(b),0))
+
 /* Create a BDD representing just <var> or the negation of <var> */
 static inline BDD
 sylvan_nithvar(uint32_t var)

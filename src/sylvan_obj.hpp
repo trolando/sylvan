@@ -187,6 +187,11 @@ public:
     Bdd Xnor(const Bdd& g) const;
 
     /**
+     * @brief Returns whether all f and g are disjoint, i.e. f * g is false
+     */
+    bool Disjoint(const Bdd& g) const;
+
+    /**
      * @brief Returns whether all elements in f are also in g
      */
     bool Leq(const Bdd& g) const;

@@ -321,6 +321,39 @@ test_operators()
     return 0;
 }
 
+static int
+test_disjoint_subset()
+{
+    // We need to test: disjoint, subset
+    
+    int vars=3;
+    BDD v[vars];
+    for (int i=0; i<vars; i++) v[i] = sylvan_nithvar(i);
+
+    BDD test_input[] = {
+        sylvan_true, sylvan_false,
+        sylvan_false, sylvan_true,
+        v[0], v[1],
+        v[1], v[1],
+        v[0], sylvan_not(v[0]),
+        sylvan_and(v[0],v[1]), v[2],
+        sylvan_and(v[0],v[1]), sylvan_and(sylvan_not(v[0]),v[1]),
+        sylvan_and(v[0],v[1]), sylvan_or(sylvan_not(v[0]),v[2]),
+        sylvan_and(v[0],v[1]), sylvan_and(v[0],sylvan_not(v[1])),
+        sylvan_or(v[0],v[1]), sylvan_and(v[0],sylvan_not(v[1])),
+        sylvan_and(v[1],sylvan_or(v[0],v[2])), sylvan_or(v[1],sylvan_and(v[0],sylvan_not(v[2])))
+    };
+
+    for (int i=0; i<11; i++) {
+        BDD t1 = test_input[2*i];
+        BDD t2 = test_input[2*i+1];
+        test_assert(sylvan_disjoint(t1,t2) == (sylvan_and(t1,t2)==sylvan_false));
+        test_assert(sylvan_subset(t1,t2) == (sylvan_or(sylvan_not(t1),t2) == sylvan_true));
+    }
+
+    return 0;
+}
+
 int
 test_relprod()
 {
@@ -526,6 +559,8 @@ TASK_0(int, runtests)
     for (int j=0;j<10;j++) if (test_compose()) return 1;
     printf("Testing operators.\n");
     for (int j=0;j<10;j++) if (test_operators()) return 1;
+    printf("Testing disjoint and subset.\n");
+    for (int j=0;j<10;j++) if (test_disjoint_subset()) return 1;
 
     printf("Testing ldd.\n");
     if (test_ldd()) return 1;

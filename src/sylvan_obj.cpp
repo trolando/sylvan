@@ -45,9 +45,7 @@ Bdd::operator=(const Bdd& right)
 bool
 Bdd::operator<=(const Bdd& other) const
 {
-    // TODO: better implementation, since we are not interested in the BDD result
-    BDD r = sylvan_ite(this->bdd, sylvan_not(other.bdd), sylvan_false);
-    return r == sylvan_false;
+    return sylvan_subset(this->bdd, other.bdd) == 1;
 }
 
 bool
@@ -220,11 +218,15 @@ Bdd::Xnor(const Bdd &g) const
 }
 
 bool
+Bdd::Disjoint(const Bdd &g) const
+{
+    return sylvan_disjoint(bdd, g.bdd) == 1;
+}
+
+bool
 Bdd::Leq(const Bdd &g) const
 {
-    // TODO: better implementation, since we are not interested in the BDD result
-    BDD r = sylvan_ite(bdd, sylvan_not(g.bdd), sylvan_false);
-    return r == sylvan_false;
+    return sylvan_subset(bdd, g.bdd) == 1;
 }
 
 Bdd

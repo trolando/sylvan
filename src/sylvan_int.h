@@ -68,6 +68,7 @@ static const uint64_t CACHE_BDD_CLOSURE             = (13LL<<40);
 static const uint64_t CACHE_BDD_ISBDD               = (14LL<<40);
 static const uint64_t CACHE_BDD_SUPPORT             = (15LL<<40);
 static const uint64_t CACHE_BDD_PATHCOUNT           = (16LL<<40);
+static const uint64_t CACHE_BDD_DISJOINT            = (17LL<<40);
 
 // MDD operations
 static const uint64_t CACHE_MDD_RELPROD             = (20LL<<40);

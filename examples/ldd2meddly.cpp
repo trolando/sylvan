@@ -106,7 +106,6 @@ typedef struct relation
 static int vector_size; // size of vector
 static int next_count; // number of partitions of the transition relation
 static rel_t *next; // each partition of the transition relation
-static int has_actions = 0;
 
 #define Abort(...) { fprintf(stderr, __VA_ARGS__); fprintf(stderr, "Abort at line %d!\n", __LINE__); exit(-1); }
 
@@ -233,12 +232,14 @@ TASK_2(MDD, strip_actions, MDD, dd, MDD, meta)
     if (dd == lddmc_false) return lddmc_false;
     if (dd == lddmc_true) {
         // now meta must be end...
+#ifndef NDEBUG
         if (meta != lddmc_true) {
             const mddnode_t nmeta = LDD_GETNODE(meta);
             const uint32_t vmeta = mddnode_getvalue(nmeta);
             // printf("Vmeta is %d\n", (int)vmeta);
             assert(vmeta == (uint32_t)-1);
         }
+#endif
         return lddmc_true;
     }
 
@@ -358,7 +359,9 @@ ldd_rel_to_meddly(const MDD dd, const MDD meta, expert_forest *F, const int leve
         return (int)result;
     }
 
+#ifndef NDEBUG
     const mddnode_t n = LDD_GETNODE(dd);
+#endif
 
     const mddnode_t nmeta = LDD_GETNODE(meta);
     const uint32_t vmeta = mddnode_getvalue(nmeta);
@@ -501,6 +504,7 @@ VOID_TASK_0(gc_end)
     printf("Garbage collection done\n");
 }
 
+#if 0
 static void
 print_matrix(size_t size, MDD meta)
 {
@@ -527,6 +531,7 @@ print_matrix(size_t size, MDD meta)
         print_matrix(size-1, lddmc_follow(meta, val));
     }
 }
+#endif
 
 void run()
 {

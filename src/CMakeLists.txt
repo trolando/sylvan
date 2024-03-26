@@ -72,7 +72,7 @@ target_include_directories(sylvan PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(sylvan PUBLIC m pthread lace)
+target_link_libraries(sylvan PUBLIC m pthread lace::lace)
 
 option(SYLVAN_USE_MMAP "Let Sylvan use mmap to allocate (virtual) memory" ON)
 if(SYLVAN_USE_MMAP)

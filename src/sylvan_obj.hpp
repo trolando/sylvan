@@ -628,6 +628,13 @@ public:
     {}
 
     /**
+     * @brief Move construction
+     */
+    Mtbdd(Mtbdd &&from)
+        : Mtbdd(from.mtbdd)
+    {}
+
+    /**
      * @brief Conversion construction from Bdd object.
      */
     Mtbdd(const Bdd &from)

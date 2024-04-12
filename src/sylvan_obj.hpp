@@ -62,10 +62,8 @@ public:
      * @brief Copy construction of another Bdd.
      */
     Bdd(const Bdd &from)
-        : bdd(from.bdd)
-    {
-        sylvan_protect(&bdd);
-    }
+        : Bdd(from.bdd)
+    {}
 
     /**
      * @brief Move construction from Bdd.

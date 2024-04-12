@@ -782,8 +782,7 @@ Mtbdd::operator*(const Mtbdd& other) const
 Mtbdd&
 Mtbdd::operator*=(const Mtbdd& other)
 {
-    mtbdd = mtbdd_times(mtbdd, other.mtbdd);
-    return *this;
+    return (*this = *this * other);
 }
 
 Mtbdd
@@ -795,8 +794,7 @@ Mtbdd::operator+(const Mtbdd& other) const
 Mtbdd&
 Mtbdd::operator+=(const Mtbdd& other)
 {
-    mtbdd = mtbdd_plus(mtbdd, other.mtbdd);
-    return *this;
+    return (*this = *this + other);
 }
 
 Mtbdd
@@ -808,8 +806,7 @@ Mtbdd::operator-(const Mtbdd& other) const
 Mtbdd&
 Mtbdd::operator-=(const Mtbdd& other)
 {
-    mtbdd = mtbdd_minus(mtbdd, other.mtbdd);
-    return *this;
+    return (*this = *this - other);
 }
 
 Mtbdd

@@ -754,6 +754,13 @@ Mtbdd::operator=(const Mtbdd& right)
     return *this;
 }
 
+Mtbdd&
+Mtbdd::operator=(Mtbdd&& right)
+{
+  mtbdd = right.mtbdd;
+  return *this;
+}
+
 Mtbdd
 Mtbdd::operator!() const
 {

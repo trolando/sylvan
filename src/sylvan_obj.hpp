@@ -711,6 +711,7 @@ public:
     bool operator==(const Mtbdd& other) const;
     bool operator!=(const Mtbdd& other) const;
     Mtbdd& operator=(const Mtbdd& right);
+    Mtbdd& operator=(Mtbdd&& right);
     Mtbdd operator!() const;
     Mtbdd operator~() const;
     Mtbdd operator*(const Mtbdd& other) const;

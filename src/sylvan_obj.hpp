@@ -67,6 +67,13 @@ public:
         sylvan_protect(&bdd);
     }
 
+    /**
+     * @brief Move construction from Bdd.
+     */
+    Bdd(Bdd &&from)
+        : Bdd(from.bdd)
+    {}
+
     ~Bdd()
     {
         sylvan_unprotect(&bdd);

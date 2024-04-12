@@ -36,22 +36,27 @@ class Bdd {
 
 public:
     /**
-     * @brief Default constructor, representing *False*.
-     */
-    Bdd()
-    {
-        bdd = sylvan_false;
-        sylvan_protect(&bdd);
-    }
-
-    /**
      * @brief Wraps a raw BDD from Sylvan's C interface into a Bdd object.
      */
     Bdd(const BDD from)
         : bdd(from)
     {
-        sylvan_protect(&bdd);
+      sylvan_protect(&bdd);
     }
+
+    /**
+     * @brief Default constructor, representing *False*.
+     */
+    Bdd()
+        : Bdd(sylvan_false)
+    {}
+
+    /**
+     * @brief Construction of the Bdd represnting a variable index in its positive form.
+     */
+    Bdd(const uint32_t var)
+        : Bdd(sylvan_ithvar(var))
+    {}
 
     /**
      * @brief Copy construction of another Bdd.
@@ -59,15 +64,6 @@ public:
     Bdd(const Bdd &from)
         : bdd(from.bdd)
     {
-        sylvan_protect(&bdd);
-    }
-
-    /**
-     * @brief Construction of the Bdd represnting a variable index in its positive form.
-     */
-    Bdd(const uint32_t var)
-    {
-        bdd = sylvan_ithvar(var);
         sylvan_protect(&bdd);
     }
 

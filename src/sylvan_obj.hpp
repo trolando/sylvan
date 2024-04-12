@@ -604,11 +604,40 @@ class Mtbdd {
     friend class MtbddMap;
 
 public:
-    Mtbdd() { mtbdd = sylvan_false; mtbdd_protect(&mtbdd); }
-    Mtbdd(const MTBDD from) : mtbdd(from) { mtbdd_protect(&mtbdd); }
-    Mtbdd(const Mtbdd &from) : mtbdd(from.mtbdd) { mtbdd_protect(&mtbdd); }
-    Mtbdd(const Bdd &from) : mtbdd(from.bdd) { mtbdd_protect(&mtbdd); }
-    ~Mtbdd() { mtbdd_unprotect(&mtbdd); }
+    /**
+     * @brief Wrap a raw MTBDD from Sylvan's C interface into an Mtbdd object.
+     */
+    Mtbdd(const MTBDD from)
+        : mtbdd(from)
+    {
+      mtbdd_protect(&mtbdd);
+    }
+
+    /**
+     * @brief Default construction, representing the Boolean *False*.
+     */
+    Mtbdd()
+        : Mtbdd(sylvan_false)
+    {}
+
+    /**
+     * @brief Copy construction
+     */
+    Mtbdd(const Mtbdd &from)
+        : Mtbdd(from.mtbdd)
+    {}
+
+    /**
+     * @brief Conversion construction from Bdd object.
+     */
+    Mtbdd(const Bdd &from)
+        : Mtbdd(from.bdd)
+    {}
+
+    ~Mtbdd()
+    {
+        mtbdd_unprotect(&mtbdd);
+    }
 
     /**
      * @brief Creates a Mtbdd leaf representing the int64 value <value>
@@ -861,11 +890,35 @@ class MtbddMap
 {
     friend class Mtbdd;
     MTBDD mtbdd;
-    MtbddMap(MTBDD from) : mtbdd(from) { mtbdd_protect(&mtbdd); }
-    MtbddMap(Mtbdd &from) : mtbdd(from.mtbdd) { mtbdd_protect(&mtbdd); }
+
+    /**
+     * @brief Wrap a raw MTBDD from Sylvan's C interface into an MtbddMap object.
+     */
+    MtbddMap(MTBDD from)
+        : mtbdd(from)
+    {
+        mtbdd_protect(&mtbdd);
+    }
+
+    /**
+     * @brief Conversion construction
+     */
+    MtbddMap(Mtbdd &from)
+      : MtbddMap(from.mtbdd)
+    {}
+
 public:
-    MtbddMap() : mtbdd(mtbdd_map_empty()) { mtbdd_protect(&mtbdd); }
-    ~MtbddMap() { mtbdd_unprotect(&mtbdd); }
+    /**
+     * @brief Default construction of an empty map.
+     */
+    MtbddMap()
+        : MtbddMap(mtbdd_map_empty())
+    {}
+
+    ~MtbddMap()
+    {
+        mtbdd_unprotect(&mtbdd);
+    }
 
     MtbddMap(uint32_t key_variable, Mtbdd value);
 

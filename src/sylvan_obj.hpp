@@ -35,11 +35,46 @@ class Bdd {
     friend class Mtbdd;
 
 public:
-    Bdd() { bdd = sylvan_false; sylvan_protect(&bdd); }
-    Bdd(const BDD from) : bdd(from) { sylvan_protect(&bdd); }
-    Bdd(const Bdd &from) : bdd(from.bdd) { sylvan_protect(&bdd); }
-    Bdd(const uint32_t var) { bdd = sylvan_ithvar(var); sylvan_protect(&bdd); }
-    ~Bdd() { sylvan_unprotect(&bdd); }
+    /**
+     * @brief Default constructor, representing *False*.
+     */
+    Bdd()
+    {
+        bdd = sylvan_false;
+        sylvan_protect(&bdd);
+    }
+
+    /**
+     * @brief Wraps a raw BDD from Sylvan's C interface into a Bdd object.
+     */
+    Bdd(const BDD from)
+        : bdd(from)
+    {
+        sylvan_protect(&bdd);
+    }
+
+    /**
+     * @brief Copy construction of another Bdd.
+     */
+    Bdd(const Bdd &from)
+        : bdd(from.bdd)
+    {
+        sylvan_protect(&bdd);
+    }
+
+    /**
+     * @brief Construction of the Bdd represnting a variable index in its positive form.
+     */
+    Bdd(const uint32_t var)
+    {
+        bdd = sylvan_ithvar(var);
+        sylvan_protect(&bdd);
+    }
+
+    ~Bdd()
+    {
+        sylvan_unprotect(&bdd);
+    }
 
     /**
      * @brief Creates a Bdd representing just the variable index in its positive form

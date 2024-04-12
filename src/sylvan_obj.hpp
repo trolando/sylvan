@@ -120,6 +120,7 @@ public:
     bool operator==(const Bdd& other) const;
     bool operator!=(const Bdd& other) const;
     Bdd& operator=(const Bdd& right);
+    Bdd& operator=(Bdd&& right);
     bool operator<=(const Bdd& other) const;
     bool operator>=(const Bdd& other) const;
     bool operator<(const Bdd& other) const;

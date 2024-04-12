@@ -42,6 +42,13 @@ Bdd::operator=(const Bdd& right)
     return *this;
 }
 
+Bdd&
+Bdd::operator=(Bdd&& right)
+{
+  bdd = right.bdd;
+  return *this;
+}
+
 bool
 Bdd::operator<=(const Bdd& other) const
 {

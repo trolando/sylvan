@@ -95,8 +95,7 @@ Bdd::operator*(const Bdd& other) const
 Bdd&
 Bdd::operator*=(const Bdd& other)
 {
-    bdd = sylvan_and(bdd, other.bdd);
-    return *this;
+    return (*this = *this * other);
 }
 
 Bdd
@@ -108,8 +107,7 @@ Bdd::operator&(const Bdd& other) const
 Bdd&
 Bdd::operator&=(const Bdd& other)
 {
-    bdd = sylvan_and(bdd, other.bdd);
-    return *this;
+    return (*this = *this & other);
 }
 
 Bdd
@@ -121,8 +119,7 @@ Bdd::operator+(const Bdd& other) const
 Bdd&
 Bdd::operator+=(const Bdd& other)
 {
-    bdd = sylvan_or(bdd, other.bdd);
-    return *this;
+    return (*this = *this + other);
 }
 
 Bdd
@@ -134,8 +131,7 @@ Bdd::operator|(const Bdd& other) const
 Bdd&
 Bdd::operator|=(const Bdd& other)
 {
-    bdd = sylvan_or(bdd, other.bdd);
-    return *this;
+    return (*this = *this | other);
 }
 
 Bdd
@@ -147,8 +143,7 @@ Bdd::operator^(const Bdd& other) const
 Bdd&
 Bdd::operator^=(const Bdd& other)
 {
-    bdd = sylvan_xor(bdd, other.bdd);
-    return *this;
+    return (*this = *this ^ other);
 }
 
 Bdd
@@ -160,8 +155,7 @@ Bdd::operator-(const Bdd& other) const
 Bdd&
 Bdd::operator-=(const Bdd& other)
 {
-    bdd = sylvan_and(bdd, sylvan_not(other.bdd));
-    return *this;
+    return (*this = *this - other);
 }
 
 Bdd

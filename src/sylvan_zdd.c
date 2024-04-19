@@ -523,14 +523,17 @@ TASK_IMPL_3(ZDD, zdd_eval, ZDD, dd, uint32_t, variable, int, value)
 {
     // If <variable> was skipped, return false if value is true
     if (zdd_isleaf(dd)) return value ? zdd_false : dd;
-    zddnode_t n = ZDD_GETNODE(dd);
-    uint32_t var = zddnode_getvariable(n);
+    const zddnode_t n = ZDD_GETNODE(dd);
+    const uint32_t var = zddnode_getvariable(n);
     if (variable < var) return value ? zdd_false : dd;
 
     // If <variable> is the current top variable, follow low/high edge
     if (variable == var) return value ? zddnode_high(dd, n) : zddnode_low(dd, n);
 
     // Otherwise
+    // Maybe perform garbage collection
+    sylvan_gc_test();
+
     // Count operation
     sylvan_stats_count(ZDD_EVAL);
 
@@ -542,13 +545,13 @@ TASK_IMPL_3(ZDD, zdd_eval, ZDD, dd, uint32_t, variable, int, value)
     }
 
     // Cache miss -> recursion
-    ZDD n0 = zddnode_low(dd, n);
-    ZDD n1 = zddnode_high(dd, n);
+    const ZDD n0 = zddnode_low(dd, n);
+    const ZDD n1 = zddnode_high(dd, n);
 
     zdd_refs_spawn(SPAWN(zdd_eval, n0, variable, value));
-    ZDD high = CALL(zdd_eval, n1, variable, value);
+    const ZDD high = CALL(zdd_eval, n1, variable, value);
     zdd_refs_push(high);
-    ZDD low = zdd_refs_sync(SYNC(zdd_eval));
+    const ZDD low = zdd_refs_sync(SYNC(zdd_eval));
     zdd_refs_pop(1);
 
     result = zdd_makenode(var, low, high);

@@ -82,14 +82,14 @@ if(SYLVAN_USE_MMAP)
         message(WARNING " mmap not found: disabling mmap support")
         set(SYLVAN_USE_MMAP OFF)
     else()
-        set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_USE_MMAP")
+        target_compile_definitions(sylvan PUBLIC SYLVAN_USE_MMAP)
     endif()
 endif()
 
 # Do we want to collect BDD statistics?
 option(SYLVAN_STATS "Let Sylvan collect statistics at runtime" OFF)
 if(SYLVAN_STATS)
-    set_target_properties(sylvan PROPERTIES COMPILE_DEFINITIONS "SYLVAN_STATS")
+    target_compile_definitions(sylvan PUBLIC SYLVAN_STATS)
 endif()
 
 set_target_properties(sylvan PROPERTIES

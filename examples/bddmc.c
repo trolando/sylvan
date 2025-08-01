@@ -380,8 +380,8 @@ BDD go_sat_CALL(lace_worker* lace, BDD set, int idx)
             set = go_sat_CALL(lace, set, idx+count);
             // chain-apply all current level once
             for (int i=0;i<count;i++) {
-                step = sylvan_relnext_CALL(lace, set, next[idx+i]->bdd, next[idx+i]->variables, 0);
-                set = sylvan_not(sylvan_and_CALL(lace, sylvan_not(set), sylvan_not(step), 0));
+                step = sylvan_relnext_CALL(lace, set, next[idx+i]->bdd, next[idx+i]->variables);
+                set = sylvan_not(sylvan_and_CALL(lace, sylvan_not(set), sylvan_not(step)));
                 step = sylvan_false; // unset, for gc
             }
         }
@@ -420,11 +420,11 @@ BDD go_par_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        BDD succ = sylvan_relnext_CALL(lace, cur, next[from]->bdd, next[from]->variables, 0);
+        BDD succ = sylvan_relnext_CALL(lace, cur, next[from]->bdd, next[from]->variables);
         bdd_refs_push(succ);
         if (deadlocks) {
             // check which BDDs in deadlocks do not have a successor in this relation
-            BDD anc = sylvan_relprev_CALL(lace, next[from]->bdd, succ, next[from]->variables, 0);
+            BDD anc = sylvan_relprev_CALL(lace, next[from]->bdd, succ, next[from]->variables);
             bdd_refs_push(anc);
             *deadlocks = sylvan_diff(*deadlocks, anc); //FIXME use a CALL
             bdd_refs_pop(1);
@@ -453,7 +453,7 @@ BDD go_par_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
 
         if (deadlocks) {
             bdd_refs_push(result);
-            *deadlocks = sylvan_and_CALL(lace, deadlocks_left, deadlocks_right, 0);
+            *deadlocks = sylvan_and_CALL(lace, deadlocks_left, deadlocks_right);
             sylvan_unprotect(&deadlocks_left);
             sylvan_unprotect(&deadlocks_right);
             bdd_refs_pop(1);
@@ -488,7 +488,7 @@ void par_CALL(lace_worker* lace, set_t set)
         next_level = go_par_CALL(lace, cur_level, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
 
         if (check_deadlocks && deadlocks != sylvan_false) {
-            INFO("Found %0.0f deadlock states... ", sylvan_satcount_CALL(lace, deadlocks, set->variables, 0));
+            INFO("Found %0.0f deadlock states... ", sylvan_satcount_CALL(lace, deadlocks, set->variables));
             if (deadlocks != sylvan_false) {
                 printf("example: ");
                 print_example(deadlocks, set->variables);
@@ -504,7 +504,7 @@ void par_CALL(lace_worker* lace, set_t set)
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
             INFO("Level %d done, %0.0f states explored, table: %0.1f%% full (%zu nodes)\n",
-                iteration, sylvan_satcount_CALL(lace, visited, set->variables, 0),
+                iteration, sylvan_satcount_CALL(lace, visited, set->variables),
                 100.0*(double)filled/total, filled);
         } else if (report_table) {
             size_t filled, total;
@@ -513,7 +513,7 @@ void par_CALL(lace_worker* lace, set_t set)
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %0.0f states explored\n", iteration, sylvan_satcount_CALL(lace, visited, set->variables, 0));
+            INFO("Level %d done, %0.0f states explored\n", iteration, sylvan_satcount_CALL(lace, visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
@@ -537,11 +537,11 @@ BDD go_bfs_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        BDD succ = sylvan_relnext_CALL(lace, cur, next[from]->bdd, next[from]->variables, 0);
+        BDD succ = sylvan_relnext_CALL(lace, cur, next[from]->bdd, next[from]->variables);
         bdd_refs_push(succ);
         if (deadlocks) {
             // check which BDDs in deadlocks do not have a successor in this relation
-            BDD anc = sylvan_relprev_CALL(lace, next[from]->bdd, succ, next[from]->variables, 0);
+            BDD anc = sylvan_relprev_CALL(lace, next[from]->bdd, succ, next[from]->variables);
             bdd_refs_push(anc);
             *deadlocks = sylvan_diff(*deadlocks, anc); // FIXME make it a CALL
             bdd_refs_pop(1);
@@ -571,7 +571,7 @@ BDD go_bfs_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
 
         if (deadlocks) {
             bdd_refs_push(result);
-            *deadlocks = sylvan_and_CALL(lace, deadlocks_left, deadlocks_right, 0);
+            *deadlocks = sylvan_and_CALL(lace, deadlocks_left, deadlocks_right);
             sylvan_unprotect(&deadlocks_left);
             sylvan_unprotect(&deadlocks_right);
             bdd_refs_pop(1);
@@ -606,7 +606,7 @@ void bfs_CALL(lace_worker* lace, set_t set)
         next_level = go_bfs_CALL(lace, cur_level, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
 
         if (check_deadlocks && deadlocks != sylvan_false) {
-            INFO("Found %0.0f deadlock states... ", sylvan_satcount_CALL(lace, deadlocks, set->variables, 0));
+            INFO("Found %0.0f deadlock states... ", sylvan_satcount_CALL(lace, deadlocks, set->variables));
             if (deadlocks != sylvan_false) {
                 printf("example: ");
                 print_example(deadlocks, set->variables);
@@ -622,7 +622,7 @@ void bfs_CALL(lace_worker* lace, set_t set)
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
             INFO("Level %d done, %0.0f states explored, table: %0.1f%% full (%zu nodes)\n",
-                iteration, sylvan_satcount_CALL(lace, visited, set->variables, 0),
+                iteration, sylvan_satcount_CALL(lace, visited, set->variables),
                 100.0*(double)filled/total, filled);
         } else if (report_table) {
             size_t filled, total;
@@ -631,7 +631,7 @@ void bfs_CALL(lace_worker* lace, set_t set)
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %0.0f states explored\n", iteration, sylvan_satcount_CALL(lace, visited, set->variables, 0));
+            INFO("Level %d done, %0.0f states explored\n", iteration, sylvan_satcount_CALL(lace, visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
@@ -664,7 +664,7 @@ void chaining_CALL(lace_worker* lace, set_t set)
     do {
         // calculate successors in parallel
         for (int i=0; i<next_count; i++) {
-            succ = sylvan_relnext_CALL(lace, next_level, next[i]->bdd, next[i]->variables, 0);
+            succ = sylvan_relnext_CALL(lace, next_level, next[i]->bdd, next[i]->variables);
             next_level = sylvan_or(next_level, succ);
             succ = sylvan_false; // reset, for gc
         }
@@ -678,7 +678,7 @@ void chaining_CALL(lace_worker* lace, set_t set)
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
             INFO("Level %d done, %0.0f states explored, table: %0.1f%% full (%zu nodes)\n",
-                iteration, sylvan_satcount_CALL(lace, visited, set->variables, 0),
+                iteration, sylvan_satcount_CALL(lace, visited, set->variables),
                 100.0*(double)filled/total, filled);
         } else if (report_table) {
             size_t filled, total;
@@ -687,7 +687,7 @@ void chaining_CALL(lace_worker* lace, set_t set)
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %0.0f states explored\n", iteration, sylvan_satcount_CALL(lace, visited, set->variables, 0));
+            INFO("Level %d done, %0.0f states explored\n", iteration, sylvan_satcount_CALL(lace, visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
@@ -727,7 +727,7 @@ BDD extend_relation_CALL(lace_worker* lace, MTBDD relation, MTBDD variables)
     }
 
     bdd_refs_push(eq);
-    BDD result = sylvan_and_CALL(lace, relation, eq, 0);
+    BDD result = sylvan_and_CALL(lace, relation, eq);
     bdd_refs_pop(1);
 
     return result;
@@ -931,7 +931,7 @@ void run_CALL(lace_worker* lace)
     }
 
     // Now we just have states
-    INFO("Final states: %0.0f states\n", sylvan_satcount_CALL(lace, states->bdd, states->variables, 0));
+    INFO("Final states: %0.0f states\n", sylvan_satcount_CALL(lace, states->bdd, states->variables));
     if (report_nodes) {
         INFO("Final states: %zu BDD nodes\n", sylvan_nodecount(states->bdd));
     }

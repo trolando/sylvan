@@ -132,25 +132,26 @@ typedef struct
 /**
  * Initialize stats system (done by sylvan_init_package)
  */
-VOID_TASK_DECL_0(sylvan_stats_init);
-#define sylvan_stats_init() RUN(sylvan_stats_init)
+static inline void sylvan_stats_init(void);
 
 /**
  * Reset all counters (for statistics)
  */
-VOID_TASK_DECL_0(sylvan_stats_reset);
-#define sylvan_stats_reset() RUN(sylvan_stats_reset)
+static inline void sylvan_stats_reset(void);
 
 /**
  * Obtain current counts (this stops the world during counting)
  */
-VOID_TASK_DECL_1(sylvan_stats_snapshot, sylvan_stats_t*);
-#define sylvan_stats_snapshot(target) RUN(sylvan_stats_snapshot, target)
+static inline void sylvan_stats_snapshot(sylvan_stats_t* target);
 
 /**
  * Write statistic report to file (stdout, stderr, etc)
  */
 void sylvan_stats_report(FILE* target);
+
+VOID_TASK_0(sylvan_stats_init);
+VOID_TASK_0(sylvan_stats_reset);
+VOID_TASK_1(sylvan_stats_snapshot, sylvan_stats_t*, target);
 
 #if SYLVAN_STATS
 

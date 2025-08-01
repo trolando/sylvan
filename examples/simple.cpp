@@ -8,6 +8,7 @@
 using namespace sylvan;
 
 VOID_TASK_0(simple_cxx)
+void simple_cxx_CALL(lace_worker* lace)
 {
     Bdd one = Bdd::bddOne(); // the True terminal
     Bdd zero = Bdd::bddZero(); // the False terminal
@@ -65,9 +66,12 @@ VOID_TASK_0(simple_cxx)
     assert((!b)      == Bdd::bddCube(variables, std::vector<uint8_t>({2, 0})));
     assert((b)       == Bdd::bddCube(variables, std::vector<uint8_t>({2, 1})));
     assert(one       == Bdd::bddCube(variables, std::vector<uint8_t>({2, 2})));
+
+    (void)lace;
 }
 
 VOID_TASK_1(_main, void*, arg)
+void _main_CALL(lace_worker* lace, void* arg)
 {
     // Initialize Sylvan
     // With starting size of the nodes table 1 << 21, and maximum size 1 << 27.
@@ -89,7 +93,7 @@ VOID_TASK_1(_main, void*, arg)
     sylvan_init_bdd();
 
     // Now we can do some simple stuff using the C++ objects.
-    CALL(simple_cxx);
+    simple_cxx_CALL(lace);
 
     // Report statistics (if SYLVAN_STATS is 1 in the configuration)
     sylvan_stats_report(stdout);
@@ -108,9 +112,9 @@ main (int argc, char *argv[])
     size_t deque_size = 0; // default value for the size of task deques for the workers
 
     // Initialize the Lace framework for <n_workers> workers.
-    lace_start(n_workers, deque_size);
+    lace_start(n_workers, deque_size, 0);
 
-    RUN(_main, NULL);
+    _main(NULL);
 
     // The lace_startup command also exits Lace after _main is completed.
 

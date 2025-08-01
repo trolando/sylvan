@@ -128,14 +128,12 @@ ZDD zdd_nithvar(uint32_t var);
 /**
  * Convert an MTBDD to a ZDD.
  */
-TASK_DECL_2(ZDD, zdd_from_mtbdd, MTBDD, MTBDD);
-#define zdd_from_mtbdd(dd, domain) RUN(zdd_from_mtbdd, dd, domain)
+TASK_2(ZDD, zdd_from_mtbdd, MTBDD, dd, MTBDD, domain);
 
 /**
  * Convert a ZDD to an MTBDD.
  */
-TASK_DECL_2(MTBDD, zdd_to_mtbdd, ZDD, ZDD);
-#define zdd_to_mtbdd(dd, domain) RUN(zdd_to_mtbdd, dd, domain)
+TASK_2(MTBDD, zdd_to_mtbdd, ZDD, dd, ZDD, domain);
 
 /**
  * Create a variable set, represented as the function that evaluates
@@ -205,21 +203,18 @@ ZDD zdd_cube(ZDD variables, uint8_t *values, ZDD leaf);
  * Same as zdd_cube, but adds the cube to an existing set of the same domain.
  * Elements already in the set are updated with the given leaf.
  */
-TASK_DECL_4(ZDD, zdd_union_cube, ZDD, ZDD, uint8_t*, ZDD);
-#define zdd_union_cube(set, variables, values, leaf) RUN(zdd_union_cube, set, variables, values, leaf)
+TASK_4(ZDD, zdd_union_cube, ZDD, set, ZDD, variables, uint8_t*, values, ZDD, leaf);
 
 /**
  * Compute the irredundant sum of products given lower and upper bounds as BDDs.
  * Returns a ZDD cover between the two bounds; if given bddresptr pointer, then that will have the BDD.
  */
-TASK_DECL_3(ZDD, zdd_isop, MTBDD, MTBDD, MTBDD*);
-#define zdd_isop(L, U, bddresptr) RUN(zdd_isop, L, U, bddresptr)
+TASK_3(ZDD, zdd_isop, MTBDD, L, MTBDD, U, MTBDD*, bddresptr);
 
 /**
  * Compute the BDD representation of a given ZDD cover.
  */
-TASK_DECL_1(MTBDD, zdd_cover_to_bdd, ZDD);
-#define zdd_cover_to_bdd(zdd) RUN(zdd_cover_to_bdd, zdd)
+TASK_1(MTBDD, zdd_cover_to_bdd, ZDD, dd);
 
 /**
  * Enumerate the cubes of a ZDD cover
@@ -234,14 +229,12 @@ ZDD zdd_cover_enum_next(ZDD dd, int32_t *arr);
  * Extend the domain of a ZDD, such that all new variables take the given value.
  * The given value can be 0 (always negative), 1 (always positive), 2 (always dontcare)
  */
-TASK_DECL_3(ZDD, zdd_extend_domain, ZDD, ZDD, int);
-#define zdd_extend_domain(dd, newvars, value) RUN(zdd_extend_domain, dd, newvars, value);
+TASK_3(ZDD, zdd_extend_domain, ZDD, dd, ZDD, newvars, int, value);
 
 /**
  * Calculate the support of a ZDD, i.e. the cube of all variables that appear in the ZDD nodes.
  */
-TASK_DECL_1(ZDD, zdd_support, ZDD);
-#define zdd_support(dd) RUN(zdd_support, dd)
+TASK_1(ZDD, zdd_support, ZDD, dd);
 
 /**
  * Count the number of satisfying assignments (minterms) leading to a non-False leaf.
@@ -253,8 +246,7 @@ TASK_DECL_1(ZDD, zdd_support, ZDD);
 /**
  * Count the number of distinct paths leading to a non-False leaf.
  */
-TASK_DECL_1(double, zdd_pathcount, ZDD);
-#define zdd_pathcount(dd) RUN(zdd_pathcount, dd)
+TASK_1(double, zdd_pathcount, ZDD, dd);
 
 /**
  * Count the number of nodes (internal nodes plus leaves) in ZDDs.
@@ -272,37 +264,32 @@ zdd_nodecount_one(const ZDD dd)
  * Compute IF <f> THEN <g> ELSE <h>.
  * Assuming f, g, h are all Boolean and on the same domain <dom>.
  */
-TASK_DECL_4(ZDD, zdd_ite, ZDD, ZDD, ZDD, ZDD);
-#define zdd_ite(f, g, h, dom) RUN(zdd_ite, f, g, h, dom)
+TASK_4(ZDD, zdd_ite, ZDD, f, ZDD, g, ZDD, h, ZDD, dom);
 
 /**
  * Compute the negation of a ZDD w.r.t. the given domain.
  */
-TASK_DECL_2(ZDD, zdd_not, ZDD, ZDD);
-#define zdd_not(dd, domain) RUN(zdd_not, dd, domain)
+TASK_2(ZDD, zdd_not, ZDD, dd, ZDD, dom);
 
 /**
  * Compute logical AND of <a> and <b>.
  */
-TASK_DECL_2(ZDD, zdd_and, ZDD, ZDD);
-#define zdd_and(a, b) RUN(zdd_and, a, b)
+TASK_2(ZDD, zdd_and, ZDD, a, ZDD, b);
 
 /**
  * Compute logical OR of <a> and <b>.
  */
-TASK_DECL_2(ZDD, zdd_or, ZDD, ZDD);
-#define zdd_or(a, b) RUN(zdd_or, a, b)
+TASK_2(ZDD, zdd_or, ZDD, a, ZDD, b);
 
 /**
  * Compute logical DIFF of <a> and <b>. (set minus)
  */
-TASK_DECL_2(ZDD, zdd_diff, ZDD, ZDD);
-#define zdd_diff(a, b) RUN(zdd_diff, a, b)
+TASK_2(ZDD, zdd_diff, ZDD, a, ZDD, b);
 
 /**
  * Compute logical XOR of <a> and <b>.
  */
-// TASK_DECL_2(ZDD, zdd_xor, ZDD, ZDD);
+// TASK_2(ZDD, zdd_xor, ZDD, ZDD);
 // #define zdd_xor(a, b) RUN(zdd_xor, a, b)
 
 /**
@@ -310,21 +297,21 @@ TASK_DECL_2(ZDD, zdd_diff, ZDD, ZDD);
  * Also called bi-implication. (a <-> b)
  * This operation requires the variable domain <dom>.
  */
-// TASK_DECL_3(ZDD, zdd_equiv, ZDD, ZDD, ZDD);
+// TASK_3(ZDD, zdd_equiv, ZDD, ZDD, ZDD);
 // #define zdd_equiv(a, b, dom) RUN(zdd_equiv, a, b, dom)
 
 /**
  * Compute logical IMP of <a> and <b>. (a -> b)
  * This operation requires the variable domain <dom>.
  */
-// TASK_DECL_3(ZDD, zdd_imp, ZDD, ZDD, ZDD);
+// TASK_3(ZDD, zdd_imp, ZDD, ZDD, ZDD);
 // #define zdd_imp(a, b, dom) RUN(zdd_imp, a, b, dom)
 
 /**
  * Compute logical INVIMP of <a> and <b>. (b <- a)
  * This operation requires the variable domain <dom>.
  */
-// TASK_DECL_3(ZDD, zdd_invimp, ZDD, ZDD, ZDD);
+// TASK_3(ZDD, zdd_invimp, ZDD, ZDD, ZDD);
 // #define zdd_invimp(a, b, dom) RUN(zdd_invimp, a, b, dom)
 
 // add binary operators
@@ -337,33 +324,31 @@ TASK_DECL_2(ZDD, zdd_diff, ZDD, ZDD);
  * Compute \exists <vars>: <dd>.
  * (Stays in same variable domain.)
  */
-TASK_DECL_2(ZDD, zdd_exists, ZDD, ZDD);
-#define zdd_exists(dd, vars) RUN(zdd_exists, dd, vars)
+TASK_2(ZDD, zdd_exists, ZDD, dd, ZDD, vars);
 
 /**
  * Project <dd> onto <domain>, existentially quantifying variables not in the domain.
  * (Changes to the new variable domain.)
  */
-TASK_DECL_2(ZDD, zdd_project, ZDD, ZDD);
-#define zdd_project(dd, domain) RUN(zdd_project, dd, domain)
+TASK_2(ZDD, zdd_project, ZDD, dd, ZDD, dom);
 
 /**
  * Compute \forall <vars>: <dd>.
  */
-// TASK_DECL_2(ZDD, zdd_forall, ZDD, ZDD);
+// TASK_2(ZDD, zdd_forall, ZDD, ZDD);
 // #define zdd_forall(dd, vars) RUN(zdd_forall, dd, vars)
 
 /**
  * Compute \exists <vars>: <a> and <b>.
  * Result is in same domain as <a> and <b>.
  */
-// TASK_DECL_3(ZDD, zdd_and_exists, ZDD, ZDD, ZDD);
+// TASK_3(ZDD, zdd_and_exists, ZDD, ZDD, ZDD);
 // #define zdd_and_exists(a, b, vars) RUN(zdd_and_exists, a, b, vars)
 
 /**
  * Compute <a> and <b> and project result on <domain>
  */
-// TASK_DECL_3(ZDD, zdd_and_project, ZDD, ZDD, ZDD);
+// TASK_3(ZDD, zdd_and_project, ZDD, ZDD, ZDD);
 // #define zdd_and_project(a, b, domain) RUN(zdd_and_project, a, b, domain)
 
 /**
@@ -371,7 +356,7 @@ TASK_DECL_2(ZDD, zdd_project, ZDD, ZDD);
  * replace the node by the result of zdd_ite(<value>, <low>, <high>).
  * Each <value> in <map> must be a Boolean ZDD.
  */
-// TASK_DECL_2(ZDD, zdd_compose, ZDD, ZDDMAP);
+// TASK_2(ZDD, zdd_compose, ZDD, ZDDMAP);
 // #define zdd_compose(dd, map) RUN(zdd_compose, dd, map)
 
 /**
@@ -381,7 +366,7 @@ TASK_DECL_2(ZDD, zdd_project, ZDD, ZDD);
  * In Debug mode, this will cause assertion failures instead of returning 0.
  * Returns 1 if all is fine, or 0 otherwise.
  */
-// TASK_DECL_1(int, zdd_test_isvalid, ZDD);
+// TASK_1(int, zdd_test_isvalid, ZDD);
 // #define zdd_test_isvalid(zdd) RUN(zdd_test_isvalid, zdd)
 
 /**
@@ -473,14 +458,14 @@ typedef struct zdd_trace {
 } * zdd_trace_t;
 
 LACE_TYPEDEF_CB(void, zdd_enum_cb, void*, uint8_t*, size_t);
-VOID_TASK_DECL_4(zdd_enum, ZDD, ZDD, zdd_enum_cb, void*);
+VOID_TASK_4(zdd_enum, ZDD, ZDD, zdd_enum_cb, void*);
 #define zdd_enum(dd, dom, cb, context) RUN(zdd_enum, dd, dom, cb, context)
 
-VOID_TASK_DECL_4(zdd_enum_seq, ZDD, ZDD, zdd_enum_cb, void*);
+VOID_TASK_4(zdd_enum_seq, ZDD, ZDD, zdd_enum_cb, void*);
 #define zdd_enum_seq(dd, dom, cb, context) RUN(zdd_enum_seq, dd, dom, cb, context)
 
 LACE_TYPEDEF_CB(ZDD, zdd_collect_cb, void*, uint8_t*, size_t);
-TASK_DECL_5(ZDD, zdd_collect, ZDD, ZDD, ZDD, zdd_collect_cb, void*);
+TASK_5(ZDD, zdd_collect, ZDD, ZDD, ZDD, zdd_collect_cb, void*);
 #define zdd_collect(dd, dom, res_dom, cb, context) RUN(zdd_collect, dd, dom, res_dom, cb, context)
 */
 
@@ -498,20 +483,18 @@ TASK_DECL_5(ZDD, zdd_collect, ZDD, ZDD, ZDD, zdd_collect_cb, void*);
  * pre_cb callback: given input ZDD and context, return whether to visit children
  * post_cb callback: given input ZDD and context
  */
-LACE_TYPEDEF_CB(int, zdd_visit_pre_cb, ZDD, void*);
-LACE_TYPEDEF_CB(void, zdd_visit_post_cb, ZDD, void*);
+typedef int (*zdd_visit_pre_cb)(ZDD, void*);
+typedef void (*zdd_visit_post_cb)(ZDD, void*);
 
 /**
  * Sequential visit operation
  */
-VOID_TASK_DECL_4(zdd_visit_seq, ZDD, zdd_visit_pre_cb, zdd_visit_post_cb, void*);
-#define zdd_visit_seq(...) RUN(zdd_visit_seq, __VA_ARGS__)
+VOID_TASK_4(zdd_visit_seq, ZDD, dd, zdd_visit_pre_cb, precb, zdd_visit_post_cb, postcb, void*, context);
 
 /**
  * Parallel visit operation
  */
-VOID_TASK_DECL_4(zdd_visit_par, ZDD, zdd_visit_pre_cb, zdd_visit_post_cb, void*);
-#define zdd_visit_par(...) RUN(zdd_visit_par, __VA_ARGS__)
+VOID_TASK_4(zdd_visit_par, ZDD, dd, zdd_visit_pre_cb, precb, zdd_visit_post_cb, postcb, void*, context);
 
 /**
  * Writing ZDDs to file.
@@ -543,8 +526,7 @@ VOID_TASK_DECL_4(zdd_visit_par, ZDD, zdd_visit_pre_cb, zdd_visit_post_cb, void*)
  * uint64_t: count -- number of stored decision diagrams
  * <count> times uint64_t: each stored decision diagram
  */
-VOID_TASK_DECL_3(zdd_writer_tobinary, FILE *, ZDD *, int);
-#define zdd_writer_tobinary(file, dds, count) RUN(zdd_writer_tobinary, file, dds, count)
+VOID_TASK_3(zdd_writer_tobinary, FILE *, file, ZDD *, dds, int, count);
 
 /**
  * Write <count> decision diagrams given in <dds> in ASCII form to <file>.
@@ -556,8 +538,7 @@ VOID_TASK_DECL_3(zdd_writer_tobinary, FILE *, ZDD *, int);
  * ],[dd1, dd2, dd3, ...,] -- and each the stored decision diagram.
  */
 
-VOID_TASK_DECL_3(zdd_writer_totext, FILE *, ZDD *, int);
-#define zdd_writer_totext(file, dds, count) RUN(zdd_writer_totext, file, dds, count)
+VOID_TASK_3(zdd_writer_totext, FILE *, file, ZDD *, dds, int, count);
 
 /**
  * Skeleton typedef for the skiplist
@@ -572,8 +553,7 @@ sylvan_skiplist_t zdd_writer_start(void);
 /**
  * Add the given ZDD to the skiplist.
  */
-VOID_TASK_DECL_2(zdd_writer_add, sylvan_skiplist_t, ZDD);
-#define zdd_writer_add(sl, dd) RUN(zdd_writer_add, sl, dd)
+VOID_TASK_2(zdd_writer_add, sylvan_skiplist_t, sl, ZDD, dd);
 
 /**
  * Write all assigned ZDD nodes in binary format to the file.
@@ -607,8 +587,7 @@ void zdd_writer_end(sylvan_skiplist_t sl);
 /*
  * Read <count> decision diagrams to <dds> from <file> in internal binary form.
  */
-TASK_DECL_3(int, zdd_reader_frombinary, FILE*, ZDD*, int);
-#define zdd_reader_frombinary(file, dds, count) RUN(zdd_reader_frombinary, file, dds, count)
+TASK_3(int, zdd_reader_frombinary, FILE*, file, ZDD*, dds, int, count);
 
 /**
  * Reading a file earlier written with zdd_writer_writebinary
@@ -617,8 +596,7 @@ TASK_DECL_3(int, zdd_reader_frombinary, FILE*, ZDD*, int);
  * Returns NULL if there was an error.
  */
 
-TASK_DECL_1(uint64_t*, zdd_reader_readbinary, FILE*);
-#define zdd_reader_readbinary(file) RUN(zdd_reader_readbinary, file)
+TASK_1(uint64_t*, zdd_reader_readbinary, FILE*, file);
 
 /**
  * Retrieve the ZDD of the given stored identifier.
@@ -637,8 +615,7 @@ void zdd_reader_end(uint64_t *arr);
 /**
  * Call zdd_gc_mark_rec for every zdd you want to keep in your custom mark functions.
  */
-VOID_TASK_DECL_1(zdd_gc_mark_rec, ZDD);
-#define zdd_gc_mark_rec(zdd) RUN(zdd_gc_mark_rec, zdd)
+VOID_TASK_1(zdd_gc_mark_rec, ZDD, dd);
 
 /**
  * Default external pointer referencing. During garbage collection, the pointers are followed and the ZDD
@@ -691,7 +668,7 @@ void zdd_refs_pop(long amount);
  * Push a Task that returns an ZDD to the tasks reference stack.
  * Usage: zdd_refs_spawn(SPAWN(function, ...));
  */
-void zdd_refs_spawn(Task *t);
+void zdd_refs_spawn(lace_task* t);
 
 /**
  * Pop a Task from the task reference stack.

@@ -90,7 +90,7 @@ sylvan_skiplist_get(sylvan_skiplist_t l, MTBDD dd)
     }
 }
 
-VOID_TASK_IMPL_2(sylvan_skiplist_assign_next, sylvan_skiplist_t, l, MTBDD, dd)
+void sylvan_skiplist_assign_next(sylvan_skiplist_t l, MTBDD dd)
 {
     if (dd == mtbdd_false || dd == mtbdd_true) return;
 
@@ -132,7 +132,7 @@ VOID_TASK_IMPL_2(sylvan_skiplist_assign_next, sylvan_skiplist_t, l, MTBDD, dd)
     atomic_store_explicit(l->buckets[loc].next, next, memory_order_release);
 
     /* determine height */
-    uint64_t h = 1 + __builtin_clz(LACE_TRNG) / 2;
+    uint64_t h = 1 + __builtin_clz(lace_rng(lace_get_worker())) / 2; // FIXME
     if (h > SL_DEPTH) h = SL_DEPTH;
 
     /* go up and create links */

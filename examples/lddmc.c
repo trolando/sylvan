@@ -184,8 +184,8 @@ set_save(FILE* f, set_t set)
 /**
  * Load a relation from file
  */
-#define rel_load_proj(f) RUN(rel_load_proj, f)
 TASK_1(rel_t, rel_load_proj, FILE*, f)
+rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
 {
     int r_k, w_k;
     if (fread(&r_k, sizeof(int), 1, f) != 1) Abort("Invalid file format.");
@@ -242,15 +242,17 @@ TASK_1(rel_t, rel_load_proj, FILE*, f)
     lddmc_protect(&rel->dd);
 
     return rel;
+    (void)lace;
 }
 
-#define rel_load(f, rel) RUN(rel_load, f, rel)
 VOID_TASK_2(rel_load, FILE*, f, rel_t, rel)
+void rel_load_CALL(lace_worker* lace, FILE* f, rel_t rel)
 {
     lddmc_serialize_fromfile(f);
     size_t dd;
     if (fread(&dd, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!");
     rel->dd = lddmc_serialize_get_reversed(dd);
+    (void)lace;
 }
 
 /**
@@ -354,19 +356,20 @@ print_matrix(size_t size, MDD meta)
  * Implement parallel strategy (that performs the relprod operations in parallel)
  */
 TASK_5(MDD, go_par, MDD, cur, MDD, visited, size_t, from, size_t, len, MDD*, deadlocks)
+MDD go_par_CALL(lace_worker* lace, MDD cur, MDD visited, size_t from, size_t len, MDD* deadlocks)
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        MDD succ = lddmc_relprod(cur, next[from]->dd, next[from]->meta);
+        MDD succ = lddmc_relprod_CALL(lace, cur, next[from]->dd, next[from]->meta);
         lddmc_refs_push(succ);
         if (deadlocks) {
             // check which MDDs in deadlocks do not have a successor in this relation
-            MDD anc = lddmc_relprev(succ, next[from]->dd, next[from]->meta, cur);
+            MDD anc = lddmc_relprev_CALL(lace, succ, next[from]->dd, next[from]->meta, cur);
             lddmc_refs_push(anc);
-            *deadlocks = lddmc_minus(*deadlocks, anc);
+            *deadlocks = lddmc_minus_CALL(lace, *deadlocks, anc);
             lddmc_refs_pop(1);
         }
-        MDD result = lddmc_minus(succ, visited);
+        MDD result = lddmc_minus_CALL(lace, succ, visited);
         lddmc_refs_pop(1);
         return result;
     } else if (deadlocks != NULL) {
@@ -376,10 +379,10 @@ TASK_5(MDD, go_par, MDD, cur, MDD, visited, size_t, from, size_t, len, MDD*, dea
         lddmc_refs_pushptr(&deadlocks_right);
 
         // Recursively compute left+right
-        lddmc_refs_spawn(SPAWN(go_par, cur, visited, from, len/2, &deadlocks_left));
-        MDD right = CALL(go_par, cur, visited, from+len/2, len-len/2, &deadlocks_right);
+        lddmc_refs_spawn(go_par_SPAWN(lace, cur, visited, from, len/2, &deadlocks_left));
+        MDD right = go_par_CALL(lace, cur, visited, from+len/2, len-len/2, &deadlocks_right);
         lddmc_refs_push(right);
-        MDD left = lddmc_refs_sync(SYNC(go_par));
+        MDD left = lddmc_refs_sync(go_par_SYNC(lace));
         lddmc_refs_push(left);
 
         // Merge results of left+right
@@ -396,14 +399,14 @@ TASK_5(MDD, go_par, MDD, cur, MDD, visited, size_t, from, size_t, len, MDD*, dea
         return result;
     } else {
         // Recursively compute left+right
-        lddmc_refs_spawn(SPAWN(go_par, cur, visited, from, len/2, NULL));
-        MDD right = CALL(go_par, cur, visited, from+len/2, len-len/2, NULL);
+        lddmc_refs_spawn(go_par_SPAWN(lace, cur, visited, from, len/2, NULL));
+        MDD right = go_par_CALL(lace, cur, visited, from+len/2, len-len/2, NULL);
         lddmc_refs_push(right);
-        MDD left = lddmc_refs_sync(SYNC(go_par));
+        MDD left = lddmc_refs_sync(go_par_SYNC(lace));
         lddmc_refs_push(left);
 
         // Merge results of left+right
-        MDD result = lddmc_union(left, right);
+        MDD result = lddmc_union_CALL(lace, left, right);
         lddmc_refs_pop(2);
 
         // Return result
@@ -415,6 +418,7 @@ TASK_5(MDD, go_par, MDD, cur, MDD, visited, size_t, from, size_t, len, MDD*, dea
  * Implementation of the PAR strategy
  */
 VOID_TASK_1(par, set_t, set)
+void par_CALL(lace_worker* lace, set_t set)
 {
     /* Prepare variables */
     MDD visited = set->dd;
@@ -428,11 +432,11 @@ VOID_TASK_1(par, set_t, set)
             // compute successors in parallel
             MDD deadlocks = front;
             lddmc_refs_pushptr(&deadlocks);
-            front = CALL(go_par, front, visited, 0, next_count, &deadlocks);
+            front = go_par_CALL(lace, front, visited, 0, next_count, &deadlocks);
             lddmc_refs_popptr(1);
 
             if (deadlocks != lddmc_false) {
-                INFO("Found %0.0f deadlock states... ", lddmc_satcount_cached(deadlocks));
+                INFO("Found %0.0f deadlock states... ", lddmc_satcount_cached_CALL(lace, deadlocks));
                 printf("example: ");
                 print_example(deadlocks);
                 printf("\n");
@@ -440,15 +444,15 @@ VOID_TASK_1(par, set_t, set)
             }
         } else {
             // compute successors in parallel
-            front = CALL(go_par, front, visited, 0, next_count, NULL);
+            front = go_par_CALL(lace, front, visited, 0, next_count, NULL);
         }
 
         // visited = visited + front
-        visited = lddmc_union(visited, front);
+        visited = lddmc_union_CALL(lace, visited, front);
 
         INFO("Level %d done", iteration);
         if (report_levels) {
-            printf(", %0.0f states explored", lddmc_satcount_cached(visited));
+            printf(", %0.0f states explored", lddmc_satcount_cached_CALL(lace, visited));
         }
         if (report_table) {
             size_t filled, total;
@@ -469,19 +473,20 @@ VOID_TASK_1(par, set_t, set)
  * Implement sequential strategy (that performs the relprod operations one by one)
  */
 TASK_5(MDD, go_bfs, MDD, cur, MDD, visited, size_t, from, size_t, len, MDD*, deadlocks)
+MDD go_bfs_CALL(lace_worker* lace, MDD cur, MDD visited, size_t from, size_t len, MDD* deadlocks)
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        MDD succ = lddmc_relprod(cur, next[from]->dd, next[from]->meta);
+        MDD succ = lddmc_relprod_CALL(lace, cur, next[from]->dd, next[from]->meta);
         lddmc_refs_push(succ);
         if (deadlocks) {
             // check which MDDs in deadlocks do not have a successor in this relation
-            MDD anc = lddmc_relprev(succ, next[from]->dd, next[from]->meta, cur);
+            MDD anc = lddmc_relprev_CALL(lace, succ, next[from]->dd, next[from]->meta, cur);
             lddmc_refs_push(anc);
-            *deadlocks = lddmc_minus(*deadlocks, anc);
+            *deadlocks = lddmc_minus_CALL(lace, *deadlocks, anc);
             lddmc_refs_pop(1);
         }
-        MDD result = lddmc_minus(succ, visited);
+        MDD result = lddmc_minus_CALL(lace, succ, visited);
         lddmc_refs_pop(1);
         return result;
     } else if (deadlocks != NULL) {
@@ -491,18 +496,18 @@ TASK_5(MDD, go_bfs, MDD, cur, MDD, visited, size_t, from, size_t, len, MDD*, dea
         lddmc_refs_pushptr(&deadlocks_right);
 
         // Recursively compute left+right
-        MDD left = CALL(go_par, cur, visited, from, len/2, &deadlocks_left);
+        MDD left = go_par_CALL(lace, cur, visited, from, len/2, &deadlocks_left);
         lddmc_refs_push(left);
-        MDD right = CALL(go_par, cur, visited, from+len/2, len-len/2, &deadlocks_right);
+        MDD right = go_par_CALL(lace, cur, visited, from+len/2, len-len/2, &deadlocks_right);
         lddmc_refs_push(right);
 
         // Merge results of left+right
-        MDD result = lddmc_union(left, right);
+        MDD result = lddmc_union_CALL(lace, left, right);
         lddmc_refs_pop(2);
 
         // Intersect deadlock sets
         lddmc_refs_push(result);
-        *deadlocks = lddmc_intersect(deadlocks_left, deadlocks_right);
+        *deadlocks = lddmc_intersect_CALL(lace, deadlocks_left, deadlocks_right);
         lddmc_refs_pop(1);
         lddmc_refs_popptr(2);
 
@@ -510,13 +515,13 @@ TASK_5(MDD, go_bfs, MDD, cur, MDD, visited, size_t, from, size_t, len, MDD*, dea
         return result;
     } else {
         // Recursively compute left+right
-        MDD left = CALL(go_par, cur, visited, from, len/2, NULL);
+        MDD left = go_par_CALL(lace, cur, visited, from, len/2, NULL);
         lddmc_refs_push(left);
-        MDD right = CALL(go_par, cur, visited, from+len/2, len-len/2, NULL);
+        MDD right = go_par_CALL(lace, cur, visited, from+len/2, len-len/2, NULL);
         lddmc_refs_push(right);
 
         // Merge results of left+right
-        MDD result = lddmc_union(left, right);
+        MDD result = lddmc_union_CALL(lace, left, right);
         lddmc_refs_pop(2);
 
         // Return result
@@ -526,6 +531,7 @@ TASK_5(MDD, go_bfs, MDD, cur, MDD, visited, size_t, from, size_t, len, MDD*, dea
 
 /* BFS strategy, sequential strategy (but operations are parallelized by Sylvan) */
 VOID_TASK_1(bfs, set_t, set)
+void bfs_CALL(lace_worker* lace, set_t set)
 {
     /* Prepare variables */
     MDD visited = set->dd;
@@ -539,11 +545,11 @@ VOID_TASK_1(bfs, set_t, set)
             // compute successors
             MDD deadlocks = front;
             lddmc_refs_pushptr(&deadlocks);
-            front = CALL(go_bfs, front, visited, 0, next_count, &deadlocks);
+            front = go_bfs_CALL(lace, front, visited, 0, next_count, &deadlocks);
             lddmc_refs_popptr(1);
 
             if (deadlocks != lddmc_false) {
-                INFO("Found %0.0f deadlock states... ", lddmc_satcount_cached(deadlocks));
+                INFO("Found %0.0f deadlock states... ", lddmc_satcount_cached_CALL(lace, deadlocks));
                 printf("example: ");
                 print_example(deadlocks);
                 printf("\n");
@@ -551,15 +557,15 @@ VOID_TASK_1(bfs, set_t, set)
             }
         } else {
             // compute successors
-            front = CALL(go_bfs, front, visited, 0, next_count, NULL);
+            front = go_bfs_CALL(lace, front, visited, 0, next_count, NULL);
         }
 
         // visited = visited + front
-        visited = lddmc_union(visited, front);
+        visited = lddmc_union_CALL(lace, visited, front);
 
         INFO("Level %d done", iteration);
         if (report_levels) {
-            printf(", %0.0f states explored", lddmc_satcount_cached(visited));
+            printf(", %0.0f states explored", lddmc_satcount_cached_CALL(lace, visited));
         }
         if (report_table) {
             size_t filled, total;
@@ -581,6 +587,7 @@ VOID_TASK_1(bfs, set_t, set)
  * (assumes relations are ordered on first variable)
  */
 TASK_3(MDD, go_sat, MDD, set, int, idx, int, depth)
+MDD go_sat_CALL(lace_worker* lace, MDD set, int idx, int depth)
 {
     /* Terminal cases */
     if (set == lddmc_false) return lddmc_false;
@@ -615,19 +622,19 @@ TASK_3(MDD, go_sat, MDD, set, int, idx, int, depth)
         while (prev != set) {
             prev = set;
             // SAT deeper
-            set = CALL(go_sat, set, idx + n, depth);
+            set = go_sat_CALL(lace, set, idx + n, depth);
             // chain-apply all current level once
             for (int i=0; i<n; i++) {
-                set = lddmc_relprod_union(set, next[idx+i]->dd, next[idx+i]->topmeta, set);
+                set = lddmc_relprod_union_CALL(lace, set, next[idx+i]->dd, next[idx+i]->topmeta, set);
             }
         }
         lddmc_refs_popptr(2);
         result = set;
     } else {
         /* Recursive computation */
-        lddmc_refs_spawn(SPAWN(go_sat, lddmc_getright(set), idx, depth));
-        MDD down = lddmc_refs_push(CALL(go_sat, lddmc_getdown(set), idx, depth+1));
-        MDD right = lddmc_refs_sync(SYNC(go_sat));
+        lddmc_refs_spawn(go_sat_SPAWN(lace, lddmc_getright(set), idx, depth));
+        MDD down = lddmc_refs_push(go_sat_CALL(lace, lddmc_getdown(set), idx, depth+1));
+        MDD right = lddmc_refs_sync(go_sat_SYNC(lace));
         lddmc_refs_pop(1);
         result = lddmc_makenode(lddmc_getvalue(set), down, right);
     }
@@ -642,14 +649,16 @@ TASK_3(MDD, go_sat, MDD, set, int, idx, int, depth)
  * Wrapper for the Saturation strategy
  */
 VOID_TASK_1(sat, set_t, set)
+void sat_CALL(lace_worker* lace, set_t set)
 {
-    set->dd = CALL(go_sat, set->dd, 0, 0);
+    set->dd = go_sat_CALL(lace, set->dd, 0, 0);
 }
 
 /**
  * Implementation of the Chaining strategy (does not support deadlock detection)
  */
 VOID_TASK_1(chaining, set_t, set)
+void chaining_CALL(lace_worker* lace, set_t set)
 {
     MDD visited = set->dd;
     MDD front = visited;
@@ -690,20 +699,25 @@ VOID_TASK_1(chaining, set_t, set)
 
     set->dd = visited;
     lddmc_refs_popptr(3);
+    (void)lace;
 }
 
 VOID_TASK_0(gc_start)
+void gc_start_CALL(lace_worker* lace)
 {
     char buf[32];
     to_h(getCurrentRSS(), buf);
     INFO("(GC) Starting garbage collection... (rss: %s)\n", buf);
+    (void)lace;
 }
 
 VOID_TASK_0(gc_end)
+void gc_end_CALL(lace_worker* lace)
 {
     char buf[32];
     to_h(getCurrentRSS(), buf);
     INFO("(GC) Garbage collection done.       (rss: %s)\n", buf);
+    (void)lace;
 }
 
 void
@@ -716,6 +730,7 @@ print_h(double size)
 }
 
 TASK_0(int, run)
+int run_CALL(lace_worker* lace)
 {
     /**
      * Read the model from file
@@ -781,22 +796,22 @@ TASK_0(int, run)
 
     if (strategy == 0) {
         double t1 = wctime();
-        RUN(bfs, states);
+        bfs_CALL(lace, states);
         double t2 = wctime();
         INFO("BFS Time: %f\n", t2-t1);
     } else if (strategy == 1) {
         double t1 = wctime();
-        RUN(par, states);
+        par_CALL(lace, states);
         double t2 = wctime();
         INFO("PAR Time: %f\n", t2-t1);
     } else if (strategy == 2) {
         double t1 = wctime();
-        RUN(sat, states);
+        sat_CALL(lace, states);
         double t2 = wctime();
         INFO("SAT Time: %f\n", t2-t1);
     } else if (strategy == 3) {
         double t1 = wctime();
-        RUN(chaining, states);
+        chaining_CALL(lace, states);
         double t2 = wctime();
         INFO("CHAINING Time: %f\n", t2-t1);
     } else {
@@ -858,7 +873,7 @@ main(int argc, char **argv)
      * Second: start all worker threads with default settings.
      * Third: setup local variables using the LACE_ME macro.
      */
-    lace_start(workers, 1000000);
+    lace_start(workers, 1000000, 0);
 
     /**
      * Initialize Sylvan.
@@ -879,10 +894,10 @@ main(int argc, char **argv)
     sylvan_set_limits(max, 1, 16);
     sylvan_init_package();
     sylvan_init_ldd();
-    sylvan_gc_hook_pregc(TASK(gc_start));
-    sylvan_gc_hook_postgc(TASK(gc_end));
+    sylvan_gc_hook_pregc(gc_start_CALL);
+    sylvan_gc_hook_postgc(gc_end_CALL);
 
-    RUN(run);
+    run();
 
     print_memory_usage();
     sylvan_stats_report(stdout);

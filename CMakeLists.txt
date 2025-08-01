@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.17)
 
 project(sylvan
-    VERSION 1.9.1
+    VERSION 2.0.0
     DESCRIPTION "Sylvan, a parallel decision diagram library"
     HOMEPAGE_URL "https://github.com/trolando/sylvan"
     LANGUAGES C CXX
@@ -30,7 +30,7 @@ if(NOT TARGET lace)
     FetchContent_Declare(
         lace
         GIT_REPOSITORY https://github.com/trolando/lace.git
-        GIT_TAG        v1.5.0
+        GIT_TAG        v2.0.3
     )
     FetchContent_MakeAvailable(lace)
   endif()

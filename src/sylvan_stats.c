@@ -124,6 +124,8 @@ struct
 };
 
 VOID_TASK_0(sylvan_stats_reset_perthread)
+
+void sylvan_stats_reset_perthread_CALL(lace_worker* lace)
 {
 #ifdef __ELF__
     for (int i=0; i<SYLVAN_COUNTER_COUNTER; i++) {
@@ -151,23 +153,24 @@ VOID_TASK_0(sylvan_stats_reset_perthread)
 #endif
 }
 
-VOID_TASK_IMPL_0(sylvan_stats_init)
+void sylvan_stats_init_CALL(lace_worker* lace)
 {
 #ifndef __ELF__
     pthread_key_create(&sylvan_stats_key, NULL);
 #endif
-    TOGETHER(sylvan_stats_reset_perthread);
+    sylvan_stats_reset_perthread_TOGETHER();
 }
 
 /**
  * Reset all counters (for statistics)
  */
-VOID_TASK_IMPL_0(sylvan_stats_reset)
+void sylvan_stats_reset_CALL(lace_worker* lace)
 {
-    TOGETHER(sylvan_stats_reset_perthread);
+    sylvan_stats_reset_perthread_TOGETHER();
 }
 
 VOID_TASK_1(sylvan_stats_sum, sylvan_stats_t*, target)
+void sylvan_stats_sum_CALL(lace_worker* lace, sylvan_stats_t* target)
 {
 #ifdef __ELF__
     for (int i=0; i<SYLVAN_COUNTER_COUNTER; i++) {
@@ -189,10 +192,10 @@ VOID_TASK_1(sylvan_stats_sum, sylvan_stats_t*, target)
 #endif
 }
 
-VOID_TASK_IMPL_1(sylvan_stats_snapshot, sylvan_stats_t*, target)
+void sylvan_stats_snapshot_CALL(lace_worker* lace, sylvan_stats_t* target)
 {
     memset(target, 0, sizeof(sylvan_stats_t));
-    TOGETHER(sylvan_stats_sum, target);
+    sylvan_stats_sum_TOGETHER(target);
 }
 
 #define BLACK "\33[22;30m"
@@ -281,15 +284,15 @@ sylvan_stats_report(FILE *target)
 
 #else
 
-VOID_TASK_IMPL_0(sylvan_stats_init)
+void sylvan_stats_init_CALL(lace_worker* lace)
 {
 }
 
-VOID_TASK_IMPL_0(sylvan_stats_reset)
+void sylvan_stats_reset_CALL(lace_worker* lace)
 {
 }
 
-VOID_TASK_IMPL_1(sylvan_stats_snapshot, sylvan_stats_t*, target)
+void sylvan_stats_snapshot_CALL(lace_worker* lace, sylvan_stats_t* target)
 {
     memset(target, 0, sizeof(sylvan_stats_t));
 }

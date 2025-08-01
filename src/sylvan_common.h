@@ -83,8 +83,7 @@ void sylvan_register_quit(quit_cb cb);
 /**
  * Return number of occupied buckets in nodes table and total number of buckets.
  */
-VOID_TASK_DECL_2(sylvan_table_usage, size_t*, size_t*);
-#define sylvan_table_usage(filled, total) (RUN(sylvan_table_usage, filled, total))
+static inline void sylvan_table_usage(size_t* filled, size_t* total);
 
 /**
  * GARBAGE COLLECTION
@@ -121,12 +120,7 @@ VOID_TASK_DECL_2(sylvan_table_usage, size_t*, size_t*);
 /**
  * Trigger garbage collection manually.
  */
-
-/**
- * Trigger garbage collection manually.
- */
-VOID_TASK_DECL_0(sylvan_gc);
-#define sylvan_gc() (RUN(sylvan_gc))
+static inline void sylvan_gc(void);
 
 /**
  * Enable or disable garbage collection.
@@ -143,30 +137,32 @@ void sylvan_gc_disable(void);
  * This is just a call to the Lace framework to see if NEWFRAME has been used.
  * Before calling this, make sure all used BDDs are referenced.
  */
-#define sylvan_gc_test() YIELD_NEWFRAME()
+static inline void sylvan_gc_test(lace_worker* lace)
+{
+    lace_check_yield(lace);
+}
 
 /**
  * Clear the operation cache.
  */
-VOID_TASK_DECL_0(sylvan_clear_cache);
-#define sylvan_clear_cache() RUN(sylvan_clear_cache)
+
+static inline void sylvan_clear_cache(void);
 
 /**
  * Clear the nodes table (data part) and mark all nodes with the marking mechanisms.
  */
-VOID_TASK_DECL_0(sylvan_clear_and_mark);
-#define sylvan_clear_and_mark() RUN(sylvan_clear_and_mark)
+
+static inline void sylvan_clear_and_mark(void);
 
 /**
  * Clear the nodes table (hash part) and rehash all marked nodes.
  */
-VOID_TASK_DECL_0(sylvan_rehash_all);
-#define sylvan_rehash_all() RUN(sylvan_rehash_all)
+static inline void sylvan_rehash_all(void);
 
 /**
  * Callback type
  */
-LACE_TYPEDEF_CB(void, gc_hook_cb);
+typedef void (*gc_hook_cb)(lace_worker* lace);
 
 /**
  * Add a hook that is called before garbage collection begins.
@@ -202,7 +198,7 @@ void sylvan_gc_add_mark(gc_hook_cb mark_cb);
  * Always double size on gc() until maximum reached.
  * Use sylvan_gc_hook_main() to set this heuristic.
  */
-VOID_TASK_DECL_0(sylvan_gc_aggressive_resize);
+VOID_TASK_0(sylvan_gc_aggressive_resize);
 
 /**
  * One of the hooks for resizing behavior.
@@ -210,7 +206,13 @@ VOID_TASK_DECL_0(sylvan_gc_aggressive_resize);
  * Double size on gc() whenever >50% is used.
  * Use sylvan_gc_hook_main() to set this heuristic.
  */
-VOID_TASK_DECL_0(sylvan_gc_normal_resize);
+VOID_TASK_0(sylvan_gc_normal_resize);
+
+VOID_TASK_2(sylvan_table_usage, size_t*, filled, size_t*, total);
+VOID_TASK_0(sylvan_gc);
+VOID_TASK_0(sylvan_clear_cache);
+VOID_TASK_0(sylvan_clear_and_mark);
+VOID_TASK_0(sylvan_rehash_all);
 
 #ifdef __cplusplus
 }

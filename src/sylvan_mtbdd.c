@@ -86,7 +86,7 @@ mtbdd_getdouble(MTBDD leaf)
  */
 
 /* Recursively mark MDD nodes as 'in use' */
-VOID_TASK_IMPL_1(mtbdd_gc_mark_rec, MDD, mtbdd)
+void mtbdd_gc_mark_rec_CALL(lace_worker* lace, MDD mtbdd)
 {
     if (mtbdd == mtbdd_true) return;
     if (mtbdd == mtbdd_false) return;
@@ -94,9 +94,9 @@ VOID_TASK_IMPL_1(mtbdd_gc_mark_rec, MDD, mtbdd)
     if (llmsset_mark(nodes, MTBDD_STRIPMARK(mtbdd))) {
         mtbddnode_t n = MTBDD_GETNODE(mtbdd);
         if (!mtbddnode_isleaf(n)) {
-            SPAWN(mtbdd_gc_mark_rec, mtbddnode_getlow(n));
-            CALL(mtbdd_gc_mark_rec, mtbddnode_gethigh(n));
-            SYNC(mtbdd_gc_mark_rec);
+            mtbdd_gc_mark_rec_SPAWN(lace, mtbddnode_getlow(n));
+            mtbdd_gc_mark_rec_CALL(lace, mtbddnode_gethigh(n));
+            mtbdd_gc_mark_rec_SYNC(lace);
         }
     }
 }
@@ -155,39 +155,43 @@ mtbdd_count_protected()
 
 /* Called during garbage collection */
 VOID_TASK_0(mtbdd_gc_mark_external_refs)
+
+void mtbdd_gc_mark_external_refs_CALL(lace_worker* lace)
 {
     // iterate through refs hash table, mark all found
     size_t count=0;
     uint64_t *it = refs_iter(&mtbdd_refs, 0, mtbdd_refs.refs_size);
     while (it != NULL) {
-        SPAWN(mtbdd_gc_mark_rec, refs_next(&mtbdd_refs, &it, mtbdd_refs.refs_size));
+        mtbdd_gc_mark_rec_SPAWN(lace, refs_next(&mtbdd_refs, &it, mtbdd_refs.refs_size));
         count++;
     }
     while (count--) {
-        SYNC(mtbdd_gc_mark_rec);
+        mtbdd_gc_mark_rec_SYNC(lace);
     }
 }
 
 VOID_TASK_0(mtbdd_gc_mark_protected)
+
+void mtbdd_gc_mark_protected_CALL(lace_worker* lace)
 {
     // iterate through refs hash table, mark all found
     size_t count=0;
     uint64_t *it = protect_iter(&mtbdd_protected, 0, mtbdd_protected.refs_size);
     while (it != NULL) {
         BDD *to_mark = (BDD*)protect_next(&mtbdd_protected, &it, mtbdd_protected.refs_size);
-        SPAWN(mtbdd_gc_mark_rec, *to_mark);
+        mtbdd_gc_mark_rec_SPAWN(lace, *to_mark);
         count++;
     }
     while (count--) {
-        SYNC(mtbdd_gc_mark_rec);
+        mtbdd_gc_mark_rec_SYNC(lace);
     }
 }
 
 /* Infrastructure for internal markings */
 typedef struct mtbdd_refs_task
 {
-    Task *t;
-    void *f;
+    lace_task* t;
+    void* f;
 } *mtbdd_refs_task_t;
 
 typedef struct mtbdd_refs_internal
@@ -200,6 +204,8 @@ typedef struct mtbdd_refs_internal
 DECLARE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
 
 VOID_TASK_2(mtbdd_refs_mark_p_par, const MTBDD**, begin, size_t, count)
+
+void mtbdd_refs_mark_p_par_CALL(lace_worker* lace, const MTBDD** begin, size_t count)
 {
     if (count < 32) {
         while (count) {
@@ -207,13 +213,15 @@ VOID_TASK_2(mtbdd_refs_mark_p_par, const MTBDD**, begin, size_t, count)
             count--;
         }
     } else {
-        SPAWN(mtbdd_refs_mark_p_par, begin, count / 2);
-        CALL(mtbdd_refs_mark_p_par, begin + (count / 2), count - count / 2);
-        SYNC(mtbdd_refs_mark_p_par);
+        mtbdd_refs_mark_p_par_SPAWN(lace, begin, count / 2);
+        mtbdd_refs_mark_p_par_CALL(lace, begin + (count / 2), count - count / 2);
+        mtbdd_refs_mark_p_par_SYNC(lace);
     }
 }
 
 VOID_TASK_2(mtbdd_refs_mark_r_par, MTBDD*, begin, size_t, count)
+
+void mtbdd_refs_mark_r_par_CALL(lace_worker* lace, MTBDD* begin, size_t count)
 {
     if (count < 32) {
         while (count) {
@@ -221,45 +229,50 @@ VOID_TASK_2(mtbdd_refs_mark_r_par, MTBDD*, begin, size_t, count)
             count--;
         }
     } else {
-        SPAWN(mtbdd_refs_mark_r_par, begin, count / 2);
-        CALL(mtbdd_refs_mark_r_par, begin + (count / 2), count - count / 2);
-        SYNC(mtbdd_refs_mark_r_par);
+        mtbdd_refs_mark_r_par_SPAWN(lace, begin, count / 2);
+        mtbdd_refs_mark_r_par_CALL(lace, begin + (count / 2), count - count / 2);
+        mtbdd_refs_mark_r_par_SYNC(lace);
     }
 }
 
 VOID_TASK_2(mtbdd_refs_mark_s_par, mtbdd_refs_task_t, begin, size_t, count)
+void mtbdd_refs_mark_s_par_CALL(lace_worker* lace, mtbdd_refs_task_t begin, size_t count)
 {
     if (count < 32) {
         while (count > 0) {
-            Task *t = begin->t;
-            if (!TASK_IS_STOLEN(t)) return;
-            if (t->f == begin->f && TASK_IS_COMPLETED(t)) {
-                mtbdd_gc_mark_rec(*(MTBDD*)TASK_RESULT(t));
+            lace_task* t = begin->t;
+            if (!lace_is_stolen_task(t)) return;
+            if (t->f == begin->f && lace_is_completed_task(t)) {
+                mtbdd_gc_mark_rec(*(MTBDD*)lace_task_result(t));
             }
             begin += 1;
             count -= 1;
         }
     } else {
-        if (!TASK_IS_STOLEN(begin->t)) return;
-        SPAWN(mtbdd_refs_mark_s_par, begin, count / 2);
-        CALL(mtbdd_refs_mark_s_par, begin + (count / 2), count - count / 2);
-        SYNC(mtbdd_refs_mark_s_par);
+        if (!lace_is_stolen_task(begin->t)) return;
+        mtbdd_refs_mark_s_par_SPAWN(lace, begin, count / 2);
+        mtbdd_refs_mark_s_par_CALL(lace, begin + (count / 2), count - count / 2);
+        mtbdd_refs_mark_s_par_SYNC(lace);
     }
 }
 
 VOID_TASK_0(mtbdd_refs_mark_task)
+
+void mtbdd_refs_mark_task_CALL(lace_worker* lace)
 {
     LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
-    SPAWN(mtbdd_refs_mark_p_par, mtbdd_refs_key->pbegin, mtbdd_refs_key->pcur-mtbdd_refs_key->pbegin);
-    SPAWN(mtbdd_refs_mark_r_par, mtbdd_refs_key->rbegin, mtbdd_refs_key->rcur-mtbdd_refs_key->rbegin);
-    CALL(mtbdd_refs_mark_s_par, mtbdd_refs_key->sbegin, mtbdd_refs_key->scur-mtbdd_refs_key->sbegin);
-    SYNC(mtbdd_refs_mark_r_par);
-    SYNC(mtbdd_refs_mark_p_par);
+    mtbdd_refs_mark_p_par_SPAWN(lace, mtbdd_refs_key->pbegin, mtbdd_refs_key->pcur-mtbdd_refs_key->pbegin);
+    mtbdd_refs_mark_r_par_SPAWN(lace, mtbdd_refs_key->rbegin, mtbdd_refs_key->rcur-mtbdd_refs_key->rbegin);
+    mtbdd_refs_mark_s_par_CALL(lace, mtbdd_refs_key->sbegin, mtbdd_refs_key->scur-mtbdd_refs_key->sbegin);
+    mtbdd_refs_mark_r_par_SYNC(lace);
+    mtbdd_refs_mark_p_par_SYNC(lace);
 }
 
 VOID_TASK_0(mtbdd_refs_mark)
+
+void mtbdd_refs_mark_CALL(lace_worker* lace)
 {
-    TOGETHER(mtbdd_refs_mark_task);
+    mtbdd_refs_mark_task_TOGETHER();
 }
 
 void
@@ -277,15 +290,18 @@ mtbdd_refs_init_key(void)
 }
 
 VOID_TASK_0(mtbdd_refs_init_task)
-{
+
+void mtbdd_refs_init_task_CALL(lace_worker* lace){
     mtbdd_refs_init_key();
 }
 
 VOID_TASK_0(mtbdd_refs_init)
+
+void mtbdd_refs_init_CALL(lace_worker* lace)
 {
     INIT_THREAD_LOCAL(mtbdd_refs_key);
-    TOGETHER(mtbdd_refs_init_task);
-    sylvan_gc_add_mark(TASK(mtbdd_refs_mark));
+    mtbdd_refs_init_task_TOGETHER();
+    sylvan_gc_add_mark(mtbdd_refs_mark_CALL);
 }
 
 void
@@ -359,7 +375,7 @@ mtbdd_refs_pop(long amount)
 }
 
 void
-mtbdd_refs_spawn(Task *t)
+mtbdd_refs_spawn(lace_task* t)
 {
     LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
     mtbdd_refs_key->scur->t = t;
@@ -403,8 +419,8 @@ sylvan_init_mtbdd()
     mtbdd_initialized = 1;
 
     sylvan_register_quit(mtbdd_quit);
-    sylvan_gc_add_mark(TASK(mtbdd_gc_mark_external_refs));
-    sylvan_gc_add_mark(TASK(mtbdd_gc_mark_protected));
+    sylvan_gc_add_mark(mtbdd_gc_mark_external_refs_CALL);
+    sylvan_gc_add_mark(mtbdd_gc_mark_protected_CALL);
 
     refs_create(&mtbdd_refs, 1024);
     if (!mtbdd_protected_created) {
@@ -412,7 +428,7 @@ sylvan_init_mtbdd()
         mtbdd_protected_created = 1;
     }
 
-    RUN(mtbdd_refs_init);
+    mtbdd_refs_init();
 }
 
 /**
@@ -429,7 +445,7 @@ mtbdd_makeleaf(uint32_t type, uint64_t value)
     int created;
     uint64_t index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
-        RUN(sylvan_gc);
+        sylvan_gc(); // FIXME ?
 
         index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
@@ -450,7 +466,7 @@ _mtbdd_makenode_gc(MTBDD low, MTBDD high)
 {
     mtbdd_refs_push(low);
     mtbdd_refs_push(high);
-    RUN(sylvan_gc);
+    sylvan_gc();
     mtbdd_refs_pop(2);
 }
 
@@ -505,7 +521,7 @@ mtbdd_makemapnode(uint32_t var, MTBDD low, MTBDD high)
     if (index == 0) {
         mtbdd_refs_push(low);
         mtbdd_refs_push(high);
-        RUN(sylvan_gc);
+        sylvan_gc(); //FIXME
         mtbdd_refs_pop(2);
 
         index = llmsset_lookup(nodes, n.a, n.b, &created);
@@ -628,14 +644,14 @@ mtbdd_cube(MTBDD variables, uint8_t *cube, MTBDD terminal)
  * Same as mtbdd_cube, but also performs "or" with existing MTBDD,
  * effectively adding an item to the set
  */
-TASK_IMPL_4(MTBDD, mtbdd_union_cube, MTBDD, mtbdd, MTBDD, vars, uint8_t*, cube, MTBDD, terminal)
+MTBDD mtbdd_union_cube_CALL(lace_worker* lace, MTBDD mtbdd, MTBDD vars, uint8_t* cube, MTBDD terminal)
 {
     /* Terminal cases */
     if (mtbdd == terminal) return terminal;
     if (mtbdd == mtbdd_false) return mtbdd_cube(vars, cube, terminal);
     if (vars == mtbdd_true) return terminal;
 
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     mtbddnode_t nv = MTBDD_GETNODE(vars);
     uint32_t v = mtbddnode_getvariable(nv);
@@ -646,10 +662,10 @@ TASK_IMPL_4(MTBDD, mtbdd_union_cube, MTBDD, mtbdd, MTBDD, vars, uint8_t*, cube, 
     if (va < v) {
         MTBDD low = node_getlow(mtbdd, na);
         MTBDD high = node_gethigh(mtbdd, na);
-        mtbdd_refs_spawn(SPAWN(mtbdd_union_cube, high, vars, cube, terminal));
-        BDD new_low = mtbdd_union_cube(low, vars, cube, terminal);
+        mtbdd_refs_spawn(mtbdd_union_cube_SPAWN(lace, high, vars, cube, terminal));
+        BDD new_low = mtbdd_union_cube_CALL(lace, low, vars, cube, terminal);
         mtbdd_refs_push(new_low);
-        BDD new_high = mtbdd_refs_sync(SYNC(mtbdd_union_cube));
+        BDD new_high = mtbdd_refs_sync(mtbdd_union_cube_SYNC(lace));
         mtbdd_refs_pop(1);
         if (new_low != low || new_high != high) return mtbdd_makenode(va, new_low, new_high);
         else return mtbdd;
@@ -659,7 +675,7 @@ TASK_IMPL_4(MTBDD, mtbdd_union_cube, MTBDD, mtbdd, MTBDD, vars, uint8_t*, cube, 
         switch (*cube) {
         case 0:
         {
-            MTBDD new_low = mtbdd_union_cube(low, node_gethigh(vars, nv), cube+1, terminal);
+            MTBDD new_low = mtbdd_union_cube_CALL(lace, low, node_gethigh(vars, nv), cube+1, terminal);
             if (new_low != low) return mtbdd_makenode(v, new_low, high);
             else return mtbdd;
         }
@@ -671,10 +687,10 @@ TASK_IMPL_4(MTBDD, mtbdd_union_cube, MTBDD, mtbdd, MTBDD, vars, uint8_t*, cube, 
         }
         case 2:
         {
-            mtbdd_refs_spawn(SPAWN(mtbdd_union_cube, high, node_gethigh(vars, nv), cube+1, terminal));
+            mtbdd_refs_spawn(mtbdd_union_cube_SPAWN(lace, high, node_gethigh(vars, nv), cube+1, terminal));
             MTBDD new_low = mtbdd_union_cube(low, node_gethigh(vars, nv), cube+1, terminal);
             mtbdd_refs_push(new_low);
-            MTBDD new_high = mtbdd_refs_sync(SYNC(mtbdd_union_cube));
+            MTBDD new_high = mtbdd_refs_sync(mtbdd_union_cube_SYNC(lace));
             mtbdd_refs_pop(1);
             if (new_low != low || new_high != high) return mtbdd_makenode(v, new_low, new_high);
             return mtbdd;
@@ -700,10 +716,10 @@ TASK_IMPL_4(MTBDD, mtbdd_union_cube, MTBDD, mtbdd, MTBDD, vars, uint8_t*, cube, 
         }
         case 2:
         {
-            mtbdd_refs_spawn(SPAWN(mtbdd_union_cube, mtbdd, node_gethigh(vars, nv), cube+1, terminal));
+            mtbdd_refs_spawn(mtbdd_union_cube_SPAWN(lace, mtbdd, node_gethigh(vars, nv), cube+1, terminal));
             MTBDD new_low = mtbdd_union_cube(mtbdd, node_gethigh(vars, nv), cube+1, terminal);
             mtbdd_refs_push(new_low);
-            MTBDD new_high = mtbdd_refs_sync(SYNC(mtbdd_union_cube));
+            MTBDD new_high = mtbdd_refs_sync(mtbdd_union_cube_SYNC(lace));
             mtbdd_refs_pop(1);
             return mtbdd_makenode(v, new_low, new_high);
         }
@@ -720,14 +736,14 @@ TASK_IMPL_4(MTBDD, mtbdd_union_cube, MTBDD, mtbdd, MTBDD, vars, uint8_t*, cube, 
 /**
  * Apply a binary operation <op> to <a> and <b>.
  */
-TASK_IMPL_3(MTBDD, mtbdd_apply, MTBDD, a, MTBDD, b, mtbdd_apply_op, op)
+MTBDD mtbdd_apply_CALL(lace_worker* lace, MTBDD a, MTBDD b, mtbdd_apply_op op)
 {
     /* Check terminal case */
-    MTBDD result = WRAP(op, &a, &b);
+    MTBDD result = op(lace, &a, &b);
     if (result != mtbdd_invalid) return result;
 
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_APPLY);
@@ -778,9 +794,9 @@ TASK_IMPL_3(MTBDD, mtbdd_apply, MTBDD, a, MTBDD, b, mtbdd_apply_op, op)
     }
 
     /* Recursive */
-    mtbdd_refs_spawn(SPAWN(mtbdd_apply, ahigh, bhigh, op));
-    MTBDD low = mtbdd_refs_push(CALL(mtbdd_apply, alow, blow, op));
-    MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_apply));
+    mtbdd_refs_spawn(mtbdd_apply_SPAWN(lace, ahigh, bhigh, op));
+    MTBDD low = mtbdd_refs_push(mtbdd_apply_CALL(lace, alow, blow, op));
+    MTBDD high = mtbdd_refs_sync(mtbdd_apply_SYNC(lace));
     mtbdd_refs_pop(1);
     result = mtbdd_makenode(v, low, high);
 
@@ -795,14 +811,14 @@ TASK_IMPL_3(MTBDD, mtbdd_apply, MTBDD, a, MTBDD, b, mtbdd_apply_op, op)
 /**
  * Apply a binary operation <op> to <a> and <b> with parameter <p>
  */
-TASK_IMPL_5(MTBDD, mtbdd_applyp, MTBDD, a, MTBDD, b, size_t, p, mtbdd_applyp_op, op, uint64_t, opid)
+MTBDD mtbdd_applyp_CALL(lace_worker* lace, MTBDD a, MTBDD b, size_t p, mtbdd_applyp_op op, uint64_t opid)
 {
     /* Check terminal case */
-    MTBDD result = WRAP(op, &a, &b, p);
+    MTBDD result = op(lace, &a, &b, p);
     if (result != mtbdd_invalid) return result;
 
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_APPLY);
@@ -852,9 +868,9 @@ TASK_IMPL_5(MTBDD, mtbdd_applyp, MTBDD, a, MTBDD, b, size_t, p, mtbdd_applyp_op,
     }
 
     /* Recursive */
-    mtbdd_refs_spawn(SPAWN(mtbdd_applyp, ahigh, bhigh, p, op, opid));
-    MTBDD low = mtbdd_refs_push(CALL(mtbdd_applyp, alow, blow, p, op, opid));
-    MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_applyp));
+    mtbdd_refs_spawn(mtbdd_applyp_SPAWN(lace, ahigh, bhigh, p, op, opid));
+    MTBDD low = mtbdd_refs_push(mtbdd_applyp_CALL(lace, alow, blow, p, op, opid));
+    MTBDD high = mtbdd_refs_sync(mtbdd_applyp_SYNC(lace));
     mtbdd_refs_pop(1);
     result = mtbdd_makenode(v, low, high);
 
@@ -869,10 +885,10 @@ TASK_IMPL_5(MTBDD, mtbdd_applyp, MTBDD, a, MTBDD, b, size_t, p, mtbdd_applyp_op,
 /**
  * Apply a unary operation <op> to <dd>.
  */
-TASK_IMPL_3(MTBDD, mtbdd_uapply, MTBDD, dd, mtbdd_uapply_op, op, size_t, param)
+MTBDD mtbdd_uapply_CALL(lace_worker* lace, MTBDD dd, mtbdd_uapply_op op, size_t param)
 {
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_UAPPLY);
@@ -885,7 +901,7 @@ TASK_IMPL_3(MTBDD, mtbdd_uapply, MTBDD, dd, mtbdd_uapply_op, op, size_t, param)
     }
 
     /* Check terminal case */
-    result = WRAP(op, dd, param);
+    result = op(lace, dd, param);
     if (result != mtbdd_invalid) {
         /* Store in cache */
         if (cache_put3(CACHE_MTBDD_UAPPLY, dd, (size_t)op, param, result)) {
@@ -901,9 +917,9 @@ TASK_IMPL_3(MTBDD, mtbdd_uapply, MTBDD, dd, mtbdd_uapply_op, op, size_t, param)
     MTBDD ddhigh = node_gethigh(dd, ndd);
 
     /* Recursive */
-    mtbdd_refs_spawn(SPAWN(mtbdd_uapply, ddhigh, op, param));
-    MTBDD low = mtbdd_refs_push(CALL(mtbdd_uapply, ddlow, op, param));
-    MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_uapply));
+    mtbdd_refs_spawn(mtbdd_uapply_SPAWN(lace, ddhigh, op, param));
+    MTBDD low = mtbdd_refs_push(mtbdd_uapply_CALL(lace, ddlow, op, param));
+    MTBDD high = mtbdd_refs_sync(mtbdd_uapply_SYNC(lace));
     mtbdd_refs_pop(1);
     result = mtbdd_makenode(mtbddnode_getvariable(ndd), low, high);
 
@@ -916,6 +932,8 @@ TASK_IMPL_3(MTBDD, mtbdd_uapply, MTBDD, dd, mtbdd_uapply_op, op, size_t, param)
 }
 
 TASK_2(MTBDD, mtbdd_uop_times_uint, MTBDD, a, size_t, k)
+
+MTBDD mtbdd_uop_times_uint_CALL(lace_worker* lace, MTBDD a, size_t k)
 {
     if (a == mtbdd_false) return mtbdd_false;
     if (a == mtbdd_true) return mtbdd_true;
@@ -945,6 +963,8 @@ TASK_2(MTBDD, mtbdd_uop_times_uint, MTBDD, a, size_t, k)
 }
 
 TASK_2(MTBDD, mtbdd_uop_pow_uint, MTBDD, a, size_t, k)
+
+MTBDD mtbdd_uop_pow_uint_CALL(lace_worker* lace, MTBDD a, size_t k)
 {
     if (a == mtbdd_false) return mtbdd_false;
     if (a == mtbdd_true) return mtbdd_true;
@@ -970,40 +990,40 @@ TASK_2(MTBDD, mtbdd_uop_pow_uint, MTBDD, a, size_t, k)
     return mtbdd_invalid;
 }
 
-TASK_IMPL_3(MTBDD, mtbdd_abstract_op_plus, MTBDD, a, MTBDD, b, int, k)
+MTBDD mtbdd_abstract_op_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 {
     if (k==0) {
-        return mtbdd_apply(a, b, TASK(mtbdd_op_plus));
+        return mtbdd_apply(a, b, mtbdd_op_plus_CALL);
     } else {
         uint64_t factor = 1ULL<<k; // skip 1,2,3,4: times 2,4,8,16
-        return mtbdd_uapply(a, TASK(mtbdd_uop_times_uint), factor);
+        return mtbdd_uapply(a, mtbdd_uop_times_uint_CALL, factor);
     }
 }
 
-TASK_IMPL_3(MTBDD, mtbdd_abstract_op_times, MTBDD, a, MTBDD, b, int, k)
+MTBDD mtbdd_abstract_op_times_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 {
     if (k==0) {
-        return mtbdd_apply(a, b, TASK(mtbdd_op_times));
+        return mtbdd_apply(a, b, mtbdd_op_times_CALL);
     } else {
         uint64_t squares = 1ULL<<k; // square k times, ie res^(2^k): 2,4,8,16
-        return mtbdd_uapply(a, TASK(mtbdd_uop_pow_uint), squares);
+        return mtbdd_uapply(a, mtbdd_uop_pow_uint_CALL, squares);
     }
 }
 
-TASK_IMPL_3(MTBDD, mtbdd_abstract_op_min, MTBDD, a, MTBDD, b, int, k)
+MTBDD mtbdd_abstract_op_min_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 {
-    return k == 0 ? mtbdd_apply(a, b, TASK(mtbdd_op_min)) : a;
+    return k == 0 ? mtbdd_apply(a, b, mtbdd_op_min_CALL) : a;
 }
 
-TASK_IMPL_3(MTBDD, mtbdd_abstract_op_max, MTBDD, a, MTBDD, b, int, k)
+MTBDD mtbdd_abstract_op_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 {
-    return k == 0 ? mtbdd_apply(a, b, TASK(mtbdd_op_max)) : a;
+    return k == 0 ? mtbdd_apply(a, b, mtbdd_op_max_CALL) : a;
 }
 
 /**
  * Abstract the variables in <v> from <a> using the operation <op>
  */
-TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
+MTBDD mtbdd_abstract_CALL(lace_worker* lace, MTBDD a, MTBDD v, mtbdd_abstract_op op)
 {
     /* Check terminal case */
     if (a == mtbdd_false) return mtbdd_false;
@@ -1011,7 +1031,7 @@ TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
     if (v == mtbdd_true) return a;
 
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_ABSTRACT);
@@ -1035,7 +1055,7 @@ TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
         }
 
         /* Compute result */
-        result = WRAP(op, a, a, k);
+        result = op(lace, a, a, k);
 
         /* Store in cache */
         if (cache_put3(CACHE_MTBDD_ABSTRACT, a, v | (k << 40), (size_t)op, result)) {
@@ -1069,22 +1089,22 @@ TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
     if (v == mtbdd_true) {
         result = a;
     } else if (var_a < var_v) {
-        mtbdd_refs_spawn(SPAWN(mtbdd_abstract, node_gethigh(a, na), v, op));
-        MTBDD low = mtbdd_refs_push(CALL(mtbdd_abstract, node_getlow(a, na), v, op));
-        MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_abstract));
+        mtbdd_refs_spawn(mtbdd_abstract_SPAWN(lace, node_gethigh(a, na), v, op));
+        MTBDD low = mtbdd_refs_push(mtbdd_abstract_CALL(lace, node_getlow(a, na), v, op));
+        MTBDD high = mtbdd_refs_sync(mtbdd_abstract_SYNC(lace));
         mtbdd_refs_pop(1);
         result = mtbdd_makenode(var_a, low, high);
     } else /* var_a == var_v */ {
-        mtbdd_refs_spawn(SPAWN(mtbdd_abstract, node_gethigh(a, na), node_gethigh(v, nv), op));
-        MTBDD low = mtbdd_refs_push(CALL(mtbdd_abstract, node_getlow(a, na), node_gethigh(v, nv), op));
-        MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(SYNC(mtbdd_abstract)));
-        result = WRAP(op, low, high, 0);
+        mtbdd_refs_spawn(mtbdd_abstract_SPAWN(lace, node_gethigh(a, na), node_gethigh(v, nv), op));
+        MTBDD low = mtbdd_refs_push(mtbdd_abstract_CALL(lace, node_getlow(a, na), node_gethigh(v, nv), op));
+        MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(mtbdd_abstract_SYNC(lace)));
+        result = op(lace, low, high, 0);
         mtbdd_refs_pop(2);
     }
 
     if (k) {
         mtbdd_refs_push(result);
-        result = WRAP(op, result, result, k);
+        result = op(lace, result, result, k);
         mtbdd_refs_pop(1);
     }
 
@@ -1101,7 +1121,7 @@ TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
  * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
  * For Integer/Double MTBDDs, mtbdd_false is interpreted as "0" or "0.0".
  */
-TASK_IMPL_2(MTBDD, mtbdd_op_plus, MTBDD*, pa, MTBDD*, pb)
+MTBDD mtbdd_op_plus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
 {
     MTBDD a = *pa, b = *pb;
     if (a == mtbdd_false) return b;
@@ -1157,7 +1177,7 @@ TASK_IMPL_2(MTBDD, mtbdd_op_plus, MTBDD*, pa, MTBDD*, pb)
  * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
  * For Integer/Double MTBDDs, mtbdd_false is interpreted as "0" or "0.0".
  */
-TASK_IMPL_2(MTBDD, mtbdd_op_minus, MTBDD*, pa, MTBDD*, pb)
+MTBDD mtbdd_op_minus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
 {
     MTBDD a = *pa, b = *pb;
     if (a == mtbdd_false) return mtbdd_negate(b);
@@ -1204,7 +1224,7 @@ TASK_IMPL_2(MTBDD, mtbdd_op_minus, MTBDD*, pa, MTBDD*, pb)
  * For Integer/Double MTBDD, if either operand is mtbdd_false (not defined),
  * then the result is mtbdd_false (i.e. not defined).
  */
-TASK_IMPL_2(MTBDD, mtbdd_op_times, MTBDD*, pa, MTBDD*, pb)
+MTBDD mtbdd_op_times_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
 {
     MTBDD a = *pa, b = *pb;
     if (a == mtbdd_false || b == mtbdd_false) return mtbdd_false;
@@ -1272,7 +1292,7 @@ TASK_IMPL_2(MTBDD, mtbdd_op_times, MTBDD*, pa, MTBDD*, pb)
  * For Integer/Double MTBDD, if either operand is mtbdd_false (not defined),
  * then the result is the other operand.
  */
-TASK_IMPL_2(MTBDD, mtbdd_op_min, MTBDD*, pa, MTBDD*, pb)
+MTBDD mtbdd_op_min_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
 {
     MTBDD a = *pa, b = *pb;
     if (a == mtbdd_true) return b;
@@ -1330,7 +1350,7 @@ TASK_IMPL_2(MTBDD, mtbdd_op_min, MTBDD*, pa, MTBDD*, pb)
  * For Integer/Double MTBDD, if either operand is mtbdd_false (not defined),
  * then the result is the other operand.
  */
-TASK_IMPL_2(MTBDD, mtbdd_op_max, MTBDD*, pa, MTBDD*, pb)
+MTBDD mtbdd_op_max_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
 {
     MTBDD a = *pa, b = *pb;
     if (a == mtbdd_true) return a;
@@ -1380,7 +1400,7 @@ TASK_IMPL_2(MTBDD, mtbdd_op_max, MTBDD*, pa, MTBDD*, pb)
     return mtbdd_invalid;
 }
 
-TASK_IMPL_2(MTBDD, mtbdd_op_cmpl, MTBDD, a, size_t, k)
+MTBDD mtbdd_op_cmpl_CALL(lace_worker* lace, MTBDD a, size_t k)
 {
     // if a is false, then it is a partial function. Keep partial!
     if (a == mtbdd_false) return mtbdd_false;
@@ -1410,7 +1430,7 @@ TASK_IMPL_2(MTBDD, mtbdd_op_cmpl, MTBDD, a, size_t, k)
     (void)k; // unused variable
 }
 
-TASK_IMPL_2(MTBDD, mtbdd_op_negate, MTBDD, a, size_t, k)
+MTBDD mtbdd_op_negate_CALL(lace_worker* lace, MTBDD a, size_t k)
 {
     // if a is false, then it is a partial function. Keep partial!
     if (a == mtbdd_false) return mtbdd_false;
@@ -1441,7 +1461,7 @@ TASK_IMPL_2(MTBDD, mtbdd_op_negate, MTBDD, a, size_t, k)
  * Compute IF <f> THEN <g> ELSE <h>.
  * <f> must be a Boolean MTBDD (or standard BDD).
  */
-TASK_IMPL_3(MTBDD, mtbdd_ite, MTBDD, f, MTBDD, g, MTBDD, h)
+MTBDD mtbdd_ite_CALL(lace_worker* lace, MTBDD f, MTBDD g, MTBDD h)
 {
     /* Terminal cases */
     if (f == mtbdd_true) return g;
@@ -1453,7 +1473,7 @@ TASK_IMPL_3(MTBDD, mtbdd_ite, MTBDD, f, MTBDD, g, MTBDD, h)
     // If all MTBDD's are Boolean, then there could be further optimizations (see sylvan_bdd.c)
 
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_ITE);
@@ -1488,9 +1508,9 @@ TASK_IMPL_3(MTBDD, mtbdd_ite, MTBDD, f, MTBDD, g, MTBDD, h)
     hhigh = (!lh && vh == v) ? node_gethigh(h, nh) : h;
 
     /* Recursive calls */
-    mtbdd_refs_spawn(SPAWN(mtbdd_ite, fhigh, ghigh, hhigh));
-    MTBDD low = mtbdd_refs_push(CALL(mtbdd_ite, flow, glow, hlow));
-    MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_ite));
+    mtbdd_refs_spawn(mtbdd_ite_SPAWN(lace, fhigh, ghigh, hhigh));
+    MTBDD low = mtbdd_refs_push(mtbdd_ite_CALL(lace, flow, glow, hlow));
+    MTBDD high = mtbdd_refs_sync(mtbdd_ite_SYNC(lace));
     mtbdd_refs_pop(1);
     result = mtbdd_makenode(v, low, high);
 
@@ -1505,7 +1525,7 @@ TASK_IMPL_3(MTBDD, mtbdd_ite, MTBDD, f, MTBDD, g, MTBDD, h)
 /**
  * Monad that converts double/fraction to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
  */
-TASK_IMPL_2(MTBDD, mtbdd_op_threshold_double, MTBDD, a, size_t, svalue)
+MTBDD mtbdd_op_threshold_double_CALL(lace_worker* lace, MTBDD a, size_t svalue)
 {
     /* We only expect "double" terminals, or false */
     if (a == mtbdd_false) return mtbdd_false;
@@ -1533,7 +1553,7 @@ TASK_IMPL_2(MTBDD, mtbdd_op_threshold_double, MTBDD, a, size_t, svalue)
 /**
  * Monad that converts double/fraction to a Boolean BDD, translate terminals > value to 1 and to 0 otherwise;
  */
-TASK_IMPL_2(MTBDD, mtbdd_op_strict_threshold_double, MTBDD, a, size_t, svalue)
+MTBDD mtbdd_op_strict_threshold_double_CALL(lace_worker* lace, MTBDD a, size_t svalue)
 {
     /* We only expect "double" terminals, or false */
     if (a == mtbdd_false) return mtbdd_false;
@@ -1558,20 +1578,22 @@ TASK_IMPL_2(MTBDD, mtbdd_op_strict_threshold_double, MTBDD, a, size_t, svalue)
     return mtbdd_invalid;
 }
 
-TASK_IMPL_2(MTBDD, mtbdd_threshold_double, MTBDD, dd, double, d)
+MTBDD mtbdd_threshold_double_CALL(lace_worker* lace, MTBDD dd, double d)
 {
-    return mtbdd_uapply(dd, TASK(mtbdd_op_threshold_double), *(size_t*)&d);
+    return mtbdd_uapply(dd, mtbdd_op_threshold_double_CALL, *(size_t*)&d);
 }
 
-TASK_IMPL_2(MTBDD, mtbdd_strict_threshold_double, MTBDD, dd, double, d)
+MTBDD mtbdd_strict_threshold_double_CALL(lace_worker* lace, MTBDD dd, double d)
 {
-    return mtbdd_uapply(dd, TASK(mtbdd_op_strict_threshold_double), *(size_t*)&d);
+    return mtbdd_uapply(dd, mtbdd_op_strict_threshold_double_CALL, *(size_t*)&d);
 }
 
 /**
  * Compare two Double MTBDDs, returns Boolean True if they are equal within some value epsilon
  */
 TASK_4(MTBDD, mtbdd_equal_norm_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, shortcircuit)
+
+MTBDD mtbdd_equal_norm_d2_CALL(lace_worker* lace, MTBDD a, MTBDD b, size_t svalue, int* shortcircuit)
 {
     /* Check short circuit */
     if (*shortcircuit) return mtbdd_false;
@@ -1602,7 +1624,7 @@ TASK_4(MTBDD, mtbdd_equal_norm_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, sho
     }
 
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_EQUAL_NORM);
@@ -1626,10 +1648,10 @@ TASK_4(MTBDD, mtbdd_equal_norm_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, sho
     blow  = vb == var ? node_getlow(b, nb)  : b;
     bhigh = vb == var ? node_gethigh(b, nb) : b;
 
-    SPAWN(mtbdd_equal_norm_d2, ahigh, bhigh, svalue, shortcircuit);
-    result = CALL(mtbdd_equal_norm_d2, alow, blow, svalue, shortcircuit);
+    mtbdd_equal_norm_d2_SPAWN(lace, ahigh, bhigh, svalue, shortcircuit);
+    result = mtbdd_equal_norm_d2_CALL(lace, alow, blow, svalue, shortcircuit);
     if (result == mtbdd_false) *shortcircuit = 1;
-    if (result != SYNC(mtbdd_equal_norm_d2)) result = mtbdd_false;
+    if (result != mtbdd_equal_norm_d2_SYNC(lace)) result = mtbdd_false;
     if (result == mtbdd_false) *shortcircuit = 1;
 
     /* Store in cache */
@@ -1640,12 +1662,12 @@ TASK_4(MTBDD, mtbdd_equal_norm_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, sho
     return result;
 }
 
-TASK_IMPL_3(MTBDD, mtbdd_equal_norm_d, MTBDD, a, MTBDD, b, double, d)
+MTBDD mtbdd_equal_norm_d_CALL(lace_worker* lace, MTBDD a, MTBDD b, double d)
 {
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
     int shortcircuit = 0;
-    return CALL(mtbdd_equal_norm_d2, a, b, *(size_t*)&d, &shortcircuit);
+    return mtbdd_equal_norm_d2_CALL(lace, a, b, *(size_t*)&d, &shortcircuit);
 }
 
 /**
@@ -1653,6 +1675,7 @@ TASK_IMPL_3(MTBDD, mtbdd_equal_norm_d, MTBDD, a, MTBDD, b, double, d)
  * This version computes the relative difference vs the value in a.
  */
 TASK_4(MTBDD, mtbdd_equal_norm_rel_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, shortcircuit)
+MTBDD mtbdd_equal_norm_rel_d2_CALL(lace_worker* lace, MTBDD a, MTBDD b, size_t svalue, int* shortcircuit)
 {
     /* Check short circuit */
     if (*shortcircuit) return mtbdd_false;
@@ -1678,7 +1701,7 @@ TASK_4(MTBDD, mtbdd_equal_norm_rel_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*,
     }
 
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_EQUAL_NORM_REL);
@@ -1702,10 +1725,10 @@ TASK_4(MTBDD, mtbdd_equal_norm_rel_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*,
     blow  = vb == var ? node_getlow(b, nb)  : b;
     bhigh = vb == var ? node_gethigh(b, nb) : b;
 
-    SPAWN(mtbdd_equal_norm_rel_d2, ahigh, bhigh, svalue, shortcircuit);
-    result = CALL(mtbdd_equal_norm_rel_d2, alow, blow, svalue, shortcircuit);
+    mtbdd_equal_norm_rel_d2_SPAWN(lace, ahigh, bhigh, svalue, shortcircuit);
+    result = mtbdd_equal_norm_rel_d2_CALL(lace, alow, blow, svalue, shortcircuit);
     if (result == mtbdd_false) *shortcircuit = 1;
-    if (result != SYNC(mtbdd_equal_norm_rel_d2)) result = mtbdd_false;
+    if (result != mtbdd_equal_norm_rel_d2_SYNC(lace)) result = mtbdd_false;
     if (result == mtbdd_false) *shortcircuit = 1;
 
     /* Store in cache */
@@ -1716,12 +1739,12 @@ TASK_4(MTBDD, mtbdd_equal_norm_rel_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*,
     return result;
 }
 
-TASK_IMPL_3(MTBDD, mtbdd_equal_norm_rel_d, MTBDD, a, MTBDD, b, double, d)
+MTBDD mtbdd_equal_norm_rel_d_CALL(lace_worker* lace, MTBDD a, MTBDD b, double d)
 {
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
     int shortcircuit = 0;
-    return CALL(mtbdd_equal_norm_rel_d2, a, b, *(size_t*)&d, &shortcircuit);
+    return mtbdd_equal_norm_rel_d2_CALL(lace, a, b, *(size_t*)&d, &shortcircuit);
 }
 
 /**
@@ -1729,6 +1752,8 @@ TASK_IMPL_3(MTBDD, mtbdd_equal_norm_rel_d, MTBDD, a, MTBDD, b, double, d)
  * For domains not in a / b, assume True.
  */
 TASK_3(MTBDD, mtbdd_leq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+
+MTBDD mtbdd_leq_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
 {
     /* Check short circuit */
     if (*shortcircuit) return mtbdd_false;
@@ -1741,7 +1766,7 @@ TASK_3(MTBDD, mtbdd_leq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
     if (b == mtbdd_false) return mtbdd_true;
 
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_LEQ);
@@ -1797,9 +1822,9 @@ TASK_3(MTBDD, mtbdd_leq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
         blow  = vb == var ? node_getlow(b, nb)  : b;
         bhigh = vb == var ? node_gethigh(b, nb) : b;
 
-        SPAWN(mtbdd_leq_rec, ahigh, bhigh, shortcircuit);
-        result = CALL(mtbdd_leq_rec, alow, blow, shortcircuit);
-        if (result != SYNC(mtbdd_leq_rec)) result = mtbdd_false;
+        mtbdd_leq_rec_SPAWN(lace, ahigh, bhigh, shortcircuit);
+        result = mtbdd_leq_rec_CALL(lace, alow, blow, shortcircuit);
+        if (result != mtbdd_leq_rec_SYNC(lace)) result = mtbdd_false;
     }
 
     if (result == mtbdd_false) *shortcircuit = 1;
@@ -1812,12 +1837,12 @@ TASK_3(MTBDD, mtbdd_leq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
     return result;
 }
 
-TASK_IMPL_2(MTBDD, mtbdd_leq, MTBDD, a, MTBDD, b)
+MTBDD mtbdd_leq_CALL(lace_worker* lace, MTBDD a, MTBDD b)
 {
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
     int shortcircuit = 0;
-    return CALL(mtbdd_leq_rec, a, b, &shortcircuit);
+    return mtbdd_leq_rec_CALL(lace, a, b, &shortcircuit);
 }
 
 /**
@@ -1825,6 +1850,8 @@ TASK_IMPL_2(MTBDD, mtbdd_leq, MTBDD, a, MTBDD, b)
  * For domains not in a / b, assume True.
  */
 TASK_3(MTBDD, mtbdd_less_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+
+MTBDD mtbdd_less_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
 {
     /* Check short circuit */
     if (*shortcircuit) return mtbdd_false;
@@ -1837,7 +1864,7 @@ TASK_3(MTBDD, mtbdd_less_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
     if (b == mtbdd_false) return mtbdd_true;
 
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_LESS);
@@ -1893,9 +1920,9 @@ TASK_3(MTBDD, mtbdd_less_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
         blow  = vb == var ? node_getlow(b, nb)  : b;
         bhigh = vb == var ? node_gethigh(b, nb) : b;
 
-        SPAWN(mtbdd_less_rec, ahigh, bhigh, shortcircuit);
-        result = CALL(mtbdd_less_rec, alow, blow, shortcircuit);
-        if (result != SYNC(mtbdd_less_rec)) result = mtbdd_false;
+        mtbdd_less_rec_SPAWN(lace, ahigh, bhigh, shortcircuit);
+        result = mtbdd_less_rec_CALL(lace, alow, blow, shortcircuit);
+        if (result != mtbdd_less_rec_SYNC(lace)) result = mtbdd_false;
     }
 
     if (result == mtbdd_false) *shortcircuit = 1;
@@ -1908,12 +1935,12 @@ TASK_3(MTBDD, mtbdd_less_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
     return result;
 }
 
-TASK_IMPL_2(MTBDD, mtbdd_less, MTBDD, a, MTBDD, b)
+MTBDD mtbdd_less_CALL(lace_worker* lace, MTBDD a, MTBDD b)
 {
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
     int shortcircuit = 0;
-    return CALL(mtbdd_less_rec, a, b, &shortcircuit);
+    return mtbdd_less_rec_CALL(lace, a, b, &shortcircuit);
 }
 
 /**
@@ -1921,6 +1948,8 @@ TASK_IMPL_2(MTBDD, mtbdd_less, MTBDD, a, MTBDD, b)
  * For domains not in a / b, assume True.
  */
 TASK_3(MTBDD, mtbdd_geq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+
+MTBDD mtbdd_geq_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
 {
     /* Check short circuit */
     if (*shortcircuit) return mtbdd_false;
@@ -1933,7 +1962,7 @@ TASK_3(MTBDD, mtbdd_geq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
     if (b == mtbdd_false) return mtbdd_true;
 
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_GEQ);
@@ -1989,9 +2018,9 @@ TASK_3(MTBDD, mtbdd_geq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
         blow  = vb == var ? node_getlow(b, nb)  : b;
         bhigh = vb == var ? node_gethigh(b, nb) : b;
 
-        SPAWN(mtbdd_geq_rec, ahigh, bhigh, shortcircuit);
-        result = CALL(mtbdd_geq_rec, alow, blow, shortcircuit);
-        if (result != SYNC(mtbdd_geq_rec)) result = mtbdd_false;
+        mtbdd_geq_rec_SPAWN(lace, ahigh, bhigh, shortcircuit);
+        result = mtbdd_geq_rec_CALL(lace, alow, blow, shortcircuit);
+        if (result != mtbdd_geq_rec_SYNC(lace)) result = mtbdd_false;
     }
 
     if (result == mtbdd_false) *shortcircuit = 1;
@@ -2004,12 +2033,12 @@ TASK_3(MTBDD, mtbdd_geq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
     return result;
 }
 
-TASK_IMPL_2(MTBDD, mtbdd_geq, MTBDD, a, MTBDD, b)
+MTBDD mtbdd_geq_CALL(lace_worker* lace, MTBDD a, MTBDD b)
 {
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
     int shortcircuit = 0;
-    return CALL(mtbdd_geq_rec, a, b, &shortcircuit);
+    return mtbdd_geq_rec_CALL(lace, a, b, &shortcircuit);
 }
 
 /**
@@ -2017,6 +2046,8 @@ TASK_IMPL_2(MTBDD, mtbdd_geq, MTBDD, a, MTBDD, b)
  * For domains not in a / b, assume True.
  */
 TASK_3(MTBDD, mtbdd_greater_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+
+MTBDD mtbdd_greater_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
 {
     /* Check short circuit */
     if (*shortcircuit) return mtbdd_false;
@@ -2029,7 +2060,7 @@ TASK_3(MTBDD, mtbdd_greater_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
     if (b == mtbdd_false) return mtbdd_true;
 
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_GREATER);
@@ -2085,9 +2116,9 @@ TASK_3(MTBDD, mtbdd_greater_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
         blow  = vb == var ? node_getlow(b, nb)  : b;
         bhigh = vb == var ? node_gethigh(b, nb) : b;
 
-        SPAWN(mtbdd_greater_rec, ahigh, bhigh, shortcircuit);
-        result = CALL(mtbdd_greater_rec, alow, blow, shortcircuit);
-        if (result != SYNC(mtbdd_greater_rec)) result = mtbdd_false;
+        mtbdd_greater_rec_SPAWN(lace, ahigh, bhigh, shortcircuit);
+        result = mtbdd_greater_rec_CALL(lace, alow, blow, shortcircuit);
+        if (result != mtbdd_greater_rec_SYNC(lace)) result = mtbdd_false;
     }
 
     if (result == mtbdd_false) *shortcircuit = 1;
@@ -2100,32 +2131,32 @@ TASK_3(MTBDD, mtbdd_greater_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
     return result;
 }
 
-TASK_IMPL_2(MTBDD, mtbdd_greater, MTBDD, a, MTBDD, b)
+MTBDD mtbdd_greater_CALL(lace_worker* lace, MTBDD a, MTBDD b)
 {
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
     int shortcircuit = 0;
-    return CALL(mtbdd_greater_rec, a, b, &shortcircuit);
+    return mtbdd_greater_rec_CALL(lace, a, b, &shortcircuit);
 }
 
 /**
  * Multiply <a> and <b>, and abstract variables <vars> using summation.
  * This is similar to the "and_exists" operation in BDDs.
  */
-TASK_IMPL_3(MTBDD, mtbdd_and_abstract_plus, MTBDD, a, MTBDD, b, MTBDD, v)
+MTBDD mtbdd_and_abstract_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
 {
     /* Check terminal case */
-    if (v == mtbdd_true) return mtbdd_apply(a, b, TASK(mtbdd_op_times));
-    MTBDD result = CALL(mtbdd_op_times, &a, &b);
+    if (v == mtbdd_true) return mtbdd_apply(a, b, mtbdd_op_times_CALL);
+    MTBDD result = mtbdd_op_times_CALL(lace, &a, &b);
     if (result != mtbdd_invalid) {
         mtbdd_refs_push(result);
-        result = mtbdd_abstract(result, v, TASK(mtbdd_abstract_op_plus));
+        result = mtbdd_abstract(result, v, mtbdd_abstract_op_plus_CALL);
         mtbdd_refs_pop(1);
         return result;
     }
 
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_AND_ABSTRACT_PLUS);
@@ -2152,9 +2183,9 @@ TASK_IMPL_3(MTBDD, mtbdd_and_abstract_plus, MTBDD, a, MTBDD, b, MTBDD, v)
 
     if (vv < var) {
         /* Recursive, then abstract result */
-        result = CALL(mtbdd_and_abstract_plus, a, b, node_gethigh(v, nv));
+        result = mtbdd_and_abstract_plus_CALL(lace, a, b, node_gethigh(v, nv));
         mtbdd_refs_push(result);
-        result = mtbdd_apply(result, result, TASK(mtbdd_op_plus));
+        result = mtbdd_apply(result, result, mtbdd_op_plus_CALL);
         mtbdd_refs_pop(1);
     } else {
         /* Get cofactors */
@@ -2166,16 +2197,16 @@ TASK_IMPL_3(MTBDD, mtbdd_and_abstract_plus, MTBDD, a, MTBDD, b, MTBDD, v)
 
         if (vv == var) {
             /* Recursive, then abstract result */
-            mtbdd_refs_spawn(SPAWN(mtbdd_and_abstract_plus, ahigh, bhigh, node_gethigh(v, nv)));
-            MTBDD low = mtbdd_refs_push(CALL(mtbdd_and_abstract_plus, alow, blow, node_gethigh(v, nv)));
-            MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(SYNC(mtbdd_and_abstract_plus)));
-            result = CALL(mtbdd_apply, low, high, TASK(mtbdd_op_plus));
+            mtbdd_refs_spawn(mtbdd_and_abstract_plus_SPAWN(lace, ahigh, bhigh, node_gethigh(v, nv)));
+            MTBDD low = mtbdd_refs_push(mtbdd_and_abstract_plus_CALL(lace, alow, blow, node_gethigh(v, nv)));
+            MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(mtbdd_and_abstract_plus_SYNC(lace)));
+            result = mtbdd_apply_CALL(lace, low, high, mtbdd_op_plus_CALL);
             mtbdd_refs_pop(2);
         } else /* vv > v */ {
             /* Recursive, then create node */
-            mtbdd_refs_spawn(SPAWN(mtbdd_and_abstract_plus, ahigh, bhigh, v));
-            MTBDD low = mtbdd_refs_push(CALL(mtbdd_and_abstract_plus, alow, blow, v));
-            MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_and_abstract_plus));
+            mtbdd_refs_spawn(mtbdd_and_abstract_plus_SPAWN(lace, ahigh, bhigh, v));
+            MTBDD low = mtbdd_refs_push(mtbdd_and_abstract_plus_CALL(lace, alow, blow, v));
+            MTBDD high = mtbdd_refs_sync(mtbdd_and_abstract_plus_SYNC(lace));
             mtbdd_refs_pop(1);
             result = mtbdd_makenode(var, low, high);
         }
@@ -2192,14 +2223,14 @@ TASK_IMPL_3(MTBDD, mtbdd_and_abstract_plus, MTBDD, a, MTBDD, b, MTBDD, v)
 /**
  * Multiply <a> and <b>, and abstract variables <vars> by taking the maximum.
  */
-TASK_IMPL_3(MTBDD, mtbdd_and_abstract_max, MTBDD, a, MTBDD, b, MTBDD, v)
+MTBDD mtbdd_and_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
 {
     /* Check terminal case */
-    if (v == mtbdd_true) return mtbdd_apply(a, b, TASK(mtbdd_op_times));
-    MTBDD result = CALL(mtbdd_op_times, &a, &b);
+    if (v == mtbdd_true) return mtbdd_apply(a, b, mtbdd_op_times_CALL);
+    MTBDD result = mtbdd_op_times_CALL(lace, &a, &b);
     if (result != mtbdd_invalid) {
         mtbdd_refs_push(result);
-        result = mtbdd_abstract(result, v, TASK(mtbdd_abstract_op_max));
+        result = mtbdd_abstract(result, v, mtbdd_abstract_op_max_CALL);
         mtbdd_refs_pop(1);
         return result;
     }
@@ -2221,13 +2252,13 @@ TASK_IMPL_3(MTBDD, mtbdd_and_abstract_max, MTBDD, a, MTBDD, b, MTBDD, v)
     while (vv < var) {
         /* we can skip variables, because max(r,r) = r */
         v = node_gethigh(v, nv);
-        if (v == mtbdd_true) return mtbdd_apply(a, b, TASK(mtbdd_op_times));
+        if (v == mtbdd_true) return mtbdd_apply(a, b, mtbdd_op_times_CALL);
         nv = MTBDD_GETNODE(v);
         vv = mtbddnode_getvariable(nv);
     }
 
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_AND_ABSTRACT_MAX);
@@ -2247,16 +2278,16 @@ TASK_IMPL_3(MTBDD, mtbdd_and_abstract_max, MTBDD, a, MTBDD, b, MTBDD, v)
 
     if (vv == var) {
         /* Recursive, then abstract result */
-        mtbdd_refs_spawn(SPAWN(mtbdd_and_abstract_max, ahigh, bhigh, node_gethigh(v, nv)));
-        MTBDD low = mtbdd_refs_push(CALL(mtbdd_and_abstract_max, alow, blow, node_gethigh(v, nv)));
-        MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(SYNC(mtbdd_and_abstract_max)));
-        result = CALL(mtbdd_apply, low, high, TASK(mtbdd_op_max));
+        mtbdd_refs_spawn(mtbdd_and_abstract_max_SPAWN(lace, ahigh, bhigh, node_gethigh(v, nv)));
+        MTBDD low = mtbdd_refs_push(mtbdd_and_abstract_max_CALL(lace, alow, blow, node_gethigh(v, nv)));
+        MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(mtbdd_and_abstract_max_SYNC(lace)));
+        result = mtbdd_apply_CALL(lace, low, high, mtbdd_op_max_CALL);
         mtbdd_refs_pop(2);
     } else /* vv > v */ {
         /* Recursive, then create node */
-        mtbdd_refs_spawn(SPAWN(mtbdd_and_abstract_max, ahigh, bhigh, v));
-        MTBDD low = mtbdd_refs_push(CALL(mtbdd_and_abstract_max, alow, blow, v));
-        MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_and_abstract_max));
+        mtbdd_refs_spawn(mtbdd_and_abstract_max_SPAWN(lace, ahigh, bhigh, v));
+        MTBDD low = mtbdd_refs_push(mtbdd_and_abstract_max_CALL(lace, alow, blow, v));
+        MTBDD high = mtbdd_refs_sync(mtbdd_and_abstract_max_SYNC(lace));
         mtbdd_refs_pop(1);
         result = mtbdd_makenode(var, low, high);
     }
@@ -2272,13 +2303,13 @@ TASK_IMPL_3(MTBDD, mtbdd_and_abstract_max, MTBDD, a, MTBDD, b, MTBDD, v)
 /**
  * Calculate the support of a MTBDD, i.e. the cube of all variables that appear in the MTBDD nodes.
  */
-TASK_IMPL_1(MTBDD, mtbdd_support, MTBDD, dd)
+MTBDD mtbdd_support_CALL(lace_worker* lace, MTBDD dd)
 {
     /* Terminal case */
     if (mtbdd_isleaf(dd)) return mtbdd_true;
 
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(BDD_SUPPORT);
@@ -2292,12 +2323,12 @@ TASK_IMPL_1(MTBDD, mtbdd_support, MTBDD, dd)
 
     /* Recursive calls */
     mtbddnode_t n = MTBDD_GETNODE(dd);
-    mtbdd_refs_spawn(SPAWN(mtbdd_support, node_getlow(dd, n)));
-    MTBDD high = mtbdd_refs_push(CALL(mtbdd_support, node_gethigh(dd, n)));
-    MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(SYNC(mtbdd_support)));
+    mtbdd_refs_spawn(mtbdd_support_SPAWN(lace, node_getlow(dd, n)));
+    MTBDD high = mtbdd_refs_push(mtbdd_support_CALL(lace, node_gethigh(dd, n)));
+    MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(mtbdd_support_SYNC(lace)));
 
     /* Compute result */
-    result = mtbdd_makenode(mtbddnode_getvariable(n), mtbdd_false, sylvan_and(low, high));
+    result = mtbdd_makenode(mtbddnode_getvariable(n), mtbdd_false, sylvan_and_CALL(lace, low, high, 0));
     mtbdd_refs_pop(2);
 
     /* Write to cache */
@@ -2313,7 +2344,7 @@ TASK_IMPL_1(MTBDD, mtbdd_support, MTBDD, dd)
  * replace the node by the result of mtbdd_ite(<value>, <high>, <low>).
  * Each <value> in <map> must be a Boolean MTBDD.
  */
-TASK_IMPL_2(MTBDD, mtbdd_compose, MTBDD, a, MTBDDMAP, map)
+MTBDD mtbdd_compose_CALL(lace_worker* lace, MTBDD a, MTBDDMAP map)
 {
     /* Terminal case */
     if (mtbdd_isleaf(a) || mtbdd_map_isempty(map)) return a;
@@ -2329,7 +2360,7 @@ TASK_IMPL_2(MTBDD, mtbdd_compose, MTBDD, a, MTBDDMAP, map)
     }
 
     /* Perhaps execute garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_COMPOSE);
@@ -2342,14 +2373,14 @@ TASK_IMPL_2(MTBDD, mtbdd_compose, MTBDD, a, MTBDDMAP, map)
     }
 
     /* Recursive calls */
-    mtbdd_refs_spawn(SPAWN(mtbdd_compose, node_getlow(a, n), map));
-    MTBDD high = mtbdd_refs_push(CALL(mtbdd_compose, node_gethigh(a, n), map));
-    MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(SYNC(mtbdd_compose)));
+    mtbdd_refs_spawn(mtbdd_compose_SPAWN(lace, node_getlow(a, n), map));
+    MTBDD high = mtbdd_refs_push(mtbdd_compose_CALL(lace, node_gethigh(a, n), map));
+    MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(mtbdd_compose_SYNC(lace)));
 
     /* Calculate result */
     MTBDD r = mtbdd_map_key(map) == v ? mtbdd_map_value(map) : mtbdd_makenode(v, mtbdd_false, mtbdd_true);
     mtbdd_refs_push(r);
-    result = CALL(mtbdd_ite, r, high, low);
+    result = mtbdd_ite_CALL(lace, r, high, low);
     mtbdd_refs_pop(3);
 
     /* Store in cache */
@@ -2363,7 +2394,7 @@ TASK_IMPL_2(MTBDD, mtbdd_compose, MTBDD, a, MTBDDMAP, map)
 /**
  * Compute minimum leaf in the MTBDD (for Integer, Double, Rational MTBDDs)
  */
-TASK_IMPL_1(MTBDD, mtbdd_minimum, MTBDD, a)
+MTBDD mtbdd_minimum_CALL(lace_worker* lace, MTBDD a)
 {
     /* Check terminal case */
     if (a == mtbdd_false) return mtbdd_false;
@@ -2371,7 +2402,7 @@ TASK_IMPL_1(MTBDD, mtbdd_minimum, MTBDD, a)
     if (mtbddnode_isleaf(na)) return a;
 
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_MINIMUM);
@@ -2384,9 +2415,9 @@ TASK_IMPL_1(MTBDD, mtbdd_minimum, MTBDD, a)
     }
 
     /* Call recursive */
-    SPAWN(mtbdd_minimum, node_getlow(a, na));
-    MTBDD high = CALL(mtbdd_minimum, node_gethigh(a, na));
-    MTBDD low = SYNC(mtbdd_minimum);
+    mtbdd_minimum_SPAWN(lace, node_getlow(a, na));
+    MTBDD high = mtbdd_minimum_CALL(lace, node_gethigh(a, na));
+    MTBDD low = mtbdd_minimum_SYNC(lace);
 
     /* Determine lowest */
     mtbddnode_t nl = MTBDD_GETNODE(low);
@@ -2422,7 +2453,7 @@ TASK_IMPL_1(MTBDD, mtbdd_minimum, MTBDD, a)
 /**
  * Compute maximum leaf in the MTBDD (for Integer, Double, Rational MTBDDs)
  */
-TASK_IMPL_1(MTBDD, mtbdd_maximum, MTBDD, a)
+MTBDD mtbdd_maximum_CALL(lace_worker* lace, MTBDD a)
 {
     /* Check terminal case */
     if (a == mtbdd_false) return mtbdd_false;
@@ -2430,7 +2461,7 @@ TASK_IMPL_1(MTBDD, mtbdd_maximum, MTBDD, a)
     if (mtbddnode_isleaf(na)) return a;
 
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_MAXIMUM);
@@ -2443,9 +2474,9 @@ TASK_IMPL_1(MTBDD, mtbdd_maximum, MTBDD, a)
     }
 
     /* Call recursive */
-    SPAWN(mtbdd_maximum, node_getlow(a, na));
-    MTBDD high = CALL(mtbdd_maximum, node_gethigh(a, na));
-    MTBDD low = SYNC(mtbdd_maximum);
+    mtbdd_maximum_SPAWN(lace, node_getlow(a, na));
+    MTBDD high = mtbdd_maximum_CALL(lace, node_gethigh(a, na));
+    MTBDD low = mtbdd_maximum_SYNC(lace);
 
     /* Determine highest */
     mtbddnode_t nl = MTBDD_GETNODE(low);
@@ -2481,7 +2512,7 @@ TASK_IMPL_1(MTBDD, mtbdd_maximum, MTBDD, a)
 /**
  * Calculate the number of satisfying variable assignments according to <variables>.
  */
-TASK_IMPL_2(double, mtbdd_satcount, MTBDD, dd, size_t, nvars)
+double mtbdd_satcount_CALL(lace_worker* lace, MTBDD dd, size_t nvars)
 {
     /* Trivial cases */
     if (dd == mtbdd_false) return 0.0;
@@ -2498,7 +2529,7 @@ TASK_IMPL_2(double, mtbdd_satcount, MTBDD, dd, size_t, nvars)
     }
 
     /* Perhaps execute garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     union {
         double d;
@@ -2511,9 +2542,9 @@ TASK_IMPL_2(double, mtbdd_satcount, MTBDD, dd, size_t, nvars)
         return hack.d;
     }
 
-    SPAWN(mtbdd_satcount, mtbdd_gethigh(dd), nvars-1);
-    double low = CALL(mtbdd_satcount, mtbdd_getlow(dd), nvars-1);
-    hack.d = low + SYNC(mtbdd_satcount);
+    mtbdd_satcount_SPAWN(lace, mtbdd_gethigh(dd), nvars-1);
+    double low = mtbdd_satcount_CALL(lace, mtbdd_getlow(dd), nvars-1);
+    hack.d = low + mtbdd_satcount_SYNC(lace);
 
     if (cache_put3(CACHE_BDD_SATCOUNT, dd, 0, nvars, hack.s)) {
         sylvan_stats_count(BDD_SATCOUNT_CACHEDPUT);
@@ -2740,9 +2771,11 @@ mtbdd_enum_all_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_c
  * mtbdd_enum_par(dd, cb, context);
  */
 VOID_TASK_4(mtbdd_enum_par_do, MTBDD, dd, mtbdd_enum_cb, cb, void*, context, mtbdd_enum_trace_t, trace)
+
+void mtbdd_enum_par_do_CALL(lace_worker* lace, MTBDD dd, mtbdd_enum_cb cb, void* context, mtbdd_enum_trace_t trace)
 {
     if (mtbdd_isleaf(dd)) {
-        WRAP(cb, trace, dd, context);
+        cb(trace, dd, context);
         return;
     }
 
@@ -2751,14 +2784,14 @@ VOID_TASK_4(mtbdd_enum_par_do, MTBDD, dd, mtbdd_enum_cb, cb, void*, context, mtb
 
     struct mtbdd_enum_trace t0 = (struct mtbdd_enum_trace){trace, var, 0};
     struct mtbdd_enum_trace t1 = (struct mtbdd_enum_trace){trace, var, 1};
-    SPAWN(mtbdd_enum_par_do, node_getlow(dd, ndd), cb, context, &t0);
-    CALL(mtbdd_enum_par_do, node_gethigh(dd, ndd), cb, context, &t1);
-    SYNC(mtbdd_enum_par_do);
+    mtbdd_enum_par_do_SPAWN(lace, node_getlow(dd, ndd), cb, context, &t0);
+    mtbdd_enum_par_do_CALL(lace, node_gethigh(dd, ndd), cb, context, &t1);
+    mtbdd_enum_par_do_SYNC(lace);
 }
 
-VOID_TASK_IMPL_3(mtbdd_enum_par, MTBDD, dd, mtbdd_enum_cb, cb, void*, context)
+void mtbdd_enum_par_CALL(lace_worker* lace, MTBDD dd, mtbdd_enum_cb cb, void* context)
 {
-    CALL(mtbdd_enum_par_do, dd, cb, context, NULL);
+    mtbdd_enum_par_do_CALL(lace, dd, cb, context, NULL);
 }
 
 /**
@@ -2772,10 +2805,10 @@ VOID_TASK_IMPL_3(mtbdd_enum_par, MTBDD, dd, mtbdd_enum_cb, cb, void*, context)
  * MTBDD x_vars = ...;  // the cube of variables x
  * MTBDD result = mtbdd_eval_compose(dd, x_vars, TASK(g));
  */
-TASK_IMPL_3(MTBDD, mtbdd_eval_compose, MTBDD, dd, MTBDD, vars, mtbdd_eval_compose_cb, cb)
+MTBDD mtbdd_eval_compose_CALL(lace_worker* lace, MTBDD dd, MTBDD vars, mtbdd_eval_compose_cb cb)
 {
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(MTBDD_EVAL_COMPOSE);
@@ -2789,7 +2822,7 @@ TASK_IMPL_3(MTBDD, mtbdd_eval_compose, MTBDD, dd, MTBDD, vars, mtbdd_eval_compos
 
     if (mtbdd_isleaf(dd) || vars == mtbdd_true) {
         /* Apply */
-        result = WRAP(cb, dd);
+        result = cb(lace, dd);
     } else {
         /* Get top variable in dd */
         mtbddnode_t ndd = MTBDD_GETNODE(dd);
@@ -2810,7 +2843,7 @@ TASK_IMPL_3(MTBDD, mtbdd_eval_compose, MTBDD, dd, MTBDD, vars, mtbdd_eval_compos
 
         if (_vars == mtbdd_true) {
             /* Apply */
-            result = WRAP(cb, dd);
+            result = cb(lace, dd);
         } else {
             /* If this fails, then there are variables in f/g BEFORE vars, which breaks functionality. */
             assert(vv == var);
@@ -2822,9 +2855,9 @@ TASK_IMPL_3(MTBDD, mtbdd_eval_compose, MTBDD, dd, MTBDD, vars, mtbdd_eval_compos
 
             /* Recursive */
             _vars = node_gethigh(_vars, nvars);
-            mtbdd_refs_spawn(SPAWN(mtbdd_eval_compose, ddhigh, _vars, cb));
-            MTBDD low = mtbdd_refs_push(CALL(mtbdd_eval_compose, ddlow, _vars, cb));
-            MTBDD high = mtbdd_refs_sync(SYNC(mtbdd_eval_compose));
+            mtbdd_refs_spawn(mtbdd_eval_compose_SPAWN(lace, ddhigh, _vars, cb));
+            MTBDD low = mtbdd_refs_push(mtbdd_eval_compose_CALL(lace, ddlow, _vars, cb));
+            MTBDD high = mtbdd_refs_sync(mtbdd_eval_compose_SYNC(lace));
             mtbdd_refs_pop(1);
             result = mtbdd_makenode(var, low, high);
         }
@@ -2901,6 +2934,8 @@ mtbdd_nodecount_more(const MTBDD *mtbdds, size_t count)
 }
 
 TASK_2(int, mtbdd_test_isvalid_rec, MTBDD, dd, uint32_t, parent_var)
+
+int mtbdd_test_isvalid_rec_CALL(lace_worker* lace, MTBDD dd, uint32_t parent_var)
 {
     // check if True/False leaf
     if (dd == mtbdd_true || dd == mtbdd_false) return 1;
@@ -2932,9 +2967,9 @@ TASK_2(int, mtbdd_test_isvalid_rec, MTBDD, dd, uint32_t, parent_var)
     }
 
     // check recursively
-    SPAWN(mtbdd_test_isvalid_rec, node_getlow(dd, n), var);
-    result = (uint64_t)CALL(mtbdd_test_isvalid_rec, node_gethigh(dd, n), var);
-    if (!SYNC(mtbdd_test_isvalid_rec)) result = 0;
+    mtbdd_test_isvalid_rec_SPAWN(lace, node_getlow(dd, n), var);
+    result = (uint64_t)mtbdd_test_isvalid_rec_CALL(lace, node_gethigh(dd, n), var);
+    if (!mtbdd_test_isvalid_rec_SYNC(lace)) result = 0;
 
     // put in cache and return result
     if (cache_put3(CACHE_BDD_ISBDD, dd, 0, 0, result)) {
@@ -2944,7 +2979,7 @@ TASK_2(int, mtbdd_test_isvalid_rec, MTBDD, dd, uint32_t, parent_var)
     return result;
 }
 
-TASK_IMPL_1(int, mtbdd_test_isvalid, MTBDD, dd)
+int mtbdd_test_isvalid_CALL(lace_worker* lace, MTBDD dd)
 {
     // check if True/False leaf
     if (dd == mtbdd_true || dd == mtbdd_false) return 1;
@@ -2965,9 +3000,9 @@ TASK_IMPL_1(int, mtbdd_test_isvalid, MTBDD, dd)
 
     // check recursively
     uint32_t var = mtbddnode_getvariable(n);
-    SPAWN(mtbdd_test_isvalid_rec, node_getlow(dd, n), var);
-    int result = CALL(mtbdd_test_isvalid_rec, node_gethigh(dd, n), var);
-    if (!SYNC(mtbdd_test_isvalid_rec)) result = 0;
+    mtbdd_test_isvalid_rec_SPAWN(lace, node_getlow(dd, n), var);
+    int result = mtbdd_test_isvalid_rec_CALL(lace, node_gethigh(dd, n), var);
+    if (!mtbdd_test_isvalid_rec_SYNC(lace)) result = 0;
     return result;
 }
 
@@ -3165,40 +3200,39 @@ mtbdd_getsha(MTBDD dd, char *target)
  * Implementation of visitor operations
  */
 
-VOID_TASK_IMPL_4(mtbdd_visit_seq, MTBDD, dd, mtbdd_visit_pre_cb, pre_cb, mtbdd_visit_post_cb, post_cb, void*, ctx)
+void mtbdd_visit_seq_CALL(lace_worker* lace, MTBDD dd, mtbdd_visit_pre_cb pre_cb, mtbdd_visit_post_cb post_cb, void* ctx)
 {
     int children = 1;
-    if (pre_cb != NULL) children = WRAP(pre_cb, dd, ctx);
+    if (pre_cb != NULL) children = pre_cb(dd, ctx);
     if (children && !mtbdd_isleaf(dd)) {
-        CALL(mtbdd_visit_seq, mtbdd_getlow(dd), pre_cb, post_cb, ctx);
-        CALL(mtbdd_visit_seq, mtbdd_gethigh(dd), pre_cb, post_cb, ctx);
+        mtbdd_visit_seq_CALL(lace, mtbdd_getlow(dd), pre_cb, post_cb, ctx);
+        mtbdd_visit_seq_CALL(lace, mtbdd_gethigh(dd), pre_cb, post_cb, ctx);
     }
-    if (post_cb != NULL) WRAP(post_cb, dd, ctx);
+    if (post_cb != NULL) post_cb(dd, ctx);
 }
 
-VOID_TASK_IMPL_4(mtbdd_visit_par, MTBDD, dd, mtbdd_visit_pre_cb, pre_cb, mtbdd_visit_post_cb, post_cb, void*, ctx)
+void mtbdd_visit_par_CALL(lace_worker* lace, MTBDD dd, mtbdd_visit_pre_cb pre_cb, mtbdd_visit_post_cb post_cb, void* ctx)
 {
     int children = 1;
-    if (pre_cb != NULL) children = WRAP(pre_cb, dd, ctx);
+    if (pre_cb != NULL) children = pre_cb(dd, ctx);
     if (children && !mtbdd_isleaf(dd)) {
-        SPAWN(mtbdd_visit_par, mtbdd_getlow(dd), pre_cb, post_cb, ctx);
-        CALL(mtbdd_visit_par, mtbdd_gethigh(dd), pre_cb, post_cb, ctx);
-        SYNC(mtbdd_visit_par);
+        mtbdd_visit_par_SPAWN(lace, mtbdd_getlow(dd), pre_cb, post_cb, ctx);
+        mtbdd_visit_par_CALL(lace, mtbdd_gethigh(dd), pre_cb, post_cb, ctx);
+        mtbdd_visit_par_SYNC(lace);
     }
-    if (post_cb != NULL) WRAP(post_cb, dd, ctx);
+    if (post_cb != NULL) post_cb(dd, ctx);
 }
 
 /**
  * Writing MTBDD files using a skiplist as a backend
  */
-
-TASK_2(int, mtbdd_writer_add_visitor_pre, MTBDD, dd, sylvan_skiplist_t, sl)
+int mtbdd_writer_add_visitor_pre(MTBDD dd, sylvan_skiplist_t sl)
 {
     if (mtbdd_isleaf(dd)) return 0;
     return sylvan_skiplist_get(sl, MTBDD_STRIPMARK(dd)) == 0 ? 1 : 0;
 }
 
-VOID_TASK_2(mtbdd_writer_add_visitor_post, MTBDD, dd, sylvan_skiplist_t, sl)
+void mtbdd_writer_add_visitor_post(MTBDD dd, sylvan_skiplist_t sl)
 {
     if (dd == mtbdd_true || dd == mtbdd_false) return;
     sylvan_skiplist_assign_next(sl, MTBDD_STRIPMARK(dd));
@@ -3211,9 +3245,9 @@ mtbdd_writer_start()
     return sylvan_skiplist_alloc(sl_size);
 }
 
-VOID_TASK_IMPL_2(mtbdd_writer_add, sylvan_skiplist_t, sl, MTBDD, dd)
+void mtbdd_writer_add_CALL(lace_worker* lace, sylvan_skiplist_t sl, MTBDD dd)
 {
-    mtbdd_visit_seq(dd, (mtbdd_visit_pre_cb)TASK(mtbdd_writer_add_visitor_pre), (mtbdd_visit_post_cb)TASK(mtbdd_writer_add_visitor_post), (void*)sl);
+    mtbdd_visit_seq(dd, (mtbdd_visit_pre_cb)mtbdd_writer_add_visitor_pre, (mtbdd_visit_post_cb)mtbdd_writer_add_visitor_post, (void*)sl);
 }
 
 void
@@ -3254,12 +3288,12 @@ mtbdd_writer_end(sylvan_skiplist_t sl)
     sylvan_skiplist_free(sl);
 }
 
-VOID_TASK_IMPL_3(mtbdd_writer_tobinary, FILE *, out, MTBDD *, dds, int, count)
+void mtbdd_writer_tobinary_CALL(lace_worker* lace, FILE * out, MTBDD * dds, int count)
 {
     sylvan_skiplist_t sl = mtbdd_writer_start();
 
     for (int i=0; i<count; i++) {
-        CALL(mtbdd_writer_add, sl, dds[i]);
+        mtbdd_writer_add_CALL(lace, sl, dds[i]);
     }
 
     mtbdd_writer_writebinary(out, sl);
@@ -3299,12 +3333,12 @@ mtbdd_writer_writetext(FILE *out, sylvan_skiplist_t sl)
     fprintf(out, "]");
 }
 
-VOID_TASK_IMPL_3(mtbdd_writer_totext, FILE *, out, MTBDD *, dds, int, count)
+void mtbdd_writer_totext_CALL(lace_worker* lace, FILE * out, MTBDD * dds, int count)
 {
     sylvan_skiplist_t sl = mtbdd_writer_start();
 
     for (int i=0; i<count; i++) {
-        CALL(mtbdd_writer_add, sl, dds[i]);
+        mtbdd_writer_add_CALL(lace, sl, dds[i]);
     }
 
     mtbdd_writer_writetext(out, sl);
@@ -3327,7 +3361,7 @@ VOID_TASK_IMPL_3(mtbdd_writer_totext, FILE *, out, MTBDD *, dds, int, count)
  * This array is allocated with malloc and must be freed afterwards.
  * This method does not support custom leaves.
  */
-TASK_IMPL_1(uint64_t*, mtbdd_reader_readbinary, FILE*, in)
+uint64_t* mtbdd_reader_readbinary_CALL(lace_worker* lace, FILE* in)
 {
     size_t nodecount;
     if (fread(&nodecount, sizeof(size_t), 1, in) != 1) {
@@ -3381,9 +3415,9 @@ mtbdd_reader_end(uint64_t *arr)
 /**
  * Reading a file earlier written with mtbdd_writer_tobinary
  */
-TASK_IMPL_3(int, mtbdd_reader_frombinary, FILE*, in, MTBDD*, dds, int, count)
+int mtbdd_reader_frombinary_CALL(lace_worker* lace, FILE* in, MTBDD* dds, int count)
 {
-    uint64_t *arr = CALL(mtbdd_reader_readbinary, in);
+    uint64_t *arr = mtbdd_reader_readbinary_CALL(lace, in);
     if (arr == NULL) return -1;
 
     /* Read stored count */
@@ -3485,7 +3519,7 @@ mtbdd_set_remove(MTBDD set, uint32_t var)
 /**
  * Remove variables in <set2> from <set1>.
  */
-TASK_IMPL_2(MTBDD, mtbdd_set_minus, MTBDD, set1, MTBDD, set2)
+MTBDD mtbdd_set_minus_CALL(lace_worker* lace, MTBDD set1, MTBDD set2)
 {
     if (set1 == mtbdd_true) return mtbdd_true;
     if (set2 == mtbdd_true) return set1;

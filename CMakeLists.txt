@@ -54,7 +54,7 @@ endif()
 # First check if Lace is already a target (e.g. a parent project added it),
 # then try find_package, then fall back to FetchContent.
 if(NOT TARGET lace::lace AND NOT TARGET lace)
-    find_package(lace 1.7.0 QUIET)
+    find_package(lace 2.4.0 QUIET)
     if(NOT TARGET lace::lace AND NOT TARGET lace)
         # Normal variables override Lace's options without modifying its cache.
         set(BUILD_SHARED_LIBS OFF)
@@ -66,7 +66,7 @@ if(NOT TARGET lace::lace AND NOT TARGET lace)
         FetchContent_Declare(
             lace
             GIT_REPOSITORY https://github.com/trolando/lace.git
-            GIT_TAG        v1.7.0
+            GIT_TAG        v2.4.0
             GIT_SHALLOW    TRUE
         )
         FetchContent_MakeAvailable(lace)
@@ -112,6 +112,15 @@ if(_sylvan_needs_pic)
 endif()
 
 unset(_sylvan_needs_pic)
+
+# Check actual version of Lace
+if(NOT DEFINED lace_VERSION)
+    message(FATAL_ERROR "Could not determine Lace version. Is Lace properly configured?")
+elseif(lace_VERSION VERSION_LESS "2.4.0")
+    message(FATAL_ERROR "Sylvan requires Lace >= 2.4.0, found ${lace_VERSION}")
+elseif(lace_VERSION VERSION_GREATER_EQUAL "3.0.0")
+    message(FATAL_ERROR "Sylvan requires Lace < 3.0.0, found ${lace_VERSION}")
+endif()
 
 # ── Sanitizer support (top-level builds only) ────────────────────────────────
 

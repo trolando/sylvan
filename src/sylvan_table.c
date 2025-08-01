@@ -23,7 +23,9 @@
 
 SYLVAN_TLS uint64_t my_region = UINT64_MAX;
 
-VOID_TASK_0(llmsset_reset_region)
+TASK(void, llmsset_reset_region)
+
+void llmsset_reset_region_CALL(lace_worker* lace)
 {
     // we don't actually need Lace, but it's a Lace task to run for initialisation
     my_region = UINT64_MAX; // no region
@@ -97,7 +99,7 @@ claim_data_bucket(const llmsset_t dbs)
             if (regions != 0) {
                 start_region =
                     ((uint64_t)lace_get_worker()->worker * regions) /
-                    (uint64_t)lace_workers();
+                    (uint64_t)lace_worker_count();
             }
 
             uint64_t claimed = claim_next_region(dbs, start_region);
@@ -377,7 +379,7 @@ llmsset_create(size_t initial_size, size_t max_size)
     // that is a problem with multiple tables.
     // so, for now, do NOT use multiple tables!!
 
-    TOGETHER(llmsset_reset_region);
+    llmsset_reset_region_TOGETHER();
 
     // initialize hashtab
     sylvan_init_hash();
@@ -396,13 +398,13 @@ llmsset_free(llmsset_t dbs)
     sylvan_free_aligned(dbs, sizeof(struct llmsset));
 }
 
-VOID_TASK_IMPL_1(llmsset_clear, llmsset_t, dbs)
+void llmsset_clear_CALL(lace_worker* lace, llmsset_t dbs)
 {
-    CALL(llmsset_clear_data, dbs);
-    CALL(llmsset_clear_hashes, dbs);
+    llmsset_clear_data_CALL(lace, dbs);
+    llmsset_clear_hashes_CALL(lace, dbs);
 }
 
-VOID_TASK_IMPL_1(llmsset_clear_data, llmsset_t, dbs)
+void llmsset_clear_data_CALL(lace_worker* lace, llmsset_t dbs)
 {
     sylvan_clear_aligned(dbs->bitmap1, dbs->max_size / (512*8));
     sylvan_clear_aligned(dbs->bitmap2, dbs->max_size / 8);
@@ -410,10 +412,10 @@ VOID_TASK_IMPL_1(llmsset_clear_data, llmsset_t, dbs)
     // forbid first two positions (index 0 and 1)
     dbs->bitmap2[0] = UINT64_C(0xc000000000000000);
 
-    TOGETHER(llmsset_reset_region);
+    llmsset_reset_region_TOGETHER();
 }
 
-VOID_TASK_IMPL_1(llmsset_clear_hashes, llmsset_t, dbs)
+void llmsset_clear_hashes_CALL(lace_worker* lace, llmsset_t dbs)
 {
     sylvan_clear_aligned(dbs->table, dbs->max_size * 8);
 }
@@ -445,12 +447,14 @@ llmsset_mark(const llmsset_t dbs, uint64_t index)
     }
 }
 
-TASK_3(int, llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
+TASK(int, llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
+
+int llmsset_rehash_par_CALL(lace_worker* lace, llmsset_t dbs, size_t first, size_t count)
 {
     if (count > 512) {
-        SPAWN(llmsset_rehash_par, dbs, first, count/2);
-        int bad = CALL(llmsset_rehash_par, dbs, first + count/2, count - count/2);
-        return bad + SYNC(llmsset_rehash_par);
+        llmsset_rehash_par_SPAWN(lace, dbs, first, count/2);
+        int bad = llmsset_rehash_par_CALL(lace, dbs, first + count/2, count - count/2);
+        return bad + llmsset_rehash_par_SYNC(lace);
     } else {
         int bad = 0;
         _Atomic(uint64_t)* ptr = dbs->bitmap2 + (first / 64);
@@ -469,18 +473,20 @@ TASK_3(int, llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
     }
 }
 
-TASK_IMPL_1(int, llmsset_rehash, llmsset_t, dbs)
+int llmsset_rehash_CALL(lace_worker* lace, llmsset_t dbs)
 {
-    return CALL(llmsset_rehash_par, dbs, 0, dbs->table_size);
+    return llmsset_rehash_par_CALL(lace, dbs, 0, dbs->table_size);
 }
 
-TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, count)
+TASK(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, count)
+
+size_t llmsset_count_marked_par_CALL(lace_worker* lace, llmsset_t dbs, size_t first, size_t count)
 {
     if (count > 512) {
         size_t split = count/2;
-        SPAWN(llmsset_count_marked_par, dbs, first, split);
-        size_t right = CALL(llmsset_count_marked_par, dbs, first + split, count - split);
-        size_t left = SYNC(llmsset_count_marked_par);
+        llmsset_count_marked_par_SPAWN(lace, dbs, first, split);
+        size_t right = llmsset_count_marked_par_CALL(lace, dbs, first + split, count - split);
+        size_t left = llmsset_count_marked_par_SYNC(lace);
         return left + right;
     } else {
         size_t result = 0;
@@ -509,18 +515,20 @@ TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, 
     }
 }
 
-TASK_IMPL_1(size_t, llmsset_count_marked, llmsset_t, dbs)
+size_t llmsset_count_marked_CALL(lace_worker* lace, llmsset_t dbs)
 {
-    return CALL(llmsset_count_marked_par, dbs, 0, dbs->table_size);
+    return llmsset_count_marked_par_CALL(lace, dbs, 0, dbs->table_size);
 }
 
-VOID_TASK_3(llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
+TASK(void, llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
+
+void llmsset_destroy_par_CALL(lace_worker* lace, llmsset_t dbs, size_t first, size_t count)
 {
     if (count > 1024) {
         size_t split = count/2;
-        SPAWN(llmsset_destroy_par, dbs, first, split);
-        CALL(llmsset_destroy_par, dbs, first + split, count - split);
-        SYNC(llmsset_destroy_par);
+        llmsset_destroy_par_SPAWN(lace, dbs, first, split);
+        llmsset_destroy_par_CALL(lace, dbs, first + split, count - split);
+        llmsset_destroy_par_SYNC(lace);
     } else {
         for (size_t k=first; k<first+count; k++) {
             _Atomic(uint64_t)* ptr2 = dbs->bitmap2 + (k/64);
@@ -538,10 +546,10 @@ VOID_TASK_3(llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
     }
 }
 
-VOID_TASK_IMPL_1(llmsset_destroy_unmarked, llmsset_t, dbs)
+void llmsset_destroy_unmarked_CALL(lace_worker* lace, llmsset_t dbs)
 {
     if (dbs->destroy_cb == NULL) return; // no custom function
-    CALL(llmsset_destroy_par, dbs, 0, dbs->table_size);
+    llmsset_destroy_par_CALL(lace, dbs, 0, dbs->table_size);
 }
 
 /**

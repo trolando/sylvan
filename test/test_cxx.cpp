@@ -10,8 +10,11 @@
 
 using namespace sylvan;
 
-TASK_0(int, runtest)
+TASK(int, runtest)
+int runtest_CALL(lace_worker* lace)
 {
+    (void)lace;
+
     Bdd one = Bdd::bddOne();
     Bdd zero = Bdd::bddZero();
 
@@ -45,7 +48,7 @@ void test6()
 int main()
 {
     // Standard Lace initialization with 1 worker
-    lace_start(1, 0);
+    lace_start(1, 0, 0);
 
     // Simple Sylvan initialization, also initialize BDD support
     sylvan_set_sizes(1LL<<16, 1LL<<16, 1LL<<16, 1LL<<16);
@@ -54,7 +57,7 @@ int main()
 
     test6();
 
-    int res = RUN(runtest);
+    int res = runtest();
 
     sylvan_quit();
     lace_stop();

@@ -10,7 +10,7 @@
 int
 main(void)
 {
-    lace_start(1, 0);
+    lace_start(1, 0, 0);
 
     uint64_t *memory = sylvan_alloc_aligned(4096);
     test_assert(memory != NULL);

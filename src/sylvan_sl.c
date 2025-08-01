@@ -90,7 +90,7 @@ sylvan_skiplist_get(sylvan_skiplist_t l, MTBDD dd)
     }
 }
 
-VOID_TASK_IMPL_2(sylvan_skiplist_assign_next, sylvan_skiplist_t, l, MTBDD, dd)
+void sylvan_skiplist_assign_next(sylvan_skiplist_t l, MTBDD dd)
 {
     if (dd == mtbdd_false || dd == mtbdd_true) return;
 

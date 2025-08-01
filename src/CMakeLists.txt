@@ -196,7 +196,7 @@ write_basic_package_version_file(
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMinorVersion
 )
- 
+
 install(
     FILES
         ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config.cmake
@@ -213,9 +213,9 @@ endif()
 # ── pkg-config ───────────────────────────────────────────────────────────────
  
 if(SYLVAN_GMP)
-    set(PKGC_REQUIRES "lace >= 1.7.0 gmp")
+    set(PKGC_REQUIRES "lace >= 2.4.0 gmp")
 else()
-    set(PKGC_REQUIRES "lace >= 1.7.0")
+    set(PKGC_REQUIRES "lace >= 2.4.0")
 endif()
  
 # -lm is needed by consumers for static linking; Threads are already pulled

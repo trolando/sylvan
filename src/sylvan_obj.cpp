@@ -45,7 +45,7 @@ Bdd::operator=(const Bdd& right)
 bool
 Bdd::operator<=(const Bdd& other) const
 {
-    return sylvan_subset(this->bdd, other.bdd) == 1;
+    return sylvan_subset(this->bdd, other.bdd, 0) == 1;
 }
 
 bool
@@ -82,26 +82,26 @@ Bdd::operator~() const
 Bdd
 Bdd::operator*(const Bdd& other) const
 {
-    return Bdd(sylvan_and(bdd, other.bdd));
+    return Bdd(sylvan_and(bdd, other.bdd, 0));
 }
 
 Bdd&
 Bdd::operator*=(const Bdd& other)
 {
-    bdd = sylvan_and(bdd, other.bdd);
+    bdd = sylvan_and(bdd, other.bdd, 0);
     return *this;
 }
 
 Bdd
 Bdd::operator&(const Bdd& other) const
 {
-    return Bdd(sylvan_and(bdd, other.bdd));
+    return Bdd(sylvan_and(bdd, other.bdd, 0));
 }
 
 Bdd&
 Bdd::operator&=(const Bdd& other)
 {
-    bdd = sylvan_and(bdd, other.bdd);
+    bdd = sylvan_and(bdd, other.bdd, 0);
     return *this;
 }
 
@@ -134,57 +134,57 @@ Bdd::operator|=(const Bdd& other)
 Bdd
 Bdd::operator^(const Bdd& other) const
 {
-    return Bdd(sylvan_xor(bdd, other.bdd));
+    return Bdd(sylvan_xor(bdd, other.bdd, 0));
 }
 
 Bdd&
 Bdd::operator^=(const Bdd& other)
 {
-    bdd = sylvan_xor(bdd, other.bdd);
+    bdd = sylvan_xor(bdd, other.bdd, 0);
     return *this;
 }
 
 Bdd
 Bdd::operator-(const Bdd& other) const
 {
-    return Bdd(sylvan_and(bdd, sylvan_not(other.bdd)));
+    return Bdd(sylvan_and(bdd, sylvan_not(other.bdd), 0));
 }
 
 Bdd&
 Bdd::operator-=(const Bdd& other)
 {
-    bdd = sylvan_and(bdd, sylvan_not(other.bdd));
+    bdd = sylvan_and(bdd, sylvan_not(other.bdd), 0);
     return *this;
 }
 
 Bdd
 Bdd::AndAbstract(const Bdd &g, const BddSet &cube) const
 {
-    return sylvan_and_exists(bdd, g.bdd, cube.set.bdd);
+    return sylvan_and_exists(bdd, g.bdd, cube.set.bdd, 0);
 }
 
 Bdd
 Bdd::ExistAbstract(const BddSet &cube) const
 {
-    return sylvan_exists(bdd, cube.set.bdd);
+    return sylvan_exists(bdd, cube.set.bdd, 0);
 }
 
 Bdd
 Bdd::UnivAbstract(const BddSet &cube) const
 {
-    return sylvan_forall(bdd, cube.set.bdd);
+    return sylvan_forall(bdd, cube.set.bdd, 0);
 }
 
 Bdd
 Bdd::Ite(const Bdd &g, const Bdd &h) const
 {
-    return sylvan_ite(bdd, g.bdd, h.bdd);
+    return sylvan_ite(bdd, g.bdd, h.bdd, 0);
 }
 
 Bdd
 Bdd::And(const Bdd &g) const
 {
-    return sylvan_and(bdd, g.bdd);
+    return sylvan_and(bdd, g.bdd, 0);
 }
 
 Bdd
@@ -208,61 +208,61 @@ Bdd::Nor(const Bdd &g) const
 Bdd
 Bdd::Xor(const Bdd &g) const
 {
-    return sylvan_xor(bdd, g.bdd);
+    return sylvan_xor(bdd, g.bdd, 0);
 }
 
 Bdd
 Bdd::Xnor(const Bdd &g) const
 {
-    return sylvan_equiv(bdd, g.bdd);
+    return sylvan_equiv(bdd, g.bdd, 0);
 }
 
 bool
 Bdd::Disjoint(const Bdd &g) const
 {
-    return sylvan_disjoint(bdd, g.bdd) == 1;
+    return sylvan_disjoint(bdd, g.bdd, 0) == 1;
 }
 
 bool
 Bdd::Leq(const Bdd &g) const
 {
-    return sylvan_subset(bdd, g.bdd) == 1;
+    return sylvan_subset(bdd, g.bdd, 0) == 1;
 }
 
 Bdd
 Bdd::RelPrev(const Bdd& relation, const BddSet& cube) const
 {
-    return sylvan_relprev(relation.bdd, bdd, cube.set.bdd);
+    return sylvan_relprev(relation.bdd, bdd, cube.set.bdd, 0);
 }
 
 Bdd
 Bdd::RelNext(const Bdd &relation, const BddSet &cube) const
 {
-    return sylvan_relnext(bdd, relation.bdd, cube.set.bdd);
+    return sylvan_relnext(bdd, relation.bdd, cube.set.bdd, 0);
 }
 
 Bdd
 Bdd::Closure() const
 {
-    return sylvan_closure(bdd);
+    return sylvan_closure(bdd, 0);
 }
 
 Bdd
 Bdd::Constrain(const Bdd &c) const
 {
-    return sylvan_constrain(bdd, c.bdd);
+    return sylvan_constrain(bdd, c.bdd, 0);
 }
 
 Bdd
 Bdd::Restrict(const Bdd &c) const
 {
-    return sylvan_restrict(bdd, c.bdd);
+    return sylvan_restrict(bdd, c.bdd, 0);
 }
 
 Bdd
 Bdd::Compose(const BddMap &m) const
 {
-    return sylvan_compose(bdd, m.bdd);
+    return sylvan_compose(bdd, m.bdd, 0);
 }
 
 Bdd
@@ -274,7 +274,7 @@ Bdd::Permute(const std::vector<uint32_t>& from, const std::vector<uint32_t>& to)
         map.put(from[i], Bdd::bddVar(to[i]));
     }
 
-    return sylvan_compose(bdd, map.bdd);
+    return sylvan_compose(bdd, map.bdd, 0);
 }
 
 Bdd
@@ -312,7 +312,7 @@ Bdd::GetShaHash() const
 double
 Bdd::SatCount(const BddSet &variables) const
 {
-    return sylvan_satcount(bdd, variables.set.bdd);
+    return sylvan_satcount(bdd, variables.set.bdd, 0);
 }
 
 double
@@ -731,7 +731,7 @@ Mtbdd::AbstractMax(const BddSet &variables) const
 Mtbdd
 Mtbdd::AndExists(const Mtbdd &other, const BddSet &variables) const
 {
-    return mtbdd_and_exists(mtbdd, other.mtbdd, variables.set.bdd);
+    return mtbdd_and_abstract_plus(mtbdd, other.mtbdd, variables.set.bdd);
 }
 
 bool

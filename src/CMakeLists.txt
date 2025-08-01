@@ -152,9 +152,9 @@ write_basic_package_version_file(
 
 # Compute PKG_CONFIG requires line
 if(SYLVAN_GMP)
-    set(PKGC_REQUIRES "lace >= 1.4.2 gmp")
+    set(PKGC_REQUIRES "lace >= 2.2.1 gmp")
 else()
-    set(PKGC_REQUIRES "lace >= 1.4.2")
+    set(PKGC_REQUIRES "lace >= 2.2.1")
 endif()
 
 set(PKGC_LIBS_PRIVATE "")

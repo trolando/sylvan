@@ -39,6 +39,11 @@ namespace sylvan {
 extern "C" {
 #endif /* __cplusplus */
 
+// FIXME either move this to a configuration header, or get rid of this file and just use a malloc/realloc...
+#ifndef SYLVAN_CACHE_LINE_SIZE
+#define SYLVAN_CACHE_LINE_SIZE 64
+#endif
+
 static inline void*
 alloc_aligned(size_t size)
 { 

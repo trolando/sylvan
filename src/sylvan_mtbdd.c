@@ -2328,7 +2328,7 @@ MTBDD mtbdd_support_CALL(lace_worker* lace, MTBDD dd)
     MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(mtbdd_support_SYNC(lace)));
 
     /* Compute result */
-    result = mtbdd_makenode(mtbddnode_getvariable(n), mtbdd_false, sylvan_and_CALL(lace, low, high, 0));
+    result = mtbdd_makenode(mtbddnode_getvariable(n), mtbdd_false, sylvan_and_CALL(lace, low, high));
     mtbdd_refs_pop(2);
 
     /* Write to cache */

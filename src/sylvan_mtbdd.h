@@ -312,11 +312,11 @@ size_t mtbdd_set_count(MTBDD set);
  * Compute the union of <set1> and <set2>
  */
 //FIXME
-static inline BDD sylvan_and(BDD, BDD, BDDVAR);
+static inline BDD sylvan_and(BDD, BDD);
 
 static inline MTBDD mtbdd_set_union(MTBDD set1, MTBDD set2)
 {
-    return sylvan_and(set1, set2, 0);
+    return sylvan_and(set1, set2);
 }
 
 /**

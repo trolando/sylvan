@@ -45,7 +45,7 @@ Bdd::operator=(const Bdd& right)
 bool
 Bdd::operator<=(const Bdd& other) const
 {
-    return sylvan_subset(this->bdd, other.bdd, 0) == 1;
+    return sylvan_subset(this->bdd, other.bdd) == 1;
 }
 
 bool
@@ -82,26 +82,26 @@ Bdd::operator~() const
 Bdd
 Bdd::operator*(const Bdd& other) const
 {
-    return Bdd(sylvan_and(bdd, other.bdd, 0));
+    return Bdd(sylvan_and(bdd, other.bdd));
 }
 
 Bdd&
 Bdd::operator*=(const Bdd& other)
 {
-    bdd = sylvan_and(bdd, other.bdd, 0);
+    bdd = sylvan_and(bdd, other.bdd);
     return *this;
 }
 
 Bdd
 Bdd::operator&(const Bdd& other) const
 {
-    return Bdd(sylvan_and(bdd, other.bdd, 0));
+    return Bdd(sylvan_and(bdd, other.bdd));
 }
 
 Bdd&
 Bdd::operator&=(const Bdd& other)
 {
-    bdd = sylvan_and(bdd, other.bdd, 0);
+    bdd = sylvan_and(bdd, other.bdd);
     return *this;
 }
 
@@ -134,57 +134,57 @@ Bdd::operator|=(const Bdd& other)
 Bdd
 Bdd::operator^(const Bdd& other) const
 {
-    return Bdd(sylvan_xor(bdd, other.bdd, 0));
+    return Bdd(sylvan_xor(bdd, other.bdd));
 }
 
 Bdd&
 Bdd::operator^=(const Bdd& other)
 {
-    bdd = sylvan_xor(bdd, other.bdd, 0);
+    bdd = sylvan_xor(bdd, other.bdd);
     return *this;
 }
 
 Bdd
 Bdd::operator-(const Bdd& other) const
 {
-    return Bdd(sylvan_and(bdd, sylvan_not(other.bdd), 0));
+    return Bdd(sylvan_and(bdd, sylvan_not(other.bdd)));
 }
 
 Bdd&
 Bdd::operator-=(const Bdd& other)
 {
-    bdd = sylvan_and(bdd, sylvan_not(other.bdd), 0);
+    bdd = sylvan_and(bdd, sylvan_not(other.bdd));
     return *this;
 }
 
 Bdd
 Bdd::AndAbstract(const Bdd &g, const BddSet &cube) const
 {
-    return sylvan_and_exists(bdd, g.bdd, cube.set.bdd, 0);
+    return sylvan_and_exists(bdd, g.bdd, cube.set.bdd);
 }
 
 Bdd
 Bdd::ExistAbstract(const BddSet &cube) const
 {
-    return sylvan_exists(bdd, cube.set.bdd, 0);
+    return sylvan_exists(bdd, cube.set.bdd);
 }
 
 Bdd
 Bdd::UnivAbstract(const BddSet &cube) const
 {
-    return sylvan_forall(bdd, cube.set.bdd, 0);
+    return sylvan_forall(bdd, cube.set.bdd);
 }
 
 Bdd
 Bdd::Ite(const Bdd &g, const Bdd &h) const
 {
-    return sylvan_ite(bdd, g.bdd, h.bdd, 0);
+    return sylvan_ite(bdd, g.bdd, h.bdd);
 }
 
 Bdd
 Bdd::And(const Bdd &g) const
 {
-    return sylvan_and(bdd, g.bdd, 0);
+    return sylvan_and(bdd, g.bdd);
 }
 
 Bdd
@@ -208,61 +208,61 @@ Bdd::Nor(const Bdd &g) const
 Bdd
 Bdd::Xor(const Bdd &g) const
 {
-    return sylvan_xor(bdd, g.bdd, 0);
+    return sylvan_xor(bdd, g.bdd);
 }
 
 Bdd
 Bdd::Xnor(const Bdd &g) const
 {
-    return sylvan_equiv(bdd, g.bdd, 0);
+    return sylvan_equiv(bdd, g.bdd);
 }
 
 bool
 Bdd::Disjoint(const Bdd &g) const
 {
-    return sylvan_disjoint(bdd, g.bdd, 0) == 1;
+    return sylvan_disjoint(bdd, g.bdd) == 1;
 }
 
 bool
 Bdd::Leq(const Bdd &g) const
 {
-    return sylvan_subset(bdd, g.bdd, 0) == 1;
+    return sylvan_subset(bdd, g.bdd) == 1;
 }
 
 Bdd
 Bdd::RelPrev(const Bdd& relation, const BddSet& cube) const
 {
-    return sylvan_relprev(relation.bdd, bdd, cube.set.bdd, 0);
+    return sylvan_relprev(relation.bdd, bdd, cube.set.bdd);
 }
 
 Bdd
 Bdd::RelNext(const Bdd &relation, const BddSet &cube) const
 {
-    return sylvan_relnext(bdd, relation.bdd, cube.set.bdd, 0);
+    return sylvan_relnext(bdd, relation.bdd, cube.set.bdd);
 }
 
 Bdd
 Bdd::Closure() const
 {
-    return sylvan_closure(bdd, 0);
+    return sylvan_closure(bdd);
 }
 
 Bdd
 Bdd::Constrain(const Bdd &c) const
 {
-    return sylvan_constrain(bdd, c.bdd, 0);
+    return sylvan_constrain(bdd, c.bdd);
 }
 
 Bdd
 Bdd::Restrict(const Bdd &c) const
 {
-    return sylvan_restrict(bdd, c.bdd, 0);
+    return sylvan_restrict(bdd, c.bdd);
 }
 
 Bdd
 Bdd::Compose(const BddMap &m) const
 {
-    return sylvan_compose(bdd, m.bdd, 0);
+    return sylvan_compose(bdd, m.bdd);
 }
 
 Bdd
@@ -274,7 +274,7 @@ Bdd::Permute(const std::vector<uint32_t>& from, const std::vector<uint32_t>& to)
         map.put(from[i], Bdd::bddVar(to[i]));
     }
 
-    return sylvan_compose(bdd, map.bdd, 0);
+    return sylvan_compose(bdd, map.bdd);
 }
 
 Bdd
@@ -312,7 +312,7 @@ Bdd::GetShaHash() const
 double
 Bdd::SatCount(const BddSet &variables) const
 {
-    return sylvan_satcount(bdd, variables.set.bdd, 0);
+    return sylvan_satcount(bdd, variables.set.bdd);
 }
 
 double
@@ -946,18 +946,6 @@ Sylvan::initPackage(size_t initialTableSize, size_t maxTableSize, size_t initial
 {
     sylvan_set_sizes(initialTableSize, maxTableSize, initialCacheSize, maxCacheSize);
     sylvan_init_package();
-}
-
-void
-Sylvan::setGranularity(int granularity)
-{
-    sylvan_set_granularity(granularity);
-}
-
-int
-Sylvan::getGranularity()
-{
-    return sylvan_get_granularity();
 }
 
 void

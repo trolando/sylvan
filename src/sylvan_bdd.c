@@ -23,25 +23,11 @@
 
 #include <avl.h>
 
-static int granularity = 1; // default
-
-void
-sylvan_set_granularity(int value)
-{
-    granularity = value;
-}
-
-int
-sylvan_get_granularity()
-{
-    return granularity;
-}
-
 /**
  * Implementation of unary, binary and if-then-else operators.
  */
 BDD
-sylvan_and_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
+sylvan_and_CALL(lace_worker* lace, BDD a, BDD b)
 {
     /* Terminal cases */
     if (a == sylvan_true) return b;
@@ -70,13 +56,10 @@ sylvan_and_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
     BDDVAR vb = bddnode_getvariable(nb);
     BDDVAR level = va < vb ? va : vb;
 
-    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
-    if (cachenow) {
-        BDD result;
-        if (cache_get3(CACHE_BDD_AND, a, b, sylvan_false, &result)) {
-            sylvan_stats_count(BDD_AND_CACHED);
-            return result;
-        }
+    BDD result;
+    if (cache_get3(CACHE_BDD_AND, a, b, sylvan_false, &result)) {
+        sylvan_stats_count(BDD_AND_CACHED);
+        return result;
     }
 
     // Get cofactors
@@ -92,7 +75,7 @@ sylvan_and_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
     }
 
     // Recursive computation
-    BDD low=sylvan_invalid, high=sylvan_invalid, result;
+    BDD low=sylvan_invalid, high=sylvan_invalid;
 
     int n=0;
 
@@ -103,7 +86,7 @@ sylvan_and_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
     } else if (bHigh == sylvan_true) {
         high = aHigh;
     } else {
-        bdd_refs_spawn(sylvan_and_SPAWN(lace, aHigh, bHigh, level));
+        bdd_refs_spawn(sylvan_and_SPAWN(lace, aHigh, bHigh));
         n=1;
     }
 
@@ -114,7 +97,7 @@ sylvan_and_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
     } else if (bLow == sylvan_true) {
         low = aLow;
     } else {
-        low = sylvan_and_CALL(lace, aLow, bLow, level);
+        low = sylvan_and_CALL(lace, aLow, bLow);
     }
 
     if (n) {
@@ -125,9 +108,7 @@ sylvan_and_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
 
     result = sylvan_makenode(level, low, high);
 
-    if (cachenow) {
-        if (cache_put3(CACHE_BDD_AND, a, b, sylvan_false, result)) sylvan_stats_count(BDD_AND_CACHEDPUT);
-    }
+    if (cache_put3(CACHE_BDD_AND, a, b, sylvan_false, result)) sylvan_stats_count(BDD_AND_CACHEDPUT);
 
     return result;
 }
@@ -137,7 +118,7 @@ sylvan_and_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
     sylvan_disjoint could be implemented as "sylvan_and(a,b)==sylvan_false",
     but this implementation avoids building new nodes and allows more short-circuitry.
 */
-char sylvan_disjoint_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
+char sylvan_disjoint_CALL(lace_worker* lace, BDD a, BDD b)
 {
     /* Terminal cases */
     if (a == sylvan_false || b == sylvan_false) return 1; 
@@ -164,8 +145,7 @@ char sylvan_disjoint_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
     BDDVAR vb = bddnode_getvariable(nb);
     BDDVAR level = va < vb ? va : vb;
 
-    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
-    if (cachenow) {
+    {
         BDD result;
         if (cache_get3(CACHE_BDD_DISJOINT, a, b, sylvan_false, &result)) {
             sylvan_stats_count(BDD_DISJOINT_CACHED);
@@ -215,15 +195,15 @@ char sylvan_disjoint_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
         result = 0;
     }
     else {
-        if (high==-1) sylvan_disjoint_SPAWN(lace, aHigh, bHigh, level);
-        if (low ==-1) low = sylvan_disjoint_CALL(lace, aLow, bLow, level);
+        if (high==-1) sylvan_disjoint_SPAWN(lace, aHigh, bHigh);
+        if (low ==-1) low = sylvan_disjoint_CALL(lace, aLow, bLow);
         if (high==-1) high = sylvan_disjoint_SYNC(lace);
         result = high && low;
     }
 
     // Store result in the cache and then return
 
-    if (cachenow) {
+    {
         BDD to_cache = (result ? sylvan_true : sylvan_false);
         if (cache_put3(CACHE_BDD_DISJOINT, a, b, sylvan_false, to_cache)) {
             sylvan_stats_count(BDD_DISJOINT_CACHEDPUT);
@@ -233,7 +213,7 @@ char sylvan_disjoint_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
     return result;
 }
 
-BDD sylvan_xor_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
+BDD sylvan_xor_CALL(lace_worker* lace, BDD a, BDD b)
 {
     /* Terminal cases */
     if (a == sylvan_false) return b;
@@ -268,8 +248,7 @@ BDD sylvan_xor_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
     BDDVAR vb = bddnode_getvariable(nb);
     BDDVAR level = va < vb ? va : vb;
 
-    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
-    if (cachenow) {
+    {
         BDD result;
         if (cache_get3(CACHE_BDD_XOR, a, b, sylvan_false, &result)) {
             sylvan_stats_count(BDD_XOR_CACHED);
@@ -292,23 +271,21 @@ BDD sylvan_xor_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
     // Recursive computation
     BDD low, high, result;
 
-    bdd_refs_spawn(sylvan_xor_SPAWN(lace, aHigh, bHigh, level));
-    low = sylvan_xor_CALL(lace, aLow, bLow, level);
+    bdd_refs_spawn(sylvan_xor_SPAWN(lace, aHigh, bHigh));
+    low = sylvan_xor_CALL(lace, aLow, bLow);
     bdd_refs_push(low);
     high = bdd_refs_sync(sylvan_xor_SYNC(lace));
     bdd_refs_pop(1);
 
     result = sylvan_makenode(level, low, high);
 
-    if (cachenow) {
-        if (cache_put3(CACHE_BDD_XOR, a, b, sylvan_false, result)) sylvan_stats_count(BDD_XOR_CACHEDPUT);
-    }
+    if (cache_put3(CACHE_BDD_XOR, a, b, sylvan_false, result)) sylvan_stats_count(BDD_XOR_CACHEDPUT);
 
     return result;
 }
 
 
-BDD sylvan_ite_CALL(lace_worker *lace, BDD a, BDD b, BDD c, BDDVAR prev_level)
+BDD sylvan_ite_CALL(lace_worker *lace, BDD a, BDD b, BDD c)
 {
     /* Terminal cases */
     if (a == sylvan_true) return b;
@@ -324,19 +301,19 @@ BDD sylvan_ite_CALL(lace_worker *lace, BDD a, BDD b, BDD c, BDDVAR prev_level)
     /* Cases that reduce to AND and XOR */
 
     // ITE(A,B,0) => AND(A,B)
-    if (c == sylvan_false) return sylvan_and_CALL(lace, a, b, prev_level);
+    if (c == sylvan_false) return sylvan_and_CALL(lace, a, b);
 
     // ITE(A,1,C) => ~AND(~A,~C)
-    if (b == sylvan_true) return sylvan_not(sylvan_and_CALL(lace, sylvan_not(a), sylvan_not(c), prev_level));
+    if (b == sylvan_true) return sylvan_not(sylvan_and_CALL(lace, sylvan_not(a), sylvan_not(c)));
 
     // ITE(A,0,C) => AND(~A,C)
-    if (b == sylvan_false) return sylvan_and_CALL(lace, sylvan_not(a), c, prev_level);
+    if (b == sylvan_false) return sylvan_and_CALL(lace, sylvan_not(a), c);
 
     // ITE(A,B,1) => ~AND(A,~B)
-    if (c == sylvan_true) return sylvan_not(sylvan_and_CALL(lace, a, sylvan_not(b), prev_level));
+    if (c == sylvan_true) return sylvan_not(sylvan_and_CALL(lace, a, sylvan_not(b)));
 
     // ITE(A,B,~B) => XOR(A,~B)
-    if (b == sylvan_not(c)) return sylvan_xor_CALL(lace, a, c, 0);
+    if (b == sylvan_not(c)) return sylvan_xor_CALL(lace, a, c);
 
     /* At this point, there are no more terminals */
 
@@ -382,8 +359,7 @@ BDD sylvan_ite_CALL(lace_worker *lace, BDD a, BDD b, BDD c, BDDVAR prev_level)
     /* Count operation */
     sylvan_stats_count(BDD_ITE);
 
-    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
-    if (cachenow) {
+    {
         BDD result;
         if (cache_get3(CACHE_BDD_ITE, a, b, c, &result)) {
             sylvan_stats_count(BDD_ITE_CACHED);
@@ -418,7 +394,7 @@ BDD sylvan_ite_CALL(lace_worker *lace, BDD a, BDD b, BDD c, BDDVAR prev_level)
     } else if (aHigh == sylvan_false) {
         high = cHigh;
     } else {
-        bdd_refs_spawn(sylvan_ite_SPAWN(lace, aHigh, bHigh, cHigh, level));
+        bdd_refs_spawn(sylvan_ite_SPAWN(lace, aHigh, bHigh, cHigh));
         n=1;
     }
 
@@ -427,7 +403,7 @@ BDD sylvan_ite_CALL(lace_worker *lace, BDD a, BDD b, BDD c, BDDVAR prev_level)
     } else if (aLow == sylvan_false) {
         low = cLow;
     } else {
-        low = sylvan_ite_CALL(lace, aLow, bLow, cLow, level);
+        low = sylvan_ite_CALL(lace, aLow, bLow, cLow);
     }
 
     if (n) {
@@ -438,9 +414,7 @@ BDD sylvan_ite_CALL(lace_worker *lace, BDD a, BDD b, BDD c, BDDVAR prev_level)
 
     result = sylvan_makenode(level, low, high);
 
-    if (cachenow) {
-        if (cache_put3(CACHE_BDD_ITE, a, b, c, result)) sylvan_stats_count(BDD_ITE_CACHEDPUT);
-    }
+    if (cache_put3(CACHE_BDD_ITE, a, b, c, result)) sylvan_stats_count(BDD_ITE_CACHEDPUT);
 
     return mark ? sylvan_not(result) : result;
 }
@@ -449,7 +423,7 @@ BDD sylvan_ite_CALL(lace_worker *lace, BDD a, BDD b, BDD c, BDDVAR prev_level)
  * Compute constrain f@c, also called the generalized co-factor.
  * c is the "care function" - f@c equals f when c evaluates to True.
  */
-BDD sylvan_constrain_CALL(lace_worker* lace, BDD f, BDD c, BDDVAR prev_level)
+BDD sylvan_constrain_CALL(lace_worker* lace, BDD f, BDD c)
 {
     /* Trivial cases */
     if (c == sylvan_true) return f;
@@ -479,8 +453,7 @@ BDD sylvan_constrain_CALL(lace_worker* lace, BDD f, BDD c, BDDVAR prev_level)
     }
 
     /* Consult cache */
-    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
-    if (cachenow) {
+    {
         BDD result;
         if (cache_get3(CACHE_BDD_CONSTRAIN, f, c, 0, &result)) {
             sylvan_stats_count(BDD_CONSTRAIN_CACHED);
@@ -509,32 +482,30 @@ BDD sylvan_constrain_CALL(lace_worker* lace, BDD f, BDD c, BDDVAR prev_level)
     if (cLow == sylvan_false) {
         /* cLow is False, so result equals fHigh @ cHigh */
         if (cHigh == sylvan_true) result = fHigh;
-        else result = sylvan_constrain_CALL(lace, fHigh, cHigh, level);
+        else result = sylvan_constrain_CALL(lace, fHigh, cHigh);
     } else if (cHigh == sylvan_false) {
         /* cHigh is False, so result equals fLow @ cLow */
         if (cLow == sylvan_true) result = fLow;
-        else result = sylvan_constrain_CALL(lace, fLow, cLow, level);
+        else result = sylvan_constrain_CALL(lace, fLow, cLow);
     } else if (cLow == sylvan_true) {
         /* cLow is True, so low result equals fLow */
-        BDD high = sylvan_constrain_CALL(lace, fHigh, cHigh, level);
+        BDD high = sylvan_constrain_CALL(lace, fHigh, cHigh);
         result = sylvan_makenode(level, fLow, high);
     } else if (cHigh == sylvan_true) {
         /* cHigh is True, so high result equals fHigh */
-        BDD low = sylvan_constrain_CALL(lace, fLow, cLow, level);
+        BDD low = sylvan_constrain_CALL(lace, fLow, cLow);
         result = sylvan_makenode(level, low, fHigh);
     } else {
         /* cLow and cHigh are not constrants... normal parallel recursion */
-        bdd_refs_spawn(sylvan_constrain_SPAWN(lace, fLow, cLow, level));
-        BDD high = sylvan_constrain_CALL(lace, fHigh, cHigh, level);
+        bdd_refs_spawn(sylvan_constrain_SPAWN(lace, fLow, cLow));
+        BDD high = sylvan_constrain_CALL(lace, fHigh, cHigh);
         bdd_refs_push(high);
         BDD low = bdd_refs_sync(sylvan_constrain_SYNC(lace));
         bdd_refs_pop(1);
         result = sylvan_makenode(level, low, high);
     }
 
-    if (cachenow) {
-        if (cache_put3(CACHE_BDD_CONSTRAIN, f, c, 0, result)) sylvan_stats_count(BDD_CONSTRAIN_CACHEDPUT);
-    }
+    if (cache_put3(CACHE_BDD_CONSTRAIN, f, c, 0, result)) sylvan_stats_count(BDD_CONSTRAIN_CACHEDPUT);
 
     return mark ? sylvan_not(result) : result;
 }
@@ -542,7 +513,7 @@ BDD sylvan_constrain_CALL(lace_worker* lace, BDD f, BDD c, BDDVAR prev_level)
 /**
  * Compute restrict f@c, which uses a heuristic to try and minimize a BDD f with respect to a care function c
  */
-BDD sylvan_restrict_CALL(lace_worker* lace, BDD f, BDD c, BDDVAR prev_level)
+BDD sylvan_restrict_CALL(lace_worker* lace, BDD f, BDD c)
 {
     /* Trivial cases */
     if (c == sylvan_true) return f;
@@ -572,22 +543,17 @@ BDD sylvan_restrict_CALL(lace_worker* lace, BDD f, BDD c, BDDVAR prev_level)
     }
 
     /* Consult cache */
-    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
-    if (cachenow) {
-        BDD result;
-        if (cache_get3(CACHE_BDD_RESTRICT, f, c, 0, &result)) {
-            sylvan_stats_count(BDD_RESTRICT_CACHED);
-            return mark ? sylvan_not(result) : result;
-        }
-    }
-
     BDD result;
+    if (cache_get3(CACHE_BDD_RESTRICT, f, c, 0, &result)) {
+        sylvan_stats_count(BDD_RESTRICT_CACHED);
+        return mark ? sylvan_not(result) : result;
+    }
 
     if (vc < vf) {
         /* f is independent of c, so result is f @ (cLow \/ cHigh) */
-        BDD new_c = sylvan_not(sylvan_and_CALL(lace, sylvan_not(node_low(c, nc)), sylvan_not(node_high(c, nc)), 0));
+        BDD new_c = sylvan_not(sylvan_and_CALL(lace, sylvan_not(node_low(c, nc)), sylvan_not(node_high(c, nc))));
         bdd_refs_push(new_c);
-        result = sylvan_restrict_CALL(lace, f, new_c, level);
+        result = sylvan_restrict_CALL(lace, f, new_c);
         bdd_refs_pop(1);
     } else {
         BDD fLow = node_low(f,nf), fHigh = node_high(f,nf);
@@ -600,14 +566,14 @@ BDD sylvan_restrict_CALL(lace_worker* lace, BDD f, BDD c, BDDVAR prev_level)
         }
         if (cLow == sylvan_false) {
             /* sibling-substitution */
-            result = sylvan_restrict_CALL(lace, fHigh, cHigh, level);
+            result = sylvan_restrict_CALL(lace, fHigh, cHigh);
         } else if (cHigh == sylvan_false) {
             /* sibling-substitution */
-            result = sylvan_restrict_CALL(lace, fLow, cLow, level);
+            result = sylvan_restrict_CALL(lace, fLow, cLow);
         } else {
             /* parallel recursion */
-            bdd_refs_spawn(sylvan_restrict_SPAWN(lace, fLow, cLow, level));
-            BDD high = sylvan_restrict_CALL(lace, fHigh, cHigh, level);
+            bdd_refs_spawn(sylvan_restrict_SPAWN(lace, fLow, cLow));
+            BDD high = sylvan_restrict_CALL(lace, fHigh, cHigh);
             bdd_refs_push(high);
             BDD low = bdd_refs_sync(sylvan_restrict_SYNC(lace));
             bdd_refs_pop(1);
@@ -615,9 +581,7 @@ BDD sylvan_restrict_CALL(lace_worker* lace, BDD f, BDD c, BDDVAR prev_level)
         }
     }
 
-    if (cachenow) {
-        if (cache_put3(CACHE_BDD_RESTRICT, f, c, 0, result)) sylvan_stats_count(BDD_RESTRICT_CACHEDPUT);
-    }
+    if (cache_put3(CACHE_BDD_RESTRICT, f, c, 0, result)) sylvan_stats_count(BDD_RESTRICT_CACHEDPUT);
 
     return mark ? sylvan_not(result) : result;
 }
@@ -625,7 +589,7 @@ BDD sylvan_restrict_CALL(lace_worker* lace, BDD f, BDD c, BDDVAR prev_level)
 /**
  * Calculates \exists variables . a
  */
-BDD sylvan_exists_CALL(lace_worker* lace, BDD a, BDD variables, BDDVAR prev_level)
+BDD sylvan_exists_CALL(lace_worker* lace, BDD a, BDD variables)
 {
     /* Terminal cases */
     if (a == sylvan_true) return sylvan_true;
@@ -650,20 +614,15 @@ BDD sylvan_exists_CALL(lace_worker* lace, BDD a, BDD variables, BDDVAR prev_leve
     /* Count operation */
     sylvan_stats_count(BDD_EXISTS);
 
-    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
-    if (cachenow) {
-        BDD result;
-        if (cache_get3(CACHE_BDD_EXISTS, a, variables, 0, &result)) {
-            sylvan_stats_count(BDD_EXISTS_CACHED);
-            return result;
-        }
+    BDD result;
+    if (cache_get3(CACHE_BDD_EXISTS, a, variables, 0, &result)) {
+        sylvan_stats_count(BDD_EXISTS_CACHED);
+        return result;
     }
 
     // Get cofactors
     BDD aLow = node_low(a, na);
     BDD aHigh = node_high(a, na);
-
-    BDD result;
 
     if (vv == level) {
         // level is in variable set, perform abstraction
@@ -671,12 +630,12 @@ BDD sylvan_exists_CALL(lace_worker* lace, BDD a, BDD variables, BDDVAR prev_leve
             result = sylvan_true;
         } else {
             BDD _v = sylvan_set_next(variables);
-            BDD low = sylvan_exists_CALL(lace, aLow, _v, level);
+            BDD low = sylvan_exists_CALL(lace, aLow, _v);
             if (low == sylvan_true) {
                 result = sylvan_true;
             } else {
                 bdd_refs_push(low);
-                BDD high = sylvan_exists_CALL(lace, aHigh, _v, level);
+                BDD high = sylvan_exists_CALL(lace, aHigh, _v);
                 if (high == sylvan_true) {
                     result = sylvan_true;
                     bdd_refs_pop(1);
@@ -685,7 +644,7 @@ BDD sylvan_exists_CALL(lace_worker* lace, BDD a, BDD variables, BDDVAR prev_leve
                     bdd_refs_pop(1);
                 } else {
                     bdd_refs_push(high);
-                    result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(low), sylvan_not(high), 0)); // low or high
+                    result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(low), sylvan_not(high))); // low or high
                     bdd_refs_pop(2);
                 }
             }
@@ -693,17 +652,15 @@ BDD sylvan_exists_CALL(lace_worker* lace, BDD a, BDD variables, BDDVAR prev_leve
     } else {
         // level is not in variable set
         BDD low, high;
-        bdd_refs_spawn(sylvan_exists_SPAWN(lace, aHigh, variables, level));
-        low = sylvan_exists_CALL(lace, aLow, variables, level);
+        bdd_refs_spawn(sylvan_exists_SPAWN(lace, aHigh, variables));
+        low = sylvan_exists_CALL(lace, aLow, variables);
         bdd_refs_push(low);
         high = bdd_refs_sync(sylvan_exists_SYNC(lace));
         bdd_refs_pop(1);
         result = sylvan_makenode(level, low, high);
     }
 
-    if (cachenow) {
-        if (cache_put3(CACHE_BDD_EXISTS, a, variables, 0, result)) sylvan_stats_count(BDD_EXISTS_CACHEDPUT);
-    }
+    if (cache_put3(CACHE_BDD_EXISTS, a, variables, 0, result)) sylvan_stats_count(BDD_EXISTS_CACHEDPUT);
 
     return result;
 }
@@ -783,7 +740,7 @@ BDD sylvan_project_CALL(lace_worker* lace, BDD a, BDDSET v)
         mtbdd_refs_spawn(sylvan_project_SPAWN(lace, a0, v));
         const MTBDD high = mtbdd_refs_push(sylvan_project_CALL(lace, a1, v));
         const MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(sylvan_project_SYNC(lace)));
-        result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(low), sylvan_not(high), 0));
+        result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(low), sylvan_not(high)));
         mtbdd_refs_pop(2);
     }
 
@@ -801,7 +758,7 @@ BDD sylvan_project_CALL(lace_worker* lace, BDD a, BDDSET v)
 /**
  * Calculate exists(a AND b, v)
  */
-BDD sylvan_and_exists_CALL(lace_worker* lace, BDD a, BDD b, BDDSET v, BDDVAR prev_level)
+BDD sylvan_and_exists_CALL(lace_worker* lace, BDD a, BDD b, BDDSET v)
 {
     /* Terminal cases */
     if (a == sylvan_false) return sylvan_false;
@@ -810,10 +767,10 @@ BDD sylvan_and_exists_CALL(lace_worker* lace, BDD a, BDD b, BDDSET v, BDDVAR pre
     if (a == sylvan_true && b == sylvan_true) return sylvan_true;
 
     /* Cases that reduce to "exists" and "and" */
-    if (a == sylvan_true) return sylvan_exists_CALL(lace, b, v, 0);
-    if (b == sylvan_true) return sylvan_exists_CALL(lace, a, v, 0);
-    if (a == b) return sylvan_exists_CALL(lace, a, v, 0);
-    if (sylvan_set_isempty(v)) return sylvan_and_CALL(lace, a, b, 0);
+    if (a == sylvan_true) return sylvan_exists_CALL(lace, b, v);
+    if (b == sylvan_true) return sylvan_exists_CALL(lace, a, v);
+    if (a == b) return sylvan_exists_CALL(lace, a, v);
+    if (sylvan_set_isempty(v)) return sylvan_and_CALL(lace, a, b);
 
     /* At this point, a and b are proper nodes, and v is non-empty */
 
@@ -843,19 +800,15 @@ BDD sylvan_and_exists_CALL(lace_worker* lace, BDD a, BDD b, BDDSET v, BDDVAR pre
     /* Skip levels in v that are not in a and b */
     while (vv < level) {
         v = node_high(v, nv); // get next variable in conjunction
-        if (sylvan_set_isempty(v)) return sylvan_and_CALL(lace, a, b, 0);
+        if (sylvan_set_isempty(v)) return sylvan_and_CALL(lace, a, b);
         nv = MTBDD_GETNODE(v);
         vv = bddnode_getvariable(nv);
     }
 
     BDD result;
-
-    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
-    if (cachenow) {
-        if (cache_get3(CACHE_BDD_AND_EXISTS, a, b, v, &result)) {
-            sylvan_stats_count(BDD_AND_EXISTS_CACHED);
-            return result;
-        }
+    if (cache_get3(CACHE_BDD_AND_EXISTS, a, b, v, &result)) {
+        sylvan_stats_count(BDD_AND_EXISTS_CACHED);
+        return result;
     }
 
     // Get cofactors
@@ -878,18 +831,18 @@ BDD sylvan_and_exists_CALL(lace_worker* lace, BDD a, BDD b, BDDSET v, BDDVAR pre
     if (level == vv) {
         // level is in variable set, perform abstraction
         BDD _v = node_high(v, nv);
-        BDD low = sylvan_and_exists_CALL(lace, aLow, bLow, _v, level);
+        BDD low = sylvan_and_exists_CALL(lace, aLow, bLow, _v);
         if (low == sylvan_true || low == aHigh || low == bHigh) {
             result = low;
         } else {
             bdd_refs_push(low);
             BDD high;
             if (low == sylvan_not(aHigh)) {
-                high = sylvan_exists_CALL(lace, bHigh, _v, 0);
+                high = sylvan_exists_CALL(lace, bHigh, _v);
             } else if (low == sylvan_not(bHigh)) {
-                high = sylvan_exists_CALL(lace, aHigh, _v, 0);
+                high = sylvan_exists_CALL(lace, aHigh, _v);
             } else {
-                high = sylvan_and_exists_CALL(lace, aHigh, bHigh, _v, level);
+                high = sylvan_and_exists_CALL(lace, aHigh, bHigh, _v);
             }
             if (high == sylvan_true) {
                 result = sylvan_true;
@@ -902,23 +855,21 @@ BDD sylvan_and_exists_CALL(lace_worker* lace, BDD a, BDD b, BDDSET v, BDDVAR pre
                 bdd_refs_pop(1);
             } else {
                 bdd_refs_push(high);
-                result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(low), sylvan_not(high), 0));
+                result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(low), sylvan_not(high)));
                 bdd_refs_pop(2);
             }
         }
     } else {
         // level is not in variable set
-        bdd_refs_spawn(sylvan_and_exists_SPAWN(lace, aHigh, bHigh, v, level));
-        BDD low = sylvan_and_exists_CALL(lace, aLow, bLow, v, level);
+        bdd_refs_spawn(sylvan_and_exists_SPAWN(lace, aHigh, bHigh, v));
+        BDD low = sylvan_and_exists_CALL(lace, aLow, bLow, v);
         bdd_refs_push(low);
         BDD high = bdd_refs_sync(sylvan_and_exists_SYNC(lace));
         bdd_refs_pop(1);
         result = sylvan_makenode(level, low, high);
     }
 
-    if (cachenow) {
-        if (cache_put3(CACHE_BDD_AND_EXISTS, a, b, v, result)) sylvan_stats_count(BDD_AND_EXISTS_CACHEDPUT);
-    }
+    if (cache_put3(CACHE_BDD_AND_EXISTS, a, b, v, result)) sylvan_stats_count(BDD_AND_EXISTS_CACHEDPUT);
 
     return result;
 }
@@ -1019,7 +970,7 @@ MTBDD sylvan_and_project_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
         mtbdd_refs_spawn(sylvan_and_project_SPAWN(lace, a0, b0, v));
         const MTBDD high = mtbdd_refs_push(sylvan_and_project_CALL(lace, a1, b1, v));
         const MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(sylvan_and_project_SYNC(lace)));
-        result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(low), sylvan_not(high), 0));
+        result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(low), sylvan_not(high)));
         mtbdd_refs_pop(2);
     }
 
@@ -1034,7 +985,7 @@ MTBDD sylvan_and_project_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
 }
 
 
-BDD sylvan_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR prev_level)
+BDD sylvan_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
 {
     /* Compute R(s) = \exists x: A(x) \and B(x,s) with support(result) = s, support(A) = s, support(B) = s+t
      * if vars == sylvan_false, then every level is in s or t
@@ -1084,16 +1035,11 @@ BDD sylvan_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR pre
     }
 
     /* Consult cache */
-    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
-    if (cachenow) {
-        BDD result;
-        if (cache_get3(CACHE_BDD_RELNEXT, a, b, vars, &result)) {
-            sylvan_stats_count(BDD_RELNEXT_CACHED);
-            return result;
-        }
-    }
-
     BDD result;
+    if (cache_get3(CACHE_BDD_RELNEXT, a, b, vars, &result)) {
+        sylvan_stats_count(BDD_RELNEXT_CACHED);
+        return result;
+    }
 
     if (is_s_or_t) {
         /* Get s and t */
@@ -1140,18 +1086,18 @@ BDD sylvan_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR pre
 
         BDD _vars = vars == sylvan_false ? sylvan_false : node_high(vars, nv);
 
-        bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b00, _vars, level));
-        bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b10, _vars, level));
-        bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b01, _vars, level));
-        bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b11, _vars, level));
+        bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b00, _vars));
+        bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b10, _vars));
+        bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b01, _vars));
+        bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b11, _vars));
 
         BDD f = bdd_refs_sync(sylvan_relnext_SYNC(lace)); bdd_refs_push(f);
         BDD e = bdd_refs_sync(sylvan_relnext_SYNC(lace)); bdd_refs_push(e);
         BDD d = bdd_refs_sync(sylvan_relnext_SYNC(lace)); bdd_refs_push(d);
         BDD c = bdd_refs_sync(sylvan_relnext_SYNC(lace)); bdd_refs_push(c);
 
-        bdd_refs_spawn(sylvan_ite_SPAWN(lace, c, sylvan_true, d, 0)); /* a0 b00  \or  a1 b01 */
-        bdd_refs_spawn(sylvan_ite_SPAWN(lace, e, sylvan_true, f, 0)); /* a0 b01  \or  a1 b11 */
+        bdd_refs_spawn(sylvan_ite_SPAWN(lace, c, sylvan_true, d)); /* a0 b00  \or  a1 b01 */
+        bdd_refs_spawn(sylvan_ite_SPAWN(lace, e, sylvan_true, f)); /* a0 b01  \or  a1 b11 */
 
         /* R1 */ d = bdd_refs_sync(sylvan_ite_SYNC(lace)); bdd_refs_push(d);
         /* R0 */ c = bdd_refs_sync(sylvan_ite_SYNC(lace)); // not necessary: bdd_refs_push(c);
@@ -1177,21 +1123,21 @@ BDD sylvan_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR pre
         if (b0 != b1) {
             if (a0 == a1) {
                 /* Quantify "b" variables */
-                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b0, vars, level));
-                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b1, vars, level));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b0, vars));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b1, vars));
 
                 BDD r1 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
                 bdd_refs_push(r1);
                 BDD r0 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
                 bdd_refs_push(r0);
-                result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(r0), sylvan_not(r1), 0));
+                result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(r0), sylvan_not(r1)));
                 bdd_refs_pop(2);
             } else {
                 /* Quantify "b" variables, but keep "a" variables */
-                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b0, vars, level));
-                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b1, vars, level));
-                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b0, vars, level));
-                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b1, vars, level));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b0, vars));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b1, vars));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b0, vars));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b1, vars));
 
                 BDD r11 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
                 bdd_refs_push(r11);
@@ -1202,8 +1148,8 @@ BDD sylvan_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR pre
                 BDD r00 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
                 bdd_refs_push(r00);
 
-                bdd_refs_spawn(sylvan_ite_SPAWN(lace, r00, sylvan_true, r01, 0));
-                bdd_refs_spawn(sylvan_ite_SPAWN(lace, r10, sylvan_true, r11, 0));
+                bdd_refs_spawn(sylvan_ite_SPAWN(lace, r00, sylvan_true, r01));
+                bdd_refs_spawn(sylvan_ite_SPAWN(lace, r10, sylvan_true, r11));
 
                 BDD r1 = bdd_refs_sync(sylvan_ite_SYNC(lace));
                 bdd_refs_push(r1);
@@ -1214,8 +1160,8 @@ BDD sylvan_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR pre
             }
         } else {
             /* Keep "a" variables */
-            bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b0, vars, level));
-            bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b1, vars, level));
+            bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b0, vars));
+            bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b1, vars));
 
             BDD r1 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
             bdd_refs_push(r1);
@@ -1225,14 +1171,12 @@ BDD sylvan_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR pre
         }
     }
 
-    if (cachenow) {
-        if (cache_put3(CACHE_BDD_RELNEXT, a, b, vars, result)) sylvan_stats_count(BDD_RELNEXT_CACHEDPUT);
-    }
+    if (cache_put3(CACHE_BDD_RELNEXT, a, b, vars, result)) sylvan_stats_count(BDD_RELNEXT_CACHEDPUT);
 
     return result;
 }
 
-BDD sylvan_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR prev_level)
+BDD sylvan_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
 {
     /* Compute \exists x: A(s,x) \and B(x,t)
      * if vars == sylvan_false, then every level is in s or t
@@ -1282,16 +1226,11 @@ BDD sylvan_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR pre
     }
 
     /* Consult cache */
-    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
-    if (cachenow) {
-        BDD result;
-        if (cache_get3(CACHE_BDD_RELPREV, a, b, vars, &result)) {
-            sylvan_stats_count(BDD_RELPREV_CACHED);
-            return result;
-        }
-    }
-
     BDD result;
+    if (cache_get3(CACHE_BDD_RELPREV, a, b, vars, &result)) {
+        sylvan_stats_count(BDD_RELPREV_CACHED);
+        return result;
+    }
 
     if (is_s_or_t) {
         /* Get s and t */
@@ -1369,23 +1308,23 @@ BDD sylvan_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR pre
         }
 
         if (b00 == b01) {
-            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a00, b0, _vars, level));
-            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a10, b0, _vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a00, b0, _vars));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a10, b0, _vars));
         } else {
-            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a00, b00, _vars, level));
-            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a00, b01, _vars, level));
-            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a10, b00, _vars, level));
-            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a10, b01, _vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a00, b00, _vars));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a00, b01, _vars));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a10, b00, _vars));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a10, b01, _vars));
         }
 
         if (b10 == b11) {
-            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a01, b1, _vars, level));
-            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a11, b1, _vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a01, b1, _vars));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a11, b1, _vars));
         } else {
-            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a01, b10, _vars, level));
-            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a01, b11, _vars, level));
-            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a11, b10, _vars, level));
-            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a11, b11, _vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a01, b10, _vars));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a01, b11, _vars));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a11, b10, _vars));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a11, b11, _vars));
         }
 
         BDD r00, r01, r10, r11;
@@ -1422,8 +1361,8 @@ BDD sylvan_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR pre
             bdd_refs_push(r00);
          }
 
-        bdd_refs_spawn(sylvan_and_SPAWN(lace, sylvan_not(r00), sylvan_not(r01), 0));
-        bdd_refs_spawn(sylvan_and_SPAWN(lace, sylvan_not(r10), sylvan_not(r11), 0));
+        bdd_refs_spawn(sylvan_and_SPAWN(lace, sylvan_not(r00), sylvan_not(r01)));
+        bdd_refs_spawn(sylvan_and_SPAWN(lace, sylvan_not(r10), sylvan_not(r11)));
 
         BDD r1 = sylvan_not(bdd_refs_push(bdd_refs_sync(sylvan_and_SYNC(lace))));
         BDD r0 = sylvan_not(bdd_refs_sync(sylvan_and_SYNC(lace)));
@@ -1447,22 +1386,22 @@ BDD sylvan_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR pre
         if (a0 != a1) {
             if (b0 == b1) {
                 /* Quantify "a" variables */
-                bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a0, b0, vars, level));
-                bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a1, b1, vars, level));
+                bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a0, b0, vars));
+                bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a1, b1, vars));
 
                 BDD r1 = bdd_refs_sync(sylvan_relprev_SYNC(lace));
                 bdd_refs_push(r1);
                 BDD r0 = bdd_refs_sync(sylvan_relprev_SYNC(lace));
                 bdd_refs_push(r0);
-                result = sylvan_ite_CALL(lace, r0, sylvan_true, r1, 0);
+                result = sylvan_ite_CALL(lace, r0, sylvan_true, r1);
                 bdd_refs_pop(2);
 
             } else {
                 /* Quantify "a" variables, but keep "b" variables */
-                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b0, vars, level));
-                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b0, vars, level));
-                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b1, vars, level));
-                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b1, vars, level));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b0, vars));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b0, vars));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b1, vars));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b1, vars));
 
                 BDD r11 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
                 bdd_refs_push(r11);
@@ -1473,8 +1412,8 @@ BDD sylvan_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR pre
                 BDD r00 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
                 bdd_refs_push(r00);
 
-                bdd_refs_spawn(sylvan_ite_SPAWN(lace, r00, sylvan_true, r10, 0));
-                bdd_refs_spawn(sylvan_ite_SPAWN(lace, r01, sylvan_true, r11, 0));
+                bdd_refs_spawn(sylvan_ite_SPAWN(lace, r00, sylvan_true, r10));
+                bdd_refs_spawn(sylvan_ite_SPAWN(lace, r01, sylvan_true, r11));
 
                 BDD r1 = bdd_refs_sync(sylvan_ite_SYNC(lace));
                 bdd_refs_push(r1);
@@ -1484,8 +1423,8 @@ BDD sylvan_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR pre
                 result = sylvan_makenode(level, r0, r1);
             }
         } else {
-            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a0, b0, vars, level));
-            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a1, b1, vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a0, b0, vars));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a1, b1, vars));
 
             BDD r1 = bdd_refs_sync(sylvan_relprev_SYNC(lace));
             bdd_refs_push(r1);
@@ -1495,9 +1434,7 @@ BDD sylvan_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR pre
         }
     }
 
-    if (cachenow) {
-        if (cache_put3(CACHE_BDD_RELPREV, a, b, vars, result)) sylvan_stats_count(BDD_RELPREV_CACHEDPUT);
-    }
+    if (cache_put3(CACHE_BDD_RELPREV, a, b, vars, result)) sylvan_stats_count(BDD_RELPREV_CACHEDPUT);
 
     return result;
 }
@@ -1508,7 +1445,7 @@ BDD sylvan_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR pre
  *     On Computing the Transitive Closre of a State Transition Relation
  *     30th ACM Design Automation Conference, 1993.
  */
-BDD sylvan_closure_CALL(lace_worker* lace, BDD a, BDDVAR prev_level)
+BDD sylvan_closure_CALL(lace_worker* lace, BDD a)
 {
     /* Terminals */
     if (a == sylvan_true) return a;
@@ -1525,13 +1462,10 @@ BDD sylvan_closure_CALL(lace_worker* lace, BDD a, BDDVAR prev_level)
     BDDVAR level = bddnode_getvariable(n);
 
     /* Consult cache */
-    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
-    if (cachenow) {
-        BDD result;
-        if (cache_get3(CACHE_BDD_CLOSURE, a, 0, 0, &result)) {
-            sylvan_stats_count(BDD_CLOSURE_CACHED);
-            return result;
-        }
+    BDD result;
+    if (cache_get3(CACHE_BDD_CLOSURE, a, 0, 0, &result)) {
+        sylvan_stats_count(BDD_CLOSURE_CACHED);
+        return result;
     }
 
     BDDVAR s = level & (~1);
@@ -1569,28 +1503,28 @@ BDD sylvan_closure_CALL(lace_worker* lace, BDD a, BDDVAR prev_level)
         a10 = a11 = a1;
     }
 
-    BDD u1 = sylvan_closure_CALL(lace, a11, level);
+    BDD u1 = sylvan_closure_CALL(lace, a11);
     bdd_refs_push(u1);
-    /* u3 = */ bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a01, u1, sylvan_false, level));
-    BDD u2 = sylvan_relprev_CALL(lace, u1, a10, sylvan_false, level);
+    /* u3 = */ bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a01, u1, sylvan_false));
+    BDD u2 = sylvan_relprev_CALL(lace, u1, a10, sylvan_false);
     bdd_refs_push(u2);
-    BDD e = sylvan_relprev_CALL(lace, a01, u2, sylvan_false, level);
+    BDD e = sylvan_relprev_CALL(lace, a01, u2, sylvan_false);
     bdd_refs_push(e);
-    e = sylvan_ite_CALL(lace, a00, sylvan_true, e, level);
+    e = sylvan_ite_CALL(lace, a00, sylvan_true, e);
     bdd_refs_pop(1);
     bdd_refs_push(e);
-    e = sylvan_closure_CALL(lace, e, level);
+    e = sylvan_closure_CALL(lace, e);
     bdd_refs_pop(1);
     bdd_refs_push(e);
-    BDD g = sylvan_relprev_CALL(lace, u2, e, sylvan_false, level);
+    BDD g = sylvan_relprev_CALL(lace, u2, e, sylvan_false);
     bdd_refs_push(g);
     BDD u3 = bdd_refs_sync(sylvan_relprev_SYNC(lace));
     bdd_refs_push(u3);
-    BDD f = sylvan_relprev_CALL(lace, e, u3, sylvan_false, level);
+    BDD f = sylvan_relprev_CALL(lace, e, u3, sylvan_false);
     bdd_refs_push(f);
-    BDD h = sylvan_relprev_CALL(lace, u2, f, sylvan_false, level);
+    BDD h = sylvan_relprev_CALL(lace, u2, f, sylvan_false);
     bdd_refs_push(h);
-    h = sylvan_ite_CALL(lace, u1, sylvan_true, h, level);
+    h = sylvan_ite_CALL(lace, u1, sylvan_true, h);
     bdd_refs_pop(1);
     bdd_refs_push(h);
 
@@ -1600,11 +1534,9 @@ BDD sylvan_closure_CALL(lace_worker* lace, BDD a, BDDVAR prev_level)
     bdd_refs_push(r0);
     /* R1 */ r1 = sylvan_makenode(t, g, h);
     bdd_refs_pop(1);
-    BDD result = sylvan_makenode(s, r0, r1);
+    result = sylvan_makenode(s, r0, r1);
 
-    if (cachenow) {
-        if (cache_put3(CACHE_BDD_CLOSURE, a, 0, 0, result)) sylvan_stats_count(BDD_CLOSURE_CACHEDPUT);
-    }
+    if (cache_put3(CACHE_BDD_CLOSURE, a, 0, 0, result)) sylvan_stats_count(BDD_CLOSURE_CACHEDPUT);
 
     return result;
 }
@@ -1613,7 +1545,7 @@ BDD sylvan_closure_CALL(lace_worker* lace, BDD a, BDDVAR prev_level)
 /**
  * Function composition
  */
-BDD sylvan_compose_CALL(lace_worker* lace, BDD a, BDDMAP map, BDDVAR prev_level)
+BDD sylvan_compose_CALL(lace_worker* lace, BDD a, BDDMAP map)
 {
     /* Trivial cases */
     if (a == sylvan_false || a == sylvan_true) return a;
@@ -1640,18 +1572,15 @@ BDD sylvan_compose_CALL(lace_worker* lace, BDD a, BDDMAP map, BDDVAR prev_level)
     }
 
     /* Consult cache */
-    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
-    if (cachenow) {
-        BDD result;
-        if (cache_get3(CACHE_BDD_COMPOSE, a, map, 0, &result)) {
-            sylvan_stats_count(BDD_COMPOSE_CACHED);
-            return result;
-        }
+    BDD result;
+    if (cache_get3(CACHE_BDD_COMPOSE, a, map, 0, &result)) {
+        sylvan_stats_count(BDD_COMPOSE_CACHED);
+        return result;
     }
 
     /* Recursively calculate low and high */
-    bdd_refs_spawn(sylvan_compose_SPAWN(lace, node_low(a, n), map, level));
-    BDD high = sylvan_compose_CALL(lace, node_high(a, n), map, level);
+    bdd_refs_spawn(sylvan_compose_SPAWN(lace, node_low(a, n), map));
+    BDD high = sylvan_compose_CALL(lace, node_high(a, n), map);
     bdd_refs_push(high);
     BDD low = bdd_refs_sync(sylvan_compose_SYNC(lace));
     bdd_refs_push(low);
@@ -1659,12 +1588,10 @@ BDD sylvan_compose_CALL(lace_worker* lace, BDD a, BDDMAP map, BDDVAR prev_level)
     /* Calculate result */
     BDD root = map_var == level ? node_high(map, map_node) : sylvan_ithvar(level);
     bdd_refs_push(root);
-    BDD result = sylvan_ite_CALL(lace, root, high, low, 0);
+    result = sylvan_ite_CALL(lace, root, high, low);
     bdd_refs_pop(3);
 
-    if (cachenow) {
-        if (cache_put3(CACHE_BDD_COMPOSE, a, map, 0, result)) sylvan_stats_count(BDD_COMPOSE_CACHEDPUT);
-    }
+    if (cache_put3(CACHE_BDD_COMPOSE, a, map, 0, result)) sylvan_stats_count(BDD_COMPOSE_CACHEDPUT);
 
     return result;
 }
@@ -1672,7 +1599,7 @@ BDD sylvan_compose_CALL(lace_worker* lace, BDD a, BDDMAP map, BDDVAR prev_level)
 /**
  * Calculate the number of distinct paths to True.
  */
-double sylvan_pathcount_CALL(lace_worker* lace, BDD bdd, BDDVAR prev_level)
+double sylvan_pathcount_CALL(lace_worker* lace, BDD bdd)
 {
     /* Trivial cases */
     if (bdd == sylvan_false) return 0.0;
@@ -1684,34 +1611,27 @@ double sylvan_pathcount_CALL(lace_worker* lace, BDD bdd, BDDVAR prev_level)
     /* Count operation */
     sylvan_stats_count(BDD_PATHCOUNT);
 
-    BDD level = sylvan_var(bdd);
-
     /* Consult cache */
-    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
-    if (cachenow) {
-        double result;
-        if (cache_get3(CACHE_BDD_PATHCOUNT, bdd, 0, 0, (uint64_t*)&result)) {
-            sylvan_stats_count(BDD_PATHCOUNT_CACHED);
-            return result;
-        }
+    double result;
+    if (cache_get3(CACHE_BDD_PATHCOUNT, bdd, 0, 0, (uint64_t*)&result)) {
+        sylvan_stats_count(BDD_PATHCOUNT_CACHED);
+        return result;
     }
 
-    sylvan_pathcount_SPAWN(lace, sylvan_low(bdd), level);
-    sylvan_pathcount_SPAWN(lace, sylvan_high(bdd), level);
-    double res1 = sylvan_pathcount_SYNC(lace);
-    res1 += sylvan_pathcount_SYNC(lace);
+    sylvan_pathcount_SPAWN(lace, sylvan_low(bdd));
+    sylvan_pathcount_SPAWN(lace, sylvan_high(bdd));
+    result = sylvan_pathcount_SYNC(lace);
+    result += sylvan_pathcount_SYNC(lace);
 
-    if (cachenow) {
-        if (cache_put3(CACHE_BDD_PATHCOUNT, bdd, 0, 0, *(uint64_t*)&res1)) sylvan_stats_count(BDD_PATHCOUNT_CACHEDPUT);
-    }
+    if (cache_put3(CACHE_BDD_PATHCOUNT, bdd, 0, 0, *(uint64_t*)&result)) sylvan_stats_count(BDD_PATHCOUNT_CACHEDPUT);
 
-    return res1;
+    return result;
 }
 
 /**
  * Calculate the number of satisfying variable assignments according to <variables>.
  */
-double sylvan_satcount_CALL(lace_worker* lace, BDD bdd, BDDSET variables, BDDVAR prev_level)
+double sylvan_satcount_CALL(lace_worker* lace, BDD bdd, BDDSET variables)
 {
     /* Trivial cases */
     if (bdd == sylvan_false) return 0.0;
@@ -1743,22 +1663,17 @@ double sylvan_satcount_CALL(lace_worker* lace, BDD bdd, BDDSET variables, BDDVAR
     } hack;
 
     /* Consult cache */
-    int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != var / granularity;
-    if (cachenow) {
-        if (cache_get3(CACHE_BDD_SATCOUNT, bdd, variables, 0, &hack.s)) {
-            sylvan_stats_count(BDD_SATCOUNT_CACHED);
-            return hack.d * powl(2.0L, skipped);
-        }
+    if (cache_get3(CACHE_BDD_SATCOUNT, bdd, variables, 0, &hack.s)) {
+        sylvan_stats_count(BDD_SATCOUNT_CACHED);
+        return hack.d * powl(2.0L, skipped);
     }
 
-    sylvan_satcount_SPAWN(lace, sylvan_high(bdd), node_high(variables, set_node), var);
-    double low = sylvan_satcount_CALL(lace, sylvan_low(bdd), node_high(variables, set_node), var);
+    sylvan_satcount_SPAWN(lace, sylvan_high(bdd), node_high(variables, set_node));
+    double low = sylvan_satcount_CALL(lace, sylvan_low(bdd), node_high(variables, set_node));
     double result = low + sylvan_satcount_SYNC(lace);
 
-    if (cachenow) {
-        hack.d = result;
-        if (cache_put3(CACHE_BDD_SATCOUNT, bdd, variables, 0, hack.s)) sylvan_stats_count(BDD_SATCOUNT_CACHEDPUT);
-    }
+    hack.d = result;
+    if (cache_put3(CACHE_BDD_SATCOUNT, bdd, variables, 0, hack.s)) sylvan_stats_count(BDD_SATCOUNT_CACHEDPUT);
 
     return result * powl(2.0L, skipped);
 }
@@ -2125,7 +2040,7 @@ BDD sylvan_collect_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, sylvan_colle
         bdd_refs_spawn(sylvan_collect_do_SPAWN(lace, bdd1, dom_next, cb, context, &p1));
         BDD low = bdd_refs_push(sylvan_collect_do_CALL(lace, bdd0, dom_next, cb, context, &p0));
         BDD high = bdd_refs_push(bdd_refs_sync(sylvan_collect_do_SYNC(lace)));
-        BDD res = sylvan_not(sylvan_and_CALL(lace, sylvan_not(low), sylvan_not(high), 0));
+        BDD res = sylvan_not(sylvan_and_CALL(lace, sylvan_not(low), sylvan_not(high)));
         bdd_refs_pop(2);
         return res;
     }

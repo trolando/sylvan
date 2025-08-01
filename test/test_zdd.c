@@ -173,7 +173,7 @@ int test_zdd_merge_domains_CALL(lace_worker* lace)
     test_assert(zdd_subdom2 == zdd_set_from_mtbdd(bdd_subdom2));
 
     // combine subdomains
-    BDD bdd_subdom = sylvan_and(bdd_subdom1, bdd_subdom2, 0);
+    BDD bdd_subdom = sylvan_and(bdd_subdom1, bdd_subdom2);
     ZDD zdd_subdom = zdd_set_union(zdd_subdom1, zdd_subdom2);
     test_assert(zdd_subdom == zdd_set_from_mtbdd(bdd_subdom));
 
@@ -344,7 +344,7 @@ int test_zdd_and_CALL(lace_worker* lace)
         bdd_set_b = sylvan_union_cube(bdd_set_b, bdd_dom, arr);
     }
 
-    BDD bdd_set = sylvan_and(bdd_set_a, bdd_set_b, 0);
+    BDD bdd_set = sylvan_and(bdd_set_a, bdd_set_b);
 
     ZDD zdd_set_a = zdd_from_mtbdd(bdd_set_a, bdd_dom);
     ZDD zdd_set_b = zdd_from_mtbdd(bdd_set_b, bdd_dom);
@@ -474,7 +474,7 @@ int test_zdd_ite_CALL(lace_worker* lace)
     ZDD zdd_set_c = zdd_from_mtbdd(set_c, bdd_dom);
     ZDD zdd_dom = zdd_set_from_mtbdd(bdd_dom);
 
-    MTBDD bdd_test_result = sylvan_ite(set_a, set_b, set_c, 0);
+    MTBDD bdd_test_result = sylvan_ite(set_a, set_b, set_c);
     ZDD zdd_test_result = zdd_ite(zdd_set_a, zdd_set_b, zdd_set_c, zdd_dom);
     test_assert(zdd_from_mtbdd(bdd_test_result, bdd_dom) == zdd_test_result);
 
@@ -522,7 +522,7 @@ int test_zdd_exists_CALL(lace_worker* lace)
         test_assert(zdd_set == zdd_from_mtbdd(bdd_set, bdd_dom));
     }
 
-    BDD bdd_qset = sylvan_exists(bdd_set, bdd_qdom, 0);
+    BDD bdd_qset = sylvan_exists(bdd_set, bdd_qdom);
     ZDD zdd_test_result = zdd_exists(zdd_set, zdd_qdom);
     test_assert(zdd_test_result == zdd_from_mtbdd(bdd_qset, bdd_dom));
     ZDD zdd_test_result2 = zdd_project(zdd_set, zdd_subdom);
@@ -677,8 +677,8 @@ int test_zdd_isop_basic_CALL(lace_worker* lace)
     BDD a = sylvan_ithvar(1);
     BDD b = sylvan_ithvar(2);
 
-    BDD a_and_b = sylvan_and(a, b, 0);
-    BDD aNot_and_b = sylvan_and(sylvan_not(a), b, 0);
+    BDD a_and_b = sylvan_and(a, b);
+    BDD aNot_and_b = sylvan_and(sylvan_not(a), b);
     BDD redundant_b = sylvan_or(a_and_b, aNot_and_b);
 
     // ab + ~ab == b

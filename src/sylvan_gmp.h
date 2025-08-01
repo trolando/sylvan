@@ -43,146 +43,176 @@ MTBDD mtbdd_gmp(mpq_t val);
 /**
  * Operation "plus" for two mpq MTBDDs
  */
-TASK_DECL_2(MTBDD, gmp_op_plus, MTBDD*, MTBDD*);
-TASK_DECL_3(MTBDD, gmp_abstract_op_plus, MTBDD, MTBDD, int);
+TASK_2(MTBDD, gmp_op_plus, MTBDD*, a, MTBDD*, b);
+TASK_3(MTBDD, gmp_abstract_op_plus, MTBDD, a, MTBDD, b, int, k);
 
 /**
  * Operation "minus" for two mpq MTBDDs
  */
-TASK_DECL_2(MTBDD, gmp_op_minus, MTBDD*, MTBDD*);
+TASK_2(MTBDD, gmp_op_minus, MTBDD*, a, MTBDD*, b);
 
 /**
  * Operation "times" for two mpq MTBDDs
  */
-TASK_DECL_2(MTBDD, gmp_op_times, MTBDD*, MTBDD*);
-TASK_DECL_3(MTBDD, gmp_abstract_op_times, MTBDD, MTBDD, int);
+TASK_2(MTBDD, gmp_op_times, MTBDD*, a, MTBDD*, b);
+TASK_3(MTBDD, gmp_abstract_op_times, MTBDD, a, MTBDD, c, int, k);
 
 /**
  * Operation "divide" for two mpq MTBDDs
  */
-TASK_DECL_2(MTBDD, gmp_op_divide, MTBDD*, MTBDD*);
+TASK_2(MTBDD, gmp_op_divide, MTBDD*, a, MTBDD*, b);
 
 /**
  * Operation "min" for two mpq MTBDDs
  */
-TASK_DECL_2(MTBDD, gmp_op_min, MTBDD*, MTBDD*);
-TASK_DECL_3(MTBDD, gmp_abstract_op_min, MTBDD, MTBDD, int);
+TASK_2(MTBDD, gmp_op_min, MTBDD*, a, MTBDD*, b);
+TASK_3(MTBDD, gmp_abstract_op_min, MTBDD, a, MTBDD, b, int, k);
 
 /**
  * Operation "max" for two mpq MTBDDs
  */
-TASK_DECL_2(MTBDD, gmp_op_max, MTBDD*, MTBDD*);
-TASK_DECL_3(MTBDD, gmp_abstract_op_max, MTBDD, MTBDD, int);
+TASK_2(MTBDD, gmp_op_max, MTBDD*, a, MTBDD*, b);
+TASK_3(MTBDD, gmp_abstract_op_max, MTBDD, a, MTBDD, b, int, k);
 
 /**
  * Operation "negate" for one mpq MTBDD
  */
-TASK_DECL_2(MTBDD, gmp_op_neg, MTBDD, size_t);
+TASK_2(MTBDD, gmp_op_neg, MTBDD, dd, size_t, p);
 
 /**
  * Operation "abs" for one mpq MTBDD
  */
-TASK_DECL_2(MTBDD, gmp_op_abs, MTBDD, size_t);
+TASK_2(MTBDD, gmp_op_abs, MTBDD, dd, size_t, p);
 
 /**
  * Compute a + b
  */
-#define gmp_plus(a, b) mtbdd_apply(a, b, TASK(gmp_op_plus))
+static inline MTBDD gmp_plus(MTBDD a, MTBDD b)
+{
+    return mtbdd_apply(a, b, gmp_op_plus_CALL);
+}
 
 /**
  * Compute a + b
  */
-#define gmp_minus(a, b) mtbdd_apply(a, b, TASK(gmp_op_minus))
+static inline MTBDD gmp_minus(MTBDD a, MTBDD b)
+{
+    return mtbdd_apply(a, b, gmp_op_minus_CALL);
+}
 
 /**
  * Compute a * b
  */
-#define gmp_times(a, b) mtbdd_apply(a, b, TASK(gmp_op_times))
+static inline MTBDD gmp_times(MTBDD a, MTBDD b)
+{
+    return mtbdd_apply(a, b, gmp_op_times_CALL);
+}
 
 /**
  * Compute a * b
  */
-#define gmp_divide(a, b) mtbdd_apply(a, b, TASK(gmp_op_divide))
+static inline MTBDD gmp_divide(MTBDD a, MTBDD b)
+{
+    return mtbdd_apply(a, b, gmp_op_divide_CALL);
+}
 
 /**
  * Compute min(a, b)
  */
-#define gmp_min(a, b) mtbdd_apply(a, b, TASK(gmp_op_min))
+static inline MTBDD gmp_min(MTBDD a, MTBDD b)
+{
+    return mtbdd_apply(a, b, gmp_op_min_CALL);
+}
 
 /**
  * Compute max(a, b)
  */
-#define gmp_max(a, b) mtbdd_apply(a, b, TASK(gmp_op_max))
+static inline MTBDD gmp_max(MTBDD a, MTBDD b)
+{
+    return mtbdd_apply(a, b, gmp_op_max_CALL);
+}
 
 /**
  * Compute -a
  */
-#define gmp_neg(a) mtbdd_uapply(a, TASK(gmp_op_neg), 0);
+static inline MTBDD gmp_neg(MTBDD dd)
+{
+    return mtbdd_uapply(dd, gmp_op_neg_CALL, 0);
+}
 
 /**
  * Compute abs(a)
  */
-#define gmp_abs(a) mtbdd_uapply(a, TASK(gmp_op_abs), 0);
+static inline MTBDD gmp_abs(MTBDD dd)
+{
+    return mtbdd_uapply(dd, gmp_op_abs_CALL, 0);
+}
 
 /**
- * Abstract the variables in <v> from <a> by taking the sum of all values
+ * Abstract the variables in <vars> from <dd> by taking the sum of all values
  */
-#define gmp_abstract_plus(dd, v) mtbdd_abstract(dd, v, TASK(gmp_abstract_op_plus))
+static inline MTBDD gmp_abstract_plus(MTBDD dd, MTBDD vars)
+{
+    return mtbdd_abstract(dd, vars, gmp_abstract_op_plus_CALL);
+}
 
 /**
- * Abstract the variables in <v> from <a> by taking the product of all values
+ * Abstract the variables in <vars> from <dd> by taking the product of all values
  */
-#define gmp_abstract_times(dd, v) mtbdd_abstract(dd, v, TASK(gmp_abstract_op_times))
+static inline MTBDD gmp_abstract_times(MTBDD dd, MTBDD vars)
+{
+    return mtbdd_abstract(dd, vars, gmp_abstract_op_times_CALL);
+}
 
 /**
- * Abstract the variables in <v> from <a> by taking the minimum of all values
+ * Abstract the variables in <vars> from <dd> by taking the minimum of all values
  */
-#define gmp_abstract_min(dd, v) mtbdd_abstract(dd, v, TASK(gmp_abstract_op_min))
+static inline MTBDD gmp_abstract_min(MTBDD dd, MTBDD vars)
+{
+    return mtbdd_abstract(dd, vars, gmp_abstract_op_min_CALL);
+}
 
 /**
- * Abstract the variables in <v> from <a> by taking the maximum of all values
+ * Abstract the variables in <vars> from <dd> by taking the maximum of all values
  */
-#define gmp_abstract_max(dd, v) mtbdd_abstract(dd, v, TASK(gmp_abstract_op_max))
+static inline MTBDD gmp_abstract_max(MTBDD dd, MTBDD vars)
+{
+    return mtbdd_abstract(dd, vars, gmp_abstract_op_max_CALL);
+}
 
 /**
  * Multiply <a> and <b>, and abstract variables <vars> using summation.
  * This is similar to the "and_exists" operation in BDDs.
  */
-TASK_DECL_3(MTBDD, gmp_and_abstract_plus, MTBDD, MTBDD, MTBDD);
-#define gmp_and_abstract_plus(a, b, vars) RUN(gmp_and_abstract_plus, a, b, vars)
+TASK_3(MTBDD, gmp_and_abstract_plus, MTBDD, a, MTBDD, b, MTBDD, vars)
 #define gmp_and_exists gmp_and_abstract_plus
 
 /**
  * Multiply <a> and <b>, and abstract variables <vars> by taking the maximum.
  */
-TASK_DECL_3(MTBDD, gmp_and_abstract_max, MTBDD, MTBDD, MTBDD);
-#define gmp_and_abstract_max(a, b, vars) RUN(gmp_and_abstract_max, a, b, vars)
+TASK_3(MTBDD, gmp_and_abstract_max, MTBDD, a, MTBDD, b, MTBDD, vars);
 
 /**
  * Convert to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
  * Parameter <dd> is the MTBDD to convert; parameter <value> is an GMP mpq leaf
  */
-TASK_DECL_2(MTBDD, gmp_op_threshold, MTBDD*, MTBDD*);
-#define gmp_threshold(dd, value) mtbdd_apply(dd, value, TASK(gmp_op_threshold));
+TASK_2(MTBDD, gmp_op_threshold, MTBDD*, dd, MTBDD*, value);
 
 /**
  * Convert to a Boolean MTBDD, translate terminals > value to 1 and to 0 otherwise;
  * Parameter <dd> is the MTBDD to convert; parameter <value> is an GMP mpq leaf
  */
-TASK_DECL_2(MTBDD, gmp_op_strict_threshold, MTBDD*, MTBDD*);
-#define gmp_strict_threshold(dd, value) mtbdd_apply(dd, value, TASK(gmp_op_strict_threshold));
+TASK_2(MTBDD, gmp_op_strict_threshold, MTBDD*, dd, MTBDD*, value);
 
 /**
  * Convert to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
  */
-TASK_DECL_2(MTBDD, gmp_threshold_d, MTBDD, double);
-#define gmp_threshold_d(dd, value) RUN(gmp_threshold_d, dd, value)
+TASK_2(MTBDD, gmp_threshold_d, MTBDD, dd, double, value);
 
 /**
  * Convert to a Boolean MTBDD, translate terminals > value to 1 and to 0 otherwise;
  */
-TASK_DECL_2(MTBDD, gmp_strict_threshold_d, MTBDD, double);
-#define gmp_strict_threshold_d(dd, value) RUN(gmp_strict_threshold_d, dd, value)
+TASK_2(MTBDD, gmp_strict_threshold_d, MTBDD, dd, double, value);
 
 #ifdef __cplusplus
 }

@@ -99,7 +99,7 @@ sylvan_gc_hook_main(gc_hook_cb callback)
 /**
  * Clear the operation cache.
  */
-VOID_TASK_IMPL_0(sylvan_clear_cache)
+void sylvan_clear_cache_CALL(lace_worker* lace)
 {
    cache_clear();
 }
@@ -111,12 +111,12 @@ VOID_TASK_IMPL_0(sylvan_clear_cache)
  * After marking, the "destroy" hooks are called for all unmarked nodes,
  * for example to free data of custom MTBDD leaves.
  */
-VOID_TASK_IMPL_0(sylvan_clear_and_mark)
+void sylvan_clear_and_mark_CALL(lace_worker* lace)
 {
     llmsset_clear_data(nodes);
 
     for (gc_hook_entry_t e = mark_list; e != NULL; e = e->next) {
-        WRAP(e->cb);
+        e->cb(lace);
     }
 
     llmsset_destroy_unmarked(nodes);
@@ -125,7 +125,7 @@ VOID_TASK_IMPL_0(sylvan_clear_and_mark)
 /**
  * Clear the hash array of the nodes table and rehash all marked buckets.
  */
-VOID_TASK_IMPL_0(sylvan_rehash_all)
+void sylvan_rehash_all_CALL(lace_worker* lace)
 {
     // clear hash array
     llmsset_clear_hashes(nodes);
@@ -164,7 +164,7 @@ next_size(size_t current_size)
  * Resizing heuristic that always doubles the tables when running gc (until max).
  * The nodes table and operation cache are both resized until their maximum size.
  */
-VOID_TASK_IMPL_0(sylvan_gc_aggressive_resize)
+void sylvan_gc_aggressive_resize_CALL(lace_worker* lace)
 {
     size_t nodes_size = llmsset_get_size(nodes);
     size_t nodes_max = llmsset_get_max_size(nodes);
@@ -186,7 +186,7 @@ VOID_TASK_IMPL_0(sylvan_gc_aggressive_resize)
  * Resizing heuristic that only resizes when more than 50% is marked.
  * The operation cache is only resized if the nodes table is resized.
  */
-VOID_TASK_IMPL_0(sylvan_gc_normal_resize)
+void sylvan_gc_normal_resize_CALL(lace_worker* lace)
 {
     size_t nodes_size = llmsset_get_size(nodes);
     size_t nodes_max = llmsset_get_max_size(nodes);
@@ -213,13 +213,15 @@ VOID_TASK_IMPL_0(sylvan_gc_normal_resize)
  * Actual implementation of garbage collection
  */
 VOID_TASK_0(sylvan_gc_go)
+
+void sylvan_gc_go_CALL(lace_worker* lace)
 {
     sylvan_stats_count(SYLVAN_GC_COUNT);
     sylvan_timer_start(SYLVAN_GC);
 
     // call pre gc hooks
     for (gc_hook_entry_t e = pregc_list; e != NULL; e = e->next) {
-        WRAP(e->cb);
+        e->cb(lace);
     }
 
     /*
@@ -227,18 +229,18 @@ VOID_TASK_0(sylvan_gc_go)
      * Alternatively, we could implement for example some strategy
      * where part of the cache is cleared and part is marked
      */
-    CALL(sylvan_clear_cache);
+    sylvan_clear_cache_CALL(lace);
 
-    CALL(sylvan_clear_and_mark);
+    sylvan_clear_and_mark_CALL(lace);
 
     // call hooks for resizing and all that
-    WRAP(main_hook);
+    main_hook(lace);
 
-    CALL(sylvan_rehash_all);
+    sylvan_rehash_all_CALL(lace);
 
     // call post gc hooks
     for (gc_hook_entry_t e = postgc_list; e != NULL; e = e->next) {
-        WRAP(e->cb);
+        e->cb(lace);
     }
 
     sylvan_timer_stop(SYLVAN_GC);
@@ -247,17 +249,17 @@ VOID_TASK_0(sylvan_gc_go)
 /**
  * Perform garbage collection
  */
-VOID_TASK_IMPL_0(sylvan_gc)
+void sylvan_gc_CALL(lace_worker* lace)
 {
     if (gc_enabled) {
         int zero = 0;
         if (atomic_compare_exchange_strong(&gc, &zero, 1)) {
-            NEWFRAME(sylvan_gc_go);
+            sylvan_gc_go_NEWFRAME();
             gc = 0;
         } else {
             /* wait for new frame to appear */
             while (atomic_load_explicit(&lace_newframe.t, memory_order_relaxed) == 0) {}
-            lace_yield(__lace_worker, __lace_dq_head);
+            lace_yield(lace);
         }
     }
 }
@@ -370,10 +372,12 @@ sylvan_init_package(void)
 
     /* Initialize garbage collection */
     gc = 0;
+
+    // FIXME better configuration!!
 #if SYLVAN_AGGRESSIVE_RESIZE
-    main_hook = TASK(sylvan_gc_aggressive_resize);
+    main_hook = sylvan_gc_aggressive_resize_CALL;
 #else
-    main_hook = TASK(sylvan_gc_normal_resize);
+    main_hook = sylvan_gc_normal_resize_CALL;
 #endif
 
     sylvan_stats_init();
@@ -431,7 +435,7 @@ sylvan_quit()
 /**
  * Calculate table usage (in parallel)
  */
-VOID_TASK_IMPL_2(sylvan_table_usage, size_t*, filled, size_t*, total)
+void sylvan_table_usage_CALL(lace_worker* lace, size_t* filled, size_t* total)
 {
     size_t tot = llmsset_get_size(nodes);
     if (filled != NULL) *filled = llmsset_count_marked(nodes);

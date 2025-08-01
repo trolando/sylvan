@@ -93,8 +93,8 @@ size_t lddmc_count_refs(void);
 /**
  * Call mtbdd_gc_mark_rec for every mtbdd you want to keep in your custom mark functions.
  */
-VOID_TASK_DECL_1(lddmc_gc_mark_rec, MDD)
-#define lddmc_gc_mark_rec(mdd) RUN(lddmc_gc_mark_rec, mdd)
+
+static inline void lddmc_gc_mark_rec(MDD dd);
 
 /* Sanity check - returns depth of MDD including 'true' terminal or 0 for empty set */
 #ifndef NDEBUG
@@ -102,20 +102,15 @@ size_t lddmc_test_ismdd(MDD mdd);
 #endif
 
 /* Operations for model checking */
-TASK_DECL_2(MDD, lddmc_union, MDD, MDD);
-#define lddmc_union(a, b) RUN(lddmc_union, a, b)
+static inline MDD lddmc_union(MDD a, MDD b);
 
-TASK_DECL_2(MDD, lddmc_minus, MDD, MDD);
-#define lddmc_minus(a, b) RUN(lddmc_minus, a, b)
+static inline MDD lddmc_minus(MDD a, MDD b);
 
-TASK_DECL_3(MDD, lddmc_zip, MDD, MDD, MDD*);
-#define lddmc_zip(a, b, res) RUN(lddmc_zip, a, b, res)
+static inline MDD lddmc_zip(MDD a, MDD b, MDD* res);
 
-TASK_DECL_2(MDD, lddmc_intersect, MDD, MDD);
-#define lddmc_intersect(a, b) RUN(lddmc_intersect, a, b)
+static inline MDD lddmc_intersect(MDD a, MDD b);
 
-TASK_DECL_3(MDD, lddmc_match, MDD, MDD, MDD);
-#define lddmc_match(a, b, proj) RUN(lddmc_match, a, b, proj)
+static inline MDD lddmc_match(MDD a, MDD b, MDD proj);
 
 MDD lddmc_union_cube(MDD a, uint32_t* values, size_t count);
 int lddmc_member_cube(MDD a, uint32_t* values, size_t count);
@@ -125,29 +120,23 @@ MDD lddmc_union_cube_copy(MDD a, uint32_t* values, int* copy, size_t count);
 int lddmc_member_cube_copy(MDD a, uint32_t* values, int* copy, size_t count);
 MDD lddmc_cube_copy(uint32_t* values, int* copy, size_t count);
 
-TASK_DECL_3(MDD, lddmc_relprod, MDD, MDD, MDD);
-#define lddmc_relprod(a, b, proj) RUN(lddmc_relprod, a, b, proj)
+TASK_3(MDD, lddmc_relprod, MDD, a, MDD, b, MDD, proj)
 
-TASK_DECL_4(MDD, lddmc_relprod_union, MDD, MDD, MDD, MDD);
-#define lddmc_relprod_union(a, b, meta, un) RUN(lddmc_relprod_union, a, b, meta, un)
+TASK_4(MDD, lddmc_relprod_union, MDD, a, MDD, b, MDD, meta, MDD, un)
 
 /**
  * Calculate all predecessors to a in uni according to rel[proj]
  * <proj> follows the same semantics as relprod
  * i.e. 0 (not in rel), 1 (read+write), 2 (read), 3 (write), -1 (end; rest=0)
  */
-TASK_DECL_4(MDD, lddmc_relprev, MDD, MDD, MDD, MDD);
-#define lddmc_relprev(a, rel, proj, uni) RUN(lddmc_relprev, a, rel, proj, uni)
+TASK_4(MDD, lddmc_relprev, MDD, dd, MDD, rel, MDD, proj, MDD, uni);
 
 // so: proj: -2 (end; quantify rest), -1 (end; keep rest), 0 (quantify), 1 (keep)
-TASK_DECL_2(MDD, lddmc_project, MDD, MDD);
-#define lddmc_project(mdd, proj) RUN(lddmc_project, mdd, proj)
+TASK_2(MDD, lddmc_project, MDD, dd, MDD, proj);
 
-TASK_DECL_3(MDD, lddmc_project_minus, MDD, MDD, MDD);
-#define lddmc_project_minus(mdd, proj, avoid) RUN(lddmc_project_minus, mdd, proj, avoid)
+TASK_3(MDD, lddmc_project_minus, MDD, dd, MDD, proj, MDD, avoid);
 
-TASK_DECL_4(MDD, lddmc_join, MDD, MDD, MDD, MDD);
-#define lddmc_join(a, b, a_proj, b_proj) RUN(lddmc_join, a, b, a_proj, b_proj)
+TASK_4(MDD, lddmc_join, MDD, a, MDD, b, MDD, a_proj, MDD, b_proj);
 
 /* Write a DOT representation */
 void lddmc_printdot(MDD mdd);
@@ -172,11 +161,9 @@ typedef double lddmc_satcount_double_t;
 // if this line below gives an error, modify the above typedef until fixed ;)
 typedef char __lddmc_check_float_is_8_bytes[(sizeof(lddmc_satcount_double_t) == sizeof(uint64_t))?1:-1];
 
-TASK_DECL_1(lddmc_satcount_double_t, lddmc_satcount_cached, MDD);
-#define lddmc_satcount_cached(mdd) RUN(lddmc_satcount_cached, mdd)
+TASK_1(lddmc_satcount_double_t, lddmc_satcount_cached, MDD, dd);
 
-TASK_DECL_1(long double, lddmc_satcount, MDD);
-#define lddmc_satcount(mdd) RUN(lddmc_satcount, mdd)
+TASK_1(long double, lddmc_satcount, MDD, dd);
 
 /**
  * A callback for enumerating functions like sat_all_par, collect and match
@@ -185,20 +172,16 @@ TASK_DECL_1(long double, lddmc_satcount, MDD);
  * For collect, use:
  * TASK_3(MDD, ...)
  */
-LACE_TYPEDEF_CB(void, lddmc_enum_cb, uint32_t*, size_t, void*);
-LACE_TYPEDEF_CB(MDD, lddmc_collect_cb, uint32_t*, size_t, void*);
+typedef void (*lddmc_enum_cb)(uint32_t*, size_t, void*);
+typedef MDD (*lddmc_collect_cb)(uint32_t*, size_t, void*);
 
-VOID_TASK_DECL_5(lddmc_sat_all_par, MDD, lddmc_enum_cb, void*, uint32_t*, size_t);
-#define lddmc_sat_all_par(mdd, cb, context) RUN(lddmc_sat_all_par, mdd, cb, context, 0, 0)
+VOID_TASK_5(lddmc_sat_all_par, MDD, dd, lddmc_enum_cb, cb, void*, context, uint32_t*, arr, size_t, len);
 
-VOID_TASK_DECL_3(lddmc_sat_all_nopar, MDD, lddmc_enum_cb, void*);
-#define lddmc_sat_all_nopar(mdd, cb, context) RUN(lddmc_sat_all_nopar, mdd, cb, context)
+VOID_TASK_3(lddmc_sat_all_nopar, MDD, dd, lddmc_enum_cb, cb, void*, context);
 
-TASK_DECL_5(MDD, lddmc_collect, MDD, lddmc_collect_cb, void*, uint32_t*, size_t);
-#define lddmc_collect(mdd, cb, context) RUN(lddmc_collect, mdd, cb, context, 0, 0)
+TASK_5(MDD, lddmc_collect, MDD, dd, lddmc_collect_cb, cb, void*, context, uint32_t*, arr, size_t, len);
 
-VOID_TASK_DECL_5(lddmc_match_sat_par, MDD, MDD, MDD, lddmc_enum_cb, void*);
-#define lddmc_match_sat_par(mdd, match, proj, cb, context) RUN(lddmc_match_sat_par, mdd, match, proj, cb, context)
+VOID_TASK_5(lddmc_match_sat_par, MDD, dd, MDD, match, MDD, proj, lddmc_enum_cb, cb, void*, context);
 
 int lddmc_sat_one(MDD mdd, uint32_t *values, size_t count);
 MDD lddmc_sat_one_mdd(MDD mdd);
@@ -209,9 +192,9 @@ MDD lddmc_sat_one_mdd(MDD mdd);
  * lddmc_visit_seq sequentially visits nodes, down first, then right.
  * lddmc_visit_par visits nodes in parallel (down || right)
  */
-LACE_TYPEDEF_CB(int, lddmc_visit_pre_cb, MDD, void*); // int pre(MDD, context)
-LACE_TYPEDEF_CB(void, lddmc_visit_post_cb, MDD, void*); // void post(MDD, context)
-LACE_TYPEDEF_CB(void, lddmc_visit_init_context_cb, void*, void*, int); // void init_context(context, parent, is_down)
+typedef int (*lddmc_visit_pre_cb)(MDD, void*); // int pre(MDD, context)
+typedef void (*lddmc_visit_post_cb)(MDD, void*); // void post(MDD, context)
+typedef void (*lddmc_visit_init_context_cb)(void*, void*, int); // void init_context(context, parent, is_down)
 
 typedef struct lddmc_visit_node_callbacks {
     lddmc_visit_pre_cb lddmc_visit_pre;
@@ -219,11 +202,9 @@ typedef struct lddmc_visit_node_callbacks {
     lddmc_visit_init_context_cb lddmc_visit_init_context;
 } lddmc_visit_callbacks_t;
 
-VOID_TASK_DECL_4(lddmc_visit_par, MDD, lddmc_visit_callbacks_t*, size_t, void*);
-#define lddmc_visit_par(mdd, cbs, ctx_size, context) RUN(lddmc_visit_par, mdd, cbs, ctx_size, context);
+VOID_TASK_4(lddmc_visit_par, MDD, dd, lddmc_visit_callbacks_t*, cbs, size_t, ctx_size, void*, context);
 
-VOID_TASK_DECL_4(lddmc_visit_seq, MDD, lddmc_visit_callbacks_t*, size_t, void*);
-#define lddmc_visit_seq(mdd, cbs, ctx_size, context) RUN(lddmc_visit_seq, mdd, cbs, ctx_size, context);
+VOID_TASK_4(lddmc_visit_seq, MDD, dd, lddmc_visit_callbacks_t*, cbs, size_t, ctx_size, void*, context);
 
 size_t lddmc_nodecount(MDD mdd);
 void lddmc_nodecount_levels(MDD mdd, size_t *variables);
@@ -233,9 +214,8 @@ void lddmc_nodecount_levels(MDD mdd, size_t *variables);
  * For every node at depth <depth>, call function cb (MDD -> MDD).
  * and replace the node by the result of the function
  */
-LACE_TYPEDEF_CB(MDD, lddmc_compose_cb, MDD, void*);
-TASK_DECL_4(MDD, lddmc_compose, MDD, lddmc_compose_cb, void*, int);
-#define lddmc_compose(mdd, cb, context, depth) RUN(lddmc_compose, mdd, cb, context, depth)
+typedef MDD (*lddmc_compose_cb)(MDD, void*);
+TASK_4(MDD, lddmc_compose, MDD, dd, lddmc_compose_cb, cb, void*, context, int, depth);
 
 /**
  * SAVING:
@@ -298,13 +278,22 @@ void lddmc_refs_pop(long amount);
  * Push a Task that returns an LDD to the tasks reference stack.
  * Usage: lddmc_refs_spawn(SPAWN(function, ...));
  */
-void lddmc_refs_spawn(Task *t);
+void lddmc_refs_spawn(lace_task* t);
 
 /**
  * Pop a Task from the task reference stack.
  * Usage: MDD result = lddmc_refs_sync(SYNC(function));
  */
 MDD lddmc_refs_sync(MDD dd);
+
+VOID_TASK_1(lddmc_gc_mark_rec, MDD, dd)
+TASK_2(MDD, lddmc_union, MDD, a, MDD, b);
+TASK_2(MDD, lddmc_minus, MDD, a, MDD, b);
+TASK_3(MDD, lddmc_zip, MDD, a, MDD, b, MDD*, res);
+TASK_2(MDD, lddmc_intersect, MDD, a, MDD, b);
+TASK_3(MDD, lddmc_match, MDD, a, MDD, b, MDD, proj);
+
+
 
 #ifdef __cplusplus
 }

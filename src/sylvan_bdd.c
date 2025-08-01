@@ -40,7 +40,8 @@ sylvan_get_granularity()
 /**
  * Implementation of unary, binary and if-then-else operators.
  */
-TASK_IMPL_3(BDD, sylvan_and, BDD, a, BDD, b, BDDVAR, prev_level)
+BDD
+sylvan_and_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
 {
     /* Terminal cases */
     if (a == sylvan_true) return b;
@@ -50,7 +51,7 @@ TASK_IMPL_3(BDD, sylvan_and, BDD, a, BDD, b, BDDVAR, prev_level)
     if (a == b) return a;
     if (a == BDD_TOGGLEMARK(b)) return sylvan_false;
 
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(BDD_AND);
@@ -102,7 +103,7 @@ TASK_IMPL_3(BDD, sylvan_and, BDD, a, BDD, b, BDDVAR, prev_level)
     } else if (bHigh == sylvan_true) {
         high = aHigh;
     } else {
-        bdd_refs_spawn(SPAWN(sylvan_and, aHigh, bHigh, level));
+        bdd_refs_spawn(sylvan_and_SPAWN(lace, aHigh, bHigh, level));
         n=1;
     }
 
@@ -113,12 +114,12 @@ TASK_IMPL_3(BDD, sylvan_and, BDD, a, BDD, b, BDDVAR, prev_level)
     } else if (bLow == sylvan_true) {
         low = aLow;
     } else {
-        low = CALL(sylvan_and, aLow, bLow, level);
+        low = sylvan_and_CALL(lace, aLow, bLow, level);
     }
 
     if (n) {
         bdd_refs_push(low);
-        high = bdd_refs_sync(SYNC(sylvan_and));
+        high = bdd_refs_sync(sylvan_and_SYNC(lace));
         bdd_refs_pop(1);
     }
 
@@ -131,11 +132,12 @@ TASK_IMPL_3(BDD, sylvan_and, BDD, a, BDD, b, BDDVAR, prev_level)
     return result;
 }
 
+// FIXME improve documentation...
 /*
     sylvan_disjoint could be implemented as "sylvan_and(a,b)==sylvan_false",
     but this implementation avoids building new nodes and allows more short-circuitry.
 */
-TASK_IMPL_3(char, sylvan_disjoint, BDD, a, BDD, b, BDDVAR, prev_level)
+char sylvan_disjoint_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
 {
     /* Terminal cases */
     if (a == sylvan_false || b == sylvan_false) return 1; 
@@ -143,7 +145,7 @@ TASK_IMPL_3(char, sylvan_disjoint, BDD, a, BDD, b, BDDVAR, prev_level)
     if (a == b) return 0; /* since a,b != sylvan_false */
     if (a == BDD_TOGGLEMARK(b)) return 1;
 
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(BDD_DISJOINT);
@@ -213,9 +215,9 @@ TASK_IMPL_3(char, sylvan_disjoint, BDD, a, BDD, b, BDDVAR, prev_level)
         result = 0;
     }
     else {
-        if (high==-1) SPAWN(sylvan_disjoint, aHigh, bHigh, level);
-        if (low ==-1) low = CALL(sylvan_disjoint, aLow, bLow, level);
-        if (high==-1) high = SYNC(sylvan_disjoint);
+        if (high==-1) sylvan_disjoint_SPAWN(lace, aHigh, bHigh, level);
+        if (low ==-1) low = sylvan_disjoint_CALL(lace, aLow, bLow, level);
+        if (high==-1) high = sylvan_disjoint_SYNC(lace);
         result = high && low;
     }
 
@@ -231,7 +233,7 @@ TASK_IMPL_3(char, sylvan_disjoint, BDD, a, BDD, b, BDDVAR, prev_level)
     return result;
 }
 
-TASK_IMPL_3(BDD, sylvan_xor, BDD, a, BDD, b, BDDVAR, prev_level)
+BDD sylvan_xor_CALL(lace_worker* lace, BDD a, BDD b, BDDVAR prev_level)
 {
     /* Terminal cases */
     if (a == sylvan_false) return b;
@@ -241,7 +243,7 @@ TASK_IMPL_3(BDD, sylvan_xor, BDD, a, BDD, b, BDDVAR, prev_level)
     if (a == b) return sylvan_false;
     if (a == sylvan_not(b)) return sylvan_true;
 
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(BDD_XOR);
@@ -290,10 +292,10 @@ TASK_IMPL_3(BDD, sylvan_xor, BDD, a, BDD, b, BDDVAR, prev_level)
     // Recursive computation
     BDD low, high, result;
 
-    bdd_refs_spawn(SPAWN(sylvan_xor, aHigh, bHigh, level));
-    low = CALL(sylvan_xor, aLow, bLow, level);
+    bdd_refs_spawn(sylvan_xor_SPAWN(lace, aHigh, bHigh, level));
+    low = sylvan_xor_CALL(lace, aLow, bLow, level);
     bdd_refs_push(low);
-    high = bdd_refs_sync(SYNC(sylvan_xor));
+    high = bdd_refs_sync(sylvan_xor_SYNC(lace));
     bdd_refs_pop(1);
 
     result = sylvan_makenode(level, low, high);
@@ -306,7 +308,7 @@ TASK_IMPL_3(BDD, sylvan_xor, BDD, a, BDD, b, BDDVAR, prev_level)
 }
 
 
-TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
+BDD sylvan_ite_CALL(lace_worker *lace, BDD a, BDD b, BDD c, BDDVAR prev_level)
 {
     /* Terminal cases */
     if (a == sylvan_true) return b;
@@ -322,19 +324,19 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     /* Cases that reduce to AND and XOR */
 
     // ITE(A,B,0) => AND(A,B)
-    if (c == sylvan_false) return CALL(sylvan_and, a, b, prev_level);
+    if (c == sylvan_false) return sylvan_and_CALL(lace, a, b, prev_level);
 
     // ITE(A,1,C) => ~AND(~A,~C)
-    if (b == sylvan_true) return sylvan_not(CALL(sylvan_and, sylvan_not(a), sylvan_not(c), prev_level));
+    if (b == sylvan_true) return sylvan_not(sylvan_and_CALL(lace, sylvan_not(a), sylvan_not(c), prev_level));
 
     // ITE(A,0,C) => AND(~A,C)
-    if (b == sylvan_false) return CALL(sylvan_and, sylvan_not(a), c, prev_level);
+    if (b == sylvan_false) return sylvan_and_CALL(lace, sylvan_not(a), c, prev_level);
 
     // ITE(A,B,1) => ~AND(A,~B)
-    if (c == sylvan_true) return sylvan_not(CALL(sylvan_and, a, sylvan_not(b), prev_level));
+    if (c == sylvan_true) return sylvan_not(sylvan_and_CALL(lace, a, sylvan_not(b), prev_level));
 
     // ITE(A,B,~B) => XOR(A,~B)
-    if (b == sylvan_not(c)) return CALL(sylvan_xor, a, c, 0);
+    if (b == sylvan_not(c)) return sylvan_xor_CALL(lace, a, c, 0);
 
     /* At this point, there are no more terminals */
 
@@ -375,7 +377,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
 
     if (va < level) level = va;
 
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(BDD_ITE);
@@ -416,7 +418,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     } else if (aHigh == sylvan_false) {
         high = cHigh;
     } else {
-        bdd_refs_spawn(SPAWN(sylvan_ite, aHigh, bHigh, cHigh, level));
+        bdd_refs_spawn(sylvan_ite_SPAWN(lace, aHigh, bHigh, cHigh, level));
         n=1;
     }
 
@@ -425,12 +427,12 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
     } else if (aLow == sylvan_false) {
         low = cLow;
     } else {
-        low = CALL(sylvan_ite, aLow, bLow, cLow, level);
+        low = sylvan_ite_CALL(lace, aLow, bLow, cLow, level);
     }
 
     if (n) {
         bdd_refs_push(low);
-        high = bdd_refs_sync(SYNC(sylvan_ite));
+        high = bdd_refs_sync(sylvan_ite_SYNC(lace));
         bdd_refs_pop(1);
     }
 
@@ -447,7 +449,7 @@ TASK_IMPL_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_level)
  * Compute constrain f@c, also called the generalized co-factor.
  * c is the "care function" - f@c equals f when c evaluates to True.
  */
-TASK_IMPL_3(BDD, sylvan_constrain, BDD, f, BDD, c, BDDVAR, prev_level)
+BDD sylvan_constrain_CALL(lace_worker* lace, BDD f, BDD c, BDDVAR prev_level)
 {
     /* Trivial cases */
     if (c == sylvan_true) return f;
@@ -457,7 +459,7 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, f, BDD, c, BDDVAR, prev_level)
     if (f == sylvan_not(c)) return sylvan_false;
 
     /* Perhaps execute garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(BDD_CONSTRAIN);
@@ -507,25 +509,25 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, f, BDD, c, BDDVAR, prev_level)
     if (cLow == sylvan_false) {
         /* cLow is False, so result equals fHigh @ cHigh */
         if (cHigh == sylvan_true) result = fHigh;
-        else result = CALL(sylvan_constrain, fHigh, cHigh, level);
+        else result = sylvan_constrain_CALL(lace, fHigh, cHigh, level);
     } else if (cHigh == sylvan_false) {
         /* cHigh is False, so result equals fLow @ cLow */
         if (cLow == sylvan_true) result = fLow;
-        else result = CALL(sylvan_constrain, fLow, cLow, level);
+        else result = sylvan_constrain_CALL(lace, fLow, cLow, level);
     } else if (cLow == sylvan_true) {
         /* cLow is True, so low result equals fLow */
-        BDD high = CALL(sylvan_constrain, fHigh, cHigh, level);
+        BDD high = sylvan_constrain_CALL(lace, fHigh, cHigh, level);
         result = sylvan_makenode(level, fLow, high);
     } else if (cHigh == sylvan_true) {
         /* cHigh is True, so high result equals fHigh */
-        BDD low = CALL(sylvan_constrain, fLow, cLow, level);
+        BDD low = sylvan_constrain_CALL(lace, fLow, cLow, level);
         result = sylvan_makenode(level, low, fHigh);
     } else {
         /* cLow and cHigh are not constrants... normal parallel recursion */
-        bdd_refs_spawn(SPAWN(sylvan_constrain, fLow, cLow, level));
-        BDD high = CALL(sylvan_constrain, fHigh, cHigh, level);
+        bdd_refs_spawn(sylvan_constrain_SPAWN(lace, fLow, cLow, level));
+        BDD high = sylvan_constrain_CALL(lace, fHigh, cHigh, level);
         bdd_refs_push(high);
-        BDD low = bdd_refs_sync(SYNC(sylvan_constrain));
+        BDD low = bdd_refs_sync(sylvan_constrain_SYNC(lace));
         bdd_refs_pop(1);
         result = sylvan_makenode(level, low, high);
     }
@@ -540,7 +542,7 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, f, BDD, c, BDDVAR, prev_level)
 /**
  * Compute restrict f@c, which uses a heuristic to try and minimize a BDD f with respect to a care function c
  */
-TASK_IMPL_3(BDD, sylvan_restrict, BDD, f, BDD, c, BDDVAR, prev_level)
+BDD sylvan_restrict_CALL(lace_worker* lace, BDD f, BDD c, BDDVAR prev_level)
 {
     /* Trivial cases */
     if (c == sylvan_true) return f;
@@ -550,7 +552,7 @@ TASK_IMPL_3(BDD, sylvan_restrict, BDD, f, BDD, c, BDDVAR, prev_level)
     if (f == sylvan_not(c)) return sylvan_false;
 
     /* Perhaps execute garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(BDD_RESTRICT);
@@ -583,9 +585,9 @@ TASK_IMPL_3(BDD, sylvan_restrict, BDD, f, BDD, c, BDDVAR, prev_level)
 
     if (vc < vf) {
         /* f is independent of c, so result is f @ (cLow \/ cHigh) */
-        BDD new_c = sylvan_or(node_low(c, nc), node_high(c, nc));
+        BDD new_c = sylvan_not(sylvan_and_CALL(lace, sylvan_not(node_low(c, nc)), sylvan_not(node_high(c, nc)), 0));
         bdd_refs_push(new_c);
-        result = CALL(sylvan_restrict, f, new_c, level);
+        result = sylvan_restrict_CALL(lace, f, new_c, level);
         bdd_refs_pop(1);
     } else {
         BDD fLow = node_low(f,nf), fHigh = node_high(f,nf);
@@ -598,16 +600,16 @@ TASK_IMPL_3(BDD, sylvan_restrict, BDD, f, BDD, c, BDDVAR, prev_level)
         }
         if (cLow == sylvan_false) {
             /* sibling-substitution */
-            result = CALL(sylvan_restrict, fHigh, cHigh, level);
+            result = sylvan_restrict_CALL(lace, fHigh, cHigh, level);
         } else if (cHigh == sylvan_false) {
             /* sibling-substitution */
-            result = CALL(sylvan_restrict, fLow, cLow, level);
+            result = sylvan_restrict_CALL(lace, fLow, cLow, level);
         } else {
             /* parallel recursion */
-            bdd_refs_spawn(SPAWN(sylvan_restrict, fLow, cLow, level));
-            BDD high = CALL(sylvan_restrict, fHigh, cHigh, level);
+            bdd_refs_spawn(sylvan_restrict_SPAWN(lace, fLow, cLow, level));
+            BDD high = sylvan_restrict_CALL(lace, fHigh, cHigh, level);
             bdd_refs_push(high);
-            BDD low = bdd_refs_sync(SYNC(sylvan_restrict));
+            BDD low = bdd_refs_sync(sylvan_restrict_SYNC(lace));
             bdd_refs_pop(1);
             result = sylvan_makenode(level, low, high);
         }
@@ -623,7 +625,7 @@ TASK_IMPL_3(BDD, sylvan_restrict, BDD, f, BDD, c, BDDVAR, prev_level)
 /**
  * Calculates \exists variables . a
  */
-TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
+BDD sylvan_exists_CALL(lace_worker* lace, BDD a, BDD variables, BDDVAR prev_level)
 {
     /* Terminal cases */
     if (a == sylvan_true) return sylvan_true;
@@ -643,7 +645,7 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
         vv = bddnode_getvariable(nv);
     }
 
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(BDD_EXISTS);
@@ -669,12 +671,12 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
             result = sylvan_true;
         } else {
             BDD _v = sylvan_set_next(variables);
-            BDD low = CALL(sylvan_exists, aLow, _v, level);
+            BDD low = sylvan_exists_CALL(lace, aLow, _v, level);
             if (low == sylvan_true) {
                 result = sylvan_true;
             } else {
                 bdd_refs_push(low);
-                BDD high = CALL(sylvan_exists, aHigh, _v, level);
+                BDD high = sylvan_exists_CALL(lace, aHigh, _v, level);
                 if (high == sylvan_true) {
                     result = sylvan_true;
                     bdd_refs_pop(1);
@@ -683,7 +685,7 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
                     bdd_refs_pop(1);
                 } else {
                     bdd_refs_push(high);
-                    result = sylvan_or(low, high);
+                    result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(low), sylvan_not(high), 0)); // low or high
                     bdd_refs_pop(2);
                 }
             }
@@ -691,10 +693,10 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
     } else {
         // level is not in variable set
         BDD low, high;
-        bdd_refs_spawn(SPAWN(sylvan_exists, aHigh, variables, level));
-        low = CALL(sylvan_exists, aLow, variables, level);
+        bdd_refs_spawn(sylvan_exists_SPAWN(lace, aHigh, variables, level));
+        low = sylvan_exists_CALL(lace, aLow, variables, level);
         bdd_refs_push(low);
-        high = bdd_refs_sync(SYNC(sylvan_exists));
+        high = bdd_refs_sync(sylvan_exists_SYNC(lace));
         bdd_refs_pop(1);
         result = sylvan_makenode(level, low, high);
     }
@@ -711,7 +713,7 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
  * Calculate projection of <a> unto <v>
  * (Expects Boolean <a>)
  */
-TASK_IMPL_2(MTBDD, sylvan_project, MTBDD, a, MTBDD, v)
+BDD sylvan_project_CALL(lace_worker* lace, BDD a, BDDSET v)
 {
     /**
      * Terminal cases
@@ -744,7 +746,7 @@ TASK_IMPL_2(MTBDD, sylvan_project, MTBDD, a, MTBDD, v)
     /**
      * Maybe perform garbage collection
      */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /**
      * Count operation
@@ -771,17 +773,17 @@ TASK_IMPL_2(MTBDD, sylvan_project, MTBDD, a, MTBDD, v)
      */
     if (v_var == a_var) {
         // variable in projection variables
-        mtbdd_refs_spawn(SPAWN(sylvan_project, a0, v_next));
-        const MTBDD high = mtbdd_refs_push(sylvan_project(a1, v_next));
-        const MTBDD low = mtbdd_refs_sync(SYNC(sylvan_project));
+        mtbdd_refs_spawn(sylvan_project_SPAWN(lace, a0, v_next));
+        const MTBDD high = mtbdd_refs_push(sylvan_project_CALL(lace, a1, v_next));
+        const MTBDD low = mtbdd_refs_sync(sylvan_project_SYNC(lace));
         mtbdd_refs_pop(1);
         result = mtbdd_makenode(a_var, low, high);
     } else {
         // variable not in projection variables
-        mtbdd_refs_spawn(SPAWN(sylvan_project, a0, v));
-        const MTBDD high = mtbdd_refs_push(sylvan_project(a1, v));
-        const MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(SYNC(sylvan_project)));
-        result = sylvan_or(low, high);
+        mtbdd_refs_spawn(sylvan_project_SPAWN(lace, a0, v));
+        const MTBDD high = mtbdd_refs_push(sylvan_project_CALL(lace, a1, v));
+        const MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(sylvan_project_SYNC(lace)));
+        result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(low), sylvan_not(high), 0));
         mtbdd_refs_pop(2);
     }
 
@@ -799,7 +801,7 @@ TASK_IMPL_2(MTBDD, sylvan_project, MTBDD, a, MTBDD, v)
 /**
  * Calculate exists(a AND b, v)
  */
-TASK_IMPL_4(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, v, BDDVAR, prev_level)
+BDD sylvan_and_exists_CALL(lace_worker* lace, BDD a, BDD b, BDDSET v, BDDVAR prev_level)
 {
     /* Terminal cases */
     if (a == sylvan_false) return sylvan_false;
@@ -808,10 +810,10 @@ TASK_IMPL_4(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, v, BDDVAR, prev_leve
     if (a == sylvan_true && b == sylvan_true) return sylvan_true;
 
     /* Cases that reduce to "exists" and "and" */
-    if (a == sylvan_true) return CALL(sylvan_exists, b, v, 0);
-    if (b == sylvan_true) return CALL(sylvan_exists, a, v, 0);
-    if (a == b) return CALL(sylvan_exists, a, v, 0);
-    if (sylvan_set_isempty(v)) return sylvan_and(a, b);
+    if (a == sylvan_true) return sylvan_exists_CALL(lace, b, v, 0);
+    if (b == sylvan_true) return sylvan_exists_CALL(lace, a, v, 0);
+    if (a == b) return sylvan_exists_CALL(lace, a, v, 0);
+    if (sylvan_set_isempty(v)) return sylvan_and_CALL(lace, a, b, 0);
 
     /* At this point, a and b are proper nodes, and v is non-empty */
 
@@ -823,7 +825,7 @@ TASK_IMPL_4(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, v, BDDVAR, prev_leve
     }
 
     /* Maybe perform garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(BDD_AND_EXISTS);
@@ -841,7 +843,7 @@ TASK_IMPL_4(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, v, BDDVAR, prev_leve
     /* Skip levels in v that are not in a and b */
     while (vv < level) {
         v = node_high(v, nv); // get next variable in conjunction
-        if (sylvan_set_isempty(v)) return sylvan_and(a, b);
+        if (sylvan_set_isempty(v)) return sylvan_and_CALL(lace, a, b, 0);
         nv = MTBDD_GETNODE(v);
         vv = bddnode_getvariable(nv);
     }
@@ -876,18 +878,18 @@ TASK_IMPL_4(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, v, BDDVAR, prev_leve
     if (level == vv) {
         // level is in variable set, perform abstraction
         BDD _v = node_high(v, nv);
-        BDD low = CALL(sylvan_and_exists, aLow, bLow, _v, level);
+        BDD low = sylvan_and_exists_CALL(lace, aLow, bLow, _v, level);
         if (low == sylvan_true || low == aHigh || low == bHigh) {
             result = low;
         } else {
             bdd_refs_push(low);
             BDD high;
             if (low == sylvan_not(aHigh)) {
-                high = CALL(sylvan_exists, bHigh, _v, 0);
+                high = sylvan_exists_CALL(lace, bHigh, _v, 0);
             } else if (low == sylvan_not(bHigh)) {
-                high = CALL(sylvan_exists, aHigh, _v, 0);
+                high = sylvan_exists_CALL(lace, aHigh, _v, 0);
             } else {
-                high = CALL(sylvan_and_exists, aHigh, bHigh, _v, level);
+                high = sylvan_and_exists_CALL(lace, aHigh, bHigh, _v, level);
             }
             if (high == sylvan_true) {
                 result = sylvan_true;
@@ -900,16 +902,16 @@ TASK_IMPL_4(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, v, BDDVAR, prev_leve
                 bdd_refs_pop(1);
             } else {
                 bdd_refs_push(high);
-                result = sylvan_or(low, high);
+                result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(low), sylvan_not(high), 0));
                 bdd_refs_pop(2);
             }
         }
     } else {
         // level is not in variable set
-        bdd_refs_spawn(SPAWN(sylvan_and_exists, aHigh, bHigh, v, level));
-        BDD low = CALL(sylvan_and_exists, aLow, bLow, v, level);
+        bdd_refs_spawn(sylvan_and_exists_SPAWN(lace, aHigh, bHigh, v, level));
+        BDD low = sylvan_and_exists_CALL(lace, aLow, bLow, v, level);
         bdd_refs_push(low);
-        BDD high = bdd_refs_sync(SYNC(sylvan_and_exists));
+        BDD high = bdd_refs_sync(sylvan_and_exists_SYNC(lace));
         bdd_refs_pop(1);
         result = sylvan_makenode(level, low, high);
     }
@@ -926,7 +928,7 @@ TASK_IMPL_4(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, v, BDDVAR, prev_leve
  * Calculate projection of (<a> AND <b>) unto <v>
  * (Expects Boolean <a> and <b>)
  */
-TASK_IMPL_3(MTBDD, sylvan_and_project, MTBDD, a, MTBDD, b, MTBDD, v)
+MTBDD sylvan_and_project_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
 {
     /**
      * Terminal cases
@@ -954,7 +956,7 @@ TASK_IMPL_3(MTBDD, sylvan_and_project, MTBDD, a, MTBDD, b, MTBDD, v)
     /**
      * Maybe perform garbage collection
      */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /**
      * Count operation
@@ -1007,17 +1009,17 @@ TASK_IMPL_3(MTBDD, sylvan_and_project, MTBDD, a, MTBDD, b, MTBDD, v)
      */
     if (v_var == minvar) {
         // variable in projection variables
-        mtbdd_refs_spawn(SPAWN(sylvan_and_project, a0, b0, v_next));
-        const MTBDD high = mtbdd_refs_push(sylvan_and_project(a1, b1, v_next));
-        const MTBDD low = mtbdd_refs_sync(SYNC(sylvan_and_project));
+        mtbdd_refs_spawn(sylvan_and_project_SPAWN(lace, a0, b0, v_next));
+        const MTBDD high = mtbdd_refs_push(sylvan_and_project_CALL(lace, a1, b1, v_next));
+        const MTBDD low = mtbdd_refs_sync(sylvan_and_project_SYNC(lace));
         mtbdd_refs_pop(1);
         result = mtbdd_makenode(minvar, low, high);
     } else {
         // variable not in projection variables
-        mtbdd_refs_spawn(SPAWN(sylvan_and_project, a0, b0, v));
-        const MTBDD high = mtbdd_refs_push(sylvan_and_project(a1, b1, v));
-        const MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(SYNC(sylvan_and_project)));
-        result = sylvan_or(low, high);
+        mtbdd_refs_spawn(sylvan_and_project_SPAWN(lace, a0, b0, v));
+        const MTBDD high = mtbdd_refs_push(sylvan_and_project_CALL(lace, a1, b1, v));
+        const MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(sylvan_and_project_SYNC(lace)));
+        result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(low), sylvan_not(high), 0));
         mtbdd_refs_pop(2);
     }
 
@@ -1032,7 +1034,7 @@ TASK_IMPL_3(MTBDD, sylvan_and_project, MTBDD, a, MTBDD, b, MTBDD, v)
 }
 
 
-TASK_IMPL_4(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_level)
+BDD sylvan_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR prev_level)
 {
     /* Compute R(s) = \exists x: A(x) \and B(x,s) with support(result) = s, support(A) = s, support(B) = s+t
      * if vars == sylvan_false, then every level is in s or t
@@ -1046,7 +1048,7 @@ TASK_IMPL_4(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
     if (sylvan_set_isempty(vars)) return a;
 
     /* Perhaps execute garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(BDD_RELNEXT);
@@ -1138,21 +1140,21 @@ TASK_IMPL_4(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
 
         BDD _vars = vars == sylvan_false ? sylvan_false : node_high(vars, nv);
 
-        bdd_refs_spawn(SPAWN(sylvan_relnext, a0, b00, _vars, level));
-        bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b10, _vars, level));
-        bdd_refs_spawn(SPAWN(sylvan_relnext, a0, b01, _vars, level));
-        bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b11, _vars, level));
+        bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b00, _vars, level));
+        bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b10, _vars, level));
+        bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b01, _vars, level));
+        bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b11, _vars, level));
 
-        BDD f = bdd_refs_sync(SYNC(sylvan_relnext)); bdd_refs_push(f);
-        BDD e = bdd_refs_sync(SYNC(sylvan_relnext)); bdd_refs_push(e);
-        BDD d = bdd_refs_sync(SYNC(sylvan_relnext)); bdd_refs_push(d);
-        BDD c = bdd_refs_sync(SYNC(sylvan_relnext)); bdd_refs_push(c);
+        BDD f = bdd_refs_sync(sylvan_relnext_SYNC(lace)); bdd_refs_push(f);
+        BDD e = bdd_refs_sync(sylvan_relnext_SYNC(lace)); bdd_refs_push(e);
+        BDD d = bdd_refs_sync(sylvan_relnext_SYNC(lace)); bdd_refs_push(d);
+        BDD c = bdd_refs_sync(sylvan_relnext_SYNC(lace)); bdd_refs_push(c);
 
-        bdd_refs_spawn(SPAWN(sylvan_ite, c, sylvan_true, d, 0)); /* a0 b00  \or  a1 b01 */
-        bdd_refs_spawn(SPAWN(sylvan_ite, e, sylvan_true, f, 0)); /* a0 b01  \or  a1 b11 */
+        bdd_refs_spawn(sylvan_ite_SPAWN(lace, c, sylvan_true, d, 0)); /* a0 b00  \or  a1 b01 */
+        bdd_refs_spawn(sylvan_ite_SPAWN(lace, e, sylvan_true, f, 0)); /* a0 b01  \or  a1 b11 */
 
-        /* R1 */ d = bdd_refs_sync(SYNC(sylvan_ite)); bdd_refs_push(d);
-        /* R0 */ c = bdd_refs_sync(SYNC(sylvan_ite)); // not necessary: bdd_refs_push(c);
+        /* R1 */ d = bdd_refs_sync(sylvan_ite_SYNC(lace)); bdd_refs_push(d);
+        /* R0 */ c = bdd_refs_sync(sylvan_ite_SYNC(lace)); // not necessary: bdd_refs_push(c);
 
         bdd_refs_pop(5);
         result = sylvan_makenode(s, c, d);
@@ -1175,49 +1177,49 @@ TASK_IMPL_4(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
         if (b0 != b1) {
             if (a0 == a1) {
                 /* Quantify "b" variables */
-                bdd_refs_spawn(SPAWN(sylvan_relnext, a0, b0, vars, level));
-                bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b1, vars, level));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b0, vars, level));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b1, vars, level));
 
-                BDD r1 = bdd_refs_sync(SYNC(sylvan_relnext));
+                BDD r1 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
                 bdd_refs_push(r1);
-                BDD r0 = bdd_refs_sync(SYNC(sylvan_relnext));
+                BDD r0 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
                 bdd_refs_push(r0);
-                result = sylvan_or(r0, r1);
+                result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(r0), sylvan_not(r1), 0));
                 bdd_refs_pop(2);
             } else {
                 /* Quantify "b" variables, but keep "a" variables */
-                bdd_refs_spawn(SPAWN(sylvan_relnext, a0, b0, vars, level));
-                bdd_refs_spawn(SPAWN(sylvan_relnext, a0, b1, vars, level));
-                bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b0, vars, level));
-                bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b1, vars, level));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b0, vars, level));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b1, vars, level));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b0, vars, level));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b1, vars, level));
 
-                BDD r11 = bdd_refs_sync(SYNC(sylvan_relnext));
+                BDD r11 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
                 bdd_refs_push(r11);
-                BDD r10 = bdd_refs_sync(SYNC(sylvan_relnext));
+                BDD r10 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
                 bdd_refs_push(r10);
-                BDD r01 = bdd_refs_sync(SYNC(sylvan_relnext));
+                BDD r01 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
                 bdd_refs_push(r01);
-                BDD r00 = bdd_refs_sync(SYNC(sylvan_relnext));
+                BDD r00 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
                 bdd_refs_push(r00);
 
-                bdd_refs_spawn(SPAWN(sylvan_ite, r00, sylvan_true, r01, 0));
-                bdd_refs_spawn(SPAWN(sylvan_ite, r10, sylvan_true, r11, 0));
+                bdd_refs_spawn(sylvan_ite_SPAWN(lace, r00, sylvan_true, r01, 0));
+                bdd_refs_spawn(sylvan_ite_SPAWN(lace, r10, sylvan_true, r11, 0));
 
-                BDD r1 = bdd_refs_sync(SYNC(sylvan_ite));
+                BDD r1 = bdd_refs_sync(sylvan_ite_SYNC(lace));
                 bdd_refs_push(r1);
-                BDD r0 = bdd_refs_sync(SYNC(sylvan_ite));
+                BDD r0 = bdd_refs_sync(sylvan_ite_SYNC(lace));
                 bdd_refs_pop(5);
 
                 result = sylvan_makenode(level, r0, r1);
             }
         } else {
             /* Keep "a" variables */
-            bdd_refs_spawn(SPAWN(sylvan_relnext, a0, b0, vars, level));
-            bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b1, vars, level));
+            bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b0, vars, level));
+            bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b1, vars, level));
 
-            BDD r1 = bdd_refs_sync(SYNC(sylvan_relnext));
+            BDD r1 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
             bdd_refs_push(r1);
-            BDD r0 = bdd_refs_sync(SYNC(sylvan_relnext));
+            BDD r0 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
             bdd_refs_pop(1);
             result = sylvan_makenode(level, r0, r1);
         }
@@ -1230,7 +1232,7 @@ TASK_IMPL_4(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
     return result;
 }
 
-TASK_IMPL_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_level)
+BDD sylvan_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars, BDDVAR prev_level)
 {
     /* Compute \exists x: A(s,x) \and B(x,t)
      * if vars == sylvan_false, then every level is in s or t
@@ -1244,7 +1246,7 @@ TASK_IMPL_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
     if (sylvan_set_isempty(vars)) return b;
 
     /* Perhaps execute garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(BDD_RELPREV);
@@ -1367,64 +1369,64 @@ TASK_IMPL_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
         }
 
         if (b00 == b01) {
-            bdd_refs_spawn(SPAWN(sylvan_relprev, a00, b0, _vars, level));
-            bdd_refs_spawn(SPAWN(sylvan_relprev, a10, b0, _vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a00, b0, _vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a10, b0, _vars, level));
         } else {
-            bdd_refs_spawn(SPAWN(sylvan_relprev, a00, b00, _vars, level));
-            bdd_refs_spawn(SPAWN(sylvan_relprev, a00, b01, _vars, level));
-            bdd_refs_spawn(SPAWN(sylvan_relprev, a10, b00, _vars, level));
-            bdd_refs_spawn(SPAWN(sylvan_relprev, a10, b01, _vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a00, b00, _vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a00, b01, _vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a10, b00, _vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a10, b01, _vars, level));
         }
 
         if (b10 == b11) {
-            bdd_refs_spawn(SPAWN(sylvan_relprev, a01, b1, _vars, level));
-            bdd_refs_spawn(SPAWN(sylvan_relprev, a11, b1, _vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a01, b1, _vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a11, b1, _vars, level));
         } else {
-            bdd_refs_spawn(SPAWN(sylvan_relprev, a01, b10, _vars, level));
-            bdd_refs_spawn(SPAWN(sylvan_relprev, a01, b11, _vars, level));
-            bdd_refs_spawn(SPAWN(sylvan_relprev, a11, b10, _vars, level));
-            bdd_refs_spawn(SPAWN(sylvan_relprev, a11, b11, _vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a01, b10, _vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a01, b11, _vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a11, b10, _vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a11, b11, _vars, level));
         }
 
         BDD r00, r01, r10, r11;
 
         if (b10 == b11) {
-            r11 = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_relprev)));
-            r01 = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_relprev)));
+            r11 = bdd_refs_push(bdd_refs_sync(sylvan_relprev_SYNC(lace)));
+            r01 = bdd_refs_push(bdd_refs_sync(sylvan_relprev_SYNC(lace)));
         } else {
-            BDD r111 = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_relprev)));
-            BDD r110 = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_relprev)));
+            BDD r111 = bdd_refs_push(bdd_refs_sync(sylvan_relprev_SYNC(lace)));
+            BDD r110 = bdd_refs_push(bdd_refs_sync(sylvan_relprev_SYNC(lace)));
             r11 = sylvan_makenode(t, r110, r111);
             bdd_refs_pop(2);
             bdd_refs_push(r11);
-            BDD r011 = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_relprev)));
-            BDD r010 = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_relprev)));
+            BDD r011 = bdd_refs_push(bdd_refs_sync(sylvan_relprev_SYNC(lace)));
+            BDD r010 = bdd_refs_push(bdd_refs_sync(sylvan_relprev_SYNC(lace)));
             r01 = sylvan_makenode(t, r010, r011);
             bdd_refs_pop(2);
             bdd_refs_push(r01);
         }
 
         if (b00 == b01) {
-            r10 = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_relprev)));
-            r00 = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_relprev)));
+            r10 = bdd_refs_push(bdd_refs_sync(sylvan_relprev_SYNC(lace)));
+            r00 = bdd_refs_push(bdd_refs_sync(sylvan_relprev_SYNC(lace)));
         } else {
-            BDD r101 = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_relprev)));
-            BDD r100 = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_relprev)));
+            BDD r101 = bdd_refs_push(bdd_refs_sync(sylvan_relprev_SYNC(lace)));
+            BDD r100 = bdd_refs_push(bdd_refs_sync(sylvan_relprev_SYNC(lace)));
             r10 = sylvan_makenode(t, r100, r101);
             bdd_refs_pop(2);
             bdd_refs_push(r10);
-            BDD r001 = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_relprev)));
-            BDD r000 = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_relprev)));
+            BDD r001 = bdd_refs_push(bdd_refs_sync(sylvan_relprev_SYNC(lace)));
+            BDD r000 = bdd_refs_push(bdd_refs_sync(sylvan_relprev_SYNC(lace)));
             r00 = sylvan_makenode(t, r000, r001);
             bdd_refs_pop(2);
             bdd_refs_push(r00);
          }
 
-        bdd_refs_spawn(SPAWN(sylvan_and, sylvan_not(r00), sylvan_not(r01), 0));
-        bdd_refs_spawn(SPAWN(sylvan_and, sylvan_not(r10), sylvan_not(r11), 0));
+        bdd_refs_spawn(sylvan_and_SPAWN(lace, sylvan_not(r00), sylvan_not(r01), 0));
+        bdd_refs_spawn(sylvan_and_SPAWN(lace, sylvan_not(r10), sylvan_not(r11), 0));
 
-        BDD r1 = sylvan_not(bdd_refs_push(bdd_refs_sync(SYNC(sylvan_and))));
-        BDD r0 = sylvan_not(bdd_refs_sync(SYNC(sylvan_and)));
+        BDD r1 = sylvan_not(bdd_refs_push(bdd_refs_sync(sylvan_and_SYNC(lace))));
+        BDD r0 = sylvan_not(bdd_refs_sync(sylvan_and_SYNC(lace)));
         bdd_refs_pop(5);
         result = sylvan_makenode(s, r0, r1);
     } else {
@@ -1445,49 +1447,49 @@ TASK_IMPL_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
         if (a0 != a1) {
             if (b0 == b1) {
                 /* Quantify "a" variables */
-                bdd_refs_spawn(SPAWN(sylvan_relprev, a0, b0, vars, level));
-                bdd_refs_spawn(SPAWN(sylvan_relprev, a1, b1, vars, level));
+                bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a0, b0, vars, level));
+                bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a1, b1, vars, level));
 
-                BDD r1 = bdd_refs_sync(SYNC(sylvan_relprev));
+                BDD r1 = bdd_refs_sync(sylvan_relprev_SYNC(lace));
                 bdd_refs_push(r1);
-                BDD r0 = bdd_refs_sync(SYNC(sylvan_relprev));
+                BDD r0 = bdd_refs_sync(sylvan_relprev_SYNC(lace));
                 bdd_refs_push(r0);
-                result = CALL(sylvan_ite, r0, sylvan_true, r1, 0);
+                result = sylvan_ite_CALL(lace, r0, sylvan_true, r1, 0);
                 bdd_refs_pop(2);
 
             } else {
                 /* Quantify "a" variables, but keep "b" variables */
-                bdd_refs_spawn(SPAWN(sylvan_relnext, a0, b0, vars, level));
-                bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b0, vars, level));
-                bdd_refs_spawn(SPAWN(sylvan_relnext, a0, b1, vars, level));
-                bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b1, vars, level));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b0, vars, level));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b0, vars, level));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a0, b1, vars, level));
+                bdd_refs_spawn(sylvan_relnext_SPAWN(lace, a1, b1, vars, level));
 
-                BDD r11 = bdd_refs_sync(SYNC(sylvan_relnext));
+                BDD r11 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
                 bdd_refs_push(r11);
-                BDD r01 = bdd_refs_sync(SYNC(sylvan_relnext));
+                BDD r01 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
                 bdd_refs_push(r01);
-                BDD r10 = bdd_refs_sync(SYNC(sylvan_relnext));
+                BDD r10 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
                 bdd_refs_push(r10);
-                BDD r00 = bdd_refs_sync(SYNC(sylvan_relnext));
+                BDD r00 = bdd_refs_sync(sylvan_relnext_SYNC(lace));
                 bdd_refs_push(r00);
 
-                bdd_refs_spawn(SPAWN(sylvan_ite, r00, sylvan_true, r10, 0));
-                bdd_refs_spawn(SPAWN(sylvan_ite, r01, sylvan_true, r11, 0));
+                bdd_refs_spawn(sylvan_ite_SPAWN(lace, r00, sylvan_true, r10, 0));
+                bdd_refs_spawn(sylvan_ite_SPAWN(lace, r01, sylvan_true, r11, 0));
 
-                BDD r1 = bdd_refs_sync(SYNC(sylvan_ite));
+                BDD r1 = bdd_refs_sync(sylvan_ite_SYNC(lace));
                 bdd_refs_push(r1);
-                BDD r0 = bdd_refs_sync(SYNC(sylvan_ite));
+                BDD r0 = bdd_refs_sync(sylvan_ite_SYNC(lace));
                 bdd_refs_pop(5);
 
                 result = sylvan_makenode(level, r0, r1);
             }
         } else {
-            bdd_refs_spawn(SPAWN(sylvan_relprev, a0, b0, vars, level));
-            bdd_refs_spawn(SPAWN(sylvan_relprev, a1, b1, vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a0, b0, vars, level));
+            bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a1, b1, vars, level));
 
-            BDD r1 = bdd_refs_sync(SYNC(sylvan_relprev));
+            BDD r1 = bdd_refs_sync(sylvan_relprev_SYNC(lace));
             bdd_refs_push(r1);
-            BDD r0 = bdd_refs_sync(SYNC(sylvan_relprev));
+            BDD r0 = bdd_refs_sync(sylvan_relprev_SYNC(lace));
             bdd_refs_pop(1);
             result = sylvan_makenode(level, r0, r1);
         }
@@ -1506,14 +1508,14 @@ TASK_IMPL_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_leve
  *     On Computing the Transitive Closre of a State Transition Relation
  *     30th ACM Design Automation Conference, 1993.
  */
-TASK_IMPL_2(BDD, sylvan_closure, BDD, a, BDDVAR, prev_level)
+BDD sylvan_closure_CALL(lace_worker* lace, BDD a, BDDVAR prev_level)
 {
     /* Terminals */
     if (a == sylvan_true) return a;
     if (a == sylvan_false) return a;
 
     /* Perhaps execute garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(BDD_CLOSURE);
@@ -1567,28 +1569,28 @@ TASK_IMPL_2(BDD, sylvan_closure, BDD, a, BDDVAR, prev_level)
         a10 = a11 = a1;
     }
 
-    BDD u1 = CALL(sylvan_closure, a11, level);
+    BDD u1 = sylvan_closure_CALL(lace, a11, level);
     bdd_refs_push(u1);
-    /* u3 = */ bdd_refs_spawn(SPAWN(sylvan_relprev, a01, u1, sylvan_false, level));
-    BDD u2 = CALL(sylvan_relprev, u1, a10, sylvan_false, level);
+    /* u3 = */ bdd_refs_spawn(sylvan_relprev_SPAWN(lace, a01, u1, sylvan_false, level));
+    BDD u2 = sylvan_relprev_CALL(lace, u1, a10, sylvan_false, level);
     bdd_refs_push(u2);
-    BDD e = CALL(sylvan_relprev, a01, u2, sylvan_false, level);
+    BDD e = sylvan_relprev_CALL(lace, a01, u2, sylvan_false, level);
     bdd_refs_push(e);
-    e = CALL(sylvan_ite, a00, sylvan_true, e, level);
+    e = sylvan_ite_CALL(lace, a00, sylvan_true, e, level);
     bdd_refs_pop(1);
     bdd_refs_push(e);
-    e = CALL(sylvan_closure, e, level);
+    e = sylvan_closure_CALL(lace, e, level);
     bdd_refs_pop(1);
     bdd_refs_push(e);
-    BDD g = CALL(sylvan_relprev, u2, e, sylvan_false, level);
+    BDD g = sylvan_relprev_CALL(lace, u2, e, sylvan_false, level);
     bdd_refs_push(g);
-    BDD u3 = bdd_refs_sync(SYNC(sylvan_relprev));
+    BDD u3 = bdd_refs_sync(sylvan_relprev_SYNC(lace));
     bdd_refs_push(u3);
-    BDD f = CALL(sylvan_relprev, e, u3, sylvan_false, level);
+    BDD f = sylvan_relprev_CALL(lace, e, u3, sylvan_false, level);
     bdd_refs_push(f);
-    BDD h = CALL(sylvan_relprev, u2, f, sylvan_false, level);
+    BDD h = sylvan_relprev_CALL(lace, u2, f, sylvan_false, level);
     bdd_refs_push(h);
-    h = CALL(sylvan_ite, u1, sylvan_true, h, level);
+    h = sylvan_ite_CALL(lace, u1, sylvan_true, h, level);
     bdd_refs_pop(1);
     bdd_refs_push(h);
 
@@ -1611,14 +1613,14 @@ TASK_IMPL_2(BDD, sylvan_closure, BDD, a, BDDVAR, prev_level)
 /**
  * Function composition
  */
-TASK_IMPL_3(BDD, sylvan_compose, BDD, a, BDDMAP, map, BDDVAR, prev_level)
+BDD sylvan_compose_CALL(lace_worker* lace, BDD a, BDDMAP map, BDDVAR prev_level)
 {
     /* Trivial cases */
     if (a == sylvan_false || a == sylvan_true) return a;
     if (sylvan_map_isempty(map)) return a;
 
     /* Perhaps execute garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(BDD_COMPOSE);
@@ -1648,16 +1650,16 @@ TASK_IMPL_3(BDD, sylvan_compose, BDD, a, BDDMAP, map, BDDVAR, prev_level)
     }
 
     /* Recursively calculate low and high */
-    bdd_refs_spawn(SPAWN(sylvan_compose, node_low(a, n), map, level));
-    BDD high = CALL(sylvan_compose, node_high(a, n), map, level);
+    bdd_refs_spawn(sylvan_compose_SPAWN(lace, node_low(a, n), map, level));
+    BDD high = sylvan_compose_CALL(lace, node_high(a, n), map, level);
     bdd_refs_push(high);
-    BDD low = bdd_refs_sync(SYNC(sylvan_compose));
+    BDD low = bdd_refs_sync(sylvan_compose_SYNC(lace));
     bdd_refs_push(low);
 
     /* Calculate result */
     BDD root = map_var == level ? node_high(map, map_node) : sylvan_ithvar(level);
     bdd_refs_push(root);
-    BDD result = CALL(sylvan_ite, root, high, low, 0);
+    BDD result = sylvan_ite_CALL(lace, root, high, low, 0);
     bdd_refs_pop(3);
 
     if (cachenow) {
@@ -1670,14 +1672,14 @@ TASK_IMPL_3(BDD, sylvan_compose, BDD, a, BDDMAP, map, BDDVAR, prev_level)
 /**
  * Calculate the number of distinct paths to True.
  */
-TASK_IMPL_2(double, sylvan_pathcount, BDD, bdd, BDDVAR, prev_level)
+double sylvan_pathcount_CALL(lace_worker* lace, BDD bdd, BDDVAR prev_level)
 {
     /* Trivial cases */
     if (bdd == sylvan_false) return 0.0;
     if (bdd == sylvan_true) return 1.0;
 
     /* Perhaps execute garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(BDD_PATHCOUNT);
@@ -1694,10 +1696,10 @@ TASK_IMPL_2(double, sylvan_pathcount, BDD, bdd, BDDVAR, prev_level)
         }
     }
 
-    SPAWN(sylvan_pathcount, sylvan_low(bdd), level);
-    SPAWN(sylvan_pathcount, sylvan_high(bdd), level);
-    double res1 = SYNC(sylvan_pathcount);
-    res1 += SYNC(sylvan_pathcount);
+    sylvan_pathcount_SPAWN(lace, sylvan_low(bdd), level);
+    sylvan_pathcount_SPAWN(lace, sylvan_high(bdd), level);
+    double res1 = sylvan_pathcount_SYNC(lace);
+    res1 += sylvan_pathcount_SYNC(lace);
 
     if (cachenow) {
         if (cache_put3(CACHE_BDD_PATHCOUNT, bdd, 0, 0, *(uint64_t*)&res1)) sylvan_stats_count(BDD_PATHCOUNT_CACHEDPUT);
@@ -1709,14 +1711,14 @@ TASK_IMPL_2(double, sylvan_pathcount, BDD, bdd, BDDVAR, prev_level)
 /**
  * Calculate the number of satisfying variable assignments according to <variables>.
  */
-TASK_IMPL_3(double, sylvan_satcount, BDD, bdd, BDDSET, variables, BDDVAR, prev_level)
+double sylvan_satcount_CALL(lace_worker* lace, BDD bdd, BDDSET variables, BDDVAR prev_level)
 {
     /* Trivial cases */
     if (bdd == sylvan_false) return 0.0;
     if (bdd == sylvan_true) return powl(2.0L, sylvan_set_count(variables));
 
     /* Perhaps execute garbage collection */
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
     /* Count operation */
     sylvan_stats_count(BDD_SATCOUNT);
@@ -1749,9 +1751,9 @@ TASK_IMPL_3(double, sylvan_satcount, BDD, bdd, BDDSET, variables, BDDVAR, prev_l
         }
     }
 
-    SPAWN(sylvan_satcount, sylvan_high(bdd), node_high(variables, set_node), var);
-    double low = CALL(sylvan_satcount, sylvan_low(bdd), node_high(variables, set_node), var);
-    double result = low + SYNC(sylvan_satcount);
+    sylvan_satcount_SPAWN(lace, sylvan_high(bdd), node_high(variables, set_node), var);
+    double low = sylvan_satcount_CALL(lace, sylvan_low(bdd), node_high(variables, set_node), var);
+    double result = low + sylvan_satcount_SYNC(lace);
 
     if (cachenow) {
         hack.d = result;
@@ -1881,7 +1883,7 @@ sylvan_cube(BDDSET vars, uint8_t *cube)
     return result;
 }
 
-TASK_IMPL_3(BDD, sylvan_union_cube, BDD, bdd, BDDSET, vars, uint8_t *, cube)
+BDD sylvan_union_cube_CALL(lace_worker* lace, BDD bdd, BDDSET vars, uint8_t * cube)
 {
     /* Terminal cases */
     if (bdd == sylvan_true) return sylvan_true;
@@ -1899,9 +1901,9 @@ TASK_IMPL_3(BDD, sylvan_union_cube, BDD, bdd, BDDSET, vars, uint8_t *, cube)
         nv = MTBDD_GETNODE(vars);
     }
 
-    sylvan_gc_test();
+    sylvan_gc_test(lace);
 
-    // missing: SV_CNT_OP
+    // missing: SV_CNT_OP FIXME
 
     bddnode_t n = MTBDD_GETNODE(bdd);
     BDD result = bdd;
@@ -1911,19 +1913,19 @@ TASK_IMPL_3(BDD, sylvan_union_cube, BDD, bdd, BDDSET, vars, uint8_t *, cube)
     if (v < n_level) {
         vars = node_high(vars, nv);
         if (*cube == 0) {
-            result = sylvan_union_cube(bdd, vars, cube+1);
+            result = sylvan_union_cube_CALL(lace, bdd, vars, cube+1);
             result = sylvan_makenode(v, result, bdd);
         } else /* *cube == 1 */ {
-            result = sylvan_union_cube(bdd, vars, cube+1);
+            result = sylvan_union_cube_CALL(lace, bdd, vars, cube+1);
             result = sylvan_makenode(v, bdd, result);
         }
     } else if (v > n_level) {
         BDD high = node_high(bdd, n);
         BDD low = node_low(bdd, n);
-        bdd_refs_spawn(SPAWN(sylvan_union_cube, high, vars, cube));
-        BDD new_low = sylvan_union_cube(low, vars, cube);
+        bdd_refs_spawn(sylvan_union_cube_SPAWN(lace, high, vars, cube));
+        BDD new_low = sylvan_union_cube_CALL(lace, low, vars, cube);
         bdd_refs_push(new_low);
-        BDD new_high = bdd_refs_sync(SYNC(sylvan_union_cube));
+        BDD new_high = bdd_refs_sync(sylvan_union_cube_SYNC(lace));
         bdd_refs_pop(1);
         if (new_low != low || new_high != high) {
             result = sylvan_makenode(n_level, new_low, new_high);
@@ -1955,7 +1957,7 @@ struct bdd_path
     int8_t val; // 0=false, 1=true, 2=both
 };
 
-VOID_TASK_5(sylvan_enum_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context, struct bdd_path*, path)
+void sylvan_enum_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, enum_cb cb, void* context, struct bdd_path* path)
 {
     if (bdd == sylvan_false) return;
 
@@ -1978,7 +1980,7 @@ VOID_TASK_5(sylvan_enum_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context,
             j++;
         }
         /* call callback */
-        WRAP(cb, context, vars, cube, i);
+        cb(context, vars, cube, i);
         return;
     }
 
@@ -1989,14 +1991,14 @@ VOID_TASK_5(sylvan_enum_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context,
     /* assert var <= bdd_var */
     if (bdd == sylvan_true || var < bdd_var) {
         struct bdd_path pp0 = (struct bdd_path){path, var, 0};
-        CALL(sylvan_enum_do, bdd, vars, cb, context, &pp0);
+        sylvan_enum_do_CALL(lace, bdd, vars, cb, context, &pp0);
         struct bdd_path pp1 = (struct bdd_path){path, var, 1};
-        CALL(sylvan_enum_do, bdd, vars, cb, context, &pp1);
+        sylvan_enum_do_CALL(lace, bdd, vars, cb, context, &pp1);
     } else if (var == bdd_var) {
         struct bdd_path pp0 = (struct bdd_path){path, var, 0};
-        CALL(sylvan_enum_do, sylvan_low(bdd), vars, cb, context, &pp0);
+        sylvan_enum_do_CALL(lace, sylvan_low(bdd), vars, cb, context, &pp0);
         struct bdd_path pp1 = (struct bdd_path){path, var, 1};
-        CALL(sylvan_enum_do, sylvan_high(bdd), vars, cb, context, &pp1);
+        sylvan_enum_do_CALL(lace, sylvan_high(bdd), vars, cb, context, &pp1);
     } else {
         printf("var %u not expected (expecting %u)!\n", bdd_var, var);
         assert(var <= bdd_var);
@@ -2004,6 +2006,8 @@ VOID_TASK_5(sylvan_enum_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context,
 }
 
 VOID_TASK_5(sylvan_enum_par_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context, struct bdd_path*, path)
+
+void sylvan_enum_par_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, enum_cb cb, void* context, struct bdd_path* path)
 {
     if (bdd == sylvan_false) return;
 
@@ -2026,7 +2030,7 @@ VOID_TASK_5(sylvan_enum_par_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, cont
             j++;
         }
         /* call callback */
-        WRAP(cb, context, vars, cube, i);
+        cb(context, vars, cube, i);
         return;
     }
 
@@ -2037,32 +2041,35 @@ VOID_TASK_5(sylvan_enum_par_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, cont
     /* assert var <= bdd_var */
     if (var < bdd_var) {
         struct bdd_path pp1 = (struct bdd_path){path, var, 1};
-        SPAWN(sylvan_enum_par_do, bdd, vars, cb, context, &pp1);
+        sylvan_enum_par_do_SPAWN(lace, bdd, vars, cb, context, &pp1);
         struct bdd_path pp0 = (struct bdd_path){path, var, 0};
-        CALL(sylvan_enum_par_do, bdd, vars, cb, context, &pp0);
-        SYNC(sylvan_enum_par_do);
+        sylvan_enum_par_do_CALL(lace, bdd, vars, cb, context, &pp0);
+        sylvan_enum_par_do_SYNC(lace);
     } else if (var == bdd_var) {
         struct bdd_path pp1 = (struct bdd_path){path, var, 1};
-        SPAWN(sylvan_enum_par_do, sylvan_high(bdd), vars, cb, context, &pp1);
+        sylvan_enum_par_do_SPAWN(lace, sylvan_high(bdd), vars, cb, context, &pp1);
         struct bdd_path pp0 = (struct bdd_path){path, var, 0};
-        CALL(sylvan_enum_par_do, sylvan_low(bdd), vars, cb, context, &pp0);
-        SYNC(sylvan_enum_par_do);
+        sylvan_enum_par_do_CALL(lace, sylvan_low(bdd), vars, cb, context, &pp0);
+        sylvan_enum_par_do_SYNC(lace);
     } else {
         assert(var <= bdd_var);
     }
 }
 
-VOID_TASK_IMPL_4(sylvan_enum, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context)
+//FIXME clean this up
+void sylvan_enum_CALL(lace_worker* lace, BDD bdd, BDDSET  vars, enum_cb cb, void* context)
 {
-    CALL(sylvan_enum_do, bdd, vars, cb, context, 0);
+    sylvan_enum_do_CALL(lace, bdd, vars, cb, context, 0);
 }
 
-VOID_TASK_IMPL_4(sylvan_enum_par, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context)
+void sylvan_enum_par_CALL(lace_worker* lace, BDD bdd, BDDSET vars, enum_cb cb, void* context)
 {
-    CALL(sylvan_enum_par_do, bdd, vars, cb, context, 0);
+    sylvan_enum_par_do_CALL(lace, bdd, vars, cb, context, 0);
 }
 
 TASK_5(BDD, sylvan_collect_do, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, void*, context, struct bdd_path*, path)
+
+BDD sylvan_collect_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, sylvan_collect_cb cb, void* context, struct bdd_path* path)
 {
     if (bdd == sylvan_false) {
          return sylvan_false;
@@ -2087,7 +2094,7 @@ TASK_5(BDD, sylvan_collect_do, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, vo
         /**
          * Call callback
          */
-        return WRAP(cb, context, arr);
+        return cb(context, arr);
     } else {
         /**
          * Obtain domain variable
@@ -2115,18 +2122,19 @@ TASK_5(BDD, sylvan_collect_do, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, vo
          */
         struct bdd_path p0 = (struct bdd_path){path, dom_var, 0};
         struct bdd_path p1 = (struct bdd_path){path, dom_var, 1};
-        bdd_refs_spawn(SPAWN(sylvan_collect_do, bdd1, dom_next, cb, context, &p1));
-        BDD low = bdd_refs_push(CALL(sylvan_collect_do, bdd0, dom_next, cb, context, &p0));
-        BDD high = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_collect_do)));
-        BDD res = sylvan_or(low, high);
+        bdd_refs_spawn(sylvan_collect_do_SPAWN(lace, bdd1, dom_next, cb, context, &p1));
+        BDD low = bdd_refs_push(sylvan_collect_do_CALL(lace, bdd0, dom_next, cb, context, &p0));
+        BDD high = bdd_refs_push(bdd_refs_sync(sylvan_collect_do_SYNC(lace)));
+        BDD res = sylvan_not(sylvan_and_CALL(lace, sylvan_not(low), sylvan_not(high), 0));
         bdd_refs_pop(2);
         return res;
     }
 }
 
-TASK_IMPL_4(BDD, sylvan_collect, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, void*, context)
+// FIXME we don't need the extra indirection?
+BDD sylvan_collect_CALL(lace_worker* lace, BDD bdd, BDDSET vars, sylvan_collect_cb cb, void* context)
 {
-    return CALL(sylvan_collect_do, bdd, vars, cb, context, NULL);
+    return sylvan_collect_do_CALL(lace, bdd, vars, cb, context, NULL);
 }
 
 /**

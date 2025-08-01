@@ -148,14 +148,11 @@ uint64_t llmsset_lookupc(const llmsset_t dbs, const uint64_t a, const uint64_t b
  * 2) call llmsset_mark for every bucket to rehash
  * 3) call llmsset_rehash 
  */
-VOID_TASK_DECL_1(llmsset_clear, llmsset_t);
-#define llmsset_clear(dbs) RUN(llmsset_clear, dbs)
+static inline void llmsset_clear(llmsset_t dbs);
 
-VOID_TASK_DECL_1(llmsset_clear_data, llmsset_t);
-#define llmsset_clear_data(dbs) RUN(llmsset_clear_data, dbs)
+static inline void llmsset_clear_data(llmsset_t dbs);
 
-VOID_TASK_DECL_1(llmsset_clear_hashes, llmsset_t);
-#define llmsset_clear_hashes(dbs) RUN(llmsset_clear_hashes, dbs)
+static inline void llmsset_clear_hashes(llmsset_t dbs);
 
 /**
  * Check if a certain data bucket is marked (in use).
@@ -173,8 +170,7 @@ int llmsset_mark(const llmsset_t dbs, uint64_t index);
  * Rehash all marked buckets.
  * Returns 0 if successful, or the number of buckets not rehashed if not.
  */
-TASK_DECL_1(int, llmsset_rehash, llmsset_t);
-#define llmsset_rehash(dbs) RUN(llmsset_rehash, dbs)
+static inline int llmsset_rehash(llmsset_t dbs);
 
 /**
  * Rehash a single bucket.
@@ -185,15 +181,13 @@ int llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx);
 /**
  * Retrieve number of marked buckets.
  */
-TASK_DECL_1(size_t, llmsset_count_marked, llmsset_t);
-#define llmsset_count_marked(dbs) RUN(llmsset_count_marked, dbs)
+static inline size_t llmsset_count_marked(llmsset_t dbs);
 
 /**
  * During garbage collection, this method calls the destroy callback
  * for all 'custom' data that is not kept.
  */
-VOID_TASK_DECL_1(llmsset_destroy_unmarked, llmsset_t);
-#define llmsset_destroy_unmarked(dbs) RUN(llmsset_destroy_unmarked, dbs)
+static inline void llmsset_destroy_unmarked(llmsset_t dbs);
 
 /**
  * Set custom functions
@@ -205,6 +199,13 @@ void llmsset_set_custom(const llmsset_t dbs, llmsset_hash_cb hash_cb, llmsset_eq
  */
 #define llmsset_hash sylvan_tabhash16
 #define llmsset_fnvhash sylvan_fnvhash16
+
+VOID_TASK_1(llmsset_clear, llmsset_t, dbs)
+VOID_TASK_1(llmsset_clear_data, llmsset_t, dbs)
+VOID_TASK_1(llmsset_clear_hashes, llmsset_t, dbs)
+TASK_1(int, llmsset_rehash, llmsset_t, dbs)
+TASK_1(size_t, llmsset_count_marked, llmsset_t, dbs)
+VOID_TASK_1(llmsset_destroy_unmarked, llmsset_t, dbs)
 
 #ifdef __cplusplus
 }

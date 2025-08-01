@@ -99,19 +99,24 @@ static double t_start;
 #define Abort(...) { fprintf(stderr, __VA_ARGS__); exit(-1); }
 
 VOID_TASK_0(gc_start)
+void gc_start_CALL(lace_worker* lace)
 {
     if (report_minor) {
         printf("\n");
     }
     INFO("(GC) Starting garbage collection...\n");
+    (void)lace;
 }
 
 VOID_TASK_0(gc_end)
+void gc_end_CALL(lace_worker* lace)
 {
     INFO("(GC) Garbage collection done.\n");
+    (void)lace;
 }
 
 VOID_TASK_0(run)
+void run_CALL(lace_worker* lace)
 {
     double t1 = wctime();
 
@@ -136,7 +141,7 @@ VOID_TASK_0(run)
     // Old satcount function still requires a silly variables cube
     BDD vars = one;
     sylvan_protect(&vars);
-    for (size_t i=0; i<size*size; i++) vars = sylvan_and(vars, board[i]);
+    for (size_t i=0; i<size*size; i++) vars = sylvan_and_CALL(lace, vars, board[i], 0);
 
     INFO("Initialisation complete!\n");
 
@@ -157,11 +162,11 @@ VOID_TASK_0(run)
             temp = one;
             for (size_t k=0; k<size; k++) {
                 if (j==k) continue;
-                temp = sylvan_and(temp, sylvan_not(board[i*size+k]));
+                temp = sylvan_and_CALL(lace, temp, sylvan_not(board[i*size+k]), 0);
             }
-            temp = sylvan_or(temp, sylvan_not(board[i*size+j]));
+            temp = sylvan_not(sylvan_and_CALL(lace, sylvan_not(temp), board[i*size+j], 0));
             // add cube to "res"
-            res = sylvan_and(res, temp);
+            res = sylvan_and_CALL(lace, res, temp, 0);
         }
     }
 
@@ -169,7 +174,7 @@ VOID_TASK_0(run)
         printf("\n");
     }
     if (report_minterms) {
-        INFO("We have %.0f minterms\n", sylvan_satcount(res, vars));
+        INFO("We have %.0f minterms\n", sylvan_satcount_CALL(lace, res, vars, 0));
     }
     if (report_minor) {
         INFO("Encoding columns... ");
@@ -188,11 +193,11 @@ VOID_TASK_0(run)
             temp = one;
             for (size_t k=0; k<size; k++) {
                 if (i==k) continue;
-                temp = sylvan_and(temp, sylvan_not(board[k*size+j]));
+                temp = sylvan_and_CALL(lace, temp, sylvan_not(board[k*size+j]), 0);
             }
-            temp = sylvan_or(temp, sylvan_not(board[i*size+j]));
+            temp = sylvan_not(sylvan_and_CALL(lace, sylvan_not(temp), board[i*size+j], 0));
             // add cube to "res"
-            res = sylvan_and(res, temp);
+            res = sylvan_and_CALL(lace, res, temp, 0);
         }
     }
 
@@ -200,7 +205,7 @@ VOID_TASK_0(run)
         printf("\n");
     }
     if (report_minterms) {
-        INFO("We have %.0f minterms\n", sylvan_satcount(res, vars));
+        INFO("We have %.0f minterms\n", sylvan_satcount_CALL(lace, res, vars, 0));
     }
     if (report_minor) {
         INFO("Encoding rising diagonals... ");
@@ -219,12 +224,12 @@ VOID_TASK_0(run)
             for (size_t k=0; k<size; k++) {
                 // if (j+k-i >= 0 && j+k-i < size && k != i)
                 if (j+k >= i && j+k < size+i && k != i) {
-                    temp = sylvan_and(temp, sylvan_not(board[k*size + (j+k-i)]));
+                    temp = sylvan_and_CALL(lace, temp, sylvan_not(board[k*size + (j+k-i)]), 0);
                 }
             }
-            temp = sylvan_or(temp, sylvan_not(board[i*size+j]));
+            temp = sylvan_not(sylvan_and_CALL(lace, sylvan_not(temp), board[i*size+j], 0));
             // add cube to "res"
-            res = sylvan_and(res, temp);
+            res = sylvan_and_CALL(lace, res, temp, 0);
         }
     }
 
@@ -232,7 +237,7 @@ VOID_TASK_0(run)
         printf("\n");
     }
     if (report_minterms) {
-        INFO("We have %.0f minterms\n", sylvan_satcount(res, vars));
+        INFO("We have %.0f minterms\n", sylvan_satcount_CALL(lace, res, vars, 0));
     }
     if (report_minor) {
         INFO("Encoding falling diagonals... ");
@@ -251,12 +256,12 @@ VOID_TASK_0(run)
             for (size_t k=0; k<size; k++) {
                 // if (j+i-k >= 0 && j+i-k < size && k != i)
                 if (j+i >= k && j+i < size+k && k != i) {
-                    temp = sylvan_and(temp, sylvan_not(board[k*size + (j+i-k)]));
+                    temp = sylvan_and_CALL(lace, temp, sylvan_not(board[k*size + (j+i-k)]), 0);
                 }
             }
-            temp = sylvan_or(temp, sylvan_not(board[i*size + j]));
+            temp = sylvan_not(sylvan_and_CALL(lace, sylvan_not(temp), board[i*size + j], 0));
             // add cube to "res"
-            res = sylvan_and(res, temp);
+            res = sylvan_and_CALL(lace, res, temp, 0);
         }
     }
 
@@ -264,7 +269,7 @@ VOID_TASK_0(run)
         printf("\n");
     }
     if (report_minterms) {
-        INFO("We have %.0f minterms\n", sylvan_satcount(res, vars));
+        INFO("We have %.0f minterms\n", sylvan_satcount_CALL(lace, res, vars, 0));
     }
     if (report_minor) {
         INFO("Final computation to place a queen on every row... ");
@@ -280,9 +285,9 @@ VOID_TASK_0(run)
 
         temp = zero;
         for (size_t j=0; j<size; j++) {
-            temp = sylvan_or(temp, board[i*size+j]);
+            temp = sylvan_not(sylvan_and_CALL(lace, sylvan_not(temp), sylvan_not(board[i*size+j]), 0));
         }
-        res = sylvan_and(res, temp);
+        res = sylvan_and_CALL(lace, res, temp, 0);
     }
 
     if (report_minor) {
@@ -291,7 +296,7 @@ VOID_TASK_0(run)
 
     double t2 = wctime();
 
-    INFO("Result: NQueens(%zu) has %.0f solutions.\n", size, sylvan_satcount(res, vars));
+    INFO("Result: NQueens(%zu) has %.0f solutions.\n", size, sylvan_satcount_CALL(lace, res, vars, 0));
     INFO("Result BDD has %zu nodes.\n", sylvan_nodecount(res));
     INFO("Computation time: %f sec.\n", t2-t1);
 }
@@ -304,7 +309,7 @@ main(int argc, char** argv)
     t_start = wctime();
 
     // Init Lace
-    lace_start(workers, 1000000); // auto-detect number of workers, use a 1,000,000 size task queue
+    lace_start(workers, 1000000, 0); // auto-detect number of workers, use a 1,000,000 size task queue
 
     // Lace is initialized, now set local variables
 
@@ -321,10 +326,10 @@ main(int argc, char** argv)
     sylvan_init_bdd();
 
     // Before and after garbage collection, call gc_start and gc_end
-    sylvan_gc_hook_pregc(TASK(gc_start));
-    sylvan_gc_hook_postgc(TASK(gc_end));
+    sylvan_gc_hook_pregc(gc_start_CALL);
+    sylvan_gc_hook_postgc(gc_end_CALL);
 
-    RUN(run);
+    run();
 
     if (report_stats) {
         sylvan_stats_report(stdout);

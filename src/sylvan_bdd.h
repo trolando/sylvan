@@ -57,34 +57,43 @@ int sylvan_get_granularity(void);
  * These operations are all implemented by NOT, AND and XOR.
  */
 static inline BDD
-sylvan_not(BDD a)
+sylvan_not(BDD dd)
 {
-    return a ^ sylvan_complement;
+    return dd ^ sylvan_complement;
 }
 
-TASK_DECL_4(BDD, sylvan_ite, BDD, BDD, BDD, BDDVAR);
-#define sylvan_ite(a,b,c) (RUN(sylvan_ite,a,b,c,0))
-TASK_DECL_3(BDD, sylvan_and, BDD, BDD, BDDVAR);
-#define sylvan_and(a,b) (RUN(sylvan_and,a,b,0))
-TASK_DECL_3(BDD, sylvan_xor, BDD, BDD, BDDVAR);
-#define sylvan_xor(a,b) (RUN(sylvan_xor,a,b,0))
-#define sylvan_equiv(a,b) sylvan_not(sylvan_xor(a,b))
-#define sylvan_or(a,b) sylvan_not(sylvan_and(sylvan_not(a),sylvan_not(b)))
-#define sylvan_nand(a,b) sylvan_not(sylvan_and(a,b))
+static inline BDD sylvan_ite(BDD a, BDD b, BDD c, BDDVAR prev_var);
+
+static inline BDD sylvan_and(BDD a, BDD b, BDDVAR prev_var);
+
+static inline BDD sylvan_xor(BDD a, BDD b, BDDVAR prev_var);
+
+static inline BDD sylvan_equiv(BDD a, BDD b, BDDVAR prev_var)
+{
+    return sylvan_not(sylvan_xor(a, b, prev_var));
+}
+
+// FIXME
+#define sylvan_or(a,b) sylvan_not(sylvan_and(sylvan_not(a),sylvan_not(b), 0))
+#define sylvan_nand(a,b) sylvan_not(sylvan_and(a,b, 0))
 #define sylvan_nor(a,b) sylvan_not(sylvan_or(a,b))
-#define sylvan_imp(a,b) sylvan_not(sylvan_and(a,sylvan_not(b)))
-#define sylvan_invimp(a,b) sylvan_not(sylvan_and(sylvan_not(a),b))
+#define sylvan_imp(a,b) sylvan_not(sylvan_and(a,sylvan_not(b),0))
+#define sylvan_invimp(a,b) sylvan_not(sylvan_and(sylvan_not(a),b,0))
 #define sylvan_biimp sylvan_equiv
-#define sylvan_diff(a,b) sylvan_and(a,sylvan_not(b))
-#define sylvan_less(a,b) sylvan_and(sylvan_not(a),b)
+#define sylvan_diff(a,b) sylvan_and(a,sylvan_not(b),0)
+#define sylvan_less(a,b) sylvan_and(sylvan_not(a),b,0)
 
-TASK_DECL_3(char, sylvan_disjoint, BDD, BDD, BDDVAR);
-#define sylvan_disjoint(a,b) (RUN(sylvan_disjoint,a,b,0))
-#define sylvan_subset(a,b) (RUN(sylvan_disjoint,a,sylvan_not(b),0))
+static inline char sylvan_disjoint(BDD a, BDD b, BDDVAR prev_var);
 
-/* Create a BDD representing just <var> or the negation of <var> */
-static inline BDD
-sylvan_nithvar(uint32_t var)
+static inline char sylvan_subset(BDD a, BDD b, BDDVAR prev_var)
+{
+    return sylvan_disjoint(a, sylvan_not(b), prev_var);
+}
+
+/**
+ * Create a BDD representing just the negation of <var>.
+ */
+static inline BDD sylvan_nithvar(uint32_t var)
 {
     return sylvan_not(sylvan_ithvar(var));
 }
@@ -92,27 +101,27 @@ sylvan_nithvar(uint32_t var)
 /**
  * Existential and universal quantification.
  */
-TASK_DECL_3(BDD, sylvan_exists, BDD, BDD, BDDVAR);
-#define sylvan_exists(a, vars) (RUN(sylvan_exists, a, vars, 0))
-#define sylvan_forall(a, vars) (sylvan_not(RUN(sylvan_exists, sylvan_not(a), vars, 0)))
+static inline BDD sylvan_exists(BDD dd, BDDSET vars, BDDVAR prev_var);
+
+static inline BDD sylvan_forall(BDD dd, BDDSET vars, BDDVAR prev_var)
+{
+    return sylvan_not(sylvan_exists(sylvan_not(dd), vars, prev_var));
+}
 
 /**
  * Projection. (Same as existential quantification, but <vars> contains variables to keep.
  */
-TASK_DECL_2(BDD, sylvan_project, BDD, BDD);
-#define sylvan_project(a, vars) RUN(sylvan_project, a, vars)
+static inline BDD sylvan_project(BDD dd, BDDSET vars);
 
 /**
  * Compute \exists <vars>: <a> \and <b>
  */
-TASK_DECL_4(BDD, sylvan_and_exists, BDD, BDD, BDDSET, BDDVAR);
-#define sylvan_and_exists(a,b,vars) RUN(sylvan_and_exists,a,b,vars,0)
+static inline BDD sylvan_and_exists(BDD a, BDD b, BDDSET vars, BDDVAR prev_var);
 
 /**
  * Compute and_exists, but as a projection (only keep given variables)
  */
-TASK_DECL_3(BDD, sylvan_and_project, BDD, BDD, BDDSET);
-#define sylvan_and_project(a,b,vars) RUN(sylvan_and_project,a,b,vars)
+static inline BDD sylvan_and_project(BDD a, BDD b, BDDSET vars);
 
 /**
  * Compute R(s,t) = \exists x: A(s,x) \and B(x,t)
@@ -126,8 +135,7 @@ TASK_DECL_3(BDD, sylvan_and_project, BDD, BDD, BDDSET);
  * Use this function to concatenate two relations   --> -->
  * or to take the 'previous' of a set               -->  S
  */
-TASK_DECL_4(BDD, sylvan_relprev, BDD, BDD, BDDSET, BDDVAR);
-#define sylvan_relprev(a,b,vars) RUN(sylvan_relprev,a,b,vars,0)
+static inline BDD sylvan_relprev(BDD a, BDD b, BDDSET vars, BDDVAR prev_var);
 
 /**
  * Compute R(s) = \exists x: A(x) \and B(x,s)
@@ -140,8 +148,7 @@ TASK_DECL_4(BDD, sylvan_relprev, BDD, BDD, BDDSET, BDDVAR);
  *
  * Use this function to take the 'next' of a set     S  -->
  */
-TASK_DECL_4(BDD, sylvan_relnext, BDD, BDD, BDDSET, BDDVAR);
-#define sylvan_relnext(a,b,vars) RUN(sylvan_relnext,a,b,vars,0)
+static inline BDD sylvan_relnext(BDD a, BDD b, BDDSET vars, BDDVAR prev_var);
 
 /**
  * Computes the transitive closure by traversing the BDD recursively.
@@ -153,8 +160,7 @@ TASK_DECL_4(BDD, sylvan_relnext, BDD, BDD, BDDSET, BDDVAR);
  * with s,t interleaved with s even and t odd, i.e.
  * s level 0,2,4 matches with t level 1,3,5 and so forth.
  */
-TASK_DECL_2(BDD, sylvan_closure, BDD, BDDVAR);
-#define sylvan_closure(a) RUN(sylvan_closure,a,0);
+static inline BDD sylvan_closure(BDD dd, BDDVAR prev_var);
 
 /**
  * Compute f@c (f constrain c), such that f and f@c are the same when c is true
@@ -167,40 +173,34 @@ TASK_DECL_2(BDD, sylvan_closure, BDD, BDDVAR);
  *   - f@f = 1
  *   - f@not(f) = 0
  */
-TASK_DECL_3(BDD, sylvan_constrain, BDD, BDD, BDDVAR);
-#define sylvan_constrain(f,c) (RUN(sylvan_constrain, f, c, 0))
+static inline BDD sylvan_constrain(BDD f, BDD c, BDDVAR prev_var);
 
 /**
  * Compute restrict f@c, which uses a heuristic to try and minimize a BDD f with respect to a care function c
  * Similar to constrain, but avoids introducing variables from c into f.
  */
-TASK_DECL_3(BDD, sylvan_restrict, BDD, BDD, BDDVAR);
-#define sylvan_restrict(f,c) (RUN(sylvan_restrict, f, c, 0))
+static inline BDD sylvan_restrict(BDD f, BDD c, BDDVAR prev_var);
 
 /**
  * Function composition.
  * For each node with variable <key> which has a <key,value> pair in <map>,
  * replace the node by the result of sylvan_ite(<value>, <low>, <high>).
  */
-TASK_DECL_3(BDD, sylvan_compose, BDD, BDDMAP, BDDVAR);
-#define sylvan_compose(f,m) (RUN(sylvan_compose, (f), (m), 0))
+static inline BDD sylvan_compose(BDD f, BDD m, BDDVAR prev_var);
 
 /**
  * Calculate number of satisfying variable assignments.
  * The set of variables must be >= the support of the BDD.
  */
-
-TASK_DECL_3(double, sylvan_satcount, BDD, BDDSET, BDDVAR);
-#define sylvan_satcount(bdd, variables) RUN(sylvan_satcount, bdd, variables, 0)
+static inline double sylvan_satcount(BDD dd, BDDSET variables, BDDVAR prev_var);
 
 /**
  * Create a BDD cube representing the conjunction of variables in their positive or negative
  * form depending on whether the cube[idx] equals 0 (negative), 1 (positive) or 2 (any).
- * CHANGED 2014/09/19: vars is now a BDDSET (ordered!)
  */
 BDD sylvan_cube(BDDSET variables, uint8_t *cube);
-TASK_DECL_3(BDD, sylvan_union_cube, BDD, BDDSET, uint8_t*);
-#define sylvan_union_cube(bdd, variables, cube) RUN(sylvan_union_cube, bdd, variables, cube)
+
+static inline BDD sylvan_union_cube(BDD dd, BDDSET variables, uint8_t* cube);
 
 /**
  * Pick one satisfying variable assignment randomly for which <bdd> is true.
@@ -232,11 +232,12 @@ BDD sylvan_sat_single(BDD bdd, BDDSET vars);
  * Calls <cb> with four parameters: a user-supplied context, the array of BDD variables in <vars>,
  * the cube (array of values 0 and 1 for each variables in <vars>) and the length of the two arrays.
  */
-LACE_TYPEDEF_CB(void, enum_cb, void*, BDDVAR*, uint8_t*, int);
-VOID_TASK_DECL_4(sylvan_enum, BDD, BDDSET, enum_cb, void*);
-#define sylvan_enum(bdd, vars, cb, context) RUN(sylvan_enum, bdd, vars, cb, context)
-VOID_TASK_DECL_4(sylvan_enum_par, BDD, BDDSET, enum_cb, void*);
-#define sylvan_enum_par(bdd, vars, cb, context) RUN(sylvan_enum_par, bdd, vars, cb, context)
+
+typedef void (*enum_cb)(void*, BDDVAR*, uint8_t*, int);
+
+static inline void sylvan_enum(BDD dd, BDDSET vars, enum_cb cb, void* context);
+
+static inline void sylvan_enum_par(BDD dd, BDDSET vars, enum_cb cb, void* context);
 
 /**
  * Enumerate all satisfyable variable assignments of the given <bdd> using variables <vars>.
@@ -244,15 +245,15 @@ VOID_TASK_DECL_4(sylvan_enum_par, BDD, BDDSET, enum_cb, void*);
  * values 0 and 1 for each variable in <vars>).
  * The BDD that <cb> returns is pair-wise merged (using or) and returned.
  */
-LACE_TYPEDEF_CB(BDD, sylvan_collect_cb, void*, uint8_t*);
-TASK_DECL_4(BDD, sylvan_collect, BDD, BDDSET, sylvan_collect_cb, void*);
-#define sylvan_collect(bdd, vars, cb, context) RUN(sylvan_collect, bdd, vars, cb, context)
+
+typedef BDD (*sylvan_collect_cb)(void*, uint8_t*);
+
+static inline BDD sylvan_collect(BDD dd, BDDSET vars, sylvan_collect_cb cb, void* context);
 
 /**
  * Compute the number of distinct paths to sylvan_true in the BDD
  */
-TASK_DECL_2(double, sylvan_pathcount, BDD, BDDVAR);
-#define sylvan_pathcount(bdd) (RUN(sylvan_pathcount, bdd, 0))
+static inline double sylvan_pathcount(BDD dd, BDDVAR prev_var);
 
 /**
  * SAVING:
@@ -291,6 +292,27 @@ sylvan_print(BDD bdd)
 {
     return sylvan_fprint(stdout, bdd);
 }
+
+TASK_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_var)
+TASK_3(BDD, sylvan_and, BDD, a, BDD, b, BDDVAR, prev_var)
+TASK_3(BDD, sylvan_xor, BDD, a, BDD, b, BDDVAR, prev_var)
+TASK_3(char, sylvan_disjoint, BDD, a, BDD, b, BDDVAR, prev_var)
+TASK_3(BDD, sylvan_exists, BDD, dd, BDD, vars, BDDVAR, prev_var)
+TASK_2(BDD, sylvan_project, BDD, dd, BDD, vars);
+TASK_4(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_var);
+TASK_3(BDD, sylvan_and_project, BDD, a, BDD, b, BDDSET, vars);
+TASK_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_var);
+TASK_4(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_var);
+TASK_2(BDD, sylvan_closure, BDD, a, BDDVAR, prev_var);
+TASK_3(BDD, sylvan_constrain, BDD, f, BDD, c, BDDVAR, prev_var);
+TASK_3(BDD, sylvan_restrict, BDD, f, BDD, c, BDDVAR, prev_var);
+TASK_3(BDD, sylvan_compose, BDD, f, BDDMAP, m, BDDVAR, var);
+TASK_3(double, sylvan_satcount, BDD, dd, BDDSET, vars, BDDVAR, var);
+VOID_TASK_4(sylvan_enum, BDD, dd, BDDSET, vars, enum_cb, cb, void*, context);
+VOID_TASK_4(sylvan_enum_par, BDD, dd, BDDSET, vars, enum_cb, cb, void*, context);
+TASK_4(BDD, sylvan_collect, BDD, dd, BDDSET, vars, sylvan_collect_cb, cb, void*, context);
+TASK_2(double, sylvan_pathcount, BDD, dd, BDDVAR, prev_var);
+TASK_3(BDD, sylvan_union_cube, BDD, dd, BDDSET, vars, uint8_t*, cube);
 
 #ifdef __cplusplus
 }

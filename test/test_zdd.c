@@ -98,6 +98,26 @@ TASK_0(int, test_zdd_eval)
     test_assert(zdd_eval(zdd, 6, 1) == zdd_false);
     test_assert(zdd_eval(zdd, 6, 0) != zdd_false);
 
+    /**
+     * Test that the evaluation works correctly also for variables that are not in the root.
+    */
+
+    zdd = zdd_from_mtbdd(dd, dom);
+    test_assert(zdd_eval(zdd, 2, 1) != zdd_false);
+    test_assert(zdd_eval(zdd, 3, 1) != zdd_false);
+    test_assert(zdd_eval(zdd, 5, 1) != zdd_false);
+    test_assert(zdd_eval(zdd, 2, 0) == zdd_eval(zdd, 2, 1));
+    test_assert(zdd_eval(zdd, 3, 0) == zdd_eval(zdd, 3, 1));
+    test_assert(zdd_eval(zdd, 5, 0) == zdd_eval(zdd, 5, 1));
+    zdd = zdd_eval(zdd, 6, 0);
+    zdd = zdd_eval(zdd, 5, 0);
+    zdd = zdd_eval(zdd, 4, 0);
+    zdd = zdd_eval(zdd, 3, 0);
+    zdd = zdd_eval(zdd, 2, 0);
+    zdd = zdd_eval(zdd, 1, 0);
+    test_assert(zdd_eval(zdd, 0, 1) == zdd_false);
+    test_assert(zdd_eval(zdd, 0, 0) == zdd_true);
+
     return 0;
 }
 

@@ -68,32 +68,31 @@ cache_next_opid()
 //         0x7fff0000 - hash (part of the 64-bit hash not used to position)
 //         0x0000ffff - tag (every put increases tag field)
 
-/* Rotating 64-bit FNV-1a hash */
-static uint64_t
-cache_hash(uint64_t a, uint64_t b, uint64_t c)
-{
-    const uint64_t prime = 1099511628211;
-    uint64_t hash = 14695981039346656037LLU;
-    hash = (hash ^ (a>>32));
-    hash = (hash ^ a) * prime;
-    hash = (hash ^ b) * prime;
-    hash = (hash ^ c) * prime;
-    return hash;
+static inline uint64_t rotl64(uint64_t x, unsigned k) {
+    return (x << k) | (x >> (64 - k));
 }
 
-static uint64_t
-cache_hash6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t f)
+static inline uint64_t cache_hash(uint64_t a, uint64_t b, uint64_t c)
 {
-    const uint64_t prime = 1099511628211;
-    uint64_t hash = 14695981039346656037LLU;
-    hash = (hash ^ (a>>32));
-    hash = (hash ^ a) * prime;
-    hash = (hash ^ b) * prime;
-    hash = (hash ^ c) * prime;
-    hash = (hash ^ d) * prime;
-    hash = (hash ^ e) * prime;
-    hash = (hash ^ f) * prime;
-    return hash;
+    uint64_t h = a ^ rotl64(b, 21) ^ rotl64(c, 43);
+    h ^= h >> 17;
+    h *= 0x9E3779B97F4A7C15ULL; // golden ratio constant
+    h ^= h >> 31;
+    return h;
+}
+
+static inline uint64_t cache_hash6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t f)
+{
+    uint64_t h1 = a ^ rotl64(b, 19) ^ rotl64(c, 37);
+    uint64_t h2 = d ^ rotl64(e, 11) ^ rotl64(f, 53);
+
+    h1 ^= h1 >> 23;
+    h2 ^= h2 << 7;
+
+    uint64_t h = h1 ^ h2;
+    h *= 0x9E3779B97F4A7C15ULL; // golden ratio constant
+    h ^= h >> 29;
+    return h;
 }
 
 int

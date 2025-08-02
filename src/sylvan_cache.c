@@ -21,10 +21,6 @@
 #include <errno.h>  // for errno
 #include <string.h> // for strerror
 
-#ifndef compiler_barrier
-#define compiler_barrier() atomic_signal_fence(memory_order_seq_cst)
-#endif
-
 /**
  * This cache is designed to store a,b,c->res, with a,b,c,res 64-bit integers.
  *
@@ -112,7 +108,7 @@ cache_get6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t 
     cache6_entry_t bucket = (cache6_entry_t)cache_table + (hash % cache_size)/2;
 #endif
     // can be relaxed, we check again afterwards
-    const uint64_t s = atomic_load_explicit(s_bucket, memory_order_relaxed);
+    const uint64_t s = atomic_load_explicit(s_bucket, memory_order_acquire);
     // abort if locked or second part of 2-part entry or if different hash
     uint64_t x = ((hash>>32) & 0x7fff0000) | 0x04000000;
     x = x | (x<<32);
@@ -122,8 +118,9 @@ cache_get6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t 
     if (bucket->d != d || bucket->e != e || bucket->f != f) return 0;
     *res1 = bucket->res;
     if (res2) *res2 = bucket->res2;
+    atomic_thread_fence(memory_order_seq_cst);
     // abort if status field changed after compiler_barrier()
-    return atomic_load_explicit(s_bucket, memory_order_acquire) == s ? 1 : 0;
+    return atomic_load_explicit(s_bucket, memory_order_relaxed) == s ? 1 : 0;
 }
 
 int
@@ -173,7 +170,7 @@ cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
     _Atomic(uint32_t) *s_bucket = (_Atomic(uint32_t)*)cache_status + (hash % cache_size);
     cache_entry_t bucket = cache_table + (hash % cache_size);
 #endif
-    const uint32_t s = atomic_load_explicit(s_bucket, memory_order_relaxed);
+    const uint32_t s = atomic_load_explicit(s_bucket, memory_order_acquire);
     // abort if locked or if part of a 2-part cache entry
     if (s & 0xc0000000) return 0;
     // abort if different hash
@@ -181,8 +178,9 @@ cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
     // abort if key different
     if (bucket->a != a || bucket->b != b || bucket->c != c) return 0;
     *res = bucket->res;
+    atomic_thread_fence(memory_order_seq_cst);
     // abort if status field changed after compiler_barrier()
-    return atomic_load_explicit(s_bucket, memory_order_acquire) == s ? 1 : 0;
+    return atomic_load_explicit(s_bucket, memory_order_relaxed) == s ? 1 : 0;
 }
 
 int

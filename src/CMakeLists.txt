@@ -151,20 +151,32 @@ else()
 endif()
 
 set(PKGC_LIBS_PRIVATE "")
-if(UNIX AND NOT APPLE)
-    list(APPEND PKGC_LIBS_PRIVATE -lm -lpthread)
-elseif(APPLE)
-    list(APPEND PKGC_LIBS_PRIVATE -lpthread)  # -lm not needed separately on macOS
-elseif(WIN32)
-    # leaving this empty for now...
+list(APPEND PKGC_LIBS_PRIVATE -lpthread)
+if(NOT APPLE)
+    list(APPEND PKGC_LIBS_PRIVATE -lm)
 endif()
 
 # Join into space-separated string
-string(JOIN " " PKGC_LIBS_PRIVATE "${PKGC_LIBS_PRIVATE}")
+string(REPLACE ";" " " PKGC_LIBS_PRIVATE "${PKGC_LIBS_PRIVATE}")
 
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sylvan.pc.in"
-               "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc"
-               @ONLY)
+install(CODE "
+  file(MAKE_DIRECTORY \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/pkgconfig\")
+  file(WRITE \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/pkgconfig/sylvan.pc\" \"
+prefix=\${CMAKE_INSTALL_PREFIX}
+exec_prefix=\\\${prefix}
+libdir=\\\${prefix}/${CMAKE_INSTALL_LIBDIR}
+includedir=\\\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}
+
+Name: ${PROJECT_NAME}
+Description: ${PROJECT_DESCRIPTION}
+URL: ${PROJECT_HOMEPAGE_URL}
+Version: ${PROJECT_VERSION}
+Cflags: -I\\\${includedir}
+Libs: -L\\\${libdir} -lsylvan
+Libs.private: ${PKGC_LIBS_PRIVATE}
+Requires: ${PKGC_REQUIRES}
+\")
+")
     
 install(
     FILES
@@ -177,12 +189,6 @@ if(SYLVAN_GMP)
     install(FILES ${PROJECT_SOURCE_DIR}/cmake/FindGMP.cmake
             DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan)
 endif()
-
-install(
-    FILES
-        ${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
-)
 
 export(EXPORT sylvan-targets
     FILE ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-targets.cmake

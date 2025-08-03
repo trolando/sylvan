@@ -1,7 +1,9 @@
 Sylvan
 ======
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![CI testing](https://github.com/trolando/sylvan/actions/workflows/ci-build.yml/badge.svg)](https://github.com/trolando/sylvan/actions/workflows/ci-build.yml)
+[![Linux](https://github.com/trolando/sylvan/actions/workflows/linux.yml/badge.svg)](https://github.com/trolando/sylvan/actions/workflows/linux.yml)
+[![macOS](https://github.com/trolando/sylvan/actions/workflows/macos.yml/badge.svg)](https://github.com/trolando/sylvan/actions/workflows/macos.yml)
+[![Windows](https://github.com/trolando/sylvan/actions/workflows/windows.yml/badge.svg)](https://github.com/trolando/sylvan/actions/workflows/windows.yml)
+[![License: Apache](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 Sylvan is a parallel (multi-core) multi-terminal binary decision diagram library written in C.
 Sylvan implements typical binary decision diagram operations also found in libraries like CUDD,
@@ -10,7 +12,7 @@ supporting custom decision diagram terminal types.
 
 The main author of Sylvan is Tom van Dijk who can be reached via <tom@tvandijk.nl>.
 
-**Table of Contents**
+## Table of Contents
 
 - [Features](#features)
 - [Dependencies](#dependencies)

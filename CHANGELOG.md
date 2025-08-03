@@ -1,6 +1,19 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [1.9.0] - 2025-08-03
+### Added
+- New BDD operations: fast tests for `disjoint` and `subset`.
+- Test scripts to validate the result of `make install`
+
+### Changed
+- Update Lace to version 1.5.0
+- Slightly more efficient hash function for the cache.
+- Various changes to improve the CMake build script.
+
+### Fixed
+- Fixed major concurrency bug in the cache.
+
 ## [1.8.1] - 2023-11-17
 ### Added
 - Added CMake scripts for installing again.

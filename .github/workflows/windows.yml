@@ -1,0 +1,55 @@
+name: Windows
+
+on: [push, pull_request]
+
+jobs:
+  windows-build:
+    name: '🚧${{ matrix.icon }} ${{ matrix.sys }} ${{ matrix.build_type }}'
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { icon: '🟦', sys: mingw64, build_type: Release }
+          - { icon: '🟦', sys: mingw64, build_type: Debug }
+          - { icon: '🟨', sys: ucrt64,  build_type: Release }
+          - { icon: '🟨', sys: ucrt64,  build_type: Debug }
+          - { icon: '🟧', sys: clang64, build_type: Release }
+          - { icon: '🟧', sys: clang64, build_type: Debug }
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+    - name: '🧰 Checkout'
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: '${{ matrix.icon }} Setup MSYS2'
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: ${{matrix.sys}}
+        update: true
+        install: >-
+          git
+          make
+          gmp
+          libargp-devel
+        pacboy: >-
+          toolchain:p
+          cmake:p
+          ninja:p
+
+    - name: '🚧 Build TOOL'
+      run: |
+        cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
+        cmake --build build
+
+    - name: 'Test'
+      working-directory: build
+      run: |
+        ctest --output-on-failure -C ${{ matrix.build_type }} -VV --timeout 30
+        examples/simple
+        examples/nqueens -w 2 9 | tee >(cat 1>&2) | grep -q "352 solutions"
+        examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee >(cat 1>&2) | grep -q "1570340"
+        examples/lddmc ../models/blocks.2.ldd -w 2 | tee >(cat 1>&2) | grep -q "7057 states"

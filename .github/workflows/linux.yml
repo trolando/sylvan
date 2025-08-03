@@ -1,0 +1,86 @@
+name: Linux
+
+on: [push, pull_request]
+
+jobs:
+  gcc-build:
+    name: 'Linux GCC-${{matrix.version}} ${{matrix.build_type}}'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Release, Debug]
+        version: [9, 12]
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install dependencies
+      shell: bash
+      run: |
+        sudo apt update
+        sudo apt install -y cmake cmake-data build-essential libgmp-dev gcc-${{matrix.version}} g++-${{matrix.version}}
+
+    - name: Configure and build Sylvan
+      shell: bash
+      run: |
+        export CC=gcc-${{matrix.version}} CXX=g++-${{matrix.version}}
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
+        cmake --build build --config ${{matrix.build_type}}
+
+    - name: Run unit tests and example tests
+      shell: bash
+      working-directory: build
+      run:  |
+        ctest --output-on-failure -C ${{ matrix.build_type }} -VV --timeout 30
+        examples/simple
+        examples/nqueens -w 2 9 | tee /dev/fd/2 | grep -q "352 solutions"
+        examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee /dev/fd/2 | grep -q "1570340"
+        examples/lddmc ../models/blocks.2.ldd -w 2 | tee /dev/fd/2 | grep -q "7057 states"
+
+    - name: Install Sylvan to test prefix
+      shell: bash
+      run: |
+        cmake --install build --prefix $HOME/sylvan-install
+
+    - name: Run pkg-config consumer test
+      shell: bash
+      working-directory: test/install/consumer-pkgconfig
+      run: |
+        export PKG_CONFIG_PATH=$HOME/sylvan-install/lib/pkgconfig
+        ./test.sh
+
+    - name: Run CMake consumer test
+      shell: bash
+      working-directory: test/install/consumer-cmake
+      run: |
+        export CMAKE_PREFIX_PATH=$HOME/sylvan-install
+        ./test.sh
+
+  clang-build:
+    name: 'Linux CLang-${{matrix.version}} ${{matrix.build_type}}'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Release, Debug]
+        version: [15, 19]
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install dependencies
+      shell: bash
+      run: |
+        sudo apt update
+        sudo apt install -y cmake cmake-data build-essential clang-${{matrix.version}}
+    - name: Build
+      shell: bash
+      run: |
+        export CC=clang-${{matrix.version}} CXX=clang++-${{matrix.version}}
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
+        cmake --build build --config ${{matrix.build_type}}
+    - name: Test
+      shell: bash
+      working-directory: build
+      run:  |
+        ctest --output-on-failure -C ${{ matrix.build_type }} -VV --timeout 30
+        examples/nqueens -w 2 9 | tee /dev/fd/2 | grep -q "352 solutions"
+        examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee /dev/fd/2 | grep -q "1570340"
+        examples/lddmc ../models/blocks.2.ldd -w 2 | tee /dev/fd/2 | grep -q "7057 states"

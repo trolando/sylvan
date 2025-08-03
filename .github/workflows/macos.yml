@@ -1,0 +1,34 @@
+name: macOS
+on: [push, pull_request]
+
+jobs:
+  clang-build:
+    name: 'macOS Clang ${{matrix.build_type}} macOS-${{matrix.version}}'
+    runs-on: macos-${{matrix.version}}
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Release, Debug]
+        version: [14, 15]
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install dependencies
+      shell: bash
+      run: |
+        brew update
+        brew install gawk argp-standalone
+    - name: Build
+      shell: bash
+      run: |
+        export CC=clang CXX=clang++
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
+        cmake --build build --config ${{matrix.build_type}}
+    - name: Test
+      shell: bash
+      working-directory: build
+      run: |
+        ctest --output-on-failure -C ${{matrix.build_type}} -VV --timeout 30
+        examples/simple
+        examples/nqueens -w 2 9 | tee /dev/fd/2 | grep -q "352 solutions"
+        examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee /dev/fd/2 | grep -q "1570340"
+        examples/lddmc ../models/blocks.2.ldd -w 2 | tee /dev/fd/2 | grep -q "7057 states"

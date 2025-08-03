@@ -1,3 +1,5 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
 libdir=@CMAKE_INSTALL_FULL_LIBDIR@
 includedir=@CMAKE_INSTALL_FULL_INCLUDEDIR@
 
@@ -5,6 +7,8 @@ Name: @PROJECT_NAME@
 Description: @PROJECT_DESCRIPTION@
 URL: @PROJECT_HOMEPAGE_URL@
 Version: @PROJECT_VERSION@
+
 Cflags: -I${includedir}
-Libs: -L${libdir} -lsylvan @PKGC_LINK_GMP@
-Requires: lace >= 1.4.2
+Libs: -L${libdir} -lsylvan
+Libs.private: @PKGC_LIBS_PRIVATE@
+Requires: @PKGC_REQUIRES@

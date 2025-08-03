@@ -1,6 +1,3 @@
-add_library(sylvan STATIC)
-add_library(sylvan::sylvan ALIAS sylvan)
-
 set(SYLVAN_HDRS
     sylvan.h
     sylvan_bdd.h
@@ -49,30 +46,41 @@ if(SYLVAN_GMP)
     target_sources(sylvan PRIVATE sylvan_gmp.c sylvan_gmp.h)
     target_include_directories(sylvan PRIVATE ${GMP_INCLUDE_DIR})
     target_link_libraries(sylvan PUBLIC ${GMP_LIBRARIES})
-    set(PKGC_LINK_GMP -lgmp)
-else()
-    set(PKGC_LINK_GMP "")
 endif()
 
 set_target_properties(sylvan PROPERTIES VERSION ${sylvan_VERSION} SOVERSION ${sylvan_VERSION_MAJOR})
 set_target_properties(sylvan PROPERTIES PUBLIC_HEADER "${SYLVAN_HDRS}")
 
+option(SYLVAN_ENABLE_PIC "Build Sylvan with -fPIC (e.g. for linking into shared libs)" OFF)
+set_target_properties(sylvan PROPERTIES POSITION_INDEPENDENT_CODE ${SYLVAN_ENABLE_PIC})
+
 target_compile_features(sylvan PUBLIC c_std_11 cxx_std_11)
 
-target_compile_options(sylvan PRIVATE
-    $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:GNU>>:
-        -pipe -march=native
-        $<$<CONFIG:Debug>:-O0 -Wall -Wextra>>
-    $<$<CXX_COMPILER_ID:MSVC>:
-        $<$<CONFIG:Debug>:/Od /Wall /Zi>>
-)
+option(SYLVAN_NATIVE_OPT "Enable -march=native for compiler optimizations" OFF)
+
+if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(sylvan PRIVATE
+        $<$<CONFIG:Debug>:-O0 -Wall -Wextra -pipe>
+        $<$<CONFIG:Release>:-pipe>
+        $<$<BOOL:${SYLVAN_NATIVE_OPT}>:-march=native>
+    )
+elseif(MSVC)
+    target_compile_options(sylvan PRIVATE
+        $<$<CONFIG:Debug>:/Od /Wall /Zi>
+    )
+endif()
 
 target_include_directories(sylvan PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>
     $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(sylvan PUBLIC m pthread lace::lace)
+find_package(Threads REQUIRED)
+target_link_libraries(sylvan PUBLIC Threads::Threads)
+target_link_libraries(sylvan PUBLIC lace::lace)
+if(NOT WIN32)
+    target_link_libraries(sylvan PUBLIC m)
+endif()
 
 option(SYLVAN_USE_MMAP "Let Sylvan use mmap to allocate (virtual) memory" ON)
 if(SYLVAN_USE_MMAP)
@@ -117,6 +125,12 @@ install(EXPORT sylvan-targets
 
 include(CMakePackageConfigHelpers)
 
+if(SYLVAN_GMP)
+    set(SYLVAN_CONFIG_FIND_GMP "find_dependency(GMP REQUIRED)")
+else()
+    set(SYLVAN_CONFIG_FIND_GMP "")
+endif()
+
 configure_package_config_file(
     ${PROJECT_SOURCE_DIR}/cmake/sylvan-config.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config.cmake
@@ -129,7 +143,28 @@ write_basic_package_version_file(
     COMPATIBILITY SameMinorVersion
 )
 
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sylvan.pc.in" "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc" @ONLY)
+# Compute PKG_CONFIG requires line
+if(SYLVAN_GMP)
+    set(PKGC_REQUIRES "lace >= 1.4.2 gmp")
+else()
+    set(PKGC_REQUIRES "lace >= 1.4.2")
+endif()
+
+set(PKGC_LIBS_PRIVATE "")
+if(UNIX AND NOT APPLE)
+    list(APPEND PKGC_LIBS_PRIVATE -lm -lpthread)
+elseif(APPLE)
+    list(APPEND PKGC_LIBS_PRIVATE -lpthread)  # -lm not needed separately on macOS
+elseif(WIN32)
+    # leaving this empty for now...
+endif()
+
+# Join into space-separated string
+string(JOIN " " PKGC_LIBS_PRIVATE "${PKGC_LIBS_PRIVATE}")
+
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sylvan.pc.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc"
+               @ONLY)
     
 install(
     FILES
@@ -137,6 +172,11 @@ install(
         ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config-version.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
 )
+
+if(SYLVAN_GMP)
+    install(FILES ${PROJECT_SOURCE_DIR}/cmake/FindGMP.cmake
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan)
+endif()
 
 install(
     FILES

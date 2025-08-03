@@ -7,12 +7,22 @@ project(sylvan
     LANGUAGES C CXX
 )
 
+add_library(sylvan STATIC)
+add_library(sylvan::sylvan ALIAS sylvan)
+
+string(COMPARE EQUAL
+    "${CMAKE_SOURCE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    sylvan_is_top_level)
+
 # Add CMake modules path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/")
 
 # Dependencies
-# with CMake >= 3.24, Lace is only downloaded if it is not already installed
-# with CMake <= 3.23, Lace is always downloaded
+# First check if lace is a target already, for example if we are a subproject,
+# and lace is already added.
+# Then try to find lace in the OS using find_package.
+# If that fails, then download lace.
 if(NOT TARGET lace)
   find_package(lace QUIET)
   if(NOT lace_FOUND)
@@ -26,34 +36,31 @@ if(NOT TARGET lace)
   endif()
 endif()
 
-# Add the Sylvan library target
+# Add the sources for Sylvan
 add_subdirectory(src)
 
-if(PROJECT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
-    # If we are in the root, add some options to build examples/tests
-    option(SYLVAN_BUILD_EXAMPLES "Build example tools" ON)
-    option(SYLVAN_BUILD_DOCS "Build documentation" OFF)
-    option(SYLVAN_BUILD_TESTS "Build tests" ON)
+option(SYLVAN_BUILD_TESTS "Build tests" ${sylvan_is_top_level})
+option(SYLVAN_BUILD_EXAMPLES "Build examples" ${sylvan_is_top_level})
+option(SYLVAN_BUILD_DOCS "Build documentation" OFF)
 
-    # Build examples
-    if(SYLVAN_BUILD_EXAMPLES)
-        add_subdirectory(examples)
-    endif()
+# Build and add tests
+if(SYLVAN_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(test)
+endif()
 
-    # Make documentation
-    if(SYLVAN_BUILD_DOCS)
-        configure_file("docs/conf.py.in" "docs/conf.py" @ONLY)
-        find_package(Sphinx REQUIRED)
-        Sphinx_add_targets(sylvan ${CMAKE_CURRENT_BINARY_DIR}/docs ${CMAKE_CURRENT_SOURCE_DIR}/docs ${CMAKE_CURRENT_BINARY_DIR})
-        add_custom_target(update_gh_pages COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_MODULE_PATH}/UpdateGHPages.cmake")
-        add_dependencies(update_gh_pages sylvan_html)
-    endif()
+# Build examples
+if(SYLVAN_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()
 
-    # Add tests
-    if(SYLVAN_BUILD_TESTS)
-        enable_testing()
-        add_subdirectory(test)
-    endif()
+# Make documentation
+if(SYLVAN_BUILD_DOCS)
+    configure_file("docs/conf.py.in" "docs/conf.py" @ONLY)
+    find_package(Sphinx REQUIRED)
+    Sphinx_add_targets(sylvan ${CMAKE_CURRENT_BINARY_DIR}/docs ${CMAKE_CURRENT_SOURCE_DIR}/docs ${CMAKE_CURRENT_BINARY_DIR})
+    add_custom_target(update_gh_pages COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_MODULE_PATH}/UpdateGHPages.cmake")
+    add_dependencies(update_gh_pages sylvan_html)
 endif()
 
 

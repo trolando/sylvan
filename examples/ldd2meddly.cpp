@@ -11,7 +11,7 @@
 #include <sylvan_int.h>
 
 #include <meddly.h>
-#include <meddly_expert.h>
+//#include <meddly_expert.h>
 
 /* Configuration */
 static int verbose = 0;
@@ -64,7 +64,7 @@ parse_args(int argc, char **argv)
                 exit(0);
         }
     }
-    if (optind + 1 >= argc) {
+    if (optind + 1 > argc) {
         print_usage();
         exit(0);
     }
@@ -320,7 +320,7 @@ strip_actions_meta(MDD meta)
  */
 static uint64_t ldd_rel_to_meddly_cache_id;
 int
-ldd_rel_to_meddly(const MDD dd, const MDD meta, expert_forest *F, const int level)
+ldd_rel_to_meddly(const MDD dd, const MDD meta, forest *F, const int level)
 {
     if (dd == lddmc_false) return F->handleForValue(false);
     if (dd == lddmc_true) return F->handleForValue(true);
@@ -386,12 +386,11 @@ ldd_rel_to_meddly(const MDD dd, const MDD meta, expert_forest *F, const int leve
         int len = 0;
         for (MDD x = dd; x != lddmc_false; x = lddmc_getright(x)) len++;
 
-        unpacked_node* nb = unpacked_node::newSparse(F, level, len);
+        unpacked_node* nb = unpacked_node::newWritable(F, level, len, SPARSE_ONLY);
         MDD x = dd;
         for (int i=0; i<len; i++) {
-            nb->i_ref(i) = lddmc_getvalue(x);
             int m_d = ldd_rel_to_meddly(lddmc_getdown(x), next_meta, F, level);
-            nb->d_ref(i) = F->linkNode(m_d);
+            nb->setSparse(i, lddmc_getvalue(x), F->linkNode(m_d));
             x = lddmc_getright(x);
         }
 
@@ -404,16 +403,14 @@ ldd_rel_to_meddly(const MDD dd, const MDD meta, expert_forest *F, const int leve
         int len = 0;
         for (MDD x = dd; x != lddmc_false; x = lddmc_getright(x)) len++;
 
-        unpacked_node* nb = unpacked_node::newSparse(F, level, len);
+        unpacked_node* nb = unpacked_node::newWritable(F, level, len, SPARSE_ONLY);
         MDD x = dd;
         for (int i=0; i<len; i++) {
             // Now create a reduced WRITE node on top of the recursive result
-            unpacked_node *nx = unpacked_node::newSparse(F, -level, 1);
-            nx->i_ref(0) = lddmc_getvalue(x);
+            unpacked_node *nx = unpacked_node::newWritable(F, -level, 1, SPARSE_ONLY);
             int m_d = ldd_rel_to_meddly(lddmc_getdown(x), next_meta, F, level-1);
-            nx->d_ref(0) = F->linkNode(m_d);
-            nb->i_ref(i) = lddmc_getvalue(x);
-            nb->d_ref(i) = F->linkNode(F->createReducedNode(-1, nx));
+            nx->setSparse(0, lddmc_getvalue(x), F->linkNode(m_d));
+            nb->setSparse(i, lddmc_getvalue(x), F->linkNode(F->createReducedNode(-1, nx)));
             x = lddmc_getright(x);
         }
 
@@ -426,12 +423,11 @@ ldd_rel_to_meddly(const MDD dd, const MDD meta, expert_forest *F, const int leve
         int len = 0;
         for (MDD x = dd; x != lddmc_false; x = lddmc_getright(x)) len++;
 
-        unpacked_node* nb = unpacked_node::newSparse(F, -level, len);
+        unpacked_node* nb = unpacked_node::newWritable(F, -level, len, SPARSE_ONLY);
         MDD x = dd;
         for (int i=0; i<len; i++) {
-            nb->i_ref(i) = lddmc_getvalue(x);
             int m_d = ldd_rel_to_meddly(lddmc_getdown(x), next_meta, F, level-1);
-            nb->d_ref(i) = F->linkNode(m_d);
+            nb->setSparse(i, lddmc_getvalue(x), F->linkNode(m_d));
             x = lddmc_getright(x);
         }
 
@@ -448,7 +444,7 @@ ldd_rel_to_meddly(const MDD dd, const MDD meta, expert_forest *F, const int leve
 
 static uint64_t ldd_to_meddly_cache_id;
 int
-ldd_to_meddly(MDD inp, expert_forest *F, int level)
+ldd_to_meddly(MDD inp, forest *F, int level)
 {
     if (level == 0) {
         assert(inp == lddmc_true);
@@ -473,14 +469,13 @@ ldd_to_meddly(MDD inp, expert_forest *F, int level)
         x = lddmc_getright(x);
     }
 
-    unpacked_node* nb = unpacked_node::newSparse(F, level, len);
+    unpacked_node* nb = unpacked_node::newWritable(F, level, len, SPARSE_ONLY);
     x = inp;
     for (int i=0; i<len; i++) {
-        nb->i_ref(i) = lddmc_getvalue(x);
         if (level == 1) {
-            nb->d_ref(i) = F->handleForValue(1);
+            nb->setSparse(i, lddmc_getvalue(x), F->handleForValue(1));
         } else {
-            nb->d_ref(i) = F->linkNode(ldd_to_meddly(lddmc_getdown(x), F, level-1));
+            nb->setSparse(i, lddmc_getvalue(x), F->linkNode(ldd_to_meddly(lddmc_getdown(x), F, level-1)));
         }
         x = lddmc_getright(x);
     }
@@ -667,11 +662,11 @@ void run()
     // Initialize domain
     int* sizes = new int[vector_size];
     for (int i=0; i<vector_size; i++) sizes[vector_size-i-1] = highest[i]+1; // TODO actually look at chain lengths?
-    domain* d = createDomainBottomUp(sizes, vector_size);
+    domain* d = domain::createBottomUp(sizes, vector_size);
 
     // Initialize forests
-    expert_forest* mdd = (expert_forest*)d->createForest(0, forest::BOOLEAN, forest::MULTI_TERMINAL);
-    expert_forest* mxd = (expert_forest*)d->createForest(1, forest::BOOLEAN, forest::MULTI_TERMINAL);
+    forest* mdd = (forest*)forest::create(d, 0, range_type::BOOLEAN, edge_labeling::MULTI_TERMINAL);
+    forest* mxd = (forest*)forest::create(d, 1, range_type::BOOLEAN, edge_labeling::MULTI_TERMINAL);
 
     dd_edge m_initial(mdd);
     m_initial.set(ldd_to_meddly(initial->dd, mdd, vector_size));
@@ -690,10 +685,10 @@ void run()
     // Report statistics
     if (verbose) {
         printf("MEDDLY MDD nodes:\n");
-        printf("Initial states: %u MDD nodes\n", m_initial.getNodeCount());
-        printf("Reachable states: %u MDD nodes\n", m_states.getNodeCount());
+        printf("Initial states: %lu MDD nodes\n", m_initial.getNodeCount());
+        printf("Reachable states: %lu MDD nodes\n", m_states.getNodeCount());
         for (int i=0; i<next_count; i++) {
-            printf("Transition %d: %u MDD nodes\n", i, m_next[i].getNodeCount());
+            printf("Transition %d: %lu MDD nodes\n", i, m_next[i].getNodeCount());
         }
     }
 
@@ -707,51 +702,26 @@ void run()
         }
         FILE_output m_out(out);
 
-        dd_edge list[2];
-        list[0] = m_initial;
-        list[1] = m_states;
-
         fprintf(out, "model %d %d\n\t", vector_size, next_count);
-        for (int i=0; i<vector_size; i++) fprintf(out, "%d ", sizes[i]);
-        fprintf(out, "\n\t");
-
-        // Workaround for a bug in Meddly, where if we send _only_ empty
-        // MDDs to store, the library crashes. So we just store whether we have each block
-        const int blocks = (next_count+999)/1000;
-        int have_block[blocks];
-        for (int b=0; b<blocks; b++) {
-            have_block[b] = 0;
-            int cnt = next_count - b*1000;
-            if (cnt > 1000) cnt = 1000;
-            for (int c=0; c<cnt; c++) {
-                if (next[1000*b+c]->dd != lddmc_false) {
-                    have_block[b] = 1;
-                    break;
-                }
-            }
-            fprintf(out, "%d ", have_block[b]);
+        for (int i=0; i<vector_size; i++) {
+            if (i > 0) fprintf(out, " %d", sizes[i]);
+            else fprintf(out, "%d", sizes[0]);
         }
+        fprintf(out, "\nledom\n");
 
-        fprintf(out, "\n");
-        fprintf(out, "ledom\n");
-
-        // Due to a bug in Meddly, we can't use next_count if next_count > 1024
-        for (int b=0; b<blocks; b++) {
-            if (have_block[b]) {
-                int64_t offset = 1000*b;
-                int cnt = next_count - b*1000;
-                if (cnt > 1000) cnt = 1000;
-                mxd->writeEdges(m_out, m_next+offset, cnt);
-            }
+        mdd_writer wmxd(m_out, mxd);
+        for (int i=0; i<next_count; i++) {
+            wmxd.writeRootEdge(m_next[i]);
         }
-
-        mdd->writeEdges(m_out, list, 2);
+        wmxd.writeRootEdge(m_initial);
+        wmxd.writeRootEdge(m_states);
+        wmxd.finish();
 
         fclose(out);
 
         // Report to the user
         printf("Written file %s.\n", out_filename);
-        exit(0);
+        // exit(0;
     }
 
     // Report Sylvan statistics (if SYLVAN_STATS is set)
@@ -761,25 +731,24 @@ void run()
 
     printf("Testing correctness by running event-saturation on the result...\n");
 
-    satpregen_opname::pregen_relation* ensf = 
-        new satpregen_opname::pregen_relation(mdd, mxd, mdd, next_count);
+    pregen_relation* ensf = new pregen_relation(mxd, next_count);
     for (int i=0; i<next_count; i++) ensf->addToRelation(m_next[i]);
     ensf->finalize();
 
-    specialized_operation* sat = SATURATION_FORWARD->buildOperation(ensf);
+    saturation_operation* sat = SATURATION_FORWARD(mdd, ensf, mdd);
 
     dd_edge m_reachable(mdd);
     double t1 = wctime();
     sat->compute(m_initial, m_reachable);
     double t2 = wctime();
 
-    double c;
-    apply(CARDINALITY, m_initial, c);
-    printf("Approx. %.0f initial states\n", c);
-    apply(CARDINALITY, m_reachable, c);
-    printf("Approx. %.0f reachable states\n", c);
-    apply(CARDINALITY, m_states, c);
-    printf("Approx. %.0f expected reachable states\n", c);
+    double card = 0;
+    apply(CARDINALITY, m_initial, card);
+    printf("Approx. %.0f initial states\n", card);
+    apply(CARDINALITY, m_reachable, card);
+    printf("Approx. %.0f reachable states\n", card);
+    apply(CARDINALITY, m_states, card);
+    printf("Approx. %.0f expected reachable states\n", card);
 
     printf("MEDDLY Time: %f\n", t2-t1);
 
@@ -791,14 +760,13 @@ void run()
 
     assert(m_reachable == m_states);
 
-    /*
     if (verbose) {
         mdd->reportStats(meddlyout, "\t",
-            expert_forest::HUMAN_READABLE_MEMORY |
-            expert_forest::BASIC_STATS | expert_forest::EXTRA_STATS |
-            expert_forest::STORAGE_STATS | expert_forest::HOLE_MANAGER_STATS |
-            expert_forest::HOLE_MANAGER_DETAILED);
-    }*/
+            HUMAN_READABLE_MEMORY |
+            BASIC_STATS | EXTRA_STATS |
+            STORAGE_STATS | HOLE_MANAGER_STATS |
+            HOLE_MANAGER_DETAILED);
+    }
 }
 
 int

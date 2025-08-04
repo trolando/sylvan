@@ -24,17 +24,3 @@ add_example(nqueens nqueens.c)
 
 add_example(simple simple.cpp)
 
-# Check if we have Meddly
-find_library(MEDDLY_FOUND meddly)
-if(MEDDLY_FOUND)
-    find_path(MEDDLY_INCLUDE_DIR "meddly.h")
-
-    add_example(ldd2meddly ldd2meddly.cpp)
-    target_link_libraries(ldd2meddly PRIVATE stdc++ ${MEDDLY_FOUND})
-    target_include_directories(ldd2meddly PRIVATE ${MEDDLY_INCLUDE_DIR})
-
-    add_example(medmc medmc.cpp)
-    target_link_libraries(medmc PRIVATE stdc++ ${MEDDLY_FOUND})
-    target_include_directories(medmc PRIVATE ${MEDDLY_INCLUDE_DIR})
-endif()
-

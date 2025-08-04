@@ -2281,7 +2281,8 @@ TASK_IMPL_1(MTBDD, zdd_cover_to_bdd, ZDD, zdd)
             zdd_nv = zdd_false;
             zdd_dc = zdd_false;
         } else if (zdd2 == zdd_true) {
-            // um? this should not even happen?
+            // while technically there is no problem with this, it does mean
+            // that the cover is not redundant.
             zdd_nv = zdd_false;
             zdd_dc = zdd_true;
         } else {
@@ -2302,7 +2303,7 @@ TASK_IMPL_1(MTBDD, zdd_cover_to_bdd, ZDD, zdd)
 
     mtbdd_refs_spawn(SPAWN(zdd_cover_to_bdd, zdd_pv));
     mtbdd_refs_spawn(SPAWN(zdd_cover_to_bdd, zdd_nv));
-    MTBDD Fdc = mtbdd_refs_push(zdd_cover_to_bdd(zdd_dc));
+    MTBDD Fdc = mtbdd_refs_push(CALL(zdd_cover_to_bdd, zdd_dc));
     MTBDD Fnv = mtbdd_refs_push(mtbdd_refs_sync(SYNC(zdd_cover_to_bdd)));
     MTBDD Fpv = mtbdd_refs_push(mtbdd_refs_sync(SYNC(zdd_cover_to_bdd)));
 

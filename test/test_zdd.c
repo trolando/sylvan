@@ -676,8 +676,8 @@ TASK_0(int, test_zdd_isop_random)
     MTBDD bdd_set = mtbdd_false;
     int cubecount = rng(1,200);
     for (int j=0; j<cubecount; j++) {
-        uint8_t arr[11];
-        for (int j=0; j<11; j++) arr[j] = rng(0, 2);
+        uint8_t arr[12];
+        for (int j=0; j<12; j++) arr[j] = rng(0, 2);
         bdd_set = sylvan_or(bdd_set, sylvan_cube(bdd_dom, arr));
     }
 
@@ -687,7 +687,7 @@ TASK_0(int, test_zdd_isop_random)
     MTBDD remade_bdd = zdd_cover_to_bdd(isop_zdd);
 
     // manually count cubes
-    int arr[12];
+    int arr[13];
     ZDD res = zdd_cover_enum_first(isop_zdd, arr);
     int count1 = 0;
     while (res != zdd_false) {
@@ -748,7 +748,7 @@ TASK_0(int, runtests)
     // Testing without garbage collection
     sylvan_gc_disable();
 
-    int test_iterations = 10;
+    int test_iterations = 100;
 
     printf("test_zdd_eval...\n");
     for (int i=0; i<test_iterations; i++) if (CALL(test_zdd_eval)) return 1;

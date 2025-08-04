@@ -16,12 +16,12 @@ jobs:
       shell: bash
       run: |
         brew update
-        brew install gawk argp-standalone
+        brew install gawk gmp argp-standalone
     - name: Build
       shell: bash
       run: |
         export CC=clang CXX=clang++
-        cmake -S . -B build -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DSYLVAN_GMP=ON
         cmake --build build --config ${{matrix.build_type}}
     - name: Test
       shell: bash

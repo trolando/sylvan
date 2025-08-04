@@ -23,7 +23,7 @@ jobs:
       shell: bash
       run: |
         export CC=gcc-${{matrix.version}} CXX=g++-${{matrix.version}}
-        cmake -S . -B build -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DSYLVAN_GMP=ON
         cmake --build build --config ${{matrix.build_type}}
 
     - name: Run unit tests and example tests
@@ -69,12 +69,12 @@ jobs:
       shell: bash
       run: |
         sudo apt update
-        sudo apt install -y cmake cmake-data build-essential clang-${{matrix.version}}
+        sudo apt install -y cmake cmake-data build-essential libgmp-dev clang-${{matrix.version}}
     - name: Build
       shell: bash
       run: |
         export CC=clang-${{matrix.version}} CXX=clang++-${{matrix.version}}
-        cmake -S . -B build -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DSYLVAN_GMP=ON
         cmake --build build --config ${{matrix.build_type}}
     - name: Test
       shell: bash

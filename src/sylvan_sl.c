@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <sylvan.h>
+#include <sylvan/sylvan.h>
 #include <sylvan_align.h>
 #include <sylvan_sl.h>
 

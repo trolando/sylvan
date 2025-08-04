@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include "sylvan.h"
+#include <sylvan/sylvan.h>
 
 int main() {
     return 0;

@@ -15,10 +15,10 @@
  * limitations under the License.
  */
 
-#include <sylvan.h>
+#include <sylvan/sylvan.h>
+#include <sylvan/sylvan_hash.h>
 #include <sylvan_align.h>
 #include <sylvan_refs.h>
-#include <sylvan_hash.h>
 
 #include <errno.h>  // for errno
 #include <string.h> // for strerror

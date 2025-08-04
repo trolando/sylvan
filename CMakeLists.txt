@@ -19,7 +19,7 @@ if(sylvan_IS_TOP_LEVEL)
 endif()
 
 # Add CMake modules path
-list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/")
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/tools/")
 
 # ── Options ──────────────────────────────────────────────────────────────────
 
@@ -208,7 +208,7 @@ if(SYLVAN_BUILD_DOCS)
         ${CMAKE_CURRENT_BINARY_DIR}
     )
     add_custom_target(update_gh_pages
-        COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_SOURCE_DIR}/cmake/UpdateGHPages.cmake"
+        COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_SOURCE_DIR}/tools/UpdateGHPages.cmake"
     )
     add_dependencies(update_gh_pages sylvan_html)
 endif()

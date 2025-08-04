@@ -20,7 +20,7 @@
  * Include this file for access to internals.
  */
 
-#include <sylvan.h>
+#include <sylvan/sylvan.h>
 
 #ifdef __cplusplus
 namespace sylvan {
@@ -30,9 +30,9 @@ namespace sylvan {
  * Sylvan internal header files inside the namespace
  */
 
-#include <sylvan_cache.h>
-#include <sylvan_table.h>
-#include <sylvan_hash.h>
+#include <sylvan/sylvan_cache.h>
+#include <sylvan/sylvan_table.h>
+#include <sylvan/sylvan_hash.h>
 
 #ifndef SYLVAN_INT_H
 #define SYLVAN_INT_H
@@ -122,9 +122,9 @@ static const uint64_t CACHE_ZDD_COVER_TO_BDD        = (93LL<<40);
 }
 #endif /* __cplusplus */
 
-#include <sylvan_mtbdd_int.h>
-#include <sylvan_ldd_int.h>
-#include <sylvan_zdd_int.h>
+#include <sylvan/internal/sylvan_mtbdd_int.h>
+#include <sylvan/internal/sylvan_ldd_int.h>
+#include <sylvan/internal/sylvan_zdd_int.h>
 
 #ifdef __cplusplus
 } /* namespace */

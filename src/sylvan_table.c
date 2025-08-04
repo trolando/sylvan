@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 
-#include <sylvan_int.h>
-#include <sylvan_platform.h>
+#include <sylvan/internal/sylvan_int.h>
+#include <sylvan/sylvan_platform.h>
 
 #include <errno.h>
 #include <string.h>

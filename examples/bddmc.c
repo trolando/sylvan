@@ -6,8 +6,7 @@
 
 #include <getrss.h>
 
-#include <sylvan.h>
-#include <sylvan_int.h>
+#include <sylvan/internal/sylvan_int.h>
 
 #include <common.h>
 

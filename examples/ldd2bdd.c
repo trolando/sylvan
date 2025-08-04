@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <sylvan_int.h>
+#include <sylvan/internal/sylvan_int.h>
 #include <getrss.h>
 #include <common.h>
 

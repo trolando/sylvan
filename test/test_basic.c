@@ -7,11 +7,10 @@
 #include <inttypes.h>
 #include <math.h>
 
-#include "sylvan.h"
+#include <sylvan/internal/sylvan_int.h>
 #include "test_assert.h"
-#include "sylvan_int.h"
 
-#include <sylvan_platform.h>
+#include <sylvan/sylvan_platform.h>
 #include <lace.h>
 
 

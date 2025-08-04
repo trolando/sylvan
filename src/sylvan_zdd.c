@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#include <sylvan_int.h>
-#include <sylvan_platform.h>
+#include <sylvan/internal/sylvan_int.h>
+#include <sylvan/sylvan_platform.h>
 
 #include <assert.h>
 #include <inttypes.h>
@@ -24,8 +24,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-// #include <sylvan.h>
 
 #include <sylvan_refs.h>
 #include <sylvan_sl.h>

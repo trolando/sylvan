@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-#include <sylvan_int.h>
+#include <sylvan/internal/sylvan_int.h>
 
 /**
  * Implementation of garbage collection

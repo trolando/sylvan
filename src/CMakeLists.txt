@@ -16,9 +16,10 @@ option(SYLVAN_STATS "Let Sylvan collect statistics at runtime" OFF)
 include(DetectCacheLineSize)
 detect_cache_line_size(SYLVAN_CACHE_LINE_SIZE DEFAULT 64)
 
+file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/include/sylvan")
 configure_file(
-    sylvan_config.h.in
-    "${CMAKE_CURRENT_BINARY_DIR}/sylvan_config.h"
+    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_config.h.in
+    ${PROJECT_BINARY_DIR}/include/sylvan/sylvan_config.h
     @ONLY
 )
 
@@ -53,64 +54,81 @@ target_sources(sylvan
   PUBLIC
     FILE_SET HEADERS
     BASE_DIRS
-      "${CMAKE_CURRENT_SOURCE_DIR}"
-      "${CMAKE_CURRENT_BINARY_DIR}"
+      ${PROJECT_SOURCE_DIR}/include
+      ${PROJECT_BINARY_DIR}/include
     FILES
-      sylvan.h
-      sylvan_bdd.h
-      sylvan_cache.h
-      sylvan_common.h
-      sylvan_hash.h
-      sylvan_int.h
-      sylvan_ldd.h
-      sylvan_ldd_int.h
-      sylvan_mt.h
-      sylvan_mtbdd.h
-      sylvan_mtbdd_int.h
-      sylvan_platform.h
-      sylvan_stats.h
-      sylvan_table.h
-      sylvan_zdd.h
-      sylvan_zdd_int.h
-      "${CMAKE_CURRENT_BINARY_DIR}/sylvan_config.h"
+      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_bdd.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_cache.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_common.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_hash.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/internal/sylvan_int.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_ldd.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/internal/sylvan_ldd_int.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_mt.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_mtbdd.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/internal/sylvan_mtbdd_int.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_platform.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_stats.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_table.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_zdd.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/internal/sylvan_zdd_int.h
+      ${PROJECT_BINARY_DIR}/include/sylvan/sylvan_config.h
 )
 
 # ── Optional C++ bindings ────────────────────────────────────────────────────
- 
+
 if(SYLVAN_BUILD_CPP)
     target_sources(sylvan
       PRIVATE sylvan_obj.cpp
-      PUBLIC FILE_SET HEADERS FILES sylvan_obj.hpp
+      PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS ${PROJECT_SOURCE_DIR}/include
+        FILES ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_obj.hpp
     )
 endif()
 
-# ── Optional GMP support ────────────────────────────────────────────────────
- 
+# ── Optional GMP support ─────────────────────────────────────────────────────
+
 option(SYLVAN_GMP "Include custom MTBDD type GMP" OFF)
 if(SYLVAN_GMP)
     find_package(GMP REQUIRED)
     target_sources(sylvan
       PRIVATE sylvan_gmp.c
-      PUBLIC FILE_SET HEADERS FILES sylvan_gmp.h
+      PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS ${PROJECT_SOURCE_DIR}/include
+        FILES ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_gmp.h
     )
     target_link_libraries(sylvan PUBLIC GMP::GMP)
 endif()
 
+# ── Include directories ──────────────────────────────────────────────────────
+
+target_include_directories(sylvan
+  PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+  PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>
+)
+
 # ── Compile features ────────────────────────────────────────────────────────
- 
+
 target_compile_features(sylvan PUBLIC c_std_11)
 if(SYLVAN_BUILD_CPP)
     target_compile_features(sylvan PUBLIC cxx_std_11)
 endif()
 
 # ── Target properties ───────────────────────────────────────────────────────
- 
+
 # PIC: required for shared libraries, optional for static (e.g. embedding
 # Sylvan in a downstream shared library).
 if((BUILD_SHARED_LIBS AND NOT WIN32) OR SYLVAN_ENABLE_PIC)
     set_target_properties(sylvan PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endif()
- 
+
 # Shared library versioning (ignored for static builds)
 if(BUILD_SHARED_LIBS AND NOT WIN32)
     set_target_properties(sylvan PROPERTIES
@@ -120,7 +138,7 @@ if(BUILD_SHARED_LIBS AND NOT WIN32)
 endif()
 
 # ── Compiler flags ──────────────────────────────────────────────────────────
- 
+
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(sylvan PRIVATE
         -pipe
@@ -138,7 +156,7 @@ elseif(MSVC)
 endif()
 
 # ── Link dependencies ───────────────────────────────────────────────────────
- 
+
 find_package(Threads REQUIRED)
 target_link_libraries(sylvan PUBLIC Threads::Threads)
 target_link_libraries(sylvan PUBLIC lace::lace)
@@ -159,9 +177,9 @@ if(NOT sylvan_IS_TOP_LEVEL)
 endif()
 
 # ── Installation ─────────────────────────────────────────────────────────────
- 
+
 include(GNUInstallDirs)
- 
+
 install(TARGETS sylvan
     EXPORT sylvan-targets
     ARCHIVE          DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -177,21 +195,21 @@ install(EXPORT sylvan-targets
 )
 
 # ── CMake package config ─────────────────────────────────────────────────────
- 
+
 include(CMakePackageConfigHelpers)
- 
+
 if(SYLVAN_GMP)
     set(SYLVAN_CONFIG_FIND_GMP "find_dependency(GMP REQUIRED)")
 else()
     set(SYLVAN_CONFIG_FIND_GMP "")
 endif()
- 
+
 configure_package_config_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/sylvan-config.cmake.in
+    ${PROJECT_SOURCE_DIR}/tools/sylvan-config.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
 )
- 
+
 write_basic_package_version_file(
     ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config-version.cmake
     VERSION ${PROJECT_VERSION}
@@ -204,21 +222,21 @@ install(
         ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config-version.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
 )
- 
+
 if(SYLVAN_GMP)
-    install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/FindGMP.cmake
+    install(FILES ${PROJECT_SOURCE_DIR}/tools/FindGMP.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
     )
 endif()
 
 # ── pkg-config ───────────────────────────────────────────────────────────────
- 
+
 if(SYLVAN_GMP)
     set(PKGC_REQUIRES "lace >= 2.4.0 gmp")
 else()
     set(PKGC_REQUIRES "lace >= 2.4.0")
 endif()
- 
+
 # -lm is needed by consumers for static linking; Threads are already pulled
 # in transitively via the lace.pc Requires line.
 set(PKGC_LIBS_PRIVATE "")
@@ -228,7 +246,7 @@ endif()
 
 if(NOT MSVC)
     configure_file(
-        "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/sylvan.pc.in"
+        "${PROJECT_SOURCE_DIR}/tools/sylvan.pc.in"
         "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc"
         @ONLY
     )

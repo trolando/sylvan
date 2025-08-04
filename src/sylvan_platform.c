@@ -23,7 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <sylvan_platform.h>
+#include <sylvan/sylvan_platform.h>
 
 #if SYLVAN_USE_MMAP && !defined(_WIN32)
     #include <sys/mman.h> // for mmap

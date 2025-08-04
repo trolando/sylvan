@@ -9,8 +9,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <sylvan.h>
-#include <sylvan_table.h>
+#include <sylvan/internal/sylvan_int.h>
+#include <sylvan/sylvan_table.h>
 
 #include <common.h>
 

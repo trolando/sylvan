@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#include <sylvan.h>
-#include <sylvan_platform.h>
+#include <sylvan/sylvan.h>
+#include <sylvan/sylvan_platform.h>
 #include <sylvan_sl.h>
 
 /* A SL_DEPTH of 6 means 32 bytes per bucket, of 14 means 64 bytes per bucket.

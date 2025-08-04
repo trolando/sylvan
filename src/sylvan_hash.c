@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <sylvan_hash.h>
+#include <sylvan/sylvan_hash.h>
 
 /**
  * The table for tabulation hashing

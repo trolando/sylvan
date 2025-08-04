@@ -20,7 +20,7 @@
  * Include this file.
  */
 
-#include <sylvan_config.h>
+#include <sylvan/sylvan_config.h>
 
 #include <assert.h>
 #include <stddef.h>
@@ -28,7 +28,7 @@
 #include <stdio.h> // for FILE
 #include <stdlib.h> // for realloc
 
-#include <sylvan_platform.h>
+#include <sylvan/sylvan_platform.h>
 
 /**
  * Sylvan header files outside the namespace
@@ -44,13 +44,13 @@ namespace sylvan {
  * Sylvan header files inside the namespace
  */
 
-#include <sylvan_common.h>
-#include <sylvan_stats.h>
-#include <sylvan_mt.h>
-#include <sylvan_mtbdd.h>
-#include <sylvan_bdd.h>
-#include <sylvan_ldd.h>
-#include <sylvan_zdd.h>
+#include <sylvan/sylvan_common.h>
+#include <sylvan/sylvan_stats.h>
+#include <sylvan/sylvan_mt.h>
+#include <sylvan/sylvan_mtbdd.h>
+#include <sylvan/sylvan_bdd.h>
+#include <sylvan/sylvan_ldd.h>
+#include <sylvan/sylvan_zdd.h>
 
 #ifdef __cplusplus
 }

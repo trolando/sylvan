@@ -3,8 +3,7 @@
  */
 
 #include <assert.h>
-#include <sylvan.h>
-#include <sylvan_obj.hpp>
+#include <sylvan/sylvan_obj.hpp>
 
 #include "test_assert.h"
 

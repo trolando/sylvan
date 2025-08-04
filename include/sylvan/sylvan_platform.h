@@ -30,7 +30,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <sylvan_config.h>
+#include <sylvan/sylvan_config.h>
 
 /*
 // Commented out for now, shouldn't this be handled by a bridge header?

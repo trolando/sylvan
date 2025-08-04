@@ -21,7 +21,7 @@
 #include <vector>
 
 #include <lace.h>
-#include <sylvan.h>
+#include <sylvan/sylvan.h>
 
 namespace sylvan {
 

@@ -19,7 +19,6 @@
  * This is an implementation of GMP mpq custom leaves of MTBDDs
  */
 
-#include <sylvan.h>
 #include <gmp.h>
 
 #ifndef SYLVAN_GMP_H

@@ -16,7 +16,7 @@ string(COMPARE EQUAL
     sylvan_is_top_level)
 
 # Add CMake modules path
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/tools/")
 
 # Dependencies
 # First check if lace is a target already, for example if we are a subproject,

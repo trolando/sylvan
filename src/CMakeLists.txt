@@ -1,24 +1,3 @@
-set(SYLVAN_HDRS
-    sylvan.h
-    sylvan_bdd.h
-    sylvan_cache.h
-    sylvan_config.h
-    sylvan_common.h
-    sylvan_hash.h
-    sylvan_int.h
-    sylvan_ldd.h
-    sylvan_ldd_int.h
-    sylvan_mt.h
-    sylvan_mtbdd.h
-    sylvan_mtbdd_int.h
-    sylvan_obj.hpp
-    sylvan_stats.h
-    sylvan_table.h
-    sylvan_tls.h
-    sylvan_zdd.h
-    sylvan_zdd_int.h
-)
-
 target_sources(sylvan
   PRIVATE
     sha2.c
@@ -35,21 +14,17 @@ target_sources(sylvan
     sylvan_stats.c
     sylvan_table.c
     sylvan_zdd.c
-    ${SYLVAN_HDRS}
 )
 
-option(SYLVAN_GMP "Include custom MTBDD type GMP")
-if(SYLVAN_GMP)
-    # We only want to include the custom MTBDD type GMP if we actually have the GMP library
-    find_package(GMP REQUIRED)
-    set(SYLVAN_HDRS ${SYLVAN_HDRS} sylvan_gmp.h)
-    target_sources(sylvan PRIVATE sylvan_gmp.c sylvan_gmp.h)
-    target_include_directories(sylvan PRIVATE ${GMP_INCLUDE_DIR})
-    target_link_libraries(sylvan PUBLIC ${GMP_LIBRARIES})
-endif()
+target_include_directories(sylvan
+  PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+  PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>
+)
 
 set_target_properties(sylvan PROPERTIES VERSION ${sylvan_VERSION} SOVERSION ${sylvan_VERSION_MAJOR})
-set_target_properties(sylvan PROPERTIES PUBLIC_HEADER "${SYLVAN_HDRS}")
 
 option(SYLVAN_ENABLE_PIC "Build Sylvan with -fPIC (e.g. for linking into shared libs)" OFF)
 set_target_properties(sylvan PROPERTIES POSITION_INDEPENDENT_CODE ${SYLVAN_ENABLE_PIC})
@@ -70,14 +45,8 @@ elseif(MSVC)
     )
 endif()
 
-target_include_directories(sylvan PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>
-    $<INSTALL_INTERFACE:include>
-)
-
 find_package(Threads REQUIRED)
-target_link_libraries(sylvan PUBLIC Threads::Threads)
-target_link_libraries(sylvan PUBLIC lace::lace)
+target_link_libraries(sylvan PUBLIC Threads::Threads lace::lace)
 if(NOT WIN32)
     target_link_libraries(sylvan PUBLIC m)
 endif()
@@ -100,6 +69,15 @@ if(SYLVAN_STATS)
     target_compile_definitions(sylvan PUBLIC SYLVAN_STATS)
 endif()
 
+option(SYLVAN_GMP "Include custom MTBDD type GMP")
+if(SYLVAN_GMP)
+    # We only want to include the custom MTBDD type GMP if we actually have the GMP library
+    find_package(GMP REQUIRED)
+    target_sources(sylvan PRIVATE sylvan_gmp.c)
+    target_include_directories(sylvan PRIVATE ${GMP_INCLUDE_DIR})
+    target_link_libraries(sylvan PUBLIC ${GMP_LIBRARIES})
+endif()
+
 set_target_properties(sylvan PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib
@@ -113,9 +91,38 @@ install(TARGETS sylvan
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
+
+set(SYLVAN_PUBLIC_HDRS
+    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_bdd.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_cache.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_config.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_common.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_hash.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/internal/sylvan_int.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_ldd.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/internal/sylvan_ldd_int.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_mt.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_mtbdd.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/internal/sylvan_mtbdd_int.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_obj.hpp
+    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_stats.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_table.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_tls.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_zdd.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/internal/sylvan_zdd_int.h
+)
+
+if(SYLVAN_GMP)
+    set(SYLVAN_PUBLIC_HDRS ${SYLVAN_PUBLIC_HDRS} ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_gmp.h)
+endif()
+
+foreach(hdr IN LISTS SYLVAN_PUBLIC_HDRS)
+    file(RELATIVE_PATH rel "${PROJECT_SOURCE_DIR}/include/sylvan" "${hdr}")
+    get_filename_component(dir "${rel}" DIRECTORY)
+    install(FILES "${hdr}" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/sylvan/${dir}")
+endforeach()
 
 install(EXPORT sylvan-targets
     FILE sylvan-targets.cmake
@@ -132,7 +139,7 @@ else()
 endif()
 
 configure_package_config_file(
-    ${PROJECT_SOURCE_DIR}/cmake/sylvan-config.cmake.in
+    ${PROJECT_SOURCE_DIR}/tools/sylvan-config.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
 )
@@ -186,7 +193,7 @@ install(
 )
 
 if(SYLVAN_GMP)
-    install(FILES ${PROJECT_SOURCE_DIR}/cmake/FindGMP.cmake
+    install(FILES ${PROJECT_SOURCE_DIR}/tools/FindGMP.cmake
             DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan)
 endif()
 

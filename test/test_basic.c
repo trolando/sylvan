@@ -9,9 +9,8 @@
 #include <sys/time.h>
 #include <inttypes.h>
 
-#include "sylvan.h"
+#include <sylvan/internal/sylvan_int.h>
 #include "test_assert.h"
-#include "sylvan_int.h"
 
 __thread uint64_t seed = 1;
 

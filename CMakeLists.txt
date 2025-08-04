@@ -24,7 +24,7 @@ if(SYLVAN_IS_TOP_LEVEL AND NOT CMAKE_CONFIGURATION_TYPES AND CMAKE_BUILD_TYPE ST
 endif()
 
 # Add CMake modules path
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/tools/")
 
 # Dependencies
 # First check if lace is a target already, for example if we are a subproject,

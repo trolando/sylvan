@@ -20,7 +20,7 @@
  * Include this file.
  */
 
-#include <sylvan_config.h>
+#include <sylvan/sylvan_config.h>
 
 #include <assert.h>
 #include <stddef.h>
@@ -43,7 +43,7 @@
  */
 
 #include <lace.h>
-#include <sylvan_tls.h>
+#include <sylvan/sylvan_tls.h>
 
 #ifdef __cplusplus
 namespace sylvan {
@@ -53,13 +53,13 @@ namespace sylvan {
  * Sylvan header files inside the namespace
  */
 
-#include <sylvan_common.h>
-#include <sylvan_stats.h>
-#include <sylvan_mt.h>
-#include <sylvan_mtbdd.h>
-#include <sylvan_bdd.h>
-#include <sylvan_ldd.h>
-#include <sylvan_zdd.h>
+#include <sylvan/sylvan_common.h>
+#include <sylvan/sylvan_stats.h>
+#include <sylvan/sylvan_mt.h>
+#include <sylvan/sylvan_mtbdd.h>
+#include <sylvan/sylvan_bdd.h>
+#include <sylvan/sylvan_ldd.h>
+#include <sylvan/sylvan_zdd.h>
 
 #ifdef __cplusplus
 }

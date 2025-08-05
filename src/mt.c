@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-#include <sylvan/internal/internal.h> // for llmsset*, nodes, sylvan_register_quit
+#include <sylvan/internal/internal.h> // for nodes*, nodes, sylvan_register_quit
 
 #include <inttypes.h>
 #include <string.h>
@@ -40,7 +40,7 @@ static size_t cl_registry_count;
 static size_t cl_registry_size;
 
 /**
- * Implementation of hooks for llmsset
+ * Implementation of hooks for nodes
  */
 
 /**
@@ -168,8 +168,8 @@ sylvan_init_mt()
     // Register quit handler to free structures
     sylvan_register_quit(sylvan_mt_quit);
 
-    // Tell llmsset to use our custom hooks
-    llmsset_set_custom(nodes, _sylvan_hash_cb, _sylvan_equals_cb, _sylvan_create_cb, _sylvan_destroy_cb);
+    // Tell nodes to use our custom hooks
+    nodes_set_custom(nodes, _sylvan_hash_cb, _sylvan_equals_cb, _sylvan_create_cb, _sylvan_destroy_cb);
 
     // Initialize data structures
     cl_registry_size = 8;

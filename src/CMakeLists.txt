@@ -1,19 +1,19 @@
 target_sources(sylvan
   PRIVATE
     sha2.c
-    sylvan_bdd.c
-    sylvan_cache.c
-    sylvan_common.c
-    sylvan_hash.c
-    sylvan_ldd.c
-    sylvan_mt.c
-    sylvan_mtbdd.c
-    sylvan_obj.cpp
-    sylvan_refs.c
-    sylvan_sl.c
-    sylvan_stats.c
-    sylvan_table.c
-    sylvan_zdd.c
+    bdd.c
+    cache.c
+    common.c
+    hash.c
+    ldd.c
+    mt.c
+    mtbdd.c
+    nodes_llht.c
+    obj.cpp
+    refs.c
+    sl.c
+    stats.c
+    zdd.c
 )
 
 target_include_directories(sylvan
@@ -73,7 +73,7 @@ option(SYLVAN_GMP "Include custom MTBDD type GMP")
 if(SYLVAN_GMP)
     # We only want to include the custom MTBDD type GMP if we actually have the GMP library
     find_package(GMP REQUIRED)
-    target_sources(sylvan PRIVATE sylvan_gmp.c)
+    target_sources(sylvan PRIVATE gmp.c)
     target_include_directories(sylvan PRIVATE ${GMP_INCLUDE_DIR})
     target_link_libraries(sylvan PUBLIC ${GMP_LIBRARIES})
 endif()
@@ -95,27 +95,27 @@ install(TARGETS sylvan
 
 set(SYLVAN_PUBLIC_HDRS
     ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_bdd.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_cache.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_config.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_common.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_hash.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/internal/sylvan_int.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_ldd.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/internal/sylvan_ldd_int.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_mt.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_mtbdd.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/internal/sylvan_mtbdd_int.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_obj.hpp
-    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_stats.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_table.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_tls.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_zdd.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/internal/sylvan_zdd_int.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/bdd.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/cache.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/config.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/common.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/hash.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/ldd.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/mt.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/mtbdd.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/obj.hpp
+    ${PROJECT_SOURCE_DIR}/include/sylvan/stats.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/nodes.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/tls.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/zdd.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/internal/internal.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/internal/ldd_internal.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/internal/mtbdd_internal.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/internal/zdd_internal.h
 )
 
 if(SYLVAN_GMP)
-    set(SYLVAN_PUBLIC_HDRS ${SYLVAN_PUBLIC_HDRS} ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_gmp.h)
+    set(SYLVAN_PUBLIC_HDRS ${SYLVAN_PUBLIC_HDRS} ${PROJECT_SOURCE_DIR}/include/sylvan/gmp.h)
 endif()
 
 foreach(hdr IN LISTS SYLVAN_PUBLIC_HDRS)

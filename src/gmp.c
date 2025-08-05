@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 
-#include <sylvan/internal/sylvan_int.h>
-#include <sylvan/sylvan_gmp.h>
+#include <sylvan/internal/internal.h>
+#include <sylvan/gmp.h>
 
 #include <math.h>
 #include <string.h>

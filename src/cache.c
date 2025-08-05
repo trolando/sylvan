@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 
-#include <sylvan/internal/sylvan_int.h>
-#include <sylvan_align.h>
+#include <sylvan/internal/internal.h>
+#include "align.h"
 
 #include <errno.h>  // for errno
 #include <string.h> // for strerror

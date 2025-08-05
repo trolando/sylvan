@@ -6,7 +6,7 @@
 #include <string.h>
 #include <sys/time.h>
 
-#include <sylvan/internal/sylvan_int.h>
+#include <sylvan/internal/internal.h>
 #include <getrss.h>
 
 /* Configuration */

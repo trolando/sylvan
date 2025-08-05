@@ -15,15 +15,15 @@
  * limitations under the License.
  */
 
-#include <sylvan/internal/sylvan_int.h>
+#include <sylvan/internal/internal.h>
 
 #include <inttypes.h>
 #include <math.h>
 #include <string.h>
 
-#include <avl.h>
-#include <sylvan_refs.h>
-#include <sha2.h>
+#include "avl.h"
+#include "refs.h"
+#include "sha2.h"
 
 /**
  * Implementation of garbage collection

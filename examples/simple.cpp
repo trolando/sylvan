@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#include <sylvan/sylvan_obj.hpp>
+#include <sylvan/obj.hpp>
 
 using namespace sylvan;
 

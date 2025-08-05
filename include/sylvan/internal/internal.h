@@ -30,9 +30,9 @@ namespace sylvan {
  * Sylvan internal header files inside the namespace
  */
 
-#include <sylvan/sylvan_cache.h>
-#include <sylvan/sylvan_table.h>
-#include <sylvan/sylvan_hash.h>
+#include <sylvan/cache.h>
+#include <sylvan/nodes.h>
+#include <sylvan/hash.h>
 
 #ifndef SYLVAN_INT_H
 #define SYLVAN_INT_H
@@ -122,9 +122,9 @@ static const uint64_t CACHE_ZDD_COVER_TO_BDD        = (93LL<<40);
 }
 #endif /* __cplusplus */
 
-#include <sylvan/internal/sylvan_mtbdd_int.h>
-#include <sylvan/internal/sylvan_ldd_int.h>
-#include <sylvan/internal/sylvan_zdd_int.h>
+#include <sylvan/internal/mtbdd_internal.h>
+#include <sylvan/internal/ldd_internal.h>
+#include <sylvan/internal/zdd_internal.h>
 
 #ifdef __cplusplus
 } /* namespace */

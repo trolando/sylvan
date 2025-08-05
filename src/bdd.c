@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-#include <sylvan/internal/sylvan_int.h>
+#include <sylvan/internal/internal.h>
 
 #include <inttypes.h>
 #include <math.h>

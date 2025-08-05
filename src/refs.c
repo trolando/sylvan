@@ -16,9 +16,9 @@
  */
 
 #include <sylvan/sylvan.h>
-#include <sylvan/sylvan_hash.h>
-#include <sylvan_align.h>
-#include <sylvan_refs.h>
+#include <sylvan/hash.h>
+#include "align.h"
+#include "refs.h"
 
 #include <errno.h>  // for errno
 #include <string.h> // for strerror

@@ -412,25 +412,14 @@ void nodes_free(nodes_table* dbs)
 
 void nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    nodes_clear_data_CALL(lace, dbs);
-    nodes_clear_hashes_CALL(lace, dbs);
-}
-
-void nodes_clear_data_CALL(lace_worker* lace, nodes_table* dbs)
-{
     clear_aligned(dbs->bitmap1, dbs->max_size / (512*8));
     clear_aligned(dbs->bitmap2, dbs->max_size / 8);
+    clear_aligned(dbs->table, dbs->max_size * 8);
 
     // forbid first two positions (index 0 and 1)
     dbs->bitmap2[0] = 0xc000000000000000LL;
 
     nodes_reset_region_TOGETHER();
-}
-
-// does this need to be a Lace task??
-void nodes_clear_hashes_CALL(lace_worker* lace, nodes_table* dbs)
-{
-    clear_aligned(dbs->table, dbs->max_size * 8);
 }
 
 int

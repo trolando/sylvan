@@ -78,17 +78,12 @@ uint64_t nodes_lookupc(const nodes_table* dbs, const uint64_t a, const uint64_t 
  * 2) call nodes_mark for every bucket to rehash
  * 3) call nodes_rehash
  */
-// static inline void nodes_clear(nodes_table* dbs);
 
 /**
- * Frees all nodes, but do not change any data or clear the hashes
+ * Frees all nodes, but do not change any data
+ * Clears all data to prepare for reinsertion/rehashing
  */
-static inline void nodes_clear_data(nodes_table* dbs);
-
-/**
- * Clears all data to prepare for rehashing
- */
-static inline void nodes_clear_hashes(nodes_table* dbs);
+static inline void nodes_clear(nodes_table* dbs);
 
 /**
  * Check if a certain data bucket is marked (in use).
@@ -126,8 +121,6 @@ static inline size_t nodes_count_marked(nodes_table* dbs);
 static inline void nodes_destroy_unmarked(nodes_table* dbs);
 
 VOID_TASK_1(nodes_clear, nodes_table*, dbs)
-VOID_TASK_1(nodes_clear_data, nodes_table*, dbs)
-VOID_TASK_1(nodes_clear_hashes, nodes_table*, dbs)
 TASK_1(int, nodes_rehash, nodes_table*, dbs)
 TASK_1(size_t, nodes_count_marked, nodes_table*, dbs)
 VOID_TASK_1(nodes_destroy_unmarked, nodes_table*, dbs)

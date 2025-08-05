@@ -113,7 +113,7 @@ void sylvan_clear_cache_CALL(lace_worker* lace)
  */
 void sylvan_clear_and_mark_CALL(lace_worker* lace)
 {
-    nodes_clear_data(nodes);
+    nodes_clear(nodes);
 
     for (gc_hook_entry_t e = mark_list; e != NULL; e = e->next) {
         e->cb(lace);
@@ -127,9 +127,6 @@ void sylvan_clear_and_mark_CALL(lace_worker* lace)
  */
 void sylvan_rehash_all_CALL(lace_worker* lace)
 {
-    // clear hash array
-    nodes_clear_hashes(nodes);
-
     // rehash marked nodes
     if (nodes_rehash(nodes) != 0) {
         fprintf(stderr, "sylvan_gc_rehash error: not all nodes could be rehashed!\n");

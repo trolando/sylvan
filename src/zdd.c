@@ -1941,7 +1941,7 @@ void zdd_writer_add_visitor_post_CALL(lace_worker* lace, ZDD dd, sylvan_skiplist
 sylvan_skiplist_t
 zdd_writer_start()
 {
-    size_t sl_size = nodes->table_size > 0x7fffffff ? 0x7fffffff : nodes->table_size;
+    size_t sl_size = llmsset_get_size(nodes) > 0x7fffffff ? 0x7fffffff : llmsset_get_size(nodes);
     return sylvan_skiplist_alloc(sl_size);
 }
 

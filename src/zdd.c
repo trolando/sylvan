@@ -115,7 +115,7 @@ void zdd_gc_mark_rec_CALL(lace_worker* lace, ZDD zdd)
     if (zdd == zdd_false) return;
 
     // Mark, and if returns 0, we are done
-    if (llmsset_mark(nodes, ZDD_GETINDEX(zdd)) != 0) {
+    if (nodes_mark(nodes, ZDD_GETINDEX(zdd)) != 0) {
         // The node was not yet marked, so go recursive if not a leaf
         zddnode_t n = ZDD_GETNODE(zdd);
         if (!zddnode_isleaf(n)) {
@@ -414,13 +414,13 @@ zdd_makeleaf(uint16_t type, uint64_t value)
     int custom = sylvan_mt_has_custom_hash(type);
 
     int created;
-    uint64_t index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
+    uint64_t index = custom ? nodes_lookupc(nodes, n.a, n.b, &created) : nodes_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
         sylvan_gc(); // FIXME
 
-        index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
+        index = custom ? nodes_lookupc(nodes, n.a, n.b, &created) : nodes_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_marked(nodes), nodes_get_size(nodes));
             exit(1);
         }
     }
@@ -458,16 +458,16 @@ _zdd_makenode(uint32_t var, ZDD low, ZDD high)
     zddnode_makenode(&n, var, low, high);
 
     int created;
-    uint64_t index = llmsset_lookup(nodes, n.a, n.b, &created);
+    uint64_t index = nodes_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
         zdd_refs_push(low);
         zdd_refs_push(high);
         sylvan_gc(); //FIXME move to a mini function?
         zdd_refs_pop(2);
 
-        index = llmsset_lookup(nodes, n.a, n.b, &created);
+        index = nodes_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_marked(nodes), nodes_get_size(nodes));
             exit(1);
         }
     }
@@ -488,16 +488,16 @@ zdd_makemapnode(uint32_t var, ZDD low, ZDD high)
     zddnode_makemapnode(&n, var, low, high);
 
     int created;
-    uint64_t index = llmsset_lookup(nodes, n.a, n.b, &created);
+    uint64_t index = nodes_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
         zdd_refs_push(low);
         zdd_refs_push(high);
         sylvan_gc();
         zdd_refs_pop(2);
 
-        index = llmsset_lookup(nodes, n.a, n.b, &created);
+        index = nodes_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_marked(nodes), nodes_get_size(nodes));
             exit(1);
         }
     }
@@ -1941,7 +1941,7 @@ void zdd_writer_add_visitor_post_CALL(lace_worker* lace, ZDD dd, sylvan_skiplist
 sylvan_skiplist_t
 zdd_writer_start()
 {
-    size_t sl_size = llmsset_get_size(nodes) > 0x7fffffff ? 0x7fffffff : llmsset_get_size(nodes);
+    size_t sl_size = nodes_get_size(nodes) > 0x7fffffff ? 0x7fffffff : nodes_get_size(nodes);
     return sylvan_skiplist_alloc(sl_size);
 }
 

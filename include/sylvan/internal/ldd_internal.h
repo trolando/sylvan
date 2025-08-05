@@ -37,7 +37,7 @@ typedef struct __attribute__((packed)) mddnode {
 static inline mddnode_t
 LDD_GETNODE(MDD mdd)
 {
-    return ((mddnode_t)llmsset_index_to_ptr(nodes, mdd));
+    return ((mddnode_t)nodes_get_pointer(nodes, mdd));
 }
 
 static inline uint32_t __attribute__((unused))

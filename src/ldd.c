@@ -34,7 +34,7 @@ void lddmc_gc_mark_rec_CALL(lace_worker* lace, MDD mdd)
 {
     if (mdd <= lddmc_true) return;
 
-    if (llmsset_mark(nodes, mdd)) {
+    if (nodes_mark(nodes, mdd)) {
         mddnode_t n = LDD_GETNODE(mdd);
         lddmc_gc_mark_rec_SPAWN(lace, mddnode_getright(n));
         lddmc_gc_mark_rec_CALL(lace, mddnode_getdown(n));
@@ -374,16 +374,16 @@ lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
     mddnode_make(&n, value, ifneq, ifeq);
 
     int created;
-    uint64_t index = llmsset_lookup(nodes, n.a, n.b, &created);
+    uint64_t index = nodes_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
         lddmc_refs_push(ifeq);
         lddmc_refs_push(ifneq);
         sylvan_gc(); // FIXME can be just sylvan_gc_CALL?
         lddmc_refs_pop(1);
 
-        index = llmsset_lookup(nodes, n.a, n.b, &created);
+        index = nodes_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "MDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
+            fprintf(stderr, "MDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_marked(nodes), nodes_get_size(nodes));
             exit(1);
         }
     }
@@ -401,16 +401,16 @@ lddmc_make_copynode(MDD ifeq, MDD ifneq)
     mddnode_makecopy(&n, ifneq, ifeq);
 
     int created;
-    uint64_t index = llmsset_lookup(nodes, n.a, n.b, &created);
+    uint64_t index = nodes_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
         lddmc_refs_push(ifeq);
         lddmc_refs_push(ifneq);
         sylvan_gc();
         lddmc_refs_pop(1);
 
-        index = llmsset_lookup(nodes, n.a, n.b, &created);
+        index = nodes_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "MDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
+            fprintf(stderr, "MDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_marked(nodes), nodes_get_size(nodes));
             exit(1);
         }
     }
@@ -2709,7 +2709,7 @@ lddmc_test_ismdd(MDD mdd)
 
     uint32_t value = 0;
     while (mdd != lddmc_false) {
-        assert(llmsset_is_marked(nodes, mdd));
+        assert(nodes_is_marked(nodes, mdd));
 
         mddnode_t n = LDD_GETNODE(mdd);
         uint32_t next_value = mddnode_getvalue(n);

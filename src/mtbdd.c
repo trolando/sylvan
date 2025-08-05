@@ -91,7 +91,7 @@ void mtbdd_gc_mark_rec_CALL(lace_worker* lace, MDD mtbdd)
     if (mtbdd == mtbdd_true) return;
     if (mtbdd == mtbdd_false) return;
 
-    if (llmsset_mark(nodes, MTBDD_STRIPMARK(mtbdd))) {
+    if (nodes_mark(nodes, MTBDD_STRIPMARK(mtbdd))) {
         mtbddnode_t n = MTBDD_GETNODE(mtbdd);
         if (!mtbddnode_isleaf(n)) {
             mtbdd_gc_mark_rec_SPAWN(lace, mtbddnode_getlow(n));
@@ -443,13 +443,13 @@ mtbdd_makeleaf(uint32_t type, uint64_t value)
     int custom = sylvan_mt_has_custom_hash(type);
 
     int created;
-    uint64_t index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
+    uint64_t index = custom ? nodes_lookupc(nodes, n.a, n.b, &created) : nodes_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
         sylvan_gc(); // FIXME ?
 
-        index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
+        index = custom ? nodes_lookupc(nodes, n.a, n.b, &created) : nodes_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_marked(nodes), nodes_get_size(nodes));
             exit(1);
         }
     }
@@ -474,7 +474,7 @@ void
 __attribute__ ((noinline))
 _mtbdd_makenode_exit(void)
 {
-    fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
+    fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_marked(nodes), nodes_get_size(nodes));
     exit(1);
 }
 
@@ -492,10 +492,10 @@ _mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high)
     mtbddnode_makenode(&n, var, low, high);
 
     int created;
-    uint64_t index = llmsset_lookup(nodes, n.a, n.b, &created);
+    uint64_t index = nodes_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
         _mtbdd_makenode_gc(low, high);
-        index = llmsset_lookup(nodes, n.a, n.b, &created);
+        index = nodes_lookup(nodes, n.a, n.b, &created);
         if (index == 0) _mtbdd_makenode_exit();
     }
 
@@ -517,16 +517,16 @@ mtbdd_makemapnode(uint32_t var, MTBDD low, MTBDD high)
     assert(!MTBDD_HASMARK(low));
 
     mtbddnode_makemapnode(&n, var, low, high);
-    index = llmsset_lookup(nodes, n.a, n.b, &created);
+    index = nodes_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
         mtbdd_refs_push(low);
         mtbdd_refs_push(high);
         sylvan_gc(); //FIXME
         mtbdd_refs_pop(2);
 
-        index = llmsset_lookup(nodes, n.a, n.b, &created);
+        index = nodes_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_marked(nodes), nodes_get_size(nodes));
             exit(1);
         }
     }
@@ -2942,11 +2942,11 @@ int mtbdd_test_isvalid_rec_CALL(lace_worker* lace, MTBDD dd, uint32_t parent_var
 
     // check if index is in array
     uint64_t index = dd & (~mtbdd_complement);
-    assert(index > 1 && index < llmsset_get_size(nodes));
-    if (index <= 1 || index >= llmsset_get_size(nodes)) return 0;
+    assert(index > 1 && index < nodes_get_size(nodes));
+    if (index <= 1 || index >= nodes_get_size(nodes)) return 0;
 
     // check if marked
-    int marked = llmsset_is_marked(nodes, index);
+    int marked = nodes_is_marked(nodes, index);
     assert(marked);
     if (marked == 0) return 0;
 
@@ -2986,11 +2986,11 @@ int mtbdd_test_isvalid_CALL(lace_worker* lace, MTBDD dd)
 
     // check if index is in array
     uint64_t index = dd & (~mtbdd_complement);
-    assert(index > 1 && index < llmsset_get_size(nodes));
-    if (index <= 1 || index >= llmsset_get_size(nodes)) return 0;
+    assert(index > 1 && index < nodes_get_size(nodes));
+    if (index <= 1 || index >= nodes_get_size(nodes)) return 0;
 
     // check if marked
-    int marked = llmsset_is_marked(nodes, index);
+    int marked = nodes_is_marked(nodes, index);
     assert(marked);
     if (marked == 0) return 0;
 
@@ -3241,7 +3241,7 @@ void mtbdd_writer_add_visitor_post(MTBDD dd, sylvan_skiplist_t sl)
 sylvan_skiplist_t
 mtbdd_writer_start()
 {
-    size_t sl_size = llmsset_get_size(nodes) > 0x7fffffff ? 0x7fffffff : llmsset_get_size(nodes);
+    size_t sl_size = nodes_get_size(nodes) > 0x7fffffff ? 0x7fffffff : nodes_get_size(nodes);
     return sylvan_skiplist_alloc(sl_size);
 }
 
@@ -3583,7 +3583,7 @@ mtbdd_test_isset(MTBDD set)
 {
     while (set != mtbdd_true) {
         assert(set != mtbdd_false);
-        assert(llmsset_is_marked(nodes, set));
+        assert(nodes_is_marked(nodes, set));
         mtbddnode_t n = MTBDD_GETNODE(set);
         assert(node_getlow(set, n) == mtbdd_false);
         set = node_gethigh(set, n);

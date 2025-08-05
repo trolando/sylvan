@@ -44,7 +44,7 @@ extern "C" {
 /**
  * Nodes table.
  */
-extern llmsset_t nodes;
+extern nodes_table* nodes;
 
 /**
  * Macros for all operation identifiers for the operation cache

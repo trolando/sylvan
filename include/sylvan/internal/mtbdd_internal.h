@@ -34,7 +34,7 @@ typedef struct __attribute__((packed)) mtbddnode {
 static inline mtbddnode_t
 MTBDD_GETNODE(MTBDD dd)
 {
-    return (mtbddnode_t)llmsset_index_to_ptr(nodes, dd&0x000000ffffffffff);
+    return (mtbddnode_t)nodes_get_pointer(nodes, dd&0x000000ffffffffff);
 }
 
 /**

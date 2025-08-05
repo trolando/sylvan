@@ -74,7 +74,7 @@ ZDD_SETINDEX(ZDD dd, uint64_t idx)
 static inline zddnode_t
 ZDD_GETNODE(ZDD dd)
 {
-    return (zddnode_t)llmsset_index_to_ptr(nodes, dd & 0x000000ffffffffff);
+    return (zddnode_t)nodes_get_pointer(nodes, dd & 0x000000ffffffffff);
 }
 
 static inline int

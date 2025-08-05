@@ -8,7 +8,7 @@
 
 #include <getrss.h>
 
-#include <sylvan/internal/sylvan_int.h>
+#include <sylvan/internal/internal.h>
 
 /* Configuration */
 static int report_levels = 0; // report states at end of every level

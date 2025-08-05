@@ -11,8 +11,8 @@
 #include <string.h>
 #include <sys/time.h>
 
-#include <sylvan/internal/sylvan_int.h>
-#include <sylvan/sylvan_table.h>
+#include <sylvan/internal/internal.h>
+#include <sylvan/nodes.h>
 
 /* Configuration */
 static int report_minterms = 0; // report minterms at every major step

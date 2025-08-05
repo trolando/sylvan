@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <sylvan/sylvan_hash.h>
+#include <sylvan/hash.h>
 
 /**
  * This tricks the compiler into generating the bit-wise rotation instruction

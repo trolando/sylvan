@@ -2948,8 +2948,8 @@ int mtbdd_test_isvalid_rec_CALL(lace_worker* lace, MTBDD dd, uint32_t parent_var
 
     // check if index is in array
     uint64_t index = dd & (~mtbdd_complement);
-    assert(index > 1 && index < nodes->table_size);
-    if (index <= 1 || index >= nodes->table_size) return 0;
+    assert(index > 1 && index < llmsset_get_size(nodes));
+    if (index <= 1 || index >= llmsset_get_size(nodes)) return 0;
 
     // check if marked
     int marked = llmsset_is_marked(nodes, index);
@@ -2992,8 +2992,8 @@ int mtbdd_test_isvalid_CALL(lace_worker* lace, MTBDD dd)
 
     // check if index is in array
     uint64_t index = dd & (~mtbdd_complement);
-    assert(index > 1 && index < nodes->table_size);
-    if (index <= 1 || index >= nodes->table_size) return 0;
+    assert(index > 1 && index < llmsset_get_size(nodes));
+    if (index <= 1 || index >= llmsset_get_size(nodes)) return 0;
 
     // check if marked
     int marked = llmsset_is_marked(nodes, index);
@@ -3247,7 +3247,7 @@ void mtbdd_writer_add_visitor_post(MTBDD dd, sylvan_skiplist_t sl)
 sylvan_skiplist_t
 mtbdd_writer_start()
 {
-    size_t sl_size = nodes->table_size > 0x7fffffff ? 0x7fffffff : nodes->table_size;
+    size_t sl_size = llmsset_get_size(nodes) > 0x7fffffff ? 0x7fffffff : llmsset_get_size(nodes);
     return sylvan_skiplist_alloc(sl_size);
 }
 

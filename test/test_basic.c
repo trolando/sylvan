@@ -9,7 +9,7 @@
 #include <sys/time.h>
 #include <inttypes.h>
 
-#include <sylvan/internal/sylvan_int.h>
+#include <sylvan/internal/internal.h>
 #include "test_assert.h"
 
 __thread uint64_t seed = 1;

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <sylvan/sylvan_config.h>
+#include <sylvan/config.h>
 #include <stdlib.h>
 #include <string.h>
 

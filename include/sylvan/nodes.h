@@ -49,34 +49,12 @@ typedef int (*llmsset_equals_cb)(uint64_t, uint64_t, uint64_t, uint64_t);
 typedef void (*llmsset_create_cb)(uint64_t *, uint64_t *);
 typedef void (*llmsset_destroy_cb)(uint64_t, uint64_t);
 
-typedef struct llmsset
-{
-    _Atomic(uint64_t)* table;        // table with hashes
-    uint8_t*           data;         // table with values
-    _Atomic(uint64_t)* bitmap1;      // ownership bitmap (per 512 buckets)
-    _Atomic(uint64_t)* bitmap2;      // bitmap for "contains data"
-    uint64_t*          bitmapc;      // bitmap for "use custom functions"
-    size_t             max_size;     // maximum size of the hash table (for resizing)
-    size_t             table_size;   // size of the hash table (number of slots) --> power of 2!
-#if LLMSSET_MASK
-    size_t             mask;         // size-1
-#endif
-    size_t             f_size;
-    llmsset_hash_cb    hash_cb;      // custom hash function
-    llmsset_equals_cb  equals_cb;    // custom equals function
-    llmsset_create_cb  create_cb;    // custom create function
-    llmsset_destroy_cb destroy_cb;   // custom destroy function
-    _Atomic(int16_t)   threshold;    // number of iterations for insertion until returning error
-} *llmsset_t;
+typedef struct llmsset *llmsset_t;
 
 /**
  * Retrieve a pointer to the data associated with the 42-bit value.
  */
-static inline void*
-llmsset_index_to_ptr(const llmsset_t dbs, size_t index)
-{
-    return dbs->data + index * 16;
-}
+void* llmsset_index_to_ptr(const llmsset_t dbs, size_t index);
 
 /**
  * Create the set.
@@ -93,40 +71,19 @@ void llmsset_free(llmsset_t dbs);
 /**
  * Retrieve the maximum size of the set.
  */
-static inline size_t
-llmsset_get_max_size(const llmsset_t dbs)
-{
-    return dbs->max_size;
-}
+size_t llmsset_get_max_size(const llmsset_t dbs);
 
 /**
  * Retrieve the current size of the lockless MS set.
  */
-static inline size_t
-llmsset_get_size(const llmsset_t dbs)
-{
-    return dbs->table_size;
-}
+size_t llmsset_get_size(const llmsset_t dbs);
 
 /**
  * Set the table size of the set.
  * Typically called during garbage collection, after clear and before rehash.
  * Returns 0 if dbs->table_size > dbs->max_size!
  */
-static inline void
-llmsset_set_size(llmsset_t dbs, size_t size)
-{
-    /* check bounds (don't be rediculous) */
-    if (size > 128 && size <= dbs->max_size) {
-        dbs->table_size = size;
-#if LLMSSET_MASK
-        /* Warning: if size is not a power of two, you will get interesting behavior */
-        dbs->mask = dbs->table_size - 1;
-#endif
-        /* Set threshold: number of cache lines to probe before giving up on node insertion */
-        dbs->threshold = 192 - 2 * __builtin_clzll(dbs->table_size);
-    }
-}
+void llmsset_set_size(llmsset_t dbs, size_t size);
 
 /**
  * Core function: find existing data or add new.

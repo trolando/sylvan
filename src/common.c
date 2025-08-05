@@ -113,13 +113,13 @@ void sylvan_clear_cache_CALL(lace_worker* lace)
  */
 void sylvan_clear_and_mark_CALL(lace_worker* lace)
 {
-    llmsset_clear_data(nodes);
+    nodes_clear_data(nodes);
 
     for (gc_hook_entry_t e = mark_list; e != NULL; e = e->next) {
         e->cb(lace);
     }
 
-    llmsset_destroy_unmarked(nodes);
+    nodes_destroy_unmarked(nodes);
 }
 
 /**
@@ -128,10 +128,10 @@ void sylvan_clear_and_mark_CALL(lace_worker* lace)
 void sylvan_rehash_all_CALL(lace_worker* lace)
 {
     // clear hash array
-    llmsset_clear_hashes(nodes);
+    nodes_clear_hashes(nodes);
 
     // rehash marked nodes
-    if (llmsset_rehash(nodes) != 0) {
+    if (nodes_rehash(nodes) != 0) {
         fprintf(stderr, "sylvan_gc_rehash error: not all nodes could be rehashed!\n");
         exit(1);
     }
@@ -166,12 +166,12 @@ next_size(size_t current_size)
  */
 void sylvan_gc_aggressive_resize_CALL(lace_worker* lace)
 {
-    size_t nodes_size = llmsset_get_size(nodes);
-    size_t nodes_max = llmsset_get_max_size(nodes);
+    size_t nodes_size = nodes_get_size(nodes);
+    size_t nodes_max = nodes_get_max_size(nodes);
     if (nodes_size < nodes_max) {
         size_t new_size = next_size(nodes_size);
         if (new_size > nodes_max) new_size = nodes_max;
-        llmsset_set_size(nodes, new_size);
+        nodes_set_size(nodes, new_size);
     }
     size_t cache_size = cache_getsize();
     size_t cache_max = cache_getmaxsize();
@@ -188,14 +188,14 @@ void sylvan_gc_aggressive_resize_CALL(lace_worker* lace)
  */
 void sylvan_gc_normal_resize_CALL(lace_worker* lace)
 {
-    size_t nodes_size = llmsset_get_size(nodes);
-    size_t nodes_max = llmsset_get_max_size(nodes);
+    size_t nodes_size = nodes_get_size(nodes);
+    size_t nodes_max = nodes_get_max_size(nodes);
     if (nodes_size < nodes_max) {
-        size_t marked = llmsset_count_marked(nodes);
+        size_t marked = nodes_count_marked(nodes);
         if (marked*2 > nodes_size) {
             size_t new_size = next_size(nodes_size);
             if (new_size > nodes_max) new_size = nodes_max;
-            llmsset_set_size(nodes, new_size);
+            nodes_set_size(nodes, new_size);
 
             // also increase the operation cache
             size_t cache_size = cache_getsize();
@@ -268,7 +268,7 @@ void sylvan_gc_CALL(lace_worker* lace)
  * The unique table
  */
 
-llmsset_t nodes;
+nodes_table* nodes;
 
 static size_t table_min = 0, table_max = 0, cache_min = 0, cache_max = 0;
 
@@ -367,7 +367,7 @@ sylvan_init_package(void)
     }
 
     /* Create tables */
-    nodes = llmsset_create(table_min, table_max);
+    nodes = nodes_create(table_min, table_max);
     cache_create(cache_min, cache_max);
 
     /* Initialize garbage collection */
@@ -429,7 +429,7 @@ sylvan_quit()
     }
 
     cache_free();
-    llmsset_free(nodes);
+    nodes_free(nodes);
 }
 
 /**
@@ -437,8 +437,8 @@ sylvan_quit()
  */
 void sylvan_table_usage_CALL(lace_worker* lace, size_t* filled, size_t* total)
 {
-    size_t tot = llmsset_get_size(nodes);
-    if (filled != NULL) *filled = llmsset_count_marked(nodes);
+    size_t tot = nodes_get_size(nodes);
+    if (filled != NULL) *filled = nodes_count_marked(nodes);
     if (total != NULL) *total = tot;
 }
 

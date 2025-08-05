@@ -4,8 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <sylvan/internal/sylvan_int.h>
-#include <sylvan/sylvan_platform.h>
+#include <sylvan/internal/internal.h>
+#include <sylvan/platform.h>
 
 #include "test_assert.h"
 

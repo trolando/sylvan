@@ -3,8 +3,8 @@
 
 #include <lace.h>
 
-#include <sylvan/sylvan_platform.h>
-#include <sylvan/sylvan_table.h>
+#include <sylvan/platform.h>
+#include <sylvan/nodes.h>
 #include "test_assert.h"
 
 int

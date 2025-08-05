@@ -15,8 +15,9 @@
  */
 
 #include <sylvan/sylvan.h>
-#include <sylvan/sylvan_platform.h>
-#include <sylvan_sl.h>
+#include <sylvan/platform.h>
+
+#include "sl.h"
 
 /* A SL_DEPTH of 6 means 32 bytes per bucket, of 14 means 64 bytes per bucket.
    However, there is a very large performance drop with only 6 levels. */

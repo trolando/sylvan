@@ -18,8 +18,8 @@ detect_cache_line_size(SYLVAN_CACHE_LINE_SIZE DEFAULT 64)
 
 file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/include/sylvan")
 configure_file(
-    ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_config.h.in
-    ${PROJECT_BINARY_DIR}/include/sylvan/sylvan_config.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/config.h.in
+    ${PROJECT_BINARY_DIR}/include/sylvan/config.h
     @ONLY
 )
 
@@ -37,20 +37,20 @@ add_library(sylvan::sylvan ALIAS sylvan)
 
 target_sources(sylvan
   PRIVATE
+    bdd.c
+    cache.c
+    common.c
+    hash.c
+    ldd.c
+    mt.c
+    mtbdd.c
+    nodes_llht.c
+    platform.c
+    refs.c
     sha2.c
-    sylvan_bdd.c
-    sylvan_cache.c
-    sylvan_common.c
-    sylvan_hash.c
-    sylvan_ldd.c
-    sylvan_mt.c
-    sylvan_mtbdd.c
-    sylvan_platform.c
-    sylvan_refs.c
-    sylvan_sl.c
-    sylvan_stats.c
-    sylvan_table.c
-    sylvan_zdd.c
+    sl.c
+    stats.c
+    zdd.c
   PUBLIC
     FILE_SET HEADERS
     BASE_DIRS
@@ -58,33 +58,33 @@ target_sources(sylvan
       ${PROJECT_BINARY_DIR}/include
     FILES
       ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_bdd.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_cache.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_common.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_hash.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/internal/sylvan_int.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_ldd.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/internal/sylvan_ldd_int.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_mt.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_mtbdd.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/internal/sylvan_mtbdd_int.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_platform.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_stats.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_table.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_zdd.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/internal/sylvan_zdd_int.h
-      ${PROJECT_BINARY_DIR}/include/sylvan/sylvan_config.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/bdd.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/cache.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/common.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/hash.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/ldd.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/mt.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/mtbdd.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/nodes.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/platform.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/stats.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/zdd.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/internal/internal.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/internal/ldd_internal.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/internal/mtbdd_internal.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/internal/zdd_internal.h
+      ${PROJECT_BINARY_DIR}/include/sylvan/config.h
 )
 
 # ── Optional C++ bindings ────────────────────────────────────────────────────
 
 if(SYLVAN_BUILD_CPP)
     target_sources(sylvan
-      PRIVATE sylvan_obj.cpp
+      PRIVATE obj.cpp
       PUBLIC
         FILE_SET HEADERS
         BASE_DIRS ${PROJECT_SOURCE_DIR}/include
-        FILES ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_obj.hpp
+        FILES ${PROJECT_SOURCE_DIR}/include/sylvan/obj.hpp
     )
 endif()
 
@@ -94,11 +94,11 @@ option(SYLVAN_GMP "Include custom MTBDD type GMP" OFF)
 if(SYLVAN_GMP)
     find_package(GMP REQUIRED)
     target_sources(sylvan
-      PRIVATE sylvan_gmp.c
+      PRIVATE gmp.c
       PUBLIC
         FILE_SET HEADERS
         BASE_DIRS ${PROJECT_SOURCE_DIR}/include
-        FILES ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan_gmp.h
+        FILES ${PROJECT_SOURCE_DIR}/include/sylvan/gmp.h
     )
     target_link_libraries(sylvan PUBLIC GMP::GMP)
 endif()

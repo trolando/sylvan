@@ -15,16 +15,16 @@
  * limitations under the License.
  */
 
-#include <sylvan/internal/sylvan_int.h>
+#include <sylvan/internal/internal.h>
 
 #include <inttypes.h>
 #include <limits.h>
 #include <math.h>
 #include <string.h>
 
-#include <sylvan_refs.h>
-#include <sylvan_sl.h>
-#include <sha2.h>
+#include "refs.h"
+#include "sl.h"
+#include "sha2.h"
 
 /* Primitives */
 int

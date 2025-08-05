@@ -7,11 +7,11 @@
 #include <inttypes.h>
 #include <math.h>
 
-#include <sylvan/internal/sylvan_int.h>
-#include "test_assert.h"
-
-#include <sylvan/sylvan_platform.h>
 #include <lace.h>
+#include <sylvan/internal/internal.h>
+#include <sylvan/platform.h>
+
+#include "test_assert.h"
 
 
 SYLVAN_TLS uint64_t seed = 1;

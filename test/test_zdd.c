@@ -4,7 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <sylvan/internal/sylvan_int.h>
+#include <sylvan/internal/internal.h>
 
 #include "test_assert.h"
 

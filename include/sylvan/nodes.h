@@ -1,6 +1,7 @@
 /*
  * Copyright 2011-2016 Formal Methods and Tools, University of Twente
- * Copyright 2016-2017 Tom van Dijk, Johannes Kepler University Linz
+ * Copyright 2016-2018 Tom van Dijk, Johannes Kepler University Linz
+ * Copyright 2019-2025 Tom van Dijk, Johannes Kepler University Linz
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,154 +16,146 @@
  * limitations under the License.
  */
 
-/* Do not include this file directly. Instead, include sylvan_int.h */
-
-#ifndef SYLVAN_TABLE_H
-#define SYLVAN_TABLE_H
+#ifndef SYLVAN_NODES_H
+#define SYLVAN_NODES_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
 
 /**
- * Lockless hash table (set) to store 16-byte keys.
- * Each unique key is associated with a 42-bit number.
- *
- * The set has support for stop-the-world garbage collection.
- * Methods llmsset_clear, llmsset_mark and llmsset_rehash implement garbage collection.
- * During their execution, llmsset_lookup is not allowed.
- *
- * WARNING: Originally, this table is designed to allow multiple tables.
- * However, this is not compatible with thread local storage for now.
- * Do not use multiple tables.
+ * Functions for managing decision diagram nodes.
  */
 
+typedef struct nodes nodes_table;
+
 /**
- * hash(a, b, seed)
- * equals(lhs_a, lhs_b, rhs_a, rhs_b)
- * create(a, b) -- with a,b pointers, allows changing pointers on create of node,
- *                 but must keep hash/equals same!
- * destroy(a, b)
+ * Retrieve a pointer to the data associated with the index
  */
-typedef uint64_t (*llmsset_hash_cb)(uint64_t, uint64_t, uint64_t);
-typedef int (*llmsset_equals_cb)(uint64_t, uint64_t, uint64_t, uint64_t);
-typedef void (*llmsset_create_cb)(uint64_t *, uint64_t *);
-typedef void (*llmsset_destroy_cb)(uint64_t, uint64_t);
-
-typedef struct llmsset *llmsset_t;
+void* nodes_get_pointer(const nodes_table* dbs, size_t index);
 
 /**
- * Retrieve a pointer to the data associated with the 42-bit value.
- */
-void* llmsset_index_to_ptr(const llmsset_t dbs, size_t index);
-
-/**
- * Create the set.
+ * Create the table for the decision diagram nodes.
  * This will allocate a set of <max_size> buckets in virtual memory.
  * The actual space used is <initial_size> buckets.
  */
-llmsset_t llmsset_create(size_t initial_size, size_t max_size);
+nodes_table* nodes_create(size_t initial_size, size_t max_size);
 
 /**
- * Free the set.
+ * Free the table.
  */
-void llmsset_free(llmsset_t dbs);
+void nodes_free(nodes_table* dbs);
 
 /**
- * Retrieve the maximum size of the set.
+ * Retrieve the maximum size of the nodes table.
  */
-size_t llmsset_get_max_size(const llmsset_t dbs);
+size_t nodes_get_max_size(const nodes_table* dbs);
 
 /**
- * Retrieve the current size of the lockless MS set.
+ * Retrieve the current size of the nodes table.
  */
-size_t llmsset_get_size(const llmsset_t dbs);
+size_t nodes_get_size(const nodes_table* dbs);
 
 /**
- * Set the table size of the set.
- * Typically called during garbage collection, after clear and before rehash.
- * Returns 0 if dbs->table_size > dbs->max_size!
+ * Find or insert a decision diagram node.
+ * Returns the index if successful, or 0 if the table is full!!
+ * @ensures 2 <= \result < nodes_get_size(dbs);
  */
-void llmsset_set_size(llmsset_t dbs, size_t size);
+uint64_t nodes_lookup(const nodes_table* dbs, const uint64_t a, const uint64_t b, int *created);
 
 /**
- * Core function: find existing data or add new.
- * Returns the unique 42-bit value associated with the data, or 0 when table is full.
- * Also, this value will never equal 0 or 1.
- * Note: garbage collection during lookup strictly forbidden
+ * Find or insert a decision diagram node using the custom callbacks.
+ * This is mainly used for multi-terminal custom leaf support.
+ * Returns the index if successful, or 0 if the table is full!!
+ * @ensures 2 <= \result < nodes_get_size(dbs);
  */
-uint64_t llmsset_lookup(const llmsset_t dbs, const uint64_t a, const uint64_t b, int *created);
-
-/**
- * Same as lookup, but use the custom functions
- */
-uint64_t llmsset_lookupc(const llmsset_t dbs, const uint64_t a, const uint64_t b, int *created);
+uint64_t nodes_lookupc(const nodes_table* dbs, const uint64_t a, const uint64_t b, int *created);
 
 /**
  * To perform garbage collection, the user is responsible that no lookups are performed during the process.
  *
- * 1) call llmsset_clear 
- * 2) call llmsset_mark for every bucket to rehash
- * 3) call llmsset_rehash 
+ * 1) call nodes_clear
+ * 2) call nodes_mark for every bucket to rehash
+ * 3) call nodes_rehash
  */
-static inline void llmsset_clear(llmsset_t dbs);
+// static inline void nodes_clear(nodes_table* dbs);
 
-static inline void llmsset_clear_data(llmsset_t dbs);
+/**
+ * Frees all nodes, but do not change any data or clear the hashes
+ */
+static inline void nodes_clear_data(nodes_table* dbs);
 
-static inline void llmsset_clear_hashes(llmsset_t dbs);
+/**
+ * Clears all data to prepare for rehashing
+ */
+static inline void nodes_clear_hashes(nodes_table* dbs);
 
 /**
  * Check if a certain data bucket is marked (in use).
  */
-int llmsset_is_marked(const llmsset_t dbs, uint64_t index);
+int nodes_is_marked(const nodes_table* dbs, uint64_t index);
 
 /**
  * During garbage collection, buckets are marked (for rehashing) with this function.
  * Returns 0 if the node was already marked, or non-zero if it was not marked.
  * May also return non-zero if multiple workers marked at the same time.
  */
-int llmsset_mark(const llmsset_t dbs, uint64_t index);
+int nodes_mark(const nodes_table* dbs, uint64_t index);
 
 /**
  * Rehash all marked buckets.
  * Returns 0 if successful, or the number of buckets not rehashed if not.
  */
-static inline int llmsset_rehash(llmsset_t dbs);
+static inline int nodes_rehash(nodes_table* dbs);
 
 /**
  * Rehash a single bucket.
  * Returns 0 if successful, or 1 if not.
  */
-int llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx);
+int nodes_rehash_bucket(nodes_table* dbs, uint64_t d_idx);
 
 /**
  * Retrieve number of marked buckets.
  */
-static inline size_t llmsset_count_marked(llmsset_t dbs);
+static inline size_t nodes_count_marked(nodes_table* dbs);
 
 /**
- * During garbage collection, this method calls the destroy callback
+ * After garbage collection, this method calls the destroy callback
  * for all 'custom' data that is not kept.
  */
-static inline void llmsset_destroy_unmarked(llmsset_t dbs);
+static inline void nodes_destroy_unmarked(nodes_table* dbs);
+
+VOID_TASK_1(nodes_clear, nodes_table*, dbs)
+VOID_TASK_1(nodes_clear_data, nodes_table*, dbs)
+VOID_TASK_1(nodes_clear_hashes, nodes_table*, dbs)
+TASK_1(int, nodes_rehash, nodes_table*, dbs)
+TASK_1(size_t, nodes_count_marked, nodes_table*, dbs)
+VOID_TASK_1(nodes_destroy_unmarked, nodes_table*, dbs)
+
+/**
+ * Helper callbacks for dealing with custom leaves.
+ * This is used by the MT support (mt.c)
+ * hash(a, b, seed)
+ * equals(lhs_a, lhs_b, rhs_a, rhs_b)
+ * create(a, b) -- with a,b pointers, allows changing pointers on create of node,
+ *                 but must keep hash/equals same!
+ * destroy(a, b)
+ */
+typedef uint64_t (*nodes_hash_cb)(uint64_t, uint64_t, uint64_t);
+typedef int (*nodes_equals_cb)(uint64_t, uint64_t, uint64_t, uint64_t);
+typedef void (*nodes_create_cb)(uint64_t *, uint64_t *);
+typedef void (*nodes_destroy_cb)(uint64_t, uint64_t);
 
 /**
  * Set custom functions
  */
-void llmsset_set_custom(const llmsset_t dbs, llmsset_hash_cb hash_cb, llmsset_equals_cb equals_cb, llmsset_create_cb create_cb, llmsset_destroy_cb destroy_cb);
+void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb equals_cb, nodes_create_cb create_cb, nodes_destroy_cb destroy_cb);
 
 /**
- * Default hashing functions.
+ * Set the table size of the set.
+ * This should only be called internally during garbage collection.
  */
-#define llmsset_hash sylvan_tabhash16
-#define llmsset_fnvhash sylvan_fnvhash16
-
-VOID_TASK_1(llmsset_clear, llmsset_t, dbs)
-VOID_TASK_1(llmsset_clear_data, llmsset_t, dbs)
-VOID_TASK_1(llmsset_clear_hashes, llmsset_t, dbs)
-TASK_1(int, llmsset_rehash, llmsset_t, dbs)
-TASK_1(size_t, llmsset_count_marked, llmsset_t, dbs)
-VOID_TASK_1(llmsset_destroy_unmarked, llmsset_t, dbs)
+void nodes_set_size(nodes_table* dbs, size_t size);
 
 #ifdef __cplusplus
 }

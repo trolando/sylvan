@@ -26,15 +26,15 @@
  * Each unique key is associated with a 42-bit number.
  *
  * The set has support for stop-the-world garbage collection.
- * Methods llmsset_clear, llmsset_mark and llmsset_rehash implement garbage collection.
- * During their execution, llmsset_lookup is not allowed.
+ * Methods nodes_clear, nodes_mark and nodes_rehash implement garbage collection.
+ * During their execution, nodes_lookup is not allowed.
  *
  * WARNING: Originally, this table is designed to allow multiple tables.
  * However, this is not compatible with thread local storage for now.
  * Do not use multiple tables.
  */
 
-typedef struct llmsset
+typedef struct nodes
 {
     _Atomic(uint64_t)* table;        // table with hashes
     uint8_t*           data;         // table with values
@@ -47,30 +47,30 @@ typedef struct llmsset
     size_t             mask;         // size-1
 #endif
     size_t             f_size;
-    llmsset_hash_cb    hash_cb;      // custom hash function
-    llmsset_equals_cb  equals_cb;    // custom equals function
-    llmsset_create_cb  create_cb;    // custom create function
-    llmsset_destroy_cb destroy_cb;   // custom destroy function
+    nodes_hash_cb    hash_cb;      // custom hash function
+    nodes_equals_cb  equals_cb;    // custom equals function
+    nodes_create_cb  create_cb;    // custom create function
+    nodes_destroy_cb destroy_cb;   // custom destroy function
     _Atomic(int16_t)   threshold;    // number of iterations for insertion until returning error
-} *llmsset_t;
+} nodes_table;
 
-void* llmsset_index_to_ptr(const llmsset_t dbs, size_t index)
+void* nodes_get_pointer(const nodes_table* dbs, size_t index)
 {
     return dbs->data + index * 16;
 }
 
 size_t
-llmsset_get_max_size(const llmsset_t dbs)
+nodes_get_max_size(const nodes_table* dbs)
 {
     return dbs->max_size;
 }
 
-size_t llmsset_get_size(const llmsset_t dbs)
+size_t nodes_get_size(const nodes_table* dbs)
 {
     return dbs->table_size;
 }
 
-void llmsset_set_size(llmsset_t dbs, size_t size)
+void nodes_set_size(nodes_table* dbs, size_t size)
 {
     /* check bounds (don't be ridiculous) */
     if (size > 128 && size <= dbs->max_size) {
@@ -86,16 +86,16 @@ void llmsset_set_size(llmsset_t dbs, size_t size)
 
 SYLVAN_TLS uint64_t my_region = UINT64_MAX;
 
-TASK(void, llmsset_reset_region)
+TASK(void, nodes_reset_region)
 
-void llmsset_reset_region_CALL(lace_worker* lace)
+void nodes_reset_region_CALL(lace_worker* lace)
 {
     // we don't actually need Lace, but it's a Lace task to run for initialisation
     my_region = UINT64_MAX; // no region
 }
 
 static uint64_t
-claim_next_region(const llmsset_t dbs, uint64_t start_region)
+claim_next_region(const nodes_table* dbs, uint64_t start_region)
 {
     const uint64_t regions = dbs->table_size / (64u * 8u);
     if (regions == 0) return UINT64_MAX;
@@ -128,7 +128,7 @@ claim_next_region(const llmsset_t dbs, uint64_t start_region)
 }
 
 static uint64_t
-claim_data_bucket(const llmsset_t dbs)
+claim_data_bucket(const nodes_table* dbs)
 {
     for (;;) {
         if (my_region != UINT64_MAX) {
@@ -173,7 +173,7 @@ claim_data_bucket(const llmsset_t dbs)
 }
 
 static void
-release_data_bucket(const llmsset_t dbs, uint64_t index)
+release_data_bucket(const nodes_table* dbs, uint64_t index)
 {
     _Atomic(uint64_t)*ptr = dbs->bitmap2 + (index / 64);
     uint64_t mask = UINT64_C(0x8000000000000000) >> (index & 63);
@@ -186,7 +186,7 @@ release_data_bucket(const llmsset_t dbs, uint64_t index)
  * region concurrently. Cleanup/rehash is stop-the-world relative to insertion.
  */
 static void
-set_custom_bucket(const llmsset_t dbs, uint64_t index, int on)
+set_custom_bucket(const nodes_table* dbs, uint64_t index, int on)
 {
     uint64_t *ptr = dbs->bitmapc + (index/64);
     uint64_t mask = UINT64_C(0x8000000000000000) >> (index&63);
@@ -195,7 +195,7 @@ set_custom_bucket(const llmsset_t dbs, uint64_t index, int on)
 }
 
 static int
-is_custom_bucket(const llmsset_t dbs, uint64_t index)
+is_custom_bucket(const nodes_table* dbs, uint64_t index)
 {
     uint64_t *ptr = dbs->bitmapc + (index/64);
     uint64_t mask = UINT64_C(0x8000000000000000) >> (index&63);
@@ -216,7 +216,7 @@ static const uint64_t CL_MASK_R = CL_WORDS - 1;
 #define MASK_HASH  ((uint64_t)0xffffff0000000000)
 
 static inline uint64_t
-llmsset_lookup2(const llmsset_t dbs, uint64_t a, uint64_t b, int* created, const int custom)
+nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_t b, int* created, const int custom)
 {
     uint64_t hash_rehash = 14695981039346656037LLU;
     if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
@@ -302,19 +302,19 @@ llmsset_lookup2(const llmsset_t dbs, uint64_t a, uint64_t b, int* created, const
 }
 
 uint64_t
-llmsset_lookup(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* created)
+nodes_lookup(const nodes_table* dbs, const uint64_t a, const uint64_t b, int* created)
 {
-    return llmsset_lookup2(dbs, a, b, created, 0);
+    return nodes_lookup2(dbs, a, b, created, 0);
 }
 
 uint64_t
-llmsset_lookupc(const llmsset_t dbs, const uint64_t a, const uint64_t b, int* created)
+nodes_lookupc(const nodes_table* dbs, const uint64_t a, const uint64_t b, int* created)
 {
-    return llmsset_lookup2(dbs, a, b, created, 1);
+    return nodes_lookup2(dbs, a, b, created, 1);
 }
 
 int
-llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
+nodes_rehash_bucket(nodes_table* dbs, uint64_t d_idx)
 {
     const uint64_t * const d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
     const uint64_t a = d_ptr[0];
@@ -369,42 +369,42 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
     }
 }
 
-llmsset_t
-llmsset_create(size_t initial_size, size_t max_size)
+nodes_table*
+nodes_create(size_t initial_size, size_t max_size)
 {
-    llmsset_t dbs = sylvan_alloc_aligned(sizeof(struct llmsset));
+    nodes_table* dbs = sylvan_alloc_aligned(sizeof(struct nodes));
     if (dbs == 0) {
-        fprintf(stderr, "llmsset_create: Unable to allocate memory: %s!\n", strerror(errno));
+        fprintf(stderr, "nodes_create: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
     }
 
 #if LLMSSET_MASK
     /* Check if initial_size and max_size are powers of 2 */
     if (popcnt_uint64((uint64_t)initial_size) != 1) {
-        fprintf(stderr, "llmsset_create: initial_size is not a power of 2!\n");
+        fprintf(stderr, "nodes_create: initial_size is not a power of 2!\n");
         exit(1);
     }
 
     if (popcnt_uint64((uint64_t)max_size) != 1) {
-        fprintf(stderr, "llmsset_create: max_size is not a power of 2!\n");
+        fprintf(stderr, "nodes_create: max_size is not a power of 2!\n");
         exit(1);
     }
 #endif
 
     if (initial_size > max_size) {
-        fprintf(stderr, "llmsset_create: initial_size > max_size!\n");
+        fprintf(stderr, "nodes_create: initial_size > max_size!\n");
         exit(1);
     }
 
     // minimum size is now 512 buckets (region size, but of course, n_workers * 512 is suggested as minimum)
 
     if (initial_size < 512) {
-        fprintf(stderr, "llmsset_create: initial_size too small!\n");
+        fprintf(stderr, "nodes_create: initial_size too small!\n");
         exit(1);
     }
 
     dbs->max_size = max_size;
-    llmsset_set_size(dbs, initial_size);
+    nodes_set_size(dbs, initial_size);
 
     /* This implementation of "resizable hash table" allocates the max_size table in virtual memory,
        but only uses the "actual size" part in real memory */
@@ -422,7 +422,7 @@ llmsset_create(size_t initial_size, size_t max_size)
     dbs->bitmapc = (uint64_t*)sylvan_alloc_aligned(dbs->max_size / 8);
 
     if (dbs->table == 0 || dbs->data == 0 || dbs->bitmap1 == 0 || dbs->bitmap2 == 0 || dbs->bitmapc == 0) {
-        fprintf(stderr, "llmsset_create: Unable to allocate memory: %s!\n", strerror(errno));
+        fprintf(stderr, "nodes_create: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
     }
 
@@ -442,7 +442,7 @@ llmsset_create(size_t initial_size, size_t max_size)
     // that is a problem with multiple tables.
     // so, for now, do NOT use multiple tables!!
 
-    llmsset_reset_region_TOGETHER();
+    nodes_reset_region_TOGETHER();
 
     // initialize hashtab
     sylvan_init_hash();
@@ -450,24 +450,23 @@ llmsset_create(size_t initial_size, size_t max_size)
     return dbs;
 }
 
-void
-llmsset_free(llmsset_t dbs)
+void nodes_free(nodes_table* dbs)
 {
     sylvan_free_aligned(dbs->table, dbs->max_size * sizeof(*dbs->table));
     sylvan_free_aligned(dbs->data, dbs->max_size * 2 * sizeof(uint64_t));
     sylvan_free_aligned(dbs->bitmap1, dbs->max_size / (512 * 8));
     sylvan_free_aligned(dbs->bitmap2, (dbs->max_size / 64) * sizeof(*dbs->bitmap2));
     sylvan_free_aligned(dbs->bitmapc, dbs->max_size / 8);
-    sylvan_free_aligned(dbs, sizeof(struct llmsset));
+    sylvan_free_aligned(dbs, sizeof(struct nodes));
 }
 
-void llmsset_clear_CALL(lace_worker* lace, llmsset_t dbs)
+void nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    llmsset_clear_data_CALL(lace, dbs);
-    llmsset_clear_hashes_CALL(lace, dbs);
+    nodes_clear_data_CALL(lace, dbs);
+    nodes_clear_hashes_CALL(lace, dbs);
 }
 
-void llmsset_clear_data_CALL(lace_worker* lace, llmsset_t dbs)
+void nodes_clear_data_CALL(lace_worker* lace, nodes_table* dbs)
 {
     sylvan_clear_aligned(dbs->bitmap1, dbs->max_size / (512*8));
     sylvan_clear_aligned(dbs->bitmap2, dbs->max_size / 8);
@@ -475,16 +474,17 @@ void llmsset_clear_data_CALL(lace_worker* lace, llmsset_t dbs)
     // forbid first two positions (index 0 and 1)
     dbs->bitmap2[0] = UINT64_C(0xc000000000000000);
 
-    llmsset_reset_region_TOGETHER();
+    nodes_reset_region_TOGETHER();
 }
 
-void llmsset_clear_hashes_CALL(lace_worker* lace, llmsset_t dbs)
+// does this need to be a Lace task??
+void nodes_clear_hashes_CALL(lace_worker* lace, nodes_table* dbs)
 {
     sylvan_clear_aligned(dbs->table, dbs->max_size * 8);
 }
 
 int
-llmsset_is_marked(const llmsset_t dbs, uint64_t index)
+nodes_is_marked(const nodes_table* dbs, uint64_t index)
 {
     _Atomic(uint64_t)* ptr = dbs->bitmap2 + (index/64);
     uint64_t mask = UINT64_C(0x8000000000000000) >> (index&63);
@@ -492,7 +492,7 @@ llmsset_is_marked(const llmsset_t dbs, uint64_t index)
 }
 
 int
-llmsset_mark(const llmsset_t dbs, uint64_t index)
+nodes_mark(const nodes_table* dbs, uint64_t index)
 {
     _Atomic(uint64_t)* ptr = dbs->bitmap2 + (index/64);
     uint64_t mask = UINT64_C(0x8000000000000000) >> (index&63);
@@ -510,21 +510,21 @@ llmsset_mark(const llmsset_t dbs, uint64_t index)
     }
 }
 
-TASK(int, llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
+TASK(int, nodes_rehash_par, nodes_table*, dbs, size_t, first, size_t, count)
 
-int llmsset_rehash_par_CALL(lace_worker* lace, llmsset_t dbs, size_t first, size_t count)
+int nodes_rehash_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first, size_t count)
 {
     if (count > 512) {
-        llmsset_rehash_par_SPAWN(lace, dbs, first, count/2);
-        int bad = llmsset_rehash_par_CALL(lace, dbs, first + count/2, count - count/2);
-        return bad + llmsset_rehash_par_SYNC(lace);
+        nodes_rehash_par_SPAWN(lace, dbs, first, count/2);
+        int bad = nodes_rehash_par_CALL(lace, dbs, first + count/2, count - count/2);
+        return bad + nodes_rehash_par_SYNC(lace);
     } else {
         int bad = 0;
         _Atomic(uint64_t)* ptr = dbs->bitmap2 + (first / 64);
         uint64_t mask = UINT64_C(0x8000000000000000) >> (first & 63);
         for (size_t k=0; k<count; k++) {
             if (atomic_load_explicit(ptr, memory_order_relaxed) & mask) {
-                if (llmsset_rehash_bucket(dbs, first+k) == 0) bad++;
+                if (nodes_rehash_bucket(dbs, first+k) == 0) bad++;
             }
             mask >>= 1;
             if (mask == 0) {
@@ -536,20 +536,20 @@ int llmsset_rehash_par_CALL(lace_worker* lace, llmsset_t dbs, size_t first, size
     }
 }
 
-int llmsset_rehash_CALL(lace_worker* lace, llmsset_t dbs)
+int nodes_rehash_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    return llmsset_rehash_par_CALL(lace, dbs, 0, dbs->table_size);
+    return nodes_rehash_par_CALL(lace, dbs, 0, dbs->table_size);
 }
 
-TASK(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, count)
+TASK(size_t, nodes_count_marked_par, nodes_table*, dbs, size_t, first, size_t, count)
 
-size_t llmsset_count_marked_par_CALL(lace_worker* lace, llmsset_t dbs, size_t first, size_t count)
+size_t nodes_count_marked_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first, size_t count)
 {
     if (count > 512) {
         size_t split = count/2;
-        llmsset_count_marked_par_SPAWN(lace, dbs, first, split);
-        size_t right = llmsset_count_marked_par_CALL(lace, dbs, first + split, count - split);
-        size_t left = llmsset_count_marked_par_SYNC(lace);
+        nodes_count_marked_par_SPAWN(lace, dbs, first, split);
+        size_t right = nodes_count_marked_par_CALL(lace, dbs, first + split, count - split);
+        size_t left = nodes_count_marked_par_SYNC(lace);
         return left + right;
     } else {
         size_t result = 0;
@@ -578,20 +578,20 @@ size_t llmsset_count_marked_par_CALL(lace_worker* lace, llmsset_t dbs, size_t fi
     }
 }
 
-size_t llmsset_count_marked_CALL(lace_worker* lace, llmsset_t dbs)
+size_t nodes_count_marked_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    return llmsset_count_marked_par_CALL(lace, dbs, 0, dbs->table_size);
+    return nodes_count_marked_par_CALL(lace, dbs, 0, dbs->table_size);
 }
 
-TASK(void, llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
+TASK(void, nodes_destroy_par, nodes_table*, dbs, size_t, first, size_t, count)
 
-void llmsset_destroy_par_CALL(lace_worker* lace, llmsset_t dbs, size_t first, size_t count)
+void nodes_destroy_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first, size_t count)
 {
     if (count > 1024) {
         size_t split = count/2;
-        llmsset_destroy_par_SPAWN(lace, dbs, first, split);
-        llmsset_destroy_par_CALL(lace, dbs, first + split, count - split);
-        llmsset_destroy_par_SYNC(lace);
+        nodes_destroy_par_SPAWN(lace, dbs, first, split);
+        nodes_destroy_par_CALL(lace, dbs, first + split, count - split);
+        nodes_destroy_par_SYNC(lace);
     } else {
         for (size_t k=first; k<first+count; k++) {
             _Atomic(uint64_t)* ptr2 = dbs->bitmap2 + (k/64);
@@ -609,16 +609,16 @@ void llmsset_destroy_par_CALL(lace_worker* lace, llmsset_t dbs, size_t first, si
     }
 }
 
-void llmsset_destroy_unmarked_CALL(lace_worker* lace, llmsset_t dbs)
+void nodes_destroy_unmarked_CALL(lace_worker* lace, nodes_table* dbs)
 {
     if (dbs->destroy_cb == NULL) return; // no custom function
-    llmsset_destroy_par_CALL(lace, dbs, 0, dbs->table_size);
+    nodes_destroy_par_CALL(lace, dbs, 0, dbs->table_size);
 }
 
 /**
  * Set custom functions
  */
-void llmsset_set_custom(const llmsset_t dbs, llmsset_hash_cb hash_cb, llmsset_equals_cb equals_cb, llmsset_create_cb create_cb, llmsset_destroy_cb destroy_cb)
+void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb equals_cb, nodes_create_cb create_cb, nodes_destroy_cb destroy_cb)
 {
     dbs->hash_cb = hash_cb;
     dbs->equals_cb = equals_cb;

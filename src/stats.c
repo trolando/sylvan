@@ -268,11 +268,11 @@ sylvan_stats_report(FILE *target)
                 fprintf(target, "%-20s %'.6Lf sec.\n", sylvan_report_info[i].key, (long double)totals.timers[id]/1000000000);
             }
         } else if (type == 4) {
-            fprintf(target, "%-20s %'zu of %'zu buckets filled.\n", "Unique nodes table", llmsset_count_marked(nodes), llmsset_get_size(nodes));
+            fprintf(target, "%-20s %'zu of %'zu buckets filled.\n", "Unique nodes table", nodes_count_marked(nodes), nodes_get_size(nodes));
             fprintf(target, "%-20s %'zu of %'zu buckets filled.\n", "Operation cache", cache_getused(), cache_getsize());
             char buf[64], buf2[64];
-            to_h(24ULL * llmsset_get_size(nodes), buf);
-            to_h(24ULL * llmsset_get_max_size(nodes), buf2);
+            to_h(24ULL * nodes_get_size(nodes), buf);
+            to_h(24ULL * nodes_get_max_size(nodes), buf2);
             fprintf(target, "%-20s %s (max real) of %s (allocated virtual memory).\n", "Memory (nodes)", buf, buf2);
             to_h(36ULL * cache_getsize(), buf);
             to_h(36ULL * cache_getmaxsize(), buf2);

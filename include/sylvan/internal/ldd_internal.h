@@ -39,7 +39,7 @@ static_assert(sizeof(struct mddnode) == 16, "mddnode should be a 16 byte struct"
 static inline mddnode_t
 LDD_GETNODE(MDD mdd)
 {
-    return ((mddnode_t)llmsset_index_to_ptr(nodes, mdd));
+    return ((mddnode_t)nodes_get_pointer(nodes, mdd));
 }
 
 static inline uint32_t SYLVAN_UNUSED

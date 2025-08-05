@@ -19,15 +19,15 @@ main(void)
     for (size_t i=0; i<512; i++) test_assert(memory[i] == 0);
     sylvan_free_aligned(memory, 4096);
 
-    llmsset_t table = llmsset_create(4096, 4096);
+    nodes_table *table = nodes_create(4096, 4096);
 
-    test_assert(llmsset_mark(table, 74));
-    test_assert(llmsset_is_marked(table, 74));
-    test_assert(!llmsset_is_marked(table, 73));
-    test_assert(!llmsset_is_marked(table, 75));
-    test_assert(llmsset_mark(table, 75));
+    test_assert(nodes_mark(table, 74));
+    test_assert(nodes_is_marked(table, 74));
+    test_assert(!nodes_is_marked(table, 73));
+    test_assert(!nodes_is_marked(table, 75));
+    test_assert(nodes_mark(table, 75));
 
-    llmsset_free(table);
+    nodes_free(table);
     lace_stop();
 
     return 0;

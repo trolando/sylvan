@@ -106,19 +106,19 @@ cache_get6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t 
     _Atomic(uint64_t) *s_bucket = (_Atomic(uint64_t)*)cache_status + (hash % cache_size)/2;
     cache6_entry_t bucket = (cache6_entry_t)cache_table + (hash % cache_size)/2;
 #endif
-    // can be relaxed, we check again afterwards
-    const uint64_t s = atomic_load_explicit(s_bucket, memory_order_acquire);
+    const uint64_t s = atomic_load_explicit(s_bucket, memory_order_relaxed);
     // abort if locked or second part of 2-part entry or if different hash
     uint64_t x = ((hash>>32) & 0x7fff0000) | 0x04000000;
     x = x | (x<<32);
     if ((s & 0xffff0000ffff0000) != x) return 0;
+    atomic_thread_fence(memory_order_acquire); // prevent LoadLoad reordering
     // abort if key different
     if (bucket->a != a || bucket->b != b || bucket->c != c) return 0;
     if (bucket->d != d || bucket->e != e || bucket->f != f) return 0;
     *res1 = bucket->res;
     if (res2) *res2 = bucket->res2;
-    atomic_thread_fence(memory_order_seq_cst);
-    // abort if status field changed after compiler_barrier()
+    atomic_thread_fence(memory_order_acquire); // prevent LoadLoad reordering
+    // abort if status field changed
     return atomic_load_explicit(s_bucket, memory_order_relaxed) == s ? 1 : 0;
 }
 
@@ -143,7 +143,7 @@ cache_put6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t 
     new_s |= (((s>>32)+1)&0xffff)<<32;
     new_s |= (s+1)&0xffff;
     // use cas to claim bucket
-    if (!atomic_compare_exchange_weak(s_bucket, &s, new_s | 0x8000000080000000LL)) return 0;
+    if (!atomic_compare_exchange_weak_explicit(s_bucket, &s, new_s | 0x8000000080000000LL, memory_order_acq_rel, memory_order_relaxed)) return 0;
     // cas succesful: write data
     bucket->a = a;
     bucket->b = b;
@@ -169,15 +169,16 @@ cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
     _Atomic(uint32_t) *s_bucket = (_Atomic(uint32_t)*)cache_status + (hash % cache_size);
     cache_entry_t bucket = cache_table + (hash % cache_size);
 #endif
-    const uint32_t s = atomic_load_explicit(s_bucket, memory_order_acquire);
+    const uint32_t s = atomic_load_explicit(s_bucket, memory_order_relaxed);
     // abort if locked or if part of a 2-part cache entry
     if (s & 0xc0000000) return 0;
     // abort if different hash
     if ((s ^ (hash>>32)) & 0x3fff0000) return 0;
+    atomic_thread_fence(memory_order_acquire); // prevent LoadLoad reordering
     // abort if key different
     if (bucket->a != a || bucket->b != b || bucket->c != c) return 0;
     *res = bucket->res;
-    atomic_thread_fence(memory_order_seq_cst);
+    atomic_thread_fence(memory_order_acquire); // prevent LoadLoad reordering
     // abort if status field changed after compiler_barrier()
     return atomic_load_explicit(s_bucket, memory_order_relaxed) == s ? 1 : 0;
 }
@@ -201,13 +202,13 @@ cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
     // if ((s & 0x7fff0000) == hash_mask) return 0;
     // use cas to claim bucket
     const uint32_t new_s = ((s+1) & 0x0000ffff) | hash_mask;
-    if (!atomic_compare_exchange_weak(s_bucket, &s, new_s | 0x80000000)) return 0;
+    if (!atomic_compare_exchange_weak_explicit(s_bucket, &s, new_s | 0x80000000, memory_order_acq_rel, memory_order_relaxed)) return 0;
     // cas succesful: write data
     bucket->a = a;
     bucket->b = b;
     bucket->c = c;
     bucket->res = res;
-    // after compiler_barrier(), unlock status field
+    // unlock status field
     atomic_store_explicit(s_bucket, new_s, memory_order_release);
     return 1;
 }

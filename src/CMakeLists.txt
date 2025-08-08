@@ -8,13 +8,38 @@ target_sources(sylvan
     ldd.c
     mt.c
     mtbdd.c
-    nodes_llht.c
     obj.cpp
     refs.c
     sl.c
     stats.c
     zdd.c
 )
+
+# Choose the nodes table implementation
+# Valid values: list, llht, trie
+set(SYLVAN_NODES_TABLE "trie" CACHE STRING "Nodes table implementation (llht|trie|list)")
+set_property(CACHE SYLVAN_NODES_TABLE PROPERTY STRINGS llht trie list)
+
+# Normalize and select the source + an identifying macro
+string(TOLOWER "${SYLVAN_NODES_TABLE}" _sylvan_nodes_table)
+if(_sylvan_nodes_table STREQUAL "llht")
+  set(_sylvan_nodes_src nodes_llht.c)
+  set(_sylvan_nodes_def SYLVAN_NODES_TABLE_LLHT=1)
+elseif(_sylvan_nodes_table STREQUAL "trie")
+  set(_sylvan_nodes_src nodes_trie.c)
+  set(_sylvan_nodes_def SYLVAN_NODES_TABLE_TRIE=1)
+elseif(_sylvan_nodes_table STREQUAL "list")
+  set(_sylvan_nodes_src nodes_list.c)
+  set(_sylvan_nodes_def SYLVAN_NODES_TABLE_LIST=1)
+else()
+  message(FATAL_ERROR "Invalid SYLVAN_NODES_TABLE='${SYLVAN_NODES_TABLE}'. Valid: list, llht, trie")
+endif()
+
+message(STATUS "Sylvan: using '${_sylvan_nodes_table}' nodes table implementation (${_sylvan_nodes_src})")
+
+# Add the chosen implementation and a compile definition
+target_sources(sylvan PRIVATE ${_sylvan_nodes_src})
+target_compile_definitions(sylvan PRIVATE ${_sylvan_nodes_def})
 
 target_include_directories(sylvan
   PUBLIC

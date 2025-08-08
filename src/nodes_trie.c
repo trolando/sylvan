@@ -23,36 +23,29 @@
 #include <string.h> // memset
 
 /**
- * Lockless hash table (set) to store 16-byte keys.
- * Each unique key is associated with a 42-bit number.
+ * Manage nodes in an array, using a trie from the maximum child to ensure that
+ * nodes are unique.
+ *
+ * Node indices are 40-bit numbers.
  *
  * The set has support for stop-the-world garbage collection.
- * Methods nodes_clear, nodes_mark and nodes_rehash implement garbage collection.
- * During their execution, nodes_lookup is not allowed.
- *
- * WARNING: Originally, this table is designed to allow multiple tables.
- * However, this is not compatible with thread local storage for now.
- * Do not use multiple tables.
+ * Methods nodes_clear and nodes_reinsert implement garbage collection.
  */
 
 typedef struct nodes
 {
-    _Atomic(uint64_t)* table;        // table with hashes
-    uint8_t*           data;         // table with values
+    uint8_t*           data;         // array with the nodes
+    _Atomic(uint64_t)* first;        // array with the root of the trie
+    _Atomic(uint64_t)* next;         // array with the 'next' entries of the trie
     _Atomic(uint64_t)* bitmap1;      // ownership bitmap (per 512 buckets)
     _Atomic(uint64_t)* bitmap2;      // bitmap for "contains data"
     uint64_t*          bitmapc;      // bitmap for "use custom functions"
     size_t             max_size;     // maximum size of the hash table (for resizing)
     size_t             table_size;   // size of the hash table (number of slots) --> power of 2!
-#if LLMSSET_MASK
-    size_t             mask;         // size-1
-#endif
-    size_t             f_size;
-    nodes_hash_cb    hash_cb;      // custom hash function
-    nodes_equals_cb  equals_cb;    // custom equals function
-    nodes_create_cb  create_cb;    // custom create function
-    nodes_destroy_cb destroy_cb;   // custom destroy function
-    _Atomic(int16_t)   threshold;    // number of iterations for insertion until returning error
+    nodes_hash_cb      hash_cb;      // custom hash function
+    nodes_equals_cb    equals_cb;    // custom equals function
+    nodes_create_cb    create_cb;    // custom create function
+    nodes_destroy_cb   destroy_cb;   // custom destroy function
 } nodes_table;
 
 void* nodes_get_pointer(const nodes_table* dbs, size_t index)
@@ -60,8 +53,7 @@ void* nodes_get_pointer(const nodes_table* dbs, size_t index)
     return dbs->data + index * 16;
 }
 
-size_t
-nodes_get_max_size(const nodes_table* dbs)
+size_t nodes_get_max_size(const nodes_table* dbs)
 {
     return dbs->max_size;
 }
@@ -76,12 +68,6 @@ void nodes_set_size(nodes_table* dbs, size_t size)
     /* check bounds (don't be ridiculous) */
     if (size > 128 && size <= dbs->max_size) {
         dbs->table_size = size;
-#if LLMSSET_MASK
-        /* Warning: if size is not a power of two, you will get interesting behavior */
-        dbs->mask = dbs->table_size - 1;
-#endif
-        /* Set threshold: number of cache lines to probe before giving up on node insertion */
-        dbs->threshold = 192 - 2 * __builtin_clzll(dbs->table_size);
     }
 }
 
@@ -97,8 +83,7 @@ void nodes_reset_region_CALL(lace_worker* lace)
     SET_THREAD_LOCAL(my_region, my_region);
 }
 
-static uint64_t
-claim_data_bucket(const nodes_table* dbs)
+static uint64_t claim_data_bucket(const nodes_table* dbs)
 {
     LOCALIZE_THREAD_LOCAL(my_region, uint64_t);
 
@@ -143,16 +128,14 @@ restart:
     }
 }
 
-static void
-release_data_bucket(const nodes_table* dbs, uint64_t index)
+static void release_data_bucket(const nodes_table* dbs, uint64_t index)
 {
     _Atomic(uint64_t)* ptr = dbs->bitmap2 + (index/64);
     uint64_t mask = 0x8000000000000000LL >> (index&63);
     atomic_fetch_and(ptr, ~mask);
 }
 
-static void
-set_custom_bucket(const nodes_table* dbs, uint64_t index, int on)
+static void set_custom_bucket(const nodes_table* dbs, uint64_t index, int on)
 {
     uint64_t *ptr = dbs->bitmapc + (index/64);
     uint64_t mask = 0x8000000000000000LL >> (index&63);
@@ -160,102 +143,126 @@ set_custom_bucket(const nodes_table* dbs, uint64_t index, int on)
     else *ptr &= ~mask;
 }
 
-static int
-is_custom_bucket(const nodes_table* dbs, uint64_t index)
+static int is_custom_bucket(const nodes_table* dbs, uint64_t index)
 {
     uint64_t *ptr = dbs->bitmapc + (index/64);
     uint64_t mask = 0x8000000000000000LL >> (index&63);
     return (*ptr & mask) ? 1 : 0;
 }
 
-/*
- * CL_MASK and CL_MASK_R are for the probe sequence calculation.
- * With 64 bytes per cacheline, there are 8 64-bit values per cacheline.
- */
-// The LINE_SIZE is defined in lace.h
-static const uint64_t CL_MASK     = ~(((SYLVAN_CACHE_LINE_SIZE) / 8) - 1);
-static const uint64_t CL_MASK_R   = ((SYLVAN_CACHE_LINE_SIZE) / 8) - 1;
-
-/* 40 bits for the index, 24 bits for the hash */
-#define MASK_INDEX ((uint64_t)0x000000ffffffffff)
-#define MASK_HASH  ((uint64_t)0xffffff0000000000)
+static inline uint64_t ror64(uint64_t x, unsigned int k) {
+    return (x >> k) | (x << (64 - k));
+}
 
 static inline uint64_t
 nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_t b, int* created, const int custom)
 {
-    uint64_t hash_rehash = 14695981039346656037LLU;
-    if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
-    else hash_rehash = sylvan_tabhash16(a, b, hash_rehash);
+    // Determine index in the trie array (first)
+    uint64_t trie;
+    if (a & 0x4000000000000000) {
+        trie = 1; // it's a leaf
+    } else {
+        uint64_t A = a & 0x000000ffffffffff;
+        uint64_t B = b & 0x000000ffffffffff;
+        trie = A > B ? A : B;
+    }
 
-    const uint64_t step = (((hash_rehash >> 20) | 1) << 3);
-    const uint64_t hash = hash_rehash & MASK_HASH;
-    uint64_t idx, last, cidx = 0;
-    int i=0;
+    // Calculate the hash
+    uint64_t hash = 14695981039346656037LLU;
+    if (custom) hash = dbs->hash_cb(a, b, hash);
+    else hash = sylvan_tabhash16(a, b, hash);
+    uint64_t masked_hash = hash & 0xffffff0000000000;
+    uint64_t created_idx = 0;
 
-#if LLMSSET_MASK
-    last = idx = hash_rehash & dbs->mask;
-#else
-    last = idx = hash_rehash % dbs->table_size;
-#endif
+    // First check the root of the trie
+    uint64_t value = atomic_load_explicit(&dbs->first[trie], memory_order_relaxed);
+    if (value == 0) {
+        // Empty, so not yet inserted!
+        // Claim data bucket and write data
+        created_idx = claim_data_bucket(dbs);
+        if (created_idx == (uint64_t)-1) return 0; // failed to claim a data bucket!!
+        if (custom) dbs->create_cb(&a, &b);
+        uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*created_idx;
+        d_ptr[0] = a;
+        d_ptr[1] = b;
+        // Use compare-exchange to store in the trie
+        if (atomic_compare_exchange_strong(&dbs->first[trie], &value, masked_hash | created_idx)) {
+            if (custom) set_custom_bucket(dbs, created_idx, custom);
+            *created = 1;
+            return created_idx;
+        }
+    }
 
+    // Root of the trie already has a value. Compare it!
+    if (masked_hash == (value&0xffffff0000000000)) {
+        uint64_t d_idx = value & 0x000000ffffffffff;
+        uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
+        if (custom) {
+            if (dbs->equals_cb(a, b, d_ptr[0], d_ptr[1])) {
+                if (created_idx != 0) {
+                    dbs->destroy_cb(a, b);
+                    release_data_bucket(dbs, created_idx);
+                }
+                *created = 0;
+                return d_idx;
+            }
+        } else {
+            if (d_ptr[0] == a && d_ptr[1] == b) {
+                if (created_idx != 0) {
+                    release_data_bucket(dbs, created_idx);
+                }
+                *created = 0;
+                return d_idx;
+            }
+        }
+    }
+
+    // Was a different value, continue trying to find a place.
     for (;;) {
-        _Atomic(uint64_t)* bucket = dbs->table + idx;
-        uint64_t v = atomic_load_explicit(bucket, memory_order_acquire);
-
-        if (v == 0) {
-            if (cidx == 0) {
+        uint64_t n_idx = trie*2 + (hash&1);
+        hash = ror64(hash, 1);
+        value = atomic_load_explicit(&dbs->next[n_idx], memory_order_relaxed);
+        if (value == 0) {
+            if (created_idx == 0) {
                 // Claim data bucket and write data
-                cidx = claim_data_bucket(dbs);
-                if (cidx == (uint64_t)-1) return 0; // failed to claim a data bucket
+                created_idx = claim_data_bucket(dbs);
+                if (created_idx == (uint64_t)-1) return 0; // failed to claim a data bucket!!
                 if (custom) dbs->create_cb(&a, &b);
-                uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*cidx;
+                uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*created_idx;
                 d_ptr[0] = a;
                 d_ptr[1] = b;
             }
-            if (atomic_compare_exchange_strong(bucket, &v, hash | cidx)) {
-                if (custom) set_custom_bucket(dbs, cidx, custom);
+            if (atomic_compare_exchange_strong(&dbs->next[n_idx], &value, masked_hash | created_idx)) {
+                if (custom) set_custom_bucket(dbs, created_idx, custom);
                 *created = 1;
-                return cidx;
+                return created_idx;
             }
         }
-
-        if (hash == (v & MASK_HASH)) {
-            uint64_t d_idx = v & MASK_INDEX;
+        // Compare the data
+        if (masked_hash == (value&0xffffff0000000000)) {
+            uint64_t d_idx = value & 0x000000ffffffffff;
             uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
             if (custom) {
                 if (dbs->equals_cb(a, b, d_ptr[0], d_ptr[1])) {
-                    if (cidx != 0) {
+                    if (created_idx != 0) {
                         dbs->destroy_cb(a, b);
-                        release_data_bucket(dbs, cidx);
+                        release_data_bucket(dbs, created_idx);
                     }
                     *created = 0;
                     return d_idx;
                 }
             } else {
                 if (d_ptr[0] == a && d_ptr[1] == b) {
-                    if (cidx != 0) release_data_bucket(dbs, cidx);
+                    if (created_idx != 0) {
+                        release_data_bucket(dbs, created_idx);
+                    }
                     *created = 0;
                     return d_idx;
                 }
             }
         }
-
-        sylvan_stats_count(LLMSSET_LOOKUP);
-
-        // find next idx on probe sequence
-        idx = (idx & CL_MASK) | ((idx+1) & CL_MASK_R);
-        if (idx == last) {
-            if (++i == dbs->threshold) return 0; // failed to find empty spot in probe sequence
-
-            // go to next cache line in probe sequence
-            hash_rehash += step;
-
-#if LLMSSET_MASK
-            last = idx = hash_rehash & dbs->mask;
-#else
-            last = idx = hash_rehash % dbs->table_size;
-#endif
-        }
+        // Not equal, continue...
+        trie = value&0x000000ffffffffff;
     }
 }
 
@@ -278,44 +285,38 @@ nodes_rehash_bucket(nodes_table* dbs, uint64_t d_idx)
     const uint64_t a = d_ptr[0];
     const uint64_t b = d_ptr[1];
 
-    uint64_t hash_rehash = 14695981039346656037LLU;
+    // Calculate the hash
+    uint64_t hash = 14695981039346656037LLU;
     const int custom = is_custom_bucket(dbs, d_idx) ? 1 : 0;
-    if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
-    else hash_rehash = sylvan_tabhash16(a, b, hash_rehash);
-    const uint64_t step = (((hash_rehash >> 20) | 1) << 3);
-    const uint64_t new_v = (hash_rehash & MASK_HASH) | d_idx;
-    int i=0;
+    if (custom) hash = dbs->hash_cb(a, b, hash);
+    else hash = sylvan_tabhash16(a, b, hash);
+    uint64_t masked_hash = hash & 0xffffff0000000000;
 
-    uint64_t idx, last;
-#if LLMSSET_MASK
-    last = idx = hash_rehash & dbs->mask;
-#else
-    last = idx = hash_rehash % dbs->table_size;
-#endif
+    // Determine trie root.
+    uint64_t trie;
+    if (a & 0x4000000000000000) {
+        trie = 1; // it's a leaf
+    } else {
+        uint64_t A = a & 0x000000ffffffffff;
+        uint64_t B = b & 0x000000ffffffffff;
+        trie = A > B ? A : B;
+    }
 
+    // First see if it's in trie...
+    uint64_t value = atomic_load_explicit(&dbs->first[trie], memory_order_relaxed);
+    if (value == 0) {
+        if (atomic_compare_exchange_strong(&dbs->first[trie], &value, masked_hash | d_idx)) return 1;
+    }
+
+    // didn't compare! follow trie
     for (;;) {
-        _Atomic(uint64_t)* bucket = &dbs->table[idx];
-        uint64_t v = atomic_load_explicit(bucket, memory_order_acquire);
-        if (v == 0 && atomic_compare_exchange_strong(bucket, &v, new_v)) return 1;
-
-        // find next idx on probe sequence
-        idx = (idx & CL_MASK) | ((idx+1) & CL_MASK_R);
-        if (idx == last) {
-            if (++i == atomic_load_explicit(&dbs->threshold, memory_order_relaxed)) {
-                // failed to find empty spot in probe sequence
-                // solution: increase probe sequence length...
-                atomic_fetch_add(&dbs->threshold, 1);
-            }
-
-            // go to next cache line in probe sequence
-            hash_rehash += step;
-
-#if LLMSSET_MASK
-            last = idx = hash_rehash & dbs->mask;
-#else
-            last = idx = hash_rehash % dbs->table_size;
-#endif
+        uint64_t n_idx = trie*2 + (hash&1);
+        hash = ror64(hash, 1);
+        value = atomic_load_explicit(&dbs->next[n_idx], memory_order_relaxed);
+        if (value == 0) {
+            if (atomic_compare_exchange_strong(&dbs->next[n_idx], &value, masked_hash | d_idx)) return 1;
         }
+        trie = value&0x000000ffffffffff;
     }
 }
 
@@ -359,8 +360,9 @@ nodes_create(size_t initial_size, size_t max_size)
     /* This implementation of "resizable hash table" allocates the max_size table in virtual memory,
        but only uses the "actual size" part in real memory */
 
-    dbs->table = (_Atomic(uint64_t)*) alloc_aligned(dbs->max_size * 8);
     dbs->data = (uint8_t*) alloc_aligned(dbs->max_size * 16);
+    dbs->first = (_Atomic(uint64_t)*) alloc_aligned(dbs->max_size * 8);
+    dbs->next = (_Atomic(uint64_t)*) alloc_aligned(dbs->max_size * 16);
 
     /* Also allocate bitmaps. Each region is 64*8 = 512 buckets.
        Overhead of bitmap1: 1 bit per 4096 bucket.
@@ -371,13 +373,14 @@ nodes_create(size_t initial_size, size_t max_size)
     dbs->bitmap2 = (_Atomic(uint64_t)*)alloc_aligned(dbs->max_size / 8);
     dbs->bitmapc = (uint64_t*)alloc_aligned(dbs->max_size / 8);
 
-    if (dbs->table == 0 || dbs->data == 0 || dbs->bitmap1 == 0 || dbs->bitmap2 == 0 || dbs->bitmapc == 0) {
+    if (dbs->data == 0 || dbs->first == 0 || dbs->next == 0 || dbs->bitmap1 == 0 || dbs->bitmap2 == 0 || dbs->bitmapc == 0) {
         fprintf(stderr, "nodes_create: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
     }
 
 #if defined(madvise) && defined(MADV_RANDOM)
-    madvise(dbs->table, dbs->max_size * 8, MADV_RANDOM);
+    madvise(dbs->first, dbs->max_size * 8, MADV_RANDOM);
+    madvise(dbs->next, dbs->max_size * 16, MADV_RANDOM);
 #endif
 
     // forbid first two positions (index 0 and 1)
@@ -403,8 +406,9 @@ nodes_create(size_t initial_size, size_t max_size)
 
 void nodes_free(nodes_table* dbs)
 {
-    free_aligned(dbs->table, dbs->max_size * 8);
     free_aligned(dbs->data, dbs->max_size * 16);
+    free_aligned(dbs->first, dbs->max_size * 8);
+    free_aligned(dbs->next, dbs->max_size * 16);
     free_aligned(dbs->bitmap1, dbs->max_size / (512*8));
     free_aligned(dbs->bitmap2, dbs->max_size / 8);
     free_aligned(dbs->bitmapc, dbs->max_size / 8);
@@ -415,7 +419,8 @@ void nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
 {
     clear_aligned(dbs->bitmap1, dbs->max_size / (512*8));
     clear_aligned(dbs->bitmap2, dbs->max_size / 8);
-    clear_aligned(dbs->table, dbs->max_size * 8);
+    clear_aligned(dbs->first, dbs->max_size * 8);
+    clear_aligned(dbs->next, dbs->max_size * 16);
 
     // forbid first two positions (index 0 and 1)
     dbs->bitmap2[0] = 0xc000000000000000LL;
@@ -423,16 +428,14 @@ void nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
     nodes_reset_region_TOGETHER();
 }
 
-int
-nodes_is_marked(const nodes_table* dbs, uint64_t index)
+int nodes_is_marked(const nodes_table* dbs, uint64_t index)
 {
     _Atomic(uint64_t)* ptr = dbs->bitmap2 + (index/64);
     uint64_t mask = 0x8000000000000000LL >> (index&63);
     return (atomic_load_explicit(ptr, memory_order_relaxed) & mask) ? 1 : 0;
 }
 
-int
-nodes_mark(const nodes_table* dbs, uint64_t index)
+int nodes_mark(const nodes_table* dbs, uint64_t index)
 {
     _Atomic(uint64_t)* ptr = dbs->bitmap2 + (index/64);
     uint64_t mask = 0x8000000000000000LL >> (index&63);

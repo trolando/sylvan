@@ -8,7 +8,9 @@ target_sources(sylvan
     ldd.c
     mt.c
     mtbdd.c
-    nodes_llht.c
+    #nodes_trie.c
+    #nodes_llht.c
+    nodes_list.c
     obj.cpp
     refs.c
     sl.c

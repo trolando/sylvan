@@ -42,6 +42,13 @@ Bdd::operator=(const Bdd& right)
     return *this;
 }
 
+Bdd&
+Bdd::operator=(Bdd&& right)
+{
+  bdd = right.bdd;
+  return *this;
+}
+
 bool
 Bdd::operator<=(const Bdd& other) const
 {
@@ -88,8 +95,7 @@ Bdd::operator*(const Bdd& other) const
 Bdd&
 Bdd::operator*=(const Bdd& other)
 {
-    bdd = sylvan_and(bdd, other.bdd);
-    return *this;
+    return (*this = *this * other);
 }
 
 Bdd
@@ -101,8 +107,7 @@ Bdd::operator&(const Bdd& other) const
 Bdd&
 Bdd::operator&=(const Bdd& other)
 {
-    bdd = sylvan_and(bdd, other.bdd);
-    return *this;
+    return (*this = *this & other);
 }
 
 Bdd
@@ -114,8 +119,7 @@ Bdd::operator+(const Bdd& other) const
 Bdd&
 Bdd::operator+=(const Bdd& other)
 {
-    bdd = sylvan_or(bdd, other.bdd);
-    return *this;
+    return (*this = *this + other);
 }
 
 Bdd
@@ -127,8 +131,7 @@ Bdd::operator|(const Bdd& other) const
 Bdd&
 Bdd::operator|=(const Bdd& other)
 {
-    bdd = sylvan_or(bdd, other.bdd);
-    return *this;
+    return (*this = *this | other);
 }
 
 Bdd
@@ -140,8 +143,7 @@ Bdd::operator^(const Bdd& other) const
 Bdd&
 Bdd::operator^=(const Bdd& other)
 {
-    bdd = sylvan_xor(bdd, other.bdd);
-    return *this;
+    return (*this = *this ^ other);
 }
 
 Bdd
@@ -153,8 +155,7 @@ Bdd::operator-(const Bdd& other) const
 Bdd&
 Bdd::operator-=(const Bdd& other)
 {
-    bdd = sylvan_and(bdd, sylvan_not(other.bdd));
-    return *this;
+    return (*this = *this - other);
 }
 
 Bdd
@@ -753,6 +754,13 @@ Mtbdd::operator=(const Mtbdd& right)
     return *this;
 }
 
+Mtbdd&
+Mtbdd::operator=(Mtbdd&& right)
+{
+  mtbdd = right.mtbdd;
+  return *this;
+}
+
 Mtbdd
 Mtbdd::operator!() const
 {
@@ -774,8 +782,7 @@ Mtbdd::operator*(const Mtbdd& other) const
 Mtbdd&
 Mtbdd::operator*=(const Mtbdd& other)
 {
-    mtbdd = mtbdd_times(mtbdd, other.mtbdd);
-    return *this;
+    return (*this = *this * other);
 }
 
 Mtbdd
@@ -787,8 +794,7 @@ Mtbdd::operator+(const Mtbdd& other) const
 Mtbdd&
 Mtbdd::operator+=(const Mtbdd& other)
 {
-    mtbdd = mtbdd_plus(mtbdd, other.mtbdd);
-    return *this;
+    return (*this = *this + other);
 }
 
 Mtbdd
@@ -800,8 +806,7 @@ Mtbdd::operator-(const Mtbdd& other) const
 Mtbdd&
 Mtbdd::operator-=(const Mtbdd& other)
 {
-    mtbdd = mtbdd_minus(mtbdd, other.mtbdd);
-    return *this;
+    return (*this = *this - other);
 }
 
 Mtbdd

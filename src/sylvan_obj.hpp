@@ -35,11 +35,47 @@ class Bdd {
     friend class Mtbdd;
 
 public:
-    Bdd() { bdd = sylvan_false; sylvan_protect(&bdd); }
-    Bdd(const BDD from) : bdd(from) { sylvan_protect(&bdd); }
-    Bdd(const Bdd &from) : bdd(from.bdd) { sylvan_protect(&bdd); }
-    Bdd(const uint32_t var) { bdd = sylvan_ithvar(var); sylvan_protect(&bdd); }
-    ~Bdd() { sylvan_unprotect(&bdd); }
+    /**
+     * @brief Wraps a raw BDD from Sylvan's C interface into a Bdd object.
+     */
+    Bdd(const BDD from)
+        : bdd(from)
+    {
+      sylvan_protect(&bdd);
+    }
+
+    /**
+     * @brief Default constructor, representing *False*.
+     */
+    Bdd()
+        : Bdd(sylvan_false)
+    {}
+
+    /**
+     * @brief Construction of the Bdd represnting a variable index in its positive form.
+     */
+    Bdd(const uint32_t var)
+        : Bdd(sylvan_ithvar(var))
+    {}
+
+    /**
+     * @brief Copy construction of another Bdd.
+     */
+    Bdd(const Bdd &from)
+        : Bdd(from.bdd)
+    {}
+
+    /**
+     * @brief Move construction from Bdd.
+     */
+    Bdd(Bdd &&from)
+        : Bdd(from.bdd)
+    {}
+
+    ~Bdd()
+    {
+        sylvan_unprotect(&bdd);
+    }
 
     /**
      * @brief Creates a Bdd representing just the variable index in its positive form
@@ -82,6 +118,7 @@ public:
     bool operator==(const Bdd& other) const;
     bool operator!=(const Bdd& other) const;
     Bdd& operator=(const Bdd& right);
+    Bdd& operator=(Bdd&& right);
     bool operator<=(const Bdd& other) const;
     bool operator>=(const Bdd& other) const;
     bool operator<(const Bdd& other) const;
@@ -343,57 +380,69 @@ public:
     /**
      * @brief Create a new empty set.
      */
-    BddSet() : set(Bdd::bddOne()) {}
+    BddSet()
+        : set(Bdd::bddOne())
+    {}
 
     /**
      * @brief Wrap the BDD cube <other> in a set.
      */
-    BddSet(const Bdd &other) : set(other) {}
+    BddSet(const Bdd &other)
+        : set(other)
+    {}
 
     /**
      * @brief Create a copy of the set <other>.
      */
-    BddSet(const BddSet &other) : set(other.set) {}
+    BddSet(const BddSet &other)
+        : set(other.set)
+    {}
 
     /**
      * @brief Add the variable <variable> to this set.
      */
-    void add(uint32_t variable) {
+    void add(uint32_t variable)
+    {
         set *= Bdd::bddVar(variable);
     }
 
     /**
      * @brief Add all variables in the set <other> to this set.
      */
-    void add(BddSet &other) {
+    void add(BddSet &other)
+    {
         set *= other.set;
     }
 
     /**
      * @brief Remove the variable <variable> from this set.
      */
-    void remove(uint32_t variable) {
+    void remove(uint32_t variable)
+    {
         set = set.ExistAbstract(Bdd::bddVar(variable));
     }
 
     /**
      * @brief Remove all variables in the set <other> from this set.
      */
-    void remove(BddSet &other) {
+    void remove(BddSet &other)
+    {
         set = set.ExistAbstract(other.set);
     }
 
     /**
      * @brief Retrieve the head of the set. (The first variable.)
      */
-    uint32_t TopVar() const {
+    uint32_t TopVar() const
+    {
         return set.TopVar();
     }
 
     /**
      * @brief Retrieve the tail of the set. (The set containing all but the first variables.)
      */
-    BddSet Next() const {
+    BddSet Next() const
+    {
         Bdd then = set.Then();
         return BddSet(then);
     }
@@ -401,14 +450,16 @@ public:
     /**
      * @brief Return true if this set is empty, or false otherwise.
      */
-    bool isEmpty() const {
+    bool isEmpty() const
+    {
         return set.isOne();
     }
 
     /**
      * @brief Return true if this set contains the variable <variable>, or false otherwise.
      */
-    bool contains(uint32_t variable) const {
+    bool contains(uint32_t variable) const
+    {
         if (isEmpty()) return false;
         else if (TopVar() == variable) return true;
         else return Next().contains(variable);
@@ -417,7 +468,8 @@ public:
     /**
      * @brief Return the number of variables in this set.
      */
-    size_t size() const {
+    size_t size() const
+    {
         if (isEmpty()) return 0;
         else return 1 + Next().size();
     }
@@ -426,7 +478,8 @@ public:
      * @brief Create a set containing the <length> variables in <arr>.
      * It is advised to have the variables in <arr> in ascending order.
      */
-    static BddSet fromArray(BDDVAR *arr, size_t length) {
+    static BddSet fromArray(BDDVAR *arr, size_t length)
+    {
         BddSet set;
         for (size_t i = 0; i < length; i++) {
             set.add(arr[length-i-1]);
@@ -438,7 +491,8 @@ public:
      * @brief Create a set containing the variables in <variables>.
      * It is advised to have the variables in <arr> in ascending order.
      */
-    static BddSet fromVector(const std::vector<Bdd> variables) {
+    static BddSet fromVector(const std::vector<Bdd> variables)
+    {
         BddSet set;
         for (int i=variables.size()-1; i>=0; i--) {
             set.set *= variables[i];
@@ -450,7 +504,8 @@ public:
      * @brief Create a set containing the variables in <variables>.
      * It is advised to have the variables in <arr> in ascending order.
      */
-    static BddSet fromVector(const std::vector<uint32_t> variables) {
+    static BddSet fromVector(const std::vector<uint32_t> variables)
+    {
         BddSet set;
         for (int i=variables.size()-1; i>=0; i--) {
             set.add(variables[i]);
@@ -462,7 +517,8 @@ public:
      * @brief Write all variables in this set to <arr>.
      * @param arr An array of at least size this.size().
      */
-    void toArray(BDDVAR *arr) const {
+    void toArray(BDDVAR *arr) const
+    {
         if (!isEmpty()) {
             *arr = TopVar();
             Next().toArray(arr+1);
@@ -472,7 +528,8 @@ public:
     /**
      * @brief Return the vector of all variables in this set.
      */
-    std::vector<uint32_t> toVector() const {
+    std::vector<uint32_t> toVector() const
+    {
         std::vector<uint32_t> result;
         Bdd x = set;
         while (!x.isOne()) {
@@ -487,12 +544,30 @@ class BddMap
 {
     friend class Bdd;
     BDD bdd;
-    BddMap(const BDD from) : bdd(from) { sylvan_protect(&bdd); }
-    BddMap(const Bdd &from) : bdd(from.bdd) { sylvan_protect(&bdd); }
+
+    BddMap(const BDD from)
+        : bdd(from)
+    {
+        sylvan_protect(&bdd);
+    }
+
+    BddMap(const Bdd &from)
+        : BddMap(from.bdd)
+    {}
+
 public:
-    BddMap(const BddMap& from) : bdd(from.bdd) { sylvan_protect(&bdd); }
-    BddMap() : bdd(sylvan_map_empty()) { sylvan_protect(&bdd); }
-    ~BddMap() { sylvan_unprotect(&bdd); }
+    BddMap()
+        : BddMap(sylvan_map_empty())
+    {}
+
+    BddMap(const BddMap& from)
+        : BddMap(from.bdd)
+    {}
+
+    ~BddMap()
+    {
+        sylvan_unprotect(&bdd);
+    }
 
     BddMap(uint32_t key_variable, const Bdd value);
 
@@ -529,11 +604,47 @@ class Mtbdd {
     friend class MtbddMap;
 
 public:
-    Mtbdd() { mtbdd = sylvan_false; mtbdd_protect(&mtbdd); }
-    Mtbdd(const MTBDD from) : mtbdd(from) { mtbdd_protect(&mtbdd); }
-    Mtbdd(const Mtbdd &from) : mtbdd(from.mtbdd) { mtbdd_protect(&mtbdd); }
-    Mtbdd(const Bdd &from) : mtbdd(from.bdd) { mtbdd_protect(&mtbdd); }
-    ~Mtbdd() { mtbdd_unprotect(&mtbdd); }
+    /**
+     * @brief Wrap a raw MTBDD from Sylvan's C interface into an Mtbdd object.
+     */
+    Mtbdd(const MTBDD from)
+        : mtbdd(from)
+    {
+      mtbdd_protect(&mtbdd);
+    }
+
+    /**
+     * @brief Default construction, representing the Boolean *False*.
+     */
+    Mtbdd()
+        : Mtbdd(sylvan_false)
+    {}
+
+    /**
+     * @brief Copy construction
+     */
+    Mtbdd(const Mtbdd &from)
+        : Mtbdd(from.mtbdd)
+    {}
+
+    /**
+     * @brief Move construction
+     */
+    Mtbdd(Mtbdd &&from)
+        : Mtbdd(from.mtbdd)
+    {}
+
+    /**
+     * @brief Conversion construction from Bdd object.
+     */
+    Mtbdd(const Bdd &from)
+        : Mtbdd(from.bdd)
+    {}
+
+    ~Mtbdd()
+    {
+        mtbdd_unprotect(&mtbdd);
+    }
 
     /**
      * @brief Creates a Mtbdd leaf representing the int64 value <value>
@@ -600,6 +711,7 @@ public:
     bool operator==(const Mtbdd& other) const;
     bool operator!=(const Mtbdd& other) const;
     Mtbdd& operator=(const Mtbdd& right);
+    Mtbdd& operator=(Mtbdd&& right);
     Mtbdd operator!() const;
     Mtbdd operator~() const;
     Mtbdd operator*(const Mtbdd& other) const;
@@ -786,11 +898,35 @@ class MtbddMap
 {
     friend class Mtbdd;
     MTBDD mtbdd;
-    MtbddMap(MTBDD from) : mtbdd(from) { mtbdd_protect(&mtbdd); }
-    MtbddMap(Mtbdd &from) : mtbdd(from.mtbdd) { mtbdd_protect(&mtbdd); }
+
+    /**
+     * @brief Wrap a raw MTBDD from Sylvan's C interface into an MtbddMap object.
+     */
+    MtbddMap(MTBDD from)
+        : mtbdd(from)
+    {
+        mtbdd_protect(&mtbdd);
+    }
+
+    /**
+     * @brief Conversion construction
+     */
+    MtbddMap(Mtbdd &from)
+      : MtbddMap(from.mtbdd)
+    {}
+
 public:
-    MtbddMap() : mtbdd(mtbdd_map_empty()) { mtbdd_protect(&mtbdd); }
-    ~MtbddMap() { mtbdd_unprotect(&mtbdd); }
+    /**
+     * @brief Default construction of an empty map.
+     */
+    MtbddMap()
+        : MtbddMap(mtbdd_map_empty())
+    {}
+
+    ~MtbddMap()
+    {
+        mtbdd_unprotect(&mtbdd);
+    }
 
     MtbddMap(uint32_t key_variable, Mtbdd value);
 

@@ -113,18 +113,7 @@ void zdd_gc_mark_rec_CALL(lace_worker* lace, ZDD zdd)
 {
     if (zdd == zdd_true) return;
     if (zdd == zdd_false) return;
-
-    // Mark, and if returns 0, we are done
-    if (nodes_mark(nodes, ZDD_GETINDEX(zdd)) != 0) {
-        // The node was not yet marked, so go recursive if not a leaf
-        zddnode_t n = ZDD_GETNODE(zdd);
-        if (!zddnode_isleaf(n)) {
-            // Recursively mark low and high
-            zdd_gc_mark_rec_SPAWN(lace, zddnode_getlow(n));
-            zdd_gc_mark_rec_CALL(lace, zddnode_gethigh(n));
-            zdd_gc_mark_rec_SYNC(lace);
-        }
-    }
+    nodes_mark_rec_CALL(lace, nodes, ZDD_GETINDEX(zdd));
 }
 
 /**
@@ -420,7 +409,7 @@ zdd_makeleaf(uint16_t type, uint64_t value)
 
         index = custom ? nodes_lookupc(nodes, n.a, n.b, &created) : nodes_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_marked(nodes), nodes_get_size(nodes));
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
             exit(1);
         }
     }
@@ -467,7 +456,7 @@ _zdd_makenode(uint32_t var, ZDD low, ZDD high)
 
         index = nodes_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_marked(nodes), nodes_get_size(nodes));
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
             exit(1);
         }
     }
@@ -497,7 +486,7 @@ zdd_makemapnode(uint32_t var, ZDD low, ZDD high)
 
         index = nodes_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_marked(nodes), nodes_get_size(nodes));
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
             exit(1);
         }
     }

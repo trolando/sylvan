@@ -84,6 +84,12 @@ set_target_properties(sylvan PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin
 )
 
+configure_file(${PROJECT_SOURCE_DIR}/include/sylvan/config.h.in ${PROJECT_BINARY_DIR}/include/sylvan/config.h @ONLY)
+target_include_directories(sylvan
+  PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
+)
+
 include(GNUInstallDirs)
 
 install(TARGETS sylvan
@@ -97,7 +103,6 @@ set(SYLVAN_PUBLIC_HDRS
     ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/bdd.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/cache.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/config.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/common.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/hash.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/ldd.h
@@ -123,6 +128,9 @@ foreach(hdr IN LISTS SYLVAN_PUBLIC_HDRS)
     get_filename_component(dir "${rel}" DIRECTORY)
     install(FILES "${hdr}" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/sylvan/${dir}")
 endforeach()
+
+# special case for config.h
+install(FILES "${PROJECT_BINARY_DIR}/include/sylvan/config.h" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/sylvan")
 
 install(EXPORT sylvan-targets
     FILE sylvan-targets.cmake

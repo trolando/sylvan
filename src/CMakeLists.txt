@@ -33,6 +33,9 @@ target_compile_features(sylvan PUBLIC c_std_11 cxx_std_11)
 
 option(SYLVAN_NATIVE_OPT "Enable -march=native for compiler optimizations" OFF)
 
+include(DetectCacheLineSize)
+detect_cache_line_size(SYLVAN_CACHE_LINE_SIZE DEFAULT 64)
+
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(sylvan PRIVATE
         $<$<CONFIG:Debug>:-O0 -Wall -Wextra -pipe>

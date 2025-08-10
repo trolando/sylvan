@@ -241,6 +241,7 @@ void lddmc_serialize_reset(void);
 void lddmc_serialize_totext(FILE *out);
 void lddmc_serialize_tofile(FILE *out);
 void lddmc_serialize_fromfile(FILE *in);
+void lddmc_serialize_fromfile_old(FILE *in);
 
 /**
  * Infrastructure for internal references.

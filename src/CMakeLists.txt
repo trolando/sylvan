@@ -144,6 +144,9 @@ endif()
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
+include(DetectCacheLineSize)
+detect_cache_line_size(SYLVAN_CACHE_LINE_SIZE DEFAULT 64)
+
 file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/src")
 configure_file(
     ${PROJECT_SOURCE_DIR}/src/sylvan_config.h.in

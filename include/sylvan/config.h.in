@@ -25,6 +25,9 @@
 /* Enable/disable using mmap to allocate large amounts of memory */
 #cmakedefine01 SYLVAN_USE_MMAP
 
+/* Size of a cache line on this system */
+#cmakedefine SYLVAN_CACHE_LINE_SIZE @SYLVAN_CACHE_LINE_SIZE@
+
 /* Aggressive or conservative resizing strategy */
 #ifndef SYLVAN_AGGRESSIVE_RESIZE
 #define SYLVAN_AGGRESSIVE_RESIZE 1

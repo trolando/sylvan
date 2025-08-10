@@ -92,14 +92,7 @@ void mtbdd_gc_mark_rec_CALL(lace_worker* lace, MDD mtbdd)
     if (mtbdd == mtbdd_true) return;
     if (mtbdd == mtbdd_false) return;
 
-    if (nodes_mark(nodes, MTBDD_STRIPMARK(mtbdd))) {
-        mtbddnode_t n = MTBDD_GETNODE(mtbdd);
-        if (!mtbddnode_isleaf(n)) {
-            mtbdd_gc_mark_rec_SPAWN(lace, mtbddnode_getlow(n));
-            mtbdd_gc_mark_rec_CALL(lace, mtbddnode_gethigh(n));
-            mtbdd_gc_mark_rec_SYNC(lace);
-        }
-    }
+    nodes_mark_rec_CALL(lace, nodes, MTBDD_STRIPMARK(mtbdd));
 }
 
 /**
@@ -446,7 +439,7 @@ mtbdd_makeleaf(uint32_t type, uint64_t value)
 
         index = custom ? nodes_lookupc(nodes, n.a, n.b, &created) : nodes_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_marked(nodes), nodes_get_size(nodes));
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
             exit(1);
         }
     }
@@ -469,7 +462,7 @@ _mtbdd_makenode_gc(MTBDD low, MTBDD high)
 void SYLVAN_NOINLINE
 _mtbdd_makenode_exit(void)
 {
-    fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_marked(nodes), nodes_get_size(nodes));
+    fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
     exit(1);
 }
 
@@ -521,7 +514,7 @@ mtbdd_makemapnode(uint32_t var, MTBDD low, MTBDD high)
 
         index = nodes_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_marked(nodes), nodes_get_size(nodes));
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
             exit(1);
         }
     }

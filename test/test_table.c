@@ -20,12 +20,20 @@ main(void)
     sylvan_free_aligned(memory, 4096);
 
     nodes_table *table = nodes_create(4096, 4096);
+    int created = 0;
+    uint64_t first = nodes_lookup(table, UINT64_C(0x400000000000004a), 0, &created);
+    test_assert(first > 1 && created);
+    uint64_t second = nodes_lookup(table, UINT64_C(0x400000000000004b), 0, &created);
+    test_assert(second > 1 && second != first && created);
 
-    test_assert(nodes_mark(table, 74));
-    test_assert(nodes_is_marked(table, 74));
-    test_assert(!nodes_is_marked(table, 73));
-    test_assert(!nodes_is_marked(table, 75));
-    test_assert(nodes_mark(table, 75));
+    nodes_clear(table);
+    test_assert(!nodes_is_marked(table, first));
+    test_assert(!nodes_is_marked(table, second));
+    nodes_mark_rec(table, first);
+    test_assert(nodes_is_marked(table, first));
+    test_assert(!nodes_is_marked(table, second));
+    nodes_mark_rec(table, second);
+    test_assert(nodes_is_marked(table, second));
 
     nodes_free(table);
     lace_stop();

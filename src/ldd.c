@@ -2636,6 +2636,41 @@ lddmc_serialize_fromfile(FILE *in)
     }
 }
 
+void
+lddmc_serialize_fromfile_old(FILE *in)
+{
+    size_t count, i;
+    if (fread(&count, sizeof(size_t), 1, in) != 1) {
+        // TODO FIXME return error
+        printf("sylvan_serialize_fromfile: file format error, giving up\n");
+        exit(-1);
+    }
+
+    for (i=1; i<=count; i++) {
+        struct mddnode node;
+        if (fread(&node, sizeof(struct mddnode), 1, in) != 1) {
+            // TODO FIXME return error
+            printf("sylvan_serialize_fromfile: file format error, giving up\n");
+            exit(-1);
+        }
+
+        assert(mddnode_old_getright(&node) <= lddmc_ser_done+1);
+        assert(mddnode_old_getdown(&node) <= lddmc_ser_done+1);
+
+        MDD right = lddmc_serialize_get_reversed(mddnode_old_getright(&node));
+        MDD down = lddmc_serialize_get_reversed(mddnode_old_getdown(&node));
+
+        struct lddmc_ser s;
+        if (mddnode_old_getcopy(&node)) s.mdd = lddmc_make_copynode(down, right);
+        else s.mdd = lddmc_makenode(mddnode_old_getvalue(&node), down, right);
+        s.assigned = lddmc_ser_done+2; // starts at 0 but we want 2-based...
+        lddmc_ser_done++;
+
+        lddmc_ser_insert(&lddmc_ser_set, &s);
+        lddmc_ser_reversed_insert(&lddmc_ser_reversed_set, &s);
+    }
+}
+
 void lddmc_gc_mark_serialize_CALL(lace_worker* lace)
 {
     struct lddmc_ser *s;

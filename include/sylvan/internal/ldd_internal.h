@@ -27,8 +27,8 @@
 /**
  * LDD node structure
  *
- * RmRR RRRR RRRR VVVV | VVVV DcDD DDDD DDDD (little endian - in memory)
- * VVVV RRRR RRRR RRRm | DDDD DDDD DDDc VVVV (big endian)
+ * RRRR RRRR RRVV VV-- | DDDD DDDD DDVV VV--
+ * 
  */
 typedef struct __attribute__((packed)) mddnode {
     uint64_t a, b;
@@ -43,70 +43,82 @@ LDD_GETNODE(MDD mdd)
 static inline uint32_t __attribute__((unused))
 mddnode_getvalue(mddnode_t n)
 {
-    return *(uint32_t*)((uint8_t*)n+6);
+    return ((n->a >> 40) & 0xffff) | ((n->b >> 24) & 0xffff0000);
 }
 
 static inline uint8_t __attribute__((unused))
 mddnode_getmark(mddnode_t n)
 {
-    return n->a & 1;
+    return n->a & 0x4000000000000000 ? 1 : 0;
 }
 
 static inline uint8_t __attribute__((unused))
 mddnode_getcopy(mddnode_t n)
 {
-    return n->b & 0x10000 ? 1 : 0;
+    return n->a & 0x8000000000000000 ? 1 : 0;
 }
 
 static inline uint64_t __attribute__((unused))
 mddnode_getright(mddnode_t n)
 {
-    return (n->a & 0x0000ffffffffffff) >> 1;
+    return n->a & 0x000000ffffffffff;
 }
 
 static inline uint64_t __attribute__((unused))
 mddnode_getdown(mddnode_t n)
 {
-    return n->b >> 17;
+    return n->b & 0x000000ffffffffff;
 }
 
-static inline void __attribute__((unused))
-mddnode_setvalue(mddnode_t n, uint32_t value)
+static inline uint32_t __attribute__((unused))
+mddnode_old_getvalue(mddnode_t n)
 {
-    *(uint32_t*)((uint8_t*)n+6) = value;
+    return *(uint32_t*)((uint8_t*)n+6);
+}
+
+static inline uint8_t __attribute__((unused))
+mddnode_old_getmark(mddnode_t n)
+{
+    return n->a & 1;
+}
+
+static inline uint8_t __attribute__((unused))
+mddnode_old_getcopy(mddnode_t n)
+{
+    return n->b & 0x10000 ? 1 : 0;
+}
+
+static inline uint64_t __attribute__((unused))
+mddnode_old_getright(mddnode_t n)
+{
+    return (n->a & 0x0000ffffffffffff) >> 1;
+}
+
+static inline uint64_t __attribute__((unused))
+mddnode_old_getdown(mddnode_t n)
+{
+    return n->b >> 17;
 }
 
 static inline void __attribute__((unused))
 mddnode_setmark(mddnode_t n, uint8_t mark)
 {
-    n->a = (n->a & 0xfffffffffffffffe) | (mark ? 1 : 0);
-}
-
-static inline void __attribute__((unused))
-mddnode_setright(mddnode_t n, uint64_t right)
-{
-    n->a = (n->a & 0xffff000000000001) | (right << 1);
-}
-
-static inline void __attribute__((unused))
-mddnode_setdown(mddnode_t n, uint64_t down)
-{
-    n->b = (n->b & 0x000000000001ffff) | (down << 17);
+    // FIXME this should not exist at all!!
+    n->a = (n->a & 0xbfffffffffffffff) | (mark ? 0x4000000000000000 : 0);
 }
 
 static inline void __attribute__((unused))
 mddnode_make(mddnode_t n, uint32_t value, uint64_t right, uint64_t down)
 {
-    n->a = right << 1;
-    n->b = down << 17;
-    *(uint32_t*)((uint8_t*)n+6) = value;
+    n->a = right | (((uint64_t)value & 0x0000ffff) << 40);
+    n->b = down  | (((uint64_t)value & 0xffff0000) << 24);
 }
 
 static inline void __attribute__((unused))
 mddnode_makecopy(mddnode_t n, uint64_t right, uint64_t down)
 {
-    n->a = right << 1;
-    n->b = ((down << 1) | 1) << 16;
+    n->a = right | 0x8000000000000000;
+    n->b = down;
 }
 
 #endif

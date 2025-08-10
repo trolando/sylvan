@@ -159,7 +159,7 @@ set_load(FILE* f)
     if (k != -1) Abort("Invalid input file!\n"); // only support full vector
 
     /* read dd */
-    lddmc_serialize_fromfile(f);
+    lddmc_serialize_fromfile_old(f);
     size_t dd;
     if (fread(&dd, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
     set->dd = lddmc_serialize_get_reversed(dd);
@@ -248,7 +248,7 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
 VOID_TASK_2(rel_load, FILE*, f, rel_t, rel)
 void rel_load_CALL(lace_worker* lace, FILE* f, rel_t rel)
 {
-    lddmc_serialize_fromfile(f);
+    lddmc_serialize_fromfile_old(f);
     size_t dd;
     if (fread(&dd, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!");
     rel->dd = lddmc_serialize_get_reversed(dd);

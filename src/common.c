@@ -119,7 +119,7 @@ void sylvan_clear_and_mark_CALL(lace_worker* lace)
         e->cb(lace);
     }
 
-    nodes_destroy_unmarked(nodes);
+    nodes_cleanup_custom(nodes);
 }
 
 /**
@@ -127,9 +127,9 @@ void sylvan_clear_and_mark_CALL(lace_worker* lace)
  */
 void sylvan_rehash_all_CALL(lace_worker* lace)
 {
-    // rehash marked nodes
-    if (nodes_rehash(nodes) != 0) {
-        fprintf(stderr, "sylvan_gc_rehash error: not all nodes could be rehashed!\n");
+    // rebuild the nodes table with the marked nodes
+    if (nodes_rebuild(nodes) != 0) {
+        fprintf(stderr, "sylvan_rebuild error: not all nodes could be rehashed!\n");
         exit(1);
     }
 }
@@ -188,7 +188,7 @@ void sylvan_gc_normal_resize_CALL(lace_worker* lace)
     size_t nodes_size = nodes_get_size(nodes);
     size_t nodes_max = nodes_get_max_size(nodes);
     if (nodes_size < nodes_max) {
-        size_t marked = nodes_count_marked(nodes);
+        size_t marked = nodes_count_nodes(nodes);
         if (marked*2 > nodes_size) {
             size_t new_size = next_size(nodes_size);
             if (new_size > nodes_max) new_size = nodes_max;
@@ -435,7 +435,7 @@ sylvan_quit()
 void sylvan_table_usage_CALL(lace_worker* lace, size_t* filled, size_t* total)
 {
     size_t tot = nodes_get_size(nodes);
-    if (filled != NULL) *filled = nodes_count_marked(nodes);
+    if (filled != NULL) *filled = nodes_count_nodes(nodes);
     if (total != NULL) *total = tot;
 }
 

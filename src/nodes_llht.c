@@ -1,6 +1,7 @@
 /*
  * Copyright 2011-2016 Formal Methods and Tools, University of Twente
- * Copyright 2016-2017 Tom van Dijk, Johannes Kepler University Linz
+ * Copyright 2016-2018 Tom van Dijk, Johannes Kepler University Linz
+ * Copyright 2019-2025 Formal Methods and Tools, University of Twente
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,10 +48,10 @@ typedef struct nodes
     size_t             mask;         // size-1
 #endif
     size_t             f_size;
-    nodes_hash_cb    hash_cb;      // custom hash function
-    nodes_equals_cb  equals_cb;    // custom equals function
-    nodes_create_cb  create_cb;    // custom create function
-    nodes_destroy_cb destroy_cb;   // custom destroy function
+    nodes_hash_cb      hash_cb;      // custom hash function
+    nodes_equals_cb    equals_cb;    // custom equals function
+    nodes_create_cb    create_cb;    // custom create function
+    nodes_destroy_cb   destroy_cb;   // custom destroy function
     _Atomic(int16_t)   threshold;    // number of iterations for insertion until returning error
 } nodes_table;
 
@@ -59,8 +60,7 @@ void* nodes_get_pointer(const nodes_table* dbs, size_t index)
     return dbs->data + index * 16;
 }
 
-size_t
-nodes_get_max_size(const nodes_table* dbs)
+size_t nodes_get_max_size(const nodes_table* dbs)
 {
     return dbs->max_size;
 }
@@ -87,7 +87,6 @@ void nodes_set_size(nodes_table* dbs, size_t size)
 DECLARE_THREAD_LOCAL(my_region, uint64_t);
 
 VOID_TASK_0(nodes_reset_region)
-
 void nodes_reset_region_CALL(lace_worker* lace)
 {
     // we don't actually need Lace, but it's a Lace task to run for initialisation
@@ -96,62 +95,83 @@ void nodes_reset_region_CALL(lace_worker* lace)
     SET_THREAD_LOCAL(my_region, my_region);
 }
 
-static uint64_t
-claim_data_bucket(const nodes_table* dbs)
+/**
+ * Try to claim a free region.
+ * start_region is the last region we worked on; search proceeds round-robin.
+ * Returns the claimed region index, or UINT64_MAX if none available.
+ */
+static uint64_t claim_next_region(const nodes_table* dbs, uint64_t start_region)
+{
+    const uint64_t regions = dbs->table_size / (64u * 8u); // regions in table
+    const uint64_t words   = (regions + 63u) / 64u;        // bitmap1 word count
+
+    // start word index and bit index
+    const uint64_t start_word = start_region / 64u;
+    const uint64_t start_bit  = start_region % 64u;
+
+    // Scan words
+    //for (uint64_t w_offset = 0; w_offset < words; ++w_offset) {
+    //    uint64_t w = (start_word + w_offset) % words;
+    for (uint64_t w = start_word; w < words;) {
+        _Atomic(uint64_t) *word = dbs->bitmap1 + w;
+
+        uint64_t v = atomic_load_explicit(word, memory_order_relaxed);
+        while (v != UINT64_MAX) {
+            // There is at least one free bit
+            int bit = __builtin_ctzll(~v); // least-significant free bit
+            uint64_t mask = UINT64_C(1) << bit;
+
+            // Try to claim
+            if (atomic_compare_exchange_weak_explicit(
+                         word, &v, v | mask,
+                         memory_order_acq_rel, memory_order_relaxed)) {
+                // Claimed successfully
+                return w * 64 + bit;
+            }
+        }
+        w++;
+    }
+
+    return UINT64_MAX; // full
+}
+
+static uint64_t claim_data_bucket(const nodes_table* dbs)
 {
     LOCALIZE_THREAD_LOCAL(my_region, uint64_t);
 
+    // First-time (or post-GC) init: everyone starts at region 0
+    if (my_region == UINT64_MAX) {
+        my_region = claim_next_region(dbs, 0);
+        if (my_region == UINT64_MAX) return UINT64_MAX;
+        SET_THREAD_LOCAL(my_region, my_region);
+    }
+
     for (;;) {
-        if (my_region != (uint64_t)-1) {
-            // find empty bucket in region <my_region>
-            _Atomic(uint64_t)* ptr = dbs->bitmap2 + (my_region*8);
-            int i=0;
-            for (;i<8;) {
-                uint64_t v = atomic_load_explicit(ptr, memory_order_relaxed);
-                if (v != 0xffffffffffffffffLL) {
-                    int j = __builtin_clzll(~v);
-                    *ptr |= (0x8000000000000000LL>>j);
-                    return (8 * my_region + i) * 64 + j;
-                }
-                i++;
-                ptr++;
+        // find empty bucket in region <my_region>
+        _Atomic(uint64_t)* ptr = dbs->bitmap2 + (my_region * 8u);
+        for (int i=0; i<8; i++) {
+            uint64_t v = atomic_load_explicit(ptr, memory_order_relaxed);
+            if (v != UINT64_MAX) {
+                int j = __builtin_clzll(~v);
+                *ptr |= UINT64_C(1) << (63 - j);
+                return (8 * my_region + i) * 64 + j;
             }
-        } else {
-            // special case on startup or after garbage collection
-            my_region += (lace_get_worker()->worker*(dbs->table_size/(64*8)))/lace_worker_count();
+            ptr++;
         }
-        uint64_t count = dbs->table_size/(64*8);
-        for (;;) {
-            // check if table maybe full
-            if (count-- == 0) return (uint64_t)-1;
-
-            my_region += 1;
-            if (my_region >= (dbs->table_size/(64*8))) my_region = 0;
-
-            // try to claim it
-            _Atomic(uint64_t)* ptr = dbs->bitmap1 + (my_region/64);
-            uint64_t mask = 0x8000000000000000LL >> (my_region&63);
-            uint64_t v;
-restart:
-            v = atomic_load_explicit(ptr, memory_order_relaxed);
-            if (v & mask) continue; // taken
-            if (atomic_compare_exchange_weak(ptr, &v, v|mask)) break;
-            else goto restart;
-        }
+        my_region = claim_next_region(dbs, my_region);
+        if (my_region == UINT64_MAX) return UINT64_MAX;
         SET_THREAD_LOCAL(my_region, my_region);
     }
 }
 
-static void
-release_data_bucket(const nodes_table* dbs, uint64_t index)
+static void release_data_bucket(const nodes_table* dbs, uint64_t index)
 {
     _Atomic(uint64_t)* ptr = dbs->bitmap2 + (index/64);
     uint64_t mask = 0x8000000000000000LL >> (index&63);
     atomic_fetch_and(ptr, ~mask);
 }
 
-static void
-set_custom_bucket(const nodes_table* dbs, uint64_t index, int on)
+static void set_custom_bucket(const nodes_table* dbs, uint64_t index, int on)
 {
     uint64_t *ptr = dbs->bitmapc + (index/64);
     uint64_t mask = 0x8000000000000000LL >> (index&63);
@@ -159,8 +179,7 @@ set_custom_bucket(const nodes_table* dbs, uint64_t index, int on)
     else *ptr &= ~mask;
 }
 
-static int
-is_custom_bucket(const nodes_table* dbs, uint64_t index)
+static int is_custom_bucket(const nodes_table* dbs, uint64_t index)
 {
     uint64_t *ptr = dbs->bitmapc + (index/64);
     uint64_t mask = 0x8000000000000000LL >> (index&63);
@@ -169,9 +188,9 @@ is_custom_bucket(const nodes_table* dbs, uint64_t index)
 
 /*
  * CL_MASK and CL_MASK_R are for the probe sequence calculation.
- * With 64 bytes per cacheline, there are 8 64-bit values per cacheline.
+ * With 64 bytes per cache line, there are 8 64-bit values per cache line.
+ * With 128 bytes per cache line, there are 16 64-bit values per cache line.
  */
-// The LINE_SIZE is defined in lace.h
 static const uint64_t CL_MASK     = ~(((SYLVAN_CACHE_LINE_SIZE) / 8) - 1);
 static const uint64_t CL_MASK_R   = ((SYLVAN_CACHE_LINE_SIZE) / 8) - 1;
 
@@ -179,22 +198,23 @@ static const uint64_t CL_MASK_R   = ((SYLVAN_CACHE_LINE_SIZE) / 8) - 1;
 #define MASK_INDEX ((uint64_t)0x000000ffffffffff)
 #define MASK_HASH  ((uint64_t)0xffffff0000000000)
 
-static inline uint64_t
-nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_t b, int* created, const int custom)
+static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_t b, int* created, const int custom)
 {
-    uint64_t hash_rehash = 14695981039346656037LLU;
-    if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);
-    else hash_rehash = sylvan_tabhash16(a, b, hash_rehash);
+    // Compute the hash
+    uint64_t hash = 14695981039346656037LLU;
+    if (custom) hash = dbs->hash_cb(a, b, hash);
+    else hash = sylvan_tabhash16(a, b, hash);
 
-    const uint64_t step = (((hash_rehash >> 20) | 1) << 3);
-    const uint64_t hash = hash_rehash & MASK_HASH;
+    //const uint64_t step = (((hash >> 20) | 1) << 3);
+    const uint64_t step = SYLVAN_CACHE_LINE_SIZE/8;
+    const uint64_t masked_hash = hash & MASK_HASH;
     uint64_t idx, last, cidx = 0;
     int i=0;
 
 #if LLMSSET_MASK
-    last = idx = hash_rehash & dbs->mask;
+    last = idx = hash & dbs->mask;
 #else
-    last = idx = hash_rehash % dbs->table_size;
+    last = idx = hash % dbs->table_size;
 #endif
 
     for (;;) {
@@ -207,18 +227,19 @@ nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_t b, int* created, cons
                 cidx = claim_data_bucket(dbs);
                 if (cidx == (uint64_t)-1) return 0; // failed to claim a data bucket
                 if (custom) dbs->create_cb(&a, &b);
+                // FIXME ensure a acquire_release fence
                 uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*cidx;
                 d_ptr[0] = a;
                 d_ptr[1] = b;
             }
-            if (atomic_compare_exchange_strong(bucket, &v, hash | cidx)) {
+            if (atomic_compare_exchange_strong_explicit(bucket, &v, masked_hash | cidx, memory_order_acq_rel, memory_order_relaxed)) {
                 if (custom) set_custom_bucket(dbs, cidx, custom);
                 *created = 1;
                 return cidx;
             }
         }
 
-        if (hash == (v & MASK_HASH)) {
+        if (masked_hash == (v & MASK_HASH)) {
             uint64_t d_idx = v & MASK_INDEX;
             uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
             if (custom) {
@@ -247,31 +268,28 @@ nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_t b, int* created, cons
             if (++i == dbs->threshold) return 0; // failed to find empty spot in probe sequence
 
             // go to next cache line in probe sequence
-            hash_rehash += step;
 
 #if LLMSSET_MASK
-            last = idx = hash_rehash & dbs->mask;
+            idx = (idx + step) & dbs->mask;
 #else
-            last = idx = hash_rehash % dbs->table_size;
+            idx = (idx + step) & dbs->table_size;
 #endif
+            last = idx;
         }
     }
 }
 
-uint64_t
-nodes_lookup(const nodes_table* dbs, const uint64_t a, const uint64_t b, int* created)
+uint64_t nodes_lookup(const nodes_table* dbs, const uint64_t a, const uint64_t b, int* created)
 {
     return nodes_lookup2(dbs, a, b, created, 0);
 }
 
-uint64_t
-nodes_lookupc(const nodes_table* dbs, const uint64_t a, const uint64_t b, int* created)
+uint64_t nodes_lookupc(const nodes_table* dbs, const uint64_t a, const uint64_t b, int* created)
 {
     return nodes_lookup2(dbs, a, b, created, 1);
 }
 
-int
-nodes_rehash_bucket(nodes_table* dbs, uint64_t d_idx)
+int nodes_rehash_bucket(nodes_table* dbs, uint64_t d_idx)
 {
     const uint64_t * const d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
     const uint64_t a = d_ptr[0];
@@ -318,8 +336,7 @@ nodes_rehash_bucket(nodes_table* dbs, uint64_t d_idx)
     }
 }
 
-nodes_table*
-nodes_create(size_t initial_size, size_t max_size)
+nodes_table* nodes_create(size_t initial_size, size_t max_size)
 {
     nodes_table* dbs = alloc_aligned(sizeof(struct nodes));
     if (dbs == 0) {
@@ -422,23 +439,33 @@ void nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
     nodes_reset_region_TOGETHER();
 }
 
-int
-nodes_is_marked(const nodes_table* dbs, uint64_t index)
+int nodes_is_marked(const nodes_table* dbs, uint64_t index)
 {
     _Atomic(uint64_t)* ptr = dbs->bitmap2 + (index/64);
     uint64_t mask = 0x8000000000000000LL >> (index&63);
     return (atomic_load_explicit(ptr, memory_order_relaxed) & mask) ? 1 : 0;
 }
 
-int
-nodes_mark(const nodes_table* dbs, uint64_t index)
+void nodes_mark_rec_CALL(lace_worker* lace, const nodes_table* dbs, uint64_t index)
 {
+    if (index == 0 || index == 1) return; // reserved for true/false
+
     _Atomic(uint64_t)* ptr = dbs->bitmap2 + (index/64);
     uint64_t mask = 0x8000000000000000LL >> (index&63);
+    uint64_t v = atomic_load_explicit(ptr, memory_order_relaxed);
     for (;;) {
-        uint64_t v = *ptr;
-        if (v & mask) return 0;
-        if (atomic_compare_exchange_weak(ptr, &v, v|mask)) return 1;
+        if (v & mask) return;
+        if (atomic_compare_exchange_weak_explicit(
+                ptr, &v, v|mask,
+                memory_order_relaxed, memory_order_relaxed)) {
+            const uint64_t * const d_ptr = ((uint64_t*)dbs->data) + 2*index;
+            const uint64_t a = d_ptr[0];
+            const uint64_t b = d_ptr[1];
+            if (a & 0x4000000000000000) return; // leaf node
+            nodes_mark_rec_SPAWN(lace, dbs, b & 0x000000ffffffffff);
+            nodes_mark_rec_CALL(lace, dbs, a & 0x000000ffffffffff);
+            nodes_mark_rec_SYNC(lace);
+        }
     }
 }
 
@@ -468,20 +495,20 @@ int nodes_rehash_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first, siz
     }
 }
 
-int nodes_rehash_CALL(lace_worker* lace, nodes_table* dbs)
+int nodes_rebuild_CALL(lace_worker* lace, nodes_table* dbs)
 {
     return nodes_rehash_par_CALL(lace, dbs, 0, dbs->table_size);
 }
 
-TASK_3(size_t, nodes_count_marked_par, nodes_table*, dbs, size_t, first, size_t, count)
+TASK_3(size_t, nodes_count_nodes_par, nodes_table*, dbs, size_t, first, size_t, count)
 
-size_t nodes_count_marked_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first, size_t count)
+size_t nodes_count_nodes_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first, size_t count)
 {
     if (count > 512) {
         size_t split = count/2;
-        nodes_count_marked_par_SPAWN(lace, dbs, first, split);
-        size_t right = nodes_count_marked_par_CALL(lace, dbs, first + split, count - split);
-        size_t left = nodes_count_marked_par_SYNC(lace);
+        nodes_count_nodes_par_SPAWN(lace, dbs, first, split);
+        size_t right = nodes_count_nodes_par_CALL(lace, dbs, first + split, count - split);
+        size_t left = nodes_count_nodes_par_SYNC(lace);
         return left + right;
     } else {
         size_t result = 0;
@@ -510,9 +537,9 @@ size_t nodes_count_marked_par_CALL(lace_worker* lace, nodes_table* dbs, size_t f
     }
 }
 
-size_t nodes_count_marked_CALL(lace_worker* lace, nodes_table* dbs)
+size_t nodes_count_nodes_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    return nodes_count_marked_par_CALL(lace, dbs, 0, dbs->table_size);
+    return nodes_count_nodes_par_CALL(lace, dbs, 0, dbs->table_size);
 }
 
 VOID_TASK_3(nodes_destroy_par, nodes_table*, dbs, size_t, first, size_t, count)
@@ -540,7 +567,7 @@ void nodes_destroy_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first, s
     }
 }
 
-void nodes_destroy_unmarked_CALL(lace_worker* lace, nodes_table* dbs)
+void nodes_cleanup_custom_CALL(lace_worker* lace, nodes_table* dbs)
 {
     if (dbs->destroy_cb == NULL) return; // no custom function
     nodes_destroy_par_CALL(lace, dbs, 0, dbs->table_size);

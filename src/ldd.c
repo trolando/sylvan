@@ -34,12 +34,7 @@ void lddmc_gc_mark_rec_CALL(lace_worker* lace, MDD mdd)
 {
     if (mdd <= lddmc_true) return;
 
-    if (nodes_mark(nodes, mdd)) {
-        mddnode_t n = LDD_GETNODE(mdd);
-        lddmc_gc_mark_rec_SPAWN(lace, mddnode_getright(n));
-        lddmc_gc_mark_rec_CALL(lace, mddnode_getdown(n));
-        lddmc_gc_mark_rec_SYNC(lace);
-    }
+    nodes_mark_rec_CALL(lace, nodes, mdd);
 }
 
 /**
@@ -383,7 +378,7 @@ lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
 
         index = nodes_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "MDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_marked(nodes), nodes_get_size(nodes));
+            fprintf(stderr, "MDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
             exit(1);
         }
     }
@@ -410,7 +405,7 @@ lddmc_make_copynode(MDD ifeq, MDD ifneq)
 
         index = nodes_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "MDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_marked(nodes), nodes_get_size(nodes));
+            fprintf(stderr, "MDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
             exit(1);
         }
     }

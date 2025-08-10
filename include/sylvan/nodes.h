@@ -86,44 +86,40 @@ uint64_t nodes_lookupc(const nodes_table* dbs, const uint64_t a, const uint64_t 
 static inline void nodes_clear(nodes_table* dbs);
 
 /**
- * Check if a certain data bucket is marked (in use).
+ * Check if an index is a valid node and/or is marked to be reinserted after
+ * garbage collection.
  */
 int nodes_is_marked(const nodes_table* dbs, uint64_t index);
 
 /**
- * During garbage collection, buckets are marked (for rehashing) with this function.
- * Returns 0 if the node was already marked, or non-zero if it was not marked.
- * May also return non-zero if multiple workers marked at the same time.
+ * Recursively mark a node and its descendants.
  */
-int nodes_mark(const nodes_table* dbs, uint64_t index);
+static inline void nodes_mark_rec(const nodes_table* dbs, uint64_t index);
 
 /**
- * Rehash all marked buckets.
- * Returns 0 if successful, or the number of buckets not rehashed if not.
+ * Rebuild the nodes table by reinserting/rehashing all marked nodes.
+ * Returns 0 if successful, or the number of buckets that could not be
+ * reinserted otherwise.
  */
-static inline int nodes_rehash(nodes_table* dbs);
+static inline int nodes_rebuild(nodes_table* dbs);
 
 /**
- * Rehash a single bucket.
- * Returns 0 if successful, or 1 if not.
+ * Retrieve number of nodes in the table.
  */
-int nodes_rehash_bucket(nodes_table* dbs, uint64_t d_idx);
-
-/**
- * Retrieve number of marked buckets.
- */
-static inline size_t nodes_count_marked(nodes_table* dbs);
+static inline size_t nodes_count_nodes(nodes_table* dbs);
 
 /**
  * After garbage collection, this method calls the destroy callback
  * for all 'custom' data that is not kept.
  */
-static inline void nodes_destroy_unmarked(nodes_table* dbs);
+static inline void nodes_cleanup_custom(nodes_table* dbs);
 
+// Definitions of tasks
 VOID_TASK_1(nodes_clear, nodes_table*, dbs)
-TASK_1(int, nodes_rehash, nodes_table*, dbs)
-TASK_1(size_t, nodes_count_marked, nodes_table*, dbs)
-VOID_TASK_1(nodes_destroy_unmarked, nodes_table*, dbs)
+VOID_TASK_2(nodes_mark_rec, const nodes_table*, dbs, uint64_t, index)
+TASK_1(int, nodes_rebuild, nodes_table*, dbs)
+TASK_1(size_t, nodes_count_nodes, nodes_table*, dbs)
+VOID_TASK_1(nodes_cleanup_custom, nodes_table*, dbs)
 
 /**
  * Helper callbacks for dealing with custom leaves.

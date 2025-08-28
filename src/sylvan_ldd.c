@@ -2564,16 +2564,22 @@ lddmc_serialize_tofile(FILE *out)
 
         mddnode_t n = LDD_GETNODE(s->mdd);
 
-        struct mddnode node;
         uint64_t right = lddmc_serialize_get(mddnode_getright(n));
         uint64_t down = lddmc_serialize_get(mddnode_getdown(n));
-        if (mddnode_getcopy(n)) mddnode_makecopy(&node, right, down);
-        else mddnode_make(&node, mddnode_getvalue(n), right, down);
 
-        assert(right <= index);
-        assert(down <= index);
-
-        fwrite(&node, sizeof(struct mddnode), 1, out);
+        if (mddnode_getcopy(n)) {
+            char copy = 1;
+            fwrite(&copy, 1, 1, out);
+            fwrite(&right, 8, 1, out);
+            fwrite(&down, 8, 1, out);
+        } else {
+            char copy = 0;
+            fwrite(&copy, 1, 1, out);
+            uint32_t value = mddnode_getvalue(n);
+            fwrite(&value, 4, 1, out);
+            fwrite(&right, 8, 1, out);
+            fwrite(&down, 8, 1, out);
+        }
     }
 
     lddmc_ser_done = lddmc_ser_counter-2;
@@ -2591,22 +2597,48 @@ lddmc_serialize_fromfile(FILE *in)
     }
 
     for (i=1; i<=count; i++) {
-        struct mddnode node;
-        if (fread(&node, sizeof(struct mddnode), 1, in) != 1) {
-            // TODO FIXME return error
+        char copy;
+        if (fread(&copy, 1, 1, in) != 1) {
             printf("sylvan_serialize_fromfile: file format error, giving up\n");
             exit(-1);
         }
-
-        assert(mddnode_getright(&node) <= lddmc_ser_done+1);
-        assert(mddnode_getdown(&node) <= lddmc_ser_done+1);
-
-        MDD right = lddmc_serialize_get_reversed(mddnode_getright(&node));
-        MDD down = lddmc_serialize_get_reversed(mddnode_getdown(&node));
-
         struct lddmc_ser s;
-        if (mddnode_getcopy(&node)) s.mdd = lddmc_make_copynode(down, right);
-        else s.mdd = lddmc_makenode(mddnode_getvalue(&node), down, right);
+        if (copy == 1) {
+            uint64_t right, down;
+            if (fread(&right, 8, 1, in) != 1) {
+                printf("sylvan_serialize_fromfile: file format error, giving up\n");
+                exit(-1);
+            }
+            if (fread(&down, 8, 1, in) != 1) {
+                printf("sylvan_serialize_fromfile: file format error, giving up\n");
+                exit(-1);
+            }
+            assert(right <= lddmc_ser_done+1);
+            assert(down <= lddmc_ser_done+1);
+            MDD mdd_right = lddmc_serialize_get_reversed(right);
+            MDD mdd_down = lddmc_serialize_get_reversed(down);
+            s.mdd = lddmc_make_copynode(mdd_down, mdd_right);
+        } else {
+            uint32_t value;
+            uint64_t right, down;
+            if (fread(&value, 4, 1, in) != 1) {
+                printf("sylvan_serialize_fromfile: file format error, giving up\n");
+                exit(-1);
+            }
+            if (fread(&right, 8, 1, in) != 1) {
+                printf("sylvan_serialize_fromfile: file format error, giving up\n");
+                exit(-1);
+            }
+            if (fread(&down, 8, 1, in) != 1) {
+                printf("sylvan_serialize_fromfile: file format error, giving up\n");
+                exit(-1);
+            }
+            assert(right <= lddmc_ser_done+1);
+            assert(down <= lddmc_ser_done+1);
+            MDD mdd_right = lddmc_serialize_get_reversed(right);
+            MDD mdd_down = lddmc_serialize_get_reversed(down);
+            s.mdd = lddmc_makenode(value, mdd_down, mdd_right);
+        }
         s.assigned = lddmc_ser_done+2; // starts at 0 but we want 2-based...
         lddmc_ser_done++;
 

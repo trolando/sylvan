@@ -769,6 +769,18 @@ TASK_0(int, run)
     INFO("Read file '%s'\n", model_filename);
     INFO("%d integers per state, %d transition groups\n", vector_size, next_count);
 
+    if (report_nodes) {
+        // TODO we need to see the size of the forest, not just add the nodes like this?
+        /*MDD* arr = malloc(sizeof(MDD*)*next_count);
+        for (int i=0; i<next_count; i++) {
+            arr[i] = next[i]->dd;
+        }*/
+        size_t nodecount = 0;
+        for (int i=0; i<next_count; i++) nodecount += lddmc_nodecount(next[i]->dd);
+        INFO("Transitions: %zu MDD nodes\n", nodecount);
+    }
+
+
     if (print_transition_matrix) {
         for (int i=0; i<next_count; i++) {
             INFO("");

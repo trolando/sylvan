@@ -36,12 +36,13 @@ if(NOT TARGET lace)
   endif()
 endif()
 
-# Add the sources for Sylvan
-add_subdirectory(src)
-
+option(SYLVAN_BUILD_CPP "Build CPP header" ON)
 option(SYLVAN_BUILD_TESTS "Build tests" ${sylvan_is_top_level})
 option(SYLVAN_BUILD_EXAMPLES "Build examples" ${sylvan_is_top_level})
 option(SYLVAN_BUILD_DOCS "Build documentation" OFF)
+
+# Add the sources for Sylvan
+add_subdirectory(src)
 
 # Build and add tests
 if(SYLVAN_BUILD_TESTS)

@@ -11,7 +11,6 @@ set(SYLVAN_HDRS
     sylvan_mt.h
     sylvan_mtbdd.h
     sylvan_mtbdd_int.h
-    sylvan_obj.hpp
     sylvan_stats.h
     sylvan_table.h
     sylvan_tls.h
@@ -29,7 +28,6 @@ target_sources(sylvan
     sylvan_ldd.c
     sylvan_mt.c
     sylvan_mtbdd.c
-    sylvan_obj.cpp
     sylvan_refs.c
     sylvan_sl.c
     sylvan_stats.c
@@ -37,6 +35,11 @@ target_sources(sylvan
     sylvan_zdd.c
     ${SYLVAN_HDRS}
 )
+
+if(SYLVAN_BUILD_CPP)
+    list(APPEND SYLVAN_HDRS sylvan_obj.hpp)
+    target_sources(sylvan PRIVATE sylvan_obj.cpp sylvan_obj.hpp)
+endif()
 
 option(SYLVAN_GMP "Include custom MTBDD type GMP")
 if(SYLVAN_GMP)

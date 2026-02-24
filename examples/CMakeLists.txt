@@ -22,5 +22,7 @@ target_sources(ldd2bdd PRIVATE getrss.c getrss.h)
 
 add_example(nqueens nqueens.c)
 
-add_example(simple simple.cpp)
+if(SYLVAN_BUILD_CPP)
+    add_example(simple simple.cpp)
+endif()
 

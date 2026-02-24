@@ -1,6 +1,16 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [1.9.2] - 2026-02-24
+### Changed
+- The C++ wrapper is now optional and can be excluded from the library
+- Update Lace to version 1.5.1 with some improved support for other platforms
+
+### Fixed
+- Added forgotten copy constructor to MtbddMap to ensure correct garbage collection
+- Fix two memory leaks in the LDD implementation
+
+
 ## [1.9.1] - 2025-08-07
 ### Changed
 - Improved implementation of `cache_get` and `cache_get` for systems with weak
@@ -12,6 +22,7 @@ All notable changes to Sylvan will be documented in this file.
 
 ### Fixed
 - The `zdd_isop` test was faulty and is now functioning correctly.
+
 
 ## [1.9.0] - 2025-08-03
 ### Added
@@ -25,6 +36,7 @@ All notable changes to Sylvan will be documented in this file.
 
 ### Fixed
 - Fixed major concurrency bug in the cache.
+
 
 ## [1.8.1] - 2023-11-17
 ### Added

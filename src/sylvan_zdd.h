@@ -113,7 +113,8 @@ ZDD zdd_gethigh(ZDD dd);
 /**
  * Evaluate a ZDD, assigning <value> (1 or 0) to <variables>.
  */
-ZDD zdd_eval(ZDD dd, uint32_t var, int value);
+TASK_DECL_3(ZDD, zdd_eval, ZDD, uint32_t, int);
+#define zdd_eval(dd, var, value) RUN(zdd_eval, dd, var, value)
 
 /**
  * Obtain a ZDD representing a positive literal of variable <var>.

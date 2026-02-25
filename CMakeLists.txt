@@ -10,10 +10,18 @@ project(sylvan
 add_library(sylvan STATIC)
 add_library(sylvan::sylvan ALIAS sylvan)
 
-string(COMPARE EQUAL
-    "${CMAKE_SOURCE_DIR}"
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-    sylvan_is_top_level)
+# Check if top level
+if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    set(SYLVAN_IS_TOP_LEVEL ON)
+else()
+    set(SYLVAN_IS_TOP_LEVEL OFF)
+endif()
+
+# Default build type
+if(SYLVAN_IS_TOP_LEVEL AND NOT CMAKE_CONFIGURATION_TYPES AND CMAKE_BUILD_TYPE STREQUAL "")
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel)
+endif()
 
 # Add CMake modules path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/")

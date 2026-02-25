@@ -70,6 +70,37 @@ Bindings for other languages than C/C++ also exist:
 -  Python bindings: https://github.com/johnyf/dd
 -  Rust bindings: https://github.com/daemontus/sylvan-sys
 
+When using Sylvan as a subproject, you can set options in your `CMakeLists.txt` as follows:
+```cmake
+# Configure Sylvan options before adding the subproject (optional)
+set(SYLVAN_ENABLE_PIC   ON  CACHE BOOL "build with -fPIC"   FORCE)
+set(SYLVAN_USE_MMAP     ON  CACHE BOOL "Use virtual memory" FORCE)
+set(SYLVAN_ENABLE_STATS OFF CACHE BOOL "Enable statistics"  FORCE)
+
+# Bring Sylvan in (same build tree)
+include(FetchContent)
+FetchContent_Declare(
+    sylvan
+    GIT_REPOSITORY https://github.com/trolando/sylvan.git
+    GIT_TAG        v1.9.2
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(sylvan)
+
+# Control UI visibility of Sylvan options (optional)
+mark_as_advanced(CLEAR
+    SYLVAN_USE_MMAP
+    SYLVAN_ENABLE_STATS
+)
+```
+
+If you don't want to use `FetchContent` to include Sylvan in your project, the recommended
+approach is to include Lace and Sylvan as subdirectories:
+```cmake
+add_subdirectory(external/lace)
+add_subdirectory(external/sylvan)
+```
+
 ## Documentation
 
 Documentation is available [on GitHub Pages](https://trolando.github.io/sylvan).

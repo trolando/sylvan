@@ -1,6 +1,12 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [1.9.3] - 2026-02-25
+### Changed
+- By default, Sylvan now sets a default build type (Release) when it is the top project
+- Sylvan build options are now marked as advanced when Sylvan is not the top project
+
+
 ## [1.9.2] - 2026-02-24
 ### Changed
 - The C++ wrapper is now optional and can be excluded from the library

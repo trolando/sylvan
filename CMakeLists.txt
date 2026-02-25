@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.17)
 
 project(sylvan
-    VERSION 1.9.2
+    VERSION 1.9.3
     DESCRIPTION "Sylvan, a parallel decision diagram library"
     HOMEPAGE_URL "https://github.com/trolando/sylvan"
     LANGUAGES C CXX

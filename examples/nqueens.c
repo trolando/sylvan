@@ -3,16 +3,16 @@
  * Based on work by Robert Meolic, released by him into the public domain.
  */
 
-#include <getopt.h>
 #include <inttypes.h>
 #include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
 
 #include <sylvan.h>
 #include <sylvan_table.h>
+
+#include <common.h>
 
 /* Configuration */
 static int report_minterms = 0; // report minterms at every major step
@@ -43,23 +43,24 @@ print_help()
 }
 
 static void
-parse_args(int argc, char **argv)
+parse_args(int argc, const char **argv)
 {
-    static const struct option longopts[] = {
-        {.name = "workers", .val = 'w', .has_arg = required_argument},
-        {.name = "report-minterms", .val = 1, .has_arg = no_argument},
-        {.name = "report-minor", .val = 2, .has_arg = no_argument},
-        {.name = "report-stats", .val = 3, .has_arg = no_argument},
-        {.name = "usage", .val = 99, .has_arg = no_argument},
-        {.name = "help", .val = 'h', .has_arg = no_argument},
+    static const struct optparse_long longopts[] = {
+        {"workers", 'w', OPTPARSE_REQUIRED},
+        {"report-minterms", 1, OPTPARSE_NONE},
+        {"report-minor", 2, OPTPARSE_NONE},
+        {"report-stats", 3, OPTPARSE_NONE},
+        {"usage", 'u', OPTPARSE_NONE},
+        {"help", 'h', OPTPARSE_NONE},
         {},
     };
-    int key = 0;
-    int long_index = 0;
-    while ((key = getopt_long(argc, argv, "w:h", longopts, &long_index)) != -1) {
-        switch (key) {
+    int option = 0;
+    struct optparse options;
+    optparse_init(&options, argv);
+    while ((option = optparse_long(&options, longopts, NULL)) != -1) {
+        switch (option) {
         case 'w':
-            workers = atoi(optarg);
+            workers = atoi(options.optarg);
             break;
         case 1:
             report_minterms = 1;
@@ -70,7 +71,7 @@ parse_args(int argc, char **argv)
         case 3:
             report_stats = 1;
             break;
-        case 99:
+        case 'u':
             print_usage();
             exit(0);
         case 'h':
@@ -78,20 +79,11 @@ parse_args(int argc, char **argv)
             exit(0);
         }
     }
-    if (optind >= argc) {
+    if (options.optind >= argc) {
         printf("missing required parameter <size>\n");
         exit(-1);
     }
-    size = atoi(argv[optind]);
-}
-
-/* Obtain current wallclock time */
-static double
-wctime()
-{
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (tv.tv_sec + 1E-6 * tv.tv_usec);
+    size = atoi(optparse_arg(&options));
 }
 
 static double t_start;
@@ -120,7 +112,7 @@ VOID_TASK_0(run)
 
     // Variables 0 ... (SIZE*SIZE-1)
 
-    BDD board[size*size];
+    BDD* board = (BDD*)malloc((size_t)(size*size) * sizeof(*board));
     for (size_t i=0; i<size*size; i++) {
         board[i] = sylvan_ithvar(i);
         sylvan_protect(board+i);
@@ -289,6 +281,8 @@ VOID_TASK_0(run)
         printf("\n");
     }
 
+    free(board);
+
     double t2 = wctime();
 
     INFO("Result: NQueens(%zu) has %.0f solutions.\n", size, sylvan_satcount(res, vars));
@@ -297,7 +291,7 @@ VOID_TASK_0(run)
 }
 
 int
-main(int argc, char** argv)
+main(int argc, const char** argv)
 {
     parse_args(argc, argv);
     setlocale(LC_NUMERIC, "en_US.utf-8");

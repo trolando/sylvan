@@ -1,19 +1,18 @@
 #include <assert.h>
-#include <getopt.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
 
 #include <sylvan_int.h>
 #include <getrss.h>
+#include <common.h>
 
 /* Configuration */
 static int workers = 0; // autodetect
 static int verbose = 0;
-static char* model_filename = NULL; // filename of model
-static char* bdd_filename = NULL; // filename of output BDD
+static const char* model_filename = NULL; // filename of model
+static const char* bdd_filename = NULL; // filename of output BDD
 static int check_results = 0;
 static int no_reachable = 0;
 
@@ -38,23 +37,24 @@ print_help()
 }
 
 static void
-parse_args(int argc, char **argv)
+parse_args(int argc, const char **argv)
 {
-    static const struct option longopts[] = {
-        {.name = "workers", .val = 'w', .has_arg = required_argument},
-        {.name = "check-results", .val = 2, .has_arg = no_argument},
-        {.name = "no-reachable", .val = 1, .has_arg = no_argument},
-        {.name = "verbose", .val = 'v', .has_arg = no_argument},
-        {.name = "help", .val = 'h', .has_arg = no_argument},
-        {.name = "usage", .val = 99, .has_arg = no_argument},
+    static const struct optparse_long longopts[] = {
+        {"workers", 'w', OPTPARSE_REQUIRED},
+        {"check-results", 2, OPTPARSE_NONE},
+        {"no-reachable", 1, OPTPARSE_NONE},
+        {"verbose", 'v', OPTPARSE_NONE},
+        {"help", 'h', OPTPARSE_NONE},
+        {"usage", 'u', OPTPARSE_NONE},
         {}
     };
-    int key = 0;
-    int long_index = 0;
-    while ((key = getopt_long(argc, argv, "w:vh", longopts, &long_index)) != -1) {
-        switch (key) {
+    int option = 0;
+    struct optparse options;
+    optparse_init(&options, argv);
+    while ((option = optparse_long(&options, longopts, NULL)) != -1) {
+        switch (option) {
             case 'w':
-                workers = atoi(optarg);
+                workers = atoi(options.optarg);
                 break;
             case 'v':
                 verbose = 1;
@@ -65,7 +65,7 @@ parse_args(int argc, char **argv)
             case 2:
                 check_results = 1;
                 break;
-            case 99:
+            case 'u':
                 print_usage();
                 exit(0);
             case 'h':
@@ -73,12 +73,12 @@ parse_args(int argc, char **argv)
                 exit(0);
         }
     }
-    if (optind + 1 >= argc) {
+    if (options.optind + 1 >= argc) {
         print_usage();
         exit(0);
     }
-    model_filename = argv[optind];
-    bdd_filename = argv[optind + 1];
+    model_filename = optparse_arg(&options);
+    bdd_filename = optparse_arg(&options);
 }
 
 /**
@@ -103,6 +103,18 @@ static int actionbits = 0;
 static int has_actions = 0;
 
 #define Abort(...) { fprintf(stderr, __VA_ARGS__); fprintf(stderr, "Abort at line %d!\n", __LINE__); exit(-1); }
+
+static void*
+xmalloc_array(size_t count, size_t size)
+{
+    if (count == 0) count = 1;
+    if (size == 0) size = 1;
+    if (count > SIZE_MAX / size) Abort("Out of memory!\n");
+    void *res = malloc(count * size);
+    if (res == NULL) Abort("Out of memory!\n");
+    return res;
+}
+
 
 /* Load a set from file */
 #define set_load(f) RUN(set_load, f)
@@ -131,11 +143,13 @@ TASK_1(rel_t, rel_load_proj, FILE*, f)
     if (fread(&r_k, sizeof(int), 1, f) != 1) Abort("Invalid file format.");
     if (fread(&w_k, sizeof(int), 1, f) != 1) Abort("Invalid file format.");
 
-    rel_t rel = (rel_t)malloc(sizeof(struct relation));
+    if (r_k < 0 || w_k < 0) Abort("Invalid file format.");
+
+    rel_t rel = (rel_t)xmalloc_array(1, sizeof(*rel));
     rel->r_k = r_k;
     rel->w_k = w_k;
-    rel->r_proj = (int*)malloc(sizeof(int[rel->r_k]));
-    rel->w_proj = (int*)malloc(sizeof(int[rel->w_k]));
+    rel->r_proj = (int*)xmalloc_array((size_t)rel->r_k, sizeof(*rel->r_proj));
+    rel->w_proj = (int*)xmalloc_array((size_t)rel->w_k, sizeof(*rel->w_proj));
 
     if (fread(rel->r_proj, sizeof(int), rel->r_k, f) != (size_t)rel->r_k) Abort("Invalid file format.");
     if (fread(rel->w_proj, sizeof(int), rel->w_k, f) != (size_t)rel->w_k) Abort("Invalid file format.");
@@ -144,8 +158,9 @@ TASK_1(rel_t, rel_load_proj, FILE*, f)
     int *w_proj = rel->w_proj;
 
     /* Compute the meta */
-    uint32_t meta[vector_size*2+2];
-    memset(meta, 0, sizeof(uint32_t[vector_size*2+2]));
+    size_t meta_size = (size_t)vector_size * 2 + 2;
+    uint32_t *meta = (uint32_t*)xmalloc_array(meta_size, sizeof(*meta));
+    memset(meta, 0, meta_size * sizeof(*meta));
     int r_i=0, w_i=0, i=0, j=0;
     for (;;) {
         int type = 0;
@@ -169,7 +184,8 @@ TASK_1(rel_t, rel_load_proj, FILE*, f)
         i++;
     }
 
-    rel->meta = lddmc_cube((uint32_t*)meta, j);
+    rel->meta = lddmc_cube(meta, j);
+    free(meta);
     rel->dd = lddmc_false;
 
     lddmc_protect(&rel->meta);
@@ -193,7 +209,7 @@ VOID_TASK_2(rel_load, FILE*, f, rel_t, rel)
  */
 static uint64_t compute_highest_id;
 #define compute_highest(dd, arr) RUN(compute_highest, dd, arr)
-VOID_TASK_2(compute_highest, MDD, dd, uint32_t*, arr)
+VOID_TASK_2(compute_highest, MDD, dd, _Atomic(uint32_t)*, arr)
 {
     if (dd == lddmc_true || dd == lddmc_false) return;
 
@@ -210,9 +226,9 @@ VOID_TASK_2(compute_highest, MDD, dd, uint32_t*, arr)
     if (!mddnode_getcopy(n)) {
         const uint32_t v = mddnode_getvalue(n);
         while (1) {
-            const uint32_t cur = *(volatile uint32_t*)arr;
+            uint32_t cur = atomic_load_explicit(arr, memory_order_relaxed);
             if (v <= cur) break;
-            if (__sync_bool_compare_and_swap(arr, cur, v)) break;
+            if (atomic_compare_exchange_strong(arr, &cur, v)) break;
         }
     }
 }
@@ -223,7 +239,7 @@ VOID_TASK_2(compute_highest, MDD, dd, uint32_t*, arr)
  */
 static uint64_t compute_highest_action_id;
 #define compute_highest_action(dd, meta, arr) RUN(compute_highest_action, dd, meta, arr)
-VOID_TASK_3(compute_highest_action, MDD, dd, MDD, meta, uint32_t*, target)
+VOID_TASK_3(compute_highest_action, MDD, dd, MDD, meta, _Atomic(uint32_t)*, target)
 {
     if (dd == lddmc_true || dd == lddmc_false) return;
     if (meta == lddmc_true) return;
@@ -255,9 +271,9 @@ VOID_TASK_3(compute_highest_action, MDD, dd, MDD, meta, uint32_t*, target)
         has_actions = 1;
         const uint32_t v = mddnode_getvalue(n);
         while (1) {
-            const uint32_t cur = *(volatile uint32_t*)target;
+            uint32_t cur = atomic_load_explicit(target, memory_order_relaxed);
             if (v <= cur) break;
-            if (__sync_bool_compare_and_swap(target, cur, v)) break;
+            if (atomic_compare_exchange_strong(target, &cur, v)) break;
         }
     }
 }
@@ -571,14 +587,15 @@ VOID_TASK_0(run)
     // Read number of action labels
     int action_labels_count = 0;
     if (fread(&action_labels_count, sizeof(int), 1, f) != 1) action_labels_count = 0;
+    if (action_labels_count < 0) Abort("Invalid input file!\n");
     // ignore: Abort("Input file missing action label count!\n");
 
     // Read action labels
-    char *action_labels[action_labels_count];
+    char **action_labels = (char**)xmalloc_array((size_t)action_labels_count, sizeof(*action_labels));
     for (int i=0; i<action_labels_count; i++) {
         uint32_t len;
         if (fread(&len, sizeof(uint32_t), 1, f) != 1) Abort("Invalid input file!\n");
-        action_labels[i] = (char*)malloc(sizeof(char[len+1]));
+        action_labels[i] = (char*)xmalloc_array((size_t)len + 1, sizeof(*action_labels[i]));
         if (fread(action_labels[i], sizeof(char), len, f) != len) Abort("Invalid input file!\n");
         action_labels[i][len] = 0;
     }
@@ -603,32 +620,34 @@ VOID_TASK_0(run)
     if (verbose) printf("Preparing conversion to BDD...\n");
 
     // Compute highest value at each level (from reachable states)
-    uint32_t highest[vector_size];
-    for (int i=0; i<vector_size; i++) highest[i] = 0;
+    _Atomic(uint32_t) *highest = (_Atomic(uint32_t)*)xmalloc_array((size_t)vector_size, sizeof(*highest));
+    for (int i=0; i<vector_size; i++) atomic_store_explicit(&highest[i], 0, memory_order_relaxed);
     compute_highest(states->dd, highest);
 
     // Compute highest action label value (from transition relations)
-    uint32_t highest_action = 0;
+    _Atomic(uint32_t) highest_action = 0;
     for (int i=0; i<next_count; i++) {
-        compute_highest_action(next[i]->dd, next[i]->meta, (uint32_t*)&highest_action);
+        compute_highest_action(next[i]->dd, next[i]->meta, &highest_action);
     }
 
     // Compute number of bits for each level
-    int bits[vector_size];
+    int *bits = (int*)xmalloc_array((size_t)vector_size, sizeof(*bits));
     for (int i=0; i<vector_size; i++) {
         bits[i] = 0;
-        while (highest[i] != 0) {
+        uint32_t highest_i = atomic_load_explicit(&highest[i], memory_order_relaxed);
+        while (highest_i != 0) {
             bits[i]++;
-            highest[i]>>=1;
+            highest_i >>= 1;
         }
         if (bits[i] == 0) bits[i] = 1;
     }
 
     // Compute number of bits for action label
     actionbits = 0;
-    while (highest_action != 0) {
+    uint32_t highest_action_value = atomic_load_explicit(&highest_action, memory_order_relaxed);
+    while (highest_action_value != 0) {
         actionbits++;
-        highest_action>>=1;
+        highest_action_value >>= 1;
     }
     if (actionbits == 0 && has_actions) actionbits = 1;
 
@@ -667,7 +686,7 @@ VOID_TASK_0(run)
     if (verbose) printf("Converting to BDD...\n");
 
     // Create BDD file
-    f = fopen(bdd_filename, "w");
+    f = fopen(bdd_filename, "wb");
     if (f == NULL) Abort("Cannot open file '%s'!\n", bdd_filename);
 
     // Write domain...
@@ -749,10 +768,16 @@ VOID_TASK_0(run)
     // Write action labels
     fwrite(&action_labels_count, sizeof(int), 1, f);
     for (int i=0; i<action_labels_count; i++) {
-        uint32_t len = strlen(action_labels[i]);
+        size_t len_size = strlen(action_labels[i]);
+        if (len_size > UINT32_MAX) Abort("Action label too long!\n");
+        uint32_t len = (uint32_t)len_size;
         fwrite(&len, sizeof(uint32_t), 1, f);
         fwrite(action_labels[i], sizeof(char), len, f);
+        free(action_labels[i]);
     }
+    free(action_labels);
+    free(bits);
+    free(highest);
 
     // Close the file
     fclose(f);
@@ -762,7 +787,7 @@ VOID_TASK_0(run)
 }
 
 int
-main(int argc, char **argv)
+main(int argc, const char **argv)
 {
     parse_args(argc, argv);
 

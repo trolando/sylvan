@@ -1,14 +1,14 @@
-#include <getopt.h>
 #include <inttypes.h>
 #include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
 
 #include <getrss.h>
 
 #include <sylvan_int.h>
+
+#include <common.h>
 
 /* Configuration */
 static int report_levels = 0; // report states at start of every level
@@ -18,8 +18,8 @@ static int strategy = 2; // 0 = BFS, 1 = PAR, 2 = SAT, 3 = CHAINING
 static int check_deadlocks = 0; // set to 1 to check for deadlocks on-the-fly
 static int print_transition_matrix = 0; // print transition relation matrix
 static int workers = 0; // autodetect
-static char* model_filename = NULL; // filename of model
-static char* out_filename = NULL; // filename of output
+static const char* model_filename = NULL; // filename of model
+static const char* out_filename = NULL; // filename of output
 
 static void
 print_usage()
@@ -47,32 +47,33 @@ print_help()
 }
 
 static void
-parse_args(int argc, char **argv)
+parse_args(int argc, const char **argv)
 {
-    static const struct option longopts[] = {
-        {.name = "workers", .val = 'w', .has_arg = required_argument},
-        {.name = "strategy", .val = 's', .has_arg = required_argument},
-        {.name = "deadlocks", .val = 3, .has_arg = no_argument},
-        {.name = "count-nodes", .val = 5, .has_arg = no_argument},
-        {.name = "count-states", .val = 1, .has_arg = no_argument},
-        {.name = "count-table", .val = 2, .has_arg = no_argument},
-        {.name = "print-matrix", .val = 4, .has_arg = no_argument},
-        {.name = "help", .val = 'h', .has_arg = no_argument},
-        {.name = "usage", .val = 99, .has_arg = no_argument},
+    static const struct optparse_long longopts[] = {
+        {"workers", 'w', OPTPARSE_REQUIRED},
+        {"strategy", 's', OPTPARSE_REQUIRED},
+        {"deadlocks", 3, OPTPARSE_NONE},
+        {"count-nodes", 5, OPTPARSE_NONE},
+        {"count-states", 1, OPTPARSE_NONE},
+        {"count-table", 2, OPTPARSE_NONE},
+        {"print-matrix", 4, OPTPARSE_NONE},
+        {"help", 'h', OPTPARSE_NONE},
+        {"usage", 'u', OPTPARSE_NONE},
         {},
     };
-    int key = 0;
-    int long_index = 0;
-    while ((key = getopt_long(argc, argv, "w:s:h", longopts, &long_index)) != -1) {
-        switch (key) {
+    int option = 0;
+    struct optparse options;
+    optparse_init(&options, argv);
+    while ((option = optparse_long(&options, longopts, NULL)) != -1) {
+        switch (option) {
             case 'w':
-                workers = atoi(optarg);
+                workers = atoi(options.optarg);
                 break;
             case 's':
-                if (strcmp(optarg, "bfs")==0) strategy = 0;
-                else if (strcmp(optarg, "par")==0) strategy = 1;
-                else if (strcmp(optarg, "sat")==0) strategy = 2;
-                else if (strcmp(optarg, "chaining")==0) strategy = 3;
+                if (strcmp(options.optarg, "bfs")==0) strategy = 0;
+                else if (strcmp(options.optarg, "par")==0) strategy = 1;
+                else if (strcmp(options.optarg, "sat")==0) strategy = 2;
+                else if (strcmp(options.optarg, "chaining")==0) strategy = 3;
                 else {
                     print_usage();
                     exit(0);
@@ -93,7 +94,7 @@ parse_args(int argc, char **argv)
             case 5:
                 report_nodes = 1;
                 break;
-            case 99:
+            case 'u':
                 print_usage();
                 exit(0);
             case 'h':
@@ -101,12 +102,12 @@ parse_args(int argc, char **argv)
                 exit(0);
         }
     }
-    if (optind >= argc) {
+    if (options.optind >= argc) {
         print_usage();
         exit(0);
     }
-    model_filename = argv[optind];
-    if (optind + 1 < argc) out_filename = argv[optind + 1];
+    model_filename = optparse_arg(&options);
+    if (options.optind < argc) out_filename = optparse_arg(&options);
 }
 
 /**
@@ -129,17 +130,6 @@ typedef struct relation
 static int vector_size; // size of vector in integers
 static int next_count; // number of partitions of the transition relation
 static rel_t *next; // each partition of the transition relation
-
-/**
- * Obtain current wallclock time
- */
-static double
-wctime()
-{
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (tv.tv_sec + 1E-6 * tv.tv_usec);
-}
 
 static double t_start;
 #define INFO(s, ...) fprintf(stdout, "[% 8.2f] " s, wctime()-t_start, ##__VA_ARGS__)
@@ -203,8 +193,8 @@ TASK_1(rel_t, rel_load_proj, FILE*, f)
     rel_t rel = (rel_t)malloc(sizeof(struct relation));
     rel->r_k = r_k;
     rel->w_k = w_k;
-    rel->r_proj = (int*)malloc(sizeof(int[rel->r_k]));
-    rel->w_proj = (int*)malloc(sizeof(int[rel->w_k]));
+    rel->r_proj = (int*)malloc((size_t)rel->r_k * sizeof(*rel->r_proj));
+    rel->w_proj = (int*)malloc((size_t)rel->w_k * sizeof(*rel->w_proj));
 
     if (fread(rel->r_proj, sizeof(int), rel->r_k, f) != (size_t)rel->r_k) Abort("Invalid file format.");
     if (fread(rel->w_proj, sizeof(int), rel->w_k, f) != (size_t)rel->w_k) Abort("Invalid file format.");
@@ -215,8 +205,8 @@ TASK_1(rel_t, rel_load_proj, FILE*, f)
     rel->firstvar = -1;
 
     /* Compute the meta */
-    uint32_t meta[vector_size*2+2];
-    memset(meta, 0, sizeof(uint32_t[vector_size*2+2]));
+    uint32_t* meta = (uint32_t*)malloc((size_t)(vector_size*2+2) * sizeof(*meta));
+    memset(meta, 0, (size_t)(vector_size*2+2) * sizeof(*meta));
     int r_i=0, w_i=0, i=0, j=0;
     for (;;) {
         int type = 0;
@@ -250,6 +240,7 @@ TASK_1(rel_t, rel_load_proj, FILE*, f)
     rel->dd = lddmc_false;
     lddmc_protect(&rel->dd);
 
+    free(meta);
     return rel;
 }
 
@@ -330,7 +321,7 @@ static void
 print_example(MDD example)
 {
     if (example != lddmc_false) {
-        uint32_t vec[vector_size];
+        uint32_t* vec = (uint32_t*)malloc((size_t)vector_size * sizeof(*vec));
         lddmc_sat_one(example, vec, vector_size);
 
         printf("[");
@@ -339,6 +330,7 @@ print_example(MDD example)
             printf("%" PRIu32, vec[i]);
         }
         printf("]");
+        free(vec);
     }
 }
 
@@ -854,7 +846,7 @@ TASK_0(int, run)
 }
 
 int
-main(int argc, char **argv)
+main(int argc, const char **argv)
 {
     /**
      * Parse command line, set locale, set startup time for INFO messages.

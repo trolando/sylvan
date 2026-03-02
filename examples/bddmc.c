@@ -1,15 +1,15 @@
-#include <getopt.h>
 #include <inttypes.h>
 #include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
 
 #include <getrss.h>
 
 #include <sylvan.h>
 #include <sylvan_int.h>
+
+#include <common.h>
 
 /* Configuration */
 static int report_levels = 0; // report states at end of every level
@@ -20,7 +20,7 @@ static int check_deadlocks = 0; // set to 1 to check for deadlocks on-the-fly (o
 static int merge_relations = 0; // merge relations to 1 relation
 static int print_transition_matrix = 0; // print transition relation matrix
 static int workers = 0; // autodetect
-static char* model_filename = NULL; // filename of model
+static const char* model_filename = NULL; // filename of model
 
 static void
 print_usage()
@@ -49,33 +49,34 @@ print_help()
 }
 
 static void
-parse_args(int argc, char **argv)
+parse_args(int argc, const char **argv)
 {
-    static const struct option longopts[] = {
-        {.name = "workers", .val = 'w', .has_arg = required_argument},
-        {.name = "strategy", .val = 's', .has_arg = required_argument},
-        {.name = "deadlocks", .val = 3, .has_arg = no_argument},
-        {.name = "count-nodes", .val = 5, .has_arg = no_argument},
-        {.name = "count-states", .val = 1, .has_arg = no_argument},
-        {.name = "count-table", .val = 2, .has_arg = no_argument},
-        {.name = "merge-relations", .val = 6, .has_arg = no_argument},
-        {.name = "print-matrix", .val = 4, .has_arg = no_argument},
-        {.name = "help", .val = 'h', .has_arg = no_argument},
-        {.name = "usage", .val = 99, .has_arg = no_argument},
+    static const struct optparse_long longopts[] = {
+        {"workers", 'w', OPTPARSE_REQUIRED},
+        {"strategy", 's', OPTPARSE_REQUIRED},
+        {"deadlocks", 3, OPTPARSE_NONE},
+        {"count-nodes", 5, OPTPARSE_NONE},
+        {"count-states", 1, OPTPARSE_NONE},
+        {"count-table", 2, OPTPARSE_NONE},
+        {"merge-relations", 6, OPTPARSE_NONE},
+        {"print-matrix", 4, OPTPARSE_NONE},
+        {"help", 'h', OPTPARSE_NONE},
+        {"usage", 'u', OPTPARSE_NONE},
         {},
     };
-    int key = 0;
-    int long_index = 0;
-    while ((key = getopt_long(argc, argv, "w:s:h", longopts, &long_index)) != -1) {
-        switch (key) {
+    int option = 0;
+    struct optparse options;
+    optparse_init(&options, argv);
+    while ((option = optparse_long(&options, longopts, NULL)) != -1) {
+        switch (option) {
             case 'w':
-                workers = atoi(optarg);
+                workers = atoi(options.optarg);
                 break;
             case 's':
-                if (strcmp(optarg, "bfs")==0) strategy = 0;
-                else if (strcmp(optarg, "par")==0) strategy = 1;
-                else if (strcmp(optarg, "sat")==0) strategy = 2;
-                else if (strcmp(optarg, "chaining")==0) strategy = 3;
+                if (strcmp(options.optarg, "bfs")==0) strategy = 0;
+                else if (strcmp(options.optarg, "par")==0) strategy = 1;
+                else if (strcmp(options.optarg, "sat")==0) strategy = 2;
+                else if (strcmp(options.optarg, "chaining")==0) strategy = 3;
                 else {
                     print_usage();
                     exit(0);
@@ -99,7 +100,7 @@ parse_args(int argc, char **argv)
             case 6:
                 merge_relations = 1;
                 break;
-            case 99:
+            case 'u':
                 print_usage();
                 exit(0);
             case 'h':
@@ -107,11 +108,11 @@ parse_args(int argc, char **argv)
                 exit(0);
         }
     }
-    if (optind >= argc) {
+    if (options.optind >= argc) {
         print_usage();
         exit(0);
     }
-    model_filename = argv[optind];
+    model_filename = optparse_arg(&options);
 }
 
 /**
@@ -136,17 +137,6 @@ static int actionbits; // number of bits for action label
 static int totalbits; // total number of bits
 static int next_count; // number of partitions of the transition relation
 static rel_t *next; // each partition of the transition relation
-
-/**
- * Obtain current wallclock time
- */
-static double
-wctime()
-{
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (tv.tv_sec + 1E-6 * tv.tv_usec);
-}
 
 static double t_start;
 #define INFO(s, ...) fprintf(stdout, "[% 8.2f] " s, wctime()-t_start, ##__VA_ARGS__)
@@ -193,15 +183,19 @@ TASK_1(set_t, set_load, FILE*, f)
 
     if (k == -1) {
         // create variables for a full state vector
-        uint32_t vars[totalbits];
+        uint32_t *vars = (uint32_t*)malloc((size_t)totalbits * sizeof(*vars));
+        if (vars == NULL) Abort("Out of memory!\n");
         for (int i=0; i<totalbits; i++) vars[i] = 2*i;
         set->variables = sylvan_set_fromarray(vars, totalbits);
+        free(vars);
     } else {
         // read proj
-        int proj[k];
+        int *proj = (int*)malloc((size_t)k * sizeof(*proj));
+        if (proj == NULL) Abort("Out of memory!\n");
         if (fread(proj, sizeof(int), k, f) != (size_t)k) Abort("Invalid input file!\n");
         // create variables for a short/projected state vector
-        uint32_t vars[totalbits];
+        uint32_t *vars = (uint32_t*)malloc((size_t)totalbits * sizeof(*vars));
+        if (vars == NULL) Abort("Out of memory!\n");
         uint32_t cv = 0;
         int j = 0, n = 0;
         for (int i=0; i<vectorsize && j<k; i++) {
@@ -213,6 +207,8 @@ TASK_1(set_t, set_load, FILE*, f)
             }
         }
         set->variables = sylvan_set_fromarray(vars, n);
+        free(vars);
+        free(proj);
     }
 
     // read bdd
@@ -239,8 +235,8 @@ TASK_1(rel_t, rel_load_proj, FILE*, f)
     if (fread(&w_k, sizeof(int), 1, f) != 1) Abort("Invalid file format.");
     rel->r_k = r_k;
     rel->w_k = w_k;
-    int *r_proj = (int*)malloc(sizeof(int[r_k]));
-    int *w_proj = (int*)malloc(sizeof(int[w_k]));
+    int *r_proj = (int*)malloc((size_t)r_k * sizeof(*r_proj));
+    int *w_proj = (int*)malloc((size_t)w_k * sizeof(*w_proj));
     if (fread(r_proj, sizeof(int), r_k, f) != (size_t)r_k) Abort("Invalid file format.");
     if (fread(w_proj, sizeof(int), w_k, f) != (size_t)w_k) Abort("Invalid file format.");
     rel->r_proj = r_proj;
@@ -250,7 +246,8 @@ TASK_1(rel_t, rel_load_proj, FILE*, f)
     sylvan_protect(&rel->bdd);
 
     /* Compute a_proj the union of r_proj and w_proj, and a_k the length of a_proj */
-    int a_proj[r_k+w_k];
+    int *a_proj = (int*)malloc((size_t)(r_k + w_k) * sizeof(*a_proj));
+    if (a_proj == NULL) Abort("Out of memory!\n");
     int r_i = 0, w_i = 0, a_i = 0;
     for (;r_i < r_k || w_i < w_k;) {
         if (r_i < r_k && w_i < w_k) {
@@ -271,7 +268,8 @@ TASK_1(rel_t, rel_load_proj, FILE*, f)
     const int a_k = a_i;
 
     /* Compute all_variables, which are all variables the transition relation is defined on */
-    uint32_t all_vars[totalbits * 2];
+    uint32_t *all_vars = (uint32_t*)malloc((size_t)totalbits * 2 * sizeof(*all_vars));
+    if (all_vars == NULL) Abort("Out of memory!\n");
     uint32_t curvar = 0; // start with variable 0
     int i=0, j=0, n=0;
     for (; i<vectorsize && j<a_k; i++) {
@@ -289,6 +287,8 @@ TASK_1(rel_t, rel_load_proj, FILE*, f)
     rel->variables = sylvan_set_fromarray(all_vars, n);
     sylvan_protect(&rel->variables);
 
+    free(a_proj);
+    free(all_vars);
     return rel;
 }
 
@@ -309,9 +309,10 @@ VOID_TASK_2(rel_load, rel_t, rel, FILE*, f)
 #define print_example(example, variables) RUN(print_example, example, variables)
 VOID_TASK_2(print_example, BDD, example, BDDSET, variables)
 {
-    uint8_t str[totalbits];
-
     if (example != sylvan_false) {
+        uint8_t *str = (uint8_t*)malloc((size_t)totalbits * sizeof(*str));
+        if (str == NULL) Abort("Out of memory!\n");
+
         sylvan_sat_one(example, variables, str);
         int x=0;
         printf("[");
@@ -325,6 +326,8 @@ VOID_TASK_2(print_example, BDD, example, BDDSET, variables)
             printf("%" PRIu32, res);
         }
         printf("]");
+
+        free(str);
     }
 }
 
@@ -691,8 +694,8 @@ VOID_TASK_1(chaining, set_t, set)
 TASK_2(BDD, extend_relation, MTBDD, relation, MTBDD, variables)
 {
     /* first determine which state BDD variables are in rel */
-    int has[totalbits];
-    for (int i=0; i<totalbits; i++) has[i] = 0;
+    int *has = (int*)calloc((size_t)totalbits, sizeof(*has));
+    if (has == NULL) Abort("Out of memory!\n");
     MTBDD s = variables;
     while (!sylvan_set_isempty(s)) {
         uint32_t v = sylvan_set_first(s);
@@ -716,6 +719,7 @@ TASK_2(BDD, extend_relation, MTBDD, relation, MTBDD, variables)
     BDD result = sylvan_and(relation, eq);
     bdd_refs_pop(1);
 
+    free(has);
     return result;
 }
 
@@ -794,7 +798,7 @@ VOID_TASK_0(run)
 
     /* Read domain data */
     if (fread(&vectorsize, sizeof(int), 1, f) != 1) Abort("Invalid input file!\n");
-    statebits = (int*)malloc(sizeof(int[vectorsize]));
+    statebits = (int*)malloc((size_t)vectorsize * sizeof(*statebits));
     if (fread(statebits, sizeof(int), vectorsize, f) != (size_t)vectorsize) Abort("Invalid input file!\n");
     if (fread(&actionbits, sizeof(int), 1, f) != 1) Abort("Invalid input file!\n");
     totalbits = 0;
@@ -919,7 +923,7 @@ VOID_TASK_0(run)
 }
 
 int
-main(int argc, char **argv)
+main(int argc, const char **argv)
 {
     /**
      * Parse command line, set locale, set startup time for INFO messages.

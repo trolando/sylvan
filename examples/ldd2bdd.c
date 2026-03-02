@@ -195,8 +195,8 @@ void rel_load_CALL(lace_worker* lace, FILE* f, rel_t rel)
  * This method is called for the set of reachable states.
  */
 static uint64_t compute_highest_id;
-VOID_TASK_2(compute_highest, MDD, dd, uint32_t*, arr)
-void compute_highest_CALL(lace_worker* lace, MDD dd, uint32_t* arr)
+VOID_TASK_2(compute_highest, MDD, dd, _Atomic(uint32_t)*, arr)
+void compute_highest_CALL(lace_worker* lace, MDD dd, _Atomic(uint32_t)* arr)
 {
     if (dd == lddmc_true || dd == lddmc_false) return;
 
@@ -213,9 +213,9 @@ void compute_highest_CALL(lace_worker* lace, MDD dd, uint32_t* arr)
     if (!mddnode_getcopy(n)) {
         const uint32_t v = mddnode_getvalue(n);
         while (1) {
-            const uint32_t cur = *(volatile uint32_t*)arr;
+            uint32_t cur = atomic_load_explicit(arr, memory_order_relaxed);
             if (v <= cur) break;
-            if (__sync_bool_compare_and_swap(arr, cur, v)) break;
+            if (atomic_compare_exchange_strong(arr, &cur, v)) break;
         }
     }
 }
@@ -225,8 +225,8 @@ void compute_highest_CALL(lace_worker* lace, MDD dd, uint32_t* arr)
  * This method is called for each transition relation.
  */
 static uint64_t compute_highest_action_id;
-VOID_TASK_3(compute_highest_action, MDD, dd, MDD, meta, uint32_t*, target)
-void compute_highest_action_CALL(lace_worker* lace, MDD dd, MDD meta, uint32_t* target)
+VOID_TASK_3(compute_highest_action, MDD, dd, MDD, meta, _Atomic(uint32_t)*, target)
+void compute_highest_action_CALL(lace_worker* lace, MDD dd, MDD meta, _Atomic(uint32_t)* target)
 {
     if (dd == lddmc_true || dd == lddmc_false) return;
     if (meta == lddmc_true) return;
@@ -258,9 +258,9 @@ void compute_highest_action_CALL(lace_worker* lace, MDD dd, MDD meta, uint32_t* 
         has_actions = 1;
         const uint32_t v = mddnode_getvalue(n);
         while (1) {
-            const uint32_t cur = *(volatile uint32_t*)target;
+            uint32_t cur = atomic_load_explicit(target, memory_order_relaxed);
             if (v <= cur) break;
-            if (__sync_bool_compare_and_swap(target, cur, v)) break;
+            if (atomic_compare_exchange_strong(target, &cur, v)) break;
         }
     }
 }
@@ -616,7 +616,7 @@ void run_CALL(lace_worker* lace)
     compute_highest(states->dd, highest);
 
     // Compute highest action label value (from transition relations)
-    uint32_t highest_action = 0;
+    _Atomic(uint32_t) highest_action = 0;
     for (int i=0; i<next_count; i++) {
         compute_highest_action(next[i]->dd, next[i]->meta, &highest_action);
     }

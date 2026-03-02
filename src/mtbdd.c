@@ -194,7 +194,7 @@ typedef struct mtbdd_refs_internal
     mtbdd_refs_task_t sbegin, send, scur;
 } *mtbdd_refs_internal_t;
 
-DECLARE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
+SYLVAN_TLS mtbdd_refs_internal_t mtbdd_refs_key;
 
 VOID_TASK_2(mtbdd_refs_mark_p_par, const MTBDD**, begin, size_t, count)
 
@@ -253,7 +253,6 @@ VOID_TASK_0(mtbdd_refs_mark_task)
 
 void mtbdd_refs_mark_task_CALL(lace_worker* lace)
 {
-    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
     mtbdd_refs_mark_p_par_SPAWN(lace, mtbdd_refs_key->pbegin, mtbdd_refs_key->pcur-mtbdd_refs_key->pbegin);
     mtbdd_refs_mark_r_par_SPAWN(lace, mtbdd_refs_key->rbegin, mtbdd_refs_key->rcur-mtbdd_refs_key->rbegin);
     mtbdd_refs_mark_s_par_CALL(lace, mtbdd_refs_key->sbegin, mtbdd_refs_key->scur-mtbdd_refs_key->sbegin);
@@ -279,7 +278,7 @@ mtbdd_refs_init_key(void)
     s->rend = s->rbegin + 1024;
     s->scur = s->sbegin = (mtbdd_refs_task_t)malloc(sizeof(struct mtbdd_refs_task) * 1024);
     s->send = s->sbegin + 1024;
-    SET_THREAD_LOCAL(mtbdd_refs_key, s);
+    mtbdd_refs_key = s;
 }
 
 VOID_TASK_0(mtbdd_refs_init_task)
@@ -292,7 +291,6 @@ VOID_TASK_0(mtbdd_refs_init)
 
 void mtbdd_refs_init_CALL(lace_worker* lace)
 {
-    INIT_THREAD_LOCAL(mtbdd_refs_key);
     mtbdd_refs_init_task_TOGETHER();
     sylvan_gc_add_mark(mtbdd_refs_mark_CALL);
 }
@@ -329,7 +327,6 @@ mtbdd_refs_tasks_up(mtbdd_refs_internal_t mtbdd_refs_key)
 void __attribute__((unused))
 mtbdd_refs_pushptr(const MTBDD *ptr)
 {
-    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
     if (mtbdd_refs_key == 0) {
         mtbdd_refs_init_key();
         mtbdd_refs_pushptr(ptr);
@@ -342,14 +339,12 @@ mtbdd_refs_pushptr(const MTBDD *ptr)
 void __attribute__((unused))
 mtbdd_refs_popptr(size_t amount)
 {
-    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
     mtbdd_refs_key->pcur -= amount;
 }
 
 MTBDD __attribute__((unused))
 mtbdd_refs_push(MTBDD mtbdd)
 {
-    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
     if (mtbdd_refs_key == 0) {
         mtbdd_refs_init_key();
         return mtbdd_refs_push(mtbdd);
@@ -363,14 +358,12 @@ mtbdd_refs_push(MTBDD mtbdd)
 void __attribute__((unused))
 mtbdd_refs_pop(long amount)
 {
-    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
     mtbdd_refs_key->rcur -= amount;
 }
 
 void
 mtbdd_refs_spawn(lace_task* t)
 {
-    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
     mtbdd_refs_key->scur->t = t;
     mtbdd_refs_key->scur->f = t->f;
     mtbdd_refs_key->scur += 1;
@@ -380,7 +373,6 @@ mtbdd_refs_spawn(lace_task* t)
 MTBDD
 mtbdd_refs_sync(MTBDD result)
 {
-    LOCALIZE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
     mtbdd_refs_key->scur -= 1;
     return result;
 }
@@ -548,10 +540,10 @@ gcd(uint32_t u, uint32_t v)
     int shift;
     if (u == 0) return v;
     if (v == 0) return u;
-    shift = __builtin_ctz(u | v);
-    u >>= __builtin_ctz(u);
+    shift = ctz_uint32(u | v);
+    u >>= ctz_uint32(u);
     do {
-        v >>= __builtin_ctz(v);
+        v >>= ctz_uint32(v);
         if (u > v) {
             unsigned int t = v;
             v = u;

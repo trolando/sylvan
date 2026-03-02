@@ -17,7 +17,7 @@
  */
 
 #include <sylvan/internal/internal.h>
-#include "align.h"
+#include <sylvan/platform.h>
 
 #include <errno.h>  // for errno
 #include <string.h> // memset
@@ -71,15 +71,13 @@ void nodes_set_size(nodes_table* dbs, size_t size)
     }
 }
 
-DECLARE_THREAD_LOCAL(my_region, uint64_t);
+SYLVAN_TLS uint64_t my_region;
 
 VOID_TASK_0(nodes_reset_region)
 void nodes_reset_region_CALL(lace_worker* lace)
 {
     // we don't actually need Lace, but it's a Lace task to run for initialisation
-    LOCALIZE_THREAD_LOCAL(my_region, uint64_t);
     my_region = UINT64_MAX; // no region
-    SET_THREAD_LOCAL(my_region, my_region);
 }
 
 /**
@@ -105,7 +103,7 @@ static uint64_t claim_next_region(const nodes_table* dbs, uint64_t start_region)
         uint64_t v = atomic_load_explicit(word, memory_order_relaxed);
         while (v != UINT64_MAX) {
             // There is at least one free bit
-            int bit = __builtin_ctzll(~v); // least-significant free bit
+            int bit = ctz_uint64(~v); // least-significant free bit
             uint64_t mask = UINT64_C(1) << bit;
 
             // Try to claim
@@ -124,13 +122,10 @@ static uint64_t claim_next_region(const nodes_table* dbs, uint64_t start_region)
 
 static uint64_t claim_data_bucket(const nodes_table* dbs)
 {
-    LOCALIZE_THREAD_LOCAL(my_region, uint64_t);
-
     // First-time (or post-GC) init: everyone starts at region 0
     if (my_region == UINT64_MAX) {
         my_region = claim_next_region(dbs, 0);
         if (my_region == UINT64_MAX) return UINT64_MAX;
-        SET_THREAD_LOCAL(my_region, my_region);
     }
 
     for (;;) {
@@ -139,15 +134,15 @@ static uint64_t claim_data_bucket(const nodes_table* dbs)
         for (int i=0; i<8; i++) {
             uint64_t v = atomic_load_explicit(ptr, memory_order_relaxed);
             if (v != UINT64_MAX) {
-                int j = __builtin_clzll(~v);
+                int j = clz_uint64(~v);
                 *ptr |= UINT64_C(1) << (63 - j);
                 return (8 * my_region + i) * 64 + j;
             }
             ptr++;
         }
-        my_region = claim_next_region(dbs, my_region);
-        if (my_region == UINT64_MAX) return UINT64_MAX;
-        SET_THREAD_LOCAL(my_region, my_region);
+        uint64_t claimed = claim_next_region(dbs, my_region);
+        if (claimed == UINT64_MAX) return UINT64_MAX;
+        my_region = claimed;
     }
 }
 
@@ -347,7 +342,7 @@ static int nodes_reinsert_bucket(nodes_table* dbs, uint64_t d_idx)
 
 nodes_table* nodes_create(size_t initial_size, size_t max_size)
 {
-    nodes_table* dbs = alloc_aligned(sizeof(struct nodes));
+    nodes_table* dbs = sylvan_alloc_aligned(sizeof(struct nodes));
     if (dbs == 0) {
         fprintf(stderr, "nodes_create: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
@@ -368,18 +363,18 @@ nodes_table* nodes_create(size_t initial_size, size_t max_size)
     dbs->max_size = max_size;
     nodes_set_size(dbs, initial_size);
 
-    dbs->data = (uint8_t*) alloc_aligned(dbs->max_size * 16);
-    dbs->first = (_Atomic(uint64_t)*) alloc_aligned(dbs->max_size * 8);
-    dbs->next = (_Atomic(uint64_t)*) alloc_aligned(dbs->max_size * 16);
+    dbs->data = (uint8_t*)sylvan_alloc_aligned(dbs->max_size * 16);
+    dbs->first = (_Atomic(uint64_t)*) sylvan_alloc_aligned(dbs->max_size * 8);
+    dbs->next = (_Atomic(uint64_t)*) sylvan_alloc_aligned(dbs->max_size * 16);
 
     /* Allocate bitmaps. Each region is 64*8 = 512 buckets.
        Overhead of bitmap1: 1 bit per 4096 bucket.
        Overhead of bitmap2: 1 bit per bucket.
        Overhead of bitmapc: 1 bit per bucket. */
 
-    dbs->bitmap1 = (_Atomic(uint64_t)*)alloc_aligned(dbs->max_size / (512*8));
-    dbs->bitmap2 = (_Atomic(uint64_t)*)alloc_aligned(dbs->max_size / 8);
-    dbs->bitmapc = (uint64_t*)alloc_aligned(dbs->max_size / 8);
+    dbs->bitmap1 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(dbs->max_size / (512*8));
+    dbs->bitmap2 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(dbs->max_size / 8);
+    dbs->bitmapc = (uint64_t*)sylvan_alloc_aligned(dbs->max_size / 8);
 
     if (dbs->data == 0 || dbs->first == 0 || dbs->next == 0 || dbs->bitmap1 == 0 || dbs->bitmap2 == 0 || dbs->bitmapc == 0) {
         fprintf(stderr, "nodes_create: Unable to allocate memory: %s!\n", strerror(errno));
@@ -401,7 +396,6 @@ nodes_table* nodes_create(size_t initial_size, size_t max_size)
 
     // this design assumes there is only one nodes table...
 
-    INIT_THREAD_LOCAL(my_region);
     nodes_reset_region_TOGETHER();
 
     // initialize hashtab
@@ -412,21 +406,21 @@ nodes_table* nodes_create(size_t initial_size, size_t max_size)
 
 void nodes_free(nodes_table* dbs)
 {
-    free_aligned(dbs->data, dbs->max_size * 16);
-    free_aligned(dbs->first, dbs->max_size * 8);
-    free_aligned(dbs->next, dbs->max_size * 16);
-    free_aligned(dbs->bitmap1, dbs->max_size / (512*8));
-    free_aligned(dbs->bitmap2, dbs->max_size / 8);
-    free_aligned(dbs->bitmapc, dbs->max_size / 8);
-    free_aligned(dbs, sizeof(struct nodes));
+    sylvan_free_aligned(dbs->data, dbs->max_size * 16);
+    sylvan_free_aligned(dbs->first, dbs->max_size * 8);
+    sylvan_free_aligned(dbs->next, dbs->max_size * 16);
+    sylvan_free_aligned(dbs->bitmap1, dbs->max_size / (512*8));
+    sylvan_free_aligned(dbs->bitmap2, dbs->max_size / 8);
+    sylvan_free_aligned(dbs->bitmapc, dbs->max_size / 8);
+    sylvan_free_aligned(dbs, sizeof(struct nodes));
 }
 
 void nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    clear_aligned(dbs->bitmap1, dbs->max_size / (512*8));
-    clear_aligned(dbs->bitmap2, dbs->max_size / 8);
-    clear_aligned(dbs->first, dbs->max_size * 8);
-    clear_aligned(dbs->next, dbs->max_size * 16);
+    sylvan_clear_aligned(dbs->bitmap1, dbs->max_size / (512*8));
+    sylvan_clear_aligned(dbs->bitmap2, dbs->max_size / 8);
+    sylvan_clear_aligned(dbs->first, dbs->max_size * 8);
+    sylvan_clear_aligned(dbs->next, dbs->max_size * 16);
 
     // forbid first two positions (index 0 and 1)
     dbs->bitmap2[0] = 0xc000000000000000LL;
@@ -509,14 +503,14 @@ size_t nodes_count_nodes_par_CALL(lace_worker* lace, nodes_table* dbs, size_t fi
         size_t result = 0;
         _Atomic(uint64_t)* ptr = dbs->bitmap2 + (first / 64);
         if (count == 512) {
-            result += __builtin_popcountll(atomic_load_explicit(ptr+0, memory_order_relaxed));
-            result += __builtin_popcountll(atomic_load_explicit(ptr+1, memory_order_relaxed));
-            result += __builtin_popcountll(atomic_load_explicit(ptr+2, memory_order_relaxed));
-            result += __builtin_popcountll(atomic_load_explicit(ptr+3, memory_order_relaxed));
-            result += __builtin_popcountll(atomic_load_explicit(ptr+4, memory_order_relaxed));
-            result += __builtin_popcountll(atomic_load_explicit(ptr+5, memory_order_relaxed));
-            result += __builtin_popcountll(atomic_load_explicit(ptr+6, memory_order_relaxed));
-            result += __builtin_popcountll(atomic_load_explicit(ptr+7, memory_order_relaxed));
+            result += popcnt_uint64(atomic_load_explicit(ptr+0, memory_order_relaxed));
+            result += popcnt_uint64(atomic_load_explicit(ptr+1, memory_order_relaxed));
+            result += popcnt_uint64(atomic_load_explicit(ptr+2, memory_order_relaxed));
+            result += popcnt_uint64(atomic_load_explicit(ptr+3, memory_order_relaxed));
+            result += popcnt_uint64(atomic_load_explicit(ptr+4, memory_order_relaxed));
+            result += popcnt_uint64(atomic_load_explicit(ptr+5, memory_order_relaxed));
+            result += popcnt_uint64(atomic_load_explicit(ptr+6, memory_order_relaxed));
+            result += popcnt_uint64(atomic_load_explicit(ptr+7, memory_order_relaxed));
         } else {
             uint64_t mask = 0x8000000000000000LL >> (first & 63);
             for (size_t k=0; k<count; k++) {

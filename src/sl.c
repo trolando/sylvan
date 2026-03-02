@@ -15,7 +15,7 @@
  */
 
 #include <sylvan/sylvan.h>
-#include "align.h"
+#include <sylvan/platform.h>
 #include "sl.h"
 
 /* A SL_DEPTH of 6 means 32 bytes per bucket, of 14 means 64 bytes per bucket.
@@ -43,7 +43,7 @@ sylvan_skiplist_alloc(size_t size)
         exit(1);
     }
     sylvan_skiplist_t l = malloc(sizeof(struct sylvan_skiplist));
-    l->buckets = alloc_aligned(sizeof(sl_bucket) * size);
+    l->buckets = sylvan_alloc_aligned(sizeof(sl_bucket) * size);
     if (l->buckets == 0) {
         fprintf(stderr, "sylvan: Unable to allocate virtual memory (%'zu bytes) for the skiplist!\n", size*sizeof(sl_bucket));
         exit(1);
@@ -56,7 +56,7 @@ sylvan_skiplist_alloc(size_t size)
 void
 sylvan_skiplist_free(sylvan_skiplist_t l)
 {
-    free_aligned(l->buckets, sizeof(sl_bucket)*l->size);
+    sylvan_free_aligned(l->buckets, sizeof(sl_bucket)*l->size);
     free(l);
 }
 
@@ -129,10 +129,10 @@ void sylvan_skiplist_assign_next(sylvan_skiplist_t l, MTBDD dd)
     sl_bucket *a = l->buckets + next;
     a->dd = dd;
     a->next[0] = loc_next;
-    atomic_store_explicit(l->buckets[loc].next, next, memory_order_release);
+    atomic_store_explicit(&l->buckets[loc].next[0], next, memory_order_release);
 
     /* determine height */
-    uint64_t h = 1 + __builtin_clz(lace_rng(lace_get_worker())) / 2; // FIXME
+    uint64_t h = 1 + ctz_uint32(lace_rng(lace_get_worker())) / 2; // FIXME
     if (h > SL_DEPTH) h = SL_DEPTH;
 
     /* go up and create links */

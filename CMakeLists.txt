@@ -28,17 +28,18 @@ list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/tools/")
 # and lace is already added.
 # Then try to find lace in the OS using find_package.
 # If that fails, then download lace.
-if(NOT TARGET lace)
-  find_package(lace QUIET)
-  if(NOT lace_FOUND)
-    include(FetchContent)
-    FetchContent_Declare(
-        lace
-        GIT_REPOSITORY https://github.com/trolando/lace.git
-        GIT_TAG        v2.0.3
-    )
-    FetchContent_MakeAvailable(lace)
-  endif()
+if(NOT TARGET lace::lace)
+    find_package(lace 2.1 CONFIG QUIET)
+    if(NOT lace_FOUND)
+        include(FetchContent)
+        FetchContent_Declare(
+            lace
+            GIT_REPOSITORY https://github.com/trolando/lace.git
+            GIT_TAG        v2.1.0
+            GIT_SHALLOW    TRUE
+        )
+        FetchContent_MakeAvailable(lace)
+    endif()
 endif()
 
 include(CTest) # defines BUILD_TESTING option (default ON at top-level)

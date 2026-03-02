@@ -33,7 +33,6 @@
 
 #include <string.h>	/* memcpy()/memset() or bcopy()/bzero() */
 #include <assert.h>	/* assert() */
-#include <sys/param.h> /* for BYTE_ORDER */
 #include "sha2.h"
 
 /*
@@ -85,9 +84,6 @@
  * <machine/endian.h> where the appropriate definitions are actually
  * made).
  */
-#if !defined(BYTE_ORDER) || (BYTE_ORDER != LITTLE_ENDIAN && BYTE_ORDER != BIG_ENDIAN)
-#error Define BYTE_ORDER to be equal to either LITTLE_ENDIAN or BIG_ENDIAN
-#endif
 
 /*
  * Define the followingsha2_* types to types of the correct length on

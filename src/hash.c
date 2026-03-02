@@ -19,7 +19,7 @@
 /**
  * This tricks the compiler into generating the bit-wise rotation instruction
  */
-static uint64_t __attribute__((unused))
+static uint64_t
 rotr64(uint64_t n, unsigned int c)
 {
     return (n >> c) | (n << (64-c));
@@ -30,7 +30,7 @@ rotr64(uint64_t n, unsigned int c)
  * Implementation of xorshift128+ by Vigna 2016, which is
  * based on "Xorshift RNGs", Marsaglia 2003
  */
-static uint64_t __attribute__((unused))
+static uint64_t
 xor64(void)
 {
     // For the initial state of s, we select two numbers:

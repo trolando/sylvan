@@ -2054,7 +2054,7 @@ MDD lddmc_collect_CALL(lace_worker* lace, MDD mdd, lddmc_collect_cb cb, void* co
 
     lddmc_refs_spawn(lddmc_collect_SPAWN(lace, mddnode_getright(n), cb, context, values, count));
 
-    uint32_t newvalues[count+1];
+    uint32_t* newvalues = SYLVAN_ALLOCA(uint32_t, count+1);
     if (count > 0) memcpy(newvalues, values, sizeof(uint32_t)*count);
     newvalues[count] = mddnode_getvalue(n);
     MDD down = lddmc_collect_CALL(lace, mddnode_getdown(n), cb, context, newvalues, count+1);
@@ -2105,7 +2105,7 @@ void lddmc_sat_all_nopar_CALL(lace_worker* lace, MDD mdd, lddmc_enum_cb cb, void
         count++;
     }
 
-    uint32_t values[count];
+    uint32_t* values = SYLVAN_ALLOCA(uint32_t, count);
     _lddmc_sat_all_nopar_CALL(lace, mdd, cb, context, values, 0);
 }
 
@@ -2121,7 +2121,7 @@ void lddmc_sat_all_par_CALL(lace_worker* lace, MDD mdd, lddmc_enum_cb cb, void* 
 
     lddmc_sat_all_par_SPAWN(lace, mddnode_getright(n), cb, context, values, count);
 
-    uint32_t newvalues[count+1];
+    uint32_t* newvalues = SYLVAN_ALLOCA(uint32_t, count+1);
     if (count > 0) memcpy(newvalues, values, sizeof(uint32_t)*count);
     newvalues[count] = mddnode_getvalue(n);
     lddmc_sat_all_par_CALL(lace, mddnode_getdown(n), cb, context, newvalues, count+1);
@@ -2184,8 +2184,8 @@ void lddmc_match_sat_CALL(lace_worker* lace, struct lddmc_match_sat_info * info,
         }
     }
 
-    struct lddmc_match_sat_info *ri = (struct lddmc_match_sat_info*)alloca(sizeof(struct lddmc_match_sat_info)+sizeof(uint32_t[info->count]));
-    struct lddmc_match_sat_info *di = (struct lddmc_match_sat_info*)alloca(sizeof(struct lddmc_match_sat_info)+sizeof(uint32_t[info->count+1]));
+    struct lddmc_match_sat_info *ri = (struct lddmc_match_sat_info*)SYLVAN_ALLOCA_BYTES(sizeof(struct lddmc_match_sat_info)+info->count*sizeof(uint32_t));
+    struct lddmc_match_sat_info *di = (struct lddmc_match_sat_info*)SYLVAN_ALLOCA_BYTES(sizeof(struct lddmc_match_sat_info)+(info->count+1)*sizeof(uint32_t));
 
     ri->mdd = mddnode_getright(na);
     di->mdd = mddnode_getdown(na);
@@ -2195,8 +2195,8 @@ void lddmc_match_sat_CALL(lace_worker* lace, struct lddmc_match_sat_info * info,
     di->proj = mddnode_getdown(p_node);
     ri->count = info->count;
     di->count = info->count+1;
-    if (ri->count > 0) memcpy(ri->values, info->values, sizeof(uint32_t[info->count]));
-    if (di->count > 0) memcpy(di->values, info->values, sizeof(uint32_t[info->count]));
+    if (ri->count > 0) memcpy(ri->values, info->values, info->count * sizeof(uint32_t));
+    if (di->count > 0) memcpy(di->values, info->values, info->count * sizeof(uint32_t));
     di->values[info->count] = na_value;
 
     lddmc_match_sat_SPAWN(lace, ri, cb, context);
@@ -2254,8 +2254,8 @@ void lddmc_visit_seq_CALL(lace_worker* lace, MDD mdd, lddmc_visit_callbacks_t* c
 {
     if (cbs->lddmc_visit_pre(mdd, context) == 0) return;
 
-    void* context_down = alloca(ctx_size);
-    void* context_right = alloca(ctx_size);
+    void* context_down = SYLVAN_ALLOCA_BYTES(ctx_size);
+    void* context_right = SYLVAN_ALLOCA_BYTES(ctx_size);
     cbs->lddmc_visit_init_context(context_down, context, 1);
     cbs->lddmc_visit_init_context(context_right, context, 0);
 
@@ -2269,8 +2269,8 @@ void lddmc_visit_par_CALL(lace_worker* lace, MDD mdd, lddmc_visit_callbacks_t* c
 {
     if (cbs->lddmc_visit_pre(mdd, context) == 0) return;
 
-    void* context_down = alloca(ctx_size);
-    void* context_right = alloca(ctx_size);
+    void* context_down = SYLVAN_ALLOCA_BYTES(ctx_size);
+    void* context_right = SYLVAN_ALLOCA_BYTES(ctx_size);
     cbs->lddmc_visit_init_context(context_down, context, 1);
     cbs->lddmc_visit_init_context(context_right, context, 0);
 

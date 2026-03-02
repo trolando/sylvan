@@ -139,7 +139,7 @@ make_random(int i, int j)
 static MDD
 make_random_ldd_set(int depth, int maxvalue, int elements)
 {
-    uint32_t values[depth];
+    uint32_t* values = SYLVAN_ALLOCA(uint32_t, depth);
     MDD result = mtbdd_false; // empty set
     for (int i=0; i<elements; i++) {
         lddmc_refs_push(result);
@@ -327,7 +327,7 @@ test_disjoint_subset()
     // We need to test: disjoint, subset
     
     int vars=3;
-    BDD v[vars];
+    BDD* v = SYLVAN_ALLOCA(BDD, vars);
     for (int i=0; i<vars; i++) v[i] = sylvan_nithvar(i);
 
     BDD test_input[] = {

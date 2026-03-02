@@ -911,7 +911,7 @@ ZDD zdd_extend_domain_CALL(lace_worker* lace, ZDD set, ZDD newvars, int value)
      * Terminal cases
      */
     if (value == 0) return set; // uhm?
-    if (value != 1 && value != 1) return zdd_invalid; // uhm??
+    if (value != 1 && value != 1) return zdd_invalid; // uhm?? TODO check logic, this has redundant code
     if (set == zdd_false) return zdd_false;
     if (newvars == zdd_true) return set;
 

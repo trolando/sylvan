@@ -156,7 +156,7 @@ int test_zdd_merge_domains_CALL(lace_worker* lace)
     int nvars = rng(20,50);
 
     // Create random subdomain 1
-    uint32_t subdom1_arr[nvars];
+    uint32_t* subdom1_arr = SYLVAN_ALLOCA(uint32_t, nvars);
     int nsub1 = 0;
     for (int i=0; i<nvars; i++) if (rng(0,2)) subdom1_arr[nsub1++] = i;
     BDD bdd_subdom1 = mtbdd_fromarray(subdom1_arr, nsub1);
@@ -164,7 +164,7 @@ int test_zdd_merge_domains_CALL(lace_worker* lace)
     test_assert(zdd_subdom1 == zdd_set_from_mtbdd(bdd_subdom1));
 
     // Create random subdomain 2
-    uint32_t subdom2_arr[nvars];
+    uint32_t* subdom2_arr = SYLVAN_ALLOCA(uint32_t, nvars);
     int nsub2 = 0;
     for (int i=0; i<nvars; i++) if (rng(0,2)) subdom2_arr[nsub2++] = i;
     BDD bdd_subdom2 = mtbdd_fromarray(subdom2_arr, nsub2);
@@ -282,10 +282,10 @@ int test_zdd_enum_CALL(lace_worker* lace)
      */
 
     int nvars = rng(8,12);
-    uint8_t arr[nvars];
+    uint8_t* arr = SYLVAN_ALLOCA(uint8_t, nvars);
 
     // Create random source set
-    uint32_t dom_arr[nvars];
+    uint32_t* dom_arr = SYLVAN_ALLOCA(uint32_t, nvars);
     for (int i=0; i<nvars; i++) dom_arr[i] = i*2;
     ZDD zdd_dom = zdd_set_from_array(dom_arr, nvars);
 
@@ -300,11 +300,11 @@ int test_zdd_enum_CALL(lace_worker* lace)
     enum_len = nvars;
     enum_idx = 0;
 
-    enum_arrs = malloc(sizeof(uint8_t*[enum_max]));
+    enum_arrs = malloc(enum_max * sizeof(uint8_t*));
     ZDD res = zdd_enum_first(zdd_set, zdd_dom, arr, NULL);
     for (int i=0; i<enum_max; i++) {
         test_assert(res != zdd_false);
-        enum_arrs[i] = malloc(sizeof(uint8_t[nvars]));
+        enum_arrs[i] = malloc(nvars * sizeof(uint8_t));
         memcpy(enum_arrs[i], arr, nvars);
         res = zdd_enum_next(zdd_set, zdd_dom, arr, NULL);
     }
@@ -327,7 +327,7 @@ int test_zdd_and_CALL(lace_worker* lace)
 
     // Create random domain of 6..14 variables
     int nvars = rng(6,14);
-    uint32_t dom_arr[nvars];
+    uint32_t* dom_arr = SYLVAN_ALLOCA(uint32_t, nvars);
     for (int i=0; i<nvars; i++) dom_arr[i] = i;
     BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
 
@@ -336,7 +336,7 @@ int test_zdd_and_CALL(lace_worker* lace)
 
     int count = rng(0,100);
     for (int i=0; i<count; i++) {
-        uint8_t arr[nvars];
+        uint8_t* arr = SYLVAN_ALLOCA(uint8_t, nvars);
         for (int j=0; j<nvars; j++) arr[j] = rng(0, 2);
         bdd_set_a = sylvan_union_cube(bdd_set_a, bdd_dom, arr);
         for (int j=0; j<nvars; j++) arr[j] = rng(0, 2);
@@ -367,7 +367,7 @@ int test_zdd_or_CALL(lace_worker* lace)
 
     // Create random domain of 6..14 variables
     int nvars = rng(6,14);
-    uint32_t dom_arr[nvars];
+    uint32_t* dom_arr = SYLVAN_ALLOCA(uint32_t, nvars);
     for (int i=0; i<nvars; i++) dom_arr[i] = i;
     BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
 
@@ -376,7 +376,7 @@ int test_zdd_or_CALL(lace_worker* lace)
 
     int count = rng(0,100);
     for (int i=0; i<count; i++) {
-        uint8_t arr[nvars];
+        uint8_t* arr = SYLVAN_ALLOCA(uint8_t, nvars);
         for (int j=0; j<nvars; j++) arr[j] = rng(0, 2);
         bdd_set_a = sylvan_union_cube(bdd_set_a, bdd_dom, arr);
         for (int j=0; j<nvars; j++) arr[j] = rng(0, 2);
@@ -435,14 +435,14 @@ int test_zdd_ite_CALL(lace_worker* lace)
 
     // Create random domain of 6..12 variables
     int nvars = rng(6, 12);
-    uint32_t dom_arr[nvars];
+    uint32_t* dom_arr = SYLVAN_ALLOCA(uint32_t, nvars);
     for (int i=0; i<nvars; i++) dom_arr[i] = i;
     BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
 
     // Create three random sets
     BDD set_a, set_b, set_c;
     set_a = set_b = set_c = mtbdd_false;
-    uint8_t arr[nvars];
+    uint8_t* arr = SYLVAN_ALLOCA(uint8_t, nvars);
 
     {
         int count = rng(0, 100);
@@ -490,13 +490,14 @@ int test_zdd_exists_CALL(lace_worker* lace)
 
     // Create random domain of 6..12 variables
     int nvars = rng(6, 12);
-    uint32_t dom_arr[nvars];
+    uint32_t* dom_arr = SYLVAN_ALLOCA(uint32_t, nvars);
     for (int i=0; i<nvars; i++) dom_arr[i] = i;
     BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
     ZDD zdd_dom = zdd_set_from_array(dom_arr, nvars);
 
     // Create random subdomain and quotiented variables (qdom)
-    uint32_t subdom_arr[nvars], q_arr[nvars];
+    uint32_t* subdom_arr = SYLVAN_ALLOCA(uint32_t, nvars);
+    uint32_t* q_arr = SYLVAN_ALLOCA(uint32_t, nvars);
     int nsub = 0, nq = 0;
     for (int i=0; i<nvars; i++) {
         if (rng(0,2)) subdom_arr[nsub++] = i;
@@ -511,7 +512,7 @@ int test_zdd_exists_CALL(lace_worker* lace)
     BDD bdd_set = sylvan_false;
     ZDD zdd_set = zdd_false;
     {
-        uint8_t arr[nvars];
+        uint8_t* arr = SYLVAN_ALLOCA(uint8_t, nvars);
         int count = rng(10,200);
         for (int i=0; i<count; i++) {
             for (int j=0; j<nvars; j++) arr[j] = rng(0, 2);
@@ -747,17 +748,17 @@ int test_zdd_read_write_CALL(lace_worker* lace)
     int nvars = rng(8,12);
 
     // Create random source sets
-    uint32_t dom_arr[nvars];
+    uint32_t* dom_arr = SYLVAN_ALLOCA(uint32_t, nvars);
     for (int i=0; i<nvars; i++) dom_arr[i] = i*2;
     ZDD zdd_dom = zdd_set_from_array(dom_arr, nvars);
 
     int set_count = rng(1,10);
-    ZDD zdd_set[set_count];
+    ZDD* zdd_set = SYLVAN_ALLOCA(ZDD, set_count);
     for (int k=0; k<set_count; k++) {
         zdd_set[k] = zdd_false;
         int count = rng(4,100);
         for (int i=0; i<count; i++) {
-            uint8_t arr[nvars];
+            uint8_t* arr = SYLVAN_ALLOCA(uint8_t, nvars);
             for (int j=0; j<nvars; j++) arr[j] = rng(0, 2);
             zdd_set[k] = zdd_union_cube(zdd_set[k], zdd_dom, arr, zdd_true);
         }
@@ -766,7 +767,7 @@ int test_zdd_read_write_CALL(lace_worker* lace)
     FILE *f = tmpfile();
     zdd_writer_tobinary(f, zdd_set, set_count);
     rewind(f);
-    ZDD test[set_count];
+    ZDD* test = SYLVAN_ALLOCA(ZDD, set_count);
     test_assert(zdd_reader_frombinary(f, test, set_count) == 0);
     for (int i=0; i<set_count; i++) test_assert(test[i] == zdd_set[i]);
 

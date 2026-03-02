@@ -183,15 +183,15 @@ set_t set_load_CALL(lace_worker* lace, FILE* f)
 
     if (k == -1) {
         // create variables for a full state vector
-        uint32_t vars[totalbits];
+        uint32_t* vars = SYLVAN_ALLOCA(uint32_t, totalbits);
         for (int i=0; i<totalbits; i++) vars[i] = 2*i;
         set->variables = sylvan_set_fromarray(vars, totalbits);
     } else {
         // read proj
-        int proj[k];
+        int* proj = SYLVAN_ALLOCA(int, k);
         if (fread(proj, sizeof(int), k, f) != (size_t)k) Abort("Invalid input file!\n");
         // create variables for a short/projected state vector
-        uint32_t vars[totalbits];
+        uint32_t* vars = SYLVAN_ALLOCA(uint32_t, totalbits);
         uint32_t cv = 0;
         int j = 0, n = 0;
         for (int i=0; i<vectorsize && j<k; i++) {
@@ -230,8 +230,8 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
     if (fread(&w_k, sizeof(int), 1, f) != 1) Abort("Invalid file format.");
     rel->r_k = r_k;
     rel->w_k = w_k;
-    int *r_proj = (int*)malloc(sizeof(int[r_k]));
-    int *w_proj = (int*)malloc(sizeof(int[w_k]));
+    int *r_proj = (int*)malloc(r_k * sizeof(int));
+    int *w_proj = (int*)malloc(w_k * sizeof(int));
     if (fread(r_proj, sizeof(int), r_k, f) != (size_t)r_k) Abort("Invalid file format.");
     if (fread(w_proj, sizeof(int), w_k, f) != (size_t)w_k) Abort("Invalid file format.");
     rel->r_proj = r_proj;
@@ -241,7 +241,7 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
     sylvan_protect(&rel->bdd);
 
     /* Compute a_proj the union of r_proj and w_proj, and a_k the length of a_proj */
-    int a_proj[r_k+w_k];
+    int* a_proj = SYLVAN_ALLOCA(int, r_k+w_k);
     int r_i = 0, w_i = 0, a_i = 0;
     for (;r_i < r_k || w_i < w_k;) {
         if (r_i < r_k && w_i < w_k) {
@@ -262,7 +262,7 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
     const int a_k = a_i;
 
     /* Compute all_variables, which are all variables the transition relation is defined on */
-    uint32_t all_vars[totalbits * 2];
+    uint32_t* all_vars = SYLVAN_ALLOCA(uint32_t, totalbits * 2);
     uint32_t curvar = 0; // start with variable 0
     int i=0, j=0, n=0;
     for (; i<vectorsize && j<a_k; i++) {
@@ -303,7 +303,7 @@ void rel_load_CALL(lace_worker* lace, rel_t rel, FILE* f)
 TASK(void, print_example, BDD, example, BDDSET, variables)
 void print_example_CALL(lace_worker* lace, BDD example, BDDSET variables)
 {
-    uint8_t str[totalbits];
+    uint8_t* str = SYLVAN_ALLOCA(uint8_t, totalbits);
 
     if (example != sylvan_false) {
         sylvan_sat_one(example, variables, str);
@@ -694,7 +694,7 @@ TASK(BDD, extend_relation, MTBDD, relation, MTBDD, variables)
 BDD extend_relation_CALL(lace_worker* lace, MTBDD relation, MTBDD variables)
 {
     /* first determine which state BDD variables are in rel */
-    int has[totalbits];
+    int* has = SYLVAN_ALLOCA(int, totalbits);
     for (int i=0; i<totalbits; i++) has[i] = 0;
     MTBDD s = variables;
     while (!sylvan_set_isempty(s)) {
@@ -804,7 +804,7 @@ void run_CALL(lace_worker* lace)
 
     /* Read domain data */
     if (fread(&vectorsize, sizeof(int), 1, f) != 1) Abort("Invalid input file!\n");
-    statebits = (int*)malloc(sizeof(int[vectorsize]));
+    statebits = (int*)malloc(vectorsize * sizeof(int));
     if (fread(statebits, sizeof(int), vectorsize, f) != (size_t)vectorsize) Abort("Invalid input file!\n");
     if (fread(&actionbits, sizeof(int), 1, f) != 1) Abort("Invalid input file!\n");
     totalbits = 0;
@@ -815,7 +815,7 @@ void run_CALL(lace_worker* lace)
 
     /* Read number of transition relations */
     if (fread(&next_count, sizeof(int), 1, f) != 1) Abort("Invalid input file!\n");
-    next = (rel_t*)malloc(sizeof(rel_t) * next_count);
+    next = (rel_t*)malloc(next_count * sizeof(rel_t));
 
     /* Read transition relations */
     for (int i=0; i<next_count; i++) next[i] = rel_load_proj(f);

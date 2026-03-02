@@ -129,9 +129,10 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     )
 elseif(MSVC)
     target_compile_options(sylvan
-      PRIVATE
+      PUBLIC
         /Zc:__STDC__
         /experimental:c11atomics
+      PRIVATE
         $<$<CONFIG:Debug>:/Od /W4 /Zi>
     )
 endif()

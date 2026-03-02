@@ -16,7 +16,7 @@
  */
 
 #include <sylvan/internal/internal.h>
-#include "align.h"
+#include <sylvan/platform.h>
 
 #include <errno.h>  // for errno
 #include <string.h> // memset
@@ -137,7 +137,7 @@ void sylvan_stats_reset_perthread_CALL(lace_worker* lace)
 #else
     sylvan_stats_t *sylvan_stats = pthread_getspecific(sylvan_stats_key);
     if (sylvan_stats == NULL) {
-        sylvan_stats = alloc_aligned(sizeof(sylvan_stats_t));
+        sylvan_stats = sylvan_alloc_aligned(sizeof(sylvan_stats_t));
         if (sylvan_stats == 0) {
             fprintf(stderr, "sylvan_stats: Unable to allocate memory: %s!\n", strerror(errno));
             exit(1);

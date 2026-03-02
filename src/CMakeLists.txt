@@ -1,6 +1,5 @@
 target_sources(sylvan
   PRIVATE
-    sha2.c
     bdd.c
     cache.c
     common.c
@@ -8,8 +7,9 @@ target_sources(sylvan
     ldd.c
     mt.c
     mtbdd.c
-    nodes_llht.c
+    platform.c
     refs.c
+    sha2.c
     sl.c
     stats.c
     zdd.c
@@ -146,9 +146,9 @@ set(SYLVAN_PUBLIC_HDRS
     ${PROJECT_SOURCE_DIR}/include/sylvan/ldd.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/mt.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/mtbdd.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/platform.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/stats.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/nodes.h
-    ${PROJECT_SOURCE_DIR}/include/sylvan/tls.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/zdd.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/internal/internal.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/internal/ldd_internal.h

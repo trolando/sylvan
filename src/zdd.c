@@ -15,11 +15,11 @@
  */
 
 #include <sylvan/internal/internal.h>
+#include <sylvan/platform.h>
 
 #include <assert.h>
 #include <inttypes.h>
 #include <math.h>
-#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -182,7 +182,7 @@ typedef struct zdd_refs_internal
     zdd_refs_task_t sbegin, send, scur;
 } *zdd_refs_internal_t;
 
-DECLARE_THREAD_LOCAL(zdd_refs_key, zdd_refs_internal_t);
+SYLVAN_TLS zdd_refs_internal_t zdd_refs_key;
 
 TASK(void, zdd_refs_mark_p_par, ZDD**, begin, size_t, count)
 
@@ -242,7 +242,6 @@ TASK(void, zdd_refs_mark_task)
 
 void zdd_refs_mark_task_CALL(lace_worker* lace)
 {
-    LOCALIZE_THREAD_LOCAL(zdd_refs_key, zdd_refs_internal_t);
     zdd_refs_mark_p_par_SPAWN(lace, zdd_refs_key->pbegin, zdd_refs_key->pcur-zdd_refs_key->pbegin);
     zdd_refs_mark_r_par_SPAWN(lace, zdd_refs_key->rbegin, zdd_refs_key->rcur-zdd_refs_key->rbegin);
     zdd_refs_mark_s_par_CALL(lace, zdd_refs_key->sbegin, zdd_refs_key->scur-zdd_refs_key->sbegin);
@@ -267,7 +266,7 @@ void zdd_refs_init_task_CALL(lace_worker* lace)
     s->rend = s->rbegin + 1024;
     s->scur = s->sbegin = (zdd_refs_task_t)malloc(sizeof(struct zdd_refs_task) * 1024);
     s->send = s->sbegin + 1024;
-    SET_THREAD_LOCAL(zdd_refs_key, s);
+    zdd_refs_key = s;
 }
 
 TASK(void, zdd_refs_free)
@@ -285,7 +284,6 @@ TASK(void, zdd_refs_free)
 TASK(void, zdd_refs_init)
 void zdd_refs_init_CALL(lace_worker* lace)
 {
-    INIT_THREAD_LOCAL(zdd_refs_key);
     zdd_refs_init_task_TOGETHER();
 }
 
@@ -320,7 +318,6 @@ zdd_refs_tasks_up(zdd_refs_internal_t zdd_refs_key)
 void __attribute__((unused))
 zdd_refs_pushptr(ZDD *ptr)
 {
-    LOCALIZE_THREAD_LOCAL(zdd_refs_key, zdd_refs_internal_t);
     // If you get a segfault here (null dereference) then you're running this from outside Lace threads
     *zdd_refs_key->pcur++ = ptr;
     if (zdd_refs_key->pcur == zdd_refs_key->pend) zdd_refs_ptrs_up(zdd_refs_key);
@@ -329,14 +326,12 @@ zdd_refs_pushptr(ZDD *ptr)
 void __attribute__((unused))
 zdd_refs_popptr(size_t amount)
 {
-    LOCALIZE_THREAD_LOCAL(zdd_refs_key, zdd_refs_internal_t);
     zdd_refs_key->pcur -= amount;
 }
 
 ZDD __attribute__((unused))
 zdd_refs_push(ZDD zdd)
 {
-    LOCALIZE_THREAD_LOCAL(zdd_refs_key, zdd_refs_internal_t);
     // If you get a segfault here (null dereference) then you're running this from outside Lace threads
     *(zdd_refs_key->rcur++) = zdd;
     if (zdd_refs_key->rcur == zdd_refs_key->rend) return zdd_refs_refs_up(zdd_refs_key, zdd);
@@ -346,14 +341,12 @@ zdd_refs_push(ZDD zdd)
 void __attribute__((unused))
 zdd_refs_pop(long amount)
 {
-    LOCALIZE_THREAD_LOCAL(zdd_refs_key, zdd_refs_internal_t);
     zdd_refs_key->rcur -= amount;
 }
 
 void __attribute__((unused))
 zdd_refs_spawn(lace_task* t)
 {
-    LOCALIZE_THREAD_LOCAL(zdd_refs_key, zdd_refs_internal_t);
     // If you get a segfault here (null dereference) then you're running this from outside Lace threads
     zdd_refs_key->scur->t = t;
     zdd_refs_key->scur->f = t->f;
@@ -364,7 +357,6 @@ zdd_refs_spawn(lace_task* t)
 ZDD __attribute__((unused))
 zdd_refs_sync(ZDD result)
 {
-    LOCALIZE_THREAD_LOCAL(zdd_refs_key, zdd_refs_internal_t);
     zdd_refs_key->scur -= 1;
     return result;
 }

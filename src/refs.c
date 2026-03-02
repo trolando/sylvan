@@ -17,12 +17,13 @@
 
 #include <sylvan/sylvan.h>
 #include <sylvan/hash.h>
-#include "align.h"
+#include <sylvan/platform.h>
 #include "refs.h"
 
 #include <errno.h>  // for errno
 #include <string.h> // for strerror
 
+// TODO is this the clean way?
 #ifndef compiler_barrier
 #define compiler_barrier() atomic_signal_fence(memory_order_seq_cst)
 #endif
@@ -128,7 +129,7 @@ refs_resize(refs_table_t *tbl)
     if (count*4 > tbl->refs_size) new_size *= 2;
 
     // allocate new table
-    _Atomic(uint64_t)* new_table = (_Atomic(uint64_t)*)alloc_aligned(new_size * sizeof(uint64_t));
+    _Atomic(uint64_t)* new_table = (_Atomic(uint64_t)*)sylvan_alloc_aligned(new_size * sizeof(uint64_t));
     if (new_table == 0) {
         fprintf(stderr, "refs: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
@@ -148,7 +149,7 @@ refs_resize(refs_table_t *tbl)
     tbl->refs_control = 0;
 
     // unmap old table
-    free_aligned(tbl->refs_resize_table, tbl->refs_resize_size * sizeof(uint64_t));
+    sylvan_free_aligned(tbl->refs_resize_table, tbl->refs_resize_size * sizeof(uint64_t));
 }
 
 /* Enter refs_modify */
@@ -302,13 +303,13 @@ refs_next(refs_table_t *tbl, uint64_t **_bucket, size_t end)
 void
 refs_create(refs_table_t *tbl, size_t _refs_size)
 {
-    if (__builtin_popcountll(_refs_size) != 1) {
+    if (popcnt_uint64(_refs_size) != 1) {
         fprintf(stderr, "refs: Table size must be a power of 2!\n");
         exit(1);
     }
 
     tbl->refs_size = _refs_size;
-    tbl->refs_table = (_Atomic(uint64_t)*)alloc_aligned(tbl->refs_size * sizeof(uint64_t));
+    tbl->refs_table = (_Atomic(uint64_t)*)sylvan_alloc_aligned(tbl->refs_size * sizeof(uint64_t));
     if (tbl->refs_table == 0) {
         fprintf(stderr, "refs: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
@@ -318,7 +319,7 @@ refs_create(refs_table_t *tbl, size_t _refs_size)
 void
 refs_free(refs_table_t *tbl)
 {
-    free_aligned(tbl->refs_table, tbl->refs_size * sizeof(uint64_t));
+    sylvan_free_aligned(tbl->refs_table, tbl->refs_size * sizeof(uint64_t));
 }
 
 /**
@@ -411,7 +412,7 @@ protect_resize(refs_table_t *tbl)
     if (count*4 > tbl->refs_size) new_size *= 2;
 
     // allocate new table
-    _Atomic(uint64_t)* new_table = (_Atomic(uint64_t)*)alloc_aligned(new_size * sizeof(uint64_t));
+    _Atomic(uint64_t)* new_table = (_Atomic(uint64_t)*)sylvan_alloc_aligned(new_size * sizeof(uint64_t));
     if (new_table == 0) {
         fprintf(stderr, "refs: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
@@ -431,7 +432,7 @@ protect_resize(refs_table_t *tbl)
     tbl->refs_control = 0;
 
     // unmap old table
-    free_aligned(tbl->refs_resize_table, tbl->refs_resize_size * sizeof(uint64_t));
+    sylvan_free_aligned(tbl->refs_resize_table, tbl->refs_resize_size * sizeof(uint64_t));
 }
 
 static inline void
@@ -578,13 +579,13 @@ protect_next(refs_table_t *tbl, uint64_t **_bucket, size_t end)
 void
 protect_create(refs_table_t *tbl, size_t _refs_size)
 {
-    if (__builtin_popcountll(_refs_size) != 1) {
+    if (popcnt_uint64(_refs_size) != 1) {
         fprintf(stderr, "refs: Table size must be a power of 2!\n");
         exit(1);
     }
 
     tbl->refs_size = _refs_size;
-    tbl->refs_table = (_Atomic(uint64_t)*)alloc_aligned(tbl->refs_size * sizeof(uint64_t));
+    tbl->refs_table = (_Atomic(uint64_t)*)sylvan_alloc_aligned(tbl->refs_size * sizeof(uint64_t));
     if (tbl->refs_table == 0) {
         fprintf(stderr, "refs: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
@@ -594,6 +595,6 @@ protect_create(refs_table_t *tbl, size_t _refs_size)
 void
 protect_free(refs_table_t *tbl)
 {
-    free_aligned(tbl->refs_table, tbl->refs_size * sizeof(uint64_t));
+    sylvan_free_aligned(tbl->refs_table, tbl->refs_size * sizeof(uint64_t));
     tbl->refs_table = 0;
 }

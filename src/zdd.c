@@ -284,7 +284,7 @@ zdd_refs_ptrs_up(zdd_refs_internal_t zdd_refs_key)
     zdd_refs_key->pend = zdd_refs_key->pend + size * 2;
 }
 
-ZDD __attribute__((noinline))
+ZDD SYLVAN_NOINLINE
 zdd_refs_refs_up(zdd_refs_internal_t zdd_refs_key, ZDD res)
 {
     long size = zdd_refs_key->rend - zdd_refs_key->rbegin;
@@ -294,7 +294,7 @@ zdd_refs_refs_up(zdd_refs_internal_t zdd_refs_key, ZDD res)
     return res;
 }
 
-void __attribute__((noinline))
+void SYLVAN_NOINLINE
 zdd_refs_tasks_up(zdd_refs_internal_t zdd_refs_key)
 {
     long size = zdd_refs_key->send - zdd_refs_key->sbegin;
@@ -303,20 +303,20 @@ zdd_refs_tasks_up(zdd_refs_internal_t zdd_refs_key)
     zdd_refs_key->send = zdd_refs_key->sbegin + (size * 2);
 }
 
-void __attribute__((unused))
+void
 zdd_refs_pushptr(ZDD *ptr)
 {
     *zdd_refs_key->pcur++ = ptr;
     if (zdd_refs_key->pcur == zdd_refs_key->pend) zdd_refs_ptrs_up(zdd_refs_key);
 }
 
-void __attribute__((unused))
+void
 zdd_refs_popptr(size_t amount)
 {
     zdd_refs_key->pcur -= amount;
 }
 
-ZDD __attribute__((unused))
+ZDD
 zdd_refs_push(ZDD zdd)
 {
     *(zdd_refs_key->rcur++) = zdd;
@@ -324,13 +324,13 @@ zdd_refs_push(ZDD zdd)
     else return zdd;
 }
 
-void __attribute__((unused))
+void
 zdd_refs_pop(long amount)
 {
     zdd_refs_key->rcur -= amount;
 }
 
-void __attribute__((unused))
+void
 zdd_refs_spawn(lace_task* t)
 {
     zdd_refs_key->scur->t = t;
@@ -339,7 +339,7 @@ zdd_refs_spawn(lace_task* t)
     if (zdd_refs_key->scur == zdd_refs_key->send) zdd_refs_tasks_up(zdd_refs_key);
 }
 
-ZDD __attribute__((unused))
+ZDD
 zdd_refs_sync(ZDD result)
 {
     zdd_refs_key->scur -= 1;

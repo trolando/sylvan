@@ -243,7 +243,7 @@ lddmc_refs_ptrs_up(lddmc_refs_internal_t lddmc_refs_key)
     lddmc_refs_key->pend = lddmc_refs_key->pbegin + (size * 2);
 }
 
-MDD __attribute__((noinline))
+MDD SYLVAN_NOINLINE
 lddmc_refs_refs_up(lddmc_refs_internal_t lddmc_refs_key, MDD res)
 {
     long size = lddmc_refs_key->rend - lddmc_refs_key->rbegin;
@@ -253,7 +253,7 @@ lddmc_refs_refs_up(lddmc_refs_internal_t lddmc_refs_key, MDD res)
     return res;
 }
 
-void __attribute__((noinline))
+void SYLVAN_NOINLINE
 lddmc_refs_tasks_up(lddmc_refs_internal_t lddmc_refs_key)
 {
     long size = lddmc_refs_key->send - lddmc_refs_key->sbegin;
@@ -262,7 +262,7 @@ lddmc_refs_tasks_up(lddmc_refs_internal_t lddmc_refs_key)
     lddmc_refs_key->send = lddmc_refs_key->sbegin + (size * 2);
 }
 
-void __attribute__((unused))
+void
 lddmc_refs_pushptr(const MDD *ptr)
 {
     if (lddmc_refs_key == 0) {
@@ -274,13 +274,13 @@ lddmc_refs_pushptr(const MDD *ptr)
     }
 }
 
-void __attribute__((unused))
+void
 lddmc_refs_popptr(size_t amount)
 {
     lddmc_refs_key->pcur -= amount;
 }
 
-MDD __attribute__((unused))
+MDD
 lddmc_refs_push(MDD lddmc)
 {
     if (lddmc_refs_key == 0) {
@@ -293,13 +293,13 @@ lddmc_refs_push(MDD lddmc)
     }
 }
 
-void __attribute__((unused))
+void
 lddmc_refs_pop(long amount)
 {
     lddmc_refs_key->rcur -= amount;
 }
 
-void __attribute__((unused))
+void
 lddmc_refs_spawn(lace_task* t)
 {
     lddmc_refs_key->scur->t = t;
@@ -308,7 +308,7 @@ lddmc_refs_spawn(lace_task* t)
     if (lddmc_refs_key->scur == lddmc_refs_key->send) lddmc_refs_tasks_up(lddmc_refs_key);
 }
 
-MDD __attribute__((unused))
+MDD 
 lddmc_refs_sync(MDD result)
 {
     lddmc_refs_key->scur -= 1;

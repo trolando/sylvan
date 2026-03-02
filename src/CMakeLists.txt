@@ -63,24 +63,25 @@ detect_cache_line_size(SYLVAN_CACHE_LINE_SIZE DEFAULT 64)
 
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(sylvan PRIVATE
-        $<$<CONFIG:Debug>:-O0 -Wall -Wextra -pipe>
-        $<$<CONFIG:Release>:-pipe>
+        -pipe
+        $<$<CONFIG:Debug>:-O0 -Wall -Wextra -Wpedantic>
         $<$<BOOL:${SYLVAN_NATIVE_OPT}>:-march=native>
     )
 elseif(MSVC)
-    target_compile_options(sylvan PRIVATE
-        $<$<CONFIG:Debug>:/Od /Wall /Zi>
+    target_compile_options(sylvan PUBLIC
+        /Zc:__STDC__
+        /experimental:c11atomics
     )
 endif()
 
 find_package(Threads REQUIRED)
 target_link_libraries(sylvan PUBLIC Threads::Threads lace::lace)
-if(NOT WIN32)
+if(UNIX AND NOT APPLE)
     target_link_libraries(sylvan PUBLIC m)
 endif()
 
-option(SYLVAN_USE_MMAP "Let Sylvan use mmap to allocate (virtual) memory" ON)
-if(SYLVAN_USE_MMAP)
+option(SYLVAN_USE_MMAP "Let Sylvan use mmap or VirtualAlloc to allocate (virtual) memory" ON)
+if(SYLVAN_USE_MMAP AND NOT MSVC)
     include(CheckSymbolExists)
     check_symbol_exists(mmap "sys/mman.h" HAVE_MMAP)
     if(NOT HAVE_MMAP)
@@ -112,6 +113,7 @@ set_target_properties(sylvan PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin
 )
 
+file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/include/sylvan")
 configure_file(${PROJECT_SOURCE_DIR}/include/sylvan/config.h.in ${PROJECT_BINARY_DIR}/include/sylvan/config.h @ONLY)
 target_include_directories(sylvan
   PUBLIC
@@ -182,7 +184,7 @@ configure_package_config_file(
 
 write_basic_package_version_file(
     ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config-version.cmake
-    VERSION ${SYLVAN_VERSION}
+    VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMinorVersion
 )
 
@@ -195,7 +197,7 @@ endif()
 
 set(PKGC_LIBS_PRIVATE "")
 list(APPEND PKGC_LIBS_PRIVATE -lpthread)
-if(NOT APPLE)
+if(UNIX AND NOT APPLE)
     list(APPEND PKGC_LIBS_PRIVATE -lm)
 endif()
 

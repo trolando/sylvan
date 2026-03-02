@@ -353,7 +353,7 @@ zdd_refs_sync(ZDD result)
 static int zdd_initialized = 0;
 
 static void
-zdd_quit()
+zdd_quit(void)
 {
     if (zdd_protected_created) {
         protect_free(&zdd_protected);
@@ -364,7 +364,7 @@ zdd_quit()
 }
 
 void
-sylvan_init_zdd()
+sylvan_init_zdd(void)
 {
     sylvan_init_mt();
 
@@ -895,7 +895,7 @@ ZDD zdd_extend_domain_CALL(lace_worker* lace, ZDD set, ZDD newvars, int value)
      * Terminal cases
      */
     if (value == 0) return set; // uhm?
-    if (value != 1 && value != 1) return zdd_invalid; // uhm??
+    if (value != 1 && value != 1) return zdd_invalid; // uhm?? TODO check logic, this has redundant code
     if (set == zdd_false) return zdd_false;
     if (newvars == zdd_true) return set;
 

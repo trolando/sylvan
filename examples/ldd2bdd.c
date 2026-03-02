@@ -135,8 +135,8 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
     rel_t rel = (rel_t)malloc(sizeof(struct relation));
     rel->r_k = r_k;
     rel->w_k = w_k;
-    rel->r_proj = (int*)malloc(sizeof(int[rel->r_k]));
-    rel->w_proj = (int*)malloc(sizeof(int[rel->w_k]));
+    rel->r_proj = (int*)malloc(rel->r_k * sizeof(*rel->r_proj));
+    rel->w_proj = (int*)malloc(rel->w_k * sizeof(*rel->w_proj));
 
     if (fread(rel->r_proj, sizeof(int), rel->r_k, f) != (size_t)rel->r_k) Abort("Invalid file format.");
     if (fread(rel->w_proj, sizeof(int), rel->w_k, f) != (size_t)rel->w_k) Abort("Invalid file format.");
@@ -145,8 +145,8 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
     int *w_proj = rel->w_proj;
 
     /* Compute the meta */
-    uint32_t meta[vector_size*2+2];
-    memset(meta, 0, sizeof(uint32_t[vector_size*2+2]));
+    uint32_t* meta = SYLVAN_ALLOCA(uint32_t, vector_size*2+2);
+    memset(meta, 0, (vector_size * 2 + 2) * sizeof(*meta));
     int r_i=0, w_i=0, i=0, j=0;
     for (;;) {
         int type = 0;
@@ -582,11 +582,11 @@ void run_CALL(lace_worker* lace)
     // ignore: Abort("Input file missing action label count!\n");
 
     // Read action labels
-    char *action_labels[action_labels_count];
+    char** action_labels = SYLVAN_ALLOCA(char*, action_labels_count);
     for (int i=0; i<action_labels_count; i++) {
         uint32_t len;
         if (fread(&len, sizeof(uint32_t), 1, f) != 1) Abort("Invalid input file!\n");
-        action_labels[i] = (char*)malloc(sizeof(char[len+1]));
+        action_labels[i] = (char*)malloc((len+1) * sizeof(char));
         if (fread(action_labels[i], sizeof(char), len, f) != len) Abort("Invalid input file!\n");
         action_labels[i][len] = 0;
     }
@@ -611,7 +611,7 @@ void run_CALL(lace_worker* lace)
     if (verbose) printf("Preparing conversion to BDD...\n");
 
     // Compute highest value at each level (from reachable states)
-    uint32_t highest[vector_size];
+    _Atomic(uint32_t)* highest = SYLVAN_ALLOCA(_Atomic(uint32_t), vector_size);
     for (int i=0; i<vector_size; i++) highest[i] = 0;
     compute_highest(states->dd, highest);
 
@@ -622,7 +622,7 @@ void run_CALL(lace_worker* lace)
     }
 
     // Compute number of bits for each level
-    int bits[vector_size];
+    int* bits = SYLVAN_ALLOCA(int, vector_size);
     for (int i=0; i<vector_size; i++) {
         bits[i] = 0;
         while (highest[i] != 0) {

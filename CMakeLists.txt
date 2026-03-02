@@ -7,15 +7,16 @@ project(sylvan
     LANGUAGES C CXX
 )
 
-add_library(sylvan STATIC)
-add_library(sylvan::sylvan ALIAS sylvan)
-
 # Check if top level
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     set(SYLVAN_IS_TOP_LEVEL ON)
 else()
     set(SYLVAN_IS_TOP_LEVEL OFF)
 endif()
+
+add_library(sylvan STATIC)
+add_library(sylvan::sylvan ALIAS sylvan)
+
 
 # Default build type
 if(SYLVAN_IS_TOP_LEVEL AND NOT CMAKE_CONFIGURATION_TYPES AND CMAKE_BUILD_TYPE STREQUAL "")
@@ -24,7 +25,7 @@ if(SYLVAN_IS_TOP_LEVEL AND NOT CMAKE_CONFIGURATION_TYPES AND CMAKE_BUILD_TYPE ST
 endif()
 
 # Add CMake modules path
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/tools/")
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/tools/")
 
 # Dependencies
 # First check if lace is a target already, for example if we are a subproject,
@@ -45,6 +46,7 @@ if(NOT TARGET lace::lace)
     endif()
 endif()
 
+include(CTest) # defines BUILD_TESTING option (default ON at top-level)
 option(SYLVAN_BUILD_CPP "Build Sylvan CPP header" ON)
 option(SYLVAN_BUILD_TESTS "Build Sylvan tests" ${SYLVAN_IS_TOP_LEVEL})
 option(SYLVAN_BUILD_EXAMPLES "Build Sylvan examples" ${SYLVAN_IS_TOP_LEVEL})
@@ -104,7 +106,7 @@ endif()
 add_subdirectory(src)
 
 # Build and add tests
-if(SYLVAN_BUILD_TESTS)
+if(SYLVAN_BUILD_TESTS AND BUILD_TESTING)
     enable_testing()
     add_subdirectory(test)
 endif()

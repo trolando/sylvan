@@ -305,7 +305,7 @@ mtbdd_refs_ptrs_up(mtbdd_refs_internal_t mtbdd_refs_key)
     mtbdd_refs_key->pend = mtbdd_refs_key->pbegin + (size * 2);
 }
 
-MTBDD __attribute__((noinline))
+MTBDD SYLVAN_NOINLINE
 mtbdd_refs_refs_up(mtbdd_refs_internal_t mtbdd_refs_key, MTBDD res)
 {
     long size = mtbdd_refs_key->rend - mtbdd_refs_key->rbegin;
@@ -315,7 +315,7 @@ mtbdd_refs_refs_up(mtbdd_refs_internal_t mtbdd_refs_key, MTBDD res)
     return res;
 }
 
-void __attribute__((noinline))
+void SYLVAN_NOINLINE
 mtbdd_refs_tasks_up(mtbdd_refs_internal_t mtbdd_refs_key)
 {
     long size = mtbdd_refs_key->send - mtbdd_refs_key->sbegin;
@@ -324,7 +324,7 @@ mtbdd_refs_tasks_up(mtbdd_refs_internal_t mtbdd_refs_key)
     mtbdd_refs_key->send = mtbdd_refs_key->sbegin + (size * 2);
 }
 
-void __attribute__((unused))
+void
 mtbdd_refs_pushptr(const MTBDD *ptr)
 {
     if (mtbdd_refs_key == 0) {
@@ -336,13 +336,13 @@ mtbdd_refs_pushptr(const MTBDD *ptr)
     }
 }
 
-void __attribute__((unused))
+void
 mtbdd_refs_popptr(size_t amount)
 {
     mtbdd_refs_key->pcur -= amount;
 }
 
-MTBDD __attribute__((unused))
+MTBDD
 mtbdd_refs_push(MTBDD mtbdd)
 {
     if (mtbdd_refs_key == 0) {
@@ -355,7 +355,7 @@ mtbdd_refs_push(MTBDD mtbdd)
     }
 }
 
-void __attribute__((unused))
+void
 mtbdd_refs_pop(long amount)
 {
     mtbdd_refs_key->rcur -= amount;
@@ -445,8 +445,7 @@ mtbdd_makeleaf(uint32_t type, uint64_t value)
     return (MTBDD)index;
 }
 
-void
-__attribute__ ((noinline))
+void SYLVAN_NOINLINE
 _mtbdd_makenode_gc(MTBDD low, MTBDD high)
 {
     mtbdd_refs_push(low);
@@ -455,8 +454,7 @@ _mtbdd_makenode_gc(MTBDD low, MTBDD high)
     mtbdd_refs_pop(2);
 }
 
-void
-__attribute__ ((noinline))
+void SYLVAN_NOINLINE
 _mtbdd_makenode_exit(void)
 {
     fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));

@@ -1,19 +1,18 @@
 #include <assert.h>
-#include <getopt.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
 
 #include <sylvan/internal/internal.h>
 #include <getrss.h>
+#include <common.h>
 
 /* Configuration */
 static int workers = 0; // autodetect
 static int verbose = 0;
-static char* model_filename = NULL; // filename of model
-static char* bdd_filename = NULL; // filename of output BDD
+static const char* model_filename = NULL; // filename of model
+static const char* bdd_filename = NULL; // filename of output BDD
 static int check_results = 0;
 static int no_reachable = 0;
 
@@ -38,23 +37,24 @@ print_help()
 }
 
 static void
-parse_args(int argc, char **argv)
+parse_args(int argc, const char **argv)
 {
-    static const struct option longopts[] = {
-        {.name = "workers", .val = 'w', .has_arg = required_argument},
-        {.name = "check-results", .val = 2, .has_arg = no_argument},
-        {.name = "no-reachable", .val = 1, .has_arg = no_argument},
-        {.name = "verbose", .val = 'v', .has_arg = no_argument},
-        {.name = "help", .val = 'h', .has_arg = no_argument},
-        {.name = "usage", .val = 99, .has_arg = no_argument},
+    static const struct optparse_long longopts[] = {
+        {"workers", 'w', OPTPARSE_REQUIRED},
+        {"check-results", 2, OPTPARSE_NONE},
+        {"no-reachable", 1, OPTPARSE_NONE},
+        {"verbose", 'v', OPTPARSE_NONE},
+        {"help", 'h', OPTPARSE_NONE},
+        {"usage", 'u', OPTPARSE_NONE},
         {}
     };
-    int key = 0;
-    int long_index = 0;
-    while ((key = getopt_long(argc, argv, "w:vh", longopts, &long_index)) != -1) {
-        switch (key) {
+    int option = 0;
+    struct optparse options;
+    optparse_init(&options, argv);
+    while ((option = optparse_long(&options, longopts, NULL)) != -1) {
+        switch (option) {
             case 'w':
-                workers = atoi(optarg);
+                workers = atoi(options.optarg);
                 break;
             case 'v':
                 verbose = 1;
@@ -65,7 +65,7 @@ parse_args(int argc, char **argv)
             case 2:
                 check_results = 1;
                 break;
-            case 99:
+            case 'u':
                 print_usage();
                 exit(0);
             case 'h':
@@ -73,12 +73,12 @@ parse_args(int argc, char **argv)
                 exit(0);
         }
     }
-    if (optind + 1 >= argc) {
+    if (options.optind + 1 >= argc) {
         print_usage();
         exit(0);
     }
-    model_filename = argv[optind];
-    bdd_filename = argv[optind + 1];
+    model_filename = optparse_arg(&options);
+    bdd_filename = optparse_arg(&options);
 }
 
 /**
@@ -195,8 +195,8 @@ void rel_load_CALL(lace_worker* lace, FILE* f, rel_t rel)
  * This method is called for the set of reachable states.
  */
 static uint64_t compute_highest_id;
-VOID_TASK_2(compute_highest, MDD, dd, uint32_t*, arr)
-void compute_highest_CALL(lace_worker* lace, MDD dd, uint32_t* arr)
+VOID_TASK_2(compute_highest, MDD, dd, _Atomic(uint32_t)*, arr)
+void compute_highest_CALL(lace_worker* lace, MDD dd, _Atomic(uint32_t)* arr)
 {
     if (dd == lddmc_true || dd == lddmc_false) return;
 
@@ -213,9 +213,9 @@ void compute_highest_CALL(lace_worker* lace, MDD dd, uint32_t* arr)
     if (!mddnode_getcopy(n)) {
         const uint32_t v = mddnode_getvalue(n);
         while (1) {
-            const uint32_t cur = *(volatile uint32_t*)arr;
+            uint32_t cur = atomic_load_explicit(arr, memory_order_relaxed);
             if (v <= cur) break;
-            if (__sync_bool_compare_and_swap(arr, cur, v)) break;
+            if (atomic_compare_exchange_strong(arr, &cur, v)) break;
         }
     }
 }
@@ -225,8 +225,8 @@ void compute_highest_CALL(lace_worker* lace, MDD dd, uint32_t* arr)
  * This method is called for each transition relation.
  */
 static uint64_t compute_highest_action_id;
-VOID_TASK_3(compute_highest_action, MDD, dd, MDD, meta, uint32_t*, target)
-void compute_highest_action_CALL(lace_worker* lace, MDD dd, MDD meta, uint32_t* target)
+VOID_TASK_3(compute_highest_action, MDD, dd, MDD, meta, _Atomic(uint32_t)*, target)
+void compute_highest_action_CALL(lace_worker* lace, MDD dd, MDD meta, _Atomic(uint32_t)* target)
 {
     if (dd == lddmc_true || dd == lddmc_false) return;
     if (meta == lddmc_true) return;
@@ -258,9 +258,9 @@ void compute_highest_action_CALL(lace_worker* lace, MDD dd, MDD meta, uint32_t* 
         has_actions = 1;
         const uint32_t v = mddnode_getvalue(n);
         while (1) {
-            const uint32_t cur = *(volatile uint32_t*)target;
+            uint32_t cur = atomic_load_explicit(target, memory_order_relaxed);
             if (v <= cur) break;
-            if (__sync_bool_compare_and_swap(target, cur, v)) break;
+            if (atomic_compare_exchange_strong(target, &cur, v)) break;
         }
     }
 }
@@ -616,7 +616,7 @@ void run_CALL(lace_worker* lace)
     compute_highest(states->dd, highest);
 
     // Compute highest action label value (from transition relations)
-    uint32_t highest_action = 0;
+    _Atomic(uint32_t) highest_action = 0;
     for (int i=0; i<next_count; i++) {
         compute_highest_action(next[i]->dd, next[i]->meta, &highest_action);
     }
@@ -771,7 +771,7 @@ void run_CALL(lace_worker* lace)
 }
 
 int
-main(int argc, char **argv)
+main(int argc, const char **argv)
 {
     parse_args(argc, argv);
 

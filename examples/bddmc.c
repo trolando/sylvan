@@ -1,14 +1,14 @@
-#include <getopt.h>
 #include <inttypes.h>
 #include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
 
 #include <getrss.h>
 
 #include <sylvan/internal/internal.h>
+
+#include <common.h>
 
 /* Configuration */
 static int report_levels = 0; // report states at end of every level
@@ -19,7 +19,7 @@ static int check_deadlocks = 0; // set to 1 to check for deadlocks on-the-fly (o
 static int merge_relations = 0; // merge relations to 1 relation
 static int print_transition_matrix = 0; // print transition relation matrix
 static int workers = 0; // autodetect
-static char* model_filename = NULL; // filename of model
+static const char* model_filename = NULL; // filename of model
 
 static void
 print_usage()
@@ -48,33 +48,34 @@ print_help()
 }
 
 static void
-parse_args(int argc, char **argv)
+parse_args(int argc, const char **argv)
 {
-    static const struct option longopts[] = {
-        {.name = "workers", .val = 'w', .has_arg = required_argument},
-        {.name = "strategy", .val = 's', .has_arg = required_argument},
-        {.name = "deadlocks", .val = 3, .has_arg = no_argument},
-        {.name = "count-nodes", .val = 5, .has_arg = no_argument},
-        {.name = "count-states", .val = 1, .has_arg = no_argument},
-        {.name = "count-table", .val = 2, .has_arg = no_argument},
-        {.name = "merge-relations", .val = 6, .has_arg = no_argument},
-        {.name = "print-matrix", .val = 4, .has_arg = no_argument},
-        {.name = "help", .val = 'h', .has_arg = no_argument},
-        {.name = "usage", .val = 99, .has_arg = no_argument},
+    static const struct optparse_long longopts[] = {
+        {"workers", 'w', OPTPARSE_REQUIRED},
+        {"strategy", 's', OPTPARSE_REQUIRED},
+        {"deadlocks", 3, OPTPARSE_NONE},
+        {"count-nodes", 5, OPTPARSE_NONE},
+        {"count-states", 1, OPTPARSE_NONE},
+        {"count-table", 2, OPTPARSE_NONE},
+        {"merge-relations", 6, OPTPARSE_NONE},
+        {"print-matrix", 4, OPTPARSE_NONE},
+        {"help", 'h', OPTPARSE_NONE},
+        {"usage", 'u', OPTPARSE_NONE},
         {},
     };
-    int key = 0;
-    int long_index = 0;
-    while ((key = getopt_long(argc, argv, "w:s:h", longopts, &long_index)) != -1) {
-        switch (key) {
+    int option = 0;
+    struct optparse options;
+    optparse_init(&options, argv);
+    while ((option = optparse_long(&options, longopts, NULL)) != -1) {
+        switch (option) {
             case 'w':
-                workers = atoi(optarg);
+                workers = atoi(options.optarg);
                 break;
             case 's':
-                if (strcmp(optarg, "bfs")==0) strategy = 0;
-                else if (strcmp(optarg, "par")==0) strategy = 1;
-                else if (strcmp(optarg, "sat")==0) strategy = 2;
-                else if (strcmp(optarg, "chaining")==0) strategy = 3;
+                if (strcmp(options.optarg, "bfs")==0) strategy = 0;
+                else if (strcmp(options.optarg, "par")==0) strategy = 1;
+                else if (strcmp(options.optarg, "sat")==0) strategy = 2;
+                else if (strcmp(options.optarg, "chaining")==0) strategy = 3;
                 else {
                     print_usage();
                     exit(0);
@@ -98,7 +99,7 @@ parse_args(int argc, char **argv)
             case 6:
                 merge_relations = 1;
                 break;
-            case 99:
+            case 'u':
                 print_usage();
                 exit(0);
             case 'h':
@@ -106,11 +107,11 @@ parse_args(int argc, char **argv)
                 exit(0);
         }
     }
-    if (optind >= argc) {
+    if (options.optind >= argc) {
         print_usage();
         exit(0);
     }
-    model_filename = argv[optind];
+    model_filename = optparse_arg(&options);
 }
 
 /**
@@ -135,17 +136,6 @@ static int actionbits; // number of bits for action label
 static int totalbits; // total number of bits
 static int next_count; // number of partitions of the transition relation
 static rel_t *next; // each partition of the transition relation
-
-/**
- * Obtain current wallclock time
- */
-static double
-wctime()
-{
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (tv.tv_sec + 1E-6 * tv.tv_usec);
-}
 
 static double t_start;
 #define INFO(s, ...) fprintf(stdout, "[% 8.2f] " s, wctime()-t_start, ##__VA_ARGS__)
@@ -932,7 +922,7 @@ void run_CALL(lace_worker* lace)
 }
 
 int
-main(int argc, char **argv)
+main(int argc, const char **argv)
 {
     /**
      * Parse command line, set locale, set startup time for INFO messages.

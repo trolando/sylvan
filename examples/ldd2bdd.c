@@ -1,19 +1,18 @@
 #include <assert.h>
-#include <getopt.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
 
 #include <sylvan/internal/internal.h>
 #include <getrss.h>
+#include <common.h>
 
 /* Configuration */
 static int workers = 0; // autodetect
 static int verbose = 0;
-static char* model_filename = NULL; // filename of model
-static char* bdd_filename = NULL; // filename of output BDD
+static const char* model_filename = NULL; // filename of model
+static const char* bdd_filename = NULL; // filename of output BDD
 static int check_results = 0;
 static int no_reachable = 0;
 
@@ -38,23 +37,24 @@ print_help()
 }
 
 static void
-parse_args(int argc, char **argv)
+parse_args(int argc, const char **argv)
 {
-    static const struct option longopts[] = {
-        {.name = "workers", .val = 'w', .has_arg = required_argument},
-        {.name = "check-results", .val = 2, .has_arg = no_argument},
-        {.name = "no-reachable", .val = 1, .has_arg = no_argument},
-        {.name = "verbose", .val = 'v', .has_arg = no_argument},
-        {.name = "help", .val = 'h', .has_arg = no_argument},
-        {.name = "usage", .val = 99, .has_arg = no_argument},
+    static const struct optparse_long longopts[] = {
+        {"workers", 'w', OPTPARSE_REQUIRED},
+        {"check-results", 2, OPTPARSE_NONE},
+        {"no-reachable", 1, OPTPARSE_NONE},
+        {"verbose", 'v', OPTPARSE_NONE},
+        {"help", 'h', OPTPARSE_NONE},
+        {"usage", 'u', OPTPARSE_NONE},
         {}
     };
-    int key = 0;
-    int long_index = 0;
-    while ((key = getopt_long(argc, argv, "w:vh", longopts, &long_index)) != -1) {
-        switch (key) {
+    int option = 0;
+    struct optparse options;
+    optparse_init(&options, argv);
+    while ((option = optparse_long(&options, longopts, NULL)) != -1) {
+        switch (option) {
             case 'w':
-                workers = atoi(optarg);
+                workers = atoi(options.optarg);
                 break;
             case 'v':
                 verbose = 1;
@@ -65,7 +65,7 @@ parse_args(int argc, char **argv)
             case 2:
                 check_results = 1;
                 break;
-            case 99:
+            case 'u':
                 print_usage();
                 exit(0);
             case 'h':
@@ -73,12 +73,12 @@ parse_args(int argc, char **argv)
                 exit(0);
         }
     }
-    if (optind + 1 >= argc) {
+    if (options.optind + 1 >= argc) {
         print_usage();
         exit(0);
     }
-    model_filename = argv[optind];
-    bdd_filename = argv[optind + 1];
+    model_filename = optparse_arg(&options);
+    bdd_filename = optparse_arg(&options);
 }
 
 /**
@@ -771,7 +771,7 @@ void run_CALL(lace_worker* lace)
 }
 
 int
-main(int argc, char **argv)
+main(int argc, const char **argv)
 {
     parse_args(argc, argv);
 

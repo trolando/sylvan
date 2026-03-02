@@ -117,7 +117,7 @@ void run_CALL(lace_worker* lace)
 
     // Variables 0 ... (SIZE*SIZE-1)
 
-    BDD board[size*size];
+    BDD* board = SYLVAN_ALLOCA(BDD, size*size);
     for (size_t i=0; i<size*size; i++) {
         board[i] = sylvan_ithvar(i);
         sylvan_protect(board+i);

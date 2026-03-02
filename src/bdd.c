@@ -1886,8 +1886,8 @@ void sylvan_enum_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, enum_cb cb, vo
         /* if length is 0 (enum called with empty vars??), return */
         if (i == 0) return;
         /* fill cube and vars with trace */
-        uint8_t cube[i];
-        BDDVAR vars[i];
+        uint8_t* cube = SYLVAN_ALLOCA(uint8_t, i);
+        BDDVAR *vars = SYLVAN_ALLOCA(BDDVAR, i);
         int j=0;
         for (pp = path; pp != NULL; pp = pp->prev) {
             cube[i-j-1] = pp->val;
@@ -1936,8 +1936,8 @@ void sylvan_enum_par_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, enum_cb cb
         /* if length is 0 (enum called with empty vars??), return */
         if (i == 0) return;
         /* fill cube and vars with trace */
-        uint8_t cube[i];
-        BDDVAR vars[i];
+        uint8_t* cube = SYLVAN_ALLOCA(uint8_t, i);
+        BDDVAR* vars = SYLVAN_ALLOCA(BDDVAR, i);
         int j=0;
         for (pp = path; pp != NULL; pp = pp->prev) {
             cube[i-j-1] = pp->val;
@@ -2001,7 +2001,7 @@ BDD sylvan_collect_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, sylvan_colle
         /**
          * Fill array
          */
-        uint8_t arr[len];
+        uint8_t* arr = SYLVAN_ALLOCA(uint8_t, len);
         for (size_t i=0; i<len; i++) {
             arr[len-i-1] = path->val;
             path = path->prev;

@@ -184,8 +184,8 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
     rel_t rel = (rel_t)malloc(sizeof(struct relation));
     rel->r_k = r_k;
     rel->w_k = w_k;
-    rel->r_proj = (int*)malloc(sizeof(int[rel->r_k]));
-    rel->w_proj = (int*)malloc(sizeof(int[rel->w_k]));
+    rel->r_proj = (int*)malloc(rel->r_k * sizeof(*rel->r_proj));
+    rel->w_proj = (int*)malloc(rel->w_k * sizeof(*rel->w_proj));
 
     if (fread(rel->r_proj, sizeof(int), rel->r_k, f) != (size_t)rel->r_k) Abort("Invalid file format.");
     if (fread(rel->w_proj, sizeof(int), rel->w_k, f) != (size_t)rel->w_k) Abort("Invalid file format.");
@@ -196,8 +196,8 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
     rel->firstvar = -1;
 
     /* Compute the meta */
-    uint32_t meta[vector_size*2+2];
-    memset(meta, 0, sizeof(uint32_t[vector_size*2+2]));
+    uint32_t* meta = SYLVAN_ALLOCA(uint32_t, vector_size*2+2);
+    memset(meta, 0, (vector_size * 2 + 2) * sizeof(*meta));
     int r_i=0, w_i=0, i=0, j=0;
     for (;;) {
         int type = 0;
@@ -313,7 +313,7 @@ static void
 print_example(MDD example)
 {
     if (example != lddmc_false) {
-        uint32_t vec[vector_size];
+        uint32_t* vec = SYLVAN_ALLOCA(uint32_t, vector_size);
         lddmc_sat_one(example, vec, vector_size);
 
         printf("[");

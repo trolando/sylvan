@@ -384,7 +384,7 @@ mtbdd_refs_sync(MTBDD result)
 static int mtbdd_initialized = 0;
 
 static void
-mtbdd_quit()
+mtbdd_quit(void)
 {
     refs_free(&mtbdd_refs);
     if (mtbdd_protected_created) {
@@ -396,7 +396,7 @@ mtbdd_quit()
 }
 
 void
-sylvan_init_mtbdd()
+sylvan_init_mtbdd(void)
 {
     sylvan_init_mt();
 

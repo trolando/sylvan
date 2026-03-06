@@ -8,7 +8,7 @@ project(sylvan
 )
 
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.21")
-    set(sylvan_is_top_level PROJECT_IS_TOP_LEVEL)
+    set(sylvan_is_top_level ${PROJECT_IS_TOP_LEVEL})
 else()
     if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         set(sylvan_is_top_level ON)
@@ -29,13 +29,13 @@ list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/tools/")
 # Then try to find lace in the OS using find_package.
 # If that fails, then download lace.
 if(NOT TARGET lace::lace)
-    find_package(lace 2.1 CONFIG QUIET)
+    find_package(lace 2.2.1 CONFIG QUIET)
     if(NOT lace_FOUND)
         include(FetchContent)
         FetchContent_Declare(
             lace
             GIT_REPOSITORY https://github.com/trolando/lace.git
-            GIT_TAG        v2.1.0
+            GIT_TAG        v2.2.1
             GIT_SHALLOW    TRUE
         )
         FetchContent_MakeAvailable(lace)

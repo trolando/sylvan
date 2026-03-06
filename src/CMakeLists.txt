@@ -191,9 +191,9 @@ write_basic_package_version_file(
 
 # Compute PKG_CONFIG requires line
 if(SYLVAN_GMP)
-    set(PKGC_REQUIRES "lace >= 1.4.2 gmp")
+    set(PKGC_REQUIRES "lace >= 2.2.1 gmp")
 else()
-    set(PKGC_REQUIRES "lace >= 1.4.2")
+    set(PKGC_REQUIRES "lace >= 2.2.1")
 endif()
 
 set(PKGC_LIBS_PRIVATE "")
@@ -236,8 +236,4 @@ if(SYLVAN_GMP)
             DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan)
 endif()
 
-export(EXPORT sylvan-targets
-    FILE ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-targets.cmake
-    NAMESPACE sylvan::
-)
 

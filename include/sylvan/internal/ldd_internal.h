@@ -32,92 +32,93 @@
  */
 typedef struct mddnode {
     uint64_t a, b;
-} * mddnode_t; // 16 bytes
+} mddnode; // 16 bytes
 
 static_assert(sizeof(struct mddnode) == 16, "mddnode should be a 16 byte struct");
 
-static inline mddnode_t
+static inline mddnode*
 LDD_GETNODE(MDD mdd)
 {
-    return ((mddnode_t)nodes_get_pointer(nodes, mdd));
+    return ((mddnode*)nodes_get_pointer(nodes, mdd));
 }
 
 static inline uint32_t SYLVAN_UNUSED
-mddnode_getvalue(mddnode_t n)
+mddnode_getvalue(const mddnode* n)
 {
     return ((n->a >> 40) & 0xffff) | ((n->b >> 24) & 0xffff0000);
 }
 
 static inline uint8_t SYLVAN_UNUSED
-mddnode_getmark(mddnode_t n)
+mddnode_getmark(const mddnode* n)
 {
     return n->a & 0x4000000000000000 ? 1 : 0;
 }
 
 static inline uint8_t SYLVAN_UNUSED
-mddnode_getcopy(mddnode_t n)
+mddnode_getcopy(const mddnode* n)
 {
     return n->a & 0x8000000000000000 ? 1 : 0;
 }
 
 static inline uint64_t SYLVAN_UNUSED
-mddnode_getright(mddnode_t n)
+mddnode_getright(const mddnode* n)
 {
     return n->a & 0x000000ffffffffff;
 }
 
 static inline uint64_t SYLVAN_UNUSED
-mddnode_getdown(mddnode_t n)
+mddnode_getdown(const mddnode* n)
 {
     return n->b & 0x000000ffffffffff;
 }
 
 static inline uint32_t SYLVAN_UNUSED
-mddnode_old_getvalue(mddnode_t n)
+mddnode_old_getvalue(const mddnode* n)
 {
     return *(uint32_t*)((uint8_t*)n+6);
 }
 
 static inline uint8_t SYLVAN_UNUSED
-mddnode_old_getmark(mddnode_t n)
+mddnode_old_getmark(const mddnode* n)
 {
     return n->a & 1;
 }
 
 static inline uint8_t SYLVAN_UNUSED
-mddnode_old_getcopy(mddnode_t n)
+mddnode_old_getcopy(const mddnode* n)
 {
     return n->b & 0x10000 ? 1 : 0;
 }
 
 static inline uint64_t SYLVAN_UNUSED
-mddnode_old_getright(mddnode_t n)
+mddnode_old_getright(const mddnode* n)
 {
     return (n->a & 0x0000ffffffffffff) >> 1;
 }
 
 static inline uint64_t SYLVAN_UNUSED
-mddnode_old_getdown(mddnode_t n)
+mddnode_old_getdown(const mddnode* n)
 {
     return n->b >> 17;
 }
 
 static inline void SYLVAN_UNUSED
-mddnode_setmark(mddnode_t n, uint8_t mark)
+mddnode_setmark(mddnode* n, uint8_t mark)
 {
     // FIXME this should not exist at all!!
+    //       we need an alternative mechanism to mark stuff
     n->a = (n->a & 0xbfffffffffffffff) | (mark ? 0x4000000000000000 : 0);
 }
 
 static inline void SYLVAN_UNUSED
-mddnode_make(mddnode_t n, uint32_t value, uint64_t right, uint64_t down)
+mddnode_make(mddnode* n, uint32_t value, uint64_t right, uint64_t down)
 {
     n->a = right | (((uint64_t)value & 0x0000ffff) << 40);
     n->b = down  | (((uint64_t)value & 0xffff0000) << 24);
 }
 
 static inline void SYLVAN_UNUSED
-mddnode_makecopy(mddnode_t n, uint64_t right, uint64_t down)
+mddnode_makecopy(mddnode* n, uint64_t right, uint64_t down)
 {
     n->a = right | 0x8000000000000000;
     n->b = down;

@@ -29,7 +29,7 @@
  * Therefore, size 2^N = 36*(2^N) bytes.
  */
 
-struct cache6_entry {
+typedef struct cache6_entry {
     uint64_t            a;
     uint64_t            b;
     uint64_t            c;
@@ -38,17 +38,16 @@ struct cache6_entry {
     uint64_t            e;
     uint64_t            f;
     uint64_t            res2;
-};
-typedef struct cache6_entry *cache6_entry_t;
+} cache6_entry;
 
 static_assert(sizeof(struct cache6_entry) == 64, "cache6_entry should be a 64 byte struct");
 
-struct cache_entry {
+typedef struct cache_entry {
     uint64_t            a;
     uint64_t            b;
     uint64_t            c;
     uint64_t            res;
-};
+} cache_entry;
 
 static_assert(sizeof(struct cache_entry) == 32, "cache_entry should be a 32 byte struct");
 
@@ -58,7 +57,7 @@ static size_t             cache_max;          // power of 2
 #if CACHE_MASK
 static size_t             cache_mask;         // cache_size-1
 #endif
-static cache_entry_t      cache_table;
+static cache_entry*      cache_table;
 static uint32_t*          cache_status;
 
 static _Atomic(uint64_t)  next_opid;
@@ -106,10 +105,10 @@ cache_get6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t 
     const uint64_t hash = cache_hash6(a, b, c, d, e, f);
 #if CACHE_MASK
     _Atomic(uint64_t) *s_bucket = (_Atomic(uint64_t)*)cache_status + (hash & cache_mask)/2;
-    cache6_entry_t bucket = (cache6_entry_t)cache_table + (hash & cache_mask)/2;
+    cache6_entry* bucket = (cache6_entry*)cache_table + (hash & cache_mask)/2;
 #else
     _Atomic(uint64_t) *s_bucket = (_Atomic(uint64_t)*)cache_status + (hash % cache_size)/2;
-    cache6_entry_t bucket = (cache6_entry_t)cache_table + (hash % cache_size)/2;
+    cache6_entry* bucket = (cache6_entry*)cache_table + (hash % cache_size)/2;
 #endif
     const uint64_t s = atomic_load_explicit(s_bucket, memory_order_relaxed);
     // abort if locked or second part of 2-part entry or if different hash
@@ -133,10 +132,10 @@ cache_put6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t 
     const uint64_t hash = cache_hash6(a, b, c, d, e, f);
 #if CACHE_MASK
     _Atomic(uint64_t) *s_bucket = (_Atomic(uint64_t)*)cache_status + (hash & cache_mask)/2;
-    cache6_entry_t bucket = (cache6_entry_t)cache_table + (hash & cache_mask)/2;
+    cache6_entry* bucket = (cache6_entry*)cache_table + (hash & cache_mask)/2;
 #else
     _Atomic(uint64_t) *s_bucket = (_Atomic(uint64_t)*)cache_status + (hash % cache_size)/2;
-    cache6_entry_t bucket = (cache6_entry_t)cache_table + (hash % cache_size)/2;
+    cache6_entry* bucket = (cache6_entry*)cache_table + (hash % cache_size)/2;
 #endif
     // can be relaxed, we use cas afterwards to claim it
     uint64_t s = atomic_load_explicit(s_bucket, memory_order_relaxed);
@@ -169,10 +168,10 @@ cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
     const uint64_t hash = cache_hash(a, b, c);
 #if CACHE_MASK
     _Atomic(uint32_t) *s_bucket = (_Atomic(uint32_t)*)cache_status + (hash & cache_mask);
-    cache_entry_t bucket = cache_table + (hash & cache_mask);
+    cache_entry* bucket = cache_table + (hash & cache_mask);
 #else
     _Atomic(uint32_t) *s_bucket = (_Atomic(uint32_t)*)cache_status + (hash % cache_size);
-    cache_entry_t bucket = cache_table + (hash % cache_size);
+    cache_entry* bucket = cache_table + (hash % cache_size);
 #endif
     const uint32_t s = atomic_load_explicit(s_bucket, memory_order_relaxed);
     // abort if locked or if part of a 2-part cache entry
@@ -194,10 +193,10 @@ cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
     const uint64_t hash = cache_hash(a, b, c);
 #if CACHE_MASK
     _Atomic(uint32_t) *s_bucket = (_Atomic(uint32_t)*)cache_status + (hash & cache_mask);
-    cache_entry_t bucket = cache_table + (hash & cache_mask);
+    cache_entry* bucket = cache_table + (hash & cache_mask);
 #else
     _Atomic(uint32_t) *s_bucket = (_Atomic(uint32_t)*)cache_status + (hash % cache_size);
-    cache_entry_t bucket = cache_table + (hash % cache_size);
+    cache_entry* bucket = cache_table + (hash % cache_size);
 #endif
     uint32_t s = atomic_load_explicit(s_bucket, memory_order_relaxed);
     // abort if locked
@@ -244,7 +243,7 @@ cache_create(size_t _cache_size, size_t _max_size)
         exit(1);
     }
 
-    cache_table = (cache_entry_t)sylvan_alloc_aligned(cache_max * sizeof(struct cache_entry));
+    cache_table = (cache_entry*)sylvan_alloc_aligned(cache_max * sizeof(struct cache_entry));
     cache_status = (uint32_t*)sylvan_alloc_aligned(cache_max * sizeof(uint32_t));
     if (cache_table == 0 || cache_status == 0) {
         fprintf(stderr, "cache_create: Unable to allocate memory: %s!\n", strerror(errno));

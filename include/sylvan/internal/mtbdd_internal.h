@@ -29,14 +29,14 @@
  */
 typedef struct mtbddnode {
     uint64_t a, b;
-} * mtbddnode_t; // 16 bytes
+} mtbddnode; // 16 bytes
 
 static_assert(sizeof(struct mtbddnode) == 16, "mtbddnode should be a 16 byte struct");
 
-static inline mtbddnode_t
+static inline mtbddnode*
 MTBDD_GETNODE(MTBDD dd)
 {
-    return (mtbddnode_t)nodes_get_pointer(nodes, dd&0x000000ffffffffff);
+    return (mtbddnode*)nodes_get_pointer(nodes, dd&0x000000ffffffffff);
 }
 
 /**
@@ -81,95 +81,95 @@ MTBDD_EQUALM(MTBDD a, MTBDD b)
 // Only complement edge on "high"
 
 static inline int SYLVAN_UNUSED
-mtbddnode_isleaf(mtbddnode_t n)
+mtbddnode_isleaf(const mtbddnode* n)
 {
     return n->a & 0x4000000000000000 ? 1 : 0;
 }
 
 static inline uint32_t SYLVAN_UNUSED
-mtbddnode_gettype(mtbddnode_t n)
+mtbddnode_gettype(const mtbddnode* n)
 {
     return n->a & 0x00000000ffffffff;
 }
 
 static inline uint64_t SYLVAN_UNUSED
-mtbddnode_getvalue(mtbddnode_t n)
+mtbddnode_getvalue(const mtbddnode* n)
 {
     return n->b;
 }
 
 static inline int SYLVAN_UNUSED
-mtbddnode_getcomp(mtbddnode_t n)
+mtbddnode_getcomp(const mtbddnode* n)
 {
     return n->a & 0x8000000000000000 ? 1 : 0;
 }
 
 static inline uint64_t SYLVAN_UNUSED
-mtbddnode_getlow(mtbddnode_t n)
+mtbddnode_getlow(const mtbddnode* n)
 {
     return n->b & 0x000000ffffffffff; // 40 bits
 }
 
 static inline uint64_t SYLVAN_UNUSED
-mtbddnode_gethigh(mtbddnode_t n)
+mtbddnode_gethigh(const mtbddnode* n)
 {
     return n->a & 0x800000ffffffffff; // 40 bits plus high bit of first
 }
 
 static inline uint32_t SYLVAN_UNUSED
-mtbddnode_getvariable(mtbddnode_t n)
+mtbddnode_getvariable(const mtbddnode* n)
 {
     return (uint32_t)(n->b >> 40);
 }
 
 static inline int SYLVAN_UNUSED
-mtbddnode_getmark(mtbddnode_t n)
+mtbddnode_getmark(mtbddnode* n)
 {
     return n->a & 0x2000000000000000 ? 1 : 0;
 }
 
 static inline void SYLVAN_UNUSED
-mtbddnode_setmark(mtbddnode_t n, int mark)
+mtbddnode_setmark(mtbddnode* n, int mark)
 {
     if (mark) n->a |= 0x2000000000000000;
     else n->a &= 0xdfffffffffffffff;
 }
 
 static inline void SYLVAN_UNUSED
-mtbddnode_makeleaf(mtbddnode_t n, uint32_t type, uint64_t value)
+mtbddnode_makeleaf(mtbddnode* n, uint32_t type, uint64_t value)
 {
     n->a = 0x4000000000000000 | (uint64_t)type;
     n->b = value;
 }
 
 static inline void SYLVAN_UNUSED
-mtbddnode_makenode(mtbddnode_t n, uint32_t var, uint64_t low, uint64_t high)
+mtbddnode_makenode(mtbddnode* n, uint32_t var, uint64_t low, uint64_t high)
 {
     n->a = high;
     n->b = ((uint64_t)var)<<40 | low;
 }
 
 static inline void SYLVAN_UNUSED
-mtbddnode_makemapnode(mtbddnode_t n, uint32_t var, uint64_t low, uint64_t high)
+mtbddnode_makemapnode(mtbddnode* n, uint32_t var, uint64_t low, uint64_t high)
 {
     n->a = high | 0x1000000000000000;
     n->b = ((uint64_t)var)<<40 | low;
 }
 
 static inline int SYLVAN_UNUSED
-mtbddnode_ismapnode(mtbddnode_t n)
+mtbddnode_ismapnode(mtbddnode* n)
 {
     return n->a & 0x1000000000000000 ? 1 : 0;
 }
 
 static MTBDD SYLVAN_UNUSED
-mtbddnode_followlow(MTBDD mtbdd, mtbddnode_t node)
+mtbddnode_followlow(const MTBDD mtbdd, const mtbddnode* node)
 {
     return MTBDD_TRANSFERMARK(mtbdd, mtbddnode_getlow(node));
 }
 
 static MTBDD SYLVAN_UNUSED
-mtbddnode_followhigh(MTBDD mtbdd, mtbddnode_t node)
+mtbddnode_followhigh(const MTBDD mtbdd, const mtbddnode* node)
 {
     return MTBDD_TRANSFERMARK(mtbdd, mtbddnode_gethigh(node));
 }
@@ -187,7 +187,6 @@ mtbddnode_followhigh(MTBDD mtbdd, mtbddnode_t node)
 #define BDD_TRANSFERMARK MTBDD_TRANSFERMARK
 #define BDD_EQUALM MTBDD_EQUALM
 #define bddnode mtbddnode
-#define bddnode_t mtbddnode_t
 #define bddnode_getcomp mtbddnode_getcomp
 #define bddnode_getlow mtbddnode_getlow
 #define bddnode_gethigh mtbddnode_gethigh

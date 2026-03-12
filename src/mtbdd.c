@@ -597,7 +597,7 @@ MTBDD
 mtbdd_cube(MTBDD variables, uint8_t *cube, MTBDD terminal)
 {
     if (variables == mtbdd_true) return terminal;
-    mtbddnode_t n = MTBDD_GETNODE(variables);
+    mtbddnode* n = MTBDD_GETNODE(variables);
 
     BDD result;
     switch (*cube) {
@@ -614,7 +614,7 @@ mtbdd_cube(MTBDD variables, uint8_t *cube, MTBDD terminal)
     case 3:
     {
         MTBDD variables2 = node_gethigh(variables, n);
-        mtbddnode_t n2 = MTBDD_GETNODE(variables2);
+        mtbddnode* n2 = MTBDD_GETNODE(variables2);
         uint32_t var2 = mtbddnode_getvariable(n2);
         result = mtbdd_cube(node_gethigh(variables2, n2), cube+2, terminal);
         BDD low = mtbdd_makenode(var2, result, mtbdd_false);
@@ -642,10 +642,10 @@ MTBDD mtbdd_union_cube_CALL(lace_worker* lace, MTBDD mtbdd, MTBDD vars, uint8_t*
 
     sylvan_gc_test(lace);
 
-    mtbddnode_t nv = MTBDD_GETNODE(vars);
+    mtbddnode* nv = MTBDD_GETNODE(vars);
     uint32_t v = mtbddnode_getvariable(nv);
 
-    mtbddnode_t na = MTBDD_GETNODE(mtbdd);
+    mtbddnode* na = MTBDD_GETNODE(mtbdd);
     uint32_t va = mtbddnode_getvariable(na);
 
     if (va < v) {
@@ -747,7 +747,8 @@ MTBDD mtbdd_apply_CALL(lace_worker* lace, MTBDD a, MTBDD b, mtbdd_apply_op op)
     int la = mtbdd_isleaf(a);
     int lb = mtbdd_isleaf(b);
     assert(!la || !lb);
-    mtbddnode_t na, nb;
+    mtbddnode* na;
+    mtbddnode* nb;
     uint32_t va, vb;
     if (!la) {
         na = MTBDD_GETNODE(a);
@@ -821,7 +822,7 @@ MTBDD mtbdd_applyp_CALL(lace_worker* lace, MTBDD a, MTBDD b, size_t p, mtbdd_app
     /* Get top variable */
     int la = mtbdd_isleaf(a);
     int lb = mtbdd_isleaf(b);
-    mtbddnode_t na, nb;
+    mtbddnode* na, *nb;
     uint32_t va, vb;
     if (!la) {
         na = MTBDD_GETNODE(a);
@@ -901,7 +902,7 @@ MTBDD mtbdd_uapply_CALL(lace_worker* lace, MTBDD dd, mtbdd_uapply_op op, size_t 
     }
 
     /* Get cofactors */
-    mtbddnode_t ndd = MTBDD_GETNODE(dd);
+    mtbddnode* ndd = MTBDD_GETNODE(dd);
     MTBDD ddlow = node_getlow(dd, ndd);
     MTBDD ddhigh = node_gethigh(dd, ndd);
 
@@ -928,7 +929,7 @@ MTBDD mtbdd_uop_times_uint_CALL(lace_worker* lace, MTBDD a, size_t k)
     if (a == mtbdd_true) return mtbdd_true;
 
     // a != constant
-    mtbddnode_t na = MTBDD_GETNODE(a);
+    mtbddnode* na = MTBDD_GETNODE(a);
 
     if (mtbddnode_isleaf(na)) {
         if (mtbddnode_gettype(na) == 0) {
@@ -959,7 +960,7 @@ MTBDD mtbdd_uop_pow_uint_CALL(lace_worker* lace, MTBDD a, size_t k)
     if (a == mtbdd_true) return mtbdd_true;
 
     // a != constant
-    mtbddnode_t na = MTBDD_GETNODE(a);
+    mtbddnode* na = MTBDD_GETNODE(a);
 
     if (mtbddnode_isleaf(na)) {
         if (mtbddnode_gettype(na) == 0) {
@@ -1026,7 +1027,7 @@ MTBDD mtbdd_abstract_CALL(lace_worker* lace, MTBDD a, MTBDD v, mtbdd_abstract_op
     sylvan_stats_count(MTBDD_ABSTRACT);
 
     /* a != constant, v != constant */
-    mtbddnode_t na = MTBDD_GETNODE(a);
+    mtbddnode* na = MTBDD_GETNODE(a);
 
     if (mtbddnode_isleaf(na)) {
         /* Count number of variables */
@@ -1055,7 +1056,7 @@ MTBDD mtbdd_abstract_CALL(lace_worker* lace, MTBDD a, MTBDD v, mtbdd_abstract_op
     }
 
     /* Possibly skip k variables */
-    mtbddnode_t nv = MTBDD_GETNODE(v);
+    mtbddnode* nv = MTBDD_GETNODE(v);
     uint32_t var_a = mtbddnode_getvariable(na);
     uint32_t var_v = mtbddnode_getvariable(nv);
     uint64_t k = 0;
@@ -1120,8 +1121,8 @@ MTBDD mtbdd_op_plus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
     if (a == mtbdd_true) return mtbdd_true;
     if (b == mtbdd_true) return mtbdd_true;
 
-    mtbddnode_t na = MTBDD_GETNODE(a);
-    mtbddnode_t nb = MTBDD_GETNODE(b);
+    mtbddnode* na = MTBDD_GETNODE(a);
+    mtbddnode* nb = MTBDD_GETNODE(b);
 
     if (mtbddnode_isleaf(na) && mtbddnode_isleaf(nb)) {
         uint64_t val_a = mtbddnode_getvalue(na);
@@ -1172,8 +1173,8 @@ MTBDD mtbdd_op_minus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
     if (a == mtbdd_false) return mtbdd_negate(b);
     if (b == mtbdd_false) return a;
 
-    mtbddnode_t na = MTBDD_GETNODE(a);
-    mtbddnode_t nb = MTBDD_GETNODE(b);
+    mtbddnode* na = MTBDD_GETNODE(a);
+    mtbddnode* nb = MTBDD_GETNODE(b);
 
     if (mtbddnode_isleaf(na) && mtbddnode_isleaf(nb)) {
         uint64_t val_a = mtbddnode_getvalue(na);
@@ -1222,8 +1223,8 @@ MTBDD mtbdd_op_times_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
     if (a == mtbdd_true) return b;
     if (b == mtbdd_true) return a;
 
-    mtbddnode_t na = MTBDD_GETNODE(a);
-    mtbddnode_t nb = MTBDD_GETNODE(b);
+    mtbddnode* na = MTBDD_GETNODE(a);
+    mtbddnode* nb = MTBDD_GETNODE(b);
 
     if (mtbddnode_isleaf(na) && mtbddnode_isleaf(nb)) {
         uint64_t val_a = mtbddnode_getvalue(na);
@@ -1292,8 +1293,8 @@ MTBDD mtbdd_op_min_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
     if (a == mtbdd_false && b != mtbdd_false && mtbddnode_isleaf(MTBDD_GETNODE(b))) return b;
     if (b == mtbdd_false && a != mtbdd_false && mtbddnode_isleaf(MTBDD_GETNODE(a))) return a;
 
-    mtbddnode_t na = MTBDD_GETNODE(a);
-    mtbddnode_t nb = MTBDD_GETNODE(b);
+    mtbddnode* na = MTBDD_GETNODE(a);
+    mtbddnode* nb = MTBDD_GETNODE(b);
 
     if (mtbddnode_isleaf(na) && mtbddnode_isleaf(nb)) {
         uint64_t val_a = mtbddnode_getvalue(na);
@@ -1348,8 +1349,8 @@ MTBDD mtbdd_op_max_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
     if (b == mtbdd_false) return a;
     if (a == b) return a;
 
-    mtbddnode_t na = MTBDD_GETNODE(a);
-    mtbddnode_t nb = MTBDD_GETNODE(b);
+    mtbddnode* na = MTBDD_GETNODE(a);
+    mtbddnode* nb = MTBDD_GETNODE(b);
 
     if (mtbddnode_isleaf(na) && mtbddnode_isleaf(nb)) {
         uint64_t val_a = mtbddnode_getvalue(na);
@@ -1395,7 +1396,7 @@ MTBDD mtbdd_op_cmpl_CALL(lace_worker* lace, MTBDD a, size_t k)
     if (a == mtbdd_false) return mtbdd_false;
 
     // a != constant
-    mtbddnode_t na = MTBDD_GETNODE(a);
+    mtbddnode* na = MTBDD_GETNODE(a);
 
     if (mtbddnode_isleaf(na)) {
         if (mtbddnode_gettype(na) == 0) {
@@ -1425,7 +1426,7 @@ MTBDD mtbdd_op_negate_CALL(lace_worker* lace, MTBDD a, size_t k)
     if (a == mtbdd_false) return mtbdd_false;
 
     // a != constant
-    mtbddnode_t na = MTBDD_GETNODE(a);
+    mtbddnode* na = MTBDD_GETNODE(a);
 
     if (mtbddnode_isleaf(na)) {
         if (mtbddnode_gettype(na) == 0) {
@@ -1477,9 +1478,9 @@ MTBDD mtbdd_ite_CALL(lace_worker* lace, MTBDD f, MTBDD g, MTBDD h)
     /* Get top variable */
     int lg = mtbdd_isleaf(g);
     int lh = mtbdd_isleaf(h);
-    mtbddnode_t nf = MTBDD_GETNODE(f);
-    mtbddnode_t ng = lg ? 0 : MTBDD_GETNODE(g);
-    mtbddnode_t nh = lh ? 0 : MTBDD_GETNODE(h);
+    mtbddnode* nf = MTBDD_GETNODE(f);
+    mtbddnode* ng = lg ? 0 : MTBDD_GETNODE(g);
+    mtbddnode* nh = lh ? 0 : MTBDD_GETNODE(h);
     uint32_t vf = mtbddnode_getvariable(nf);
     uint32_t vg = lg ? 0 : mtbddnode_getvariable(ng);
     uint32_t vh = lh ? 0 : mtbddnode_getvariable(nh);
@@ -1521,7 +1522,7 @@ MTBDD mtbdd_op_threshold_double_CALL(lace_worker* lace, MTBDD a, size_t svalue)
     if (a == mtbdd_true) return mtbdd_invalid;
 
     // a != constant
-    mtbddnode_t na = MTBDD_GETNODE(a);
+    mtbddnode* na = MTBDD_GETNODE(a);
 
     if (mtbddnode_isleaf(na)) {
         double value = *(double*)&svalue;
@@ -1549,7 +1550,7 @@ MTBDD mtbdd_op_strict_threshold_double_CALL(lace_worker* lace, MTBDD a, size_t s
     if (a == mtbdd_true) return mtbdd_invalid;
 
     // a != constant
-    mtbddnode_t na = MTBDD_GETNODE(a);
+    mtbddnode* na = MTBDD_GETNODE(a);
 
     if (mtbddnode_isleaf(na)) {
         double value = *(double*)&svalue;
@@ -1592,8 +1593,8 @@ MTBDD mtbdd_equal_norm_d2_CALL(lace_worker* lace, MTBDD a, MTBDD b, size_t svalu
     if (a == mtbdd_false) return mtbdd_false;
     if (b == mtbdd_false) return mtbdd_false;
 
-    mtbddnode_t na = MTBDD_GETNODE(a);
-    mtbddnode_t nb = MTBDD_GETNODE(b);
+    mtbddnode* na = MTBDD_GETNODE(a);
+    mtbddnode* nb = MTBDD_GETNODE(b);
     int la = mtbddnode_isleaf(na);
     int lb = mtbddnode_isleaf(nb);
 
@@ -1674,8 +1675,8 @@ MTBDD mtbdd_equal_norm_rel_d2_CALL(lace_worker* lace, MTBDD a, MTBDD b, size_t s
     if (a == mtbdd_false) return mtbdd_false;
     if (b == mtbdd_false) return mtbdd_false;
 
-    mtbddnode_t na = MTBDD_GETNODE(a);
-    mtbddnode_t nb = MTBDD_GETNODE(b);
+    mtbddnode* na = MTBDD_GETNODE(a);
+    mtbddnode* nb = MTBDD_GETNODE(b);
     int la = mtbddnode_isleaf(na);
     int lb = mtbddnode_isleaf(nb);
 
@@ -1767,8 +1768,8 @@ MTBDD mtbdd_leq_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
         return result;
     }
 
-    mtbddnode_t na = MTBDD_GETNODE(a);
-    mtbddnode_t nb = MTBDD_GETNODE(b);
+    mtbddnode* na = MTBDD_GETNODE(a);
+    mtbddnode* nb = MTBDD_GETNODE(b);
     int la = mtbddnode_isleaf(na);
     int lb = mtbddnode_isleaf(nb);
 
@@ -1865,8 +1866,8 @@ MTBDD mtbdd_less_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit
         return result;
     }
 
-    mtbddnode_t na = MTBDD_GETNODE(a);
-    mtbddnode_t nb = MTBDD_GETNODE(b);
+    mtbddnode* na = MTBDD_GETNODE(a);
+    mtbddnode* nb = MTBDD_GETNODE(b);
     int la = mtbddnode_isleaf(na);
     int lb = mtbddnode_isleaf(nb);
 
@@ -1963,8 +1964,8 @@ MTBDD mtbdd_geq_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
         return result;
     }
 
-    mtbddnode_t na = MTBDD_GETNODE(a);
-    mtbddnode_t nb = MTBDD_GETNODE(b);
+    mtbddnode* na = MTBDD_GETNODE(a);
+    mtbddnode* nb = MTBDD_GETNODE(b);
     int la = mtbddnode_isleaf(na);
     int lb = mtbddnode_isleaf(nb);
 
@@ -2061,8 +2062,8 @@ MTBDD mtbdd_greater_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcirc
         return result;
     }
 
-    mtbddnode_t na = MTBDD_GETNODE(a);
-    mtbddnode_t nb = MTBDD_GETNODE(b);
+    mtbddnode* na = MTBDD_GETNODE(a);
+    mtbddnode* nb = MTBDD_GETNODE(b);
     int la = mtbddnode_isleaf(na);
     int lb = mtbddnode_isleaf(nb);
 
@@ -2161,13 +2162,13 @@ MTBDD mtbdd_and_abstract_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     /* Get top variable */
     int la = mtbdd_isleaf(a);
     int lb = mtbdd_isleaf(b);
-    mtbddnode_t na = la ? 0 : MTBDD_GETNODE(a);
-    mtbddnode_t nb = lb ? 0 : MTBDD_GETNODE(b);
+    mtbddnode* na = la ? 0 : MTBDD_GETNODE(a);
+    mtbddnode* nb = lb ? 0 : MTBDD_GETNODE(b);
     uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
     uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
     uint32_t var = va < vb ? va : vb;
 
-    mtbddnode_t nv = MTBDD_GETNODE(v);
+    mtbddnode* nv = MTBDD_GETNODE(v);
     uint32_t vv = mtbddnode_getvariable(nv);
 
     if (vv < var) {
@@ -2229,13 +2230,13 @@ MTBDD mtbdd_and_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     /* Get top variable */
     int la = mtbdd_isleaf(a);
     int lb = mtbdd_isleaf(b);
-    mtbddnode_t na = la ? 0 : MTBDD_GETNODE(a);
-    mtbddnode_t nb = lb ? 0 : MTBDD_GETNODE(b);
+    mtbddnode* na = la ? 0 : MTBDD_GETNODE(a);
+    mtbddnode* nb = lb ? 0 : MTBDD_GETNODE(b);
     uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
     uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
     uint32_t var = va < vb ? va : vb;
 
-    mtbddnode_t nv = MTBDD_GETNODE(v);
+    mtbddnode* nv = MTBDD_GETNODE(v);
     uint32_t vv = mtbddnode_getvariable(nv);
 
     while (vv < var) {
@@ -2311,7 +2312,7 @@ MTBDD mtbdd_support_CALL(lace_worker* lace, MTBDD dd)
     }
 
     /* Recursive calls */
-    mtbddnode_t n = MTBDD_GETNODE(dd);
+    mtbddnode* n = MTBDD_GETNODE(dd);
     mtbdd_refs_spawn(mtbdd_support_SPAWN(lace, node_getlow(dd, n)));
     MTBDD high = mtbdd_refs_push(mtbdd_support_CALL(lace, node_gethigh(dd, n)));
     MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(mtbdd_support_SYNC(lace)));
@@ -2339,7 +2340,7 @@ MTBDD mtbdd_compose_CALL(lace_worker* lace, MTBDD a, MTBDDMAP map)
     if (mtbdd_isleaf(a) || mtbdd_map_isempty(map)) return a;
 
     /* Determine top level */
-    mtbddnode_t n = MTBDD_GETNODE(a);
+    mtbddnode* n = MTBDD_GETNODE(a);
     uint32_t v = mtbddnode_getvariable(n);
 
     /* Find in map */
@@ -2387,7 +2388,7 @@ MTBDD mtbdd_minimum_CALL(lace_worker* lace, MTBDD a)
 {
     /* Check terminal case */
     if (a == mtbdd_false) return mtbdd_false;
-    mtbddnode_t na = MTBDD_GETNODE(a);
+    mtbddnode* na = MTBDD_GETNODE(a);
     if (mtbddnode_isleaf(na)) return a;
 
     /* Maybe perform garbage collection */
@@ -2409,8 +2410,8 @@ MTBDD mtbdd_minimum_CALL(lace_worker* lace, MTBDD a)
     MTBDD low = mtbdd_minimum_SYNC(lace);
 
     /* Determine lowest */
-    mtbddnode_t nl = MTBDD_GETNODE(low);
-    mtbddnode_t nh = MTBDD_GETNODE(high);
+    mtbddnode* nl = MTBDD_GETNODE(low);
+    mtbddnode* nh = MTBDD_GETNODE(high);
 
     if (mtbddnode_gettype(nl) == 0 && mtbddnode_gettype(nh) == 0) {
         result = mtbdd_getint64(low) < mtbdd_getint64(high) ? low : high;
@@ -2446,7 +2447,7 @@ MTBDD mtbdd_maximum_CALL(lace_worker* lace, MTBDD a)
 {
     /* Check terminal case */
     if (a == mtbdd_false) return mtbdd_false;
-    mtbddnode_t na = MTBDD_GETNODE(a);
+    mtbddnode* na = MTBDD_GETNODE(a);
     if (mtbddnode_isleaf(na)) return a;
 
     /* Maybe perform garbage collection */
@@ -2468,8 +2469,8 @@ MTBDD mtbdd_maximum_CALL(lace_worker* lace, MTBDD a)
     MTBDD low = mtbdd_maximum_SYNC(lace);
 
     /* Determine highest */
-    mtbddnode_t nl = MTBDD_GETNODE(low);
-    mtbddnode_t nh = MTBDD_GETNODE(high);
+    mtbddnode* nl = MTBDD_GETNODE(low);
+    mtbddnode* nh = MTBDD_GETNODE(high);
 
     if (mtbddnode_gettype(nl) == 0 && mtbddnode_gettype(nh) == 0) {
         result = mtbdd_getint64(low) > mtbdd_getint64(high) ? low : high;
@@ -2508,7 +2509,7 @@ double mtbdd_satcount_CALL(lace_worker* lace, MTBDD dd, size_t nvars)
 
     if (mtbdd_isleaf(dd)) {
         // test if 0
-        mtbddnode_t dd_node = MTBDD_GETNODE(dd);
+        mtbddnode* dd_node = MTBDD_GETNODE(dd);
         if (dd != mtbdd_true) {
             if (mtbddnode_gettype(dd_node) == 0 && mtbdd_getint64(dd) == 0) return 0.0;
             else if (mtbddnode_gettype(dd_node) == 1 && mtbdd_getdouble(dd) == 0.0) return 0.0;
@@ -2571,7 +2572,7 @@ mtbdd_enum_first(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb f
         variables = mtbdd_gethigh(variables);
 
         // check if MTBDD is on this variable
-        mtbddnode_t n = MTBDD_GETNODE(dd);
+        mtbddnode* n = MTBDD_GETNODE(dd);
         if (mtbddnode_getvariable(n) != v) {
             *arr = 2;
             return mtbdd_enum_first(dd, variables, arr+1, filter_cb);
@@ -2614,7 +2615,7 @@ mtbdd_enum_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb fi
 
         if (*arr == 0) {
             // previous was low
-            mtbddnode_t n = MTBDD_GETNODE(dd);
+            mtbddnode* n = MTBDD_GETNODE(dd);
             MTBDD res = mtbdd_enum_next(node_getlow(dd, n), variables, arr+1, filter_cb);
             if (res != mtbdd_false) {
                 return res;
@@ -2630,7 +2631,7 @@ mtbdd_enum_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb fi
             }
         } else if (*arr == 1) {
             // previous was high
-            mtbddnode_t n = MTBDD_GETNODE(dd);
+            mtbddnode* n = MTBDD_GETNODE(dd);
             return mtbdd_enum_next(node_gethigh(dd, n), variables, arr+1, filter_cb);
         } else {
             // previous was either
@@ -2663,11 +2664,11 @@ mtbdd_enum_all_first(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_
         return dd;
     } else {
         // get next variable from <variables>
-        mtbddnode_t nv = MTBDD_GETNODE(variables);
+        mtbddnode* nv = MTBDD_GETNODE(variables);
         variables = node_gethigh(variables, nv);
 
         // get cofactors
-        mtbddnode_t ndd = MTBDD_GETNODE(dd);
+        mtbddnode* ndd = MTBDD_GETNODE(dd);
         MTBDD low, high;
         if (mtbddnode_getvariable(ndd) == mtbddnode_getvariable(nv)) {
             low = node_getlow(dd, ndd);
@@ -2709,11 +2710,11 @@ mtbdd_enum_all_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_c
         return mtbdd_false;
     } else {
         // get next variable from <variables>
-        mtbddnode_t nv = MTBDD_GETNODE(variables);
+        mtbddnode* nv = MTBDD_GETNODE(variables);
         variables = node_gethigh(variables, nv);
 
         // filter leaf (if leaf) or get cofactors (if not leaf)
-        mtbddnode_t ndd = MTBDD_GETNODE(dd);
+        mtbddnode* ndd = MTBDD_GETNODE(dd);
         MTBDD low, high;
         if (mtbdd_isleaf(dd)) {
             // a leaf for which the filter returns 0 is skipped
@@ -2756,19 +2757,19 @@ mtbdd_enum_all_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_c
  * Given a MTBDD <dd>, call <cb> with context <context> for every unique path in <dd> ending in leaf <leaf>.
  *
  * Usage:
- * TASK(void, cb, mtbdd_enum_trace_t, trace, MTBDD, leaf, void*, context) { ... do something ... }
+ * TASK(void, cb, mtbdd_enum_trace*, trace, MTBDD, leaf, void*, context) { ... do something ... }
  * mtbdd_enum_par(dd, cb, context);
  */
-TASK(void, mtbdd_enum_par_do, MTBDD, dd, mtbdd_enum_cb, cb, void*, context, mtbdd_enum_trace_t, trace)
+TASK(void, mtbdd_enum_par_do, MTBDD, dd, mtbdd_enum_cb, cb, void*, context, mtbdd_enum_trace*, trace)
 
-void mtbdd_enum_par_do_CALL(lace_worker* lace, MTBDD dd, mtbdd_enum_cb cb, void* context, mtbdd_enum_trace_t trace)
+void mtbdd_enum_par_do_CALL(lace_worker* lace, MTBDD dd, mtbdd_enum_cb cb, void* context, mtbdd_enum_trace* trace)
 {
     if (mtbdd_isleaf(dd)) {
         cb(trace, dd, context);
         return;
     }
 
-    mtbddnode_t ndd = MTBDD_GETNODE(dd);
+    mtbddnode* ndd = MTBDD_GETNODE(dd);
     uint32_t var = mtbddnode_getvariable(ndd);
 
     struct mtbdd_enum_trace t0 = (struct mtbdd_enum_trace){trace, var, 0};
@@ -2814,11 +2815,11 @@ MTBDD mtbdd_eval_compose_CALL(lace_worker* lace, MTBDD dd, MTBDD vars, mtbdd_eva
         result = cb(lace, dd);
     } else {
         /* Get top variable in dd */
-        mtbddnode_t ndd = MTBDD_GETNODE(dd);
+        mtbddnode* ndd = MTBDD_GETNODE(dd);
         uint32_t var = mtbddnode_getvariable(ndd);
 
         /* Check if <var> is in <vars> */
-        mtbddnode_t nvars = MTBDD_GETNODE(vars);
+        mtbddnode* nvars = MTBDD_GETNODE(vars);
         uint32_t vv = mtbddnode_getvariable(nvars);
 
         /* Search/forward <vars> */
@@ -2866,7 +2867,7 @@ MTBDD mtbdd_eval_compose_CALL(lace_worker* lace, MTBDD dd, MTBDD vars, mtbdd_eva
 static void
 mtbdd_unmark_rec(MTBDD mtbdd)
 {
-    mtbddnode_t n = MTBDD_GETNODE(mtbdd);
+    mtbddnode* n = MTBDD_GETNODE(mtbdd);
     if (!mtbddnode_getmark(n)) return;
     mtbddnode_setmark(n, 0);
     if (mtbddnode_isleaf(n)) return;
@@ -2883,7 +2884,7 @@ mtbdd_leafcount_mark(MTBDD mtbdd)
 {
     if (mtbdd == mtbdd_true) return 0; // do not count true/false leaf
     if (mtbdd == mtbdd_false) return 0; // do not count true/false leaf
-    mtbddnode_t n = MTBDD_GETNODE(mtbdd);
+    mtbddnode* n = MTBDD_GETNODE(mtbdd);
     if (mtbddnode_getmark(n)) return 0;
     mtbddnode_setmark(n, 1);
     if (mtbddnode_isleaf(n)) return 1; // count leaf as 1
@@ -2906,7 +2907,7 @@ mtbdd_leafcount_more(const MTBDD *mtbdds, size_t count)
 static size_t
 mtbdd_nodecount_mark(MTBDD mtbdd)
 {
-    mtbddnode_t n = MTBDD_GETNODE(mtbdd);
+    mtbddnode* n = MTBDD_GETNODE(mtbdd);
     if (mtbddnode_getmark(n)) return 0;
     mtbddnode_setmark(n, 1);
     if (mtbddnode_isleaf(n)) return 1; // count leaf as 1
@@ -2940,7 +2941,7 @@ int mtbdd_test_isvalid_rec_CALL(lace_worker* lace, MTBDD dd, uint32_t parent_var
     if (marked == 0) return 0;
 
     // check if leaf
-    mtbddnode_t n = MTBDD_GETNODE(dd);
+    mtbddnode* n = MTBDD_GETNODE(dd);
     if (mtbddnode_isleaf(n)) return 1; // we're fine
 
     // check variable order
@@ -2984,7 +2985,7 @@ int mtbdd_test_isvalid_CALL(lace_worker* lace, MTBDD dd)
     if (marked == 0) return 0;
 
     // check if leaf
-    mtbddnode_t n = MTBDD_GETNODE(dd);
+    mtbddnode* n = MTBDD_GETNODE(dd);
     if (mtbddnode_isleaf(n)) return 1; // we're fine
 
     // check recursively
@@ -3026,7 +3027,7 @@ mtbdd_print_leaf(MTBDD leaf)
 char *
 mtbdd_leaf_to_str(MTBDD leaf, char *buf, size_t buflen)
 {
-    mtbddnode_t n = MTBDD_GETNODE(leaf);
+    mtbddnode* n = MTBDD_GETNODE(leaf);
     uint32_t type = mtbddnode_gettype(n);
     uint64_t value = mtbddnode_getvalue(n);
     int complement = MTBDD_HASMARK(leaf) ? 1 : 0;
@@ -3041,7 +3042,7 @@ mtbdd_leaf_to_str(MTBDD leaf, char *buf, size_t buflen)
 static void
 mtbdd_fprintdot_rec(FILE *out, MTBDD mtbdd)
 {
-    mtbddnode_t n = MTBDD_GETNODE(mtbdd); // also works for mtbdd_false
+    mtbddnode* n = MTBDD_GETNODE(mtbdd); // also works for mtbdd_false
     if (mtbddnode_getmark(n)) return;
     mtbddnode_setmark(n, 1);
 
@@ -3090,7 +3091,7 @@ mtbdd_fprintdot(FILE *out, MTBDD mtbdd)
 static void
 mtbdd_fprintdot_nc_rec(FILE *out, MTBDD mtbdd)
 {
-    mtbddnode_t n = MTBDD_GETNODE(mtbdd); // also works for mtbdd_false
+    mtbddnode* n = MTBDD_GETNODE(mtbdd); // also works for mtbdd_false
     if (mtbddnode_getmark(n)) return;
     mtbddnode_setmark(n, 1);
 
@@ -3142,7 +3143,7 @@ mtbdd_sha2_rec(MTBDD dd, SHA256_CTX *ctx)
         return;
     }
 
-    mtbddnode_t node = MTBDD_GETNODE(dd);
+    mtbddnode* node = MTBDD_GETNODE(dd);
     if (mtbddnode_getmark(node) == 0) {
         mtbddnode_setmark(node, 1);
         if (mtbddnode_isleaf(node)) {
@@ -3247,7 +3248,7 @@ mtbdd_writer_writebinary(FILE *out, sylvan_skiplist_t sl)
     for (size_t i=1; i<=nodecount; i++) {
         MTBDD dd = sylvan_skiplist_getr(sl, i);
 
-        mtbddnode_t n = MTBDD_GETNODE(dd);
+        mtbddnode* n = MTBDD_GETNODE(dd);
         if (mtbddnode_isleaf(n)) {
             /* write leaf */
             fwrite(n, sizeof(struct mtbddnode), 1, out);
@@ -3305,7 +3306,7 @@ mtbdd_writer_writetext(FILE *out, sylvan_skiplist_t sl)
     for (size_t i=1; i<=nodecount; i++) {
         MTBDD dd = sylvan_skiplist_getr(sl, i);
 
-        mtbddnode_t n = MTBDD_GETNODE(dd);
+        mtbddnode* n = MTBDD_GETNODE(dd);
         if (mtbddnode_isleaf(n)) {
             /* serialize leaf, does not support customs yet */
             fprintf(out, "  leaf(%zu,%u,\"", i, mtbddnode_gettype(n));
@@ -3459,7 +3460,7 @@ void
 mtbdd_set_to_array(MTBDD set, uint32_t *arr)
 {
     while (set != mtbdd_true) {
-        mtbddnode_t n = MTBDD_GETNODE(set);
+        mtbddnode* n = MTBDD_GETNODE(set);
         *arr++ = mtbddnode_getvariable(n);
         set = node_gethigh(set, n);
     }
@@ -3473,7 +3474,7 @@ mtbdd_set_add(MTBDD set, uint32_t var)
 {
     if (set == mtbdd_true) return mtbdd_makenode(var, mtbdd_false, mtbdd_true);
 
-    mtbddnode_t set_node = MTBDD_GETNODE(set);
+    mtbddnode* set_node = MTBDD_GETNODE(set);
     uint32_t set_var = mtbddnode_getvariable(set_node);
     if (var < set_var) return mtbdd_makenode(var, mtbdd_false, set);
     else if (set_var == var) return set;
@@ -3493,7 +3494,7 @@ mtbdd_set_remove(MTBDD set, uint32_t var)
 {
     if (set == mtbdd_true) return mtbdd_true;
 
-    mtbddnode_t set_node = MTBDD_GETNODE(set);
+    mtbddnode* set_node = MTBDD_GETNODE(set);
     uint32_t set_var = mtbddnode_getvariable(set_node);
     if (var < set_var) return set;
     else if (set_var == var) return mtbddnode_followhigh(set, set_node);
@@ -3514,8 +3515,8 @@ MTBDD mtbdd_set_minus_CALL(lace_worker* lace, MTBDD set1, MTBDD set2)
     if (set2 == mtbdd_true) return set1;
     if (set1 == set2) return mtbdd_true;
 
-    mtbddnode_t set1_node = MTBDD_GETNODE(set1);
-    mtbddnode_t set2_node = MTBDD_GETNODE(set2);
+    mtbddnode* set1_node = MTBDD_GETNODE(set1);
+    mtbddnode* set2_node = MTBDD_GETNODE(set2);
     uint32_t set1_var = mtbddnode_getvariable(set1_node);
     uint32_t set2_var = mtbddnode_getvariable(set2_node);
 
@@ -3540,7 +3541,7 @@ int
 mtbdd_set_contains(MTBDD set, uint32_t var)
 {
     while (set != mtbdd_true) {
-        mtbddnode_t n = MTBDD_GETNODE(set);
+        mtbddnode* n = MTBDD_GETNODE(set);
         uint32_t v = mtbddnode_getvariable(n);
         if (v == var) return 1;
         if (v > var) return 0;
@@ -3573,7 +3574,7 @@ mtbdd_test_isset(MTBDD set)
     while (set != mtbdd_true) {
         assert(set != mtbdd_false);
         assert(nodes_is_marked(nodes, set));
-        mtbddnode_t n = MTBDD_GETNODE(set);
+        mtbddnode* n = MTBDD_GETNODE(set);
         assert(node_getlow(set, n) == mtbdd_false);
         set = node_gethigh(set, n);
     }
@@ -3586,7 +3587,7 @@ int
 mtbdd_map_contains(MTBDDMAP map, uint32_t key)
 {
     while (!mtbdd_map_isempty(map)) {
-        mtbddnode_t n = MTBDD_GETNODE(map);
+        mtbddnode* n = MTBDD_GETNODE(map);
         uint32_t k = mtbddnode_getvariable(n);
         if (k == key) return 1;
         if (k > key) return 0;
@@ -3622,7 +3623,7 @@ mtbdd_map_add(MTBDDMAP map, uint32_t key, MTBDD value)
         return mtbdd_makemapnode(key, mtbdd_map_empty(), value);
     }
 
-    mtbddnode_t n = MTBDD_GETNODE(map);
+    mtbddnode* n = MTBDD_GETNODE(map);
     uint32_t k = mtbddnode_getvariable(n);
 
     if (k < key) {
@@ -3646,8 +3647,8 @@ mtbdd_map_update(MTBDDMAP map1, MTBDDMAP map2)
     if (mtbdd_map_isempty(map1)) return map2;
     if (mtbdd_map_isempty(map2)) return map1;
 
-    mtbddnode_t n1 = MTBDD_GETNODE(map1);
-    mtbddnode_t n2 = MTBDD_GETNODE(map2);
+    mtbddnode* n1 = MTBDD_GETNODE(map1);
+    mtbddnode* n2 = MTBDD_GETNODE(map2);
     uint32_t k1 = mtbddnode_getvariable(n1);
     uint32_t k2 = mtbddnode_getvariable(n2);
 
@@ -3674,7 +3675,7 @@ mtbdd_map_remove(MTBDDMAP map, uint32_t key)
 {
     if (mtbdd_map_isempty(map)) return map;
 
-    mtbddnode_t n = MTBDD_GETNODE(map);
+    mtbddnode* n = MTBDD_GETNODE(map);
     uint32_t k = mtbddnode_getvariable(n);
 
     if (k < key) {
@@ -3696,8 +3697,8 @@ mtbdd_map_removeall(MTBDDMAP map, MTBDD variables)
     if (mtbdd_map_isempty(map)) return map;
     if (variables == mtbdd_true) return map;
 
-    mtbddnode_t n1 = MTBDD_GETNODE(map);
-    mtbddnode_t n2 = MTBDD_GETNODE(variables);
+    mtbddnode* n1 = MTBDD_GETNODE(map);
+    mtbddnode* n2 = MTBDD_GETNODE(variables);
     uint32_t k1 = mtbddnode_getvariable(n1);
     uint32_t k2 = mtbddnode_getvariable(n2);
 

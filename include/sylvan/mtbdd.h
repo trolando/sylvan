@@ -728,16 +728,16 @@ MTBDD mtbdd_enum_all_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_fi
  * Given a MTBDD <dd>, call <cb> with context <context> for every unique path in <dd> ending in leaf <leaf>.
  *
  * Usage:
- * TASK(void, cb, mtbdd_enum_trace_t, trace, MTBDD, leaf, void*, context) { ... do something ... }
+ * TASK(void, cb, mtbdd_enum_trace*, trace, MTBDD, leaf, void*, context) { ... do something ... }
  * mtbdd_enum_par(dd, cb, context);
  */
 typedef struct mtbdd_enum_trace {
     struct mtbdd_enum_trace *prev;
     uint32_t var;
     int val;  // 0 or 1
-} * mtbdd_enum_trace_t;
+} mtbdd_enum_trace;
 
-typedef void (*mtbdd_enum_cb)(mtbdd_enum_trace_t, MTBDD, void*);
+typedef void (*mtbdd_enum_cb)(mtbdd_enum_trace*, MTBDD, void*);
 TASK(void, mtbdd_enum_par, MTBDD, dd, mtbdd_enum_cb, cb, void*, context);
 
 /**

@@ -455,7 +455,7 @@ typedef struct zdd_trace {
         struct zdd_trace *prev;
             uint32_t var;
                 uint8_t val;
-} * zdd_trace_t;
+} zdd_trace;
 
 LACE_TYPEDEF_CB(void, zdd_enum_cb, void*, uint8_t*, size_t);
 TASK(void, zdd_enum, ZDD, ZDD, zdd_enum_cb, void*);
@@ -543,33 +543,33 @@ TASK(void, zdd_writer_totext, FILE *, file, ZDD *, dds, int, count);
 /**
  * Skeleton typedef for the skiplist
  */
-typedef struct sylvan_skiplist *sylvan_skiplist_t;
+typedef struct sylvan_skiplist sylvan_skiplist;
 
 /**
  * Allocate a skiplist for writing an BDD.
  */
-sylvan_skiplist_t zdd_writer_start(void);
+sylvan_skiplist* zdd_writer_start(void);
 
 /**
  * Add the given ZDD to the skiplist.
  */
-TASK(void, zdd_writer_add, sylvan_skiplist_t, sl, ZDD, dd);
+TASK(void, zdd_writer_add, sylvan_skiplist*, sl, ZDD, dd);
 
 /**
  * Write all assigned ZDD nodes in binary format to the file.
  */
-void zdd_writer_writebinary(FILE *out, sylvan_skiplist_t sl);
+void zdd_writer_writebinary(FILE *out, sylvan_skiplist* sl);
 
 /**
  * Retrieve the identifier of the given stored ZDD.
  * This is useful if you want to be able to retrieve the stored ZDD later.
  */
-uint64_t zdd_writer_get(sylvan_skiplist_t sl, ZDD dd);
+uint64_t zdd_writer_get(sylvan_skiplist* sl, ZDD dd);
 
 /**
  * Free the allocated skiplist.
  */
-void zdd_writer_end(sylvan_skiplist_t sl);
+void zdd_writer_end(sylvan_skiplist* sl);
 
 /**
  * Reading ZDDs from file (binary format).

@@ -620,13 +620,13 @@ MTBDD gmp_and_abstract_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     /* Get top variable */
     int la = mtbdd_isleaf(a);
     int lb = mtbdd_isleaf(b);
-    mtbddnode_t na = la ? 0 : MTBDD_GETNODE(a);
-    mtbddnode_t nb = lb ? 0 : MTBDD_GETNODE(b);
+    mtbddnode* na = la ? 0 : MTBDD_GETNODE(a);
+    mtbddnode* nb = lb ? 0 : MTBDD_GETNODE(b);
     uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
     uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
     uint32_t var = va < vb ? va : vb;
 
-    mtbddnode_t nv = MTBDD_GETNODE(v);
+    mtbddnode* nv = MTBDD_GETNODE(v);
     uint32_t vv = mtbddnode_getvariable(nv);
 
     if (vv < var) {
@@ -695,13 +695,13 @@ MTBDD gmp_and_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     /* Get top variable */
     int la = mtbdd_isleaf(a);
     int lb = mtbdd_isleaf(b);
-    mtbddnode_t na = la ? 0 : MTBDD_GETNODE(a);
-    mtbddnode_t nb = lb ? 0 : MTBDD_GETNODE(b);
+    mtbddnode* na = la ? 0 : MTBDD_GETNODE(a);
+    mtbddnode* nb = lb ? 0 : MTBDD_GETNODE(b);
     uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
     uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
     uint32_t var = va < vb ? va : vb;
 
-    mtbddnode_t nv = MTBDD_GETNODE(v);
+    mtbddnode* nv = MTBDD_GETNODE(v);
     uint32_t vv = mtbddnode_getvariable(nv);
 
     while (vv < var) {

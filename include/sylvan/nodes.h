@@ -27,7 +27,7 @@ extern "C" {
  * Functions for managing decision diagram nodes.
  */
 
-typedef struct nodes nodes_table;
+typedef struct nodes_table nodes_table;
 
 /**
  * Retrieve a pointer to the data associated with the index

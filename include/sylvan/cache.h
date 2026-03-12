@@ -43,8 +43,6 @@ extern "C" {
  * - Use "0" for unused parameters
  */
 
-typedef struct cache_entry *cache_entry_t;
-
 /**
  * Primitives for cache get/put
  */

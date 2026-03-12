@@ -200,11 +200,11 @@ typedef struct lddmc_visit_node_callbacks {
     lddmc_visit_pre_cb lddmc_visit_pre;
     lddmc_visit_post_cb lddmc_visit_post;
     lddmc_visit_init_context_cb lddmc_visit_init_context;
-} lddmc_visit_callbacks_t;
+} lddmc_visit_callbacks;
 
-TASK(void, lddmc_visit_par, MDD, dd, lddmc_visit_callbacks_t*, cbs, size_t, ctx_size, void*, context);
+TASK(void, lddmc_visit_par, MDD, dd, lddmc_visit_callbacks*, cbs, size_t, ctx_size, void*, context);
 
-TASK(void, lddmc_visit_seq, MDD, dd, lddmc_visit_callbacks_t*, cbs, size_t, ctx_size, void*, context);
+TASK(void, lddmc_visit_seq, MDD, dd, lddmc_visit_callbacks*, cbs, size_t, ctx_size, void*, context);
 
 size_t lddmc_nodecount(MDD mdd);
 void lddmc_nodecount_levels(MDD mdd, size_t *variables);

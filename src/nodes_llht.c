@@ -35,7 +35,7 @@
  * Do not use multiple tables.
  */
 
-typedef struct nodes
+typedef struct nodes_table
 {
     _Atomic(uint64_t)* table;        // table with hashes
     uint8_t*           data;         // table with values
@@ -334,7 +334,7 @@ int nodes_rehash_bucket(nodes_table* dbs, uint64_t d_idx)
 
 nodes_table* nodes_create(size_t initial_size, size_t max_size)
 {
-    nodes_table* dbs = sylvan_alloc_aligned(sizeof(struct nodes));
+    nodes_table* dbs = sylvan_alloc_aligned(sizeof(struct nodes_table));
     if (dbs == 0) {
         fprintf(stderr, "nodes_create: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
@@ -419,7 +419,7 @@ void nodes_free(nodes_table* dbs)
     sylvan_free_aligned(dbs->bitmap1, dbs->max_size / (512*8));
     sylvan_free_aligned(dbs->bitmap2, dbs->max_size / 8);
     sylvan_free_aligned(dbs->bitmapc, dbs->max_size / 8);
-    sylvan_free_aligned(dbs, sizeof(struct nodes));
+    sylvan_free_aligned(dbs, sizeof(struct nodes_table));
 }
 
 void nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)

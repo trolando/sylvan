@@ -516,7 +516,7 @@ zdd_eval(ZDD dd, uint32_t variable, int value)
 {
     // If <variable> was skipped, return false if value is true
     if (zdd_isleaf(dd)) return value ? zdd_false : dd;
-    zddnode_t n = ZDD_GETNODE(dd);
+    zddnode* n = ZDD_GETNODE(dd);
     uint32_t var = zddnode_getvariable(n);
     if (variable < var) return value ? zdd_false : dd;
     assert(variable == var);
@@ -551,9 +551,9 @@ ZDD zdd_from_mtbdd_CALL(lace_worker* lace, MTBDD dd, MTBDD dom)
         return result;
     }
 
-    const mtbddnode_t dd_node = dd == zdd_true ? NULL : MTBDD_GETNODE(dd);
+    const mtbddnode* dd_node = dd == zdd_true ? NULL : MTBDD_GETNODE(dd);
     if (dd == zdd_true || mtbddnode_isleaf(dd_node)) {
-        const mtbddnode_t dom_node = MTBDD_GETNODE(dom);
+        const mtbddnode* dom_node = MTBDD_GETNODE(dom);
         const uint32_t dom_var = mtbddnode_getvariable(dom_node);
         const MTBDD dom_next = mtbddnode_followhigh(dom, dom_node);
         result = zdd_from_mtbdd(dd, dom_next);
@@ -561,7 +561,7 @@ ZDD zdd_from_mtbdd_CALL(lace_worker* lace, MTBDD dd, MTBDD dom)
     } else {
         /* Get variables */
         const uint32_t var = mtbddnode_getvariable(dd_node);
-        const mtbddnode_t dom_node = MTBDD_GETNODE(dom);
+        const mtbddnode* dom_node = MTBDD_GETNODE(dom);
         const uint32_t dom_var = mtbddnode_getvariable(dom_node);
         assert(dom_var <= var);
 
@@ -613,16 +613,16 @@ ZDD zdd_to_mtbdd_CALL(lace_worker* lace, ZDD dd, ZDD dom)
         return result;
     }
 
-    const zddnode_t dd_node = dd == zdd_true ? NULL : ZDD_GETNODE(dd);
+    const zddnode* dd_node = dd == zdd_true ? NULL : ZDD_GETNODE(dd);
     if (dd == zdd_true || zddnode_isleaf(dd_node)) {
-        const zddnode_t dom_node = ZDD_GETNODE(dom);
+        const zddnode* dom_node = ZDD_GETNODE(dom);
         const uint32_t dom_var = zddnode_getvariable(dom_node);
         const MTBDD dom_next = zddnode_high(dom, dom_node);
         result = zdd_to_mtbdd(dd, dom_next);
         result = mtbdd_makenode(dom_var, result, mtbdd_false);
     } else {
         /* Get variables */
-        const zddnode_t dom_node = ZDD_GETNODE(dom);
+        const zddnode* dom_node = ZDD_GETNODE(dom);
         const uint32_t dd_var = zddnode_getvariable(dd_node);
         const uint32_t dom_var = zddnode_getvariable(dom_node);
         assert(dom_var <= dd_var);
@@ -672,7 +672,7 @@ void
 zdd_set_to_array(ZDD set, uint32_t *arr)
 {
     if (set == zdd_true) return;
-    zddnode_t set_node = ZDD_GETNODE(set);
+    zddnode* set_node = ZDD_GETNODE(set);
     *arr = zddnode_getvariable(set_node);
     zdd_set_to_array(zddnode_high(set, set_node), arr+1);
 }
@@ -697,8 +697,8 @@ zdd_set_union(ZDD set1, ZDD set2)
     if (set2 == zdd_true) return set1;
     if (set1 == set2) return set1;
 
-    zddnode_t set1_node = ZDD_GETNODE(set1);
-    zddnode_t set2_node = ZDD_GETNODE(set2);
+    zddnode* set1_node = ZDD_GETNODE(set1);
+    zddnode* set2_node = ZDD_GETNODE(set2);
     uint32_t set1_var = zddnode_getvariable(set1_node);
     uint32_t set2_var = zddnode_getvariable(set2_node);
 
@@ -723,8 +723,8 @@ zdd_set_minus(ZDD set1, ZDD set2)
     if (set1 == zdd_true) return zdd_true;
     if (set2 == zdd_true) return set1;
 
-    zddnode_t set1_node = ZDD_GETNODE(set1);
-    zddnode_t set2_node = ZDD_GETNODE(set2);
+    zddnode* set1_node = ZDD_GETNODE(set1);
+    zddnode* set2_node = ZDD_GETNODE(set2);
     uint32_t set1_var = zddnode_getvariable(set1_node);
     uint32_t set2_var = zddnode_getvariable(set2_node);
 
@@ -749,7 +749,7 @@ zdd_set_contains(ZDD set, uint32_t var)
 {
     if (set == zdd_true) return 0;
 
-    zddnode_t set_node = ZDD_GETNODE(set);
+    zddnode* set_node = ZDD_GETNODE(set);
     uint32_t set_var = zddnode_getvariable(set_node);
     if (var < set_var) return 0;
     else if (var == set_var) return 1;
@@ -764,7 +764,7 @@ zdd_set_add(ZDD set, uint32_t var)
 {
     if (set == zdd_true) return zdd_makenode(var, zdd_true, zdd_true);
 
-    zddnode_t set_node = ZDD_GETNODE(set);
+    zddnode* set_node = ZDD_GETNODE(set);
     uint32_t set_var = zddnode_getvariable(set_node);
     if (var < set_var) return zdd_makenode(var, set, set);
     else if (var == set_var) return set;
@@ -784,7 +784,7 @@ zdd_set_remove(ZDD set, uint32_t var)
 {
     if (set == zdd_true) return zdd_true;
 
-    zddnode_t set_node = ZDD_GETNODE(set);
+    zddnode* set_node = ZDD_GETNODE(set);
     uint32_t set_var = zddnode_getvariable(set_node);
     if (var < set_var) return set;
     else if (var == set_var) return zddnode_high(set, set_node);
@@ -803,7 +803,7 @@ MTBDD
 zdd_set_to_mtbdd(ZDD set)
 {
     if (set == zdd_true) return mtbdd_true;
-    zddnode_t set_node = ZDD_GETNODE(set);
+    zddnode* set_node = ZDD_GETNODE(set);
     uint32_t set_var = zddnode_getvariable(set_node);
     return mtbdd_makenode(set_var, mtbdd_false, zdd_set_to_mtbdd(zddnode_high(set, set_node)));
 }
@@ -816,7 +816,7 @@ ZDD
 zdd_cube(ZDD dom, uint8_t *arr, ZDD leaf)
 {
     if (dom == zdd_true) return leaf;
-    const zddnode_t dom_node = ZDD_GETNODE(dom);
+    const zddnode* dom_node = ZDD_GETNODE(dom);
     const uint32_t dom_var = zddnode_getvariable(dom_node);
     const ZDD dom_next = zddnode_high(dom, dom_node);
     const ZDD res = zdd_cube(dom_next, arr+1, leaf);
@@ -855,9 +855,9 @@ ZDD zdd_union_cube_CALL(lace_worker* lace, ZDD set, ZDD dom, uint8_t* arr, ZDD l
     /**
      * Get set variable, domain variable, and next domain variable
      */
-    const zddnode_t set_node = set == zdd_true ? NULL : ZDD_GETNODE(set);
+    const zddnode* set_node = set == zdd_true ? NULL : ZDD_GETNODE(set);
     const uint32_t set_var = set_node == NULL || zddnode_isleaf(set_node) ? 0xffffffff : zddnode_getvariable(set_node);
-    const zddnode_t dom_node = ZDD_GETNODE(dom);
+    const zddnode* dom_node = ZDD_GETNODE(dom);
     const uint32_t dom_var = zddnode_getvariable(dom_node);
     const ZDD dom_next = zddnode_high(dom, dom_node);
 
@@ -921,9 +921,9 @@ ZDD zdd_extend_domain_CALL(lace_worker* lace, ZDD set, ZDD newvars, int value)
     /**
      * Get set variable, domain variable, and next domain variable
      */
-    const zddnode_t set_node = set == zdd_true ? NULL : ZDD_GETNODE(set);
+    const zddnode* set_node = set == zdd_true ? NULL : ZDD_GETNODE(set);
     const uint32_t set_var = set_node == NULL || zddnode_isleaf(set_node) ? 0xffffffff : zddnode_getvariable(set_node);
-    const zddnode_t nv_node = ZDD_GETNODE(newvars);
+    const zddnode* nv_node = ZDD_GETNODE(newvars);
     const uint32_t nv_var = zddnode_getvariable(nv_node);
     const uint32_t nv_next = zddnode_high(newvars, nv_node);
 
@@ -962,7 +962,7 @@ ZDD zdd_extend_domain_CALL(lace_worker* lace, ZDD set, ZDD newvars, int value)
 ZDD zdd_support_CALL(lace_worker* lace, ZDD dd)
 {
     if (dd == zdd_true || dd == zdd_false) return zdd_true;
-    const zddnode_t dd_node = ZDD_GETNODE(dd);
+    const zddnode* dd_node = ZDD_GETNODE(dd);
     if (zddnode_isleaf(dd_node)) return zdd_true;
 
     /**
@@ -1010,7 +1010,7 @@ double zdd_pathcount_CALL(lace_worker* lace, ZDD dd)
 {
     if (dd == zdd_false) return 0.0;
     if (dd == zdd_true) return 1.0;
-    const zddnode_t dd_node = ZDD_GETNODE(dd);
+    const zddnode* dd_node = ZDD_GETNODE(dd);
     if (zddnode_isleaf(dd_node)) return 1.0;
 
     /**
@@ -1059,7 +1059,7 @@ double zdd_pathcount_CALL(lace_worker* lace, ZDD dd)
 static void
 zdd_unmark_rec(ZDD zdd)
 {
-    zddnode_t n = ZDD_GETNODE(zdd);
+    zddnode* n = ZDD_GETNODE(zdd);
     if (!zddnode_getmark(n)) return;
     zddnode_setmark(n, 0);
     zdd_unmark_rec(zddnode_getlow(n));
@@ -1074,7 +1074,7 @@ static size_t
 zdd_nodecount_mark(ZDD zdd)
 {
     // Note: the True/False leaf can be marked/unmarked, as buckets 0--1 are unused
-    zddnode_t n = ZDD_GETNODE(zdd);
+    zddnode* n = ZDD_GETNODE(zdd);
     if (zddnode_getmark(n)) return 0;
     zddnode_setmark(n, 1);
     return 1 + zdd_nodecount_mark(zddnode_getlow(n)) + zdd_nodecount_mark(zddnode_gethigh(n));
@@ -1144,9 +1144,9 @@ ZDD zdd_and_CALL(lace_worker* lace, ZDD a, ZDD b)
         /**
          * Get the vars
          */
-        const zddnode_t a_node = ZDD_GETNODE(a);
+        const zddnode* a_node = ZDD_GETNODE(a);
         const uint32_t a_var = zddnode_getvariable(a_node);
-        const zddnode_t b_node = ZDD_GETNODE(b);
+        const zddnode* b_node = ZDD_GETNODE(b);
         const uint32_t b_var = zddnode_getvariable(b_node);
         uint32_t minvar = a_var < b_var ? a_var : b_var;
 
@@ -1215,11 +1215,11 @@ ZDD zdd_ite_CALL(lace_worker* lace, ZDD a, ZDD b, ZDD c, ZDD dom)
     /**
      * Get the vars
      */
-    const zddnode_t a_node = zdd_isleaf(a) ? NULL : ZDD_GETNODE(a);
+    const zddnode* a_node = zdd_isleaf(a) ? NULL : ZDD_GETNODE(a);
     const uint32_t a_var = a_node == NULL ? 0xffffffff : zddnode_getvariable(a_node);
-    const zddnode_t b_node = zdd_isleaf(b) ? NULL : ZDD_GETNODE(b);
+    const zddnode* b_node = zdd_isleaf(b) ? NULL : ZDD_GETNODE(b);
     const uint32_t b_var = b_node == NULL ? 0xffffffff : zddnode_getvariable(b_node);
-    const zddnode_t c_node = zdd_isleaf(c) ? NULL : ZDD_GETNODE(c);
+    const zddnode* c_node = zdd_isleaf(c) ? NULL : ZDD_GETNODE(c);
     const uint32_t c_var = c_node == NULL ? 0xffffffff : zddnode_getvariable(c_node);
     uint32_t minvar = a_var < b_var ? a_var : b_var;
     if (minvar > c_var) minvar = c_var;
@@ -1228,7 +1228,7 @@ ZDD zdd_ite_CALL(lace_worker* lace, ZDD a, ZDD b, ZDD c, ZDD dom)
     /**
      * Move dom to minvar
      */
-    zddnode_t dom_node = ZDD_GETNODE(dom);
+    zddnode* dom_node = ZDD_GETNODE(dom);
     uint32_t dom_var = zddnode_getvariable(dom_node);
     ZDD dom_next = zddnode_high(dom, dom_node);
     while (dom_var != minvar) {
@@ -1329,9 +1329,9 @@ ZDD zdd_or_CALL(lace_worker* lace, ZDD a, ZDD b)
     /**
      * Get the vars
      */
-    const zddnode_t a_node = zdd_isleaf(a) ? NULL : ZDD_GETNODE(a);
+    const zddnode* a_node = zdd_isleaf(a) ? NULL : ZDD_GETNODE(a);
     const uint32_t a_var = a_node == NULL ? 0xffffffff : zddnode_getvariable(a_node);
-    const zddnode_t b_node = zdd_isleaf(b) ? NULL : ZDD_GETNODE(b);
+    const zddnode* b_node = zdd_isleaf(b) ? NULL : ZDD_GETNODE(b);
     const uint32_t b_var = b_node == NULL ? 0xffffffff : zddnode_getvariable(b_node);
     uint32_t minvar = a_var < b_var ? a_var : b_var;
     assert(minvar != 0xffffffff);
@@ -1402,9 +1402,9 @@ ZDD zdd_not_CALL(lace_worker* lace, ZDD dd, ZDD dom)
     /**
      * Get the vars
      */
-    const zddnode_t dd_node = zdd_isleaf(dd) ? NULL : ZDD_GETNODE(dd);
+    const zddnode* dd_node = zdd_isleaf(dd) ? NULL : ZDD_GETNODE(dd);
     const uint32_t dd_var = dd_node == NULL ? 0xffffffff : zddnode_getvariable(dd_node);
-    const zddnode_t dom_node = ZDD_GETNODE(dom);
+    const zddnode* dom_node = ZDD_GETNODE(dom);
     const uint32_t dom_var = zddnode_getvariable(dom_node);
 
     assert(dom_var <= dd_var);
@@ -1481,9 +1481,9 @@ ZDD zdd_diff_CALL(lace_worker* lace, ZDD a, ZDD b)
     /**
      * Get the vars
      */
-    const zddnode_t a_node = zdd_isleaf(a) ? NULL : ZDD_GETNODE(a);
+    const zddnode* a_node = zdd_isleaf(a) ? NULL : ZDD_GETNODE(a);
     const uint32_t a_var = a_node == NULL ? 0xffffffff : zddnode_getvariable(a_node);
-    const zddnode_t b_node = zdd_isleaf(b) ? NULL : ZDD_GETNODE(b);
+    const zddnode* b_node = zdd_isleaf(b) ? NULL : ZDD_GETNODE(b);
     const uint32_t b_var = b_node == NULL ? 0xffffffff : zddnode_getvariable(b_node);
     uint32_t minvar = a_var < b_var ? a_var : b_var;
 
@@ -1553,9 +1553,9 @@ ZDD zdd_exists_CALL(lace_worker* lace, ZDD dd, ZDD vars)
     /**
      * Obtain variables
      */
-    const zddnode_t dd_node = ZDD_GETNODE(dd);
+    const zddnode* dd_node = ZDD_GETNODE(dd);
     const uint32_t dd_var = zddnode_getvariable(dd_node);
-    const zddnode_t vars_node = ZDD_GETNODE(vars);
+    const zddnode* vars_node = ZDD_GETNODE(vars);
     const uint32_t vars_var = zddnode_getvariable(vars_node);
 
     /**
@@ -1651,13 +1651,13 @@ ZDD zdd_project_CALL(lace_worker* lace, ZDD dd, ZDD dom)
     /**
      * Obtain variables
      */
-    const zddnode_t dd_node = ZDD_GETNODE(dd);
+    const zddnode* dd_node = ZDD_GETNODE(dd);
     const uint32_t dd_var = zddnode_getvariable(dd_node);
 
     /**
      * Move dom to dd_var
      */
-    zddnode_t dom_node = ZDD_GETNODE(dom);
+    zddnode* dom_node = ZDD_GETNODE(dom);
     uint32_t dom_var = zddnode_getvariable(dom_node);
     ZDD dom_next = zddnode_high(dom, dom_node);
     while (dom_var < dd_var) {
@@ -1755,10 +1755,10 @@ ZDD zdd_enum_first(ZDD dd, ZDD dom, uint8_t *arr, zdd_enum_filter_cb filter_cb)
         /**
          * Obtain domain variable
          */
-        const zddnode_t dom_node = ZDD_GETNODE(dom);
+        const zddnode* dom_node = ZDD_GETNODE(dom);
         const uint32_t dom_var = zddnode_getvariable(dom_node);
         const ZDD dom_next = zddnode_high(dom, dom_node);
-        const zddnode_t dd_node = ZDD_GETNODE(dd);
+        const zddnode* dd_node = ZDD_GETNODE(dd);
         const uint32_t dd_var = zddnode_getvariable(dd_node);
 
         if (dom_var < dd_var) {
@@ -1800,10 +1800,10 @@ ZDD zdd_enum_next(ZDD dd, ZDD dom, uint8_t *arr, zdd_enum_filter_cb filter_cb)
     /**
      * Obtain domain variable
      */
-    const zddnode_t dom_node = ZDD_GETNODE(dom);
+    const zddnode* dom_node = ZDD_GETNODE(dom);
     const uint32_t dom_var = zddnode_getvariable(dom_node);
     const ZDD dom_next = zddnode_high(dom, dom_node);
-    const zddnode_t dd_node = ZDD_GETNODE(dd);
+    const zddnode* dd_node = ZDD_GETNODE(dd);
     const uint32_t dd_var = zddnode_getvariable(dd_node);
 
     if (dom_var < dd_var) {
@@ -1834,7 +1834,7 @@ ZDD zdd_enum_next(ZDD dd, ZDD dom, uint8_t *arr, zdd_enum_filter_cb filter_cb)
 static void
 zdd_fprintdot_rec(FILE *out, ZDD zdd)
 {
-    zddnode_t n = ZDD_GETNODE(zdd); // also works for zdd_false
+    zddnode* n = ZDD_GETNODE(zdd); // also works for zdd_false
     if (zddnode_getmark(n)) return;
     zddnode_setmark(n, 1);
 
@@ -1939,7 +1939,7 @@ zdd_writer_writebinary(FILE *out, sylvan_skiplist_t sl)
     for (size_t i=1; i<=nodecount; i++) {
         ZDD dd = sylvan_skiplist_getr(sl, i);
 
-        zddnode_t n = ZDD_GETNODE(dd);
+        zddnode* n = ZDD_GETNODE(dd);
         struct zddnode node;
         ZDD low = zddnode_getlow(n);
         ZDD high = zddnode_gethigh(n);
@@ -1990,7 +1990,7 @@ zdd_writer_writetext(FILE *out, sylvan_skiplist_t sl)
     for (size_t i=1; i<=nodecount; i++) {
         ZDD dd = sylvan_skiplist_getr(sl, i);
 
-        zddnode_t n = ZDD_GETNODE(dd);
+        zddnode* n = ZDD_GETNODE(dd);
         ZDD low = zddnode_getlow(n);
         ZDD high = zddnode_gethigh(n);
         if (ZDD_GETINDEX(low) > 1) low = ZDD_SETINDEX(low, sylvan_skiplist_get(sl, ZDD_GETINDEX(low)));
@@ -2149,8 +2149,8 @@ ZDD zdd_isop_CALL(lace_worker* lace, MTBDD L, MTBDD U, MTBDD* bddresptr)
     /**
      * Compute variable and cofactors
      */
-    const mtbddnode_t L_node = MTBDD_GETNODE(L);
-    const mtbddnode_t U_node = MTBDD_GETNODE(U);
+    const mtbddnode* L_node = MTBDD_GETNODE(L);
+    const mtbddnode* U_node = MTBDD_GETNODE(U);
     const uint32_t L_var = mtbddnode_getvariable(L_node);
     const uint32_t U_var = mtbddnode_getvariable(U_node);
     const uint32_t minvar = L_var < U_var ? L_var : U_var;
@@ -2258,7 +2258,7 @@ MTBDD zdd_cover_to_bdd_CALL(lace_worker* lace, ZDD zdd)
         return result;
     }
 
-    const zddnode_t zdd_node = ZDD_GETNODE(zdd);
+    const zddnode* zdd_node = ZDD_GETNODE(zdd);
     const uint32_t zdd_var = zddnode_getvariable(zdd_node);
     const uint32_t pv = zdd_var & ~1;
     const uint32_t nv = pv + 1;
@@ -2280,7 +2280,7 @@ MTBDD zdd_cover_to_bdd_CALL(lace_worker* lace, ZDD zdd)
             zdd_nv = zdd_false;
             zdd_dc = zdd_true;
         } else {
-            const zddnode_t zdd2_node = ZDD_GETNODE(zdd2);
+            const zddnode* zdd2_node = ZDD_GETNODE(zdd2);
             if (zddnode_getvariable(zdd2_node) == nv) {
                 zdd_nv = zddnode_high(zdd2, zdd2_node);
                 zdd_dc = zddnode_low(zdd2, zdd2_node);
@@ -2324,7 +2324,7 @@ zdd_cover_enum_first(ZDD dd, int32_t *arr)
         *arr = -1;
         return zdd_true;
     } else {
-        const zddnode_t dd_node = ZDD_GETNODE(dd);
+        const zddnode* dd_node = ZDD_GETNODE(dd);
         const uint32_t dd_var = zddnode_getvariable(dd_node);
 
         ZDD res = zdd_cover_enum_first(zddnode_high(dd, dd_node), arr+1);
@@ -2341,7 +2341,7 @@ zdd_cover_enum_next(ZDD dd, int32_t *arr)
 {
     if (dd == zdd_true) return zdd_false; // only find a leaf in enum_first
 
-    const zddnode_t dd_node = ZDD_GETNODE(dd);
+    const zddnode* dd_node = ZDD_GETNODE(dd);
     const uint32_t dd_var = zddnode_getvariable(dd_node);
 
     if (*arr == (int32_t) dd_var) {

@@ -30,19 +30,19 @@
  * }
  *
  * You get:
- *  - some_type *some_name_put(avl_node_t **root_node, some_type *data, int *inserted);
+ *  - some_type *some_name_put(avl_node **root_node, some_type *data, int *inserted);
  *    Either insert new or retrieve existing key, <inserted> if non-NULL receives 0 or 1.
- *  - int some_name_insert(avl_node_t **root_node, some_type *data);
+ *  - int some_name_insert(avl_node **root_node, some_type *data);
  *    Try to insert, return 1 if succesful, 0 if existed.
- *  - int some_name_delete(avl_node_t **root_node, some_type *data);
+ *  - int some_name_delete(avl_node **root_node, some_type *data);
  *    Try to delete, return 1 if deleted, 0 if no match.
- *  - some_type *some_name_search(avl_node_t *root_node, some_type *data);
+ *  - some_type *some_name_search(avl_node *root_node, some_type *data);
  *    Retrieve existing data, returns NULL if unsuccesful
- *  - void some_name_free(avl_node_t **root_node);
+ *  - void some_name_free(avl_node **root_node);
  *    Free all memory used by the AVL tree
- *  - some_type *some_name_toarray(avl_node_t *root_node);
+ *  - some_type *some_name_toarray(avl_node *root_node);
  *    Malloc an array and put the sorted data in it...
- *  - size_t avl_count(avl_node_t *root_node);
+ *  - size_t avl_count(avl_node *root_node);
  *    Returns the number of items in the tree
  *
  * For example:
@@ -53,7 +53,7 @@
  *    Return <0 when left<right, >0 when left>right, 0 when left=right
  * }
  *
- * avl_node_t *the_root = NULL;
+ * avl_node *the_root = NULL;
  * struct mystuff;
  * if (!some_name_search(the_root, &mystuff)) some_name_insert(&the_root, &mystuff);
  * some_name_free(&the_root);
@@ -77,18 +77,18 @@ typedef struct avl_node
     unsigned int height;
     char pad[8-sizeof(unsigned int)];
     char data[0];
-} avl_node_t;
+} avl_node;
 
 /* Retrieve the height of a tree */
 static inline int
-avl_get_height(avl_node_t *node)
+avl_get_height(avl_node *node)
 {
     return node == NULL ? 0 : node->height;
 }
 
 /* Helper for rotations to update the heights of trees */
 static inline void
-avl_update_height(avl_node_t *node)
+avl_update_height(avl_node *node)
 {
     int h1 = avl_get_height(node->left);
     int h2 = avl_get_height(node->right);
@@ -97,7 +97,7 @@ avl_update_height(avl_node_t *node)
 
 /* Helper for avl_balance_tree */
 static inline int
-avl_update_height_get_balance(avl_node_t *node)
+avl_update_height_get_balance(avl_node *node)
 {
     int h1 = avl_get_height(node->left);
     int h2 = avl_get_height(node->right);
@@ -107,7 +107,7 @@ avl_update_height_get_balance(avl_node_t *node)
 
 /* Helper for avl_check_consistent */
 static inline int
-avl_verify_height(avl_node_t *node)
+avl_verify_height(avl_node *node)
 {
     int h1 = avl_get_height(node->left);
     int h2 = avl_get_height(node->right);
@@ -117,7 +117,7 @@ avl_verify_height(avl_node_t *node)
 
 /* Optional consistency check */
 static inline int SYLVAN_UNUSED
-avl_check_consistent(avl_node_t *root)
+avl_check_consistent(avl_node *root)
 {
     if (root == NULL) return 1;
     if (!avl_check_consistent(root->left)) return 0;
@@ -127,10 +127,10 @@ avl_check_consistent(avl_node_t *root)
 }
 
 /* Perform LL rotation, returns the new root */
-static avl_node_t*
-avl_rotate_LL(avl_node_t *parent)
+static avl_node*
+avl_rotate_LL(avl_node *parent)
 {
-    avl_node_t *child = parent->left;
+    avl_node *child = parent->left;
     parent->left = child->right;
     child->right = parent;
     avl_update_height(parent);
@@ -139,10 +139,10 @@ avl_rotate_LL(avl_node_t *parent)
 }
 
 /* Perform RR rotation, returns the new root */
-static avl_node_t*
-avl_rotate_RR(avl_node_t *parent)
+static avl_node*
+avl_rotate_RR(avl_node *parent)
 {
-    avl_node_t *child = parent->right;
+    avl_node *child = parent->right;
     parent->right = child->left;
     child->left = parent;
     avl_update_height(parent);
@@ -151,26 +151,26 @@ avl_rotate_RR(avl_node_t *parent)
 }
 
 /* Perform RL rotation, returns the new root */
-static avl_node_t*
-avl_rotate_RL(avl_node_t *parent)
+static avl_node*
+avl_rotate_RL(avl_node *parent)
 {
-    avl_node_t *child = parent->right;
+    avl_node *child = parent->right;
     parent->right = avl_rotate_LL(child);
     return avl_rotate_RR(parent);
 }
 
 /* Perform LR rotation, returns the new root */
-static avl_node_t*
-avl_rotate_LR(avl_node_t *parent)
+static avl_node*
+avl_rotate_LR(avl_node *parent)
 {
-    avl_node_t *child = parent->left;
+    avl_node *child = parent->left;
     parent->left = avl_rotate_RR(child);
     return avl_rotate_LL(parent);
 }
 
 /* Calculate balance factor */
 static inline int
-avl_get_balance(avl_node_t *node)
+avl_get_balance(avl_node *node)
 {
     if (node == NULL) return 0;
     return avl_get_height(node->left) - avl_get_height(node->right);
@@ -178,7 +178,7 @@ avl_get_balance(avl_node_t *node)
 
 /* Balance the tree */
 static void
-avl_balance_tree(avl_node_t **node)
+avl_balance_tree(avl_node **node)
 {
     int factor = avl_update_height_get_balance(*node);
 
@@ -193,7 +193,7 @@ avl_balance_tree(avl_node_t **node)
 
 /* Get number of items in the AVL */
 static size_t
-avl_count(avl_node_t *node)
+avl_count(avl_node *node)
 {
     if (node == NULL) return 0;
     return 1 + avl_count(node->left) + avl_count(node->right);
@@ -203,7 +203,7 @@ avl_count(avl_node_t *node)
 typedef struct avl_iter
 {
     size_t height;
-    avl_node_t *nodes[0];
+    avl_node *nodes[0];
 } avl_iter_t;
 
 /**
@@ -216,17 +216,17 @@ typedef struct avl_iter
 
 /* Create a new iterator */
 static inline avl_iter_t*
-avl_iter(avl_node_t *node)
+avl_iter(avl_node *node)
 {
     size_t max = node ? node->height+1 : 1;
-    avl_iter_t *result = (avl_iter_t*)malloc(sizeof(avl_iter_t) + sizeof(avl_node_t*) * max);
+    avl_iter_t *result = (avl_iter_t*)malloc(sizeof(avl_iter_t) + sizeof(avl_node*) * max);
     result->height = 0;
     result->nodes[0] = node;
     return result;
 }
 
 /* Get the next node during iteration */
-static inline avl_node_t*
+static inline avl_node*
 avl_iter_next(avl_iter_t *iter)
 {
     /* when first node is NULL, we're done */
@@ -239,7 +239,7 @@ avl_iter_next(avl_iter_t *iter)
     }
 
     /* head is now NULL, take parent as result */
-    avl_node_t *result = iter->nodes[iter->height-1];
+    avl_node *result = iter->nodes[iter->height-1];
 
     if (result->right != NULL) {
         /* if we can go right, do that */
@@ -259,13 +259,13 @@ avl_iter_next(avl_iter_t *iter)
 static inline int                                                                           \
 NAME##_AVL_compare(TYPE *left, TYPE *right);                                                \
 static SYLVAN_UNUSED TYPE*                                                                  \
-NAME##_put(avl_node_t **root, TYPE *data, int *inserted)                                    \
+NAME##_put(avl_node **root, TYPE *data, int *inserted)                                      \
 {                                                                                           \
     if (inserted && *inserted) *inserted = 0; /* reset inserted once */                     \
     TYPE *result;                                                                           \
-    avl_node_t *it = *root;                                                                 \
+    avl_node *it = *root;                                                                   \
     if (it == NULL) {                                                                       \
-        *root = it = (avl_node_t*)malloc(sizeof(struct avl_node)+sizeof(TYPE));             \
+        *root = it = (avl_node*)malloc(sizeof(struct avl_node)+sizeof(TYPE));               \
         it->left = it->right = NULL;                                                        \
         it->height = 1;                                                                     \
         memcpy(it->data, data, sizeof(TYPE));                                               \
@@ -281,16 +281,16 @@ NAME##_put(avl_node_t **root, TYPE *data, int *inserted)                        
     return result;                                                                          \
 }                                                                                           \
 static SYLVAN_UNUSED int                                                                    \
-NAME##_insert(avl_node_t **root, TYPE *data)                                                \
+NAME##_insert(avl_node **root, TYPE *data)                                                  \
 {                                                                                           \
     int inserted = 0;                                                                       \
     NAME##_put(root, data, &inserted);                                                      \
     return inserted;                                                                        \
 }                                                                                           \
 static void                                                                                 \
-NAME##_exchange_and_balance(avl_node_t *target, avl_node_t **node)                          \
+NAME##_exchange_and_balance(avl_node *target, avl_node **node)                              \
 {                                                                                           \
-    avl_node_t *it = *node;                                                                 \
+    avl_node *it = *node;                                                                   \
     if (it->left == 0) { /* leftmost node contains lowest value */                          \
         memcpy(target->data, it->data, sizeof(TYPE));                                       \
         *node = it->right;                                                                  \
@@ -301,9 +301,9 @@ NAME##_exchange_and_balance(avl_node_t *target, avl_node_t **node)              
     avl_balance_tree(node);                                                                 \
 }                                                                                           \
 static SYLVAN_UNUSED int                                                                    \
-NAME##_delete(avl_node_t **node, TYPE *data)                                                \
+NAME##_delete(avl_node **node, TYPE *data)                                                  \
 {                                                                                           \
-    avl_node_t *it = *node;                                                                 \
+    avl_node *it = *node;                                                                   \
     if (it == NULL) return 0;                                                               \
     int cmp = NAME##_AVL_compare(data, (TYPE *)((*node)->data)), res;                       \
     if (cmp < 0) res = NAME##_delete(&it->left, data);                                      \
@@ -334,7 +334,7 @@ NAME##_delete(avl_node_t **node, TYPE *data)                                    
     return res;                                                                             \
 }                                                                                           \
 static SYLVAN_UNUSED TYPE*                                                                  \
-NAME##_search(avl_node_t *node, TYPE *data)                                                 \
+NAME##_search(avl_node *node, TYPE *data)                                                   \
 {                                                                                           \
     while (node != NULL) {                                                                  \
         int result = NAME##_AVL_compare((TYPE *)node->data, data);                          \
@@ -345,9 +345,9 @@ NAME##_search(avl_node_t *node, TYPE *data)                                     
     return NULL;                                                                            \
 }                                                                                           \
 static SYLVAN_UNUSED void                                                                   \
-NAME##_free(avl_node_t **node)                                                              \
+NAME##_free(avl_node **node)                                                                \
 {                                                                                           \
-    avl_node_t *it = *node;                                                                 \
+    avl_node *it = *node;                                                                   \
     if (it) {                                                                               \
         NAME##_free(&it->left);                                                             \
         NAME##_free(&it->right);                                                            \
@@ -356,7 +356,7 @@ NAME##_free(avl_node_t **node)                                                  
     }                                                                                       \
 }                                                                                           \
 static void                                                                                 \
-NAME##_toarray_rec(avl_node_t *node, TYPE **ptr)                                            \
+NAME##_toarray_rec(avl_node *node, TYPE **ptr)                                              \
 {                                                                                           \
     if (node->left != NULL) NAME##_toarray_rec(node->left, ptr);                            \
     memcpy(*ptr, node->data, sizeof(TYPE));                                                 \
@@ -364,7 +364,7 @@ NAME##_toarray_rec(avl_node_t *node, TYPE **ptr)                                
     if (node->right != NULL) NAME##_toarray_rec(node->right, ptr);                          \
 }                                                                                           \
 static SYLVAN_UNUSED TYPE*                                                                  \
-NAME##_toarray(avl_node_t *node)                                                            \
+NAME##_toarray(avl_node *node)                                                              \
 {                                                                                           \
     size_t count = avl_count(node);                                                         \
     TYPE *arr = (TYPE *)malloc(sizeof(TYPE) * count);                                       \
@@ -373,14 +373,14 @@ NAME##_toarray(avl_node_t *node)                                                
     return arr;                                                                             \
 }                                                                                           \
 static SYLVAN_UNUSED avl_iter_t*                                                            \
-NAME##_iter(avl_node_t *node)                                                               \
+NAME##_iter(avl_node *node)                                                                 \
 {                                                                                           \
     return avl_iter(node);                                                                  \
 }                                                                                           \
 static SYLVAN_UNUSED TYPE*                                                                  \
 NAME##_iter_next(avl_iter_t *iter)                                                          \
 {                                                                                           \
-    avl_node_t *result = avl_iter_next(iter);                                               \
+    avl_node *result = avl_iter_next(iter);                                                 \
     if (result == NULL) return NULL;                                                        \
     return (TYPE*)(result->data);                                                           \
 }                                                                                           \

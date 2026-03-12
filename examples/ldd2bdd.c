@@ -204,7 +204,7 @@ void compute_highest_CALL(lace_worker* lace, MDD dd, _Atomic(uint32_t)* arr)
     if (cache_get3(compute_highest_id, dd, 0, 0, &result)) return;
     cache_put3(compute_highest_id, dd, 0, 0, result);
 
-    mddnode_t n = LDD_GETNODE(dd);
+    mddnode* n = LDD_GETNODE(dd);
 
     compute_highest_SPAWN(lace, mddnode_getright(n), arr);
     compute_highest_CALL(lace, mddnode_getdown(n), arr+1);
@@ -245,8 +245,8 @@ void compute_highest_action_CALL(lace_worker* lace, MDD dd, MDD meta, _Atomic(ui
      * -1 is end
      */
 
-    const mddnode_t n = LDD_GETNODE(dd);
-    const mddnode_t nmeta = LDD_GETNODE(meta);
+    const mddnode* n = LDD_GETNODE(dd);
+    const mddnode* nmeta = LDD_GETNODE(meta);
     const uint32_t vmeta = mddnode_getvalue(nmeta);
     if (vmeta == (uint32_t)-1) return;
 
@@ -281,8 +281,8 @@ MTBDD bdd_from_ldd_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t firstva
     /* note: some assumptions about the encoding... */
     if (cache_get3(bdd_from_ldd_id, dd, bits_dd, firstvar, &result)) return result;
 
-    mddnode_t n = LDD_GETNODE(dd);
-    mddnode_t nbits = LDD_GETNODE(bits_dd);
+    mddnode* n = LDD_GETNODE(dd);
+    mddnode* nbits = LDD_GETNODE(bits_dd);
     int bits = (int)mddnode_getvalue(nbits);
 
     /* spawn right, same bits_dd and firstvar */
@@ -339,9 +339,9 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t fir
     /* note: assumptions */
     if (cache_get4(bdd_from_ldd_rel_id, dd, bits_dd, firstvar, meta, &result)) return result;
 
-    const mddnode_t n = LDD_GETNODE(dd);
-    const mddnode_t nmeta = LDD_GETNODE(meta);
-    const mddnode_t nbits = LDD_GETNODE(bits_dd);
+    const mddnode* n = LDD_GETNODE(dd);
+    const mddnode* nmeta = LDD_GETNODE(meta);
+    const mddnode* nbits = LDD_GETNODE(bits_dd);
     const int bits = (int)mddnode_getvalue(nbits);
 
     const uint32_t vmeta = mddnode_getvalue(nmeta);
@@ -495,7 +495,7 @@ meta_to_bdd(MDD meta, MDD bits_dd, uint32_t firstvar)
      *  4 is only-write
      */
 
-    const mddnode_t nmeta = LDD_GETNODE(meta);
+    const mddnode* nmeta = LDD_GETNODE(meta);
     const uint32_t vmeta = mddnode_getvalue(nmeta);
     if (vmeta == (uint32_t)-1) return mtbdd_true;
     
@@ -504,7 +504,7 @@ meta_to_bdd(MDD meta, MDD bits_dd, uint32_t firstvar)
         return meta_to_bdd(mddnode_getdown(nmeta), bits_dd, firstvar);
     }
 
-    const mddnode_t nbits = LDD_GETNODE(bits_dd);
+    const mddnode* nbits = LDD_GETNODE(bits_dd);
     const int bits = (int)mddnode_getvalue(nbits);
 
     /* compute recursive result */

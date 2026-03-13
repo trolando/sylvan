@@ -406,21 +406,21 @@ nodes_table* nodes_create(size_t initial_size, size_t max_size)
 
 void nodes_free(nodes_table* dbs)
 {
-    sylvan_free_aligned(dbs->data, dbs->max_size * 16);
-    sylvan_free_aligned(dbs->first, dbs->max_size * 8);
-    sylvan_free_aligned(dbs->next, dbs->max_size * 16);
-    sylvan_free_aligned(dbs->bitmap1, dbs->max_size / (512*8));
-    sylvan_free_aligned(dbs->bitmap2, dbs->max_size / 8);
-    sylvan_free_aligned(dbs->bitmapc, dbs->max_size / 8);
+    sylvan_free_aligned((void*)dbs->data, dbs->max_size * 16);
+    sylvan_free_aligned((void*)dbs->first, dbs->max_size * 8);
+    sylvan_free_aligned((void*)dbs->next, dbs->max_size * 16);
+    sylvan_free_aligned((void*)dbs->bitmap1, dbs->max_size / (512*8));
+    sylvan_free_aligned((void*)dbs->bitmap2, dbs->max_size / 8);
+    sylvan_free_aligned((void*)dbs->bitmapc, dbs->max_size / 8);
     sylvan_free_aligned(dbs, sizeof(struct nodes_table));
 }
 
 void nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    sylvan_clear_aligned(dbs->bitmap1, dbs->max_size / (512*8));
-    sylvan_clear_aligned(dbs->bitmap2, dbs->max_size / 8);
-    sylvan_clear_aligned(dbs->first, dbs->max_size * 8);
-    sylvan_clear_aligned(dbs->next, dbs->max_size * 16);
+    sylvan_clear_aligned((void*)dbs->bitmap1, dbs->max_size / (512*8));
+    sylvan_clear_aligned((void*)dbs->bitmap2, dbs->max_size / 8);
+    sylvan_clear_aligned((void*)dbs->first, dbs->max_size * 8);
+    sylvan_clear_aligned((void*)dbs->next, dbs->max_size * 16);
 
     // forbid first two positions (index 0 and 1)
     dbs->bitmap2[0] = 0xc000000000000000LL;

@@ -45,7 +45,7 @@ Bdd::operator=(const Bdd& right)
 bool
 Bdd::operator<=(const Bdd& other) const
 {
-    return sylvan_subset(this->bdd, other.bdd) == 1;
+    return bdd_subset(this->bdd, other.bdd) == 1;
 }
 
 bool
@@ -70,199 +70,199 @@ Bdd::operator>(const Bdd& other) const
 Bdd
 Bdd::operator!() const
 {
-    return Bdd(sylvan_not(bdd));
+    return Bdd(bdd_not(bdd));
 }
 
 Bdd
 Bdd::operator~() const
 {
-    return Bdd(sylvan_not(bdd));
+    return Bdd(bdd_not(bdd));
 }
 
 Bdd
 Bdd::operator*(const Bdd& other) const
 {
-    return Bdd(sylvan_and(bdd, other.bdd));
+    return Bdd(bdd_and(bdd, other.bdd));
 }
 
 Bdd&
 Bdd::operator*=(const Bdd& other)
 {
-    bdd = sylvan_and(bdd, other.bdd);
+    bdd = bdd_and(bdd, other.bdd);
     return *this;
 }
 
 Bdd
 Bdd::operator&(const Bdd& other) const
 {
-    return Bdd(sylvan_and(bdd, other.bdd));
+    return Bdd(bdd_and(bdd, other.bdd));
 }
 
 Bdd&
 Bdd::operator&=(const Bdd& other)
 {
-    bdd = sylvan_and(bdd, other.bdd);
+    bdd = bdd_and(bdd, other.bdd);
     return *this;
 }
 
 Bdd
 Bdd::operator+(const Bdd& other) const
 {
-    return Bdd(sylvan_or(bdd, other.bdd));
+    return Bdd(bdd_or(bdd, other.bdd));
 }
 
 Bdd&
 Bdd::operator+=(const Bdd& other)
 {
-    bdd = sylvan_or(bdd, other.bdd);
+    bdd = bdd_or(bdd, other.bdd);
     return *this;
 }
 
 Bdd
 Bdd::operator|(const Bdd& other) const
 {
-    return Bdd(sylvan_or(bdd, other.bdd));
+    return Bdd(bdd_or(bdd, other.bdd));
 }
 
 Bdd&
 Bdd::operator|=(const Bdd& other)
 {
-    bdd = sylvan_or(bdd, other.bdd);
+    bdd = bdd_or(bdd, other.bdd);
     return *this;
 }
 
 Bdd
 Bdd::operator^(const Bdd& other) const
 {
-    return Bdd(sylvan_xor(bdd, other.bdd));
+    return Bdd(bdd_xor(bdd, other.bdd));
 }
 
 Bdd&
 Bdd::operator^=(const Bdd& other)
 {
-    bdd = sylvan_xor(bdd, other.bdd);
+    bdd = bdd_xor(bdd, other.bdd);
     return *this;
 }
 
 Bdd
 Bdd::operator-(const Bdd& other) const
 {
-    return Bdd(sylvan_and(bdd, sylvan_not(other.bdd)));
+    return Bdd(bdd_and(bdd, bdd_not(other.bdd)));
 }
 
 Bdd&
 Bdd::operator-=(const Bdd& other)
 {
-    bdd = sylvan_and(bdd, sylvan_not(other.bdd));
+    bdd = bdd_and(bdd, bdd_not(other.bdd));
     return *this;
 }
 
 Bdd
 Bdd::AndAbstract(const Bdd &g, const BddSet &cube) const
 {
-    return sylvan_and_exists(bdd, g.bdd, cube.set.bdd);
+    return bdd_and_exists(bdd, g.bdd, cube.set.bdd);
 }
 
 Bdd
 Bdd::ExistAbstract(const BddSet &cube) const
 {
-    return sylvan_exists(bdd, cube.set.bdd);
+    return bdd_exists(bdd, cube.set.bdd);
 }
 
 Bdd
 Bdd::UnivAbstract(const BddSet &cube) const
 {
-    return sylvan_forall(bdd, cube.set.bdd);
+    return bdd_forall(bdd, cube.set.bdd);
 }
 
 Bdd
 Bdd::Ite(const Bdd &g, const Bdd &h) const
 {
-    return sylvan_ite(bdd, g.bdd, h.bdd);
+    return bdd_ite(bdd, g.bdd, h.bdd);
 }
 
 Bdd
 Bdd::And(const Bdd &g) const
 {
-    return sylvan_and(bdd, g.bdd);
+    return bdd_and(bdd, g.bdd);
 }
 
 Bdd
 Bdd::Or(const Bdd &g) const
 {
-    return sylvan_or(bdd, g.bdd);
+    return bdd_or(bdd, g.bdd);
 }
 
 Bdd
 Bdd::Nand(const Bdd &g) const
 {
-    return sylvan_nand(bdd, g.bdd);
+    return bdd_nand(bdd, g.bdd);
 }
 
 Bdd
 Bdd::Nor(const Bdd &g) const
 {
-    return sylvan_nor(bdd, g.bdd);
+    return bdd_nor(bdd, g.bdd);
 }
 
 Bdd
 Bdd::Xor(const Bdd &g) const
 {
-    return sylvan_xor(bdd, g.bdd);
+    return bdd_xor(bdd, g.bdd);
 }
 
 Bdd
 Bdd::Xnor(const Bdd &g) const
 {
-    return sylvan_equiv(bdd, g.bdd);
+    return bdd_equiv(bdd, g.bdd);
 }
 
 bool
 Bdd::Disjoint(const Bdd &g) const
 {
-    return sylvan_disjoint(bdd, g.bdd) == 1;
+    return bdd_disjoint(bdd, g.bdd) == 1;
 }
 
 bool
 Bdd::Leq(const Bdd &g) const
 {
-    return sylvan_subset(bdd, g.bdd) == 1;
+    return bdd_subset(bdd, g.bdd) == 1;
 }
 
 Bdd
 Bdd::RelPrev(const Bdd& relation, const BddSet& cube) const
 {
-    return sylvan_relprev(relation.bdd, bdd, cube.set.bdd);
+    return bdd_relprev(relation.bdd, bdd, cube.set.bdd);
 }
 
 Bdd
 Bdd::RelNext(const Bdd &relation, const BddSet &cube) const
 {
-    return sylvan_relnext(bdd, relation.bdd, cube.set.bdd);
+    return bdd_relnext(bdd, relation.bdd, cube.set.bdd);
 }
 
 Bdd
 Bdd::Closure() const
 {
-    return sylvan_closure(bdd);
+    return bdd_closure(bdd);
 }
 
 Bdd
 Bdd::Constrain(const Bdd &c) const
 {
-    return sylvan_constrain(bdd, c.bdd);
+    return bdd_constrain(bdd, c.bdd);
 }
 
 Bdd
 Bdd::Restrict(const Bdd &c) const
 {
-    return sylvan_restrict(bdd, c.bdd);
+    return bdd_restrict(bdd, c.bdd);
 }
 
 Bdd
 Bdd::Compose(const BddMap &m) const
 {
-    return sylvan_compose(bdd, m.bdd);
+    return bdd_compose(bdd, m.bdd);
 }
 
 Bdd
@@ -274,13 +274,13 @@ Bdd::Permute(const std::vector<uint32_t>& from, const std::vector<uint32_t>& to)
         map.put(from[i], Bdd::bddVar(to[i]));
     }
 
-    return sylvan_compose(bdd, map.bdd);
+    return bdd_compose(bdd, map.bdd);
 }
 
 Bdd
 Bdd::Support() const
 {
-    return sylvan_support(bdd);
+    return mtbdd_support(bdd);
 }
 
 BDD
@@ -292,27 +292,27 @@ Bdd::GetBDD() const
 void
 Bdd::PrintDot(FILE *out) const
 {
-    sylvan_fprintdot(out, bdd);
+    mtbdd_fprintdot(out, bdd);
 }
 
 void
 Bdd::GetShaHash(char *string) const
 {
-    sylvan_getsha(bdd, string);
+    mtbdd_getsha(bdd, string);
 }
 
 std::string
 Bdd::GetShaHash() const
 {
     char buf[65];
-    sylvan_getsha(bdd, buf);
+    mtbdd_getsha(bdd, buf);
     return std::string(buf);
 }
 
 double
 Bdd::SatCount(const BddSet &variables) const
 {
-    return sylvan_satcount(bdd, variables.set.bdd);
+    return bdd_satcount(bdd, variables.set.bdd);
 }
 
 double
@@ -325,7 +325,7 @@ Bdd::SatCount(size_t nvars) const
 void
 Bdd::PickOneCube(const BddSet &variables, uint8_t *values) const
 {
-    sylvan_sat_one(bdd, variables.set.bdd, values);
+    bdd_sat_one(bdd, variables.set.bdd, values);
 }
 
 std::vector<bool>
@@ -336,26 +336,26 @@ Bdd::PickOneCube(const BddSet &variables) const
     BDD bdd = this->bdd;
     BDD vars = variables.set.bdd;
 
-    if (bdd == sylvan_false) return result;
+    if (bdd == mtbdd_false) return result;
 
-    for (; !sylvan_set_isempty(vars); vars = sylvan_set_next(vars)) {
-        uint32_t var = sylvan_set_first(vars);
-        if (bdd == sylvan_true) {
+    for (; !mtbdd_set_isempty(vars); vars = mtbdd_set_next(vars)) {
+        uint32_t var = mtbdd_set_first(vars);
+        if (bdd == mtbdd_true) {
             // pick 0
             result.push_back(false);
         } else {
-            if (sylvan_var(bdd) != var) {
+            if (mtbdd_getvar(bdd) != var) {
                 // pick 0
                 result.push_back(false);
             } else {
-                if (sylvan_low(bdd) == sylvan_false) {
+                if (mtbdd_getlow(bdd) == mtbdd_false) {
                     // pick 1
                     result.push_back(true);
-                    bdd = sylvan_high(bdd);
+                    bdd = mtbdd_gethigh(bdd);
                 } else {
                     // pick 0
                     result.push_back(false);
-                    bdd = sylvan_low(bdd);
+                    bdd = mtbdd_getlow(bdd);
                 }
             }
         }
@@ -367,20 +367,20 @@ Bdd::PickOneCube(const BddSet &variables) const
 Bdd
 Bdd::PickOneCube() const
 {
-    return Bdd(sylvan_sat_one_bdd(bdd));
+    return Bdd(bdd_sat_one_bdd(bdd));
 }
 
 Bdd
 Bdd::UnionCube(const BddSet &variables, uint8_t *values) const
 {
-    return sylvan_union_cube(bdd, variables.set.bdd, values);
+    return bdd_union_cube(bdd, variables.set.bdd, values);
 }
 
 Bdd
 Bdd::UnionCube(const BddSet &variables, std::vector<uint8_t> values) const
 {
     uint8_t *data = values.data();
-    return sylvan_union_cube(bdd, variables.set.bdd, data);
+    return bdd_union_cube(bdd, variables.set.bdd, data);
 }
 
 /**
@@ -402,9 +402,9 @@ Bdd::VectorCube(const std::vector<Bdd> variables)
 Bdd
 Bdd::VariablesCube(std::vector<uint32_t> variables)
 {
-    BDD result = sylvan_true;
+    BDD result = mtbdd_true;
     for (int i=variables.size()-1; i>=0; i--) {
-        result = sylvan_makenode(variables[i], sylvan_false, result);
+        result = mtbdd_makenode(variables[i], mtbdd_false, result);
     }
     return result;
 }
@@ -412,80 +412,80 @@ Bdd::VariablesCube(std::vector<uint32_t> variables)
 size_t
 Bdd::NodeCount() const
 {
-    return sylvan_nodecount(bdd);
+    return mtbdd_nodecount(bdd);
 }
 
 Bdd
 Bdd::bddOne()
 {
-    return sylvan_true;
+    return mtbdd_true;
 }
 
 Bdd
 Bdd::bddZero()
 {
-    return sylvan_false;
+    return mtbdd_false;
 }
 
 Bdd
 Bdd::bddVar(uint32_t index)
 {
-    return sylvan_ithvar(index);
+    return mtbdd_ithvar(index);
 }
 
 Bdd
 Bdd::bddCube(const BddSet &variables, uint8_t *values)
 {
-    return sylvan_cube(variables.set.bdd, values);
+    return bdd_cube(variables.set.bdd, values);
 }
 
 Bdd
 Bdd::bddCube(const BddSet &variables, std::vector<uint8_t> values)
 {
     uint8_t *data = values.data();
-    return sylvan_cube(variables.set.bdd, data);
+    return bdd_cube(variables.set.bdd, data);
 }
 
 bool
 Bdd::isConstant() const
 {
-    return bdd == sylvan_true || bdd == sylvan_false;
+    return bdd == mtbdd_true || bdd == mtbdd_false;
 }
 
 bool
 Bdd::isTerminal() const
 {
-    return bdd == sylvan_true || bdd == sylvan_false;
+    return bdd == mtbdd_true || bdd == mtbdd_false;
 }
 
 bool
 Bdd::isOne() const
 {
-    return bdd == sylvan_true;
+    return bdd == mtbdd_true;
 }
 
 bool
 Bdd::isZero() const
 {
-    return bdd == sylvan_false;
+    return bdd == mtbdd_false;
 }
 
 uint32_t
 Bdd::TopVar() const
 {
-    return sylvan_var(bdd);
+    return mtbdd_getvar(bdd);
 }
 
 Bdd
 Bdd::Then() const
 {
-    return Bdd(sylvan_high(bdd));
+    return Bdd(mtbdd_gethigh(bdd));
 }
 
 Bdd
 Bdd::Else() const
 {
-    return Bdd(sylvan_low(bdd));
+    return Bdd(mtbdd_getlow(bdd));
 }
 
 /***
@@ -494,58 +494,58 @@ Bdd::Else() const
 
 BddMap::BddMap(uint32_t key_variable, const Bdd value)
 {
-    bdd = sylvan_map_add(sylvan_map_empty(), key_variable, value.bdd);
+    bdd = mtbdd_map_add(mtbdd_map_empty(), key_variable, value.bdd);
 }
 
 
 BddMap
 BddMap::operator+(const Bdd& other) const
 {
-    return BddMap(sylvan_map_addall(bdd, other.bdd));
+    return BddMap(mtbdd_map_update(bdd, other.bdd));
 }
 
 BddMap&
 BddMap::operator+=(const Bdd& other)
 {
-    bdd = sylvan_map_addall(bdd, other.bdd);
+    bdd = mtbdd_map_update(bdd, other.bdd);
     return *this;
 }
 
 BddMap
 BddMap::operator-(const Bdd& other) const
 {
-    return BddMap(sylvan_map_removeall(bdd, other.bdd));
+    return BddMap(mtbdd_map_removeall(bdd, other.bdd));
 }
 
 BddMap&
 BddMap::operator-=(const Bdd& other)
 {
-    bdd = sylvan_map_removeall(bdd, other.bdd);
+    bdd = mtbdd_map_removeall(bdd, other.bdd);
     return *this;
 }
 
 void
 BddMap::put(uint32_t key, Bdd value)
 {
-    bdd = sylvan_map_add(bdd, key, value.bdd);
+    bdd = mtbdd_map_add(bdd, key, value.bdd);
 }
 
 void
 BddMap::removeKey(uint32_t key)
 {
-    bdd = sylvan_map_remove(bdd, key);
+    bdd = mtbdd_map_remove(bdd, key);
 }
 
 size_t
 BddMap::size() const
 {
-    return sylvan_map_count(bdd);
+    return mtbdd_map_count(bdd);
 }
 
 bool
 BddMap::isEmpty() const
 {
-    return sylvan_map_isempty(bdd);
+    return mtbdd_map_isempty(bdd);
 }
 
 
@@ -867,7 +867,7 @@ Mtbdd::SatCount(size_t nvars) const
 double
 Mtbdd::SatCount(const BddSet &variables) const
 {
-    return SatCount(sylvan_set_count(variables.set.bdd));
+    return SatCount(mtbdd_set_count(variables.set.bdd));
 }
 
 size_t
@@ -889,13 +889,13 @@ MtbddMap::MtbddMap(uint32_t key_variable, Mtbdd value)
 MtbddMap
 MtbddMap::operator+(const Mtbdd& other) const
 {
-    return MtbddMap(mtbdd_map_addall(mtbdd, other.mtbdd));
+    return MtbddMap(mtbdd_map_update(mtbdd, other.mtbdd));
 }
 
 MtbddMap&
 MtbddMap::operator+=(const Mtbdd& other)
 {
-    mtbdd = mtbdd_map_addall(mtbdd, other.mtbdd);
+    mtbdd = mtbdd_map_update(mtbdd, other.mtbdd);
     return *this;
 }
 
@@ -944,14 +944,8 @@ MtbddMap::isEmpty()
 void
 Sylvan::initPackage(size_t initialTableSize, size_t maxTableSize, size_t initialCacheSize, size_t maxCacheSize)
 {
-    sylvan_set_sizes(initialTableSize, maxTableSize, initialCacheSize, maxCacheSize);
+    mtbdd_set_sizes(initialTableSize, maxTableSize, initialCacheSize, maxCacheSize);
     sylvan_init_package();
-}
-
-void
-Sylvan::initBdd()
-{
-    sylvan_init_bdd();
 }
 
 void

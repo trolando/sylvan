@@ -35,11 +35,11 @@ class Bdd {
     friend class Mtbdd;
 
 public:
-    Bdd() { bdd = sylvan_false; sylvan_protect(&bdd); }
-    Bdd(const BDD from) : bdd(from) { sylvan_protect(&bdd); }
-    Bdd(const Bdd &from) : bdd(from.bdd) { sylvan_protect(&bdd); }
-    Bdd(const uint32_t var) { bdd = sylvan_ithvar(var); sylvan_protect(&bdd); }
-    ~Bdd() { sylvan_unprotect(&bdd); }
+    Bdd() { bdd = mtbdd_false; mtbdd_protect(&bdd); }
+    Bdd(const BDD from) : bdd(from) { mtbdd_protect(&bdd); }
+    Bdd(const Bdd &from) : bdd(from.bdd) { mtbdd_protect(&bdd); }
+    Bdd(const uint32_t var) { bdd = mtbdd_ithvar(var); mtbdd_protect(&bdd); }
+    ~Bdd() { mtbdd_unprotect(&bdd); }
 
     /**
      * @brief Creates a Bdd representing just the variable index in its positive form
@@ -440,7 +440,7 @@ public:
      */
     static BddSet fromVector(const std::vector<Bdd> variables) {
         BddSet set;
-        for (int i=variables.size()-1; i>=0; i--) {
+        for (int i=(int)variables.size()-1; i>=0; i--) {
             set.set *= variables[i];
         }
         return set;
@@ -452,7 +452,7 @@ public:
      */
     static BddSet fromVector(const std::vector<uint32_t> variables) {
         BddSet set;
-        for (int i=variables.size()-1; i>=0; i--) {
+        for (int i=(int)variables.size()-1; i>=0; i--) {
             set.add(variables[i]);
         }
         return set;
@@ -487,12 +487,12 @@ class BddMap
 {
     friend class Bdd;
     BDD bdd;
-    BddMap(const BDD from) : bdd(from) { sylvan_protect(&bdd); }
-    BddMap(const Bdd &from) : bdd(from.bdd) { sylvan_protect(&bdd); }
+    BddMap(const BDD from) : bdd(from) { mtbdd_protect(&bdd); }
+    BddMap(const Bdd &from) : bdd(from.bdd) { mtbdd_protect(&bdd); }
 public:
-    BddMap(const BddMap& from) : bdd(from.bdd) { sylvan_protect(&bdd); }
-    BddMap() : bdd(sylvan_map_empty()) { sylvan_protect(&bdd); }
-    ~BddMap() { sylvan_unprotect(&bdd); }
+    BddMap(const BddMap& from) : bdd(from.bdd) { mtbdd_protect(&bdd); }
+    BddMap() : bdd(mtbdd_map_empty()) { mtbdd_protect(&bdd); }
+    ~BddMap() { mtbdd_unprotect(&bdd); }
 
     BddMap(uint32_t key_variable, const Bdd value);
 
@@ -529,7 +529,7 @@ class Mtbdd {
     friend class MtbddMap;
 
 public:
-    Mtbdd() { mtbdd = sylvan_false; mtbdd_protect(&mtbdd); }
+    Mtbdd() { mtbdd = mtbdd_false; mtbdd_protect(&mtbdd); }
     Mtbdd(const MTBDD from) : mtbdd(from) { mtbdd_protect(&mtbdd); }
     Mtbdd(const Mtbdd &from) : mtbdd(from.mtbdd) { mtbdd_protect(&mtbdd); }
     Mtbdd(const Bdd &from) : mtbdd(from.bdd) { mtbdd_protect(&mtbdd); }

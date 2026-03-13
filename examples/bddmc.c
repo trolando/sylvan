@@ -147,7 +147,7 @@ to_h(double size, char *buf)
     const char* units[] = {"B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"};
     int i = 0;
     for (;size>1024;size/=1024) i++;
-    sprintf(buf, "%.*f %s", i, size, units[i]);
+    snprintf(buf, 32, "%.*f %s", i, size, units[i]);
     return buf;
 }
 
@@ -155,7 +155,7 @@ static void
 print_memory_usage(void)
 {
     char buf[32];
-    to_h(getCurrentRSS(), buf);
+    to_h((double)getCurrentRSS(), buf);
     INFO("Memory usage: %s\n", buf);
 }
 
@@ -172,10 +172,10 @@ set_t set_load_CALL(lace_worker* lace, FILE* f)
 {
     // allocate set
     set_t set = (set_t)malloc(sizeof(struct set));
-    set->bdd = sylvan_false;
-    set->variables = sylvan_true;
-    sylvan_protect(&set->bdd);
-    sylvan_protect(&set->variables);
+    set->bdd = mtbdd_false;
+    set->variables = mtbdd_true;
+    mtbdd_protect(&set->bdd);
+    mtbdd_protect(&set->variables);
 
     // read k
     int k;
@@ -185,7 +185,7 @@ set_t set_load_CALL(lace_worker* lace, FILE* f)
         // create variables for a full state vector
         uint32_t* vars = SYLVAN_ALLOCA(uint32_t, totalbits);
         for (int i=0; i<totalbits; i++) vars[i] = 2*i;
-        set->variables = sylvan_set_fromarray(vars, totalbits);
+        set->variables = mtbdd_set_from_array(vars, totalbits);
     } else {
         // read proj
         int* proj = SYLVAN_ALLOCA(int, k);
@@ -202,7 +202,7 @@ set_t set_load_CALL(lace_worker* lace, FILE* f)
                 cv += 2 * statebits[i];
             }
         }
-        set->variables = sylvan_set_fromarray(vars, n);
+        set->variables = mtbdd_set_from_array(vars, n);
     }
 
     // read bdd
@@ -237,8 +237,8 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
     rel->r_proj = r_proj;
     rel->w_proj = w_proj;
 
-    rel->bdd = sylvan_false;
-    sylvan_protect(&rel->bdd);
+    rel->bdd = mtbdd_false;
+    mtbdd_protect(&rel->bdd);
 
     /* Compute a_proj the union of r_proj and w_proj, and a_k the length of a_proj */
     int* a_proj = SYLVAN_ALLOCA(int, r_k+w_k);
@@ -277,8 +277,8 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
             curvar += 2 * statebits[i];
         }
     }
-    rel->variables = sylvan_set_fromarray(all_vars, n);
-    sylvan_protect(&rel->variables);
+    rel->variables = mtbdd_set_from_array(all_vars, n);
+    mtbdd_protect(&rel->variables);
 
     return rel;
     (void)lace;
@@ -305,8 +305,8 @@ void print_example_CALL(lace_worker* lace, BDD example, BDDSET variables)
 {
     uint8_t* str = SYLVAN_ALLOCA(uint8_t, totalbits);
 
-    if (example != sylvan_false) {
-        sylvan_sat_one(example, variables, str);
+    if (example != mtbdd_false) {
+        bdd_sat_one(example, variables, str);
         int x=0;
         printf("[");
         for (int i=0; i<vectorsize; i++) {
@@ -332,7 +332,7 @@ TASK(BDD, go_sat, BDD, set, int, idx)
 BDD go_sat_CALL(lace_worker* lace, BDD set, int idx)
 {
     /* Terminal cases */
-    if (set == sylvan_false) return sylvan_false;
+    if (set == mtbdd_false) return mtbdd_false;
     if (idx == next_count) return set;
 
     /* Consult the cache */
@@ -347,19 +347,19 @@ BDD go_sat_CALL(lace_worker* lace, BDD set, int idx)
      */
 
     /* Check if the relation should be applied */
-    const uint32_t var = sylvan_var(next[idx]->variables);
-    if (set == sylvan_true || var <= sylvan_var(set)) {
+    const uint32_t var = mtbdd_getvar(next[idx]->variables);
+    if (set == mtbdd_true || var <= mtbdd_getvar(set)) {
         /* Count the number of relations starting here */
         int count = idx+1;
-        while (count < next_count && var == sylvan_var(next[count]->variables)) count++;
+        while (count < next_count && var == mtbdd_getvar(next[count]->variables)) count++;
         count -= idx;
         /*
          * Compute until fixpoint:
          * - SAT deeper
          * - chain-apply all current level once
          */
-        BDD prev = sylvan_false;
-        BDD step = sylvan_false;
+        BDD prev = mtbdd_false;
+        BDD step = mtbdd_false;
         mtbdd_refs_pushptr(&set);
         mtbdd_refs_pushptr(&prev);
         mtbdd_refs_pushptr(&step);
@@ -369,20 +369,20 @@ BDD go_sat_CALL(lace_worker* lace, BDD set, int idx)
             set = go_sat_CALL(lace, set, idx+count);
             // chain-apply all current level once
             for (int i=0;i<count;i++) {
-                step = sylvan_relnext_CALL(lace, set, next[idx+i]->bdd, next[idx+i]->variables);
-                set = sylvan_not(sylvan_and_CALL(lace, sylvan_not(set), sylvan_not(step)));
-                step = sylvan_false; // unset, for gc
+                step = bdd_relnext_CALL(lace, set, next[idx+i]->bdd, next[idx+i]->variables);
+                set = bdd_not(bdd_and_CALL(lace, bdd_not(set), bdd_not(step)));
+                step = mtbdd_false; // unset, for gc
             }
         }
         mtbdd_refs_popptr(3);
         result = set;
     } else {
         /* Recursive computation */
-        mtbdd_refs_spawn(go_sat_SPAWN(lace, sylvan_low(set), idx));
-        BDD high = mtbdd_refs_push(go_sat_CALL(lace, sylvan_high(set), idx));
+        mtbdd_refs_spawn(go_sat_SPAWN(lace, mtbdd_getlow(set), idx));
+        BDD high = mtbdd_refs_push(go_sat_CALL(lace, mtbdd_gethigh(set), idx));
         BDD low = mtbdd_refs_sync(go_sat_SYNC(lace));
         mtbdd_refs_pop(1);
-        result = sylvan_makenode(sylvan_var(set), low, high);
+        result = mtbdd_makenode(mtbdd_getvar(set), low, high);
     }
 
     /* Store in cache */
@@ -409,17 +409,17 @@ BDD go_par_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        BDD succ = sylvan_relnext_CALL(lace, cur, next[from]->bdd, next[from]->variables);
-        bdd_refs_push(succ);
+        BDD succ = bdd_relnext_CALL(lace, cur, next[from]->bdd, next[from]->variables);
+        mtbdd_refs_push(succ);
         if (deadlocks) {
             // check which BDDs in deadlocks do not have a successor in this relation
-            BDD anc = sylvan_relprev_CALL(lace, next[from]->bdd, succ, next[from]->variables);
-            bdd_refs_push(anc);
-            *deadlocks = sylvan_diff(*deadlocks, anc); //FIXME use a CALL
-            bdd_refs_pop(1);
+            BDD anc = bdd_relprev_CALL(lace, next[from]->bdd, succ, next[from]->variables);
+            mtbdd_refs_push(anc);
+            *deadlocks = bdd_diff(*deadlocks, anc); //FIXME use a CALL
+            mtbdd_refs_pop(1);
         }
-        BDD result = sylvan_diff(succ, visited);
-        bdd_refs_pop(1);
+        BDD result = bdd_diff(succ, visited);
+        mtbdd_refs_pop(1);
         return result;
     } else {
         BDD deadlocks_left;
@@ -427,25 +427,25 @@ BDD go_par_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
         if (deadlocks) {
             deadlocks_left = *deadlocks;
             deadlocks_right = *deadlocks;
-            sylvan_protect(&deadlocks_left);
-            sylvan_protect(&deadlocks_right);
+            mtbdd_protect(&deadlocks_left);
+            mtbdd_protect(&deadlocks_right);
         }
 
         // Recursively calculate left+right
-        bdd_refs_spawn(go_par_SPAWN(lace, cur, visited, from, (len+1)/2, deadlocks ? &deadlocks_left: NULL));
-        BDD right = bdd_refs_push(go_par_CALL(lace, cur, visited, from+(len+1)/2, len/2, deadlocks ? &deadlocks_right : NULL));
-        BDD left = bdd_refs_push(bdd_refs_sync(go_par_SYNC(lace)));
+        mtbdd_refs_spawn(go_par_SPAWN(lace, cur, visited, from, (len+1)/2, deadlocks ? &deadlocks_left: NULL));
+        BDD right = mtbdd_refs_push(go_par_CALL(lace, cur, visited, from+(len+1)/2, len/2, deadlocks ? &deadlocks_right : NULL));
+        BDD left = mtbdd_refs_push(mtbdd_refs_sync(go_par_SYNC(lace)));
 
         // Merge results of left+right
-        BDD result = sylvan_or(left, right);
-        bdd_refs_pop(2);
+        BDD result = bdd_or(left, right);
+        mtbdd_refs_pop(2);
 
         if (deadlocks) {
-            bdd_refs_push(result);
-            *deadlocks = sylvan_and_CALL(lace, deadlocks_left, deadlocks_right);
-            sylvan_unprotect(&deadlocks_left);
-            sylvan_unprotect(&deadlocks_right);
-            bdd_refs_pop(1);
+            mtbdd_refs_push(result);
+            *deadlocks = bdd_and_CALL(lace, deadlocks_left, deadlocks_right);
+            mtbdd_unprotect(&deadlocks_left);
+            mtbdd_unprotect(&deadlocks_right);
+            mtbdd_refs_pop(1);
         }
 
         return result;
@@ -460,13 +460,13 @@ void par_CALL(lace_worker* lace, set_t set)
 {
     BDD visited = set->bdd;
     BDD next_level = visited;
-    BDD cur_level = sylvan_false;
-    BDD deadlocks = sylvan_false;
+    BDD cur_level = mtbdd_false;
+    BDD deadlocks = mtbdd_false;
 
-    sylvan_protect(&visited);
-    sylvan_protect(&next_level);
-    sylvan_protect(&cur_level);
-    sylvan_protect(&deadlocks);
+    mtbdd_protect(&visited);
+    mtbdd_protect(&next_level);
+    mtbdd_protect(&cur_level);
+    mtbdd_protect(&deadlocks);
 
     int iteration = 1;
     do {
@@ -476,9 +476,9 @@ void par_CALL(lace_worker* lace, set_t set)
 
         next_level = go_par_CALL(lace, cur_level, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
 
-        if (check_deadlocks && deadlocks != sylvan_false) {
-            INFO("Found %0.0f deadlock states... ", sylvan_satcount_CALL(lace, deadlocks, set->variables));
-            if (deadlocks != sylvan_false) {
+        if (check_deadlocks && deadlocks != mtbdd_false) {
+            INFO("Found %0.0f deadlock states... ", bdd_satcount_CALL(lace, deadlocks, set->variables));
+            if (deadlocks != mtbdd_false) {
                 printf("example: ");
                 print_example(deadlocks, set->variables);
                 check_deadlocks = 0;
@@ -487,13 +487,13 @@ void par_CALL(lace_worker* lace, set_t set)
         }
 
         // visited = visited + new
-        visited = sylvan_or(visited, next_level);
+        visited = bdd_or(visited, next_level);
 
         if (report_table && report_levels) {
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
             INFO("Level %d done, %0.0f states explored, table: %0.1f%% full (%zu nodes)\n",
-                iteration, sylvan_satcount_CALL(lace, visited, set->variables),
+                iteration, bdd_satcount_CALL(lace, visited, set->variables),
                 100.0*(double)filled/total, filled);
         } else if (report_table) {
             size_t filled, total;
@@ -502,19 +502,19 @@ void par_CALL(lace_worker* lace, set_t set)
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %0.0f states explored\n", iteration, sylvan_satcount_CALL(lace, visited, set->variables));
+            INFO("Level %d done, %0.0f states explored\n", iteration, bdd_satcount_CALL(lace, visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
         iteration++;
-    } while (next_level != sylvan_false);
+    } while (next_level != mtbdd_false);
 
     set->bdd = visited;
 
-    sylvan_unprotect(&visited);
-    sylvan_unprotect(&next_level);
-    sylvan_unprotect(&cur_level);
-    sylvan_unprotect(&deadlocks);
+    mtbdd_unprotect(&visited);
+    mtbdd_unprotect(&next_level);
+    mtbdd_unprotect(&cur_level);
+    mtbdd_unprotect(&deadlocks);
 }
 
 /**
@@ -526,17 +526,17 @@ BDD go_bfs_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        BDD succ = sylvan_relnext_CALL(lace, cur, next[from]->bdd, next[from]->variables);
-        bdd_refs_push(succ);
+        BDD succ = bdd_relnext_CALL(lace, cur, next[from]->bdd, next[from]->variables);
+        mtbdd_refs_push(succ);
         if (deadlocks) {
             // check which BDDs in deadlocks do not have a successor in this relation
-            BDD anc = sylvan_relprev_CALL(lace, next[from]->bdd, succ, next[from]->variables);
-            bdd_refs_push(anc);
-            *deadlocks = sylvan_diff(*deadlocks, anc); // FIXME make it a CALL
-            bdd_refs_pop(1);
+            BDD anc = bdd_relprev_CALL(lace, next[from]->bdd, succ, next[from]->variables);
+            mtbdd_refs_push(anc);
+            *deadlocks = bdd_diff(*deadlocks, anc); // FIXME make it a CALL
+            mtbdd_refs_pop(1);
         }
-        BDD result = sylvan_diff(succ, visited);
-        bdd_refs_pop(1);
+        BDD result = bdd_diff(succ, visited);
+        mtbdd_refs_pop(1);
         return result;
     } else {
         BDD deadlocks_left;
@@ -544,26 +544,26 @@ BDD go_bfs_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
         if (deadlocks) {
             deadlocks_left = *deadlocks;
             deadlocks_right = *deadlocks;
-            sylvan_protect(&deadlocks_left);
-            sylvan_protect(&deadlocks_right);
+            mtbdd_protect(&deadlocks_left);
+            mtbdd_protect(&deadlocks_right);
         }
 
         // Recursively calculate left+right
         BDD left = go_bfs_CALL(lace, cur, visited, from, (len+1)/2, deadlocks ? &deadlocks_left : NULL);
-        bdd_refs_push(left);
+        mtbdd_refs_push(left);
         BDD right = go_bfs_CALL(lace, cur, visited, from+(len+1)/2, len/2, deadlocks ? &deadlocks_right : NULL);
-        bdd_refs_push(right);
+        mtbdd_refs_push(right);
 
         // Merge results of left+right
-        BDD result = sylvan_or(left, right);
-        bdd_refs_pop(2);
+        BDD result = bdd_or(left, right);
+        mtbdd_refs_pop(2);
 
         if (deadlocks) {
-            bdd_refs_push(result);
-            *deadlocks = sylvan_and_CALL(lace, deadlocks_left, deadlocks_right);
-            sylvan_unprotect(&deadlocks_left);
-            sylvan_unprotect(&deadlocks_right);
-            bdd_refs_pop(1);
+            mtbdd_refs_push(result);
+            *deadlocks = bdd_and_CALL(lace, deadlocks_left, deadlocks_right);
+            mtbdd_unprotect(&deadlocks_left);
+            mtbdd_unprotect(&deadlocks_right);
+            mtbdd_refs_pop(1);
         }
 
         return result;
@@ -578,13 +578,13 @@ void bfs_CALL(lace_worker* lace, set_t set)
 {
     BDD visited = set->bdd;
     BDD next_level = visited;
-    BDD cur_level = sylvan_false;
-    BDD deadlocks = sylvan_false;
+    BDD cur_level = mtbdd_false;
+    BDD deadlocks = mtbdd_false;
 
-    sylvan_protect(&visited);
-    sylvan_protect(&next_level);
-    sylvan_protect(&cur_level);
-    sylvan_protect(&deadlocks);
+    mtbdd_protect(&visited);
+    mtbdd_protect(&next_level);
+    mtbdd_protect(&cur_level);
+    mtbdd_protect(&deadlocks);
 
     int iteration = 1;
     do {
@@ -594,9 +594,9 @@ void bfs_CALL(lace_worker* lace, set_t set)
 
         next_level = go_bfs_CALL(lace, cur_level, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
 
-        if (check_deadlocks && deadlocks != sylvan_false) {
-            INFO("Found %0.0f deadlock states... ", sylvan_satcount_CALL(lace, deadlocks, set->variables));
-            if (deadlocks != sylvan_false) {
+        if (check_deadlocks && deadlocks != mtbdd_false) {
+            INFO("Found %0.0f deadlock states... ", bdd_satcount_CALL(lace, deadlocks, set->variables));
+            if (deadlocks != mtbdd_false) {
                 printf("example: ");
                 print_example(deadlocks, set->variables);
                 check_deadlocks = 0;
@@ -605,13 +605,13 @@ void bfs_CALL(lace_worker* lace, set_t set)
         }
 
         // visited = visited + new
-        visited = sylvan_or(visited, next_level);
+        visited = bdd_or(visited, next_level);
 
         if (report_table && report_levels) {
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
             INFO("Level %d done, %0.0f states explored, table: %0.1f%% full (%zu nodes)\n",
-                iteration, sylvan_satcount_CALL(lace, visited, set->variables),
+                iteration, bdd_satcount_CALL(lace, visited, set->variables),
                 100.0*(double)filled/total, filled);
         } else if (report_table) {
             size_t filled, total;
@@ -620,19 +620,19 @@ void bfs_CALL(lace_worker* lace, set_t set)
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %0.0f states explored\n", iteration, sylvan_satcount_CALL(lace, visited, set->variables));
+            INFO("Level %d done, %0.0f states explored\n", iteration, bdd_satcount_CALL(lace, visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
         iteration++;
-    } while (next_level != sylvan_false);
+    } while (next_level != mtbdd_false);
 
     set->bdd = visited;
 
-    sylvan_unprotect(&visited);
-    sylvan_unprotect(&next_level);
-    sylvan_unprotect(&cur_level);
-    sylvan_unprotect(&deadlocks);
+    mtbdd_unprotect(&visited);
+    mtbdd_unprotect(&next_level);
+    mtbdd_unprotect(&cur_level);
+    mtbdd_unprotect(&deadlocks);
 }
 
 /**
@@ -643,31 +643,31 @@ void chaining_CALL(lace_worker* lace, set_t set)
 {
     BDD visited = set->bdd;
     BDD next_level = visited;
-    BDD succ = sylvan_false;
+    BDD succ = mtbdd_false;
 
-    bdd_refs_pushptr(&visited);
-    bdd_refs_pushptr(&next_level);
-    bdd_refs_pushptr(&succ);
+    mtbdd_refs_pushptr(&visited);
+    mtbdd_refs_pushptr(&next_level);
+    mtbdd_refs_pushptr(&succ);
 
     int iteration = 1;
     do {
         // calculate successors in parallel
         for (int i=0; i<next_count; i++) {
-            succ = sylvan_relnext_CALL(lace, next_level, next[i]->bdd, next[i]->variables);
-            next_level = sylvan_or(next_level, succ);
-            succ = sylvan_false; // reset, for gc
+            succ = bdd_relnext_CALL(lace, next_level, next[i]->bdd, next[i]->variables);
+            next_level = bdd_or(next_level, succ);
+            succ = mtbdd_false; // reset, for gc
         }
 
         // new = new - visited
         // visited = visited + new
-        next_level = sylvan_diff(next_level, visited);
-        visited = sylvan_or(visited, next_level);
+        next_level = bdd_diff(next_level, visited);
+        visited = bdd_or(visited, next_level);
 
         if (report_table && report_levels) {
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
             INFO("Level %d done, %0.0f states explored, table: %0.1f%% full (%zu nodes)\n",
-                iteration, sylvan_satcount_CALL(lace, visited, set->variables),
+                iteration, bdd_satcount_CALL(lace, visited, set->variables),
                 100.0*(double)filled/total, filled);
         } else if (report_table) {
             size_t filled, total;
@@ -676,15 +676,15 @@ void chaining_CALL(lace_worker* lace, set_t set)
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %0.0f states explored\n", iteration, sylvan_satcount_CALL(lace, visited, set->variables));
+            INFO("Level %d done, %0.0f states explored\n", iteration, bdd_satcount_CALL(lace, visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
         iteration++;
-    } while (next_level != sylvan_false);
+    } while (next_level != mtbdd_false);
 
     set->bdd = visited;
-    bdd_refs_popptr(3);
+    mtbdd_refs_popptr(3);
 }
 
 /**
@@ -697,27 +697,27 @@ BDD extend_relation_CALL(lace_worker* lace, MTBDD relation, MTBDD variables)
     int* has = SYLVAN_ALLOCA(int, totalbits);
     for (int i=0; i<totalbits; i++) has[i] = 0;
     MTBDD s = variables;
-    while (!sylvan_set_isempty(s)) {
-        uint32_t v = sylvan_set_first(s);
+    while (!mtbdd_set_isempty(s)) {
+        uint32_t v = mtbdd_set_first(s);
         if (v/2 >= (unsigned)totalbits) break; // action labels
         has[v/2] = 1;
-        s = sylvan_set_next(s);
+        s = mtbdd_set_next(s);
     }
 
     /* create "s=s'" for all variables not in rel */
-    BDD eq = sylvan_true;
+    BDD eq = mtbdd_true;
     for (int i=totalbits-1; i>=0; i--) {
         if (has[i]) continue;
-        BDD low = sylvan_makenode(2*i+1, eq, sylvan_false);
-        bdd_refs_push(low);
-        BDD high = sylvan_makenode(2*i+1, sylvan_false, eq);
-        bdd_refs_pop(1);
-        eq = sylvan_makenode(2*i, low, high);
+        BDD low = mtbdd_makenode(2*i+1, eq, mtbdd_false);
+        mtbdd_refs_push(low);
+        BDD high = mtbdd_makenode(2*i+1, mtbdd_false, eq);
+        mtbdd_refs_pop(1);
+        eq = mtbdd_makenode(2*i, low, high);
     }
 
-    bdd_refs_push(eq);
-    BDD result = sylvan_and_CALL(lace, relation, eq);
-    bdd_refs_pop(1);
+    mtbdd_refs_push(eq);
+    BDD result = bdd_and_CALL(lace, relation, eq);
+    mtbdd_refs_pop(1);
 
     return result;
 }
@@ -730,11 +730,11 @@ BDD big_union_CALL(lace_worker* lace, int first, int count)
 {
     if (count == 1) return next[first]->bdd;
 
-    bdd_refs_spawn(big_union_SPAWN(lace, first, count/2));
-    BDD right = bdd_refs_push(big_union_CALL(lace, first+count/2, count-count/2));
-    BDD left = bdd_refs_push(bdd_refs_sync(big_union_SYNC(lace)));
-    BDD result = sylvan_or(left, right);
-    bdd_refs_pop(2);
+    mtbdd_refs_spawn(big_union_SPAWN(lace, first, count/2));
+    BDD right = mtbdd_refs_push(big_union_CALL(lace, first+count/2, count-count/2));
+    BDD left = mtbdd_refs_push(mtbdd_refs_sync(big_union_SYNC(lace)));
+    BDD result = bdd_or(left, right);
+    mtbdd_refs_pop(2);
     return result;
 }
 
@@ -766,7 +766,7 @@ TASK(void, gc_start)
 void gc_start_CALL(lace_worker* lace)
 {
     char buf[32];
-    to_h(getCurrentRSS(), buf);
+    to_h((double)getCurrentRSS(), buf);
     INFO("(GC) Starting garbage collection... (rss: %s)\n", buf);
     return;
     (void)lace;
@@ -776,7 +776,7 @@ TASK(void, gc_end)
 void gc_end_CALL(lace_worker* lace)
 {
     char buf[32];
-    to_h(getCurrentRSS(), buf);
+    to_h((double)getCurrentRSS(), buf);
     INFO("(GC) Garbage collection done.       (rss: %s)\n", buf);
     return;
     (void)lace;
@@ -836,7 +836,7 @@ void run_CALL(lace_worker* lace)
         rel_t t;
         while (i < next_count) {
             rel_t *p = &next[i], *q = p-1;
-            if (sylvan_var((*q)->variables) > sylvan_var((*p)->variables)) {
+            if (mtbdd_getvar((*q)->variables) > mtbdd_getvar((*p)->variables)) {
                 t = *q;
                 *q = *p;
                 *p = t;
@@ -860,11 +860,11 @@ void run_CALL(lace_worker* lace)
 
     /* merge all relations to one big transition relation if requested */
     if (merge_relations) {
-        BDD newvars = sylvan_set_empty();
-        bdd_refs_pushptr(&newvars);
+        BDD newvars = mtbdd_set_empty();
+        mtbdd_refs_pushptr(&newvars);
         for (int i=totalbits-1; i>=0; i--) {
-            newvars = sylvan_set_add(newvars, i*2+1);
-            newvars = sylvan_set_add(newvars, i*2);
+            newvars = mtbdd_set_add(newvars, i*2+1);
+            newvars = mtbdd_set_add(newvars, i*2);
         }
 
         INFO("Extending transition relations to full domain.\n");
@@ -873,23 +873,23 @@ void run_CALL(lace_worker* lace)
             next[i]->variables = newvars;
         }
 
-        bdd_refs_popptr(1);
+        mtbdd_refs_popptr(1);
 
         INFO("Taking union of all transition relations.\n");
         next[0]->bdd = big_union(0, next_count);
 
         for (int i=1; i<next_count; i++) {
-            next[i]->bdd = sylvan_false;
-            next[i]->variables = sylvan_true;
+            next[i]->bdd = mtbdd_false;
+            next[i]->variables = mtbdd_true;
         }
         next_count = 1;
     }
 
     if (report_nodes) {
         INFO("BDD nodes:\n");
-        INFO("Initial states: %zu BDD nodes\n", sylvan_nodecount(states->bdd));
+        INFO("Initial states: %zu BDD nodes\n", mtbdd_nodecount(states->bdd));
         for (int i=0; i<next_count; i++) {
-            INFO("Transition %d: %zu BDD nodes\n", i, sylvan_nodecount(next[i]->bdd));
+            INFO("Transition %d: %zu BDD nodes\n", i, mtbdd_nodecount(next[i]->bdd));
         }
     }
 
@@ -920,9 +920,9 @@ void run_CALL(lace_worker* lace)
     }
 
     // Now we just have states
-    INFO("Final states: %0.0f states\n", sylvan_satcount_CALL(lace, states->bdd, states->variables));
+    INFO("Final states: %0.0f states\n", bdd_satcount_CALL(lace, states->bdd, states->variables));
     if (report_nodes) {
-        INFO("Final states: %zu BDD nodes\n", sylvan_nodecount(states->bdd));
+        INFO("Final states: %zu BDD nodes\n", mtbdd_nodecount(states->bdd));
     }
 
     set_free(states);
@@ -959,12 +959,12 @@ main(int argc, const char **argv)
     size_t max = 16LL<<30;
     if (max > getMaxMemory()) max = getMaxMemory()/10*9;
     printf("Setting Sylvan main tables memory to ");
-    print_h(max);
+    print_h((double)max);
     printf(" max.\n");
 
-    sylvan_set_limits(max, 1, 6);
+    mtbdd_set_limits(max, 1, 6);
     sylvan_init_package();
-    sylvan_init_bdd();
+    sylvan_init_mtbdd();
     sylvan_gc_hook_pregc(gc_start_CALL);
     sylvan_gc_hook_postgc(gc_end_CALL);
 

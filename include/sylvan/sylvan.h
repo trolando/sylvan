@@ -1,6 +1,7 @@
 /*
- * Copyright 2011-2016 Formal Methods and Tools, University of Twente
- * Copyright 2016-2017 Tom van Dijk, Johannes Kepler University Linz
+ * Copyright 2011-2016 Tom van Dijk, University of Twente
+ * Copyright 2016-2018 Tom van Dijk, Johannes Kepler University Linz
+ * Copyright 2019-2026 Tom van Dijk, University of Twente
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,32 +18,20 @@
 
 /**
  * Sylvan: parallel MTBDD/ListDD package.
- * Include this file.
  */
 
+#pragma once
+
 #include <sylvan/config.h>
+#include <sylvan/platform.h>
 
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h> // for FILE
-#include <stdlib.h> // for realloc
-
-#include <sylvan/platform.h>
-
-/**
- * Sylvan header files outside the namespace
- */
+#include <stdio.h>
+#include <stdlib.h>
 
 #include <lace.h>
-
-#ifdef __cplusplus
-namespace sylvan {
-#endif
-
-/**
- * Sylvan header files inside the namespace
- */
 
 #include <sylvan/common.h>
 #include <sylvan/stats.h>
@@ -52,6 +41,10 @@ namespace sylvan {
 #include <sylvan/ldd.h>
 #include <sylvan/zdd.h>
 
-#ifdef __cplusplus
-}
-#endif
+#include <sylvan/bdd_impl.h>
+#include <sylvan/mtbdd_impl.h>
+
+
+ // TODO: separate headers that declare functions (even static inline) from the implementations
+ // Should a set of variables be the same thing whether its BDD, LDD, ZDD or MTBDD?
+ // Same for a map?

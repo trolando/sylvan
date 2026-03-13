@@ -140,12 +140,14 @@ install(TARGETS sylvan
 set(SYLVAN_PUBLIC_HDRS
     ${PROJECT_SOURCE_DIR}/include/sylvan/sylvan.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/bdd.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/bdd_impl.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/cache.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/common.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/hash.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/ldd.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/mt.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/mtbdd.h
+    ${PROJECT_SOURCE_DIR}/include/sylvan/mtbdd_impl.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/platform.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/stats.h
     ${PROJECT_SOURCE_DIR}/include/sylvan/nodes.h

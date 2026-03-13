@@ -112,28 +112,28 @@ void run_CALL(lace_worker* lace)
 {
     double t1 = wctime();
 
-    BDD zero = sylvan_false;
-    BDD one = sylvan_true;
+    BDD zero = mtbdd_false;
+    BDD one = mtbdd_true;
 
     // Variables 0 ... (SIZE*SIZE-1)
 
     BDD* board = SYLVAN_ALLOCA(BDD, size*size);
-    for (size_t i=0; i<size*size; i++) {
-        board[i] = sylvan_ithvar(i);
-        sylvan_protect(board+i);
+    for (uint32_t i=0; i<size*size; i++) {
+        board[i] = mtbdd_ithvar(i);
+        mtbdd_protect(board+i);
     }
 
     BDD res = one, temp = one;
 
     // we use sylvan's "protect" marking mechanism...
     // that means we hardly need to do manual ref/deref when the variables change
-    sylvan_protect(&res);
-    sylvan_protect(&temp);
+    mtbdd_protect(&res);
+    mtbdd_protect(&temp);
 
     // Old satcount function still requires a silly variables cube
     BDD vars = one;
-    sylvan_protect(&vars);
-    for (size_t i=0; i<size*size; i++) vars = sylvan_and_CALL(lace, vars, board[i]);
+    mtbdd_protect(&vars);
+    for (size_t i=0; i<size*size; i++) vars = bdd_and_CALL(lace, vars, board[i]);
 
     INFO("Initialisation complete!\n");
 
@@ -154,11 +154,11 @@ void run_CALL(lace_worker* lace)
             temp = one;
             for (size_t k=0; k<size; k++) {
                 if (j==k) continue;
-                temp = sylvan_and_CALL(lace, temp, sylvan_not(board[i*size+k]));
+                temp = bdd_and_CALL(lace, temp, bdd_not(board[i*size+k]));
             }
-            temp = sylvan_not(sylvan_and_CALL(lace, sylvan_not(temp), board[i*size+j]));
+            temp = bdd_not(bdd_and_CALL(lace, bdd_not(temp), board[i*size+j]));
             // add cube to "res"
-            res = sylvan_and_CALL(lace, res, temp);
+            res = bdd_and_CALL(lace, res, temp);
         }
     }
 
@@ -166,7 +166,7 @@ void run_CALL(lace_worker* lace)
         printf("\n");
     }
     if (report_minterms) {
-        INFO("We have %.0f minterms\n", sylvan_satcount_CALL(lace, res, vars));
+        INFO("We have %.0f minterms\n", bdd_satcount_CALL(lace, res, vars));
     }
     if (report_minor) {
         INFO("Encoding columns... ");
@@ -185,11 +185,11 @@ void run_CALL(lace_worker* lace)
             temp = one;
             for (size_t k=0; k<size; k++) {
                 if (i==k) continue;
-                temp = sylvan_and_CALL(lace, temp, sylvan_not(board[k*size+j]));
+                temp = bdd_and_CALL(lace, temp, bdd_not(board[k*size+j]));
             }
-            temp = sylvan_not(sylvan_and_CALL(lace, sylvan_not(temp), board[i*size+j]));
+            temp = bdd_not(bdd_and_CALL(lace, bdd_not(temp), board[i*size+j]));
             // add cube to "res"
-            res = sylvan_and_CALL(lace, res, temp);
+            res = bdd_and_CALL(lace, res, temp);
         }
     }
 
@@ -197,7 +197,7 @@ void run_CALL(lace_worker* lace)
         printf("\n");
     }
     if (report_minterms) {
-        INFO("We have %.0f minterms\n", sylvan_satcount_CALL(lace, res, vars));
+        INFO("We have %.0f minterms\n", bdd_satcount_CALL(lace, res, vars));
     }
     if (report_minor) {
         INFO("Encoding rising diagonals... ");
@@ -216,12 +216,12 @@ void run_CALL(lace_worker* lace)
             for (size_t k=0; k<size; k++) {
                 // if (j+k-i >= 0 && j+k-i < size && k != i)
                 if (j+k >= i && j+k < size+i && k != i) {
-                    temp = sylvan_and_CALL(lace, temp, sylvan_not(board[k*size + (j+k-i)]));
+                    temp = bdd_and_CALL(lace, temp, bdd_not(board[k*size + (j+k-i)]));
                 }
             }
-            temp = sylvan_not(sylvan_and_CALL(lace, sylvan_not(temp), board[i*size+j]));
+            temp = bdd_not(bdd_and_CALL(lace, bdd_not(temp), board[i*size+j]));
             // add cube to "res"
-            res = sylvan_and_CALL(lace, res, temp);
+            res = bdd_and_CALL(lace, res, temp);
         }
     }
 
@@ -229,7 +229,7 @@ void run_CALL(lace_worker* lace)
         printf("\n");
     }
     if (report_minterms) {
-        INFO("We have %.0f minterms\n", sylvan_satcount_CALL(lace, res, vars));
+        INFO("We have %.0f minterms\n", bdd_satcount_CALL(lace, res, vars));
     }
     if (report_minor) {
         INFO("Encoding falling diagonals... ");
@@ -248,12 +248,12 @@ void run_CALL(lace_worker* lace)
             for (size_t k=0; k<size; k++) {
                 // if (j+i-k >= 0 && j+i-k < size && k != i)
                 if (j+i >= k && j+i < size+k && k != i) {
-                    temp = sylvan_and_CALL(lace, temp, sylvan_not(board[k*size + (j+i-k)]));
+                    temp = bdd_and_CALL(lace, temp, bdd_not(board[k*size + (j+i-k)]));
                 }
             }
-            temp = sylvan_not(sylvan_and_CALL(lace, sylvan_not(temp), board[i*size + j]));
+            temp = bdd_not(bdd_and_CALL(lace, bdd_not(temp), board[i*size + j]));
             // add cube to "res"
-            res = sylvan_and_CALL(lace, res, temp);
+            res = bdd_and_CALL(lace, res, temp);
         }
     }
 
@@ -261,7 +261,7 @@ void run_CALL(lace_worker* lace)
         printf("\n");
     }
     if (report_minterms) {
-        INFO("We have %.0f minterms\n", sylvan_satcount_CALL(lace, res, vars));
+        INFO("We have %.0f minterms\n", bdd_satcount_CALL(lace, res, vars));
     }
     if (report_minor) {
         INFO("Final computation to place a queen on every row... ");
@@ -277,9 +277,9 @@ void run_CALL(lace_worker* lace)
 
         temp = zero;
         for (size_t j=0; j<size; j++) {
-            temp = sylvan_not(sylvan_and_CALL(lace, sylvan_not(temp), sylvan_not(board[i*size+j])));
+            temp = bdd_not(bdd_and_CALL(lace, bdd_not(temp), bdd_not(board[i*size+j])));
         }
-        res = sylvan_and_CALL(lace, res, temp);
+        res = bdd_and_CALL(lace, res, temp);
     }
 
     if (report_minor) {
@@ -288,8 +288,8 @@ void run_CALL(lace_worker* lace)
 
     double t2 = wctime();
 
-    INFO("Result: NQueens(%zu) has %.0f solutions.\n", size, sylvan_satcount_CALL(lace, res, vars));
-    INFO("Result BDD has %zu nodes.\n", sylvan_nodecount(res));
+    INFO("Result: NQueens(%zu) has %.0f solutions.\n", size, bdd_satcount_CALL(lace, res, vars));
+    INFO("Result BDD has %zu nodes.\n", mtbdd_nodecount(res));
     INFO("Computation time: %f sec.\n", t2-t1);
 }
 
@@ -312,9 +312,9 @@ main(int argc, const char** argv)
     // Cache table size: 36 bytes * cache entries
     // With 2^20 nodes and 2^18 cache entries, that's 33 MB
     // With 2^24 nodes and 2^22 cache entries, that's 528 MB
-    sylvan_set_sizes(1LL<<20, 1LL<<24, 1LL<<18, 1LL<<22);
+    mtbdd_set_sizes(1LL<<20, 1LL<<24, 1LL<<18, 1LL<<22);
     sylvan_init_package();
-    sylvan_init_bdd();
+    sylvan_init_mtbdd();
 
     // Before and after garbage collection, call gc_start and gc_end
     sylvan_gc_hook_pregc(gc_start_CALL);

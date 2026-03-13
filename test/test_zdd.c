@@ -52,8 +52,8 @@ rng(int low, int high)
 
 uint8_t **enum_arrs;
 size_t enum_len;
-int enum_idx;
-int enum_max;
+size_t enum_idx;
+size_t enum_max;
 
 TASK(void, test_zdd_enum_cb, void*, ctx, uint8_t*, arr, size_t, len)
 void test_zdd_enum_cb_CALL(lace_worker* lace, void* ctx, uint8_t* arr, size_t len)
@@ -78,7 +78,7 @@ int test_zdd_eval_CALL(lace_worker* lace)
      * Create simple MTBDD domain and singleton set
      */
 
-    BDD dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4,5,6}, 7);
+    BDD dom = mtbdd_set_from_array((uint32_t[]){0,1,2,3,4,5,6}, 7);
     BDD dd = mtbdd_cube(dom, (uint8_t[]){0,0,2,2,0,2,0}, mtbdd_true);
 
     /**
@@ -126,7 +126,7 @@ int test_zdd_ithvar_CALL(lace_worker* lace)
     uint32_t var = rng(0, 0xfffff);
     ZDD a = zdd_makenode(var, zdd_false, zdd_true);
     test_assert(a == zdd_ithvar(var));
-    test_assert(a == zdd_from_mtbdd(sylvan_ithvar(var), sylvan_ithvar(var)));
+    test_assert(a == zdd_from_mtbdd(mtbdd_ithvar(var), mtbdd_ithvar(var)));
 
     return 0;
     (void)lace;
@@ -139,7 +139,7 @@ int test_zdd_from_mtbdd_CALL(lace_worker* lace)
      * Test zdd_from_mtbdd, zdd_to_mtbdd and zdd_cube with random sets
      */
 
-    BDD bdd_dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+    BDD bdd_dom = mtbdd_set_from_array((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
     ZDD zdd_dom = zdd_set_from_array((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
     test_assert(zdd_set_from_mtbdd(bdd_dom) == zdd_dom);
 
@@ -147,7 +147,7 @@ int test_zdd_from_mtbdd_CALL(lace_worker* lace)
     for (int i=0; i<count; i++) {
         uint8_t arr[8];
         for (int j=0; j<8; j++) arr[j] = (uint8_t)rng(0, 2);
-        BDD bdd_set = sylvan_cube(bdd_dom, arr);
+        BDD bdd_set = bdd_cube(bdd_dom, arr);
         ZDD zdd_set = zdd_cube(zdd_dom, arr, zdd_true);
         test_assert(zdd_from_mtbdd(bdd_set, bdd_dom) == zdd_set);
         test_assert(zdd_to_mtbdd(zdd_set, zdd_dom) == bdd_set);
@@ -172,7 +172,7 @@ int test_zdd_merge_domains_CALL(lace_worker* lace)
     test_assert(subdom1_arr != NULL);
     int nsub1 = 0;
     for (int i=0; i<nvars; i++) if (rng(0,2)) subdom1_arr[nsub1++] = i;
-    BDD bdd_subdom1 = mtbdd_fromarray(subdom1_arr, nsub1);
+    BDD bdd_subdom1 = mtbdd_set_from_array(subdom1_arr, nsub1);
     ZDD zdd_subdom1 = zdd_set_from_array(subdom1_arr, nsub1);
     test_assert(zdd_subdom1 == zdd_set_from_mtbdd(bdd_subdom1));
 
@@ -181,12 +181,12 @@ int test_zdd_merge_domains_CALL(lace_worker* lace)
     test_assert(subdom2_arr != NULL);
     int nsub2 = 0;
     for (int i=0; i<nvars; i++) if (rng(0,2)) subdom2_arr[nsub2++] = i;
-    BDD bdd_subdom2 = mtbdd_fromarray(subdom2_arr, nsub2);
+    BDD bdd_subdom2 = mtbdd_set_from_array(subdom2_arr, nsub2);
     ZDD zdd_subdom2 = zdd_set_from_array(subdom2_arr, nsub2);
     test_assert(zdd_subdom2 == zdd_set_from_mtbdd(bdd_subdom2));
 
     // combine subdomains
-    BDD bdd_subdom = sylvan_and(bdd_subdom1, bdd_subdom2);
+    BDD bdd_subdom = bdd_and(bdd_subdom1, bdd_subdom2);
     ZDD zdd_subdom = zdd_set_union(zdd_subdom1, zdd_subdom2);
     test_assert(zdd_subdom == zdd_set_from_mtbdd(bdd_subdom));
 
@@ -233,7 +233,7 @@ int test_zdd_refs_growth_CALL(lace_worker* lace)
 //     int nvars = rng(6,14);
 //     uint32_t dom_arr[nvars];
 //     for (int i=0; i<nvars; i++) dom_arr[i] = i;
-//     BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
+//     BDD bdd_dom = mtbdd_set_from_array(dom_arr, nvars);
 //     ZDD zdd_dom = zdd_from_array(dom_arr, nvars);
 //     test_assert(zdd_dom == zdd_from_mtbdd(bdd_dom, bdd_dom));
 // 
@@ -241,19 +241,19 @@ int test_zdd_refs_growth_CALL(lace_worker* lace)
 //     uint32_t subdom_arr[nvars];
 //     int nsub = 0;
 //     for (int i=0; i<nvars; i++) if (rng(0,2)) subdom_arr[nsub++] = i;
-//     BDD bdd_subdom = mtbdd_fromarray(subdom_arr, nsub);
+//     BDD bdd_subdom = mtbdd_set_from_array(subdom_arr, nsub);
 //     ZDD zdd_subdom = zdd_from_array(subdom_arr, nsub);
 //     test_assert(zdd_subdom == zdd_from_mtbdd(bdd_subdom, bdd_subdom));
 // 
 //     // Create random set on subdomain
-//     BDD bdd_set = sylvan_false;
+//     BDD bdd_set = mtbdd_false;
 //     ZDD zdd_set = zdd_false;
 //     {
 //         int count = rng(10,200);
 //         for (int i=0; i<count; i++) {
 //             uint8_t arr[nsub];
 //             for (int j=0; j<nsub; j++) arr[j] = (uint8_t)rng(0, 2);
-//             bdd_set = sylvan_union_cube(bdd_set, bdd_subdom, arr);
+//             bdd_set = bdd_union_cube(bdd_set, bdd_subdom, arr);
 //             zdd_set = zdd_union_cube(zdd_set, zdd_subdom, arr);
 //         }
 //     }
@@ -273,16 +273,16 @@ int test_zdd_union_cube_CALL(lace_worker* lace)
      * This also tests zdd_from_mtbdd...
      */
 
-    BDD bdd_dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+    BDD bdd_dom = mtbdd_set_from_array((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
     ZDD zdd_dom = zdd_set_from_array((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
 
-    BDD bdd_set = sylvan_false;
+    BDD bdd_set = mtbdd_false;
     ZDD zdd_set = zdd_false;
     int count = rng(100,1000);
     for (int i=0; i<count; i++) {
         uint8_t arr[8];
         for (int j=0; j<8; j++) arr[j] = (uint8_t)rng(0, 3);
-        bdd_set = sylvan_union_cube(bdd_set, bdd_dom, arr);
+        bdd_set = bdd_union_cube(bdd_set, bdd_dom, arr);
         zdd_set = zdd_union_cube(zdd_set, zdd_dom, arr, zdd_true);
         test_assert(zdd_from_mtbdd(bdd_set, bdd_dom) == zdd_set);
     }
@@ -299,14 +299,14 @@ int test_zdd_satcount_CALL(lace_worker* lace)
      * This also tests zdd_from_mtbdd...
      */
 
-    BDD bdd_dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+    BDD bdd_dom = mtbdd_set_from_array((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
 
     int count = rng(0,100);
-    BDD bdd_set = sylvan_false;
+    BDD bdd_set = mtbdd_false;
     for (int i=0; i<count; i++) {
         uint8_t arr[8];
         for (int j=0; j<8; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set = sylvan_union_cube(bdd_set, bdd_dom, arr);
+        bdd_set = bdd_union_cube(bdd_set, bdd_dom, arr);
     }
 
     ZDD zdd_set = zdd_from_mtbdd(bdd_set, bdd_dom);
@@ -370,20 +370,20 @@ int test_zdd_and_CALL(lace_worker* lace)
     test_assert(dom_arr != NULL);
     test_assert(arr != NULL);
     for (int i=0; i<nvars; i++) dom_arr[i] = i;
-    BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
+    BDD bdd_dom = mtbdd_set_from_array(dom_arr, nvars);
 
-    BDD bdd_set_a = sylvan_false;
-    BDD bdd_set_b = sylvan_false;
+    BDD bdd_set_a = mtbdd_false;
+    BDD bdd_set_b = mtbdd_false;
 
     int count = rng(0,100);
     for (int i=0; i<count; i++) {
         for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set_a = sylvan_union_cube(bdd_set_a, bdd_dom, arr);
+        bdd_set_a = bdd_union_cube(bdd_set_a, bdd_dom, arr);
         for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set_b = sylvan_union_cube(bdd_set_b, bdd_dom, arr);
+        bdd_set_b = bdd_union_cube(bdd_set_b, bdd_dom, arr);
     }
 
-    BDD bdd_set = sylvan_and(bdd_set_a, bdd_set_b);
+    BDD bdd_set = bdd_and(bdd_set_a, bdd_set_b);
 
     ZDD zdd_set_a = zdd_from_mtbdd(bdd_set_a, bdd_dom);
     ZDD zdd_set_b = zdd_from_mtbdd(bdd_set_b, bdd_dom);
@@ -412,20 +412,20 @@ int test_zdd_or_CALL(lace_worker* lace)
     test_assert(dom_arr != NULL);
     test_assert(arr != NULL);
     for (int i=0; i<nvars; i++) dom_arr[i] = i;
-    BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
+    BDD bdd_dom = mtbdd_set_from_array(dom_arr, nvars);
 
-    BDD bdd_set_a = sylvan_false;
-    BDD bdd_set_b = sylvan_false;
+    BDD bdd_set_a = mtbdd_false;
+    BDD bdd_set_b = mtbdd_false;
 
     int count = rng(0,100);
     for (int i=0; i<count; i++) {
         for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set_a = sylvan_union_cube(bdd_set_a, bdd_dom, arr);
+        bdd_set_a = bdd_union_cube(bdd_set_a, bdd_dom, arr);
         for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set_b = sylvan_union_cube(bdd_set_b, bdd_dom, arr);
+        bdd_set_b = bdd_union_cube(bdd_set_b, bdd_dom, arr);
     }
 
-    BDD bdd_set = sylvan_or(bdd_set_a, bdd_set_b);
+    BDD bdd_set = bdd_or(bdd_set_a, bdd_set_b);
 
     ZDD zdd_set_a = zdd_from_mtbdd(bdd_set_a, bdd_dom);
     ZDD zdd_set_b = zdd_from_mtbdd(bdd_set_b, bdd_dom);
@@ -447,21 +447,21 @@ int test_zdd_not_CALL(lace_worker* lace)
      * Test negation with random sets
      */
 
-    BDD bdd_dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+    BDD bdd_dom = mtbdd_set_from_array((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
 
     int count = rng(0,100);
-    BDD bdd_set = sylvan_false;
+    BDD bdd_set = mtbdd_false;
     for (int i=0; i<count; i++) {
         uint8_t arr[8];
         for (int j=0; j<8; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set = sylvan_union_cube(bdd_set, bdd_dom, arr);
+        bdd_set = bdd_union_cube(bdd_set, bdd_dom, arr);
     }
 
     ZDD zdd_set = zdd_from_mtbdd(bdd_set, bdd_dom);
-    ZDD zdd_set_inv = zdd_from_mtbdd(sylvan_not(bdd_set), bdd_dom);
+    ZDD zdd_set_inv = zdd_from_mtbdd(bdd_not(bdd_set), bdd_dom);
     ZDD zdd_dom = zdd_set_from_mtbdd(bdd_dom);
 
-    test_assert((size_t)mtbdd_satcount(sylvan_not(bdd_set), 8) == (size_t)zdd_satcount(zdd_set_inv));
+    test_assert((size_t)mtbdd_satcount(bdd_not(bdd_set), 8) == (size_t)zdd_satcount(zdd_set_inv));
     test_assert(zdd_set_inv == zdd_not(zdd_set, zdd_dom));
 
     return 0;
@@ -482,7 +482,7 @@ int test_zdd_ite_CALL(lace_worker* lace)
     test_assert(dom_arr != NULL);
     test_assert(arr != NULL);
     for (int i=0; i<nvars; i++) dom_arr[i] = i;
-    BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
+    BDD bdd_dom = mtbdd_set_from_array(dom_arr, nvars);
 
     // Create three random sets
     BDD set_a, set_b, set_c;
@@ -492,7 +492,7 @@ int test_zdd_ite_CALL(lace_worker* lace)
         int count = rng(0, 100);
         for (int i=0; i<count; i++) {
             for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-            set_a = sylvan_union_cube(set_a, bdd_dom, arr);
+            set_a = bdd_union_cube(set_a, bdd_dom, arr);
         }
     }
 
@@ -500,7 +500,7 @@ int test_zdd_ite_CALL(lace_worker* lace)
         int count = rng(0, 100);
         for (int i=0; i<count; i++) {
             for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-            set_b = sylvan_union_cube(set_b, bdd_dom, arr);
+            set_b = bdd_union_cube(set_b, bdd_dom, arr);
         }
     }
 
@@ -508,7 +508,7 @@ int test_zdd_ite_CALL(lace_worker* lace)
         int count = rng(0, 100);
         for (int i=0; i<count; i++) {
             for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-            set_c = sylvan_union_cube(set_c, bdd_dom, arr);
+            set_c = bdd_union_cube(set_c, bdd_dom, arr);
         }
     }
 
@@ -517,7 +517,7 @@ int test_zdd_ite_CALL(lace_worker* lace)
     ZDD zdd_set_c = zdd_from_mtbdd(set_c, bdd_dom);
     ZDD zdd_dom = zdd_set_from_mtbdd(bdd_dom);
 
-    MTBDD bdd_test_result = sylvan_ite(set_a, set_b, set_c);
+    MTBDD bdd_test_result = bdd_ite(set_a, set_b, set_c);
     ZDD zdd_test_result = zdd_ite(zdd_set_a, zdd_set_b, zdd_set_c, zdd_dom);
     test_assert(zdd_from_mtbdd(bdd_test_result, bdd_dom) == zdd_test_result);
 
@@ -546,7 +546,7 @@ int test_zdd_exists_CALL(lace_worker* lace)
     test_assert(arr != NULL);
 
     for (int i=0; i<nvars; i++) dom_arr[i] = i;
-    BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
+    BDD bdd_dom = mtbdd_set_from_array(dom_arr, nvars);
     ZDD zdd_dom = zdd_set_from_array(dom_arr, nvars);
 
     // Create random subdomain and quotiented variables (qdom)
@@ -555,23 +555,23 @@ int test_zdd_exists_CALL(lace_worker* lace)
         if (rng(0,2)) subdom_arr[nsub++] = i;
         else q_arr[nq++] = i;
     }
-    BDD bdd_subdom = mtbdd_fromarray(subdom_arr, nsub);
+    BDD bdd_subdom = mtbdd_set_from_array(subdom_arr, nsub);
     ZDD zdd_subdom = zdd_set_from_array(subdom_arr, nsub);
-    BDD bdd_qdom = mtbdd_fromarray(q_arr, nq);
+    BDD bdd_qdom = mtbdd_set_from_array(q_arr, nq);
     ZDD zdd_qdom = zdd_set_from_array(q_arr, nq);
 
     // Create random set on subdomain
-    BDD bdd_set = sylvan_false;
+    BDD bdd_set = mtbdd_false;
     ZDD zdd_set = zdd_false;
     int count = rng(10,200);
     for (int i=0; i<count; i++) {
         for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set = sylvan_union_cube(bdd_set, bdd_dom, arr);
+        bdd_set = bdd_union_cube(bdd_set, bdd_dom, arr);
         zdd_set = zdd_union_cube(zdd_set, zdd_dom, arr, zdd_true);
     }
     test_assert(zdd_set == zdd_from_mtbdd(bdd_set, bdd_dom));
 
-    BDD bdd_qset = sylvan_exists(bdd_set, bdd_qdom);
+    BDD bdd_qset = bdd_exists(bdd_set, bdd_qdom);
     ZDD zdd_test_result = zdd_exists(zdd_set, zdd_qdom);
     test_assert(zdd_test_result == zdd_from_mtbdd(bdd_qset, bdd_dom));
     ZDD zdd_test_result2 = zdd_project(zdd_set, zdd_subdom);
@@ -595,17 +595,17 @@ int test_zdd_exists_CALL(lace_worker* lace)
 //     // Create random source set
 //     uint32_t dom_arr[nvars];
 //     for (int i=0; i<nvars; i++) dom_arr[i] = i*2;
-//     BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
+//     BDD bdd_dom = mtbdd_set_from_array(dom_arr, nvars);
 //     ZDD zdd_dom = zdd_from_array(dom_arr, nvars);
 // 
-//     BDD bdd_set = sylvan_false;
+//     BDD bdd_set = mtbdd_false;
 //     ZDD zdd_set = zdd_false;
 //     {
 //         int count = rng(4,100);
 //         for (int i=0; i<count; i++) {
 //             uint8_t arr[nvars];
 //             for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-//             bdd_set = sylvan_union_cube(bdd_set, bdd_dom, arr);
+//             bdd_set = bdd_union_cube(bdd_set, bdd_dom, arr);
 //             zdd_set = zdd_union_cube(zdd_set, zdd_dom, arr);
 //         }
 //     }
@@ -624,30 +624,30 @@ int test_zdd_exists_CALL(lace_worker* lace)
 //                 vars_arr[len++] = i*2+1;
 //             }
 //         }
-//         bdd_vars = mtbdd_fromarray(vars_arr, len);
+//         bdd_vars = mtbdd_set_from_array(vars_arr, len);
 //         zdd_vars = zdd_from_array(vars_arr, len);
 //     }
 //     test_assert(zdd_vars == zdd_from_mtbdd(bdd_vars, bdd_vars));
 // 
 //     // Create random transitions
-//     BDD bdd_rel = sylvan_false;
+//     BDD bdd_rel = mtbdd_false;
 //     ZDD zdd_rel = zdd_false;
 //     {
 //         int count = rng(100, 200);
 //         for (int i=0; i<count; i++) {
 //             uint8_t arr[len];
 //             for (int j=0; j<len; j++) arr[j] = (uint8_t)rng(0, 2);
-//             bdd_rel = sylvan_union_cube(bdd_rel, bdd_vars, arr);
+//             bdd_rel = bdd_union_cube(bdd_rel, bdd_vars, arr);
 //             zdd_rel = zdd_union_cube(zdd_rel, zdd_vars, arr);
 //         }
 //     }
 //     test_assert(zdd_rel == zdd_from_mtbdd(bdd_rel, bdd_vars));
 // 
 //     // Check if sat counts are the same
-//     test_assert(sylvan_satcount(bdd_set, bdd_dom) == zdd_satcount(zdd_set, zdd_dom));
-//     test_assert(sylvan_satcount(bdd_rel, bdd_vars) == zdd_satcount(zdd_rel, zdd_vars));
+//     test_assert(bdd_satcount(bdd_set, bdd_dom) == zdd_satcount(zdd_set, zdd_dom));
+//     test_assert(bdd_satcount(bdd_rel, bdd_vars) == zdd_satcount(zdd_rel, zdd_vars));
 // 
-//     BDD bdd_succ = sylvan_relnext(bdd_set, bdd_rel, bdd_vars);
+//     BDD bdd_succ = bdd_relnext(bdd_set, bdd_rel, bdd_vars);
 //     ZDD zdd_succ = zdd_relnext(zdd_set, zdd_rel, zdd_vars, zdd_dom);
 // 
 //     test_assert(zdd_succ == zdd_from_mtbdd(bdd_succ, bdd_dom));
@@ -665,7 +665,7 @@ int test_zdd_exists_CALL(lace_worker* lace)
 //     int nvars = rng(6,14);
 //     uint32_t dom_arr[nvars];
 //     for (int i=0; i<nvars; i++) dom_arr[i] = i;
-//     BDD bdd_dom = mtbdd_fromarray(dom_arr, nvars);
+//     BDD bdd_dom = mtbdd_set_from_array(dom_arr, nvars);
 //     ZDD zdd_dom = zdd_from_array(dom_arr, nvars);
 //     test_assert(zdd_dom == zdd_from_mtbdd(bdd_dom, bdd_dom));
 // 
@@ -673,7 +673,7 @@ int test_zdd_exists_CALL(lace_worker* lace)
 //     uint32_t subdom1_arr[nvars];
 //     int nsub1 = 0;
 //     for (int i=0; i<nvars; i++) if (rng(0,2)) subdom1_arr[nsub1++] = i;
-//     BDD bdd_subdom1 = mtbdd_fromarray(subdom1_arr, nsub1);
+//     BDD bdd_subdom1 = mtbdd_set_from_array(subdom1_arr, nsub1);
 //     ZDD zdd_subdom1 = zdd_from_array(subdom1_arr, nsub1);
 //     test_assert(zdd_subdom1 == zdd_from_mtbdd(bdd_subdom1, bdd_subdom1));
 // 
@@ -681,40 +681,40 @@ int test_zdd_exists_CALL(lace_worker* lace)
 //     uint32_t subdom2_arr[nvars];
 //     int nsub2 = 0;
 //     for (int i=0; i<nvars; i++) if (rng(0,2)) subdom2_arr[nsub2++] = i;
-//     BDD bdd_subdom2 = mtbdd_fromarray(subdom2_arr, nsub2);
+//     BDD bdd_subdom2 = mtbdd_set_from_array(subdom2_arr, nsub2);
 //     ZDD zdd_subdom2 = zdd_from_array(subdom2_arr, nsub2);
 //     test_assert(zdd_subdom2 == zdd_from_mtbdd(bdd_subdom2, bdd_subdom2));
 // 
 //     // Create random set on subdomain 1
-//     BDD bdd_set1 = sylvan_false;
+//     BDD bdd_set1 = mtbdd_false;
 //     ZDD zdd_set1 = zdd_false;
 //     {
 //         int count = rng(10,200);
 //         for (int i=0; i<count; i++) {
 //             uint8_t arr[nsub1];
 //             for (int j=0; j<nsub1; j++) arr[j] = (uint8_t)rng(0, 2);
-//             bdd_set1 = sylvan_union_cube(bdd_set1, bdd_subdom1, arr);
+//             bdd_set1 = bdd_union_cube(bdd_set1, bdd_subdom1, arr);
 //             zdd_set1 = zdd_union_cube(zdd_set1, zdd_subdom1, arr);
 //         }
 //     }
 //     test_assert(zdd_set1 == zdd_from_mtbdd(bdd_set1, bdd_subdom1));
 // 
 //     // Create random set on subdomain 2
-//     BDD bdd_set2 = sylvan_false;
+//     BDD bdd_set2 = mtbdd_false;
 //     ZDD zdd_set2 = zdd_false;
 //     {
 //         int count = rng(10,200);
 //         for (int i=0; i<count; i++) {
 //             uint8_t arr[nsub2];
 //             for (int j=0; j<nsub2; j++) arr[j] = (uint8_t)rng(0, 2);
-//             bdd_set2 = sylvan_union_cube(bdd_set2, bdd_subdom2, arr);
+//             bdd_set2 = bdd_union_cube(bdd_set2, bdd_subdom2, arr);
 //             zdd_set2 = zdd_union_cube(zdd_set2, zdd_subdom2, arr);
 //         }
 //     }
 //     test_assert(zdd_set2 == zdd_from_mtbdd(bdd_set2, bdd_subdom2));
 // 
-//     BDD bdd_set = sylvan_and(bdd_set1, bdd_set2);
-//     BDD bdd_subdom = sylvan_and(bdd_subdom1, bdd_subdom2);
+//     BDD bdd_set = bdd_and(bdd_set1, bdd_set2);
+//     BDD bdd_subdom = bdd_and(bdd_subdom1, bdd_subdom2);
 //     ZDD zdd_set = zdd_and_dom(zdd_set1, zdd_subdom1, zdd_set2, zdd_subdom2);
 //     test_assert(zdd_set == zdd_from_mtbdd(bdd_set, bdd_subdom));
 // 
@@ -727,12 +727,12 @@ int test_zdd_exists_CALL(lace_worker* lace)
 TASK(int, test_zdd_isop_basic)
 int test_zdd_isop_basic_CALL(lace_worker* lace)
 {
-    BDD a = sylvan_ithvar(1);
-    BDD b = sylvan_ithvar(2);
+    BDD a = mtbdd_ithvar(1);
+    BDD b = mtbdd_ithvar(2);
 
-    BDD a_and_b = sylvan_and(a, b);
-    BDD aNot_and_b = sylvan_and(sylvan_not(a), b);
-    BDD redundant_b = sylvan_or(a_and_b, aNot_and_b);
+    BDD a_and_b = bdd_and(a, b);
+    BDD aNot_and_b = bdd_and(bdd_not(a), b);
+    BDD redundant_b = bdd_or(a_and_b, aNot_and_b);
 
     // ab + ~ab == b
 
@@ -752,7 +752,7 @@ int test_zdd_isop_basic_CALL(lace_worker* lace)
 TASK(int, test_zdd_isop_random)
 int test_zdd_isop_random_CALL(lace_worker* lace)
 {
-    BDD bdd_dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4,5,6,7,8,9,10,11}, 12);
+    BDD bdd_dom = mtbdd_set_from_array((uint32_t[]){0,1,2,3,4,5,6,7,8,9,10,11}, 12);
 
     // create a random BDD
     MTBDD bdd_set = mtbdd_false;
@@ -760,7 +760,7 @@ int test_zdd_isop_random_CALL(lace_worker* lace)
     for (int j=0; j<cubecount; j++) {
         uint8_t arr[12];
         for (int j=0; j<12; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set = sylvan_or(bdd_set, sylvan_cube(bdd_dom, arr));
+        bdd_set = bdd_or(bdd_set, bdd_cube(bdd_dom, arr));
     }
 
     // convert to ISOP cover
@@ -895,7 +895,7 @@ int main()
 	lace_start(1, 0, 0);
 
     // Simple Sylvan initialization, also initialize BDD, MTBDD and LDD support
-	sylvan_set_sizes(1LL<<26, 1LL<<26, 1LL<<20, 1LL<<20);
+	mtbdd_set_sizes(1LL<<26, 1LL<<26, 1LL<<20, 1LL<<20);
 	sylvan_init_package();
     sylvan_init_mtbdd();
     sylvan_init_zdd();

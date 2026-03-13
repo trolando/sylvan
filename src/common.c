@@ -276,7 +276,7 @@ is_power_of_two(size_t size)
 }
 
 void
-sylvan_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cachesize, size_t max_cachesize)
+mtbdd_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cachesize, size_t max_cachesize)
 {
     /* Some sanity checks */
     if (min_tablesize > max_tablesize) min_tablesize = max_tablesize;
@@ -284,12 +284,12 @@ sylvan_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cachesiz
 
     if (!is_power_of_two(min_tablesize) || !is_power_of_two(max_tablesize) ||
         !is_power_of_two(min_cachesize) || !is_power_of_two(max_cachesize)) {
-        fprintf(stderr, "sylvan_set_sizes error: parameters not powers of 2!\n");
+        fprintf(stderr, "mtbdd_set_sizes error: parameters not powers of 2!\n");
         exit(1);
     }
 
     if (max_tablesize > 0x0000040000000000) {
-        fprintf(stderr, "sylvan_set_sizes error: tablesize must be <= 42 bits!\n");
+        fprintf(stderr, "mtbdd_set_sizes error: tablesize must be <= 42 bits!\n");
         exit(1);
     }
 
@@ -300,7 +300,7 @@ sylvan_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cachesiz
 }
 
 void
-sylvan_set_limits(size_t memorycap, int table_ratio, int initial_ratio)
+mtbdd_set_limits(size_t memorycap, int table_ratio, int initial_ratio)
 {
     /* This method ONLY limits the "unique nodes table" and the "operation cache" which are the main
      * datastructures of Sylvan.
@@ -311,7 +311,7 @@ sylvan_set_limits(size_t memorycap, int table_ratio, int initial_ratio)
      * - inital_ratio to something like 10 (start with 1024x smaller tables initially)
      */
     if (table_ratio < -10 || table_ratio > 10) {
-        fprintf(stderr, "sylvan_set_limits: table_ratio unreasonable (between -10 and 10)\n");
+        fprintf(stderr, "mtbdd_set_limits: table_ratio unreasonable (between -10 and 10)\n");
         exit(1);
     }
 
@@ -325,7 +325,7 @@ sylvan_set_limits(size_t memorycap, int table_ratio, int initial_ratio)
 
     size_t cur = max_t * 24 + max_c * 36;
     if (cur > memorycap) {
-        fprintf(stderr, "sylvan_set_limits: memory cap incompatible with requested table ratio\n");
+        fprintf(stderr, "mtbdd_set_limits: memory cap incompatible with requested table ratio\n");
     }
 
     while (2*cur < memorycap && max_t < 0x0000040000000000) {
@@ -335,7 +335,7 @@ sylvan_set_limits(size_t memorycap, int table_ratio, int initial_ratio)
     }
 
     if (initial_ratio < 0) {
-        fprintf(stderr, "sylvan_set_limits: initial_ratio unreasonable (may not be negative)\n");
+        fprintf(stderr, "mtbdd_set_limits: initial_ratio unreasonable (may not be negative)\n");
         exit(1);
     }
 
@@ -359,7 +359,7 @@ void
 sylvan_init_package(void)
 {
     if (table_max == 0) {
-        fprintf(stderr, "sylvan_init_package error: table sizes not set (sylvan_set_sizes or sylvan_set_limits)!");
+        fprintf(stderr, "sylvan_init_package error: table sizes not set (mtbdd_set_sizes or mtbdd_set_limits)!");
         exit(1);
     }
 

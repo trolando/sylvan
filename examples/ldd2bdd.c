@@ -1,3 +1,7 @@
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS // suppress MSVC warnings
+#endif
+
 #include <assert.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -322,7 +326,7 @@ MTBDD bdd_from_ldd_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t firstva
 
     /* take union of current and right */
     mtbdd_refs_push(right);
-    result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(down), sylvan_not(right)));
+    result = bdd_not(bdd_and_CALL(lace, bdd_not(down), bdd_not(right)));
     mtbdd_refs_pop(2);
 
     /* put in cache */
@@ -390,7 +394,7 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t fir
 
         /* intersect read value with down result */
         mtbdd_refs_push(part);
-        down = sylvan_and_CALL(lace, part, down);
+        down = bdd_and_CALL(lace, part, down);
         mtbdd_refs_pop(2);
 
         /* sync right */
@@ -399,7 +403,7 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t fir
 
         /* take union of current and right */
         mtbdd_refs_push(right);
-        result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(down), sylvan_not(right)));
+        result = bdd_not(bdd_and_CALL(lace, bdd_not(down), bdd_not(right)));
         mtbdd_refs_pop(2);
     } else if (vmeta == 2 || vmeta == 4) {
         /* write or only-write level */
@@ -438,7 +442,7 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t fir
 
         /* take union of current and right */
         mtbdd_refs_push(right);
-        result = sylvan_or(down, right);
+        result = bdd_or(down, right);
         mtbdd_refs_pop(2);
     } else if (vmeta == 3) {
         /* only-read level */
@@ -468,7 +472,7 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t fir
 
         /* take union of current and right */
         mtbdd_refs_push(right);
-        result = sylvan_or(down, right);
+        result = bdd_or(down, right);
         mtbdd_refs_pop(2);
     } else if (vmeta == 5) {
         assert(!mddnode_getcopy(n));  // not allowed!
@@ -750,7 +754,7 @@ void run_CALL(lace_worker* lace)
             mtbdd_refs_push(new_vars);
 
             // Test if the transition is correctly converted
-            MTBDD test = sylvan_relnext(new_states, new_rel, new_vars);
+            MTBDD test = bdd_relnext(new_states, new_rel, new_vars);
             mtbdd_refs_push(test);
             MDD succ = lddmc_relprod(states->dd, next[i]->dd, next[i]->meta);
             lddmc_refs_push(succ);
@@ -806,11 +810,11 @@ main(int argc, const char **argv)
     size_t max = 16LL<<30;
     if (max > getMaxMemory()) max = getMaxMemory()/10*9;
     printf("Setting Sylvan main tables memory to ");
-    print_h(max);
+    print_h((double)max);
     printf(" max.\n");
 
     // Init Sylvan
-    sylvan_set_limits(max, 1, 10);
+    mtbdd_set_limits(max, 1, 10);
     sylvan_init_package();
     sylvan_init_ldd();
     sylvan_init_mtbdd();

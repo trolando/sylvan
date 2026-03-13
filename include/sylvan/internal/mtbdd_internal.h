@@ -175,7 +175,7 @@ mtbddnode_followhigh(const MTBDD mtbdd, const mtbddnode* node)
 }
 
 /**
- * Compatibility
+ * Compatibility TODO remove this then all hell breaks loose
  */
 
 #define node_getlow mtbddnode_followlow

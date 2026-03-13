@@ -293,7 +293,7 @@ to_h(double size, char *buf)
     const char* units[] = {"B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"};
     int i = 0;
     for (;size>1024;size/=1024) i++;
-    sprintf(buf, "%.*f %s", i, size, units[i]);
+    snprintf(buf, 32, "%.*f %s", i, size, units[i]);
     return buf;
 }
 
@@ -301,7 +301,7 @@ static void
 print_memory_usage(void)
 {
     char buf[32];
-    to_h(getCurrentRSS(), buf);
+    to_h((double)getCurrentRSS(), buf);
     INFO("Memory usage: %s\n", buf);
 }
 
@@ -461,7 +461,7 @@ void par_CALL(lace_worker* lace, set_t set)
             printf(", table: %0.1f%% full (%zu nodes)", 100.0*(double)filled/total, filled);
         }
         char buf[32];
-        to_h(getCurrentRSS(), buf);
+        to_h((double)getCurrentRSS(), buf);
         printf(", rss=%s.\n", buf);
         iteration++;
     } while (front != lddmc_false);
@@ -574,7 +574,7 @@ void bfs_CALL(lace_worker* lace, set_t set)
             printf(", table: %0.1f%% full (%zu nodes)", 100.0*(double)filled/total, filled);
         }
         char buf[32];
-        to_h(getCurrentRSS(), buf);
+        to_h((double)getCurrentRSS(), buf);
         printf(", rss=%s.\n", buf);
         iteration++;
     } while (front != lddmc_false);
@@ -663,7 +663,7 @@ void chaining_CALL(lace_worker* lace, set_t set)
 {
     MDD visited = set->dd;
     MDD front = visited;
-    MDD succ = sylvan_false;
+    MDD succ = lddmc_false;
 
     lddmc_refs_pushptr(&visited);
     lddmc_refs_pushptr(&front);
@@ -693,7 +693,7 @@ void chaining_CALL(lace_worker* lace, set_t set)
             printf(", table: %0.1f%% full (%zu nodes)", 100.0*(double)filled/total, filled);
         }
         char buf[32];
-        to_h(getCurrentRSS(), buf);
+        to_h((double)getCurrentRSS(), buf);
         printf(", rss=%s.\n", buf);
         iteration++;
     } while (front != lddmc_false);
@@ -707,7 +707,7 @@ TASK(void, gc_start)
 void gc_start_CALL(lace_worker* lace)
 {
     char buf[32];
-    to_h(getCurrentRSS(), buf);
+    to_h((double)getCurrentRSS(), buf);
     INFO("(GC) Starting garbage collection... (rss: %s)\n", buf);
     (void)lace;
 }
@@ -716,7 +716,7 @@ TASK(void, gc_end)
 void gc_end_CALL(lace_worker* lace)
 {
     char buf[32];
-    to_h(getCurrentRSS(), buf);
+    to_h((double)getCurrentRSS(), buf);
     INFO("(GC) Garbage collection done.       (rss: %s)\n", buf);
     (void)lace;
 }
@@ -892,10 +892,10 @@ main(int argc, const char **argv)
     size_t max = 16LL<<30;
     if (max > getMaxMemory()) max = getMaxMemory()/10*9;
     printf("Setting Sylvan main tables memory to ");
-    print_h(max);
+    print_h((double)max);
     printf(" max.\n");
 
-    sylvan_set_limits(max, 1, 16);
+    mtbdd_set_limits(max, 1, 16);
     sylvan_init_package();
     sylvan_init_ldd();
     sylvan_gc_hook_pregc(gc_start_CALL);

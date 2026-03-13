@@ -188,7 +188,7 @@ ZDD zdd_set_remove(ZDD set, uint32_t var);
 #define zdd_set_first(set) zdd_getvar(set)
 #define zdd_set_next(set) zdd_high(set)
 
-#define zdd_set_from_mtbdd(orig) zdd_from_mtbdd(sylvan_true, orig)
+#define zdd_set_from_mtbdd(orig) zdd_from_mtbdd(mtbdd_true, orig)
 MTBDD zdd_set_to_mtbdd(ZDD set);
 
 /**
@@ -626,7 +626,7 @@ void zdd_unprotect(ZDD* ptr);
 size_t zdd_count_protected(void);
 
 /**
- * If sylvan_set_ondead is set to a callback, then this function marks ZDDs (terminals).
+ * If mtbdd_set_ondead is set to a callback, then this function marks ZDDs (terminals).
  * When they are dead after the mark phase in garbage collection, the callback is called for marked ZDDs.
  * The ondead callback can either perform cleanup or resurrect dead terminals.
  */

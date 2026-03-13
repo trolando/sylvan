@@ -28,6 +28,7 @@
 
 #include <assert.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifndef __cplusplus
     #include <stdatomic.h>
@@ -131,12 +132,12 @@
 // __builtin_ctz and __builtin_ctzll
 #if SYLVAN_MSVC
     static inline unsigned int ctz_uint32(uint32_t x) { return _tzcnt_u32(x); }
-    static inline unsigned int ctz_uint64(uint64_t x) { return _tzcnt_u64(x); }
+    static inline unsigned int ctz_uint64(uint64_t x) { return (unsigned int)_tzcnt_u64(x); }
     static inline unsigned int clz_uint32(uint32_t x) { return __lzcnt(x); }
     static inline unsigned int clz_uint64(uint64_t x) { return (unsigned int)__lzcnt64(x); }
 #elif defined(__GNUC__) || defined(__clang__)
-    static inline unsigned int ctz_uint32(uint32_t x) { return __builtin_ctz(x); }
-    static inline unsigned int ctz_uint64(uint64_t x) { return __builtin_ctzll(x); }
+    static inline unsigned int ctz_uint32(uint32_t x) { return (unsigned int)__builtin_ctz(x); }
+    static inline unsigned int ctz_uint64(uint64_t x) { return (unsigned int)__builtin_ctzll(x); }
     static inline unsigned int clz_uint32(uint32_t x) { return (unsigned int)__builtin_clz(x); }
     static inline unsigned int clz_uint64(uint64_t x) { return (unsigned int)__builtin_clzll(x); }
 #else

@@ -1299,7 +1299,7 @@ ZDD zdd_ite_CALL(lace_worker* lace, ZDD a, ZDD b, ZDD c, ZDD dom)
 ZDD zdd_or_CALL(lace_worker* lace, ZDD a, ZDD b)
 {
     /**
-     * Trivial cases (similar to sylvan_ite)
+     * Trivial cases (similar to bdd_ite)
      */
     if (a == zdd_false) return b;
     if (b == zdd_false) return a;
@@ -2161,7 +2161,7 @@ ZDD zdd_isop_CALL(lace_worker* lace, MTBDD L, MTBDD U, MTBDD* bddresptr)
     const MTBDD Uv = minvar == U_var ? mtbddnode_followhigh(U, U_node) : U;
 
     // spawn Ud computation ahead of time...
-    mtbdd_refs_spawn(sylvan_and_SPAWN(lace, Unv, Uv));
+    mtbdd_refs_spawn(bdd_and_SPAWN(lace, Unv, Uv));
 
     /**
      * Compute Lsub0 and Lsub1
@@ -2169,9 +2169,9 @@ ZDD zdd_isop_CALL(lace_worker* lace, MTBDD L, MTBDD U, MTBDD* bddresptr)
      * Lsub1 := Lv && !Unv
      */
     MTBDD Lsub0, Lsub1;
-    mtbdd_refs_spawn(sylvan_and_SPAWN(lace, Lnv, sylvan_not(Uv)));
-    Lsub1 = mtbdd_refs_push(sylvan_and_CALL(lace, Lv, sylvan_not(Unv)));
-    Lsub0 = mtbdd_refs_push(mtbdd_refs_sync(sylvan_and_SYNC(lace)));
+    mtbdd_refs_spawn(bdd_and_SPAWN(lace, Lnv, bdd_not(Uv)));
+    Lsub1 = mtbdd_refs_push(bdd_and_CALL(lace, Lv, bdd_not(Unv)));
+    Lsub0 = mtbdd_refs_push(mtbdd_refs_sync(bdd_and_SYNC(lace)));
 
     /**
      * Compute recursive results for sub0 and sub1
@@ -2192,11 +2192,11 @@ ZDD zdd_isop_CALL(lace_worker* lace, MTBDD L, MTBDD U, MTBDD* bddresptr)
      * Ld = Lsuper0 || Lsuper1
      * Ud = Usuper0 && Usuper1  (computation spawned ahead of time)
      */
-    mtbdd_refs_spawn(sylvan_and_SPAWN(lace, Lnv, sylvan_not(I0)));
-    MTBDD Lsuper1 = mtbdd_refs_push(sylvan_and_CALL(lace, Lv, sylvan_not(I1)));
-    MTBDD Lsuper0 = mtbdd_refs_push(mtbdd_refs_sync(sylvan_and_SYNC(lace)));
-    MTBDD Ld = mtbdd_refs_push(sylvan_or(Lsuper0, Lsuper1));
-    MTBDD Ud = mtbdd_refs_push(mtbdd_refs_sync(sylvan_and_SYNC(lace)));
+    mtbdd_refs_spawn(bdd_and_SPAWN(lace, Lnv, bdd_not(I0)));
+    MTBDD Lsuper1 = mtbdd_refs_push(bdd_and_CALL(lace, Lv, bdd_not(I1)));
+    MTBDD Lsuper0 = mtbdd_refs_push(mtbdd_refs_sync(bdd_and_SYNC(lace)));
+    MTBDD Ld = mtbdd_refs_push(bdd_or(Lsuper0, Lsuper1));
+    MTBDD Ud = mtbdd_refs_push(mtbdd_refs_sync(bdd_and_SYNC(lace)));
 
     /**
      * Compute recursive result for dontcare
@@ -2210,7 +2210,7 @@ ZDD zdd_isop_CALL(lace_worker* lace, MTBDD L, MTBDD U, MTBDD* bddresptr)
      * Now we have: I0, I1, ID and Z0, Z1, Zd
      */
     MTBDD x = mtbdd_refs_push(mtbdd_makenode(minvar, I0, I1));
-    bddres = sylvan_or(x, Id);
+    bddres = bdd_or(x, Id);
     mtbdd_refs_pop(1); // x
     mtbdd_refs_popptr(3); // Id, I0, I1
     mtbdd_refs_push(bddres);
@@ -2305,7 +2305,7 @@ MTBDD zdd_cover_to_bdd_CALL(lace_worker* lace, ZDD zdd)
     mtbdd_refs_pop(2); // Fnv, Fpv
     mtbdd_refs_push(result);
 
-    result = sylvan_not(sylvan_and_CALL(lace, sylvan_not(result), sylvan_not(Fdc)));
+    result = bdd_not(bdd_and_CALL(lace, bdd_not(result), bdd_not(Fdc)));
     mtbdd_refs_pop(2); // Fdc, previous result
 
     if (cache_put3(CACHE_ZDD_COVER_TO_BDD, zdd, 0, 0, result)) {

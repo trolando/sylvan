@@ -149,7 +149,7 @@ refs_resize(refs_table_t *tbl)
     tbl->refs_control = 0;
 
     // unmap old table
-    sylvan_free_aligned(tbl->refs_resize_table, tbl->refs_resize_size * sizeof(uint64_t));
+    sylvan_free_aligned((void*)tbl->refs_resize_table, tbl->refs_resize_size * sizeof(uint64_t));
 }
 
 /* Enter refs_modify */
@@ -319,7 +319,7 @@ refs_create(refs_table_t *tbl, size_t _refs_size)
 void
 refs_free(refs_table_t *tbl)
 {
-    sylvan_free_aligned(tbl->refs_table, tbl->refs_size * sizeof(uint64_t));
+    sylvan_free_aligned((void*)tbl->refs_table, tbl->refs_size * sizeof(uint64_t));
 }
 
 /**
@@ -432,7 +432,7 @@ protect_resize(refs_table_t *tbl)
     tbl->refs_control = 0;
 
     // unmap old table
-    sylvan_free_aligned(tbl->refs_resize_table, tbl->refs_resize_size * sizeof(uint64_t));
+    sylvan_free_aligned((void*)tbl->refs_resize_table, tbl->refs_resize_size * sizeof(uint64_t));
 }
 
 static inline void
@@ -595,6 +595,6 @@ protect_create(refs_table_t *tbl, size_t _refs_size)
 void
 protect_free(refs_table_t *tbl)
 {
-    sylvan_free_aligned(tbl->refs_table, tbl->refs_size * sizeof(uint64_t));
+    sylvan_free_aligned((void*)tbl->refs_table, tbl->refs_size * sizeof(uint64_t));
     tbl->refs_table = 0;
 }

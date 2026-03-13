@@ -33,7 +33,7 @@ extern "C" {
  * Initialize the Sylvan parallel decision diagrams package.
  *
  * First, Sylvan must know how big the nodes table and cache may be.
- * Either use sylvan_set_sizes to explicitly set the table sizes, or use sylvan_set_limits
+ * Either use mtbdd_set_sizes to explicitly set the table sizes, or use mtbdd_set_limits
  * to let Sylvan compute the sizes for you.
  *
  * Then, call sylvan_init_package. This allocates the tables and other support structures.
@@ -56,7 +56,7 @@ void sylvan_init_package(void);
  * The minimum size is the size initially used.
  * The maximum size is the size allocated in virtual memory.
  */
-void sylvan_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cachesize, size_t max_cachesize);
+void mtbdd_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cachesize, size_t max_cachesize);
 
 /**
  * Implicitly compute and set the sizes of the nodes table and the operation cache.
@@ -72,7 +72,7 @@ void sylvan_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cac
  * The parameter initial_ratio controls how much smaller the initial table sizes are.
  * For values of 1, 2, 3, 4 the tables will initially be 2, 4, 8, 16 times smaller.
  */
-void sylvan_set_limits(size_t memory_cap, int table_ratio, int initial_ratio);
+void mtbdd_set_limits(size_t memory_cap, int table_ratio, int initial_ratio);
 
 /**
  * Frees all Sylvan data (also calls the quit() functions of BDD/LDD parts)
@@ -203,7 +203,7 @@ void sylvan_gc_add_mark(gc_hook_cb mark_cb);
  * Always double size on gc() until maximum reached.
  * Use sylvan_gc_hook_main() to set this heuristic.
  */
-VOID_TASK_0(sylvan_gc_aggressive_resize);
+static inline void sylvan_gc_aggressive_resize(void);
 
 /**
  * One of the hooks for resizing behavior.
@@ -211,8 +211,10 @@ VOID_TASK_0(sylvan_gc_aggressive_resize);
  * Double size on gc() whenever >50% is used.
  * Use sylvan_gc_hook_main() to set this heuristic.
  */
-VOID_TASK_0(sylvan_gc_normal_resize);
+static inline void sylvan_gc_normal_resize(void);
 
+VOID_TASK_0(sylvan_gc_aggressive_resize);
+VOID_TASK_0(sylvan_gc_normal_resize);
 VOID_TASK_2(sylvan_table_usage, size_t*, filled, size_t*, total);
 VOID_TASK_0(sylvan_gc);
 VOID_TASK_0(sylvan_clear_cache);

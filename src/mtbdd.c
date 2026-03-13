@@ -2312,7 +2312,7 @@ MTBDD mtbdd_support_CALL(lace_worker* lace, MTBDD dd)
     MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(mtbdd_support_SYNC(lace)));
 
     /* Compute result */
-    result = mtbdd_makenode(mtbddnode_getvariable(n), mtbdd_false, sylvan_and_CALL(lace, low, high));
+    result = mtbdd_makenode(mtbddnode_getvariable(n), mtbdd_false, bdd_and_CALL(lace, low, high));
     mtbdd_refs_pop(2);
 
     /* Write to cache */
@@ -3443,7 +3443,7 @@ mtbdd_set_from_array(uint32_t* arr, size_t length)
 {
     if (length == 0) return mtbdd_true;
     else if (length == 1) return mtbdd_makenode(*arr, mtbdd_false, mtbdd_true);
-    else return mtbdd_set_add(mtbdd_fromarray(arr+1, length-1), *arr);
+    else return mtbdd_set_add(mtbdd_set_from_array(arr+1, length-1), *arr);
 }
 
 /**

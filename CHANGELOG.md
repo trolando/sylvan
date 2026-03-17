@@ -1,6 +1,14 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [1.9.4] - 2026-03-17
+### Changed
+- Updated Lace to version 1.5.3
+
+### Fixed
+- Removed a few compiler warnings and build errors
+
+
 ## [1.9.3] - 2026-02-25
 ### Changed
 - By default, Sylvan now sets a default build type (Release) when it is the top project

@@ -794,6 +794,7 @@ main(int argc, char **argv)
     // Report Sylvan statistics (if SYLVAN_STATS is set)
     if (verbose) sylvan_stats_report(stdout);
 
+    sylvan_quit();
     lace_stop();
 
     return 0;

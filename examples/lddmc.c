@@ -182,6 +182,15 @@ set_save(FILE* f, set_t set)
 }
 
 /**
+ * Free the memory associated with a set
+ */
+static void
+set_free(set_t set)
+{
+    free(set);
+}
+
+/**
  * Load a relation from file
  */
 #define rel_load_proj(f) RUN(rel_load_proj, f)
@@ -838,6 +847,9 @@ TASK_0(int, run)
         fclose(f);
     }
 
+    set_free(states);
+    set_free(initial);
+
     return 0;
 }
 
@@ -887,5 +899,6 @@ main(int argc, char **argv)
     print_memory_usage();
     sylvan_stats_report(stdout);
 
+    sylvan_quit();
     lace_stop();
 }

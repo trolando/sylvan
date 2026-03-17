@@ -221,6 +221,11 @@ TASK_1(set_t, set_load, FILE*, f)
     return set;
 }
 
+void set_free(set_t set)
+{
+    free(set);
+}
+
 /**
  * Load a relation from file
  * This part just reads the r_k, w_k, r_proj and w_proj variables.
@@ -909,6 +914,8 @@ VOID_TASK_0(run)
     if (report_nodes) {
         INFO("Final states: %zu BDD nodes\n", sylvan_nodecount(states->bdd));
     }
+
+    set_free(states);
 }
 
 int
@@ -957,5 +964,6 @@ main(int argc, char **argv)
 
     sylvan_stats_report(stdout);
 
+    sylvan_quit();
     lace_stop();
 }

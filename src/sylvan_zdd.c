@@ -361,7 +361,7 @@ zdd_refs_sync(ZDD result)
 static int zdd_initialized = 0;
 
 static void
-zdd_quit()
+zdd_quit(void)
 {
     if (zdd_protected_created) {
         protect_free(&zdd_protected);
@@ -372,7 +372,7 @@ zdd_quit()
 }
 
 void
-sylvan_init_zdd()
+sylvan_init_zdd(void)
 {
     sylvan_init_mt();
 

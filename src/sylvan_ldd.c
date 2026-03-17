@@ -323,13 +323,13 @@ VOID_TASK_DECL_0(lddmc_gc_mark_serialize);
  */
 
 static void
-lddmc_quit()
+lddmc_quit(void)
 {
     refs_free(&lddmc_refs);
 }
 
 void
-sylvan_init_ldd()
+sylvan_init_ldd(void)
 {
     sylvan_register_quit(lddmc_quit);
     sylvan_gc_add_mark(TASK(lddmc_gc_mark_external_refs));

@@ -213,13 +213,13 @@ static inline void sylvan_gc_aggressive_resize(void);
  */
 static inline void sylvan_gc_normal_resize(void);
 
-TASK(void, sylvan_gc_aggressive_resize);
-TASK(void, sylvan_gc_normal_resize);
-TASK(void, sylvan_table_usage, size_t*, filled, size_t*, total);
-TASK(void, sylvan_gc);
-TASK(void, sylvan_clear_cache);
-TASK(void, sylvan_clear_and_mark);
-TASK(void, sylvan_rehash_all);
+TASK(void, sylvan_gc_aggressive_resize)
+TASK(void, sylvan_gc_normal_resize)
+TASK(void, sylvan_table_usage, size_t*, filled, size_t*, total)
+TASK(void, sylvan_gc)
+TASK(void, sylvan_clear_cache)
+TASK(void, sylvan_clear_and_mark)
+TASK(void, sylvan_rehash_all)
 
 #ifdef __cplusplus
 }

@@ -149,11 +149,7 @@ MTBDD mtbdd_makeleaf(uint32_t type, uint64_t value);
  * <var> is a 24-bit integer.
  * Please note that this does NOT check variable ordering!
  */
-MTBDD _mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high);
-static inline MTBDD mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high)
-{
-    return low == high ? low : _mtbdd_makenode(var, low, high);
-}
+static inline MTBDD mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high);
 
 /**
  * Return 1 if the MTBDD is a terminal, or 0 otherwise.
@@ -322,7 +318,7 @@ static inline MTBDD mtbdd_set_union(MTBDD set1, MTBDD set2)
 /**
  * Remove variables in <set2> from <set1>
  */
-TASK(MTBDD, mtbdd_set_minus, MTBDD, set1, MTBDD, set2)
+static inline MTBDD mtbdd_set_minus(MTBDD set1, MTBDD set2);
 
 /**
  * Return 1 if <set> contains <var>, 0 otherwise.

@@ -44,6 +44,7 @@ extern "C" {
 #endif /* __cplusplus */
 
 
+MTBDD _mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high);
 static inline MTBDD mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high)
 {
     return low == high ? low : _mtbdd_makenode(var, low, high);

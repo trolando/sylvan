@@ -149,9 +149,9 @@ static inline void sylvan_stats_snapshot(sylvan_stats_t* target);
  */
 void sylvan_stats_report(FILE* target);
 
-TASK(void, sylvan_stats_init);
-TASK(void, sylvan_stats_reset);
-TASK(void, sylvan_stats_snapshot, sylvan_stats_t*, target);
+TASK(void, sylvan_stats_init)
+TASK(void, sylvan_stats_reset)
+TASK(void, sylvan_stats_snapshot, sylvan_stats_t*, target)
 
 #if SYLVAN_STATS
 

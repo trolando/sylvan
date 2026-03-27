@@ -203,7 +203,7 @@ void sylvan_gc_add_mark(gc_hook_cb mark_cb);
  * Always double size on gc() until maximum reached.
  * Use sylvan_gc_hook_main() to set this heuristic.
  */
-VOID_TASK_0(sylvan_gc_aggressive_resize);
+TASK(void, sylvan_gc_aggressive_resize);
 
 /**
  * One of the hooks for resizing behavior.
@@ -211,13 +211,13 @@ VOID_TASK_0(sylvan_gc_aggressive_resize);
  * Double size on gc() whenever >50% is used.
  * Use sylvan_gc_hook_main() to set this heuristic.
  */
-VOID_TASK_0(sylvan_gc_normal_resize);
+TASK(void, sylvan_gc_normal_resize);
 
-VOID_TASK_2(sylvan_table_usage, size_t*, filled, size_t*, total);
-VOID_TASK_0(sylvan_gc);
-VOID_TASK_0(sylvan_clear_cache);
-VOID_TASK_0(sylvan_clear_and_mark);
-VOID_TASK_0(sylvan_rehash_all);
+TASK(void, sylvan_table_usage, size_t*, filled, size_t*, total);
+TASK(void, sylvan_gc);
+TASK(void, sylvan_clear_cache);
+TASK(void, sylvan_clear_and_mark);
+TASK(void, sylvan_rehash_all);
 
 #ifdef __cplusplus
 }

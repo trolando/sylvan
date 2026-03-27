@@ -2005,7 +2005,7 @@ void sylvan_enum_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, enum_cb cb, vo
     }
 }
 
-VOID_TASK_5(sylvan_enum_par_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context, struct bdd_path*, path)
+TASK(void, sylvan_enum_par_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context, struct bdd_path*, path)
 
 void sylvan_enum_par_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, enum_cb cb, void* context, struct bdd_path* path)
 {
@@ -2067,7 +2067,7 @@ void sylvan_enum_par_CALL(lace_worker* lace, BDD bdd, BDDSET vars, enum_cb cb, v
     sylvan_enum_par_do_CALL(lace, bdd, vars, cb, context, 0);
 }
 
-TASK_5(BDD, sylvan_collect_do, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, void*, context, struct bdd_path*, path)
+TASK(BDD, sylvan_collect_do, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, void*, context, struct bdd_path*, path)
 
 BDD sylvan_collect_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, sylvan_collect_cb cb, void* context, struct bdd_path* path)
 {

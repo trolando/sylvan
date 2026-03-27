@@ -154,7 +154,7 @@ mtbdd_count_protected()
 }
 
 /* Called during garbage collection */
-VOID_TASK_0(mtbdd_gc_mark_external_refs)
+TASK(void, mtbdd_gc_mark_external_refs)
 
 void mtbdd_gc_mark_external_refs_CALL(lace_worker* lace)
 {
@@ -170,7 +170,7 @@ void mtbdd_gc_mark_external_refs_CALL(lace_worker* lace)
     }
 }
 
-VOID_TASK_0(mtbdd_gc_mark_protected)
+TASK(void, mtbdd_gc_mark_protected)
 
 void mtbdd_gc_mark_protected_CALL(lace_worker* lace)
 {
@@ -203,7 +203,7 @@ typedef struct mtbdd_refs_internal
 
 DECLARE_THREAD_LOCAL(mtbdd_refs_key, mtbdd_refs_internal_t);
 
-VOID_TASK_2(mtbdd_refs_mark_p_par, const MTBDD**, begin, size_t, count)
+TASK(void, mtbdd_refs_mark_p_par, const MTBDD**, begin, size_t, count)
 
 void mtbdd_refs_mark_p_par_CALL(lace_worker* lace, const MTBDD** begin, size_t count)
 {
@@ -219,7 +219,7 @@ void mtbdd_refs_mark_p_par_CALL(lace_worker* lace, const MTBDD** begin, size_t c
     }
 }
 
-VOID_TASK_2(mtbdd_refs_mark_r_par, MTBDD*, begin, size_t, count)
+TASK(void, mtbdd_refs_mark_r_par, MTBDD*, begin, size_t, count)
 
 void mtbdd_refs_mark_r_par_CALL(lace_worker* lace, MTBDD* begin, size_t count)
 {
@@ -235,7 +235,7 @@ void mtbdd_refs_mark_r_par_CALL(lace_worker* lace, MTBDD* begin, size_t count)
     }
 }
 
-VOID_TASK_2(mtbdd_refs_mark_s_par, mtbdd_refs_task_t, begin, size_t, count)
+TASK(void, mtbdd_refs_mark_s_par, mtbdd_refs_task_t, begin, size_t, count)
 void mtbdd_refs_mark_s_par_CALL(lace_worker* lace, mtbdd_refs_task_t begin, size_t count)
 {
     if (count < 32) {
@@ -256,7 +256,7 @@ void mtbdd_refs_mark_s_par_CALL(lace_worker* lace, mtbdd_refs_task_t begin, size
     }
 }
 
-VOID_TASK_0(mtbdd_refs_mark_task)
+TASK(void, mtbdd_refs_mark_task)
 
 void mtbdd_refs_mark_task_CALL(lace_worker* lace)
 {
@@ -268,7 +268,7 @@ void mtbdd_refs_mark_task_CALL(lace_worker* lace)
     mtbdd_refs_mark_p_par_SYNC(lace);
 }
 
-VOID_TASK_0(mtbdd_refs_mark)
+TASK(void, mtbdd_refs_mark)
 
 void mtbdd_refs_mark_CALL(lace_worker* lace)
 {
@@ -289,13 +289,13 @@ mtbdd_refs_init_key(void)
     SET_THREAD_LOCAL(mtbdd_refs_key, s);
 }
 
-VOID_TASK_0(mtbdd_refs_init_task)
+TASK(void, mtbdd_refs_init_task)
 
 void mtbdd_refs_init_task_CALL(lace_worker* lace){
     mtbdd_refs_init_key();
 }
 
-VOID_TASK_0(mtbdd_refs_init)
+TASK(void, mtbdd_refs_init)
 
 void mtbdd_refs_init_CALL(lace_worker* lace)
 {
@@ -931,7 +931,7 @@ MTBDD mtbdd_uapply_CALL(lace_worker* lace, MTBDD dd, mtbdd_uapply_op op, size_t 
     return result;
 }
 
-TASK_2(MTBDD, mtbdd_uop_times_uint, MTBDD, a, size_t, k)
+TASK(MTBDD, mtbdd_uop_times_uint, MTBDD, a, size_t, k)
 
 MTBDD mtbdd_uop_times_uint_CALL(lace_worker* lace, MTBDD a, size_t k)
 {
@@ -962,7 +962,7 @@ MTBDD mtbdd_uop_times_uint_CALL(lace_worker* lace, MTBDD a, size_t k)
     return mtbdd_invalid;
 }
 
-TASK_2(MTBDD, mtbdd_uop_pow_uint, MTBDD, a, size_t, k)
+TASK(MTBDD, mtbdd_uop_pow_uint, MTBDD, a, size_t, k)
 
 MTBDD mtbdd_uop_pow_uint_CALL(lace_worker* lace, MTBDD a, size_t k)
 {
@@ -1591,7 +1591,7 @@ MTBDD mtbdd_strict_threshold_double_CALL(lace_worker* lace, MTBDD dd, double d)
 /**
  * Compare two Double MTBDDs, returns Boolean True if they are equal within some value epsilon
  */
-TASK_4(MTBDD, mtbdd_equal_norm_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, shortcircuit)
+TASK(MTBDD, mtbdd_equal_norm_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, shortcircuit)
 
 MTBDD mtbdd_equal_norm_d2_CALL(lace_worker* lace, MTBDD a, MTBDD b, size_t svalue, int* shortcircuit)
 {
@@ -1674,7 +1674,7 @@ MTBDD mtbdd_equal_norm_d_CALL(lace_worker* lace, MTBDD a, MTBDD b, double d)
  * Compare two Double MTBDDs, returns Boolean True if they are equal within some value epsilon
  * This version computes the relative difference vs the value in a.
  */
-TASK_4(MTBDD, mtbdd_equal_norm_rel_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, shortcircuit)
+TASK(MTBDD, mtbdd_equal_norm_rel_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, shortcircuit)
 MTBDD mtbdd_equal_norm_rel_d2_CALL(lace_worker* lace, MTBDD a, MTBDD b, size_t svalue, int* shortcircuit)
 {
     /* Check short circuit */
@@ -1751,7 +1751,7 @@ MTBDD mtbdd_equal_norm_rel_d_CALL(lace_worker* lace, MTBDD a, MTBDD b, double d)
  * For two MTBDDs a, b, return mtbdd_true if all common assignments a(s) <= b(s), mtbdd_false otherwise.
  * For domains not in a / b, assume True.
  */
-TASK_3(MTBDD, mtbdd_leq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+TASK(MTBDD, mtbdd_leq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
 MTBDD mtbdd_leq_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
 {
@@ -1849,7 +1849,7 @@ MTBDD mtbdd_leq_CALL(lace_worker* lace, MTBDD a, MTBDD b)
  * For two MTBDDs a, b, return mtbdd_true if all common assignments a(s) < b(s), mtbdd_false otherwise.
  * For domains not in a / b, assume True.
  */
-TASK_3(MTBDD, mtbdd_less_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+TASK(MTBDD, mtbdd_less_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
 MTBDD mtbdd_less_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
 {
@@ -1947,7 +1947,7 @@ MTBDD mtbdd_less_CALL(lace_worker* lace, MTBDD a, MTBDD b)
  * For two MTBDDs a, b, return mtbdd_true if all common assignments a(s) >= b(s), mtbdd_false otherwise.
  * For domains not in a / b, assume True.
  */
-TASK_3(MTBDD, mtbdd_geq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+TASK(MTBDD, mtbdd_geq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
 MTBDD mtbdd_geq_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
 {
@@ -2045,7 +2045,7 @@ MTBDD mtbdd_geq_CALL(lace_worker* lace, MTBDD a, MTBDD b)
  * For two MTBDDs a, b, return mtbdd_true if all common assignments a(s) > b(s), mtbdd_false otherwise.
  * For domains not in a / b, assume True.
  */
-TASK_3(MTBDD, mtbdd_greater_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+TASK(MTBDD, mtbdd_greater_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
 MTBDD mtbdd_greater_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
 {
@@ -2767,10 +2767,10 @@ mtbdd_enum_all_next(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_c
  * Given a MTBDD <dd>, call <cb> with context <context> for every unique path in <dd> ending in leaf <leaf>.
  *
  * Usage:
- * VOID_TASK_3(cb, mtbdd_enum_trace_t, trace, MTBDD, leaf, void*, context) { ... do something ... }
+ * TASK(void, cb, mtbdd_enum_trace_t, trace, MTBDD, leaf, void*, context) { ... do something ... }
  * mtbdd_enum_par(dd, cb, context);
  */
-VOID_TASK_4(mtbdd_enum_par_do, MTBDD, dd, mtbdd_enum_cb, cb, void*, context, mtbdd_enum_trace_t, trace)
+TASK(void, mtbdd_enum_par_do, MTBDD, dd, mtbdd_enum_cb, cb, void*, context, mtbdd_enum_trace_t, trace)
 
 void mtbdd_enum_par_do_CALL(lace_worker* lace, MTBDD dd, mtbdd_enum_cb cb, void* context, mtbdd_enum_trace_t trace)
 {
@@ -2801,7 +2801,7 @@ void mtbdd_enum_par_CALL(lace_worker* lace, MTBDD dd, mtbdd_enum_cb cb, void* co
  * All variables X in <vars> must appear before all variables in f and g(f).
  *
  * Usage:
- * TASK_2(MTBDD, g, MTBDD, in) { ... return g of <in> ... }
+ * TASK(MTBDD, g, MTBDD, in) { ... return g of <in> ... }
  * MTBDD x_vars = ...;  // the cube of variables x
  * MTBDD result = mtbdd_eval_compose(dd, x_vars, TASK(g));
  */
@@ -2933,7 +2933,7 @@ mtbdd_nodecount_more(const MTBDD *mtbdds, size_t count)
     return result;
 }
 
-TASK_2(int, mtbdd_test_isvalid_rec, MTBDD, dd, uint32_t, parent_var)
+TASK(int, mtbdd_test_isvalid_rec, MTBDD, dd, uint32_t, parent_var)
 
 int mtbdd_test_isvalid_rec_CALL(lace_worker* lace, MTBDD dd, uint32_t parent_var)
 {

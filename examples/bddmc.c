@@ -177,7 +177,7 @@ print_memory_usage(void)
  * - int[k] proj : k integers specifying the variables of the projection
  * - MTBDD[1] BDD (mtbdd binary format)
  */
-TASK_1(set_t, set_load, FILE*, f)
+TASK(set_t, set_load, FILE*, f)
 
 set_t set_load_CALL(lace_worker* lace, FILE* f)
 {
@@ -227,7 +227,7 @@ set_t set_load_CALL(lace_worker* lace, FILE* f)
  * Load a relation from file
  * This part just reads the r_k, w_k, r_proj and w_proj variables.
  */
-TASK_1(rel_t, rel_load_proj, FILE*, f)
+TASK(rel_t, rel_load_proj, FILE*, f)
 rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
 {
     rel_t rel = (rel_t)malloc(sizeof(struct relation));
@@ -294,7 +294,7 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
  * Load a relation from file
  * This part just reads the bdd of the relation
  */
-VOID_TASK_2(rel_load, rel_t, rel, FILE*, f)
+TASK(void, rel_load, rel_t, rel, FILE*, f)
 void rel_load_CALL(lace_worker* lace, rel_t rel, FILE* f)
 {
     if (mtbdd_reader_frombinary(f, &rel->bdd, 1) != 0) Abort("Invalid file format!\n");
@@ -306,7 +306,7 @@ void rel_load_CALL(lace_worker* lace, rel_t rel, FILE* f)
  * Print a single example of a set to stdout
  * Assumption: the example is a full vector and variables contains all state variables...
  */
-VOID_TASK_2(print_example, BDD, example, BDDSET, variables)
+TASK(void, print_example, BDD, example, BDDSET, variables)
 void print_example_CALL(lace_worker* lace, BDD example, BDDSET variables)
 {
     uint8_t str[totalbits];
@@ -334,7 +334,7 @@ void print_example_CALL(lace_worker* lace, BDD example, BDDSET variables)
  * Implementation of (parallel) saturation
  * (assumes relations are ordered on first variable)
  */
-TASK_2(BDD, go_sat, BDD, set, int, idx)
+TASK(BDD, go_sat, BDD, set, int, idx)
 BDD go_sat_CALL(lace_worker* lace, BDD set, int idx)
 {
     /* Terminal cases */
@@ -400,7 +400,7 @@ BDD go_sat_CALL(lace_worker* lace, BDD set, int idx)
 /**
  * Wrapper for the Saturation strategy
  */
-VOID_TASK_1(sat, set_t, set)
+TASK(void, sat, set_t, set)
 void sat_CALL(lace_worker* lace, set_t set)
 {
     set->bdd = go_sat_CALL(lace, set->bdd, 0);
@@ -410,7 +410,7 @@ void sat_CALL(lace_worker* lace, set_t set)
  * Implement parallel strategy (that performs the relnext operations in parallel)
  * This function does one level...
  */
-TASK_5(BDD, go_par, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, deadlocks)
+TASK(BDD, go_par, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, deadlocks)
 BDD go_par_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len, BDD* deadlocks)
 {
     if (len == 1) {
@@ -461,7 +461,7 @@ BDD go_par_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
 /**
  * Implementation of the PAR strategy
  */
-VOID_TASK_1(par, set_t, set)
+TASK(void, par, set_t, set)
 void par_CALL(lace_worker* lace, set_t set)
 {
     BDD visited = set->bdd;
@@ -527,7 +527,7 @@ void par_CALL(lace_worker* lace, set_t set)
  * Implement sequential strategy (that performs the relnext operations one by one)
  * This function does one level...
  */
-TASK_5(BDD, go_bfs, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, deadlocks)
+TASK(BDD, go_bfs, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, deadlocks)
 BDD go_bfs_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len, BDD* deadlocks)
 {
     if (len == 1) {
@@ -579,7 +579,7 @@ BDD go_bfs_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
 /**
  * Implementation of the BFS strategy
  */
-VOID_TASK_1(bfs, set_t, set)
+TASK(void, bfs, set_t, set)
 void bfs_CALL(lace_worker* lace, set_t set)
 {
     BDD visited = set->bdd;
@@ -644,7 +644,7 @@ void bfs_CALL(lace_worker* lace, set_t set)
 /**
  * Implementation of the Chaining strategy (does not support deadlock detection)
  */
-VOID_TASK_1(chaining, set_t, set)
+TASK(void, chaining, set_t, set)
 void chaining_CALL(lace_worker* lace, set_t set)
 {
     BDD visited = set->bdd;
@@ -696,7 +696,7 @@ void chaining_CALL(lace_worker* lace, set_t set)
 /**
  * Extend a transition relation to a larger domain (using s=s')
  */
-TASK_2(BDD, extend_relation, MTBDD, relation, MTBDD, variables)
+TASK(BDD, extend_relation, MTBDD, relation, MTBDD, variables)
 BDD extend_relation_CALL(lace_worker* lace, MTBDD relation, MTBDD variables)
 {
     /* first determine which state BDD variables are in rel */
@@ -731,7 +731,7 @@ BDD extend_relation_CALL(lace_worker* lace, MTBDD relation, MTBDD variables)
 /**
  * Compute \BigUnion ( sets[i] )
  */
-TASK_2(BDD, big_union, int, first, int, count)
+TASK(BDD, big_union, int, first, int, count)
 BDD big_union_CALL(lace_worker* lace, int first, int count)
 {
     if (count == 1) return next[first]->bdd;
@@ -768,7 +768,7 @@ print_matrix_row(rel_t rel)
     }
 }
 
-VOID_TASK_0(gc_start)
+TASK(void, gc_start)
 void gc_start_CALL(lace_worker* lace)
 {
     char buf[32];
@@ -778,7 +778,7 @@ void gc_start_CALL(lace_worker* lace)
     (void)lace;
 }
 
-VOID_TASK_0(gc_end)
+TASK(void, gc_end)
 void gc_end_CALL(lace_worker* lace)
 {
     char buf[32];
@@ -797,7 +797,7 @@ print_h(double size)
     printf("%.*f %s", i, size, units[i]);
 }
 
-VOID_TASK_0(run)
+TASK(void, run)
 void run_CALL(lace_worker* lace)
 {
     /**

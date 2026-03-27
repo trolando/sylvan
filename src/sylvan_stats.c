@@ -123,7 +123,7 @@ struct
     {-1, -1, NULL},
 };
 
-VOID_TASK_0(sylvan_stats_reset_perthread)
+TASK(void, sylvan_stats_reset_perthread)
 
 void sylvan_stats_reset_perthread_CALL(lace_worker* lace)
 {
@@ -169,7 +169,7 @@ void sylvan_stats_reset_CALL(lace_worker* lace)
     sylvan_stats_reset_perthread_TOGETHER();
 }
 
-VOID_TASK_1(sylvan_stats_sum, sylvan_stats_t*, target)
+TASK(void, sylvan_stats_sum, sylvan_stats_t*, target)
 void sylvan_stats_sum_CALL(lace_worker* lace, sylvan_stats_t* target)
 {
 #ifdef __ELF__

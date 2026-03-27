@@ -44,7 +44,7 @@ size_t enum_len;
 int enum_idx;
 int enum_max;
 
-VOID_TASK_3(test_zdd_enum_cb, void*, ctx, uint8_t*, arr, size_t, len)
+TASK(void, test_zdd_enum_cb, void*, ctx, uint8_t*, arr, size_t, len)
 void test_zdd_enum_cb_CALL(lace_worker* lace, void* ctx, uint8_t* arr, size_t len)
 {
     assert(len == enum_len);
@@ -56,7 +56,7 @@ void test_zdd_enum_cb_CALL(lace_worker* lace, void* ctx, uint8_t* arr, size_t le
     (void)len;
 }
 
-TASK_0(int, test_zdd_eval)
+TASK(int, test_zdd_eval)
 int test_zdd_eval_CALL(lace_worker* lace)
 {
     /**
@@ -105,7 +105,7 @@ int test_zdd_eval_CALL(lace_worker* lace)
     (void)lace;
 }
 
-TASK_0(int, test_zdd_ithvar)
+TASK(int, test_zdd_ithvar)
 int test_zdd_ithvar_CALL(lace_worker* lace)
 {
     /**
@@ -121,7 +121,7 @@ int test_zdd_ithvar_CALL(lace_worker* lace)
     (void)lace;
 }
 
-TASK_0(int, test_zdd_from_mtbdd)
+TASK(int, test_zdd_from_mtbdd)
 int test_zdd_from_mtbdd_CALL(lace_worker* lace)
 {
     /**
@@ -146,7 +146,7 @@ int test_zdd_from_mtbdd_CALL(lace_worker* lace)
     (void)lace;
 }
 
-TASK_0(int, test_zdd_merge_domains)
+TASK(int, test_zdd_merge_domains)
 int test_zdd_merge_domains_CALL(lace_worker* lace)
 {
     /*
@@ -181,7 +181,7 @@ int test_zdd_merge_domains_CALL(lace_worker* lace)
     (void)lace;
 }
 
-// TASK_0(int, test_zdd_extend_domain)
+// TASK(int, test_zdd_extend_domain)
 // {
 //     /**
 //      * Test zdd_extend_domain with random sets
@@ -223,7 +223,7 @@ int test_zdd_merge_domains_CALL(lace_worker* lace)
 //     return 0;
 // }
 
-TASK_0(int, test_zdd_union_cube)
+TASK(int, test_zdd_union_cube)
 int test_zdd_union_cube_CALL(lace_worker* lace)
 {
     /**
@@ -249,7 +249,7 @@ int test_zdd_union_cube_CALL(lace_worker* lace)
     (void)lace;;
 }
 
-TASK_0(int, test_zdd_satcount)
+TASK(int, test_zdd_satcount)
 int test_zdd_satcount_CALL(lace_worker* lace)
 {
     /**
@@ -275,7 +275,7 @@ int test_zdd_satcount_CALL(lace_worker* lace)
     (void)lace;
 }
 
-TASK_0(int, test_zdd_enum)
+TASK(int, test_zdd_enum)
 int test_zdd_enum_CALL(lace_worker* lace)
 {
     /**
@@ -319,7 +319,7 @@ int test_zdd_enum_CALL(lace_worker* lace)
     (void)lace;
 }
 
-TASK_0(int, test_zdd_and)
+TASK(int, test_zdd_and)
 int test_zdd_and_CALL(lace_worker* lace)
 {
     /**
@@ -359,7 +359,7 @@ int test_zdd_and_CALL(lace_worker* lace)
     (void)lace;
 }
 
-TASK_0(int, test_zdd_or)
+TASK(int, test_zdd_or)
 int test_zdd_or_CALL(lace_worker* lace)
 {
     /**
@@ -399,7 +399,7 @@ int test_zdd_or_CALL(lace_worker* lace)
     (void)lace;
 }
 
-TASK_0(int, test_zdd_not)
+TASK(int, test_zdd_not)
 int test_zdd_not_CALL(lace_worker* lace)
 {
     /**
@@ -427,7 +427,7 @@ int test_zdd_not_CALL(lace_worker* lace)
     (void)lace;
 }
 
-TASK_0(int, test_zdd_ite)
+TASK(int, test_zdd_ite)
 int test_zdd_ite_CALL(lace_worker* lace)
 {
     /**
@@ -482,7 +482,7 @@ int test_zdd_ite_CALL(lace_worker* lace)
     (void)lace;
 }
 
-TASK_0(int, test_zdd_exists)
+TASK(int, test_zdd_exists)
 int test_zdd_exists_CALL(lace_worker* lace)
 {
     /**
@@ -532,7 +532,7 @@ int test_zdd_exists_CALL(lace_worker* lace)
     (void)lace;
 }
 
-// TASK_0(int, test_zdd_relnext)
+// TASK(int, test_zdd_relnext)
 // {
 //     /**
 //      * Test zdd_relnext with random sets
@@ -602,7 +602,7 @@ int test_zdd_exists_CALL(lace_worker* lace)
 //     return 0;
 // }
 // 
-// TASK_0(int, test_zdd_and_dom)
+// TASK(int, test_zdd_and_dom)
 // {
 //     /**
 //      * Test zdd_and_dom with random sets
@@ -671,7 +671,7 @@ int test_zdd_exists_CALL(lace_worker* lace)
 /**
  * Basic test for ISOP on a known small case.
  */
-TASK_0(int, test_zdd_isop_basic)
+TASK(int, test_zdd_isop_basic)
 int test_zdd_isop_basic_CALL(lace_worker* lace)
 {
     BDD a = sylvan_ithvar(1);
@@ -696,7 +696,7 @@ int test_zdd_isop_basic_CALL(lace_worker* lace)
     (void)lace;
 }
 
-TASK_0(int, test_zdd_isop_random)
+TASK(int, test_zdd_isop_random)
 int test_zdd_isop_random_CALL(lace_worker* lace)
 {
     BDD bdd_dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4,5,6,7,8,9,10,11}, 12);
@@ -739,7 +739,7 @@ int test_zdd_isop_random_CALL(lace_worker* lace)
     (void)lace;
 }
 
-TASK_0(int, test_zdd_read_write)
+TASK(int, test_zdd_read_write)
 int test_zdd_read_write_CALL(lace_worker* lace)
 {
     /**
@@ -775,7 +775,7 @@ int test_zdd_read_write_CALL(lace_worker* lace)
     (void)lace;
 }
 
-TASK_0(int, runtests)
+TASK(int, runtests)
 int runtests_CALL(lace_worker* lace)
 {
     // Testing without garbage collection

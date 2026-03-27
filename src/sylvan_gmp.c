@@ -504,7 +504,7 @@ MTBDD gmp_op_threshold_d_CALL(lace_worker* lace, MTBDD a, size_t svalue)
 /**
  * Convert to Boolean MTBDD, terminals > value (double) to True, or False otherwise.
  */
-TASK_2(MTBDD, gmp_op_strict_threshold_d, MTBDD, a, size_t, svalue)
+TASK(MTBDD, gmp_op_strict_threshold_d, MTBDD, a, size_t, svalue)
 MTBDD gmp_op_strict_threshold_d_CALL(lace_worker* lace, MTBDD a, size_t svalue)
 {
     /* Handle partial function */

@@ -184,7 +184,7 @@ set_save(FILE* f, set_t set)
 /**
  * Load a relation from file
  */
-TASK_1(rel_t, rel_load_proj, FILE*, f)
+TASK(rel_t, rel_load_proj, FILE*, f)
 rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
 {
     int r_k, w_k;
@@ -245,7 +245,7 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
     (void)lace;
 }
 
-VOID_TASK_2(rel_load, FILE*, f, rel_t, rel)
+TASK(void, rel_load, FILE*, f, rel_t, rel)
 void rel_load_CALL(lace_worker* lace, FILE* f, rel_t rel)
 {
     lddmc_serialize_fromfile(f);
@@ -355,7 +355,7 @@ print_matrix(size_t size, MDD meta)
 /**
  * Implement parallel strategy (that performs the relprod operations in parallel)
  */
-TASK_5(MDD, go_par, MDD, cur, MDD, visited, size_t, from, size_t, len, MDD*, deadlocks)
+TASK(MDD, go_par, MDD, cur, MDD, visited, size_t, from, size_t, len, MDD*, deadlocks)
 MDD go_par_CALL(lace_worker* lace, MDD cur, MDD visited, size_t from, size_t len, MDD* deadlocks)
 {
     if (len == 1) {
@@ -417,7 +417,7 @@ MDD go_par_CALL(lace_worker* lace, MDD cur, MDD visited, size_t from, size_t len
 /**
  * Implementation of the PAR strategy
  */
-VOID_TASK_1(par, set_t, set)
+TASK(void, par, set_t, set)
 void par_CALL(lace_worker* lace, set_t set)
 {
     /* Prepare variables */
@@ -472,7 +472,7 @@ void par_CALL(lace_worker* lace, set_t set)
 /**
  * Implement sequential strategy (that performs the relprod operations one by one)
  */
-TASK_5(MDD, go_bfs, MDD, cur, MDD, visited, size_t, from, size_t, len, MDD*, deadlocks)
+TASK(MDD, go_bfs, MDD, cur, MDD, visited, size_t, from, size_t, len, MDD*, deadlocks)
 MDD go_bfs_CALL(lace_worker* lace, MDD cur, MDD visited, size_t from, size_t len, MDD* deadlocks)
 {
     if (len == 1) {
@@ -530,7 +530,7 @@ MDD go_bfs_CALL(lace_worker* lace, MDD cur, MDD visited, size_t from, size_t len
 }
 
 /* BFS strategy, sequential strategy (but operations are parallelized by Sylvan) */
-VOID_TASK_1(bfs, set_t, set)
+TASK(void, bfs, set_t, set)
 void bfs_CALL(lace_worker* lace, set_t set)
 {
     /* Prepare variables */
@@ -586,7 +586,7 @@ void bfs_CALL(lace_worker* lace, set_t set)
  * Implementation of (parallel) saturation
  * (assumes relations are ordered on first variable)
  */
-TASK_3(MDD, go_sat, MDD, set, int, idx, int, depth)
+TASK(MDD, go_sat, MDD, set, int, idx, int, depth)
 MDD go_sat_CALL(lace_worker* lace, MDD set, int idx, int depth)
 {
     /* Terminal cases */
@@ -648,7 +648,7 @@ MDD go_sat_CALL(lace_worker* lace, MDD set, int idx, int depth)
 /**
  * Wrapper for the Saturation strategy
  */
-VOID_TASK_1(sat, set_t, set)
+TASK(void, sat, set_t, set)
 void sat_CALL(lace_worker* lace, set_t set)
 {
     set->dd = go_sat_CALL(lace, set->dd, 0, 0);
@@ -657,7 +657,7 @@ void sat_CALL(lace_worker* lace, set_t set)
 /**
  * Implementation of the Chaining strategy (does not support deadlock detection)
  */
-VOID_TASK_1(chaining, set_t, set)
+TASK(void, chaining, set_t, set)
 void chaining_CALL(lace_worker* lace, set_t set)
 {
     MDD visited = set->dd;
@@ -702,7 +702,7 @@ void chaining_CALL(lace_worker* lace, set_t set)
     (void)lace;
 }
 
-VOID_TASK_0(gc_start)
+TASK(void, gc_start)
 void gc_start_CALL(lace_worker* lace)
 {
     char buf[32];
@@ -711,7 +711,7 @@ void gc_start_CALL(lace_worker* lace)
     (void)lace;
 }
 
-VOID_TASK_0(gc_end)
+TASK(void, gc_end)
 void gc_end_CALL(lace_worker* lace)
 {
     char buf[32];
@@ -729,7 +729,7 @@ print_h(double size)
     printf("%.*f %s", i, size, units[i]);
 }
 
-TASK_0(int, run)
+TASK(int, run)
 int run_CALL(lace_worker* lace)
 {
     /**

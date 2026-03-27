@@ -542,7 +542,7 @@ test_ldd()
     return 0;
 }
 
-TASK_0(int, runtests)
+TASK(int, runtests)
 int runtests_CALL(lace_worker* lace)
 {
     // we are not testing garbage collection

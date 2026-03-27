@@ -105,7 +105,7 @@ static int has_actions = 0;
 #define Abort(...) { fprintf(stderr, __VA_ARGS__); fprintf(stderr, "Abort at line %d!\n", __LINE__); exit(-1); }
 
 /* Load a set from file */
-TASK_1(set_t, set_load, FILE*, f)
+TASK(set_t, set_load, FILE*, f)
 set_t set_load_CALL(lace_worker* lace, FILE* f)
 {
     set_t set = (set_t)malloc(sizeof(struct set));
@@ -125,7 +125,7 @@ set_t set_load_CALL(lace_worker* lace, FILE* f)
 }
 
 /* Load a relation from file */
-TASK_1(rel_t, rel_load_proj, FILE*, f)
+TASK(rel_t, rel_load_proj, FILE*, f)
 rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
 {
     int r_k, w_k;
@@ -180,7 +180,7 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
     (void)lace;
 }
 
-VOID_TASK_2(rel_load, FILE*, f, rel_t, rel)
+TASK(void, rel_load, FILE*, f, rel_t, rel)
 void rel_load_CALL(lace_worker* lace, FILE* f, rel_t rel)
 {
     lddmc_serialize_fromfile(f);
@@ -195,7 +195,7 @@ void rel_load_CALL(lace_worker* lace, FILE* f, rel_t rel)
  * This method is called for the set of reachable states.
  */
 static uint64_t compute_highest_id;
-VOID_TASK_2(compute_highest, MDD, dd, uint32_t*, arr)
+TASK(void, compute_highest, MDD, dd, uint32_t*, arr)
 void compute_highest_CALL(lace_worker* lace, MDD dd, uint32_t* arr)
 {
     if (dd == lddmc_true || dd == lddmc_false) return;
@@ -225,7 +225,7 @@ void compute_highest_CALL(lace_worker* lace, MDD dd, uint32_t* arr)
  * This method is called for each transition relation.
  */
 static uint64_t compute_highest_action_id;
-VOID_TASK_3(compute_highest_action, MDD, dd, MDD, meta, uint32_t*, target)
+TASK(void, compute_highest_action, MDD, dd, MDD, meta, uint32_t*, target)
 void compute_highest_action_CALL(lace_worker* lace, MDD dd, MDD meta, uint32_t* target)
 {
     if (dd == lddmc_true || dd == lddmc_false) return;
@@ -269,7 +269,7 @@ void compute_highest_action_CALL(lace_worker* lace, MDD dd, MDD meta, uint32_t* 
  * Compute the BDD equivalent of the LDD of a set of states.
  */
 static uint64_t bdd_from_ldd_id;
-TASK_3(MTBDD, bdd_from_ldd, MDD, dd, MDD, bits_dd, uint32_t, firstvar)
+TASK(MTBDD, bdd_from_ldd, MDD, dd, MDD, bits_dd, uint32_t, firstvar)
 MTBDD bdd_from_ldd_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t firstvar)
 {
     /* simple for leaves */
@@ -319,7 +319,7 @@ MTBDD bdd_from_ldd_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t firstva
  * Compute the BDD equivalent of an LDD transition relation.
  */
 static uint64_t bdd_from_ldd_rel_id;
-TASK_4(MTBDD, bdd_from_ldd_rel, MDD, dd, MDD, bits_dd, uint32_t, firstvar, MDD, meta)
+TASK(MTBDD, bdd_from_ldd_rel, MDD, dd, MDD, bits_dd, uint32_t, firstvar, MDD, meta)
 MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t firstvar, MDD meta)
 {
     if (dd == lddmc_false) return mtbdd_false;
@@ -521,14 +521,14 @@ meta_to_bdd(MDD meta, MDD bits_dd, uint32_t firstvar)
     return res;
 }
 
-VOID_TASK_0(gc_start)
+TASK(void, gc_start)
 void gc_start_CALL(lace_worker* lace)
 {
     printf("Starting garbage collection\n");
     (void)lace;
 }
 
-VOID_TASK_0(gc_end)
+TASK(void, gc_end)
 void gc_end_CALL(lace_worker* lace)
 {
     printf("Garbage collection done\n");
@@ -544,7 +544,7 @@ print_h(double size)
     printf("%.*f %s", i, size, units[i]);
 }
 
-VOID_TASK_0(run)
+TASK(void, run)
 void run_CALL(lace_worker* lace)
 {
     // Open file

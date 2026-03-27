@@ -140,7 +140,7 @@ typedef struct lddmc_refs_internal
 
 DECLARE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
 
-VOID_TASK_2(lddmc_refs_mark_p_par, const MDD**, begin, size_t, count)
+TASK(void, lddmc_refs_mark_p_par, const MDD**, begin, size_t, count)
 
 void lddmc_refs_mark_p_par_CALL(lace_worker* lace, const MDD** begin, size_t count)
 {
@@ -156,7 +156,7 @@ void lddmc_refs_mark_p_par_CALL(lace_worker* lace, const MDD** begin, size_t cou
     }
 }
 
-VOID_TASK_2(lddmc_refs_mark_r_par, MDD*, begin, size_t, count)
+TASK(void, lddmc_refs_mark_r_par, MDD*, begin, size_t, count)
 
 void lddmc_refs_mark_r_par_CALL(lace_worker* lace, MDD* begin, size_t count)
 {
@@ -172,7 +172,7 @@ void lddmc_refs_mark_r_par_CALL(lace_worker* lace, MDD* begin, size_t count)
     }
 }
 
-VOID_TASK_2(lddmc_refs_mark_s_par, lddmc_refs_task_t, begin, size_t, count)
+TASK(void, lddmc_refs_mark_s_par, lddmc_refs_task_t, begin, size_t, count)
 
 void lddmc_refs_mark_s_par_CALL(lace_worker* lace, lddmc_refs_task_t begin, size_t count)
 {
@@ -194,7 +194,7 @@ void lddmc_refs_mark_s_par_CALL(lace_worker* lace, lddmc_refs_task_t begin, size
     }
 }
 
-VOID_TASK_0(lddmc_refs_mark_task)
+TASK(void, lddmc_refs_mark_task)
 
 void lddmc_refs_mark_task_CALL(lace_worker* lace)
 {
@@ -206,7 +206,7 @@ void lddmc_refs_mark_task_CALL(lace_worker* lace)
     lddmc_refs_mark_p_par_SYNC(lace);
 }
 
-VOID_TASK_0(lddmc_refs_mark)
+TASK(void, lddmc_refs_mark)
 
 void lddmc_refs_mark_CALL(lace_worker* lace)
 {
@@ -227,13 +227,13 @@ lddmc_refs_init_key(void)
     SET_THREAD_LOCAL(lddmc_refs_key, s);
 }
 
-VOID_TASK_0(lddmc_refs_init_task)
+TASK(void, lddmc_refs_init_task)
 void lddmc_refs_init_task_CALL(lace_worker* lace)
 {
     lddmc_refs_init_key();
 }
 
-VOID_TASK_0(lddmc_refs_init)
+TASK(void, lddmc_refs_init)
 void lddmc_refs_init_CALL(lace_worker* lace)
 {
     INIT_THREAD_LOCAL(lddmc_refs_key);
@@ -328,7 +328,7 @@ lddmc_refs_sync(MDD result)
     return result;
 }
 
-VOID_TASK_0(lddmc_gc_mark_serialize)
+TASK(void, lddmc_gc_mark_serialize)
 
 /**
  * Initialize and quit functions
@@ -804,7 +804,7 @@ MDD lddmc_match_CALL(lace_worker* lace, MDD a, MDD b, MDD proj)
     return result;
 }
 
-TASK_4(MDD, lddmc_relprod_help, uint32_t, val, MDD, set, MDD, rel, MDD, proj)
+TASK(MDD, lddmc_relprod_help, uint32_t, val, MDD, set, MDD, rel, MDD, proj)
 
 MDD lddmc_relprod_help_CALL(lace_worker* lace, uint32_t val, MDD set, MDD rel, MDD proj)
 {
@@ -995,7 +995,7 @@ MDD lddmc_relprod_CALL(lace_worker* lace, MDD set, MDD rel, MDD meta)
     return result;
 }
 
-TASK_5(MDD, lddmc_relprod_union_help, uint32_t, val, MDD, set, MDD, rel, MDD, proj, MDD, un)
+TASK(MDD, lddmc_relprod_union_help, uint32_t, val, MDD, set, MDD, rel, MDD, proj, MDD, un)
 
 MDD lddmc_relprod_union_help_CALL(lace_worker* lace, uint32_t val, MDD set, MDD rel, MDD proj, MDD un)
 {
@@ -1308,7 +1308,7 @@ MDD lddmc_relprod_union_CALL(lace_worker* lace, MDD set, MDD rel, MDD meta, MDD 
     return result;
 }
 
-TASK_5(MDD, lddmc_relprev_help, uint32_t, val, MDD, set, MDD, rel, MDD, proj, MDD, uni)
+TASK(MDD, lddmc_relprev_help, uint32_t, val, MDD, set, MDD, rel, MDD, proj, MDD, uni)
 
 MDD lddmc_relprev_help_CALL(lace_worker* lace, uint32_t val, MDD set, MDD rel, MDD proj, MDD uni)
 {
@@ -2081,7 +2081,7 @@ MDD lddmc_collect_CALL(lace_worker* lace, MDD mdd, lddmc_collect_cb cb, void* co
     }
 }
 
-VOID_TASK_5(_lddmc_sat_all_nopar, MDD, mdd, lddmc_enum_cb, cb, void*, context, uint32_t*, values, size_t, count)
+TASK(void, _lddmc_sat_all_nopar, MDD, mdd, lddmc_enum_cb, cb, void*, context, uint32_t*, values, size_t, count)
 
 void _lddmc_sat_all_nopar_CALL(lace_worker* lace, MDD mdd, lddmc_enum_cb cb, void* context, uint32_t* values, size_t count)
 {
@@ -2142,7 +2142,7 @@ struct lddmc_match_sat_info
 };
 
 // proj: -1 (rest 0), 0 (no match), 1 (match)
-VOID_TASK_3(lddmc_match_sat, struct lddmc_match_sat_info *, info, lddmc_enum_cb, cb, void*, context)
+TASK(void, lddmc_match_sat, struct lddmc_match_sat_info *, info, lddmc_enum_cb, cb, void*, context)
 void lddmc_match_sat_CALL(lace_worker* lace, struct lddmc_match_sat_info * info, lddmc_enum_cb cb, void* context)
 {
     MDD a = info->mdd, b = info->match, proj = info->proj;

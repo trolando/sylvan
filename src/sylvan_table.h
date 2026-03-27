@@ -200,12 +200,12 @@ void llmsset_set_custom(const llmsset_t dbs, llmsset_hash_cb hash_cb, llmsset_eq
 #define llmsset_hash sylvan_tabhash16
 #define llmsset_fnvhash sylvan_fnvhash16
 
-VOID_TASK_1(llmsset_clear, llmsset_t, dbs)
-VOID_TASK_1(llmsset_clear_data, llmsset_t, dbs)
-VOID_TASK_1(llmsset_clear_hashes, llmsset_t, dbs)
-TASK_1(int, llmsset_rehash, llmsset_t, dbs)
-TASK_1(size_t, llmsset_count_marked, llmsset_t, dbs)
-VOID_TASK_1(llmsset_destroy_unmarked, llmsset_t, dbs)
+TASK(void, llmsset_clear, llmsset_t, dbs)
+TASK(void, llmsset_clear_data, llmsset_t, dbs)
+TASK(void, llmsset_clear_hashes, llmsset_t, dbs)
+TASK(int, llmsset_rehash, llmsset_t, dbs)
+TASK(size_t, llmsset_count_marked, llmsset_t, dbs)
+TASK(void, llmsset_destroy_unmarked, llmsset_t, dbs)
 
 #ifdef __cplusplus
 }

@@ -163,7 +163,7 @@ zdd_count_protected()
 /**
  * Mark all external references (during garbage collection)
  */
-VOID_TASK_0(zdd_gc_mark_protected)
+TASK(void, zdd_gc_mark_protected)
 
 void zdd_gc_mark_protected_CALL(lace_worker* lace)
 {
@@ -198,7 +198,7 @@ typedef struct zdd_refs_internal
 
 DECLARE_THREAD_LOCAL(zdd_refs_key, zdd_refs_internal_t);
 
-VOID_TASK_2(zdd_refs_mark_p_par, ZDD**, begin, size_t, count)
+TASK(void, zdd_refs_mark_p_par, ZDD**, begin, size_t, count)
 
 void zdd_refs_mark_p_par_CALL(lace_worker* lace, ZDD** begin, size_t count)
 {
@@ -214,7 +214,7 @@ void zdd_refs_mark_p_par_CALL(lace_worker* lace, ZDD** begin, size_t count)
     }
 }
 
-VOID_TASK_2(zdd_refs_mark_r_par, ZDD*, begin, size_t, count)
+TASK(void, zdd_refs_mark_r_par, ZDD*, begin, size_t, count)
 
 void zdd_refs_mark_r_par_CALL(lace_worker* lace, ZDD* begin, size_t count)
 {
@@ -230,7 +230,7 @@ void zdd_refs_mark_r_par_CALL(lace_worker* lace, ZDD* begin, size_t count)
     }
 }
 
-VOID_TASK_2(zdd_refs_mark_s_par, zdd_refs_task_t, begin, size_t, count)
+TASK(void, zdd_refs_mark_s_par, zdd_refs_task_t, begin, size_t, count)
 
 void zdd_refs_mark_s_par_CALL(lace_worker* lace, zdd_refs_task_t begin, size_t count)
 {
@@ -252,7 +252,7 @@ void zdd_refs_mark_s_par_CALL(lace_worker* lace, zdd_refs_task_t begin, size_t c
     }
 }
 
-VOID_TASK_0(zdd_refs_mark_task)
+TASK(void, zdd_refs_mark_task)
 
 void zdd_refs_mark_task_CALL(lace_worker* lace)
 {
@@ -264,14 +264,14 @@ void zdd_refs_mark_task_CALL(lace_worker* lace)
     zdd_refs_mark_p_par_SYNC(lace);
 }
 
-VOID_TASK_0(zdd_refs_mark)
+TASK(void, zdd_refs_mark)
 
 void zdd_refs_mark_CALL(lace_worker* lace)
 {
     zdd_refs_mark_task_TOGETHER();
 }
 
-VOID_TASK_0(zdd_refs_init_task)
+TASK(void, zdd_refs_init_task)
 void zdd_refs_init_task_CALL(lace_worker* lace)
 {
     zdd_refs_internal_t s = (zdd_refs_internal_t)malloc(sizeof(struct zdd_refs_internal));
@@ -284,7 +284,7 @@ void zdd_refs_init_task_CALL(lace_worker* lace)
     SET_THREAD_LOCAL(zdd_refs_key, s);
 }
 
-VOID_TASK_0(zdd_refs_init)
+TASK(void, zdd_refs_init)
 void zdd_refs_init_CALL(lace_worker* lace)
 {
     INIT_THREAD_LOCAL(zdd_refs_key);
@@ -1927,14 +1927,14 @@ void zdd_visit_par_CALL(lace_worker* lace, ZDD dd, zdd_visit_pre_cb pre_cb, zdd_
  * Writing ZDD files using a skiplist as a backend
  */
 
-TASK_2(int, zdd_writer_add_visitor_pre, ZDD, dd, sylvan_skiplist_t, sl)
+TASK(int, zdd_writer_add_visitor_pre, ZDD, dd, sylvan_skiplist_t, sl)
 int zdd_writer_add_visitor_pre_CALL(lace_worker* lace, ZDD dd, sylvan_skiplist_t sl)
 {
     if (zdd_isleaf(dd)) return 0;
     return sylvan_skiplist_get(sl, ZDD_GETINDEX(dd)) == 0 ? 1 : 0;
 }
 
-VOID_TASK_2(zdd_writer_add_visitor_post, ZDD, dd, sylvan_skiplist_t, sl)
+TASK(void, zdd_writer_add_visitor_post, ZDD, dd, sylvan_skiplist_t, sl)
 void zdd_writer_add_visitor_post_CALL(lace_worker* lace, ZDD dd, sylvan_skiplist_t sl)
 {
     if (ZDD_GETINDEX(dd) <= 1) return;

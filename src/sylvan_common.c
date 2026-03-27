@@ -212,7 +212,7 @@ void sylvan_gc_normal_resize_CALL(lace_worker* lace)
 /**
  * Actual implementation of garbage collection
  */
-VOID_TASK_0(sylvan_gc_go)
+TASK(void, sylvan_gc_go)
 
 void sylvan_gc_go_CALL(lace_worker* lace)
 {

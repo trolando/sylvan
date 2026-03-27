@@ -23,7 +23,7 @@
 
 DECLARE_THREAD_LOCAL(my_region, uint64_t);
 
-VOID_TASK_0(llmsset_reset_region)
+TASK(void, llmsset_reset_region)
 
 void llmsset_reset_region_CALL(lace_worker* lace)
 {
@@ -390,7 +390,7 @@ llmsset_mark(const llmsset_t dbs, uint64_t index)
     }
 }
 
-TASK_3(int, llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
+TASK(int, llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
 
 int llmsset_rehash_par_CALL(lace_worker* lace, llmsset_t dbs, size_t first, size_t count)
 {
@@ -421,7 +421,7 @@ int llmsset_rehash_CALL(lace_worker* lace, llmsset_t dbs)
     return llmsset_rehash_par_CALL(lace, dbs, 0, dbs->table_size);
 }
 
-TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, count)
+TASK(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, count)
 
 size_t llmsset_count_marked_par_CALL(lace_worker* lace, llmsset_t dbs, size_t first, size_t count)
 {
@@ -463,7 +463,7 @@ size_t llmsset_count_marked_CALL(lace_worker* lace, llmsset_t dbs)
     return llmsset_count_marked_par_CALL(lace, dbs, 0, dbs->table_size);
 }
 
-VOID_TASK_3(llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
+TASK(void, llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
 
 void llmsset_destroy_par_CALL(lace_worker* lace, llmsset_t dbs, size_t first, size_t count)
 {

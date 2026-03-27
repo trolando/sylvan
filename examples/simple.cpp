@@ -7,7 +7,7 @@
 
 using namespace sylvan;
 
-VOID_TASK_0(simple_cxx)
+TASK(void, simple_cxx)
 void simple_cxx_CALL(lace_worker* lace)
 {
     Bdd one = Bdd::bddOne(); // the True terminal
@@ -70,7 +70,7 @@ void simple_cxx_CALL(lace_worker* lace)
     (void)lace;
 }
 
-VOID_TASK_1(_main, void*, arg)
+TASK(void, _main, void*, arg)
 void _main_CALL(lace_worker* lace, void* arg)
 {
     // Initialize Sylvan

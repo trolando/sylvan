@@ -98,7 +98,7 @@ static double t_start;
 #define INFO(s, ...) fprintf(stdout, "[% 8.2f] " s, wctime()-t_start, ##__VA_ARGS__)
 #define Abort(...) { fprintf(stderr, __VA_ARGS__); exit(-1); }
 
-VOID_TASK_0(gc_start)
+TASK(void, gc_start)
 void gc_start_CALL(lace_worker* lace)
 {
     if (report_minor) {
@@ -108,14 +108,14 @@ void gc_start_CALL(lace_worker* lace)
     (void)lace;
 }
 
-VOID_TASK_0(gc_end)
+TASK(void, gc_end)
 void gc_end_CALL(lace_worker* lace)
 {
     INFO("(GC) Garbage collection done.\n");
     (void)lace;
 }
 
-VOID_TASK_0(run)
+TASK(void, run)
 void run_CALL(lace_worker* lace)
 {
     double t1 = wctime();

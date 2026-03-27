@@ -293,26 +293,26 @@ sylvan_print(BDD bdd)
     return sylvan_fprint(stdout, bdd);
 }
 
-TASK_4(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_var)
-TASK_3(BDD, sylvan_and, BDD, a, BDD, b, BDDVAR, prev_var)
-TASK_3(BDD, sylvan_xor, BDD, a, BDD, b, BDDVAR, prev_var)
-TASK_3(char, sylvan_disjoint, BDD, a, BDD, b, BDDVAR, prev_var)
-TASK_3(BDD, sylvan_exists, BDD, dd, BDD, vars, BDDVAR, prev_var)
-TASK_2(BDD, sylvan_project, BDD, dd, BDD, vars);
-TASK_4(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_var);
-TASK_3(BDD, sylvan_and_project, BDD, a, BDD, b, BDDSET, vars);
-TASK_4(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_var);
-TASK_4(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_var);
-TASK_2(BDD, sylvan_closure, BDD, a, BDDVAR, prev_var);
-TASK_3(BDD, sylvan_constrain, BDD, f, BDD, c, BDDVAR, prev_var);
-TASK_3(BDD, sylvan_restrict, BDD, f, BDD, c, BDDVAR, prev_var);
-TASK_3(BDD, sylvan_compose, BDD, f, BDDMAP, m, BDDVAR, var);
-TASK_3(double, sylvan_satcount, BDD, dd, BDDSET, vars, BDDVAR, var);
-VOID_TASK_4(sylvan_enum, BDD, dd, BDDSET, vars, enum_cb, cb, void*, context);
-VOID_TASK_4(sylvan_enum_par, BDD, dd, BDDSET, vars, enum_cb, cb, void*, context);
-TASK_4(BDD, sylvan_collect, BDD, dd, BDDSET, vars, sylvan_collect_cb, cb, void*, context);
-TASK_2(double, sylvan_pathcount, BDD, dd, BDDVAR, prev_var);
-TASK_3(BDD, sylvan_union_cube, BDD, dd, BDDSET, vars, uint8_t*, cube);
+TASK(BDD, sylvan_ite, BDD, a, BDD, b, BDD, c, BDDVAR, prev_var)
+TASK(BDD, sylvan_and, BDD, a, BDD, b, BDDVAR, prev_var)
+TASK(BDD, sylvan_xor, BDD, a, BDD, b, BDDVAR, prev_var)
+TASK(char, sylvan_disjoint, BDD, a, BDD, b, BDDVAR, prev_var)
+TASK(BDD, sylvan_exists, BDD, dd, BDD, vars, BDDVAR, prev_var)
+TASK(BDD, sylvan_project, BDD, dd, BDD, vars);
+TASK(BDD, sylvan_and_exists, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_var);
+TASK(BDD, sylvan_and_project, BDD, a, BDD, b, BDDSET, vars);
+TASK(BDD, sylvan_relprev, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_var);
+TASK(BDD, sylvan_relnext, BDD, a, BDD, b, BDDSET, vars, BDDVAR, prev_var);
+TASK(BDD, sylvan_closure, BDD, a, BDDVAR, prev_var);
+TASK(BDD, sylvan_constrain, BDD, f, BDD, c, BDDVAR, prev_var);
+TASK(BDD, sylvan_restrict, BDD, f, BDD, c, BDDVAR, prev_var);
+TASK(BDD, sylvan_compose, BDD, f, BDDMAP, m, BDDVAR, var);
+TASK(double, sylvan_satcount, BDD, dd, BDDSET, vars, BDDVAR, var);
+TASK(void, sylvan_enum, BDD, dd, BDDSET, vars, enum_cb, cb, void*, context);
+TASK(void, sylvan_enum_par, BDD, dd, BDDSET, vars, enum_cb, cb, void*, context);
+TASK(BDD, sylvan_collect, BDD, dd, BDDSET, vars, sylvan_collect_cb, cb, void*, context);
+TASK(double, sylvan_pathcount, BDD, dd, BDDVAR, prev_var);
+TASK(BDD, sylvan_union_cube, BDD, dd, BDDSET, vars, uint8_t*, cube);
 
 #ifdef __cplusplus
 }

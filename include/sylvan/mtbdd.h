@@ -1,6 +1,7 @@
 /*
  * Copyright 2011-2016 Formal Methods and Tools, University of Twente
  * Copyright 2016-2017 Tom van Dijk, Johannes Kepler University Linz
+ * Copyright 2019-2026 Tom van Dijk, University of Twente
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -78,58 +79,6 @@ static const MTBDD sylvan_complement = UINT64_C(0x8000000000000000);
 static const MTBDD sylvan_false      = 0;
 static const MTBDD sylvan_true       = UINT64_C(0x8000000000000000);
 static const MTBDD sylvan_invalid    = UINT64_MAX;
-#define sylvan_init_bdd         sylvan_init_mtbdd
-#define sylvan_ref              mtbdd_ref
-#define sylvan_deref            mtbdd_deref
-#define sylvan_count_refs       mtbdd_count_refs
-#define sylvan_protect          mtbdd_protect
-#define sylvan_unprotect        mtbdd_unprotect
-#define sylvan_count_protected  mtbdd_count_protected
-#define sylvan_gc_mark_rec      mtbdd_gc_mark_rec
-#define sylvan_ithvar           mtbdd_ithvar
-#define bdd_refs_pushptr        mtbdd_refs_pushptr
-#define bdd_refs_popptr         mtbdd_refs_popptr
-#define bdd_refs_push           mtbdd_refs_push
-#define bdd_refs_pop            mtbdd_refs_pop
-#define bdd_refs_spawn          mtbdd_refs_spawn
-#define bdd_refs_sync           mtbdd_refs_sync
-#define sylvan_map_empty        mtbdd_map_empty
-#define sylvan_map_isempty      mtbdd_map_isempty
-#define sylvan_map_key          mtbdd_map_key
-#define sylvan_map_value        mtbdd_map_value
-#define sylvan_map_next         mtbdd_map_next
-#define sylvan_map_contains     mtbdd_map_contains
-#define sylvan_map_count        mtbdd_map_count
-#define sylvan_map_add          mtbdd_map_add
-#define sylvan_map_addall       mtbdd_map_addall
-#define sylvan_map_remove       mtbdd_map_remove
-#define sylvan_map_removeall    mtbdd_map_removeall
-#define sylvan_set_empty        mtbdd_set_empty
-#define sylvan_set_isempty      mtbdd_set_isempty
-#define sylvan_set_add          mtbdd_set_add
-#define sylvan_set_addall       mtbdd_set_addall
-#define sylvan_set_remove       mtbdd_set_remove
-#define sylvan_set_removeall    mtbdd_set_removeall
-#define sylvan_set_first        mtbdd_set_first
-#define sylvan_set_next         mtbdd_set_next
-#define sylvan_set_fromarray    mtbdd_set_fromarray
-#define sylvan_set_toarray      mtbdd_set_toarray
-#define sylvan_set_in           mtbdd_set_in
-#define sylvan_set_count        mtbdd_set_count
-#define sylvan_test_isset       mtbdd_test_isset
-#define sylvan_var              mtbdd_getvar
-#define sylvan_low              mtbdd_getlow
-#define sylvan_high             mtbdd_gethigh
-#define sylvan_makenode         mtbdd_makenode
-#define sylvan_makemapnode      mtbdd_makemapnode
-#define sylvan_support          mtbdd_support
-#define sylvan_test_isbdd       mtbdd_test_isvalid
-#define sylvan_nodecount        mtbdd_nodecount
-#define sylvan_printdot         mtbdd_printdot
-#define sylvan_fprintdot        mtbdd_fprintdot
-#define sylvan_printsha         mtbdd_printsha
-#define sylvan_fprintsha        mtbdd_fprintsha
-#define sylvan_getsha           mtbdd_getsha
 
 /**
  * Initialize MTBDD functionality.
@@ -303,17 +252,6 @@ MTBDD mtbdd_set_remove(MTBDD set, uint32_t var);
  * and if all nodes are marked in the nodes table (detects violations after garbage collection).
  */
 void mtbdd_test_isset(MTBDD set);
-
-/**
- * Definitions for backwards compatibility
- */
-// FIXME throw awaaaaay
-#define mtbdd_fromarray mtbdd_set_from_array
-#define mtbdd_set_fromarray mtbdd_set_from_array
-#define mtbdd_set_toarray mtbdd_set_to_array
-#define mtbdd_set_addall mtbdd_set_union
-#define mtbdd_set_removeall mtbdd_set_minus
-#define mtbdd_set_in mtbdd_set_contains
 
 /**
  * Create a MTBDD cube representing the conjunction of variables in their positive or negative

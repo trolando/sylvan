@@ -1,4 +1,4 @@
-#include <sylvan/sylvan_platform.h>
+#include <sylvan/platform.h>
 #include <sylvan/sylvan.h>
 
 TASK(int, test_addition)

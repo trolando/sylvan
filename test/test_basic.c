@@ -624,7 +624,7 @@ int main()
     lace_start(1, 0, 0);
 
     // Simple Sylvan initialization, also initialize BDD, MTBDD and LDD support
-    mtbdd_set_sizes(1LL<<20, 1LL<<20, 1LL<<16, 1LL<<16);
+    sylvan_set_sizes(1LL<<20, 1LL<<20, 1LL<<16, 1LL<<16);
     sylvan_init_package();
     sylvan_init_mtbdd();
     sylvan_init_ldd();

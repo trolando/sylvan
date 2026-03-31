@@ -895,7 +895,7 @@ main(int argc, const char **argv)
     print_h((double)max);
     printf(" max.\n");
 
-    mtbdd_set_limits(max, 1, 16);
+    sylvan_set_limits(max, 1, 16);
     sylvan_init_package();
     sylvan_init_ldd();
     sylvan_gc_hook_pregc(gc_start_CALL);

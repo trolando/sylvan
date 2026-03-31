@@ -944,7 +944,7 @@ MtbddMap::isEmpty()
 void
 Sylvan::initPackage(size_t initialTableSize, size_t maxTableSize, size_t initialCacheSize, size_t maxCacheSize)
 {
-    mtbdd_set_sizes(initialTableSize, maxTableSize, initialCacheSize, maxCacheSize);
+    sylvan_set_sizes(initialTableSize, maxTableSize, initialCacheSize, maxCacheSize);
     sylvan_init_package();
 }
 

@@ -199,11 +199,11 @@ int test_zdd_merge_domains_CALL(lace_worker* lace)
 TASK(int, test_zdd_extend_domain)
 int test_zdd_extend_domain_CALL(lace_worker* lace)
 {
-    BDD subdomain = mtbdd_fromarray((uint32_t[]){1}, 1);
-    BDD domain = mtbdd_fromarray((uint32_t[]){0,1,2}, 3);
+    BDD subdomain = mtbdd_set_from_array((uint32_t[]){1}, 1);
+    BDD domain = mtbdd_set_from_array((uint32_t[]){0,1,2}, 3);
     ZDD newvars = zdd_set_from_array((uint32_t[]){0,2}, 2);
-    ZDD set = zdd_from_mtbdd(sylvan_ithvar(1), subdomain);
-    ZDD expected = zdd_from_mtbdd(sylvan_ithvar(1), domain);
+    ZDD set = zdd_from_mtbdd(mtbdd_ithvar(1), subdomain);
+    ZDD expected = zdd_from_mtbdd(mtbdd_ithvar(1), domain);
 
     test_assert(zdd_extend_domain_CALL(lace, set, newvars, 2) == expected);
     test_assert(zdd_extend_domain_CALL(lace, set, newvars, 3) == zdd_invalid);
@@ -895,7 +895,7 @@ int main()
 	lace_start(1, 0, 0);
 
     // Simple Sylvan initialization, also initialize BDD, MTBDD and LDD support
-	mtbdd_set_sizes(1LL<<26, 1LL<<26, 1LL<<20, 1LL<<20);
+	sylvan_set_sizes(1LL<<26, 1LL<<26, 1LL<<20, 1LL<<20);
 	sylvan_init_package();
     sylvan_init_mtbdd();
     sylvan_init_zdd();

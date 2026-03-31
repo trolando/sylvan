@@ -84,7 +84,7 @@ void _main_CALL(lace_worker* lace, void* arg)
     // - 1<<25 cache: 1152 MB
     // - 1<<26 cache: 2304 MB
     // - 1<<27 cache: 4608 MB
-    mtbdd_set_sizes(1LL<<22, 1LL<<26, 1LL<<22, 1LL<<26);
+    sylvan_set_sizes(1LL<<22, 1LL<<26, 1LL<<22, 1LL<<26);
     sylvan_init_package();
 
     // Initialize the BDD module with granularity 1 (cache every operation)

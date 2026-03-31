@@ -976,7 +976,7 @@ main(int argc, const char **argv)
     print_h((double)max);
     printf(" max.\n");
 
-    mtbdd_set_limits(max, 1, 6);
+    sylvan_set_limits(max, 1, 6);
     sylvan_init_package();
     sylvan_init_mtbdd();
     sylvan_gc_hook_pregc(gc_start_CALL);

@@ -314,7 +314,7 @@ main(int argc, const char** argv)
     // Cache table size: 36 bytes * cache entries
     // With 2^20 nodes and 2^18 cache entries, that's 33 MB
     // With 2^24 nodes and 2^22 cache entries, that's 528 MB
-    mtbdd_set_sizes(1LL<<20, 1LL<<28, 1LL<<18, 1LL<<26);
+    sylvan_set_sizes(1LL<<20, 1LL<<28, 1LL<<18, 1LL<<26);
     sylvan_init_package();
     sylvan_init_mtbdd();
 

@@ -5,6 +5,7 @@
 
 #include <sylvan/platform.h>
 #include <sylvan/nodes.h>
+
 #include "test_assert.h"
 
 int

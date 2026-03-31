@@ -814,7 +814,7 @@ main(int argc, const char **argv)
     printf(" max.\n");
 
     // Init Sylvan
-    mtbdd_set_limits(max, 1, 10);
+    sylvan_set_limits(max, 1, 10);
     sylvan_init_package();
     sylvan_init_ldd();
     sylvan_init_mtbdd();

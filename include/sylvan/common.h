@@ -28,7 +28,7 @@ extern "C" {
  * Initialize the Sylvan parallel decision diagrams package.
  *
  * First, Sylvan must know how big the nodes table and cache may be.
- * Either use mtbdd_set_sizes to explicitly set the table sizes, or use mtbdd_set_limits
+ * Either use sylvan_set_sizes to explicitly set the table sizes, or use sylvan_set_limits
  * to let Sylvan compute the sizes for you.
  *
  * Then, call sylvan_init_package. This allocates the tables and other support structures.
@@ -51,7 +51,7 @@ void sylvan_init_package(void);
  * The minimum size is the size initially used.
  * The maximum size is the size allocated in virtual memory.
  */
-void mtbdd_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cachesize, size_t max_cachesize);
+void sylvan_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cachesize, size_t max_cachesize);
 
 /**
  * Implicitly compute and set the sizes of the nodes table and the operation cache.
@@ -67,7 +67,7 @@ void mtbdd_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cach
  * The parameter initial_ratio controls how much smaller the initial table sizes are.
  * For values of 1, 2, 3, 4 the tables will initially be 2, 4, 8, 16 times smaller.
  */
-void mtbdd_set_limits(size_t memory_cap, int table_ratio, int initial_ratio);
+void sylvan_set_limits(size_t memory_cap, int table_ratio, int initial_ratio);
 
 /**
  * Frees all Sylvan data (also calls the quit() functions of BDD/LDD parts)
@@ -187,7 +187,7 @@ void sylvan_gc_hook_main(gc_hook_cb callback);
  * appropriate recursive marking functions for the decision diagram nodes, for example
  * mtbdd_gc_mark_rec() for MTBDDs or lddmc_gc_mark_rec() for LDDs.
  *
- * The sylvan_count_refs() function uses the count_cb callbacks to compute the number
+ * The mtbdd_count_refs() function uses the count_cb callbacks to compute the number
  * of references.
  */
 void sylvan_gc_add_mark(gc_hook_cb mark_cb);

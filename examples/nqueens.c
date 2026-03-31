@@ -321,8 +321,8 @@ main(int argc, char** argv)
     sylvan_init_bdd();
 
     // Before and after garbage collection, call gc_start and gc_end
-    sylvan_gc_hook_pregc(TASK(gc_start));
-    sylvan_gc_hook_postgc(TASK(gc_end));
+    sylvan_gc_hook_pregc(gc_start_CALL);
+    sylvan_gc_hook_postgc(gc_end_CALL);
 
     RUN(run);
 

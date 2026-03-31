@@ -780,8 +780,8 @@ main(int argc, char **argv)
     sylvan_init_package();
     sylvan_init_ldd();
     sylvan_init_mtbdd();
-    sylvan_gc_hook_pregc(TASK(gc_start));
-    sylvan_gc_hook_postgc(TASK(gc_end));
+    sylvan_gc_hook_pregc(gc_start_CALL);
+    sylvan_gc_hook_postgc(gc_end_CALL);
 
     // Obtain operation ids for the operation cache
     compute_highest_id = cache_next_opid();

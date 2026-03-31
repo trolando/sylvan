@@ -1,6 +1,17 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [1.10.0] - 2026-03-31
+
+This release contains a small API change in Lace, which will break things! If you use
+the `TASK(foo)` macro, you will need to change it to `foo_CALL`. Lace 1.6.0 contains
+backports from the new Lace version 2.3.0, which is the current development version.
+It has some improvements with better support for Windows MSVC.
+
+### Changed
+- Updated Lace to version 1.6.0.
+
+
 ## [1.9.4] - 2026-03-17
 ### Changed
 - Updated Lace to version 1.5.3

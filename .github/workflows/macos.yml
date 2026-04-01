@@ -1,4 +1,5 @@
 name: macOS
+
 on: [push, pull_request]
 
 jobs:
@@ -11,20 +12,22 @@ jobs:
         build_type: [Release, Debug]
         version: [14, 15]
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6
+
     - name: Install dependencies
-      shell: bash
+      run: brew install gmp
+
+    - name: Configure
       run: |
-        brew update
-        brew install gawk gmp argp-standalone
+        cmake -S . -B build \
+          -DCMAKE_BUILD_TYPE=${{matrix.build_type}} \
+          -DCMAKE_INSTALL_PREFIX=$HOME/sylvan-install \
+          -DSYLVAN_GMP=ON
+
     - name: Build
-      shell: bash
-      run: |
-        export CC=clang CXX=clang++
-        cmake -S . -B build -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DSYLVAN_GMP=ON
-        cmake --build build --config ${{matrix.build_type}}
+      run: cmake --build build --config ${{matrix.build_type}}
+
     - name: Test
-      shell: bash
       working-directory: build
       run: |
         ctest --output-on-failure -C ${{matrix.build_type}} -VV --timeout 30
@@ -32,3 +35,18 @@ jobs:
         examples/nqueens -w 2 9 | tee /dev/fd/2 | grep -q "352 solutions"
         examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee /dev/fd/2 | grep -q "1570340"
         examples/lddmc ../models/blocks.2.ldd -w 2 | tee /dev/fd/2 | grep -q "7057 states"
+
+    - name: Install
+      run: cmake --install build
+
+    - name: Run pkg-config consumer test
+      working-directory: test/install/consumer-pkgconfig
+      run: |
+        export PKG_CONFIG_PATH=$HOME/sylvan-install/lib/pkgconfig
+        ./test.sh
+
+    - name: Run CMake consumer test
+      working-directory: test/install/consumer-cmake
+      run: |
+        export CMAKE_PREFIX_PATH=$HOME/sylvan-install
+        ./test.sh

@@ -42,11 +42,23 @@ endif()
 
 # ── Dependencies ─────────────────────────────────────────────────────────────
 
+# Determine if Lace needs PIC (shared Sylvan or explicit PIC request)
+set(_sylvan_needs_pic OFF)
+if(BUILD_SHARED_LIBS OR SYLVAN_ENABLE_PIC)
+    set(_sylvan_needs_pic ON)
+endif()
+
 # First check if lace is already a target (e.g. parent project added it),
 # then try find_package, then fall back to FetchContent.
 if(NOT TARGET lace)
     find_package(lace 1.6.0 QUIET)
     if(NOT lace_FOUND)
+        set(_saved_bsl ${BUILD_SHARED_LIBS})
+        set(BUILD_SHARED_LIBS OFF)
+        if(_sylvan_needs_pic)
+            set(LACE_ENABLE_PIC ON CACHE BOOL "" FORCE)
+        endif()
+
         include(FetchContent)
         FetchContent_Declare(
             lace
@@ -55,8 +67,27 @@ if(NOT TARGET lace)
             GIT_SHALLOW    TRUE
         )
         FetchContent_MakeAvailable(lace)
+
+        set(BUILD_SHARED_LIBS ${_saved_bsl})
+        unset(_saved_bsl)
     endif()
 endif()
+
+# Verify PIC compatibility when needed
+if(_sylvan_needs_pic AND TARGET lace)
+    get_target_property(_lace_pic lace POSITION_INDEPENDENT_CODE)
+    if(NOT _lace_pic)
+        message(FATAL_ERROR
+            "Sylvan requires PIC (BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS}, "
+            "SYLVAN_ENABLE_PIC=${SYLVAN_ENABLE_PIC}) but the lace target "
+            "was built without POSITION_INDEPENDENT_CODE. Rebuild Lace with "
+            "-DCMAKE_POSITION_INDEPENDENT_CODE=ON or -DLACE_ENABLE_PIC=ON."
+        )
+    endif()
+    unset(_lace_pic)
+endif()
+
+unset(_sylvan_needs_pic)
 
 # ── Sanitizer support (top-level builds only) ────────────────────────────────
 

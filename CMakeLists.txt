@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.23...3.31)
 
 project(sylvan
     VERSION 1.10.0
@@ -7,32 +7,28 @@ project(sylvan
     LANGUAGES C CXX
 )
 
-# Check if top level
-if(CMAKE_VERSION VERSION_LESS 3.21)
-    if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
-        set(PROJECT_IS_TOP_LEVEL ON)
-    else()
-        set(PROJECT_IS_TOP_LEVEL OFF)
-    endif()
-endif()
-
-# Default build type
-if(PROJECT_IS_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+# Default to Release for top-level single-config builds
+if(sylvan_IS_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel)
 endif()
 
+# Generate compile_commands.json for clangd / IDE integration
+if(sylvan_IS_TOP_LEVEL)
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+endif()
+
 # Add CMake modules path
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/")
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/")
 
 # ── Options ──────────────────────────────────────────────────────────────────
 
 option(BUILD_SHARED_LIBS          "Build Sylvan as a shared library"                OFF)
 option(SYLVAN_NATIVE_OPT          "Enable -march=native for compiler optimizations" OFF)
 option(SYLVAN_ENABLE_PIC          "Build with -fPIC (for embedding in shared libs)" OFF)
-option(SYLVAN_BUILD_CPP           "Build Sylvan C++ bindings"                       ON)
-option(SYLVAN_BUILD_TESTS         "Build Sylvan tests"         ${PROJECT_IS_TOP_LEVEL})
-option(SYLVAN_BUILD_EXAMPLES      "Build Sylvan examples"      ${PROJECT_IS_TOP_LEVEL})
+option(SYLVAN_BUILD_CPP           "Build Sylvan C++ bindings"                        ON)
+option(SYLVAN_BUILD_TESTS         "Build Sylvan tests"          ${PROJECT_IS_TOP_LEVEL})
+option(SYLVAN_BUILD_EXAMPLES      "Build Sylvan examples"       ${PROJECT_IS_TOP_LEVEL})
 option(SYLVAN_BUILD_DOCS          "Build Sylvan documentation"                      OFF)
 
 # Enable C++ only when something needs it
@@ -139,7 +135,7 @@ endif()
 
 # ── Hide options when consumed as a subproject ───────────────────────────────
 
-if(NOT PROJECT_IS_TOP_LEVEL)
+if(NOT sylvan_IS_TOP_LEVEL)
     mark_as_advanced(
         BUILD_SHARED_LIBS
         SYLVAN_ENABLE_PIC
@@ -172,7 +168,7 @@ if(SYLVAN_BUILD_DOCS)
         ${CMAKE_CURRENT_BINARY_DIR}
     )
     add_custom_target(update_gh_pages
-        COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_MODULE_PATH}/UpdateGHPages.cmake"
+        COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_SOURCE_DIR}/cmake/UpdateGHPages.cmake"
     )
     add_dependencies(update_gh_pages sylvan_html)
 endif()

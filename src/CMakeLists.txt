@@ -6,26 +6,6 @@ add_library(sylvan::sylvan ALIAS sylvan)
 
 # ── Sources ──────────────────────────────────────────────────────────────────
 
-set(SYLVAN_HDRS
-    sylvan.h
-    sylvan_bdd.h
-    sylvan_cache.h
-    sylvan_config.h
-    sylvan_common.h
-    sylvan_hash.h
-    sylvan_int.h
-    sylvan_ldd.h
-    sylvan_ldd_int.h
-    sylvan_mt.h
-    sylvan_mtbdd.h
-    sylvan_mtbdd_int.h
-    sylvan_stats.h
-    sylvan_table.h
-    sylvan_tls.h
-    sylvan_zdd.h
-    sylvan_zdd_int.h
-)
-
 target_sources(sylvan
   PRIVATE
     sha2.c
@@ -41,14 +21,35 @@ target_sources(sylvan
     sylvan_stats.c
     sylvan_table.c
     sylvan_zdd.c
-    ${SYLVAN_HDRS}
+  PUBLIC
+    FILE_SET HEADERS
+    FILES
+      sylvan.h
+      sylvan_bdd.h
+      sylvan_cache.h
+      sylvan_config.h
+      sylvan_common.h
+      sylvan_hash.h
+      sylvan_int.h
+      sylvan_ldd.h
+      sylvan_ldd_int.h
+      sylvan_mt.h
+      sylvan_mtbdd.h
+      sylvan_mtbdd_int.h
+      sylvan_stats.h
+      sylvan_table.h
+      sylvan_tls.h
+      sylvan_zdd.h
+      sylvan_zdd_int.h
 )
 
 # ── Optional C++ bindings ────────────────────────────────────────────────────
  
 if(SYLVAN_BUILD_CPP)
-    list(APPEND SYLVAN_HDRS sylvan_obj.hpp)
-    target_sources(sylvan PRIVATE sylvan_obj.cpp sylvan_obj.hpp)
+    target_sources(sylvan
+      PRIVATE sylvan_obj.cpp
+      PUBLIC FILE_SET HEADERS FILES sylvan_obj.hpp
+    )
 endif()
 
 # ── Optional GMP support ────────────────────────────────────────────────────
@@ -56,8 +57,10 @@ endif()
 option(SYLVAN_GMP "Include custom MTBDD type GMP" OFF)
 if(SYLVAN_GMP)
     find_package(GMP REQUIRED)
-    list(APPEND SYLVAN_HDRS sylvan_gmp.h)
-    target_sources(sylvan PRIVATE sylvan_gmp.c sylvan_gmp.h)
+    target_sources(sylvan
+      PRIVATE sylvan_gmp.c
+      PUBLIC FILE_SET HEADERS FILES sylvan_gmp.h
+    )
     target_link_libraries(sylvan PUBLIC GMP::GMP)
 endif()
 
@@ -83,7 +86,7 @@ if(BUILD_SHARED_LIBS)
         SOVERSION ${PROJECT_VERSION_MAJOR}
     )
 endif()
- 
+
 # ── Compiler flags ──────────────────────────────────────────────────────────
  
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
@@ -98,19 +101,12 @@ elseif(MSVC)
     )
 endif()
 
-# ── Include directories ─────────────────────────────────────────────────────
- 
-target_include_directories(sylvan PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>
-    $<INSTALL_INTERFACE:include>
-)
-
 # ── Link dependencies ───────────────────────────────────────────────────────
  
 find_package(Threads REQUIRED)
 target_link_libraries(sylvan PUBLIC Threads::Threads)
 target_link_libraries(sylvan PUBLIC lace::lace)
-if(NOT WIN32)
+if(NOT WIN32 AND NOT APPLE)
     target_link_libraries(sylvan PUBLIC m)
 endif()
 
@@ -137,7 +133,7 @@ endif()
 
 # ── Hide tunables when consumed as a subproject ──────────────────────────────
 
-if(NOT PROJECT_IS_TOP_LEVEL)
+if(NOT sylvan_IS_TOP_LEVEL)
     mark_as_advanced(
         SYLVAN_GMP
         SYLVAN_ENABLE_PIC
@@ -153,19 +149,15 @@ include(GNUInstallDirs)
  
 install(TARGETS sylvan
     EXPORT sylvan-targets
-    ARCHIVE       DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    LIBRARY       DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME       DESTINATION ${CMAKE_INSTALL_BINDIR}
-    INCLUDES      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    ARCHIVE          DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY          DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME          DESTINATION ${CMAKE_INSTALL_BINDIR}
+    FILE_SET HEADERS DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
-
-install(FILES ${SYLVAN_HDRS}
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
-
+ 
 install(EXPORT sylvan-targets
-    FILE      sylvan-targets.cmake
-    NAMESPACE sylvan::
+    FILE        sylvan-targets.cmake
+    NAMESPACE   sylvan::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
 )
 
@@ -218,7 +210,7 @@ set(PKGC_LIBS_PRIVATE "")
 if(NOT WIN32 AND NOT APPLE)
     set(PKGC_LIBS_PRIVATE "-lm")
 endif()
- 
+
 if(NOT MSVC)
     configure_file(
         "${PROJECT_SOURCE_DIR}/cmake/sylvan.pc.in"

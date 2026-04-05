@@ -51,7 +51,7 @@ endif()
 # First check if lace is already a target (e.g. parent project added it),
 # then try find_package, then fall back to FetchContent.
 if(NOT TARGET lace)
-    find_package(lace 1.6.0 QUIET)
+    find_package(lace 1.6.1 QUIET)
     if(NOT lace_FOUND)
         set(_saved_bsl ${BUILD_SHARED_LIBS})
         set(BUILD_SHARED_LIBS OFF)
@@ -63,7 +63,7 @@ if(NOT TARGET lace)
         FetchContent_Declare(
             lace
             GIT_REPOSITORY https://github.com/trolando/lace.git
-            GIT_TAG        v1.6.0
+            GIT_TAG        v1.6.1
             GIT_SHALLOW    TRUE
         )
         FetchContent_MakeAvailable(lace)

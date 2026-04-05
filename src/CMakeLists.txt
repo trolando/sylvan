@@ -84,8 +84,6 @@ if(BUILD_SHARED_LIBS)
     )
 endif()
  
-set_target_properties(sylvan PROPERTIES PUBLIC_HEADER "${SYLVAN_HDRS}")
-
 # ── Compiler flags ──────────────────────────────────────────────────────────
  
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
@@ -159,9 +157,12 @@ install(TARGETS sylvan
     LIBRARY       DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME       DESTINATION ${CMAKE_INSTALL_BINDIR}
     INCLUDES      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
- 
+
+install(FILES ${SYLVAN_HDRS}
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
 install(EXPORT sylvan-targets
     FILE      sylvan-targets.cmake
     NAMESPACE sylvan::

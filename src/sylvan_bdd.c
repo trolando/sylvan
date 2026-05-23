@@ -1969,8 +1969,9 @@ VOID_TASK_5(sylvan_enum_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context,
         /* if length is 0 (enum called with empty vars??), return */
         if (i == 0) return;
         /* fill cube and vars with trace */
-        uint8_t cube[i];
-        BDDVAR vars[i];
+        void* mark = LACE_SCRATCH_MARK();
+        uint8_t* cube = LACE_SCRATCH_ARRAY(uint8_t, i);
+        BDDVAR* vars = LACE_SCRATCH_ARRAY(BDDVAR, i);
         int j=0;
         for (pp = path; pp != NULL; pp = pp->prev) {
             cube[i-j-1] = pp->val;
@@ -1979,6 +1980,7 @@ VOID_TASK_5(sylvan_enum_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context,
         }
         /* call callback */
         WRAP(cb, context, vars, cube, i);
+        LACE_SCRATCH_RESET(mark);
         return;
     }
 
@@ -2017,8 +2019,9 @@ VOID_TASK_5(sylvan_enum_par_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, cont
         /* if length is 0 (enum called with empty vars??), return */
         if (i == 0) return;
         /* fill cube and vars with trace */
-        uint8_t cube[i];
-        BDDVAR vars[i];
+        void* mark = LACE_SCRATCH_MARK();
+        uint8_t* cube = LACE_SCRATCH_ARRAY(uint8_t, i);
+        BDDVAR* vars = LACE_SCRATCH_ARRAY(BDDVAR, i);
         int j=0;
         for (pp = path; pp != NULL; pp = pp->prev) {
             cube[i-j-1] = pp->val;
@@ -2027,6 +2030,7 @@ VOID_TASK_5(sylvan_enum_par_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, cont
         }
         /* call callback */
         WRAP(cb, context, vars, cube, i);
+        LACE_SCRATCH_RESET(mark);
         return;
     }
 
@@ -2079,7 +2083,8 @@ TASK_5(BDD, sylvan_collect_do, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, vo
         /**
          * Fill array
          */
-        uint8_t arr[len];
+        void* mark = LACE_SCRATCH_MARK();
+        uint8_t* arr = LACE_SCRATCH_ARRAY(uint8_t, len);
         for (size_t i=0; i<len; i++) {
             arr[len-i-1] = path->val;
             path = path->prev;
@@ -2087,7 +2092,9 @@ TASK_5(BDD, sylvan_collect_do, BDD, bdd, BDDSET, vars, sylvan_collect_cb, cb, vo
         /**
          * Call callback
          */
-        return WRAP(cb, context, arr);
+        BDD result = WRAP(cb, context, arr);
+        LACE_SCRATCH_RESET(mark);
+        return result;
     } else {
         /**
          * Obtain domain variable

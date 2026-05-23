@@ -91,7 +91,7 @@ endif()
  
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(sylvan PRIVATE
-        $<$<CONFIG:Debug>:-O0 -Wall -Wextra -Wpedantic -pipe>
+        $<$<CONFIG:Debug>:-O0 -Wall -Wextra -Wpedantic -pipe -Wvla -Werror=vla>
         $<$<CONFIG:Release>:-pipe>
         $<$<BOOL:${SYLVAN_NATIVE_OPT}>:-march=native>
     )

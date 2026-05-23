@@ -2,6 +2,10 @@ name: Windows
 
 on: [push, pull_request]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   msys2-build:
     name: '${{matrix.icon}} ${{matrix.sys}} ${{matrix.build_type}}'
@@ -10,40 +14,42 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { icon: '🟦', sys: mingw64, build_type: Release }
-          - { icon: '🟦', sys: mingw64, build_type: Debug }
-          - { icon: '🟨', sys: ucrt64,  build_type: Release }
-          - { icon: '🟨', sys: ucrt64,  build_type: Debug }
-          - { icon: '🟧', sys: clang64, build_type: Release }
-          - { icon: '🟧', sys: clang64, build_type: Debug }
+          - { icon: '🟦', sys: mingw64, build_type: RelWithDebInfo }
+          - { icon: '🟨', sys: ucrt64,  build_type: RelWithDebInfo }
+          - { icon: '🟨', sys: ucrt64,  build_type: Debug   }
+          - { icon: '🟧', sys: clang64, build_type: RelWithDebInfo }
     defaults:
       run:
         shell: msys2 {0}
     steps:
-    - uses: actions/checkout@v6
+    - name: '🧰 Checkout'
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
 
-    - name: Setup MSYS2
+    - name: '${{ matrix.icon }} Setup MSYS2'
       uses: msys2/setup-msys2@v2
       with:
         msystem: ${{matrix.sys}}
         update: true
+        install: >-
+          git
+          make
         pacboy: >-
           toolchain:p
           cmake:p
           ninja:p
           gmp:p
 
-    - name: Configure
+    - name: '🚧 Build'
       run: |
         cmake -G Ninja -S . -B build \
           -DCMAKE_BUILD_TYPE=${{matrix.build_type}} \
           -DCMAKE_INSTALL_PREFIX=$HOME/sylvan-install \
           -DSYLVAN_GMP=ON
+        cmake --build build
 
-    - name: Build
-      run: cmake --build build --config ${{matrix.build_type}}
-
-    - name: Test
+    - name: '🧪 Test'
       working-directory: build
       run: |
         ctest --output-on-failure -C ${{matrix.build_type}} -VV --timeout 30
@@ -66,3 +72,61 @@ jobs:
       run: |
         export CMAKE_PREFIX_PATH=$HOME/sylvan-install
         ./test.sh
+
+  msvc-build:
+    name: '🧱 MSVC ${{ matrix.build_type }}'
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [RelWithDebInfo, Debug]
+    steps:
+    - name: '🧰 Checkout'
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: 🧰 Setup MSVC dev cmd
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+
+    - name: 🛠️  Configure
+      run: |
+        $prefix = Join-Path $env:RUNNER_TEMP "sylvan-install"
+        cmake -G Ninja -S . -B build `
+          -DCMAKE_BUILD_TYPE=${{matrix.build_type}} `
+          "-DCMAKE_INSTALL_PREFIX=$prefix" `
+
+    - name: 🏗️  Build
+      run: cmake --build build
+
+    - name: '🧪 Test'
+      working-directory: build
+      run: |
+        ctest --output-on-failure -C ${{matrix.build_type}} -VV --timeout 30
+
+        .\examples\simple.exe
+
+        $out = .\examples\nqueens.exe -w 2 9 2>&1
+        $out
+        if ($LASTEXITCODE -ne 0 -or $out -notmatch "352 solutions") { exit 1 }
+
+        $out = .\examples\bddmc.exe ..\models\schedule_world.2.bdd -w 2 2>&1
+        $out
+        if ($LASTEXITCODE -ne 0 -or $out -notmatch "1570340") { exit 1 }
+
+        $out = .\examples\lddmc.exe ..\models\blocks.2.ldd -w 2 2>&1
+        $out
+        if ($LASTEXITCODE -ne 0 -or $out -notmatch "7057 states") { exit 1 }
+
+    - name: Install
+      run: cmake --install build
+
+    - name: Run CMake consumer test
+      working-directory: test/install/consumer-cmake
+      run: |
+        $env:CMAKE_PREFIX_PATH = "$env:RUNNER_TEMP\sylvan-install"
+        cmake -S . -B build -G Ninja
+        cmake --build build
+        .\build\test.exe

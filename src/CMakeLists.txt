@@ -27,7 +27,6 @@ target_sources(sylvan
       sylvan.h
       sylvan_bdd.h
       sylvan_cache.h
-      sylvan_config.h
       sylvan_common.h
       sylvan_hash.h
       sylvan_int.h
@@ -143,6 +142,19 @@ if(NOT sylvan_IS_TOP_LEVEL)
     )
 endif()
 
+# ── Configuration ────────────────────────────────────────────────────────────
+
+file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/src")
+configure_file(
+    ${PROJECT_SOURCE_DIR}/src/sylvan_config.h.in
+    ${PROJECT_BINARY_DIR}/src/sylvan_config.h
+    @ONLY
+)
+target_include_directories(sylvan
+  PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/src>
+)
+
 # ── Installation ─────────────────────────────────────────────────────────────
  
 include(GNUInstallDirs)
@@ -154,6 +166,9 @@ install(TARGETS sylvan
     RUNTIME          DESTINATION ${CMAKE_INSTALL_BINDIR}
     FILE_SET HEADERS DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
+
+# special case for sylvan_config.h
+install(FILES "${PROJECT_BINARY_DIR}/src/sylvan_config.h" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
  
 install(EXPORT sylvan-targets
     FILE        sylvan-targets.cmake

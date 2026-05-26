@@ -20,14 +20,10 @@
 #endif
 
 /* Enable/disable counters and timers */
-#ifndef SYLVAN_STATS
-#define SYLVAN_STATS 0
-#endif
+#cmakedefine01 SYLVAN_STATS
 
 /* Enable/disable using mmap to allocate large amounts of memory */
-#ifndef SYLVAN_USE_MMAP
-#define SYLVAN_USE_MMAP 0
-#endif
+#cmakedefine01 SYLVAN_USE_MMAP
 
 /* Aggressive or conservative resizing strategy */
 #ifndef SYLVAN_AGGRESSIVE_RESIZE

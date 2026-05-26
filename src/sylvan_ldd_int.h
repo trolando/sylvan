@@ -30,9 +30,11 @@
  * RmRR RRRR RRRR VVVV | VVVV DcDD DDDD DDDD (little endian - in memory)
  * VVVV RRRR RRRR RRRm | DDDD DDDD DDDc VVVV (big endian)
  */
-typedef struct __attribute__((packed)) mddnode {
+typedef struct mddnode {
     uint64_t a, b;
 } * mddnode_t; // 16 bytes
+
+static_assert(sizeof(struct mddnode) == 16, "mddnode should be a 16 byte struct");
 
 static inline mddnode_t
 LDD_GETNODE(MDD mdd)

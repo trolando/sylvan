@@ -139,7 +139,7 @@ typedef struct lddmc_refs_internal
     lddmc_refs_task_t sbegin, send, scur;
 } *lddmc_refs_internal_t;
 
-DECLARE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
+SYLVAN_TLS lddmc_refs_internal_t lddmc_refs_key;
 
 VOID_TASK_2(lddmc_refs_mark_p_par, const MDD**, begin, size_t, count)
 {
@@ -191,7 +191,6 @@ VOID_TASK_2(lddmc_refs_mark_s_par, lddmc_refs_task_t, begin, size_t, count)
 
 VOID_TASK_0(lddmc_refs_mark_task)
 {
-    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
     SPAWN(lddmc_refs_mark_p_par, lddmc_refs_key->pbegin, lddmc_refs_key->pcur-lddmc_refs_key->pbegin);
     SPAWN(lddmc_refs_mark_r_par, lddmc_refs_key->rbegin, lddmc_refs_key->rcur-lddmc_refs_key->rbegin);
     CALL(lddmc_refs_mark_s_par, lddmc_refs_key->sbegin, lddmc_refs_key->scur-lddmc_refs_key->sbegin);
@@ -215,19 +214,15 @@ lddmc_refs_init_key(void)
     s->rend = s->rbegin + 1024;
     s->scur = s->sbegin = (lddmc_refs_task_t)malloc(sizeof(struct lddmc_refs_task) * 1024);
     s->send = s->sbegin + 1024;
-    SET_THREAD_LOCAL(lddmc_refs_key, s);
+    lddmc_refs_key = s;
 }
 
 VOID_TASK_0(lddmc_refs_free)
 {
-    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
-    if (lddmc_refs_key != NULL) {
-        free(lddmc_refs_key->pbegin);
-        free(lddmc_refs_key->rbegin);
-        free(lddmc_refs_key->sbegin);
-        free(lddmc_refs_key);
-        SET_THREAD_LOCAL(lddmc_refs_key, NULL);
-    }
+    free(lddmc_refs_key->pbegin);
+    free(lddmc_refs_key->rbegin);
+    free(lddmc_refs_key->sbegin);
+    free(lddmc_refs_key);
 }
 
 VOID_TASK_0(lddmc_refs_init_task)
@@ -237,7 +232,6 @@ VOID_TASK_0(lddmc_refs_init_task)
 
 VOID_TASK_0(lddmc_refs_init)
 {
-    INIT_THREAD_LOCAL(lddmc_refs_key);
     TOGETHER(lddmc_refs_init_task);
     sylvan_gc_add_mark(lddmc_refs_mark_CALL);
 }
@@ -273,7 +267,6 @@ lddmc_refs_tasks_up(lddmc_refs_internal_t lddmc_refs_key)
 void __attribute__((unused))
 lddmc_refs_pushptr(const MDD *ptr)
 {
-    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
     // If you get a segfault here (null dereference) then you're running this from outside Lace threads
     *lddmc_refs_key->pcur++ = ptr;
     if (lddmc_refs_key->pcur == lddmc_refs_key->pend) lddmc_refs_ptrs_up(lddmc_refs_key);
@@ -282,14 +275,12 @@ lddmc_refs_pushptr(const MDD *ptr)
 void __attribute__((unused))
 lddmc_refs_popptr(size_t amount)
 {
-    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
     lddmc_refs_key->pcur -= amount;
 }
 
 MDD __attribute__((unused))
 lddmc_refs_push(MDD lddmc)
 {
-    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
     // If you get a segfault here (null dereference) then you're running this from outside Lace threads
     *(lddmc_refs_key->rcur++) = lddmc;
     if (lddmc_refs_key->rcur == lddmc_refs_key->rend) return lddmc_refs_refs_up(lddmc_refs_key, lddmc);
@@ -299,14 +290,12 @@ lddmc_refs_push(MDD lddmc)
 void __attribute__((unused))
 lddmc_refs_pop(long amount)
 {
-    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
     lddmc_refs_key->rcur -= amount;
 }
 
 void __attribute__((unused))
 lddmc_refs_spawn(Task *t)
 {
-    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
     lddmc_refs_key->scur->t = t;
     lddmc_refs_key->scur->f = t->f;
     lddmc_refs_key->scur += 1;
@@ -316,7 +305,6 @@ lddmc_refs_spawn(Task *t)
 MDD __attribute__((unused))
 lddmc_refs_sync(MDD result)
 {
-    LOCALIZE_THREAD_LOCAL(lddmc_refs_key, lddmc_refs_internal_t);
     lddmc_refs_key->scur -= 1;
     return result;
 }

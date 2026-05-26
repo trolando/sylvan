@@ -27,9 +27,11 @@
 /**
  * BDD/MTBDD node structure
  */
-typedef struct __attribute__((packed)) mtbddnode {
+typedef struct mtbddnode {
     uint64_t a, b;
 } * mtbddnode_t; // 16 bytes
+
+static_assert(sizeof(struct mtbddnode) == 16, "mtbddnode should be a 16 byte struct");
 
 static inline mtbddnode_t
 MTBDD_GETNODE(MTBDD dd)

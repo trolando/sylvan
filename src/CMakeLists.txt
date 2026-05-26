@@ -16,6 +16,7 @@ target_sources(sylvan
     sylvan_ldd.c
     sylvan_mt.c
     sylvan_mtbdd.c
+    sylvan_platform.c
     sylvan_refs.c
     sylvan_sl.c
     sylvan_stats.c
@@ -35,9 +36,9 @@ target_sources(sylvan
       sylvan_mt.h
       sylvan_mtbdd.h
       sylvan_mtbdd_int.h
+      sylvan_platform.h
       sylvan_stats.h
       sylvan_table.h
-      sylvan_tls.h
       sylvan_zdd.h
       sylvan_zdd_int.h
 )
@@ -114,13 +115,19 @@ endif()
 
 # ── Platform feature detection ───────────────────────────────────────────────
  
-option(SYLVAN_USE_MMAP "Let Sylvan use mmap to allocate (virtual) memory" ON)
+option(SYLVAN_USE_MMAP "Let Sylvan use mmap or VirtualAlloc to allocate (virtual) memory" ON)
 if(SYLVAN_USE_MMAP)
-    include(CheckSymbolExists)
-    check_symbol_exists(mmap "sys/mman.h" HAVE_MMAP)
-    if(NOT HAVE_MMAP)
-        message(WARNING "mmap not found: disabling mmap support")
-        set(SYLVAN_USE_MMAP OFF)
+    if(WIN32)
+        target_compile_definitions(sylvan PUBLIC SYLVAN_USE_MMAP)
+    else()
+        include(CheckSymbolExists)
+        check_symbol_exists(mmap "sys/mman.h" HAVE_MMAP)
+        if(NOT HAVE_MMAP)
+            message(WARNING "mmap not found: disabling mmap support")
+            set(SYLVAN_USE_MMAP OFF)
+        else()
+            target_compile_definitions(sylvan PUBLIC SYLVAN_USE_MMAP)
+        endif()
     endif()
 endif()
 

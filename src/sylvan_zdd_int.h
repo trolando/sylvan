@@ -51,9 +51,11 @@
  * ZDD node structure
  */
 
-typedef struct __attribute__((packed)) zddnode {
+typedef struct zddnode {
     uint64_t a, b;
 } * zddnode_t; // 16 bytes
+
+static_assert(sizeof(struct zddnode) == 16, "zddnode should be a 16 byte struct");
 
 /**
  * Some inlines to work with the ZDD type and the complement marks

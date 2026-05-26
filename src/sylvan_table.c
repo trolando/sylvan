@@ -16,25 +16,22 @@
  */
 
 #include <sylvan_int.h>
-#include <sylvan_align.h>
+#include <sylvan_platform.h>
 
 #include <errno.h>  // for errno
 #include <string.h> // memset
 
-DECLARE_THREAD_LOCAL(my_region, uint64_t);
+SYLVAN_TLS uint64_t my_region;
 
 VOID_TASK_0(llmsset_reset_region)
 {
-    LOCALIZE_THREAD_LOCAL(my_region, uint64_t);
-    my_region = (uint64_t)-1; // no region
-    SET_THREAD_LOCAL(my_region, my_region);
+    // we don't actually need Lace, but it's a Lace task to run for initialisation
+    my_region = UINT64_MAX; // no region
 }
 
 static uint64_t
 claim_data_bucket(const llmsset_t dbs)
 {
-    LOCALIZE_THREAD_LOCAL(my_region, uint64_t);
-
     for (;;) {
         if (my_region != (uint64_t)-1) {
             // find empty bucket in region <my_region>
@@ -42,9 +39,9 @@ claim_data_bucket(const llmsset_t dbs)
             int i=0;
             for (;i<8;) {
                 uint64_t v = atomic_load_explicit(ptr, memory_order_relaxed);
-                if (v != 0xffffffffffffffffLL) {
-                    int j = __builtin_clzll(~v);
-                    *ptr |= (0x8000000000000000LL>>j);
+                if (v != UINT64_MAX) {
+                    int j = clz_uint64(~v);
+                    *ptr |= (UINT64_C(0x8000000000000000) >> j);
                     return (8 * my_region + i) * 64 + j;
                 }
                 i++;
@@ -72,7 +69,6 @@ restart:
             if (atomic_compare_exchange_weak(ptr, &v, v|mask)) break;
             else goto restart;
         }
-        SET_THREAD_LOCAL(my_region, my_region);
     }
 }
 
@@ -255,7 +251,7 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 llmsset_t
 llmsset_create(size_t initial_size, size_t max_size)
 {
-    llmsset_t dbs = alloc_aligned(sizeof(struct llmsset));
+    llmsset_t dbs = sylvan_alloc_aligned(sizeof(struct llmsset));
     if (dbs == 0) {
         fprintf(stderr, "llmsset_create: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
@@ -263,12 +259,12 @@ llmsset_create(size_t initial_size, size_t max_size)
 
 #if LLMSSET_MASK
     /* Check if initial_size and max_size are powers of 2 */
-    if (__builtin_popcountll(initial_size) != 1) {
+    if (popcnt_uint64((uint64_t)initial_size) != 1) {
         fprintf(stderr, "llmsset_create: initial_size is not a power of 2!\n");
         exit(1);
     }
 
-    if (__builtin_popcountll(max_size) != 1) {
+    if (popcnt_uint64((uint64_t)max_size) != 1) {
         fprintf(stderr, "llmsset_create: max_size is not a power of 2!\n");
         exit(1);
     }
@@ -292,17 +288,17 @@ llmsset_create(size_t initial_size, size_t max_size)
     /* This implementation of "resizable hash table" allocates the max_size table in virtual memory,
        but only uses the "actual size" part in real memory */
 
-    dbs->table = (_Atomic(uint64_t)*) alloc_aligned(dbs->max_size * 8);
-    dbs->data = (uint8_t*) alloc_aligned(dbs->max_size * 16);
+    dbs->table = (_Atomic(uint64_t)*) sylvan_alloc_aligned(dbs->max_size * 8);
+    dbs->data = (uint8_t*)sylvan_alloc_aligned(dbs->max_size * 16);
 
     /* Also allocate bitmaps. Each region is 64*8 = 512 buckets.
        Overhead of bitmap1: 1 bit per 4096 bucket.
        Overhead of bitmap2: 1 bit per bucket.
        Overhead of bitmapc: 1 bit per bucket. */
 
-    dbs->bitmap1 = (_Atomic(uint64_t)*)alloc_aligned(dbs->max_size / (512*8));
-    dbs->bitmap2 = (_Atomic(uint64_t)*)alloc_aligned(dbs->max_size / 8);
-    dbs->bitmapc = (uint64_t*)alloc_aligned(dbs->max_size / 8);
+    dbs->bitmap1 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(dbs->max_size / (512*8));
+    dbs->bitmap2 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(dbs->max_size / 8);
+    dbs->bitmapc = (uint64_t*)sylvan_alloc_aligned(dbs->max_size / 8);
 
     if (dbs->table == 0 || dbs->data == 0 || dbs->bitmap1 == 0 || dbs->bitmap2 == 0 || dbs->bitmapc == 0) {
         fprintf(stderr, "llmsset_create: Unable to allocate memory: %s!\n", strerror(errno));
@@ -325,7 +321,6 @@ llmsset_create(size_t initial_size, size_t max_size)
     // that is a problem with multiple tables.
     // so, for now, do NOT use multiple tables!!
 
-    INIT_THREAD_LOCAL(my_region);
     TOGETHER(llmsset_reset_region);
 
     // initialize hashtab
@@ -337,12 +332,12 @@ llmsset_create(size_t initial_size, size_t max_size)
 void
 llmsset_free(llmsset_t dbs)
 {
-    free_aligned(dbs->table, dbs->max_size * 8);
-    free_aligned(dbs->data, dbs->max_size * 16);
-    free_aligned(dbs->bitmap1, dbs->max_size / (512*8));
-    free_aligned(dbs->bitmap2, dbs->max_size / 8);
-    free_aligned(dbs->bitmapc, dbs->max_size / 8);
-    free_aligned(dbs, sizeof(struct llmsset));
+    sylvan_free_aligned(dbs->table, dbs->max_size * 8);
+    sylvan_free_aligned(dbs->data, dbs->max_size * 16);
+    sylvan_free_aligned(dbs->bitmap1, dbs->max_size / (512*8));
+    sylvan_free_aligned(dbs->bitmap2, dbs->max_size / 8);
+    sylvan_free_aligned(dbs->bitmapc, dbs->max_size / 8);
+    sylvan_free_aligned(dbs, sizeof(struct llmsset));
 }
 
 VOID_TASK_IMPL_1(llmsset_clear, llmsset_t, dbs)
@@ -353,8 +348,8 @@ VOID_TASK_IMPL_1(llmsset_clear, llmsset_t, dbs)
 
 VOID_TASK_IMPL_1(llmsset_clear_data, llmsset_t, dbs)
 {
-    clear_aligned(dbs->bitmap1, dbs->max_size / (512*8));
-    clear_aligned(dbs->bitmap2, dbs->max_size / 8);
+    sylvan_clear_aligned(dbs->bitmap1, dbs->max_size / (512*8));
+    sylvan_clear_aligned(dbs->bitmap2, dbs->max_size / 8);
 
     // forbid first two positions (index 0 and 1)
     dbs->bitmap2[0] = 0xc000000000000000LL;
@@ -364,7 +359,7 @@ VOID_TASK_IMPL_1(llmsset_clear_data, llmsset_t, dbs)
 
 VOID_TASK_IMPL_1(llmsset_clear_hashes, llmsset_t, dbs)
 {
-    clear_aligned(dbs->table, dbs->max_size * 8);
+    sylvan_clear_aligned(dbs->table, dbs->max_size * 8);
 }
 
 int
@@ -428,14 +423,14 @@ TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, 
         size_t result = 0;
         _Atomic(uint64_t)* ptr = dbs->bitmap2 + (first / 64);
         if (count == 512) {
-            result += __builtin_popcountll(atomic_load_explicit(ptr+0, memory_order_relaxed));
-            result += __builtin_popcountll(atomic_load_explicit(ptr+1, memory_order_relaxed));
-            result += __builtin_popcountll(atomic_load_explicit(ptr+2, memory_order_relaxed));
-            result += __builtin_popcountll(atomic_load_explicit(ptr+3, memory_order_relaxed));
-            result += __builtin_popcountll(atomic_load_explicit(ptr+4, memory_order_relaxed));
-            result += __builtin_popcountll(atomic_load_explicit(ptr+5, memory_order_relaxed));
-            result += __builtin_popcountll(atomic_load_explicit(ptr+6, memory_order_relaxed));
-            result += __builtin_popcountll(atomic_load_explicit(ptr+7, memory_order_relaxed));
+            result += popcnt_uint64(atomic_load_explicit(ptr+0, memory_order_relaxed));
+            result += popcnt_uint64(atomic_load_explicit(ptr+1, memory_order_relaxed));
+            result += popcnt_uint64(atomic_load_explicit(ptr+2, memory_order_relaxed));
+            result += popcnt_uint64(atomic_load_explicit(ptr+3, memory_order_relaxed));
+            result += popcnt_uint64(atomic_load_explicit(ptr+4, memory_order_relaxed));
+            result += popcnt_uint64(atomic_load_explicit(ptr+5, memory_order_relaxed));
+            result += popcnt_uint64(atomic_load_explicit(ptr+6, memory_order_relaxed));
+            result += popcnt_uint64(atomic_load_explicit(ptr+7, memory_order_relaxed));
         } else {
             uint64_t mask = 0x8000000000000000LL >> (first & 63);
             for (size_t k=0; k<count; k++) {

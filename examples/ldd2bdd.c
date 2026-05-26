@@ -610,7 +610,7 @@ VOID_TASK_0(run)
     // Compute highest action label value (from transition relations)
     uint32_t highest_action = 0;
     for (int i=0; i<next_count; i++) {
-        compute_highest_action(next[i]->dd, next[i]->meta, &highest_action);
+        compute_highest_action(next[i]->dd, next[i]->meta, (uint32_t*)&highest_action);
     }
 
     // Compute number of bits for each level

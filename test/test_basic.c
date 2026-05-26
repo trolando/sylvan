@@ -2,18 +2,19 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
-#include <unistd.h>
 #include <time.h>
 #include <sys/types.h>
-#include <sys/time.h>
 #include <inttypes.h>
 
 #include "sylvan.h"
 #include "test_assert.h"
 #include "sylvan_int.h"
 
-__thread uint64_t seed = 1;
+#include <sylvan_platform.h>
+#include <lace.h>
+
+
+SYLVAN_TLS uint64_t seed = 1;
 
 uint64_t
 xorshift_rand(void)

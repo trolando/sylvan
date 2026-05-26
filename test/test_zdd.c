@@ -2,14 +2,14 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "sylvan.h"
 #include "sylvan_int.h"
+#include <sylvan_platform.h>
 
 #include "test_assert.h"
 
-__thread uint64_t seed = 1;
+SYLVAN_TLS uint64_t seed = 1;
 
 uint64_t
 xorshift_rand(void)

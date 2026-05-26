@@ -90,12 +90,15 @@ endif()
  
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(sylvan PRIVATE
-        $<$<CONFIG:Debug>:-O0 -Wall -Wextra -Wpedantic -pipe -Wvla -Werror=vla>
-        $<$<CONFIG:Release>:-pipe>
+        -pipe
+        $<$<CONFIG:Debug>:-O0 -Wall -Wextra -Wpedantic -Wvla -Werror=vla>
         $<$<BOOL:${SYLVAN_NATIVE_OPT}>:-march=native>
     )
 elseif(MSVC)
-    target_compile_options(sylvan PRIVATE
+    target_compile_options(sylvan
+      PRIVATE
+        /Zc:__STDC__
+        /experimental:c11atomics
         $<$<CONFIG:Debug>:/Od /W4 /Zi>
     )
 endif()
@@ -105,7 +108,7 @@ endif()
 find_package(Threads REQUIRED)
 target_link_libraries(sylvan PUBLIC Threads::Threads)
 target_link_libraries(sylvan PUBLIC lace::lace)
-if(NOT WIN32 AND NOT APPLE)
+if(UNIX AND NOT APPLE)
     target_link_libraries(sylvan PUBLIC m)
 endif()
 
@@ -118,8 +121,6 @@ if(SYLVAN_USE_MMAP)
     if(NOT HAVE_MMAP)
         message(WARNING "mmap not found: disabling mmap support")
         set(SYLVAN_USE_MMAP OFF)
-    else()
-        target_compile_definitions(sylvan PUBLIC SYLVAN_USE_MMAP)
     endif()
 endif()
 
@@ -225,7 +226,7 @@ endif()
 # -lm is needed by consumers for static linking; Threads are already pulled
 # in transitively via the lace.pc Requires line.
 set(PKGC_LIBS_PRIVATE "")
-if(NOT WIN32 AND NOT APPLE)
+if(UNIX AND NOT APPLE)
     set(PKGC_LIBS_PRIVATE "-lm")
 endif()
 

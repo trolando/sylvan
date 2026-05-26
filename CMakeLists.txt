@@ -36,6 +36,8 @@ if(SYLVAN_BUILD_CPP OR SYLVAN_BUILD_TESTS OR SYLVAN_BUILD_EXAMPLES)
     enable_language(CXX)
 endif()
 
+include(CTest) # defines BUILD_TESTING option
+
 # ── Dependencies ─────────────────────────────────────────────────────────────
 
 # Determine if Lace needs PIC (shared Sylvan or explicit PIC request)
@@ -150,7 +152,7 @@ endif()
 
 add_subdirectory(src)
 
-if(SYLVAN_BUILD_TESTS)
+if(SYLVAN_BUILD_TESTS AND BUILD_TESTING)
     enable_testing()
     add_subdirectory(test)
 endif()

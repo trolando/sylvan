@@ -140,7 +140,7 @@ make_random(int i, int j)
 static MDD
 make_random_ldd_set(int depth, int maxvalue, int elements)
 {
-    uint32_t values[depth];
+    uint32_t *values = (uint32_t*)malloc((size_t)depth * sizeof(*values));
     MDD result = mtbdd_false; // empty set
     for (int i=0; i<elements; i++) {
         lddmc_refs_push(result);
@@ -150,6 +150,7 @@ make_random_ldd_set(int depth, int maxvalue, int elements)
         result = lddmc_union_cube(result, values, depth);
         lddmc_refs_pop(1);
     }
+    free(values);
     return result;
 }
 
@@ -326,10 +327,10 @@ static int
 test_disjoint_subset()
 {
     // We need to test: disjoint, subset
-    
-    int vars=3;
-    BDD v[vars];
-    for (int i=0; i<vars; i++) v[i] = sylvan_nithvar(i);
+#define VARS 3    
+    BDD v[VARS];
+    for (int i=0; i<VARS; i++) v[i] = sylvan_nithvar(i);
+#undef VARS
 
     BDD test_input[] = {
         sylvan_true, sylvan_false,

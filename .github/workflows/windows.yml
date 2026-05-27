@@ -106,7 +106,12 @@ jobs:
       run: |
         ctest --output-on-failure -C ${{matrix.build_type}} -VV --timeout 30
 
-        .\examples\simple.exe
+        $out = .\examples\simple.exe 2>&1
+        $out
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "simple.exe failed with exit code $LASTEXITCODE"
+          exit $LASTEXITCODE
+        }
 
         $out = .\examples\nqueens.exe -w 2 9 2>&1
         $out

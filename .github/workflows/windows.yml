@@ -106,24 +106,27 @@ jobs:
       run: |
         ctest --output-on-failure -C ${{matrix.build_type}} -VV --timeout 30
 
-        $out = .\examples\simple.exe 2>&1
-        $out
-        if ($LASTEXITCODE -ne 0) {
-          Write-Error "simple.exe failed with exit code $LASTEXITCODE"
-          exit $LASTEXITCODE
-        }
+        Write-Host "Running simple..."
+        .\examples\simple.exe
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+        Write-Host "Running nqueens..."
         $out = .\examples\nqueens.exe -w 2 9 2>&1
         $out
-        if ($LASTEXITCODE -ne 0 -or $out -notmatch "352 solutions") { exit 1 }
+        $text = $out -join "`n"
+        if ($LASTEXITCODE -ne 0 -or $text -notmatch "352 solutions") { exit 1 }
 
+        Write-Host "Running bddmc..."
         $out = .\examples\bddmc.exe ..\models\schedule_world.2.bdd -w 2 2>&1
         $out
-        if ($LASTEXITCODE -ne 0 -or $out -notmatch "1570340") { exit 1 }
+        $text = $out -join "`n"
+        if ($LASTEXITCODE -ne 0 -or $text -notmatch "1570340") { exit 1 }
 
+        Write-Host "Running lddmc..."
         $out = .\examples\lddmc.exe ..\models\blocks.2.ldd -w 2 2>&1
         $out
-        if ($LASTEXITCODE -ne 0 -or $out -notmatch "7057 states") { exit 1 }
+        $text = $out -join "`n"
+        if ($LASTEXITCODE -ne 0 -or $text -notmatch "7057 states") { exit 1 }
 
     - name: Install
       run: cmake --install build

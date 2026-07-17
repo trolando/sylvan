@@ -1,6 +1,25 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Added support for building and running Sylvan on Windows with MSVC, alongside
+  the existing MSYS2 builds. Windows library builds are currently static.
+
+### Changed
+- Large internal allocations are cleared using virtual memory operations on
+  supported platforms.
+- Improved CMake integration, including true C-only builds, cleaner subproject
+  behavior, and stronger installed-package tests.
+- Cleaned up portability issues and compiler warnings across MSVC, GCC, and
+  Clang.
+
+### Fixed
+- Fixed garbage collection on Windows.
+- Fixed edge cases in MTBDD integer and fraction handling.
+- Fixed ZDD reference handling and domain operations.
+
 ## [1.10.0] - 2026-03-31
 
 This release contains a small API change in Lace, which will break things! If you use

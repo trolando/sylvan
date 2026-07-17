@@ -18,6 +18,7 @@
 #include <sylvan_int.h>
 
 #include <inttypes.h>
+#include <limits.h>
 #include <math.h>
 #include <string.h>
 
@@ -544,6 +545,17 @@ gcd(uint32_t u, uint32_t v)
     return u << shift;
 }
 
+static uint64_t
+gcd64(uint64_t u, uint64_t v)
+{
+    while (v != 0) {
+        const uint64_t remainder = u % v;
+        u = v;
+        v = remainder;
+    }
+    return u;
+}
+
 /**
  * Create leaves of unsigned/signed integers and doubles
  */
@@ -565,12 +577,27 @@ mtbdd_double(double value)
 MTBDD
 mtbdd_fraction(int64_t nom, uint64_t denom)
 {
+    if (denom == 0) {
+        fprintf(stderr, "mtbdd_fraction: denominator must not be zero\n");
+        return mtbdd_invalid;
+    }
+
     if (nom == 0) return mtbdd_makeleaf(2, 1);
-    uint32_t c = gcd(nom < 0 ? -nom : nom, denom);
-    nom /= c;
+
+    const int negative = nom < 0;
+    uint64_t magnitude = negative ? (uint64_t)(-(nom + 1)) + 1 : (uint64_t)nom;
+    const uint64_t c = gcd64(magnitude, denom);
+    magnitude /= c;
     denom /= c;
-    if (nom > 2147483647 || nom < -2147483647 || denom > 4294967295) fprintf(stderr, "mtbdd_fraction: fraction overflow\n");
-    return mtbdd_makeleaf(2, (nom<<32)|denom);
+
+    if (magnitude > INT32_MAX || denom > UINT32_MAX) {
+        fprintf(stderr, "mtbdd_fraction: reduced fraction does not fit in a terminal\n");
+        return mtbdd_invalid;
+    }
+
+    const int32_t numerator = negative ? -(int32_t)magnitude : (int32_t)magnitude;
+    const uint64_t value = ((uint64_t)(uint32_t)numerator << 32) | denom;
+    return mtbdd_makeleaf(2, value);
 }
 
 /**
@@ -961,23 +988,46 @@ TASK_2(MTBDD, mtbdd_uop_pow_uint, MTBDD, a, size_t, k)
     return mtbdd_invalid;
 }
 
+static MTBDD
+mtbdd_uapply_power_of_two(MTBDD a, mtbdd_uapply_op op, unsigned int k)
+{
+    const unsigned int max_shift = (unsigned int)(sizeof(size_t) * CHAR_BIT - 1);
+    const size_t max_factor = (size_t)1 << max_shift;
+    MTBDD result = a;
+
+    while (k > max_shift) {
+        mtbdd_refs_push(result);
+        result = mtbdd_uapply(result, op, max_factor);
+        mtbdd_refs_pop(1);
+        if (result == mtbdd_invalid) return mtbdd_invalid;
+        k -= max_shift;
+    }
+
+    mtbdd_refs_push(result);
+    result = mtbdd_uapply(result, op, (size_t)1 << k);
+    mtbdd_refs_pop(1);
+    return result;
+}
+
 TASK_IMPL_3(MTBDD, mtbdd_abstract_op_plus, MTBDD, a, MTBDD, b, int, k)
 {
-    if (k==0) {
+    if (k < 0) {
+        return mtbdd_invalid;
+    } else if (k == 0) {
         return mtbdd_apply(a, b, mtbdd_op_plus_CALL);
     } else {
-        uint64_t factor = 1ULL<<k; // skip 1,2,3,4: times 2,4,8,16
-        return mtbdd_uapply(a, mtbdd_uop_times_uint_CALL, factor);
+        return mtbdd_uapply_power_of_two(a, mtbdd_uop_times_uint_CALL, (unsigned int)k);
     }
 }
 
 TASK_IMPL_3(MTBDD, mtbdd_abstract_op_times, MTBDD, a, MTBDD, b, int, k)
 {
-    if (k==0) {
+    if (k < 0) {
+        return mtbdd_invalid;
+    } else if (k == 0) {
         return mtbdd_apply(a, b, mtbdd_op_times_CALL);
     } else {
-        uint64_t squares = 1ULL<<k; // square k times, ie res^(2^k): 2,4,8,16
-        return mtbdd_uapply(a, mtbdd_uop_pow_uint_CALL, squares);
+        return mtbdd_uapply_power_of_two(a, mtbdd_uop_pow_uint_CALL, (unsigned int)k);
     }
 }
 
@@ -1012,15 +1062,23 @@ TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
 
     if (mtbddnode_isleaf(na)) {
         /* Count number of variables */
-        uint64_t k = 0;
+        int k = 0;
         while (v != mtbdd_true) {
+            if (k == INT_MAX) {
+                fprintf(stderr, "mtbdd_abstract: variable count exceeds INT_MAX\n");
+                return mtbdd_invalid;
+            }
             k++;
             v = node_gethigh(v, MTBDD_GETNODE(v));
         }
 
         /* Check cache */
         MTBDD result;
-        if (cache_get3(CACHE_MTBDD_ABSTRACT, a, v | (k << 40), (size_t)op, &result)) {
+        const int cacheable = (unsigned int)k <= UINT32_C(0xffffff);
+        const uint64_t cache_key = cacheable
+            ? (v & UINT64_C(0x000000ffffffffff)) | ((uint64_t)(unsigned int)k << 40)
+            : 0;
+        if (cacheable && cache_get3(CACHE_MTBDD_ABSTRACT, a, cache_key, (size_t)op, &result)) {
             sylvan_stats_count(MTBDD_ABSTRACT_CACHED);
             return result;
         }
@@ -1029,7 +1087,7 @@ TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
         result = WRAP(op, a, a, k);
 
         /* Store in cache */
-        if (cache_put3(CACHE_MTBDD_ABSTRACT, a, v | (k << 40), (size_t)op, result)) {
+        if (cacheable && cache_put3(CACHE_MTBDD_ABSTRACT, a, cache_key, (size_t)op, result)) {
             sylvan_stats_count(MTBDD_ABSTRACT_CACHEDPUT);
         }
 
@@ -1040,8 +1098,12 @@ TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
     mtbddnode_t nv = MTBDD_GETNODE(v);
     uint32_t var_a = mtbddnode_getvariable(na);
     uint32_t var_v = mtbddnode_getvariable(nv);
-    uint64_t k = 0;
+    int k = 0;
     while (var_v < var_a) {
+        if (k == INT_MAX) {
+            fprintf(stderr, "mtbdd_abstract: variable count exceeds INT_MAX\n");
+            return mtbdd_invalid;
+        }
         k++;
         v = node_gethigh(v, nv);
         if (v == mtbdd_true) break;
@@ -1051,7 +1113,11 @@ TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
 
     /* Check cache */
     MTBDD result;
-    if (cache_get3(CACHE_MTBDD_ABSTRACT, a, v | (k << 40), (size_t)op, &result)) {
+    const int cacheable = (unsigned int)k <= UINT32_C(0xffffff);
+    const uint64_t cache_key = cacheable
+        ? (v & UINT64_C(0x000000ffffffffff)) | ((uint64_t)(unsigned int)k << 40)
+        : 0;
+    if (cacheable && cache_get3(CACHE_MTBDD_ABSTRACT, a, cache_key, (size_t)op, &result)) {
         sylvan_stats_count(MTBDD_ABSTRACT_CACHED);
         return result;
     }
@@ -1080,7 +1146,7 @@ TASK_IMPL_3(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_op, op)
     }
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_ABSTRACT, a, v | (k << 40), (size_t)op, result)) {
+    if (cacheable && cache_put3(CACHE_MTBDD_ABSTRACT, a, cache_key, (size_t)op, result)) {
         sylvan_stats_count(MTBDD_ABSTRACT_CACHEDPUT);
     }
 

@@ -5,6 +5,7 @@
 #include <time.h>
 #include <sys/types.h>
 #include <inttypes.h>
+#include <math.h>
 
 #include "sylvan.h"
 #include "test_assert.h"
@@ -152,6 +153,37 @@ make_random_ldd_set(int depth, int maxvalue, int elements)
     }
     free(values);
     return result;
+}
+
+static int
+test_mtbdd()
+{
+    MTBDD fraction = mtbdd_fraction(-6, 8);
+    test_assert(fraction != mtbdd_invalid);
+    test_assert(mtbdd_getnumer(fraction) == -3);
+    test_assert(mtbdd_getdenom(fraction) == 4);
+
+    fraction = mtbdd_fraction(INT64_MIN, UINT64_C(1) << 33);
+    test_assert(fraction != mtbdd_invalid);
+    test_assert(mtbdd_getnumer(fraction) == -1073741824);
+    test_assert(mtbdd_getdenom(fraction) == 1);
+
+    test_assert(mtbdd_fraction(INT64_MIN, 1) == mtbdd_invalid);
+    test_assert(mtbdd_fraction(1, 0) == mtbdd_invalid);
+
+    uint32_t variables[64];
+    for (uint32_t i=0; i<64; i++) variables[i] = i;
+    MTBDD variable_set = mtbdd_set_from_array(variables, 64);
+
+    MTBDD result = mtbdd_abstract_plus(mtbdd_double(1.0), variable_set);
+    test_assert(result != mtbdd_invalid);
+    test_assert(mtbdd_getdouble(result) == ldexp(1.0, 64));
+
+    result = mtbdd_abstract_times(mtbdd_double(0.5), variable_set);
+    test_assert(result != mtbdd_invalid);
+    test_assert(mtbdd_getdouble(result) == 0.0);
+
+    return 0;
 }
 
 int testEqual(BDD a, BDD b)
@@ -553,6 +585,8 @@ TASK_0(int, runtests)
     if (test_cache()) return 1;
     printf("Testing bdd.\n");
     if (test_bdd()) return 1;
+    printf("Testing mtbdd.\n");
+    if (test_mtbdd()) return 1;
     printf("Testing cube.\n");
     for (int j=0;j<10;j++) if (test_cube()) return 1;
     printf("Testing relprod.\n");

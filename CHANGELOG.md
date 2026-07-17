@@ -1,7 +1,7 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
-## [Unreleased]
+## [1.11.0] - 2026-07-17
 
 ### Added
 - Added support for building and running Sylvan on Windows with MSVC, alongside

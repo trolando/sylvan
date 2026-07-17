@@ -270,8 +270,8 @@ Bdd::Permute(const std::vector<uint32_t>& from, const std::vector<uint32_t>& to)
 {
     /* Create a map */
     BddMap map;
-    for (int i=from.size()-1; i>=0; i--) {
-        map.put(from[i], Bdd::bddVar(to[i]));
+    for (size_t i=from.size(); i>0; i--) {
+        map.put(from[i-1], Bdd::bddVar(to[i-1]));
     }
 
     return sylvan_compose(bdd, map.bdd);
@@ -390,8 +390,8 @@ Bdd
 Bdd::VectorCube(const std::vector<Bdd> variables)
 {
     Bdd result = Bdd::bddOne();
-    for (int i=variables.size()-1; i>=0; i--) {
-        result *= variables[i];
+    for (size_t i=variables.size(); i>0; i--) {
+        result *= variables[i-1];
     }
     return result;
 }
@@ -403,8 +403,8 @@ Bdd
 Bdd::VariablesCube(std::vector<uint32_t> variables)
 {
     BDD result = sylvan_true;
-    for (int i=variables.size()-1; i>=0; i--) {
-        result = sylvan_makenode(variables[i], sylvan_false, result);
+    for (size_t i=variables.size(); i>0; i--) {
+        result = sylvan_makenode(variables[i-1], sylvan_false, result);
     }
     return result;
 }
@@ -851,8 +851,8 @@ Mtbdd::Permute(const std::vector<uint32_t>& from, const std::vector<uint32_t>& t
 {
     /* Create a map */
     MtbddMap map;
-    for (int i=from.size()-1; i>=0; i--) {
-        map.put(from[i], Bdd::bddVar(to[i]));
+    for (size_t i=from.size(); i>0; i--) {
+        map.put(from[i-1], Bdd::bddVar(to[i-1]));
     }
 
     return mtbdd_compose(mtbdd, map.mtbdd);

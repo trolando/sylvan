@@ -212,7 +212,8 @@ ref_restart:
             res = 1;
             uint64_t count = v >> 40;
             if (count == 0x7fffff) goto ref_exit;
-            count += dir;
+            if (dir > 0) count++;
+            else count--;
             if (count == 0) new_v = refs_ts;
             else new_v = a | (count << 40);
             goto ref_mod;

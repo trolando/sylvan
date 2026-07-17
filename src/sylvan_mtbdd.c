@@ -126,7 +126,7 @@ mtbdd_deref(MDD a)
 }
 
 size_t
-mtbdd_count_refs()
+mtbdd_count_refs(void)
 {
     return refs_count(&mtbdd_refs);
 }
@@ -149,7 +149,7 @@ mtbdd_unprotect(MTBDD *a)
 }
 
 size_t
-mtbdd_count_protected()
+mtbdd_count_protected(void)
 {
     return protect_count(&mtbdd_protected);
 }
@@ -250,9 +250,9 @@ VOID_TASK_2(mtbdd_refs_mark_s_par, mtbdd_refs_task_t, begin, size_t, count)
 
 VOID_TASK_0(mtbdd_refs_mark_task)
 {
-    SPAWN(mtbdd_refs_mark_p_par, mtbdd_refs_key->pbegin, mtbdd_refs_key->pcur-mtbdd_refs_key->pbegin);
-    SPAWN(mtbdd_refs_mark_r_par, mtbdd_refs_key->rbegin, mtbdd_refs_key->rcur-mtbdd_refs_key->rbegin);
-    CALL(mtbdd_refs_mark_s_par, mtbdd_refs_key->sbegin, mtbdd_refs_key->scur-mtbdd_refs_key->sbegin);
+    SPAWN(mtbdd_refs_mark_p_par, mtbdd_refs_key->pbegin, (size_t)(mtbdd_refs_key->pcur-mtbdd_refs_key->pbegin));
+    SPAWN(mtbdd_refs_mark_r_par, mtbdd_refs_key->rbegin, (size_t)(mtbdd_refs_key->rcur-mtbdd_refs_key->rbegin));
+    CALL(mtbdd_refs_mark_s_par, mtbdd_refs_key->sbegin, (size_t)(mtbdd_refs_key->scur-mtbdd_refs_key->sbegin));
     SYNC(mtbdd_refs_mark_r_par);
     SYNC(mtbdd_refs_mark_p_par);
 }
@@ -298,8 +298,8 @@ VOID_TASK_0(mtbdd_refs_init)
 void
 mtbdd_refs_ptrs_up(mtbdd_refs_internal_t refs)
 {
-    size_t cur = refs->pcur - refs->pbegin;
-    size_t size = refs->pend - refs->pbegin;
+    size_t cur = (size_t)(refs->pcur - refs->pbegin);
+    size_t size = (size_t)(refs->pend - refs->pbegin);
     refs->pbegin = (const MTBDD**)realloc(refs->pbegin, sizeof(MTBDD*) * size * 2);
     refs->pcur = refs->pbegin + cur;
     refs->pend = refs->pbegin + (size * 2);
@@ -308,7 +308,7 @@ mtbdd_refs_ptrs_up(mtbdd_refs_internal_t refs)
 MTBDD SYLVAN_NOINLINE
 mtbdd_refs_refs_up(mtbdd_refs_internal_t refs, MTBDD res)
 {
-    size_t size = refs->rend - refs->rbegin;
+    size_t size = (size_t)(refs->rend - refs->rbegin);
     refs->rbegin = (MTBDD*)realloc(refs->rbegin, sizeof(MTBDD) * size * 2);
     refs->rcur = refs->rbegin + size;
     refs->rend = refs->rbegin + (size * 2);
@@ -318,7 +318,7 @@ mtbdd_refs_refs_up(mtbdd_refs_internal_t refs, MTBDD res)
 void SYLVAN_NOINLINE
 mtbdd_refs_tasks_up(mtbdd_refs_internal_t refs)
 {
-    size_t size = refs->send - refs->sbegin;
+    size_t size = (size_t)(refs->send - refs->sbegin);
     refs->sbegin = (mtbdd_refs_task_t)realloc(refs->sbegin, sizeof(struct mtbdd_refs_task) * size * 2);
     refs->scur = refs->sbegin + size;
     refs->send = refs->sbegin + (size * 2);
@@ -3262,7 +3262,7 @@ VOID_TASK_2(mtbdd_writer_add_visitor_post, MTBDD, dd, sylvan_skiplist_t, sl)
 }
 
 sylvan_skiplist_t
-mtbdd_writer_start()
+mtbdd_writer_start(void)
 {
     size_t sl_size = nodes->table_size > 0x7fffffff ? 0x7fffffff : nodes->table_size;
     return sylvan_skiplist_alloc(sl_size);

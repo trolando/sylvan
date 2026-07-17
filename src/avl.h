@@ -80,38 +80,38 @@ typedef struct avl_node
 } avl_node_t;
 
 /* Retrieve the height of a tree */
-static inline int
+static inline unsigned int
 avl_get_height(avl_node_t *node)
 {
-    return node == NULL ? 0 : node->height;
+    return node == NULL ? 0u : node->height;
 }
 
 /* Helper for rotations to update the heights of trees */
 static inline void
 avl_update_height(avl_node_t *node)
 {
-    int h1 = avl_get_height(node->left);
-    int h2 = avl_get_height(node->right);
-    node->height = 1 + (h1 > h2 ? h1 : h2);
+    unsigned int h1 = avl_get_height(node->left);
+    unsigned int h2 = avl_get_height(node->right);
+    node->height = 1u + (h1 > h2 ? h1 : h2);
 }
 
 /* Helper for avl_balance_tree */
 static inline int
 avl_update_height_get_balance(avl_node_t *node)
 {
-    int h1 = avl_get_height(node->left);
-    int h2 = avl_get_height(node->right);
-    node->height = 1 + (h1 > h2 ? h1 : h2);
-    return h1 - h2;
+    unsigned int h1 = avl_get_height(node->left);
+    unsigned int h2 = avl_get_height(node->right);
+    node->height = 1u + (h1 > h2 ? h1 : h2);
+    return (int)h1 - (int)h2;
 }
 
 /* Helper for avl_check_consistent */
 static inline int
 avl_verify_height(avl_node_t *node)
 {
-    int h1 = avl_get_height(node->left);
-    int h2 = avl_get_height(node->right);
-    int expected_height = 1 + (h1 > h2 ? h1 : h2);
+    unsigned int h1 = avl_get_height(node->left);
+    unsigned int h2 = avl_get_height(node->right);
+    unsigned int expected_height = 1u + (h1 > h2 ? h1 : h2);
     return expected_height == avl_get_height(node);
 }
 
@@ -173,7 +173,7 @@ static inline int
 avl_get_balance(avl_node_t *node)
 {
     if (node == NULL) return 0;
-    return avl_get_height(node->left) - avl_get_height(node->right);
+    return (int)avl_get_height(node->left) - (int)avl_get_height(node->right);
 }
 
 /* Balance the tree */
@@ -309,8 +309,8 @@ NAME##_delete(avl_node_t **node, TYPE *data)                                    
     if (cmp < 0) res = NAME##_delete(&it->left, data);                                      \
     else if (cmp > 0) res = NAME##_delete(&it->right, data);                                \
     else {                                                                                  \
-        int h_left = avl_get_height(it->left);                                              \
-        int h_right = avl_get_height(it->right);                                            \
+        unsigned int h_left = avl_get_height(it->left);                                     \
+        unsigned int h_right = avl_get_height(it->right);                                   \
         if (h_left == 0) {                                                                  \
             if (h_right == 0) { /* Leaf */                                                  \
                 *node = NULL;                                                               \

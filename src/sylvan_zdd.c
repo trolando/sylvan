@@ -154,7 +154,7 @@ zdd_unprotect(ZDD *a)
 }
 
 size_t
-zdd_count_protected()
+zdd_count_protected(void)
 {
     return protect_count(&zdd_protected);
 }
@@ -245,9 +245,9 @@ VOID_TASK_2(zdd_refs_mark_s_par, zdd_refs_task_t, begin, size_t, count)
 
 VOID_TASK_0(zdd_refs_mark_task)
 {
-    SPAWN(zdd_refs_mark_p_par, zdd_refs_key->pbegin, zdd_refs_key->pcur-zdd_refs_key->pbegin);
-    SPAWN(zdd_refs_mark_r_par, zdd_refs_key->rbegin, zdd_refs_key->rcur-zdd_refs_key->rbegin);
-    CALL(zdd_refs_mark_s_par, zdd_refs_key->sbegin, zdd_refs_key->scur-zdd_refs_key->sbegin);
+    SPAWN(zdd_refs_mark_p_par, zdd_refs_key->pbegin, (size_t)(zdd_refs_key->pcur-zdd_refs_key->pbegin));
+    SPAWN(zdd_refs_mark_r_par, zdd_refs_key->rbegin, (size_t)(zdd_refs_key->rcur-zdd_refs_key->rbegin));
+    CALL(zdd_refs_mark_s_par, zdd_refs_key->sbegin, (size_t)(zdd_refs_key->scur-zdd_refs_key->sbegin));
     SYNC(zdd_refs_mark_r_par);
     SYNC(zdd_refs_mark_p_par);
 }
@@ -285,7 +285,7 @@ VOID_TASK_0(zdd_refs_init)
 void
 zdd_refs_ptrs_up(zdd_refs_internal_t refs)
 {
-    size_t size = refs->pend - refs->pbegin;
+    size_t size = (size_t)(refs->pend - refs->pbegin);
     refs->pbegin = (ZDD**)realloc(refs->pbegin, sizeof(ZDD*) * size*2);
     refs->pcur = refs->pbegin + size;
     refs->pend = refs->pbegin + (size * 2);
@@ -294,7 +294,7 @@ zdd_refs_ptrs_up(zdd_refs_internal_t refs)
 ZDD SYLVAN_NOINLINE
 zdd_refs_refs_up(zdd_refs_internal_t refs, ZDD res)
 {
-    size_t size = refs->rend - refs->rbegin;
+    size_t size = (size_t)(refs->rend - refs->rbegin);
     refs->rbegin = (ZDD*)realloc(refs->rbegin, sizeof(ZDD) * size * 2);
     refs->rcur = refs->rbegin + size;
     refs->rend = refs->rbegin + (size * 2);
@@ -304,7 +304,7 @@ zdd_refs_refs_up(zdd_refs_internal_t refs, ZDD res)
 void SYLVAN_NOINLINE
 zdd_refs_tasks_up(zdd_refs_internal_t refs)
 {
-    size_t size = refs->send - refs->sbegin;
+    size_t size = (size_t)(refs->send - refs->sbegin);
     refs->sbegin = (zdd_refs_task_t)realloc(refs->sbegin, sizeof(struct zdd_refs_task) * size * 2);
     refs->scur = refs->sbegin + size;
     refs->send = refs->sbegin + (size * 2);
@@ -924,7 +924,7 @@ TASK_IMPL_3(ZDD, zdd_extend_domain, ZDD, set, ZDD, newvars, int, value)
      * Check the cache
      */
     ZDD result;
-    if (cache_get3(CACHE_ZDD_EXTEND_DOMAIN, set, newvars, value, &result)) {
+    if (cache_get3(CACHE_ZDD_EXTEND_DOMAIN, set, newvars, (uint64_t)(unsigned int)value, &result)) {
         sylvan_stats_count(ZDD_EXTEND_DOMAIN_CACHED);
         return result;
     }
@@ -960,7 +960,7 @@ TASK_IMPL_3(ZDD, zdd_extend_domain, ZDD, set, ZDD, newvars, int, value)
     /**
      * Put in cache
      */
-    if (cache_put3(CACHE_ZDD_EXTEND_DOMAIN, set, newvars, value, result)) {
+    if (cache_put3(CACHE_ZDD_EXTEND_DOMAIN, set, newvars, (uint64_t)(unsigned int)value, result)) {
         sylvan_stats_count(ZDD_EXTEND_DOMAIN_CACHEDPUT);
     }
 
@@ -1929,7 +1929,7 @@ VOID_TASK_2(zdd_writer_add_visitor_post, ZDD, dd, sylvan_skiplist_t, sl)
 }
 
 sylvan_skiplist_t
-zdd_writer_start()
+zdd_writer_start(void)
 {
     size_t sl_size = nodes->table_size > 0x7fffffff ? 0x7fffffff : nodes->table_size;
     return sylvan_skiplist_alloc(sl_size);
@@ -2340,7 +2340,7 @@ zdd_cover_enum_first(ZDD dd, int32_t *arr)
         // this cannot return False; following high edges must always lead to zdd_true!
         assert(res != zdd_false);
 
-        *arr = dd_var;
+        *arr = (int32_t)dd_var;
         return res;
     }
 }

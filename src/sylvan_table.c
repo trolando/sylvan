@@ -73,7 +73,7 @@ claim_data_bucket(const llmsset_t dbs)
             for (int i = 0; i < 8; i++) {
                 uint64_t v = atomic_load_explicit(ptr, memory_order_relaxed);
                 if (v != UINT64_MAX) {
-                    int j = clz_uint64(~v);
+                    unsigned int j = clz_uint64(~v);
                     atomic_fetch_or_explicit(
                         ptr,
                         UINT64_C(0x8000000000000000) >> j,

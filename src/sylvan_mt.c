@@ -88,7 +88,7 @@ _sylvan_equals_cb(uint64_t a, uint64_t b, uint64_t aa, uint64_t bb)
 }
 
 uint32_t
-sylvan_mt_create_type()
+sylvan_mt_create_type(void)
 {
     if (cl_registry_count > UINT32_MAX) {
         fprintf(stderr, "sylvan: Too many custom terminal types\n");
@@ -177,7 +177,7 @@ sylvan_init_mt(void)
 
     // Initialize data structures
     cl_registry_size = 8;
-    cl_registry = (customleaf_t *)calloc(sizeof(customleaf_t), cl_registry_size);
+    cl_registry = (customleaf_t *)calloc(cl_registry_size, sizeof(customleaf_t));
     cl_registry_count = 3; // 0, 1, 2 are taken
 }
 

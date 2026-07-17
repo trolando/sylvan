@@ -64,7 +64,7 @@ static uint32_t*          cache_status;
 static _Atomic(uint64_t)  next_opid;
 
 uint64_t
-cache_next_opid()
+cache_next_opid(void)
 {
     return atomic_fetch_add(&next_opid, 1LL<<40);
 }
@@ -255,14 +255,14 @@ cache_create(size_t _cache_size, size_t _max_size)
 }
 
 void
-cache_free()
+cache_free(void)
 {
     sylvan_free_aligned(cache_table, cache_max * sizeof(struct cache_entry));
     sylvan_free_aligned(cache_status, cache_max * sizeof(uint32_t));
 }
 
 void
-cache_clear()
+cache_clear(void)
 {
     // a bit silly, but this works just fine, and does not require writing 0 everywhere...
     cache_free();
@@ -278,13 +278,13 @@ cache_setsize(size_t size)
 }
 
 size_t
-cache_getsize()
+cache_getsize(void)
 {
     return cache_size;
 }
 
 size_t
-cache_getused()
+cache_getused(void)
 {
     size_t result = 0;
     for (size_t i=0;i<cache_size;i++) {
@@ -296,7 +296,7 @@ cache_getused()
 }
 
 size_t
-cache_getmaxsize()
+cache_getmaxsize(void)
 {
     return cache_max;
 }

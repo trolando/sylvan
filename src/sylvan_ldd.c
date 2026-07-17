@@ -67,7 +67,7 @@ lddmc_deref(MDD a)
 }
 
 size_t
-lddmc_count_refs()
+lddmc_count_refs(void)
 {
     return refs_count(&lddmc_refs);
 }
@@ -191,9 +191,9 @@ VOID_TASK_2(lddmc_refs_mark_s_par, lddmc_refs_task_t, begin, size_t, count)
 
 VOID_TASK_0(lddmc_refs_mark_task)
 {
-    SPAWN(lddmc_refs_mark_p_par, lddmc_refs_key->pbegin, lddmc_refs_key->pcur-lddmc_refs_key->pbegin);
-    SPAWN(lddmc_refs_mark_r_par, lddmc_refs_key->rbegin, lddmc_refs_key->rcur-lddmc_refs_key->rbegin);
-    CALL(lddmc_refs_mark_s_par, lddmc_refs_key->sbegin, lddmc_refs_key->scur-lddmc_refs_key->sbegin);
+    SPAWN(lddmc_refs_mark_p_par, lddmc_refs_key->pbegin, (size_t)(lddmc_refs_key->pcur-lddmc_refs_key->pbegin));
+    SPAWN(lddmc_refs_mark_r_par, lddmc_refs_key->rbegin, (size_t)(lddmc_refs_key->rcur-lddmc_refs_key->rbegin));
+    CALL(lddmc_refs_mark_s_par, lddmc_refs_key->sbegin, (size_t)(lddmc_refs_key->scur-lddmc_refs_key->sbegin));
     SYNC(lddmc_refs_mark_r_par);
     SYNC(lddmc_refs_mark_p_par);
 }
@@ -239,7 +239,7 @@ VOID_TASK_0(lddmc_refs_init)
 void
 lddmc_refs_ptrs_up(lddmc_refs_internal_t refs)
 {
-    size_t size = refs->pend - refs->pbegin;
+    size_t size = (size_t)(refs->pend - refs->pbegin);
     refs->pbegin = (const MDD**)realloc(refs->pbegin, sizeof(MDD*) * size * 2);
     refs->pcur = refs->pbegin + size;
     refs->pend = refs->pbegin + (size * 2);
@@ -248,7 +248,7 @@ lddmc_refs_ptrs_up(lddmc_refs_internal_t refs)
 MDD SYLVAN_NOINLINE
 lddmc_refs_refs_up(lddmc_refs_internal_t refs, MDD res)
 {
-    size_t size = refs->rend - refs->rbegin;
+    size_t size = (size_t)(refs->rend - refs->rbegin);
     refs->rbegin = (MDD*)realloc(refs->rbegin, sizeof(MDD) * size * 2);
     refs->rcur = refs->rbegin + size;
     refs->rend = refs->rbegin + (size * 2);
@@ -258,7 +258,7 @@ lddmc_refs_refs_up(lddmc_refs_internal_t refs, MDD res)
 void SYLVAN_NOINLINE
 lddmc_refs_tasks_up(lddmc_refs_internal_t refs)
 {
-    size_t size = refs->send - refs->sbegin;
+    size_t size = (size_t)(refs->send - refs->sbegin);
     refs->sbegin = (lddmc_refs_task_t)realloc(refs->sbegin, sizeof(struct lddmc_refs_task) * size * 2);
     refs->scur = refs->sbegin + size;
     refs->send = refs->sbegin + (size * 2);
@@ -2504,7 +2504,7 @@ lddmc_serialize_add(MDD mdd)
 }
 
 void
-lddmc_serialize_reset()
+lddmc_serialize_reset(void)
 {
     lddmc_ser_free(&lddmc_ser_set);
     lddmc_ser_free(&lddmc_ser_reversed_set);

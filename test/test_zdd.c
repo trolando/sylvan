@@ -187,6 +187,30 @@ TASK_0(int, test_zdd_merge_domains)
     return 0;
 }
 
+TASK_0(int, test_zdd_extend_domain)
+{
+    BDD subdomain = mtbdd_fromarray((uint32_t[]){1}, 1);
+    BDD domain = mtbdd_fromarray((uint32_t[]){0,1,2}, 3);
+    ZDD newvars = zdd_set_from_array((uint32_t[]){0,2}, 2);
+    ZDD set = zdd_from_mtbdd(sylvan_ithvar(1), subdomain);
+    ZDD expected = zdd_from_mtbdd(sylvan_ithvar(1), domain);
+
+    test_assert(RUN(zdd_extend_domain, set, newvars, 2) == expected);
+    test_assert(RUN(zdd_extend_domain, set, newvars, 3) == zdd_invalid);
+    return 0;
+}
+
+TASK_0(int, test_zdd_refs_growth)
+{
+    ZDD refs[4096];
+    for (size_t i=0; i<4096; i++) {
+        refs[i] = zdd_true;
+        zdd_refs_pushptr(&refs[i]);
+    }
+    zdd_refs_popptr(4096);
+    return 0;
+}
+
 // TASK_0(int, test_zdd_extend_domain)
 // {
 //     /**
@@ -798,6 +822,10 @@ TASK_0(int, runtests)
     for (int k=0; k<test_iterations; k++) if (CALL(test_zdd_satcount)) return 1;
     printf("test_zdd_merge_domains...\n");
     for (int k=0; k<test_iterations; k++) if (CALL(test_zdd_merge_domains)) return 1;
+    printf("test_zdd_extend_domain...\n");
+    if (CALL(test_zdd_extend_domain)) return 1;
+    printf("test_zdd_refs_growth...\n");
+    if (CALL(test_zdd_refs_growth)) return 1;
     printf("test_zdd_union_cube...\n");
     for (int k=0; k<test_iterations; k++) if (CALL(test_zdd_union_cube)) return 1;
     printf("test_zdd_enum...\n");

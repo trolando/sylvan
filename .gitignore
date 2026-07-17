@@ -8,3 +8,10 @@
 
 # CMake files
 build/
+cmake-build-*/
+out/
+
+# IDE files
+.idea/
+.vs/
+CMakeSettings.json

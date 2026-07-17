@@ -19,8 +19,15 @@ target_link_libraries(test_zdd PRIVATE sylvan::sylvan)
 target_compile_features(test_zdd PRIVATE c_std_11)
 sylvan_test_warnings(test_zdd)
 
+add_executable(test_table)
+target_sources(test_table PRIVATE test_table.c)
+target_link_libraries(test_table PRIVATE sylvan::sylvan)
+target_compile_features(test_table PRIVATE c_std_11)
+sylvan_test_warnings(test_table)
+
 add_test(NAME test_basic COMMAND test_basic)
 add_test(NAME test_zdd COMMAND test_zdd)
+add_test(NAME test_table COMMAND test_table)
 
 if(SYLVAN_BUILD_CPP)
     add_executable(test_cxx)

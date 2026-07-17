@@ -61,10 +61,10 @@ typedef MTBDD MTBDDMAP;
  * mtbdd_true and mtbdd_false are the Boolean leaves representing True and False.
  * False is also used in Integer/Real/Fraction MTBDDs for partially defined functions.
  */
-static const MTBDD mtbdd_complement = 0x8000000000000000LL;
+static const MTBDD mtbdd_complement = UINT64_C(0x8000000000000000);
 static const MTBDD mtbdd_false      = 0;
-static const MTBDD mtbdd_true       = 0x8000000000000000LL;
-static const MTBDD mtbdd_invalid    = 0xffffffffffffffffLL;
+static const MTBDD mtbdd_true       = UINT64_C(0x8000000000000000);
+static const MTBDD mtbdd_invalid    = UINT64_MAX;
 
 /**
  * Definitions for backward compatibility...
@@ -74,10 +74,10 @@ typedef MTBDD BDD;
 typedef MTBDDMAP BDDMAP;
 typedef MTBDD BDDSET;
 typedef uint32_t BDDVAR;
-static const MTBDD sylvan_complement = 0x8000000000000000LL;
+static const MTBDD sylvan_complement = UINT64_C(0x8000000000000000);
 static const MTBDD sylvan_false      = 0;
-static const MTBDD sylvan_true       = 0x8000000000000000LL;
-static const MTBDD sylvan_invalid    = 0xffffffffffffffffLL;
+static const MTBDD sylvan_true       = UINT64_C(0x8000000000000000);
+static const MTBDD sylvan_invalid    = UINT64_MAX;
 #define sylvan_init_bdd         sylvan_init_mtbdd
 #define sylvan_ref              mtbdd_ref
 #define sylvan_deref            mtbdd_deref

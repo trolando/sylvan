@@ -124,7 +124,7 @@ static void
 set_custom_bucket(const llmsset_t dbs, uint64_t index, int on)
 {
     uint64_t *ptr = dbs->bitmapc + (index/64);
-    uint64_t mask = 0x8000000000000000LL >> (index&63);
+    uint64_t mask = UINT64_C(0x8000000000000000) >> (index&63);
     if (on) *ptr |= mask;
     else *ptr &= ~mask;
 }
@@ -133,7 +133,7 @@ static int
 is_custom_bucket(const llmsset_t dbs, uint64_t index)
 {
     uint64_t *ptr = dbs->bitmapc + (index/64);
-    uint64_t mask = 0x8000000000000000LL >> (index&63);
+    uint64_t mask = UINT64_C(0x8000000000000000) >> (index&63);
     return (*ptr & mask) ? 1 : 0;
 }
 
@@ -366,7 +366,7 @@ llmsset_create(size_t initial_size, size_t max_size)
 #endif
 
     // forbid first two positions (index 0 and 1)
-    dbs->bitmap2[0] = 0xc000000000000000LL;
+    dbs->bitmap2[0] = UINT64_C(0xc000000000000000);
 
     dbs->hash_cb = NULL;
     dbs->equals_cb = NULL;
@@ -408,7 +408,7 @@ VOID_TASK_IMPL_1(llmsset_clear_data, llmsset_t, dbs)
     sylvan_clear_aligned(dbs->bitmap2, dbs->max_size / 8);
 
     // forbid first two positions (index 0 and 1)
-    dbs->bitmap2[0] = 0xc000000000000000LL;
+    dbs->bitmap2[0] = UINT64_C(0xc000000000000000);
 
     TOGETHER(llmsset_reset_region);
 }
@@ -422,7 +422,7 @@ int
 llmsset_is_marked(const llmsset_t dbs, uint64_t index)
 {
     _Atomic(uint64_t)* ptr = dbs->bitmap2 + (index/64);
-    uint64_t mask = 0x8000000000000000LL >> (index&63);
+    uint64_t mask = UINT64_C(0x8000000000000000) >> (index&63);
     return (atomic_load_explicit(ptr, memory_order_relaxed) & mask) ? 1 : 0;
 }
 
@@ -430,7 +430,7 @@ int
 llmsset_mark(const llmsset_t dbs, uint64_t index)
 {
     _Atomic(uint64_t)* ptr = dbs->bitmap2 + (index/64);
-    uint64_t mask = 0x8000000000000000LL >> (index&63);
+    uint64_t mask = UINT64_C(0x8000000000000000) >> (index&63);
     for (;;) {
         uint64_t v = atomic_load_explicit(ptr, memory_order_relaxed);
         if (v & mask) return 0;
@@ -454,7 +454,7 @@ TASK_3(int, llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
     } else {
         int bad = 0;
         _Atomic(uint64_t)* ptr = dbs->bitmap2 + (first / 64);
-        uint64_t mask = 0x8000000000000000LL >> (first & 63);
+        uint64_t mask = UINT64_C(0x8000000000000000) >> (first & 63);
         for (size_t k=0; k<count; k++) {
             if (atomic_load_explicit(ptr, memory_order_relaxed) & mask) {
                 if (llmsset_rehash_bucket(dbs, first+k) == 0) bad++;
@@ -462,7 +462,7 @@ TASK_3(int, llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
             mask >>= 1;
             if (mask == 0) {
                 ptr++;
-                mask = 0x8000000000000000LL;
+                mask = UINT64_C(0x8000000000000000);
             }
         }
         return bad;
@@ -495,13 +495,13 @@ TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, 
             result += popcnt_uint64(atomic_load_explicit(ptr+6, memory_order_relaxed));
             result += popcnt_uint64(atomic_load_explicit(ptr+7, memory_order_relaxed));
         } else {
-            uint64_t mask = 0x8000000000000000LL >> (first & 63);
+            uint64_t mask = UINT64_C(0x8000000000000000) >> (first & 63);
             for (size_t k=0; k<count; k++) {
                 if (atomic_load_explicit(ptr, memory_order_relaxed) & mask) result += 1;
                 mask >>= 1;
                 if (mask == 0) {
                     ptr++;
-                    mask = 0x8000000000000000LL;
+                    mask = UINT64_C(0x8000000000000000);
                 }
             }
         }
@@ -525,7 +525,7 @@ VOID_TASK_3(llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
         for (size_t k=first; k<first+count; k++) {
             _Atomic(uint64_t)* ptr2 = dbs->bitmap2 + (k/64);
             uint64_t *ptrc = dbs->bitmapc + (k/64);
-            uint64_t mask = 0x8000000000000000LL >> (k&63);
+            uint64_t mask = UINT64_C(0x8000000000000000) >> (k&63);
 
             // if not marked but is custom
             uint64_t marked = atomic_load_explicit(ptr2, memory_order_relaxed);

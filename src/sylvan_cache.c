@@ -141,14 +141,14 @@ cache_put6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t 
     // can be relaxed, we use cas afterwards to claim it
     uint64_t s = atomic_load_explicit(s_bucket, memory_order_relaxed);
     // abort if locked
-    if (s & 0x8000000080000000LL) return 0;
+    if (s & UINT64_C(0x8000000080000000)) return 0;
     // create new
     uint64_t new_s = ((hash>>32) & 0x7fff0000) | 0x04000000;
     new_s |= (new_s<<32);
     new_s |= (((s>>32)+1)&0xffff)<<32;
     new_s |= (s+1)&0xffff;
     // use cas to claim bucket
-    if (!atomic_compare_exchange_weak_explicit(s_bucket, &s, new_s | 0x8000000080000000LL, memory_order_acq_rel, memory_order_relaxed)) return 0;
+    if (!atomic_compare_exchange_weak_explicit(s_bucket, &s, new_s | UINT64_C(0x8000000080000000), memory_order_acq_rel, memory_order_relaxed)) return 0;
     // cas succesful: write data
     bucket->a = a;
     bucket->b = b;

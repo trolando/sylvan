@@ -117,11 +117,16 @@ sylvan_clear_aligned(void* ptr, size_t size)
 {
     if (!ptr || size == 0) return;
 
-#if SYLVAN_USE_MMAP&& !defined(_WIN32)
+#if SYLVAN_USE_MMAP && defined(_WIN32)
+    if (VirtualFree(ptr, size, MEM_DECOMMIT)) {
+        if (VirtualAlloc(ptr, size, MEM_COMMIT, PAGE_READWRITE) == ptr) return;
+        abort();
+    }
+#elif SYLVAN_USE_MMAP
     void* res = mmap(ptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-    if (res == MAP_FAILED) memset(ptr, 0, size);
-#else
-    memset(ptr, 0, size);
+    if (res != MAP_FAILED) return;
 #endif
+
+    memset(ptr, 0, size);
 }
 

@@ -237,31 +237,31 @@ VOID_TASK_0(lddmc_refs_init)
 }
 
 void
-lddmc_refs_ptrs_up(lddmc_refs_internal_t lddmc_refs_key)
+lddmc_refs_ptrs_up(lddmc_refs_internal_t refs)
 {
-    size_t size = lddmc_refs_key->pend - lddmc_refs_key->pbegin;
-    lddmc_refs_key->pbegin = (const MDD**)realloc(lddmc_refs_key->pbegin, sizeof(MDD*) * size * 2);
-    lddmc_refs_key->pcur = lddmc_refs_key->pbegin + size;
-    lddmc_refs_key->pend = lddmc_refs_key->pbegin + (size * 2);
+    size_t size = refs->pend - refs->pbegin;
+    refs->pbegin = (const MDD**)realloc(refs->pbegin, sizeof(MDD*) * size * 2);
+    refs->pcur = refs->pbegin + size;
+    refs->pend = refs->pbegin + (size * 2);
 }
 
 MDD SYLVAN_NOINLINE
-lddmc_refs_refs_up(lddmc_refs_internal_t lddmc_refs_key, MDD res)
+lddmc_refs_refs_up(lddmc_refs_internal_t refs, MDD res)
 {
-    long size = lddmc_refs_key->rend - lddmc_refs_key->rbegin;
-    lddmc_refs_key->rbegin = (MDD*)realloc(lddmc_refs_key->rbegin, sizeof(MDD) * size * 2);
-    lddmc_refs_key->rcur = lddmc_refs_key->rbegin + size;
-    lddmc_refs_key->rend = lddmc_refs_key->rbegin + (size * 2);
+    size_t size = refs->rend - refs->rbegin;
+    refs->rbegin = (MDD*)realloc(refs->rbegin, sizeof(MDD) * size * 2);
+    refs->rcur = refs->rbegin + size;
+    refs->rend = refs->rbegin + (size * 2);
     return res;
 }
 
 void SYLVAN_NOINLINE
-lddmc_refs_tasks_up(lddmc_refs_internal_t lddmc_refs_key)
+lddmc_refs_tasks_up(lddmc_refs_internal_t refs)
 {
-    long size = lddmc_refs_key->send - lddmc_refs_key->sbegin;
-    lddmc_refs_key->sbegin = (lddmc_refs_task_t)realloc(lddmc_refs_key->sbegin, sizeof(struct lddmc_refs_task) * size * 2);
-    lddmc_refs_key->scur = lddmc_refs_key->sbegin + size;
-    lddmc_refs_key->send = lddmc_refs_key->sbegin + (size * 2);
+    size_t size = refs->send - refs->sbegin;
+    refs->sbegin = (lddmc_refs_task_t)realloc(refs->sbegin, sizeof(struct lddmc_refs_task) * size * 2);
+    refs->scur = refs->sbegin + size;
+    refs->send = refs->sbegin + (size * 2);
 }
 
 void
@@ -2358,7 +2358,7 @@ lddmc_fprintdot_rec(FILE* out, MDD mdd)
                 fprintf(out, "%" PRIu64 ":%u [style=solid];\n", down, mddnode_getvalue(LDD_GETNODE(down)));
             }
         }
-        MDD right = mddnode_getright(n);
+        right = mddnode_getright(n);
         if (right == lddmc_false) break;
         n = LDD_GETNODE(right);
     }

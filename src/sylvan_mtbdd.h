@@ -227,6 +227,11 @@ MTBDD mtbdd_double(double value);
 
 /**
  * Create a Fraction leaf with the given numerator and denominator.
+ *
+ * The fraction is reduced before it is stored. The reduced numerator must fit
+ * in the range [-INT32_MAX, INT32_MAX], the reduced denominator must fit in a
+ * uint32_t, and the denominator must not be zero. Returns mtbdd_invalid when
+ * these requirements are not met.
  */
 MTBDD mtbdd_fraction(int64_t numer, uint64_t denom);
 
@@ -426,11 +431,14 @@ TASK_DECL_3(MTBDD, mtbdd_uapply, MTBDD, mtbdd_uapply_op, size_t);
  * The function is either called with k==0 (apply to two arguments) or k>0 (k skipped BDD variables)
  * k == 0  =>  res := apply op to a and b
  * k  > 0  =>  res := apply op to op(a, a, k-1) and op(a, a, k-1)
+ * The number of skipped variables must fit in a non-negative int. Built-in
+ * abstraction operations process large values of k in size_t-width chunks.
  */
 LACE_TYPEDEF_CB(MTBDD, mtbdd_abstract_op, MTBDD, MTBDD, int);
 
 /**
  * Abstract the variables in <v> from <a> using the binary operation <op>.
+ * Returns mtbdd_invalid if the number of skipped variables exceeds INT_MAX.
  */
 TASK_DECL_3(MTBDD, mtbdd_abstract, MTBDD, MTBDD, mtbdd_abstract_op);
 #define mtbdd_abstract(a, v, op) RUN(mtbdd_abstract, a, v, op)

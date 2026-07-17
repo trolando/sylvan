@@ -74,6 +74,7 @@ jobs:
         export CC=clang-${{matrix.version}} CXX=clang++-${{matrix.version}}
         cmake -S . -B build \
           -DCMAKE_BUILD_TYPE=${{matrix.build_type}} \
+          -DLACE_NATIVE_OPT=OFF \
           -DSYLVAN_GMP=ON
 
     - name: Build

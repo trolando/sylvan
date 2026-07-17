@@ -333,29 +333,29 @@ Bdd::PickOneCube(const BddSet &variables) const
 {
     std::vector<bool> result = std::vector<bool>();
 
-    BDD bdd = this->bdd;
+    BDD current = bdd;
     BDD vars = variables.set.bdd;
 
-    if (bdd == sylvan_false) return result;
+    if (current == sylvan_false) return result;
 
     for (; !sylvan_set_isempty(vars); vars = sylvan_set_next(vars)) {
         uint32_t var = sylvan_set_first(vars);
-        if (bdd == sylvan_true) {
+        if (current == sylvan_true) {
             // pick 0
             result.push_back(false);
         } else {
-            if (sylvan_var(bdd) != var) {
+            if (sylvan_var(current) != var) {
                 // pick 0
                 result.push_back(false);
             } else {
-                if (sylvan_low(bdd) == sylvan_false) {
+                if (sylvan_low(current) == sylvan_false) {
                     // pick 1
                     result.push_back(true);
-                    bdd = sylvan_high(bdd);
+                    current = sylvan_high(current);
                 } else {
                     // pick 0
                     result.push_back(false);
-                    bdd = sylvan_low(bdd);
+                    current = sylvan_low(current);
                 }
             }
         }

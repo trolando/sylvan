@@ -528,7 +528,7 @@ mtbdd_ithvar(uint32_t var)
 uint32_t
 gcd(uint32_t u, uint32_t v)
 {
-    int shift;
+    unsigned int shift;
     if (u == 0) return v;
     if (v == 0) return u;
     shift = ctz_uint32(u | v);

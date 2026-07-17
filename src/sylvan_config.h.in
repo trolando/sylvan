@@ -1,3 +1,8 @@
+/* Sylvan version */
+#define SYLVAN_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define SYLVAN_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define SYLVAN_VERSION_PATCH @PROJECT_VERSION_PATCH@
+
 /* Operation cache: use bitmasks for module (size must be power of 2!) */
 #ifndef CACHE_MASK
 #define CACHE_MASK 1

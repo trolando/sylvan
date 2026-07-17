@@ -10,6 +10,19 @@
 #   it is respected and no probe is run.
 # - On cross-compiling, uses DEFAULT (or 64) unless manually overridden.
 
+include_guard(GLOBAL)
+
+function(_detect_cache_line_size_validate VALUE DESCRIPTION)
+  if(NOT "${VALUE}" MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR "${DESCRIPTION} must be a positive integer, got '${VALUE}'")
+  endif()
+
+  math(EXPR _not_power_of_two "${VALUE} & (${VALUE} - 1)")
+  if(NOT _not_power_of_two EQUAL 0)
+    message(FATAL_ERROR "${DESCRIPTION} must be a power of two, got '${VALUE}'")
+  endif()
+endfunction()
+
 function(detect_cache_line_size OUT_VAR)
   if(NOT OUT_VAR)
     message(FATAL_ERROR "detect_cache_line_size requires an output variable name")
@@ -23,26 +36,31 @@ function(detect_cache_line_size OUT_VAR)
   if(DCLS_DEFAULT)
     set(_default "${DCLS_DEFAULT}")
   endif()
+  _detect_cache_line_size_validate("${_default}" "Default cache line size")
 
   # Respect manual override from command line cache: -D<OUT_VAR>=...
   if(DEFINED CACHE{${OUT_VAR}})
+    set(_cacheline_out "$CACHE{${OUT_VAR}}")
+    _detect_cache_line_size_validate("${_cacheline_out}" "${OUT_VAR}")
     # Optionally add compile definition
     if(DCLS_DEFINE)
-      add_compile_definitions(${OUT_VAR}=$CACHE{${OUT_VAR}})
+      add_compile_definitions(${OUT_VAR}=${_cacheline_out})
     endif()
     return()
   endif()
 
   if(CMAKE_CROSSCOMPILING)
-    message(WARNING "Cross-compiling: defaulting ${OUT_VAR} to ${_default}. Override with -D${OUT_VAR}=…")
-    set(${OUT_VAR} "${_default}" CACHE STRING "Hardware L1 data cache line size in bytes" FORCE)
+    message(WARNING "Cross-compiling: defaulting ${OUT_VAR} to ${_default}. Override with -D${OUT_VAR}=...")
+    set(${OUT_VAR} "${_default}" CACHE STRING "Hardware L1 data cache line size in bytes")
     if(DCLS_DEFINE)
       add_compile_definitions(${OUT_VAR}=${_default})
     endif()
     return()
   endif()
 
-  set(_probe "${CMAKE_BINARY_DIR}/_detect_cacheline.c")
+  set(_probe_dir "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/DetectCacheLineSize")
+  file(MAKE_DIRECTORY "${_probe_dir}")
+  set(_probe "${_probe_dir}/detect_cacheline.c")
   file(WRITE "${_probe}" [=[
 #include <stdio.h>
 #include <stdlib.h>
@@ -134,7 +152,7 @@ int main(void){
 ]=])
 
   try_run(_run_res _compile_res
-          "${CMAKE_BINARY_DIR}" "${_probe}"
+          "${_probe_dir}" "${_probe}"
           RUN_OUTPUT_VARIABLE _cacheline_out)
 
   if(NOT _compile_res)
@@ -146,7 +164,8 @@ int main(void){
   endif()
 
   string(STRIP "${_cacheline_out}" _cacheline_out)
-  set(${OUT_VAR} "${_cacheline_out}" CACHE STRING "Hardware L1 data cache line size in bytes" FORCE)
+  _detect_cache_line_size_validate("${_cacheline_out}" "Detected cache line size")
+  set(${OUT_VAR} "${_cacheline_out}" CACHE STRING "Hardware L1 data cache line size in bytes")
   message(STATUS "Detected ${OUT_VAR} = ${_cacheline_out}")
 
   if(DCLS_DEFINE)

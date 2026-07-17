@@ -4,7 +4,7 @@ project(sylvan
     VERSION 1.10.0
     DESCRIPTION "Sylvan, a parallel decision diagram library"
     HOMEPAGE_URL "https://github.com/trolando/sylvan"
-    LANGUAGES C CXX
+    LANGUAGES C
 )
 
 # Default to Release for top-level single-config builds
@@ -23,38 +23,43 @@ list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/")
 
 # ── Options ──────────────────────────────────────────────────────────────────
 
-option(BUILD_SHARED_LIBS          "Build Sylvan as a shared library"                OFF)
+option(BUILD_SHARED_LIBS          "Build shared libraries (except on Windows)"       OFF)
 option(SYLVAN_NATIVE_OPT          "Enable -march=native for compiler optimizations" OFF)
 option(SYLVAN_ENABLE_PIC          "Build with -fPIC (for embedding in shared libs)" OFF)
 option(SYLVAN_BUILD_CPP           "Build Sylvan C++ bindings"                        ON)
-option(SYLVAN_BUILD_TESTS         "Build Sylvan tests"          ${PROJECT_IS_TOP_LEVEL})
+option(BUILD_TESTING              "Build Sylvan tests"          ${PROJECT_IS_TOP_LEVEL})
 option(SYLVAN_BUILD_EXAMPLES      "Build Sylvan examples"       ${PROJECT_IS_TOP_LEVEL})
 option(SYLVAN_BUILD_DOCS          "Build Sylvan documentation"                      OFF)
 
-# Enable C++ only when something needs it
-if(SYLVAN_BUILD_CPP OR SYLVAN_BUILD_TESTS OR SYLVAN_BUILD_EXAMPLES)
+# Enable C++ only for the optional bindings and their test/example
+if(SYLVAN_BUILD_CPP)
     enable_language(CXX)
 endif()
 
-include(CTest) # defines BUILD_TESTING option
+include(CTest)
+
+if(WIN32 AND BUILD_SHARED_LIBS)
+    message(STATUS "Sylvan does not currently support Windows DLLs; building a static library")
+endif()
 
 # ── Dependencies ─────────────────────────────────────────────────────────────
 
-# Determine if Lace needs PIC (shared Sylvan or explicit PIC request)
+# Determine if Lace needs PIC (shared Sylvan or explicit PIC request). Sylvan
+# is always static on Windows.
 set(_sylvan_needs_pic OFF)
-if(BUILD_SHARED_LIBS OR SYLVAN_ENABLE_PIC)
+if((BUILD_SHARED_LIBS AND NOT WIN32) OR SYLVAN_ENABLE_PIC)
     set(_sylvan_needs_pic ON)
 endif()
 
-# First check if lace is already a target (e.g. parent project added it),
+# First check if Lace is already a target (e.g. a parent project added it),
 # then try find_package, then fall back to FetchContent.
-if(NOT TARGET lace)
+if(NOT TARGET lace::lace AND NOT TARGET lace)
     find_package(lace 1.7.0 QUIET)
-    if(NOT lace_FOUND)
-        set(_saved_bsl ${BUILD_SHARED_LIBS})
+    if(NOT TARGET lace::lace AND NOT TARGET lace)
+        # Normal variables override Lace's options without modifying its cache.
         set(BUILD_SHARED_LIBS OFF)
         if(_sylvan_needs_pic)
-            set(LACE_ENABLE_PIC ON CACHE BOOL "" FORCE)
+            set(LACE_ENABLE_PIC ON)
         endif()
 
         include(FetchContent)
@@ -66,23 +71,44 @@ if(NOT TARGET lace)
         )
         FetchContent_MakeAvailable(lace)
 
-        set(BUILD_SHARED_LIBS ${_saved_bsl})
-        unset(_saved_bsl)
+        unset(BUILD_SHARED_LIBS)
+        if(_sylvan_needs_pic)
+            unset(LACE_ENABLE_PIC)
+        endif()
+    endif()
+endif()
+
+# Installed Lace packages use the namespaced target. Keep compatibility with a
+# parent project that provides only the older unnamespaced target.
+if(NOT TARGET lace::lace)
+    if(TARGET lace)
+        add_library(lace::lace ALIAS lace)
+    else()
+        message(FATAL_ERROR "Lace was found, but it did not provide a lace::lace target")
     endif()
 endif()
 
 # Verify PIC compatibility when needed
-if(_sylvan_needs_pic AND TARGET lace)
-    get_target_property(_lace_pic lace POSITION_INDEPENDENT_CODE)
-    if(NOT _lace_pic)
-        message(FATAL_ERROR
-            "Sylvan requires PIC (BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS}, "
-            "SYLVAN_ENABLE_PIC=${SYLVAN_ENABLE_PIC}) but the lace target "
-            "was built without POSITION_INDEPENDENT_CODE. Rebuild Lace with "
-            "-DCMAKE_POSITION_INDEPENDENT_CODE=ON or -DLACE_ENABLE_PIC=ON."
-        )
+if(_sylvan_needs_pic)
+    get_target_property(_lace_target lace::lace ALIASED_TARGET)
+    if(NOT _lace_target)
+        set(_lace_target lace::lace)
     endif()
-    unset(_lace_pic)
+    get_target_property(_lace_imported ${_lace_target} IMPORTED)
+    if(NOT _lace_imported)
+        get_target_property(_lace_pic ${_lace_target} POSITION_INDEPENDENT_CODE)
+        if(NOT _lace_pic)
+            message(FATAL_ERROR
+                "Sylvan requires PIC (BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS}, "
+                "SYLVAN_ENABLE_PIC=${SYLVAN_ENABLE_PIC}) but the Lace target "
+                "was built without POSITION_INDEPENDENT_CODE. Rebuild Lace with "
+                "-DCMAKE_POSITION_INDEPENDENT_CODE=ON or -DLACE_ENABLE_PIC=ON."
+            )
+        endif()
+        unset(_lace_pic)
+    endif()
+    unset(_lace_imported)
+    unset(_lace_target)
 endif()
 
 unset(_sylvan_needs_pic)
@@ -120,17 +146,18 @@ if(PROJECT_IS_TOP_LEVEL)
     endif()
  
     if(_san)
-        if(MSVC)
-            message(FATAL_ERROR "Sanitizers are not supported with MSVC in this project")
+        if(NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+            message(FATAL_ERROR "Sanitizers are not supported with compiler '${CMAKE_C_COMPILER_ID}'")
         endif()
         string(REPLACE ";" "," _san_list "${_san}")
-        set(_san_flags "-fsanitize=${_san_list} -fno-omit-frame-pointer")
-        string(APPEND CMAKE_C_FLAGS              " ${_san_flags}")
-        string(APPEND CMAKE_CXX_FLAGS            " ${_san_flags}")
-        string(APPEND CMAKE_EXE_LINKER_FLAGS     " ${_san_flags}")
-        string(APPEND CMAKE_SHARED_LINKER_FLAGS  " ${_san_flags}")
-        string(APPEND CMAKE_MODULE_LINKER_FLAGS  " ${_san_flags}")
+        add_library(sylvan_sanitizers INTERFACE)
+        target_compile_options(sylvan_sanitizers INTERFACE
+            "-fsanitize=${_san_list}"
+            -fno-omit-frame-pointer
+        )
+        target_link_options(sylvan_sanitizers INTERFACE "-fsanitize=${_san_list}")
         message(STATUS "Sanitizers enabled: ${_san_list}")
+        unset(_san_list)
     endif()
     unset(_san)
 endif()
@@ -142,7 +169,6 @@ if(NOT sylvan_IS_TOP_LEVEL)
         BUILD_SHARED_LIBS
         SYLVAN_ENABLE_PIC
         SYLVAN_BUILD_CPP
-        SYLVAN_BUILD_TESTS
         SYLVAN_BUILD_EXAMPLES
         SYLVAN_BUILD_DOCS
     )
@@ -152,8 +178,11 @@ endif()
 
 add_subdirectory(src)
 
-if(SYLVAN_BUILD_TESTS AND BUILD_TESTING)
-    enable_testing()
+if(TARGET sylvan_sanitizers)
+    target_link_libraries(sylvan PUBLIC "$<BUILD_INTERFACE:sylvan_sanitizers>")
+endif()
+
+if(BUILD_TESTING)
     add_subdirectory(test)
 endif()
 

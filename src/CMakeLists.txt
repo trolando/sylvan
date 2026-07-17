@@ -1,7 +1,35 @@
-# ── Library target ────────────────────────────────────────────────────────────
+# ── Platform configuration ──────────────────────────────────────────────────
 
-# Respects BUILD_SHARED_LIBS (default OFF, set in root CMakeLists.txt)
-add_library(sylvan)
+# Configure platform features before declaring the generated header file set.
+option(SYLVAN_USE_MMAP "Let Sylvan use mmap or VirtualAlloc to allocate (virtual) memory" ON)
+if(SYLVAN_USE_MMAP AND NOT WIN32)
+    include(CheckSymbolExists)
+    check_symbol_exists(mmap "sys/mman.h" HAVE_MMAP)
+    if(NOT HAVE_MMAP)
+        message(WARNING "mmap not found: disabling mmap support")
+        set(SYLVAN_USE_MMAP OFF)
+    endif()
+endif()
+
+option(SYLVAN_STATS "Let Sylvan collect statistics at runtime" OFF)
+
+include(DetectCacheLineSize)
+detect_cache_line_size(SYLVAN_CACHE_LINE_SIZE DEFAULT 64)
+
+configure_file(
+    sylvan_config.h.in
+    "${CMAKE_CURRENT_BINARY_DIR}/sylvan_config.h"
+    @ONLY
+)
+
+# ── Library target ───────────────────────────────────────────────────────────
+
+# Windows builds are static until Sylvan and Lace have an explicit DLL API.
+if(WIN32)
+    add_library(sylvan STATIC)
+else()
+    add_library(sylvan)
+endif()
 add_library(sylvan::sylvan ALIAS sylvan)
 
 # ── Sources ──────────────────────────────────────────────────────────────────
@@ -24,6 +52,9 @@ target_sources(sylvan
     sylvan_zdd.c
   PUBLIC
     FILE_SET HEADERS
+    BASE_DIRS
+      "${CMAKE_CURRENT_SOURCE_DIR}"
+      "${CMAKE_CURRENT_BINARY_DIR}"
     FILES
       sylvan.h
       sylvan_bdd.h
@@ -41,6 +72,7 @@ target_sources(sylvan
       sylvan_table.h
       sylvan_zdd.h
       sylvan_zdd_int.h
+      "${CMAKE_CURRENT_BINARY_DIR}/sylvan_config.h"
 )
 
 # ── Optional C++ bindings ────────────────────────────────────────────────────
@@ -75,12 +107,12 @@ endif()
  
 # PIC: required for shared libraries, optional for static (e.g. embedding
 # Sylvan in a downstream shared library).
-if(BUILD_SHARED_LIBS OR SYLVAN_ENABLE_PIC)
+if((BUILD_SHARED_LIBS AND NOT WIN32) OR SYLVAN_ENABLE_PIC)
     set_target_properties(sylvan PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endif()
  
 # Shared library versioning (ignored for static builds)
-if(BUILD_SHARED_LIBS)
+if(BUILD_SHARED_LIBS AND NOT WIN32)
     set_target_properties(sylvan PROPERTIES
         VERSION   ${PROJECT_VERSION}
         SOVERSION ${PROJECT_VERSION_MAJOR}
@@ -113,31 +145,6 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(sylvan PUBLIC m)
 endif()
 
-# ── Platform feature detection ───────────────────────────────────────────────
- 
-option(SYLVAN_USE_MMAP "Let Sylvan use mmap or VirtualAlloc to allocate (virtual) memory" ON)
-if(SYLVAN_USE_MMAP)
-    if(WIN32)
-        target_compile_definitions(sylvan PUBLIC SYLVAN_USE_MMAP)
-    else()
-        include(CheckSymbolExists)
-        check_symbol_exists(mmap "sys/mman.h" HAVE_MMAP)
-        if(NOT HAVE_MMAP)
-            message(WARNING "mmap not found: disabling mmap support")
-            set(SYLVAN_USE_MMAP OFF)
-        else()
-            target_compile_definitions(sylvan PUBLIC SYLVAN_USE_MMAP)
-        endif()
-    endif()
-endif()
-
-# ── Optional runtime statistics ──────────────────────────────────────────────
- 
-option(SYLVAN_STATS "Let Sylvan collect statistics at runtime" OFF)
-if(SYLVAN_STATS)
-    target_compile_definitions(sylvan PUBLIC SYLVAN_STATS)
-endif()
-
 # ── Hide tunables when consumed as a subproject ──────────────────────────────
 
 if(NOT sylvan_IS_TOP_LEVEL)
@@ -149,22 +156,6 @@ if(NOT sylvan_IS_TOP_LEVEL)
         SYLVAN_STATS
     )
 endif()
-
-# ── Configuration ────────────────────────────────────────────────────────────
-
-include(DetectCacheLineSize)
-detect_cache_line_size(SYLVAN_CACHE_LINE_SIZE DEFAULT 64)
-
-file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/src")
-configure_file(
-    ${PROJECT_SOURCE_DIR}/src/sylvan_config.h.in
-    ${PROJECT_BINARY_DIR}/src/sylvan_config.h
-    @ONLY
-)
-target_include_directories(sylvan
-  PUBLIC
-    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/src>
-)
 
 # ── Installation ─────────────────────────────────────────────────────────────
  
@@ -178,9 +169,6 @@ install(TARGETS sylvan
     FILE_SET HEADERS DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-# special case for sylvan_config.h
-install(FILES "${PROJECT_BINARY_DIR}/src/sylvan_config.h" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
- 
 install(EXPORT sylvan-targets
     FILE        sylvan-targets.cmake
     NAMESPACE   sylvan::
@@ -198,7 +186,7 @@ else()
 endif()
  
 configure_package_config_file(
-    ${PROJECT_SOURCE_DIR}/cmake/sylvan-config.cmake.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/sylvan-config.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
 )
@@ -217,7 +205,7 @@ install(
 )
  
 if(SYLVAN_GMP)
-    install(FILES ${PROJECT_SOURCE_DIR}/cmake/FindGMP.cmake
+    install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/FindGMP.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
     )
 endif()
@@ -239,7 +227,7 @@ endif()
 
 if(NOT MSVC)
     configure_file(
-        "${PROJECT_SOURCE_DIR}/cmake/sylvan.pc.in"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/sylvan.pc.in"
         "${CMAKE_CURRENT_BINARY_DIR}/sylvan.pc"
         @ONLY
     )

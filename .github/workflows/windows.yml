@@ -96,7 +96,7 @@ jobs:
         $prefix = Join-Path $env:RUNNER_TEMP "sylvan-install"
         cmake -G Ninja -S . -B build `
           -DCMAKE_BUILD_TYPE=${{matrix.build_type}} `
-          "-DCMAKE_INSTALL_PREFIX=$prefix" `
+          "-DCMAKE_INSTALL_PREFIX=$prefix"
 
     - name: 🏗️  Build
       run: cmake --build build

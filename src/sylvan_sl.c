@@ -45,7 +45,7 @@ sylvan_skiplist_alloc(size_t size)
     sylvan_skiplist_t l = malloc(sizeof(struct sylvan_skiplist));
     l->buckets = sylvan_alloc_aligned(sizeof(sl_bucket) * size);
     if (l->buckets == 0) {
-        fprintf(stderr, "sylvan: Unable to allocate virtual memory (%'zu bytes) for the skiplist!\n", size*sizeof(sl_bucket));
+        fprintf(stderr, "sylvan: Unable to allocate virtual memory (%zu bytes) for the skiplist!\n", size*sizeof(sl_bucket));
         exit(1);
     }
     l->size = size;
@@ -119,11 +119,12 @@ VOID_TASK_IMPL_2(sylvan_skiplist_assign_next, sylvan_skiplist_t, l, MTBDD, dd)
     }
 
     /* claim next item */
-    const uint64_t next = atomic_fetch_add(&l->next, 1);
-    if (next >= l->size) {
+    const size_t next_index = atomic_fetch_add(&l->next, 1);
+    if (next_index >= l->size) {
         fprintf(stderr, "Out of cheese exception, no more blocks available\n");
         exit(1);
     }
+    const uint32_t next = (uint32_t)next_index;
 
     /* fill next item */
     sl_bucket *a = l->buckets + next;
@@ -132,7 +133,7 @@ VOID_TASK_IMPL_2(sylvan_skiplist_assign_next, sylvan_skiplist_t, l, MTBDD, dd)
     atomic_store_explicit(&l->buckets[loc].next[0], next, memory_order_release);
 
     /* determine height */
-    uint64_t h = 1 + ctz_uint32(lace_rng(lace_get_worker())) / 2; // FIXME
+    uint32_t h = 1 + ctz_uint32((uint32_t)lace_rng(lace_get_worker())) / 2; // FIXME
     if (h > SL_DEPTH) h = SL_DEPTH;
 
     /* go up and create links */
@@ -141,12 +142,12 @@ VOID_TASK_IMPL_2(sylvan_skiplist_assign_next, sylvan_skiplist_t, l, MTBDD, dd)
         for (;;) {
             sl_bucket *e = l->buckets + loc;
             /* note, at k>0, no locks on edges */
-            uint32_t loc_next = atomic_load_explicit(&e->next[k], memory_order_acquire);
-            if (loc_next != 0 && l->buckets[loc_next].dd < dd) {
-                loc = loc_next;
+            uint32_t next_at_level = atomic_load_explicit(&e->next[k], memory_order_acquire);
+            if (next_at_level != 0 && l->buckets[next_at_level].dd < dd) {
+                loc = next_at_level;
             } else {
-                a->next[k] = loc_next;
-                if (atomic_compare_exchange_strong(&e->next[k], &loc_next, next)) break;
+                a->next[k] = next_at_level;
+                if (atomic_compare_exchange_strong(&e->next[k], &next_at_level, next)) break;
             }
         }
     }

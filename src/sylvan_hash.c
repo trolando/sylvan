@@ -153,5 +153,5 @@ void
 sylvan_init_hash(void)
 {
     // initialize sylvan_tabhash_table
-    for (int i=0; i<256*16; i++) sylvan_tabhash_table[i] = CWhash(i);
+    for (int i=0; i<256*16; i++) sylvan_tabhash_table[i] = CWhash((uint64_t)i);
 }

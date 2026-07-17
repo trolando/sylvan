@@ -296,32 +296,32 @@ VOID_TASK_0(mtbdd_refs_init)
 }
 
 void
-mtbdd_refs_ptrs_up(mtbdd_refs_internal_t mtbdd_refs_key)
+mtbdd_refs_ptrs_up(mtbdd_refs_internal_t refs)
 {
-    size_t cur = mtbdd_refs_key->pcur - mtbdd_refs_key->pbegin;
-    size_t size = mtbdd_refs_key->pend - mtbdd_refs_key->pbegin;
-    mtbdd_refs_key->pbegin = (const MTBDD**)realloc(mtbdd_refs_key->pbegin, sizeof(MTBDD*) * size * 2);
-    mtbdd_refs_key->pcur = mtbdd_refs_key->pbegin + cur;
-    mtbdd_refs_key->pend = mtbdd_refs_key->pbegin + (size * 2);
+    size_t cur = refs->pcur - refs->pbegin;
+    size_t size = refs->pend - refs->pbegin;
+    refs->pbegin = (const MTBDD**)realloc(refs->pbegin, sizeof(MTBDD*) * size * 2);
+    refs->pcur = refs->pbegin + cur;
+    refs->pend = refs->pbegin + (size * 2);
 }
 
 MTBDD SYLVAN_NOINLINE
-mtbdd_refs_refs_up(mtbdd_refs_internal_t mtbdd_refs_key, MTBDD res)
+mtbdd_refs_refs_up(mtbdd_refs_internal_t refs, MTBDD res)
 {
-    long size = mtbdd_refs_key->rend - mtbdd_refs_key->rbegin;
-    mtbdd_refs_key->rbegin = (MTBDD*)realloc(mtbdd_refs_key->rbegin, sizeof(MTBDD) * size * 2);
-    mtbdd_refs_key->rcur = mtbdd_refs_key->rbegin + size;
-    mtbdd_refs_key->rend = mtbdd_refs_key->rbegin + (size * 2);
+    size_t size = refs->rend - refs->rbegin;
+    refs->rbegin = (MTBDD*)realloc(refs->rbegin, sizeof(MTBDD) * size * 2);
+    refs->rcur = refs->rbegin + size;
+    refs->rend = refs->rbegin + (size * 2);
     return res;
 }
 
 void SYLVAN_NOINLINE
-mtbdd_refs_tasks_up(mtbdd_refs_internal_t mtbdd_refs_key)
+mtbdd_refs_tasks_up(mtbdd_refs_internal_t refs)
 {
-    long size = mtbdd_refs_key->send - mtbdd_refs_key->sbegin;
-    mtbdd_refs_key->sbegin = (mtbdd_refs_task_t)realloc(mtbdd_refs_key->sbegin, sizeof(struct mtbdd_refs_task) * size * 2);
-    mtbdd_refs_key->scur = mtbdd_refs_key->sbegin + size;
-    mtbdd_refs_key->send = mtbdd_refs_key->sbegin + (size * 2);
+    size_t size = refs->send - refs->sbegin;
+    refs->sbegin = (mtbdd_refs_task_t)realloc(refs->sbegin, sizeof(struct mtbdd_refs_task) * size * 2);
+    refs->scur = refs->sbegin + size;
+    refs->send = refs->sbegin + (size * 2);
 }
 
 void
@@ -951,7 +951,7 @@ TASK_2(MTBDD, mtbdd_uop_times_uint, MTBDD, a, size_t, k)
         } else if (mtbddnode_gettype(na) == 2) {
             uint64_t v = mtbddnode_getvalue(na);
             int64_t n = (int32_t)(v>>32);
-            uint32_t d = v;
+            uint32_t d = (uint32_t)v;
             uint32_t c = gcd(d, (uint32_t)k);
             return mtbdd_fraction(n*(k/c), d/c);
         } else {
@@ -1190,7 +1190,7 @@ TASK_IMPL_2(MTBDD, mtbdd_op_plus, MTBDD*, pa, MTBDD*, pb)
             if (nom_a == 0) return b;
             if (nom_b == 0) return a;
             // equalize denominators
-            uint32_t c = gcd(denom_a, denom_b);
+            uint32_t c = gcd((uint32_t)denom_a, (uint32_t)denom_b);
             nom_a *= denom_b/c;
             nom_b *= denom_a/c;
             denom_a *= denom_b/c;
@@ -1241,7 +1241,7 @@ TASK_IMPL_2(MTBDD, mtbdd_op_minus, MTBDD*, pa, MTBDD*, pb)
             // common cases
             if (nom_b == 0) return a;
             // equalize denominators
-            uint32_t c = gcd(denom_a, denom_b);
+            uint32_t c = gcd((uint32_t)denom_a, (uint32_t)denom_b);
             nom_a *= denom_b/c;
             nom_b *= denom_a/c;
             denom_a *= denom_b/c;
@@ -1303,8 +1303,8 @@ TASK_IMPL_2(MTBDD, mtbdd_op_times, MTBDD*, pa, MTBDD*, pb)
             if (nom_a == 0) return a;
             if (nom_b == 0) return b;
             // multiply!
-            uint32_t c = gcd(nom_b < 0 ? -nom_b : nom_b, denom_a);
-            uint32_t d = gcd(nom_a < 0 ? -nom_a : nom_a, denom_b);
+            uint32_t c = gcd((uint32_t)(nom_b < 0 ? -nom_b : nom_b), (uint32_t)denom_a);
+            uint32_t d = gcd((uint32_t)(nom_a < 0 ? -nom_a : nom_a), (uint32_t)denom_b);
             nom_a /= d;
             denom_a /= c;
             nom_a *= (nom_b/c);
@@ -1363,7 +1363,7 @@ TASK_IMPL_2(MTBDD, mtbdd_op_min, MTBDD*, pa, MTBDD*, pb)
             uint64_t denom_a = val_a&0xffffffff;
             uint64_t denom_b = val_b&0xffffffff;
             // equalize denominators
-            uint32_t c = gcd(denom_a, denom_b);
+            uint32_t c = gcd((uint32_t)denom_a, (uint32_t)denom_b);
             nom_a *= denom_b/c;
             nom_b *= denom_a/c;
             // compute lowest
@@ -1419,7 +1419,7 @@ TASK_IMPL_2(MTBDD, mtbdd_op_max, MTBDD*, pa, MTBDD*, pb)
             uint64_t denom_a = val_a&0xffffffff;
             uint64_t denom_b = val_b&0xffffffff;
             // equalize denominators
-            uint32_t c = gcd(denom_a, denom_b);
+            uint32_t c = gcd((uint32_t)denom_a, (uint32_t)denom_b);
             nom_a *= denom_b/c;
             nom_b *= denom_a/c;
             // compute highest
@@ -1834,7 +1834,7 @@ TASK_3(MTBDD, mtbdd_leq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
             uint64_t da = va&0xffffffff;
             uint64_t db = vb&0xffffffff;
             // equalize denominators
-            uint32_t c = gcd(da, db);
+            uint32_t c = gcd((uint32_t)da, (uint32_t)db);
             nom_a *= db/c;
             nom_b *= da/c;
             result = nom_a <= nom_b ? mtbdd_true : mtbdd_false;
@@ -1930,7 +1930,7 @@ TASK_3(MTBDD, mtbdd_less_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
             uint64_t da = va&0xffffffff;
             uint64_t db = vb&0xffffffff;
             // equalize denominators
-            uint32_t c = gcd(da, db);
+            uint32_t c = gcd((uint32_t)da, (uint32_t)db);
             nom_a *= db/c;
             nom_b *= da/c;
             result = nom_a < nom_b ? mtbdd_true : mtbdd_false;
@@ -2026,7 +2026,7 @@ TASK_3(MTBDD, mtbdd_geq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
             uint64_t da = va&0xffffffff;
             uint64_t db = vb&0xffffffff;
             // equalize denominators
-            uint32_t c = gcd(da, db);
+            uint32_t c = gcd((uint32_t)da, (uint32_t)db);
             nom_a *= db/c;
             nom_b *= da/c;
             result = nom_a >= nom_b ? mtbdd_true : mtbdd_false;
@@ -2122,7 +2122,7 @@ TASK_3(MTBDD, mtbdd_greater_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
             uint64_t da = va&0xffffffff;
             uint64_t db = vb&0xffffffff;
             // equalize denominators
-            uint32_t c = gcd(da, db);
+            uint32_t c = gcd((uint32_t)da, (uint32_t)db);
             nom_a *= db/c;
             nom_b *= da/c;
             result = nom_a > nom_b ? mtbdd_true : mtbdd_false;
@@ -2460,7 +2460,7 @@ TASK_IMPL_1(MTBDD, mtbdd_minimum, MTBDD, a)
         uint64_t denom_l = mtbdd_getdenom(low);
         uint64_t denom_h = mtbdd_getdenom(high);
         // equalize denominators
-        uint32_t c = gcd(denom_l, denom_h);
+        uint32_t c = gcd((uint32_t)denom_l, (uint32_t)denom_h);
         nom_l *= denom_h/c;
         nom_h *= denom_l/c;
         result = nom_l < nom_h ? low : high;
@@ -2519,7 +2519,7 @@ TASK_IMPL_1(MTBDD, mtbdd_maximum, MTBDD, a)
         uint64_t denom_l = mtbdd_getdenom(low);
         uint64_t denom_h = mtbdd_getdenom(high);
         // equalize denominators
-        uint32_t c = gcd(denom_l, denom_h);
+        uint32_t c = gcd((uint32_t)denom_l, (uint32_t)denom_h);
         nom_l *= denom_h/c;
         nom_h *= denom_l/c;
         result = nom_l > nom_h ? low : high;
@@ -2551,7 +2551,7 @@ TASK_IMPL_2(double, mtbdd_satcount, MTBDD, dd, size_t, nvars)
             else if (mtbddnode_gettype(dd_node) == 1 && mtbdd_getdouble(dd) == 0.0) return 0.0;
             else if (mtbddnode_gettype(dd_node) == 2 && mtbdd_getvalue(dd) == 1) return 0.0;
         }
-        return powl(2.0L, nvars);
+        return (double)powl(2.0L, (long double)nvars);
     }
 
     /* Perhaps execute garbage collection */
@@ -2985,7 +2985,7 @@ TASK_2(int, mtbdd_test_isvalid_rec, MTBDD, dd, uint32_t, parent_var)
     uint64_t result;
     if (cache_get3(CACHE_BDD_ISBDD, dd, 0, 0, &result)) {
         sylvan_stats_count(BDD_ISBDD_CACHED);
-        return result;
+        return (int)result;
     }
 
     // check recursively
@@ -2998,7 +2998,7 @@ TASK_2(int, mtbdd_test_isvalid_rec, MTBDD, dd, uint32_t, parent_var)
         sylvan_stats_count(BDD_ISBDD_CACHEDPUT);
     }
 
-    return result;
+    return (int)result;
 }
 
 TASK_IMPL_1(int, mtbdd_test_isvalid, MTBDD, dd)

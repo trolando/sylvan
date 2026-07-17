@@ -228,7 +228,7 @@ TASK_IMPL_3(char, sylvan_disjoint, BDD, a, BDD, b, BDDVAR, prev_level)
         }
     }
 
-    return result;
+    return (char)result;
 }
 
 TASK_IMPL_3(BDD, sylvan_xor, BDD, a, BDD, b, BDDVAR, prev_level)
@@ -1682,7 +1682,7 @@ TASK_IMPL_2(double, sylvan_pathcount, BDD, bdd, BDDVAR, prev_level)
     /* Count operation */
     sylvan_stats_count(BDD_PATHCOUNT);
 
-    BDD level = sylvan_var(bdd);
+    BDDVAR level = sylvan_var(bdd);
 
     /* Consult cache */
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / granularity != level / granularity;
@@ -1713,7 +1713,7 @@ TASK_IMPL_3(double, sylvan_satcount, BDD, bdd, BDDSET, variables, BDDVAR, prev_l
 {
     /* Trivial cases */
     if (bdd == sylvan_false) return 0.0;
-    if (bdd == sylvan_true) return powl(2.0L, sylvan_set_count(variables));
+    if (bdd == sylvan_true) return (double)powl(2.0L, (long double)sylvan_set_count(variables));
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test();
@@ -1745,7 +1745,7 @@ TASK_IMPL_3(double, sylvan_satcount, BDD, bdd, BDDSET, variables, BDDVAR, prev_l
     if (cachenow) {
         if (cache_get3(CACHE_BDD_SATCOUNT, bdd, variables, 0, &hack.s)) {
             sylvan_stats_count(BDD_SATCOUNT_CACHED);
-            return hack.d * powl(2.0L, skipped);
+            return (double)((long double)hack.d * powl(2.0L, (long double)skipped));
         }
     }
 
@@ -1758,7 +1758,7 @@ TASK_IMPL_3(double, sylvan_satcount, BDD, bdd, BDDSET, variables, BDDVAR, prev_l
         if (cache_put3(CACHE_BDD_SATCOUNT, bdd, variables, 0, hack.s)) sylvan_stats_count(BDD_SATCOUNT_CACHEDPUT);
     }
 
-    return result * powl(2.0L, skipped);
+    return (double)((long double)result * powl(2.0L, (long double)skipped));
 }
 
 int
@@ -1971,15 +1971,15 @@ VOID_TASK_5(sylvan_enum_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, context,
         /* fill cube and vars with trace */
         void* mark = LACE_SCRATCH_MARK();
         uint8_t* cube = LACE_SCRATCH_ARRAY(uint8_t, i);
-        BDDVAR* vars = LACE_SCRATCH_ARRAY(BDDVAR, i);
+        BDDVAR* path_vars = LACE_SCRATCH_ARRAY(BDDVAR, i);
         int j=0;
         for (pp = path; pp != NULL; pp = pp->prev) {
             cube[i-j-1] = pp->val;
-            vars[i-j-1] = pp->var;
+            path_vars[i-j-1] = pp->var;
             j++;
         }
         /* call callback */
-        WRAP(cb, context, vars, cube, i);
+        WRAP(cb, context, path_vars, cube, i);
         LACE_SCRATCH_RESET(mark);
         return;
     }
@@ -2021,22 +2021,22 @@ VOID_TASK_5(sylvan_enum_par_do, BDD, bdd, BDDSET, vars, enum_cb, cb, void*, cont
         /* fill cube and vars with trace */
         void* mark = LACE_SCRATCH_MARK();
         uint8_t* cube = LACE_SCRATCH_ARRAY(uint8_t, i);
-        BDDVAR* vars = LACE_SCRATCH_ARRAY(BDDVAR, i);
+        BDDVAR* path_vars = LACE_SCRATCH_ARRAY(BDDVAR, i);
         int j=0;
         for (pp = path; pp != NULL; pp = pp->prev) {
             cube[i-j-1] = pp->val;
-            vars[i-j-1] = pp->var;
+            path_vars[i-j-1] = pp->var;
             j++;
         }
         /* call callback */
-        WRAP(cb, context, vars, cube, i);
+        WRAP(cb, context, path_vars, cube, i);
         LACE_SCRATCH_RESET(mark);
         return;
     }
 
-    BDD var = sylvan_var(vars);
+    BDDVAR var = sylvan_var(vars);
     vars = sylvan_set_next(vars);
-    BDD bdd_var = sylvan_var(bdd);
+    BDDVAR bdd_var = sylvan_var(bdd);
 
     /* assert var <= bdd_var */
     if (var < bdd_var) {

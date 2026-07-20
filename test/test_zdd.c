@@ -9,6 +9,26 @@
 
 #include "test_assert.h"
 
+static BDD
+test_bdd_and(BDD a, BDD b)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    test_assert(bdd_and(&result, a, b) == SYLVAN_OK);
+    mtbdd_unprotect(&result);
+    return result;
+}
+
+static BDD
+test_bdd_ite(BDD a, BDD b, BDD c)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    test_assert(bdd_ite(&result, a, b, c) == SYLVAN_OK);
+    mtbdd_unprotect(&result);
+    return result;
+}
+
 static void*
 test_alloc_array(size_t count, size_t size)
 {
@@ -100,7 +120,7 @@ int test_zdd_cofactor_CALL(lace_worker* lace)
     BDD x1 = bdd_var_at_level(1);
     BDD x2 = bdd_var_at_level(2);
     BDD function = bdd_xor(x0, x1);
-    BDD cube = bdd_and(x0, bdd_not(x2));
+    BDD cube = test_bdd_and(x0, bdd_not(x2));
     ZDD zdd = zdd_from_bdd(function, domain);
 
     BDDSET result_domain = bdd_set_from_array((uint32_t[]){1}, 1);
@@ -164,7 +184,7 @@ int test_zdd_merge_domains_CALL(lace_worker* lace)
     BDDSET zdd_subdom2 = bdd_set_from_array(subdom2_arr, nsub2);
 
     // combine subdomains
-    BDD bdd_subdom = bdd_and(bdd_subdom1, bdd_subdom2);
+    BDD bdd_subdom = test_bdd_and(bdd_subdom1, bdd_subdom2);
     BDDSET zdd_subdom = bdd_set_union(zdd_subdom1, zdd_subdom2);
     test_assert(zdd_subdom == bdd_subdom);
 
@@ -363,7 +383,7 @@ int test_zdd_and_CALL(lace_worker* lace)
         bdd_set_b = bdd_or_cube(bdd_set_b, bdd_dom, arr);
     }
 
-    BDD bdd_set = bdd_and(bdd_set_a, bdd_set_b);
+    BDD bdd_set = test_bdd_and(bdd_set_a, bdd_set_b);
 
     ZDD zdd_set_a = zdd_from_bdd(bdd_set_a, bdd_dom);
     ZDD zdd_set_b = zdd_from_bdd(bdd_set_b, bdd_dom);
@@ -493,7 +513,7 @@ int test_zdd_ite_CALL(lace_worker* lace)
     ZDD zdd_set_a = zdd_from_bdd(set_a, bdd_dom);
     ZDD zdd_set_b = zdd_from_bdd(set_b, bdd_dom);
     ZDD zdd_set_c = zdd_from_bdd(set_c, bdd_dom);
-    MTBDD bdd_test_result = bdd_ite(set_a, set_b, set_c);
+    MTBDD bdd_test_result = test_bdd_ite(set_a, set_b, set_c);
     ZDD zdd_test_result = zdd_ite(zdd_set_a, zdd_set_b, zdd_set_c, bdd_dom);
     test_assert(zdd_from_bdd(bdd_test_result, bdd_dom) == zdd_test_result);
 
@@ -689,8 +709,8 @@ int test_zdd_exists_CALL(lace_worker* lace)
 //     }
 //     test_assert(zdd_set2 == zdd_from_bdd(bdd_set2, bdd_subdom2));
 // 
-//     BDD bdd_set = bdd_and(bdd_set1, bdd_set2);
-//     BDD bdd_subdom = bdd_and(bdd_subdom1, bdd_subdom2);
+//     BDD bdd_set = test_bdd_and(bdd_set1, bdd_set2);
+//     BDD bdd_subdom = test_bdd_and(bdd_subdom1, bdd_subdom2);
 //     ZDD zdd_set = zdd_and_dom(zdd_set1, zdd_subdom1, zdd_set2, zdd_subdom2);
 //     test_assert(zdd_set == zdd_from_bdd(bdd_set, bdd_subdom));
 // 
@@ -706,8 +726,8 @@ int test_zdd_isop_basic_CALL(lace_worker* lace)
     BDD a = bdd_var_at_level(1);
     BDD b = bdd_var_at_level(2);
 
-    BDD a_and_b = bdd_and(a, b);
-    BDD aNot_and_b = bdd_and(bdd_not(a), b);
+    BDD a_and_b = test_bdd_and(a, b);
+    BDD aNot_and_b = test_bdd_and(bdd_not(a), b);
     BDD redundant_b = bdd_or(a_and_b, aNot_and_b);
 
     // ab + ~ab == b

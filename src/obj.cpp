@@ -82,26 +82,26 @@ Bdd::operator~() const
 Bdd
 Bdd::operator*(const Bdd& other) const
 {
-    return Bdd(bdd_and(bdd, other.bdd));
+    return Bdd(bdd_and_value(bdd, other.bdd));
 }
 
 Bdd&
 Bdd::operator*=(const Bdd& other)
 {
-    bdd = bdd_and(bdd, other.bdd);
+    bdd = bdd_and_value(bdd, other.bdd);
     return *this;
 }
 
 Bdd
 Bdd::operator&(const Bdd& other) const
 {
-    return Bdd(bdd_and(bdd, other.bdd));
+    return Bdd(bdd_and_value(bdd, other.bdd));
 }
 
 Bdd&
 Bdd::operator&=(const Bdd& other)
 {
-    bdd = bdd_and(bdd, other.bdd);
+    bdd = bdd_and_value(bdd, other.bdd);
     return *this;
 }
 
@@ -147,13 +147,13 @@ Bdd::operator^=(const Bdd& other)
 Bdd
 Bdd::operator-(const Bdd& other) const
 {
-    return Bdd(bdd_and(bdd, bdd_not(other.bdd)));
+    return Bdd(bdd_and_value(bdd, bdd_not(other.bdd)));
 }
 
 Bdd&
 Bdd::operator-=(const Bdd& other)
 {
-    bdd = bdd_and(bdd, bdd_not(other.bdd));
+    bdd = bdd_and_value(bdd, bdd_not(other.bdd));
     return *this;
 }
 
@@ -178,13 +178,13 @@ Bdd::UnivAbstract(const BddSet &cube) const
 Bdd
 Bdd::Ite(const Bdd &g, const Bdd &h) const
 {
-    return bdd_ite(bdd, g.bdd, h.bdd);
+    return bdd_ite_value(bdd, g.bdd, h.bdd);
 }
 
 Bdd
 Bdd::And(const Bdd &g) const
 {
-    return bdd_and(bdd, g.bdd);
+    return bdd_and_value(bdd, g.bdd);
 }
 
 Bdd

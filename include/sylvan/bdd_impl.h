@@ -45,29 +45,48 @@ static inline BDD bdd_not(BDD dd)
     return dd ^ bdd_complement;
 }
 
+/* Transitional value-return bridges for operations not converted yet. */
+static inline BDD bdd_and_value(BDD a, BDD b)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = bdd_and(&result, a, b);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+static inline BDD bdd_ite_value(BDD a, BDD b, BDD c)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = bdd_ite(&result, a, b, c);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
 static inline BDD bdd_xnor(BDD a, BDD b)
 {
     return bdd_not(bdd_xor(a, b));
 }
 
 static inline BDD bdd_or(BDD a, BDD b) {
-    return bdd_not(bdd_and(bdd_not(a), bdd_not(b)));
+    return bdd_not(bdd_and_value(bdd_not(a), bdd_not(b)));
 }
 
 static inline BDD bdd_nand(BDD a, BDD b) {
-    return bdd_not(bdd_and(a, b));
+    return bdd_not(bdd_and_value(a, b));
 }
 
 static inline BDD bdd_nor(BDD a, BDD b) {
-    return bdd_and(bdd_not(a), bdd_not(b));
+    return bdd_and_value(bdd_not(a), bdd_not(b));
 }
 
 static inline BDD bdd_imp(BDD a, BDD b) {
-    return bdd_not(bdd_and(a, bdd_not(b)));
+    return bdd_not(bdd_and_value(a, bdd_not(b)));
 }
 
 static inline BDD bdd_diff(BDD a, BDD b) {
-    return bdd_and(a, bdd_not(b));
+    return bdd_and_value(a, bdd_not(b));
 }
 
 static inline char bdd_subseteq(BDD a, BDD b)
@@ -102,11 +121,11 @@ static inline BDDSET bdd_set_next(BDDSET set)
 
 static inline BDDSET bdd_set_union(BDDSET set1, BDDSET set2)
 {
-    return bdd_and(set1, set2);
+    return bdd_and_value(set1, set2);
 }
 
-TASK(BDD, bdd_ite, BDD, a, BDD, b, BDD, c)
-TASK(BDD, bdd_and, BDD, a, BDD, b)
+TASK(int, bdd_ite, BDD*, result, BDD, a, BDD, b, BDD, c)
+TASK(int, bdd_and, BDD*, result, BDD, a, BDD, b)
 TASK(BDD, bdd_xor, BDD, a, BDD, b)
 TASK(char, bdd_disjoint, BDD, a, BDD, b)
 TASK(BDD, bdd_exists, BDD, dd, BDD, vars)

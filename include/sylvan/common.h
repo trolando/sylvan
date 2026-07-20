@@ -24,6 +24,15 @@
 extern "C" {
 #endif /* __cplusplus */
 
+/** Status returned by fallible Sylvan operations. */
+enum {
+    SYLVAN_OK = 0,
+    SYLVAN_ERR_OOM = -1,
+    SYLVAN_ERR_INVALID = -2,
+    SYLVAN_ERR_IO = -3,
+    SYLVAN_ERR_CALLBACK = -4
+};
+
 /**
  * Initialize the Sylvan parallel decision diagrams package.
  *

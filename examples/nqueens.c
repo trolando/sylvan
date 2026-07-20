@@ -133,7 +133,7 @@ void run_CALL(lace_worker* lace)
     // Old satcount function still requires a silly variables cube
     BDD vars = one;
     mtbdd_protect(&vars);
-    for (size_t i=0; i<size*size; i++) vars = bdd_and_CALL(lace, vars, board[i]);
+    for (size_t i=0; i<size*size; i++) vars = bdd_and_legacy_CALL(lace, vars, board[i]);
 
     INFO("Initialisation complete!\n");
 
@@ -154,11 +154,11 @@ void run_CALL(lace_worker* lace)
             temp = one;
             for (size_t k=0; k<size; k++) {
                 if (j==k) continue;
-                temp = bdd_and_CALL(lace, temp, bdd_not(board[i*size+k]));
+                temp = bdd_and_legacy_CALL(lace, temp, bdd_not(board[i*size+k]));
             }
-            temp = bdd_not(bdd_and_CALL(lace, bdd_not(temp), board[i*size+j]));
+            temp = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(temp), board[i*size+j]));
             // add cube to "res"
-            res = bdd_and_CALL(lace, res, temp);
+            res = bdd_and_legacy_CALL(lace, res, temp);
         }
     }
 
@@ -185,11 +185,11 @@ void run_CALL(lace_worker* lace)
             temp = one;
             for (size_t k=0; k<size; k++) {
                 if (i==k) continue;
-                temp = bdd_and_CALL(lace, temp, bdd_not(board[k*size+j]));
+                temp = bdd_and_legacy_CALL(lace, temp, bdd_not(board[k*size+j]));
             }
-            temp = bdd_not(bdd_and_CALL(lace, bdd_not(temp), board[i*size+j]));
+            temp = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(temp), board[i*size+j]));
             // add cube to "res"
-            res = bdd_and_CALL(lace, res, temp);
+            res = bdd_and_legacy_CALL(lace, res, temp);
         }
     }
 
@@ -216,12 +216,12 @@ void run_CALL(lace_worker* lace)
             for (size_t k=0; k<size; k++) {
                 // if (j+k-i >= 0 && j+k-i < size && k != i)
                 if (j+k >= i && j+k < size+i && k != i) {
-                    temp = bdd_and_CALL(lace, temp, bdd_not(board[k*size + (j+k-i)]));
+                    temp = bdd_and_legacy_CALL(lace, temp, bdd_not(board[k*size + (j+k-i)]));
                 }
             }
-            temp = bdd_not(bdd_and_CALL(lace, bdd_not(temp), board[i*size+j]));
+            temp = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(temp), board[i*size+j]));
             // add cube to "res"
-            res = bdd_and_CALL(lace, res, temp);
+            res = bdd_and_legacy_CALL(lace, res, temp);
         }
     }
 
@@ -248,12 +248,12 @@ void run_CALL(lace_worker* lace)
             for (size_t k=0; k<size; k++) {
                 // if (j+i-k >= 0 && j+i-k < size && k != i)
                 if (j+i >= k && j+i < size+k && k != i) {
-                    temp = bdd_and_CALL(lace, temp, bdd_not(board[k*size + (j+i-k)]));
+                    temp = bdd_and_legacy_CALL(lace, temp, bdd_not(board[k*size + (j+i-k)]));
                 }
             }
-            temp = bdd_not(bdd_and_CALL(lace, bdd_not(temp), board[i*size + j]));
+            temp = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(temp), board[i*size + j]));
             // add cube to "res"
-            res = bdd_and_CALL(lace, res, temp);
+            res = bdd_and_legacy_CALL(lace, res, temp);
         }
     }
 
@@ -277,9 +277,9 @@ void run_CALL(lace_worker* lace)
 
         temp = zero;
         for (size_t j=0; j<size; j++) {
-            temp = bdd_not(bdd_and_CALL(lace, bdd_not(temp), bdd_not(board[i*size+j])));
+            temp = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(temp), bdd_not(board[i*size+j])));
         }
-        res = bdd_and_CALL(lace, res, temp);
+        res = bdd_and_legacy_CALL(lace, res, temp);
     }
 
     if (report_minor) {

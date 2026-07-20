@@ -512,14 +512,16 @@ bdd_ite_legacy_CALL(lace_worker *lace, BDD a, BDD b, BDD c)
  * Compute constrain f@c, also called the generalized co-factor.
  * c is the "care function" - f@c equals f when c evaluates to True.
  */
-BDD bdd_constrain_CALL(lace_worker* lace, BDD f, BDD c)
+int bdd_constrain_CALL(lace_worker* lace, BDD *destination, BDD f, BDD c)
 {
+    if (destination == NULL || f == mtbdd_invalid || c == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
     /* Trivial cases */
-    if (c == bdd_true) return f;
-    if (c == bdd_false) return bdd_false;
-    if (bdd_is_leaf(f)) return f;
-    if (f == c) return bdd_true;
-    if (f == bdd_not(c)) return bdd_false;
+    if (c == bdd_true) { *destination = f; return SYLVAN_OK; }
+    if (c == bdd_false) { *destination = bdd_false; return SYLVAN_OK; }
+    if (bdd_is_leaf(f)) { *destination = f; return SYLVAN_OK; }
+    if (f == c) { *destination = bdd_true; return SYLVAN_OK; }
+    if (f == bdd_not(c)) { *destination = bdd_false; return SYLVAN_OK; }
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test(lace);
@@ -541,13 +543,19 @@ BDD bdd_constrain_CALL(lace_worker* lace, BDD f, BDD c)
         mark = 1;
     }
 
+    BDD computed = mtbdd_invalid;
+    BDD low = mtbdd_invalid;
+    BDD high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+
     /* Consult cache */
-    {
-        BDD result;
-        if (cache_get3(CACHE_BDD_CONSTRAIN, f, c, 0, &result)) {
-            sylvan_stats_count(BDD_CONSTRAIN_CACHED);
-            return mark ? bdd_not(result) : result;
-        }
+    if (cache_get3(CACHE_BDD_CONSTRAIN, f, c, 0, &computed)) {
+        sylvan_stats_count(BDD_CONSTRAIN_CACHED);
+        *destination = mark ? bdd_not(computed) : computed;
+        mtbdd_refs_popptr(3);
+        return SYLVAN_OK;
     }
 
     BDD fLow, fHigh, cLow, cHigh;
@@ -566,52 +574,63 @@ BDD bdd_constrain_CALL(lace_worker* lace, BDD f, BDD c)
         cLow = cHigh = c;
     }
 
-    BDD result;
+    int status = SYLVAN_OK;
 
     if (cLow == bdd_false) {
         /* cLow is False, so result equals fHigh @ cHigh */
-        if (cHigh == bdd_true) result = fHigh;
-        else result = bdd_constrain_CALL(lace, fHigh, cHigh);
+        if (cHigh == bdd_true) computed = fHigh;
+        else status = bdd_constrain_CALL(lace, &computed, fHigh, cHigh);
     } else if (cHigh == bdd_false) {
         /* cHigh is False, so result equals fLow @ cLow */
-        if (cLow == bdd_true) result = fLow;
-        else result = bdd_constrain_CALL(lace, fLow, cLow);
+        if (cLow == bdd_true) computed = fLow;
+        else status = bdd_constrain_CALL(lace, &computed, fLow, cLow);
     } else if (cLow == bdd_true) {
         /* cLow is True, so low result equals fLow */
-        BDD high = bdd_constrain_CALL(lace, fHigh, cHigh);
-        result = mtbdd_make_node(level, fLow, high);
+        status = bdd_constrain_CALL(lace, &high, fHigh, cHigh);
+        if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, level, fLow, high);
     } else if (cHigh == bdd_true) {
         /* cHigh is True, so high result equals fHigh */
-        BDD low = bdd_constrain_CALL(lace, fLow, cLow);
-        result = mtbdd_make_node(level, low, fHigh);
+        status = bdd_constrain_CALL(lace, &low, fLow, cLow);
+        if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, level, low, fHigh);
     } else {
         /* cLow and cHigh are not constrants... normal parallel recursion */
-        mtbdd_refs_spawn(bdd_constrain_SPAWN(lace, fLow, cLow));
-        BDD high = bdd_constrain_CALL(lace, fHigh, cHigh);
-        mtbdd_refs_push(high);
-        BDD low = mtbdd_refs_sync(bdd_constrain_SYNC(lace));
-        mtbdd_refs_pop(1);
-        result = mtbdd_make_node(level, low, high);
+        bdd_constrain_SPAWN(lace, &low, fLow, cLow);
+        int high_status = bdd_constrain_CALL(lace, &high, fHigh, cHigh);
+        int low_status = bdd_constrain_SYNC(lace);
+        if (low_status != SYLVAN_OK || high_status != SYLVAN_OK) {
+            status = high_status != SYLVAN_OK ? high_status : low_status;
+        } else {
+            status = _mtbdd_try_make_node(&computed, level, low, high);
+        }
     }
 
-    if (cache_put3(CACHE_BDD_CONSTRAIN, f, c, 0, result)) sylvan_stats_count(BDD_CONSTRAIN_CACHEDPUT);
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(3);
+        return status;
+    }
 
-    return mark ? bdd_not(result) : result;
+    if (cache_put3(CACHE_BDD_CONSTRAIN, f, c, 0, computed)) sylvan_stats_count(BDD_CONSTRAIN_CACHEDPUT);
+
+    *destination = mark ? bdd_not(computed) : computed;
+    mtbdd_refs_popptr(3);
+    return SYLVAN_OK;
 }
 
 /**
  * Compute restrict f@c, which uses a heuristic to try and minimize a BDD f with respect to a care function c
  */
-TASK(BDD, bdd_restrict_internal, BDD, f, BDD, c)
+TASK(int, bdd_restrict_internal, BDD*, result, BDD, f, BDD, c)
 
-BDD bdd_restrict_internal_CALL(lace_worker* lace, BDD f, BDD c)
+int bdd_restrict_internal_CALL(lace_worker* lace, BDD *destination, BDD f, BDD c)
 {
+    if (destination == NULL || f == mtbdd_invalid || c == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
     /* Trivial cases */
-    if (c == bdd_true) return f;
-    if (c == bdd_false) return bdd_false;
-    if (bdd_is_leaf(f)) return f;
-    if (f == c) return bdd_true;
-    if (f == bdd_not(c)) return bdd_false;
+    if (c == bdd_true) { *destination = f; return SYLVAN_OK; }
+    if (c == bdd_false) { *destination = bdd_false; return SYLVAN_OK; }
+    if (bdd_is_leaf(f)) { *destination = f; return SYLVAN_OK; }
+    if (f == c) { *destination = bdd_true; return SYLVAN_OK; }
+    if (f == bdd_not(c)) { *destination = bdd_false; return SYLVAN_OK; }
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test(lace);
@@ -633,19 +652,29 @@ BDD bdd_restrict_internal_CALL(lace_worker* lace, BDD f, BDD c)
         mark = 1;
     }
 
+    BDD computed = mtbdd_invalid;
+    BDD low = mtbdd_invalid;
+    BDD high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+
     /* Consult cache */
-    BDD result;
-    if (cache_get3(CACHE_BDD_RESTRICT, f, c, 0, &result)) {
+    if (cache_get3(CACHE_BDD_RESTRICT, f, c, 0, &computed)) {
         sylvan_stats_count(BDD_RESTRICT_CACHED);
-        return mark ? bdd_not(result) : result;
+        *destination = mark ? bdd_not(computed) : computed;
+        mtbdd_refs_popptr(3);
+        return SYLVAN_OK;
     }
 
+    int status = SYLVAN_OK;
     if (vc < vf) {
         /* f is independent of c, so result is f @ (cLow \/ cHigh) */
-        BDD new_c = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(node_low(c, nc)), bdd_not(node_high(c, nc))));
-        mtbdd_refs_push(new_c);
-        result = bdd_restrict_internal_CALL(lace, f, new_c);
-        mtbdd_refs_pop(1);
+        status = bdd_and_CALL(lace, &low, bdd_not(node_low(c, nc)), bdd_not(node_high(c, nc)));
+        if (status == SYLVAN_OK) {
+            low = bdd_not(low);
+            status = bdd_restrict_internal_CALL(lace, &computed, f, low);
+        }
     } else {
         BDD fLow = node_low(f,nf), fHigh = node_high(f,nf);
         BDD cLow, cHigh;
@@ -657,31 +686,48 @@ BDD bdd_restrict_internal_CALL(lace_worker* lace, BDD f, BDD c)
         }
         if (cLow == bdd_false) {
             /* sibling-substitution */
-            result = bdd_restrict_internal_CALL(lace, fHigh, cHigh);
+            status = bdd_restrict_internal_CALL(lace, &computed, fHigh, cHigh);
         } else if (cHigh == bdd_false) {
             /* sibling-substitution */
-            result = bdd_restrict_internal_CALL(lace, fLow, cLow);
+            status = bdd_restrict_internal_CALL(lace, &computed, fLow, cLow);
         } else {
             /* parallel recursion */
-            mtbdd_refs_spawn(bdd_restrict_internal_SPAWN(lace, fLow, cLow));
-            BDD high = bdd_restrict_internal_CALL(lace, fHigh, cHigh);
-            mtbdd_refs_push(high);
-            BDD low = mtbdd_refs_sync(bdd_restrict_internal_SYNC(lace));
-            mtbdd_refs_pop(1);
-            result = mtbdd_make_node(level, low, high);
+            bdd_restrict_internal_SPAWN(lace, &low, fLow, cLow);
+            int high_status = bdd_restrict_internal_CALL(lace, &high, fHigh, cHigh);
+            int low_status = bdd_restrict_internal_SYNC(lace);
+            if (low_status != SYLVAN_OK || high_status != SYLVAN_OK) {
+                status = high_status != SYLVAN_OK ? high_status : low_status;
+            } else {
+                status = _mtbdd_try_make_node(&computed, level, low, high);
+            }
         }
     }
 
-    if (cache_put3(CACHE_BDD_RESTRICT, f, c, 0, result)) sylvan_stats_count(BDD_RESTRICT_CACHEDPUT);
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(3);
+        return status;
+    }
 
-    return mark ? bdd_not(result) : result;
+    if (cache_put3(CACHE_BDD_RESTRICT, f, c, 0, computed)) sylvan_stats_count(BDD_RESTRICT_CACHEDPUT);
+
+    *destination = mark ? bdd_not(computed) : computed;
+    mtbdd_refs_popptr(3);
+    return SYLVAN_OK;
 }
 
-BDD
-bdd_restrict_CALL(lace_worker* lace, BDD f, BDD c)
+int
+bdd_restrict_CALL(lace_worker* lace, BDD *destination, BDD f, BDD c)
 {
-    BDD result = bdd_restrict_internal_CALL(lace, f, c);
-    return mtbdd_node_count(result) <= mtbdd_node_count(f) ? result : f;
+    if (destination == NULL || f == mtbdd_invalid || c == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    int status = bdd_restrict_internal_CALL(lace, &computed, f, c);
+    if (status == SYLVAN_OK) {
+        *destination = mtbdd_node_count(computed) <= mtbdd_node_count(f) ? computed : f;
+    }
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
 static int
@@ -698,11 +744,13 @@ bdd_is_cube(BDD cube)
     return cube == bdd_true;
 }
 
-BDD
-bdd_cofactor(BDD f, BDD cube)
+int
+bdd_cofactor(BDD *destination, BDD f, BDD cube)
 {
-    if (!bdd_is_cube(cube)) return mtbdd_invalid;
-    return bdd_constrain(f, cube);
+    if (destination == NULL || f == mtbdd_invalid || cube == mtbdd_invalid || !bdd_is_cube(cube)) {
+        return SYLVAN_ERR_INVALID;
+    }
+    return bdd_constrain(destination, f, cube);
 }
 
 /**

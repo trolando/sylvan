@@ -41,7 +41,7 @@ target_sources(sylvan
     cache.c
     common.c
     hash.c
-    ldd.c
+    listdd.c
     mt.c
     mtbdd.c
     platform.c
@@ -62,16 +62,17 @@ target_sources(sylvan
       ${PROJECT_SOURCE_DIR}/include/sylvan/cache.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/common.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/hash.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/ldd.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/listdd.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/mt.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/mtbdd.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/mtbdd_impl.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/nodes.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/platform.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/stats.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/types.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/zdd.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/internal/internal.h
-      ${PROJECT_SOURCE_DIR}/include/sylvan/internal/ldd_internal.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/internal.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/internal/listdd_internal.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/internal/mtbdd_internal.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/internal/zdd_internal.h
       ${PROJECT_BINARY_DIR}/include/sylvan/config.h

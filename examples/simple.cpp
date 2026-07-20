@@ -13,8 +13,8 @@ void simple_cxx_CALL(lace_worker* lace)
     Bdd zero = Bdd::bddZero(); // the False terminal
 
     // check if they really are the True/False terminal
-    assert(one.GetBDD() == mtbdd_true);
-    assert(zero.GetBDD() == mtbdd_false);
+    assert(one.GetBDD() == bdd_true);
+    assert(zero.GetBDD() == bdd_false);
 
     Bdd a = Bdd::bddVar(0); // create a BDD variable x_0
     Bdd b = Bdd::bddVar(1); // create a BDD variable x_1
@@ -89,7 +89,7 @@ void _main_CALL(lace_worker* lace, void* arg)
 
     // Initialize the BDD module with granularity 1 (cache every operation)
     // A higher granularity (e.g. 6) often results in better performance in practice
-    sylvan_init_mtbdd();
+    mtbdd_init();
 
     // Now we can do some simple stuff using the C++ objects.
     simple_cxx_CALL(lace);

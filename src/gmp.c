@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-#include <sylvan/internal/internal.h>
+#include <sylvan/internal.h>
 #include <sylvan/gmp.h>
 
 #include <math.h>
@@ -167,7 +167,7 @@ MTBDD
 mtbdd_gmp(mpq_t val)
 {
     mpq_canonicalize(val);
-    return mtbdd_makeleaf(gmp_type, (size_t)val);
+    return mtbdd_leaf(gmp_type, (size_t)val);
 }
 
 /**
@@ -179,15 +179,15 @@ MTBDD gmp_op_plus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
     MTBDD a = *pa, b = *pb;
 
     /* Check for partial functions */
-    if (a == mtbdd_false) return b;
-    if (b == mtbdd_false) return a;
+    if (a == mtbdd_undefined) return b;
+    if (b == mtbdd_undefined) return a;
 
     /* If both leaves, compute plus */
-    if (mtbdd_isleaf(a) && mtbdd_isleaf(b)) {
-        assert(mtbdd_gettype(a) == gmp_type && mtbdd_gettype(b) == gmp_type);
+    if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
+        assert(mtbdd_leaf_type(a) == gmp_type && mtbdd_leaf_type(b) == gmp_type);
 
-        mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
-        mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
+        mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
+        mpq_ptr mb = (mpq_ptr)mtbdd_leaf_value(b);
 
         mpq_t mres;
         mpq_init(mres);
@@ -215,15 +215,15 @@ MTBDD gmp_op_minus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
     MTBDD a = *pa, b = *pb;
 
     /* Check for partial functions */
-    if (a == mtbdd_false) return gmp_neg(b);
-    if (b == mtbdd_false) return a;
+    if (a == mtbdd_undefined) return gmp_neg(b);
+    if (b == mtbdd_undefined) return a;
 
     /* If both leaves, compute plus */
-    if (mtbdd_isleaf(a) && mtbdd_isleaf(b)) {
-        assert(mtbdd_gettype(a) == gmp_type && mtbdd_gettype(b) == gmp_type);
+    if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
+        assert(mtbdd_leaf_type(a) == gmp_type && mtbdd_leaf_type(b) == gmp_type);
 
-        mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
-        mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
+        mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
+        mpq_ptr mb = (mpq_ptr)mtbdd_leaf_value(b);
 
         mpq_t mres;
         mpq_init(mres);
@@ -246,18 +246,18 @@ MTBDD gmp_op_times_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
     MTBDD a = *pa, b = *pb;
 
     /* Check for partial functions and for Boolean (filter) */
-    if (a == mtbdd_false || b == mtbdd_false) return mtbdd_false;
+    if (a == mtbdd_undefined || b == mtbdd_undefined) return mtbdd_undefined;
 
     /* If one of Boolean, interpret as filter */
-    if (a == mtbdd_true) return b;
-    if (b == mtbdd_true) return a;
+    if (a == bdd_true) return b;
+    if (b == bdd_true) return a;
 
     /* Handle multiplication of leaves */
-    if (mtbdd_isleaf(a) && mtbdd_isleaf(b)) {
-        assert(mtbdd_gettype(a) == gmp_type && mtbdd_gettype(b) == gmp_type);
+    if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
+        assert(mtbdd_leaf_type(a) == gmp_type && mtbdd_leaf_type(b) == gmp_type);
 
-        mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
-        mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
+        mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
+        mpq_ptr mb = (mpq_ptr)mtbdd_leaf_value(b);
 
         // compute result
         mpq_t mres;
@@ -286,14 +286,14 @@ MTBDD gmp_op_divide_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
     MTBDD a = *pa, b = *pb;
 
     /* Check for partial functions */
-    if (a == mtbdd_false || b == mtbdd_false) return mtbdd_false;
+    if (a == mtbdd_undefined || b == mtbdd_undefined) return mtbdd_undefined;
 
     /* Handle division of leaves */
-    if (mtbdd_isleaf(a) && mtbdd_isleaf(b)) {
-        assert(mtbdd_gettype(a) == gmp_type && mtbdd_gettype(b) == gmp_type);
+    if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
+        assert(mtbdd_leaf_type(a) == gmp_type && mtbdd_leaf_type(b) == gmp_type);
 
-        mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
-        mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
+        mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
+        mpq_ptr mb = (mpq_ptr)mtbdd_leaf_value(b);
 
         // compute result
         mpq_t mres;
@@ -315,18 +315,18 @@ MTBDD gmp_op_min_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
     MTBDD a = *pa, b = *pb;
 
     /* Handle partial functions */
-    if (a == mtbdd_false) return b;
-    if (b == mtbdd_false) return a;
+    if (a == mtbdd_undefined) return b;
+    if (b == mtbdd_undefined) return a;
 
     /* Handle trivial case */
     if (a == b) return a;
 
     /* Compute result for leaves */
-    if (mtbdd_isleaf(a) && mtbdd_isleaf(b)) {
-        assert(mtbdd_gettype(a) == gmp_type && mtbdd_gettype(b) == gmp_type);
+    if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
+        assert(mtbdd_leaf_type(a) == gmp_type && mtbdd_leaf_type(b) == gmp_type);
 
-        mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
-        mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
+        mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
+        mpq_ptr mb = (mpq_ptr)mtbdd_leaf_value(b);
         int cmp = mpq_cmp(ma, mb);
         return cmp < 0 ? a : b;
     }
@@ -348,18 +348,18 @@ MTBDD gmp_op_max_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
     MTBDD a = *pa, b = *pb;
 
     /* Handle partial functions */
-    if (a == mtbdd_false) return b;
-    if (b == mtbdd_false) return a;
+    if (a == mtbdd_undefined) return b;
+    if (b == mtbdd_undefined) return a;
 
     /* Handle trivial case */
     if (a == b) return a;
 
     /* Compute result for leaves */
-    if (mtbdd_isleaf(a) && mtbdd_isleaf(b)) {
-        assert(mtbdd_gettype(a) == gmp_type && mtbdd_gettype(b) == gmp_type);
+    if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
+        assert(mtbdd_leaf_type(a) == gmp_type && mtbdd_leaf_type(b) == gmp_type);
 
-        mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
-        mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
+        mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
+        mpq_ptr mb = (mpq_ptr)mtbdd_leaf_value(b);
         int cmp = mpq_cmp(ma, mb);
         return cmp > 0 ? a : b;
     }
@@ -379,13 +379,13 @@ MTBDD gmp_op_max_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
 MTBDD gmp_op_neg_CALL(lace_worker* lace, MTBDD dd, size_t p)
 {
     /* Handle partial functions */
-    if (dd == mtbdd_false) return mtbdd_false;
+    if (dd == mtbdd_undefined) return mtbdd_undefined;
 
     /* Compute result for leaf */
-    if (mtbdd_isleaf(dd)) {
-        assert(mtbdd_gettype(dd) == gmp_type);
+    if (mtbdd_is_leaf(dd)) {
+        assert(mtbdd_leaf_type(dd) == gmp_type);
 
-        mpq_ptr m = (mpq_ptr)mtbdd_getvalue(dd);
+        mpq_ptr m = (mpq_ptr)mtbdd_leaf_value(dd);
 
         mpq_t mres;
         mpq_init(mres);
@@ -405,13 +405,13 @@ MTBDD gmp_op_neg_CALL(lace_worker* lace, MTBDD dd, size_t p)
 MTBDD gmp_op_abs_CALL(lace_worker* lace, MTBDD dd, size_t p)
 {
     /* Handle partial functions */
-    if (dd == mtbdd_false) return mtbdd_false;
+    if (dd == mtbdd_undefined) return mtbdd_undefined;
 
     /* Compute result for leaf */
-    if (mtbdd_isleaf(dd)) {
-        assert(mtbdd_gettype(dd) == gmp_type);
+    if (mtbdd_is_leaf(dd)) {
+        assert(mtbdd_leaf_type(dd) == gmp_type);
 
-        mpq_ptr m = (mpq_ptr)mtbdd_getvalue(dd);
+        mpq_ptr m = (mpq_ptr)mtbdd_leaf_value(dd);
 
         mpq_t mres;
         mpq_init(mres);
@@ -487,15 +487,15 @@ MTBDD gmp_abstract_op_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 MTBDD gmp_op_threshold_d_CALL(lace_worker* lace, MTBDD a, size_t svalue)
 {
     /* Handle partial function */
-    if (a == mtbdd_false) return mtbdd_false;
+    if (a == mtbdd_undefined) return mtbdd_undefined;
 
     /* Compute result */
-    if (mtbdd_isleaf(a)) {
-        assert(mtbdd_gettype(a) == gmp_type);
+    if (mtbdd_is_leaf(a)) {
+        assert(mtbdd_leaf_type(a) == gmp_type);
 
         double value = *(double*)&svalue;
-        mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
-        return mpq_get_d(ma) >= value ? mtbdd_true : mtbdd_false;
+        mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
+        return mpq_get_d(ma) >= value ? bdd_true : mtbdd_undefined;
     }
 
     return mtbdd_invalid;
@@ -508,15 +508,15 @@ TASK(MTBDD, gmp_op_strict_threshold_d, MTBDD, a, size_t, svalue)
 MTBDD gmp_op_strict_threshold_d_CALL(lace_worker* lace, MTBDD a, size_t svalue)
 {
     /* Handle partial function */
-    if (a == mtbdd_false) return mtbdd_false;
+    if (a == mtbdd_undefined) return mtbdd_undefined;
 
     /* Compute result */
-    if (mtbdd_isleaf(a)) {
-        assert(mtbdd_gettype(a) == gmp_type);
+    if (mtbdd_is_leaf(a)) {
+        assert(mtbdd_leaf_type(a) == gmp_type);
 
         double value = *(double*)&svalue;
-        mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
-        return mpq_get_d(ma) > value ? mtbdd_true : mtbdd_false;
+        mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
+        return mpq_get_d(ma) > value ? bdd_true : mtbdd_undefined;
     }
 
     return mtbdd_invalid;
@@ -524,12 +524,12 @@ MTBDD gmp_op_strict_threshold_d_CALL(lace_worker* lace, MTBDD a, size_t svalue)
 
 MTBDD gmp_threshold_d_CALL(lace_worker* lace, MTBDD dd, double d)
 {
-    return mtbdd_uapply(dd, gmp_op_threshold_d_CALL, *(size_t*)&d);
+    return mtbdd_apply_unary(dd, gmp_op_threshold_d_CALL, *(size_t*)&d);
 }
 
 MTBDD gmp_strict_threshold_d_CALL(lace_worker* lace, MTBDD dd, double d)
 {
-    return mtbdd_uapply(dd, gmp_op_strict_threshold_d_CALL, *(size_t*)&d);
+    return mtbdd_apply_unary(dd, gmp_op_strict_threshold_d_CALL, *(size_t*)&d);
 }
 
 /**
@@ -541,16 +541,16 @@ MTBDD gmp_op_threshold_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
     MTBDD a = *pa, b = *pb;
 
     /* Check for partial functions */
-    if (a == mtbdd_false) return mtbdd_false;
+    if (a == mtbdd_undefined) return mtbdd_undefined;
 
     /* Handle comparison of leaves */
-    if (mtbdd_isleaf(a)) {
-        assert(mtbdd_gettype(a) == gmp_type);
+    if (mtbdd_is_leaf(a)) {
+        assert(mtbdd_leaf_type(a) == gmp_type);
 
-        mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
-        mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
+        mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
+        mpq_ptr mb = (mpq_ptr)mtbdd_leaf_value(b);
         int cmp = mpq_cmp(ma, mb);
-        return cmp >= 0 ? mtbdd_true : mtbdd_false;
+        return cmp >= 0 ? bdd_true : mtbdd_undefined;
     }
 
     return mtbdd_invalid;
@@ -565,16 +565,16 @@ MTBDD gmp_op_strict_threshold_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
     MTBDD a = *pa, b = *pb;
 
     /* Check for partial functions */
-    if (a == mtbdd_false) return mtbdd_false;
+    if (a == mtbdd_undefined) return mtbdd_undefined;
 
     /* Handle comparison of leaves */
-    if (mtbdd_isleaf(a)) {
-        assert(mtbdd_gettype(a) == gmp_type);
+    if (mtbdd_is_leaf(a)) {
+        assert(mtbdd_leaf_type(a) == gmp_type);
 
-        mpq_ptr ma = (mpq_ptr)mtbdd_getvalue(a);
-        mpq_ptr mb = (mpq_ptr)mtbdd_getvalue(b);
+        mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
+        mpq_ptr mb = (mpq_ptr)mtbdd_leaf_value(b);
         int cmp = mpq_cmp(ma, mb);
-        return cmp > 0 ? mtbdd_true : mtbdd_false;
+        return cmp > 0 ? bdd_true : mtbdd_undefined;
     }
 
     return mtbdd_invalid;
@@ -589,7 +589,7 @@ MTBDD gmp_and_abstract_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     /* Check terminal cases */
 
     /* If v == true, then <vars> is an empty set */
-    if (v == mtbdd_true) return mtbdd_apply(a, b, gmp_op_times_CALL);
+    if (v == bdd_true) return mtbdd_apply(a, b, gmp_op_times_CALL);
 
     /* Try the times operator on a and b */
     MTBDD result = gmp_op_times_CALL(lace, &a, &b);
@@ -618,8 +618,8 @@ MTBDD gmp_and_abstract_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     /* Now, v is not a constant, and either a or b is not a constant */
 
     /* Get top variable */
-    int la = mtbdd_isleaf(a);
-    int lb = mtbdd_isleaf(b);
+    int la = mtbdd_is_leaf(a);
+    int lb = mtbdd_is_leaf(b);
     mtbddnode* na = la ? 0 : MTBDD_GETNODE(a);
     mtbddnode* nb = lb ? 0 : MTBDD_GETNODE(b);
     uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
@@ -656,7 +656,7 @@ MTBDD gmp_and_abstract_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
             MTBDD low = mtbdd_refs_push(gmp_and_abstract_plus_CALL(lace, alow, blow, v));
             MTBDD high = mtbdd_refs_sync(gmp_and_abstract_plus_SYNC(lace));
             mtbdd_refs_pop(1);
-            result = mtbdd_makenode(var, low, high);
+            result = mtbdd_make_node(var, low, high);
         }
     }
 
@@ -676,7 +676,7 @@ MTBDD gmp_and_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     /* Check terminal cases */
 
     /* If v == true, then <vars> is an empty set */
-    if (v == mtbdd_true) return mtbdd_apply(a, b, gmp_op_times_CALL);
+    if (v == bdd_true) return mtbdd_apply(a, b, gmp_op_times_CALL);
 
     /* Try the times operator on a and b */
     MTBDD result = gmp_op_times_CALL(lace, &a, &b);
@@ -693,8 +693,8 @@ MTBDD gmp_and_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     /* Now, v is not a constant, and either a or b is not a constant */
 
     /* Get top variable */
-    int la = mtbdd_isleaf(a);
-    int lb = mtbdd_isleaf(b);
+    int la = mtbdd_is_leaf(a);
+    int lb = mtbdd_is_leaf(b);
     mtbddnode* na = la ? 0 : MTBDD_GETNODE(a);
     mtbddnode* nb = lb ? 0 : MTBDD_GETNODE(b);
     uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
@@ -707,7 +707,7 @@ MTBDD gmp_and_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     while (vv < var) {
         /* we can skip variables, because max(r,r) = r */
         v = node_high(v, nv);
-        if (v == mtbdd_true) return mtbdd_apply(a, b, gmp_op_times_CALL);
+        if (v == bdd_true) return mtbdd_apply(a, b, gmp_op_times_CALL);
         nv = MTBDD_GETNODE(v);
         vv = mtbddnode_getvariable(nv);
     }
@@ -744,7 +744,7 @@ MTBDD gmp_and_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
         MTBDD low = mtbdd_refs_push(gmp_and_abstract_max_CALL(lace, alow, blow, v));
         MTBDD high = mtbdd_refs_sync(gmp_and_abstract_max_SYNC(lace));
         mtbdd_refs_pop(1);
-        result = mtbdd_makenode(var, low, high);
+        result = mtbdd_make_node(var, low, high);
     }
 
     /* Store in cache */

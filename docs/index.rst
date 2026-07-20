@@ -304,7 +304,7 @@ See ``src/sylvan_mt.h`` and the example in ``src/sylvan_gmp.h`` and ``src/sylvan
 Custom decision diagram operations
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Adding custom decision diagram operations is easy. Include ``sylvan_int.h`` for the internal functions. See ``sylvan_cache.h``
+Adding custom decision diagram operations is easy. Include ``sylvan/internal.h`` for the advanced functions. See ``sylvan/cache.h``
 for how to use the operation cache.
 
 List decision diagrams

@@ -38,3 +38,20 @@ if(SYLVAN_BUILD_CPP)
 
     add_test(NAME test_cxx COMMAND test_cxx)
 endif()
+
+# MinGW-built executables depend on runtime DLLs beside the compiler (for
+# example libgcc_s_seh-1.dll and libwinpthread-1.dll in MSYS2). Make CTest use
+# that directory without requiring the user's shell PATH to be configured.
+if(WIN32 AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" AND
+   NOT CMAKE_C_SIMULATE_ID STREQUAL "MSVC")
+    get_filename_component(_sylvan_compiler_runtime_dir "${CMAKE_C_COMPILER}" DIRECTORY)
+    set(_sylvan_tests test_basic test_zdd test_table)
+    if(SYLVAN_BUILD_CPP)
+        list(APPEND _sylvan_tests test_cxx)
+    endif()
+    set_tests_properties(${_sylvan_tests} PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_sylvan_compiler_runtime_dir}"
+    )
+    unset(_sylvan_tests)
+    unset(_sylvan_compiler_runtime_dir)
+endif()

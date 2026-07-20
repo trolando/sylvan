@@ -6,7 +6,7 @@
 
 #include <getrss.h>
 
-#include <sylvan/internal/internal.h>
+#include <sylvan/internal.h>
 
 #include <common.h>
 
@@ -115,16 +115,16 @@ parse_args(int argc, const char **argv)
  */
 typedef struct set
 {
-    MDD dd;
+    LISTDD dd;
 } *set_t;
 
 typedef struct relation
 {
-    MDD dd;
-    MDD meta; // for relprod
+    LISTDD dd;
+    LISTDD meta; // for relprod
     int r_k, w_k, *r_proj, *w_proj;
     int firstvar; // for saturation/chaining
-    MDD topmeta; // for saturation
+    LISTDD topmeta; // for saturation
 } *rel_t;
 
 static int vector_size; // size of vector in integers
@@ -149,11 +149,11 @@ set_load(FILE* f)
     if (k != -1) Abort("Invalid input file!\n"); // only support full vector
 
     /* read dd */
-    lddmc_serialize_fromfile_old(f);
+    listdd_serialize_fromfile_old(f);
     size_t dd;
     if (fread(&dd, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!\n");
-    set->dd = lddmc_serialize_get_reversed(dd);
-    lddmc_protect(&set->dd);
+    set->dd = listdd_serialize_get_reversed(dd);
+    listdd_protect(&set->dd);
 
     return set;
 }
@@ -166,8 +166,8 @@ set_save(FILE* f, set_t set)
 {
     int k = -1;
     fwrite(&k, sizeof(int), 1, f);
-    size_t dd = lddmc_serialize_add(set->dd);
-    lddmc_serialize_tofile(f);
+    size_t dd = listdd_serialize_add(set->dd);
+    listdd_serialize_tofile(f);
     fwrite(&dd, sizeof(size_t), 1, f);
 }
 
@@ -231,14 +231,14 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
         i++;
     }
 
-    rel->meta = lddmc_cube((uint32_t*)meta, j);
-    lddmc_protect(&rel->meta);
+    rel->meta = listdd_singleton((uint32_t*)meta, j);
+    listdd_protect(&rel->meta);
     if (rel->firstvar != -1) {
-        rel->topmeta = lddmc_cube((uint32_t*)meta+rel->firstvar, j-rel->firstvar);
-        lddmc_protect(&rel->topmeta);
+        rel->topmeta = listdd_singleton((uint32_t*)meta+rel->firstvar, j-rel->firstvar);
+        listdd_protect(&rel->topmeta);
     }
-    rel->dd = lddmc_false;
-    lddmc_protect(&rel->dd);
+    rel->dd = listdd_empty;
+    listdd_protect(&rel->dd);
 
     free(meta);
     return rel;
@@ -248,10 +248,10 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
 TASK(void, rel_load, FILE*, f, rel_t, rel)
 void rel_load_CALL(lace_worker* lace, FILE* f, rel_t rel)
 {
-    lddmc_serialize_fromfile_old(f);
+    listdd_serialize_fromfile_old(f);
     size_t dd;
     if (fread(&dd, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!");
-    rel->dd = lddmc_serialize_get_reversed(dd);
+    rel->dd = listdd_serialize_get_reversed(dd);
     (void)lace;
 }
 
@@ -270,8 +270,8 @@ rel_save_proj(FILE* f, rel_t rel)
 static void
 rel_save(FILE* f, rel_t rel)
 {
-    size_t dd = lddmc_serialize_add(rel->dd);
-    lddmc_serialize_tofile(f);
+    size_t dd = listdd_serialize_add(rel->dd);
+    listdd_serialize_tofile(f);
     fwrite(&dd, sizeof(size_t), 1, f);
 }
 
@@ -283,7 +283,7 @@ set_clone(set_t source)
 {
     set_t set = (set_t)malloc(sizeof(struct set));
     set->dd = source->dd;
-    lddmc_protect(&set->dd);
+    listdd_protect(&set->dd);
     return set;
 }
 
@@ -309,22 +309,22 @@ print_memory_usage(void)
  * Get the first variable of the transition relation
  */
 static int
-get_first(MDD meta)
+get_first(LISTDD meta)
 {
-    uint32_t val = lddmc_getvalue(meta);
+    uint32_t val = listdd_node_value(meta);
     if (val != 0) return 0;
-    return 1+get_first(lddmc_follow(meta, val));
+    return 1+get_first(listdd_follow(meta, val));
 }
 
 /**
  * Print a single example of a set to stdout
  */
 static void
-print_example(MDD example)
+print_example(LISTDD example)
 {
-    if (example != lddmc_false) {
+    if (example != listdd_empty) {
         uint32_t* vec = (uint32_t*)malloc((size_t)vector_size * sizeof(*vec));
-        lddmc_sat_one(example, vec, vector_size);
+        listdd_pick_values(example, vec, vector_size);
 
         printf("[");
         for (int i=0; i<vector_size; i++) {
@@ -337,78 +337,78 @@ print_example(MDD example)
 }
 
 static void
-print_matrix(size_t size, MDD meta)
+print_matrix(size_t size, LISTDD meta)
 {
     if (size == 0) return;
-    uint32_t val = lddmc_getvalue(meta);
+    uint32_t val = listdd_node_value(meta);
     if (val == 1) {
         printf("+");
-        print_matrix(size-1, lddmc_follow(lddmc_follow(meta, 1), 2));
+        print_matrix(size-1, listdd_follow(listdd_follow(meta, 1), 2));
     } else {
         if (val == (uint32_t)-1) printf("-");
         else if (val == 0) printf("-");
         else if (val == 3) printf("r");
         else if (val == 4) printf("w");
-        print_matrix(size-1, lddmc_follow(meta, val));
+        print_matrix(size-1, listdd_follow(meta, val));
     }
 }
 
 /**
  * Implement parallel strategy (that performs the relprod operations in parallel)
  */
-TASK(MDD, go_par, MDD, cur, MDD, visited, size_t, from, size_t, len, MDD*, deadlocks)
-MDD go_par_CALL(lace_worker* lace, MDD cur, MDD visited, size_t from, size_t len, MDD* deadlocks)
+TASK(LISTDD, go_par, LISTDD, cur, LISTDD, visited, size_t, from, size_t, len, LISTDD*, deadlocks)
+LISTDD go_par_CALL(lace_worker* lace, LISTDD cur, LISTDD visited, size_t from, size_t len, LISTDD* deadlocks)
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        MDD succ = lddmc_relprod_CALL(lace, cur, next[from]->dd, next[from]->meta);
-        lddmc_refs_push(succ);
+        LISTDD succ = listdd_rel_next_CALL(lace, cur, next[from]->dd, next[from]->meta);
+        listdd_refs_push(succ);
         if (deadlocks) {
             // check which MDDs in deadlocks do not have a successor in this relation
-            MDD anc = lddmc_relprev_CALL(lace, succ, next[from]->dd, next[from]->meta, cur);
-            lddmc_refs_push(anc);
-            *deadlocks = lddmc_minus_CALL(lace, *deadlocks, anc);
-            lddmc_refs_pop(1);
+            LISTDD anc = listdd_rel_prev_CALL(lace, succ, next[from]->dd, next[from]->meta, cur);
+            listdd_refs_push(anc);
+            *deadlocks = listdd_diff_CALL(lace, *deadlocks, anc);
+            listdd_refs_pop(1);
         }
-        MDD result = lddmc_minus_CALL(lace, succ, visited);
-        lddmc_refs_pop(1);
+        LISTDD result = listdd_diff_CALL(lace, succ, visited);
+        listdd_refs_pop(1);
         return result;
     } else if (deadlocks != NULL) {
-        MDD deadlocks_left = *deadlocks;
-        MDD deadlocks_right = *deadlocks;
-        lddmc_refs_pushptr(&deadlocks_left);
-        lddmc_refs_pushptr(&deadlocks_right);
+        LISTDD deadlocks_left = *deadlocks;
+        LISTDD deadlocks_right = *deadlocks;
+        listdd_refs_pushptr(&deadlocks_left);
+        listdd_refs_pushptr(&deadlocks_right);
 
         // Recursively compute left+right
-        lddmc_refs_spawn(go_par_SPAWN(lace, cur, visited, from, len/2, &deadlocks_left));
-        MDD right = go_par_CALL(lace, cur, visited, from+len/2, len-len/2, &deadlocks_right);
-        lddmc_refs_push(right);
-        MDD left = lddmc_refs_sync(go_par_SYNC(lace));
-        lddmc_refs_push(left);
+        listdd_refs_spawn(go_par_SPAWN(lace, cur, visited, from, len/2, &deadlocks_left));
+        LISTDD right = go_par_CALL(lace, cur, visited, from+len/2, len-len/2, &deadlocks_right);
+        listdd_refs_push(right);
+        LISTDD left = listdd_refs_sync(go_par_SYNC(lace));
+        listdd_refs_push(left);
 
         // Merge results of left+right
-        MDD result = lddmc_union(left, right);
-        lddmc_refs_pop(2);
+        LISTDD result = listdd_union(left, right);
+        listdd_refs_pop(2);
 
         // Intersect deadlock sets
-        lddmc_refs_push(result);
-        *deadlocks = lddmc_intersect(deadlocks_left, deadlocks_right);
-        lddmc_refs_pop(1);
-        lddmc_refs_popptr(2);
+        listdd_refs_push(result);
+        *deadlocks = listdd_intersection(deadlocks_left, deadlocks_right);
+        listdd_refs_pop(1);
+        listdd_refs_popptr(2);
 
         // Return result
         return result;
     } else {
         // Recursively compute left+right
-        lddmc_refs_spawn(go_par_SPAWN(lace, cur, visited, from, len/2, NULL));
-        MDD right = go_par_CALL(lace, cur, visited, from+len/2, len-len/2, NULL);
-        lddmc_refs_push(right);
-        MDD left = lddmc_refs_sync(go_par_SYNC(lace));
-        lddmc_refs_push(left);
+        listdd_refs_spawn(go_par_SPAWN(lace, cur, visited, from, len/2, NULL));
+        LISTDD right = go_par_CALL(lace, cur, visited, from+len/2, len-len/2, NULL);
+        listdd_refs_push(right);
+        LISTDD left = listdd_refs_sync(go_par_SYNC(lace));
+        listdd_refs_push(left);
 
         // Merge results of left+right
-        MDD result = lddmc_union_CALL(lace, left, right);
-        lddmc_refs_pop(2);
+        LISTDD result = listdd_union_CALL(lace, left, right);
+        listdd_refs_pop(2);
 
         // Return result
         return result;
@@ -422,22 +422,22 @@ TASK(void, par, set_t, set)
 void par_CALL(lace_worker* lace, set_t set)
 {
     /* Prepare variables */
-    MDD visited = set->dd;
-    MDD front = visited;
-    lddmc_refs_pushptr(&visited);
-    lddmc_refs_pushptr(&front);
+    LISTDD visited = set->dd;
+    LISTDD front = visited;
+    listdd_refs_pushptr(&visited);
+    listdd_refs_pushptr(&front);
 
     int iteration = 1;
     do {
         if (check_deadlocks) {
             // compute successors in parallel
-            MDD deadlocks = front;
-            lddmc_refs_pushptr(&deadlocks);
+            LISTDD deadlocks = front;
+            listdd_refs_pushptr(&deadlocks);
             front = go_par_CALL(lace, front, visited, 0, next_count, &deadlocks);
-            lddmc_refs_popptr(1);
+            listdd_refs_popptr(1);
 
-            if (deadlocks != lddmc_false) {
-                INFO("Found %0.0f deadlock states... ", lddmc_satcount_cached_CALL(lace, deadlocks));
+            if (deadlocks != listdd_empty) {
+                INFO("Found %0.0Lf deadlock states... ", listdd_count_CALL(lace, deadlocks));
                 printf("example: ");
                 print_example(deadlocks);
                 printf("\n");
@@ -449,11 +449,11 @@ void par_CALL(lace_worker* lace, set_t set)
         }
 
         // visited = visited + front
-        visited = lddmc_union_CALL(lace, visited, front);
+        visited = listdd_union_CALL(lace, visited, front);
 
         INFO("Level %d done", iteration);
         if (report_levels) {
-            printf(", %0.0f states explored", lddmc_satcount_cached_CALL(lace, visited));
+            printf(", %0.0Lf states explored", listdd_count_CALL(lace, visited));
         }
         if (report_table) {
             size_t filled, total;
@@ -464,66 +464,66 @@ void par_CALL(lace_worker* lace, set_t set)
         to_h((double)getCurrentRSS(), buf);
         printf(", rss=%s.\n", buf);
         iteration++;
-    } while (front != lddmc_false);
+    } while (front != listdd_empty);
 
     set->dd = visited;
-    lddmc_refs_popptr(2);
+    listdd_refs_popptr(2);
 }
 
 /**
  * Implement sequential strategy (that performs the relprod operations one by one)
  */
-TASK(MDD, go_bfs, MDD, cur, MDD, visited, size_t, from, size_t, len, MDD*, deadlocks)
-MDD go_bfs_CALL(lace_worker* lace, MDD cur, MDD visited, size_t from, size_t len, MDD* deadlocks)
+TASK(LISTDD, go_bfs, LISTDD, cur, LISTDD, visited, size_t, from, size_t, len, LISTDD*, deadlocks)
+LISTDD go_bfs_CALL(lace_worker* lace, LISTDD cur, LISTDD visited, size_t from, size_t len, LISTDD* deadlocks)
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        MDD succ = lddmc_relprod_CALL(lace, cur, next[from]->dd, next[from]->meta);
-        lddmc_refs_push(succ);
+        LISTDD succ = listdd_rel_next_CALL(lace, cur, next[from]->dd, next[from]->meta);
+        listdd_refs_push(succ);
         if (deadlocks) {
             // check which MDDs in deadlocks do not have a successor in this relation
-            MDD anc = lddmc_relprev_CALL(lace, succ, next[from]->dd, next[from]->meta, cur);
-            lddmc_refs_push(anc);
-            *deadlocks = lddmc_minus_CALL(lace, *deadlocks, anc);
-            lddmc_refs_pop(1);
+            LISTDD anc = listdd_rel_prev_CALL(lace, succ, next[from]->dd, next[from]->meta, cur);
+            listdd_refs_push(anc);
+            *deadlocks = listdd_diff_CALL(lace, *deadlocks, anc);
+            listdd_refs_pop(1);
         }
-        MDD result = lddmc_minus_CALL(lace, succ, visited);
-        lddmc_refs_pop(1);
+        LISTDD result = listdd_diff_CALL(lace, succ, visited);
+        listdd_refs_pop(1);
         return result;
     } else if (deadlocks != NULL) {
-        MDD deadlocks_left = *deadlocks;
-        MDD deadlocks_right = *deadlocks;
-        lddmc_refs_pushptr(&deadlocks_left);
-        lddmc_refs_pushptr(&deadlocks_right);
+        LISTDD deadlocks_left = *deadlocks;
+        LISTDD deadlocks_right = *deadlocks;
+        listdd_refs_pushptr(&deadlocks_left);
+        listdd_refs_pushptr(&deadlocks_right);
 
         // Recursively compute left+right
-        MDD left = go_par_CALL(lace, cur, visited, from, len/2, &deadlocks_left);
-        lddmc_refs_push(left);
-        MDD right = go_par_CALL(lace, cur, visited, from+len/2, len-len/2, &deadlocks_right);
-        lddmc_refs_push(right);
+        LISTDD left = go_par_CALL(lace, cur, visited, from, len/2, &deadlocks_left);
+        listdd_refs_push(left);
+        LISTDD right = go_par_CALL(lace, cur, visited, from+len/2, len-len/2, &deadlocks_right);
+        listdd_refs_push(right);
 
         // Merge results of left+right
-        MDD result = lddmc_union_CALL(lace, left, right);
-        lddmc_refs_pop(2);
+        LISTDD result = listdd_union_CALL(lace, left, right);
+        listdd_refs_pop(2);
 
         // Intersect deadlock sets
-        lddmc_refs_push(result);
-        *deadlocks = lddmc_intersect_CALL(lace, deadlocks_left, deadlocks_right);
-        lddmc_refs_pop(1);
-        lddmc_refs_popptr(2);
+        listdd_refs_push(result);
+        *deadlocks = listdd_intersection_CALL(lace, deadlocks_left, deadlocks_right);
+        listdd_refs_pop(1);
+        listdd_refs_popptr(2);
 
         // Return result
         return result;
     } else {
         // Recursively compute left+right
-        MDD left = go_par_CALL(lace, cur, visited, from, len/2, NULL);
-        lddmc_refs_push(left);
-        MDD right = go_par_CALL(lace, cur, visited, from+len/2, len-len/2, NULL);
-        lddmc_refs_push(right);
+        LISTDD left = go_par_CALL(lace, cur, visited, from, len/2, NULL);
+        listdd_refs_push(left);
+        LISTDD right = go_par_CALL(lace, cur, visited, from+len/2, len-len/2, NULL);
+        listdd_refs_push(right);
 
         // Merge results of left+right
-        MDD result = lddmc_union_CALL(lace, left, right);
-        lddmc_refs_pop(2);
+        LISTDD result = listdd_union_CALL(lace, left, right);
+        listdd_refs_pop(2);
 
         // Return result
         return result;
@@ -535,22 +535,22 @@ TASK(void, bfs, set_t, set)
 void bfs_CALL(lace_worker* lace, set_t set)
 {
     /* Prepare variables */
-    MDD visited = set->dd;
-    MDD front = visited;
-    lddmc_refs_pushptr(&visited);
-    lddmc_refs_pushptr(&front);
+    LISTDD visited = set->dd;
+    LISTDD front = visited;
+    listdd_refs_pushptr(&visited);
+    listdd_refs_pushptr(&front);
 
     int iteration = 1;
     do {
         if (check_deadlocks) {
             // compute successors
-            MDD deadlocks = front;
-            lddmc_refs_pushptr(&deadlocks);
+            LISTDD deadlocks = front;
+            listdd_refs_pushptr(&deadlocks);
             front = go_bfs_CALL(lace, front, visited, 0, next_count, &deadlocks);
-            lddmc_refs_popptr(1);
+            listdd_refs_popptr(1);
 
-            if (deadlocks != lddmc_false) {
-                INFO("Found %0.0f deadlock states... ", lddmc_satcount_cached_CALL(lace, deadlocks));
+            if (deadlocks != listdd_empty) {
+                INFO("Found %0.0Lf deadlock states... ", listdd_count_CALL(lace, deadlocks));
                 printf("example: ");
                 print_example(deadlocks);
                 printf("\n");
@@ -562,11 +562,11 @@ void bfs_CALL(lace_worker* lace, set_t set)
         }
 
         // visited = visited + front
-        visited = lddmc_union_CALL(lace, visited, front);
+        visited = listdd_union_CALL(lace, visited, front);
 
         INFO("Level %d done", iteration);
         if (report_levels) {
-            printf(", %0.0f states explored", lddmc_satcount_cached_CALL(lace, visited));
+            printf(", %0.0Lf states explored", listdd_count_CALL(lace, visited));
         }
         if (report_table) {
             size_t filled, total;
@@ -577,28 +577,28 @@ void bfs_CALL(lace_worker* lace, set_t set)
         to_h((double)getCurrentRSS(), buf);
         printf(", rss=%s.\n", buf);
         iteration++;
-    } while (front != lddmc_false);
+    } while (front != listdd_empty);
 
     set->dd = visited;
-    lddmc_refs_popptr(2);
+    listdd_refs_popptr(2);
 }
 
 /**
  * Implementation of (parallel) saturation
  * (assumes relations are ordered on first variable)
  */
-TASK(MDD, go_sat, MDD, set, int, idx, int, depth)
-MDD go_sat_CALL(lace_worker* lace, MDD set, int idx, int depth)
+TASK(LISTDD, go_sat, LISTDD, set, int, idx, int, depth)
+LISTDD go_sat_CALL(lace_worker* lace, LISTDD set, int idx, int depth)
 {
     /* Terminal cases */
-    if (set == lddmc_false) return lddmc_false;
+    if (set == listdd_empty) return listdd_empty;
     if (idx == next_count) return set;
 
     /* Consult the cache */
-    MDD result;
-    const MDD _set = set;
+    LISTDD result;
+    const LISTDD _set = set;
     if (cache_get3(201LL<<40, _set, idx, 0, &result)) return result;
-    lddmc_refs_pushptr(&_set);
+    listdd_refs_pushptr(&_set);
 
     /**
      * Possible improvement: cache more things (like intermediate results?)
@@ -617,32 +617,32 @@ MDD go_sat_CALL(lace_worker* lace, MDD set, int idx, int depth)
          * - SAT deeper
          * - chain-apply all current level once
          */
-        MDD prev = lddmc_false;
-        lddmc_refs_pushptr(&set);
-        lddmc_refs_pushptr(&prev);
+        LISTDD prev = listdd_empty;
+        listdd_refs_pushptr(&set);
+        listdd_refs_pushptr(&prev);
         while (prev != set) {
             prev = set;
             // SAT deeper
             set = go_sat_CALL(lace, set, idx + n, depth);
             // chain-apply all current level once
             for (int i=0; i<n; i++) {
-                set = lddmc_relprod_union_CALL(lace, set, next[idx+i]->dd, next[idx+i]->topmeta, set);
+                set = listdd_rel_next_union_CALL(lace, set, next[idx+i]->dd, next[idx+i]->topmeta, set);
             }
         }
-        lddmc_refs_popptr(2);
+        listdd_refs_popptr(2);
         result = set;
     } else {
         /* Recursive computation */
-        lddmc_refs_spawn(go_sat_SPAWN(lace, lddmc_getright(set), idx, depth));
-        MDD down = lddmc_refs_push(go_sat_CALL(lace, lddmc_getdown(set), idx, depth+1));
-        MDD right = lddmc_refs_sync(go_sat_SYNC(lace));
-        lddmc_refs_pop(1);
-        result = lddmc_makenode(lddmc_getvalue(set), down, right);
+        listdd_refs_spawn(go_sat_SPAWN(lace, listdd_node_right(set), idx, depth));
+        LISTDD down = listdd_refs_push(go_sat_CALL(lace, listdd_node_down(set), idx, depth+1));
+        LISTDD right = listdd_refs_sync(go_sat_SYNC(lace));
+        listdd_refs_pop(1);
+        result = listdd_make_node(listdd_node_value(set), down, right);
     }
 
     /* Store in cache */
     cache_put3(201LL<<40, _set, idx, 0, result);
-    lddmc_refs_popptr(1);
+    listdd_refs_popptr(1);
     return result;
 }
 
@@ -661,31 +661,31 @@ void sat_CALL(lace_worker* lace, set_t set)
 TASK(void, chaining, set_t, set)
 void chaining_CALL(lace_worker* lace, set_t set)
 {
-    MDD visited = set->dd;
-    MDD front = visited;
-    MDD succ = lddmc_false;
+    LISTDD visited = set->dd;
+    LISTDD front = visited;
+    LISTDD succ = listdd_empty;
 
-    lddmc_refs_pushptr(&visited);
-    lddmc_refs_pushptr(&front);
-    lddmc_refs_pushptr(&succ);
+    listdd_refs_pushptr(&visited);
+    listdd_refs_pushptr(&front);
+    listdd_refs_pushptr(&succ);
 
     int iteration = 1;
     do {
         // calculate successors in parallel
         for (int i=0; i<next_count; i++) {
-            succ = lddmc_relprod(front, next[i]->dd, next[i]->meta);
-            front = lddmc_union(front, succ);
-            succ = lddmc_false; // reset, for gc
+            succ = listdd_rel_next(front, next[i]->dd, next[i]->meta);
+            front = listdd_union(front, succ);
+            succ = listdd_empty; // reset, for gc
         }
 
         // front = front - visited
         // visited = visited + front
-        front = lddmc_minus(front, visited);
-        visited = lddmc_union(visited, front);
+        front = listdd_diff(front, visited);
+        visited = listdd_union(visited, front);
 
         INFO("Level %d done", iteration);
         if (report_levels) {
-            printf(", %0.0f states explored", lddmc_satcount_cached(visited));
+            printf(", %0.0Lf states explored", listdd_count(visited));
         }
         if (report_table) {
             size_t filled, total;
@@ -696,10 +696,10 @@ void chaining_CALL(lace_worker* lace, set_t set)
         to_h((double)getCurrentRSS(), buf);
         printf(", rss=%s.\n", buf);
         iteration++;
-    } while (front != lddmc_false);
+    } while (front != listdd_empty);
 
     set->dd = visited;
-    lddmc_refs_popptr(3);
+    listdd_refs_popptr(3);
     (void)lace;
 }
 
@@ -820,9 +820,9 @@ int run_CALL(lace_worker* lace)
     }
 
     // Now we just have states
-    INFO("Final states: %0.0f states\n", lddmc_satcount_cached(states->dd));
+    INFO("Final states: %0.0Lf states\n", listdd_count(states->dd));
     if (report_nodes) {
-        INFO("Final states: %zu MDD nodes\n", lddmc_nodecount(states->dd));
+        INFO("Final states: %zu LISTDD nodes\n", listdd_node_count(states->dd));
     }
 
     if (out_filename != NULL) {
@@ -830,7 +830,7 @@ int run_CALL(lace_worker* lace)
 
         // Create LDD file
         FILE *f = fopen(out_filename, "w");
-        lddmc_serialize_reset();
+        listdd_serialize_reset();
 
         // Write domain...
         fwrite(&vector_size, sizeof(int), 1, f);
@@ -897,7 +897,7 @@ main(int argc, const char **argv)
 
     sylvan_set_limits(max, 1, 16);
     sylvan_init_package();
-    sylvan_init_ldd();
+    listdd_init();
     sylvan_gc_hook_pregc(gc_start_CALL);
     sylvan_gc_hook_postgc(gc_end_CALL);
 

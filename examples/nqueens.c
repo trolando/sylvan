@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <sylvan/internal/internal.h>
+#include <sylvan/internal.h>
 #include <sylvan/nodes.h>
 
 #include <common.h>
@@ -112,14 +112,14 @@ void run_CALL(lace_worker* lace)
 {
     double t1 = wctime();
 
-    BDD zero = mtbdd_false;
-    BDD one = mtbdd_true;
+    BDD zero = bdd_false;
+    BDD one = bdd_true;
 
     // Variables 0 ... (SIZE*SIZE-1)
 
     BDD* board = (BDD*)malloc((size_t)(size*size) * sizeof(*board));
     for (size_t i=0; i<size*size; i++) {
-        board[i] = mtbdd_ithvar(i);
+        board[i] = bdd_var_at_level(i);
         mtbdd_protect(board+i);
     }
 
@@ -166,7 +166,7 @@ void run_CALL(lace_worker* lace)
         printf("\n");
     }
     if (report_minterms) {
-        INFO("We have %.0f minterms\n", bdd_satcount_CALL(lace, res, vars));
+        INFO("We have %.0f minterms\n", bdd_sat_count_CALL(lace, res, vars));
     }
     if (report_minor) {
         INFO("Encoding columns... ");
@@ -197,7 +197,7 @@ void run_CALL(lace_worker* lace)
         printf("\n");
     }
     if (report_minterms) {
-        INFO("We have %.0f minterms\n", bdd_satcount_CALL(lace, res, vars));
+        INFO("We have %.0f minterms\n", bdd_sat_count_CALL(lace, res, vars));
     }
     if (report_minor) {
         INFO("Encoding rising diagonals... ");
@@ -229,7 +229,7 @@ void run_CALL(lace_worker* lace)
         printf("\n");
     }
     if (report_minterms) {
-        INFO("We have %.0f minterms\n", bdd_satcount_CALL(lace, res, vars));
+        INFO("We have %.0f minterms\n", bdd_sat_count_CALL(lace, res, vars));
     }
     if (report_minor) {
         INFO("Encoding falling diagonals... ");
@@ -261,7 +261,7 @@ void run_CALL(lace_worker* lace)
         printf("\n");
     }
     if (report_minterms) {
-        INFO("We have %.0f minterms\n", bdd_satcount_CALL(lace, res, vars));
+        INFO("We have %.0f minterms\n", bdd_sat_count_CALL(lace, res, vars));
     }
     if (report_minor) {
         INFO("Final computation to place a queen on every row... ");
@@ -290,8 +290,8 @@ void run_CALL(lace_worker* lace)
 
     double t2 = wctime();
 
-    INFO("Result: NQueens(%zu) has %.0f solutions.\n", size, bdd_satcount_CALL(lace, res, vars));
-    INFO("Result BDD has %zu nodes.\n", mtbdd_nodecount(res));
+    INFO("Result: NQueens(%zu) has %.0f solutions.\n", size, bdd_sat_count_CALL(lace, res, vars));
+    INFO("Result BDD has %zu nodes.\n", mtbdd_node_count(res));
     INFO("Computation time: %f sec.\n", t2-t1);
 }
 
@@ -316,7 +316,7 @@ main(int argc, const char** argv)
     // With 2^24 nodes and 2^22 cache entries, that's 528 MB
     sylvan_set_sizes(1LL<<20, 1LL<<28, 1LL<<18, 1LL<<26);
     sylvan_init_package();
-    sylvan_init_mtbdd();
+    mtbdd_init();
 
     // Before and after garbage collection, call gc_start and gc_end
     sylvan_gc_hook_pregc(gc_start_CALL);

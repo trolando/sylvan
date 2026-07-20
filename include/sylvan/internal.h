@@ -17,8 +17,11 @@
 
 /**
  * Sylvan: parallel MTBDD/ListDD package.
- * Include this file for access to internals.
+ * Include this file for the advanced extension API.
  */
+
+#ifndef SYLVAN_INTERNAL_H
+#define SYLVAN_INTERNAL_H
 
 #include <sylvan/sylvan.h>
 
@@ -34,9 +37,6 @@ namespace sylvan {
 #include <sylvan/nodes.h>
 #include <sylvan/hash.h>
 
-#ifndef SYLVAN_INT_H
-#define SYLVAN_INT_H
-
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
@@ -45,6 +45,13 @@ extern "C" {
  * Nodes table.
  */
 extern nodes_table* nodes;
+
+/** The ZDD terminal representing the family containing only the empty set. */
+static const ZDD zdd_base = UINT64_C(1);
+
+/** Advanced multi-terminal ZDD conversion primitives. */
+TASK(ZDD, zdd_from_mtbdd, MTBDD, dd, BDDSET, domain)
+TASK(MTBDD, zdd_to_mtbdd, ZDD, dd, BDDSET, domain)
 
 /**
  * Macros for all operation identifiers for the operation cache
@@ -70,7 +77,7 @@ static const uint64_t CACHE_BDD_SUPPORT             = (15LL<<40);
 static const uint64_t CACHE_BDD_PATHCOUNT           = (16LL<<40);
 static const uint64_t CACHE_BDD_DISJOINT            = (17LL<<40);
 
-// MDD operations
+// LISTDD operations
 static const uint64_t CACHE_MDD_RELPROD             = (20LL<<40);
 static const uint64_t CACHE_MDD_MINUS               = (21LL<<40);
 static const uint64_t CACHE_MDD_UNION               = (22LL<<40);
@@ -123,7 +130,7 @@ static const uint64_t CACHE_ZDD_COVER_TO_BDD        = (93LL<<40);
 #endif /* __cplusplus */
 
 #include <sylvan/internal/mtbdd_internal.h>
-#include <sylvan/internal/ldd_internal.h>
+#include <sylvan/internal/listdd_internal.h>
 #include <sylvan/internal/zdd_internal.h>
 
 #ifdef __cplusplus

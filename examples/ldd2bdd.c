@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <sylvan/internal/internal.h>
+#include <sylvan/internal.h>
 #include <getrss.h>
 #include <common.h>
 
@@ -90,13 +90,13 @@ parse_args(int argc, const char **argv)
  */
 typedef struct set
 {
-    MDD dd;
+    LISTDD dd;
 } *set_t;
 
 typedef struct relation
 {
-    MDD dd;
-    MDD meta; // for relprod
+    LISTDD dd;
+    LISTDD meta; // for relprod
     int r_k, w_k, *r_proj, *w_proj;
 } *rel_t;
 
@@ -130,11 +130,11 @@ set_t set_load_CALL(lace_worker* lace, FILE* f)
     if (fread(&k, sizeof(int), 1, f) != 1) Abort("Invalid input file!");
     if (k != -1) Abort("Invalid input file!");
 
-    lddmc_serialize_fromfile(f);
+    listdd_serialize_fromfile(f);
     size_t dd;
     if (fread(&dd, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!");
-    set->dd = lddmc_serialize_get_reversed(dd);
-    lddmc_protect(&set->dd);
+    set->dd = listdd_serialize_get_reversed(dd);
+    listdd_protect(&set->dd);
 
     return set;
     (void)lace;
@@ -189,12 +189,12 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
         i++;
     }
 
-    rel->meta = lddmc_cube(meta, j);
+    rel->meta = listdd_singleton(meta, j);
     free(meta);
-    rel->dd = lddmc_false;
+    rel->dd = listdd_empty;
 
-    lddmc_protect(&rel->meta);
-    lddmc_protect(&rel->dd);
+    listdd_protect(&rel->meta);
+    listdd_protect(&rel->dd);
 
     return rel;
     (void)lace;
@@ -203,10 +203,10 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
 TASK(void, rel_load, FILE*, f, rel_t, rel)
 void rel_load_CALL(lace_worker* lace, FILE* f, rel_t rel)
 {
-    lddmc_serialize_fromfile(f);
+    listdd_serialize_fromfile(f);
     size_t dd;
     if (fread(&dd, sizeof(size_t), 1, f) != 1) Abort("Invalid input file!");
-    rel->dd = lddmc_serialize_get_reversed(dd);
+    rel->dd = listdd_serialize_get_reversed(dd);
     (void)lace;
 }
 
@@ -215,10 +215,10 @@ void rel_load_CALL(lace_worker* lace, FILE* f, rel_t rel)
  * This method is called for the set of reachable states.
  */
 static uint64_t compute_highest_id;
-TASK(void, compute_highest, MDD, dd, _Atomic(uint32_t)*, arr)
-void compute_highest_CALL(lace_worker* lace, MDD dd, _Atomic(uint32_t)* arr)
+TASK(void, compute_highest, LISTDD, dd, _Atomic(uint32_t)*, arr)
+void compute_highest_CALL(lace_worker* lace, LISTDD dd, _Atomic(uint32_t)* arr)
 {
-    if (dd == lddmc_true || dd == lddmc_false) return;
+    if (dd == listdd_empty_list || dd == listdd_empty) return;
 
     uint64_t result = 1;
     if (cache_get3(compute_highest_id, dd, 0, 0, &result)) return;
@@ -245,11 +245,11 @@ void compute_highest_CALL(lace_worker* lace, MDD dd, _Atomic(uint32_t)* arr)
  * This method is called for each transition relation.
  */
 static uint64_t compute_highest_action_id;
-TASK(void, compute_highest_action, MDD, dd, MDD, meta, _Atomic(uint32_t)*, target)
-void compute_highest_action_CALL(lace_worker* lace, MDD dd, MDD meta, _Atomic(uint32_t)* target)
+TASK(void, compute_highest_action, LISTDD, dd, LISTDD, meta, _Atomic(uint32_t)*, target)
+void compute_highest_action_CALL(lace_worker* lace, LISTDD dd, LISTDD meta, _Atomic(uint32_t)* target)
 {
-    if (dd == lddmc_true || dd == lddmc_false) return;
-    if (meta == lddmc_true) return;
+    if (dd == listdd_empty_list || dd == listdd_empty) return;
+    if (meta == listdd_empty_list) return;
 
     uint64_t result = 1;
     if (cache_get3(compute_highest_action_id, dd, meta, 0, &result)) return;
@@ -289,12 +289,12 @@ void compute_highest_action_CALL(lace_worker* lace, MDD dd, MDD meta, _Atomic(ui
  * Compute the BDD equivalent of the LDD of a set of states.
  */
 static uint64_t bdd_from_ldd_id;
-TASK(MTBDD, bdd_from_ldd, MDD, dd, MDD, bits_dd, uint32_t, firstvar)
-MTBDD bdd_from_ldd_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t firstvar)
+TASK(MTBDD, bdd_from_ldd, LISTDD, dd, LISTDD, bits_dd, uint32_t, firstvar)
+MTBDD bdd_from_ldd_CALL(lace_worker* lace, LISTDD dd, LISTDD bits_dd, uint32_t firstvar)
 {
     /* simple for leaves */
-    if (dd == lddmc_false) return mtbdd_false;
-    if (dd == lddmc_true) return mtbdd_true;
+    if (dd == listdd_empty) return bdd_false;
+    if (dd == listdd_empty_list) return bdd_true;
 
     MTBDD result;
     /* get from cache */
@@ -316,8 +316,8 @@ MTBDD bdd_from_ldd_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t firstva
     for (int i=0; i<bits; i++) {
         /* encode with high bit first */
         int bit = bits-i-1;
-        if (val & (1LL<<i)) down = mtbdd_makenode(firstvar + 2*bit, mtbdd_false, down);
-        else down = mtbdd_makenode(firstvar + 2*bit, down, mtbdd_false);
+        if (val & (1LL<<i)) down = mtbdd_make_node(firstvar + 2*bit, bdd_false, down);
+        else down = mtbdd_make_node(firstvar + 2*bit, down, bdd_false);
     }
 
     /* sync right */
@@ -339,12 +339,12 @@ MTBDD bdd_from_ldd_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t firstva
  * Compute the BDD equivalent of an LDD transition relation.
  */
 static uint64_t bdd_from_ldd_rel_id;
-TASK(MTBDD, bdd_from_ldd_rel, MDD, dd, MDD, bits_dd, uint32_t, firstvar, MDD, meta)
-MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t firstvar, MDD meta)
+TASK(MTBDD, bdd_from_ldd_rel, LISTDD, dd, LISTDD, bits_dd, uint32_t, firstvar, LISTDD, meta)
+MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, LISTDD dd, LISTDD bits_dd, uint32_t firstvar, LISTDD meta)
 {
-    if (dd == lddmc_false) return mtbdd_false;
-    if (dd == lddmc_true) return mtbdd_true;
-    assert(meta != lddmc_false && meta != lddmc_true);
+    if (dd == listdd_empty) return bdd_false;
+    if (dd == listdd_empty_list) return bdd_true;
+    assert(meta != listdd_empty && meta != listdd_empty_list);
 
     /* meta:
      * -1 is end
@@ -373,7 +373,7 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t fir
     } else if (vmeta == 1) {
         /* read level */
         assert(!mddnode_getcopy(n));  // do not process read copy nodes for now
-        assert(mddnode_getright(n) != mtbdd_true);
+        assert(mddnode_getright(n) != bdd_true);
 
         /* spawn right */
         mtbdd_refs_spawn(bdd_from_ldd_rel_SPAWN(lace, mddnode_getright(n), bits_dd, firstvar, meta));
@@ -384,12 +384,12 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t fir
 
         /* encode read value */
         uint32_t val = mddnode_getvalue(n);
-        MTBDD part = mtbdd_true;
+        MTBDD part = bdd_true;
         for (int i=0; i<bits; i++) {
             /* encode with high bit first */
             int bit = bits-i-1;
-            if (val & (1LL<<i)) part = mtbdd_makenode(firstvar + 2*bit, mtbdd_false, part);
-            else part = mtbdd_makenode(firstvar + 2*bit, part, mtbdd_false);
+            if (val & (1LL<<i)) part = mtbdd_make_node(firstvar + 2*bit, bdd_false, part);
+            else part = mtbdd_make_node(firstvar + 2*bit, part, bdd_false);
         }
 
         /* intersect read value with down result */
@@ -409,7 +409,7 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t fir
         /* write or only-write level */
 
         /* spawn right */
-        assert(mddnode_getright(n) != mtbdd_true);
+        assert(mddnode_getright(n) != bdd_true);
         mtbdd_refs_spawn(bdd_from_ldd_rel_SPAWN(lace, mddnode_getright(n), bits_dd, firstvar, meta));
 
         /* get recursive result */
@@ -419,11 +419,11 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t fir
             /* encode a copy node */
             for (int i=0; i<bits; i++) {
                 int bit = bits-i-1;
-                MTBDD low = mtbdd_makenode(firstvar + 2*bit + 1, down, mtbdd_false);
+                MTBDD low = mtbdd_make_node(firstvar + 2*bit + 1, down, bdd_false);
                 mtbdd_refs_push(low);
-                MTBDD high = mtbdd_makenode(firstvar + 2*bit + 1, mtbdd_false, down);
+                MTBDD high = mtbdd_make_node(firstvar + 2*bit + 1, bdd_false, down);
                 mtbdd_refs_pop(1);
-                down = mtbdd_makenode(firstvar + 2*bit, low, high);
+                down = mtbdd_make_node(firstvar + 2*bit, low, high);
             }
         } else {
             /* encode written value */
@@ -431,8 +431,8 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t fir
             for (int i=0; i<bits; i++) {
                 /* encode with high bit first */
                 int bit = bits-i-1;
-                if (val & (1LL<<i)) down = mtbdd_makenode(firstvar + 2*bit + 1, mtbdd_false, down);
-                else down = mtbdd_makenode(firstvar + 2*bit + 1, down, mtbdd_false);
+                if (val & (1LL<<i)) down = mtbdd_make_node(firstvar + 2*bit + 1, bdd_false, down);
+                else down = mtbdd_make_node(firstvar + 2*bit + 1, down, bdd_false);
             }
         }
 
@@ -460,10 +460,10 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t fir
             /* encode with high bit first */
             int bit = bits-i-1;
             /* only-read, so write same value */
-            if (val & (1LL<<i)) down = mtbdd_makenode(firstvar + 2*bit + 1, mtbdd_false, down);
-            else down = mtbdd_makenode(firstvar + 2*bit + 1, down, mtbdd_false);
-            if (val & (1LL<<i)) down = mtbdd_makenode(firstvar + 2*bit, mtbdd_false, down);
-            else down = mtbdd_makenode(firstvar + 2*bit, down, mtbdd_false);
+            if (val & (1LL<<i)) down = mtbdd_make_node(firstvar + 2*bit + 1, bdd_false, down);
+            else down = mtbdd_make_node(firstvar + 2*bit + 1, down, bdd_false);
+            if (val & (1LL<<i)) down = mtbdd_make_node(firstvar + 2*bit, bdd_false, down);
+            else down = mtbdd_make_node(firstvar + 2*bit, down, bdd_false);
         }
 
         /* sync right */
@@ -478,7 +478,7 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t fir
         assert(!mddnode_getcopy(n));  // not allowed!
 
         /* we assume this is the last value */
-        result = mtbdd_true;
+        result = bdd_true;
 
         /* encode action value */
         uint32_t val = mddnode_getvalue(n);
@@ -486,8 +486,8 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t fir
             /* encode with high bit first */
             int bit = actionbits-i-1;
             /* only-read, so write same value */
-            if (val & (1LL<<i)) result = mtbdd_makenode(1000000 + bit, mtbdd_false, result);
-            else result = mtbdd_makenode(1000000 + bit, result, mtbdd_false);
+            if (val & (1LL<<i)) result = mtbdd_make_node(1000000 + bit, bdd_false, result);
+            else result = mtbdd_make_node(1000000 + bit, result, bdd_false);
         }
     } else {
         assert(vmeta <= 5);
@@ -502,9 +502,9 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, MDD dd, MDD bits_dd, uint32_t fir
  * Compute the BDD equivalent of the meta variable (to a variables cube)
  */
 MTBDD
-meta_to_bdd(MDD meta, MDD bits_dd, uint32_t firstvar)
+meta_to_bdd(LISTDD meta, LISTDD bits_dd, uint32_t firstvar)
 {
-    if (meta == lddmc_false || meta == lddmc_true) return mtbdd_true;
+    if (meta == listdd_empty || meta == listdd_empty_list) return bdd_true;
 
     /* meta:
      * -1 is end
@@ -517,7 +517,7 @@ meta_to_bdd(MDD meta, MDD bits_dd, uint32_t firstvar)
 
     const mddnode* nmeta = LDD_GETNODE(meta);
     const uint32_t vmeta = mddnode_getvalue(nmeta);
-    if (vmeta == (uint32_t)-1) return mtbdd_true;
+    if (vmeta == (uint32_t)-1) return bdd_true;
     
     if (vmeta == 1) {
         /* return recursive result, don't go down on bits */
@@ -533,8 +533,8 @@ meta_to_bdd(MDD meta, MDD bits_dd, uint32_t firstvar)
     /* add our variables if meta is 2,3,4 */
     if (vmeta != 0 && vmeta != 5) {
         for (int i=0; i<bits; i++) {
-            res = mtbdd_makenode(firstvar + 2*(bits-i-1) + 1, mtbdd_false, res);
-            res = mtbdd_makenode(firstvar + 2*(bits-i-1), mtbdd_false, res);
+            res = mtbdd_make_node(firstvar + 2*(bits-i-1) + 1, bdd_false, res);
+            res = mtbdd_make_node(firstvar + 2*(bits-i-1), bdd_false, res);
         }
     }
 
@@ -622,9 +622,9 @@ void run_CALL(lace_worker* lace)
     if (verbose) {
         printf("%d integers per state, %d transition groups\n", vector_size, next_count);
         printf("LDD nodes:\n");
-        printf("Initial states: %zu LDD nodes\n", lddmc_nodecount(initial->dd));
+        printf("Initial states: %zu LDD nodes\n", listdd_node_count(initial->dd));
         for (int i=0; i<next_count; i++) {
-            printf("Transition %d: %zu LDD nodes\n", i, lddmc_nodecount(next[i]->dd));
+            printf("Transition %d: %zu LDD nodes\n", i, listdd_node_count(next[i]->dd));
         }
     }
 
@@ -674,12 +674,12 @@ void run_CALL(lace_worker* lace)
         printf("Action bits: %d.\n", actionbits);
     }
 
-    // Compute bits MDD
-    MDD bits_dd = lddmc_true;
+    // Compute bits LISTDD
+    LISTDD bits_dd = listdd_empty_list;
     for (int i=0; i<vector_size; i++) {
-        bits_dd = lddmc_makenode(bits[vector_size-i-1], bits_dd, lddmc_false);
+        bits_dd = listdd_make_node(bits[vector_size-i-1], bits_dd, listdd_empty);
     }
-    lddmc_ref(bits_dd);
+    listdd_ref(bits_dd);
 
     // Compute total number of bits
     int totalbits = 0;
@@ -688,9 +688,9 @@ void run_CALL(lace_worker* lace)
     }
 
     // Compute state variables
-    MTBDD state_vars = mtbdd_true;
+    MTBDD state_vars = bdd_true;
     for (int i=0; i<totalbits; i++) {
-        state_vars = mtbdd_makenode(2*(totalbits-i-1), mtbdd_false, state_vars);
+        state_vars = mtbdd_make_node(2*(totalbits-i-1), bdd_false, state_vars);
     }
     mtbdd_protect(&state_vars);
 
@@ -708,7 +708,7 @@ void run_CALL(lace_worker* lace)
 
     // Write initial state...
     MTBDD new_initial = bdd_from_ldd(initial->dd, bits_dd, 0);
-    assert((size_t)mtbdd_satcount(new_initial, totalbits) == (size_t)lddmc_satcount_cached(initial->dd));
+    assert((size_t)mtbdd_sat_count(new_initial, totalbits) == (size_t)listdd_count(initial->dd));
     mtbdd_refs_push(new_initial);
     {
         int k = -1;
@@ -718,13 +718,13 @@ void run_CALL(lace_worker* lace)
 
     // Custom operation that converts to BDD given number of bits for each level
     MTBDD new_states = bdd_from_ldd(states->dd, bits_dd, 0);
-    assert((size_t)mtbdd_satcount(new_states, totalbits) == (size_t)lddmc_satcount_cached(states->dd));
+    assert((size_t)mtbdd_sat_count(new_states, totalbits) == (size_t)listdd_count(states->dd));
     mtbdd_refs_push(new_states);
 
     // Report size of BDD
     if (verbose) {
-        printf("Initial states: %zu BDD nodes\n", mtbdd_nodecount(new_initial));
-        printf("Reachable states: %zu BDD nodes\n", mtbdd_nodecount(new_states));
+        printf("Initial states: %zu BDD nodes\n", mtbdd_node_count(new_initial));
+        printf("Reachable states: %zu BDD nodes\n", mtbdd_node_count(new_states));
     }
 
     // Write number of transitions
@@ -746,7 +746,7 @@ void run_CALL(lace_worker* lace)
         mtbdd_writer_tobinary(f, &new_rel, 1);
 
         // Report number of nodes
-        if (verbose) printf("Transition %d: %zu BDD nodes\n", i, mtbdd_nodecount(new_rel));
+        if (verbose) printf("Transition %d: %zu BDD nodes\n", i, mtbdd_node_count(new_rel));
 
         if (check_results) {
             // Compute new <variables> for the current transition relation
@@ -754,13 +754,13 @@ void run_CALL(lace_worker* lace)
             mtbdd_refs_push(new_vars);
 
             // Test if the transition is correctly converted
-            MTBDD test = bdd_relnext(new_states, new_rel, new_vars);
+            MTBDD test = bdd_rel_next(new_states, new_rel, new_vars);
             mtbdd_refs_push(test);
-            MDD succ = lddmc_relprod(states->dd, next[i]->dd, next[i]->meta);
-            lddmc_refs_push(succ);
+            LISTDD succ = listdd_rel_next(states->dd, next[i]->dd, next[i]->meta);
+            listdd_refs_push(succ);
             MTBDD test2 = bdd_from_ldd(succ, bits_dd, 0);
             if (test != test2) Abort("Conversion error!\n");
-            lddmc_refs_pop(1);
+            listdd_refs_pop(1);
             mtbdd_refs_pop(2);
         }
 
@@ -816,8 +816,8 @@ main(int argc, const char **argv)
     // Init Sylvan
     sylvan_set_limits(max, 1, 10);
     sylvan_init_package();
-    sylvan_init_ldd();
-    sylvan_init_mtbdd();
+    listdd_init();
+    mtbdd_init();
     sylvan_gc_hook_pregc(gc_start_CALL);
     sylvan_gc_hook_postgc(gc_end_CALL);
 

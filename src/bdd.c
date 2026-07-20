@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-#include <sylvan/internal/internal.h>
+#include <sylvan/internal.h>
 
 #include <inttypes.h>
 #include <math.h>
@@ -30,12 +30,12 @@ BDD
 bdd_and_CALL(lace_worker* lace, BDD a, BDD b)
 {
     /* Terminal cases */
-    if (a == mtbdd_true) return b;
-    if (b == mtbdd_true) return a;
-    if (a == mtbdd_false) return mtbdd_false;
-    if (b == mtbdd_false) return mtbdd_false;
+    if (a == bdd_true) return b;
+    if (b == bdd_true) return a;
+    if (a == bdd_false) return bdd_false;
+    if (b == bdd_false) return bdd_false;
     if (a == b) return a;
-    if (a == BDD_TOGGLEMARK(b)) return mtbdd_false;
+    if (a == BDD_TOGGLEMARK(b)) return bdd_false;
 
     sylvan_gc_test(lace);
 
@@ -52,12 +52,12 @@ bdd_and_CALL(lace_worker* lace, BDD a, BDD b)
     bddnode* na = MTBDD_GETNODE(a);
     bddnode* nb = MTBDD_GETNODE(b);
 
-    BDDVAR va = bddnode_getvariable(na);
-    BDDVAR vb = bddnode_getvariable(nb);
-    BDDVAR level = va < vb ? va : vb;
+    uint32_t va = bddnode_getvariable(na);
+    uint32_t vb = bddnode_getvariable(nb);
+    uint32_t level = va < vb ? va : vb;
 
     BDD result;
-    if (cache_get3(CACHE_BDD_AND, a, b, mtbdd_false, &result)) {
+    if (cache_get3(CACHE_BDD_AND, a, b, bdd_false, &result)) {
         sylvan_stats_count(BDD_AND_CACHED);
         return result;
     }
@@ -80,22 +80,22 @@ bdd_and_CALL(lace_worker* lace, BDD a, BDD b)
 
     int n=0;
 
-    if (aHigh == mtbdd_true) {
+    if (aHigh == bdd_true) {
         high = bHigh;
-    } else if (aHigh == mtbdd_false || bHigh == mtbdd_false) {
-        high = mtbdd_false;
-    } else if (bHigh == mtbdd_true) {
+    } else if (aHigh == bdd_false || bHigh == bdd_false) {
+        high = bdd_false;
+    } else if (bHigh == bdd_true) {
         high = aHigh;
     } else {
         mtbdd_refs_spawn(bdd_and_SPAWN(lace, aHigh, bHigh));
         n=1;
     }
 
-    if (aLow == mtbdd_true) {
+    if (aLow == bdd_true) {
         low = bLow;
-    } else if (aLow == mtbdd_false || bLow == mtbdd_false) {
-        low = mtbdd_false;
-    } else if (bLow == mtbdd_true) {
+    } else if (aLow == bdd_false || bLow == bdd_false) {
+        low = bdd_false;
+    } else if (bLow == bdd_true) {
         low = aLow;
     } else {
         low = bdd_and_CALL(lace, aLow, bLow);
@@ -107,24 +107,24 @@ bdd_and_CALL(lace_worker* lace, BDD a, BDD b)
         mtbdd_refs_pop(1);
     }
 
-    result = mtbdd_makenode(level, low, high);
+    result = mtbdd_make_node(level, low, high);
 
-    if (cache_put3(CACHE_BDD_AND, a, b, mtbdd_false, result)) sylvan_stats_count(BDD_AND_CACHEDPUT);
+    if (cache_put3(CACHE_BDD_AND, a, b, bdd_false, result)) sylvan_stats_count(BDD_AND_CACHEDPUT);
 
     return result;
 }
 
 // FIXME improve documentation...
 /*
-    bdd_disjoint could be implemented as "bdd_and(a,b)==mtbdd_false",
+    bdd_disjoint could be implemented as "bdd_and(a,b)==bdd_false",
     but this implementation avoids building new nodes and allows more short-circuitry.
 */
 char bdd_disjoint_CALL(lace_worker* lace, BDD a, BDD b)
 {
     /* Terminal cases */
-    if (a == mtbdd_false || b == mtbdd_false) return 1;
-    if (a == mtbdd_true || b == mtbdd_true) return 0; /* since a,b != mtbdd_false */
-    if (a == b) return 0; /* since a,b != mtbdd_false */
+    if (a == bdd_false || b == bdd_false) return 1;
+    if (a == bdd_true || b == bdd_true) return 0; /* since a,b != bdd_false */
+    if (a == b) return 0; /* since a,b != bdd_false */
     if (a == BDD_TOGGLEMARK(b)) return 1;
 
     sylvan_gc_test(lace);
@@ -142,15 +142,15 @@ char bdd_disjoint_CALL(lace_worker* lace, BDD a, BDD b)
     bddnode* na = MTBDD_GETNODE(a);
     bddnode* nb = MTBDD_GETNODE(b);
 
-    BDDVAR va = bddnode_getvariable(na);
-    BDDVAR vb = bddnode_getvariable(nb);
-    BDDVAR level = va < vb ? va : vb;
+    uint32_t va = bddnode_getvariable(na);
+    uint32_t vb = bddnode_getvariable(nb);
+    uint32_t level = va < vb ? va : vb;
 
     {
         BDD result;
-        if (cache_get3(CACHE_BDD_DISJOINT, a, b, mtbdd_false, &result)) {
+        if (cache_get3(CACHE_BDD_DISJOINT, a, b, bdd_false, &result)) {
             sylvan_stats_count(BDD_DISJOINT_CACHED);
-            return (result==mtbdd_false ? 0 : 1);
+            return (result==bdd_false ? 0 : 1);
         }
     }
 
@@ -170,22 +170,22 @@ char bdd_disjoint_CALL(lace_worker* lace, BDD a, BDD b)
 
     // Try to obtain the subresults without recursion (short-circuiting)
 
-    if (aHigh == mtbdd_false || bHigh == mtbdd_false) {
+    if (aHigh == bdd_false || bHigh == bdd_false) {
         high = 1;
-    } else if (aHigh == mtbdd_true || bHigh == mtbdd_true) {
-        high = 0; /* since none of them is mtbdd_false */
+    } else if (aHigh == bdd_true || bHigh == bdd_true) {
+        high = 0; /* since none of them is bdd_false */
     } else if (aHigh == bHigh) {
-        high = 0; /* since none of them is mtbdd_false */
+        high = 0; /* since none of them is bdd_false */
     } else if (aHigh == BDD_TOGGLEMARK(bHigh)) {
         high = 1;
     }
 
-    if (aLow == mtbdd_false || bLow == mtbdd_false) {
+    if (aLow == bdd_false || bLow == bdd_false) {
         low = 1;
-    } else if (aLow == mtbdd_true || bLow == mtbdd_true) {
-        low = 0; /* since none of them is mtbdd_false */
+    } else if (aLow == bdd_true || bLow == bdd_true) {
+        low = 0; /* since none of them is bdd_false */
     } else if (aLow == bLow) {
-        low = 0; /* since none of them is mtbdd_false */
+        low = 0; /* since none of them is bdd_false */
     } else if (aLow == BDD_TOGGLEMARK(bLow)) {
         low = 1;
     }
@@ -205,8 +205,8 @@ char bdd_disjoint_CALL(lace_worker* lace, BDD a, BDD b)
     // Store result in the cache and then return
 
     {
-        BDD to_cache = (result ? mtbdd_true : mtbdd_false);
-        if (cache_put3(CACHE_BDD_DISJOINT, a, b, mtbdd_false, to_cache)) {
+        BDD to_cache = (result ? bdd_true : bdd_false);
+        if (cache_put3(CACHE_BDD_DISJOINT, a, b, bdd_false, to_cache)) {
             sylvan_stats_count(BDD_DISJOINT_CACHEDPUT);
         }
     }
@@ -217,12 +217,12 @@ char bdd_disjoint_CALL(lace_worker* lace, BDD a, BDD b)
 BDD bdd_xor_CALL(lace_worker* lace, BDD a, BDD b)
 {
     /* Terminal cases */
-    if (a == mtbdd_false) return b;
-    if (b == mtbdd_false) return a;
-    if (a == mtbdd_true) return bdd_not(b);
-    if (b == mtbdd_true) return bdd_not(a);
-    if (a == b) return mtbdd_false;
-    if (a == bdd_not(b)) return mtbdd_true;
+    if (a == bdd_false) return b;
+    if (b == bdd_false) return a;
+    if (a == bdd_true) return bdd_not(b);
+    if (b == bdd_true) return bdd_not(a);
+    if (a == b) return bdd_false;
+    if (a == bdd_not(b)) return bdd_true;
 
     sylvan_gc_test(lace);
 
@@ -245,13 +245,13 @@ BDD bdd_xor_CALL(lace_worker* lace, BDD a, BDD b)
     bddnode* na = MTBDD_GETNODE(a);
     bddnode* nb = MTBDD_GETNODE(b);
 
-    BDDVAR va = bddnode_getvariable(na);
-    BDDVAR vb = bddnode_getvariable(nb);
-    BDDVAR level = va < vb ? va : vb;
+    uint32_t va = bddnode_getvariable(na);
+    uint32_t vb = bddnode_getvariable(nb);
+    uint32_t level = va < vb ? va : vb;
 
     {
         BDD result;
-        if (cache_get3(CACHE_BDD_XOR, a, b, mtbdd_false, &result)) {
+        if (cache_get3(CACHE_BDD_XOR, a, b, bdd_false, &result)) {
             sylvan_stats_count(BDD_XOR_CACHED);
             return result;
         }
@@ -278,9 +278,9 @@ BDD bdd_xor_CALL(lace_worker* lace, BDD a, BDD b)
     high = mtbdd_refs_sync(bdd_xor_SYNC(lace));
     mtbdd_refs_pop(1);
 
-    result = mtbdd_makenode(level, low, high);
+    result = mtbdd_make_node(level, low, high);
 
-    if (cache_put3(CACHE_BDD_XOR, a, b, mtbdd_false, result)) sylvan_stats_count(BDD_XOR_CACHEDPUT);
+    if (cache_put3(CACHE_BDD_XOR, a, b, bdd_false, result)) sylvan_stats_count(BDD_XOR_CACHEDPUT);
 
     return result;
 }
@@ -289,29 +289,29 @@ BDD bdd_xor_CALL(lace_worker* lace, BDD a, BDD b)
 BDD bdd_ite_CALL(lace_worker *lace, BDD a, BDD b, BDD c)
 {
     /* Terminal cases */
-    if (a == mtbdd_true) return b;
-    if (a == mtbdd_false) return c;
-    if (a == b) b = mtbdd_true;
-    if (a == bdd_not(b)) b = mtbdd_false;
-    if (a == c) c = mtbdd_false;
-    if (a == bdd_not(c)) c = mtbdd_true;
+    if (a == bdd_true) return b;
+    if (a == bdd_false) return c;
+    if (a == b) b = bdd_true;
+    if (a == bdd_not(b)) b = bdd_false;
+    if (a == c) c = bdd_false;
+    if (a == bdd_not(c)) c = bdd_true;
     if (b == c) return b;
-    if (b == mtbdd_true && c == mtbdd_false) return a;
-    if (b == mtbdd_false && c == mtbdd_true) return bdd_not(a);
+    if (b == bdd_true && c == bdd_false) return a;
+    if (b == bdd_false && c == bdd_true) return bdd_not(a);
 
     /* Cases that reduce to AND and XOR */
 
     // ITE(A,B,0) => AND(A,B)
-    if (c == mtbdd_false) return bdd_and_CALL(lace, a, b);
+    if (c == bdd_false) return bdd_and_CALL(lace, a, b);
 
     // ITE(A,1,C) => ~AND(~A,~C)
-    if (b == mtbdd_true) return bdd_not(bdd_and_CALL(lace, bdd_not(a), bdd_not(c)));
+    if (b == bdd_true) return bdd_not(bdd_and_CALL(lace, bdd_not(a), bdd_not(c)));
 
     // ITE(A,0,C) => AND(~A,C)
-    if (b == mtbdd_false) return bdd_and_CALL(lace, bdd_not(a), c);
+    if (b == bdd_false) return bdd_and_CALL(lace, bdd_not(a), c);
 
     // ITE(A,B,1) => ~AND(A,~B)
-    if (c == mtbdd_true) return bdd_not(bdd_and_CALL(lace, a, bdd_not(b)));
+    if (c == bdd_true) return bdd_not(bdd_and_CALL(lace, a, bdd_not(b)));
 
     // ITE(A,B,~B) => XOR(A,~B)
     if (b == bdd_not(c)) return bdd_xor_CALL(lace, a, c);
@@ -340,16 +340,16 @@ BDD bdd_ite_CALL(lace_worker *lace, BDD a, BDD b, BDD c)
     bddnode* nb = MTBDD_GETNODE(b);
     bddnode* nc = MTBDD_GETNODE(c);
 
-    BDDVAR va = bddnode_getvariable(na);
-    BDDVAR vb = bddnode_getvariable(nb);
-    BDDVAR vc = bddnode_getvariable(nc);
+    uint32_t va = bddnode_getvariable(na);
+    uint32_t vb = bddnode_getvariable(nb);
+    uint32_t vc = bddnode_getvariable(nc);
 
     // Get lowest level
-    BDDVAR level = vb < vc ? vb : vc;
+    uint32_t level = vb < vc ? vb : vc;
 
     // Fast case
-    if (va < level && node_low(a, na) == mtbdd_false && node_high(a, na) == mtbdd_true) {
-        BDD result = mtbdd_makenode(va, c, b);
+    if (va < level && node_low(a, na) == bdd_false && node_high(a, na) == bdd_true) {
+        BDD result = mtbdd_make_node(va, c, b);
         return mark ? bdd_not(result) : result;
     }
 
@@ -390,18 +390,18 @@ BDD bdd_ite_CALL(lace_worker *lace, BDD a, BDD b, BDD c)
 
     int n=0;
 
-    if (aHigh == mtbdd_true) {
+    if (aHigh == bdd_true) {
         high = bHigh;
-    } else if (aHigh == mtbdd_false) {
+    } else if (aHigh == bdd_false) {
         high = cHigh;
     } else {
         mtbdd_refs_spawn(bdd_ite_SPAWN(lace, aHigh, bHigh, cHigh));
         n=1;
     }
 
-    if (aLow == mtbdd_true) {
+    if (aLow == bdd_true) {
         low = bLow;
-    } else if (aLow == mtbdd_false) {
+    } else if (aLow == bdd_false) {
         low = cLow;
     } else {
         low = bdd_ite_CALL(lace, aLow, bLow, cLow);
@@ -413,7 +413,7 @@ BDD bdd_ite_CALL(lace_worker *lace, BDD a, BDD b, BDD c)
         mtbdd_refs_pop(1);
     }
 
-    result = mtbdd_makenode(level, low, high);
+    result = mtbdd_make_node(level, low, high);
 
     if (cache_put3(CACHE_BDD_ITE, a, b, c, result)) sylvan_stats_count(BDD_ITE_CACHEDPUT);
 
@@ -427,11 +427,11 @@ BDD bdd_ite_CALL(lace_worker *lace, BDD a, BDD b, BDD c)
 BDD bdd_constrain_CALL(lace_worker* lace, BDD f, BDD c)
 {
     /* Trivial cases */
-    if (c == mtbdd_true) return f;
-    if (c == mtbdd_false) return mtbdd_false;
-    if (bdd_isconst(f)) return f;
-    if (f == c) return mtbdd_true;
-    if (f == bdd_not(c)) return mtbdd_false;
+    if (c == bdd_true) return f;
+    if (c == bdd_false) return bdd_false;
+    if (bdd_is_leaf(f)) return f;
+    if (f == c) return bdd_true;
+    if (f == bdd_not(c)) return bdd_false;
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test(lace);
@@ -442,9 +442,9 @@ BDD bdd_constrain_CALL(lace_worker* lace, BDD f, BDD c)
     bddnode* nf = MTBDD_GETNODE(f);
     bddnode* nc = MTBDD_GETNODE(c);
 
-    BDDVAR vf = bddnode_getvariable(nf);
-    BDDVAR vc = bddnode_getvariable(nc);
-    BDDVAR level = vf < vc ? vf : vc;
+    uint32_t vf = bddnode_getvariable(nf);
+    uint32_t vc = bddnode_getvariable(nc);
+    uint32_t level = vf < vc ? vf : vc;
 
     /* Make canonical */
     int mark = 0;
@@ -480,22 +480,22 @@ BDD bdd_constrain_CALL(lace_worker* lace, BDD f, BDD c)
 
     BDD result;
 
-    if (cLow == mtbdd_false) {
+    if (cLow == bdd_false) {
         /* cLow is False, so result equals fHigh @ cHigh */
-        if (cHigh == mtbdd_true) result = fHigh;
+        if (cHigh == bdd_true) result = fHigh;
         else result = bdd_constrain_CALL(lace, fHigh, cHigh);
-    } else if (cHigh == mtbdd_false) {
+    } else if (cHigh == bdd_false) {
         /* cHigh is False, so result equals fLow @ cLow */
-        if (cLow == mtbdd_true) result = fLow;
+        if (cLow == bdd_true) result = fLow;
         else result = bdd_constrain_CALL(lace, fLow, cLow);
-    } else if (cLow == mtbdd_true) {
+    } else if (cLow == bdd_true) {
         /* cLow is True, so low result equals fLow */
         BDD high = bdd_constrain_CALL(lace, fHigh, cHigh);
-        result = mtbdd_makenode(level, fLow, high);
-    } else if (cHigh == mtbdd_true) {
+        result = mtbdd_make_node(level, fLow, high);
+    } else if (cHigh == bdd_true) {
         /* cHigh is True, so high result equals fHigh */
         BDD low = bdd_constrain_CALL(lace, fLow, cLow);
-        result = mtbdd_makenode(level, low, fHigh);
+        result = mtbdd_make_node(level, low, fHigh);
     } else {
         /* cLow and cHigh are not constrants... normal parallel recursion */
         mtbdd_refs_spawn(bdd_constrain_SPAWN(lace, fLow, cLow));
@@ -503,7 +503,7 @@ BDD bdd_constrain_CALL(lace_worker* lace, BDD f, BDD c)
         mtbdd_refs_push(high);
         BDD low = mtbdd_refs_sync(bdd_constrain_SYNC(lace));
         mtbdd_refs_pop(1);
-        result = mtbdd_makenode(level, low, high);
+        result = mtbdd_make_node(level, low, high);
     }
 
     if (cache_put3(CACHE_BDD_CONSTRAIN, f, c, 0, result)) sylvan_stats_count(BDD_CONSTRAIN_CACHEDPUT);
@@ -514,14 +514,16 @@ BDD bdd_constrain_CALL(lace_worker* lace, BDD f, BDD c)
 /**
  * Compute restrict f@c, which uses a heuristic to try and minimize a BDD f with respect to a care function c
  */
-BDD bdd_restrict_CALL(lace_worker* lace, BDD f, BDD c)
+TASK(BDD, bdd_restrict_internal, BDD, f, BDD, c)
+
+BDD bdd_restrict_internal_CALL(lace_worker* lace, BDD f, BDD c)
 {
     /* Trivial cases */
-    if (c == mtbdd_true) return f;
-    if (c == mtbdd_false) return mtbdd_false;
-    if (bdd_isconst(f)) return f;
-    if (f == c) return mtbdd_true;
-    if (f == bdd_not(c)) return mtbdd_false;
+    if (c == bdd_true) return f;
+    if (c == bdd_false) return bdd_false;
+    if (bdd_is_leaf(f)) return f;
+    if (f == c) return bdd_true;
+    if (f == bdd_not(c)) return bdd_false;
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test(lace);
@@ -532,9 +534,9 @@ BDD bdd_restrict_CALL(lace_worker* lace, BDD f, BDD c)
     bddnode* nf = MTBDD_GETNODE(f);
     bddnode* nc = MTBDD_GETNODE(c);
 
-    BDDVAR vf = bddnode_getvariable(nf);
-    BDDVAR vc = bddnode_getvariable(nc);
-    BDDVAR level = vf < vc ? vf : vc;
+    uint32_t vf = bddnode_getvariable(nf);
+    uint32_t vc = bddnode_getvariable(nc);
+    uint32_t level = vf < vc ? vf : vc;
 
     /* Make canonical */
     int mark = 0;
@@ -554,7 +556,7 @@ BDD bdd_restrict_CALL(lace_worker* lace, BDD f, BDD c)
         /* f is independent of c, so result is f @ (cLow \/ cHigh) */
         BDD new_c = bdd_not(bdd_and_CALL(lace, bdd_not(node_low(c, nc)), bdd_not(node_high(c, nc))));
         mtbdd_refs_push(new_c);
-        result = bdd_restrict_CALL(lace, f, new_c);
+        result = bdd_restrict_internal_CALL(lace, f, new_c);
         mtbdd_refs_pop(1);
     } else {
         BDD fLow = node_low(f,nf), fHigh = node_high(f,nf);
@@ -565,20 +567,20 @@ BDD bdd_restrict_CALL(lace_worker* lace, BDD f, BDD c)
         } else {
             cLow = cHigh = c;
         }
-        if (cLow == mtbdd_false) {
+        if (cLow == bdd_false) {
             /* sibling-substitution */
-            result = bdd_restrict_CALL(lace, fHigh, cHigh);
-        } else if (cHigh == mtbdd_false) {
+            result = bdd_restrict_internal_CALL(lace, fHigh, cHigh);
+        } else if (cHigh == bdd_false) {
             /* sibling-substitution */
-            result = bdd_restrict_CALL(lace, fLow, cLow);
+            result = bdd_restrict_internal_CALL(lace, fLow, cLow);
         } else {
             /* parallel recursion */
-            mtbdd_refs_spawn(bdd_restrict_SPAWN(lace, fLow, cLow));
-            BDD high = bdd_restrict_CALL(lace, fHigh, cHigh);
+            mtbdd_refs_spawn(bdd_restrict_internal_SPAWN(lace, fLow, cLow));
+            BDD high = bdd_restrict_internal_CALL(lace, fHigh, cHigh);
             mtbdd_refs_push(high);
-            BDD low = mtbdd_refs_sync(bdd_restrict_SYNC(lace));
+            BDD low = mtbdd_refs_sync(bdd_restrict_internal_SYNC(lace));
             mtbdd_refs_pop(1);
-            result = mtbdd_makenode(level, low, high);
+            result = mtbdd_make_node(level, low, high);
         }
     }
 
@@ -587,25 +589,53 @@ BDD bdd_restrict_CALL(lace_worker* lace, BDD f, BDD c)
     return mark ? bdd_not(result) : result;
 }
 
+BDD
+bdd_restrict_CALL(lace_worker* lace, BDD f, BDD c)
+{
+    BDD result = bdd_restrict_internal_CALL(lace, f, c);
+    return mtbdd_node_count(result) <= mtbdd_node_count(f) ? result : f;
+}
+
+static int
+bdd_is_cube(BDD cube)
+{
+    while (!bdd_is_leaf(cube)) {
+        bddnode *node = MTBDD_GETNODE(cube);
+        BDD low = node_low(cube, node);
+        BDD high = node_high(cube, node);
+        if (low == bdd_false && high != bdd_false) cube = high;
+        else if (high == bdd_false && low != bdd_false) cube = low;
+        else return 0;
+    }
+    return cube == bdd_true;
+}
+
+BDD
+bdd_cofactor(BDD f, BDD cube)
+{
+    if (!bdd_is_cube(cube)) return mtbdd_invalid;
+    return bdd_constrain(f, cube);
+}
+
 /**
  * Calculates \exists variables . a
  */
 BDD bdd_exists_CALL(lace_worker* lace, BDD a, BDD variables)
 {
     /* Terminal cases */
-    if (a == mtbdd_true) return mtbdd_true;
-    if (a == mtbdd_false) return mtbdd_false;
-    if (mtbdd_set_isempty(variables)) return a;
+    if (a == bdd_true) return bdd_true;
+    if (a == bdd_false) return bdd_false;
+    if (bdd_set_is_empty(variables)) return a;
 
     // a != constant
     bddnode* na = MTBDD_GETNODE(a);
-    BDDVAR level = bddnode_getvariable(na);
+    uint32_t level = bddnode_getvariable(na);
 
     bddnode* nv = MTBDD_GETNODE(variables);
-    BDDVAR vv = bddnode_getvariable(nv);
+    uint32_t vv = bddnode_getvariable(nv);
     while (vv < level) {
         variables = node_high(variables, nv);
-        if (mtbdd_set_isempty(variables)) return a;
+        if (bdd_set_is_empty(variables)) return a;
         nv = MTBDD_GETNODE(variables);
         vv = bddnode_getvariable(nv);
     }
@@ -627,21 +657,21 @@ BDD bdd_exists_CALL(lace_worker* lace, BDD a, BDD variables)
 
     if (vv == level) {
         // level is in variable set, perform abstraction
-        if (aLow == mtbdd_true || aHigh == mtbdd_true || aLow == bdd_not(aHigh)) {
-            result = mtbdd_true;
+        if (aLow == bdd_true || aHigh == bdd_true || aLow == bdd_not(aHigh)) {
+            result = bdd_true;
         } else {
-            BDD _v = mtbdd_set_next(variables);
+            BDD _v = bdd_set_next(variables);
             BDD low = bdd_exists_CALL(lace, aLow, _v);
-            if (low == mtbdd_true) {
-                result = mtbdd_true;
+            if (low == bdd_true) {
+                result = bdd_true;
             } else {
                 mtbdd_refs_push(low);
                 BDD high = bdd_exists_CALL(lace, aHigh, _v);
-                if (high == mtbdd_true) {
-                    result = mtbdd_true;
+                if (high == bdd_true) {
+                    result = bdd_true;
                     mtbdd_refs_pop(1);
-                } else if (low == mtbdd_false && high == mtbdd_false) {
-                    result = mtbdd_false;
+                } else if (low == bdd_false && high == bdd_false) {
+                    result = bdd_false;
                     mtbdd_refs_pop(1);
                 } else {
                     mtbdd_refs_push(high);
@@ -658,7 +688,7 @@ BDD bdd_exists_CALL(lace_worker* lace, BDD a, BDD variables)
         mtbdd_refs_push(low);
         high = mtbdd_refs_sync(bdd_exists_SYNC(lace));
         mtbdd_refs_pop(1);
-        result = mtbdd_makenode(level, low, high);
+        result = mtbdd_make_node(level, low, high);
     }
 
     if (cache_put3(CACHE_BDD_EXISTS, a, variables, 0, result)) sylvan_stats_count(BDD_EXISTS_CACHEDPUT);
@@ -676,9 +706,9 @@ BDD bdd_project_CALL(lace_worker* lace, BDD a, BDDSET v)
     /**
      * Terminal cases
      */
-    if (a == mtbdd_false) return mtbdd_false;
-    if (a == mtbdd_true) return mtbdd_true;
-    if (mtbdd_set_isempty(v)) return mtbdd_true;
+    if (a == bdd_false) return bdd_false;
+    if (a == bdd_true) return bdd_true;
+    if (bdd_set_is_empty(v)) return bdd_true;
 
     /**
      * Obtain variables
@@ -694,7 +724,7 @@ BDD bdd_project_CALL(lace_worker* lace, BDD a, BDDSET v)
     MTBDD v_next = mtbddnode_followhigh(v, v_node);
 
     while (v_var < a_var) {
-        if (mtbdd_set_isempty(v_next)) return mtbdd_true;
+        if (bdd_set_is_empty(v_next)) return bdd_true;
         v = v_next;
         v_node = MTBDD_GETNODE(v);
         v_var = mtbddnode_getvariable(v_node);
@@ -735,7 +765,7 @@ BDD bdd_project_CALL(lace_worker* lace, BDD a, BDDSET v)
         const MTBDD high = mtbdd_refs_push(bdd_project_CALL(lace, a1, v_next));
         const MTBDD low = mtbdd_refs_sync(bdd_project_SYNC(lace));
         mtbdd_refs_pop(1);
-        result = mtbdd_makenode(a_var, low, high);
+        result = mtbdd_make_node(a_var, low, high);
     } else {
         // variable not in projection variables
         mtbdd_refs_spawn(bdd_project_SPAWN(lace, a0, v));
@@ -762,16 +792,16 @@ BDD bdd_project_CALL(lace_worker* lace, BDD a, BDDSET v)
 BDD bdd_and_exists_CALL(lace_worker* lace, BDD a, BDD b, BDDSET v)
 {
     /* Terminal cases */
-    if (a == mtbdd_false) return mtbdd_false;
-    if (b == mtbdd_false) return mtbdd_false;
-    if (a == bdd_not(b)) return mtbdd_false;
-    if (a == mtbdd_true && b == mtbdd_true) return mtbdd_true;
+    if (a == bdd_false) return bdd_false;
+    if (b == bdd_false) return bdd_false;
+    if (a == bdd_not(b)) return bdd_false;
+    if (a == bdd_true && b == bdd_true) return bdd_true;
 
     /* Cases that reduce to "exists" and "and" */
-    if (a == mtbdd_true) return bdd_exists_CALL(lace, b, v);
-    if (b == mtbdd_true) return bdd_exists_CALL(lace, a, v);
+    if (a == bdd_true) return bdd_exists_CALL(lace, b, v);
+    if (b == bdd_true) return bdd_exists_CALL(lace, a, v);
     if (a == b) return bdd_exists_CALL(lace, a, v);
-    if (mtbdd_set_isempty(v)) return bdd_and_CALL(lace, a, b);
+    if (bdd_set_is_empty(v)) return bdd_and_CALL(lace, a, b);
 
     /* At this point, a and b are proper nodes, and v is non-empty */
 
@@ -793,15 +823,15 @@ BDD bdd_and_exists_CALL(lace_worker* lace, BDD a, BDD b, BDDSET v)
     bddnode* nb = MTBDD_GETNODE(b);
     bddnode* nv = MTBDD_GETNODE(v);
 
-    BDDVAR va = bddnode_getvariable(na);
-    BDDVAR vb = bddnode_getvariable(nb);
-    BDDVAR vv = bddnode_getvariable(nv);
-    BDDVAR level = va < vb ? va : vb;
+    uint32_t va = bddnode_getvariable(na);
+    uint32_t vb = bddnode_getvariable(nb);
+    uint32_t vv = bddnode_getvariable(nv);
+    uint32_t level = va < vb ? va : vb;
 
     /* Skip levels in v that are not in a and b */
     while (vv < level) {
         v = node_high(v, nv); // get next variable in conjunction
-        if (mtbdd_set_isempty(v)) return bdd_and_CALL(lace, a, b);
+        if (bdd_set_is_empty(v)) return bdd_and_CALL(lace, a, b);
         nv = MTBDD_GETNODE(v);
         vv = bddnode_getvariable(nv);
     }
@@ -833,7 +863,7 @@ BDD bdd_and_exists_CALL(lace_worker* lace, BDD a, BDD b, BDDSET v)
         // level is in variable set, perform abstraction
         BDD _v = node_high(v, nv);
         BDD low = bdd_and_exists_CALL(lace, aLow, bLow, _v);
-        if (low == mtbdd_true || low == aHigh || low == bHigh) {
+        if (low == bdd_true || low == aHigh || low == bHigh) {
             result = low;
         } else {
             mtbdd_refs_push(low);
@@ -845,13 +875,13 @@ BDD bdd_and_exists_CALL(lace_worker* lace, BDD a, BDD b, BDDSET v)
             } else {
                 high = bdd_and_exists_CALL(lace, aHigh, bHigh, _v);
             }
-            if (high == mtbdd_true) {
-                result = mtbdd_true;
+            if (high == bdd_true) {
+                result = bdd_true;
                 mtbdd_refs_pop(1);
-            } else if (high == mtbdd_false) {
+            } else if (high == bdd_false) {
                 result = low;
                 mtbdd_refs_pop(1);
-            } else if (low == mtbdd_false) {
+            } else if (low == bdd_false) {
                 result = high;
                 mtbdd_refs_pop(1);
             } else {
@@ -867,7 +897,7 @@ BDD bdd_and_exists_CALL(lace_worker* lace, BDD a, BDD b, BDDSET v)
         mtbdd_refs_push(low);
         BDD high = mtbdd_refs_sync(bdd_and_exists_SYNC(lace));
         mtbdd_refs_pop(1);
-        result = mtbdd_makenode(level, low, high);
+        result = mtbdd_make_node(level, low, high);
     }
 
     if (cache_put3(CACHE_BDD_AND_EXISTS, a, b, v, result)) sylvan_stats_count(BDD_AND_EXISTS_CACHEDPUT);
@@ -885,16 +915,16 @@ MTBDD bdd_and_project_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     /**
      * Terminal cases
      */
-    if (a == mtbdd_false) return mtbdd_false;
-    if (b == mtbdd_false) return mtbdd_false;
-    if (a == bdd_not(b)) return mtbdd_false;
-    if (a == mtbdd_true && b == mtbdd_true) return mtbdd_true;
-    if (mtbdd_set_isempty(v)) return mtbdd_true;
+    if (a == bdd_false) return bdd_false;
+    if (b == bdd_false) return bdd_false;
+    if (a == bdd_not(b)) return bdd_false;
+    if (a == bdd_true && b == bdd_true) return bdd_true;
+    if (bdd_set_is_empty(v)) return bdd_true;
 
     /**
      * Cases that reduce to bdd_project
      */
-    if (a == mtbdd_true || b == mtbdd_true || a == b) return bdd_project(b, v);
+    if (a == bdd_true || b == bdd_true || a == b) return bdd_project(b, v);
 
     /**
      * Normalization (only for caching)
@@ -932,7 +962,7 @@ MTBDD bdd_and_project_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     MTBDD v_next = mtbddnode_followhigh(v, v_node);
 
     while (v_var < minvar) {
-        if (mtbdd_set_isempty(v_next)) return mtbdd_true;
+        if (bdd_set_is_empty(v_next)) return bdd_true;
         v = v_next;
         v_node = MTBDD_GETNODE(v);
         v_var = mtbddnode_getvariable(v_node);
@@ -965,7 +995,7 @@ MTBDD bdd_and_project_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
         const MTBDD high = mtbdd_refs_push(bdd_and_project_CALL(lace, a1, b1, v_next));
         const MTBDD low = mtbdd_refs_sync(bdd_and_project_SYNC(lace));
         mtbdd_refs_pop(1);
-        result = mtbdd_makenode(minvar, low, high);
+        result = mtbdd_make_node(minvar, low, high);
     } else {
         // variable not in projection variables
         mtbdd_refs_spawn(bdd_and_project_SPAWN(lace, a0, b0, v));
@@ -986,18 +1016,18 @@ MTBDD bdd_and_project_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
 }
 
 
-BDD bdd_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
+BDD bdd_rel_next_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
 {
     /* Compute R(s) = \exists x: A(x) \and B(x,s) with support(result) = s, support(A) = s, support(B) = s+t
-     * if vars == mtbdd_false, then every level is in s or t
+     * if vars == bdd_false, then every level is in s or t
      * any other levels (outside s,t) in B are ignored / existentially quantified
      */
 
     /* Terminals */
-    if (a == mtbdd_true && b == mtbdd_true) return mtbdd_true;
-    if (a == mtbdd_false) return mtbdd_false;
-    if (b == mtbdd_false) return mtbdd_false;
-    if (mtbdd_set_isempty(vars)) return a;
+    if (a == bdd_true && b == bdd_true) return bdd_true;
+    if (a == bdd_false) return bdd_false;
+    if (b == bdd_false) return bdd_false;
+    if (bdd_set_is_empty(vars)) return a;
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test(lace);
@@ -1006,23 +1036,23 @@ BDD bdd_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
     sylvan_stats_count(BDD_RELNEXT);
 
     /* Determine top level */
-    bddnode* na = bdd_isconst(a) ? 0 : MTBDD_GETNODE(a);
-    bddnode* nb = bdd_isconst(b) ? 0 : MTBDD_GETNODE(b);
+    bddnode* na = bdd_is_leaf(a) ? 0 : MTBDD_GETNODE(a);
+    bddnode* nb = bdd_is_leaf(b) ? 0 : MTBDD_GETNODE(b);
 
-    BDDVAR va = na ? bddnode_getvariable(na) : 0xffffffff;
-    BDDVAR vb = nb ? bddnode_getvariable(nb) : 0xffffffff;
-    BDDVAR level = va < vb ? va : vb;
+    uint32_t va = na ? bddnode_getvariable(na) : 0xffffffff;
+    uint32_t vb = nb ? bddnode_getvariable(nb) : 0xffffffff;
+    uint32_t level = va < vb ? va : vb;
 
     /* Skip vars */
     int is_s_or_t = 0;
     bddnode* nv = 0;
-    if (vars == mtbdd_false) {
+    if (vars == bdd_false) {
         is_s_or_t = 1;
     } else {
         nv = MTBDD_GETNODE(vars);
         for (;;) {
             /* check if level is s/t */
-            BDDVAR vv = bddnode_getvariable(nv);
+            uint32_t vv = bddnode_getvariable(nv);
             if (level == vv || (level^1) == vv) {
                 is_s_or_t = 1;
                 break;
@@ -1030,7 +1060,7 @@ BDD bdd_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
             /* check if level < s/t */
             if (level < vv) break;
             vars = node_high(vars, nv); // get next in vars
-            if (mtbdd_set_isempty(vars)) return a;
+            if (bdd_set_is_empty(vars)) return a;
             nv = MTBDD_GETNODE(vars);
         }
     }
@@ -1044,8 +1074,8 @@ BDD bdd_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
 
     if (is_s_or_t) {
         /* Get s and t */
-        BDDVAR s = level & ~UINT32_C(1);
-        BDDVAR t = s+1;
+        uint32_t s = level & ~UINT32_C(1);
+        uint32_t t = s+1;
 
         BDD a0, a1, b0, b1;
         if (na && va == s) {
@@ -1062,7 +1092,7 @@ BDD bdd_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
         }
 
         BDD b00, b01, b10, b11;
-        if (!bdd_isconst(b0)) {
+        if (!bdd_is_leaf(b0)) {
             bddnode* nb0 = MTBDD_GETNODE(b0);
             if (bddnode_getvariable(nb0) == t) {
                 b00 = node_low(b0, nb0);
@@ -1073,7 +1103,7 @@ BDD bdd_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
         } else {
             b00 = b01 = b0;
         }
-        if (!bdd_isconst(b1)) {
+        if (!bdd_is_leaf(b1)) {
             bddnode* nb1 = MTBDD_GETNODE(b1);
             if (bddnode_getvariable(nb1) == t) {
                 b10 = node_low(b1, nb1);
@@ -1085,26 +1115,26 @@ BDD bdd_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
             b10 = b11 = b1;
         }
 
-        BDD _vars = vars == mtbdd_false ? mtbdd_false : node_high(vars, nv);
+        BDD _vars = vars == bdd_false ? bdd_false : node_high(vars, nv);
 
-        mtbdd_refs_spawn(bdd_relnext_SPAWN(lace, a0, b00, _vars));
-        mtbdd_refs_spawn(bdd_relnext_SPAWN(lace, a1, b10, _vars));
-        mtbdd_refs_spawn(bdd_relnext_SPAWN(lace, a0, b01, _vars));
-        mtbdd_refs_spawn(bdd_relnext_SPAWN(lace, a1, b11, _vars));
+        mtbdd_refs_spawn(bdd_rel_next_SPAWN(lace, a0, b00, _vars));
+        mtbdd_refs_spawn(bdd_rel_next_SPAWN(lace, a1, b10, _vars));
+        mtbdd_refs_spawn(bdd_rel_next_SPAWN(lace, a0, b01, _vars));
+        mtbdd_refs_spawn(bdd_rel_next_SPAWN(lace, a1, b11, _vars));
 
-        BDD f = mtbdd_refs_sync(bdd_relnext_SYNC(lace)); mtbdd_refs_push(f);
-        BDD e = mtbdd_refs_sync(bdd_relnext_SYNC(lace)); mtbdd_refs_push(e);
-        BDD d = mtbdd_refs_sync(bdd_relnext_SYNC(lace)); mtbdd_refs_push(d);
-        BDD c = mtbdd_refs_sync(bdd_relnext_SYNC(lace)); mtbdd_refs_push(c);
+        BDD f = mtbdd_refs_sync(bdd_rel_next_SYNC(lace)); mtbdd_refs_push(f);
+        BDD e = mtbdd_refs_sync(bdd_rel_next_SYNC(lace)); mtbdd_refs_push(e);
+        BDD d = mtbdd_refs_sync(bdd_rel_next_SYNC(lace)); mtbdd_refs_push(d);
+        BDD c = mtbdd_refs_sync(bdd_rel_next_SYNC(lace)); mtbdd_refs_push(c);
 
-        mtbdd_refs_spawn(bdd_ite_SPAWN(lace, c, mtbdd_true, d)); /* a0 b00  \or  a1 b01 */
-        mtbdd_refs_spawn(bdd_ite_SPAWN(lace, e, mtbdd_true, f)); /* a0 b01  \or  a1 b11 */
+        mtbdd_refs_spawn(bdd_ite_SPAWN(lace, c, bdd_true, d)); /* a0 b00  \or  a1 b01 */
+        mtbdd_refs_spawn(bdd_ite_SPAWN(lace, e, bdd_true, f)); /* a0 b01  \or  a1 b11 */
 
         /* R1 */ d = mtbdd_refs_sync(bdd_ite_SYNC(lace)); mtbdd_refs_push(d);
         /* R0 */ c = mtbdd_refs_sync(bdd_ite_SYNC(lace)); // not necessary: mtbdd_refs_push(c);
 
         mtbdd_refs_pop(5);
-        result = mtbdd_makenode(s, c, d);
+        result = mtbdd_make_node(s, c, d);
     } else {
         /* Variable not in vars! Take a, quantify b */
         BDD a0, a1, b0, b1;
@@ -1124,51 +1154,51 @@ BDD bdd_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
         if (b0 != b1) {
             if (a0 == a1) {
                 /* Quantify "b" variables */
-                mtbdd_refs_spawn(bdd_relnext_SPAWN(lace, a0, b0, vars));
-                mtbdd_refs_spawn(bdd_relnext_SPAWN(lace, a1, b1, vars));
+                mtbdd_refs_spawn(bdd_rel_next_SPAWN(lace, a0, b0, vars));
+                mtbdd_refs_spawn(bdd_rel_next_SPAWN(lace, a1, b1, vars));
 
-                BDD r1 = mtbdd_refs_sync(bdd_relnext_SYNC(lace));
+                BDD r1 = mtbdd_refs_sync(bdd_rel_next_SYNC(lace));
                 mtbdd_refs_push(r1);
-                BDD r0 = mtbdd_refs_sync(bdd_relnext_SYNC(lace));
+                BDD r0 = mtbdd_refs_sync(bdd_rel_next_SYNC(lace));
                 mtbdd_refs_push(r0);
                 result = bdd_not(bdd_and_CALL(lace, bdd_not(r0), bdd_not(r1)));
                 mtbdd_refs_pop(2);
             } else {
                 /* Quantify "b" variables, but keep "a" variables */
-                mtbdd_refs_spawn(bdd_relnext_SPAWN(lace, a0, b0, vars));
-                mtbdd_refs_spawn(bdd_relnext_SPAWN(lace, a0, b1, vars));
-                mtbdd_refs_spawn(bdd_relnext_SPAWN(lace, a1, b0, vars));
-                mtbdd_refs_spawn(bdd_relnext_SPAWN(lace, a1, b1, vars));
+                mtbdd_refs_spawn(bdd_rel_next_SPAWN(lace, a0, b0, vars));
+                mtbdd_refs_spawn(bdd_rel_next_SPAWN(lace, a0, b1, vars));
+                mtbdd_refs_spawn(bdd_rel_next_SPAWN(lace, a1, b0, vars));
+                mtbdd_refs_spawn(bdd_rel_next_SPAWN(lace, a1, b1, vars));
 
-                BDD r11 = mtbdd_refs_sync(bdd_relnext_SYNC(lace));
+                BDD r11 = mtbdd_refs_sync(bdd_rel_next_SYNC(lace));
                 mtbdd_refs_push(r11);
-                BDD r10 = mtbdd_refs_sync(bdd_relnext_SYNC(lace));
+                BDD r10 = mtbdd_refs_sync(bdd_rel_next_SYNC(lace));
                 mtbdd_refs_push(r10);
-                BDD r01 = mtbdd_refs_sync(bdd_relnext_SYNC(lace));
+                BDD r01 = mtbdd_refs_sync(bdd_rel_next_SYNC(lace));
                 mtbdd_refs_push(r01);
-                BDD r00 = mtbdd_refs_sync(bdd_relnext_SYNC(lace));
+                BDD r00 = mtbdd_refs_sync(bdd_rel_next_SYNC(lace));
                 mtbdd_refs_push(r00);
 
-                mtbdd_refs_spawn(bdd_ite_SPAWN(lace, r00, mtbdd_true, r01));
-                mtbdd_refs_spawn(bdd_ite_SPAWN(lace, r10, mtbdd_true, r11));
+                mtbdd_refs_spawn(bdd_ite_SPAWN(lace, r00, bdd_true, r01));
+                mtbdd_refs_spawn(bdd_ite_SPAWN(lace, r10, bdd_true, r11));
 
                 BDD r1 = mtbdd_refs_sync(bdd_ite_SYNC(lace));
                 mtbdd_refs_push(r1);
                 BDD r0 = mtbdd_refs_sync(bdd_ite_SYNC(lace));
                 mtbdd_refs_pop(5);
 
-                result = mtbdd_makenode(level, r0, r1);
+                result = mtbdd_make_node(level, r0, r1);
             }
         } else {
             /* Keep "a" variables */
-            mtbdd_refs_spawn(bdd_relnext_SPAWN(lace, a0, b0, vars));
-            mtbdd_refs_spawn(bdd_relnext_SPAWN(lace, a1, b1, vars));
+            mtbdd_refs_spawn(bdd_rel_next_SPAWN(lace, a0, b0, vars));
+            mtbdd_refs_spawn(bdd_rel_next_SPAWN(lace, a1, b1, vars));
 
-            BDD r1 = mtbdd_refs_sync(bdd_relnext_SYNC(lace));
+            BDD r1 = mtbdd_refs_sync(bdd_rel_next_SYNC(lace));
             mtbdd_refs_push(r1);
-            BDD r0 = mtbdd_refs_sync(bdd_relnext_SYNC(lace));
+            BDD r0 = mtbdd_refs_sync(bdd_rel_next_SYNC(lace));
             mtbdd_refs_pop(1);
-            result = mtbdd_makenode(level, r0, r1);
+            result = mtbdd_make_node(level, r0, r1);
         }
     }
 
@@ -1177,18 +1207,18 @@ BDD bdd_relnext_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
     return result;
 }
 
-BDD bdd_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
+BDD bdd_rel_prev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
 {
     /* Compute \exists x: A(s,x) \and B(x,t)
-     * if vars == mtbdd_false, then every level is in s or t
+     * if vars == bdd_false, then every level is in s or t
      * any other levels (outside s,t) in A are ignored / existentially quantified
      */
 
     /* Terminals */
-    if (a == mtbdd_true && b == mtbdd_true) return mtbdd_true;
-    if (a == mtbdd_false) return mtbdd_false;
-    if (b == mtbdd_false) return mtbdd_false;
-    if (mtbdd_set_isempty(vars)) return b;
+    if (a == bdd_true && b == bdd_true) return bdd_true;
+    if (a == bdd_false) return bdd_false;
+    if (b == bdd_false) return bdd_false;
+    if (bdd_set_is_empty(vars)) return b;
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test(lace);
@@ -1197,23 +1227,23 @@ BDD bdd_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
     sylvan_stats_count(BDD_RELPREV);
 
     /* Determine top level */
-    bddnode* na = bdd_isconst(a) ? 0 : MTBDD_GETNODE(a);
-    bddnode* nb = bdd_isconst(b) ? 0 : MTBDD_GETNODE(b);
+    bddnode* na = bdd_is_leaf(a) ? 0 : MTBDD_GETNODE(a);
+    bddnode* nb = bdd_is_leaf(b) ? 0 : MTBDD_GETNODE(b);
 
-    BDDVAR va = na ? bddnode_getvariable(na) : 0xffffffff;
-    BDDVAR vb = nb ? bddnode_getvariable(nb) : 0xffffffff;
-    BDDVAR level = va < vb ? va : vb;
+    uint32_t va = na ? bddnode_getvariable(na) : 0xffffffff;
+    uint32_t vb = nb ? bddnode_getvariable(nb) : 0xffffffff;
+    uint32_t level = va < vb ? va : vb;
 
     /* Skip vars */
     int is_s_or_t = 0;
     bddnode* nv = 0;
-    if (vars == mtbdd_false) {
+    if (vars == bdd_false) {
         is_s_or_t = 1;
     } else {
         nv = MTBDD_GETNODE(vars);
         for (;;) {
             /* check if level is s/t */
-            BDDVAR vv = bddnode_getvariable(nv);
+            uint32_t vv = bddnode_getvariable(nv);
             if (level == vv || (level^1) == vv) {
                 is_s_or_t = 1;
                 break;
@@ -1221,7 +1251,7 @@ BDD bdd_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
             /* check if level < s/t */
             if (level < vv) break;
             vars = node_high(vars, nv); // get next in vars
-            if (mtbdd_set_isempty(vars)) return b;
+            if (bdd_set_is_empty(vars)) return b;
             nv = MTBDD_GETNODE(vars);
         }
     }
@@ -1235,8 +1265,8 @@ BDD bdd_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
 
     if (is_s_or_t) {
         /* Get s and t */
-        BDDVAR s = level & ~UINT32_C(1);
-        BDDVAR t = s+1;
+        uint32_t s = level & ~UINT32_C(1);
+        uint32_t t = s+1;
 
         BDD a0, a1, b0, b1;
         if (na && va == s) {
@@ -1253,7 +1283,7 @@ BDD bdd_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
         }
 
         BDD a00, a01, a10, a11;
-        if (!bdd_isconst(a0)) {
+        if (!bdd_is_leaf(a0)) {
             bddnode* na0 = MTBDD_GETNODE(a0);
             if (bddnode_getvariable(na0) == t) {
                 a00 = node_low(a0, na0);
@@ -1264,7 +1294,7 @@ BDD bdd_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
         } else {
             a00 = a01 = a0;
         }
-        if (!bdd_isconst(a1)) {
+        if (!bdd_is_leaf(a1)) {
             bddnode* na1 = MTBDD_GETNODE(a1);
             if (bddnode_getvariable(na1) == t) {
                 a10 = node_low(a1, na1);
@@ -1277,7 +1307,7 @@ BDD bdd_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
         }
 
         BDD b00, b01, b10, b11;
-        if (!bdd_isconst(b0)) {
+        if (!bdd_is_leaf(b0)) {
             bddnode* nb0 = MTBDD_GETNODE(b0);
             if (bddnode_getvariable(nb0) == t) {
                 b00 = node_low(b0, nb0);
@@ -1288,7 +1318,7 @@ BDD bdd_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
         } else {
             b00 = b01 = b0;
         }
-        if (!bdd_isconst(b1)) {
+        if (!bdd_is_leaf(b1)) {
             bddnode* nb1 = MTBDD_GETNODE(b1);
             if (bddnode_getvariable(nb1) == t) {
                 b10 = node_low(b1, nb1);
@@ -1301,63 +1331,63 @@ BDD bdd_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
         }
 
         BDD _vars;
-        if (vars != mtbdd_false) {
+        if (vars != bdd_false) {
             _vars = node_high(vars, nv);
-            if (mtbdd_set_first(_vars) == t) _vars = mtbdd_set_next(_vars);
+            if (bdd_set_first(_vars) == t) _vars = bdd_set_next(_vars);
         } else {
-            _vars = mtbdd_false;
+            _vars = bdd_false;
         }
 
         if (b00 == b01) {
-            mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a00, b0, _vars));
-            mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a10, b0, _vars));
+            mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a00, b0, _vars));
+            mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a10, b0, _vars));
         } else {
-            mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a00, b00, _vars));
-            mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a00, b01, _vars));
-            mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a10, b00, _vars));
-            mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a10, b01, _vars));
+            mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a00, b00, _vars));
+            mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a00, b01, _vars));
+            mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a10, b00, _vars));
+            mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a10, b01, _vars));
         }
 
         if (b10 == b11) {
-            mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a01, b1, _vars));
-            mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a11, b1, _vars));
+            mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a01, b1, _vars));
+            mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a11, b1, _vars));
         } else {
-            mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a01, b10, _vars));
-            mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a01, b11, _vars));
-            mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a11, b10, _vars));
-            mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a11, b11, _vars));
+            mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a01, b10, _vars));
+            mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a01, b11, _vars));
+            mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a11, b10, _vars));
+            mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a11, b11, _vars));
         }
 
         BDD r00, r01, r10, r11;
 
         if (b10 == b11) {
-            r11 = mtbdd_refs_push(mtbdd_refs_sync(bdd_relprev_SYNC(lace)));
-            r01 = mtbdd_refs_push(mtbdd_refs_sync(bdd_relprev_SYNC(lace)));
+            r11 = mtbdd_refs_push(mtbdd_refs_sync(bdd_rel_prev_SYNC(lace)));
+            r01 = mtbdd_refs_push(mtbdd_refs_sync(bdd_rel_prev_SYNC(lace)));
         } else {
-            BDD r111 = mtbdd_refs_push(mtbdd_refs_sync(bdd_relprev_SYNC(lace)));
-            BDD r110 = mtbdd_refs_push(mtbdd_refs_sync(bdd_relprev_SYNC(lace)));
-            r11 = mtbdd_makenode(t, r110, r111);
+            BDD r111 = mtbdd_refs_push(mtbdd_refs_sync(bdd_rel_prev_SYNC(lace)));
+            BDD r110 = mtbdd_refs_push(mtbdd_refs_sync(bdd_rel_prev_SYNC(lace)));
+            r11 = mtbdd_make_node(t, r110, r111);
             mtbdd_refs_pop(2);
             mtbdd_refs_push(r11);
-            BDD r011 = mtbdd_refs_push(mtbdd_refs_sync(bdd_relprev_SYNC(lace)));
-            BDD r010 = mtbdd_refs_push(mtbdd_refs_sync(bdd_relprev_SYNC(lace)));
-            r01 = mtbdd_makenode(t, r010, r011);
+            BDD r011 = mtbdd_refs_push(mtbdd_refs_sync(bdd_rel_prev_SYNC(lace)));
+            BDD r010 = mtbdd_refs_push(mtbdd_refs_sync(bdd_rel_prev_SYNC(lace)));
+            r01 = mtbdd_make_node(t, r010, r011);
             mtbdd_refs_pop(2);
             mtbdd_refs_push(r01);
         }
 
         if (b00 == b01) {
-            r10 = mtbdd_refs_push(mtbdd_refs_sync(bdd_relprev_SYNC(lace)));
-            r00 = mtbdd_refs_push(mtbdd_refs_sync(bdd_relprev_SYNC(lace)));
+            r10 = mtbdd_refs_push(mtbdd_refs_sync(bdd_rel_prev_SYNC(lace)));
+            r00 = mtbdd_refs_push(mtbdd_refs_sync(bdd_rel_prev_SYNC(lace)));
         } else {
-            BDD r101 = mtbdd_refs_push(mtbdd_refs_sync(bdd_relprev_SYNC(lace)));
-            BDD r100 = mtbdd_refs_push(mtbdd_refs_sync(bdd_relprev_SYNC(lace)));
-            r10 = mtbdd_makenode(t, r100, r101);
+            BDD r101 = mtbdd_refs_push(mtbdd_refs_sync(bdd_rel_prev_SYNC(lace)));
+            BDD r100 = mtbdd_refs_push(mtbdd_refs_sync(bdd_rel_prev_SYNC(lace)));
+            r10 = mtbdd_make_node(t, r100, r101);
             mtbdd_refs_pop(2);
             mtbdd_refs_push(r10);
-            BDD r001 = mtbdd_refs_push(mtbdd_refs_sync(bdd_relprev_SYNC(lace)));
-            BDD r000 = mtbdd_refs_push(mtbdd_refs_sync(bdd_relprev_SYNC(lace)));
-            r00 = mtbdd_makenode(t, r000, r001);
+            BDD r001 = mtbdd_refs_push(mtbdd_refs_sync(bdd_rel_prev_SYNC(lace)));
+            BDD r000 = mtbdd_refs_push(mtbdd_refs_sync(bdd_rel_prev_SYNC(lace)));
+            r00 = mtbdd_make_node(t, r000, r001);
             mtbdd_refs_pop(2);
             mtbdd_refs_push(r00);
          }
@@ -1368,7 +1398,7 @@ BDD bdd_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
         BDD r1 = bdd_not(mtbdd_refs_push(mtbdd_refs_sync(bdd_and_SYNC(lace))));
         BDD r0 = bdd_not(mtbdd_refs_sync(bdd_and_SYNC(lace)));
         mtbdd_refs_pop(5);
-        result = mtbdd_makenode(s, r0, r1);
+        result = mtbdd_make_node(s, r0, r1);
     } else {
         BDD a0, a1, b0, b1;
         if (na && va == level) {
@@ -1387,51 +1417,51 @@ BDD bdd_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
         if (a0 != a1) {
             if (b0 == b1) {
                 /* Quantify "a" variables */
-                mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a0, b0, vars));
-                mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a1, b1, vars));
+                mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a0, b0, vars));
+                mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a1, b1, vars));
 
-                BDD r1 = mtbdd_refs_sync(bdd_relprev_SYNC(lace));
+                BDD r1 = mtbdd_refs_sync(bdd_rel_prev_SYNC(lace));
                 mtbdd_refs_push(r1);
-                BDD r0 = mtbdd_refs_sync(bdd_relprev_SYNC(lace));
+                BDD r0 = mtbdd_refs_sync(bdd_rel_prev_SYNC(lace));
                 mtbdd_refs_push(r0);
-                result = bdd_ite_CALL(lace, r0, mtbdd_true, r1);
+                result = bdd_ite_CALL(lace, r0, bdd_true, r1);
                 mtbdd_refs_pop(2);
 
             } else {
                 /* Quantify "a" variables, but keep "b" variables */
-                mtbdd_refs_spawn(bdd_relnext_SPAWN(lace, a0, b0, vars));
-                mtbdd_refs_spawn(bdd_relnext_SPAWN(lace, a1, b0, vars));
-                mtbdd_refs_spawn(bdd_relnext_SPAWN(lace, a0, b1, vars));
-                mtbdd_refs_spawn(bdd_relnext_SPAWN(lace, a1, b1, vars));
+                mtbdd_refs_spawn(bdd_rel_next_SPAWN(lace, a0, b0, vars));
+                mtbdd_refs_spawn(bdd_rel_next_SPAWN(lace, a1, b0, vars));
+                mtbdd_refs_spawn(bdd_rel_next_SPAWN(lace, a0, b1, vars));
+                mtbdd_refs_spawn(bdd_rel_next_SPAWN(lace, a1, b1, vars));
 
-                BDD r11 = mtbdd_refs_sync(bdd_relnext_SYNC(lace));
+                BDD r11 = mtbdd_refs_sync(bdd_rel_next_SYNC(lace));
                 mtbdd_refs_push(r11);
-                BDD r01 = mtbdd_refs_sync(bdd_relnext_SYNC(lace));
+                BDD r01 = mtbdd_refs_sync(bdd_rel_next_SYNC(lace));
                 mtbdd_refs_push(r01);
-                BDD r10 = mtbdd_refs_sync(bdd_relnext_SYNC(lace));
+                BDD r10 = mtbdd_refs_sync(bdd_rel_next_SYNC(lace));
                 mtbdd_refs_push(r10);
-                BDD r00 = mtbdd_refs_sync(bdd_relnext_SYNC(lace));
+                BDD r00 = mtbdd_refs_sync(bdd_rel_next_SYNC(lace));
                 mtbdd_refs_push(r00);
 
-                mtbdd_refs_spawn(bdd_ite_SPAWN(lace, r00, mtbdd_true, r10));
-                mtbdd_refs_spawn(bdd_ite_SPAWN(lace, r01, mtbdd_true, r11));
+                mtbdd_refs_spawn(bdd_ite_SPAWN(lace, r00, bdd_true, r10));
+                mtbdd_refs_spawn(bdd_ite_SPAWN(lace, r01, bdd_true, r11));
 
                 BDD r1 = mtbdd_refs_sync(bdd_ite_SYNC(lace));
                 mtbdd_refs_push(r1);
                 BDD r0 = mtbdd_refs_sync(bdd_ite_SYNC(lace));
                 mtbdd_refs_pop(5);
 
-                result = mtbdd_makenode(level, r0, r1);
+                result = mtbdd_make_node(level, r0, r1);
             }
         } else {
-            mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a0, b0, vars));
-            mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a1, b1, vars));
+            mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a0, b0, vars));
+            mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a1, b1, vars));
 
-            BDD r1 = mtbdd_refs_sync(bdd_relprev_SYNC(lace));
+            BDD r1 = mtbdd_refs_sync(bdd_rel_prev_SYNC(lace));
             mtbdd_refs_push(r1);
-            BDD r0 = mtbdd_refs_sync(bdd_relprev_SYNC(lace));
+            BDD r0 = mtbdd_refs_sync(bdd_rel_prev_SYNC(lace));
             mtbdd_refs_pop(1);
-            result = mtbdd_makenode(level, r0, r1);
+            result = mtbdd_make_node(level, r0, r1);
         }
     }
 
@@ -1446,11 +1476,11 @@ BDD bdd_relprev_CALL(lace_worker* lace, BDD a, BDD b, BDDSET vars)
  *     On Computing the Transitive Closre of a State Transition Relation
  *     30th ACM Design Automation Conference, 1993.
  */
-BDD bdd_closure_CALL(lace_worker* lace, BDD a)
+BDD bdd_transitive_closure_CALL(lace_worker* lace, BDD a)
 {
     /* Terminals */
-    if (a == mtbdd_true) return a;
-    if (a == mtbdd_false) return a;
+    if (a == bdd_true) return a;
+    if (a == bdd_false) return a;
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test(lace);
@@ -1460,7 +1490,7 @@ BDD bdd_closure_CALL(lace_worker* lace, BDD a)
 
     /* Determine top level */
     bddnode* n = MTBDD_GETNODE(a);
-    BDDVAR level = bddnode_getvariable(n);
+    uint32_t level = bddnode_getvariable(n);
 
     /* Consult cache */
     BDD result;
@@ -1469,8 +1499,8 @@ BDD bdd_closure_CALL(lace_worker* lace, BDD a)
         return result;
     }
 
-    BDDVAR s = level & ~UINT32_C(1);
-    BDDVAR t = s+1;
+    uint32_t s = level & ~UINT32_C(1);
+    uint32_t t = s+1;
 
     BDD a0, a1;
     if (level == s) {
@@ -1481,7 +1511,7 @@ BDD bdd_closure_CALL(lace_worker* lace, BDD a)
     }
 
     BDD a00, a01, a10, a11;
-    if (!bdd_isconst(a0)) {
+    if (!bdd_is_leaf(a0)) {
         bddnode* na0 = MTBDD_GETNODE(a0);
         if (bddnode_getvariable(na0) == t) {
             a00 = node_low(a0, na0);
@@ -1492,7 +1522,7 @@ BDD bdd_closure_CALL(lace_worker* lace, BDD a)
     } else {
         a00 = a01 = a0;
     }
-    if (!bdd_isconst(a1)) {
+    if (!bdd_is_leaf(a1)) {
         bddnode* na1 = MTBDD_GETNODE(a1);
         if (bddnode_getvariable(na1) == t) {
             a10 = node_low(a1, na1);
@@ -1504,38 +1534,38 @@ BDD bdd_closure_CALL(lace_worker* lace, BDD a)
         a10 = a11 = a1;
     }
 
-    BDD u1 = bdd_closure_CALL(lace, a11);
+    BDD u1 = bdd_transitive_closure_CALL(lace, a11);
     mtbdd_refs_push(u1);
-    /* u3 = */ mtbdd_refs_spawn(bdd_relprev_SPAWN(lace, a01, u1, mtbdd_false));
-    BDD u2 = bdd_relprev_CALL(lace, u1, a10, mtbdd_false);
+    /* u3 = */ mtbdd_refs_spawn(bdd_rel_prev_SPAWN(lace, a01, u1, bdd_false));
+    BDD u2 = bdd_rel_prev_CALL(lace, u1, a10, bdd_false);
     mtbdd_refs_push(u2);
-    BDD e = bdd_relprev_CALL(lace, a01, u2, mtbdd_false);
+    BDD e = bdd_rel_prev_CALL(lace, a01, u2, bdd_false);
     mtbdd_refs_push(e);
-    e = bdd_ite_CALL(lace, a00, mtbdd_true, e);
+    e = bdd_ite_CALL(lace, a00, bdd_true, e);
     mtbdd_refs_pop(1);
     mtbdd_refs_push(e);
-    e = bdd_closure_CALL(lace, e);
+    e = bdd_transitive_closure_CALL(lace, e);
     mtbdd_refs_pop(1);
     mtbdd_refs_push(e);
-    BDD g = bdd_relprev_CALL(lace, u2, e, mtbdd_false);
+    BDD g = bdd_rel_prev_CALL(lace, u2, e, bdd_false);
     mtbdd_refs_push(g);
-    BDD u3 = mtbdd_refs_sync(bdd_relprev_SYNC(lace));
+    BDD u3 = mtbdd_refs_sync(bdd_rel_prev_SYNC(lace));
     mtbdd_refs_push(u3);
-    BDD f = bdd_relprev_CALL(lace, e, u3, mtbdd_false);
+    BDD f = bdd_rel_prev_CALL(lace, e, u3, bdd_false);
     mtbdd_refs_push(f);
-    BDD h = bdd_relprev_CALL(lace, u2, f, mtbdd_false);
+    BDD h = bdd_rel_prev_CALL(lace, u2, f, bdd_false);
     mtbdd_refs_push(h);
-    h = bdd_ite_CALL(lace, u1, mtbdd_true, h);
+    h = bdd_ite_CALL(lace, u1, bdd_true, h);
     mtbdd_refs_pop(1);
     mtbdd_refs_push(h);
 
     BDD r0, r1;
-    /* R0 */ r0 = mtbdd_makenode(t, e, f);
+    /* R0 */ r0 = mtbdd_make_node(t, e, f);
     mtbdd_refs_pop(7);
     mtbdd_refs_push(r0);
-    /* R1 */ r1 = mtbdd_makenode(t, g, h);
+    /* R1 */ r1 = mtbdd_make_node(t, g, h);
     mtbdd_refs_pop(1);
-    result = mtbdd_makenode(s, r0, r1);
+    result = mtbdd_make_node(s, r0, r1);
 
     if (cache_put3(CACHE_BDD_CLOSURE, a, 0, 0, result)) sylvan_stats_count(BDD_CLOSURE_CACHEDPUT);
 
@@ -1546,11 +1576,11 @@ BDD bdd_closure_CALL(lace_worker* lace, BDD a)
 /**
  * Function composition
  */
-BDD bdd_compose_CALL(lace_worker* lace, BDD a, BDDMAP map)
+BDD bdd_compose_CALL(lace_worker* lace, BDD a, MTBDDMAP map)
 {
     /* Trivial cases */
-    if (a == mtbdd_false || a == mtbdd_true) return a;
-    if (mtbdd_map_isempty(map)) return a;
+    if (a == bdd_false || a == bdd_true) return a;
+    if (mtbdd_map_is_empty(map)) return a;
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test(lace);
@@ -1560,14 +1590,14 @@ BDD bdd_compose_CALL(lace_worker* lace, BDD a, BDDMAP map)
 
     /* Determine top level */
     bddnode* n = MTBDD_GETNODE(a);
-    BDDVAR level = bddnode_getvariable(n);
+    uint32_t level = bddnode_getvariable(n);
 
     /* Skip map */
     bddnode* map_node = MTBDD_GETNODE(map);
-    BDDVAR map_var = bddnode_getvariable(map_node);
+    uint32_t map_var = bddnode_getvariable(map_node);
     while (map_var < level) {
         map = node_low(map, map_node);
-        if (mtbdd_map_isempty(map)) return a;
+        if (mtbdd_map_is_empty(map)) return a;
         map_node = MTBDD_GETNODE(map);
         map_var = bddnode_getvariable(map_node);
     }
@@ -1587,7 +1617,7 @@ BDD bdd_compose_CALL(lace_worker* lace, BDD a, BDDMAP map)
     mtbdd_refs_push(low);
 
     /* Calculate result */
-    BDD root = map_var == level ? node_high(map, map_node) : mtbdd_ithvar(level);
+    BDD root = map_var == level ? node_high(map, map_node) : bdd_var_at_level(level);
     mtbdd_refs_push(root);
     result = bdd_ite_CALL(lace, root, high, low);
     mtbdd_refs_pop(3);
@@ -1600,11 +1630,11 @@ BDD bdd_compose_CALL(lace_worker* lace, BDD a, BDDMAP map)
 /**
  * Calculate the number of distinct paths to True.
  */
-double bdd_pathcount_CALL(lace_worker* lace, BDD bdd)
+double bdd_path_count_CALL(lace_worker* lace, BDD bdd)
 {
     /* Trivial cases */
-    if (bdd == mtbdd_false) return 0.0;
-    if (bdd == mtbdd_true) return 1.0;
+    if (bdd == bdd_false) return 0.0;
+    if (bdd == bdd_true) return 1.0;
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test(lace);
@@ -1619,10 +1649,10 @@ double bdd_pathcount_CALL(lace_worker* lace, BDD bdd)
         return result;
     }
 
-    bdd_pathcount_SPAWN(lace, mtbdd_getlow(bdd));
-    bdd_pathcount_SPAWN(lace, mtbdd_gethigh(bdd));
-    result = bdd_pathcount_SYNC(lace);
-    result += bdd_pathcount_SYNC(lace);
+    bdd_path_count_SPAWN(lace, mtbdd_node_low(bdd));
+    bdd_path_count_SPAWN(lace, mtbdd_node_high(bdd));
+    result = bdd_path_count_SYNC(lace);
+    result += bdd_path_count_SYNC(lace);
 
     if (cache_put3(CACHE_BDD_PATHCOUNT, bdd, 0, 0, *(uint64_t*)&result)) sylvan_stats_count(BDD_PATHCOUNT_CACHEDPUT);
 
@@ -1632,11 +1662,11 @@ double bdd_pathcount_CALL(lace_worker* lace, BDD bdd)
 /**
  * Calculate the number of satisfying variable assignments according to <variables>.
  */
-double bdd_satcount_CALL(lace_worker* lace, BDD bdd, BDDSET variables)
+double bdd_sat_count_CALL(lace_worker* lace, BDD bdd, BDDSET variables)
 {
     /* Trivial cases */
-    if (bdd == mtbdd_false) return 0.0;
-    if (bdd == mtbdd_true) return (double)powl(2.0L, (long double)mtbdd_set_count(variables));
+    if (bdd == bdd_false) return 0.0;
+    if (bdd == bdd_true) return (double)powl(2.0L, (long double)bdd_set_count(variables));
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test(lace);
@@ -1646,14 +1676,14 @@ double bdd_satcount_CALL(lace_worker* lace, BDD bdd, BDDSET variables)
 
     /* Count variables before var(bdd) */
     size_t skipped = 0;
-    BDDVAR var = mtbdd_getvar(bdd);
+    uint32_t var = mtbdd_node_variable(bdd);
     bddnode* set_node = MTBDD_GETNODE(variables);
-    BDDVAR set_var = bddnode_getvariable(set_node);
+    uint32_t set_var = bddnode_getvariable(set_node);
     while (var != set_var) {
         skipped++;
         variables = node_high(variables, set_node);
         // if this assertion fails, then variables is not the support of <bdd>
-        assert(!mtbdd_set_isempty(variables));
+        assert(!bdd_set_is_empty(variables));
         set_node = MTBDD_GETNODE(variables);
         set_var = bddnode_getvariable(set_node);
     }
@@ -1669,9 +1699,9 @@ double bdd_satcount_CALL(lace_worker* lace, BDD bdd, BDDSET variables)
         return (double)((long double)hack.d * powl(2.0L, (long double)skipped));
     }
 
-    bdd_satcount_SPAWN(lace, mtbdd_gethigh(bdd), node_high(variables, set_node));
-    double low = bdd_satcount_CALL(lace, mtbdd_getlow(bdd), node_high(variables, set_node));
-    double result = low + bdd_satcount_SYNC(lace);
+    bdd_sat_count_SPAWN(lace, mtbdd_node_high(bdd), node_high(variables, set_node));
+    double low = bdd_sat_count_CALL(lace, mtbdd_node_low(bdd), node_high(variables, set_node));
+    double result = low + bdd_sat_count_SYNC(lace);
 
     hack.d = result;
     if (cache_put3(CACHE_BDD_SATCOUNT, bdd, variables, 0, hack.s)) sylvan_stats_count(BDD_SATCOUNT_CACHEDPUT);
@@ -1680,34 +1710,35 @@ double bdd_satcount_CALL(lace_worker* lace, BDD bdd, BDDSET variables)
 }
 
 int
-bdd_sat_one(BDD bdd, BDDSET vars, uint8_t *str)
+bdd_pick_cube_values(BDD bdd, BDDSET vars, uint8_t *str)
 {
-    if (bdd == mtbdd_false) return 0;
+    if (bdd == bdd_false) return 0;
     if (str == NULL) return 0;
-    if (mtbdd_set_isempty(vars)) return 1;
+    if (bdd_set_is_empty(vars)) return 1;
 
     for (;;) {
         bddnode* n_vars = MTBDD_GETNODE(vars);
-        if (bdd == mtbdd_true) {
-            *str = 0;
+        const uint32_t var = bddnode_getvariable(n_vars);
+        while (bdd != bdd_true && bddnode_getvariable(MTBDD_GETNODE(bdd)) < var) {
+            bddnode *n_bdd = MTBDD_GETNODE(bdd);
+            bdd = node_low(bdd, n_bdd) != bdd_false
+                ? node_low(bdd, n_bdd)
+                : node_high(bdd, n_bdd);
+        }
+        if (bdd == bdd_true || bddnode_getvariable(MTBDD_GETNODE(bdd)) > var) {
+            *str = 2;
         } else {
-            bddnode* n_bdd = MTBDD_GETNODE(bdd);
-            if (bddnode_getvariable(n_bdd) != bddnode_getvariable(n_vars)) {
+            bddnode *n_bdd = MTBDD_GETNODE(bdd);
+            if (node_low(bdd, n_bdd) != bdd_false) {
                 *str = 0;
+                bdd = node_low(bdd, n_bdd);
             } else {
-                if (node_low(bdd, n_bdd) == mtbdd_false) {
-                    // take high edge
-                    *str = 1;
-                    bdd = node_high(bdd, n_bdd);
-                } else {
-                    // take low edge
-                    *str = 0;
-                    bdd = node_low(bdd, n_bdd);
-                }
+                *str = 1;
+                bdd = node_high(bdd, n_bdd);
             }
         }
         vars = node_high(vars, n_vars);
-        if (mtbdd_set_isempty(vars)) break;
+        if (bdd_set_is_empty(vars)) break;
         str++;
     }
 
@@ -1715,96 +1746,94 @@ bdd_sat_one(BDD bdd, BDDSET vars, uint8_t *str)
 }
 
 BDD
-bdd_sat_single(BDD bdd, BDDSET vars)
+bdd_pick_minterm(BDD bdd, BDDSET vars)
 {
-    if (bdd == mtbdd_false) return mtbdd_false;
-    if (mtbdd_set_isempty(vars)) {
-        assert(bdd == mtbdd_true);
-        return mtbdd_true;
-    }
+    if (bdd == bdd_false) return bdd_false;
+    if (bdd_set_is_empty(vars)) return bdd_true;
 
     bddnode* n_vars = MTBDD_GETNODE(vars);
     uint32_t var = bddnode_getvariable(n_vars);
     BDD next_vars = node_high(vars, n_vars);
-    if (bdd == mtbdd_true) {
+    if (bdd == bdd_true) {
         // take false
-        BDD res = bdd_sat_single(bdd, next_vars);
-        return mtbdd_makenode(var, res, mtbdd_false);
+        BDD res = bdd_pick_minterm(bdd, next_vars);
+        return mtbdd_make_node(var, res, bdd_false);
     }
     bddnode* n_bdd = MTBDD_GETNODE(bdd);
+    while (bddnode_getvariable(n_bdd) < var) {
+        bdd = node_low(bdd, n_bdd) != bdd_false
+            ? node_low(bdd, n_bdd)
+            : node_high(bdd, n_bdd);
+        if (bdd == bdd_true) return bdd_pick_minterm(bdd, vars);
+        n_bdd = MTBDD_GETNODE(bdd);
+    }
     if (bddnode_getvariable(n_bdd) != var) {
         assert(bddnode_getvariable(n_bdd)>var);
         // take false
-        BDD res = bdd_sat_single(bdd, next_vars);
-        return mtbdd_makenode(var, res, mtbdd_false);
+        BDD res = bdd_pick_minterm(bdd, next_vars);
+        return mtbdd_make_node(var, res, bdd_false);
     }
-    if (node_high(bdd, n_bdd) == mtbdd_false) {
+    if (node_high(bdd, n_bdd) == bdd_false) {
         // take false
-        BDD res = bdd_sat_single(node_low(bdd, n_bdd), next_vars);
-        return mtbdd_makenode(var, res, mtbdd_false);
+        BDD res = bdd_pick_minterm(node_low(bdd, n_bdd), next_vars);
+        return mtbdd_make_node(var, res, bdd_false);
     }
     // take true
-    BDD res = bdd_sat_single(node_high(bdd, n_bdd), next_vars);
-    return mtbdd_makenode(var, mtbdd_false, res);
+    BDD res = bdd_pick_minterm(node_high(bdd, n_bdd), next_vars);
+    return mtbdd_make_node(var, bdd_false, res);
 }
 
 BDD
-bdd_sat_one_bdd(BDD bdd)
+bdd_pick_cube(BDD bdd, BDDSET vars)
 {
-    if (bdd == mtbdd_false) return mtbdd_false;
-    if (bdd == mtbdd_true) return mtbdd_true;
+    if (bdd == bdd_false) return bdd_false;
+    if (bdd == bdd_true || bdd_set_is_empty(vars)) return bdd_true;
 
     bddnode* node = MTBDD_GETNODE(bdd);
+    bddnode* vars_node = MTBDD_GETNODE(vars);
+    uint32_t bdd_var = bddnode_getvariable(node);
+    uint32_t var = bddnode_getvariable(vars_node);
+    BDDSET next_vars = node_high(vars, vars_node);
+
+    if (var < bdd_var) return bdd_pick_cube(bdd, next_vars);
+
     BDD low = node_low(bdd, node);
     BDD high = node_high(bdd, node);
+    BDD chosen = low != bdd_false ? low : high;
 
-    BDD m;
+    if (bdd_var < var) return bdd_pick_cube(chosen, vars);
 
-    BDD result;
-    if (low == mtbdd_false) {
-        m = bdd_sat_one_bdd(high);
-        result = mtbdd_makenode(bddnode_getvariable(node), mtbdd_false, m);
-    } else if (high == mtbdd_false) {
-        m = bdd_sat_one_bdd(low);
-        result = mtbdd_makenode(bddnode_getvariable(node), m, mtbdd_false);
-    } else {
-        if (rand() & 0x2000) {
-            m = bdd_sat_one_bdd(low);
-            result = mtbdd_makenode(bddnode_getvariable(node), m, mtbdd_false);
-        } else {
-            m = bdd_sat_one_bdd(high);
-            result = mtbdd_makenode(bddnode_getvariable(node), mtbdd_false, m);
-        }
-    }
-
-    return result;
+    BDD result = bdd_pick_cube(chosen, next_vars);
+    return low != bdd_false
+        ? mtbdd_make_node(var, result, bdd_false)
+        : mtbdd_make_node(var, bdd_false, result);
 }
 
 BDD
 bdd_cube(BDDSET vars, uint8_t *cube)
 {
-    if (mtbdd_set_isempty(vars)) return mtbdd_true;
+    if (bdd_set_is_empty(vars)) return bdd_true;
 
     bddnode* n = MTBDD_GETNODE(vars);
-    BDDVAR v = bddnode_getvariable(n);
+    uint32_t v = bddnode_getvariable(n);
     vars = node_high(vars, n);
 
     BDD result = bdd_cube(vars, cube+1);
     if (*cube == 0) {
-        result = mtbdd_makenode(v, result, mtbdd_false);
+        result = mtbdd_make_node(v, result, bdd_false);
     } else if (*cube == 1) {
-        result = mtbdd_makenode(v, mtbdd_false, result);
+        result = mtbdd_make_node(v, bdd_false, result);
     }
 
     return result;
 }
 
-BDD bdd_union_cube_CALL(lace_worker* lace, BDD bdd, BDDSET vars, uint8_t * cube)
+BDD bdd_or_cube_CALL(lace_worker* lace, BDD bdd, BDDSET vars, uint8_t * cube)
 {
     /* Terminal cases */
-    if (bdd == mtbdd_true) return mtbdd_true;
-    if (bdd == mtbdd_false) return bdd_cube(vars, cube);
-    if (mtbdd_set_isempty(vars)) return mtbdd_true;
+    if (bdd == bdd_true) return bdd_true;
+    if (bdd == bdd_false) return bdd_cube(vars, cube);
+    if (bdd_set_is_empty(vars)) return bdd_true;
 
     bddnode* nv = MTBDD_GETNODE(vars);
 
@@ -1813,7 +1842,7 @@ BDD bdd_union_cube_CALL(lace_worker* lace, BDD bdd, BDDSET vars, uint8_t * cube)
         // *cube should be 2
         cube++;
         vars = node_high(vars, nv);
-        if (mtbdd_set_isempty(vars)) return mtbdd_true;
+        if (bdd_set_is_empty(vars)) return bdd_true;
         nv = MTBDD_GETNODE(vars);
     }
 
@@ -1823,42 +1852,42 @@ BDD bdd_union_cube_CALL(lace_worker* lace, BDD bdd, BDDSET vars, uint8_t * cube)
 
     bddnode* n = MTBDD_GETNODE(bdd);
     BDD result = bdd;
-    BDDVAR v = bddnode_getvariable(nv);
-    BDDVAR n_level = bddnode_getvariable(n);
+    uint32_t v = bddnode_getvariable(nv);
+    uint32_t n_level = bddnode_getvariable(n);
 
     if (v < n_level) {
         vars = node_high(vars, nv);
         if (*cube == 0) {
-            result = bdd_union_cube_CALL(lace, bdd, vars, cube+1);
-            result = mtbdd_makenode(v, result, bdd);
+            result = bdd_or_cube_CALL(lace, bdd, vars, cube+1);
+            result = mtbdd_make_node(v, result, bdd);
         } else /* *cube == 1 */ {
-            result = bdd_union_cube_CALL(lace, bdd, vars, cube+1);
-            result = mtbdd_makenode(v, bdd, result);
+            result = bdd_or_cube_CALL(lace, bdd, vars, cube+1);
+            result = mtbdd_make_node(v, bdd, result);
         }
     } else if (v > n_level) {
         BDD high = node_high(bdd, n);
         BDD low = node_low(bdd, n);
-        mtbdd_refs_spawn(bdd_union_cube_SPAWN(lace, high, vars, cube));
-        BDD new_low = bdd_union_cube_CALL(lace, low, vars, cube);
+        mtbdd_refs_spawn(bdd_or_cube_SPAWN(lace, high, vars, cube));
+        BDD new_low = bdd_or_cube_CALL(lace, low, vars, cube);
         mtbdd_refs_push(new_low);
-        BDD new_high = mtbdd_refs_sync(bdd_union_cube_SYNC(lace));
+        BDD new_high = mtbdd_refs_sync(bdd_or_cube_SYNC(lace));
         mtbdd_refs_pop(1);
         if (new_low != low || new_high != high) {
-            result = mtbdd_makenode(n_level, new_low, new_high);
+            result = mtbdd_make_node(n_level, new_low, new_high);
         }
     } else /* v == n_level */ {
         vars = node_high(vars, nv);
         BDD high = node_high(bdd, n);
         BDD low = node_low(bdd, n);
         if (*cube == 0) {
-            BDD new_low = bdd_union_cube(low, vars, cube+1);
+            BDD new_low = bdd_or_cube(low, vars, cube+1);
             if (new_low != low) {
-                result = mtbdd_makenode(n_level, new_low, high);
+                result = mtbdd_make_node(n_level, new_low, high);
             }
         } else /* *cube == 1 */ {
-            BDD new_high = bdd_union_cube(high, vars, cube+1);
+            BDD new_high = bdd_or_cube(high, vars, cube+1);
             if (new_high != high) {
-                result = mtbdd_makenode(n_level, low, new_high);
+                result = mtbdd_make_node(n_level, low, new_high);
             }
         }
     }
@@ -1869,17 +1898,17 @@ BDD bdd_union_cube_CALL(lace_worker* lace, BDD bdd, BDDSET vars, uint8_t * cube)
 struct bdd_path
 {
     struct bdd_path *prev;
-    BDDVAR var;
+    uint32_t var;
     uint8_t val; // 0=false, 1=true, 2=both
 };
 
-void bdd_enum_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_enum_cb cb, void* context, struct bdd_path* path)
+void bdd_enum_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_enumerate_cb cb, void* context, struct bdd_path* path)
 {
-    if (bdd == mtbdd_false) return;
+    if (bdd == bdd_false) return;
 
-    if (mtbdd_set_isempty(vars)) {
+    if (bdd_set_is_empty(vars)) {
         /* bdd should now be true */
-        assert(bdd == mtbdd_true);
+        assert(bdd == bdd_true);
         /* compute length of path */
         int i=0;
         struct bdd_path *pp;
@@ -1889,7 +1918,7 @@ void bdd_enum_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_enum_cb cb, v
         /* fill cube and vars with trace */
         void* mark = lace_scratch_mark(lace);
         uint8_t* cube = LACE_SCRATCH_ARRAY(lace, uint8_t, i);
-        BDDVAR* path_vars = LACE_SCRATCH_ARRAY(lace, BDDVAR, i);
+        uint32_t* path_vars = LACE_SCRATCH_ARRAY(lace, uint32_t, i);
         int j=0;
         for (pp = path; pp != NULL; pp = pp->prev) {
             cube[i-j-1] = pp->val;
@@ -1902,36 +1931,36 @@ void bdd_enum_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_enum_cb cb, v
         return;
     }
 
-    BDDVAR var = mtbdd_getvar(vars);
-    vars = mtbdd_set_next(vars);
-    BDDVAR bdd_var = mtbdd_getvar(bdd);
+    uint32_t var = mtbdd_node_variable(vars);
+    vars = bdd_set_next(vars);
+    uint32_t bdd_var = mtbdd_node_variable(bdd);
 
     /* assert var <= bdd_var */
-    if (bdd == mtbdd_true || var < bdd_var) {
+    if (bdd == bdd_true || var < bdd_var) {
         struct bdd_path pp0 = (struct bdd_path){path, var, 0};
         bdd_enum_do_CALL(lace, bdd, vars, cb, context, &pp0);
         struct bdd_path pp1 = (struct bdd_path){path, var, 1};
         bdd_enum_do_CALL(lace, bdd, vars, cb, context, &pp1);
     } else if (var == bdd_var) {
         struct bdd_path pp0 = (struct bdd_path){path, var, 0};
-        bdd_enum_do_CALL(lace, mtbdd_getlow(bdd), vars, cb, context, &pp0);
+        bdd_enum_do_CALL(lace, mtbdd_node_low(bdd), vars, cb, context, &pp0);
         struct bdd_path pp1 = (struct bdd_path){path, var, 1};
-        bdd_enum_do_CALL(lace, mtbdd_gethigh(bdd), vars, cb, context, &pp1);
+        bdd_enum_do_CALL(lace, mtbdd_node_high(bdd), vars, cb, context, &pp1);
     } else {
         printf("var %u not expected (expecting %u)!\n", bdd_var, var);
         assert(var <= bdd_var);
     }
 }
 
-TASK(void, bdd_enum_par_do, BDD, bdd, BDDSET, vars, bdd_enum_cb, cb, void*, context, struct bdd_path*, path)
+TASK(void, bdd_enum_par_do, BDD, bdd, BDDSET, vars, bdd_enumerate_cb, cb, void*, context, struct bdd_path*, path)
 
-void bdd_enum_par_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_enum_cb cb, void* context, struct bdd_path* path)
+void bdd_enum_par_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_enumerate_cb cb, void* context, struct bdd_path* path)
 {
-    if (bdd == mtbdd_false) return;
+    if (bdd == bdd_false) return;
 
-    if (mtbdd_set_isempty(vars)) {
+    if (bdd_set_is_empty(vars)) {
         /* bdd should now be true */
-        assert(bdd == mtbdd_true);
+        assert(bdd == bdd_true);
         /* compute length of path */
         int i=0;
         struct bdd_path *pp;
@@ -1941,7 +1970,7 @@ void bdd_enum_par_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_enum_cb c
         /* fill cube and vars with trace */
         void* mark = lace_scratch_mark(lace);
         uint8_t* cube = LACE_SCRATCH_ARRAY(lace, uint8_t, i);
-        BDDVAR* path_vars = LACE_SCRATCH_ARRAY(lace, BDDVAR, i);
+        uint32_t* path_vars = LACE_SCRATCH_ARRAY(lace, uint32_t, i);
         int j=0;
         for (pp = path; pp != NULL; pp = pp->prev) {
             cube[i-j-1] = pp->val;
@@ -1954,9 +1983,9 @@ void bdd_enum_par_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_enum_cb c
         return;
     }
 
-    BDDVAR var = mtbdd_getvar(vars);
-    vars = mtbdd_set_next(vars);
-    BDDVAR bdd_var = mtbdd_getvar(bdd);
+    uint32_t var = mtbdd_node_variable(vars);
+    vars = bdd_set_next(vars);
+    uint32_t bdd_var = mtbdd_node_variable(bdd);
 
     /* assert var <= bdd_var */
     if (var < bdd_var) {
@@ -1967,9 +1996,9 @@ void bdd_enum_par_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_enum_cb c
         bdd_enum_par_do_SYNC(lace);
     } else if (var == bdd_var) {
         struct bdd_path pp1 = (struct bdd_path){path, var, 1};
-        bdd_enum_par_do_SPAWN(lace, mtbdd_gethigh(bdd), vars, cb, context, &pp1);
+        bdd_enum_par_do_SPAWN(lace, mtbdd_node_high(bdd), vars, cb, context, &pp1);
         struct bdd_path pp0 = (struct bdd_path){path, var, 0};
-        bdd_enum_par_do_CALL(lace, mtbdd_getlow(bdd), vars, cb, context, &pp0);
+        bdd_enum_par_do_CALL(lace, mtbdd_node_low(bdd), vars, cb, context, &pp0);
         bdd_enum_par_do_SYNC(lace);
     } else {
         assert(var <= bdd_var);
@@ -1977,23 +2006,23 @@ void bdd_enum_par_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_enum_cb c
 }
 
 //FIXME clean this up
-void bdd_enum_CALL(lace_worker* lace, BDD bdd, BDDSET  vars, bdd_enum_cb cb, void* context)
+void bdd_enumerate_minterms_CALL(lace_worker* lace, BDD bdd, BDDSET  vars, bdd_enumerate_cb cb, void* context)
 {
     bdd_enum_do_CALL(lace, bdd, vars, cb, context, 0);
 }
 
-void bdd_enum_par_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_enum_cb cb, void* context)
+void bdd_enumerate_minterms_parallel_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_enumerate_cb cb, void* context)
 {
     bdd_enum_par_do_CALL(lace, bdd, vars, cb, context, 0);
 }
 
-TASK(BDD, bdd_collect_do, BDD, bdd, BDDSET, vars, bdd_collect_cb, cb, void*, context, struct bdd_path*, path)
+TASK(BDD, bdd_collect_do, BDD, bdd, BDDSET, vars, bdd_map_reduce_or_cb, cb, void*, context, struct bdd_path*, path)
 
-BDD bdd_collect_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_collect_cb cb, void* context, struct bdd_path* path)
+BDD bdd_collect_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_map_reduce_or_cb cb, void* context, struct bdd_path* path)
 {
-    if (bdd == mtbdd_false) {
-         return mtbdd_false;
-    } else if (mtbdd_set_isempty(vars)) {
+    if (bdd == bdd_false) {
+         return bdd_false;
+    } else if (bdd_set_is_empty(vars)) {
         /**
          * Compute trace length
          */
@@ -2022,22 +2051,22 @@ BDD bdd_collect_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_collect_cb 
         /**
          * Obtain domain variable
          */
-        const uint32_t dom_var = mtbdd_getvar(vars);
-        const BDD dom_next = mtbdd_set_next(vars);
+        const uint32_t dom_var = mtbdd_node_variable(vars);
+        const BDD dom_next = bdd_set_next(vars);
         /**
          * Obtain cofactors
          */
         BDD bdd0, bdd1;
-        if (bdd == mtbdd_true) {
+        if (bdd == bdd_true) {
             bdd0 = bdd1 = bdd;
         } else {
-            const uint32_t bdd_var = mtbdd_getvar(bdd);
+            const uint32_t bdd_var = mtbdd_node_variable(bdd);
             assert(dom_var <= bdd_var);
             if (dom_var < bdd_var) {
                 bdd0 = bdd1 = bdd;
             } else {
-                bdd0 = mtbdd_getlow(bdd);
-                bdd1 = mtbdd_gethigh(bdd);
+                bdd0 = mtbdd_node_low(bdd);
+                bdd1 = mtbdd_node_high(bdd);
             }
        }
         /**
@@ -2055,7 +2084,7 @@ BDD bdd_collect_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_collect_cb 
 }
 
 // FIXME we don't need the extra indirection?
-BDD bdd_collect_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_collect_cb cb, void* context)
+BDD bdd_map_reduce_or_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_map_reduce_or_cb cb, void* context)
 {
     return bdd_collect_do_CALL(lace, bdd, vars, cb, context, NULL);
 }
@@ -2102,7 +2131,7 @@ static size_t bdd_ser_done = 0;
 static size_t
 bdd_serialize_assign_rec(BDD bdd)
 {
-    if (bdd_isnode(bdd)) {
+    if (!bdd_is_leaf(bdd)) {
         bddnode* n = MTBDD_GETNODE(bdd);
 
         struct bdd_ser s, *ss;
@@ -2148,7 +2177,7 @@ bdd_serialize_reset(void)
 size_t
 bdd_serialize_get(BDD bdd)
 {
-    if (!bdd_isnode(bdd)) return bdd;
+    if (bdd_is_leaf(bdd)) return bdd;
     struct bdd_ser s, *ss;
     s.bdd = BDD_STRIPMARK(bdd);
     ss = bdd_ser_search(bdd_ser_set, &s);
@@ -2159,7 +2188,7 @@ bdd_serialize_get(BDD bdd)
 BDD
 bdd_serialize_get_reversed(size_t value)
 {
-    if (!bdd_isnode(value)) return value;
+    if (bdd_is_leaf(value)) return value;
     struct bdd_ser s, *ss;
     s.assigned = BDD_STRIPMARK(value);
     ss = bdd_ser_reversed_search(bdd_ser_reversed_set, &s);
@@ -2245,7 +2274,7 @@ bdd_serialize_fromfile(FILE *in)
         BDD high = bdd_serialize_get_reversed(bddnode_gethigh(&node));
 
         struct bdd_ser s;
-        s.bdd = mtbdd_makenode(bddnode_getvariable(&node), low, high);
+        s.bdd = mtbdd_make_node(bddnode_getvariable(&node), low, high);
         s.assigned = ++bdd_ser_done; // starts at 0 but we want 1-based...
 
         bdd_ser_insert(&bdd_ser_set, &s);

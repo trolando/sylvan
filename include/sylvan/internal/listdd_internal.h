@@ -15,17 +15,17 @@
  * limitations under the License.
  */
 
-/* Do not include this file directly. Instead, include sylvan_int.h */
+/* Do not include this file directly. Instead, include <sylvan/internal.h>. */
 
 /**
- * Internals for LDDs
+ * Internals for ListDDs
  */
 
-#ifndef SYLVAN_LDD_INT_H
-#define SYLVAN_LDD_INT_H
+#ifndef SYLVAN_LISTDD_INT_H
+#define SYLVAN_LISTDD_INT_H
 
 /**
- * LDD node structure
+ * ListDD node structure
  *
  * RRRR RRRR RRVV VV-- | DDDD DDDD DDVV VV--
  *
@@ -37,7 +37,7 @@ typedef struct mddnode {
 static_assert(sizeof(struct mddnode) == 16, "mddnode should be a 16 byte struct");
 
 static inline mddnode*
-LDD_GETNODE(MDD mdd)
+LDD_GETNODE(LISTDD mdd)
 {
     return ((mddnode*)nodes_get_pointer(nodes, mdd));
 }

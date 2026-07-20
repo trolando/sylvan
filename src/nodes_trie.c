@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-#include <sylvan/internal/internal.h>
+#include <sylvan/internal.h>
 #include <sylvan/platform.h>
 
 #include <errno.h>  // for errno

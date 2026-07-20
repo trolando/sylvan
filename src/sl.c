@@ -68,7 +68,7 @@ sylvan_skiplist_free(sylvan_skiplist_t l)
 uint64_t
 sylvan_skiplist_get(sylvan_skiplist_t l, MTBDD dd)
 {
-    if (dd == mtbdd_false || dd == mtbdd_true) return 0;
+    if (dd == mtbdd_undefined || dd == bdd_true) return 0;
 
     uint32_t loc = 0, k = SL_DEPTH-1;
     for (;;) {
@@ -93,7 +93,7 @@ sylvan_skiplist_get(sylvan_skiplist_t l, MTBDD dd)
 
 void sylvan_skiplist_assign_next(sylvan_skiplist_t l, MTBDD dd)
 {
-    if (dd == mtbdd_false || dd == mtbdd_true) return;
+    if (dd == mtbdd_undefined || dd == bdd_true) return;
 
     uint32_t trace[SL_DEPTH];
     uint32_t loc = 0, loc_next = 0, k = SL_DEPTH-1;

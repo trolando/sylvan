@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-/* Do not include this file directly. Instead, include sylvan_int.h */
+/* Do not include this file directly. Instead, include <sylvan/internal.h>. */
 
 #ifndef SYLVAN_CACHE_H
 #define SYLVAN_CACHE_H

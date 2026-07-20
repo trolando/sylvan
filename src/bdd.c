@@ -2427,12 +2427,17 @@ void bdd_enumerate_minterms_parallel_CALL(lace_worker* lace, BDD bdd, BDDSET var
     bdd_enum_par_do_CALL(lace, bdd, vars, cb, context, 0);
 }
 
-TASK(BDD, bdd_collect_do, BDD, bdd, BDDSET, vars, bdd_map_reduce_or_cb, cb, void*, context, struct bdd_path*, path)
+TASK(int, bdd_collect_do, BDD*, result, BDD, bdd, BDDSET, vars, bdd_map_reduce_or_cb, cb, void*, context, struct bdd_path*, path)
 
-BDD bdd_collect_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_map_reduce_or_cb cb, void* context, struct bdd_path* path)
+int bdd_collect_do_CALL(lace_worker* lace, BDD *destination, BDD bdd, BDDSET vars, bdd_map_reduce_or_cb cb, void* context, struct bdd_path* path)
 {
+    if (destination == NULL || bdd == mtbdd_invalid || vars == mtbdd_invalid || cb == NULL) {
+        return SYLVAN_ERR_INVALID;
+    }
+
     if (bdd == bdd_false) {
-         return bdd_false;
+        *destination = bdd_false;
+        return SYLVAN_OK;
     } else if (bdd_set_is_empty(vars)) {
         /**
          * Compute trace length
@@ -2455,9 +2460,11 @@ BDD bdd_collect_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_map_reduce_
         /**
          * Call callback
          */
-        BDD result = cb(context, arr);
+        BDD computed = cb(context, arr);
         lace_scratch_reset(lace, mark);
-        return result;
+        if (computed == mtbdd_invalid) return SYLVAN_ERR_CALLBACK;
+        *destination = computed;
+        return SYLVAN_OK;
     } else {
         /**
          * Obtain domain variable
@@ -2485,19 +2492,28 @@ BDD bdd_collect_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_map_reduce_
          */
         struct bdd_path p0 = (struct bdd_path){path, dom_var, 0};
         struct bdd_path p1 = (struct bdd_path){path, dom_var, 1};
-        mtbdd_refs_spawn(bdd_collect_do_SPAWN(lace, bdd1, dom_next, cb, context, &p1));
-        BDD low = mtbdd_refs_push(bdd_collect_do_CALL(lace, bdd0, dom_next, cb, context, &p0));
-        BDD high = mtbdd_refs_push(mtbdd_refs_sync(bdd_collect_do_SYNC(lace)));
-        BDD res = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(low), bdd_not(high)));
-        mtbdd_refs_pop(2);
-        return res;
+        BDD low = mtbdd_invalid, high = mtbdd_invalid, computed = mtbdd_invalid;
+        mtbdd_refs_pushptr(&low);
+        mtbdd_refs_pushptr(&high);
+        mtbdd_refs_pushptr(&computed);
+
+        bdd_collect_do_SPAWN(lace, &high, bdd1, dom_next, cb, context, &p1);
+        int status = bdd_collect_do_CALL(lace, &low, bdd0, dom_next, cb, context, &p0);
+        int high_status = bdd_collect_do_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+        if (status == SYLVAN_OK) {
+            status = bdd_and_CALL(lace, &computed, bdd_not(low), bdd_not(high));
+            if (status == SYLVAN_OK) computed = bdd_not(computed);
+        }
+        if (status == SYLVAN_OK) *destination = computed;
+        mtbdd_refs_popptr(3);
+        return status;
     }
 }
 
-// FIXME we don't need the extra indirection?
-BDD bdd_map_reduce_or_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_map_reduce_or_cb cb, void* context)
+int bdd_map_reduce_or_CALL(lace_worker* lace, BDD *destination, BDD bdd, BDDSET vars, bdd_map_reduce_or_cb cb, void* context)
 {
-    return bdd_collect_do_CALL(lace, bdd, vars, cb, context, NULL);
+    return bdd_collect_do_CALL(lace, destination, bdd, vars, cb, context, NULL);
 }
 
 /**

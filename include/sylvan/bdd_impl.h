@@ -94,9 +94,12 @@ static inline char bdd_subseteq(BDD a, BDD b)
     return bdd_disjoint(a, bdd_not(b));
 }
 
-static inline BDD bdd_forall(BDD dd, BDDSET vars)
+static inline int bdd_forall(BDD *result, BDD dd, BDDSET vars)
 {
-    return bdd_not(bdd_exists(bdd_not(dd), vars));
+    if (result == NULL || dd == mtbdd_invalid || vars == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    int status = bdd_exists(result, bdd_not(dd), vars);
+    if (status == SYLVAN_OK) *result = bdd_not(*result);
+    return status;
 }
 
 static inline BDDSET bdd_set_empty(void)
@@ -132,10 +135,10 @@ TASK(int, bdd_ite, BDD*, result, BDD, a, BDD, b, BDD, c)
 TASK(int, bdd_and, BDD*, result, BDD, a, BDD, b)
 TASK(int, bdd_xor, BDD*, result, BDD, a, BDD, b)
 TASK(char, bdd_disjoint, BDD, a, BDD, b)
-TASK(BDD, bdd_exists, BDD, dd, BDD, vars)
-TASK(BDD, bdd_project, BDD, dd, BDD, vars);
-TASK(BDD, bdd_and_exists, BDD, a, BDD, b, BDDSET, vars)
-TASK(BDD, bdd_and_project, BDD, a, BDD, b, BDDSET, vars);
+TASK(int, bdd_exists, BDD*, result, BDD, dd, BDD, vars)
+TASK(int, bdd_project, BDD*, result, BDD, dd, BDD, vars);
+TASK(int, bdd_and_exists, BDD*, result, BDD, a, BDD, b, BDDSET, vars)
+TASK(int, bdd_and_project, BDD*, result, BDD, a, BDD, b, BDDSET, vars);
 TASK(BDD, bdd_rel_prev, BDD, a, BDD, b, BDDSET, vars)
 TASK(BDD, bdd_rel_next, BDD, a, BDD, b, BDDSET, vars)
 TASK(BDD, bdd_transitive_closure, BDD, a)

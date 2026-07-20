@@ -14,6 +14,8 @@
 #include "test_assert.h"
 
 typedef int (*test_bdd_binary_op)(BDD*, BDD, BDD);
+typedef int (*test_bdd_unary_set_op)(BDD*, BDD, BDDSET);
+typedef int (*test_bdd_binary_set_op)(BDD*, BDD, BDD, BDDSET);
 
 static BDD
 test_bdd_binary(test_bdd_binary_op op, BDD a, BDD b)
@@ -33,6 +35,32 @@ static BDD test_bdd_nand(BDD a, BDD b) { return test_bdd_binary(bdd_nand, a, b);
 static BDD test_bdd_nor(BDD a, BDD b) { return test_bdd_binary(bdd_nor, a, b); }
 static BDD test_bdd_imp(BDD a, BDD b) { return test_bdd_binary(bdd_imp, a, b); }
 static BDD test_bdd_diff(BDD a, BDD b) { return test_bdd_binary(bdd_diff, a, b); }
+
+static BDD
+test_bdd_unary_set(test_bdd_unary_set_op op, BDD dd, BDDSET vars)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = op(&result, dd, vars);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+static BDD
+test_bdd_binary_set(test_bdd_binary_set_op op, BDD a, BDD b, BDDSET vars)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = op(&result, a, b, vars);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+static BDD test_bdd_exists(BDD dd, BDDSET vars) { return test_bdd_unary_set(bdd_exists, dd, vars); }
+static BDD test_bdd_forall(BDD dd, BDDSET vars) { return test_bdd_unary_set(bdd_forall, dd, vars); }
+static BDD test_bdd_project(BDD dd, BDDSET vars) { return test_bdd_unary_set(bdd_project, dd, vars); }
+static BDD test_bdd_and_exists(BDD a, BDD b, BDDSET vars) { return test_bdd_binary_set(bdd_and_exists, a, b, vars); }
+static BDD test_bdd_and_project(BDD a, BDD b, BDDSET vars) { return test_bdd_binary_set(bdd_and_project, a, b, vars); }
 
 static BDD
 test_bdd_ite(BDD a, BDD b, BDD c)
@@ -107,6 +135,146 @@ test_protected_destinations_CALL(lace_worker *lace)
     test_assert(bdd_xor_CALL(lace, NULL, a, b) == SYLVAN_ERR_INVALID);
 
     mtbdd_refs_popptr(10);
+    return 0;
+}
+
+TASK(int, test_quantification_destinations)
+int
+test_quantification_destinations_CALL(lace_worker *lace)
+{
+    BDD a = bdd_var_at_level(0);
+    BDD b = bdd_var_at_level(1);
+    BDD conjunction = mtbdd_invalid;
+    BDD disjoint_constraint = mtbdd_invalid;
+    BDD exists_result = mtbdd_invalid;
+    BDD forall_result = mtbdd_invalid;
+    BDD project_result = mtbdd_invalid;
+    BDD and_exists_result = mtbdd_invalid;
+    BDD and_project_result = mtbdd_invalid;
+
+    mtbdd_refs_pushptr(&a);
+    mtbdd_refs_pushptr(&b);
+    mtbdd_refs_pushptr(&conjunction);
+    mtbdd_refs_pushptr(&disjoint_constraint);
+    mtbdd_refs_pushptr(&exists_result);
+    mtbdd_refs_pushptr(&forall_result);
+    mtbdd_refs_pushptr(&project_result);
+    mtbdd_refs_pushptr(&and_exists_result);
+    mtbdd_refs_pushptr(&and_project_result);
+
+    test_assert(bdd_and_CALL(lace, &conjunction, a, b) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(lace, &disjoint_constraint, bdd_not(a), b) == SYLVAN_OK);
+
+    bdd_exists_SPAWN(lace, &exists_result, conjunction, a);
+    bdd_project_SPAWN(lace, &project_result, conjunction, a);
+    bdd_and_exists_SPAWN(lace, &and_exists_result, a, b, a);
+    int and_project_status = bdd_and_project_CALL(lace, &and_project_result, a, b, a);
+    int and_exists_status = bdd_and_exists_SYNC(lace);
+    int project_status = bdd_project_SYNC(lace);
+    int exists_status = bdd_exists_SYNC(lace);
+    int forall_status = bdd_forall(&forall_result, conjunction, a);
+
+    test_assert(exists_status == SYLVAN_OK);
+    test_assert(forall_status == SYLVAN_OK);
+    test_assert(project_status == SYLVAN_OK);
+    test_assert(and_exists_status == SYLVAN_OK);
+    test_assert(and_project_status == SYLVAN_OK);
+
+    sylvan_gc_CALL(lace);
+    test_assert(exists_result == b);
+    test_assert(forall_result == bdd_false);
+    test_assert(project_result == a);
+    test_assert(and_exists_result == b);
+    test_assert(and_project_result == a);
+
+    BDD unchanged = bdd_true;
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_bdd_unary_set_op unary_ops[] = {bdd_exists, bdd_forall, bdd_project};
+    for (size_t i = 0; i < sizeof(unary_ops) / sizeof(unary_ops[0]); i++) {
+        test_assert(unary_ops[i](&unchanged, mtbdd_invalid, a) == SYLVAN_ERR_INVALID);
+        test_assert(unchanged == bdd_true);
+        test_assert(unary_ops[i](&unchanged, a, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+        test_assert(unchanged == bdd_true);
+        test_assert(unary_ops[i](NULL, a, a) == SYLVAN_ERR_INVALID);
+    }
+
+    test_bdd_binary_set_op binary_ops[] = {bdd_and_exists, bdd_and_project};
+    for (size_t i = 0; i < sizeof(binary_ops) / sizeof(binary_ops[0]); i++) {
+        test_assert(binary_ops[i](&unchanged, mtbdd_invalid, b, a) == SYLVAN_ERR_INVALID);
+        test_assert(unchanged == bdd_true);
+        test_assert(binary_ops[i](&unchanged, a, b, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+        test_assert(unchanged == bdd_true);
+        test_assert(binary_ops[i](NULL, a, b, a) == SYLVAN_ERR_INVALID);
+    }
+
+    test_assert(bdd_and_project_CALL(lace, &unchanged, a, b, bdd_set_empty()) == SYLVAN_OK);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_and_project_CALL(lace, &unchanged, a, disjoint_constraint, bdd_set_empty()) == SYLVAN_OK);
+    test_assert(unchanged == bdd_false);
+    test_assert(bdd_and_project_CALL(lace, &unchanged, bdd_true, a, a) == SYLVAN_OK);
+    test_assert(unchanged == a);
+    test_assert(bdd_and_project_CALL(lace, &unchanged, a, bdd_true, a) == SYLVAN_OK);
+    test_assert(unchanged == a);
+
+    BDD c = bdd_var_at_level(2);
+    BDD d = bdd_var_at_level(3);
+    BDD xor_ab = mtbdd_invalid;
+    BDD ite_abc = mtbdd_invalid;
+    BDD or_abc = mtbdd_invalid;
+    BDD set_bc = mtbdd_invalid;
+    BDD set_ad = mtbdd_invalid;
+    BDD set_abc = mtbdd_invalid;
+
+    mtbdd_refs_pushptr(&c);
+    mtbdd_refs_pushptr(&d);
+    mtbdd_refs_pushptr(&xor_ab);
+    mtbdd_refs_pushptr(&ite_abc);
+    mtbdd_refs_pushptr(&or_abc);
+    mtbdd_refs_pushptr(&set_bc);
+    mtbdd_refs_pushptr(&set_ad);
+    mtbdd_refs_pushptr(&set_abc);
+
+    test_assert(bdd_xor_CALL(lace, &xor_ab, a, b) == SYLVAN_OK);
+    test_assert(bdd_ite_CALL(lace, &ite_abc, a, b, c) == SYLVAN_OK);
+    test_assert(bdd_ite_CALL(lace, &or_abc, c, bdd_true, conjunction) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(lace, &set_bc, b, c) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(lace, &set_ad, a, d) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(lace, &set_abc, conjunction, c) == SYLVAN_OK);
+
+    BDD samples[] = {
+        bdd_false, bdd_true,
+        a, bdd_not(a), b, bdd_not(b), c, bdd_not(c),
+        conjunction, disjoint_constraint, xor_ab, ite_abc, or_abc
+    };
+    BDDSET projection_sets[] = {
+        bdd_set_empty(), a, b, c, d, conjunction, set_bc, set_ad, set_abc
+    };
+
+    for (size_t i = 0; i < sizeof(samples) / sizeof(samples[0]); i++) {
+        for (size_t j = 0; j < sizeof(samples) / sizeof(samples[0]); j++) {
+            for (size_t k = 0; k < sizeof(projection_sets) / sizeof(projection_sets[0]); k++) {
+                BDD product = mtbdd_invalid;
+                BDD expected = mtbdd_invalid;
+                BDD actual = mtbdd_invalid;
+                mtbdd_refs_pushptr(&product);
+                mtbdd_refs_pushptr(&expected);
+                mtbdd_refs_pushptr(&actual);
+
+                test_assert(bdd_and_CALL(lace, &product, samples[i], samples[j]) == SYLVAN_OK);
+                test_assert(bdd_project_CALL(lace, &expected, product, projection_sets[k]) == SYLVAN_OK);
+                test_assert(bdd_and_project_CALL(lace, &actual, samples[i], samples[j], projection_sets[k]) == SYLVAN_OK);
+                test_assert(actual == expected);
+
+                mtbdd_refs_popptr(3);
+            }
+        }
+    }
+
+    /* Leave the cache empty for the cache unit test that follows. */
+    sylvan_gc_CALL(lace);
+
+    mtbdd_refs_popptr(18);
     return 0;
 }
 
@@ -336,6 +504,15 @@ test_bdd()
     test_assert(test_bdd_ite(bdd_var_at_level(1), bdd_false, bdd_true) == bdd_not(test_bdd_ite(bdd_var_at_level(1), bdd_true, bdd_false)));
     test_assert(test_bdd_ite(bdd_var_at_level(1), bdd_true, bdd_false) == bdd_not(test_bdd_ite(bdd_var_at_level(1), bdd_false, bdd_true)));
     test_assert(test_bdd_ite(bdd_var_at_level(1), bdd_false, bdd_false) == bdd_not(test_bdd_ite(bdd_var_at_level(1), bdd_true, bdd_true)));
+
+    BDD a = bdd_var_at_level(0);
+    BDD b = bdd_var_at_level(1);
+    BDD conjunction = test_bdd_and(a, b);
+    test_assert(test_bdd_exists(conjunction, a) == b);
+    test_assert(test_bdd_forall(conjunction, a) == bdd_false);
+    test_assert(test_bdd_project(conjunction, a) == a);
+    test_assert(test_bdd_and_exists(a, b, a) == b);
+    test_assert(test_bdd_and_project(a, b, a) == a);
 
     return 0;
 }
@@ -719,6 +896,7 @@ int runtests_CALL(lace_worker* lace)
     printf("Testing protected destinations.\n");
     for (int j = 0; j < 10; j++) {
         if (test_protected_destinations_CALL(lace)) return 1;
+        if (test_quantification_destinations_CALL(lace)) return 1;
     }
 
     // we are not testing garbage collection

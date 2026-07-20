@@ -690,14 +690,18 @@ Mtbdd::mtbddZero()
 Mtbdd
 Mtbdd::mtbddCube(const BddSet &variables, uint8_t *values, const Mtbdd &terminal)
 {
-    return mtbdd_cube(variables.set.bdd, values, terminal.mtbdd);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_cube(&result.mtbdd, variables.set.bdd, values, terminal.mtbdd);
+    return result;
 }
 
 Mtbdd
 Mtbdd::mtbddCube(const BddSet &variables, std::vector<uint8_t> values, const Mtbdd &terminal)
 {
     uint8_t *data = values.data();
-    return mtbdd_cube(variables.set.bdd, data, terminal.mtbdd);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_cube(&result.mtbdd, variables.set.bdd, data, terminal.mtbdd);
+    return result;
 }
 
 bool
@@ -769,7 +773,9 @@ Mtbdd::Abstract(const BddSet &variables, mtbdd_abstract_cb op) const
 Mtbdd
 Mtbdd::Ite(const Mtbdd &g, const Mtbdd &h) const
 {
-    return mtbdd_ite(mtbdd, g.mtbdd, h.mtbdd);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_ite(&result.mtbdd, mtbdd, g.mtbdd, h.mtbdd);
+    return result;
 }
 
 Mtbdd

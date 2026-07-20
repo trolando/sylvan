@@ -41,6 +41,16 @@ test_bdd_set_union(BDDSET set1, BDDSET set2)
     return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
 
+static MTBDD
+test_mtbdd_cube(BDDSET variables, const uint8_t *cube, MTBDD terminal)
+{
+    MTBDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = mtbdd_cube(&result, variables, cube, terminal);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
 static BDD
 test_bdd_binary(test_bdd_binary_op op, BDD a, BDD b)
 {
@@ -157,7 +167,7 @@ TASK(int, test_zdd_conversion)
 int test_zdd_conversion_CALL(lace_worker* lace)
 {
     BDDSET dom = test_bdd_set_from_levels((uint32_t[]){0,1,2,3,4,5,6}, 7);
-    BDD dd = mtbdd_cube(dom, (uint8_t[]){0,0,2,2,0,2,0}, bdd_true);
+    BDD dd = test_mtbdd_cube(dom, (uint8_t[]){0,0,2,2,0,2,0}, bdd_true);
     ZDD zdd = zdd_from_bdd(dd, dom);
     test_assert(zdd != zdd_invalid);
     test_assert(bdd_from_zdd(zdd, dom) == dd);

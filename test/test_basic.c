@@ -137,6 +137,139 @@ test_variable_set_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+TASK(int, test_mtbdd_construction_destinations)
+int
+test_mtbdd_construction_destinations_CALL(lace_worker *lace)
+{
+    const uint32_t levels[] = {0, 1, 2};
+    const uint32_t pair_levels[] = {0, 1};
+    const uint32_t single_level[] = {0};
+    const uint32_t late_level[] = {1};
+    const uint8_t first_cube[] = {0, 1, 2};
+    const uint8_t second_cube[] = {1, 0, 2};
+    const uint8_t equality_cube[] = {3, 0};
+    const uint8_t invalid_cube[] = {4, 0, 0};
+    const uint8_t zero_cube[] = {0};
+    const uint8_t one_cube[] = {1};
+    const uint8_t any_cube[] = {2, 2, 2};
+    const uint8_t any_single[] = {2};
+    MTBDD terminal = mtbdd_int64(42);
+    MTBDD other_terminal = mtbdd_invalid;
+    BDDSET vars = mtbdd_invalid;
+    BDDSET pair_vars = mtbdd_invalid;
+    BDDSET single_var = mtbdd_invalid;
+    BDDSET late_var = mtbdd_invalid;
+    BDD condition = mtbdd_invalid;
+    MTBDD ite_result = mtbdd_invalid;
+    MTBDD inplace_ite = mtbdd_invalid;
+    MTBDD cube_result = mtbdd_invalid;
+    MTBDD set_result = mtbdd_invalid;
+    MTBDD equality_result = mtbdd_invalid;
+    MTBDD leading_result = mtbdd_invalid;
+    MTBDD later_cube = mtbdd_invalid;
+    MTBDD earlier_result = mtbdd_invalid;
+    MTBDD any_result = mtbdd_invalid;
+    MTBDD unchanged = bdd_true;
+
+    mtbdd_refs_pushptr(&terminal);
+    other_terminal = mtbdd_int64(7);
+    mtbdd_refs_pushptr(&other_terminal);
+    mtbdd_refs_pushptr(&vars);
+    mtbdd_refs_pushptr(&pair_vars);
+    mtbdd_refs_pushptr(&single_var);
+    mtbdd_refs_pushptr(&late_var);
+    mtbdd_refs_pushptr(&condition);
+    mtbdd_refs_pushptr(&ite_result);
+    mtbdd_refs_pushptr(&inplace_ite);
+    mtbdd_refs_pushptr(&cube_result);
+    mtbdd_refs_pushptr(&set_result);
+    mtbdd_refs_pushptr(&equality_result);
+    mtbdd_refs_pushptr(&leading_result);
+    mtbdd_refs_pushptr(&later_cube);
+    mtbdd_refs_pushptr(&earlier_result);
+    mtbdd_refs_pushptr(&any_result);
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_assert(bdd_set_from_array(&vars, levels, 3) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(&pair_vars, pair_levels, 2) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(&single_var, single_level, 1) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(&late_var, late_level, 1) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&condition, 0) == SYLVAN_OK);
+
+    mtbdd_ite_SPAWN(lace, &ite_result, condition, terminal, other_terminal);
+    test_assert(mtbdd_cube(&cube_result, vars, first_cube, terminal) == SYLVAN_OK);
+    test_assert(mtbdd_ite_SYNC(lace) == SYLVAN_OK);
+    inplace_ite = terminal;
+    test_assert(mtbdd_ite_CALL(lace, &inplace_ite, condition, inplace_ite, other_terminal) == SYLVAN_OK);
+    test_assert(inplace_ite == ite_result);
+    test_assert(mtbdd_set_cube_CALL(lace, &set_result, mtbdd_undefined, vars, first_cube, terminal) == SYLVAN_OK);
+    test_assert(set_result == cube_result);
+    test_assert(mtbdd_set_cube_CALL(lace, &set_result, set_result, vars, second_cube, other_terminal) == SYLVAN_OK);
+    test_assert(mtbdd_cube(&equality_result, pair_vars, equality_cube, terminal) == SYLVAN_OK);
+    test_assert(mtbdd_cube(&later_cube, late_var, one_cube, terminal) == SYLVAN_OK);
+    BDDSET latest_var = bdd_set_next(bdd_set_next(vars));
+    test_assert(mtbdd_set_cube_CALL(lace, &leading_result, later_cube, latest_var, zero_cube, terminal) == SYLVAN_OK);
+    test_assert(mtbdd_set_cube_CALL(lace, &earlier_result, later_cube, single_var, zero_cube, other_terminal) == SYLVAN_OK);
+    test_assert(mtbdd_set_cube_CALL(lace, &any_result, later_cube, single_var, any_single, other_terminal) == SYLVAN_OK);
+    test_assert(any_result == other_terminal);
+    test_assert(mtbdd_set_cube_CALL(lace, &any_result, set_result, vars, any_cube, other_terminal) == SYLVAN_OK);
+    test_assert(any_result == other_terminal);
+
+    sylvan_gc_CALL(lace);
+
+    MTBDD if_false, if_true;
+    mtbdd_cofactors(ite_result, &if_false, &if_true);
+    test_assert(mtbdd_node_variable(ite_result) == 0);
+    test_assert(if_false == other_terminal);
+    test_assert(if_true == terminal);
+
+    mtbdd_cofactors(cube_result, &if_false, &if_true);
+    test_assert(if_true == mtbdd_undefined);
+    mtbdd_cofactors(if_false, &if_false, &if_true);
+    test_assert(if_false == mtbdd_undefined);
+    test_assert(if_true == terminal);
+    test_assert(mtbdd_is_valid(leading_result));
+    test_assert(mtbdd_is_valid(earlier_result));
+
+    mtbdd_cofactors(earlier_result, &if_false, &if_true);
+    test_assert(if_false == other_terminal);
+    test_assert(if_true == later_cube);
+
+    MTBDD first_assignment, second_assignment;
+    mtbdd_cofactors(set_result, &first_assignment, &second_assignment);
+    mtbdd_cofactors(first_assignment, &if_false, &if_true);
+    test_assert(if_true == terminal);
+    mtbdd_cofactors(second_assignment, &if_false, &if_true);
+    test_assert(if_false == other_terminal);
+
+    mtbdd_cofactors(equality_result, &first_assignment, &second_assignment);
+    mtbdd_cofactors(first_assignment, &if_false, &if_true);
+    test_assert(if_false == terminal);
+    test_assert(if_true == mtbdd_undefined);
+    mtbdd_cofactors(second_assignment, &if_false, &if_true);
+    test_assert(if_false == mtbdd_undefined);
+    test_assert(if_true == terminal);
+
+    test_assert(mtbdd_ite_CALL(lace, NULL, condition, terminal, other_terminal) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_ite_CALL(lace, &unchanged, mtbdd_invalid, terminal, other_terminal) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_cube(NULL, vars, first_cube, terminal) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_cube(&unchanged, vars, NULL, terminal) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_cube(&unchanged, vars, invalid_cube, terminal) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_cube(&unchanged, single_var, equality_cube, terminal) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_set_cube_CALL(lace, &unchanged, set_result, vars, equality_cube, terminal) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_set_cube_CALL(lace, &unchanged, set_result, vars, invalid_cube, terminal) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+
+    sylvan_gc_CALL(lace);
+    mtbdd_refs_popptr(17);
+    return 0;
+}
+
 static BDD
 test_bdd_binary(test_bdd_binary_op op, BDD a, BDD b)
 {
@@ -1052,19 +1185,6 @@ test_mtbdd()
     test_assert(result != mtbdd_invalid);
     test_assert(mtbdd_leaf_double(result) == 0.0);
 
-    uint32_t early_level[] = {0};
-    uint32_t late_level[] = {1};
-    MTBDD early_var = mtbdd_set_from_array(early_level, 1);
-    MTBDD late_var = mtbdd_set_from_array(late_level, 1);
-    MTBDD terminal = mtbdd_int64(42);
-    MTBDD other_terminal = mtbdd_int64(7);
-    MTBDD later_cube = mtbdd_cube(late_var, (uint8_t[]){1}, terminal);
-    MTBDD earlier_result = mtbdd_union_cube(later_cube, early_var, (uint8_t[]){0}, other_terminal);
-    test_assert(mtbdd_getvar(earlier_result) == 0);
-    test_assert(mtbdd_getlow(earlier_result) == other_terminal);
-    test_assert(mtbdd_gethigh(earlier_result) == later_cube);
-    test_assert(mtbdd_union_cube(later_cube, early_var, (uint8_t[]){2}, other_terminal) == other_terminal);
-
     return 0;
 }
 
@@ -1489,6 +1609,7 @@ int runtests_CALL(lace_worker* lace)
     printf("Testing protected destinations.\n");
     for (int j = 0; j < 10; j++) {
         if (test_variable_set_destinations_CALL(lace)) return 1;
+        if (test_mtbdd_construction_destinations_CALL(lace)) return 1;
         if (test_protected_destinations_CALL(lace)) return 1;
         if (test_quantification_destinations_CALL(lace)) return 1;
         if (test_care_destinations_CALL(lace)) return 1;

@@ -687,52 +687,86 @@ mtbdd_fraction(int64_t nom, uint64_t denom)
  * Use cube[idx]==3 for "s=s'" in interleaved variables (matches with next variable)
  * <variables> is the cube of variables
  */
-MTBDD
-mtbdd_cube(MTBDD variables, uint8_t *cube, MTBDD terminal)
+int
+mtbdd_cube(MTBDD *destination, BDDSET variables, const uint8_t *cube, MTBDD terminal)
 {
-    if (variables == bdd_true) return terminal;
-    mtbddnode* n = MTBDD_GETNODE(variables);
+    if (destination == NULL || variables == mtbdd_invalid || terminal == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (variables == bdd_true) {
+        *destination = terminal;
+        return SYLVAN_OK;
+    }
+    if (cube == NULL) return SYLVAN_ERR_INVALID;
 
-    BDD result;
+    mtbddnode* n = MTBDD_GETNODE(variables);
+    const BDDSET next = node_gethigh(variables, n);
+    const uint32_t variable = mtbddnode_getvariable(n);
+
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    int status = SYLVAN_OK;
     switch (*cube) {
     case 0:
-        result = mtbdd_cube(node_gethigh(variables, n), cube+1, terminal);
-        result = mtbdd_make_node(mtbddnode_getvariable(n), result, mtbdd_undefined);
-        return result;
+        status = mtbdd_cube(&computed, next, cube+1, terminal);
+        if (status == SYLVAN_OK) {
+            status = _mtbdd_try_make_node(&computed, variable, computed, mtbdd_undefined);
+        }
+        break;
     case 1:
-        result = mtbdd_cube(node_gethigh(variables, n), cube+1, terminal);
-        result = mtbdd_make_node(mtbddnode_getvariable(n), mtbdd_undefined, result);
-        return result;
+        status = mtbdd_cube(&computed, next, cube+1, terminal);
+        if (status == SYLVAN_OK) {
+            status = _mtbdd_try_make_node(&computed, variable, mtbdd_undefined, computed);
+        }
+        break;
     case 2:
-        return mtbdd_cube(node_gethigh(variables, n), cube+1, terminal);
+        status = mtbdd_cube(&computed, next, cube+1, terminal);
+        break;
     case 3:
     {
-        MTBDD variables2 = node_gethigh(variables, n);
+        BDDSET variables2 = next;
+        if (variables2 == bdd_true) {
+            status = SYLVAN_ERR_INVALID;
+            break;
+        }
         mtbddnode* n2 = MTBDD_GETNODE(variables2);
         uint32_t var2 = mtbddnode_getvariable(n2);
-        result = mtbdd_cube(node_gethigh(variables2, n2), cube+2, terminal);
-        BDD low = mtbdd_make_node(var2, result, mtbdd_undefined);
-        mtbdd_refs_push(low);
-        BDD high = mtbdd_make_node(var2, mtbdd_undefined, result);
-        mtbdd_refs_pop(1);
-        result = mtbdd_make_node(mtbddnode_getvariable(n), low, high);
-        return result;
+        MTBDD low = mtbdd_invalid;
+        MTBDD high = mtbdd_invalid;
+        mtbdd_refs_pushptr(&low);
+        mtbdd_refs_pushptr(&high);
+        status = mtbdd_cube(&computed, node_gethigh(variables2, n2), cube+2, terminal);
+        if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&low, var2, computed, mtbdd_undefined);
+        if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&high, var2, mtbdd_undefined, computed);
+        if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, variable, low, high);
+        mtbdd_refs_popptr(2);
+        break;
     }
     default:
-        return mtbdd_undefined; // ?
+        status = SYLVAN_ERR_INVALID;
+        break;
     }
+
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
 /**
  * Same as mtbdd_cube, but also performs "or" with existing MTBDD,
  * effectively adding an item to the set
  */
-MTBDD mtbdd_set_cube_CALL(lace_worker* lace, MTBDD mtbdd, MTBDD vars, uint8_t* cube, MTBDD terminal)
+int mtbdd_set_cube_CALL(lace_worker* lace, MTBDD *destination, MTBDD mtbdd, BDDSET vars, const uint8_t *cube, MTBDD terminal)
 {
+    if (destination == NULL || mtbdd == mtbdd_invalid || vars == mtbdd_invalid || terminal == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
     /* Terminal cases */
-    if (mtbdd == terminal) return terminal;
-    if (mtbdd == mtbdd_undefined) return mtbdd_cube(vars, cube, terminal);
-    if (vars == bdd_true) return terminal;
+    if (mtbdd == terminal) { *destination = terminal; return SYLVAN_OK; }
+    if (mtbdd == mtbdd_undefined) return mtbdd_cube(destination, vars, cube, terminal);
+    if (vars == bdd_true) { *destination = terminal; return SYLVAN_OK; }
+    if (cube == NULL) return SYLVAN_ERR_INVALID;
 
     sylvan_gc_test(lace);
 
@@ -746,66 +780,114 @@ MTBDD mtbdd_set_cube_CALL(lace_worker* lace, MTBDD mtbdd, MTBDD vars, uint8_t* c
     if (va < v) {
         MTBDD low = node_getlow(mtbdd, na);
         MTBDD high = node_gethigh(mtbdd, na);
-        mtbdd_refs_spawn(mtbdd_set_cube_SPAWN(lace, high, vars, cube, terminal));
-        BDD new_low = mtbdd_set_cube_CALL(lace, low, vars, cube, terminal);
-        mtbdd_refs_push(new_low);
-        BDD new_high = mtbdd_refs_sync(mtbdd_set_cube_SYNC(lace));
-        mtbdd_refs_pop(1);
-        if (new_low != low || new_high != high) return mtbdd_make_node(va, new_low, new_high);
-        else return mtbdd;
+        MTBDD new_low = mtbdd_invalid;
+        MTBDD new_high = mtbdd_invalid;
+        MTBDD computed = mtbdd_invalid;
+        mtbdd_refs_pushptr(&new_low);
+        mtbdd_refs_pushptr(&new_high);
+        mtbdd_refs_pushptr(&computed);
+        mtbdd_set_cube_SPAWN(lace, &new_high, high, vars, cube, terminal);
+        int status = mtbdd_set_cube_CALL(lace, &new_low, low, vars, cube, terminal);
+        int high_status = mtbdd_set_cube_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+        if (status == SYLVAN_OK) {
+            if (new_low == low && new_high == high) computed = mtbdd;
+            else status = _mtbdd_try_make_node(&computed, va, new_low, new_high);
+        }
+        if (status == SYLVAN_OK) *destination = computed;
+        mtbdd_refs_popptr(3);
+        return status;
     } else if (va == v) {
         MTBDD low = node_getlow(mtbdd, na);
         MTBDD high = node_gethigh(mtbdd, na);
+        BDDSET next = node_gethigh(vars, nv);
         switch (*cube) {
         case 0:
         {
-            MTBDD new_low = mtbdd_set_cube_CALL(lace, low, node_gethigh(vars, nv), cube+1, terminal);
-            if (new_low != low) return mtbdd_make_node(v, new_low, high);
-            else return mtbdd;
+            MTBDD new_low = mtbdd_invalid;
+            MTBDD computed = mtbdd_invalid;
+            mtbdd_refs_pushptr(&new_low);
+            mtbdd_refs_pushptr(&computed);
+            int status = mtbdd_set_cube_CALL(lace, &new_low, low, next, cube+1, terminal);
+            if (status == SYLVAN_OK) {
+                if (new_low == low) computed = mtbdd;
+                else status = _mtbdd_try_make_node(&computed, v, new_low, high);
+            }
+            if (status == SYLVAN_OK) *destination = computed;
+            mtbdd_refs_popptr(2);
+            return status;
         }
         case 1:
         {
-            MTBDD new_high = mtbdd_set_cube(high, node_gethigh(vars, nv), cube+1, terminal);
-            if (new_high != high) return mtbdd_make_node(v, low, new_high);
-            return mtbdd;
+            MTBDD new_high = mtbdd_invalid;
+            MTBDD computed = mtbdd_invalid;
+            mtbdd_refs_pushptr(&new_high);
+            mtbdd_refs_pushptr(&computed);
+            int status = mtbdd_set_cube_CALL(lace, &new_high, high, next, cube+1, terminal);
+            if (status == SYLVAN_OK) {
+                if (new_high == high) computed = mtbdd;
+                else status = _mtbdd_try_make_node(&computed, v, low, new_high);
+            }
+            if (status == SYLVAN_OK) *destination = computed;
+            mtbdd_refs_popptr(2);
+            return status;
         }
         case 2:
         {
-            mtbdd_refs_spawn(mtbdd_set_cube_SPAWN(lace, high, node_gethigh(vars, nv), cube+1, terminal));
-            MTBDD new_low = mtbdd_set_cube(low, node_gethigh(vars, nv), cube+1, terminal);
-            mtbdd_refs_push(new_low);
-            MTBDD new_high = mtbdd_refs_sync(mtbdd_set_cube_SYNC(lace));
-            mtbdd_refs_pop(1);
-            if (new_low != low || new_high != high) return mtbdd_make_node(v, new_low, new_high);
-            return mtbdd;
+            MTBDD new_low = mtbdd_invalid;
+            MTBDD new_high = mtbdd_invalid;
+            MTBDD computed = mtbdd_invalid;
+            mtbdd_refs_pushptr(&new_low);
+            mtbdd_refs_pushptr(&new_high);
+            mtbdd_refs_pushptr(&computed);
+            mtbdd_set_cube_SPAWN(lace, &new_high, high, next, cube+1, terminal);
+            int status = mtbdd_set_cube_CALL(lace, &new_low, low, next, cube+1, terminal);
+            int high_status = mtbdd_set_cube_SYNC(lace);
+            if (status == SYLVAN_OK) status = high_status;
+            if (status == SYLVAN_OK) {
+                if (new_low == low && new_high == high) computed = mtbdd;
+                else status = _mtbdd_try_make_node(&computed, v, new_low, new_high);
+            }
+            if (status == SYLVAN_OK) *destination = computed;
+            mtbdd_refs_popptr(3);
+            return status;
         }
         case 3:
-        {
-            return mtbdd_undefined; // currently not implemented
-        }
         default:
-            return mtbdd_undefined;
+            return SYLVAN_ERR_INVALID;
         }
     } else /* va > v */ {
+        BDDSET next = node_gethigh(vars, nv);
         switch (*cube) {
         case 0:
         {
-            MTBDD new_low = mtbdd_set_cube(mtbdd, node_gethigh(vars, nv), cube+1, terminal);
-            return mtbdd_make_node(v, new_low, mtbdd);
+            MTBDD new_low = mtbdd_invalid;
+            MTBDD computed = mtbdd_invalid;
+            mtbdd_refs_pushptr(&new_low);
+            mtbdd_refs_pushptr(&computed);
+            int status = mtbdd_set_cube_CALL(lace, &new_low, mtbdd, next, cube+1, terminal);
+            if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, v, new_low, mtbdd);
+            if (status == SYLVAN_OK) *destination = computed;
+            mtbdd_refs_popptr(2);
+            return status;
         }
         case 1:
         {
-            MTBDD new_high = mtbdd_set_cube(mtbdd, node_gethigh(vars, nv), cube+1, terminal);
-            return mtbdd_make_node(v, mtbdd, new_high);
+            MTBDD new_high = mtbdd_invalid;
+            MTBDD computed = mtbdd_invalid;
+            mtbdd_refs_pushptr(&new_high);
+            mtbdd_refs_pushptr(&computed);
+            int status = mtbdd_set_cube_CALL(lace, &new_high, mtbdd, next, cube+1, terminal);
+            if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, v, mtbdd, new_high);
+            if (status == SYLVAN_OK) *destination = computed;
+            mtbdd_refs_popptr(2);
+            return status;
         }
         case 2:
-            return mtbdd_set_cube(mtbdd, node_gethigh(vars, nv), cube+1, terminal);
+            return mtbdd_set_cube_CALL(lace, destination, mtbdd, next, cube+1, terminal);
         case 3:
-        {
-            return mtbdd_undefined; // currently not implemented
-        }
         default:
-            return mtbdd_undefined;
+            return SYLVAN_ERR_INVALID;
         }
     }
 }
@@ -1578,14 +1660,21 @@ MTBDD mtbdd_op_negate_CALL(lace_worker* lace, MTBDD a, size_t k)
  * Compute IF <f> THEN <g> ELSE <h>.
  * <f> must be a Boolean MTBDD (or standard BDD).
  */
-MTBDD mtbdd_ite_CALL(lace_worker* lace, BDD f, MTBDD g, MTBDD h)
+int mtbdd_ite_CALL(lace_worker* lace, MTBDD *destination, BDD f, MTBDD g, MTBDD h)
 {
+    if (destination == NULL || f == mtbdd_invalid || g == mtbdd_invalid || h == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
     /* Terminal cases */
-    if (f == bdd_true) return g;
-    if (f == mtbdd_undefined) return h;
-    if (g == h) return g;
-    if (g == bdd_true && h == mtbdd_undefined) return f;
-    if (h == bdd_true && g == mtbdd_undefined) return MTBDD_TOGGLEMARK(f);
+    if (f == bdd_true) { *destination = g; return SYLVAN_OK; }
+    if (f == mtbdd_undefined) { *destination = h; return SYLVAN_OK; }
+    if (g == h) { *destination = g; return SYLVAN_OK; }
+    if (g == bdd_true && h == mtbdd_undefined) { *destination = f; return SYLVAN_OK; }
+    if (h == bdd_true && g == mtbdd_undefined) {
+        *destination = MTBDD_TOGGLEMARK(f);
+        return SYLVAN_OK;
+    }
 
     // If all MTBDD's are Boolean, then there could be further optimizations (see sylvan_bdd.c)
 
@@ -1596,10 +1685,13 @@ MTBDD mtbdd_ite_CALL(lace_worker* lace, BDD f, MTBDD g, MTBDD h)
     sylvan_stats_count(MTBDD_ITE);
 
     /* Check cache */
-    MTBDD result;
-    if (cache_get3(CACHE_MTBDD_ITE, f, g, h, &result)) {
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_MTBDD_ITE, f, g, h, &computed)) {
         sylvan_stats_count(MTBDD_ITE_CACHED);
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /* Get top variable */
@@ -1625,18 +1717,33 @@ MTBDD mtbdd_ite_CALL(lace_worker* lace, BDD f, MTBDD g, MTBDD h)
     hhigh = (!lh && vh == v) ? node_gethigh(h, nh) : h;
 
     /* Recursive calls */
-    mtbdd_refs_spawn(mtbdd_ite_SPAWN(lace, fhigh, ghigh, hhigh));
-    MTBDD low = mtbdd_refs_push(mtbdd_ite_CALL(lace, flow, glow, hlow));
-    MTBDD high = mtbdd_refs_sync(mtbdd_ite_SYNC(lace));
-    mtbdd_refs_pop(1);
-    result = mtbdd_make_node(v, low, high);
+    MTBDD low = mtbdd_invalid;
+    MTBDD high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+    mtbdd_ite_SPAWN(lace, &high, fhigh, ghigh, hhigh);
+    int status = mtbdd_ite_CALL(lace, &low, flow, glow, hlow);
+    int high_status = mtbdd_ite_SYNC(lace);
+    if (status == SYLVAN_OK) status = high_status;
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(3);
+        return status;
+    }
+
+    status = _mtbdd_try_make_node(&computed, v, low, high);
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(3);
+        return status;
+    }
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_ITE, f, g, h, result)) {
+    if (cache_put3(CACHE_MTBDD_ITE, f, g, h, computed)) {
         sylvan_stats_count(MTBDD_ITE_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    mtbdd_refs_popptr(3);
+    return SYLVAN_OK;
 }
 
 /**
@@ -2497,8 +2604,12 @@ MTBDD mtbdd_compose_CALL(lace_worker* lace, MTBDD a, MTBDDMAP map)
     /* Calculate result */
     MTBDD r = mtbdd_map_key(map) == v ? mtbdd_map_value(map) : mtbdd_make_node(v, mtbdd_undefined, bdd_true);
     mtbdd_refs_push(r);
-    result = mtbdd_ite_CALL(lace, r, high, low);
+    result = mtbdd_invalid;
+    mtbdd_refs_pushptr(&result);
+    int status = mtbdd_ite_CALL(lace, &result, r, high, low);
+    mtbdd_refs_popptr(1);
     mtbdd_refs_pop(3);
+    if (status != SYLVAN_OK) return mtbdd_invalid;
 
     /* Store in cache */
     if (cache_put3(CACHE_MTBDD_COMPOSE, a, map, 0, result)) {

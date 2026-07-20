@@ -54,7 +54,7 @@ bdd_is_complemented(MTBDD dd)
     return (dd & bdd_complement) ? 1 : 0;
 }
 
-TASK(MTBDD, mtbdd_set_cube, MTBDD, mtbdd, MTBDD, variables, uint8_t*, cube, MTBDD, terminal)
+TASK(int, mtbdd_set_cube, MTBDD*, result, MTBDD, mtbdd, BDDSET, variables, const uint8_t*, cube, MTBDD, terminal)
 
 TASK(double, mtbdd_sat_count, MTBDD, dd, size_t, nvars);
 
@@ -206,7 +206,7 @@ static inline MTBDD mtbdd_abstract_max(MTBDD dd, MTBDD vars)
  * Compute IF <f> THEN <g> ELSE <h>.
  * <f> must be a Boolean MTBDD (or standard BDD).
  */
-TASK(MTBDD, mtbdd_ite, BDD, condition, MTBDD, if_true, MTBDD, if_false);
+TASK(int, mtbdd_ite, MTBDD*, result, BDD, condition, MTBDD, if_true, MTBDD, if_false);
 
 /**
  * Multiply <a> and <b>, and abstract variables <vars> using summation.

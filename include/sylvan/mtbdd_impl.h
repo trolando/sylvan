@@ -279,14 +279,14 @@ TASK(MTBDD, mtbdd_gt, MTBDD, a, MTBDD, b);
 /**
  * Calculate the support of a MTBDD, i.e. the cube of all variables that appear in the MTBDD nodes.
  */
-TASK(MTBDD, mtbdd_support, MTBDD, dd);
+TASK(int, mtbdd_support, BDDSET*, result, MTBDD, dd);
 
 /**
  * Function composition, for each node with variable <key> which has a <key,value> pair in <map>,
- * replace the node by the result of mtbdd_ite(<value>, <low>, <high>).
+ * replace the node by the result of mtbdd_ite(<value>, <high>, <low>).
  * Each <value> in <map> must be a Boolean MTBDD.
  */
-TASK(MTBDD, mtbdd_compose, MTBDD, dd, MTBDDMAP, map);
+TASK(int, mtbdd_compose, MTBDD*, result, MTBDD, dd, MTBDDMAP, map);
 
 /**
  * Compute minimal leaf in the MTBDD (for Integer, Double, Rational MTBDDs)

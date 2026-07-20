@@ -348,14 +348,16 @@ static inline void bdd_enumerate_minterms_parallel(BDD dd, BDDSET vars, bdd_enum
  * Enumerate all satisfying variable assignments of the given <bdd> using variables <vars>.
  * Calls <cb> with two parameters: a user-supplied context and the cube (array of
  * values 0 and 1 for each variable in <vars>).
- * The BDD that <cb> returns is pair-wise merged (using or) and returned.
+ * The BDD that <cb> returns is pair-wise merged using Boolean or. Returning
+ * mtbdd_invalid from <cb> reports SYLVAN_ERR_CALLBACK.
  */
 typedef BDD (*bdd_map_reduce_or_cb)(void*, uint8_t*);
 
 /**
  * Collect BDDs produced by the callback for each satisfying assignment.
+ * Returns SYLVAN_OK on success. On failure, <result> is unchanged.
  */
-static inline BDD bdd_map_reduce_or(BDD dd, BDDSET vars, bdd_map_reduce_or_cb cb, void* context);
+static inline int bdd_map_reduce_or(BDD *result, BDD dd, BDDSET vars, bdd_map_reduce_or_cb cb, void* context);
 
 /**
  * Compute the number of distinct paths to true in the BDD.

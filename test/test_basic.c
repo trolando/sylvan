@@ -684,6 +684,73 @@ test_relational_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+static BDD
+test_map_reduce_select(void *context, uint8_t *cube)
+{
+    return cube[0] ? *(BDD*)context : bdd_false;
+}
+
+static BDD
+test_map_reduce_fail(void *context, uint8_t *cube)
+{
+    (void)context;
+    (void)cube;
+    return mtbdd_invalid;
+}
+
+TASK(int, test_map_reduce_destinations)
+int
+test_map_reduce_destinations_CALL(lace_worker *lace)
+{
+    BDD x = bdd_var_at_level(0);
+    BDD y = bdd_var_at_level(1);
+    BDD value = bdd_var_at_level(2);
+    BDDSET vars = mtbdd_invalid;
+    BDD result = mtbdd_invalid;
+    BDD terminal = mtbdd_invalid;
+    BDD in_place = bdd_true;
+    BDD unchanged = bdd_true;
+
+    mtbdd_refs_pushptr(&x);
+    mtbdd_refs_pushptr(&y);
+    mtbdd_refs_pushptr(&value);
+    mtbdd_refs_pushptr(&vars);
+    mtbdd_refs_pushptr(&result);
+    mtbdd_refs_pushptr(&terminal);
+    mtbdd_refs_pushptr(&in_place);
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_assert(bdd_and_CALL(lace, &vars, x, y) == SYLVAN_OK);
+
+    bdd_map_reduce_or_SPAWN(lace, &result, bdd_true, vars, test_map_reduce_select, &value);
+    int terminal_status = bdd_map_reduce_or_CALL(lace, &terminal, bdd_false, vars, test_map_reduce_select, &value);
+    int result_status = bdd_map_reduce_or_SYNC(lace);
+    test_assert(terminal_status == SYLVAN_OK);
+    test_assert(result_status == SYLVAN_OK);
+    test_assert(terminal == bdd_false);
+    test_assert(result == value);
+
+    sylvan_gc_CALL(lace);
+    test_assert(result == value);
+
+    test_assert(bdd_map_reduce_or(&in_place, in_place, vars, test_map_reduce_select, &value) == SYLVAN_OK);
+    test_assert(in_place == value);
+
+    test_assert(bdd_map_reduce_or_CALL(lace, &unchanged, bdd_true, vars, test_map_reduce_fail, NULL) == SYLVAN_ERR_CALLBACK);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_map_reduce_or_CALL(lace, &unchanged, mtbdd_invalid, vars, test_map_reduce_select, &value) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_map_reduce_or_CALL(lace, &unchanged, bdd_true, mtbdd_invalid, test_map_reduce_select, &value) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_map_reduce_or_CALL(lace, &unchanged, bdd_true, vars, NULL, &value) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_map_reduce_or_CALL(lace, NULL, bdd_true, vars, test_map_reduce_select, &value) == SYLVAN_ERR_INVALID);
+
+    sylvan_gc_CALL(lace);
+    mtbdd_refs_popptr(8);
+    return 0;
+}
+
 SYLVAN_TLS uint64_t seed = 1;
 
 uint64_t
@@ -1307,6 +1374,7 @@ int runtests_CALL(lace_worker* lace)
         if (test_compose_destinations_CALL(lace)) return 1;
         if (test_cube_destinations_CALL(lace)) return 1;
         if (test_relational_destinations_CALL(lace)) return 1;
+        if (test_map_reduce_destinations_CALL(lace)) return 1;
     }
 
     // we are not testing garbage collection

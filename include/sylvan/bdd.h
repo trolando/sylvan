@@ -284,13 +284,14 @@ static inline double bdd_sat_count(BDD dd, BDDSET variables);
 /**
  * Create a BDD cube representing the conjunction of variables in their positive or negative
  * form depending on whether the cube[idx] equals 0 (negative), 1 (positive) or 2 (any).
+ * Returns SYLVAN_ERR_INVALID and leaves <result> unchanged for any other value.
  */
-BDD bdd_cube(BDDSET variables, uint8_t *cube);
+static inline int bdd_cube(BDD *result, BDDSET variables, const uint8_t *cube);
 
 /**
  * Compute the union of a BDD and a cube (disjunction of the BDD with the given cube).
  */
-static inline BDD bdd_or_cube(BDD dd, BDDSET variables, uint8_t* cube);
+static inline int bdd_or_cube(BDD *result, BDD dd, BDDSET variables, const uint8_t *cube);
 
 /**
  * Pick one satisfying assignment projected to <variables>.
@@ -312,16 +313,16 @@ int bdd_pick_cube_values(BDD bdd, BDDSET variables, uint8_t* str);
  * The low/false branch is preferred whenever it can reach true.
  * Functionally equivalent to applying bdd_cube to bdd_pick_cube_values and
  * omitting entries marked as don't-care. If <variables> contains the support
- * of <bdd>, then the conjunction of the returned cube and <bdd> equals the
- * returned cube.
+ * of <bdd>, then the conjunction of the resulting cube and <bdd> equals the
+ * resulting cube.
  */
-BDD bdd_pick_cube(BDD bdd, BDDSET variables);
+static inline int bdd_pick_cube(BDD *result, BDD bdd, BDDSET variables);
 
 /**
  * Pick one compatible assignment where every variable in <vars> is set to 0 or 1
- * (no "don't care" values). Returns false if no assignment exists.
+ * (no "don't care" values). Writes false if no assignment exists.
  */
-BDD bdd_pick_minterm(BDD bdd, BDDSET vars);
+static inline int bdd_pick_minterm(BDD *result, BDD bdd, BDDSET vars);
 
 /**
  * Enumerate all satisfying variable assignments from the given <bdd> using variables <vars>.

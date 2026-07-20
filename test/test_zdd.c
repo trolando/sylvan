@@ -26,6 +26,26 @@ static BDD test_bdd_xor(BDD a, BDD b) { return test_bdd_binary(bdd_xor, a, b); }
 static BDD test_bdd_or(BDD a, BDD b) { return test_bdd_binary(bdd_or, a, b); }
 
 static BDD
+test_bdd_cube(BDDSET vars, const uint8_t *cube)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = bdd_cube(&result, vars, cube);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+static BDD
+test_bdd_or_cube(BDD dd, BDDSET vars, const uint8_t *cube)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = bdd_or_cube(&result, dd, vars, cube);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+static BDD
 test_bdd_exists(BDD dd, BDDSET vars)
 {
     BDD result = mtbdd_invalid;
@@ -163,7 +183,7 @@ int test_zdd_from_mtbdd_CALL(lace_worker* lace)
     for (int i=0; i<count; i++) {
         uint8_t arr[8];
         for (int j=0; j<8; j++) arr[j] = (uint8_t)rng(0, 2);
-        BDD bdd_set = bdd_cube(bdd_dom, arr);
+        BDD bdd_set = test_bdd_cube(bdd_dom, arr);
         ZDD zdd_set = zdd_cube(zdd_dom, arr);
         test_assert(zdd_from_bdd(bdd_set, bdd_dom) == zdd_set);
         test_assert(bdd_from_zdd(zdd_set, zdd_dom) == bdd_set);
@@ -269,7 +289,7 @@ int test_zdd_refs_growth_CALL(lace_worker* lace)
 //         for (int i=0; i<count; i++) {
 //             uint8_t arr[nsub];
 //             for (int j=0; j<nsub; j++) arr[j] = (uint8_t)rng(0, 2);
-//             bdd_set = bdd_or_cube(bdd_set, bdd_subdom, arr);
+//             bdd_set = test_bdd_or_cube(bdd_set, bdd_subdom, arr);
 //             zdd_set = zdd_or_cube(zdd_set, zdd_subdom, arr);
 //         }
 //     }
@@ -298,7 +318,7 @@ int test_zdd_union_cube_CALL(lace_worker* lace)
     for (int i=0; i<count; i++) {
         uint8_t arr[8];
         for (int j=0; j<8; j++) arr[j] = (uint8_t)rng(0, 3);
-        bdd_set = bdd_or_cube(bdd_set, bdd_dom, arr);
+        bdd_set = test_bdd_or_cube(bdd_set, bdd_dom, arr);
         zdd_set = zdd_or_cube(zdd_set, zdd_dom, arr);
         test_assert(zdd_from_bdd(bdd_set, bdd_dom) == zdd_set);
     }
@@ -322,7 +342,7 @@ int test_zdd_satcount_CALL(lace_worker* lace)
     for (int i=0; i<count; i++) {
         uint8_t arr[8];
         for (int j=0; j<8; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set = bdd_or_cube(bdd_set, bdd_dom, arr);
+        bdd_set = test_bdd_or_cube(bdd_set, bdd_dom, arr);
     }
 
     ZDD zdd_set = zdd_from_bdd(bdd_set, bdd_dom);
@@ -394,9 +414,9 @@ int test_zdd_and_CALL(lace_worker* lace)
     int count = rng(0,100);
     for (int i=0; i<count; i++) {
         for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set_a = bdd_or_cube(bdd_set_a, bdd_dom, arr);
+        bdd_set_a = test_bdd_or_cube(bdd_set_a, bdd_dom, arr);
         for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set_b = bdd_or_cube(bdd_set_b, bdd_dom, arr);
+        bdd_set_b = test_bdd_or_cube(bdd_set_b, bdd_dom, arr);
     }
 
     BDD bdd_set = test_bdd_and(bdd_set_a, bdd_set_b);
@@ -436,9 +456,9 @@ int test_zdd_or_CALL(lace_worker* lace)
     int count = rng(0,100);
     for (int i=0; i<count; i++) {
         for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set_a = bdd_or_cube(bdd_set_a, bdd_dom, arr);
+        bdd_set_a = test_bdd_or_cube(bdd_set_a, bdd_dom, arr);
         for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set_b = bdd_or_cube(bdd_set_b, bdd_dom, arr);
+        bdd_set_b = test_bdd_or_cube(bdd_set_b, bdd_dom, arr);
     }
 
     BDD bdd_set = test_bdd_or(bdd_set_a, bdd_set_b);
@@ -470,7 +490,7 @@ int test_zdd_not_CALL(lace_worker* lace)
     for (int i=0; i<count; i++) {
         uint8_t arr[8];
         for (int j=0; j<8; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set = bdd_or_cube(bdd_set, bdd_dom, arr);
+        bdd_set = test_bdd_or_cube(bdd_set, bdd_dom, arr);
     }
 
     ZDD zdd_set = zdd_from_bdd(bdd_set, bdd_dom);
@@ -506,7 +526,7 @@ int test_zdd_ite_CALL(lace_worker* lace)
         int count = rng(0, 100);
         for (int i=0; i<count; i++) {
             for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-            set_a = bdd_or_cube(set_a, bdd_dom, arr);
+            set_a = test_bdd_or_cube(set_a, bdd_dom, arr);
         }
     }
 
@@ -514,7 +534,7 @@ int test_zdd_ite_CALL(lace_worker* lace)
         int count = rng(0, 100);
         for (int i=0; i<count; i++) {
             for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-            set_b = bdd_or_cube(set_b, bdd_dom, arr);
+            set_b = test_bdd_or_cube(set_b, bdd_dom, arr);
         }
     }
 
@@ -522,7 +542,7 @@ int test_zdd_ite_CALL(lace_worker* lace)
         int count = rng(0, 100);
         for (int i=0; i<count; i++) {
             for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-            set_c = bdd_or_cube(set_c, bdd_dom, arr);
+            set_c = test_bdd_or_cube(set_c, bdd_dom, arr);
         }
     }
 
@@ -578,7 +598,7 @@ int test_zdd_exists_CALL(lace_worker* lace)
     int count = rng(10,200);
     for (int i=0; i<count; i++) {
         for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set = bdd_or_cube(bdd_set, bdd_dom, arr);
+        bdd_set = test_bdd_or_cube(bdd_set, bdd_dom, arr);
         zdd_set = zdd_or_cube(zdd_set, zdd_dom, arr);
     }
     test_assert(zdd_set == zdd_from_bdd(bdd_set, bdd_dom));
@@ -617,7 +637,7 @@ int test_zdd_exists_CALL(lace_worker* lace)
 //         for (int i=0; i<count; i++) {
 //             uint8_t arr[nvars];
 //             for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-//             bdd_set = bdd_or_cube(bdd_set, bdd_dom, arr);
+//             bdd_set = test_bdd_or_cube(bdd_set, bdd_dom, arr);
 //             zdd_set = zdd_or_cube(zdd_set, zdd_dom, arr);
 //         }
 //     }
@@ -649,7 +669,7 @@ int test_zdd_exists_CALL(lace_worker* lace)
 //         for (int i=0; i<count; i++) {
 //             uint8_t arr[len];
 //             for (int j=0; j<len; j++) arr[j] = (uint8_t)rng(0, 2);
-//             bdd_rel = bdd_or_cube(bdd_rel, bdd_vars, arr);
+//             bdd_rel = test_bdd_or_cube(bdd_rel, bdd_vars, arr);
 //             zdd_rel = zdd_or_cube(zdd_rel, zdd_vars, arr);
 //         }
 //     }
@@ -705,7 +725,7 @@ int test_zdd_exists_CALL(lace_worker* lace)
 //         for (int i=0; i<count; i++) {
 //             uint8_t arr[nsub1];
 //             for (int j=0; j<nsub1; j++) arr[j] = (uint8_t)rng(0, 2);
-//             bdd_set1 = bdd_or_cube(bdd_set1, bdd_subdom1, arr);
+//             bdd_set1 = test_bdd_or_cube(bdd_set1, bdd_subdom1, arr);
 //             zdd_set1 = zdd_or_cube(zdd_set1, zdd_subdom1, arr);
 //         }
 //     }
@@ -719,7 +739,7 @@ int test_zdd_exists_CALL(lace_worker* lace)
 //         for (int i=0; i<count; i++) {
 //             uint8_t arr[nsub2];
 //             for (int j=0; j<nsub2; j++) arr[j] = (uint8_t)rng(0, 2);
-//             bdd_set2 = bdd_or_cube(bdd_set2, bdd_subdom2, arr);
+//             bdd_set2 = test_bdd_or_cube(bdd_set2, bdd_subdom2, arr);
 //             zdd_set2 = zdd_or_cube(zdd_set2, zdd_subdom2, arr);
 //         }
 //     }
@@ -772,7 +792,7 @@ int test_zdd_isop_random_CALL(lace_worker* lace)
     for (int j=0; j<cubecount; j++) {
         uint8_t arr[12];
         for (int j=0; j<12; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set = test_bdd_or(bdd_set, bdd_cube(bdd_dom, arr));
+        bdd_set = test_bdd_or(bdd_set, test_bdd_cube(bdd_dom, arr));
     }
 
     // convert to ISOP cover

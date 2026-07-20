@@ -150,7 +150,10 @@ TASK(void, bdd_enumerate_minterms, BDD, dd, BDDSET, vars, bdd_enumerate_cb, cb, 
 TASK(void, bdd_enumerate_minterms_parallel, BDD, dd, BDDSET, vars, bdd_enumerate_cb, cb, void*, context)
 TASK(BDD, bdd_map_reduce_or, BDD, dd, BDDSET, vars, bdd_map_reduce_or_cb, cb, void*, context)
 TASK(double, bdd_path_count, BDD, dd)
-TASK(BDD, bdd_or_cube, BDD, dd, BDDSET, vars, uint8_t*, cube)
+TASK(int, bdd_cube, BDD*, result, BDDSET, vars, const uint8_t*, cube)
+TASK(int, bdd_or_cube, BDD*, result, BDD, dd, BDDSET, vars, const uint8_t*, cube)
+TASK(int, bdd_pick_cube, BDD*, result, BDD, dd, BDDSET, vars)
+TASK(int, bdd_pick_minterm, BDD*, result, BDD, dd, BDDSET, vars)
 TASK(BDDSET, bdd_set_difference, BDDSET, set1, BDDSET, set2)
 
 #ifdef __cplusplus

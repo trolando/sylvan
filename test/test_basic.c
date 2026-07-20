@@ -75,6 +75,38 @@ test_bdd_compose(BDD dd, MTBDDMAP map)
 }
 
 static BDD
+test_bdd_cube(BDDSET vars, const uint8_t *cube)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = bdd_cube(&result, vars, cube);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+static BDD
+test_bdd_or_cube(BDD dd, BDDSET vars, const uint8_t *cube)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = bdd_or_cube(&result, dd, vars, cube);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+static BDD
+test_bdd_pick_cube(BDD dd, BDDSET vars)
+{
+    return test_bdd_unary_set(bdd_pick_cube, dd, vars);
+}
+
+static BDD
+test_bdd_pick_minterm(BDD dd, BDDSET vars)
+{
+    return test_bdd_unary_set(bdd_pick_minterm, dd, vars);
+}
+
+static BDD
 test_bdd_ite(BDD a, BDD b, BDD c)
 {
     BDD result = mtbdd_invalid;
@@ -476,6 +508,96 @@ test_compose_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+TASK(int, test_cube_destinations)
+int
+test_cube_destinations_CALL(lace_worker *lace)
+{
+    BDD x = bdd_var_at_level(0);
+    BDD y = bdd_var_at_level(1);
+    BDD z = bdd_var_at_level(2);
+    BDD xy = mtbdd_invalid;
+    BDDSET vars = mtbdd_invalid;
+    BDD cube_result = mtbdd_invalid;
+    BDD union_result = mtbdd_invalid;
+    BDD expected_union = mtbdd_invalid;
+    BDD picked = mtbdd_invalid;
+    BDD minterm = mtbdd_invalid;
+    BDD expected_minterm = mtbdd_invalid;
+    BDD unchanged = bdd_true;
+    const uint8_t path_values[] = {0, 1, 2};
+    const uint8_t minterm_values[] = {0, 1, 0};
+
+    mtbdd_refs_pushptr(&x);
+    mtbdd_refs_pushptr(&y);
+    mtbdd_refs_pushptr(&z);
+    mtbdd_refs_pushptr(&xy);
+    mtbdd_refs_pushptr(&vars);
+    mtbdd_refs_pushptr(&cube_result);
+    mtbdd_refs_pushptr(&union_result);
+    mtbdd_refs_pushptr(&expected_union);
+    mtbdd_refs_pushptr(&picked);
+    mtbdd_refs_pushptr(&minterm);
+    mtbdd_refs_pushptr(&expected_minterm);
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_assert(bdd_and_CALL(lace, &xy, x, y) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(lace, &vars, xy, z) == SYLVAN_OK);
+
+    bdd_cube_SPAWN(lace, &cube_result, vars, path_values);
+    int minterm_cube_status = bdd_cube_CALL(lace, &expected_minterm, vars, minterm_values);
+    int cube_status = bdd_cube_SYNC(lace);
+    test_assert(cube_status == SYLVAN_OK);
+    test_assert(minterm_cube_status == SYLVAN_OK);
+
+    bdd_or_cube_SPAWN(lace, &union_result, z, vars, path_values);
+    int pick_status = bdd_pick_cube_CALL(lace, &picked, cube_result, vars);
+    int minterm_status = bdd_pick_minterm_CALL(lace, &minterm, cube_result, vars);
+    int union_status = bdd_or_cube_SYNC(lace);
+    test_assert(union_status == SYLVAN_OK);
+    test_assert(pick_status == SYLVAN_OK);
+    test_assert(minterm_status == SYLVAN_OK);
+    test_assert(bdd_or(&expected_union, z, cube_result) == SYLVAN_OK);
+
+    sylvan_gc_CALL(lace);
+    test_assert(union_result == expected_union);
+    test_assert(picked == cube_result);
+    test_assert(minterm == expected_minterm);
+
+    union_result = z;
+    test_assert(bdd_or_cube_CALL(lace, &union_result, union_result, vars, path_values) == SYLVAN_OK);
+    test_assert(union_result == expected_union);
+
+    const uint8_t invalid_values[] = {0, 3, 2};
+    test_assert(bdd_cube_CALL(lace, &unchanged, vars, invalid_values) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_cube_CALL(lace, &unchanged, mtbdd_invalid, path_values) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_cube_CALL(lace, &unchanged, vars, NULL) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_cube_CALL(lace, NULL, vars, path_values) == SYLVAN_ERR_INVALID);
+
+    test_assert(bdd_or_cube_CALL(lace, &unchanged, mtbdd_invalid, vars, path_values) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_or_cube_CALL(lace, &unchanged, z, mtbdd_invalid, path_values) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_or_cube_CALL(lace, &unchanged, z, vars, invalid_values) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_or_cube_CALL(lace, NULL, z, vars, path_values) == SYLVAN_ERR_INVALID);
+
+    test_assert(bdd_pick_cube_CALL(lace, &unchanged, mtbdd_invalid, vars) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_pick_minterm_CALL(lace, &unchanged, cube_result, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_pick_cube_CALL(lace, NULL, cube_result, vars) == SYLVAN_ERR_INVALID);
+    test_assert(bdd_pick_minterm_CALL(lace, &unchanged, bdd_false, vars) == SYLVAN_OK);
+    test_assert(unchanged == bdd_false);
+
+    sylvan_gc_CALL(lace);
+
+    mtbdd_refs_popptr(12);
+    return 0;
+}
+
 SYLVAN_TLS uint64_t seed = 1;
 
 uint64_t
@@ -723,42 +845,42 @@ test_cube()
     uint8_t cube[6], check[6];
     int i, j;
     for (i=0;i<6;i++) cube[i] = rng(0,3);
-    BDD bdd = bdd_cube(vars, cube);
+    BDD bdd = test_bdd_cube(vars, cube);
 
     bdd_pick_cube_values(bdd, vars, check);
     for (i=0; i<6;i++) test_assert(cube[i] == check[i]);
 
-    BDD picked_single = bdd_pick_minterm(bdd, vars);
+    BDD picked_single = test_bdd_pick_minterm(bdd, vars);
     test_assert(testEqual(test_bdd_and(picked_single, bdd), picked_single));
     assert(bdd_sat_count(picked_single, vars)==1);
 
-    BDD picked = bdd_pick_cube(bdd, vars);
+    BDD picked = test_bdd_pick_cube(bdd, vars);
     test_assert(testEqual(test_bdd_and(picked, bdd), picked));
 
-    BDD t1 = bdd_cube(vars, ((uint8_t[]){1,1,2,2,0,0}));
-    BDD t2 = bdd_cube(vars, ((uint8_t[]){1,1,1,0,0,2}));
-    test_assert(testEqual(bdd_or_cube(t1, vars, ((uint8_t[]){1,1,1,0,0,2})), test_bdd_or(t1, t2)));
-    t2 = bdd_cube(vars, ((uint8_t[]){2,2,2,1,1,0}));
-    test_assert(testEqual(bdd_or_cube(t1, vars, ((uint8_t[]){2,2,2,1,1,0})), test_bdd_or(t1, t2)));
-    t2 = bdd_cube(vars, ((uint8_t[]){1,1,1,0,0,0}));
-    test_assert(testEqual(bdd_or_cube(t1, vars, ((uint8_t[]){1,1,1,0,0,0})), test_bdd_or(t1, t2)));
+    BDD t1 = test_bdd_cube(vars, ((uint8_t[]){1,1,2,2,0,0}));
+    BDD t2 = test_bdd_cube(vars, ((uint8_t[]){1,1,1,0,0,2}));
+    test_assert(testEqual(test_bdd_or_cube(t1, vars, ((uint8_t[]){1,1,1,0,0,2})), test_bdd_or(t1, t2)));
+    t2 = test_bdd_cube(vars, ((uint8_t[]){2,2,2,1,1,0}));
+    test_assert(testEqual(test_bdd_or_cube(t1, vars, ((uint8_t[]){2,2,2,1,1,0})), test_bdd_or(t1, t2)));
+    t2 = test_bdd_cube(vars, ((uint8_t[]){1,1,1,0,0,0}));
+    test_assert(testEqual(test_bdd_or_cube(t1, vars, ((uint8_t[]){1,1,1,0,0,0})), test_bdd_or(t1, t2)));
 
     bdd = make_random(1, 16);
     const BDDSET all_vars = bdd_set_from_array(
         ((uint32_t[]){1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}), 15);
     for (j=0;j<10;j++) {
         for (i=0;i<6;i++) cube[i] = rng(0,3);
-        BDD c = bdd_cube(vars, cube);
-        test_assert(bdd_or_cube(bdd, vars, cube) == test_bdd_or(bdd, c));
+        BDD c = test_bdd_cube(vars, cube);
+        test_assert(test_bdd_or_cube(bdd, vars, cube) == test_bdd_or(bdd, c));
     }
 
     for (i=0;i<10;i++) {
-        picked = bdd_pick_cube(bdd, all_vars);
+        picked = test_bdd_pick_cube(bdd, all_vars);
         test_assert(testEqual(test_bdd_and(picked, bdd), picked));
     }
 
     const BDDSET limited_vars = bdd_set_from_array(((uint32_t[]){1,3,8}), 3);
-    picked = bdd_pick_cube(bdd, limited_vars);
+    picked = test_bdd_pick_cube(bdd, limited_vars);
     test_assert(bdd == bdd_false || test_bdd_and(picked, bdd) != bdd_false);
 
     BDD x = bdd_var_at_level(1);
@@ -914,14 +1036,14 @@ test_relprod()
 
     // transition relation: 000 --> 111 and !000 --> 000
     t = bdd_false;
-    t = bdd_or_cube(t, all_vars_set, ((uint8_t[]){0,1,0,1,0,1}));
-    t = bdd_or_cube(t, all_vars_set, ((uint8_t[]){1,0,2,0,2,0}));
-    t = bdd_or_cube(t, all_vars_set, ((uint8_t[]){2,0,1,0,2,0}));
-    t = bdd_or_cube(t, all_vars_set, ((uint8_t[]){2,0,2,0,1,0}));
+    t = test_bdd_or_cube(t, all_vars_set, ((uint8_t[]){0,1,0,1,0,1}));
+    t = test_bdd_or_cube(t, all_vars_set, ((uint8_t[]){1,0,2,0,2,0}));
+    t = test_bdd_or_cube(t, all_vars_set, ((uint8_t[]){2,0,1,0,2,0}));
+    t = test_bdd_or_cube(t, all_vars_set, ((uint8_t[]){2,0,2,0,1,0}));
 
-    s = bdd_cube(vars_set, (uint8_t[]){0,0,1});
-    zeroes = bdd_cube(vars_set, (uint8_t[]){0,0,0});
-    ones = bdd_cube(vars_set, (uint8_t[]){1,1,1});
+    s = test_bdd_cube(vars_set, (uint8_t[]){0,0,1});
+    zeroes = test_bdd_cube(vars_set, (uint8_t[]){0,0,0});
+    ones = test_bdd_cube(vars_set, (uint8_t[]){1,1,1});
 
     next = bdd_rel_next(s, t, all_vars_set);
     prev = bdd_rel_prev(t, next, all_vars_set);
@@ -933,13 +1055,13 @@ test_relprod()
     test_assert(next == ones);
     test_assert(prev == zeroes);
 
-    t = bdd_cube(all_vars_set, (uint8_t[]){0,0,0,0,0,1});
+    t = test_bdd_cube(all_vars_set, (uint8_t[]){0,0,0,0,0,1});
     test_assert(bdd_rel_prev(t, s, all_vars_set) == zeroes);
     test_assert(bdd_rel_prev(t, bdd_not(s), all_vars_set) == bdd_false);
     test_assert(bdd_rel_next(s, t, all_vars_set) == bdd_false);
     test_assert(bdd_rel_next(zeroes, t, all_vars_set) == s);
 
-    t = bdd_cube(all_vars_set, (uint8_t[]){0,0,0,0,0,2});
+    t = test_bdd_cube(all_vars_set, (uint8_t[]){0,0,0,0,0,2});
     test_assert(bdd_rel_prev(t, s, all_vars_set) == zeroes);
     test_assert(bdd_rel_prev(t, zeroes, all_vars_set) == zeroes);
     test_assert(bdd_rel_next(bdd_not(zeroes), t, all_vars_set) == bdd_false);
@@ -1097,6 +1219,7 @@ int runtests_CALL(lace_worker* lace)
         if (test_quantification_destinations_CALL(lace)) return 1;
         if (test_care_destinations_CALL(lace)) return 1;
         if (test_compose_destinations_CALL(lace)) return 1;
+        if (test_cube_destinations_CALL(lace)) return 1;
     }
 
     // we are not testing garbage collection

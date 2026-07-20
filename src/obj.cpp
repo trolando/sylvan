@@ -28,6 +28,8 @@ using bdd_binary_set_op = int (*)(BDD*, BDD, BDD, BDDSET);
 using bdd_compose_op = int (*)(BDD*, BDD, MTBDDMAP);
 using bdd_cube_op = int (*)(BDD*, BDDSET, const uint8_t*);
 using bdd_or_cube_op = int (*)(BDD*, BDD, BDDSET, const uint8_t*);
+using mtbdd_support_op = int (*)(BDDSET*, MTBDD);
+using mtbdd_compose_op = int (*)(MTBDD*, MTBDD, MTBDDMAP);
 
 BDD
 apply_binary(bdd_binary_op op, BDD a, BDD b)
@@ -105,6 +107,26 @@ apply_or_cube(bdd_or_cube_op op, BDD dd, BDDSET vars, const uint8_t *cube)
     BDD result = mtbdd_invalid;
     mtbdd_protect(&result);
     int status = op(&result, dd, vars, cube);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+BDDSET
+apply_mtbdd_support(mtbdd_support_op op, MTBDD dd)
+{
+    BDDSET result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = op(&result, dd);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+MTBDD
+apply_mtbdd_compose(mtbdd_compose_op op, MTBDD dd, MTBDDMAP map)
+{
+    MTBDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = op(&result, dd, map);
     mtbdd_unprotect(&result);
     return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
@@ -372,7 +394,7 @@ Bdd::Permute(const std::vector<uint32_t>& from, const std::vector<uint32_t>& to)
 Bdd
 Bdd::Support() const
 {
-    return mtbdd_support(bdd);
+    return apply_mtbdd_support(mtbdd_support, bdd);
 }
 
 BDD
@@ -459,7 +481,8 @@ Bdd::PickOneCube(const BddSet &variables) const
 Bdd
 Bdd::PickOneCube() const
 {
-    return Bdd(apply_unary_set(bdd_pick_cube, bdd, mtbdd_support(bdd)));
+    BDDSET support = apply_mtbdd_support(mtbdd_support, bdd);
+    return Bdd(apply_unary_set(bdd_pick_cube, bdd, support));
 }
 
 Bdd
@@ -929,7 +952,7 @@ Mtbdd::BddStrictThreshold(double value) const
 Mtbdd
 Mtbdd::Support() const
 {
-    return mtbdd_support(mtbdd);
+    return apply_mtbdd_support(mtbdd_support, mtbdd);
 }
 
 MTBDD
@@ -941,7 +964,7 @@ Mtbdd::GetMTBDD() const
 Mtbdd
 Mtbdd::Compose(MtbddMap &m) const
 {
-    return mtbdd_compose(mtbdd, m.mtbdd);
+    return apply_mtbdd_compose(mtbdd_compose, mtbdd, m.mtbdd);
 }
 
 Mtbdd
@@ -953,7 +976,7 @@ Mtbdd::Permute(const std::vector<uint32_t>& from, const std::vector<uint32_t>& t
         map.put(from[i-1], Bdd::bddVar(to[i-1]));
     }
 
-    return mtbdd_compose(mtbdd, map.mtbdd);
+    return apply_mtbdd_compose(mtbdd_compose, mtbdd, map.mtbdd);
 }
 
 double

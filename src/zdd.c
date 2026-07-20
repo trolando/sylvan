@@ -562,14 +562,19 @@ ZDD zdd_from_mtbdd_CALL(lace_worker* lace, MTBDD dd, MTBDD dom)
 ZDD
 zdd_from_bdd_CALL(lace_worker* lace, BDD dd, BDDSET domain)
 {
-    BDDSET support = mtbdd_refs_push(mtbdd_support_CALL(lace, dd));
+    BDDSET support = mtbdd_invalid;
+    mtbdd_refs_pushptr(&support);
+    if (mtbdd_support_CALL(lace, &support, dd) != SYLVAN_OK) {
+        mtbdd_refs_popptr(1);
+        return zdd_invalid;
+    }
     for (BDDSET remaining = support; !bdd_set_is_empty(remaining); remaining = bdd_set_next(remaining)) {
         if (!bdd_set_contains(domain, bdd_set_first(remaining))) {
-            mtbdd_refs_pop(1);
+            mtbdd_refs_popptr(1);
             return zdd_invalid;
         }
     }
-    mtbdd_refs_pop(1);
+    mtbdd_refs_popptr(1);
     return zdd_from_mtbdd_CALL(lace, dd, domain);
 }
 
@@ -642,10 +647,15 @@ bdd_from_zdd_CALL(lace_worker* lace, ZDD dd, BDDSET domain)
 ZDD
 zdd_cofactor_CALL(lace_worker* lace, ZDD dd, BDD cube, BDDSET domain)
 {
-    BDDSET cube_support = mtbdd_refs_push(mtbdd_support_CALL(lace, cube));
+    BDDSET cube_support = mtbdd_invalid;
+    mtbdd_refs_pushptr(&cube_support);
+    if (mtbdd_support_CALL(lace, &cube_support, cube) != SYLVAN_OK) {
+        mtbdd_refs_popptr(1);
+        return zdd_invalid;
+    }
     for (BDDSET remaining = cube_support; !bdd_set_is_empty(remaining); remaining = bdd_set_next(remaining)) {
         if (!bdd_set_contains(domain, bdd_set_first(remaining))) {
-            mtbdd_refs_pop(1);
+            mtbdd_refs_popptr(1);
             return zdd_invalid;
         }
     }
@@ -654,21 +664,21 @@ zdd_cofactor_CALL(lace_worker* lace, ZDD dd, BDD cube, BDDSET domain)
     BDD cofactor = mtbdd_invalid;
     mtbdd_refs_pushptr(&cofactor);
     if (bdd_cofactor(&cofactor, bdd, cube) != SYLVAN_OK) {
-        mtbdd_refs_popptr(1);
-        mtbdd_refs_pop(2);
+        mtbdd_refs_popptr(2);
+        mtbdd_refs_pop(1);
         return zdd_invalid;
     }
 
     BDDSET result_domain = mtbdd_invalid;
     mtbdd_refs_pushptr(&result_domain);
     if (bdd_set_difference(&result_domain, domain, cube_support) != SYLVAN_OK) {
-        mtbdd_refs_popptr(2);
-        mtbdd_refs_pop(2);
+        mtbdd_refs_popptr(3);
+        mtbdd_refs_pop(1);
         return zdd_invalid;
     }
     ZDD result = zdd_from_bdd_CALL(lace, cofactor, result_domain);
-    mtbdd_refs_popptr(2);
-    mtbdd_refs_pop(2);
+    mtbdd_refs_popptr(3);
+    mtbdd_refs_pop(1);
     return result;
 }
 

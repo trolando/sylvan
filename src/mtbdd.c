@@ -2527,10 +2527,12 @@ MTBDD mtbdd_mul_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
 /**
  * Calculate the support of a MTBDD, i.e. the cube of all variables that appear in the MTBDD nodes.
  */
-MTBDD mtbdd_support_CALL(lace_worker* lace, MTBDD dd)
+int mtbdd_support_CALL(lace_worker* lace, BDDSET *destination, MTBDD dd)
 {
+    if (destination == NULL || dd == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
     /* Terminal case */
-    if (mtbdd_is_leaf(dd)) return bdd_true;
+    if (mtbdd_is_leaf(dd)) { *destination = bdd_true; return SYLVAN_OK; }
 
     /* Maybe perform garbage collection */
     sylvan_gc_test(lace);
@@ -2539,28 +2541,48 @@ MTBDD mtbdd_support_CALL(lace_worker* lace, MTBDD dd)
     sylvan_stats_count(BDD_SUPPORT);
 
     /* Check cache */
-    MTBDD result;
-    if (cache_get3(CACHE_MTBDD_SUPPORT, dd, 0, 0, &result)) {
+    BDDSET computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_MTBDD_SUPPORT, dd, 0, 0, &computed)) {
         sylvan_stats_count(BDD_SUPPORT_CACHED);
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /* Recursive calls */
     mtbddnode* n = MTBDD_GETNODE(dd);
-    mtbdd_refs_spawn(mtbdd_support_SPAWN(lace, node_getlow(dd, n)));
-    MTBDD high = mtbdd_refs_push(mtbdd_support_CALL(lace, node_gethigh(dd, n)));
-    MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(mtbdd_support_SYNC(lace)));
+    BDDSET low = mtbdd_invalid;
+    BDDSET high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+    mtbdd_support_SPAWN(lace, &low, node_getlow(dd, n));
+    int status = mtbdd_support_CALL(lace, &high, node_gethigh(dd, n));
+    int low_status = mtbdd_support_SYNC(lace);
+    if (status == SYLVAN_OK) status = low_status;
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(3);
+        return status;
+    }
 
     /* Compute result */
-    result = mtbdd_make_node(mtbddnode_getvariable(n), mtbdd_undefined, bdd_and_legacy_CALL(lace, low, high));
-    mtbdd_refs_pop(2);
+    status = bdd_and_CALL(lace, &computed, low, high);
+    if (status == SYLVAN_OK) {
+        status = _mtbdd_try_make_node(&computed, mtbddnode_getvariable(n), mtbdd_undefined, computed);
+    }
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(3);
+        return status;
+    }
 
     /* Write to cache */
-    if (cache_put3(CACHE_MTBDD_SUPPORT, dd, 0, 0, result)) {
+    if (cache_put3(CACHE_MTBDD_SUPPORT, dd, 0, 0, computed)) {
         sylvan_stats_count(BDD_SUPPORT_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    mtbdd_refs_popptr(3);
+    return SYLVAN_OK;
 }
 
 /**
@@ -2568,10 +2590,12 @@ MTBDD mtbdd_support_CALL(lace_worker* lace, MTBDD dd)
  * replace the node by the result of mtbdd_ite(<value>, <high>, <low>).
  * Each <value> in <map> must be a Boolean MTBDD.
  */
-MTBDD mtbdd_compose_CALL(lace_worker* lace, MTBDD a, MTBDDMAP map)
+int mtbdd_compose_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDDMAP map)
 {
+    if (destination == NULL || a == mtbdd_invalid || map == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
     /* Terminal case */
-    if (mtbdd_is_leaf(a) || mtbdd_map_is_empty(map)) return a;
+    if (mtbdd_is_leaf(a) || mtbdd_map_is_empty(map)) { *destination = a; return SYLVAN_OK; }
 
     /* Determine top level */
     mtbddnode* n = MTBDD_GETNODE(a);
@@ -2580,7 +2604,7 @@ MTBDD mtbdd_compose_CALL(lace_worker* lace, MTBDD a, MTBDDMAP map)
     /* Find in map */
     while (mtbdd_map_key(map) < v) {
         map = mtbdd_map_next(map);
-        if (mtbdd_map_is_empty(map)) return a;
+        if (mtbdd_map_is_empty(map)) { *destination = a; return SYLVAN_OK; }
     }
 
     /* Perhaps execute garbage collection */
@@ -2590,33 +2614,48 @@ MTBDD mtbdd_compose_CALL(lace_worker* lace, MTBDD a, MTBDDMAP map)
     sylvan_stats_count(MTBDD_COMPOSE);
 
     /* Check cache */
-    MTBDD result;
-    if (cache_get3(CACHE_MTBDD_COMPOSE, a, map, 0, &result)) {
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_MTBDD_COMPOSE, a, map, 0, &computed)) {
         sylvan_stats_count(MTBDD_COMPOSE_CACHED);
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /* Recursive calls */
-    mtbdd_refs_spawn(mtbdd_compose_SPAWN(lace, node_getlow(a, n), map));
-    MTBDD high = mtbdd_refs_push(mtbdd_compose_CALL(lace, node_gethigh(a, n), map));
-    MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(mtbdd_compose_SYNC(lace)));
+    MTBDD low = mtbdd_invalid;
+    MTBDD high = mtbdd_invalid;
+    MTBDD condition = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+    mtbdd_refs_pushptr(&condition);
+    mtbdd_compose_SPAWN(lace, &low, node_getlow(a, n), map);
+    int status = mtbdd_compose_CALL(lace, &high, node_gethigh(a, n), map);
+    int low_status = mtbdd_compose_SYNC(lace);
+    if (status == SYLVAN_OK) status = low_status;
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(4);
+        return status;
+    }
 
     /* Calculate result */
-    MTBDD r = mtbdd_map_key(map) == v ? mtbdd_map_value(map) : mtbdd_make_node(v, mtbdd_undefined, bdd_true);
-    mtbdd_refs_push(r);
-    result = mtbdd_invalid;
-    mtbdd_refs_pushptr(&result);
-    int status = mtbdd_ite_CALL(lace, &result, r, high, low);
-    mtbdd_refs_popptr(1);
-    mtbdd_refs_pop(3);
-    if (status != SYLVAN_OK) return mtbdd_invalid;
+    if (mtbdd_map_key(map) == v) condition = mtbdd_map_value(map);
+    else status = _mtbdd_try_make_node(&condition, v, mtbdd_undefined, bdd_true);
+    if (status == SYLVAN_OK) status = mtbdd_ite_CALL(lace, &computed, condition, high, low);
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(4);
+        return status;
+    }
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_COMPOSE, a, map, 0, result)) {
+    if (cache_put3(CACHE_MTBDD_COMPOSE, a, map, 0, computed)) {
         sylvan_stats_count(MTBDD_COMPOSE_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    mtbdd_refs_popptr(4);
+    return SYLVAN_OK;
 }
 
 /**

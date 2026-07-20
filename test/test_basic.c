@@ -270,6 +270,123 @@ test_mtbdd_construction_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+TASK(int, test_mtbdd_structure_destinations)
+int
+test_mtbdd_structure_destinations_CALL(lace_worker *lace)
+{
+    MTBDD terminal = mtbdd_int64(42);
+    MTBDD other_terminal = mtbdd_invalid;
+    BDD x0 = mtbdd_invalid;
+    BDD x1 = mtbdd_invalid;
+    BDD x2 = mtbdd_invalid;
+    MTBDD source = mtbdd_invalid;
+    MTBDD nested = mtbdd_invalid;
+    BDDSET support = mtbdd_invalid;
+    MTBDD composed = mtbdd_invalid;
+    BDDSET composed_support = mtbdd_invalid;
+    MTBDD expected_inner = mtbdd_invalid;
+    MTBDD expected = mtbdd_invalid;
+    MTBDD inplace = mtbdd_invalid;
+    MTBDD empty_result = mtbdd_invalid;
+    MTBDD support_alias = mtbdd_invalid;
+    MTBDDMAP map = mtbdd_invalid;
+    MTBDDMAP map2 = mtbdd_invalid;
+    MTBDD substituted = mtbdd_invalid;
+    MTBDD expected_substituted = mtbdd_invalid;
+    MTBDD later_source = mtbdd_invalid;
+    MTBDD preserved = mtbdd_invalid;
+    MTBDD unchanged = bdd_true;
+
+    mtbdd_refs_pushptr(&terminal);
+    other_terminal = mtbdd_int64(7);
+    mtbdd_refs_pushptr(&other_terminal);
+    mtbdd_refs_pushptr(&x0);
+    mtbdd_refs_pushptr(&x1);
+    mtbdd_refs_pushptr(&x2);
+    mtbdd_refs_pushptr(&source);
+    mtbdd_refs_pushptr(&nested);
+    mtbdd_refs_pushptr(&support);
+    mtbdd_refs_pushptr(&composed);
+    mtbdd_refs_pushptr(&composed_support);
+    mtbdd_refs_pushptr(&expected_inner);
+    mtbdd_refs_pushptr(&expected);
+    mtbdd_refs_pushptr(&inplace);
+    mtbdd_refs_pushptr(&empty_result);
+    mtbdd_refs_pushptr(&support_alias);
+    mtbdd_refs_pushptr(&map);
+    mtbdd_refs_pushptr(&map2);
+    mtbdd_refs_pushptr(&substituted);
+    mtbdd_refs_pushptr(&expected_substituted);
+    mtbdd_refs_pushptr(&later_source);
+    mtbdd_refs_pushptr(&preserved);
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_assert(bdd_var_at_level(&x0, 0) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&x1, 1) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&x2, 2) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &source, x0, terminal, other_terminal) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &nested, x2, source, terminal) == SYLVAN_OK);
+
+    map = mtbdd_map_set(mtbdd_map_empty(), 0, x1);
+    test_assert(map != mtbdd_invalid);
+    mtbdd_compose_SPAWN(lace, &composed, nested, map);
+    test_assert(mtbdd_support_CALL(lace, &support, nested) == SYLVAN_OK);
+    test_assert(mtbdd_compose_SYNC(lace) == SYLVAN_OK);
+
+    mtbdd_support_SPAWN(lace, &composed_support, composed);
+    test_assert(mtbdd_ite_CALL(lace, &expected_inner, x1, terminal, other_terminal) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &expected, x2, expected_inner, terminal) == SYLVAN_OK);
+    test_assert(mtbdd_support_SYNC(lace) == SYLVAN_OK);
+    test_assert(composed == expected);
+
+    inplace = nested;
+    test_assert(mtbdd_compose_CALL(lace, &inplace, inplace, map) == SYLVAN_OK);
+    test_assert(inplace == composed);
+
+    map2 = mtbdd_map_set(mtbdd_map_empty(), 2, x1);
+    test_assert(map2 != mtbdd_invalid);
+    test_assert(mtbdd_compose_CALL(lace, &substituted, nested, map2) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &expected_substituted, x1, source, terminal) == SYLVAN_OK);
+    test_assert(substituted == expected_substituted);
+
+    test_assert(mtbdd_ite_CALL(lace, &later_source, x2, terminal, other_terminal) == SYLVAN_OK);
+    test_assert(mtbdd_compose_CALL(lace, &preserved, later_source, map) == SYLVAN_OK);
+    test_assert(preserved == later_source);
+    test_assert(mtbdd_compose_CALL(lace, &empty_result, nested, mtbdd_map_empty()) == SYLVAN_OK);
+    test_assert(empty_result == nested);
+
+    support_alias = nested;
+    test_assert(mtbdd_support_CALL(lace, &support_alias, support_alias) == SYLVAN_OK);
+    test_assert(support_alias == support);
+    test_assert(mtbdd_support_CALL(lace, &empty_result, terminal) == SYLVAN_OK);
+    test_assert(empty_result == bdd_set_empty());
+
+    sylvan_gc_CALL(lace);
+    test_assert(bdd_set_count(support) == 2);
+    test_assert(bdd_set_contains(support, 0));
+    test_assert(!bdd_set_contains(support, 1));
+    test_assert(bdd_set_contains(support, 2));
+    test_assert(bdd_set_count(composed_support) == 2);
+    test_assert(!bdd_set_contains(composed_support, 0));
+    test_assert(bdd_set_contains(composed_support, 1));
+    test_assert(bdd_set_contains(composed_support, 2));
+    test_assert(mtbdd_is_valid(composed));
+    test_assert(mtbdd_is_valid(substituted));
+
+    test_assert(mtbdd_support_CALL(lace, NULL, nested) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_support_CALL(lace, &unchanged, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_compose_CALL(lace, NULL, nested, map) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_compose_CALL(lace, &unchanged, mtbdd_invalid, map) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_compose_CALL(lace, &unchanged, nested, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+
+    sylvan_gc_CALL(lace);
+    mtbdd_refs_popptr(22);
+    return 0;
+}
+
 static BDD
 test_bdd_binary(test_bdd_binary_op op, BDD a, BDD b)
 {
@@ -1610,6 +1727,7 @@ int runtests_CALL(lace_worker* lace)
     for (int j = 0; j < 10; j++) {
         if (test_variable_set_destinations_CALL(lace)) return 1;
         if (test_mtbdd_construction_destinations_CALL(lace)) return 1;
+        if (test_mtbdd_structure_destinations_CALL(lace)) return 1;
         if (test_protected_destinations_CALL(lace)) return 1;
         if (test_quantification_destinations_CALL(lace)) return 1;
         if (test_care_destinations_CALL(lace)) return 1;

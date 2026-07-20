@@ -29,19 +29,23 @@ static const BDD bdd_false = 0;
 static const BDD bdd_true = UINT64_C(0x8000000000000000);
 
 /**
- * Return the variable at the given level, creating its canonical node when
- * necessary. Levels are limited to 24 bits by the current node encoding.
+ * Return the variable at the given level through <result>, creating its
+ * canonical node when necessary. Levels are limited to 24 bits by the current
+ * node encoding. On failure, <result> is unchanged.
  */
-BDD bdd_var_at_level(uint32_t level);
+int bdd_var_at_level(BDD *result, uint32_t level);
 
 /**
- * Create the next variable after all levels requested so far.
+ * Create the next variable after all levels requested so far. On failure,
+ * <result> is unchanged.
  */
-BDD bdd_new_var(void);
+int bdd_new_var(BDD *result);
 
 /**
  * A BDDSET is a set of variables, represented by their positive conjunction.
  * It is not a set of values or assignments represented by a general BDD.
+ * DD-producing set operations return a status and leave <result> unchanged on
+ * failure.
  */
 static inline BDDSET bdd_set_empty(void);
 static inline int bdd_set_is_empty(BDDSET set);
@@ -49,7 +53,7 @@ static inline uint32_t bdd_set_first(BDDSET set);
 static inline BDDSET bdd_set_next(BDDSET set);
 
 /** Create a variable set from an array of levels. */
-BDDSET bdd_set_from_array(uint32_t *levels, size_t count);
+int bdd_set_from_array(BDDSET *result, const uint32_t *levels, size_t count);
 
 /** Write the levels in a variable set to a sufficiently large array. */
 void bdd_set_to_array(BDDSET set, uint32_t *levels);
@@ -57,20 +61,20 @@ void bdd_set_to_array(BDDSET set, uint32_t *levels);
 /** Return the number of variables in a variable set. */
 size_t bdd_set_count(BDDSET set);
 
-/** Return the union of two variable sets. */
-static inline BDDSET bdd_set_union(BDDSET set1, BDDSET set2);
+/** Return the union of two variable sets through result. */
+static inline int bdd_set_union(BDDSET *result, BDDSET set1, BDDSET set2);
 
-/** Remove the variables in set2 from set1. */
-static inline BDDSET bdd_set_difference(BDDSET set1, BDDSET set2);
+/** Remove the variables in set2 from set1, writing the result through result. */
+static inline int bdd_set_difference(BDDSET *result, BDDSET set1, BDDSET set2);
 
 /** Return whether set contains the variable at level. */
 int bdd_set_contains(BDDSET set, uint32_t level);
 
 /** Add the variable at level to set. */
-BDDSET bdd_set_add(BDDSET set, uint32_t level);
+int bdd_set_add(BDDSET *result, BDDSET set, uint32_t level);
 
 /** Remove the variable at level from set. */
-BDDSET bdd_set_remove(BDDSET set, uint32_t level);
+int bdd_set_remove(BDDSET *result, BDDSET set, uint32_t level);
 
 /** Check that set is a valid, referenced conjunction of positive variables. */
 void bdd_set_is_valid(BDDSET set);

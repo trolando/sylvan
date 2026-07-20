@@ -38,7 +38,10 @@ public:
     Bdd() { bdd = bdd_false; mtbdd_protect(&bdd); }
     Bdd(const BDD from) : bdd(from) { mtbdd_protect(&bdd); }
     Bdd(const Bdd &from) : bdd(from.bdd) { mtbdd_protect(&bdd); }
-    Bdd(const uint32_t var) { bdd = bdd_var_at_level(var); mtbdd_protect(&bdd); }
+    Bdd(const uint32_t var) : bdd(mtbdd_invalid) {
+        mtbdd_protect(&bdd);
+        (void)bdd_var_at_level(&bdd, var);
+    }
     ~Bdd() { mtbdd_unprotect(&bdd); }
 
     /**

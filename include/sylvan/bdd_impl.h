@@ -122,13 +122,10 @@ static inline BDDSET bdd_set_next(BDDSET set)
     return mtbdd_node_high(set);
 }
 
-static inline BDDSET bdd_set_union(BDDSET set1, BDDSET set2)
+static inline int bdd_set_union(BDDSET *result, BDDSET set1, BDDSET set2)
 {
-    BDDSET result = mtbdd_invalid;
-    mtbdd_protect(&result);
-    int status = bdd_and(&result, set1, set2);
-    mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    if (result == NULL || set1 == mtbdd_invalid || set2 == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    return bdd_and(result, set1, set2);
 }
 
 TASK(int, bdd_ite, BDD*, result, BDD, a, BDD, b, BDD, c)
@@ -154,7 +151,7 @@ TASK(int, bdd_cube, BDD*, result, BDDSET, vars, const uint8_t*, cube)
 TASK(int, bdd_or_cube, BDD*, result, BDD, dd, BDDSET, vars, const uint8_t*, cube)
 TASK(int, bdd_pick_cube, BDD*, result, BDD, dd, BDDSET, vars)
 TASK(int, bdd_pick_minterm, BDD*, result, BDD, dd, BDDSET, vars)
-TASK(BDDSET, bdd_set_difference, BDDSET, set1, BDDSET, set2)
+TASK(int, bdd_set_difference, BDDSET*, result, BDDSET, set1, BDDSET, set2)
 
 #ifdef __cplusplus
 }

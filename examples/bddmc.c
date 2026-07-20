@@ -186,7 +186,7 @@ set_t set_load_CALL(lace_worker* lace, FILE* f)
         uint32_t *vars = (uint32_t*)malloc((size_t)totalbits * sizeof(*vars));
         if (vars == NULL) Abort("Out of memory!\n");
         for (int i=0; i<totalbits; i++) vars[i] = 2*i;
-        set->variables = bdd_set_from_array(vars, totalbits);
+        if (bdd_set_from_array(&set->variables, vars, totalbits) != SYLVAN_OK) Abort("Out of memory!\n");
         free(vars);
     } else {
         // read proj
@@ -206,7 +206,7 @@ set_t set_load_CALL(lace_worker* lace, FILE* f)
                 cv += 2 * statebits[i];
             }
         }
-        set->variables = bdd_set_from_array(vars, n);
+        if (bdd_set_from_array(&set->variables, vars, n) != SYLVAN_OK) Abort("Out of memory!\n");
         free(vars);
         free(proj);
     }
@@ -244,7 +244,9 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
     rel->w_proj = w_proj;
 
     rel->bdd = bdd_false;
+    rel->variables = mtbdd_invalid;
     mtbdd_protect(&rel->bdd);
+    mtbdd_protect(&rel->variables);
 
     /* Compute a_proj the union of r_proj and w_proj, and a_k the length of a_proj */
     int *a_proj = (int*)malloc((size_t)(r_k + w_k) * sizeof(*a_proj));
@@ -285,8 +287,7 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
             curvar += 2 * statebits[i];
         }
     }
-    rel->variables = bdd_set_from_array(all_vars, n);
-    mtbdd_protect(&rel->variables);
+    if (bdd_set_from_array(&rel->variables, all_vars, n) != SYLVAN_OK) Abort("Out of memory!\n");
 
     free(a_proj);
     free(all_vars);
@@ -893,8 +894,8 @@ void run_CALL(lace_worker* lace)
         BDD newvars = bdd_set_empty();
         mtbdd_refs_pushptr(&newvars);
         for (int i=totalbits-1; i>=0; i--) {
-            newvars = bdd_set_add(newvars, i*2+1);
-            newvars = bdd_set_add(newvars, i*2);
+            if (bdd_set_add(&newvars, newvars, i*2+1) != SYLVAN_OK) Abort("Out of memory!\n");
+            if (bdd_set_add(&newvars, newvars, i*2) != SYLVAN_OK) Abort("Out of memory!\n");
         }
 
         INFO("Extending transition relations to full domain.\n");

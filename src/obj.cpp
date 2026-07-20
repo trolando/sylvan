@@ -522,7 +522,7 @@ Bdd::bddZero()
 Bdd
 Bdd::bddVar(uint32_t index)
 {
-    return bdd_var_at_level(index);
+    return Bdd(index);
 }
 
 Bdd

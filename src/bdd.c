@@ -2019,49 +2019,62 @@ bdd_pick_cube_values(BDD bdd, BDDSET vars, uint8_t *str)
     return 1;
 }
 
-BDD
-bdd_pick_minterm(BDD bdd, BDDSET vars)
+int
+bdd_pick_minterm_CALL(lace_worker* lace, BDD *destination, BDD bdd, BDDSET vars)
 {
-    if (bdd == bdd_false) return bdd_false;
-    if (bdd_set_is_empty(vars)) return bdd_true;
+    if (destination == NULL || bdd == mtbdd_invalid || vars == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    if (bdd == bdd_false) { *destination = bdd_false; return SYLVAN_OK; }
+    if (bdd_set_is_empty(vars)) { *destination = bdd_true; return SYLVAN_OK; }
 
     bddnode* n_vars = MTBDD_GETNODE(vars);
     uint32_t var = bddnode_getvariable(n_vars);
-    BDD next_vars = node_high(vars, n_vars);
+    BDDSET next_vars = node_high(vars, n_vars);
+
+    BDD child = mtbdd_invalid;
+    mtbdd_refs_pushptr(&child);
+    int status;
+
     if (bdd == bdd_true) {
-        // take false
-        BDD res = bdd_pick_minterm(bdd, next_vars);
-        return mtbdd_make_node(var, res, bdd_false);
+        status = bdd_pick_minterm_CALL(lace, &child, bdd, next_vars);
+        if (status == SYLVAN_OK) status = _mtbdd_try_make_node(destination, var, child, bdd_false);
+        mtbdd_refs_popptr(1);
+        return status;
     }
+
     bddnode* n_bdd = MTBDD_GETNODE(bdd);
     while (bddnode_getvariable(n_bdd) < var) {
         bdd = node_low(bdd, n_bdd) != bdd_false
             ? node_low(bdd, n_bdd)
             : node_high(bdd, n_bdd);
-        if (bdd == bdd_true) return bdd_pick_minterm(bdd, vars);
+        if (bdd == bdd_true) {
+            mtbdd_refs_popptr(1);
+            return bdd_pick_minterm_CALL(lace, destination, bdd, vars);
+        }
         n_bdd = MTBDD_GETNODE(bdd);
     }
+
     if (bddnode_getvariable(n_bdd) != var) {
-        assert(bddnode_getvariable(n_bdd)>var);
-        // take false
-        BDD res = bdd_pick_minterm(bdd, next_vars);
-        return mtbdd_make_node(var, res, bdd_false);
+        assert(bddnode_getvariable(n_bdd) > var);
+        status = bdd_pick_minterm_CALL(lace, &child, bdd, next_vars);
+        if (status == SYLVAN_OK) status = _mtbdd_try_make_node(destination, var, child, bdd_false);
+    } else if (node_high(bdd, n_bdd) == bdd_false) {
+        status = bdd_pick_minterm_CALL(lace, &child, node_low(bdd, n_bdd), next_vars);
+        if (status == SYLVAN_OK) status = _mtbdd_try_make_node(destination, var, child, bdd_false);
+    } else {
+        status = bdd_pick_minterm_CALL(lace, &child, node_high(bdd, n_bdd), next_vars);
+        if (status == SYLVAN_OK) status = _mtbdd_try_make_node(destination, var, bdd_false, child);
     }
-    if (node_high(bdd, n_bdd) == bdd_false) {
-        // take false
-        BDD res = bdd_pick_minterm(node_low(bdd, n_bdd), next_vars);
-        return mtbdd_make_node(var, res, bdd_false);
-    }
-    // take true
-    BDD res = bdd_pick_minterm(node_high(bdd, n_bdd), next_vars);
-    return mtbdd_make_node(var, bdd_false, res);
+
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
-BDD
-bdd_pick_cube(BDD bdd, BDDSET vars)
+int
+bdd_pick_cube_CALL(lace_worker* lace, BDD *destination, BDD bdd, BDDSET vars)
 {
-    if (bdd == bdd_false) return bdd_false;
-    if (bdd == bdd_true || bdd_set_is_empty(vars)) return bdd_true;
+    if (destination == NULL || bdd == mtbdd_invalid || vars == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    if (bdd == bdd_false) { *destination = bdd_false; return SYLVAN_OK; }
+    if (bdd == bdd_true || bdd_set_is_empty(vars)) { *destination = bdd_true; return SYLVAN_OK; }
 
     bddnode* node = MTBDD_GETNODE(bdd);
     bddnode* vars_node = MTBDD_GETNODE(vars);
@@ -2069,54 +2082,68 @@ bdd_pick_cube(BDD bdd, BDDSET vars)
     uint32_t var = bddnode_getvariable(vars_node);
     BDDSET next_vars = node_high(vars, vars_node);
 
-    if (var < bdd_var) return bdd_pick_cube(bdd, next_vars);
+    if (var < bdd_var) return bdd_pick_cube_CALL(lace, destination, bdd, next_vars);
 
     BDD low = node_low(bdd, node);
     BDD high = node_high(bdd, node);
     BDD chosen = low != bdd_false ? low : high;
 
-    if (bdd_var < var) return bdd_pick_cube(chosen, vars);
+    if (bdd_var < var) return bdd_pick_cube_CALL(lace, destination, chosen, vars);
 
-    BDD result = bdd_pick_cube(chosen, next_vars);
-    return low != bdd_false
-        ? mtbdd_make_node(var, result, bdd_false)
-        : mtbdd_make_node(var, bdd_false, result);
+    BDD child = mtbdd_invalid;
+    mtbdd_refs_pushptr(&child);
+    int status = bdd_pick_cube_CALL(lace, &child, chosen, next_vars);
+    if (status == SYLVAN_OK) {
+        status = low != bdd_false
+            ? _mtbdd_try_make_node(destination, var, child, bdd_false)
+            : _mtbdd_try_make_node(destination, var, bdd_false, child);
+    }
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
-BDD
-bdd_cube(BDDSET vars, uint8_t *cube)
+int
+bdd_cube_CALL(lace_worker* lace, BDD *destination, BDDSET vars, const uint8_t *cube)
 {
-    if (bdd_set_is_empty(vars)) return bdd_true;
+    if (destination == NULL || vars == mtbdd_invalid || cube == NULL) return SYLVAN_ERR_INVALID;
+    if (bdd_set_is_empty(vars)) { *destination = bdd_true; return SYLVAN_OK; }
+    if (*cube > 2) return SYLVAN_ERR_INVALID;
 
     bddnode* n = MTBDD_GETNODE(vars);
-    uint32_t v = bddnode_getvariable(n);
-    vars = node_high(vars, n);
+    uint32_t var = bddnode_getvariable(n);
+    BDDSET next_vars = node_high(vars, n);
 
-    BDD result = bdd_cube(vars, cube+1);
-    if (*cube == 0) {
-        result = mtbdd_make_node(v, result, bdd_false);
-    } else if (*cube == 1) {
-        result = mtbdd_make_node(v, bdd_false, result);
+    BDD child = mtbdd_invalid;
+    mtbdd_refs_pushptr(&child);
+    int status = bdd_cube_CALL(lace, &child, next_vars, cube + 1);
+    if (status == SYLVAN_OK) {
+        if (*cube == 0) status = _mtbdd_try_make_node(destination, var, child, bdd_false);
+        else if (*cube == 1) status = _mtbdd_try_make_node(destination, var, bdd_false, child);
+        else *destination = child;
     }
-
-    return result;
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
-BDD bdd_or_cube_CALL(lace_worker* lace, BDD bdd, BDDSET vars, uint8_t * cube)
+int
+bdd_or_cube_CALL(lace_worker* lace, BDD *destination, BDD bdd, BDDSET vars, const uint8_t *cube)
 {
+    if (destination == NULL || bdd == mtbdd_invalid || vars == mtbdd_invalid || cube == NULL) {
+        return SYLVAN_ERR_INVALID;
+    }
+
     /* Terminal cases */
-    if (bdd == bdd_true) return bdd_true;
-    if (bdd == bdd_false) return bdd_cube(vars, cube);
-    if (bdd_set_is_empty(vars)) return bdd_true;
+    if (bdd == bdd_true) { *destination = bdd_true; return SYLVAN_OK; }
+    if (bdd == bdd_false) return bdd_cube_CALL(lace, destination, vars, cube);
+    if (bdd_set_is_empty(vars)) { *destination = bdd_true; return SYLVAN_OK; }
 
     bddnode* nv = MTBDD_GETNODE(vars);
-
     for (;;) {
+        if (*cube > 2) return SYLVAN_ERR_INVALID;
         if (*cube == 0 || *cube == 1) break;
-        // *cube should be 2
         cube++;
         vars = node_high(vars, nv);
-        if (bdd_set_is_empty(vars)) return bdd_true;
+        if (bdd_set_is_empty(vars)) { *destination = bdd_true; return SYLVAN_OK; }
         nv = MTBDD_GETNODE(vars);
     }
 
@@ -2125,48 +2152,64 @@ BDD bdd_or_cube_CALL(lace_worker* lace, BDD bdd, BDDSET vars, uint8_t * cube)
     // missing: SV_CNT_OP FIXME
 
     bddnode* n = MTBDD_GETNODE(bdd);
-    BDD result = bdd;
-    uint32_t v = bddnode_getvariable(nv);
-    uint32_t n_level = bddnode_getvariable(n);
+    BDD computed = bdd;
+    mtbdd_refs_pushptr(&computed);
+    uint32_t var = bddnode_getvariable(nv);
+    uint32_t bdd_var = bddnode_getvariable(n);
+    int status = SYLVAN_OK;
 
-    if (v < n_level) {
-        vars = node_high(vars, nv);
-        if (*cube == 0) {
-            result = bdd_or_cube_CALL(lace, bdd, vars, cube+1);
-            result = mtbdd_make_node(v, result, bdd);
-        } else /* *cube == 1 */ {
-            result = bdd_or_cube_CALL(lace, bdd, vars, cube+1);
-            result = mtbdd_make_node(v, bdd, result);
+    if (var < bdd_var) {
+        BDD child = mtbdd_invalid;
+        mtbdd_refs_pushptr(&child);
+        BDDSET next_vars = node_high(vars, nv);
+        status = bdd_or_cube_CALL(lace, &child, bdd, next_vars, cube + 1);
+        if (status == SYLVAN_OK) {
+            status = *cube == 0
+                ? _mtbdd_try_make_node(&computed, var, child, bdd)
+                : _mtbdd_try_make_node(&computed, var, bdd, child);
         }
-    } else if (v > n_level) {
+        mtbdd_refs_popptr(1);
+    } else if (var > bdd_var) {
         BDD high = node_high(bdd, n);
         BDD low = node_low(bdd, n);
-        mtbdd_refs_spawn(bdd_or_cube_SPAWN(lace, high, vars, cube));
-        BDD new_low = bdd_or_cube_CALL(lace, low, vars, cube);
-        mtbdd_refs_push(new_low);
-        BDD new_high = mtbdd_refs_sync(bdd_or_cube_SYNC(lace));
-        mtbdd_refs_pop(1);
-        if (new_low != low || new_high != high) {
-            result = mtbdd_make_node(n_level, new_low, new_high);
+        BDD new_low = mtbdd_invalid, new_high = mtbdd_invalid;
+        mtbdd_refs_pushptr(&new_low);
+        mtbdd_refs_pushptr(&new_high);
+
+        bdd_or_cube_SPAWN(lace, &new_high, high, vars, cube);
+        int low_status = bdd_or_cube_CALL(lace, &new_low, low, vars, cube);
+        int high_status = bdd_or_cube_SYNC(lace);
+        status = low_status != SYLVAN_OK ? low_status : high_status;
+        if (status == SYLVAN_OK && (new_low != low || new_high != high)) {
+            status = _mtbdd_try_make_node(&computed, bdd_var, new_low, new_high);
         }
-    } else /* v == n_level */ {
-        vars = node_high(vars, nv);
+
+        mtbdd_refs_popptr(2);
+    } else {
         BDD high = node_high(bdd, n);
         BDD low = node_low(bdd, n);
+        BDD child = mtbdd_invalid;
+        mtbdd_refs_pushptr(&child);
+        BDDSET next_vars = node_high(vars, nv);
+
         if (*cube == 0) {
-            BDD new_low = bdd_or_cube(low, vars, cube+1);
-            if (new_low != low) {
-                result = mtbdd_make_node(n_level, new_low, high);
+            status = bdd_or_cube_CALL(lace, &child, low, next_vars, cube + 1);
+            if (status == SYLVAN_OK && child != low) {
+                status = _mtbdd_try_make_node(&computed, bdd_var, child, high);
             }
-        } else /* *cube == 1 */ {
-            BDD new_high = bdd_or_cube(high, vars, cube+1);
-            if (new_high != high) {
-                result = mtbdd_make_node(n_level, low, new_high);
+        } else {
+            status = bdd_or_cube_CALL(lace, &child, high, next_vars, cube + 1);
+            if (status == SYLVAN_OK && child != high) {
+                status = _mtbdd_try_make_node(&computed, bdd_var, low, child);
             }
         }
+
+        mtbdd_refs_popptr(1);
     }
 
-    return result;
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
 struct bdd_path

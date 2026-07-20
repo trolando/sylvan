@@ -25,6 +25,8 @@ using bdd_binary_op = int (*)(BDD*, BDD, BDD);
 using bdd_unary_set_op = int (*)(BDD*, BDD, BDDSET);
 using bdd_binary_set_op = int (*)(BDD*, BDD, BDD, BDDSET);
 using bdd_compose_op = int (*)(BDD*, BDD, MTBDDMAP);
+using bdd_cube_op = int (*)(BDD*, BDDSET, const uint8_t*);
+using bdd_or_cube_op = int (*)(BDD*, BDD, BDDSET, const uint8_t*);
 
 BDD
 apply_binary(bdd_binary_op op, BDD a, BDD b)
@@ -72,6 +74,26 @@ apply_compose(bdd_compose_op op, BDD dd, MTBDDMAP map)
     BDD result = mtbdd_invalid;
     mtbdd_protect(&result);
     int status = op(&result, dd, map);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+BDD
+apply_cube(bdd_cube_op op, BDDSET vars, const uint8_t *cube)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = op(&result, vars, cube);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+BDD
+apply_or_cube(bdd_or_cube_op op, BDD dd, BDDSET vars, const uint8_t *cube)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = op(&result, dd, vars, cube);
     mtbdd_unprotect(&result);
     return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
@@ -426,20 +448,20 @@ Bdd::PickOneCube(const BddSet &variables) const
 Bdd
 Bdd::PickOneCube() const
 {
-    return Bdd(bdd_pick_cube(bdd, mtbdd_support(bdd)));
+    return Bdd(apply_unary_set(bdd_pick_cube, bdd, mtbdd_support(bdd)));
 }
 
 Bdd
 Bdd::UnionCube(const BddSet &variables, uint8_t *values) const
 {
-    return bdd_or_cube(bdd, variables.set.bdd, values);
+    return apply_or_cube(bdd_or_cube, bdd, variables.set.bdd, values);
 }
 
 Bdd
 Bdd::UnionCube(const BddSet &variables, std::vector<uint8_t> values) const
 {
     uint8_t *data = values.data();
-    return bdd_or_cube(bdd, variables.set.bdd, data);
+    return apply_or_cube(bdd_or_cube, bdd, variables.set.bdd, data);
 }
 
 /**
@@ -495,14 +517,14 @@ Bdd::bddVar(uint32_t index)
 Bdd
 Bdd::bddCube(const BddSet &variables, uint8_t *values)
 {
-    return bdd_cube(variables.set.bdd, values);
+    return apply_cube(bdd_cube, variables.set.bdd, values);
 }
 
 Bdd
 Bdd::bddCube(const BddSet &variables, std::vector<uint8_t> values)
 {
     uint8_t *data = values.data();
-    return bdd_cube(variables.set.bdd, data);
+    return apply_cube(bdd_cube, variables.set.bdd, data);
 }
 
 bool

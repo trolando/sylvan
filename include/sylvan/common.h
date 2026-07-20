@@ -36,8 +36,8 @@ extern "C" {
  * Initially, Sylvan only uses the minimum sizes.
  * During garbage collection, table sizes may be doubled until the maximum size is reached.
  *
- * Then, call initialization functions for the MTBDD/LDD modules like sylvan_init_mtbdd
- * and sylvan_init_ldd.
+ * Then, call initialization functions for the MTBDD/LDD modules like mtbdd_init
+ * and listdd_init.
  *
  * Memory usage:
  * Every node requires 24 bytes memory. (16 bytes data + 8 bytes table overhead)
@@ -185,9 +185,9 @@ void sylvan_gc_hook_main(gc_hook_cb callback);
  *
  * The mark_cb callback is called during garbage collection and should call the
  * appropriate recursive marking functions for the decision diagram nodes, for example
- * mtbdd_gc_mark_rec() for MTBDDs or lddmc_gc_mark_rec() for LDDs.
+ * mtbdd_gc_mark() for MTBDDs or listdd_gc_mark() for LDDs.
  *
- * The mtbdd_count_refs() function uses the count_cb callbacks to compute the number
+ * The mtbdd_ref_count() function uses the count_cb callbacks to compute the number
  * of references.
  */
 void sylvan_gc_add_mark(gc_hook_cb mark_cb);

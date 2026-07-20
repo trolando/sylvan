@@ -33,12 +33,13 @@
 
 #include <lace.h>
 
+#include <sylvan/types.h>
 #include <sylvan/common.h>
 #include <sylvan/stats.h>
 #include <sylvan/mt.h>
 #include <sylvan/mtbdd.h>
 #include <sylvan/bdd.h>
-#include <sylvan/ldd.h>
+#include <sylvan/listdd.h>
 #include <sylvan/zdd.h>
 
 #include <sylvan/bdd_impl.h>

@@ -8,7 +8,7 @@
 #include <math.h>
 
 #include <lace.h>
-#include <sylvan/internal/internal.h>
+#include <sylvan/internal.h>
 #include <sylvan/platform.h>
 
 #include "test_assert.h"
@@ -106,7 +106,7 @@ test_cache()
 static inline BDD
 make_random(int i, int j)
 {
-    if (i == j) return rng(0, 2) ? mtbdd_true : mtbdd_false;
+    if (i == j) return rng(0, 2) ? bdd_true : bdd_false;
 
     BDD yes = make_random(i+1, j);
     BDD no = make_random(i+1, j);
@@ -122,13 +122,13 @@ make_random(int i, int j)
         mtbdd_deref(no);
         break;
     case 2:
-        result = mtbdd_ref(mtbdd_makenode(i, yes, no));
+        result = mtbdd_ref(mtbdd_make_node(i, yes, no));
         mtbdd_deref(no);
         mtbdd_deref(yes);
         break;
     case 3:
     default:
-        result = mtbdd_ref(mtbdd_makenode(i, no, yes));
+        result = mtbdd_ref(mtbdd_make_node(i, no, yes));
         mtbdd_deref(no);
         mtbdd_deref(yes);
         break;
@@ -137,18 +137,18 @@ make_random(int i, int j)
     return result;
 }
 
-static MDD
+static LISTDD
 make_random_ldd_set(int depth, int maxvalue, int elements)
 {
     uint32_t *values = (uint32_t*)malloc((size_t)depth * sizeof(*values));
-    MDD result = mtbdd_false; // empty set
+    LISTDD result = listdd_empty; // empty set
     for (int i=0; i<elements; i++) {
-        lddmc_refs_push(result);
+        listdd_refs_push(result);
         for (int j=0; j<depth; j++) {
             values[j] = rng(0, maxvalue);
         }
-        result = lddmc_union_cube(result, values, depth);
-        lddmc_refs_pop(1);
+        result = listdd_add(result, values, depth);
+        listdd_refs_pop(1);
     }
     free(values);
     return result;
@@ -159,28 +159,41 @@ test_mtbdd()
 {
     MTBDD fraction = mtbdd_fraction(-6, 8);
     test_assert(fraction != mtbdd_invalid);
-    test_assert(mtbdd_getnumer(fraction) == -3);
-    test_assert(mtbdd_getdenom(fraction) == 4);
+    int32_t numerator;
+    uint32_t denominator;
+    test_assert(mtbdd_leaf_fraction(fraction, &numerator, &denominator) == 0);
+    test_assert(numerator == -3);
+    test_assert(denominator == 4);
 
     fraction = mtbdd_fraction(INT64_MIN, UINT64_C(1) << 33);
     test_assert(fraction != mtbdd_invalid);
-    test_assert(mtbdd_getnumer(fraction) == -1073741824);
-    test_assert(mtbdd_getdenom(fraction) == 1);
+    test_assert(mtbdd_leaf_fraction(fraction, &numerator, &denominator) == 0);
+    test_assert(numerator == -1073741824);
+    test_assert(denominator == 1);
 
     test_assert(mtbdd_fraction(INT64_MIN, 1) == mtbdd_invalid);
     test_assert(mtbdd_fraction(1, 0) == mtbdd_invalid);
+    test_assert(mtbdd_leaf_fraction(mtbdd_int64(1), &numerator, &denominator) == -1);
+
+    MTBDD if_false, if_true;
+    MTBDD root = mtbdd_make_node(3, mtbdd_int64(1), mtbdd_int64(2));
+    mtbdd_cofactors(root, &if_false, &if_true);
+    test_assert(if_false == mtbdd_int64(1));
+    test_assert(if_true == mtbdd_int64(2));
+    mtbdd_cofactors(mtbdd_int64(3), &if_false, &if_true);
+    test_assert(if_false == mtbdd_int64(3) && if_true == mtbdd_int64(3));
 
     uint32_t variables[64];
     for (uint32_t i=0; i<64; i++) variables[i] = i;
-    MTBDD variable_set = mtbdd_set_from_array(variables, 64);
+    MTBDD variable_set = bdd_set_from_array(variables, 64);
 
-    MTBDD result = mtbdd_abstract_plus(mtbdd_double(1.0), variable_set);
+    MTBDD result = mtbdd_abstract_add(mtbdd_double(1.0), variable_set);
     test_assert(result != mtbdd_invalid);
-    test_assert(mtbdd_getdouble(result) == ldexp(1.0, 64));
+    test_assert(mtbdd_leaf_double(result) == ldexp(1.0, 64));
 
-    result = mtbdd_abstract_times(mtbdd_double(0.5), variable_set);
+    result = mtbdd_abstract_mul(mtbdd_double(0.5), variable_set);
     test_assert(result != mtbdd_invalid);
-    test_assert(mtbdd_getdouble(result) == 0.0);
+    test_assert(mtbdd_leaf_double(result) == 0.0);
 
     uint32_t early_level[] = {0};
     uint32_t late_level[] = {1};
@@ -223,10 +236,10 @@ int testEqual(BDD a, BDD b)
 int
 test_bdd()
 {
-    test_assert(bdd_ite(mtbdd_ithvar(1), mtbdd_true, mtbdd_true) == bdd_not(bdd_ite(mtbdd_ithvar(1), mtbdd_false, mtbdd_false)));
-    test_assert(bdd_ite(mtbdd_ithvar(1), mtbdd_false, mtbdd_true) == bdd_not(bdd_ite(mtbdd_ithvar(1), mtbdd_true, mtbdd_false)));
-    test_assert(bdd_ite(mtbdd_ithvar(1), mtbdd_true, mtbdd_false) == bdd_not(bdd_ite(mtbdd_ithvar(1), mtbdd_false, mtbdd_true)));
-    test_assert(bdd_ite(mtbdd_ithvar(1), mtbdd_false, mtbdd_false) == bdd_not(bdd_ite(mtbdd_ithvar(1), mtbdd_true, mtbdd_true)));
+    test_assert(bdd_ite(bdd_var_at_level(1), bdd_true, bdd_true) == bdd_not(bdd_ite(bdd_var_at_level(1), bdd_false, bdd_false)));
+    test_assert(bdd_ite(bdd_var_at_level(1), bdd_false, bdd_true) == bdd_not(bdd_ite(bdd_var_at_level(1), bdd_true, bdd_false)));
+    test_assert(bdd_ite(bdd_var_at_level(1), bdd_true, bdd_false) == bdd_not(bdd_ite(bdd_var_at_level(1), bdd_false, bdd_true)));
+    test_assert(bdd_ite(bdd_var_at_level(1), bdd_false, bdd_false) == bdd_not(bdd_ite(bdd_var_at_level(1), bdd_true, bdd_true)));
 
     return 0;
 }
@@ -234,65 +247,81 @@ test_bdd()
 int
 test_cube()
 {
-    const BDDSET vars = mtbdd_set_from_array(((BDDVAR[]){1,2,3,4,6,8}), 6);
+    const BDDSET vars = bdd_set_from_array(((uint32_t[]){1,2,3,4,6,8}), 6);
 
     uint8_t cube[6], check[6];
     int i, j;
     for (i=0;i<6;i++) cube[i] = rng(0,3);
     BDD bdd = bdd_cube(vars, cube);
 
-    bdd_sat_one(bdd, vars, check);
-    for (i=0; i<6;i++) test_assert(cube[i] == check[i] || (cube[i] == 2 && check[i] == 0));
+    bdd_pick_cube_values(bdd, vars, check);
+    for (i=0; i<6;i++) test_assert(cube[i] == check[i]);
 
-    BDD picked_single = bdd_sat_single(bdd, vars);
+    BDD picked_single = bdd_pick_minterm(bdd, vars);
     test_assert(testEqual(bdd_and(picked_single, bdd), picked_single));
-    assert(bdd_satcount(picked_single, vars)==1);
+    assert(bdd_sat_count(picked_single, vars)==1);
 
-    BDD picked = bdd_sat_one_bdd(bdd);
+    BDD picked = bdd_pick_cube(bdd, vars);
     test_assert(testEqual(bdd_and(picked, bdd), picked));
 
     BDD t1 = bdd_cube(vars, ((uint8_t[]){1,1,2,2,0,0}));
     BDD t2 = bdd_cube(vars, ((uint8_t[]){1,1,1,0,0,2}));
-    test_assert(testEqual(bdd_union_cube(t1, vars, ((uint8_t[]){1,1,1,0,0,2})), bdd_or(t1, t2)));
+    test_assert(testEqual(bdd_or_cube(t1, vars, ((uint8_t[]){1,1,1,0,0,2})), bdd_or(t1, t2)));
     t2 = bdd_cube(vars, ((uint8_t[]){2,2,2,1,1,0}));
-    test_assert(testEqual(bdd_union_cube(t1, vars, ((uint8_t[]){2,2,2,1,1,0})), bdd_or(t1, t2)));
+    test_assert(testEqual(bdd_or_cube(t1, vars, ((uint8_t[]){2,2,2,1,1,0})), bdd_or(t1, t2)));
     t2 = bdd_cube(vars, ((uint8_t[]){1,1,1,0,0,0}));
-    test_assert(testEqual(bdd_union_cube(t1, vars, ((uint8_t[]){1,1,1,0,0,0})), bdd_or(t1, t2)));
+    test_assert(testEqual(bdd_or_cube(t1, vars, ((uint8_t[]){1,1,1,0,0,0})), bdd_or(t1, t2)));
 
     bdd = make_random(1, 16);
+    const BDDSET all_vars = bdd_set_from_array(
+        ((uint32_t[]){1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}), 15);
     for (j=0;j<10;j++) {
         for (i=0;i<6;i++) cube[i] = rng(0,3);
         BDD c = bdd_cube(vars, cube);
-        test_assert(bdd_union_cube(bdd, vars, cube) == bdd_or(bdd, c));
+        test_assert(bdd_or_cube(bdd, vars, cube) == bdd_or(bdd, c));
     }
 
     for (i=0;i<10;i++) {
-        picked = bdd_sat_one_bdd(bdd);
+        picked = bdd_pick_cube(bdd, all_vars);
         test_assert(testEqual(bdd_and(picked, bdd), picked));
     }
 
+    const BDDSET limited_vars = bdd_set_from_array(((uint32_t[]){1,3,8}), 3);
+    picked = bdd_pick_cube(bdd, limited_vars);
+    test_assert(bdd == bdd_false || bdd_and(picked, bdd) != bdd_false);
+
+    BDD x = bdd_var_at_level(1);
+    BDD y = bdd_var_at_level(2);
+    test_assert(bdd_cofactor(bdd_xor(x, y), x) == bdd_not(y));
+    test_assert(bdd_cofactor(bdd_xor(x, y), bdd_not(x)) == y);
+    test_assert(bdd_cofactor(bdd_xor(x, y), bdd_or(x, y)) == mtbdd_invalid);
+
+    BDD restricted = bdd_restrict(bdd, picked);
+    test_assert(mtbdd_node_count(restricted) <= mtbdd_node_count(bdd));
+    test_assert(bdd_and(restricted, picked) == bdd_and(bdd, picked));
+
     // simple test for mtbdd_enum_all
     uint8_t arr[6];
-    MTBDD leaf = mtbdd_enum_all_first(mtbdd_true, vars, arr, NULL);
-    test_assert(leaf == mtbdd_true);
-    test_assert(mtbdd_enum_all_first(mtbdd_true, vars, arr, NULL) == mtbdd_true);
+    MTBDD leaf = mtbdd_first_minterm(bdd_true, vars, arr, NULL);
+    test_assert(leaf == bdd_true);
+    test_assert(mtbdd_first_minterm(bdd_true, vars, arr, NULL) == bdd_true);
     test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 0 && arr[4] == 0 && arr[5] == 0);
-    test_assert(mtbdd_enum_all_next(mtbdd_true, vars, arr, NULL) == mtbdd_true);
+    test_assert(mtbdd_next_minterm(bdd_true, vars, arr, NULL) == bdd_true);
     test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 0 && arr[4] == 0 && arr[5] == 1);
-    test_assert(mtbdd_enum_all_next(mtbdd_true, vars, arr, NULL) == mtbdd_true);
+    test_assert(mtbdd_next_minterm(bdd_true, vars, arr, NULL) == bdd_true);
     test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 0 && arr[4] == 1 && arr[5] == 0);
-    test_assert(mtbdd_enum_all_next(mtbdd_true, vars, arr, NULL) == mtbdd_true);
+    test_assert(mtbdd_next_minterm(bdd_true, vars, arr, NULL) == bdd_true);
     test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 0 && arr[4] == 1 && arr[5] == 1);
-    test_assert(mtbdd_enum_all_next(mtbdd_true, vars, arr, NULL) == mtbdd_true);
+    test_assert(mtbdd_next_minterm(bdd_true, vars, arr, NULL) == bdd_true);
     test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 1 && arr[4] == 0 && arr[5] == 0);
-    test_assert(mtbdd_enum_all_next(mtbdd_true, vars, arr, NULL) == mtbdd_true);
+    test_assert(mtbdd_next_minterm(bdd_true, vars, arr, NULL) == bdd_true);
     test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 1 && arr[4] == 0 && arr[5] == 1);
-    test_assert(mtbdd_enum_all_next(mtbdd_true, vars, arr, NULL) == mtbdd_true);
+    test_assert(mtbdd_next_minterm(bdd_true, vars, arr, NULL) == bdd_true);
     test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 1 && arr[4] == 1 && arr[5] == 0);
 
-    mtbdd_enum_all_first(mtbdd_true, vars, arr, NULL);
+    mtbdd_first_minterm(bdd_true, vars, arr, NULL);
     size_t count = 1;
-    while (mtbdd_enum_all_next(mtbdd_true, vars, arr, NULL) != mtbdd_false) {
+    while (mtbdd_next_minterm(bdd_true, vars, arr, NULL) != mtbdd_undefined) {
         test_assert(count < 64);
         count++;
     }
@@ -307,23 +336,23 @@ test_operators()
     // We need to test: xor, and, or, nand, nor, imp, biimp, invimp, diff, less
 
     //int i;
-    BDD a = mtbdd_ithvar(1);
-    BDD b = mtbdd_ithvar(2);
+    BDD a = bdd_var_at_level(1);
+    BDD b = bdd_var_at_level(2);
     BDD one = make_random(1, 12);
     BDD two = make_random(6, 24);
 
     // Test or
-    test_assert(testEqual(bdd_or(a, b), mtbdd_makenode(1, b, mtbdd_true)));
+    test_assert(testEqual(bdd_or(a, b), mtbdd_make_node(1, b, bdd_true)));
     test_assert(testEqual(bdd_or(a, b), bdd_or(b, a)));
     test_assert(testEqual(bdd_or(one, two), bdd_or(two, one)));
 
     // Test and
-    test_assert(testEqual(bdd_and(a, b), mtbdd_makenode(1, mtbdd_false, b)));
+    test_assert(testEqual(bdd_and(a, b), mtbdd_make_node(1, bdd_false, b)));
     test_assert(testEqual(bdd_and(a, b), bdd_and(b, a)));
     test_assert(testEqual(bdd_and(one, two), bdd_and(two, one)));
 
     // Test xor
-    test_assert(testEqual(bdd_xor(a, b), mtbdd_makenode(1, b, bdd_not(b))));
+    test_assert(testEqual(bdd_xor(a, b), mtbdd_make_node(1, b, bdd_not(b))));
     test_assert(testEqual(bdd_xor(a, b), bdd_xor(a, b)));
     test_assert(testEqual(bdd_xor(a, b), bdd_xor(b, a)));
     test_assert(testEqual(bdd_xor(one, two), bdd_xor(two, one)));
@@ -333,16 +362,16 @@ test_operators()
     test_assert(testEqual(bdd_diff(a, b), bdd_diff(a, b)));
     test_assert(testEqual(bdd_diff(a, b), bdd_diff(a, bdd_and(a, b))));
     test_assert(testEqual(bdd_diff(a, b), bdd_and(a, bdd_not(b))));
-    test_assert(testEqual(bdd_diff(a, b), bdd_ite(b, mtbdd_false, a)));
+    test_assert(testEqual(bdd_diff(a, b), bdd_ite(b, bdd_false, a)));
     test_assert(testEqual(bdd_diff(one, two), bdd_diff(one, two)));
     test_assert(testEqual(bdd_diff(one, two), bdd_diff(one, bdd_and(one, two))));
     test_assert(testEqual(bdd_diff(one, two), bdd_and(one, bdd_not(two))));
-    test_assert(testEqual(bdd_diff(one, two), bdd_ite(two, mtbdd_false, one)));
+    test_assert(testEqual(bdd_diff(one, two), bdd_ite(two, bdd_false, one)));
 
     // Test biimp
-    test_assert(testEqual(bdd_biimp(a, b), mtbdd_makenode(1, bdd_not(b), b)));
-    test_assert(testEqual(bdd_biimp(a, b), bdd_biimp(b, a)));
-    test_assert(testEqual(bdd_biimp(one, two), bdd_biimp(two, one)));
+    test_assert(testEqual(bdd_xnor(a, b), mtbdd_make_node(1, bdd_not(b), b)));
+    test_assert(testEqual(bdd_xnor(a, b), bdd_xnor(b, a)));
+    test_assert(testEqual(bdd_xnor(one, two), bdd_xnor(two, one)));
 
     // Test nand / and
     test_assert(testEqual(bdd_not(bdd_and(a, b)), bdd_nand(b, a)));
@@ -353,16 +382,16 @@ test_operators()
     test_assert(testEqual(bdd_not(bdd_or(one, two)), bdd_nor(two, one)));
 
     // Test xor / biimp
-    test_assert(testEqual(bdd_xor(a, b), bdd_not(bdd_biimp(b, a))));
-    test_assert(testEqual(bdd_xor(one, two), bdd_not(bdd_biimp(two, one))));
+    test_assert(testEqual(bdd_xor(a, b), bdd_not(bdd_xnor(b, a))));
+    test_assert(testEqual(bdd_xor(one, two), bdd_not(bdd_xnor(two, one))));
 
     // Test imp
-    test_assert(testEqual(bdd_imp(a, b), bdd_ite(a, b, mtbdd_true)));
-    test_assert(testEqual(bdd_imp(one, two), bdd_ite(one, two, mtbdd_true)));
+    test_assert(testEqual(bdd_imp(a, b), bdd_ite(a, b, bdd_true)));
+    test_assert(testEqual(bdd_imp(one, two), bdd_ite(one, two, bdd_true)));
     test_assert(testEqual(bdd_imp(one, two), bdd_not(bdd_diff(one, two))));
-    test_assert(testEqual(bdd_invimp(one, two), bdd_not(bdd_less(one, two))));
-    test_assert(testEqual(bdd_imp(a, b), bdd_invimp(b, a)));
-    test_assert(testEqual(bdd_imp(one, two), bdd_invimp(two, one)));
+    test_assert(testEqual(bdd_imp(two, one), bdd_not(bdd_diff(two, one))));
+    test_assert(testEqual(bdd_imp(a, b), bdd_not(bdd_diff(a, b))));
+    test_assert(testEqual(bdd_imp(one, two), bdd_not(bdd_diff(one, two))));
 
     return 0;
 }
@@ -373,12 +402,12 @@ test_disjoint_subset()
     // We need to test: disjoint, subset
 #define VARS 3    
     BDD v[VARS];
-    for (int i=0; i<VARS; i++) v[i] = bdd_nithvar(i);
+    for (int i=0; i<VARS; i++) v[i] = bdd_not(bdd_var_at_level(i));
 #undef VARS
 
     BDD test_input[] = {
-        mtbdd_true, mtbdd_false,
-        mtbdd_false, mtbdd_true,
+        bdd_true, bdd_false,
+        bdd_false, bdd_true,
         v[0], v[1],
         v[1], v[1],
         v[0], bdd_not(v[0]),
@@ -393,8 +422,8 @@ test_disjoint_subset()
     for (int i=0; i<11; i++) {
         BDD t1 = test_input[2*i];
         BDD t2 = test_input[2*i+1];
-        test_assert(bdd_disjoint(t1,t2) == (bdd_and(t1,t2)==mtbdd_false));
-        test_assert(bdd_subset(t1,t2) == (bdd_or(bdd_not(t1),t2) == mtbdd_true));
+        test_assert(bdd_disjoint(t1,t2) == (bdd_and(t1,t2)==bdd_false));
+        test_assert(bdd_subseteq(t1,t2) == (bdd_or(bdd_not(t1),t2) == bdd_true));
     }
 
     return 0;
@@ -403,46 +432,46 @@ test_disjoint_subset()
 int
 test_relprod()
 {
-    BDDVAR vars[] = {0,2,4};
-    BDDVAR all_vars[] = {0,1,2,3,4,5};
+    uint32_t vars[] = {0,2,4};
+    uint32_t all_vars[] = {0,1,2,3,4,5};
 
-    BDDSET vars_set = mtbdd_set_from_array(vars, 3);
-    BDDSET all_vars_set = mtbdd_set_from_array(all_vars, 6);
+    BDDSET vars_set = bdd_set_from_array(vars, 3);
+    BDDSET all_vars_set = bdd_set_from_array(all_vars, 6);
 
     BDD s, t, next, prev;
     BDD zeroes, ones;
 
     // transition relation: 000 --> 111 and !000 --> 000
-    t = mtbdd_false;
-    t = bdd_union_cube(t, all_vars_set, ((uint8_t[]){0,1,0,1,0,1}));
-    t = bdd_union_cube(t, all_vars_set, ((uint8_t[]){1,0,2,0,2,0}));
-    t = bdd_union_cube(t, all_vars_set, ((uint8_t[]){2,0,1,0,2,0}));
-    t = bdd_union_cube(t, all_vars_set, ((uint8_t[]){2,0,2,0,1,0}));
+    t = bdd_false;
+    t = bdd_or_cube(t, all_vars_set, ((uint8_t[]){0,1,0,1,0,1}));
+    t = bdd_or_cube(t, all_vars_set, ((uint8_t[]){1,0,2,0,2,0}));
+    t = bdd_or_cube(t, all_vars_set, ((uint8_t[]){2,0,1,0,2,0}));
+    t = bdd_or_cube(t, all_vars_set, ((uint8_t[]){2,0,2,0,1,0}));
 
     s = bdd_cube(vars_set, (uint8_t[]){0,0,1});
     zeroes = bdd_cube(vars_set, (uint8_t[]){0,0,0});
     ones = bdd_cube(vars_set, (uint8_t[]){1,1,1});
 
-    next = bdd_relnext(s, t, all_vars_set);
-    prev = bdd_relprev(t, next, all_vars_set);
+    next = bdd_rel_next(s, t, all_vars_set);
+    prev = bdd_rel_prev(t, next, all_vars_set);
     test_assert(next == zeroes);
     test_assert(prev == bdd_not(zeroes));
 
-    next = bdd_relnext(next, t, all_vars_set);
-    prev = bdd_relprev(t, next, all_vars_set);
+    next = bdd_rel_next(next, t, all_vars_set);
+    prev = bdd_rel_prev(t, next, all_vars_set);
     test_assert(next == ones);
     test_assert(prev == zeroes);
 
     t = bdd_cube(all_vars_set, (uint8_t[]){0,0,0,0,0,1});
-    test_assert(bdd_relprev(t, s, all_vars_set) == zeroes);
-    test_assert(bdd_relprev(t, bdd_not(s), all_vars_set) == mtbdd_false);
-    test_assert(bdd_relnext(s, t, all_vars_set) == mtbdd_false);
-    test_assert(bdd_relnext(zeroes, t, all_vars_set) == s);
+    test_assert(bdd_rel_prev(t, s, all_vars_set) == zeroes);
+    test_assert(bdd_rel_prev(t, bdd_not(s), all_vars_set) == bdd_false);
+    test_assert(bdd_rel_next(s, t, all_vars_set) == bdd_false);
+    test_assert(bdd_rel_next(zeroes, t, all_vars_set) == s);
 
     t = bdd_cube(all_vars_set, (uint8_t[]){0,0,0,0,0,2});
-    test_assert(bdd_relprev(t, s, all_vars_set) == zeroes);
-    test_assert(bdd_relprev(t, zeroes, all_vars_set) == zeroes);
-    test_assert(bdd_relnext(bdd_not(zeroes), t, all_vars_set) == mtbdd_false);
+    test_assert(bdd_rel_prev(t, s, all_vars_set) == zeroes);
+    test_assert(bdd_rel_prev(t, zeroes, all_vars_set) == zeroes);
+    test_assert(bdd_rel_next(bdd_not(zeroes), t, all_vars_set) == bdd_false);
 
     return 0;
 }
@@ -450,18 +479,18 @@ test_relprod()
 int
 test_compose()
 {
-    BDD a = mtbdd_ithvar(1);
-    BDD b = mtbdd_ithvar(2);
+    BDD a = bdd_var_at_level(1);
+    BDD b = bdd_var_at_level(2);
 
     BDD a_or_b = bdd_or(a, b);
 
     BDD one = make_random(3, 16);
     BDD two = make_random(8, 24);
 
-    BDDMAP map = mtbdd_map_empty();
+    MTBDDMAP map = mtbdd_map_empty();
 
-    map = mtbdd_map_add(map, 1, one);
-    map = mtbdd_map_add(map, 2, two);
+    map = mtbdd_map_set(map, 1, one);
+    map = mtbdd_map_set(map, 2, two);
 
     test_assert(mtbdd_map_key(map) == 1);
     test_assert(mtbdd_map_value(map) == one);
@@ -473,21 +502,21 @@ test_compose()
 
     test_assert(testEqual(bdd_or(one, two), bdd_compose(a_or_b, map)));
 
-    map = mtbdd_map_add(map, 2, one);
+    map = mtbdd_map_set(map, 2, one);
     test_assert(testEqual(bdd_compose(a_or_b, map), one));
 
-    map = mtbdd_map_add(map, 1, two);
+    map = mtbdd_map_set(map, 1, two);
     test_assert(testEqual(bdd_or(one, two), bdd_compose(a_or_b, map)));
 
     test_assert(testEqual(bdd_and(one, two), bdd_compose(bdd_and(a, b), map)));
 
     // test that composing [0:=true] on "0" yields true
-    map = mtbdd_map_add(mtbdd_map_empty(), 1, mtbdd_true);
-    test_assert(testEqual(bdd_compose(a, map), mtbdd_true));
+    map = mtbdd_map_set(mtbdd_map_empty(), 1, bdd_true);
+    test_assert(testEqual(bdd_compose(a, map), bdd_true));
 
     // test that composing [0:=false] on "0" yields false
-    map = mtbdd_map_add(mtbdd_map_empty(), 1, mtbdd_false);
-    test_assert(testEqual(bdd_compose(a, map), mtbdd_false));
+    map = mtbdd_map_set(mtbdd_map_empty(), 1, bdd_false);
+    test_assert(testEqual(bdd_compose(a, map), bdd_false));
 
     return 0;
 }
@@ -498,91 +527,91 @@ test_ldd()
     // very basic testing of makenode
     for (int i=0; i<10; i++) {
         uint32_t value = rng(0, 100);
-        MDD m = lddmc_makenode(value, lddmc_true, lddmc_false);
-        test_assert(lddmc_getvalue(m) == value);
-        test_assert(lddmc_getdown(m) == lddmc_true);
-        test_assert(lddmc_getright(m) == lddmc_false);
-        test_assert(lddmc_iscopy(m) == 0);
-        test_assert(lddmc_follow(m, value) == lddmc_true);
+        LISTDD m = listdd_make_node(value, listdd_empty_list, listdd_empty);
+        test_assert(listdd_node_value(m) == value);
+        test_assert(listdd_node_down(m) == listdd_empty_list);
+        test_assert(listdd_node_right(m) == listdd_empty);
+        test_assert(listdd_is_copy_node(m) == 0);
+        test_assert(listdd_follow(m, value) == listdd_empty_list);
         for (int j=0; j<100; j++) {
             uint32_t other_value = rng(0, 100);
-            if (value != other_value) test_assert(lddmc_follow(m, other_value) == lddmc_false);
+            if (value != other_value) test_assert(listdd_follow(m, other_value) == listdd_empty);
         }
     }
 
     // test handling of the copy node by primitives
-    MDD m = lddmc_make_copynode(lddmc_true, lddmc_false);
-    test_assert(lddmc_iscopy(m) == 1);
-    test_assert(lddmc_getvalue(m) == 0);
-    test_assert(lddmc_getdown(m) == lddmc_true);
-    test_assert(lddmc_getright(m) == lddmc_false);
-    m = lddmc_extendnode(m, 0, lddmc_true);
-    test_assert(lddmc_iscopy(m) == 1);
-    test_assert(lddmc_getvalue(m) == 0);
-    test_assert(lddmc_getdown(m) == lddmc_true);
-    test_assert(lddmc_getright(m) != lddmc_false);
-    test_assert(lddmc_follow(m, 0) == lddmc_true);
-    test_assert(lddmc_getvalue(lddmc_getright(m)) == 0);
-    test_assert(lddmc_iscopy(lddmc_getright(m)) == 0);
-    test_assert(lddmc_makenode(0, lddmc_true, lddmc_false) == lddmc_getright(m));
+    LISTDD m = listdd_make_copy_node(listdd_empty_list, listdd_empty);
+    test_assert(listdd_is_copy_node(m) == 1);
+    test_assert(listdd_node_value(m) == 0);
+    test_assert(listdd_node_down(m) == listdd_empty_list);
+    test_assert(listdd_node_right(m) == listdd_empty);
+    m = listdd_extend_node(m, 0, listdd_empty_list);
+    test_assert(listdd_is_copy_node(m) == 1);
+    test_assert(listdd_node_value(m) == 0);
+    test_assert(listdd_node_down(m) == listdd_empty_list);
+    test_assert(listdd_node_right(m) != listdd_empty);
+    test_assert(listdd_follow(m, 0) == listdd_empty_list);
+    test_assert(listdd_node_value(listdd_node_right(m)) == 0);
+    test_assert(listdd_is_copy_node(listdd_node_right(m)) == 0);
+    test_assert(listdd_make_node(0, listdd_empty_list, listdd_empty) == listdd_node_right(m));
 
     // test union_cube
     for (int i=0; i<100; i++) {
         int depth = rng(1, 6);
         int elements = rng(1, 30);
         m = make_random_ldd_set(depth, 10, elements);
-        assert(m != lddmc_true);
-        assert(m != lddmc_false);
-        assert(lddmc_satcount(m) <= elements);
-        assert(lddmc_satcount(m) >= 1);
+        assert(m != listdd_empty_list);
+        assert(m != listdd_empty);
+        assert(listdd_count(m) <= elements);
+        assert(listdd_count(m) >= 1);
     }
 
     // test simply transition relation
     {
-        MDD states, rel, meta, expected;
+        LISTDD states, rel, meta, expected;
 
         // relation: (0,0) to (1,1)
-        rel = lddmc_cube((uint32_t[]){0,1,0,1}, 4);
-        test_assert(lddmc_satcount(rel) == 1);
+        rel = listdd_singleton((uint32_t[]){0,1,0,1}, 4);
+        test_assert(listdd_count(rel) == 1);
         // relation: (0,0) to (2,2)
-        rel = lddmc_union_cube(rel, (uint32_t[]){0,2,0,2}, 4);
-        test_assert(lddmc_satcount(rel) == 2);
+        rel = listdd_add(rel, (uint32_t[]){0,2,0,2}, 4);
+        test_assert(listdd_count(rel) == 2);
         // meta: read write read write
-        meta = lddmc_cube((uint32_t[]){1,2,1,2}, 4);
-        test_assert(lddmc_satcount(meta) == 1);
+        meta = listdd_singleton((uint32_t[]){1,2,1,2}, 4);
+        test_assert(listdd_count(meta) == 1);
         // initial state: (0,0)
-        states = lddmc_cube((uint32_t[]){0,0}, 2);
-        test_assert(lddmc_satcount(states) == 1);
+        states = listdd_singleton((uint32_t[]){0,0}, 2);
+        test_assert(listdd_count(states) == 1);
         // relprod should give two states
-        states = lddmc_relprod(states, rel, meta);
-        test_assert(lddmc_satcount(states) == 2);
+        states = listdd_rel_next(states, rel, meta);
+        test_assert(listdd_count(states) == 2);
         // relprod should give states (1,1) and (2,2)
-        expected = lddmc_cube((uint32_t[]){1,1}, 2);
-        expected = lddmc_union_cube(expected, (uint32_t[]){2,2}, 2);
+        expected = listdd_singleton((uint32_t[]){1,1}, 2);
+        expected = listdd_add(expected, (uint32_t[]){2,2}, 2);
         test_assert(states == expected);
 
         // now test relprod union on the simple example
-        states = lddmc_cube((uint32_t[]){0,0}, 2);
-        states = lddmc_relprod_union(states, rel, meta, states);
-        test_assert(lddmc_satcount(states) == 3);
-        test_assert(states == lddmc_union(states, expected));
+        states = listdd_singleton((uint32_t[]){0,0}, 2);
+        states = listdd_rel_next_union(states, rel, meta, states);
+        test_assert(listdd_count(states) == 3);
+        test_assert(states == listdd_union(states, expected));
 
         // now create transition (1,1) --> (1,1) (using copy nodes)
-        rel = lddmc_cube_copy((uint32_t[]){1,0,1,0}, (int[]){0,1,0,1}, 4);
-        states = lddmc_relprod(states, rel, meta);
+        rel = listdd_relation_singleton((uint32_t[]){1,0,1,0}, (int[]){0,1,0,1}, 4);
+        states = listdd_rel_next(states, rel, meta);
         // the result should be just state (1,1)
-        test_assert(states == lddmc_cube((uint32_t[]){1,1}, 2));
+        test_assert(states == listdd_singleton((uint32_t[]){1,1}, 2));
 
-        MDD statezero = lddmc_cube((uint32_t[]){0,0}, 2);
-        states = lddmc_union_cube(statezero, (uint32_t[]){1,1}, 2);
-        test_assert(lddmc_relprod_union(states, rel, meta, statezero) == states);
+        LISTDD statezero = listdd_singleton((uint32_t[]){0,0}, 2);
+        states = listdd_add(statezero, (uint32_t[]){1,1}, 2);
+        test_assert(listdd_rel_next_union(states, rel, meta, statezero) == states);
 
         // now create transition (*,*) --> (*,*) (copy nodes)
-        rel = lddmc_cube_copy((uint32_t[]){0,0}, (int[]){1,1}, 2);
-        meta = lddmc_cube((uint32_t[]){4,4}, 2);
+        rel = listdd_relation_singleton((uint32_t[]){0,0}, (int[]){1,1}, 2);
+        meta = listdd_singleton((uint32_t[]){4,4}, 2);
         states = make_random_ldd_set(2, 10, 10);
-        MDD states2 = make_random_ldd_set(2, 10, 10);
-        test_assert(lddmc_union(states, states2) == lddmc_relprod_union(states, rel, meta, states2));
+        LISTDD states2 = make_random_ldd_set(2, 10, 10);
+        test_assert(listdd_union(states, states2) == listdd_rel_next_union(states, rel, meta, states2));
     }
 
     return 0;
@@ -626,8 +655,8 @@ int main()
     // Simple Sylvan initialization, also initialize BDD, MTBDD and LDD support
     sylvan_set_sizes(1LL<<20, 1LL<<20, 1LL<<16, 1LL<<16);
     sylvan_init_package();
-    sylvan_init_mtbdd();
-    sylvan_init_ldd();
+    mtbdd_init();
+    listdd_init();
 
     printf("Sylvan initialization complete.\n");
 

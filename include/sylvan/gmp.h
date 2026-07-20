@@ -136,7 +136,7 @@ static inline MTBDD gmp_max(MTBDD a, MTBDD b)
  */
 static inline MTBDD gmp_neg(MTBDD dd)
 {
-    return mtbdd_uapply(dd, gmp_op_neg_CALL, 0);
+    return mtbdd_apply_unary(dd, gmp_op_neg_CALL, 0);
 }
 
 /**
@@ -144,7 +144,7 @@ static inline MTBDD gmp_neg(MTBDD dd)
  */
 static inline MTBDD gmp_abs(MTBDD dd)
 {
-    return mtbdd_uapply(dd, gmp_op_abs_CALL, 0);
+    return mtbdd_apply_unary(dd, gmp_op_abs_CALL, 0);
 }
 
 /**

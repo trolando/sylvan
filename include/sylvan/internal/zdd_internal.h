@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-/* Do not include this file directly. Instead, include sylvan_int.h */
+/* Do not include this file directly. Instead, include <sylvan/internal.h>. */
 
 /**
  * Internals for multi-terminal ZDDs
  *
  * Bits
- * 127        1 complement      complement bit of the high edge
+ * 127        1 unused
  * 126        1 custom leaf     this is a custom leaf node
  * 125        1 map             is a MAP node, for compose etc
  * 124        1 mark            used for node marking
@@ -82,25 +82,27 @@ ZDD_GETNODE(ZDD dd)
 static inline int
 ZDD_HASMARK(ZDD dd)
 {
-    return (dd & zdd_complement) ? 1 : 0;
+    (void)dd;
+    return 0;
 }
 
 static inline ZDD
 ZDD_TOGGLEMARK(ZDD dd)
 {
-    return dd ^ zdd_complement;
+    return dd;
 }
 
 static inline ZDD
 ZDD_STRIPMARK(ZDD dd)
 {
-    return dd & (~zdd_complement);
+    return dd;
 }
 
 static inline ZDD
 ZDD_TRANSFERMARK(ZDD from, ZDD to)
 {
-    return (to ^ (from & zdd_complement));
+    (void)from;
+    return to;
 }
 
 /**
@@ -109,7 +111,7 @@ ZDD_TRANSFERMARK(ZDD from, ZDD to)
 static inline int
 ZDD_EQUALM(ZDD a, ZDD b)
 {
-    return ((a^b)&(~zdd_complement)) ? 0 : 1;
+    return a == b;
 }
 
 /**
@@ -145,7 +147,8 @@ zddnode_getvalue(const zddnode* n)
 static inline int SYLVAN_UNUSED
 zddnode_getcomp(const zddnode* n)
 {
-    return n->a & 0x8000000000000800 ? 1 : 0;
+    (void)n;
+    return 0;
 }
 
 /**
@@ -163,7 +166,7 @@ zddnode_getlow(const zddnode* n)
 static inline uint64_t SYLVAN_UNUSED
 zddnode_gethigh(const zddnode* n)
 {
-    return n->a & 0x800000ffffffffff;
+    return n->a & 0x000000ffffffffff;
 }
 
 /**

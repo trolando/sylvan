@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-#include <sylvan/internal/internal.h> // for nodes*, nodes, sylvan_register_quit
+#include <sylvan/internal.h> // for nodes*, nodes, sylvan_register_quit
 
 #include <inttypes.h>
 #include <string.h>

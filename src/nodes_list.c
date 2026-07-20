@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-#include <sylvan/internal/internal.h>
+#include <sylvan/internal.h>
 
 #include <errno.h>  // for errno
 #include <string.h> // memset

@@ -6,7 +6,7 @@
 
 #include <getrss.h>
 
-#include <sylvan/internal/internal.h>
+#include <sylvan/internal.h>
 
 #include <common.h>
 
@@ -172,8 +172,8 @@ set_t set_load_CALL(lace_worker* lace, FILE* f)
 {
     // allocate set
     set_t set = (set_t)malloc(sizeof(struct set));
-    set->bdd = mtbdd_false;
-    set->variables = mtbdd_true;
+    set->bdd = bdd_false;
+    set->variables = bdd_true;
     mtbdd_protect(&set->bdd);
     mtbdd_protect(&set->variables);
 
@@ -186,7 +186,7 @@ set_t set_load_CALL(lace_worker* lace, FILE* f)
         uint32_t *vars = (uint32_t*)malloc((size_t)totalbits * sizeof(*vars));
         if (vars == NULL) Abort("Out of memory!\n");
         for (int i=0; i<totalbits; i++) vars[i] = 2*i;
-        set->variables = mtbdd_set_from_array(vars, totalbits);
+        set->variables = bdd_set_from_array(vars, totalbits);
         free(vars);
     } else {
         // read proj
@@ -206,7 +206,7 @@ set_t set_load_CALL(lace_worker* lace, FILE* f)
                 cv += 2 * statebits[i];
             }
         }
-        set->variables = mtbdd_set_from_array(vars, n);
+        set->variables = bdd_set_from_array(vars, n);
         free(vars);
         free(proj);
     }
@@ -243,7 +243,7 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
     rel->r_proj = r_proj;
     rel->w_proj = w_proj;
 
-    rel->bdd = mtbdd_false;
+    rel->bdd = bdd_false;
     mtbdd_protect(&rel->bdd);
 
     /* Compute a_proj the union of r_proj and w_proj, and a_k the length of a_proj */
@@ -285,7 +285,7 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
             curvar += 2 * statebits[i];
         }
     }
-    rel->variables = mtbdd_set_from_array(all_vars, n);
+    rel->variables = bdd_set_from_array(all_vars, n);
     mtbdd_protect(&rel->variables);
 
     free(a_proj);
@@ -313,11 +313,11 @@ void rel_load_CALL(lace_worker* lace, rel_t rel, FILE* f)
 TASK(void, print_example, BDD, example, BDDSET, variables)
 void print_example_CALL(lace_worker* lace, BDD example, BDDSET variables)
 {
-    if (example != sylvan_false) {
+    if (example != bdd_false) {
         uint8_t *str = (uint8_t*)malloc((size_t)totalbits * sizeof(*str));
         if (str == NULL) Abort("Out of memory!\n");
 
-        bdd_sat_one(example, variables, str);
+        bdd_pick_cube_values(example, variables, str);
         int x=0;
         printf("[");
         for (int i=0; i<vectorsize; i++) {
@@ -345,7 +345,7 @@ TASK(BDD, go_sat, BDD, set, int, idx)
 BDD go_sat_CALL(lace_worker* lace, BDD set, int idx)
 {
     /* Terminal cases */
-    if (set == mtbdd_false) return mtbdd_false;
+    if (set == bdd_false) return bdd_false;
     if (idx == next_count) return set;
 
     /* Consult the cache */
@@ -360,19 +360,19 @@ BDD go_sat_CALL(lace_worker* lace, BDD set, int idx)
      */
 
     /* Check if the relation should be applied */
-    const uint32_t var = mtbdd_getvar(next[idx]->variables);
-    if (set == mtbdd_true || var <= mtbdd_getvar(set)) {
+    const uint32_t var = mtbdd_node_variable(next[idx]->variables);
+    if (set == bdd_true || var <= mtbdd_node_variable(set)) {
         /* Count the number of relations starting here */
         int count = idx+1;
-        while (count < next_count && var == mtbdd_getvar(next[count]->variables)) count++;
+        while (count < next_count && var == mtbdd_node_variable(next[count]->variables)) count++;
         count -= idx;
         /*
          * Compute until fixpoint:
          * - SAT deeper
          * - chain-apply all current level once
          */
-        BDD prev = mtbdd_false;
-        BDD step = mtbdd_false;
+        BDD prev = bdd_false;
+        BDD step = bdd_false;
         mtbdd_refs_pushptr(&set);
         mtbdd_refs_pushptr(&prev);
         mtbdd_refs_pushptr(&step);
@@ -382,20 +382,20 @@ BDD go_sat_CALL(lace_worker* lace, BDD set, int idx)
             set = go_sat_CALL(lace, set, idx+count);
             // chain-apply all current level once
             for (int i=0;i<count;i++) {
-                step = bdd_relnext_CALL(lace, set, next[idx+i]->bdd, next[idx+i]->variables);
+                step = bdd_rel_next_CALL(lace, set, next[idx+i]->bdd, next[idx+i]->variables);
                 set = bdd_not(bdd_and_CALL(lace, bdd_not(set), bdd_not(step)));
-                step = mtbdd_false; // unset, for gc
+                step = bdd_false; // unset, for gc
             }
         }
         mtbdd_refs_popptr(3);
         result = set;
     } else {
         /* Recursive computation */
-        mtbdd_refs_spawn(go_sat_SPAWN(lace, mtbdd_getlow(set), idx));
-        BDD high = mtbdd_refs_push(go_sat_CALL(lace, mtbdd_gethigh(set), idx));
+        mtbdd_refs_spawn(go_sat_SPAWN(lace, mtbdd_node_low(set), idx));
+        BDD high = mtbdd_refs_push(go_sat_CALL(lace, mtbdd_node_high(set), idx));
         BDD low = mtbdd_refs_sync(go_sat_SYNC(lace));
         mtbdd_refs_pop(1);
-        result = mtbdd_makenode(mtbdd_getvar(set), low, high);
+        result = mtbdd_make_node(mtbdd_node_variable(set), low, high);
     }
 
     /* Store in cache */
@@ -422,11 +422,11 @@ BDD go_par_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        BDD succ = bdd_relnext_CALL(lace, cur, next[from]->bdd, next[from]->variables);
+        BDD succ = bdd_rel_next_CALL(lace, cur, next[from]->bdd, next[from]->variables);
         mtbdd_refs_push(succ);
         if (deadlocks) {
             // check which BDDs in deadlocks do not have a successor in this relation
-            BDD anc = bdd_relprev_CALL(lace, next[from]->bdd, succ, next[from]->variables);
+            BDD anc = bdd_rel_prev_CALL(lace, next[from]->bdd, succ, next[from]->variables);
             mtbdd_refs_push(anc);
             *deadlocks = bdd_diff(*deadlocks, anc); //FIXME use a CALL
             mtbdd_refs_pop(1);
@@ -473,8 +473,8 @@ void par_CALL(lace_worker* lace, set_t set)
 {
     BDD visited = set->bdd;
     BDD next_level = visited;
-    BDD cur_level = mtbdd_false;
-    BDD deadlocks = mtbdd_false;
+    BDD cur_level = bdd_false;
+    BDD deadlocks = bdd_false;
 
     mtbdd_protect(&visited);
     mtbdd_protect(&next_level);
@@ -489,9 +489,9 @@ void par_CALL(lace_worker* lace, set_t set)
 
         next_level = go_par_CALL(lace, cur_level, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
 
-        if (check_deadlocks && deadlocks != mtbdd_false) {
-            INFO("Found %0.0f deadlock states... ", bdd_satcount_CALL(lace, deadlocks, set->variables));
-            if (deadlocks != mtbdd_false) {
+        if (check_deadlocks && deadlocks != bdd_false) {
+            INFO("Found %0.0f deadlock states... ", bdd_sat_count_CALL(lace, deadlocks, set->variables));
+            if (deadlocks != bdd_false) {
                 printf("example: ");
                 print_example(deadlocks, set->variables);
                 check_deadlocks = 0;
@@ -506,7 +506,7 @@ void par_CALL(lace_worker* lace, set_t set)
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
             INFO("Level %d done, %0.0f states explored, table: %0.1f%% full (%zu nodes)\n",
-                iteration, bdd_satcount_CALL(lace, visited, set->variables),
+                iteration, bdd_sat_count_CALL(lace, visited, set->variables),
                 100.0*(double)filled/total, filled);
         } else if (report_table) {
             size_t filled, total;
@@ -515,12 +515,12 @@ void par_CALL(lace_worker* lace, set_t set)
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %0.0f states explored\n", iteration, bdd_satcount_CALL(lace, visited, set->variables));
+            INFO("Level %d done, %0.0f states explored\n", iteration, bdd_sat_count_CALL(lace, visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
         iteration++;
-    } while (next_level != mtbdd_false);
+    } while (next_level != bdd_false);
 
     set->bdd = visited;
 
@@ -539,11 +539,11 @@ BDD go_bfs_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        BDD succ = bdd_relnext_CALL(lace, cur, next[from]->bdd, next[from]->variables);
+        BDD succ = bdd_rel_next_CALL(lace, cur, next[from]->bdd, next[from]->variables);
         mtbdd_refs_push(succ);
         if (deadlocks) {
             // check which BDDs in deadlocks do not have a successor in this relation
-            BDD anc = bdd_relprev_CALL(lace, next[from]->bdd, succ, next[from]->variables);
+            BDD anc = bdd_rel_prev_CALL(lace, next[from]->bdd, succ, next[from]->variables);
             mtbdd_refs_push(anc);
             *deadlocks = bdd_diff(*deadlocks, anc); // FIXME make it a CALL
             mtbdd_refs_pop(1);
@@ -591,8 +591,8 @@ void bfs_CALL(lace_worker* lace, set_t set)
 {
     BDD visited = set->bdd;
     BDD next_level = visited;
-    BDD cur_level = mtbdd_false;
-    BDD deadlocks = mtbdd_false;
+    BDD cur_level = bdd_false;
+    BDD deadlocks = bdd_false;
 
     mtbdd_protect(&visited);
     mtbdd_protect(&next_level);
@@ -607,9 +607,9 @@ void bfs_CALL(lace_worker* lace, set_t set)
 
         next_level = go_bfs_CALL(lace, cur_level, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
 
-        if (check_deadlocks && deadlocks != mtbdd_false) {
-            INFO("Found %0.0f deadlock states... ", bdd_satcount_CALL(lace, deadlocks, set->variables));
-            if (deadlocks != mtbdd_false) {
+        if (check_deadlocks && deadlocks != bdd_false) {
+            INFO("Found %0.0f deadlock states... ", bdd_sat_count_CALL(lace, deadlocks, set->variables));
+            if (deadlocks != bdd_false) {
                 printf("example: ");
                 print_example(deadlocks, set->variables);
                 check_deadlocks = 0;
@@ -624,7 +624,7 @@ void bfs_CALL(lace_worker* lace, set_t set)
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
             INFO("Level %d done, %0.0f states explored, table: %0.1f%% full (%zu nodes)\n",
-                iteration, bdd_satcount_CALL(lace, visited, set->variables),
+                iteration, bdd_sat_count_CALL(lace, visited, set->variables),
                 100.0*(double)filled/total, filled);
         } else if (report_table) {
             size_t filled, total;
@@ -633,12 +633,12 @@ void bfs_CALL(lace_worker* lace, set_t set)
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %0.0f states explored\n", iteration, bdd_satcount_CALL(lace, visited, set->variables));
+            INFO("Level %d done, %0.0f states explored\n", iteration, bdd_sat_count_CALL(lace, visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
         iteration++;
-    } while (next_level != mtbdd_false);
+    } while (next_level != bdd_false);
 
     set->bdd = visited;
 
@@ -656,7 +656,7 @@ void chaining_CALL(lace_worker* lace, set_t set)
 {
     BDD visited = set->bdd;
     BDD next_level = visited;
-    BDD succ = mtbdd_false;
+    BDD succ = bdd_false;
 
     mtbdd_refs_pushptr(&visited);
     mtbdd_refs_pushptr(&next_level);
@@ -666,9 +666,9 @@ void chaining_CALL(lace_worker* lace, set_t set)
     do {
         // calculate successors in parallel
         for (int i=0; i<next_count; i++) {
-            succ = bdd_relnext_CALL(lace, next_level, next[i]->bdd, next[i]->variables);
+            succ = bdd_rel_next_CALL(lace, next_level, next[i]->bdd, next[i]->variables);
             next_level = bdd_or(next_level, succ);
-            succ = mtbdd_false; // reset, for gc
+            succ = bdd_false; // reset, for gc
         }
 
         // new = new - visited
@@ -680,7 +680,7 @@ void chaining_CALL(lace_worker* lace, set_t set)
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
             INFO("Level %d done, %0.0f states explored, table: %0.1f%% full (%zu nodes)\n",
-                iteration, bdd_satcount_CALL(lace, visited, set->variables),
+                iteration, bdd_sat_count_CALL(lace, visited, set->variables),
                 100.0*(double)filled/total, filled);
         } else if (report_table) {
             size_t filled, total;
@@ -689,12 +689,12 @@ void chaining_CALL(lace_worker* lace, set_t set)
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %0.0f states explored\n", iteration, bdd_satcount_CALL(lace, visited, set->variables));
+            INFO("Level %d done, %0.0f states explored\n", iteration, bdd_sat_count_CALL(lace, visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
         iteration++;
-    } while (next_level != mtbdd_false);
+    } while (next_level != bdd_false);
 
     set->bdd = visited;
     mtbdd_refs_popptr(3);
@@ -710,22 +710,22 @@ BDD extend_relation_CALL(lace_worker* lace, MTBDD relation, MTBDD variables)
     int *has = (int*)calloc((size_t)totalbits, sizeof(*has));
     if (has == NULL) Abort("Out of memory!\n");
     MTBDD s = variables;
-    while (!mtbdd_set_isempty(s)) {
-        uint32_t v = mtbdd_set_first(s);
+    while (!bdd_set_is_empty(s)) {
+        uint32_t v = bdd_set_first(s);
         if (v/2 >= (unsigned)totalbits) break; // action labels
         has[v/2] = 1;
-        s = mtbdd_set_next(s);
+        s = bdd_set_next(s);
     }
 
     /* create "s=s'" for all variables not in rel */
-    BDD eq = mtbdd_true;
+    BDD eq = bdd_true;
     for (int i=totalbits-1; i>=0; i--) {
         if (has[i]) continue;
-        BDD low = mtbdd_makenode(2*i+1, eq, mtbdd_false);
+        BDD low = mtbdd_make_node(2*i+1, eq, bdd_false);
         mtbdd_refs_push(low);
-        BDD high = mtbdd_makenode(2*i+1, mtbdd_false, eq);
+        BDD high = mtbdd_make_node(2*i+1, bdd_false, eq);
         mtbdd_refs_pop(1);
-        eq = mtbdd_makenode(2*i, low, high);
+        eq = mtbdd_make_node(2*i, low, high);
     }
 
     mtbdd_refs_push(eq);
@@ -850,7 +850,7 @@ void run_CALL(lace_worker* lace)
         rel_t t;
         while (i < next_count) {
             rel_t *p = &next[i], *q = p-1;
-            if (mtbdd_getvar((*q)->variables) > mtbdd_getvar((*p)->variables)) {
+            if (mtbdd_node_variable((*q)->variables) > mtbdd_node_variable((*p)->variables)) {
                 t = *q;
                 *q = *p;
                 *p = t;
@@ -874,11 +874,11 @@ void run_CALL(lace_worker* lace)
 
     /* merge all relations to one big transition relation if requested */
     if (merge_relations) {
-        BDD newvars = mtbdd_set_empty();
+        BDD newvars = bdd_set_empty();
         mtbdd_refs_pushptr(&newvars);
         for (int i=totalbits-1; i>=0; i--) {
-            newvars = mtbdd_set_add(newvars, i*2+1);
-            newvars = mtbdd_set_add(newvars, i*2);
+            newvars = bdd_set_add(newvars, i*2+1);
+            newvars = bdd_set_add(newvars, i*2);
         }
 
         INFO("Extending transition relations to full domain.\n");
@@ -893,17 +893,17 @@ void run_CALL(lace_worker* lace)
         next[0]->bdd = big_union(0, next_count);
 
         for (int i=1; i<next_count; i++) {
-            next[i]->bdd = mtbdd_false;
-            next[i]->variables = mtbdd_true;
+            next[i]->bdd = bdd_false;
+            next[i]->variables = bdd_true;
         }
         next_count = 1;
     }
 
     if (report_nodes) {
         INFO("BDD nodes:\n");
-        INFO("Initial states: %zu BDD nodes\n", mtbdd_nodecount(states->bdd));
+        INFO("Initial states: %zu BDD nodes\n", mtbdd_node_count(states->bdd));
         for (int i=0; i<next_count; i++) {
-            INFO("Transition %d: %zu BDD nodes\n", i, mtbdd_nodecount(next[i]->bdd));
+            INFO("Transition %d: %zu BDD nodes\n", i, mtbdd_node_count(next[i]->bdd));
         }
     }
 
@@ -934,9 +934,9 @@ void run_CALL(lace_worker* lace)
     }
 
     // Now we just have states
-    INFO("Final states: %0.0f states\n", bdd_satcount_CALL(lace, states->bdd, states->variables));
+    INFO("Final states: %0.0f states\n", bdd_sat_count_CALL(lace, states->bdd, states->variables));
     if (report_nodes) {
-        INFO("Final states: %zu BDD nodes\n", mtbdd_nodecount(states->bdd));
+        INFO("Final states: %zu BDD nodes\n", mtbdd_node_count(states->bdd));
     }
 
     set_free(states);
@@ -978,7 +978,7 @@ main(int argc, const char **argv)
 
     sylvan_set_limits(max, 1, 6);
     sylvan_init_package();
-    sylvan_init_mtbdd();
+    mtbdd_init();
     sylvan_gc_hook_pregc(gc_start_CALL);
     sylvan_gc_hook_postgc(gc_end_CALL);
 

@@ -35,10 +35,10 @@ class Bdd {
     friend class Mtbdd;
 
 public:
-    Bdd() { bdd = mtbdd_false; mtbdd_protect(&bdd); }
+    Bdd() { bdd = bdd_false; mtbdd_protect(&bdd); }
     Bdd(const BDD from) : bdd(from) { mtbdd_protect(&bdd); }
     Bdd(const Bdd &from) : bdd(from.bdd) { mtbdd_protect(&bdd); }
-    Bdd(const uint32_t var) { bdd = mtbdd_ithvar(var); mtbdd_protect(&bdd); }
+    Bdd(const uint32_t var) { bdd = bdd_var_at_level(var); mtbdd_protect(&bdd); }
     ~Bdd() { mtbdd_unprotect(&bdd); }
 
     /**
@@ -426,7 +426,7 @@ public:
      * @brief Create a set containing the <length> variables in <arr>.
      * It is advised to have the variables in <arr> in ascending order.
      */
-    static BddSet fromArray(BDDVAR *arr, size_t length) {
+    static BddSet fromArray(uint32_t *arr, size_t length) {
         BddSet set;
         for (size_t i = 0; i < length; i++) {
             set.add(arr[length-i-1]);
@@ -462,7 +462,7 @@ public:
      * @brief Write all variables in this set to <arr>.
      * @param arr An array of at least size this.size().
      */
-    void toArray(BDDVAR *arr) const {
+    void toArray(uint32_t *arr) const {
         if (!isEmpty()) {
             *arr = TopVar();
             Next().toArray(arr+1);
@@ -529,7 +529,7 @@ class Mtbdd {
     friend class MtbddMap;
 
 public:
-    Mtbdd() { mtbdd = mtbdd_false; mtbdd_protect(&mtbdd); }
+    Mtbdd() { mtbdd = mtbdd_undefined; mtbdd_protect(&mtbdd); }
     Mtbdd(const MTBDD from) : mtbdd(from) { mtbdd_protect(&mtbdd); }
     Mtbdd(const Mtbdd &from) : mtbdd(from.mtbdd) { mtbdd_protect(&mtbdd); }
     Mtbdd(const Bdd &from) : mtbdd(from.bdd) { mtbdd_protect(&mtbdd); }
@@ -655,18 +655,18 @@ public:
     /**
      * @brief Applies the binary operation <op>
      */
-    Mtbdd Apply(const Mtbdd &other, mtbdd_apply_op op) const;
+    Mtbdd Apply(const Mtbdd &other, mtbdd_apply_cb op) const;
 
     /**
      * @brief Applies the unary operation <op> with parameter <param>
      */
-    Mtbdd UApply(mtbdd_uapply_op op, size_t param) const;
+    Mtbdd UApply(mtbdd_apply_unary_cb op, size_t param) const;
 
     /**
      * @brief Computers the abstraction on variables <variables> using operator <op>.
      * See also: AbstractPlus, AbstractTimes, AbstractMin, AbstractMax
      */
-    Mtbdd Abstract(const BddSet &variables, mtbdd_abstract_op op) const;
+    Mtbdd Abstract(const BddSet &variables, mtbdd_abstract_cb op) const;
 
     /**
      * @brief Computes if f then g else h

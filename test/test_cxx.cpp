@@ -52,7 +52,7 @@ int main()
     // Simple Sylvan initialization, also initialize BDD support
     sylvan_set_sizes(1LL<<16, 1LL<<16, 1LL<<16, 1LL<<16);
     sylvan_init_package();
-    sylvan_init_mtbdd();
+    mtbdd_init();
 
     test6();
 

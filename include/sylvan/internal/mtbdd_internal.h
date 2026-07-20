@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-/* Do not include this file directly. Instead, include sylvan_int.h */
+/* Do not include this file directly. Instead, include <sylvan/internal.h>. */
 
 /**
  * Internals for MTBDDs
@@ -30,6 +30,18 @@
 typedef struct mtbddnode {
     uint64_t a, b;
 } mtbddnode; // 16 bytes
+
+static inline int32_t
+mtbdd_fraction_numerator(MTBDD leaf)
+{
+    return (int32_t)(mtbdd_leaf_value(leaf) >> 32);
+}
+
+static inline uint32_t
+mtbdd_fraction_denominator(MTBDD leaf)
+{
+    return (uint32_t)mtbdd_leaf_value(leaf);
+}
 
 static_assert(sizeof(struct mtbddnode) == 16, "mtbddnode should be a 16 byte struct");
 
@@ -46,25 +58,25 @@ MTBDD_GETNODE(MTBDD dd)
 static inline int
 MTBDD_HASMARK(MTBDD dd)
 {
-    return (dd & mtbdd_complement) ? 1 : 0;
+    return (dd & bdd_complement) ? 1 : 0;
 }
 
 static inline MTBDD
 MTBDD_TOGGLEMARK(MTBDD dd)
 {
-    return dd ^ mtbdd_complement;
+    return dd ^ bdd_complement;
 }
 
 static inline MTBDD
 MTBDD_STRIPMARK(MTBDD dd)
 {
-    return dd & (~mtbdd_complement);
+    return dd & (~bdd_complement);
 }
 
 static inline MTBDD
 MTBDD_TRANSFERMARK(MTBDD from, MTBDD to)
 {
-    return (to ^ (from & mtbdd_complement));
+    return (to ^ (from & bdd_complement));
 }
 
 /**
@@ -73,7 +85,7 @@ MTBDD_TRANSFERMARK(MTBDD from, MTBDD to)
 static inline int
 MTBDD_EQUALM(MTBDD a, MTBDD b)
 {
-    return ((a^b)&(~mtbdd_complement)) ? 0 : 1;
+    return ((a^b)&(~bdd_complement)) ? 0 : 1;
 }
 
 // Leaf: a = L=1, M, type; b = value

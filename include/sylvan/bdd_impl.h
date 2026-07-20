@@ -26,7 +26,7 @@ static void SYLVAN_UNUSED bdd_fprint(FILE* f, BDD bdd)
 {
     bdd_serialize_reset();
     size_t v = bdd_serialize_add(bdd);
-    fprintf(f, "%s%zu,", mtbdd_complement ? "!" : "", v);
+    fprintf(f, "%s%zu,", bdd_complement ? "!" : "", v);
     bdd_serialize_totext(f);
 }
 
@@ -35,22 +35,17 @@ static void SYLVAN_UNUSED bdd_print(BDD bdd)
     bdd_fprint(stdout, bdd);
 }
 
-static inline int bdd_isconst(MTBDD bdd)
+static inline int bdd_is_leaf(MTBDD bdd)
 {
-    return bdd == mtbdd_true || bdd == mtbdd_false ? 1 : 0;
-}
-
-static inline int bdd_isnode(MTBDD bdd)
-{
-    return bdd != mtbdd_true && bdd != mtbdd_false ? 1 : 0;
+    return bdd == bdd_true || bdd == bdd_false ? 1 : 0;
 }
 
 static inline BDD bdd_not(BDD dd)
 {
-    return dd ^ mtbdd_complement;
+    return dd ^ bdd_complement;
 }
 
-static inline BDD bdd_equiv(BDD a, BDD b)
+static inline BDD bdd_xnor(BDD a, BDD b)
 {
     return bdd_not(bdd_xor(a, b));
 }
@@ -71,35 +66,43 @@ static inline BDD bdd_imp(BDD a, BDD b) {
     return bdd_not(bdd_and(a, bdd_not(b)));
 }
 
-static inline BDD bdd_invimp(BDD a, BDD b) {
-    return bdd_not(bdd_and(bdd_not(a), b));
-}
-
-static inline BDD bdd_biimp(BDD a, BDD b) {
-    return bdd_equiv(a, b);
-}
-
 static inline BDD bdd_diff(BDD a, BDD b) {
     return bdd_and(a, bdd_not(b));
 }
 
-static inline BDD bdd_less(BDD a, BDD b) {
-    return bdd_and(bdd_not(a), b);
-}
-
-static inline char bdd_subset(BDD a, BDD b)
+static inline char bdd_subseteq(BDD a, BDD b)
 {
     return bdd_disjoint(a, bdd_not(b));
-}
-
-static inline BDD bdd_nithvar(uint32_t var)
-{
-    return bdd_not(mtbdd_ithvar(var));
 }
 
 static inline BDD bdd_forall(BDD dd, BDDSET vars)
 {
     return bdd_not(bdd_exists(bdd_not(dd), vars));
+}
+
+static inline BDDSET bdd_set_empty(void)
+{
+    return bdd_true;
+}
+
+static inline int bdd_set_is_empty(BDDSET set)
+{
+    return set == bdd_true;
+}
+
+static inline uint32_t bdd_set_first(BDDSET set)
+{
+    return mtbdd_node_variable(set);
+}
+
+static inline BDDSET bdd_set_next(BDDSET set)
+{
+    return mtbdd_node_high(set);
+}
+
+static inline BDDSET bdd_set_union(BDDSET set1, BDDSET set2)
+{
+    return bdd_and(set1, set2);
 }
 
 TASK(BDD, bdd_ite, BDD, a, BDD, b, BDD, c)
@@ -110,18 +113,19 @@ TASK(BDD, bdd_exists, BDD, dd, BDD, vars)
 TASK(BDD, bdd_project, BDD, dd, BDD, vars);
 TASK(BDD, bdd_and_exists, BDD, a, BDD, b, BDDSET, vars)
 TASK(BDD, bdd_and_project, BDD, a, BDD, b, BDDSET, vars);
-TASK(BDD, bdd_relprev, BDD, a, BDD, b, BDDSET, vars)
-TASK(BDD, bdd_relnext, BDD, a, BDD, b, BDDSET, vars)
-TASK(BDD, bdd_closure, BDD, a)
+TASK(BDD, bdd_rel_prev, BDD, a, BDD, b, BDDSET, vars)
+TASK(BDD, bdd_rel_next, BDD, a, BDD, b, BDDSET, vars)
+TASK(BDD, bdd_transitive_closure, BDD, a)
 TASK(BDD, bdd_constrain, BDD, f, BDD, c)
 TASK(BDD, bdd_restrict, BDD, f, BDD, c)
-TASK(BDD, bdd_compose, BDD, f, BDDMAP, m)
-TASK(double, bdd_satcount, BDD, dd, BDDSET, vars)
-TASK(void, bdd_enum, BDD, dd, BDDSET, vars, bdd_enum_cb, cb, void*, context)
-TASK(void, bdd_enum_par, BDD, dd, BDDSET, vars, bdd_enum_cb, cb, void*, context)
-TASK(BDD, bdd_collect, BDD, dd, BDDSET, vars, bdd_collect_cb, cb, void*, context)
-TASK(double, bdd_pathcount, BDD, dd)
-TASK(BDD, bdd_union_cube, BDD, dd, BDDSET, vars, uint8_t*, cube)
+TASK(BDD, bdd_compose, BDD, f, MTBDDMAP, m)
+TASK(double, bdd_sat_count, BDD, dd, BDDSET, vars)
+TASK(void, bdd_enumerate_minterms, BDD, dd, BDDSET, vars, bdd_enumerate_cb, cb, void*, context)
+TASK(void, bdd_enumerate_minterms_parallel, BDD, dd, BDDSET, vars, bdd_enumerate_cb, cb, void*, context)
+TASK(BDD, bdd_map_reduce_or, BDD, dd, BDDSET, vars, bdd_map_reduce_or_cb, cb, void*, context)
+TASK(double, bdd_path_count, BDD, dd)
+TASK(BDD, bdd_or_cube, BDD, dd, BDDSET, vars, uint8_t*, cube)
+TASK(BDDSET, bdd_set_difference, BDDSET, set1, BDDSET, set2)
 
 #ifdef __cplusplus
 }

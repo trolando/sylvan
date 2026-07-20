@@ -326,7 +326,7 @@ MTBDD bdd_from_ldd_CALL(lace_worker* lace, LISTDD dd, LISTDD bits_dd, uint32_t f
 
     /* take union of current and right */
     mtbdd_refs_push(right);
-    result = bdd_not(bdd_and_CALL(lace, bdd_not(down), bdd_not(right)));
+    result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(down), bdd_not(right)));
     mtbdd_refs_pop(2);
 
     /* put in cache */
@@ -394,7 +394,7 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, LISTDD dd, LISTDD bits_dd, uint32
 
         /* intersect read value with down result */
         mtbdd_refs_push(part);
-        down = bdd_and_CALL(lace, part, down);
+        down = bdd_and_legacy_CALL(lace, part, down);
         mtbdd_refs_pop(2);
 
         /* sync right */
@@ -403,7 +403,7 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, LISTDD dd, LISTDD bits_dd, uint32
 
         /* take union of current and right */
         mtbdd_refs_push(right);
-        result = bdd_not(bdd_and_CALL(lace, bdd_not(down), bdd_not(right)));
+        result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(down), bdd_not(right)));
         mtbdd_refs_pop(2);
     } else if (vmeta == 2 || vmeta == 4) {
         /* write or only-write level */

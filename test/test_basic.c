@@ -13,6 +13,70 @@
 
 #include "test_assert.h"
 
+static BDD
+test_bdd_and(BDD a, BDD b)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    test_assert(bdd_and(&result, a, b) == SYLVAN_OK);
+    mtbdd_unprotect(&result);
+    return result;
+}
+
+static BDD
+test_bdd_ite(BDD a, BDD b, BDD c)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    test_assert(bdd_ite(&result, a, b, c) == SYLVAN_OK);
+    mtbdd_unprotect(&result);
+    return result;
+}
+
+TASK(int, test_protected_destinations)
+int
+test_protected_destinations_CALL(lace_worker *lace)
+{
+    BDD a = bdd_var_at_level(0);
+    BDD b = bdd_var_at_level(1);
+    BDD c = bdd_var_at_level(2);
+    BDD and_result = mtbdd_invalid;
+    BDD ite_result = mtbdd_invalid;
+    BDD expected_and = mtbdd_make_node(0, bdd_false, b);
+    BDD expected_ite = mtbdd_make_node(0, c, b);
+
+    mtbdd_refs_pushptr(&a);
+    mtbdd_refs_pushptr(&b);
+    mtbdd_refs_pushptr(&c);
+    mtbdd_refs_pushptr(&and_result);
+    mtbdd_refs_pushptr(&ite_result);
+    mtbdd_refs_pushptr(&expected_and);
+    mtbdd_refs_pushptr(&expected_ite);
+
+    bdd_and_SPAWN(lace, &and_result, a, b);
+    int ite_status = bdd_ite_CALL(lace, &ite_result, a, b, c);
+    int and_status = bdd_and_SYNC(lace);
+
+    test_assert(and_status == SYLVAN_OK);
+    test_assert(ite_status == SYLVAN_OK);
+
+    /* The task results must already be rooted when collection starts. */
+    sylvan_gc_CALL(lace);
+    test_assert(and_result == expected_and);
+    test_assert(ite_result == expected_ite);
+
+    BDD unchanged = bdd_true;
+    mtbdd_refs_pushptr(&unchanged);
+    test_assert(bdd_and_CALL(lace, &unchanged, mtbdd_invalid, b) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_ite_CALL(lace, &unchanged, a, b, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_and_CALL(lace, NULL, a, b) == SYLVAN_ERR_INVALID);
+    test_assert(bdd_ite_CALL(lace, NULL, a, b, c) == SYLVAN_ERR_INVALID);
+
+    mtbdd_refs_popptr(8);
+    return 0;
+}
 
 SYLVAN_TLS uint64_t seed = 1;
 
@@ -236,10 +300,10 @@ int testEqual(BDD a, BDD b)
 int
 test_bdd()
 {
-    test_assert(bdd_ite(bdd_var_at_level(1), bdd_true, bdd_true) == bdd_not(bdd_ite(bdd_var_at_level(1), bdd_false, bdd_false)));
-    test_assert(bdd_ite(bdd_var_at_level(1), bdd_false, bdd_true) == bdd_not(bdd_ite(bdd_var_at_level(1), bdd_true, bdd_false)));
-    test_assert(bdd_ite(bdd_var_at_level(1), bdd_true, bdd_false) == bdd_not(bdd_ite(bdd_var_at_level(1), bdd_false, bdd_true)));
-    test_assert(bdd_ite(bdd_var_at_level(1), bdd_false, bdd_false) == bdd_not(bdd_ite(bdd_var_at_level(1), bdd_true, bdd_true)));
+    test_assert(test_bdd_ite(bdd_var_at_level(1), bdd_true, bdd_true) == bdd_not(test_bdd_ite(bdd_var_at_level(1), bdd_false, bdd_false)));
+    test_assert(test_bdd_ite(bdd_var_at_level(1), bdd_false, bdd_true) == bdd_not(test_bdd_ite(bdd_var_at_level(1), bdd_true, bdd_false)));
+    test_assert(test_bdd_ite(bdd_var_at_level(1), bdd_true, bdd_false) == bdd_not(test_bdd_ite(bdd_var_at_level(1), bdd_false, bdd_true)));
+    test_assert(test_bdd_ite(bdd_var_at_level(1), bdd_false, bdd_false) == bdd_not(test_bdd_ite(bdd_var_at_level(1), bdd_true, bdd_true)));
 
     return 0;
 }
@@ -258,11 +322,11 @@ test_cube()
     for (i=0; i<6;i++) test_assert(cube[i] == check[i]);
 
     BDD picked_single = bdd_pick_minterm(bdd, vars);
-    test_assert(testEqual(bdd_and(picked_single, bdd), picked_single));
+    test_assert(testEqual(test_bdd_and(picked_single, bdd), picked_single));
     assert(bdd_sat_count(picked_single, vars)==1);
 
     BDD picked = bdd_pick_cube(bdd, vars);
-    test_assert(testEqual(bdd_and(picked, bdd), picked));
+    test_assert(testEqual(test_bdd_and(picked, bdd), picked));
 
     BDD t1 = bdd_cube(vars, ((uint8_t[]){1,1,2,2,0,0}));
     BDD t2 = bdd_cube(vars, ((uint8_t[]){1,1,1,0,0,2}));
@@ -283,12 +347,12 @@ test_cube()
 
     for (i=0;i<10;i++) {
         picked = bdd_pick_cube(bdd, all_vars);
-        test_assert(testEqual(bdd_and(picked, bdd), picked));
+        test_assert(testEqual(test_bdd_and(picked, bdd), picked));
     }
 
     const BDDSET limited_vars = bdd_set_from_array(((uint32_t[]){1,3,8}), 3);
     picked = bdd_pick_cube(bdd, limited_vars);
-    test_assert(bdd == bdd_false || bdd_and(picked, bdd) != bdd_false);
+    test_assert(bdd == bdd_false || test_bdd_and(picked, bdd) != bdd_false);
 
     BDD x = bdd_var_at_level(1);
     BDD y = bdd_var_at_level(2);
@@ -298,7 +362,7 @@ test_cube()
 
     BDD restricted = bdd_restrict(bdd, picked);
     test_assert(mtbdd_node_count(restricted) <= mtbdd_node_count(bdd));
-    test_assert(bdd_and(restricted, picked) == bdd_and(bdd, picked));
+    test_assert(test_bdd_and(restricted, picked) == test_bdd_and(bdd, picked));
 
     // simple test for mtbdd_enum_all
     uint8_t arr[6];
@@ -347,26 +411,26 @@ test_operators()
     test_assert(testEqual(bdd_or(one, two), bdd_or(two, one)));
 
     // Test and
-    test_assert(testEqual(bdd_and(a, b), mtbdd_make_node(1, bdd_false, b)));
-    test_assert(testEqual(bdd_and(a, b), bdd_and(b, a)));
-    test_assert(testEqual(bdd_and(one, two), bdd_and(two, one)));
+    test_assert(testEqual(test_bdd_and(a, b), mtbdd_make_node(1, bdd_false, b)));
+    test_assert(testEqual(test_bdd_and(a, b), test_bdd_and(b, a)));
+    test_assert(testEqual(test_bdd_and(one, two), test_bdd_and(two, one)));
 
     // Test xor
     test_assert(testEqual(bdd_xor(a, b), mtbdd_make_node(1, b, bdd_not(b))));
     test_assert(testEqual(bdd_xor(a, b), bdd_xor(a, b)));
     test_assert(testEqual(bdd_xor(a, b), bdd_xor(b, a)));
     test_assert(testEqual(bdd_xor(one, two), bdd_xor(two, one)));
-    test_assert(testEqual(bdd_xor(a, b), bdd_ite(a, bdd_not(b), b)));
+    test_assert(testEqual(bdd_xor(a, b), test_bdd_ite(a, bdd_not(b), b)));
 
     // Test diff
     test_assert(testEqual(bdd_diff(a, b), bdd_diff(a, b)));
-    test_assert(testEqual(bdd_diff(a, b), bdd_diff(a, bdd_and(a, b))));
-    test_assert(testEqual(bdd_diff(a, b), bdd_and(a, bdd_not(b))));
-    test_assert(testEqual(bdd_diff(a, b), bdd_ite(b, bdd_false, a)));
+    test_assert(testEqual(bdd_diff(a, b), bdd_diff(a, test_bdd_and(a, b))));
+    test_assert(testEqual(bdd_diff(a, b), test_bdd_and(a, bdd_not(b))));
+    test_assert(testEqual(bdd_diff(a, b), test_bdd_ite(b, bdd_false, a)));
     test_assert(testEqual(bdd_diff(one, two), bdd_diff(one, two)));
-    test_assert(testEqual(bdd_diff(one, two), bdd_diff(one, bdd_and(one, two))));
-    test_assert(testEqual(bdd_diff(one, two), bdd_and(one, bdd_not(two))));
-    test_assert(testEqual(bdd_diff(one, two), bdd_ite(two, bdd_false, one)));
+    test_assert(testEqual(bdd_diff(one, two), bdd_diff(one, test_bdd_and(one, two))));
+    test_assert(testEqual(bdd_diff(one, two), test_bdd_and(one, bdd_not(two))));
+    test_assert(testEqual(bdd_diff(one, two), test_bdd_ite(two, bdd_false, one)));
 
     // Test biimp
     test_assert(testEqual(bdd_xnor(a, b), mtbdd_make_node(1, bdd_not(b), b)));
@@ -374,8 +438,8 @@ test_operators()
     test_assert(testEqual(bdd_xnor(one, two), bdd_xnor(two, one)));
 
     // Test nand / and
-    test_assert(testEqual(bdd_not(bdd_and(a, b)), bdd_nand(b, a)));
-    test_assert(testEqual(bdd_not(bdd_and(one, two)), bdd_nand(two, one)));
+    test_assert(testEqual(bdd_not(test_bdd_and(a, b)), bdd_nand(b, a)));
+    test_assert(testEqual(bdd_not(test_bdd_and(one, two)), bdd_nand(two, one)));
 
     // Test nor / or
     test_assert(testEqual(bdd_not(bdd_or(a, b)), bdd_nor(b, a)));
@@ -386,8 +450,8 @@ test_operators()
     test_assert(testEqual(bdd_xor(one, two), bdd_not(bdd_xnor(two, one))));
 
     // Test imp
-    test_assert(testEqual(bdd_imp(a, b), bdd_ite(a, b, bdd_true)));
-    test_assert(testEqual(bdd_imp(one, two), bdd_ite(one, two, bdd_true)));
+    test_assert(testEqual(bdd_imp(a, b), test_bdd_ite(a, b, bdd_true)));
+    test_assert(testEqual(bdd_imp(one, two), test_bdd_ite(one, two, bdd_true)));
     test_assert(testEqual(bdd_imp(one, two), bdd_not(bdd_diff(one, two))));
     test_assert(testEqual(bdd_imp(two, one), bdd_not(bdd_diff(two, one))));
     test_assert(testEqual(bdd_imp(a, b), bdd_not(bdd_diff(a, b))));
@@ -411,18 +475,18 @@ test_disjoint_subset()
         v[0], v[1],
         v[1], v[1],
         v[0], bdd_not(v[0]),
-        bdd_and(v[0],v[1]), v[2],
-        bdd_and(v[0],v[1]), bdd_and(bdd_not(v[0]),v[1]),
-        bdd_and(v[0],v[1]), bdd_or(bdd_not(v[0]),v[2]),
-        bdd_and(v[0],v[1]), bdd_and(v[0],bdd_not(v[1])),
-        bdd_or(v[0],v[1]), bdd_and(v[0],bdd_not(v[1])),
-        bdd_and(v[1],bdd_or(v[0],v[2])), bdd_or(v[1],bdd_and(v[0],bdd_not(v[2])))
+        test_bdd_and(v[0],v[1]), v[2],
+        test_bdd_and(v[0],v[1]), test_bdd_and(bdd_not(v[0]),v[1]),
+        test_bdd_and(v[0],v[1]), bdd_or(bdd_not(v[0]),v[2]),
+        test_bdd_and(v[0],v[1]), test_bdd_and(v[0],bdd_not(v[1])),
+        bdd_or(v[0],v[1]), test_bdd_and(v[0],bdd_not(v[1])),
+        test_bdd_and(v[1],bdd_or(v[0],v[2])), bdd_or(v[1],test_bdd_and(v[0],bdd_not(v[2])))
     };
 
     for (int i=0; i<11; i++) {
         BDD t1 = test_input[2*i];
         BDD t2 = test_input[2*i+1];
-        test_assert(bdd_disjoint(t1,t2) == (bdd_and(t1,t2)==bdd_false));
+        test_assert(bdd_disjoint(t1,t2) == (test_bdd_and(t1,t2)==bdd_false));
         test_assert(bdd_subseteq(t1,t2) == (bdd_or(bdd_not(t1),t2) == bdd_true));
     }
 
@@ -508,7 +572,7 @@ test_compose()
     map = mtbdd_map_set(map, 1, two);
     test_assert(testEqual(bdd_or(one, two), bdd_compose(a_or_b, map)));
 
-    test_assert(testEqual(bdd_and(one, two), bdd_compose(bdd_and(a, b), map)));
+    test_assert(testEqual(test_bdd_and(one, two), bdd_compose(test_bdd_and(a, b), map)));
 
     // test that composing [0:=true] on "0" yields true
     map = mtbdd_map_set(mtbdd_map_empty(), 1, bdd_true);
@@ -620,6 +684,9 @@ test_ldd()
 TASK(int, runtests)
 int runtests_CALL(lace_worker* lace)
 {
+    printf("Testing protected destinations.\n");
+    if (test_protected_destinations_CALL(lace)) return 1;
+
     // we are not testing garbage collection
     sylvan_gc_disable();
 
@@ -649,8 +716,8 @@ int runtests_CALL(lace_worker* lace)
 
 int main()
 {
-    // Standard Lace initialization with 1 worker
-    lace_start(1, 0, 0);
+    // Use two workers to exercise the protected-destination SPAWN/SYNC path.
+    lace_start(2, 0, 0);
 
     // Simple Sylvan initialization, also initialize BDD, MTBDD and LDD support
     sylvan_set_sizes(1LL<<20, 1LL<<20, 1LL<<16, 1LL<<16);

@@ -46,6 +46,13 @@ extern "C" {
  */
 extern nodes_table* nodes;
 
+/* Fallible node construction for protected-destination operations. */
+int _mtbdd_try_make_node(MTBDD *destination, uint32_t var, MTBDD low, MTBDD high);
+
+/* Transitional tasks for operations whose callers are not converted yet. */
+TASK(BDD, bdd_and_legacy, BDD, a, BDD, b)
+TASK(BDD, bdd_ite_legacy, BDD, a, BDD, b, BDD, c)
+
 /** The ZDD terminal representing the family containing only the empty set. */
 static const ZDD zdd_base = UINT64_C(1);
 

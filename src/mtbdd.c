@@ -482,6 +482,22 @@ _mtbdd_makenode_exit(void)
 MTBDD
 _mtbdd_make_node(uint32_t var, MTBDD low, MTBDD high)
 {
+    MTBDD result;
+    if (_mtbdd_try_make_node(&result, var, low, high) != SYLVAN_OK) {
+        _mtbdd_makenode_exit();
+    }
+    return result;
+}
+
+int
+_mtbdd_try_make_node(MTBDD *destination, uint32_t var, MTBDD low, MTBDD high)
+{
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
+    if (low == high) {
+        *destination = low;
+        return SYLVAN_OK;
+    }
+
     // Normalization to keep canonicity
     // low will have no mark
 
@@ -497,14 +513,15 @@ _mtbdd_make_node(uint32_t var, MTBDD low, MTBDD high)
     if (index == 0) {
         _mtbdd_makenode_gc(low, high);
         index = nodes_lookup(nodes, n.a, n.b, &created);
-        if (index == 0) _mtbdd_makenode_exit();
+        if (index == 0) return SYLVAN_ERR_OOM;
     }
 
     if (created) sylvan_stats_count(BDD_NODES_CREATED);
     else sylvan_stats_count(BDD_NODES_REUSED);
 
     result |= index;
-    return result;
+    *destination = result;
+    return SYLVAN_OK;
 }
 
 MTBDD
@@ -2424,7 +2441,7 @@ MTBDD mtbdd_support_CALL(lace_worker* lace, MTBDD dd)
     MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(mtbdd_support_SYNC(lace)));
 
     /* Compute result */
-    result = mtbdd_make_node(mtbddnode_getvariable(n), mtbdd_undefined, bdd_and_CALL(lace, low, high));
+    result = mtbdd_make_node(mtbddnode_getvariable(n), mtbdd_undefined, bdd_and_legacy_CALL(lace, low, high));
     mtbdd_refs_pop(2);
 
     /* Write to cache */

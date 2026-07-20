@@ -383,7 +383,7 @@ BDD go_sat_CALL(lace_worker* lace, BDD set, int idx)
             // chain-apply all current level once
             for (int i=0;i<count;i++) {
                 step = bdd_rel_next_CALL(lace, set, next[idx+i]->bdd, next[idx+i]->variables);
-                set = bdd_not(bdd_and_CALL(lace, bdd_not(set), bdd_not(step)));
+                set = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(set), bdd_not(step)));
                 step = bdd_false; // unset, for gc
             }
         }
@@ -455,7 +455,7 @@ BDD go_par_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
 
         if (deadlocks) {
             mtbdd_refs_push(result);
-            *deadlocks = bdd_and_CALL(lace, deadlocks_left, deadlocks_right);
+            *deadlocks = bdd_and_legacy_CALL(lace, deadlocks_left, deadlocks_right);
             mtbdd_unprotect(&deadlocks_left);
             mtbdd_unprotect(&deadlocks_right);
             mtbdd_refs_pop(1);
@@ -573,7 +573,7 @@ BDD go_bfs_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
 
         if (deadlocks) {
             mtbdd_refs_push(result);
-            *deadlocks = bdd_and_CALL(lace, deadlocks_left, deadlocks_right);
+            *deadlocks = bdd_and_legacy_CALL(lace, deadlocks_left, deadlocks_right);
             mtbdd_unprotect(&deadlocks_left);
             mtbdd_unprotect(&deadlocks_right);
             mtbdd_refs_pop(1);
@@ -729,7 +729,7 @@ BDD extend_relation_CALL(lace_worker* lace, MTBDD relation, MTBDD variables)
     }
 
     mtbdd_refs_push(eq);
-    BDD result = bdd_and_CALL(lace, relation, eq);
+    BDD result = bdd_and_legacy_CALL(lace, relation, eq);
     mtbdd_refs_pop(1);
 
     free(has);

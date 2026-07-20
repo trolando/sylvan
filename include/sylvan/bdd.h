@@ -92,14 +92,20 @@ static inline int bdd_is_leaf(MTBDD bdd);
 static inline BDD bdd_not(BDD dd);
 
 /**
- * Computes a then b else c. Assumes all parameters are Boolean BDDs.
+ * Compute a then b else c. Returns SYLVAN_OK on success or a negative status
+ * code on failure. The caller must protect <result> before calling this
+ * operation. The destination is written before the Lace task completes and
+ * remains unchanged on failure.
  */
-static inline BDD bdd_ite(BDD a, BDD b, BDD c);
+static inline int bdd_ite(BDD *result, BDD a, BDD b, BDD c);
 
 /**
- * Compute the logical AND of two BDDs.
+ * Compute the logical AND of two BDDs. Returns SYLVAN_OK on success or a
+ * negative status code on failure. The caller must protect <result> before
+ * calling this operation. The destination is written before the Lace task
+ * completes and remains unchanged on failure.
  */
-static inline BDD bdd_and(BDD a, BDD b);
+static inline int bdd_and(BDD *result, BDD a, BDD b);
 
 /**
  * Compute the logical XOR (exclusive or) of two BDDs.
@@ -299,7 +305,8 @@ int bdd_pick_cube_values(BDD bdd, BDDSET variables, uint8_t* str);
  * The low/false branch is preferred whenever it can reach true.
  * Functionally equivalent to applying bdd_cube to bdd_pick_cube_values and
  * omitting entries marked as don't-care. If <variables> contains the support
- * of <bdd>, then bdd_and(result, bdd) == result.
+ * of <bdd>, then the conjunction of the returned cube and <bdd> equals the
+ * returned cube.
  */
 BDD bdd_pick_cube(BDD bdd, BDDSET variables);
 

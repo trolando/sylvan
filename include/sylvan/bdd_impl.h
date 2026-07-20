@@ -45,48 +45,48 @@ static inline BDD bdd_not(BDD dd)
     return dd ^ bdd_complement;
 }
 
-/* Transitional value-return bridges for operations not converted yet. */
-static inline BDD bdd_and_value(BDD a, BDD b)
+static inline int bdd_xnor(BDD *result, BDD a, BDD b)
 {
-    BDD result = mtbdd_invalid;
-    mtbdd_protect(&result);
-    int status = bdd_and(&result, a, b);
-    mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    if (result == NULL || a == mtbdd_invalid || b == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    int status = bdd_xor(result, a, b);
+    if (status == SYLVAN_OK) *result = bdd_not(*result);
+    return status;
 }
 
-static inline BDD bdd_ite_value(BDD a, BDD b, BDD c)
+static inline int bdd_or(BDD *result, BDD a, BDD b)
 {
-    BDD result = mtbdd_invalid;
-    mtbdd_protect(&result);
-    int status = bdd_ite(&result, a, b, c);
-    mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    if (result == NULL || a == mtbdd_invalid || b == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    int status = bdd_and(result, bdd_not(a), bdd_not(b));
+    if (status == SYLVAN_OK) *result = bdd_not(*result);
+    return status;
 }
 
-static inline BDD bdd_xnor(BDD a, BDD b)
+static inline int bdd_nand(BDD *result, BDD a, BDD b)
 {
-    return bdd_not(bdd_xor(a, b));
+    if (result == NULL || a == mtbdd_invalid || b == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    int status = bdd_and(result, a, b);
+    if (status == SYLVAN_OK) *result = bdd_not(*result);
+    return status;
 }
 
-static inline BDD bdd_or(BDD a, BDD b) {
-    return bdd_not(bdd_and_value(bdd_not(a), bdd_not(b)));
+static inline int bdd_nor(BDD *result, BDD a, BDD b)
+{
+    if (result == NULL || a == mtbdd_invalid || b == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    return bdd_and(result, bdd_not(a), bdd_not(b));
 }
 
-static inline BDD bdd_nand(BDD a, BDD b) {
-    return bdd_not(bdd_and_value(a, b));
+static inline int bdd_imp(BDD *result, BDD a, BDD b)
+{
+    if (result == NULL || a == mtbdd_invalid || b == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    int status = bdd_and(result, a, bdd_not(b));
+    if (status == SYLVAN_OK) *result = bdd_not(*result);
+    return status;
 }
 
-static inline BDD bdd_nor(BDD a, BDD b) {
-    return bdd_and_value(bdd_not(a), bdd_not(b));
-}
-
-static inline BDD bdd_imp(BDD a, BDD b) {
-    return bdd_not(bdd_and_value(a, bdd_not(b)));
-}
-
-static inline BDD bdd_diff(BDD a, BDD b) {
-    return bdd_and_value(a, bdd_not(b));
+static inline int bdd_diff(BDD *result, BDD a, BDD b)
+{
+    if (result == NULL || a == mtbdd_invalid || b == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    return bdd_and(result, a, bdd_not(b));
 }
 
 static inline char bdd_subseteq(BDD a, BDD b)
@@ -121,12 +121,16 @@ static inline BDDSET bdd_set_next(BDDSET set)
 
 static inline BDDSET bdd_set_union(BDDSET set1, BDDSET set2)
 {
-    return bdd_and_value(set1, set2);
+    BDDSET result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = bdd_and(&result, set1, set2);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
 
 TASK(int, bdd_ite, BDD*, result, BDD, a, BDD, b, BDD, c)
 TASK(int, bdd_and, BDD*, result, BDD, a, BDD, b)
-TASK(BDD, bdd_xor, BDD, a, BDD, b)
+TASK(int, bdd_xor, BDD*, result, BDD, a, BDD, b)
 TASK(char, bdd_disjoint, BDD, a, BDD, b)
 TASK(BDD, bdd_exists, BDD, dd, BDD, vars)
 TASK(BDD, bdd_project, BDD, dd, BDD, vars);

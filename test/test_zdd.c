@@ -9,15 +9,21 @@
 
 #include "test_assert.h"
 
+typedef int (*test_bdd_binary_op)(BDD*, BDD, BDD);
+
 static BDD
-test_bdd_and(BDD a, BDD b)
+test_bdd_binary(test_bdd_binary_op op, BDD a, BDD b)
 {
     BDD result = mtbdd_invalid;
     mtbdd_protect(&result);
-    test_assert(bdd_and(&result, a, b) == SYLVAN_OK);
+    int status = op(&result, a, b);
     mtbdd_unprotect(&result);
-    return result;
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
+
+static BDD test_bdd_and(BDD a, BDD b) { return test_bdd_binary(bdd_and, a, b); }
+static BDD test_bdd_xor(BDD a, BDD b) { return test_bdd_binary(bdd_xor, a, b); }
+static BDD test_bdd_or(BDD a, BDD b) { return test_bdd_binary(bdd_or, a, b); }
 
 static BDD
 test_bdd_ite(BDD a, BDD b, BDD c)
@@ -119,7 +125,7 @@ int test_zdd_cofactor_CALL(lace_worker* lace)
     BDD x0 = bdd_var_at_level(0);
     BDD x1 = bdd_var_at_level(1);
     BDD x2 = bdd_var_at_level(2);
-    BDD function = bdd_xor(x0, x1);
+    BDD function = test_bdd_xor(x0, x1);
     BDD cube = test_bdd_and(x0, bdd_not(x2));
     ZDD zdd = zdd_from_bdd(function, domain);
 
@@ -128,7 +134,7 @@ int test_zdd_cofactor_CALL(lace_worker* lace)
     test_assert(result != zdd_invalid);
     test_assert(bdd_from_zdd(result, result_domain) == bdd_not(x1));
 
-    test_assert(zdd_cofactor_CALL(lace, zdd, bdd_or(x0, x1), domain) == zdd_invalid);
+    test_assert(zdd_cofactor_CALL(lace, zdd, test_bdd_or(x0, x1), domain) == zdd_invalid);
     test_assert(zdd_cofactor_CALL(lace, zdd, bdd_var_at_level(3), domain) == zdd_invalid);
     return 0;
 }
@@ -425,7 +431,7 @@ int test_zdd_or_CALL(lace_worker* lace)
         bdd_set_b = bdd_or_cube(bdd_set_b, bdd_dom, arr);
     }
 
-    BDD bdd_set = bdd_or(bdd_set_a, bdd_set_b);
+    BDD bdd_set = test_bdd_or(bdd_set_a, bdd_set_b);
 
     ZDD zdd_set_a = zdd_from_bdd(bdd_set_a, bdd_dom);
     ZDD zdd_set_b = zdd_from_bdd(bdd_set_b, bdd_dom);
@@ -728,7 +734,7 @@ int test_zdd_isop_basic_CALL(lace_worker* lace)
 
     BDD a_and_b = test_bdd_and(a, b);
     BDD aNot_and_b = test_bdd_and(bdd_not(a), b);
-    BDD redundant_b = bdd_or(a_and_b, aNot_and_b);
+    BDD redundant_b = test_bdd_or(a_and_b, aNot_and_b);
 
     // ab + ~ab == b
 
@@ -756,7 +762,7 @@ int test_zdd_isop_random_CALL(lace_worker* lace)
     for (int j=0; j<cubecount; j++) {
         uint8_t arr[12];
         for (int j=0; j<12; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set = bdd_or(bdd_set, bdd_cube(bdd_dom, arr));
+        bdd_set = test_bdd_or(bdd_set, bdd_cube(bdd_dom, arr));
     }
 
     // convert to ISOP cover

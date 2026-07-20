@@ -100,6 +100,7 @@ test_protected_destinations_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&pending);
     sylvan_gc_CALL(lace);
     test_assert(pending == mtbdd_invalid);
+    test_assert(bdd_var_at_level(1) == b);
 
     bdd_and_SPAWN(lace, &and_result, a, b);
     bdd_xor_SPAWN(lace, &xor_result, a, b);

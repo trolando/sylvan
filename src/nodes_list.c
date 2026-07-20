@@ -464,7 +464,7 @@ int nodes_rebuild_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first, si
         _Atomic(uint64_t)* ptr = dbs->bitmap2 + (first / 64);
         uint64_t mask = UINT64_C(0x8000000000000000) >> (first & 63);
         for (size_t k=0; k<count; k++) {
-            if (atomic_load_explicit(ptr, memory_order_relaxed) & mask) {
+            if (first+k > 1 && atomic_load_explicit(ptr, memory_order_relaxed) & mask) {
                 if (nodes_reinsert_bucket(dbs, first+k) == 0) bad++;
             }
             mask >>= 1;

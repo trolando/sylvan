@@ -459,35 +459,26 @@ void nodes_mark_rec_CALL(lace_worker* lace, const nodes_table* dbs, uint64_t ind
     }
 }
 
-TASK(int, nodes_rebuild_par, nodes_table*, dbs, size_t, first, size_t, count)
-
-int nodes_rebuild_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first, size_t count)
-{
-    if (count > 512) {
-        nodes_rebuild_par_SPAWN(lace, dbs, first, count/2);
-        int bad = nodes_rebuild_par_CALL(lace, dbs, first + count/2, count - count/2);
-        return bad + nodes_rebuild_par_SYNC(lace);
-    } else {
-        int bad = 0;
-        _Atomic(uint64_t)* ptr = dbs->bitmap2 + (first / 64);
-        uint64_t mask = UINT64_C(0x8000000000000000) >> (first & 63);
-        for (size_t k=0; k<count; k++) {
-            if (atomic_load_explicit(ptr, memory_order_relaxed) & mask) {
-                if (nodes_reinsert_bucket(dbs, first+k) == 0) bad++;
-            }
-            mask >>= 1;
-            if (mask == 0) {
-                ptr++;
-                mask = UINT64_C(0x8000000000000000);
-            }
-        }
-        return bad;
-    }
-}
-
 int nodes_rebuild_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    return nodes_rebuild_par_CALL(lace, dbs, 0, dbs->table_size);
+    (void)lace;
+    int bad = 0;
+
+    /* Reinsert deterministically: concurrent trie reconstruction can make a
+       marked canonical node unreachable. Scan mark words to avoid walking
+       every empty bucket. */
+    const size_t words = (dbs->table_size + 63) / 64;
+    for (size_t word = 0; word < words; word++) {
+        uint64_t marked = atomic_load_explicit(dbs->bitmap2 + word, memory_order_relaxed);
+        if (word == 0) marked &= UINT64_C(0x3fffffffffffffff); // skip reserved indices 0 and 1
+        while (marked != 0) {
+            const unsigned int bit = clz_uint64(marked);
+            const size_t index = word * 64 + bit;
+            if (index < dbs->table_size && nodes_reinsert_bucket(dbs, index) == 0) bad++;
+            marked &= ~(UINT64_C(0x8000000000000000) >> bit);
+        }
+    }
+    return bad;
 }
 
 TASK(size_t, nodes_count_nodes_par, nodes_table*, dbs, size_t, first, size_t, count)

@@ -36,6 +36,12 @@ main(void)
     nodes_mark_rec(table, second);
     test_assert(nodes_is_marked(table, second));
 
+    test_assert(nodes_rebuild(table) == 0);
+    test_assert(nodes_lookup(table, UINT64_C(0x400000000000004a), 0, &created) == first);
+    test_assert(!created);
+    test_assert(nodes_lookup(table, UINT64_C(0x400000000000004b), 0, &created) == second);
+    test_assert(!created);
+
     nodes_free(table);
     lace_stop();
 

@@ -103,6 +103,7 @@ void mtbdd_gc_mark_CALL(lace_worker* lace, LISTDD mtbdd)
 {
     if (mtbdd == bdd_true) return;
     if (mtbdd == mtbdd_undefined) return;
+    if (mtbdd == mtbdd_invalid) return;
 
     nodes_mark_rec_CALL(lace, nodes, MTBDD_STRIPMARK(mtbdd));
 }

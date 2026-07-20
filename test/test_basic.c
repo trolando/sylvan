@@ -96,6 +96,11 @@ test_protected_destinations_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&expected_ite);
     mtbdd_refs_pushptr(&expected_xor);
 
+    BDD pending = mtbdd_invalid;
+    mtbdd_refs_pushptr(&pending);
+    sylvan_gc_CALL(lace);
+    test_assert(pending == mtbdd_invalid);
+
     bdd_and_SPAWN(lace, &and_result, a, b);
     bdd_xor_SPAWN(lace, &xor_result, a, b);
     int ite_status = bdd_ite_CALL(lace, &ite_result, a, b, c);
@@ -134,7 +139,7 @@ test_protected_destinations_CALL(lace_worker *lace)
     test_assert(bdd_ite_CALL(lace, NULL, a, b, c) == SYLVAN_ERR_INVALID);
     test_assert(bdd_xor_CALL(lace, NULL, a, b) == SYLVAN_ERR_INVALID);
 
-    mtbdd_refs_popptr(10);
+    mtbdd_refs_popptr(11);
     return 0;
 }
 

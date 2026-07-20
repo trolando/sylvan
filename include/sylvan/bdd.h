@@ -273,7 +273,7 @@ static inline int bdd_restrict(BDD *result, BDD f, BDD c);
  * For each node with variable <key> which has a <key,value> pair in <map>,
  * replace the node by the result of bdd_ite(<value>, <low>, <high>).
  */
-static inline BDD bdd_compose(BDD f, MTBDDMAP map);
+static inline int bdd_compose(BDD *result, BDD f, MTBDDMAP map);
 
 /**
  * Calculate number of satisfying variable assignments.

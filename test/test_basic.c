@@ -65,6 +65,16 @@ static BDD test_bdd_and_exists(BDD a, BDD b, BDDSET vars) { return test_bdd_bina
 static BDD test_bdd_and_project(BDD a, BDD b, BDDSET vars) { return test_bdd_binary_set(bdd_and_project, a, b, vars); }
 
 static BDD
+test_bdd_compose(BDD dd, MTBDDMAP map)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = bdd_compose(&result, dd, map);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+static BDD
 test_bdd_ite(BDD a, BDD b, BDD c)
 {
     BDD result = mtbdd_invalid;
@@ -399,6 +409,70 @@ test_care_destinations_CALL(lace_worker *lace)
     sylvan_gc_CALL(lace);
 
     mtbdd_refs_popptr(14);
+    return 0;
+}
+
+TASK(int, test_compose_destinations)
+int
+test_compose_destinations_CALL(lace_worker *lace)
+{
+    BDD x = bdd_var_at_level(0);
+    BDD y = bdd_var_at_level(1);
+    BDD z = bdd_var_at_level(2);
+    BDD f = mtbdd_invalid;
+    BDD expected = mtbdd_invalid;
+    MTBDDMAP map = mtbdd_map_empty();
+    MTBDDMAP later_map = mtbdd_map_empty();
+    BDD result = mtbdd_invalid;
+    BDD identity = mtbdd_invalid;
+    BDD inplace = mtbdd_invalid;
+    BDD unchanged = bdd_true;
+
+    mtbdd_refs_pushptr(&x);
+    mtbdd_refs_pushptr(&y);
+    mtbdd_refs_pushptr(&z);
+    mtbdd_refs_pushptr(&f);
+    mtbdd_refs_pushptr(&expected);
+    mtbdd_refs_pushptr(&map);
+    mtbdd_refs_pushptr(&later_map);
+    mtbdd_refs_pushptr(&result);
+    mtbdd_refs_pushptr(&identity);
+    mtbdd_refs_pushptr(&inplace);
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_assert(bdd_xor_CALL(lace, &f, x, y) == SYLVAN_OK);
+    test_assert(bdd_xor_CALL(lace, &expected, z, y) == SYLVAN_OK);
+    map = mtbdd_map_set(map, 0, z);
+
+    bdd_compose_SPAWN(lace, &result, f, map);
+    int identity_status = bdd_compose_CALL(lace, &identity, f, mtbdd_map_empty());
+    int compose_status = bdd_compose_SYNC(lace);
+    test_assert(compose_status == SYLVAN_OK);
+    test_assert(identity_status == SYLVAN_OK);
+    test_assert(identity == f);
+
+    /* A map whose first key comes after the support must rebuild f unchanged. */
+    later_map = mtbdd_map_set(later_map, 2, x);
+    test_assert(bdd_compose_CALL(lace, &identity, f, later_map) == SYLVAN_OK);
+
+    sylvan_gc_CALL(lace);
+    test_assert(result == expected);
+    test_assert(identity == f);
+
+    inplace = f;
+    test_assert(bdd_compose_CALL(lace, &inplace, inplace, map) == SYLVAN_OK);
+    test_assert(inplace == expected);
+
+    test_assert(bdd_compose_CALL(lace, &unchanged, mtbdd_invalid, map) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_compose_CALL(lace, &unchanged, f, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_compose_CALL(lace, NULL, f, map) == SYLVAN_ERR_INVALID);
+
+    /* Leave the cache empty for the cache unit test that follows. */
+    sylvan_gc_CALL(lace);
+
+    mtbdd_refs_popptr(11);
     return 0;
 }
 
@@ -894,26 +968,26 @@ test_compose()
     test_assert(mtbdd_map_key(mtbdd_map_next(map)) == 2);
     test_assert(mtbdd_map_value(mtbdd_map_next(map)) == two);
 
-    test_assert(testEqual(one, bdd_compose(a, map)));
-    test_assert(testEqual(two, bdd_compose(b, map)));
+    test_assert(testEqual(one, test_bdd_compose(a, map)));
+    test_assert(testEqual(two, test_bdd_compose(b, map)));
 
-    test_assert(testEqual(test_bdd_or(one, two), bdd_compose(a_or_b, map)));
+    test_assert(testEqual(test_bdd_or(one, two), test_bdd_compose(a_or_b, map)));
 
     map = mtbdd_map_set(map, 2, one);
-    test_assert(testEqual(bdd_compose(a_or_b, map), one));
+    test_assert(testEqual(test_bdd_compose(a_or_b, map), one));
 
     map = mtbdd_map_set(map, 1, two);
-    test_assert(testEqual(test_bdd_or(one, two), bdd_compose(a_or_b, map)));
+    test_assert(testEqual(test_bdd_or(one, two), test_bdd_compose(a_or_b, map)));
 
-    test_assert(testEqual(test_bdd_and(one, two), bdd_compose(test_bdd_and(a, b), map)));
+    test_assert(testEqual(test_bdd_and(one, two), test_bdd_compose(test_bdd_and(a, b), map)));
 
     // test that composing [0:=true] on "0" yields true
     map = mtbdd_map_set(mtbdd_map_empty(), 1, bdd_true);
-    test_assert(testEqual(bdd_compose(a, map), bdd_true));
+    test_assert(testEqual(test_bdd_compose(a, map), bdd_true));
 
     // test that composing [0:=false] on "0" yields false
     map = mtbdd_map_set(mtbdd_map_empty(), 1, bdd_false);
-    test_assert(testEqual(bdd_compose(a, map), bdd_false));
+    test_assert(testEqual(test_bdd_compose(a, map), bdd_false));
 
     return 0;
 }
@@ -1022,6 +1096,7 @@ int runtests_CALL(lace_worker* lace)
         if (test_protected_destinations_CALL(lace)) return 1;
         if (test_quantification_destinations_CALL(lace)) return 1;
         if (test_care_destinations_CALL(lace)) return 1;
+        if (test_compose_destinations_CALL(lace)) return 1;
     }
 
     // we are not testing garbage collection

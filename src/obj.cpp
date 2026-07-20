@@ -24,6 +24,7 @@ namespace {
 using bdd_binary_op = int (*)(BDD*, BDD, BDD);
 using bdd_unary_set_op = int (*)(BDD*, BDD, BDDSET);
 using bdd_binary_set_op = int (*)(BDD*, BDD, BDD, BDDSET);
+using bdd_compose_op = int (*)(BDD*, BDD, MTBDDMAP);
 
 BDD
 apply_binary(bdd_binary_op op, BDD a, BDD b)
@@ -61,6 +62,16 @@ apply_binary_set(bdd_binary_set_op op, BDD a, BDD b, BDDSET vars)
     BDD result = mtbdd_invalid;
     mtbdd_protect(&result);
     int status = op(&result, a, b, vars);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+BDD
+apply_compose(bdd_compose_op op, BDD dd, MTBDDMAP map)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = op(&result, dd, map);
     mtbdd_unprotect(&result);
     return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
@@ -310,7 +321,7 @@ Bdd::Restrict(const Bdd &c) const
 Bdd
 Bdd::Compose(const BddMap &m) const
 {
-    return bdd_compose(bdd, m.bdd);
+    return apply_compose(bdd_compose, bdd, m.bdd);
 }
 
 Bdd
@@ -322,7 +333,7 @@ Bdd::Permute(const std::vector<uint32_t>& from, const std::vector<uint32_t>& to)
         map.put(from[i-1], Bdd::bddVar(to[i-1]));
     }
 
-    return bdd_compose(bdd, map.bdd);
+    return apply_compose(bdd_compose, bdd, map.bdd);
 }
 
 Bdd

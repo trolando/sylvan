@@ -1825,11 +1825,15 @@ BDD bdd_transitive_closure_CALL(lace_worker* lace, BDD a)
 /**
  * Function composition
  */
-BDD bdd_compose_CALL(lace_worker* lace, BDD a, MTBDDMAP map)
+int bdd_compose_CALL(lace_worker* lace, BDD *destination, BDD a, MTBDDMAP map)
 {
+    if (destination == NULL || a == mtbdd_invalid || map == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
     /* Trivial cases */
-    if (a == bdd_false || a == bdd_true) return a;
-    if (mtbdd_map_is_empty(map)) return a;
+    if (a == bdd_false || a == bdd_true || mtbdd_map_is_empty(map)) {
+        *destination = a;
+        return SYLVAN_OK;
+    }
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test(lace);
@@ -1846,34 +1850,55 @@ BDD bdd_compose_CALL(lace_worker* lace, BDD a, MTBDDMAP map)
     uint32_t map_var = bddnode_getvariable(map_node);
     while (map_var < level) {
         map = node_low(map, map_node);
-        if (mtbdd_map_is_empty(map)) return a;
+        if (mtbdd_map_is_empty(map)) {
+            *destination = a;
+            return SYLVAN_OK;
+        }
         map_node = MTBDD_GETNODE(map);
         map_var = bddnode_getvariable(map_node);
     }
 
     /* Consult cache */
-    BDD result;
-    if (cache_get3(CACHE_BDD_COMPOSE, a, map, 0, &result)) {
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_BDD_COMPOSE, a, map, 0, &computed)) {
         sylvan_stats_count(BDD_COMPOSE_CACHED);
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /* Recursively calculate low and high */
-    mtbdd_refs_spawn(bdd_compose_SPAWN(lace, node_low(a, n), map));
-    BDD high = bdd_compose_CALL(lace, node_high(a, n), map);
-    mtbdd_refs_push(high);
-    BDD low = mtbdd_refs_sync(bdd_compose_SYNC(lace));
-    mtbdd_refs_push(low);
+    BDD low = mtbdd_invalid, high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+
+    bdd_compose_SPAWN(lace, &low, node_low(a, n), map);
+    int high_status = bdd_compose_CALL(lace, &high, node_high(a, n), map);
+    int low_status = bdd_compose_SYNC(lace);
+    if (high_status != SYLVAN_OK || low_status != SYLVAN_OK) {
+        mtbdd_refs_popptr(3);
+        return high_status != SYLVAN_OK ? high_status : low_status;
+    }
 
     /* Calculate result */
-    BDD root = map_var == level ? node_high(map, map_node) : bdd_var_at_level(level);
-    mtbdd_refs_push(root);
-    result = bdd_ite_legacy_CALL(lace, root, high, low);
-    mtbdd_refs_pop(3);
+    int status;
+    if (map_var == level) {
+        BDD root = node_high(map, map_node);
+        status = bdd_ite_CALL(lace, &computed, root, high, low);
+    } else {
+        status = _mtbdd_try_make_node(&computed, level, low, high);
+    }
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(3);
+        return status;
+    }
 
-    if (cache_put3(CACHE_BDD_COMPOSE, a, map, 0, result)) sylvan_stats_count(BDD_COMPOSE_CACHEDPUT);
+    if (cache_put3(CACHE_BDD_COMPOSE, a, map, 0, computed)) sylvan_stats_count(BDD_COMPOSE_CACHEDPUT);
 
-    return result;
+    *destination = computed;
+    mtbdd_refs_popptr(3);
+    return SYLVAN_OK;
 }
 
 /**

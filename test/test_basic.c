@@ -35,6 +35,8 @@ static BDD test_bdd_nand(BDD a, BDD b) { return test_bdd_binary(bdd_nand, a, b);
 static BDD test_bdd_nor(BDD a, BDD b) { return test_bdd_binary(bdd_nor, a, b); }
 static BDD test_bdd_imp(BDD a, BDD b) { return test_bdd_binary(bdd_imp, a, b); }
 static BDD test_bdd_diff(BDD a, BDD b) { return test_bdd_binary(bdd_diff, a, b); }
+static BDD test_bdd_cofactor(BDD f, BDD cube) { return test_bdd_binary(bdd_cofactor, f, cube); }
+static BDD test_bdd_restrict(BDD f, BDD c) { return test_bdd_binary(bdd_restrict, f, c); }
 
 static BDD
 test_bdd_unary_set(test_bdd_unary_set_op op, BDD dd, BDDSET vars)
@@ -281,6 +283,122 @@ test_quantification_destinations_CALL(lace_worker *lace)
     sylvan_gc_CALL(lace);
 
     mtbdd_refs_popptr(18);
+    return 0;
+}
+
+TASK(int, test_care_destinations)
+int
+test_care_destinations_CALL(lace_worker *lace)
+{
+    BDD x = bdd_var_at_level(0);
+    BDD y = bdd_var_at_level(1);
+    BDD z = bdd_var_at_level(2);
+    BDD f = mtbdd_invalid;
+    BDD care = mtbdd_invalid;
+    BDD cube = mtbdd_invalid;
+    BDD constrain_result = mtbdd_invalid;
+    BDD restrict_result = mtbdd_invalid;
+    BDD cofactor_result = mtbdd_invalid;
+    BDD constrain_slice = mtbdd_invalid;
+    BDD source_slice = mtbdd_invalid;
+    BDD restrict_slice = mtbdd_invalid;
+    BDD unchanged = bdd_true;
+    BDD inplace = mtbdd_invalid;
+
+    mtbdd_refs_pushptr(&x);
+    mtbdd_refs_pushptr(&y);
+    mtbdd_refs_pushptr(&z);
+    mtbdd_refs_pushptr(&f);
+    mtbdd_refs_pushptr(&care);
+    mtbdd_refs_pushptr(&cube);
+    mtbdd_refs_pushptr(&constrain_result);
+    mtbdd_refs_pushptr(&restrict_result);
+    mtbdd_refs_pushptr(&cofactor_result);
+    mtbdd_refs_pushptr(&constrain_slice);
+    mtbdd_refs_pushptr(&source_slice);
+    mtbdd_refs_pushptr(&restrict_slice);
+    mtbdd_refs_pushptr(&unchanged);
+    mtbdd_refs_pushptr(&inplace);
+
+    test_assert(bdd_xor_CALL(lace, &f, x, y) == SYLVAN_OK);
+    test_assert(bdd_xor_CALL(lace, &care, x, z) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(lace, &cube, x, bdd_not(z)) == SYLVAN_OK);
+
+    bdd_constrain_SPAWN(lace, &constrain_result, f, care);
+    bdd_restrict_SPAWN(lace, &restrict_result, f, care);
+    int cofactor_status = bdd_cofactor(&cofactor_result, f, x);
+    int restrict_status = bdd_restrict_SYNC(lace);
+    int constrain_status = bdd_constrain_SYNC(lace);
+
+    test_assert(constrain_status == SYLVAN_OK);
+    test_assert(restrict_status == SYLVAN_OK);
+    test_assert(cofactor_status == SYLVAN_OK);
+
+    sylvan_gc_CALL(lace);
+    test_assert(cofactor_result == bdd_not(y));
+    test_assert(bdd_and_CALL(lace, &constrain_slice, constrain_result, care) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(lace, &source_slice, f, care) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(lace, &restrict_slice, restrict_result, care) == SYLVAN_OK);
+    test_assert(constrain_slice == source_slice);
+    test_assert(restrict_slice == source_slice);
+    test_assert(mtbdd_node_count(restrict_result) <= mtbdd_node_count(f));
+
+    inplace = f;
+    test_assert(bdd_constrain_CALL(lace, &inplace, inplace, care) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(lace, &constrain_slice, inplace, care) == SYLVAN_OK);
+    test_assert(constrain_slice == source_slice);
+
+    test_bdd_binary_op care_ops[] = {bdd_constrain, bdd_cofactor, bdd_restrict};
+    for (size_t i = 0; i < sizeof(care_ops) / sizeof(care_ops[0]); i++) {
+        test_assert(care_ops[i](&unchanged, mtbdd_invalid, care) == SYLVAN_ERR_INVALID);
+        test_assert(unchanged == bdd_true);
+        test_assert(care_ops[i](&unchanged, f, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+        test_assert(unchanged == bdd_true);
+        test_assert(care_ops[i](NULL, f, care) == SYLVAN_ERR_INVALID);
+    }
+
+    test_assert(bdd_cofactor(&unchanged, f, care) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_cofactor(&unchanged, f, bdd_false) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_cofactor(&unchanged, f, bdd_true) == SYLVAN_OK);
+    test_assert(unchanged == f);
+    test_assert(bdd_cofactor(&unchanged, f, cube) == SYLVAN_OK);
+    test_assert(unchanged == bdd_not(y));
+
+    BDD samples[] = {
+        bdd_false, bdd_true,
+        x, bdd_not(x), y, bdd_not(y), z, bdd_not(z),
+        f, care, cube
+    };
+    for (size_t i = 0; i < sizeof(samples) / sizeof(samples[0]); i++) {
+        for (size_t j = 0; j < sizeof(samples) / sizeof(samples[0]); j++) {
+            BDD constrained = mtbdd_invalid;
+            BDD restricted = mtbdd_invalid;
+            BDD result_slice = mtbdd_invalid;
+            BDD expected_slice = mtbdd_invalid;
+            mtbdd_refs_pushptr(&constrained);
+            mtbdd_refs_pushptr(&restricted);
+            mtbdd_refs_pushptr(&result_slice);
+            mtbdd_refs_pushptr(&expected_slice);
+
+            test_assert(bdd_constrain_CALL(lace, &constrained, samples[i], samples[j]) == SYLVAN_OK);
+            test_assert(bdd_restrict_CALL(lace, &restricted, samples[i], samples[j]) == SYLVAN_OK);
+            test_assert(bdd_and_CALL(lace, &expected_slice, samples[i], samples[j]) == SYLVAN_OK);
+            test_assert(bdd_and_CALL(lace, &result_slice, constrained, samples[j]) == SYLVAN_OK);
+            test_assert(result_slice == expected_slice);
+            test_assert(bdd_and_CALL(lace, &result_slice, restricted, samples[j]) == SYLVAN_OK);
+            test_assert(result_slice == expected_slice);
+            test_assert(mtbdd_node_count(restricted) <= mtbdd_node_count(samples[i]));
+
+            mtbdd_refs_popptr(4);
+        }
+    }
+
+    /* Leave the cache empty for the cache unit test that follows. */
+    sylvan_gc_CALL(lace);
+
+    mtbdd_refs_popptr(14);
     return 0;
 }
 
@@ -571,11 +689,11 @@ test_cube()
 
     BDD x = bdd_var_at_level(1);
     BDD y = bdd_var_at_level(2);
-    test_assert(bdd_cofactor(test_bdd_xor(x, y), x) == bdd_not(y));
-    test_assert(bdd_cofactor(test_bdd_xor(x, y), bdd_not(x)) == y);
-    test_assert(bdd_cofactor(test_bdd_xor(x, y), test_bdd_or(x, y)) == mtbdd_invalid);
+    test_assert(test_bdd_cofactor(test_bdd_xor(x, y), x) == bdd_not(y));
+    test_assert(test_bdd_cofactor(test_bdd_xor(x, y), bdd_not(x)) == y);
+    test_assert(test_bdd_cofactor(test_bdd_xor(x, y), test_bdd_or(x, y)) == mtbdd_invalid);
 
-    BDD restricted = bdd_restrict(bdd, picked);
+    BDD restricted = test_bdd_restrict(bdd, picked);
     test_assert(mtbdd_node_count(restricted) <= mtbdd_node_count(bdd));
     test_assert(test_bdd_and(restricted, picked) == test_bdd_and(bdd, picked));
 
@@ -903,6 +1021,7 @@ int runtests_CALL(lace_worker* lace)
     for (int j = 0; j < 10; j++) {
         if (test_protected_destinations_CALL(lace)) return 1;
         if (test_quantification_destinations_CALL(lace)) return 1;
+        if (test_care_destinations_CALL(lace)) return 1;
     }
 
     // we are not testing garbage collection

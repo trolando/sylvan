@@ -250,14 +250,15 @@ static inline BDD bdd_transitive_closure(BDD dd);
  *   - f@f = 1
  *   - f@¬f = 0
  */
-static inline BDD bdd_constrain(BDD f, BDD c);
+static inline int bdd_constrain(BDD *result, BDD f, BDD c);
 
 /**
  * Substitute the literals fixed by <cube> in <f> and remove those variables
  * from the result. The cube must be one conjunction of positive or negative
- * literals. Returns mtbdd_invalid if <cube> is not such a conjunction.
+ * literals. Returns SYLVAN_ERR_INVALID and leaves <result> unchanged if
+ * <cube> is not such a conjunction.
  */
-BDD bdd_cofactor(BDD f, BDD cube);
+int bdd_cofactor(BDD *result, BDD f, BDD cube);
 
 /**
  * Compute restrict f@c, which uses a heuristic to try and minimize a BDD f
@@ -265,7 +266,7 @@ BDD bdd_cofactor(BDD f, BDD cube);
  * Similar to constrain, but avoids introducing variables from c into f.
  * The public operation returns <f> unchanged if the computed result is larger.
  */
-static inline BDD bdd_restrict(BDD f, BDD c);
+static inline int bdd_restrict(BDD *result, BDD f, BDD c);
 
 /**
  * Function composition.

@@ -651,15 +651,18 @@ zdd_cofactor_CALL(lace_worker* lace, ZDD dd, BDD cube, BDDSET domain)
     }
 
     BDD bdd = mtbdd_refs_push(bdd_from_zdd_CALL(lace, dd, domain));
-    BDD cofactor = mtbdd_refs_push(bdd_cofactor(bdd, cube));
-    if (cofactor == mtbdd_invalid) {
-        mtbdd_refs_pop(3);
+    BDD cofactor = mtbdd_invalid;
+    mtbdd_refs_pushptr(&cofactor);
+    if (bdd_cofactor(&cofactor, bdd, cube) != SYLVAN_OK) {
+        mtbdd_refs_popptr(1);
+        mtbdd_refs_pop(2);
         return zdd_invalid;
     }
 
     BDDSET result_domain = mtbdd_refs_push(bdd_set_difference(domain, cube_support));
     ZDD result = zdd_from_bdd_CALL(lace, cofactor, result_domain);
-    mtbdd_refs_pop(4);
+    mtbdd_refs_popptr(1);
+    mtbdd_refs_pop(3);
     return result;
 }
 

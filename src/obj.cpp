@@ -298,13 +298,13 @@ Bdd::Closure() const
 Bdd
 Bdd::Constrain(const Bdd &c) const
 {
-    return bdd_constrain(bdd, c.bdd);
+    return apply_binary(bdd_constrain, bdd, c.bdd);
 }
 
 Bdd
 Bdd::Restrict(const Bdd &c) const
 {
-    return bdd_restrict(bdd, c.bdd);
+    return apply_binary(bdd_restrict, bdd, c.bdd);
 }
 
 Bdd

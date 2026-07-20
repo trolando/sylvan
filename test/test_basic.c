@@ -18,6 +18,126 @@ typedef int (*test_bdd_unary_set_op)(BDD*, BDD, BDDSET);
 typedef int (*test_bdd_binary_set_op)(BDD*, BDD, BDD, BDDSET);
 
 static BDD
+test_bdd_var(uint32_t level)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = bdd_var_at_level(&result, level);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+static BDDSET
+test_bdd_set_from_levels(const uint32_t *levels, size_t count)
+{
+    BDDSET result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = bdd_set_from_array(&result, levels, count);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+TASK(int, test_new_var, BDD*, result)
+int
+test_new_var_CALL(lace_worker *lace, BDD *result)
+{
+    (void)lace;
+    return bdd_new_var(result);
+}
+
+TASK(int, test_variable_set_destinations)
+int
+test_variable_set_destinations_CALL(lace_worker *lace)
+{
+    const uint32_t levels[] = {5, 1, 3, 1};
+    const uint32_t other_levels[] = {2, 7};
+    const uint32_t invalid_level[] = {UINT32_C(0x01000000)};
+    BDD variable = mtbdd_invalid;
+    BDD same_variable = mtbdd_invalid;
+    BDD fresh_variable = mtbdd_invalid;
+    BDD other_fresh_variable = mtbdd_invalid;
+    BDDSET set = mtbdd_invalid;
+    BDDSET empty = mtbdd_invalid;
+    BDDSET added = mtbdd_invalid;
+    BDDSET removed = mtbdd_invalid;
+    BDDSET other = mtbdd_invalid;
+    BDDSET united = mtbdd_invalid;
+    BDDSET difference = mtbdd_invalid;
+    BDD unchanged = bdd_false;
+
+    mtbdd_refs_pushptr(&variable);
+    mtbdd_refs_pushptr(&same_variable);
+    mtbdd_refs_pushptr(&fresh_variable);
+    mtbdd_refs_pushptr(&other_fresh_variable);
+    mtbdd_refs_pushptr(&set);
+    mtbdd_refs_pushptr(&empty);
+    mtbdd_refs_pushptr(&added);
+    mtbdd_refs_pushptr(&removed);
+    mtbdd_refs_pushptr(&other);
+    mtbdd_refs_pushptr(&united);
+    mtbdd_refs_pushptr(&difference);
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_assert(bdd_var_at_level(&variable, 100) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&same_variable, 100) == SYLVAN_OK);
+    test_assert(variable == same_variable);
+    test_new_var_SPAWN(lace, &fresh_variable);
+    int other_fresh_status = bdd_new_var(&other_fresh_variable);
+    int fresh_status = test_new_var_SYNC(lace);
+    test_assert(fresh_status == SYLVAN_OK);
+    test_assert(other_fresh_status == SYLVAN_OK);
+    test_assert(mtbdd_node_variable(fresh_variable) > 100);
+    test_assert(mtbdd_node_variable(other_fresh_variable) > 100);
+    test_assert(fresh_variable != other_fresh_variable);
+
+    test_assert(bdd_set_from_array(&set, levels, 4) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(&empty, NULL, 0) == SYLVAN_OK);
+    test_assert(empty == bdd_set_empty());
+    test_assert(bdd_set_count(set) == 3);
+    test_assert(bdd_set_contains(set, 1));
+    test_assert(bdd_set_contains(set, 3));
+    test_assert(bdd_set_contains(set, 5));
+
+    added = set;
+    test_assert(bdd_set_add(&added, added, 2) == SYLVAN_OK);
+    removed = added;
+    test_assert(bdd_set_remove(&removed, removed, 3) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(&other, other_levels, 2) == SYLVAN_OK);
+    test_assert(bdd_set_union(&united, set, other) == SYLVAN_OK);
+    bdd_set_difference_SPAWN(lace, &difference, united, set);
+    int difference_status = bdd_set_difference_SYNC(lace);
+    test_assert(difference_status == SYLVAN_OK);
+
+    sylvan_gc_CALL(lace);
+    test_assert(variable == same_variable);
+    test_assert(bdd_set_count(added) == 4);
+    test_assert(!bdd_set_contains(removed, 3));
+    test_assert(bdd_set_count(united) == 5);
+    test_assert(bdd_set_count(difference) == 2);
+    test_assert(bdd_set_contains(difference, 2));
+    test_assert(bdd_set_contains(difference, 7));
+
+    test_assert(bdd_var_at_level(&unchanged, UINT32_C(0x01000000)) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_false);
+    test_assert(bdd_var_at_level(NULL, 0) == SYLVAN_ERR_INVALID);
+    test_assert(bdd_new_var(NULL) == SYLVAN_ERR_INVALID);
+    test_assert(bdd_set_from_array(&unchanged, NULL, 1) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_false);
+    test_assert(bdd_set_from_array(&unchanged, invalid_level, 1) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_false);
+    test_assert(bdd_set_add(&unchanged, mtbdd_invalid, 1) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_false);
+    test_assert(bdd_set_remove(&unchanged, set, UINT32_C(0x01000000)) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_false);
+    test_assert(bdd_set_union(NULL, set, other) == SYLVAN_ERR_INVALID);
+    test_assert(bdd_set_difference_CALL(lace, NULL, set, other) == SYLVAN_ERR_INVALID);
+
+    sylvan_gc_CALL(lace);
+    mtbdd_refs_popptr(12);
+    return 0;
+}
+
+static BDD
 test_bdd_binary(test_bdd_binary_op op, BDD a, BDD b)
 {
     BDD result = mtbdd_invalid;
@@ -122,9 +242,9 @@ TASK(int, test_protected_destinations)
 int
 test_protected_destinations_CALL(lace_worker *lace)
 {
-    BDD a = bdd_var_at_level(0);
-    BDD b = bdd_var_at_level(1);
-    BDD c = bdd_var_at_level(2);
+    BDD a = test_bdd_var(0);
+    BDD b = test_bdd_var(1);
+    BDD c = test_bdd_var(2);
     BDD and_result = mtbdd_invalid;
     BDD ite_result = mtbdd_invalid;
     BDD xor_result = mtbdd_invalid;
@@ -146,7 +266,7 @@ test_protected_destinations_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&pending);
     sylvan_gc_CALL(lace);
     test_assert(pending == mtbdd_invalid);
-    test_assert(bdd_var_at_level(1) == b);
+    test_assert(test_bdd_var(1) == b);
 
     bdd_and_SPAWN(lace, &and_result, a, b);
     bdd_xor_SPAWN(lace, &xor_result, a, b);
@@ -194,8 +314,8 @@ TASK(int, test_quantification_destinations)
 int
 test_quantification_destinations_CALL(lace_worker *lace)
 {
-    BDD a = bdd_var_at_level(0);
-    BDD b = bdd_var_at_level(1);
+    BDD a = test_bdd_var(0);
+    BDD b = test_bdd_var(1);
     BDD conjunction = mtbdd_invalid;
     BDD disjoint_constraint = mtbdd_invalid;
     BDD exists_result = mtbdd_invalid;
@@ -269,8 +389,8 @@ test_quantification_destinations_CALL(lace_worker *lace)
     test_assert(bdd_and_project_CALL(lace, &unchanged, a, bdd_true, a) == SYLVAN_OK);
     test_assert(unchanged == a);
 
-    BDD c = bdd_var_at_level(2);
-    BDD d = bdd_var_at_level(3);
+    BDD c = test_bdd_var(2);
+    BDD d = test_bdd_var(3);
     BDD xor_ab = mtbdd_invalid;
     BDD ite_abc = mtbdd_invalid;
     BDD or_abc = mtbdd_invalid;
@@ -334,9 +454,9 @@ TASK(int, test_care_destinations)
 int
 test_care_destinations_CALL(lace_worker *lace)
 {
-    BDD x = bdd_var_at_level(0);
-    BDD y = bdd_var_at_level(1);
-    BDD z = bdd_var_at_level(2);
+    BDD x = test_bdd_var(0);
+    BDD y = test_bdd_var(1);
+    BDD z = test_bdd_var(2);
     BDD f = mtbdd_invalid;
     BDD care = mtbdd_invalid;
     BDD cube = mtbdd_invalid;
@@ -450,9 +570,9 @@ TASK(int, test_compose_destinations)
 int
 test_compose_destinations_CALL(lace_worker *lace)
 {
-    BDD x = bdd_var_at_level(0);
-    BDD y = bdd_var_at_level(1);
-    BDD z = bdd_var_at_level(2);
+    BDD x = test_bdd_var(0);
+    BDD y = test_bdd_var(1);
+    BDD z = test_bdd_var(2);
     BDD f = mtbdd_invalid;
     BDD expected = mtbdd_invalid;
     MTBDDMAP map = mtbdd_map_empty();
@@ -514,9 +634,9 @@ TASK(int, test_cube_destinations)
 int
 test_cube_destinations_CALL(lace_worker *lace)
 {
-    BDD x = bdd_var_at_level(0);
-    BDD y = bdd_var_at_level(1);
-    BDD z = bdd_var_at_level(2);
+    BDD x = test_bdd_var(0);
+    BDD y = test_bdd_var(1);
+    BDD z = test_bdd_var(2);
     BDD xy = mtbdd_invalid;
     BDDSET vars = mtbdd_invalid;
     BDD cube_result = mtbdd_invalid;
@@ -613,8 +733,8 @@ test_relational_destinations_CALL(lace_worker *lace)
     const uint8_t state_values[] = {0, 0, 1};
     const uint8_t zero_values[] = {0, 0, 0};
 
-    BDDSET state_set = bdd_set_from_array(state_vars, 3);
-    BDDSET all_set = bdd_set_from_array(all_vars, 6);
+    BDDSET state_set = test_bdd_set_from_levels(state_vars, 3);
+    BDDSET all_set = test_bdd_set_from_levels(all_vars, 6);
     BDD transition = bdd_false;
     BDD state = mtbdd_invalid;
     BDD zeroes = mtbdd_invalid;
@@ -702,9 +822,9 @@ TASK(int, test_map_reduce_destinations)
 int
 test_map_reduce_destinations_CALL(lace_worker *lace)
 {
-    BDD x = bdd_var_at_level(0);
-    BDD y = bdd_var_at_level(1);
-    BDD value = bdd_var_at_level(2);
+    BDD x = test_bdd_var(0);
+    BDD y = test_bdd_var(1);
+    BDD value = test_bdd_var(2);
     BDDSET vars = mtbdd_invalid;
     BDD result = mtbdd_invalid;
     BDD terminal = mtbdd_invalid;
@@ -922,7 +1042,7 @@ test_mtbdd()
 
     uint32_t variables[64];
     for (uint32_t i=0; i<64; i++) variables[i] = i;
-    MTBDD variable_set = bdd_set_from_array(variables, 64);
+    MTBDD variable_set = test_bdd_set_from_levels(variables, 64);
 
     MTBDD result = mtbdd_abstract_add(mtbdd_double(1.0), variable_set);
     test_assert(result != mtbdd_invalid);
@@ -973,13 +1093,13 @@ int testEqual(BDD a, BDD b)
 int
 test_bdd()
 {
-    test_assert(test_bdd_ite(bdd_var_at_level(1), bdd_true, bdd_true) == bdd_not(test_bdd_ite(bdd_var_at_level(1), bdd_false, bdd_false)));
-    test_assert(test_bdd_ite(bdd_var_at_level(1), bdd_false, bdd_true) == bdd_not(test_bdd_ite(bdd_var_at_level(1), bdd_true, bdd_false)));
-    test_assert(test_bdd_ite(bdd_var_at_level(1), bdd_true, bdd_false) == bdd_not(test_bdd_ite(bdd_var_at_level(1), bdd_false, bdd_true)));
-    test_assert(test_bdd_ite(bdd_var_at_level(1), bdd_false, bdd_false) == bdd_not(test_bdd_ite(bdd_var_at_level(1), bdd_true, bdd_true)));
+    test_assert(test_bdd_ite(test_bdd_var(1), bdd_true, bdd_true) == bdd_not(test_bdd_ite(test_bdd_var(1), bdd_false, bdd_false)));
+    test_assert(test_bdd_ite(test_bdd_var(1), bdd_false, bdd_true) == bdd_not(test_bdd_ite(test_bdd_var(1), bdd_true, bdd_false)));
+    test_assert(test_bdd_ite(test_bdd_var(1), bdd_true, bdd_false) == bdd_not(test_bdd_ite(test_bdd_var(1), bdd_false, bdd_true)));
+    test_assert(test_bdd_ite(test_bdd_var(1), bdd_false, bdd_false) == bdd_not(test_bdd_ite(test_bdd_var(1), bdd_true, bdd_true)));
 
-    BDD a = bdd_var_at_level(0);
-    BDD b = bdd_var_at_level(1);
+    BDD a = test_bdd_var(0);
+    BDD b = test_bdd_var(1);
     BDD conjunction = test_bdd_and(a, b);
     test_assert(test_bdd_exists(conjunction, a) == b);
     test_assert(test_bdd_forall(conjunction, a) == bdd_false);
@@ -993,7 +1113,7 @@ test_bdd()
 int
 test_cube()
 {
-    const BDDSET vars = bdd_set_from_array(((uint32_t[]){1,2,3,4,6,8}), 6);
+    const BDDSET vars = test_bdd_set_from_levels(((uint32_t[]){1,2,3,4,6,8}), 6);
 
     uint8_t cube[6], check[6];
     int i, j;
@@ -1019,7 +1139,7 @@ test_cube()
     test_assert(testEqual(test_bdd_or_cube(t1, vars, ((uint8_t[]){1,1,1,0,0,0})), test_bdd_or(t1, t2)));
 
     bdd = make_random(1, 16);
-    const BDDSET all_vars = bdd_set_from_array(
+    const BDDSET all_vars = test_bdd_set_from_levels(
         ((uint32_t[]){1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}), 15);
     for (j=0;j<10;j++) {
         for (i=0;i<6;i++) cube[i] = rng(0,3);
@@ -1032,12 +1152,12 @@ test_cube()
         test_assert(testEqual(test_bdd_and(picked, bdd), picked));
     }
 
-    const BDDSET limited_vars = bdd_set_from_array(((uint32_t[]){1,3,8}), 3);
+    const BDDSET limited_vars = test_bdd_set_from_levels(((uint32_t[]){1,3,8}), 3);
     picked = test_bdd_pick_cube(bdd, limited_vars);
     test_assert(bdd == bdd_false || test_bdd_and(picked, bdd) != bdd_false);
 
-    BDD x = bdd_var_at_level(1);
-    BDD y = bdd_var_at_level(2);
+    BDD x = test_bdd_var(1);
+    BDD y = test_bdd_var(2);
     test_assert(test_bdd_cofactor(test_bdd_xor(x, y), x) == bdd_not(y));
     test_assert(test_bdd_cofactor(test_bdd_xor(x, y), bdd_not(x)) == y);
     test_assert(test_bdd_cofactor(test_bdd_xor(x, y), test_bdd_or(x, y)) == mtbdd_invalid);
@@ -1082,8 +1202,8 @@ test_operators()
     // We need to test: xor, and, or, nand, nor, imp, biimp, invimp, diff, less
 
     //int i;
-    BDD a = bdd_var_at_level(1);
-    BDD b = bdd_var_at_level(2);
+    BDD a = test_bdd_var(1);
+    BDD b = test_bdd_var(2);
     BDD one = make_random(1, 12);
     BDD two = make_random(6, 24);
 
@@ -1148,7 +1268,7 @@ test_disjoint_subset()
     // We need to test: disjoint, subset
 #define VARS 3    
     BDD v[VARS];
-    for (int i=0; i<VARS; i++) v[i] = bdd_not(bdd_var_at_level(i));
+    for (int i=0; i<VARS; i++) v[i] = bdd_not(test_bdd_var(i));
 #undef VARS
 
     BDD test_input[] = {
@@ -1181,8 +1301,8 @@ test_relprod()
     uint32_t vars[] = {0,2,4};
     uint32_t all_vars[] = {0,1,2,3,4,5};
 
-    BDDSET vars_set = bdd_set_from_array(vars, 3);
-    BDDSET all_vars_set = bdd_set_from_array(all_vars, 6);
+    BDDSET vars_set = test_bdd_set_from_levels(vars, 3);
+    BDDSET all_vars_set = test_bdd_set_from_levels(all_vars, 6);
 
     BDD s, t, next, prev;
     BDD zeroes, ones;
@@ -1225,8 +1345,8 @@ test_relprod()
 int
 test_compose()
 {
-    BDD a = bdd_var_at_level(1);
-    BDD b = bdd_var_at_level(2);
+    BDD a = test_bdd_var(1);
+    BDD b = test_bdd_var(2);
 
     BDD a_or_b = test_bdd_or(a, b);
 
@@ -1368,6 +1488,7 @@ int runtests_CALL(lace_worker* lace)
 {
     printf("Testing protected destinations.\n");
     for (int j = 0; j < 10; j++) {
+        if (test_variable_set_destinations_CALL(lace)) return 1;
         if (test_protected_destinations_CALL(lace)) return 1;
         if (test_quantification_destinations_CALL(lace)) return 1;
         if (test_care_destinations_CALL(lace)) return 1;

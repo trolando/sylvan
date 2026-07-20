@@ -556,13 +556,10 @@ mtbdd_makemapnode(uint32_t var, MTBDD low, MTBDD high)
     return index;
 }
 
-MTBDD
-bdd_var_at_level(uint32_t level)
+int
+bdd_var_at_level(BDD *destination, uint32_t level)
 {
-    if (level > UINT32_C(0x00ffffff)) {
-        fprintf(stderr, "BDD level exceeds the 24-bit node encoding.\n");
-        abort();
-    }
+    if (destination == NULL || level > UINT32_C(0x00ffffff)) return SYLVAN_ERR_INVALID;
 
     uint32_t next = atomic_load_explicit(&bdd_next_level, memory_order_relaxed);
     while (next <= level && !atomic_compare_exchange_weak_explicit(
@@ -570,7 +567,7 @@ bdd_var_at_level(uint32_t level)
         memory_order_relaxed, memory_order_relaxed)) {
     }
 
-    return mtbdd_make_node(level, bdd_false, bdd_true);
+    return _mtbdd_try_make_node(destination, level, bdd_false, bdd_true);
 }
 
 int
@@ -585,16 +582,22 @@ mtbdd_leaf_fraction(MTBDD leaf, int32_t *numerator, uint32_t *denominator)
     return 0;
 }
 
-BDD
-bdd_new_var(void)
+int
+bdd_new_var(BDD *destination)
 {
-    const uint32_t level = atomic_fetch_add_explicit(&bdd_next_level, 1, memory_order_relaxed);
-    if (level > UINT32_C(0x00ffffff)) {
-        fprintf(stderr, "BDD variable limit exceeds the 24-bit node encoding.\n");
-        abort();
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
+
+    uint32_t level = atomic_load_explicit(&bdd_next_level, memory_order_relaxed);
+    for (;;) {
+        if (level > UINT32_C(0x00ffffff)) return SYLVAN_ERR_INVALID;
+        if (atomic_compare_exchange_weak_explicit(
+            &bdd_next_level, &level, level + 1,
+            memory_order_relaxed, memory_order_relaxed)) {
+            break;
+        }
     }
 
-    return mtbdd_make_node(level, bdd_false, bdd_true);
+    return _mtbdd_try_make_node(destination, level, bdd_false, bdd_true);
 }
 
 /* Operations */
@@ -3568,12 +3571,20 @@ int mtbdd_reader_frombinary_CALL(lace_worker* lace, FILE* in, MTBDD* dds, int co
 /**
  * Create a set of variables, represented as the conjunction of (positive) variables.
  */
-MTBDD
-bdd_set_from_array(uint32_t* arr, size_t length)
+int
+bdd_set_from_array(BDDSET *destination, const uint32_t *arr, size_t length)
 {
-    if (length == 0) return bdd_true;
-    else if (length == 1) return mtbdd_make_node(*arr, mtbdd_undefined, bdd_true);
-    else return bdd_set_add(bdd_set_from_array(arr+1, length-1), *arr);
+    if (destination == NULL || (length != 0 && arr == NULL)) return SYLVAN_ERR_INVALID;
+
+    BDDSET computed = bdd_true;
+    mtbdd_refs_pushptr(&computed);
+    int status = SYLVAN_OK;
+    for (size_t i = length; i > 0 && status == SYLVAN_OK; i--) {
+        status = bdd_set_add(&computed, computed, arr[i-1]);
+    }
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
 /**
@@ -3593,51 +3604,79 @@ bdd_set_to_array(MTBDD set, uint32_t *arr)
 /**
  * Add the variable <var> to <set>.
  */
-MTBDD
-bdd_set_add(MTBDD set, uint32_t var)
+int
+bdd_set_add(BDDSET *destination, BDDSET set, uint32_t var)
 {
-    if (set == bdd_true) return mtbdd_make_node(var, mtbdd_undefined, bdd_true);
+    if (destination == NULL || set == mtbdd_invalid || var > UINT32_C(0x00ffffff)) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (set == bdd_true) return _mtbdd_try_make_node(destination, var, mtbdd_undefined, bdd_true);
 
     mtbddnode* set_node = MTBDD_GETNODE(set);
     uint32_t set_var = mtbddnode_getvariable(set_node);
-    if (var < set_var) return mtbdd_make_node(var, mtbdd_undefined, set);
-    else if (set_var == var) return set;
+    if (var < set_var) return _mtbdd_try_make_node(destination, var, mtbdd_undefined, set);
+    else if (set_var == var) {
+        *destination = set;
+        return SYLVAN_OK;
+    }
     else {
         MTBDD sub = mtbddnode_followhigh(set, set_node);
-        MTBDD res = bdd_set_add(sub, var);
-        res = sub == res ? set : mtbdd_make_node(set_var, mtbdd_undefined, res);
-        return res;
+        BDDSET computed = mtbdd_invalid;
+        mtbdd_refs_pushptr(&computed);
+        int status = bdd_set_add(&computed, sub, var);
+        if (status == SYLVAN_OK && sub == computed) computed = set;
+        else if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, set_var, mtbdd_undefined, computed);
+        if (status == SYLVAN_OK) *destination = computed;
+        mtbdd_refs_popptr(1);
+        return status;
     }
 }
 
 /**
  * Remove the variable <var> from <set>.
  */
-MTBDD
-bdd_set_remove(MTBDD set, uint32_t var)
+int
+bdd_set_remove(BDDSET *destination, BDDSET set, uint32_t var)
 {
-    if (set == bdd_true) return bdd_true;
+    if (destination == NULL || set == mtbdd_invalid || var > UINT32_C(0x00ffffff)) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (set == bdd_true) {
+        *destination = bdd_true;
+        return SYLVAN_OK;
+    }
 
     mtbddnode* set_node = MTBDD_GETNODE(set);
     uint32_t set_var = mtbddnode_getvariable(set_node);
-    if (var < set_var) return set;
-    else if (set_var == var) return mtbddnode_followhigh(set, set_node);
+    if (var < set_var) {
+        *destination = set;
+        return SYLVAN_OK;
+    }
+    else if (set_var == var) {
+        *destination = mtbddnode_followhigh(set, set_node);
+        return SYLVAN_OK;
+    }
     else {
         MTBDD sub = mtbddnode_followhigh(set, set_node);
-        MTBDD res = bdd_set_remove(sub, var);
-        res = sub == res ? set : mtbdd_make_node(set_var, mtbdd_undefined, res);
-        return res;
+        BDDSET computed = mtbdd_invalid;
+        mtbdd_refs_pushptr(&computed);
+        int status = bdd_set_remove(&computed, sub, var);
+        if (status == SYLVAN_OK && sub == computed) computed = set;
+        else if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, set_var, mtbdd_undefined, computed);
+        if (status == SYLVAN_OK) *destination = computed;
+        mtbdd_refs_popptr(1);
+        return status;
     }
 }
 
 /**
  * Remove variables in <set2> from <set1>.
  */
-MTBDD bdd_set_difference_CALL(lace_worker* lace, MTBDD set1, MTBDD set2)
+int bdd_set_difference_CALL(lace_worker* lace, BDDSET *destination, BDDSET set1, BDDSET set2)
 {
-    if (set1 == bdd_true) return bdd_true;
-    if (set2 == bdd_true) return set1;
-    if (set1 == set2) return bdd_true;
+    if (destination == NULL || set1 == mtbdd_invalid || set2 == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    if (set1 == bdd_true || set1 == set2) { *destination = bdd_true; return SYLVAN_OK; }
+    if (set2 == bdd_true) { *destination = set1; return SYLVAN_OK; }
 
     mtbddnode* set1_node = MTBDD_GETNODE(set1);
     mtbddnode* set2_node = MTBDD_GETNODE(set2);
@@ -3645,17 +3684,23 @@ MTBDD bdd_set_difference_CALL(lace_worker* lace, MTBDD set1, MTBDD set2)
     uint32_t set2_var = mtbddnode_getvariable(set2_node);
 
     if (set1_var == set2_var) {
-        return bdd_set_difference(mtbddnode_followhigh(set1, set1_node), mtbddnode_followhigh(set2, set2_node));
+        return bdd_set_difference_CALL(lace, destination, mtbddnode_followhigh(set1, set1_node), mtbddnode_followhigh(set2, set2_node));
     }
 
     if (set1_var > set2_var) {
-        return bdd_set_difference(set1, mtbddnode_followhigh(set2, set2_node));
+        return bdd_set_difference_CALL(lace, destination, set1, mtbddnode_followhigh(set2, set2_node));
     }
 
     /* set1_var < set2_var */
     MTBDD sub = mtbddnode_followhigh(set1, set1_node);
-    MTBDD res = bdd_set_difference(sub, set2);
-    return res == sub ? set1 : mtbdd_make_node(set1_var, mtbdd_undefined, res);
+    BDDSET computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    int status = bdd_set_difference_CALL(lace, &computed, sub, set2);
+    if (status == SYLVAN_OK && computed == sub) computed = set1;
+    else if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, set1_var, mtbdd_undefined, computed);
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
 /**

@@ -659,10 +659,16 @@ zdd_cofactor_CALL(lace_worker* lace, ZDD dd, BDD cube, BDDSET domain)
         return zdd_invalid;
     }
 
-    BDDSET result_domain = mtbdd_refs_push(bdd_set_difference(domain, cube_support));
+    BDDSET result_domain = mtbdd_invalid;
+    mtbdd_refs_pushptr(&result_domain);
+    if (bdd_set_difference(&result_domain, domain, cube_support) != SYLVAN_OK) {
+        mtbdd_refs_popptr(2);
+        mtbdd_refs_pop(2);
+        return zdd_invalid;
+    }
     ZDD result = zdd_from_bdd_CALL(lace, cofactor, result_domain);
-    mtbdd_refs_popptr(1);
-    mtbdd_refs_pop(3);
+    mtbdd_refs_popptr(2);
+    mtbdd_refs_pop(2);
     return result;
 }
 
@@ -780,9 +786,16 @@ zdd_lift_CALL(lace_worker* lace, ZDD dd, BDDSET old_domain, BDDSET new_domain)
         }
     }
 
-    BDDSET added = mtbdd_refs_push(bdd_set_difference(new_domain, old_domain));
+    BDDSET added = mtbdd_invalid;
+    mtbdd_refs_pushptr(&added);
+    if (bdd_set_difference(&added, new_domain, old_domain) != SYLVAN_OK) {
+        mtbdd_refs_popptr(1);
+        mtbdd_refs_pop(1);
+        return zdd_invalid;
+    }
     ZDD result = zdd_extend_domain_CALL(lace, dd, added, 2);
-    mtbdd_refs_pop(2);
+    mtbdd_refs_popptr(1);
+    mtbdd_refs_pop(1);
     return result;
 }
 
@@ -890,10 +903,19 @@ BDDSET zdd_support_CALL(lace_worker* lace, ZDD dd)
     mtbdd_refs_spawn(zdd_support_SPAWN(lace, dd0));
     BDDSET high = mtbdd_refs_push(zdd_support_CALL(lace, dd1));
     BDDSET low = mtbdd_refs_push(mtbdd_refs_sync(zdd_support_SYNC(lace)));
-    result = mtbdd_refs_push(bdd_set_union(low, high));
+    result = mtbdd_invalid;
+    mtbdd_refs_pushptr(&result);
+    if (bdd_set_union(&result, low, high) != SYLVAN_OK) {
+        mtbdd_refs_popptr(1);
+        mtbdd_refs_pop(2);
+        return mtbdd_invalid;
+    }
     mtbdd_refs_pop(2);
-    result = bdd_set_add(result, zddnode_getvariable(dd_node));
-    mtbdd_refs_pop(1);
+    if (bdd_set_add(&result, result, zddnode_getvariable(dd_node)) != SYLVAN_OK) {
+        mtbdd_refs_popptr(1);
+        return mtbdd_invalid;
+    }
+    mtbdd_refs_popptr(1);
 
     /**
      * Put in cache

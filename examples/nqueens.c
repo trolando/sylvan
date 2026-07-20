@@ -119,8 +119,9 @@ void run_CALL(lace_worker* lace)
 
     BDD* board = (BDD*)malloc((size_t)(size*size) * sizeof(*board));
     for (size_t i=0; i<size*size; i++) {
-        board[i] = bdd_var_at_level(i);
+        board[i] = mtbdd_invalid;
         mtbdd_protect(board+i);
+        if (bdd_var_at_level(board+i, (uint32_t)i) != SYLVAN_OK) Abort("Out of memory!\n");
     }
 
     BDD res = one, temp = one;

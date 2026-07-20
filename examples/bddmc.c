@@ -382,7 +382,9 @@ BDD go_sat_CALL(lace_worker* lace, BDD set, int idx)
             set = go_sat_CALL(lace, set, idx+count);
             // chain-apply all current level once
             for (int i=0;i<count;i++) {
-                step = bdd_rel_next_CALL(lace, set, next[idx+i]->bdd, next[idx+i]->variables);
+                if (bdd_rel_next_CALL(lace, &step, set, next[idx+i]->bdd, next[idx+i]->variables) != SYLVAN_OK) {
+                    Abort("Out of memory!\n");
+                }
                 set = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(set), bdd_not(step)));
                 step = bdd_false; // unset, for gc
             }
@@ -422,17 +424,23 @@ BDD go_par_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        BDD succ = bdd_rel_next_CALL(lace, cur, next[from]->bdd, next[from]->variables);
-        mtbdd_refs_push(succ);
+        BDD succ = mtbdd_invalid;
+        mtbdd_refs_pushptr(&succ);
+        if (bdd_rel_next_CALL(lace, &succ, cur, next[from]->bdd, next[from]->variables) != SYLVAN_OK) {
+            Abort("Out of memory!\n");
+        }
         if (deadlocks) {
             // check which BDDs in deadlocks do not have a successor in this relation
-            BDD anc = bdd_rel_prev_CALL(lace, next[from]->bdd, succ, next[from]->variables);
-            mtbdd_refs_push(anc);
+            BDD anc = mtbdd_invalid;
+            mtbdd_refs_pushptr(&anc);
+            if (bdd_rel_prev_CALL(lace, &anc, next[from]->bdd, succ, next[from]->variables) != SYLVAN_OK) {
+                Abort("Out of memory!\n");
+            }
             *deadlocks = bdd_and_legacy_CALL(lace, *deadlocks, bdd_not(anc));
-            mtbdd_refs_pop(1);
+            mtbdd_refs_popptr(1);
         }
         BDD result = bdd_and_legacy_CALL(lace, succ, bdd_not(visited));
-        mtbdd_refs_pop(1);
+        mtbdd_refs_popptr(1);
         return result;
     } else {
         BDD deadlocks_left;
@@ -539,17 +547,23 @@ BDD go_bfs_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        BDD succ = bdd_rel_next_CALL(lace, cur, next[from]->bdd, next[from]->variables);
-        mtbdd_refs_push(succ);
+        BDD succ = mtbdd_invalid;
+        mtbdd_refs_pushptr(&succ);
+        if (bdd_rel_next_CALL(lace, &succ, cur, next[from]->bdd, next[from]->variables) != SYLVAN_OK) {
+            Abort("Out of memory!\n");
+        }
         if (deadlocks) {
             // check which BDDs in deadlocks do not have a successor in this relation
-            BDD anc = bdd_rel_prev_CALL(lace, next[from]->bdd, succ, next[from]->variables);
-            mtbdd_refs_push(anc);
+            BDD anc = mtbdd_invalid;
+            mtbdd_refs_pushptr(&anc);
+            if (bdd_rel_prev_CALL(lace, &anc, next[from]->bdd, succ, next[from]->variables) != SYLVAN_OK) {
+                Abort("Out of memory!\n");
+            }
             *deadlocks = bdd_and_legacy_CALL(lace, *deadlocks, bdd_not(anc));
-            mtbdd_refs_pop(1);
+            mtbdd_refs_popptr(1);
         }
         BDD result = bdd_and_legacy_CALL(lace, succ, bdd_not(visited));
-        mtbdd_refs_pop(1);
+        mtbdd_refs_popptr(1);
         return result;
     } else {
         BDD deadlocks_left;
@@ -666,7 +680,9 @@ void chaining_CALL(lace_worker* lace, set_t set)
     do {
         // calculate successors in parallel
         for (int i=0; i<next_count; i++) {
-            succ = bdd_rel_next_CALL(lace, next_level, next[i]->bdd, next[i]->variables);
+            if (bdd_rel_next_CALL(lace, &succ, next_level, next[i]->bdd, next[i]->variables) != SYLVAN_OK) {
+                Abort("Out of memory!\n");
+            }
             next_level = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(next_level), bdd_not(succ)));
             succ = bdd_false; // reset, for gc
         }

@@ -22,6 +22,7 @@ using namespace sylvan;
 namespace {
 
 using bdd_binary_op = int (*)(BDD*, BDD, BDD);
+using bdd_unary_op = int (*)(BDD*, BDD);
 using bdd_unary_set_op = int (*)(BDD*, BDD, BDDSET);
 using bdd_binary_set_op = int (*)(BDD*, BDD, BDD, BDDSET);
 using bdd_compose_op = int (*)(BDD*, BDD, MTBDDMAP);
@@ -34,6 +35,16 @@ apply_binary(bdd_binary_op op, BDD a, BDD b)
     BDD result = mtbdd_invalid;
     mtbdd_protect(&result);
     int status = op(&result, a, b);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+BDD
+apply_unary(bdd_unary_op op, BDD dd)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = op(&result, dd);
     mtbdd_unprotect(&result);
     return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
@@ -313,19 +324,19 @@ Bdd::Leq(const Bdd &g) const
 Bdd
 Bdd::RelPrev(const Bdd& relation, const BddSet& cube) const
 {
-    return bdd_rel_prev(relation.bdd, bdd, cube.set.bdd);
+    return apply_binary_set(bdd_rel_prev, relation.bdd, bdd, cube.set.bdd);
 }
 
 Bdd
 Bdd::RelNext(const Bdd &relation, const BddSet &cube) const
 {
-    return bdd_rel_next(bdd, relation.bdd, cube.set.bdd);
+    return apply_binary_set(bdd_rel_next, bdd, relation.bdd, cube.set.bdd);
 }
 
 Bdd
 Bdd::Closure() const
 {
-    return bdd_transitive_closure(bdd);
+    return apply_unary(bdd_transitive_closure, bdd);
 }
 
 Bdd

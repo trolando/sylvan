@@ -754,14 +754,16 @@ void run_CALL(lace_worker* lace)
             mtbdd_refs_push(new_vars);
 
             // Test if the transition is correctly converted
-            MTBDD test = bdd_rel_next(new_states, new_rel, new_vars);
-            mtbdd_refs_push(test);
+            MTBDD test = mtbdd_invalid;
+            mtbdd_refs_pushptr(&test);
+            if (bdd_rel_next(&test, new_states, new_rel, new_vars) != SYLVAN_OK) Abort("Out of memory!\n");
             LISTDD succ = listdd_rel_next(states->dd, next[i]->dd, next[i]->meta);
             listdd_refs_push(succ);
             MTBDD test2 = bdd_from_ldd(succ, bits_dd, 0);
             if (test != test2) Abort("Conversion error!\n");
             listdd_refs_pop(1);
-            mtbdd_refs_pop(2);
+            mtbdd_refs_pop(1);
+            mtbdd_refs_popptr(1);
         }
 
         mtbdd_refs_pop(1);

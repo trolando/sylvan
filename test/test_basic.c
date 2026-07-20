@@ -63,6 +63,8 @@ static BDD test_bdd_forall(BDD dd, BDDSET vars) { return test_bdd_unary_set(bdd_
 static BDD test_bdd_project(BDD dd, BDDSET vars) { return test_bdd_unary_set(bdd_project, dd, vars); }
 static BDD test_bdd_and_exists(BDD a, BDD b, BDDSET vars) { return test_bdd_binary_set(bdd_and_exists, a, b, vars); }
 static BDD test_bdd_and_project(BDD a, BDD b, BDDSET vars) { return test_bdd_binary_set(bdd_and_project, a, b, vars); }
+static BDD test_bdd_rel_prev(BDD a, BDD b, BDDSET vars) { return test_bdd_binary_set(bdd_rel_prev, a, b, vars); }
+static BDD test_bdd_rel_next(BDD a, BDD b, BDDSET vars) { return test_bdd_binary_set(bdd_rel_next, a, b, vars); }
 
 static BDD
 test_bdd_compose(BDD dd, MTBDDMAP map)
@@ -598,6 +600,90 @@ test_cube_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+TASK(int, test_relational_destinations)
+int
+test_relational_destinations_CALL(lace_worker *lace)
+{
+    uint32_t state_vars[] = {0, 2, 4};
+    uint32_t all_vars[] = {0, 1, 2, 3, 4, 5};
+    const uint8_t transition_1[] = {0, 1, 0, 1, 0, 1};
+    const uint8_t transition_2[] = {1, 0, 2, 0, 2, 0};
+    const uint8_t transition_3[] = {2, 0, 1, 0, 2, 0};
+    const uint8_t transition_4[] = {2, 0, 2, 0, 1, 0};
+    const uint8_t state_values[] = {0, 0, 1};
+    const uint8_t zero_values[] = {0, 0, 0};
+
+    BDDSET state_set = bdd_set_from_array(state_vars, 3);
+    BDDSET all_set = bdd_set_from_array(all_vars, 6);
+    BDD transition = bdd_false;
+    BDD state = mtbdd_invalid;
+    BDD zeroes = mtbdd_invalid;
+    BDD next = mtbdd_invalid;
+    BDD prev = mtbdd_invalid;
+    BDD closure = mtbdd_invalid;
+    BDD closure_again = mtbdd_invalid;
+    BDD in_place = mtbdd_invalid;
+    BDD unchanged = bdd_true;
+
+    mtbdd_refs_pushptr(&state_set);
+    mtbdd_refs_pushptr(&all_set);
+    mtbdd_refs_pushptr(&transition);
+    mtbdd_refs_pushptr(&state);
+    mtbdd_refs_pushptr(&zeroes);
+    mtbdd_refs_pushptr(&next);
+    mtbdd_refs_pushptr(&prev);
+    mtbdd_refs_pushptr(&closure);
+    mtbdd_refs_pushptr(&closure_again);
+    mtbdd_refs_pushptr(&in_place);
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_assert(bdd_or_cube_CALL(lace, &transition, transition, all_set, transition_1) == SYLVAN_OK);
+    test_assert(bdd_or_cube_CALL(lace, &transition, transition, all_set, transition_2) == SYLVAN_OK);
+    test_assert(bdd_or_cube_CALL(lace, &transition, transition, all_set, transition_3) == SYLVAN_OK);
+    test_assert(bdd_or_cube_CALL(lace, &transition, transition, all_set, transition_4) == SYLVAN_OK);
+    test_assert(bdd_cube_CALL(lace, &state, state_set, state_values) == SYLVAN_OK);
+    test_assert(bdd_cube_CALL(lace, &zeroes, state_set, zero_values) == SYLVAN_OK);
+
+    bdd_rel_next_SPAWN(lace, &next, state, transition, all_set);
+    int terminal_status = bdd_rel_prev_CALL(lace, &prev, bdd_true, bdd_true, all_set);
+    int next_status = bdd_rel_next_SYNC(lace);
+    test_assert(terminal_status == SYLVAN_OK);
+    test_assert(next_status == SYLVAN_OK);
+    test_assert(prev == bdd_true);
+    test_assert(next == zeroes);
+
+    test_assert(bdd_rel_prev_CALL(lace, &prev, transition, next, all_set) == SYLVAN_OK);
+    test_assert(prev == bdd_not(zeroes));
+    test_assert(bdd_transitive_closure_CALL(lace, &closure, transition) == SYLVAN_OK);
+    test_assert(bdd_transitive_closure_CALL(lace, &closure_again, closure) == SYLVAN_OK);
+    test_assert(closure_again == closure);
+
+    sylvan_gc_CALL(lace);
+    test_assert(next == zeroes);
+    test_assert(prev == bdd_not(zeroes));
+    test_assert(closure_again == closure);
+
+    in_place = state;
+    test_assert(bdd_rel_next_CALL(lace, &in_place, in_place, transition, all_set) == SYLVAN_OK);
+    test_assert(in_place == zeroes);
+
+    test_assert(bdd_rel_next_CALL(lace, &unchanged, mtbdd_invalid, transition, all_set) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_rel_prev_CALL(lace, &unchanged, transition, next, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_transitive_closure_CALL(lace, &unchanged, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_rel_next_CALL(lace, NULL, state, transition, all_set) == SYLVAN_ERR_INVALID);
+    test_assert(bdd_rel_prev_CALL(lace, NULL, transition, state, all_set) == SYLVAN_ERR_INVALID);
+    test_assert(bdd_transitive_closure_CALL(lace, NULL, transition) == SYLVAN_ERR_INVALID);
+
+    /* Leave the cache empty for the cache unit test that follows. */
+    sylvan_gc_CALL(lace);
+
+    mtbdd_refs_popptr(11);
+    return 0;
+}
+
 SYLVAN_TLS uint64_t seed = 1;
 
 uint64_t
@@ -1045,26 +1131,26 @@ test_relprod()
     zeroes = test_bdd_cube(vars_set, (uint8_t[]){0,0,0});
     ones = test_bdd_cube(vars_set, (uint8_t[]){1,1,1});
 
-    next = bdd_rel_next(s, t, all_vars_set);
-    prev = bdd_rel_prev(t, next, all_vars_set);
+    next = test_bdd_rel_next(s, t, all_vars_set);
+    prev = test_bdd_rel_prev(t, next, all_vars_set);
     test_assert(next == zeroes);
     test_assert(prev == bdd_not(zeroes));
 
-    next = bdd_rel_next(next, t, all_vars_set);
-    prev = bdd_rel_prev(t, next, all_vars_set);
+    next = test_bdd_rel_next(next, t, all_vars_set);
+    prev = test_bdd_rel_prev(t, next, all_vars_set);
     test_assert(next == ones);
     test_assert(prev == zeroes);
 
     t = test_bdd_cube(all_vars_set, (uint8_t[]){0,0,0,0,0,1});
-    test_assert(bdd_rel_prev(t, s, all_vars_set) == zeroes);
-    test_assert(bdd_rel_prev(t, bdd_not(s), all_vars_set) == bdd_false);
-    test_assert(bdd_rel_next(s, t, all_vars_set) == bdd_false);
-    test_assert(bdd_rel_next(zeroes, t, all_vars_set) == s);
+    test_assert(test_bdd_rel_prev(t, s, all_vars_set) == zeroes);
+    test_assert(test_bdd_rel_prev(t, bdd_not(s), all_vars_set) == bdd_false);
+    test_assert(test_bdd_rel_next(s, t, all_vars_set) == bdd_false);
+    test_assert(test_bdd_rel_next(zeroes, t, all_vars_set) == s);
 
     t = test_bdd_cube(all_vars_set, (uint8_t[]){0,0,0,0,0,2});
-    test_assert(bdd_rel_prev(t, s, all_vars_set) == zeroes);
-    test_assert(bdd_rel_prev(t, zeroes, all_vars_set) == zeroes);
-    test_assert(bdd_rel_next(bdd_not(zeroes), t, all_vars_set) == bdd_false);
+    test_assert(test_bdd_rel_prev(t, s, all_vars_set) == zeroes);
+    test_assert(test_bdd_rel_prev(t, zeroes, all_vars_set) == zeroes);
+    test_assert(test_bdd_rel_next(bdd_not(zeroes), t, all_vars_set) == bdd_false);
 
     return 0;
 }
@@ -1220,6 +1306,7 @@ int runtests_CALL(lace_worker* lace)
         if (test_care_destinations_CALL(lace)) return 1;
         if (test_compose_destinations_CALL(lace)) return 1;
         if (test_cube_destinations_CALL(lace)) return 1;
+        if (test_relational_destinations_CALL(lace)) return 1;
     }
 
     // we are not testing garbage collection

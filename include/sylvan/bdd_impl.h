@@ -139,9 +139,9 @@ TASK(int, bdd_exists, BDD*, result, BDD, dd, BDD, vars)
 TASK(int, bdd_project, BDD*, result, BDD, dd, BDD, vars);
 TASK(int, bdd_and_exists, BDD*, result, BDD, a, BDD, b, BDDSET, vars)
 TASK(int, bdd_and_project, BDD*, result, BDD, a, BDD, b, BDDSET, vars);
-TASK(BDD, bdd_rel_prev, BDD, a, BDD, b, BDDSET, vars)
-TASK(BDD, bdd_rel_next, BDD, a, BDD, b, BDDSET, vars)
-TASK(BDD, bdd_transitive_closure, BDD, a)
+TASK(int, bdd_rel_prev, BDD*, result, BDD, a, BDD, b, BDDSET, vars)
+TASK(int, bdd_rel_next, BDD*, result, BDD, a, BDD, b, BDDSET, vars)
+TASK(int, bdd_transitive_closure, BDD*, result, BDD, a)
 TASK(int, bdd_constrain, BDD*, result, BDD, f, BDD, c)
 TASK(int, bdd_restrict, BDD*, result, BDD, f, BDD, c)
 TASK(int, bdd_compose, BDD*, result, BDD, f, MTBDDMAP, m)

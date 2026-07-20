@@ -22,6 +22,8 @@ using namespace sylvan;
 namespace {
 
 using bdd_binary_op = int (*)(BDD*, BDD, BDD);
+using bdd_unary_set_op = int (*)(BDD*, BDD, BDDSET);
+using bdd_binary_set_op = int (*)(BDD*, BDD, BDD, BDDSET);
 
 BDD
 apply_binary(bdd_binary_op op, BDD a, BDD b)
@@ -39,6 +41,26 @@ apply_ite(BDD a, BDD b, BDD c)
     BDD result = mtbdd_invalid;
     mtbdd_protect(&result);
     int status = bdd_ite(&result, a, b, c);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+BDD
+apply_unary_set(bdd_unary_set_op op, BDD dd, BDDSET vars)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = op(&result, dd, vars);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+BDD
+apply_binary_set(bdd_binary_set_op op, BDD a, BDD b, BDDSET vars)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = op(&result, a, b, vars);
     mtbdd_unprotect(&result);
     return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
@@ -186,19 +208,19 @@ Bdd::operator-=(const Bdd& other)
 Bdd
 Bdd::AndAbstract(const Bdd &g, const BddSet &cube) const
 {
-    return bdd_and_exists(bdd, g.bdd, cube.set.bdd);
+    return apply_binary_set(bdd_and_exists, bdd, g.bdd, cube.set.bdd);
 }
 
 Bdd
 Bdd::ExistAbstract(const BddSet &cube) const
 {
-    return bdd_exists(bdd, cube.set.bdd);
+    return apply_unary_set(bdd_exists, bdd, cube.set.bdd);
 }
 
 Bdd
 Bdd::UnivAbstract(const BddSet &cube) const
 {
-    return bdd_forall(bdd, cube.set.bdd);
+    return apply_unary_set(bdd_forall, bdd, cube.set.bdd);
 }
 
 Bdd

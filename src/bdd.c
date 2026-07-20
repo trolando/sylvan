@@ -708,12 +708,14 @@ bdd_cofactor(BDD f, BDD cube)
 /**
  * Calculates \exists variables . a
  */
-BDD bdd_exists_CALL(lace_worker* lace, BDD a, BDD variables)
+int bdd_exists_CALL(lace_worker* lace, BDD *destination, BDD a, BDD variables)
 {
+    if (destination == NULL || a == mtbdd_invalid || variables == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
     /* Terminal cases */
-    if (a == bdd_true) return bdd_true;
-    if (a == bdd_false) return bdd_false;
-    if (bdd_set_is_empty(variables)) return a;
+    if (a == bdd_true) { *destination = bdd_true; return SYLVAN_OK; }
+    if (a == bdd_false) { *destination = bdd_false; return SYLVAN_OK; }
+    if (bdd_set_is_empty(variables)) { *destination = a; return SYLVAN_OK; }
 
     // a != constant
     bddnode* na = MTBDD_GETNODE(a);
@@ -723,7 +725,7 @@ BDD bdd_exists_CALL(lace_worker* lace, BDD a, BDD variables)
     uint32_t vv = bddnode_getvariable(nv);
     while (vv < level) {
         variables = node_high(variables, nv);
-        if (bdd_set_is_empty(variables)) return a;
+        if (bdd_set_is_empty(variables)) { *destination = a; return SYLVAN_OK; }
         nv = MTBDD_GETNODE(variables);
         vv = bddnode_getvariable(nv);
     }
@@ -733,55 +735,78 @@ BDD bdd_exists_CALL(lace_worker* lace, BDD a, BDD variables)
     /* Count operation */
     sylvan_stats_count(BDD_EXISTS);
 
-    BDD result;
-    if (cache_get3(CACHE_BDD_EXISTS, a, variables, 0, &result)) {
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_BDD_EXISTS, a, variables, 0, &computed)) {
         sylvan_stats_count(BDD_EXISTS_CACHED);
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     // Get cofactors
     BDD aLow = node_low(a, na);
     BDD aHigh = node_high(a, na);
 
+    BDD low = mtbdd_invalid, high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+    int status = SYLVAN_OK;
+
     if (vv == level) {
         // level is in variable set, perform abstraction
         if (aLow == bdd_true || aHigh == bdd_true || aLow == bdd_not(aHigh)) {
-            result = bdd_true;
+            computed = bdd_true;
         } else {
             BDD _v = bdd_set_next(variables);
-            BDD low = bdd_exists_CALL(lace, aLow, _v);
+            status = bdd_exists_CALL(lace, &low, aLow, _v);
+            if (status != SYLVAN_OK) {
+                mtbdd_refs_popptr(3);
+                return status;
+            }
             if (low == bdd_true) {
-                result = bdd_true;
+                computed = bdd_true;
             } else {
-                mtbdd_refs_push(low);
-                BDD high = bdd_exists_CALL(lace, aHigh, _v);
+                status = bdd_exists_CALL(lace, &high, aHigh, _v);
+                if (status != SYLVAN_OK) {
+                    mtbdd_refs_popptr(3);
+                    return status;
+                }
                 if (high == bdd_true) {
-                    result = bdd_true;
-                    mtbdd_refs_pop(1);
+                    computed = bdd_true;
                 } else if (low == bdd_false && high == bdd_false) {
-                    result = bdd_false;
-                    mtbdd_refs_pop(1);
+                    computed = bdd_false;
                 } else {
-                    mtbdd_refs_push(high);
-                    result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(low), bdd_not(high))); // low or high
-                    mtbdd_refs_pop(2);
+                    status = bdd_and_CALL(lace, &computed, bdd_not(low), bdd_not(high));
+                    if (status != SYLVAN_OK) {
+                        mtbdd_refs_popptr(3);
+                        return status;
+                    }
+                    computed = bdd_not(computed);
                 }
             }
         }
     } else {
         // level is not in variable set
-        BDD low, high;
-        mtbdd_refs_spawn(bdd_exists_SPAWN(lace, aHigh, variables));
-        low = bdd_exists_CALL(lace, aLow, variables);
-        mtbdd_refs_push(low);
-        high = mtbdd_refs_sync(bdd_exists_SYNC(lace));
-        mtbdd_refs_pop(1);
-        result = mtbdd_make_node(level, low, high);
+        bdd_exists_SPAWN(lace, &high, aHigh, variables);
+        int low_status = bdd_exists_CALL(lace, &low, aLow, variables);
+        int high_status = bdd_exists_SYNC(lace);
+        if (low_status != SYLVAN_OK || high_status != SYLVAN_OK) {
+            mtbdd_refs_popptr(3);
+            return low_status != SYLVAN_OK ? low_status : high_status;
+        }
+        status = _mtbdd_try_make_node(&computed, level, low, high);
+        if (status != SYLVAN_OK) {
+            mtbdd_refs_popptr(3);
+            return status;
+        }
     }
 
-    if (cache_put3(CACHE_BDD_EXISTS, a, variables, 0, result)) sylvan_stats_count(BDD_EXISTS_CACHEDPUT);
+    if (cache_put3(CACHE_BDD_EXISTS, a, variables, 0, computed)) sylvan_stats_count(BDD_EXISTS_CACHEDPUT);
 
-    return result;
+    *destination = computed;
+    mtbdd_refs_popptr(3);
+    return SYLVAN_OK;
 }
 
 
@@ -789,14 +814,16 @@ BDD bdd_exists_CALL(lace_worker* lace, BDD a, BDD variables)
  * Calculate projection of <a> unto <v>
  * (Expects Boolean <a>)
  */
-BDD bdd_project_CALL(lace_worker* lace, BDD a, BDDSET v)
+int bdd_project_CALL(lace_worker* lace, BDD *destination, BDD a, BDDSET v)
 {
+    if (destination == NULL || a == mtbdd_invalid || v == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
     /**
      * Terminal cases
      */
-    if (a == bdd_false) return bdd_false;
-    if (a == bdd_true) return bdd_true;
-    if (bdd_set_is_empty(v)) return bdd_true;
+    if (a == bdd_false) { *destination = bdd_false; return SYLVAN_OK; }
+    if (a == bdd_true) { *destination = bdd_true; return SYLVAN_OK; }
+    if (bdd_set_is_empty(v)) { *destination = bdd_true; return SYLVAN_OK; }
 
     /**
      * Obtain variables
@@ -812,7 +839,7 @@ BDD bdd_project_CALL(lace_worker* lace, BDD a, BDDSET v)
     MTBDD v_next = mtbddnode_followhigh(v, v_node);
 
     while (v_var < a_var) {
-        if (bdd_set_is_empty(v_next)) return bdd_true;
+        if (bdd_set_is_empty(v_next)) { *destination = bdd_true; return SYLVAN_OK; }
         v = v_next;
         v_node = MTBDD_GETNODE(v);
         v_var = mtbddnode_getvariable(v_node);
@@ -832,10 +859,13 @@ BDD bdd_project_CALL(lace_worker* lace, BDD a, BDDSET v)
     /**
      * Check the cache
      */
-    MTBDD result;
-    if (cache_get3(CACHE_BDD_PROJECT, a, 0, v, &result)) {
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_BDD_PROJECT, a, 0, v, &computed)) {
         sylvan_stats_count(BDD_PROJECT_CACHED);
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /**
@@ -847,49 +877,74 @@ BDD bdd_project_CALL(lace_worker* lace, BDD a, BDDSET v)
     /**
      * Compute recursive result
      */
+    BDD low = mtbdd_invalid, high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+
     if (v_var == a_var) {
         // variable in projection variables
-        mtbdd_refs_spawn(bdd_project_SPAWN(lace, a0, v_next));
-        const MTBDD high = mtbdd_refs_push(bdd_project_CALL(lace, a1, v_next));
-        const MTBDD low = mtbdd_refs_sync(bdd_project_SYNC(lace));
-        mtbdd_refs_pop(1);
-        result = mtbdd_make_node(a_var, low, high);
+        bdd_project_SPAWN(lace, &low, a0, v_next);
+        int high_status = bdd_project_CALL(lace, &high, a1, v_next);
+        int low_status = bdd_project_SYNC(lace);
+        if (low_status != SYLVAN_OK || high_status != SYLVAN_OK) {
+            mtbdd_refs_popptr(3);
+            return high_status != SYLVAN_OK ? high_status : low_status;
+        }
+        int status = _mtbdd_try_make_node(&computed, a_var, low, high);
+        if (status != SYLVAN_OK) {
+            mtbdd_refs_popptr(3);
+            return status;
+        }
     } else {
         // variable not in projection variables
-        mtbdd_refs_spawn(bdd_project_SPAWN(lace, a0, v));
-        const MTBDD high = mtbdd_refs_push(bdd_project_CALL(lace, a1, v));
-        const MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(bdd_project_SYNC(lace)));
-        result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(low), bdd_not(high)));
-        mtbdd_refs_pop(2);
+        bdd_project_SPAWN(lace, &low, a0, v);
+        int high_status = bdd_project_CALL(lace, &high, a1, v);
+        int low_status = bdd_project_SYNC(lace);
+        if (low_status != SYLVAN_OK || high_status != SYLVAN_OK) {
+            mtbdd_refs_popptr(3);
+            return high_status != SYLVAN_OK ? high_status : low_status;
+        }
+        int status = bdd_and_CALL(lace, &computed, bdd_not(low), bdd_not(high));
+        if (status != SYLVAN_OK) {
+            mtbdd_refs_popptr(3);
+            return status;
+        }
+        computed = bdd_not(computed);
     }
 
     /**
      * Put in cache
      */
-    if (cache_put3(CACHE_BDD_PROJECT, a, 0, v, result)) {
+    if (cache_put3(CACHE_BDD_PROJECT, a, 0, v, computed)) {
         sylvan_stats_count(BDD_PROJECT_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    mtbdd_refs_popptr(3);
+    return SYLVAN_OK;
 }
 
 
 /**
  * Calculate exists(a AND b, v)
  */
-BDD bdd_and_exists_CALL(lace_worker* lace, BDD a, BDD b, BDDSET v)
+int bdd_and_exists_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET v)
 {
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || v == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
     /* Terminal cases */
-    if (a == bdd_false) return bdd_false;
-    if (b == bdd_false) return bdd_false;
-    if (a == bdd_not(b)) return bdd_false;
-    if (a == bdd_true && b == bdd_true) return bdd_true;
+    if (a == bdd_false || b == bdd_false || a == bdd_not(b)) {
+        *destination = bdd_false;
+        return SYLVAN_OK;
+    }
+    if (a == bdd_true && b == bdd_true) { *destination = bdd_true; return SYLVAN_OK; }
 
     /* Cases that reduce to "exists" and "and" */
-    if (a == bdd_true) return bdd_exists_CALL(lace, b, v);
-    if (b == bdd_true) return bdd_exists_CALL(lace, a, v);
-    if (a == b) return bdd_exists_CALL(lace, a, v);
-    if (bdd_set_is_empty(v)) return bdd_and_legacy_CALL(lace, a, b);
+    if (a == bdd_true) return bdd_exists_CALL(lace, destination, b, v);
+    if (b == bdd_true || a == b) return bdd_exists_CALL(lace, destination, a, v);
+    if (bdd_set_is_empty(v)) return bdd_and_CALL(lace, destination, a, b);
 
     /* At this point, a and b are proper nodes, and v is non-empty */
 
@@ -919,15 +974,18 @@ BDD bdd_and_exists_CALL(lace_worker* lace, BDD a, BDD b, BDDSET v)
     /* Skip levels in v that are not in a and b */
     while (vv < level) {
         v = node_high(v, nv); // get next variable in conjunction
-        if (bdd_set_is_empty(v)) return bdd_and_legacy_CALL(lace, a, b);
+        if (bdd_set_is_empty(v)) return bdd_and_CALL(lace, destination, a, b);
         nv = MTBDD_GETNODE(v);
         vv = bddnode_getvariable(nv);
     }
 
-    BDD result;
-    if (cache_get3(CACHE_BDD_AND_EXISTS, a, b, v, &result)) {
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_BDD_AND_EXISTS, a, b, v, &computed)) {
         sylvan_stats_count(BDD_AND_EXISTS_CACHED);
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     // Get cofactors
@@ -947,50 +1005,69 @@ BDD bdd_and_exists_CALL(lace_worker* lace, BDD a, BDD b, BDDSET v)
         bHigh = b;
     }
 
+    BDD low = mtbdd_invalid, high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+    int status = SYLVAN_OK;
+
     if (level == vv) {
         // level is in variable set, perform abstraction
         BDD _v = node_high(v, nv);
-        BDD low = bdd_and_exists_CALL(lace, aLow, bLow, _v);
+        status = bdd_and_exists_CALL(lace, &low, aLow, bLow, _v);
+        if (status != SYLVAN_OK) {
+            mtbdd_refs_popptr(3);
+            return status;
+        }
         if (low == bdd_true || low == aHigh || low == bHigh) {
-            result = low;
+            computed = low;
         } else {
-            mtbdd_refs_push(low);
-            BDD high;
             if (low == bdd_not(aHigh)) {
-                high = bdd_exists_CALL(lace, bHigh, _v);
+                status = bdd_exists_CALL(lace, &high, bHigh, _v);
             } else if (low == bdd_not(bHigh)) {
-                high = bdd_exists_CALL(lace, aHigh, _v);
+                status = bdd_exists_CALL(lace, &high, aHigh, _v);
             } else {
-                high = bdd_and_exists_CALL(lace, aHigh, bHigh, _v);
+                status = bdd_and_exists_CALL(lace, &high, aHigh, bHigh, _v);
+            }
+            if (status != SYLVAN_OK) {
+                mtbdd_refs_popptr(3);
+                return status;
             }
             if (high == bdd_true) {
-                result = bdd_true;
-                mtbdd_refs_pop(1);
+                computed = bdd_true;
             } else if (high == bdd_false) {
-                result = low;
-                mtbdd_refs_pop(1);
+                computed = low;
             } else if (low == bdd_false) {
-                result = high;
-                mtbdd_refs_pop(1);
+                computed = high;
             } else {
-                mtbdd_refs_push(high);
-                result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(low), bdd_not(high)));
-                mtbdd_refs_pop(2);
+                status = bdd_and_CALL(lace, &computed, bdd_not(low), bdd_not(high));
+                if (status != SYLVAN_OK) {
+                    mtbdd_refs_popptr(3);
+                    return status;
+                }
+                computed = bdd_not(computed);
             }
         }
     } else {
         // level is not in variable set
-        mtbdd_refs_spawn(bdd_and_exists_SPAWN(lace, aHigh, bHigh, v));
-        BDD low = bdd_and_exists_CALL(lace, aLow, bLow, v);
-        mtbdd_refs_push(low);
-        BDD high = mtbdd_refs_sync(bdd_and_exists_SYNC(lace));
-        mtbdd_refs_pop(1);
-        result = mtbdd_make_node(level, low, high);
+        bdd_and_exists_SPAWN(lace, &high, aHigh, bHigh, v);
+        int low_status = bdd_and_exists_CALL(lace, &low, aLow, bLow, v);
+        int high_status = bdd_and_exists_SYNC(lace);
+        if (low_status != SYLVAN_OK || high_status != SYLVAN_OK) {
+            mtbdd_refs_popptr(3);
+            return low_status != SYLVAN_OK ? low_status : high_status;
+        }
+        status = _mtbdd_try_make_node(&computed, level, low, high);
+        if (status != SYLVAN_OK) {
+            mtbdd_refs_popptr(3);
+            return status;
+        }
     }
 
-    if (cache_put3(CACHE_BDD_AND_EXISTS, a, b, v, result)) sylvan_stats_count(BDD_AND_EXISTS_CACHEDPUT);
+    if (cache_put3(CACHE_BDD_AND_EXISTS, a, b, v, computed)) sylvan_stats_count(BDD_AND_EXISTS_CACHEDPUT);
 
-    return result;
+    *destination = computed;
+    mtbdd_refs_popptr(3);
+    return SYLVAN_OK;
 }
 
 
@@ -998,21 +1075,30 @@ BDD bdd_and_exists_CALL(lace_worker* lace, BDD a, BDD b, BDDSET v)
  * Calculate projection of (<a> AND <b>) unto <v>
  * (Expects Boolean <a> and <b>)
  */
-MTBDD bdd_and_project_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
+int bdd_and_project_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET v)
 {
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || v == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
     /**
      * Terminal cases
      */
-    if (a == bdd_false) return bdd_false;
-    if (b == bdd_false) return bdd_false;
-    if (a == bdd_not(b)) return bdd_false;
-    if (a == bdd_true && b == bdd_true) return bdd_true;
-    if (bdd_set_is_empty(v)) return bdd_true;
+    if (a == bdd_false || b == bdd_false || a == bdd_not(b)) {
+        *destination = bdd_false;
+        return SYLVAN_OK;
+    }
+    if (a == bdd_true && b == bdd_true) { *destination = bdd_true; return SYLVAN_OK; }
+    if (bdd_set_is_empty(v)) {
+        *destination = bdd_disjoint_CALL(lace, a, b) ? bdd_false : bdd_true;
+        return SYLVAN_OK;
+    }
 
     /**
      * Cases that reduce to bdd_project
      */
-    if (a == bdd_true || b == bdd_true || a == b) return bdd_project(b, v);
+    if (a == bdd_true) return bdd_project_CALL(lace, destination, b, v);
+    if (b == bdd_true || a == b) return bdd_project_CALL(lace, destination, a, v);
 
     /**
      * Normalization (only for caching)
@@ -1050,7 +1136,10 @@ MTBDD bdd_and_project_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     MTBDD v_next = mtbddnode_followhigh(v, v_node);
 
     while (v_var < minvar) {
-        if (bdd_set_is_empty(v_next)) return bdd_true;
+        if (bdd_set_is_empty(v_next)) {
+            *destination = bdd_disjoint_CALL(lace, a, b) ? bdd_false : bdd_true;
+            return SYLVAN_OK;
+        }
         v = v_next;
         v_node = MTBDD_GETNODE(v);
         v_var = mtbddnode_getvariable(v_node);
@@ -1060,10 +1149,13 @@ MTBDD bdd_and_project_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     /**
      * Check the cache
      */
-    MTBDD result;
-    if (cache_get3(CACHE_BDD_AND_PROJECT, a, b, v, &result)) {
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_BDD_AND_PROJECT, a, b, v, &computed)) {
         sylvan_stats_count(BDD_AND_PROJECT_CACHED);
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /**
@@ -1077,30 +1169,51 @@ MTBDD bdd_and_project_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     /**
      * Compute recursive result
      */
+    BDD low = mtbdd_invalid, high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+
     if (v_var == minvar) {
         // variable in projection variables
-        mtbdd_refs_spawn(bdd_and_project_SPAWN(lace, a0, b0, v_next));
-        const MTBDD high = mtbdd_refs_push(bdd_and_project_CALL(lace, a1, b1, v_next));
-        const MTBDD low = mtbdd_refs_sync(bdd_and_project_SYNC(lace));
-        mtbdd_refs_pop(1);
-        result = mtbdd_make_node(minvar, low, high);
+        bdd_and_project_SPAWN(lace, &low, a0, b0, v_next);
+        int high_status = bdd_and_project_CALL(lace, &high, a1, b1, v_next);
+        int low_status = bdd_and_project_SYNC(lace);
+        if (low_status != SYLVAN_OK || high_status != SYLVAN_OK) {
+            mtbdd_refs_popptr(3);
+            return high_status != SYLVAN_OK ? high_status : low_status;
+        }
+        int status = _mtbdd_try_make_node(&computed, minvar, low, high);
+        if (status != SYLVAN_OK) {
+            mtbdd_refs_popptr(3);
+            return status;
+        }
     } else {
         // variable not in projection variables
-        mtbdd_refs_spawn(bdd_and_project_SPAWN(lace, a0, b0, v));
-        const MTBDD high = mtbdd_refs_push(bdd_and_project_CALL(lace, a1, b1, v));
-        const MTBDD low = mtbdd_refs_push(mtbdd_refs_sync(bdd_and_project_SYNC(lace)));
-        result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(low), bdd_not(high)));
-        mtbdd_refs_pop(2);
+        bdd_and_project_SPAWN(lace, &low, a0, b0, v);
+        int high_status = bdd_and_project_CALL(lace, &high, a1, b1, v);
+        int low_status = bdd_and_project_SYNC(lace);
+        if (low_status != SYLVAN_OK || high_status != SYLVAN_OK) {
+            mtbdd_refs_popptr(3);
+            return high_status != SYLVAN_OK ? high_status : low_status;
+        }
+        int status = bdd_and_CALL(lace, &computed, bdd_not(low), bdd_not(high));
+        if (status != SYLVAN_OK) {
+            mtbdd_refs_popptr(3);
+            return status;
+        }
+        computed = bdd_not(computed);
     }
 
     /**
      * Put in cache
      */
-    if (cache_put3(CACHE_BDD_AND_PROJECT, a, b, v, result)) {
+    if (cache_put3(CACHE_BDD_AND_PROJECT, a, b, v, computed)) {
         sylvan_stats_count(BDD_AND_PROJECT_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    mtbdd_refs_popptr(3);
+    return SYLVAN_OK;
 }
 
 

@@ -177,28 +177,28 @@ static inline char bdd_subseteq(BDD a, BDD b);
 /**
  * Existential quantification: compute ∃ <vars> : <dd>.
  */
-static inline BDD bdd_exists(BDD dd, BDDSET vars);
+static inline int bdd_exists(BDD *result, BDD dd, BDDSET vars);
 
 /**
  * Universal quantification: compute ∀ <vars> : <dd>.
  */
-static inline BDD bdd_forall(BDD dd, BDDSET vars);
+static inline int bdd_forall(BDD *result, BDD dd, BDDSET vars);
 
 /**
  * Projection. Same as existential quantification, but <vars> contains
  * the variables to keep rather than eliminate.
  */
-static inline BDD bdd_project(BDD dd, BDDSET vars);
+static inline int bdd_project(BDD *result, BDD dd, BDDSET vars);
 
 /**
  * Compute ∃ <vars> : <a> ∧ <b>.
  */
-static inline BDD bdd_and_exists(BDD a, BDD b, BDDSET vars);
+static inline int bdd_and_exists(BDD *result, BDD a, BDD b, BDDSET vars);
 
 /**
  * Compute and_exists, but as a projection (only keep given variables).
  */
-static inline BDD bdd_and_project(BDD a, BDD b, BDDSET vars);
+static inline int bdd_and_project(BDD *result, BDD a, BDD b, BDDSET vars);
 
 /**
  * Compute R(s,t) = ∃ x: A(s,x) ∧ B(x,t)

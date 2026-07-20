@@ -26,6 +26,16 @@ static BDD test_bdd_xor(BDD a, BDD b) { return test_bdd_binary(bdd_xor, a, b); }
 static BDD test_bdd_or(BDD a, BDD b) { return test_bdd_binary(bdd_or, a, b); }
 
 static BDD
+test_bdd_exists(BDD dd, BDDSET vars)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = bdd_exists(&result, dd, vars);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+static BDD
 test_bdd_ite(BDD a, BDD b, BDD c)
 {
     BDD result = mtbdd_invalid;
@@ -573,7 +583,7 @@ int test_zdd_exists_CALL(lace_worker* lace)
     }
     test_assert(zdd_set == zdd_from_bdd(bdd_set, bdd_dom));
 
-    BDD bdd_qset = bdd_exists(bdd_set, bdd_qdom);
+    BDD bdd_qset = test_bdd_exists(bdd_set, bdd_qdom);
     ZDD zdd_test_result = zdd_exists(zdd_set, zdd_qdom);
     test_assert(zdd_test_result == zdd_from_bdd(bdd_qset, bdd_dom));
     ZDD zdd_test_result2 = zdd_project(zdd_set, zdd_subdom);

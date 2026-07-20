@@ -167,16 +167,18 @@ void mtbdd_cofactors(MTBDD dd, MTBDD *if_false, MTBDD *if_true);
  * Create a MTBDD cube representing the conjunction of variables in their positive or negative
  * form depending on whether the cube[idx] equals 0 (negative), 1 (positive) or 2 (any).
  * Use cube[idx]==3 for "s=s'" in interleaved variables (matches with next variable)
- * <variables> is the cube of variables (var1 \and var2 \and ... \and varn)
+ * <variables> is the cube of variables (var1 \and var2 \and ... \and varn).
+ * Returns SYLVAN_OK on success. On failure, <result> is unchanged.
  */
-MTBDD mtbdd_cube(MTBDD variables, uint8_t *cube, MTBDD terminal);
+int mtbdd_cube(MTBDD *result, BDDSET variables, const uint8_t *cube, MTBDD terminal);
 
 /**
  * Same as mtbdd_cube, but extends <mtbdd> with the assignment <cube> \to <terminal>.
  * If <mtbdd> already assigns a value to the cube, the new value <terminal> is taken.
- * Does not support cube[idx]==3.
+ * Does not support cube[idx]==3. Returns SYLVAN_OK on success. On failure,
+ * <result> is unchanged.
  */
-static inline MTBDD mtbdd_set_cube(MTBDD mtbdd, MTBDD variables, uint8_t* cube, MTBDD terminal);
+static inline int mtbdd_set_cube(MTBDD *result, MTBDD mtbdd, BDDSET variables, const uint8_t *cube, MTBDD terminal);
 
 /**
  * Count the number of satisfying assignments (minterms) leading to a non-false leaf
@@ -358,8 +360,9 @@ static inline MTBDD mtbdd_abstract_max(MTBDD dd, MTBDD vars);
 /**
  * Compute IF <f> THEN <g> ELSE <h>.
  * <f> must be a Boolean MTBDD (or standard BDD).
+ * Returns SYLVAN_OK on success. On failure, <result> is unchanged.
  */
-static inline MTBDD mtbdd_ite(BDD condition, MTBDD if_true, MTBDD if_false);
+static inline int mtbdd_ite(MTBDD *result, BDD condition, MTBDD if_true, MTBDD if_false);
 
 /**
  * Multiply <a> and <b>, and abstract variables <vars> using summation.

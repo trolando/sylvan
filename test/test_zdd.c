@@ -679,7 +679,8 @@ int test_zdd_exists_CALL(lace_worker* lace)
 //     test_assert(bdd_sat_count(bdd_set, bdd_dom) == zdd_path_count(zdd_set, zdd_dom));
 //     test_assert(bdd_sat_count(bdd_rel, bdd_vars) == zdd_path_count(zdd_rel, zdd_vars));
 // 
-//     BDD bdd_succ = bdd_rel_next(bdd_set, bdd_rel, bdd_vars);
+//     BDD bdd_succ = mtbdd_invalid;
+//     bdd_rel_next(&bdd_succ, bdd_set, bdd_rel, bdd_vars);
 //     ZDD zdd_succ = zdd_relnext(zdd_set, zdd_rel, zdd_vars, zdd_dom);
 // 
 //     test_assert(zdd_succ == zdd_from_bdd(bdd_succ, bdd_dom));

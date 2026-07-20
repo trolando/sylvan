@@ -211,8 +211,9 @@ static inline int bdd_and_project(BDD *result, BDD a, BDD b, BDDSET vars);
  *
  * Use this function to concatenate two relations   --> -->
  * or to take the 'previous' of a set               -->  S
+ * Returns SYLVAN_OK on success. On failure, <result> is unchanged.
  */
-static inline BDD bdd_rel_prev(BDD a, BDD b, BDDSET vars);
+static inline int bdd_rel_prev(BDD *result, BDD a, BDD b, BDDSET vars);
 
 /**
  * Compute R(s) = ∃ x: A(x) ∧ B(x,s)
@@ -224,8 +225,9 @@ static inline BDD bdd_rel_prev(BDD a, BDD b, BDDSET vars);
  * Alternatively, vars=false means all variables are in vars.
  *
  * Use this function to take the 'next' of a set     S  -->
+ * Returns SYLVAN_OK on success. On failure, <result> is unchanged.
  */
-static inline BDD bdd_rel_next(BDD a, BDD b, BDDSET vars);
+static inline int bdd_rel_next(BDD *result, BDD a, BDD b, BDDSET vars);
 
 /**
  * Computes the transitive closure by traversing the BDD recursively.
@@ -236,8 +238,9 @@ static inline BDD bdd_rel_next(BDD a, BDD b, BDDSET vars);
  * The input BDD must be a transition relation that only has levels of s,t
  * with s,t interleaved with s even and t odd, i.e.
  * s level 0,2,4 matches with t level 1,3,5 and so forth.
+ * Returns SYLVAN_OK on success. On failure, <result> is unchanged.
  */
-static inline BDD bdd_transitive_closure(BDD dd);
+static inline int bdd_transitive_closure(BDD *result, BDD dd);
 
 /**
  * Compute f@c (f constrain c), such that f and f@c are the same when c is true.

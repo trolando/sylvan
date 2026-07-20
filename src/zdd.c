@@ -2128,7 +2128,7 @@ ZDD zdd_isop_CALL(lace_worker* lace, MTBDD L, MTBDD U, MTBDD* bddresptr)
     mtbdd_refs_spawn(bdd_and_legacy_SPAWN(lace, Lnv, bdd_not(I0)));
     MTBDD Lsuper1 = mtbdd_refs_push(bdd_and_legacy_CALL(lace, Lv, bdd_not(I1)));
     MTBDD Lsuper0 = mtbdd_refs_push(mtbdd_refs_sync(bdd_and_legacy_SYNC(lace)));
-    MTBDD Ld = mtbdd_refs_push(bdd_or(Lsuper0, Lsuper1));
+    MTBDD Ld = mtbdd_refs_push(bdd_not(bdd_and_legacy_CALL(lace, bdd_not(Lsuper0), bdd_not(Lsuper1))));
     MTBDD Ud = mtbdd_refs_push(mtbdd_refs_sync(bdd_and_legacy_SYNC(lace)));
 
     /**
@@ -2143,7 +2143,7 @@ ZDD zdd_isop_CALL(lace_worker* lace, MTBDD L, MTBDD U, MTBDD* bddresptr)
      * Now we have: I0, I1, ID and Z0, Z1, Zd
      */
     MTBDD x = mtbdd_refs_push(mtbdd_make_node(minvar, I0, I1));
-    bddres = bdd_or(x, Id);
+    bddres = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(x), bdd_not(Id)));
     mtbdd_refs_pop(1); // x
     mtbdd_refs_popptr(3); // Id, I0, I1
     mtbdd_refs_push(bddres);

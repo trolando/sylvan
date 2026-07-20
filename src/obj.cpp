@@ -19,6 +19,32 @@
 
 using namespace sylvan;
 
+namespace {
+
+using bdd_binary_op = int (*)(BDD*, BDD, BDD);
+
+BDD
+apply_binary(bdd_binary_op op, BDD a, BDD b)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = op(&result, a, b);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+BDD
+apply_ite(BDD a, BDD b, BDD c)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = bdd_ite(&result, a, b, c);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+}
+
 /***
  * Implementation of class Bdd
  */
@@ -82,78 +108,78 @@ Bdd::operator~() const
 Bdd
 Bdd::operator*(const Bdd& other) const
 {
-    return Bdd(bdd_and_value(bdd, other.bdd));
+    return Bdd(apply_binary(bdd_and, bdd, other.bdd));
 }
 
 Bdd&
 Bdd::operator*=(const Bdd& other)
 {
-    bdd = bdd_and_value(bdd, other.bdd);
+    bdd = apply_binary(bdd_and, bdd, other.bdd);
     return *this;
 }
 
 Bdd
 Bdd::operator&(const Bdd& other) const
 {
-    return Bdd(bdd_and_value(bdd, other.bdd));
+    return Bdd(apply_binary(bdd_and, bdd, other.bdd));
 }
 
 Bdd&
 Bdd::operator&=(const Bdd& other)
 {
-    bdd = bdd_and_value(bdd, other.bdd);
+    bdd = apply_binary(bdd_and, bdd, other.bdd);
     return *this;
 }
 
 Bdd
 Bdd::operator+(const Bdd& other) const
 {
-    return Bdd(bdd_or(bdd, other.bdd));
+    return Bdd(apply_binary(bdd_or, bdd, other.bdd));
 }
 
 Bdd&
 Bdd::operator+=(const Bdd& other)
 {
-    bdd = bdd_or(bdd, other.bdd);
+    bdd = apply_binary(bdd_or, bdd, other.bdd);
     return *this;
 }
 
 Bdd
 Bdd::operator|(const Bdd& other) const
 {
-    return Bdd(bdd_or(bdd, other.bdd));
+    return Bdd(apply_binary(bdd_or, bdd, other.bdd));
 }
 
 Bdd&
 Bdd::operator|=(const Bdd& other)
 {
-    bdd = bdd_or(bdd, other.bdd);
+    bdd = apply_binary(bdd_or, bdd, other.bdd);
     return *this;
 }
 
 Bdd
 Bdd::operator^(const Bdd& other) const
 {
-    return Bdd(bdd_xor(bdd, other.bdd));
+    return Bdd(apply_binary(bdd_xor, bdd, other.bdd));
 }
 
 Bdd&
 Bdd::operator^=(const Bdd& other)
 {
-    bdd = bdd_xor(bdd, other.bdd);
+    bdd = apply_binary(bdd_xor, bdd, other.bdd);
     return *this;
 }
 
 Bdd
 Bdd::operator-(const Bdd& other) const
 {
-    return Bdd(bdd_and_value(bdd, bdd_not(other.bdd)));
+    return Bdd(apply_binary(bdd_diff, bdd, other.bdd));
 }
 
 Bdd&
 Bdd::operator-=(const Bdd& other)
 {
-    bdd = bdd_and_value(bdd, bdd_not(other.bdd));
+    bdd = apply_binary(bdd_diff, bdd, other.bdd);
     return *this;
 }
 
@@ -178,43 +204,43 @@ Bdd::UnivAbstract(const BddSet &cube) const
 Bdd
 Bdd::Ite(const Bdd &g, const Bdd &h) const
 {
-    return bdd_ite_value(bdd, g.bdd, h.bdd);
+    return apply_ite(bdd, g.bdd, h.bdd);
 }
 
 Bdd
 Bdd::And(const Bdd &g) const
 {
-    return bdd_and_value(bdd, g.bdd);
+    return apply_binary(bdd_and, bdd, g.bdd);
 }
 
 Bdd
 Bdd::Or(const Bdd &g) const
 {
-    return bdd_or(bdd, g.bdd);
+    return apply_binary(bdd_or, bdd, g.bdd);
 }
 
 Bdd
 Bdd::Nand(const Bdd &g) const
 {
-    return bdd_nand(bdd, g.bdd);
+    return apply_binary(bdd_nand, bdd, g.bdd);
 }
 
 Bdd
 Bdd::Nor(const Bdd &g) const
 {
-    return bdd_nor(bdd, g.bdd);
+    return apply_binary(bdd_nor, bdd, g.bdd);
 }
 
 Bdd
 Bdd::Xor(const Bdd &g) const
 {
-    return bdd_xor(bdd, g.bdd);
+    return apply_binary(bdd_xor, bdd, g.bdd);
 }
 
 Bdd
 Bdd::Xnor(const Bdd &g) const
 {
-    return bdd_xnor(bdd, g.bdd);
+    return apply_binary(bdd_xnor, bdd, g.bdd);
 }
 
 bool

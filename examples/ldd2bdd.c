@@ -442,7 +442,7 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, LISTDD dd, LISTDD bits_dd, uint32
 
         /* take union of current and right */
         mtbdd_refs_push(right);
-        result = bdd_or(down, right);
+        result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(down), bdd_not(right)));
         mtbdd_refs_pop(2);
     } else if (vmeta == 3) {
         /* only-read level */
@@ -472,7 +472,7 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, LISTDD dd, LISTDD bits_dd, uint32
 
         /* take union of current and right */
         mtbdd_refs_push(right);
-        result = bdd_or(down, right);
+        result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(down), bdd_not(right)));
         mtbdd_refs_pop(2);
     } else if (vmeta == 5) {
         assert(!mddnode_getcopy(n));  // not allowed!

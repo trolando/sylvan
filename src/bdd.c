@@ -243,15 +243,18 @@ char bdd_disjoint_CALL(lace_worker* lace, BDD a, BDD b)
     return (char)result;
 }
 
-BDD bdd_xor_CALL(lace_worker* lace, BDD a, BDD b)
+int bdd_xor_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b)
 {
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
+    if (a == mtbdd_invalid || b == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
     /* Terminal cases */
-    if (a == bdd_false) return b;
-    if (b == bdd_false) return a;
-    if (a == bdd_true) return bdd_not(b);
-    if (b == bdd_true) return bdd_not(a);
-    if (a == b) return bdd_false;
-    if (a == bdd_not(b)) return bdd_true;
+    if (a == bdd_false) { *destination = b; return SYLVAN_OK; }
+    if (b == bdd_false) { *destination = a; return SYLVAN_OK; }
+    if (a == bdd_true) { *destination = bdd_not(b); return SYLVAN_OK; }
+    if (b == bdd_true) { *destination = bdd_not(a); return SYLVAN_OK; }
+    if (a == b) { *destination = bdd_false; return SYLVAN_OK; }
+    if (a == bdd_not(b)) { *destination = bdd_true; return SYLVAN_OK; }
 
     sylvan_gc_test(lace);
 
@@ -278,12 +281,13 @@ BDD bdd_xor_CALL(lace_worker* lace, BDD a, BDD b)
     uint32_t vb = bddnode_getvariable(nb);
     uint32_t level = va < vb ? va : vb;
 
-    {
-        BDD result;
-        if (cache_get3(CACHE_BDD_XOR, a, b, bdd_false, &result)) {
-            sylvan_stats_count(BDD_XOR_CACHED);
-            return result;
-        }
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_BDD_XOR, a, b, bdd_false, &computed)) {
+        sylvan_stats_count(BDD_XOR_CACHED);
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     // Get cofactors
@@ -299,21 +303,30 @@ BDD bdd_xor_CALL(lace_worker* lace, BDD a, BDD b)
     }
 
     // Recursive computation
-    BDD low, high, result;
+    BDD low = mtbdd_invalid, high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
 
-    mtbdd_refs_spawn(bdd_xor_SPAWN(lace, aHigh, bHigh));
-    low = bdd_xor_CALL(lace, aLow, bLow);
-    mtbdd_refs_push(low);
-    high = mtbdd_refs_sync(bdd_xor_SYNC(lace));
-    mtbdd_refs_pop(1);
+    bdd_xor_SPAWN(lace, &high, aHigh, bHigh);
+    int low_status = bdd_xor_CALL(lace, &low, aLow, bLow);
+    int high_status = bdd_xor_SYNC(lace);
+    if (low_status != SYLVAN_OK || high_status != SYLVAN_OK) {
+        mtbdd_refs_popptr(3);
+        return low_status != SYLVAN_OK ? low_status : high_status;
+    }
 
-    result = mtbdd_make_node(level, low, high);
+    int status = _mtbdd_try_make_node(&computed, level, low, high);
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(3);
+        return status;
+    }
 
-    if (cache_put3(CACHE_BDD_XOR, a, b, bdd_false, result)) sylvan_stats_count(BDD_XOR_CACHEDPUT);
+    if (cache_put3(CACHE_BDD_XOR, a, b, bdd_false, computed)) sylvan_stats_count(BDD_XOR_CACHEDPUT);
 
-    return result;
+    *destination = computed;
+    mtbdd_refs_popptr(3);
+    return SYLVAN_OK;
 }
-
 
 int bdd_ite_CALL(lace_worker *lace, BDD *destination, BDD a, BDD b, BDD c)
 {

@@ -92,6 +92,12 @@ static inline int bdd_is_leaf(MTBDD bdd);
 static inline BDD bdd_not(BDD dd);
 
 /**
+ * Boolean operations returning a status write to a caller-protected
+ * destination. They return SYLVAN_OK on success or a negative status code on
+ * failure, leaving the destination unchanged on failure.
+ */
+
+/**
  * Compute a then b else c. Returns SYLVAN_OK on success or a negative status
  * code on failure. The caller must protect <result> before calling this
  * operation. The destination is written before the Lace task completes and
@@ -110,32 +116,32 @@ static inline int bdd_and(BDD *result, BDD a, BDD b);
 /**
  * Compute the logical XOR (exclusive or) of two BDDs.
  */
-static inline BDD bdd_xor(BDD a, BDD b);
+static inline int bdd_xor(BDD *result, BDD a, BDD b);
 
 /**
  * Compute the logical equivalence of two BDDs (same as biimp).
  */
-static inline BDD bdd_xnor(BDD a, BDD b);
+static inline int bdd_xnor(BDD *result, BDD a, BDD b);
 
 /**
  * Compute the logical OR of two BDDs.
  */
-static inline BDD bdd_or(BDD a, BDD b);
+static inline int bdd_or(BDD *result, BDD a, BDD b);
 
 /**
  * Compute the logical NAND of two BDDs.
  */
-static inline BDD bdd_nand(BDD a, BDD b);
+static inline int bdd_nand(BDD *result, BDD a, BDD b);
 
 /**
  * Compute the logical NOR of two BDDs.
  */
-static inline BDD bdd_nor(BDD a, BDD b);
+static inline int bdd_nor(BDD *result, BDD a, BDD b);
 
 /**
  * Compute logical implication a → b.
  */
-static inline BDD bdd_imp(BDD a, BDD b);
+static inline int bdd_imp(BDD *result, BDD a, BDD b);
 
 /**
  * Compute reverse implication b → a.
@@ -148,7 +154,7 @@ static inline BDD bdd_imp(BDD a, BDD b);
 /**
  * Compute a ∧ ¬b (set difference when BDDs encode sets).
  */
-static inline BDD bdd_diff(BDD a, BDD b);
+static inline int bdd_diff(BDD *result, BDD a, BDD b);
 
 /**
  * Compute ¬a ∧ b (reverse difference).

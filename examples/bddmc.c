@@ -428,10 +428,10 @@ BDD go_par_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
             // check which BDDs in deadlocks do not have a successor in this relation
             BDD anc = bdd_rel_prev_CALL(lace, next[from]->bdd, succ, next[from]->variables);
             mtbdd_refs_push(anc);
-            *deadlocks = bdd_diff(*deadlocks, anc); //FIXME use a CALL
+            *deadlocks = bdd_and_legacy_CALL(lace, *deadlocks, bdd_not(anc));
             mtbdd_refs_pop(1);
         }
-        BDD result = bdd_diff(succ, visited);
+        BDD result = bdd_and_legacy_CALL(lace, succ, bdd_not(visited));
         mtbdd_refs_pop(1);
         return result;
     } else {
@@ -450,7 +450,7 @@ BDD go_par_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
         BDD left = mtbdd_refs_push(mtbdd_refs_sync(go_par_SYNC(lace)));
 
         // Merge results of left+right
-        BDD result = bdd_or(left, right);
+        BDD result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(left), bdd_not(right)));
         mtbdd_refs_pop(2);
 
         if (deadlocks) {
@@ -500,7 +500,7 @@ void par_CALL(lace_worker* lace, set_t set)
         }
 
         // visited = visited + new
-        visited = bdd_or(visited, next_level);
+        visited = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(visited), bdd_not(next_level)));
 
         if (report_table && report_levels) {
             size_t filled, total;
@@ -545,10 +545,10 @@ BDD go_bfs_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
             // check which BDDs in deadlocks do not have a successor in this relation
             BDD anc = bdd_rel_prev_CALL(lace, next[from]->bdd, succ, next[from]->variables);
             mtbdd_refs_push(anc);
-            *deadlocks = bdd_diff(*deadlocks, anc); // FIXME make it a CALL
+            *deadlocks = bdd_and_legacy_CALL(lace, *deadlocks, bdd_not(anc));
             mtbdd_refs_pop(1);
         }
-        BDD result = bdd_diff(succ, visited);
+        BDD result = bdd_and_legacy_CALL(lace, succ, bdd_not(visited));
         mtbdd_refs_pop(1);
         return result;
     } else {
@@ -568,7 +568,7 @@ BDD go_bfs_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len
         mtbdd_refs_push(right);
 
         // Merge results of left+right
-        BDD result = bdd_or(left, right);
+        BDD result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(left), bdd_not(right)));
         mtbdd_refs_pop(2);
 
         if (deadlocks) {
@@ -618,7 +618,7 @@ void bfs_CALL(lace_worker* lace, set_t set)
         }
 
         // visited = visited + new
-        visited = bdd_or(visited, next_level);
+        visited = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(visited), bdd_not(next_level)));
 
         if (report_table && report_levels) {
             size_t filled, total;
@@ -667,14 +667,14 @@ void chaining_CALL(lace_worker* lace, set_t set)
         // calculate successors in parallel
         for (int i=0; i<next_count; i++) {
             succ = bdd_rel_next_CALL(lace, next_level, next[i]->bdd, next[i]->variables);
-            next_level = bdd_or(next_level, succ);
+            next_level = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(next_level), bdd_not(succ)));
             succ = bdd_false; // reset, for gc
         }
 
         // new = new - visited
         // visited = visited + new
-        next_level = bdd_diff(next_level, visited);
-        visited = bdd_or(visited, next_level);
+        next_level = bdd_and_legacy_CALL(lace, next_level, bdd_not(visited));
+        visited = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(visited), bdd_not(next_level)));
 
         if (report_table && report_levels) {
             size_t filled, total;
@@ -747,7 +747,7 @@ BDD big_union_CALL(lace_worker* lace, int first, int count)
     mtbdd_refs_spawn(big_union_SPAWN(lace, first, count/2));
     BDD right = mtbdd_refs_push(big_union_CALL(lace, first+count/2, count-count/2));
     BDD left = mtbdd_refs_push(mtbdd_refs_sync(big_union_SYNC(lace)));
-    BDD result = bdd_or(left, right);
+    BDD result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(left), bdd_not(right)));
     mtbdd_refs_pop(2);
     return result;
 }

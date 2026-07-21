@@ -417,17 +417,20 @@ static inline int mtbdd_threshold_double(MTBDD *result, MTBDD a, double b);
 static inline int mtbdd_strict_threshold_double(MTBDD *result, MTBDD a, double b);
 
 /**
- * For two Double MTBDDs, calculate whether they are equal module some value epsilon
- * i.e. abs(a-b) < e
+ * For two Double MTBDDs, write true if all common assignments differ by less
+ * than <c>, and undefined otherwise. The caller must protect <result>. Returns
+ * SYLVAN_OK on success or a negative status on failure, leaving <result>
+ * unchanged.
  */
-static inline MTBDD mtbdd_equal_abs_double(MTBDD a, MTBDD b, double c);
+static inline int mtbdd_equal_abs_double(MTBDD *result, MTBDD a, MTBDD b, double c);
 
 /**
- * For two Double MTBDDs, calculate whether they are equal modulo some value epsilon
- * This version computes the relative difference vs the value in a.
- * i.e. abs((a-b)/a) < e
+ * For two Double MTBDDs, write true if all common assignments have relative
+ * difference abs((a-b)/a) less than <c>, and undefined otherwise. The caller
+ * must protect <result>. Returns SYLVAN_OK on success or a negative status on
+ * failure, leaving <result> unchanged.
  */
-static inline MTBDD mtbdd_equal_rel_double(MTBDD a, MTBDD b, double c);
+static inline int mtbdd_equal_rel_double(MTBDD *result, MTBDD a, MTBDD b, double c);
 
 /**
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) <= b(s), mtbdd_undefined otherwise.

@@ -243,14 +243,14 @@ TASK(int, mtbdd_strict_threshold_double, MTBDD*, result, MTBDD, a, double, b);
  * For two Double MTBDDs, calculate whether they are equal module some value epsilon
  * i.e. abs(a-b) < e
  */
-TASK(MTBDD, mtbdd_equal_abs_double, MTBDD, a, MTBDD, b, double, c);
+TASK(int, mtbdd_equal_abs_double, MTBDD*, result, MTBDD, a, MTBDD, b, double, c);
 
 /**
  * For two Double MTBDDs, calculate whether they are equal modulo some value epsilon
  * This version computes the relative difference vs the value in a.
  * i.e. abs((a-b)/a) < e
  */
-TASK(MTBDD, mtbdd_equal_rel_double, MTBDD, a, MTBDD, b, double, c);
+TASK(int, mtbdd_equal_rel_double, MTBDD*, result, MTBDD, a, MTBDD, b, double, c);
 
 /**
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) <= b(s), mtbdd_undefined otherwise.

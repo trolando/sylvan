@@ -2206,19 +2206,28 @@ int mtbdd_equal_rel_double_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, 
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) <= b(s), mtbdd_undefined otherwise.
  * For domains not in a / b, assume True.
  */
-TASK(MTBDD, mtbdd_leq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+TASK(int, mtbdd_leq_rec, MTBDD*, result, MTBDD, a, MTBDD, b, atomic_int*, shortcircuit)
 
-MTBDD mtbdd_leq_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
+int mtbdd_leq_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, atomic_int* shortcircuit)
 {
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || shortcircuit == NULL) {
+        return SYLVAN_ERR_INVALID;
+    }
+
     /* Check short circuit */
-    if (*shortcircuit) return mtbdd_undefined;
+    if (atomic_load_explicit(shortcircuit, memory_order_relaxed)) {
+        *destination = mtbdd_undefined;
+        return SYLVAN_OK;
+    }
 
     /* Check terminal case */
-    if (a == b) return bdd_true;
+    if (a == b) { *destination = bdd_true; return SYLVAN_OK; }
 
     /* For partial functions, just return true */
-    if (a == mtbdd_undefined) return bdd_true;
-    if (b == mtbdd_undefined) return bdd_true;
+    if (a == mtbdd_undefined || b == mtbdd_undefined) {
+        *destination = bdd_true;
+        return SYLVAN_OK;
+    }
 
     /* Maybe perform garbage collection */
     sylvan_gc_test(lace);
@@ -2227,10 +2236,11 @@ MTBDD mtbdd_leq_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
     sylvan_stats_count(MTBDD_LEQ);
 
     /* Check cache */
-    MTBDD result;
-    if (cache_get3(CACHE_MTBDD_LEQ, a, b, 0, &result)) {
+    MTBDD computed = mtbdd_invalid;
+    if (cache_get3(CACHE_MTBDD_LEQ, a, b, 0, &computed)) {
         sylvan_stats_count(MTBDD_LEQ_CACHED);
-        return result;
+        *destination = computed;
+        return SYLVAN_OK;
     }
 
     mtbddnode* na = MTBDD_GETNODE(a);
@@ -2244,12 +2254,10 @@ MTBDD mtbdd_leq_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
 
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
             // type 0 = integer
-            result = *(int64_t*)(&va) <= *(int64_t*)(&vb) ? bdd_true : mtbdd_undefined;
+            computed = mtbdd_leaf_int64(a) <= mtbdd_leaf_int64(b) ? bdd_true : mtbdd_undefined;
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // type 1 = double
-            double vva = *(double*)&va;
-            double vvb = *(double*)&vb;
-            result = vva <= vvb ? bdd_true : mtbdd_undefined;
+            computed = mtbdd_leaf_double(a) <= mtbdd_leaf_double(b) ? bdd_true : mtbdd_undefined;
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // type 2 = fraction
             int64_t nom_a = (int32_t)(va>>32);
@@ -2260,9 +2268,9 @@ MTBDD mtbdd_leq_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
             uint32_t c = gcd((uint32_t)da, (uint32_t)db);
             nom_a *= db/c;
             nom_b *= da/c;
-            result = nom_a <= nom_b ? bdd_true : mtbdd_undefined;
+            computed = nom_a <= nom_b ? bdd_true : mtbdd_undefined;
         } else {
-            assert(0); // failure
+            return SYLVAN_ERR_INVALID;
         }
     } else {
         /* Get top variable */
@@ -2277,46 +2285,70 @@ MTBDD mtbdd_leq_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
         blow  = vb == var ? node_getlow(b, nb)  : b;
         bhigh = vb == var ? node_gethigh(b, nb) : b;
 
-        mtbdd_leq_rec_SPAWN(lace, ahigh, bhigh, shortcircuit);
-        result = mtbdd_leq_rec_CALL(lace, alow, blow, shortcircuit);
-        if (result != mtbdd_leq_rec_SYNC(lace)) result = mtbdd_undefined;
+        MTBDD low = mtbdd_invalid;
+        MTBDD high = mtbdd_invalid;
+        mtbdd_refs_pushptr(&low);
+        mtbdd_refs_pushptr(&high);
+        mtbdd_leq_rec_SPAWN(lace, &high, ahigh, bhigh, shortcircuit);
+        int status = mtbdd_leq_rec_CALL(lace, &low, alow, blow, shortcircuit);
+        if (status == SYLVAN_OK && low == mtbdd_undefined) {
+            atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
+        }
+        int high_status = mtbdd_leq_rec_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+        if (status != SYLVAN_OK) {
+            mtbdd_refs_popptr(2);
+            return status;
+        }
+        computed = low == bdd_true && high == bdd_true ? bdd_true : mtbdd_undefined;
+        mtbdd_refs_popptr(2);
     }
 
-    if (result == mtbdd_undefined) *shortcircuit = 1;
+    if (computed == mtbdd_undefined) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_LEQ, a, b, 0, result)) {
+    if (cache_put3(CACHE_MTBDD_LEQ, a, b, 0, computed)) {
         sylvan_stats_count(MTBDD_LEQ_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    return SYLVAN_OK;
 }
 
-MTBDD mtbdd_leq_CALL(lace_worker* lace, MTBDD a, MTBDD b)
+int mtbdd_leq_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b)
 {
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
-    int shortcircuit = 0;
-    return mtbdd_leq_rec_CALL(lace, a, b, &shortcircuit);
+    atomic_int shortcircuit = 0;
+    return mtbdd_leq_rec_CALL(lace, destination, a, b, &shortcircuit);
 }
 
 /**
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) < b(s), mtbdd_undefined otherwise.
  * For domains not in a / b, assume True.
  */
-TASK(MTBDD, mtbdd_less_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+TASK(int, mtbdd_less_rec, MTBDD*, result, MTBDD, a, MTBDD, b, atomic_int*, shortcircuit)
 
-MTBDD mtbdd_less_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
+int mtbdd_less_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, atomic_int* shortcircuit)
 {
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || shortcircuit == NULL) {
+        return SYLVAN_ERR_INVALID;
+    }
+
     /* Check short circuit */
-    if (*shortcircuit) return mtbdd_undefined;
+    if (atomic_load_explicit(shortcircuit, memory_order_relaxed)) {
+        *destination = mtbdd_undefined;
+        return SYLVAN_OK;
+    }
 
     /* Check terminal case */
-    if (a == b) return mtbdd_undefined;
+    if (a == b) { *destination = mtbdd_undefined; return SYLVAN_OK; }
 
     /* For partial functions, just return true */
-    if (a == mtbdd_undefined) return bdd_true;
-    if (b == mtbdd_undefined) return bdd_true;
+    if (a == mtbdd_undefined || b == mtbdd_undefined) {
+        *destination = bdd_true;
+        return SYLVAN_OK;
+    }
 
     /* Maybe perform garbage collection */
     sylvan_gc_test(lace);
@@ -2325,10 +2357,11 @@ MTBDD mtbdd_less_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit
     sylvan_stats_count(MTBDD_LESS);
 
     /* Check cache */
-    MTBDD result;
-    if (cache_get3(CACHE_MTBDD_LESS, a, b, 0, &result)) {
+    MTBDD computed = mtbdd_invalid;
+    if (cache_get3(CACHE_MTBDD_LESS, a, b, 0, &computed)) {
         sylvan_stats_count(MTBDD_LESS_CACHED);
-        return result;
+        *destination = computed;
+        return SYLVAN_OK;
     }
 
     mtbddnode* na = MTBDD_GETNODE(a);
@@ -2342,12 +2375,10 @@ MTBDD mtbdd_less_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit
 
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
             // type 0 = integer
-            result = *(int64_t*)(&va) < *(int64_t*)(&vb) ? bdd_true : mtbdd_undefined;
+            computed = mtbdd_leaf_int64(a) < mtbdd_leaf_int64(b) ? bdd_true : mtbdd_undefined;
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // type 1 = double
-            double vva = *(double*)&va;
-            double vvb = *(double*)&vb;
-            result = vva < vvb ? bdd_true : mtbdd_undefined;
+            computed = mtbdd_leaf_double(a) < mtbdd_leaf_double(b) ? bdd_true : mtbdd_undefined;
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // type 2 = fraction
             int64_t nom_a = (int32_t)(va>>32);
@@ -2358,9 +2389,9 @@ MTBDD mtbdd_less_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit
             uint32_t c = gcd((uint32_t)da, (uint32_t)db);
             nom_a *= db/c;
             nom_b *= da/c;
-            result = nom_a < nom_b ? bdd_true : mtbdd_undefined;
+            computed = nom_a < nom_b ? bdd_true : mtbdd_undefined;
         } else {
-            assert(0); // failure
+            return SYLVAN_ERR_INVALID;
         }
     } else {
         /* Get top variable */
@@ -2375,46 +2406,70 @@ MTBDD mtbdd_less_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit
         blow  = vb == var ? node_getlow(b, nb)  : b;
         bhigh = vb == var ? node_gethigh(b, nb) : b;
 
-        mtbdd_less_rec_SPAWN(lace, ahigh, bhigh, shortcircuit);
-        result = mtbdd_less_rec_CALL(lace, alow, blow, shortcircuit);
-        if (result != mtbdd_less_rec_SYNC(lace)) result = mtbdd_undefined;
+        MTBDD low = mtbdd_invalid;
+        MTBDD high = mtbdd_invalid;
+        mtbdd_refs_pushptr(&low);
+        mtbdd_refs_pushptr(&high);
+        mtbdd_less_rec_SPAWN(lace, &high, ahigh, bhigh, shortcircuit);
+        int status = mtbdd_less_rec_CALL(lace, &low, alow, blow, shortcircuit);
+        if (status == SYLVAN_OK && low == mtbdd_undefined) {
+            atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
+        }
+        int high_status = mtbdd_less_rec_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+        if (status != SYLVAN_OK) {
+            mtbdd_refs_popptr(2);
+            return status;
+        }
+        computed = low == bdd_true && high == bdd_true ? bdd_true : mtbdd_undefined;
+        mtbdd_refs_popptr(2);
     }
 
-    if (result == mtbdd_undefined) *shortcircuit = 1;
+    if (computed == mtbdd_undefined) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_LESS, a, b, 0, result)) {
+    if (cache_put3(CACHE_MTBDD_LESS, a, b, 0, computed)) {
         sylvan_stats_count(MTBDD_LESS_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    return SYLVAN_OK;
 }
 
-MTBDD mtbdd_lt_CALL(lace_worker* lace, MTBDD a, MTBDD b)
+int mtbdd_lt_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b)
 {
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
-    int shortcircuit = 0;
-    return mtbdd_less_rec_CALL(lace, a, b, &shortcircuit);
+    atomic_int shortcircuit = 0;
+    return mtbdd_less_rec_CALL(lace, destination, a, b, &shortcircuit);
 }
 
 /**
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) >= b(s), mtbdd_undefined otherwise.
  * For domains not in a / b, assume True.
  */
-TASK(MTBDD, mtbdd_geq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+TASK(int, mtbdd_geq_rec, MTBDD*, result, MTBDD, a, MTBDD, b, atomic_int*, shortcircuit)
 
-MTBDD mtbdd_geq_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
+int mtbdd_geq_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, atomic_int* shortcircuit)
 {
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || shortcircuit == NULL) {
+        return SYLVAN_ERR_INVALID;
+    }
+
     /* Check short circuit */
-    if (*shortcircuit) return mtbdd_undefined;
+    if (atomic_load_explicit(shortcircuit, memory_order_relaxed)) {
+        *destination = mtbdd_undefined;
+        return SYLVAN_OK;
+    }
 
     /* Check terminal case */
-    if (a == b) return bdd_true;
+    if (a == b) { *destination = bdd_true; return SYLVAN_OK; }
 
     /* For partial functions, just return true */
-    if (a == mtbdd_undefined) return bdd_true;
-    if (b == mtbdd_undefined) return bdd_true;
+    if (a == mtbdd_undefined || b == mtbdd_undefined) {
+        *destination = bdd_true;
+        return SYLVAN_OK;
+    }
 
     /* Maybe perform garbage collection */
     sylvan_gc_test(lace);
@@ -2423,10 +2478,11 @@ MTBDD mtbdd_geq_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
     sylvan_stats_count(MTBDD_GEQ);
 
     /* Check cache */
-    MTBDD result;
-    if (cache_get3(CACHE_MTBDD_GEQ, a, b, 0, &result)) {
+    MTBDD computed = mtbdd_invalid;
+    if (cache_get3(CACHE_MTBDD_GEQ, a, b, 0, &computed)) {
         sylvan_stats_count(MTBDD_GEQ_CACHED);
-        return result;
+        *destination = computed;
+        return SYLVAN_OK;
     }
 
     mtbddnode* na = MTBDD_GETNODE(a);
@@ -2440,12 +2496,10 @@ MTBDD mtbdd_geq_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
 
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
             // type 0 = integer
-            result = *(int64_t*)(&va) >= *(int64_t*)(&vb) ? bdd_true : mtbdd_undefined;
+            computed = mtbdd_leaf_int64(a) >= mtbdd_leaf_int64(b) ? bdd_true : mtbdd_undefined;
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // type 1 = double
-            double vva = *(double*)&va;
-            double vvb = *(double*)&vb;
-            result = vva >= vvb ? bdd_true : mtbdd_undefined;
+            computed = mtbdd_leaf_double(a) >= mtbdd_leaf_double(b) ? bdd_true : mtbdd_undefined;
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // type 2 = fraction
             int64_t nom_a = (int32_t)(va>>32);
@@ -2456,9 +2510,9 @@ MTBDD mtbdd_geq_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
             uint32_t c = gcd((uint32_t)da, (uint32_t)db);
             nom_a *= db/c;
             nom_b *= da/c;
-            result = nom_a >= nom_b ? bdd_true : mtbdd_undefined;
+            computed = nom_a >= nom_b ? bdd_true : mtbdd_undefined;
         } else {
-            assert(0); // failure
+            return SYLVAN_ERR_INVALID;
         }
     } else {
         /* Get top variable */
@@ -2473,46 +2527,70 @@ MTBDD mtbdd_geq_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
         blow  = vb == var ? node_getlow(b, nb)  : b;
         bhigh = vb == var ? node_gethigh(b, nb) : b;
 
-        mtbdd_geq_rec_SPAWN(lace, ahigh, bhigh, shortcircuit);
-        result = mtbdd_geq_rec_CALL(lace, alow, blow, shortcircuit);
-        if (result != mtbdd_geq_rec_SYNC(lace)) result = mtbdd_undefined;
+        MTBDD low = mtbdd_invalid;
+        MTBDD high = mtbdd_invalid;
+        mtbdd_refs_pushptr(&low);
+        mtbdd_refs_pushptr(&high);
+        mtbdd_geq_rec_SPAWN(lace, &high, ahigh, bhigh, shortcircuit);
+        int status = mtbdd_geq_rec_CALL(lace, &low, alow, blow, shortcircuit);
+        if (status == SYLVAN_OK && low == mtbdd_undefined) {
+            atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
+        }
+        int high_status = mtbdd_geq_rec_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+        if (status != SYLVAN_OK) {
+            mtbdd_refs_popptr(2);
+            return status;
+        }
+        computed = low == bdd_true && high == bdd_true ? bdd_true : mtbdd_undefined;
+        mtbdd_refs_popptr(2);
     }
 
-    if (result == mtbdd_undefined) *shortcircuit = 1;
+    if (computed == mtbdd_undefined) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_GEQ, a, b, 0, result)) {
+    if (cache_put3(CACHE_MTBDD_GEQ, a, b, 0, computed)) {
         sylvan_stats_count(MTBDD_GEQ_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    return SYLVAN_OK;
 }
 
-MTBDD mtbdd_geq_CALL(lace_worker* lace, MTBDD a, MTBDD b)
+int mtbdd_geq_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b)
 {
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
-    int shortcircuit = 0;
-    return mtbdd_geq_rec_CALL(lace, a, b, &shortcircuit);
+    atomic_int shortcircuit = 0;
+    return mtbdd_geq_rec_CALL(lace, destination, a, b, &shortcircuit);
 }
 
 /**
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) > b(s), mtbdd_undefined otherwise.
  * For domains not in a / b, assume True.
  */
-TASK(MTBDD, mtbdd_greater_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+TASK(int, mtbdd_greater_rec, MTBDD*, result, MTBDD, a, MTBDD, b, atomic_int*, shortcircuit)
 
-MTBDD mtbdd_greater_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcircuit)
+int mtbdd_greater_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, atomic_int* shortcircuit)
 {
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || shortcircuit == NULL) {
+        return SYLVAN_ERR_INVALID;
+    }
+
     /* Check short circuit */
-    if (*shortcircuit) return mtbdd_undefined;
+    if (atomic_load_explicit(shortcircuit, memory_order_relaxed)) {
+        *destination = mtbdd_undefined;
+        return SYLVAN_OK;
+    }
 
     /* Check terminal case */
-    if (a == b) return mtbdd_undefined;
+    if (a == b) { *destination = mtbdd_undefined; return SYLVAN_OK; }
 
     /* For partial functions, just return true */
-    if (a == mtbdd_undefined) return bdd_true;
-    if (b == mtbdd_undefined) return bdd_true;
+    if (a == mtbdd_undefined || b == mtbdd_undefined) {
+        *destination = bdd_true;
+        return SYLVAN_OK;
+    }
 
     /* Maybe perform garbage collection */
     sylvan_gc_test(lace);
@@ -2521,10 +2599,11 @@ MTBDD mtbdd_greater_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcirc
     sylvan_stats_count(MTBDD_GREATER);
 
     /* Check cache */
-    MTBDD result;
-    if (cache_get3(CACHE_MTBDD_GREATER, a, b, 0, &result)) {
+    MTBDD computed = mtbdd_invalid;
+    if (cache_get3(CACHE_MTBDD_GREATER, a, b, 0, &computed)) {
         sylvan_stats_count(MTBDD_GREATER_CACHED);
-        return result;
+        *destination = computed;
+        return SYLVAN_OK;
     }
 
     mtbddnode* na = MTBDD_GETNODE(a);
@@ -2538,12 +2617,10 @@ MTBDD mtbdd_greater_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcirc
 
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
             // type 0 = integer
-            result = *(int64_t*)(&va) > *(int64_t*)(&vb) ? bdd_true : mtbdd_undefined;
+            computed = mtbdd_leaf_int64(a) > mtbdd_leaf_int64(b) ? bdd_true : mtbdd_undefined;
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // type 1 = double
-            double vva = *(double*)&va;
-            double vvb = *(double*)&vb;
-            result = vva > vvb ? bdd_true : mtbdd_undefined;
+            computed = mtbdd_leaf_double(a) > mtbdd_leaf_double(b) ? bdd_true : mtbdd_undefined;
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // type 2 = fraction
             int64_t nom_a = (int32_t)(va>>32);
@@ -2554,9 +2631,9 @@ MTBDD mtbdd_greater_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcirc
             uint32_t c = gcd((uint32_t)da, (uint32_t)db);
             nom_a *= db/c;
             nom_b *= da/c;
-            result = nom_a > nom_b ? bdd_true : mtbdd_undefined;
+            computed = nom_a > nom_b ? bdd_true : mtbdd_undefined;
         } else {
-            assert(0); // failure
+            return SYLVAN_ERR_INVALID;
         }
     } else {
         /* Get top variable */
@@ -2571,27 +2648,42 @@ MTBDD mtbdd_greater_rec_CALL(lace_worker* lace, MTBDD a, MTBDD b, int* shortcirc
         blow  = vb == var ? node_getlow(b, nb)  : b;
         bhigh = vb == var ? node_gethigh(b, nb) : b;
 
-        mtbdd_greater_rec_SPAWN(lace, ahigh, bhigh, shortcircuit);
-        result = mtbdd_greater_rec_CALL(lace, alow, blow, shortcircuit);
-        if (result != mtbdd_greater_rec_SYNC(lace)) result = mtbdd_undefined;
+        MTBDD low = mtbdd_invalid;
+        MTBDD high = mtbdd_invalid;
+        mtbdd_refs_pushptr(&low);
+        mtbdd_refs_pushptr(&high);
+        mtbdd_greater_rec_SPAWN(lace, &high, ahigh, bhigh, shortcircuit);
+        int status = mtbdd_greater_rec_CALL(lace, &low, alow, blow, shortcircuit);
+        if (status == SYLVAN_OK && low == mtbdd_undefined) {
+            atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
+        }
+        int high_status = mtbdd_greater_rec_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+        if (status != SYLVAN_OK) {
+            mtbdd_refs_popptr(2);
+            return status;
+        }
+        computed = low == bdd_true && high == bdd_true ? bdd_true : mtbdd_undefined;
+        mtbdd_refs_popptr(2);
     }
 
-    if (result == mtbdd_undefined) *shortcircuit = 1;
+    if (computed == mtbdd_undefined) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_GREATER, a, b, 0, result)) {
+    if (cache_put3(CACHE_MTBDD_GREATER, a, b, 0, computed)) {
         sylvan_stats_count(MTBDD_GREATER_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    return SYLVAN_OK;
 }
 
-MTBDD mtbdd_gt_CALL(lace_worker* lace, MTBDD a, MTBDD b)
+int mtbdd_gt_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b)
 {
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
-    int shortcircuit = 0;
-    return mtbdd_greater_rec_CALL(lace, a, b, &shortcircuit);
+    atomic_int shortcircuit = 0;
+    return mtbdd_greater_rec_CALL(lace, destination, a, b, &shortcircuit);
 }
 
 /**

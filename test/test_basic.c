@@ -947,6 +947,92 @@ test_mtbdd_equal_double_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+TASK(int, test_mtbdd_order_destinations)
+int
+test_mtbdd_order_destinations_CALL(lace_worker *lace)
+{
+    MTBDD one = mtbdd_int64(1);
+    MTBDD two = mtbdd_invalid;
+    MTBDD three = mtbdd_invalid;
+    MTBDD four = mtbdd_invalid;
+    MTBDD double_one = mtbdd_invalid;
+    MTBDD double_two = mtbdd_invalid;
+    MTBDD fraction_one_half = mtbdd_invalid;
+    MTBDD fraction_two_thirds = mtbdd_invalid;
+    BDD x = mtbdd_invalid;
+    MTBDD a = mtbdd_invalid;
+    MTBDD b = mtbdd_invalid;
+    MTBDD result = mtbdd_invalid;
+    MTBDD parallel_result = mtbdd_invalid;
+    MTBDD inplace = mtbdd_invalid;
+    MTBDD unchanged = bdd_true;
+
+    mtbdd_refs_pushptr(&one);
+    two = mtbdd_int64(2);
+    mtbdd_refs_pushptr(&two);
+    three = mtbdd_int64(3);
+    mtbdd_refs_pushptr(&three);
+    four = mtbdd_int64(4);
+    mtbdd_refs_pushptr(&four);
+    double_one = mtbdd_double(1.0);
+    mtbdd_refs_pushptr(&double_one);
+    double_two = mtbdd_double(2.0);
+    mtbdd_refs_pushptr(&double_two);
+    fraction_one_half = mtbdd_fraction(1, 2);
+    mtbdd_refs_pushptr(&fraction_one_half);
+    fraction_two_thirds = mtbdd_fraction(2, 3);
+    mtbdd_refs_pushptr(&fraction_two_thirds);
+    mtbdd_refs_pushptr(&x);
+    mtbdd_refs_pushptr(&a);
+    mtbdd_refs_pushptr(&b);
+    mtbdd_refs_pushptr(&result);
+    mtbdd_refs_pushptr(&parallel_result);
+    mtbdd_refs_pushptr(&inplace);
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_assert(bdd_var_at_level(&x, 0) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &a, x, three, one) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &b, x, four, two) == SYLVAN_OK);
+
+    mtbdd_leq_SPAWN(lace, &parallel_result, a, b);
+    int status = mtbdd_gt_CALL(lace, &result, b, a);
+    int parallel_status = mtbdd_leq_SYNC(lace);
+    test_assert(status == SYLVAN_OK && result == bdd_true);
+    test_assert(parallel_status == SYLVAN_OK && parallel_result == bdd_true);
+
+    test_assert(mtbdd_lt(&result, a, b) == SYLVAN_OK && result == bdd_true);
+    test_assert(mtbdd_geq(&result, a, b) == SYLVAN_OK && result == mtbdd_undefined);
+    test_assert(mtbdd_gt(&result, a, b) == SYLVAN_OK && result == mtbdd_undefined);
+    test_assert(mtbdd_leq(&result, a, a) == SYLVAN_OK && result == bdd_true);
+    test_assert(mtbdd_lt(&result, a, a) == SYLVAN_OK && result == mtbdd_undefined);
+    test_assert(mtbdd_geq(&result, a, a) == SYLVAN_OK && result == bdd_true);
+    test_assert(mtbdd_gt(&result, a, a) == SYLVAN_OK && result == mtbdd_undefined);
+    test_assert(mtbdd_lt(&result, fraction_one_half, fraction_two_thirds) == SYLVAN_OK);
+    test_assert(result == bdd_true);
+    test_assert(mtbdd_geq(&result, double_two, double_one) == SYLVAN_OK);
+    test_assert(result == bdd_true);
+    test_assert(mtbdd_leq(&result, mtbdd_undefined, one) == SYLVAN_OK);
+    test_assert(result == bdd_true);
+
+    inplace = a;
+    test_assert(mtbdd_lt(&inplace, inplace, b) == SYLVAN_OK);
+    test_assert(inplace == bdd_true);
+    sylvan_gc_CALL(lace);
+    test_assert(inplace == bdd_true);
+
+    test_assert(mtbdd_leq(NULL, a, b) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_lt(&unchanged, mtbdd_invalid, b) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_geq(&unchanged, a, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_gt(&unchanged, one, double_one) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+
+    sylvan_gc_CALL(lace);
+    mtbdd_refs_popptr(15);
+    return 0;
+}
+
 static int
 test_abstract_fail_on_four(lace_worker *lace, MTBDD *destination, MTBDD a, MTBDD b, int k)
 {
@@ -2592,6 +2678,7 @@ int runtests_CALL(lace_worker* lace)
         if (test_mtbdd_apply_destinations_CALL(lace)) return 1;
         if (test_mtbdd_threshold_destinations_CALL(lace)) return 1;
         if (test_mtbdd_equal_double_destinations_CALL(lace)) return 1;
+        if (test_mtbdd_order_destinations_CALL(lace)) return 1;
         if (test_mtbdd_abstract_destinations_CALL(lace)) return 1;
         if (test_mtbdd_eval_compose_destinations_CALL(lace)) return 1;
         if (test_protected_destinations_CALL(lace)) return 1;

@@ -256,25 +256,25 @@ TASK(int, mtbdd_equal_rel_double, MTBDD*, result, MTBDD, a, MTBDD, b, double, c)
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) <= b(s), mtbdd_undefined otherwise.
  * For domains not in a / b, assume True.
  */
-TASK(MTBDD, mtbdd_leq, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_leq, MTBDD*, result, MTBDD, a, MTBDD, b);
 
 /**
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) < b(s), mtbdd_undefined otherwise.
  * For domains not in a / b, assume True.
  */
-TASK(MTBDD, mtbdd_lt, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_lt, MTBDD*, result, MTBDD, a, MTBDD, b);
 
 /**
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) >= b(s), mtbdd_undefined otherwise.
  * For domains not in a / b, assume True.
  */
-TASK(MTBDD, mtbdd_geq, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_geq, MTBDD*, result, MTBDD, a, MTBDD, b);
 
 /**
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) > b(s), mtbdd_undefined otherwise.
  * For domains not in a / b, assume True.
  */
-TASK(MTBDD, mtbdd_gt, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_gt, MTBDD*, result, MTBDD, a, MTBDD, b);
 
 /**
  * Calculate the support of a MTBDD, i.e. the cube of all variables that appear in the MTBDD nodes.

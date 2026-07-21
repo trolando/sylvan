@@ -1646,9 +1646,9 @@ TASK(int, test_care_destinations)
 int
 test_care_destinations_CALL(lace_worker *lace)
 {
-    BDD x = test_bdd_var(0);
-    BDD y = test_bdd_var(1);
-    BDD z = test_bdd_var(2);
+    BDD x = mtbdd_invalid;
+    BDD y = mtbdd_invalid;
+    BDD z = mtbdd_invalid;
     BDD f = mtbdd_invalid;
     BDD care = mtbdd_invalid;
     BDD cube = mtbdd_invalid;
@@ -1675,6 +1675,10 @@ test_care_destinations_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&restrict_slice);
     mtbdd_refs_pushptr(&unchanged);
     mtbdd_refs_pushptr(&inplace);
+
+    x = test_bdd_var(0);
+    y = test_bdd_var(1);
+    z = test_bdd_var(2);
 
     test_assert(bdd_xor_CALL(lace, &f, x, y) == SYLVAN_OK);
     test_assert(bdd_xor_CALL(lace, &care, x, z) == SYLVAN_OK);

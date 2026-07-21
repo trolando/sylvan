@@ -290,50 +290,66 @@ void compute_highest_action_CALL(lace_worker* lace, LISTDD dd, LISTDD meta, _Ato
  * Compute the BDD equivalent of the LDD of a set of states.
  */
 static uint64_t bdd_from_ldd_id;
-TASK(MTBDD, bdd_from_ldd, LISTDD, dd, LISTDD, bits_dd, uint32_t, firstvar)
-MTBDD bdd_from_ldd_CALL(lace_worker* lace, LISTDD dd, LISTDD bits_dd, uint32_t firstvar)
+TASK(int, bdd_from_ldd, MTBDD*, result, LISTDD, dd, LISTDD, bits_dd, uint32_t, firstvar)
+int bdd_from_ldd_CALL(lace_worker* lace, MTBDD *destination, LISTDD dd, LISTDD bits_dd, uint32_t firstvar)
 {
+    if (destination == NULL || dd == listdd_invalid || bits_dd == listdd_invalid) return SYLVAN_ERR_INVALID;
     /* simple for leaves */
-    if (dd == listdd_empty) return bdd_false;
-    if (dd == listdd_empty_list) return bdd_true;
+    if (dd == listdd_empty || dd == listdd_empty_list) {
+        *destination = dd == listdd_empty ? bdd_false : bdd_true;
+        return SYLVAN_OK;
+    }
 
-    MTBDD result;
+    MTBDD computed = mtbdd_invalid;
     /* get from cache */
     /* note: some assumptions about the encoding... */
-    if (cache_get3(bdd_from_ldd_id, dd, bits_dd, firstvar, &result)) return result;
+    if (cache_get3(bdd_from_ldd_id, dd, bits_dd, firstvar, &computed)) {
+        *destination = computed;
+        return SYLVAN_OK;
+    }
 
     mddnode* n = LDD_GETNODE(dd);
     mddnode* nbits = LDD_GETNODE(bits_dd);
     int bits = (int)mddnode_getvalue(nbits);
+    MTBDD down = mtbdd_invalid;
+    MTBDD right = mtbdd_invalid;
+    mtbdd_refs_pushptr(&down);
+    mtbdd_refs_pushptr(&right);
+    mtbdd_refs_pushptr(&computed);
 
     /* spawn right, same bits_dd and firstvar */
-    mtbdd_refs_spawn(bdd_from_ldd_SPAWN(lace, mddnode_getright(n), bits_dd, firstvar));
+    bdd_from_ldd_SPAWN(lace, &right, mddnode_getright(n), bits_dd, firstvar);
 
     /* call down, with next bits_dd and firstvar */
-    MTBDD down = bdd_from_ldd_CALL(lace, mddnode_getdown(n), mddnode_getdown(nbits), firstvar + 2*bits);
+    int status = bdd_from_ldd_CALL(lace, &down, mddnode_getdown(n), mddnode_getdown(nbits), firstvar + 2*bits);
 
     /* encode current value */
     uint32_t val = mddnode_getvalue(n);
-    for (int i=0; i<bits; i++) {
+    for (int i=0; status == SYLVAN_OK && i<bits; i++) {
         /* encode with high bit first */
         int bit = bits-i-1;
-        if (val & (1LL<<i)) down = mtbdd_make_node(firstvar + 2*bit, bdd_false, down);
-        else down = mtbdd_make_node(firstvar + 2*bit, down, bdd_false);
+        if (val & (1LL<<i)) status = _mtbdd_try_make_node(&down, firstvar + 2*bit, bdd_false, down);
+        else status = _mtbdd_try_make_node(&down, firstvar + 2*bit, down, bdd_false);
     }
 
     /* sync right */
-    mtbdd_refs_push(down);
-    MTBDD right = mtbdd_refs_sync(bdd_from_ldd_SYNC(lace));
+    int right_status = bdd_from_ldd_SYNC(lace);
+    if (status == SYLVAN_OK) status = right_status;
 
     /* take union of current and right */
-    mtbdd_refs_push(right);
-    result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(down), bdd_not(right)));
-    mtbdd_refs_pop(2);
+    if (status == SYLVAN_OK) {
+        status = bdd_and_CALL(lace, &computed, bdd_not(down), bdd_not(right));
+        if (status == SYLVAN_OK) computed = bdd_not(computed);
+    }
 
     /* put in cache */
-    cache_put3(bdd_from_ldd_id, dd, bits_dd, firstvar, result);
+    if (status == SYLVAN_OK) {
+        cache_put3(bdd_from_ldd_id, dd, bits_dd, firstvar, computed);
+        *destination = computed;
+    }
 
-    return result;
+    mtbdd_refs_popptr(3);
+    return status;
 }
 
 /**
@@ -708,9 +724,10 @@ void run_CALL(lace_worker* lace)
     fwrite(&actionbits, sizeof(int), 1, f);
 
     // Write initial state...
-    MTBDD new_initial = bdd_from_ldd(initial->dd, bits_dd, 0);
+    MTBDD new_initial = mtbdd_invalid;
+    mtbdd_refs_pushptr(&new_initial);
+    if (bdd_from_ldd(&new_initial, initial->dd, bits_dd, 0) != SYLVAN_OK) Abort("Out of memory!\n");
     assert((size_t)mtbdd_sat_count(new_initial, totalbits) == (size_t)listdd_count(initial->dd));
-    mtbdd_refs_push(new_initial);
     {
         int k = -1;
         fwrite(&k, sizeof(int), 1, f);
@@ -718,9 +735,10 @@ void run_CALL(lace_worker* lace)
     }
 
     // Custom operation that converts to BDD given number of bits for each level
-    MTBDD new_states = bdd_from_ldd(states->dd, bits_dd, 0);
+    MTBDD new_states = mtbdd_invalid;
+    mtbdd_refs_pushptr(&new_states);
+    if (bdd_from_ldd(&new_states, states->dd, bits_dd, 0) != SYLVAN_OK) Abort("Out of memory!\n");
     assert((size_t)mtbdd_sat_count(new_states, totalbits) == (size_t)listdd_count(states->dd));
-    mtbdd_refs_push(new_states);
 
     // Report size of BDD
     if (verbose) {
@@ -761,8 +779,11 @@ void run_CALL(lace_worker* lace)
             LISTDD succ = listdd_invalid;
             listdd_refs_pushptr(&succ);
             if (listdd_rel_next(&succ, states->dd, next[i]->dd, next[i]->meta) != SYLVAN_OK) Abort("Out of memory!\n");
-            MTBDD test2 = bdd_from_ldd(succ, bits_dd, 0);
+            MTBDD test2 = mtbdd_invalid;
+            mtbdd_refs_pushptr(&test2);
+            if (bdd_from_ldd(&test2, succ, bits_dd, 0) != SYLVAN_OK) Abort("Out of memory!\n");
             if (test != test2) Abort("Conversion error!\n");
+            mtbdd_refs_popptr(1);
             listdd_refs_popptr(1);
             mtbdd_refs_pop(1);
             mtbdd_refs_popptr(1);
@@ -779,7 +800,8 @@ void run_CALL(lace_worker* lace)
         fwrite(&k, sizeof(int), 1, f);
         mtbdd_writer_tobinary(f, &new_states, 1);
     }
-    mtbdd_refs_pop(1);  // new_states
+    mtbdd_refs_popptr(1);  // new_states
+    mtbdd_refs_popptr(1);  // new_initial
 
     // Write action labels
     fwrite(&action_labels_count, sizeof(int), 1, f);

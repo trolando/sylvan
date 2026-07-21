@@ -815,23 +815,55 @@ int test_zdd_not_CALL(lace_worker* lace)
      * Test negation with random sets
      */
 
-    BDD bdd_dom = test_bdd_set_from_levels((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+    BDD bdd_dom = mtbdd_invalid;
+    BDD bdd_set = bdd_false;
+    ZDD zdd_set = zdd_invalid;
+    ZDD expected = zdd_invalid;
+    ZDD result = zdd_invalid;
+    ZDD parallel_result = zdd_invalid;
+    ZDD unchanged = zdd_base;
+    mtbdd_refs_pushptr(&bdd_dom);
+    mtbdd_refs_pushptr(&bdd_set);
+    zdd_refs_pushptr(&zdd_set);
+    zdd_refs_pushptr(&expected);
+    zdd_refs_pushptr(&result);
+    zdd_refs_pushptr(&parallel_result);
+    zdd_refs_pushptr(&unchanged);
+
+    bdd_dom = test_bdd_set_from_levels((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
 
     int count = rng(0,100);
-    BDD bdd_set = bdd_false;
     for (int i=0; i<count; i++) {
         uint8_t arr[8];
         for (int j=0; j<8; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set = test_bdd_or_cube(bdd_set, bdd_dom, arr);
+        test_assert(bdd_or_cube(&bdd_set, bdd_set, bdd_dom, arr) == SYLVAN_OK);
     }
 
-    ZDD zdd_set = test_zdd_from_bdd_value(bdd_set, bdd_dom);
-    ZDD zdd_set_inv = test_zdd_from_bdd_value(bdd_not(bdd_set), bdd_dom);
-    test_assert((size_t)mtbdd_sat_count(bdd_not(bdd_set), 8) == (size_t)zdd_path_count(zdd_set_inv));
-    test_assert(zdd_set_inv == zdd_not(zdd_set, bdd_dom));
+    zdd_set = test_zdd_from_bdd_value(bdd_set, bdd_dom);
+    expected = test_zdd_from_bdd_value(bdd_not(bdd_set), bdd_dom);
+    test_assert((size_t)mtbdd_sat_count(bdd_not(bdd_set), 8) == (size_t)zdd_path_count(expected));
+
+    zdd_not_SPAWN(lace, &parallel_result, zdd_set, bdd_dom);
+    int status = zdd_not_CALL(lace, &result, zdd_set, bdd_dom);
+    int parallel_status = zdd_not_SYNC(lace);
+    test_assert(status == SYLVAN_OK && result == expected);
+    test_assert(parallel_status == SYLVAN_OK && parallel_result == expected);
+
+    result = zdd_set;
+    test_assert(zdd_not(&result, result, bdd_dom) == SYLVAN_OK && result == expected);
+    sylvan_gc_CALL(lace);
+    test_assert(result == expected);
+
+    test_assert(zdd_not(&unchanged, zdd_invalid, bdd_dom) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_not(&unchanged, zdd_set, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_not(NULL, zdd_set, bdd_dom) == SYLVAN_ERR_INVALID);
+
+    zdd_refs_popptr(5);
+    mtbdd_refs_popptr(2);
 
     return 0;
-    (void)lace;
 }
 
 TASK(int, test_zdd_ite)
@@ -848,17 +880,39 @@ int test_zdd_ite_CALL(lace_worker* lace)
     test_assert(dom_arr != NULL);
     test_assert(arr != NULL);
     for (int i=0; i<nvars; i++) dom_arr[i] = i;
-    BDD bdd_dom = test_bdd_set_from_levels(dom_arr, nvars);
+    BDD bdd_dom = mtbdd_invalid;
+    BDD set_a = bdd_false;
+    BDD set_b = bdd_false;
+    BDD set_c = bdd_false;
+    BDD bdd_expected = mtbdd_invalid;
+    ZDD zdd_set_a = zdd_invalid;
+    ZDD zdd_set_b = zdd_invalid;
+    ZDD zdd_set_c = zdd_invalid;
+    ZDD expected = zdd_invalid;
+    ZDD result = zdd_invalid;
+    ZDD parallel_result = zdd_invalid;
+    ZDD unchanged = zdd_base;
+    mtbdd_refs_pushptr(&bdd_dom);
+    mtbdd_refs_pushptr(&set_a);
+    mtbdd_refs_pushptr(&set_b);
+    mtbdd_refs_pushptr(&set_c);
+    mtbdd_refs_pushptr(&bdd_expected);
+    zdd_refs_pushptr(&zdd_set_a);
+    zdd_refs_pushptr(&zdd_set_b);
+    zdd_refs_pushptr(&zdd_set_c);
+    zdd_refs_pushptr(&expected);
+    zdd_refs_pushptr(&result);
+    zdd_refs_pushptr(&parallel_result);
+    zdd_refs_pushptr(&unchanged);
+
+    bdd_dom = test_bdd_set_from_levels(dom_arr, nvars);
 
     // Create three random sets
-    BDD set_a, set_b, set_c;
-    set_a = set_b = set_c = bdd_false;
-
     {
         int count = rng(0, 100);
         for (int i=0; i<count; i++) {
             for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-            set_a = test_bdd_or_cube(set_a, bdd_dom, arr);
+            test_assert(bdd_or_cube(&set_a, set_a, bdd_dom, arr) == SYLVAN_OK);
         }
     }
 
@@ -866,7 +920,7 @@ int test_zdd_ite_CALL(lace_worker* lace)
         int count = rng(0, 100);
         for (int i=0; i<count; i++) {
             for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-            set_b = test_bdd_or_cube(set_b, bdd_dom, arr);
+            test_assert(bdd_or_cube(&set_b, set_b, bdd_dom, arr) == SYLVAN_OK);
         }
     }
 
@@ -874,21 +928,40 @@ int test_zdd_ite_CALL(lace_worker* lace)
         int count = rng(0, 100);
         for (int i=0; i<count; i++) {
             for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-            set_c = test_bdd_or_cube(set_c, bdd_dom, arr);
+            test_assert(bdd_or_cube(&set_c, set_c, bdd_dom, arr) == SYLVAN_OK);
         }
     }
 
-    ZDD zdd_set_a = test_zdd_from_bdd_value(set_a, bdd_dom);
-    ZDD zdd_set_b = test_zdd_from_bdd_value(set_b, bdd_dom);
-    ZDD zdd_set_c = test_zdd_from_bdd_value(set_c, bdd_dom);
-    MTBDD bdd_test_result = test_bdd_ite(set_a, set_b, set_c);
-    ZDD zdd_test_result = zdd_ite(zdd_set_a, zdd_set_b, zdd_set_c, bdd_dom);
-    test_assert(test_zdd_from_bdd_value(bdd_test_result, bdd_dom) == zdd_test_result);
+    zdd_set_a = test_zdd_from_bdd_value(set_a, bdd_dom);
+    zdd_set_b = test_zdd_from_bdd_value(set_b, bdd_dom);
+    zdd_set_c = test_zdd_from_bdd_value(set_c, bdd_dom);
+    bdd_expected = test_bdd_ite(set_a, set_b, set_c);
+    expected = test_zdd_from_bdd_value(bdd_expected, bdd_dom);
+
+    zdd_ite_SPAWN(lace, &parallel_result, zdd_set_a, zdd_set_b, zdd_set_c, bdd_dom);
+    int status = zdd_ite_CALL(lace, &result, zdd_set_a, zdd_set_b, zdd_set_c, bdd_dom);
+    int parallel_status = zdd_ite_SYNC(lace);
+    test_assert(status == SYLVAN_OK && result == expected);
+    test_assert(parallel_status == SYLVAN_OK && parallel_result == expected);
+
+    result = zdd_set_a;
+    test_assert(zdd_ite(&result, result, zdd_set_b, zdd_set_c, bdd_dom) == SYLVAN_OK);
+    test_assert(result == expected);
+    sylvan_gc_CALL(lace);
+    test_assert(result == expected);
+
+    test_assert(zdd_ite(&unchanged, zdd_invalid, zdd_set_b, zdd_set_c, bdd_dom) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_ite(&unchanged, zdd_set_a, zdd_set_b, zdd_set_c, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_ite(NULL, zdd_set_a, zdd_set_b, zdd_set_c, bdd_dom) == SYLVAN_ERR_INVALID);
+
+    zdd_refs_popptr(7);
+    mtbdd_refs_popptr(5);
 
     free(arr);
     free(dom_arr);
     return 0;
-    (void)lace;
 }
 
 TASK(int, test_zdd_exists)

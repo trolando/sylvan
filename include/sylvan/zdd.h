@@ -212,14 +212,18 @@ zdd_node_count(const ZDD dd)
 
 /**
  * Compute IF <f> THEN <g> ELSE <h>.
- * Assuming f, g, h are all Boolean and on the same domain <dom>.
+ * Assuming f, g, h are all Boolean and on the same domain <domain>. The caller
+ * must protect <result>. Returns SYLVAN_OK on success or a negative status on
+ * failure, leaving <result> unchanged.
  */
-TASK(ZDD, zdd_ite, ZDD, f, ZDD, g, ZDD, h, BDDSET, domain);
+TASK(int, zdd_ite, ZDD*, result, ZDD, f, ZDD, g, ZDD, h, BDDSET, domain);
 
 /**
- * Compute the negation of a ZDD w.r.t. the given domain.
+ * Compute the negation of a ZDD with respect to the given domain. The caller
+ * must protect <result>. Returns SYLVAN_OK on success or a negative status on
+ * failure, leaving <result> unchanged.
  */
-TASK(ZDD, zdd_not, ZDD, dd, BDDSET, domain);
+TASK(int, zdd_not, ZDD*, result, ZDD, dd, BDDSET, domain);
 
 /**
  * Compute logical AND of <a> and <b>. The caller must protect <result>.

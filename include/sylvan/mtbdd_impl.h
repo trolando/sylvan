@@ -291,12 +291,12 @@ TASK(int, mtbdd_compose, MTBDD*, result, MTBDD, dd, MTBDDMAP, map);
 /**
  * Compute minimal leaf in the MTBDD (for Integer, Double, Rational MTBDDs)
  */
-TASK(MTBDD, mtbdd_find_min, MTBDD, dd);
+TASK(int, mtbdd_find_min, MTBDD*, result, MTBDD, dd);
 
 /**
  * Compute maximal leaf in the MTBDD (for Integer, Double, Rational MTBDDs)
  */
-TASK(MTBDD, mtbdd_find_max, MTBDD, dd);
+TASK(int, mtbdd_find_max, MTBDD*, result, MTBDD, dd);
 
 TASK(void, mtbdd_enumerate_parallel, MTBDD, dd, mtbdd_enumerate_cb, cb, void*, context);
 

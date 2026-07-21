@@ -2658,12 +2658,14 @@ int mtbdd_compose_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDDMAP 
 /**
  * Compute minimum leaf in the MTBDD (for Integer, Double, Rational MTBDDs)
  */
-MTBDD mtbdd_find_min_CALL(lace_worker* lace, MTBDD a)
+int mtbdd_find_min_CALL(lace_worker* lace, MTBDD *destination, MTBDD a)
 {
+    if (destination == NULL || a == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
     /* Check terminal case */
-    if (a == mtbdd_undefined) return mtbdd_undefined;
+    if (a == mtbdd_undefined) { *destination = mtbdd_undefined; return SYLVAN_OK; }
     mtbddnode* na = MTBDD_GETNODE(a);
-    if (mtbddnode_isleaf(na)) return a;
+    if (mtbddnode_isleaf(na)) { *destination = a; return SYLVAN_OK; }
 
     /* Maybe perform garbage collection */
     sylvan_gc_test(lace);
@@ -2675,19 +2677,33 @@ MTBDD mtbdd_find_min_CALL(lace_worker* lace, MTBDD a)
     MTBDD result;
     if (cache_get3(CACHE_MTBDD_MINIMUM, a, 0, 0, &result)) {
         sylvan_stats_count(MTBDD_MINIMUM_CACHED);
-        return result;
+        *destination = result;
+        return SYLVAN_OK;
     }
 
     /* Call recursive */
-    mtbdd_find_min_SPAWN(lace, node_getlow(a, na));
-    MTBDD high = mtbdd_find_min_CALL(lace, node_gethigh(a, na));
-    MTBDD low = mtbdd_find_min_SYNC(lace);
+    MTBDD low = mtbdd_invalid;
+    MTBDD high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+    mtbdd_find_min_SPAWN(lace, &low, node_getlow(a, na));
+    int status = mtbdd_find_min_CALL(lace, &high, node_gethigh(a, na));
+    int low_status = mtbdd_find_min_SYNC(lace);
+    if (status == SYLVAN_OK) status = low_status;
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(2);
+        return status;
+    }
 
-    /* Determine lowest */
-    mtbddnode* nl = MTBDD_GETNODE(low);
-    mtbddnode* nh = MTBDD_GETNODE(high);
+    /* Determine lowest; undefined is not a numeric leaf. */
+    mtbddnode* nl = low == mtbdd_undefined ? NULL : MTBDD_GETNODE(low);
+    mtbddnode* nh = high == mtbdd_undefined ? NULL : MTBDD_GETNODE(high);
 
-    if (mtbddnode_gettype(nl) == 0 && mtbddnode_gettype(nh) == 0) {
+    if (low == mtbdd_undefined) {
+        result = high;
+    } else if (high == mtbdd_undefined) {
+        result = low;
+    } else if (mtbddnode_gettype(nl) == 0 && mtbddnode_gettype(nh) == 0) {
         result = mtbdd_leaf_int64(low) < mtbdd_leaf_int64(high) ? low : high;
     } else if (mtbddnode_gettype(nl) == 1 && mtbddnode_gettype(nh) == 1) {
         result = mtbdd_leaf_double(low) < mtbdd_leaf_double(high) ? low : high;
@@ -2703,7 +2719,8 @@ MTBDD mtbdd_find_min_CALL(lace_worker* lace, MTBDD a)
         nom_h *= denom_l/c;
         result = nom_l < nom_h ? low : high;
     } else {
-        assert(0); // failure
+        mtbdd_refs_popptr(2);
+        return SYLVAN_ERR_INVALID;
     }
 
     /* Store in cache */
@@ -2711,18 +2728,22 @@ MTBDD mtbdd_find_min_CALL(lace_worker* lace, MTBDD a)
         sylvan_stats_count(MTBDD_MINIMUM_CACHEDPUT);
     }
 
-    return result;
+    *destination = result;
+    mtbdd_refs_popptr(2);
+    return SYLVAN_OK;
 }
 
 /**
  * Compute maximum leaf in the MTBDD (for Integer, Double, Rational MTBDDs)
  */
-MTBDD mtbdd_find_max_CALL(lace_worker* lace, MTBDD a)
+int mtbdd_find_max_CALL(lace_worker* lace, MTBDD *destination, MTBDD a)
 {
+    if (destination == NULL || a == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
     /* Check terminal case */
-    if (a == mtbdd_undefined) return mtbdd_undefined;
+    if (a == mtbdd_undefined) { *destination = mtbdd_undefined; return SYLVAN_OK; }
     mtbddnode* na = MTBDD_GETNODE(a);
-    if (mtbddnode_isleaf(na)) return a;
+    if (mtbddnode_isleaf(na)) { *destination = a; return SYLVAN_OK; }
 
     /* Maybe perform garbage collection */
     sylvan_gc_test(lace);
@@ -2734,19 +2755,33 @@ MTBDD mtbdd_find_max_CALL(lace_worker* lace, MTBDD a)
     MTBDD result;
     if (cache_get3(CACHE_MTBDD_MAXIMUM, a, 0, 0, &result)) {
         sylvan_stats_count(MTBDD_MAXIMUM_CACHED);
-        return result;
+        *destination = result;
+        return SYLVAN_OK;
     }
 
     /* Call recursive */
-    mtbdd_find_max_SPAWN(lace, node_getlow(a, na));
-    MTBDD high = mtbdd_find_max_CALL(lace, node_gethigh(a, na));
-    MTBDD low = mtbdd_find_max_SYNC(lace);
+    MTBDD low = mtbdd_invalid;
+    MTBDD high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+    mtbdd_find_max_SPAWN(lace, &low, node_getlow(a, na));
+    int status = mtbdd_find_max_CALL(lace, &high, node_gethigh(a, na));
+    int low_status = mtbdd_find_max_SYNC(lace);
+    if (status == SYLVAN_OK) status = low_status;
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(2);
+        return status;
+    }
 
-    /* Determine highest */
-    mtbddnode* nl = MTBDD_GETNODE(low);
-    mtbddnode* nh = MTBDD_GETNODE(high);
+    /* Determine highest; undefined is not a numeric leaf. */
+    mtbddnode* nl = low == mtbdd_undefined ? NULL : MTBDD_GETNODE(low);
+    mtbddnode* nh = high == mtbdd_undefined ? NULL : MTBDD_GETNODE(high);
 
-    if (mtbddnode_gettype(nl) == 0 && mtbddnode_gettype(nh) == 0) {
+    if (low == mtbdd_undefined) {
+        result = high;
+    } else if (high == mtbdd_undefined) {
+        result = low;
+    } else if (mtbddnode_gettype(nl) == 0 && mtbddnode_gettype(nh) == 0) {
         result = mtbdd_leaf_int64(low) > mtbdd_leaf_int64(high) ? low : high;
     } else if (mtbddnode_gettype(nl) == 1 && mtbddnode_gettype(nh) == 1) {
         result = mtbdd_leaf_double(low) > mtbdd_leaf_double(high) ? low : high;
@@ -2762,7 +2797,8 @@ MTBDD mtbdd_find_max_CALL(lace_worker* lace, MTBDD a)
         nom_h *= denom_l/c;
         result = nom_l > nom_h ? low : high;
     } else {
-        assert(0); // failure
+        mtbdd_refs_popptr(2);
+        return SYLVAN_ERR_INVALID;
     }
 
     /* Store in cache */
@@ -2770,7 +2806,9 @@ MTBDD mtbdd_find_max_CALL(lace_worker* lace, MTBDD a)
         sylvan_stats_count(MTBDD_MAXIMUM_CACHEDPUT);
     }
 
-    return result;
+    *destination = result;
+    mtbdd_refs_popptr(2);
+    return SYLVAN_OK;
 }
 
 /**

@@ -447,14 +447,18 @@ static inline int mtbdd_support(BDDSET *result, MTBDD dd);
 static inline int mtbdd_compose(MTBDD *result, MTBDD dd, MTBDDMAP map);
 
 /**
- * Compute minimal leaf in the MTBDD (for Integer, Double, Rational MTBDDs)
+ * Compute minimal leaf in the MTBDD. All leaves must have the same supported
+ * numeric type: Integer, Double, or Rational.
+ * Returns SYLVAN_OK on success. On failure, <result> is unchanged.
  */
-static inline MTBDD mtbdd_find_min(MTBDD dd);
+static inline int mtbdd_find_min(MTBDD *result, MTBDD dd);
 
 /**
- * Compute maximal leaf in the MTBDD (for Integer, Double, Rational MTBDDs)
+ * Compute maximal leaf in the MTBDD. All leaves must have the same supported
+ * numeric type: Integer, Double, or Rational.
+ * Returns SYLVAN_OK on success. On failure, <result> is unchanged.
  */
-static inline MTBDD mtbdd_find_max(MTBDD dd);
+static inline int mtbdd_find_max(MTBDD *result, MTBDD dd);
 
 /**
  * Given a MTBDD <dd> and a cube of variables <variables> expected in <dd>,

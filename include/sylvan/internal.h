@@ -52,10 +52,6 @@ int _zdd_try_make_node(ZDD *destination, uint32_t var, ZDD low, ZDD high);
 int _listdd_try_make_node(LISTDD *destination, uint32_t value, LISTDD down, LISTDD right);
 int _listdd_try_make_copy_node(LISTDD *destination, LISTDD down, LISTDD right);
 
-/* Transitional tasks for operations whose callers are not converted yet. */
-TASK(BDD, bdd_and_legacy, BDD, a, BDD, b)
-TASK(BDD, bdd_ite_legacy, BDD, a, BDD, b, BDD, c)
-
 /** The ZDD terminal representing the family containing only the empty set. */
 static const ZDD zdd_base = UINT64_C(1);
 

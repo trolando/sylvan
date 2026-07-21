@@ -133,16 +133,6 @@ bdd_and_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b)
     return SYLVAN_OK;
 }
 
-BDD
-bdd_and_legacy_CALL(lace_worker *lace, BDD a, BDD b)
-{
-    BDD result = mtbdd_invalid;
-    mtbdd_refs_pushptr(&result);
-    int status = bdd_and_CALL(lace, &result, a, b);
-    mtbdd_refs_popptr(1);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
-}
-
 // FIXME improve documentation...
 /*
     bdd_disjoint could be implemented as "bdd_and(a,b)==bdd_false",
@@ -496,16 +486,6 @@ int bdd_ite_CALL(lace_worker *lace, BDD *destination, BDD a, BDD b, BDD c)
     *destination = mark ? bdd_not(computed) : computed;
     mtbdd_refs_popptr(3);
     return SYLVAN_OK;
-}
-
-BDD
-bdd_ite_legacy_CALL(lace_worker *lace, BDD a, BDD b, BDD c)
-{
-    BDD result = mtbdd_invalid;
-    mtbdd_refs_pushptr(&result);
-    int status = bdd_ite_CALL(lace, &result, a, b, c);
-    mtbdd_refs_popptr(1);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
 
 /**

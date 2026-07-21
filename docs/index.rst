@@ -151,27 +151,29 @@ MTBDD variables.
 
 If you use ``mtbdd_protect`` you do not need to update the reference every time the value changes.
 
-The *mtbdd* subpackage also implements thread-local stacks to temporarily store pointers and results of tasks:
+The *mtbdd* subpackage also implements a thread-local stack to temporarily store pointers.
+Result-producing tasks write to protected destinations, so spawned results are rooted before the task can run:
 
 .. code:: c
 
     MTBDD some_thing = ...;
     mtbdd_refs_pushptr(&some_thing);
-    MTBDD result_param1 = mtbdd_false, result_param2 = mtbdd_false;
+    MTBDD result_param1 = mtbdd_invalid, result_param2 = mtbdd_invalid;
     mtbdd_refs_pushptr(&result_param1);
     mtbdd_refs_pushptr(&result_param2);
     while (some_condition) {
-        mtbdd_refs_spawn(SPAWN(an_operation, some_thing, param1));
-        result_param2 = CALL(an_operation, some_thing, param2);
-        result_param1 = mtbdd_refs_sync(SYNC(an_operation));
-        some_thing = CALL(another_operation, result1, result2);
+        an_operation_SPAWN(lace, &result_param1, some_thing, param1);
+        int status = an_operation_CALL(lace, &result_param2, some_thing, param2);
+        int spawned_status = an_operation_SYNC(lace);
+        if (status != SYLVAN_OK || spawned_status != SYLVAN_OK) break;
+        status = another_operation_CALL(lace, &some_thing, result_param1, result_param2);
+        if (status != SYLVAN_OK) break;
     }
     mtbdd_refs_popptr(3);
     return some_thing;
 
-It is recommended to use the thread-local stacks for local variables, and to use the ``protect`` and ``unprotect``
-functions for other variables. Every SPAWN and SYNC of a Lace task that returns an MTBDD must be decorated with
-``mtbdd_refs_stack`` and ``mtbdd_refs_sync`` as in the above example.
+It is recommended to use the thread-local pointer stack for local variables, and to use the ``protect`` and
+``unprotect`` functions for other variables.
 
 References to decision diagrams must be added before a worker may cooperate on garbage collection.
 Workers can cooperate on garbage collection during ``SYNC`` and when functions create nodes or use ``sylvan_gc_test`` to test whether to assist in garbage collection.
@@ -209,8 +211,6 @@ collection (see the above explanation):
 - ``mtbdd_unprotect(bddptr)``: remove a pointer reference to <bddptr>.
 - ``mtbdd_refs_pushptr(bddptr)``: add a local pointer reference to <bddptr>.
 - ``mtbdd_refs_popptr(amount)``: remove the last <amount> local pointer references.
-- ``mtbdd_refs_spawn(SPAWN(...))``: spawn a task that returns a BDD/MTBDD.
-- ``mtbdd_refs_sync(SYNC(...))``: sync a task that returns a BDD/MTBDD.
 
 It is recommended to use ``mtbdd_protect`` and ``mtbdd_unprotect``.
 The C++ objects (defined in ``sylvan_obj.hpp``) handle this automatically.

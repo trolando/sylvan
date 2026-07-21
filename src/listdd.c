@@ -1938,77 +1938,97 @@ LISTDD listdd_project_diff_CALL(lace_worker* lace, const LISTDD mdd, const LISTD
     return result;
 }
 
-LISTDD
-listdd_add(LISTDD a, uint32_t* values, size_t count)
+int
+listdd_add(LISTDD *destination, LISTDD a, const uint32_t *values, size_t count)
 {
-    if (a == listdd_empty) return listdd_singleton(values, count);
+    if (destination == NULL || a == listdd_invalid || (count != 0 && values == NULL)) return SYLVAN_ERR_INVALID;
+    if (a == listdd_empty) return listdd_singleton(destination, values, count);
     if (a == listdd_empty_list) {
-        assert(count == 0);
-        return listdd_empty_list;
+        if (count != 0) return SYLVAN_ERR_INVALID;
+        *destination = listdd_empty_list;
+        return SYLVAN_OK;
     }
-    assert(count != 0);
+    if (count == 0) return SYLVAN_ERR_INVALID;
 
-    mddnode* na = LDD_GETNODE(a);
+    mddnode *na = LDD_GETNODE(a);
     uint32_t na_value = mddnode_getvalue(na);
-
-    /* Only create a new node if something actually changed */
+    LISTDD changed = listdd_invalid;
+    listdd_refs_pushptr(&changed);
+    int status;
 
     if (na_value < *values) {
-        LISTDD right = listdd_add(mddnode_getright(na), values, count);
-        if (right == mddnode_getright(na)) return a; // no actual change
-        return listdd_make_node(na_value, mddnode_getdown(na), right);
+        status = listdd_add(&changed, mddnode_getright(na), values, count);
+        if (status == SYLVAN_OK && changed == mddnode_getright(na)) changed = a;
+        else if (status == SYLVAN_OK) status = _listdd_try_make_node(&changed, na_value, mddnode_getdown(na), changed);
     } else if (na_value == *values) {
-        LISTDD down = listdd_add(mddnode_getdown(na), values+1, count-1);
-        if (down == mddnode_getdown(na)) return a; // no actual change
-        return listdd_make_node(na_value, down, mddnode_getright(na));
-    } else /* na_value > *values */ {
-        return listdd_make_node(*values, listdd_singleton(values+1, count-1), a);
-    }
-}
-
-LISTDD
-listdd_relation_add(LISTDD a, uint32_t* values, int* copy, size_t count)
-{
-    if (a == listdd_empty) return listdd_relation_singleton(values, copy, count);
-    if (a == listdd_empty_list) {
-        assert(count == 0);
-        return listdd_empty_list;
-    }
-    assert(count != 0);
-
-    mddnode* na = LDD_GETNODE(a);
-
-    /* Only create a new node if something actually changed */
-
-    int na_copy = mddnode_getcopy(na);
-    if (na_copy && *copy) {
-        LISTDD down = listdd_relation_add(mddnode_getdown(na), values+1, copy+1, count-1);
-        if (down == mddnode_getdown(na)) return a; // no actual change
-        return listdd_make_copy_node(down, mddnode_getright(na));
-    } else if (na_copy) {
-        LISTDD right = listdd_relation_add(mddnode_getright(na), values, copy, count);
-        if (right == mddnode_getright(na)) return a; // no actual change
-        return listdd_make_copy_node(mddnode_getdown(na), right);
-    } else if (*copy) {
-        return listdd_make_copy_node(listdd_relation_singleton(values+1, copy+1, count-1), a);
+        status = listdd_add(&changed, mddnode_getdown(na), values+1, count-1);
+        if (status == SYLVAN_OK && changed == mddnode_getdown(na)) changed = a;
+        else if (status == SYLVAN_OK) status = _listdd_try_make_node(&changed, na_value, changed, mddnode_getright(na));
+    } else {
+        status = listdd_singleton(&changed, values+1, count-1);
+        if (status == SYLVAN_OK) status = _listdd_try_make_node(&changed, *values, changed, a);
     }
 
-    uint32_t na_value = mddnode_getvalue(na);
-    if (na_value < *values) {
-        LISTDD right = listdd_relation_add(mddnode_getright(na), values, copy, count);
-        if (right == mddnode_getright(na)) return a; // no actual change
-        return listdd_make_node(na_value, mddnode_getdown(na), right);
-    } else if (na_value == *values) {
-        LISTDD down = listdd_relation_add(mddnode_getdown(na), values+1, copy+1, count-1);
-        if (down == mddnode_getdown(na)) return a; // no actual change
-        return listdd_make_node(na_value, down, mddnode_getright(na));
-    } else /* na_value > *values */ {
-        return listdd_make_node(*values, listdd_relation_singleton(values+1, copy+1, count-1), a);
-    }
+    if (status == SYLVAN_OK) *destination = changed;
+    listdd_refs_popptr(1);
+    return status;
 }
 
 int
-listdd_contains(LISTDD a, uint32_t* values, size_t count)
+listdd_relation_add(LISTDD *destination, LISTDD a, const uint32_t *values, const int *copy, size_t count)
+{
+    if (destination == NULL || a == listdd_invalid ||
+        (count != 0 && (values == NULL || copy == NULL))) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (a == listdd_empty) return listdd_relation_singleton(destination, values, copy, count);
+    if (a == listdd_empty_list) {
+        if (count != 0) return SYLVAN_ERR_INVALID;
+        *destination = listdd_empty_list;
+        return SYLVAN_OK;
+    }
+    if (count == 0) return SYLVAN_ERR_INVALID;
+
+    mddnode *na = LDD_GETNODE(a);
+    LISTDD changed = listdd_invalid;
+    listdd_refs_pushptr(&changed);
+    int status;
+    int na_copy = mddnode_getcopy(na);
+
+    if (na_copy && *copy) {
+        status = listdd_relation_add(&changed, mddnode_getdown(na), values+1, copy+1, count-1);
+        if (status == SYLVAN_OK && changed == mddnode_getdown(na)) changed = a;
+        else if (status == SYLVAN_OK) status = _listdd_try_make_copy_node(&changed, changed, mddnode_getright(na));
+    } else if (na_copy) {
+        status = listdd_relation_add(&changed, mddnode_getright(na), values, copy, count);
+        if (status == SYLVAN_OK && changed == mddnode_getright(na)) changed = a;
+        else if (status == SYLVAN_OK) status = _listdd_try_make_copy_node(&changed, mddnode_getdown(na), changed);
+    } else if (*copy) {
+        status = listdd_relation_singleton(&changed, values+1, copy+1, count-1);
+        if (status == SYLVAN_OK) status = _listdd_try_make_copy_node(&changed, changed, a);
+    } else {
+        uint32_t na_value = mddnode_getvalue(na);
+        if (na_value < *values) {
+            status = listdd_relation_add(&changed, mddnode_getright(na), values, copy, count);
+            if (status == SYLVAN_OK && changed == mddnode_getright(na)) changed = a;
+            else if (status == SYLVAN_OK) status = _listdd_try_make_node(&changed, na_value, mddnode_getdown(na), changed);
+        } else if (na_value == *values) {
+            status = listdd_relation_add(&changed, mddnode_getdown(na), values+1, copy+1, count-1);
+            if (status == SYLVAN_OK && changed == mddnode_getdown(na)) changed = a;
+            else if (status == SYLVAN_OK) status = _listdd_try_make_node(&changed, na_value, changed, mddnode_getright(na));
+        } else {
+            status = listdd_relation_singleton(&changed, values+1, copy+1, count-1);
+            if (status == SYLVAN_OK) status = _listdd_try_make_node(&changed, *values, changed, a);
+        }
+    }
+
+    if (status == SYLVAN_OK) *destination = changed;
+    listdd_refs_popptr(1);
+    return status;
+}
+
+int
+listdd_contains(LISTDD a, const uint32_t *values, size_t count)
 {
     while (1) {
         if (a == listdd_empty) return 0;
@@ -2022,7 +2042,7 @@ listdd_contains(LISTDD a, uint32_t* values, size_t count)
 }
 
 int
-listdd_relation_contains(LISTDD a, uint32_t* values, int* copy, size_t count)
+listdd_relation_contains(LISTDD a, const uint32_t *values, const int *copy, size_t count)
 {
     while (1) {
         if (a == listdd_empty) return 0;
@@ -2032,23 +2052,40 @@ listdd_relation_contains(LISTDD a, uint32_t* values, int* copy, size_t count)
         if (*copy) a = listdd_follow_copy(a);
         else a = listdd_follow(a, *values);
         values++;
+        copy++;
         count--;
     }
 }
 
-LISTDD
-listdd_singleton(uint32_t* values, size_t count)
+int
+listdd_singleton(LISTDD *destination, const uint32_t *values, size_t count)
 {
-    if (count == 0) return listdd_empty_list;
-    return listdd_make_node(*values, listdd_singleton(values+1, count-1), listdd_empty);
+    if (destination == NULL || (count != 0 && values == NULL)) return SYLVAN_ERR_INVALID;
+    if (count == 0) { *destination = listdd_empty_list; return SYLVAN_OK; }
+
+    LISTDD down = listdd_invalid;
+    listdd_refs_pushptr(&down);
+    int status = listdd_singleton(&down, values+1, count-1);
+    if (status == SYLVAN_OK) status = _listdd_try_make_node(&down, *values, down, listdd_empty);
+    if (status == SYLVAN_OK) *destination = down;
+    listdd_refs_popptr(1);
+    return status;
 }
 
-LISTDD
-listdd_relation_singleton(uint32_t* values, int* copy, size_t count)
+int
+listdd_relation_singleton(LISTDD *destination, const uint32_t *values, const int *copy, size_t count)
 {
-    if (count == 0) return listdd_empty_list;
-    if (*copy) return listdd_make_copy_node(listdd_relation_singleton(values+1, copy+1, count-1), listdd_empty);
-    else return listdd_make_node(*values, listdd_relation_singleton(values+1, copy+1, count-1), listdd_empty);
+    if (destination == NULL || (count != 0 && (values == NULL || copy == NULL))) return SYLVAN_ERR_INVALID;
+    if (count == 0) { *destination = listdd_empty_list; return SYLVAN_OK; }
+
+    LISTDD down = listdd_invalid;
+    listdd_refs_pushptr(&down);
+    int status = listdd_relation_singleton(&down, values+1, copy+1, count-1);
+    if (status == SYLVAN_OK && *copy) status = _listdd_try_make_copy_node(&down, down, listdd_empty);
+    else if (status == SYLVAN_OK) status = _listdd_try_make_node(&down, *values, down, listdd_empty);
+    if (status == SYLVAN_OK) *destination = down;
+    listdd_refs_popptr(1);
+    return status;
 }
 
 /**

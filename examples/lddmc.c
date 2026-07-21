@@ -255,11 +255,15 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
         i++;
     }
 
-    rel->meta = listdd_singleton((uint32_t*)meta, j);
+    rel->meta = listdd_invalid;
     listdd_protect(&rel->meta);
+    if (listdd_singleton(&rel->meta, meta, j) != SYLVAN_OK) Abort("Cannot create relation metadata.\n");
     if (rel->firstvar != -1) {
-        rel->topmeta = listdd_singleton((uint32_t*)meta+rel->firstvar, j-rel->firstvar);
+        rel->topmeta = listdd_invalid;
         listdd_protect(&rel->topmeta);
+        if (listdd_singleton(&rel->topmeta, meta+rel->firstvar, j-rel->firstvar) != SYLVAN_OK) {
+            Abort("Cannot create relation metadata.\n");
+        }
     }
     rel->dd = listdd_empty;
     listdd_protect(&rel->dd);

@@ -189,12 +189,13 @@ rel_t rel_load_proj_CALL(lace_worker* lace, FILE* f)
         i++;
     }
 
-    rel->meta = listdd_singleton(meta, j);
-    free(meta);
+    rel->meta = listdd_invalid;
     rel->dd = listdd_empty;
 
     listdd_protect(&rel->meta);
     listdd_protect(&rel->dd);
+    if (listdd_singleton(&rel->meta, meta, j) != SYLVAN_OK) Abort("Cannot create relation metadata.\n");
+    free(meta);
 
     return rel;
     (void)lace;

@@ -121,13 +121,17 @@ static inline int listdd_intersection(LISTDD *result, LISTDD a, LISTDD b);
 /* Keep vectors from <a> that match a vector in <b> at levels selected by <proj>. */
 static inline int listdd_match(LISTDD *result, LISTDD a, LISTDD b, LISTDD proj);
 
-LISTDD listdd_add(LISTDD a, uint32_t* values, size_t count);
-int listdd_contains(LISTDD a, uint32_t* values, size_t count);
-LISTDD listdd_singleton(uint32_t* values, size_t count);
+/* Add one <count>-element state vector to <a>. */
+int listdd_add(LISTDD *result, LISTDD a, const uint32_t *values, size_t count);
+int listdd_contains(LISTDD a, const uint32_t *values, size_t count);
+/* Construct the singleton set containing one <count>-element state vector. */
+int listdd_singleton(LISTDD *result, const uint32_t *values, size_t count);
 
-LISTDD listdd_relation_add(LISTDD a, uint32_t* values, int* copy, size_t count);
-int listdd_relation_contains(LISTDD a, uint32_t* values, int* copy, size_t count);
-LISTDD listdd_relation_singleton(uint32_t* values, int* copy, size_t count);
+/* Add a relation vector; nonzero entries in <copy> create copy nodes. */
+int listdd_relation_add(LISTDD *result, LISTDD a, const uint32_t *values, const int *copy, size_t count);
+int listdd_relation_contains(LISTDD a, const uint32_t *values, const int *copy, size_t count);
+/* Construct a singleton relation; nonzero entries in <copy> create copy nodes. */
+int listdd_relation_singleton(LISTDD *result, const uint32_t *values, const int *copy, size_t count);
 
 TASK(LISTDD, listdd_rel_next, LISTDD, a, LISTDD, b, LISTDD, proj)
 

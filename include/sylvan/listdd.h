@@ -136,7 +136,8 @@ int listdd_relation_singleton(LISTDD *result, const uint32_t *values, const int 
 /** Compute the successors of <set> under <relation> described by <meta>. */
 TASK(int, listdd_rel_next, LISTDD*, result, LISTDD, set, LISTDD, relation, LISTDD, meta)
 
-TASK(LISTDD, listdd_rel_next_union, LISTDD, a, LISTDD, b, LISTDD, meta, LISTDD, un)
+/** Compute the successors of <set> and unite them with <un>. */
+TASK(int, listdd_rel_next_union, LISTDD*, result, LISTDD, set, LISTDD, relation, LISTDD, meta, LISTDD, un)
 
 /**
  * Calculate all predecessors to a in uni according to rel[proj]

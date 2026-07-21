@@ -859,12 +859,11 @@ size_t mtbdd_ref_count(void);
 
 /**
  * Infrastructure for internal references.
- * Every thread has its own reference stacks. There are three stacks: pointer, values, tasks stack.
+ * Every thread has its own pointer and value reference stacks.
  * The pointers stack stores pointers to MTBDD variables, manipulated with pushptr and popptr.
  * The values stack stores MTBDDs, manipulated with push and pop.
- * The tasks stack stores Lace tasks (that return MTBDDs), manipulated with spawn and sync.
  *
- * It is recommended to use the pointers stack for local variables and the tasks stack for tasks.
+ * It is recommended to use the pointers stack for local variables and task destinations.
  */
 
 /**
@@ -888,18 +887,6 @@ MTBDD mtbdd_refs_push(MTBDD mtbdd);
  * Pop the last <amount> MTBDDs from the values reference stack.
  */
 void mtbdd_refs_pop(long amount);
-
-/**
- * Push a Task that returns an MTBDD to the tasks reference stack.
- * Usage: mtbdd_refs_spawn(SPAWN(function, ...));
- */
-void mtbdd_refs_spawn(lace_task* t);
-
-/**
- * Pop a Task from the task reference stack.
- * Usage: MTBDD result = mtbdd_refs_sync(SYNC(function));
- */
-MTBDD mtbdd_refs_sync(MTBDD mtbdd);
 
 #ifdef __cplusplus
 }

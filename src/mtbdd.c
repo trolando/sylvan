@@ -213,17 +213,10 @@ void mtbdd_gc_mark_protected_CALL(lace_worker* lace)
 }
 
 /* Infrastructure for internal markings */
-typedef struct mtbdd_refs_task
-{
-    lace_task* t;
-    void* f;
-} *mtbdd_refs_task_t;
-
 typedef struct mtbdd_refs_internal
 {
     const MTBDD **pbegin, **pend, **pcur;
     MTBDD *rbegin, *rend, *rcur;
-    mtbdd_refs_task_t sbegin, send, scur;
 } *mtbdd_refs_internal_t;
 
 SYLVAN_TLS mtbdd_refs_internal_t mtbdd_refs_key;
@@ -260,35 +253,12 @@ void mtbdd_refs_mark_r_par_CALL(lace_worker* lace, MTBDD* begin, size_t count)
     }
 }
 
-TASK(void, mtbdd_refs_mark_s_par, mtbdd_refs_task_t, begin, size_t, count)
-void mtbdd_refs_mark_s_par_CALL(lace_worker* lace, mtbdd_refs_task_t begin, size_t count)
-{
-    if (count < 32) {
-        while (count > 0) {
-            lace_task* t = begin->t;
-            if (!lace_is_stolen_task(t)) return;
-            if (t->f == begin->f && lace_is_completed_task(t)) {
-                mtbdd_gc_mark(*(MTBDD*)lace_task_result(t));
-            }
-            begin += 1;
-            count -= 1;
-        }
-    } else {
-        if (!lace_is_stolen_task(begin->t)) return;
-        mtbdd_refs_mark_s_par_SPAWN(lace, begin, count / 2);
-        mtbdd_refs_mark_s_par_CALL(lace, begin + (count / 2), count - count / 2);
-        mtbdd_refs_mark_s_par_SYNC(lace);
-    }
-}
-
 TASK(void, mtbdd_refs_mark_task)
 
 void mtbdd_refs_mark_task_CALL(lace_worker* lace)
 {
     mtbdd_refs_mark_p_par_SPAWN(lace, mtbdd_refs_key->pbegin, (size_t)(mtbdd_refs_key->pcur-mtbdd_refs_key->pbegin));
-    mtbdd_refs_mark_r_par_SPAWN(lace, mtbdd_refs_key->rbegin, (size_t)(mtbdd_refs_key->rcur-mtbdd_refs_key->rbegin));
-    mtbdd_refs_mark_s_par_CALL(lace, mtbdd_refs_key->sbegin, (size_t)(mtbdd_refs_key->scur-mtbdd_refs_key->sbegin));
-    mtbdd_refs_mark_r_par_SYNC(lace);
+    mtbdd_refs_mark_r_par_CALL(lace, mtbdd_refs_key->rbegin, (size_t)(mtbdd_refs_key->rcur-mtbdd_refs_key->rbegin));
     mtbdd_refs_mark_p_par_SYNC(lace);
 }
 
@@ -308,8 +278,6 @@ mtbdd_refs_init_key(void)
     s->pend = s->pbegin + 1024;
     s->rcur = s->rbegin = (MTBDD*)malloc(sizeof(MTBDD) * 1024);
     s->rend = s->rbegin + 1024;
-    s->scur = s->sbegin = (mtbdd_refs_task_t)malloc(sizeof(struct mtbdd_refs_task) * 1024);
-    s->send = s->sbegin + 1024;
     mtbdd_refs_key = s;
 }
 
@@ -319,7 +287,6 @@ void mtbdd_refs_free_CALL(lace_worker* lace)
 {
     free(mtbdd_refs_key->pbegin);
     free(mtbdd_refs_key->rbegin);
-    free(mtbdd_refs_key->sbegin);
     free(mtbdd_refs_key);
 }
 
@@ -358,15 +325,6 @@ mtbdd_refs_refs_up(mtbdd_refs_internal_t refs, MTBDD res)
     return res;
 }
 
-void SYLVAN_NOINLINE
-mtbdd_refs_tasks_up(mtbdd_refs_internal_t refs)
-{
-    size_t size = (size_t)(refs->send - refs->sbegin);
-    refs->sbegin = (mtbdd_refs_task_t)realloc(refs->sbegin, sizeof(struct mtbdd_refs_task) * size * 2);
-    refs->scur = refs->sbegin + size;
-    refs->send = refs->sbegin + (size * 2);
-}
-
 void
 mtbdd_refs_pushptr(const MTBDD *ptr)
 {
@@ -394,22 +352,6 @@ void
 mtbdd_refs_pop(long amount)
 {
     mtbdd_refs_key->rcur -= amount;
-}
-
-void
-mtbdd_refs_spawn(lace_task* t)
-{
-    mtbdd_refs_key->scur->t = t;
-    mtbdd_refs_key->scur->f = t->f;
-    mtbdd_refs_key->scur += 1;
-    if (mtbdd_refs_key->scur == mtbdd_refs_key->send) mtbdd_refs_tasks_up(mtbdd_refs_key);
-}
-
-MTBDD
-mtbdd_refs_sync(MTBDD result)
-{
-    mtbdd_refs_key->scur -= 1;
-    return result;
 }
 
 /**

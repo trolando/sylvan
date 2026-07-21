@@ -144,7 +144,7 @@ TASK(int, listdd_rel_next_union, LISTDD*, result, LISTDD, set, LISTDD, relation,
  * <proj> follows the same semantics as relprod
  * i.e. 0 (not in rel), 1 (read+write), 2 (read), 3 (write), -1 (end; rest=0)
  */
-TASK(LISTDD, listdd_rel_prev, LISTDD, dd, LISTDD, rel, LISTDD, proj, LISTDD, uni);
+TASK(int, listdd_rel_prev, LISTDD*, result, LISTDD, dd, LISTDD, rel, LISTDD, proj, LISTDD, uni);
 
 // so: proj: -2 (end; quantify rest), -1 (end; keep rest), 0 (quantify), 1 (keep)
 TASK(int, listdd_project, LISTDD*, result, LISTDD, dd, LISTDD, proj);

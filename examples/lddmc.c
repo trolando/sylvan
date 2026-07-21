@@ -168,6 +168,16 @@ listdd_rel_next_or_abort_CALL(lace_worker *lace, LISTDD set, LISTDD relation, LI
 }
 
 static LISTDD
+listdd_rel_prev_or_abort_CALL(lace_worker *lace, LISTDD set, LISTDD relation, LISTDD meta, LISTDD universe)
+{
+    LISTDD result = listdd_invalid;
+    if (listdd_rel_prev_CALL(lace, &result, set, relation, meta, universe) != SYLVAN_OK) {
+        Abort("ListDD predecessor computation failed.\n");
+    }
+    return result;
+}
+
+static LISTDD
 listdd_rel_next_union_or_abort_CALL(lace_worker *lace, LISTDD set, LISTDD relation, LISTDD meta, LISTDD un)
 {
     LISTDD result = listdd_invalid;
@@ -411,7 +421,7 @@ LISTDD go_par_CALL(lace_worker* lace, LISTDD cur, LISTDD visited, size_t from, s
         listdd_refs_push(succ);
         if (deadlocks) {
             // check which MDDs in deadlocks do not have a successor in this relation
-            LISTDD anc = listdd_rel_prev_CALL(lace, succ, next[from]->dd, next[from]->meta, cur);
+            LISTDD anc = listdd_rel_prev_or_abort_CALL(lace, succ, next[from]->dd, next[from]->meta, cur);
             listdd_refs_push(anc);
             *deadlocks = listdd_diff_or_abort_CALL(lace, *deadlocks, anc);
             listdd_refs_pop(1);
@@ -528,7 +538,7 @@ LISTDD go_bfs_CALL(lace_worker* lace, LISTDD cur, LISTDD visited, size_t from, s
         listdd_refs_push(succ);
         if (deadlocks) {
             // check which MDDs in deadlocks do not have a successor in this relation
-            LISTDD anc = listdd_rel_prev_CALL(lace, succ, next[from]->dd, next[from]->meta, cur);
+            LISTDD anc = listdd_rel_prev_or_abort_CALL(lace, succ, next[from]->dd, next[from]->meta, cur);
             listdd_refs_push(anc);
             *deadlocks = listdd_diff_or_abort_CALL(lace, *deadlocks, anc);
             listdd_refs_pop(1);

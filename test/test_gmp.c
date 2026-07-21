@@ -54,6 +54,7 @@ run_gmp_tests_CALL(lace_worker *lace)
     MTBDD abstract_product = mtbdd_invalid;
     MTBDD abstract_minimum = mtbdd_invalid;
     MTBDD abstract_maximum = mtbdd_invalid;
+    MTBDD mixed = mtbdd_invalid;
     MTBDD unchanged = bdd_true;
 
     mtbdd_refs_pushptr(&x);
@@ -72,6 +73,7 @@ run_gmp_tests_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&abstract_product);
     mtbdd_refs_pushptr(&abstract_minimum);
     mtbdd_refs_pushptr(&abstract_maximum);
+    mtbdd_refs_pushptr(&mixed);
     mtbdd_refs_pushptr(&unchanged);
 
     mpq_clear(three_halves);
@@ -116,6 +118,28 @@ run_gmp_tests_CALL(lace_worker *lace)
     test_assert(gmp_leaf_equals(low, -3, 2));
     test_assert(gmp_leaf_equals(high, -1, 2));
 
+    gmp_and_abstract_plus_SPAWN(lace, &abstract_sum, f, g, vars);
+    int max_status = gmp_and_abstract_max_CALL(lace, &abstract_maximum, f, g, vars);
+    int sum_status = gmp_and_abstract_plus_SYNC(lace);
+    test_assert(sum_status == SYLVAN_OK);
+    test_assert(max_status == SYLVAN_OK);
+    test_assert(gmp_leaf_equals(abstract_sum, 3, 2));
+    test_assert(gmp_leaf_equals(abstract_maximum, 3, 4));
+    abstract_product = f;
+    test_assert(gmp_and_abstract_plus(&abstract_product, abstract_product, g, vars) == SYLVAN_OK);
+    test_assert(gmp_leaf_equals(abstract_product, 3, 2));
+    test_assert(gmp_and_abstract_plus(&abstract_product, f, g, bdd_true) == SYLVAN_OK);
+    test_assert(abstract_product == product);
+
+    test_assert(gmp_and_abstract_plus(NULL, f, g, vars) == SYLVAN_ERR_INVALID);
+    test_assert(gmp_and_abstract_plus(&unchanged, mtbdd_invalid, g, vars) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(gmp_and_abstract_max(&unchanged, f, g, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    mixed = mtbdd_int64(1);
+    test_assert(gmp_and_abstract_plus(&unchanged, f, mixed, vars) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+
     test_assert(gmp_plus(&f, f, g) == SYLVAN_OK);
     test_assert(f == sum);
     sylvan_gc_CALL(lace);
@@ -130,7 +154,7 @@ run_gmp_tests_CALL(lace_worker *lace)
     test_assert(gmp_abstract_plus(&unchanged, mtbdd_invalid, vars) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == bdd_true);
 
-    mtbdd_refs_popptr(19);
+    mtbdd_refs_popptr(20);
     return 0;
 }
 

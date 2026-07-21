@@ -182,14 +182,18 @@ static inline int gmp_abstract_max(MTBDD *result, MTBDD dd, MTBDD vars)
 /**
  * Multiply <a> and <b>, and abstract variables <vars> using summation.
  * This is similar to the "and_exists" operation in BDDs.
+ * The caller must protect <result>. Returns SYLVAN_OK on success or a negative
+ * status on failure, leaving <result> unchanged.
  */
-TASK(MTBDD, gmp_and_abstract_plus, MTBDD, a, MTBDD, b, MTBDD, vars)
+TASK(int, gmp_and_abstract_plus, MTBDD*, result, MTBDD, a, MTBDD, b, MTBDD, vars)
 #define gmp_and_exists gmp_and_abstract_plus
 
 /**
  * Multiply <a> and <b>, and abstract variables <vars> by taking the maximum.
+ * The caller must protect <result>. Returns SYLVAN_OK on success or a negative
+ * status on failure, leaving <result> unchanged.
  */
-TASK(MTBDD, gmp_and_abstract_max, MTBDD, a, MTBDD, b, MTBDD, vars);
+TASK(int, gmp_and_abstract_max, MTBDD*, result, MTBDD, a, MTBDD, b, MTBDD, vars);
 
 /**
  * Convert to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;

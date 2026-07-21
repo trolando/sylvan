@@ -378,13 +378,17 @@ static inline int mtbdd_ite(MTBDD *result, BDD condition, MTBDD if_true, MTBDD i
 /**
  * Multiply <a> and <b>, and abstract variables <vars> using summation.
  * This is similar to the "and_exists" operation in BDDs.
+ * The caller must protect <result>. Returns SYLVAN_OK on success or a negative
+ * status on failure, leaving <result> unchanged.
  */
-static inline MTBDD mtbdd_mul_abstract_add(MTBDD a, MTBDD b, MTBDD c);
+static inline int mtbdd_mul_abstract_add(MTBDD *result, MTBDD a, MTBDD b, MTBDD vars);
 
 /**
  * Multiply <a> and <b>, and abstract variables <vars> by taking the maximum.
+ * The caller must protect <result>. Returns SYLVAN_OK on success or a negative
+ * status on failure, leaving <result> unchanged.
  */
-static inline MTBDD mtbdd_mul_abstract_max(MTBDD a, MTBDD b, MTBDD c);
+static inline int mtbdd_mul_abstract_max(MTBDD *result, MTBDD a, MTBDD b, MTBDD vars);
 
 /**
  * Monad that converts double to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;

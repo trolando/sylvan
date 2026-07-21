@@ -356,11 +356,16 @@ int bdd_from_ldd_CALL(lace_worker* lace, MTBDD *destination, LISTDD dd, LISTDD b
  * Compute the BDD equivalent of an LDD transition relation.
  */
 static uint64_t bdd_from_ldd_rel_id;
-TASK(MTBDD, bdd_from_ldd_rel, LISTDD, dd, LISTDD, bits_dd, uint32_t, firstvar, LISTDD, meta)
-MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, LISTDD dd, LISTDD bits_dd, uint32_t firstvar, LISTDD meta)
+TASK(int, bdd_from_ldd_rel, MTBDD*, result, LISTDD, dd, LISTDD, bits_dd, uint32_t, firstvar, LISTDD, meta)
+int bdd_from_ldd_rel_CALL(lace_worker* lace, MTBDD *destination, LISTDD dd, LISTDD bits_dd, uint32_t firstvar, LISTDD meta)
 {
-    if (dd == listdd_empty) return bdd_false;
-    if (dd == listdd_empty_list) return bdd_true;
+    if (destination == NULL || dd == listdd_invalid || bits_dd == listdd_invalid || meta == listdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (dd == listdd_empty || dd == listdd_empty_list) {
+        *destination = dd == listdd_empty ? bdd_false : bdd_true;
+        return SYLVAN_OK;
+    }
     assert(meta != listdd_empty && meta != listdd_empty_list);
 
     /* meta:
@@ -372,9 +377,13 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, LISTDD dd, LISTDD bits_dd, uint32
      *  4 is only-write
      */
 
-    MTBDD result;
+    MTBDD computed = mtbdd_invalid;
     /* note: assumptions */
-    if (cache_get4(bdd_from_ldd_rel_id, dd, bits_dd, firstvar, meta, &result)) return result;
+    if (cache_get4(bdd_from_ldd_rel_id, dd, bits_dd, firstvar, meta, &computed)) {
+        *destination = computed;
+        return SYLVAN_OK;
+    }
+    mtbdd_refs_pushptr(&computed);
 
     const mddnode* n = LDD_GETNODE(dd);
     const mddnode* nmeta = LDD_GETNODE(meta);
@@ -383,136 +392,171 @@ MTBDD bdd_from_ldd_rel_CALL(lace_worker* lace, LISTDD dd, LISTDD bits_dd, uint32
 
     const uint32_t vmeta = mddnode_getvalue(nmeta);
     assert(vmeta != (uint32_t)-1);
+    int status = SYLVAN_OK;
 
     if (vmeta == 0) {
         /* skip level */
-        result = bdd_from_ldd_rel(dd, mddnode_getdown(nbits), firstvar + 2*bits, mddnode_getdown(nmeta));
+        status = bdd_from_ldd_rel_CALL(lace, &computed, dd, mddnode_getdown(nbits),
+            firstvar + 2*bits, mddnode_getdown(nmeta));
     } else if (vmeta == 1) {
         /* read level */
         assert(!mddnode_getcopy(n));  // do not process read copy nodes for now
         assert(mddnode_getright(n) != bdd_true);
 
+        MTBDD down = mtbdd_invalid;
+        MTBDD right = mtbdd_invalid;
+        MTBDD part = bdd_true;
+        mtbdd_refs_pushptr(&down);
+        mtbdd_refs_pushptr(&right);
+        mtbdd_refs_pushptr(&part);
+
         /* spawn right */
-        mtbdd_refs_spawn(bdd_from_ldd_rel_SPAWN(lace, mddnode_getright(n), bits_dd, firstvar, meta));
+        bdd_from_ldd_rel_SPAWN(lace, &right, mddnode_getright(n), bits_dd, firstvar, meta);
 
         /* compute down with same bits / firstvar */
-        MTBDD down = bdd_from_ldd_rel(mddnode_getdown(n), bits_dd, firstvar, mddnode_getdown(nmeta));
-        mtbdd_refs_push(down);
+        status = bdd_from_ldd_rel_CALL(lace, &down, mddnode_getdown(n), bits_dd,
+            firstvar, mddnode_getdown(nmeta));
 
         /* encode read value */
         uint32_t val = mddnode_getvalue(n);
-        MTBDD part = bdd_true;
-        for (int i=0; i<bits; i++) {
+        for (int i=0; status == SYLVAN_OK && i<bits; i++) {
             /* encode with high bit first */
             int bit = bits-i-1;
-            if (val & (1LL<<i)) part = mtbdd_make_node(firstvar + 2*bit, bdd_false, part);
-            else part = mtbdd_make_node(firstvar + 2*bit, part, bdd_false);
+            if (val & (1LL<<i)) status = _mtbdd_try_make_node(&part, firstvar + 2*bit, bdd_false, part);
+            else status = _mtbdd_try_make_node(&part, firstvar + 2*bit, part, bdd_false);
         }
 
         /* intersect read value with down result */
-        mtbdd_refs_push(part);
-        down = bdd_and_legacy_CALL(lace, part, down);
-        mtbdd_refs_pop(2);
+        if (status == SYLVAN_OK) status = bdd_and_CALL(lace, &down, part, down);
 
         /* sync right */
-        mtbdd_refs_push(down);
-        MTBDD right = mtbdd_refs_sync(bdd_from_ldd_rel_SYNC(lace));
+        int right_status = bdd_from_ldd_rel_SYNC(lace);
+        if (status == SYLVAN_OK) status = right_status;
 
         /* take union of current and right */
-        mtbdd_refs_push(right);
-        result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(down), bdd_not(right)));
-        mtbdd_refs_pop(2);
+        if (status == SYLVAN_OK) {
+            status = bdd_and_CALL(lace, &computed, bdd_not(down), bdd_not(right));
+            if (status == SYLVAN_OK) computed = bdd_not(computed);
+        }
+        mtbdd_refs_popptr(3);
     } else if (vmeta == 2 || vmeta == 4) {
         /* write or only-write level */
 
+        MTBDD down = mtbdd_invalid;
+        MTBDD right = mtbdd_invalid;
+        mtbdd_refs_pushptr(&down);
+        mtbdd_refs_pushptr(&right);
+
         /* spawn right */
         assert(mddnode_getright(n) != bdd_true);
-        mtbdd_refs_spawn(bdd_from_ldd_rel_SPAWN(lace, mddnode_getright(n), bits_dd, firstvar, meta));
+        bdd_from_ldd_rel_SPAWN(lace, &right, mddnode_getright(n), bits_dd, firstvar, meta);
 
         /* get recursive result */
-        MTBDD down = bdd_from_ldd_rel_CALL(lace, mddnode_getdown(n), mddnode_getdown(nbits), firstvar + 2*bits, mddnode_getdown(nmeta));
+        status = bdd_from_ldd_rel_CALL(lace, &down, mddnode_getdown(n), mddnode_getdown(nbits),
+            firstvar + 2*bits, mddnode_getdown(nmeta));
 
         if (mddnode_getcopy(n)) {
             /* encode a copy node */
-            for (int i=0; i<bits; i++) {
+            MTBDD low = mtbdd_invalid;
+            MTBDD high = mtbdd_invalid;
+            mtbdd_refs_pushptr(&low);
+            mtbdd_refs_pushptr(&high);
+            for (int i=0; status == SYLVAN_OK && i<bits; i++) {
                 int bit = bits-i-1;
-                MTBDD low = mtbdd_make_node(firstvar + 2*bit + 1, down, bdd_false);
-                mtbdd_refs_push(low);
-                MTBDD high = mtbdd_make_node(firstvar + 2*bit + 1, bdd_false, down);
-                mtbdd_refs_pop(1);
-                down = mtbdd_make_node(firstvar + 2*bit, low, high);
+                status = _mtbdd_try_make_node(&low, firstvar + 2*bit + 1, down, bdd_false);
+                if (status == SYLVAN_OK) {
+                    status = _mtbdd_try_make_node(&high, firstvar + 2*bit + 1, bdd_false, down);
+                }
+                if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&down, firstvar + 2*bit, low, high);
             }
+            mtbdd_refs_popptr(2);
         } else {
             /* encode written value */
             uint32_t val = mddnode_getvalue(n);
-            for (int i=0; i<bits; i++) {
+            for (int i=0; status == SYLVAN_OK && i<bits; i++) {
                 /* encode with high bit first */
                 int bit = bits-i-1;
-                if (val & (1LL<<i)) down = mtbdd_make_node(firstvar + 2*bit + 1, bdd_false, down);
-                else down = mtbdd_make_node(firstvar + 2*bit + 1, down, bdd_false);
+                if (val & (1LL<<i)) status = _mtbdd_try_make_node(&down, firstvar + 2*bit + 1, bdd_false, down);
+                else status = _mtbdd_try_make_node(&down, firstvar + 2*bit + 1, down, bdd_false);
             }
         }
 
         /* sync right */
-        mtbdd_refs_push(down);
-        MTBDD right = mtbdd_refs_sync(bdd_from_ldd_rel_SYNC(lace));
+        int right_status = bdd_from_ldd_rel_SYNC(lace);
+        if (status == SYLVAN_OK) status = right_status;
 
         /* take union of current and right */
-        mtbdd_refs_push(right);
-        result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(down), bdd_not(right)));
-        mtbdd_refs_pop(2);
+        if (status == SYLVAN_OK) {
+            status = bdd_and_CALL(lace, &computed, bdd_not(down), bdd_not(right));
+            if (status == SYLVAN_OK) computed = bdd_not(computed);
+        }
+        mtbdd_refs_popptr(2);
     } else if (vmeta == 3) {
         /* only-read level */
         assert(!mddnode_getcopy(n));  // do not process read copy nodes
 
+        MTBDD down = mtbdd_invalid;
+        MTBDD right = mtbdd_invalid;
+        mtbdd_refs_pushptr(&down);
+        mtbdd_refs_pushptr(&right);
+
         /* spawn right */
-        mtbdd_refs_spawn(bdd_from_ldd_rel_SPAWN(lace, mddnode_getright(n), bits_dd, firstvar, meta));
+        bdd_from_ldd_rel_SPAWN(lace, &right, mddnode_getright(n), bits_dd, firstvar, meta);
 
         /* get recursive result */
-        MTBDD down = bdd_from_ldd_rel_CALL(lace, mddnode_getdown(n), mddnode_getdown(nbits), firstvar + 2*bits, mddnode_getdown(nmeta));
+        status = bdd_from_ldd_rel_CALL(lace, &down, mddnode_getdown(n), mddnode_getdown(nbits),
+            firstvar + 2*bits, mddnode_getdown(nmeta));
 
         /* encode read value */
         uint32_t val = mddnode_getvalue(n);
-        for (int i=0; i<bits; i++) {
+        for (int i=0; status == SYLVAN_OK && i<bits; i++) {
             /* encode with high bit first */
             int bit = bits-i-1;
             /* only-read, so write same value */
-            if (val & (1LL<<i)) down = mtbdd_make_node(firstvar + 2*bit + 1, bdd_false, down);
-            else down = mtbdd_make_node(firstvar + 2*bit + 1, down, bdd_false);
-            if (val & (1LL<<i)) down = mtbdd_make_node(firstvar + 2*bit, bdd_false, down);
-            else down = mtbdd_make_node(firstvar + 2*bit, down, bdd_false);
+            if (val & (1LL<<i)) status = _mtbdd_try_make_node(&down, firstvar + 2*bit + 1, bdd_false, down);
+            else status = _mtbdd_try_make_node(&down, firstvar + 2*bit + 1, down, bdd_false);
+            if (status == SYLVAN_OK) {
+                if (val & (1LL<<i)) status = _mtbdd_try_make_node(&down, firstvar + 2*bit, bdd_false, down);
+                else status = _mtbdd_try_make_node(&down, firstvar + 2*bit, down, bdd_false);
+            }
         }
 
         /* sync right */
-        mtbdd_refs_push(down);
-        MTBDD right = mtbdd_refs_sync(bdd_from_ldd_rel_SYNC(lace));
+        int right_status = bdd_from_ldd_rel_SYNC(lace);
+        if (status == SYLVAN_OK) status = right_status;
 
         /* take union of current and right */
-        mtbdd_refs_push(right);
-        result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(down), bdd_not(right)));
-        mtbdd_refs_pop(2);
+        if (status == SYLVAN_OK) {
+            status = bdd_and_CALL(lace, &computed, bdd_not(down), bdd_not(right));
+            if (status == SYLVAN_OK) computed = bdd_not(computed);
+        }
+        mtbdd_refs_popptr(2);
     } else if (vmeta == 5) {
         assert(!mddnode_getcopy(n));  // not allowed!
 
         /* we assume this is the last value */
-        result = bdd_true;
+        computed = bdd_true;
 
         /* encode action value */
         uint32_t val = mddnode_getvalue(n);
-        for (int i=0; i<actionbits; i++) {
+        for (int i=0; status == SYLVAN_OK && i<actionbits; i++) {
             /* encode with high bit first */
             int bit = actionbits-i-1;
             /* only-read, so write same value */
-            if (val & (1LL<<i)) result = mtbdd_make_node(1000000 + bit, bdd_false, result);
-            else result = mtbdd_make_node(1000000 + bit, result, bdd_false);
+            if (val & (1LL<<i)) status = _mtbdd_try_make_node(&computed, 1000000 + bit, bdd_false, computed);
+            else status = _mtbdd_try_make_node(&computed, 1000000 + bit, computed, bdd_false);
         }
     } else {
-        assert(vmeta <= 5);
+        status = SYLVAN_ERR_INVALID;
     }
 
-    cache_put4(bdd_from_ldd_rel_id, dd, bits_dd, firstvar, meta, result);
+    if (status == SYLVAN_OK) {
+        cache_put4(bdd_from_ldd_rel_id, dd, bits_dd, firstvar, meta, computed);
+        *destination = computed;
+    }
 
-    return result;
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
 /**
@@ -760,8 +804,11 @@ void run_CALL(lace_worker* lace)
     // Write BDD for each transition
     for (int i=0; i<next_count; i++) {
         // Compute new transition relation
-        MTBDD new_rel = bdd_from_ldd_rel(next[i]->dd, bits_dd, 0, next[i]->meta);
-        mtbdd_refs_push(new_rel);
+        MTBDD new_rel = mtbdd_invalid;
+        mtbdd_refs_pushptr(&new_rel);
+        if (bdd_from_ldd_rel(&new_rel, next[i]->dd, bits_dd, 0, next[i]->meta) != SYLVAN_OK) {
+            Abort("Out of memory!\n");
+        }
         mtbdd_writer_tobinary(f, &new_rel, 1);
 
         // Report number of nodes
@@ -789,7 +836,7 @@ void run_CALL(lace_worker* lace)
             mtbdd_refs_popptr(1);
         }
 
-        mtbdd_refs_pop(1);
+        mtbdd_refs_popptr(1);
     }
 
     // Write reachable states

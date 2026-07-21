@@ -982,9 +982,40 @@ int test_zdd_exists_CALL(lace_worker* lace)
     test_assert(q_arr != NULL);
     test_assert(arr != NULL);
 
+    BDD bdd_dom = mtbdd_invalid;
+    BDDSET zdd_dom = mtbdd_invalid;
+    BDD bdd_subdom = mtbdd_invalid;
+    BDDSET zdd_subdom = mtbdd_invalid;
+    BDD bdd_qdom = mtbdd_invalid;
+    BDDSET zdd_qdom = mtbdd_invalid;
+    BDD bdd_set = bdd_false;
+    BDD bdd_qset = mtbdd_invalid;
+    ZDD zdd_set = zdd_false;
+    ZDD expected_exists = zdd_invalid;
+    ZDD expected_project = zdd_invalid;
+    ZDD exists_result = zdd_invalid;
+    ZDD project_result = zdd_invalid;
+    ZDD parallel_result = zdd_invalid;
+    ZDD unchanged = zdd_base;
+    mtbdd_refs_pushptr(&bdd_dom);
+    mtbdd_refs_pushptr(&zdd_dom);
+    mtbdd_refs_pushptr(&bdd_subdom);
+    mtbdd_refs_pushptr(&zdd_subdom);
+    mtbdd_refs_pushptr(&bdd_qdom);
+    mtbdd_refs_pushptr(&zdd_qdom);
+    mtbdd_refs_pushptr(&bdd_set);
+    mtbdd_refs_pushptr(&bdd_qset);
+    zdd_refs_pushptr(&zdd_set);
+    zdd_refs_pushptr(&expected_exists);
+    zdd_refs_pushptr(&expected_project);
+    zdd_refs_pushptr(&exists_result);
+    zdd_refs_pushptr(&project_result);
+    zdd_refs_pushptr(&parallel_result);
+    zdd_refs_pushptr(&unchanged);
+
     for (int i=0; i<nvars; i++) dom_arr[i] = i;
-    BDD bdd_dom = test_bdd_set_from_levels(dom_arr, nvars);
-    BDDSET zdd_dom = test_bdd_set_from_levels(dom_arr, nvars);
+    bdd_dom = test_bdd_set_from_levels(dom_arr, nvars);
+    zdd_dom = test_bdd_set_from_levels(dom_arr, nvars);
 
     // Create random subdomain and quotiented variables (qdom)
     int nsub = 0, nq = 0;
@@ -992,34 +1023,51 @@ int test_zdd_exists_CALL(lace_worker* lace)
         if (rng(0,2)) subdom_arr[nsub++] = i;
         else q_arr[nq++] = i;
     }
-    BDD bdd_subdom = test_bdd_set_from_levels(subdom_arr, nsub);
-    BDDSET zdd_subdom = test_bdd_set_from_levels(subdom_arr, nsub);
-    BDD bdd_qdom = test_bdd_set_from_levels(q_arr, nq);
-    BDDSET zdd_qdom = test_bdd_set_from_levels(q_arr, nq);
+    bdd_subdom = test_bdd_set_from_levels(subdom_arr, nsub);
+    zdd_subdom = test_bdd_set_from_levels(subdom_arr, nsub);
+    bdd_qdom = test_bdd_set_from_levels(q_arr, nq);
+    zdd_qdom = test_bdd_set_from_levels(q_arr, nq);
 
     // Create random set on subdomain
-    BDD bdd_set = bdd_false;
-    ZDD zdd_set = zdd_false;
     int count = rng(10,200);
     for (int i=0; i<count; i++) {
         for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set = test_bdd_or_cube(bdd_set, bdd_dom, arr);
-        zdd_set = test_zdd_or_cube_value(zdd_set, zdd_dom, arr);
+        test_assert(bdd_or_cube(&bdd_set, bdd_set, bdd_dom, arr) == SYLVAN_OK);
+        test_assert(zdd_or_cube(&zdd_set, zdd_set, zdd_dom, arr) == SYLVAN_OK);
     }
     test_assert(zdd_set == test_zdd_from_bdd_value(bdd_set, bdd_dom));
 
-    BDD bdd_qset = test_bdd_exists(bdd_set, bdd_qdom);
-    ZDD zdd_test_result = zdd_exists(zdd_set, zdd_qdom);
-    test_assert(zdd_test_result == test_zdd_from_bdd_value(bdd_qset, bdd_dom));
-    ZDD zdd_test_result2 = zdd_project(zdd_set, zdd_subdom);
-    test_assert(zdd_test_result2 == test_zdd_from_bdd_value(bdd_qset, bdd_subdom));
+    bdd_qset = test_bdd_exists(bdd_set, bdd_qdom);
+    expected_exists = test_zdd_from_bdd_value(bdd_qset, bdd_dom);
+    expected_project = test_zdd_from_bdd_value(bdd_qset, bdd_subdom);
+
+    zdd_exists_SPAWN(lace, &parallel_result, zdd_set, zdd_qdom);
+    int project_status = zdd_project_CALL(lace, &project_result, zdd_set, zdd_subdom);
+    int exists_status = zdd_exists_SYNC(lace);
+    test_assert(exists_status == SYLVAN_OK && parallel_result == expected_exists);
+    test_assert(project_status == SYLVAN_OK && project_result == expected_project);
+
+    exists_result = zdd_set;
+    test_assert(zdd_exists(&exists_result, exists_result, zdd_qdom) == SYLVAN_OK);
+    test_assert(exists_result == expected_exists);
+    sylvan_gc_CALL(lace);
+    test_assert(exists_result == expected_exists && project_result == expected_project);
+
+    test_assert(zdd_exists(&unchanged, zdd_invalid, zdd_qdom) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_project(&unchanged, zdd_set, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_exists(NULL, zdd_set, zdd_qdom) == SYLVAN_ERR_INVALID);
+    test_assert(zdd_project(NULL, zdd_set, zdd_subdom) == SYLVAN_ERR_INVALID);
+
+    zdd_refs_popptr(7);
+    mtbdd_refs_popptr(8);
 
     free(arr);
     free(q_arr);
     free(subdom_arr);
     free(dom_arr);
     return 0;
-    (void)lace;
 }
 
 // TASK(int, test_zdd_relnext)

@@ -73,14 +73,14 @@ TASK(int, mtbdd_apply_param, MTBDD*, result, MTBDD, a, MTBDD, b, size_t, p, mtbd
 
 TASK(int, mtbdd_apply_unary, MTBDD*, result, MTBDD, dd, mtbdd_apply_unary_cb, op, size_t, param);
 
-TASK(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_cb, op);
+TASK(int, mtbdd_abstract, MTBDD*, result, MTBDD, a, MTBDD, v, mtbdd_abstract_cb, op);
 
 TASK(int, mtbdd_op_negate, MTBDD*, result, MTBDD, a, size_t, param);
 
 TASK(int, mtbdd_op_cmpl, MTBDD*, result, MTBDD, a, size_t, param);
 
 TASK(int, mtbdd_op_plus, MTBDD*, result, MTBDD*, a, MTBDD*, b);
-TASK(MTBDD, mtbdd_abstract_op_plus, MTBDD, a, MTBDD, b, int, c);
+TASK(int, mtbdd_abstract_op_plus, MTBDD*, result, MTBDD, a, MTBDD, b, int, c);
 
 TASK(int, mtbdd_op_minus, MTBDD*, result, MTBDD*, a, MTBDD*, b);
 
@@ -91,7 +91,7 @@ TASK(int, mtbdd_op_minus, MTBDD*, result, MTBDD*, a, MTBDD*, b);
  * then the result is mtbdd_undefined (i.e. not defined).
  */
 TASK(int, mtbdd_op_times, MTBDD*, result, MTBDD*, a, MTBDD*, b);
-TASK(MTBDD, mtbdd_abstract_op_times, MTBDD, a, MTBDD, b, int, c);
+TASK(int, mtbdd_abstract_op_times, MTBDD*, result, MTBDD, a, MTBDD, b, int, c);
 
 /**
  * Binary operation Minimum (for MTBDDs of same type)
@@ -100,7 +100,7 @@ TASK(MTBDD, mtbdd_abstract_op_times, MTBDD, a, MTBDD, b, int, c);
  * then the result is the other operand.
  */
 TASK(int, mtbdd_op_min, MTBDD*, result, MTBDD*, a, MTBDD*, b);
-TASK(MTBDD, mtbdd_abstract_op_min, MTBDD, a, MTBDD, b, int, c);
+TASK(int, mtbdd_abstract_op_min, MTBDD*, result, MTBDD, a, MTBDD, b, int, c);
 
 /**
  * Binary operation Maximum (for MTBDDs of same type)
@@ -109,7 +109,7 @@ TASK(MTBDD, mtbdd_abstract_op_min, MTBDD, a, MTBDD, b, int, c);
  * then the result is the other operand.
  */
 TASK(int, mtbdd_op_max, MTBDD*, result, MTBDD*, a, MTBDD*, b);
-TASK(MTBDD, mtbdd_abstract_op_max, MTBDD, a, MTBDD, b, int, c);
+TASK(int, mtbdd_abstract_op_max, MTBDD*, result, MTBDD, a, MTBDD, b, int, c);
 
 /**
  * Compute -a
@@ -173,33 +173,33 @@ static inline int mtbdd_max(MTBDD *result, MTBDD a, MTBDD b)
 /**
  * Abstract the variables in <v> from <a> by taking the sum of all values
  */
-static inline MTBDD mtbdd_abstract_add(MTBDD dd, MTBDD vars)
+static inline int mtbdd_abstract_add(MTBDD *result, MTBDD dd, MTBDD vars)
 {
-    return mtbdd_abstract(dd, vars, mtbdd_abstract_op_plus_CALL);
+    return mtbdd_abstract(result, dd, vars, mtbdd_abstract_op_plus_CALL);
 }
 
 /**
  * Abstract the variables in <v> from <a> by taking the product of all values
  */
-static inline MTBDD mtbdd_abstract_mul(MTBDD dd, MTBDD vars)
+static inline int mtbdd_abstract_mul(MTBDD *result, MTBDD dd, MTBDD vars)
 {
-    return mtbdd_abstract(dd, vars, mtbdd_abstract_op_times_CALL);
+    return mtbdd_abstract(result, dd, vars, mtbdd_abstract_op_times_CALL);
 }
 
 /**
  * Abstract the variables in <v> from <a> by taking the minimum of all values
  */
-static inline MTBDD mtbdd_abstract_min(MTBDD dd, MTBDD vars)
+static inline int mtbdd_abstract_min(MTBDD *result, MTBDD dd, MTBDD vars)
 {
-    return mtbdd_abstract(dd, vars, mtbdd_abstract_op_min_CALL);
+    return mtbdd_abstract(result, dd, vars, mtbdd_abstract_op_min_CALL);
 }
 
 /**
  * Abstract the variables in <v> from <a> by taking the maximum of all values
  */
-static inline MTBDD mtbdd_abstract_max(MTBDD dd, MTBDD vars)
+static inline int mtbdd_abstract_max(MTBDD *result, MTBDD dd, MTBDD vars)
 {
-    return mtbdd_abstract(dd, vars, mtbdd_abstract_op_max_CALL);
+    return mtbdd_abstract(result, dd, vars, mtbdd_abstract_op_max_CALL);
 }
 
 /**

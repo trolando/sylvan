@@ -238,20 +238,23 @@ static inline int mtbdd_apply_unary(MTBDD *result, MTBDD dd, mtbdd_apply_unary_c
 
 /**
  * Callback function types for abstraction.
- * MTBDD mtbdd_abstract_cb(MTBDD a, MTBDD b, int k).
  * The function is either called with k==0 (apply to two arguments) or k>0 (k skipped BDD variables)
  * k == 0  =>  res := apply op to a and b
  * k  > 0  =>  res := apply op to op(a, a, k-1) and op(a, a, k-1)
  * The number of skipped variables must fit in a non-negative int. Built-in
  * abstraction operations process large values of k in size_t-width chunks.
+ * The callback writes to Sylvan's protected <result> destination and returns
+ * SYLVAN_OK on success or a negative status on failure. On failure, <result>
+ * is unchanged.
  */
-typedef MTBDD (*mtbdd_abstract_cb)(lace_worker*, MTBDD, MTBDD, int);
+typedef int (*mtbdd_abstract_cb)(lace_worker*, MTBDD *result, MTBDD, MTBDD, int);
 
 /**
  * Abstract the variables in <v> from <a> using the binary operation <op>.
- * Returns mtbdd_invalid if the number of skipped variables exceeds INT_MAX.
+ * The caller must protect <result>. Returns SYLVAN_OK on success or a negative
+ * status on failure, leaving <result> unchanged.
  */
-static inline MTBDD mtbdd_abstract(MTBDD a, MTBDD v, mtbdd_abstract_cb op);
+static inline int mtbdd_abstract(MTBDD *result, MTBDD a, MTBDD v, mtbdd_abstract_cb op);
 
 /**
  * Unary operation Negate.
@@ -271,7 +274,7 @@ static inline int mtbdd_op_cmpl(MTBDD *result, MTBDD a, size_t param);
  * For Integer/Double MTBDDs, mtbdd_undefined is interpreted as "0" or "0.0".
  */
 static inline int mtbdd_op_plus(MTBDD *result, MTBDD *a, MTBDD *b);
-static inline MTBDD mtbdd_abstract_op_plus(MTBDD a, MTBDD b, int c);
+static inline int mtbdd_abstract_op_plus(MTBDD *result, MTBDD a, MTBDD b, int c);
 
 /**
  * Binary operation Minus (for MTBDDs of same type)
@@ -287,7 +290,7 @@ static inline int mtbdd_op_minus(MTBDD *result, MTBDD *a, MTBDD *b);
  * then the result is mtbdd_undefined (i.e. not defined).
  */
 static inline int mtbdd_op_times(MTBDD *result, MTBDD *a, MTBDD *b);
-static inline MTBDD mtbdd_abstract_op_times(MTBDD a, MTBDD b, int c);
+static inline int mtbdd_abstract_op_times(MTBDD *result, MTBDD a, MTBDD b, int c);
 
 /**
  * Binary operation Minimum (for MTBDDs of same type)
@@ -296,7 +299,7 @@ static inline MTBDD mtbdd_abstract_op_times(MTBDD a, MTBDD b, int c);
  * then the result is the other operand.
  */
 static inline int mtbdd_op_min(MTBDD *result, MTBDD *a, MTBDD *b);
-static inline MTBDD mtbdd_abstract_op_min(MTBDD a, MTBDD b, int c);
+static inline int mtbdd_abstract_op_min(MTBDD *result, MTBDD a, MTBDD b, int c);
 
 /**
  * Binary operation Maximum (for MTBDDs of same type)
@@ -305,7 +308,7 @@ static inline MTBDD mtbdd_abstract_op_min(MTBDD a, MTBDD b, int c);
  * then the result is the other operand.
  */
 static inline int mtbdd_op_max(MTBDD *result, MTBDD *a, MTBDD *b);
-static inline MTBDD mtbdd_abstract_op_max(MTBDD a, MTBDD b, int c);
+static inline int mtbdd_abstract_op_max(MTBDD *result, MTBDD a, MTBDD b, int c);
 
 /**
  * Compute -a
@@ -348,22 +351,22 @@ static inline int mtbdd_max(MTBDD *result, MTBDD a, MTBDD b);
 /**
  * Abstract the variables in <v> from <a> by taking the sum of all values
  */
-static inline MTBDD mtbdd_abstract_add(MTBDD dd, MTBDD vars);
+static inline int mtbdd_abstract_add(MTBDD *result, MTBDD dd, MTBDD vars);
 
 /**
  * Abstract the variables in <v> from <a> by taking the product of all values
  */
-static inline MTBDD mtbdd_abstract_mul(MTBDD dd, MTBDD vars);
+static inline int mtbdd_abstract_mul(MTBDD *result, MTBDD dd, MTBDD vars);
 
 /**
  * Abstract the variables in <v> from <a> by taking the minimum of all values
  */
-static inline MTBDD mtbdd_abstract_min(MTBDD dd, MTBDD vars);
+static inline int mtbdd_abstract_min(MTBDD *result, MTBDD dd, MTBDD vars);
 
 /**
  * Abstract the variables in <v> from <a> by taking the maximum of all values
  */
-static inline MTBDD mtbdd_abstract_max(MTBDD dd, MTBDD vars);
+static inline int mtbdd_abstract_max(MTBDD *result, MTBDD dd, MTBDD vars);
 
 /**
  * Compute IF <f> THEN <g> ELSE <h>.

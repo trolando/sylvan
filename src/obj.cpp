@@ -801,7 +801,9 @@ Mtbdd::UApply(mtbdd_apply_unary_cb op, size_t param) const
 Mtbdd
 Mtbdd::Abstract(const BddSet &variables, mtbdd_abstract_cb op) const
 {
-    return mtbdd_abstract(mtbdd, variables.set.bdd, op);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_abstract(&result.mtbdd, mtbdd, variables.set.bdd, op);
+    return result;
 }
 
 Mtbdd
@@ -847,25 +849,33 @@ Mtbdd::Max(const Mtbdd &other) const
 Mtbdd
 Mtbdd::AbstractPlus(const BddSet &variables) const
 {
-    return mtbdd_abstract_add(mtbdd, variables.set.bdd);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_abstract_add(&result.mtbdd, mtbdd, variables.set.bdd);
+    return result;
 }
 
 Mtbdd
 Mtbdd::AbstractTimes(const BddSet &variables) const
 {
-    return mtbdd_abstract_mul(mtbdd, variables.set.bdd);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_abstract_mul(&result.mtbdd, mtbdd, variables.set.bdd);
+    return result;
 }
 
 Mtbdd
 Mtbdd::AbstractMin(const BddSet &variables) const
 {
-    return mtbdd_abstract_min(mtbdd, variables.set.bdd);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_abstract_min(&result.mtbdd, mtbdd, variables.set.bdd);
+    return result;
 }
 
 Mtbdd
 Mtbdd::AbstractMax(const BddSet &variables) const
 {
-    return mtbdd_abstract_max(mtbdd, variables.set.bdd);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_abstract_max(&result.mtbdd, mtbdd, variables.set.bdd);
+    return result;
 }
 
 Mtbdd

@@ -29,6 +29,19 @@ add_test(NAME test_basic COMMAND test_basic)
 add_test(NAME test_zdd COMMAND test_zdd)
 add_test(NAME test_table COMMAND test_table)
 
+if(SYLVAN_GMP)
+    add_executable(test_gmp)
+    target_sources(test_gmp PRIVATE test_gmp.c)
+    target_link_libraries(test_gmp PRIVATE sylvan::sylvan)
+    target_compile_features(test_gmp PRIVATE c_std_11)
+    sylvan_test_warnings(test_gmp)
+    target_compile_options(test_gmp PRIVATE
+        $<$<COMPILE_LANG_AND_ID:C,GNU,Clang,AppleClang>:-Wno-unused-function>
+    )
+
+    add_test(NAME test_gmp COMMAND test_gmp)
+endif()
+
 if(SYLVAN_BUILD_CPP)
     add_executable(test_cxx)
     target_sources(test_cxx PRIVATE test_cxx.cpp)
@@ -46,6 +59,9 @@ if(WIN32 AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" AND
    NOT CMAKE_C_SIMULATE_ID STREQUAL "MSVC")
     get_filename_component(_sylvan_compiler_runtime_dir "${CMAKE_C_COMPILER}" DIRECTORY)
     set(_sylvan_tests test_basic test_zdd test_table)
+    if(SYLVAN_GMP)
+        list(APPEND _sylvan_tests test_gmp)
+    endif()
     if(SYLVAN_BUILD_CPP)
         list(APPEND _sylvan_tests test_cxx)
     endif()

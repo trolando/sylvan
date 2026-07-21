@@ -777,19 +777,25 @@ Mtbdd::Else() const
 Mtbdd
 Mtbdd::Negate() const
 {
-    return mtbdd_neg(mtbdd);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_neg(&result.mtbdd, mtbdd);
+    return result;
 }
 
 Mtbdd
 Mtbdd::Apply(const Mtbdd &other, mtbdd_apply_cb op) const
 {
-    return mtbdd_apply(mtbdd, other.mtbdd, op);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_apply(&result.mtbdd, mtbdd, other.mtbdd, op);
+    return result;
 }
 
 Mtbdd
 Mtbdd::UApply(mtbdd_apply_unary_cb op, size_t param) const
 {
-    return mtbdd_apply_unary(mtbdd, op, param);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_apply_unary(&result.mtbdd, mtbdd, op, param);
+    return result;
 }
 
 Mtbdd
@@ -809,25 +815,33 @@ Mtbdd::Ite(const Mtbdd &g, const Mtbdd &h) const
 Mtbdd
 Mtbdd::Plus(const Mtbdd &other) const
 {
-    return mtbdd_add(mtbdd, other.mtbdd);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_add(&result.mtbdd, mtbdd, other.mtbdd);
+    return result;
 }
 
 Mtbdd
 Mtbdd::Times(const Mtbdd &other) const
 {
-    return mtbdd_mul(mtbdd, other.mtbdd);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_mul(&result.mtbdd, mtbdd, other.mtbdd);
+    return result;
 }
 
 Mtbdd
 Mtbdd::Min(const Mtbdd &other) const
 {
-    return mtbdd_min(mtbdd, other.mtbdd);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_min(&result.mtbdd, mtbdd, other.mtbdd);
+    return result;
 }
 
 Mtbdd
 Mtbdd::Max(const Mtbdd &other) const
 {
-    return mtbdd_max(mtbdd, other.mtbdd);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_max(&result.mtbdd, mtbdd, other.mtbdd);
+    return result;
 }
 
 Mtbdd
@@ -894,39 +908,45 @@ Mtbdd::operator~() const
 Mtbdd
 Mtbdd::operator*(const Mtbdd& other) const
 {
-    return mtbdd_mul(mtbdd, other.mtbdd);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_mul(&result.mtbdd, mtbdd, other.mtbdd);
+    return result;
 }
 
 Mtbdd&
 Mtbdd::operator*=(const Mtbdd& other)
 {
-    mtbdd = mtbdd_mul(mtbdd, other.mtbdd);
+    (void)mtbdd_mul(&mtbdd, mtbdd, other.mtbdd);
     return *this;
 }
 
 Mtbdd
 Mtbdd::operator+(const Mtbdd& other) const
 {
-    return mtbdd_add(mtbdd, other.mtbdd);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_add(&result.mtbdd, mtbdd, other.mtbdd);
+    return result;
 }
 
 Mtbdd&
 Mtbdd::operator+=(const Mtbdd& other)
 {
-    mtbdd = mtbdd_add(mtbdd, other.mtbdd);
+    (void)mtbdd_add(&mtbdd, mtbdd, other.mtbdd);
     return *this;
 }
 
 Mtbdd
 Mtbdd::operator-(const Mtbdd& other) const
 {
-    return mtbdd_sub(mtbdd, other.mtbdd);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_sub(&result.mtbdd, mtbdd, other.mtbdd);
+    return result;
 }
 
 Mtbdd&
 Mtbdd::operator-=(const Mtbdd& other)
 {
-    mtbdd = mtbdd_sub(mtbdd, other.mtbdd);
+    (void)mtbdd_sub(&mtbdd, mtbdd, other.mtbdd);
     return *this;
 }
 

@@ -5,8 +5,12 @@ TASK(int, test_addition)
 int test_addition_CALL(lace_worker* lace)
 {
     MTBDD one = mtbdd_int64(1);
-    MTBDD two = mtbdd_add(one, one);
-    return mtbdd_leaf_int64(two) == 2 ? 0 : 1;
+    MTBDD two = mtbdd_invalid;
+    mtbdd_refs_pushptr(&one);
+    mtbdd_refs_pushptr(&two);
+    int result = mtbdd_add(&two, one, one) == SYLVAN_OK && mtbdd_leaf_int64(two) == 2 ? 0 : 1;
+    mtbdd_refs_popptr(2);
+    return result;
 }
 
 int main(void)

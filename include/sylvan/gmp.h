@@ -42,109 +42,109 @@ MTBDD mtbdd_gmp(mpq_t val);
 /**
  * Operation "plus" for two mpq MTBDDs
  */
-TASK(MTBDD, gmp_op_plus, MTBDD*, a, MTBDD*, b);
+TASK(int, gmp_op_plus, MTBDD*, result, MTBDD*, a, MTBDD*, b);
 TASK(MTBDD, gmp_abstract_op_plus, MTBDD, a, MTBDD, b, int, k);
 
 /**
  * Operation "minus" for two mpq MTBDDs
  */
-TASK(MTBDD, gmp_op_minus, MTBDD*, a, MTBDD*, b);
+TASK(int, gmp_op_minus, MTBDD*, result, MTBDD*, a, MTBDD*, b);
 
 /**
  * Operation "times" for two mpq MTBDDs
  */
-TASK(MTBDD, gmp_op_times, MTBDD*, a, MTBDD*, b);
+TASK(int, gmp_op_times, MTBDD*, result, MTBDD*, a, MTBDD*, b);
 TASK(MTBDD, gmp_abstract_op_times, MTBDD, a, MTBDD, c, int, k);
 
 /**
  * Operation "divide" for two mpq MTBDDs
  */
-TASK(MTBDD, gmp_op_divide, MTBDD*, a, MTBDD*, b);
+TASK(int, gmp_op_divide, MTBDD*, result, MTBDD*, a, MTBDD*, b);
 
 /**
  * Operation "min" for two mpq MTBDDs
  */
-TASK(MTBDD, gmp_op_min, MTBDD*, a, MTBDD*, b);
+TASK(int, gmp_op_min, MTBDD*, result, MTBDD*, a, MTBDD*, b);
 TASK(MTBDD, gmp_abstract_op_min, MTBDD, a, MTBDD, b, int, k);
 
 /**
  * Operation "max" for two mpq MTBDDs
  */
-TASK(MTBDD, gmp_op_max, MTBDD*, a, MTBDD*, b);
+TASK(int, gmp_op_max, MTBDD*, result, MTBDD*, a, MTBDD*, b);
 TASK(MTBDD, gmp_abstract_op_max, MTBDD, a, MTBDD, b, int, k);
 
 /**
  * Operation "negate" for one mpq MTBDD
  */
-TASK(MTBDD, gmp_op_neg, MTBDD, dd, size_t, p);
+TASK(int, gmp_op_neg, MTBDD*, result, MTBDD, dd, size_t, p);
 
 /**
  * Operation "abs" for one mpq MTBDD
  */
-TASK(MTBDD, gmp_op_abs, MTBDD, dd, size_t, p);
+TASK(int, gmp_op_abs, MTBDD*, result, MTBDD, dd, size_t, p);
 
 /**
  * Compute a + b
  */
-static inline MTBDD gmp_plus(MTBDD a, MTBDD b)
+static inline int gmp_plus(MTBDD *result, MTBDD a, MTBDD b)
 {
-    return mtbdd_apply(a, b, gmp_op_plus_CALL);
+    return mtbdd_apply(result, a, b, gmp_op_plus_CALL);
 }
 
 /**
  * Compute a + b
  */
-static inline MTBDD gmp_minus(MTBDD a, MTBDD b)
+static inline int gmp_minus(MTBDD *result, MTBDD a, MTBDD b)
 {
-    return mtbdd_apply(a, b, gmp_op_minus_CALL);
+    return mtbdd_apply(result, a, b, gmp_op_minus_CALL);
 }
 
 /**
  * Compute a * b
  */
-static inline MTBDD gmp_times(MTBDD a, MTBDD b)
+static inline int gmp_times(MTBDD *result, MTBDD a, MTBDD b)
 {
-    return mtbdd_apply(a, b, gmp_op_times_CALL);
+    return mtbdd_apply(result, a, b, gmp_op_times_CALL);
 }
 
 /**
  * Compute a * b
  */
-static inline MTBDD gmp_divide(MTBDD a, MTBDD b)
+static inline int gmp_divide(MTBDD *result, MTBDD a, MTBDD b)
 {
-    return mtbdd_apply(a, b, gmp_op_divide_CALL);
+    return mtbdd_apply(result, a, b, gmp_op_divide_CALL);
 }
 
 /**
  * Compute min(a, b)
  */
-static inline MTBDD gmp_min(MTBDD a, MTBDD b)
+static inline int gmp_min(MTBDD *result, MTBDD a, MTBDD b)
 {
-    return mtbdd_apply(a, b, gmp_op_min_CALL);
+    return mtbdd_apply(result, a, b, gmp_op_min_CALL);
 }
 
 /**
  * Compute max(a, b)
  */
-static inline MTBDD gmp_max(MTBDD a, MTBDD b)
+static inline int gmp_max(MTBDD *result, MTBDD a, MTBDD b)
 {
-    return mtbdd_apply(a, b, gmp_op_max_CALL);
+    return mtbdd_apply(result, a, b, gmp_op_max_CALL);
 }
 
 /**
  * Compute -a
  */
-static inline MTBDD gmp_neg(MTBDD dd)
+static inline int gmp_neg(MTBDD *result, MTBDD dd)
 {
-    return mtbdd_apply_unary(dd, gmp_op_neg_CALL, 0);
+    return mtbdd_apply_unary(result, dd, gmp_op_neg_CALL, 0);
 }
 
 /**
  * Compute abs(a)
  */
-static inline MTBDD gmp_abs(MTBDD dd)
+static inline int gmp_abs(MTBDD *result, MTBDD dd)
 {
-    return mtbdd_apply_unary(dd, gmp_op_abs_CALL, 0);
+    return mtbdd_apply_unary(result, dd, gmp_op_abs_CALL, 0);
 }
 
 /**
@@ -195,13 +195,13 @@ TASK(MTBDD, gmp_and_abstract_max, MTBDD, a, MTBDD, b, MTBDD, vars);
  * Convert to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
  * Parameter <dd> is the MTBDD to convert; parameter <value> is an GMP mpq leaf
  */
-TASK(MTBDD, gmp_op_threshold, MTBDD*, dd, MTBDD*, value);
+TASK(int, gmp_op_threshold, MTBDD*, result, MTBDD*, dd, MTBDD*, value);
 
 /**
  * Convert to a Boolean MTBDD, translate terminals > value to 1 and to 0 otherwise;
  * Parameter <dd> is the MTBDD to convert; parameter <value> is an GMP mpq leaf
  */
-TASK(MTBDD, gmp_op_strict_threshold, MTBDD*, dd, MTBDD*, value);
+TASK(int, gmp_op_strict_threshold, MTBDD*, result, MTBDD*, dd, MTBDD*, value);
 
 /**
  * Convert to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;

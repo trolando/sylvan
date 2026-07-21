@@ -67,22 +67,22 @@ static inline size_t mtbdd_node_count(const MTBDD dd) {
     return mtbdd_shared_node_count(&dd, 1);
 }
 
-TASK(MTBDD, mtbdd_apply, MTBDD, a, MTBDD, b, mtbdd_apply_cb, op);
+TASK(int, mtbdd_apply, MTBDD*, result, MTBDD, a, MTBDD, b, mtbdd_apply_cb, op);
 
-TASK(MTBDD, mtbdd_apply_param, MTBDD, a, MTBDD, b, size_t, p, mtbdd_apply_param_cb, op, uint64_t, opid);
+TASK(int, mtbdd_apply_param, MTBDD*, result, MTBDD, a, MTBDD, b, size_t, p, mtbdd_apply_param_cb, op, uint64_t, opid);
 
-TASK(MTBDD, mtbdd_apply_unary, MTBDD, dd, mtbdd_apply_unary_cb, op, size_t, param);
+TASK(int, mtbdd_apply_unary, MTBDD*, result, MTBDD, dd, mtbdd_apply_unary_cb, op, size_t, param);
 
 TASK(MTBDD, mtbdd_abstract, MTBDD, a, MTBDD, v, mtbdd_abstract_cb, op);
 
-TASK(MTBDD, mtbdd_op_negate, MTBDD, a, size_t, param);
+TASK(int, mtbdd_op_negate, MTBDD*, result, MTBDD, a, size_t, param);
 
-TASK(MTBDD, mtbdd_op_cmpl, MTBDD, a, size_t, param);
+TASK(int, mtbdd_op_cmpl, MTBDD*, result, MTBDD, a, size_t, param);
 
-TASK(MTBDD, mtbdd_op_plus, MTBDD*, a, MTBDD*, b);
+TASK(int, mtbdd_op_plus, MTBDD*, result, MTBDD*, a, MTBDD*, b);
 TASK(MTBDD, mtbdd_abstract_op_plus, MTBDD, a, MTBDD, b, int, c);
 
-TASK(MTBDD, mtbdd_op_minus, MTBDD*, a, MTBDD*, b);
+TASK(int, mtbdd_op_minus, MTBDD*, result, MTBDD*, a, MTBDD*, b);
 
 /**
  * Binary operation Times (for MTBDDs of same type)
@@ -90,7 +90,7 @@ TASK(MTBDD, mtbdd_op_minus, MTBDD*, a, MTBDD*, b);
  * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
  * then the result is mtbdd_undefined (i.e. not defined).
  */
-TASK(MTBDD, mtbdd_op_times, MTBDD*, a, MTBDD*, b);
+TASK(int, mtbdd_op_times, MTBDD*, result, MTBDD*, a, MTBDD*, b);
 TASK(MTBDD, mtbdd_abstract_op_times, MTBDD, a, MTBDD, b, int, c);
 
 /**
@@ -99,7 +99,7 @@ TASK(MTBDD, mtbdd_abstract_op_times, MTBDD, a, MTBDD, b, int, c);
  * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
  * then the result is the other operand.
  */
-TASK(MTBDD, mtbdd_op_min, MTBDD*, a, MTBDD*, b);
+TASK(int, mtbdd_op_min, MTBDD*, result, MTBDD*, a, MTBDD*, b);
 TASK(MTBDD, mtbdd_abstract_op_min, MTBDD, a, MTBDD, b, int, c);
 
 /**
@@ -108,16 +108,16 @@ TASK(MTBDD, mtbdd_abstract_op_min, MTBDD, a, MTBDD, b, int, c);
  * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
  * then the result is the other operand.
  */
-TASK(MTBDD, mtbdd_op_max, MTBDD*, a, MTBDD*, b);
+TASK(int, mtbdd_op_max, MTBDD*, result, MTBDD*, a, MTBDD*, b);
 TASK(MTBDD, mtbdd_abstract_op_max, MTBDD, a, MTBDD, b, int, c);
 
 /**
  * Compute -a
  * (negation, where 0 stays 0, and x into -x)
  */
-static inline MTBDD mtbdd_neg(MTBDD a)
+static inline int mtbdd_neg(MTBDD *result, MTBDD a)
 {
-    return mtbdd_apply_unary(a, mtbdd_op_negate_CALL, 0);
+    return mtbdd_apply_unary(result, a, mtbdd_op_negate_CALL, 0);
 }
 
 /**
@@ -125,49 +125,49 @@ static inline MTBDD mtbdd_neg(MTBDD a)
  * Does not negate Boolean True/False.
  * (complement, where 0 is turned into 1, and non-0 into 0)
  */
-static inline MTBDD mtbdd_zero_indicator(MTBDD dd)
+static inline int mtbdd_zero_indicator(MTBDD *result, MTBDD dd)
 {
-    return mtbdd_apply_unary(dd, mtbdd_op_cmpl_CALL, 0);
+    return mtbdd_apply_unary(result, dd, mtbdd_op_cmpl_CALL, 0);
 }
 
 /**
  * Compute a + b
  */
-static inline MTBDD mtbdd_add(MTBDD a, MTBDD b)
+static inline int mtbdd_add(MTBDD *result, MTBDD a, MTBDD b)
 {
-    return mtbdd_apply(a, b, mtbdd_op_plus_CALL);
+    return mtbdd_apply(result, a, b, mtbdd_op_plus_CALL);
 }
 
 /**
  * Compute a - b
  */
-static inline MTBDD mtbdd_sub(MTBDD a, MTBDD b)
+static inline int mtbdd_sub(MTBDD *result, MTBDD a, MTBDD b)
 {
-    return mtbdd_apply(a, b, mtbdd_op_minus_CALL);
+    return mtbdd_apply(result, a, b, mtbdd_op_minus_CALL);
 }
 
 /**
  * Compute a * b
  */
-static inline MTBDD mtbdd_mul(MTBDD a, MTBDD b)
+static inline int mtbdd_mul(MTBDD *result, MTBDD a, MTBDD b)
 {
-    return mtbdd_apply(a, b, mtbdd_op_times_CALL);
+    return mtbdd_apply(result, a, b, mtbdd_op_times_CALL);
 }
 
 /**
  * Compute min(a, b)
  */
-static inline MTBDD mtbdd_min(MTBDD a, MTBDD b)
+static inline int mtbdd_min(MTBDD *result, MTBDD a, MTBDD b)
 {
-    return mtbdd_apply(a, b, mtbdd_op_min_CALL);
+    return mtbdd_apply(result, a, b, mtbdd_op_min_CALL);
 }
 
 /**
  * Compute max(a, b)
  */
-static inline MTBDD mtbdd_max(MTBDD a, MTBDD b)
+static inline int mtbdd_max(MTBDD *result, MTBDD a, MTBDD b)
 {
-    return mtbdd_apply(a, b, mtbdd_op_max_CALL);
+    return mtbdd_apply(result, a, b, mtbdd_op_max_CALL);
 }
 
 /**
@@ -222,12 +222,12 @@ TASK(MTBDD, mtbdd_mul_abstract_max, MTBDD, a, MTBDD, b, MTBDD, c);
 /**
  * Monad that converts double to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
  */
-TASK(MTBDD, mtbdd_op_threshold_double, MTBDD, a, size_t, b)
+TASK(int, mtbdd_op_threshold_double, MTBDD*, result, MTBDD, a, size_t, b)
 
 /**
  * Monad that converts double to a Boolean MTBDD, translate terminals > value to 1 and to 0 otherwise;
  */
-TASK(MTBDD, mtbdd_op_strict_threshold_double, MTBDD, a, size_t, b)
+TASK(int, mtbdd_op_strict_threshold_double, MTBDD*, result, MTBDD, a, size_t, b)
 
 /**
  * Convert double to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;

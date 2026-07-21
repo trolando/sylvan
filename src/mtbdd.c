@@ -892,11 +892,31 @@ int mtbdd_set_cube_CALL(lace_worker* lace, MTBDD *destination, MTBDD mtbdd, BDDS
 /**
  * Apply a binary operation <op> to <a> and <b>.
  */
-MTBDD mtbdd_apply_CALL(lace_worker* lace, MTBDD a, MTBDD b, mtbdd_apply_cb op)
+int mtbdd_apply_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, mtbdd_apply_cb op)
 {
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || op == NULL) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+
     /* Check terminal case */
-    MTBDD result = op(lace, &a, &b);
-    if (result != mtbdd_invalid) return result;
+    int status = op(lace, &computed, &a, &b);
+    if (status == SYLVAN_OK) {
+        if (computed == mtbdd_invalid) status = SYLVAN_ERR_CALLBACK;
+        else *destination = computed;
+        mtbdd_refs_popptr(1);
+        return status;
+    }
+    if (status != SYLVAN_APPLY_RECURSE) {
+        mtbdd_refs_popptr(1);
+        return status < 0 ? status : SYLVAN_ERR_CALLBACK;
+    }
+    if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
+        mtbdd_refs_popptr(1);
+        return SYLVAN_ERR_CALLBACK;
+    }
 
     /* Maybe perform garbage collection */
     sylvan_gc_test(lace);
@@ -905,9 +925,11 @@ MTBDD mtbdd_apply_CALL(lace_worker* lace, MTBDD a, MTBDD b, mtbdd_apply_cb op)
     sylvan_stats_count(MTBDD_APPLY);
 
     /* Check cache */
-    if (cache_get3(CACHE_MTBDD_APPLY, a, b, (size_t)op, &result)) {
+    if (cache_get3(CACHE_MTBDD_APPLY, a, b, (size_t)op, &computed)) {
         sylvan_stats_count(MTBDD_APPLY_CACHED);
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /* Get top variable */
@@ -951,28 +973,58 @@ MTBDD mtbdd_apply_CALL(lace_worker* lace, MTBDD a, MTBDD b, mtbdd_apply_cb op)
     }
 
     /* Recursive */
-    mtbdd_refs_spawn(mtbdd_apply_SPAWN(lace, ahigh, bhigh, op));
-    MTBDD low = mtbdd_refs_push(mtbdd_apply_CALL(lace, alow, blow, op));
-    MTBDD high = mtbdd_refs_sync(mtbdd_apply_SYNC(lace));
-    mtbdd_refs_pop(1);
-    result = mtbdd_make_node(v, low, high);
+    MTBDD low = mtbdd_invalid;
+    MTBDD high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+    mtbdd_apply_SPAWN(lace, &high, ahigh, bhigh, op);
+    status = mtbdd_apply_CALL(lace, &low, alow, blow, op);
+    int high_status = mtbdd_apply_SYNC(lace);
+    if (status == SYLVAN_OK) status = high_status;
+    if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, v, low, high);
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(3);
+        return status;
+    }
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_APPLY, a, b, (size_t)op, result)) {
+    if (cache_put3(CACHE_MTBDD_APPLY, a, b, (size_t)op, computed)) {
         sylvan_stats_count(MTBDD_APPLY_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    mtbdd_refs_popptr(3);
+    return SYLVAN_OK;
 }
 
 /**
  * Apply a binary operation <op> to <a> and <b> with parameter <p>
  */
-MTBDD mtbdd_apply_param_CALL(lace_worker* lace, MTBDD a, MTBDD b, size_t p, mtbdd_apply_param_cb op, uint64_t opid)
+int mtbdd_apply_param_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, size_t p, mtbdd_apply_param_cb op, uint64_t opid)
 {
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || op == NULL) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+
     /* Check terminal case */
-    MTBDD result = op(lace, &a, &b, p);
-    if (result != mtbdd_invalid) return result;
+    int status = op(lace, &computed, &a, &b, p);
+    if (status == SYLVAN_OK) {
+        if (computed == mtbdd_invalid) status = SYLVAN_ERR_CALLBACK;
+        else *destination = computed;
+        mtbdd_refs_popptr(1);
+        return status;
+    }
+    if (status != SYLVAN_APPLY_RECURSE) {
+        mtbdd_refs_popptr(1);
+        return status < 0 ? status : SYLVAN_ERR_CALLBACK;
+    }
+    if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
+        mtbdd_refs_popptr(1);
+        return SYLVAN_ERR_CALLBACK;
+    }
 
     /* Maybe perform garbage collection */
     sylvan_gc_test(lace);
@@ -981,9 +1033,11 @@ MTBDD mtbdd_apply_param_CALL(lace_worker* lace, MTBDD a, MTBDD b, size_t p, mtbd
     sylvan_stats_count(MTBDD_APPLY);
 
     /* Check cache */
-    if (cache_get3(opid, a, b, p, &result)) {
+    if (cache_get3(opid, a, b, p, &computed)) {
         sylvan_stats_count(MTBDD_APPLY_CACHED);
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /* Get top variable */
@@ -1025,25 +1079,40 @@ MTBDD mtbdd_apply_param_CALL(lace_worker* lace, MTBDD a, MTBDD b, size_t p, mtbd
     }
 
     /* Recursive */
-    mtbdd_refs_spawn(mtbdd_apply_param_SPAWN(lace, ahigh, bhigh, p, op, opid));
-    MTBDD low = mtbdd_refs_push(mtbdd_apply_param_CALL(lace, alow, blow, p, op, opid));
-    MTBDD high = mtbdd_refs_sync(mtbdd_apply_param_SYNC(lace));
-    mtbdd_refs_pop(1);
-    result = mtbdd_make_node(v, low, high);
+    MTBDD low = mtbdd_invalid;
+    MTBDD high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+    mtbdd_apply_param_SPAWN(lace, &high, ahigh, bhigh, p, op, opid);
+    status = mtbdd_apply_param_CALL(lace, &low, alow, blow, p, op, opid);
+    int high_status = mtbdd_apply_param_SYNC(lace);
+    if (status == SYLVAN_OK) status = high_status;
+    if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, v, low, high);
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(3);
+        return status;
+    }
 
     /* Store in cache */
-    if (cache_put3(opid, a, b, p, result)) {
+    if (cache_put3(opid, a, b, p, computed)) {
         sylvan_stats_count(MTBDD_APPLY_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    mtbdd_refs_popptr(3);
+    return SYLVAN_OK;
 }
 
 /**
  * Apply a unary operation <op> to <dd>.
  */
-MTBDD mtbdd_apply_unary_CALL(lace_worker* lace, MTBDD dd, mtbdd_apply_unary_cb op, size_t param)
+int mtbdd_apply_unary_CALL(lace_worker* lace, MTBDD *destination, MTBDD dd, mtbdd_apply_unary_cb op, size_t param)
 {
+    if (destination == NULL || dd == mtbdd_invalid || op == NULL) return SYLVAN_ERR_INVALID;
+
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+
     /* Maybe perform garbage collection */
     sylvan_gc_test(lace);
 
@@ -1051,21 +1120,36 @@ MTBDD mtbdd_apply_unary_CALL(lace_worker* lace, MTBDD dd, mtbdd_apply_unary_cb o
     sylvan_stats_count(MTBDD_UAPPLY);
 
     /* Check cache */
-    MTBDD result;
-    if (cache_get3(CACHE_MTBDD_UAPPLY, dd, (size_t)op, param, &result)) {
+    if (cache_get3(CACHE_MTBDD_UAPPLY, dd, (size_t)op, param, &computed)) {
         sylvan_stats_count(MTBDD_UAPPLY_CACHED);
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /* Check terminal case */
-    result = op(lace, dd, param);
-    if (result != mtbdd_invalid) {
+    int status = op(lace, &computed, dd, param);
+    if (status == SYLVAN_OK) {
+        if (computed == mtbdd_invalid) {
+            mtbdd_refs_popptr(1);
+            return SYLVAN_ERR_CALLBACK;
+        }
         /* Store in cache */
-        if (cache_put3(CACHE_MTBDD_UAPPLY, dd, (size_t)op, param, result)) {
+        if (cache_put3(CACHE_MTBDD_UAPPLY, dd, (size_t)op, param, computed)) {
             sylvan_stats_count(MTBDD_UAPPLY_CACHEDPUT);
         }
 
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
+    }
+    if (status != SYLVAN_APPLY_RECURSE) {
+        mtbdd_refs_popptr(1);
+        return status < 0 ? status : SYLVAN_ERR_CALLBACK;
+    }
+    if (mtbdd_is_leaf(dd)) {
+        mtbdd_refs_popptr(1);
+        return SYLVAN_ERR_CALLBACK;
     }
 
     /* Get cofactors */
@@ -1074,26 +1158,69 @@ MTBDD mtbdd_apply_unary_CALL(lace_worker* lace, MTBDD dd, mtbdd_apply_unary_cb o
     MTBDD ddhigh = node_gethigh(dd, ndd);
 
     /* Recursive */
-    mtbdd_refs_spawn(mtbdd_apply_unary_SPAWN(lace, ddhigh, op, param));
-    MTBDD low = mtbdd_refs_push(mtbdd_apply_unary_CALL(lace, ddlow, op, param));
-    MTBDD high = mtbdd_refs_sync(mtbdd_apply_unary_SYNC(lace));
-    mtbdd_refs_pop(1);
-    result = mtbdd_make_node(mtbddnode_getvariable(ndd), low, high);
+    MTBDD low = mtbdd_invalid;
+    MTBDD high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+    mtbdd_apply_unary_SPAWN(lace, &high, ddhigh, op, param);
+    status = mtbdd_apply_unary_CALL(lace, &low, ddlow, op, param);
+    int high_status = mtbdd_apply_unary_SYNC(lace);
+    if (status == SYLVAN_OK) status = high_status;
+    if (status == SYLVAN_OK) {
+        status = _mtbdd_try_make_node(&computed, mtbddnode_getvariable(ndd), low, high);
+    }
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(3);
+        return status;
+    }
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_UAPPLY, dd, (size_t)op, param, result)) {
+    if (cache_put3(CACHE_MTBDD_UAPPLY, dd, (size_t)op, param, computed)) {
         sylvan_stats_count(MTBDD_UAPPLY_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    mtbdd_refs_popptr(3);
+    return SYLVAN_OK;
 }
 
-TASK(MTBDD, mtbdd_uop_times_uint, MTBDD, a, size_t, k)
-
-MTBDD mtbdd_uop_times_uint_CALL(lace_worker* lace, MTBDD a, size_t k)
+static int
+_mtbdd_apply_callback_result(MTBDD *destination, MTBDD result)
 {
-    if (a == mtbdd_undefined) return mtbdd_undefined;
-    if (a == bdd_true) return bdd_true;
+    if (result == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    *destination = result;
+    return SYLVAN_OK;
+}
+
+/* Temporary bridges for result-returning MTBDD operations converted in later batches. */
+static MTBDD
+_mtbdd_apply_value_CALL(lace_worker *lace, MTBDD a, MTBDD b, mtbdd_apply_cb op)
+{
+    MTBDD result = mtbdd_invalid;
+    mtbdd_refs_pushptr(&result);
+    int status = mtbdd_apply_CALL(lace, &result, a, b, op);
+    mtbdd_refs_popptr(1);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+static MTBDD
+_mtbdd_apply_callback_value(lace_worker *lace, MTBDD *a, MTBDD *b, mtbdd_apply_cb op)
+{
+    MTBDD result = mtbdd_invalid;
+    mtbdd_refs_pushptr(&result);
+    int status = op(lace, &result, a, b);
+    mtbdd_refs_popptr(1);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+TASK(int, mtbdd_uop_times_uint, MTBDD*, result, MTBDD, a, size_t, k)
+
+int mtbdd_uop_times_uint_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, size_t k)
+{
+    (void)lace;
+
+    if (a == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, mtbdd_undefined);
+    if (a == bdd_true) return _mtbdd_apply_callback_result(destination, bdd_true);
 
     // a != constant
     mtbddnode* na = MTBDD_GETNODE(a);
@@ -1101,30 +1228,32 @@ MTBDD mtbdd_uop_times_uint_CALL(lace_worker* lace, MTBDD a, size_t k)
     if (mtbddnode_isleaf(na)) {
         if (mtbddnode_gettype(na) == 0) {
             int64_t v = mtbdd_leaf_int64(a);
-            return mtbdd_int64(v*k);
+            return _mtbdd_apply_callback_result(destination, mtbdd_int64(v*k));
         } else if (mtbddnode_gettype(na) == 1) {
             double d = mtbdd_leaf_double(a);
-            return mtbdd_double(d*k);
+            return _mtbdd_apply_callback_result(destination, mtbdd_double(d*k));
         } else if (mtbddnode_gettype(na) == 2) {
             uint64_t v = mtbddnode_getvalue(na);
             int64_t n = (int32_t)(v>>32);
             uint32_t d = (uint32_t)v;
             uint32_t c = gcd(d, (uint32_t)k);
-            return mtbdd_fraction(n*(k/c), d/c);
+            return _mtbdd_apply_callback_result(destination, mtbdd_fraction(n*(k/c), d/c));
         } else {
-            assert(0); // failure
+            return SYLVAN_ERR_INVALID;
         }
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
-TASK(MTBDD, mtbdd_uop_pow_uint, MTBDD, a, size_t, k)
+TASK(int, mtbdd_uop_pow_uint, MTBDD*, result, MTBDD, a, size_t, k)
 
-MTBDD mtbdd_uop_pow_uint_CALL(lace_worker* lace, MTBDD a, size_t k)
+int mtbdd_uop_pow_uint_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, size_t k)
 {
-    if (a == mtbdd_undefined) return mtbdd_undefined;
-    if (a == bdd_true) return bdd_true;
+    (void)lace;
+
+    if (a == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, mtbdd_undefined);
+    if (a == bdd_true) return _mtbdd_apply_callback_result(destination, bdd_true);
 
     // a != constant
     mtbddnode* na = MTBDD_GETNODE(a);
@@ -1132,72 +1261,102 @@ MTBDD mtbdd_uop_pow_uint_CALL(lace_worker* lace, MTBDD a, size_t k)
     if (mtbddnode_isleaf(na)) {
         if (mtbddnode_gettype(na) == 0) {
             int64_t v = mtbdd_leaf_int64(a);
-            return mtbdd_int64(pow(v, k));
+            return _mtbdd_apply_callback_result(destination, mtbdd_int64(pow(v, k)));
         } else if (mtbddnode_gettype(na) == 1) {
             double d = mtbdd_leaf_double(a);
-            return mtbdd_double(pow(d, k));
+            return _mtbdd_apply_callback_result(destination, mtbdd_double(pow(d, k)));
         } else if (mtbddnode_gettype(na) == 2) {
             uint64_t v = mtbddnode_getvalue(na);
-            return mtbdd_fraction(pow((int32_t)(v>>32), k), (uint32_t)v);
+            return _mtbdd_apply_callback_result(destination, mtbdd_fraction(pow((int32_t)(v>>32), k), (uint32_t)v));
         } else {
-            assert(0); // failure
+            return SYLVAN_ERR_INVALID;
         }
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
-static MTBDD
-mtbdd_uapply_power_of_two(MTBDD a, mtbdd_apply_unary_cb op, unsigned int k)
+static int
+mtbdd_uapply_power_of_two(MTBDD *destination, MTBDD a, mtbdd_apply_unary_cb op, unsigned int k)
 {
     const unsigned int max_shift = (unsigned int)(sizeof(size_t) * CHAR_BIT - 1);
     const size_t max_factor = (size_t)1 << max_shift;
     MTBDD result = a;
+    mtbdd_refs_pushptr(&result);
 
     while (k > max_shift) {
-        mtbdd_refs_push(result);
-        result = mtbdd_apply_unary(result, op, max_factor);
-        mtbdd_refs_pop(1);
-        if (result == mtbdd_invalid) return mtbdd_invalid;
+        int status = mtbdd_apply_unary(&result, result, op, max_factor);
+        if (status != SYLVAN_OK) {
+            mtbdd_refs_popptr(1);
+            return status;
+        }
         k -= max_shift;
     }
 
-    mtbdd_refs_push(result);
-    result = mtbdd_apply_unary(result, op, (size_t)1 << k);
-    mtbdd_refs_pop(1);
-    return result;
+    int status = mtbdd_apply_unary(&result, result, op, (size_t)1 << k);
+    if (status == SYLVAN_OK) *destination = result;
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
 MTBDD mtbdd_abstract_op_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 {
+    (void)lace;
+
+    MTBDD result = mtbdd_invalid;
+    mtbdd_refs_pushptr(&result);
+    int status;
     if (k < 0) {
-        return mtbdd_invalid;
+        status = SYLVAN_ERR_INVALID;
     } else if (k == 0) {
-        return mtbdd_apply(a, b, mtbdd_op_plus_CALL);
+        status = mtbdd_apply(&result, a, b, mtbdd_op_plus_CALL);
     } else {
-        return mtbdd_uapply_power_of_two(a, mtbdd_uop_times_uint_CALL, (unsigned int)k);
+        status = mtbdd_uapply_power_of_two(&result, a, mtbdd_uop_times_uint_CALL, (unsigned int)k);
     }
+    mtbdd_refs_popptr(1);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
 
 MTBDD mtbdd_abstract_op_times_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 {
+    (void)lace;
+
+    MTBDD result = mtbdd_invalid;
+    mtbdd_refs_pushptr(&result);
+    int status;
     if (k < 0) {
-        return mtbdd_invalid;
+        status = SYLVAN_ERR_INVALID;
     } else if (k == 0) {
-        return mtbdd_apply(a, b, mtbdd_op_times_CALL);
+        status = mtbdd_apply(&result, a, b, mtbdd_op_times_CALL);
     } else {
-        return mtbdd_uapply_power_of_two(a, mtbdd_uop_pow_uint_CALL, (unsigned int)k);
+        status = mtbdd_uapply_power_of_two(&result, a, mtbdd_uop_pow_uint_CALL, (unsigned int)k);
     }
+    mtbdd_refs_popptr(1);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
 
 MTBDD mtbdd_abstract_op_min_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 {
-    return k == 0 ? mtbdd_apply(a, b, mtbdd_op_min_CALL) : a;
+    (void)lace;
+
+    if (k != 0) return a;
+    MTBDD result = mtbdd_invalid;
+    mtbdd_refs_pushptr(&result);
+    int status = mtbdd_apply(&result, a, b, mtbdd_op_min_CALL);
+    mtbdd_refs_popptr(1);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
 
 MTBDD mtbdd_abstract_op_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 {
-    return k == 0 ? mtbdd_apply(a, b, mtbdd_op_max_CALL) : a;
+    (void)lace;
+
+    if (k != 0) return a;
+    MTBDD result = mtbdd_invalid;
+    mtbdd_refs_pushptr(&result);
+    int status = mtbdd_apply(&result, a, b, mtbdd_op_max_CALL);
+    mtbdd_refs_popptr(1);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
 
 /**
@@ -1317,15 +1476,17 @@ MTBDD mtbdd_abstract_CALL(lace_worker* lace, MTBDD a, MTBDD v, mtbdd_abstract_cb
  * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
  * For Integer/Double MTBDDs, mtbdd_undefined is interpreted as "0" or "0.0".
  */
-MTBDD mtbdd_op_plus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
+int mtbdd_op_plus_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
+    (void)lace;
+
     MTBDD a = *pa, b = *pb;
-    if (a == mtbdd_undefined) return b;
-    if (b == mtbdd_undefined) return a;
+    if (a == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, b);
+    if (b == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, a);
 
     // Handle Boolean MTBDDs: interpret as Or
-    if (a == bdd_true) return bdd_true;
-    if (b == bdd_true) return bdd_true;
+    if (a == bdd_true) return _mtbdd_apply_callback_result(destination, bdd_true);
+    if (b == bdd_true) return _mtbdd_apply_callback_result(destination, bdd_true);
 
     mtbddnode* na = MTBDD_GETNODE(a);
     mtbddnode* nb = MTBDD_GETNODE(b);
@@ -1335,10 +1496,10 @@ MTBDD mtbdd_op_plus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
         uint64_t val_b = mtbddnode_getvalue(nb);
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
             // both integer
-            return mtbdd_int64(*(int64_t*)(&val_a) + *(int64_t*)(&val_b));
+            return _mtbdd_apply_callback_result(destination, mtbdd_int64(*(int64_t*)(&val_a) + *(int64_t*)(&val_b)));
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // both double
-            return mtbdd_double(*(double*)(&val_a) + *(double*)(&val_b));
+            return _mtbdd_apply_callback_result(destination, mtbdd_double(*(double*)(&val_a) + *(double*)(&val_b)));
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // both fraction
             int64_t nom_a = (int32_t)(val_a>>32);
@@ -1346,17 +1507,17 @@ MTBDD mtbdd_op_plus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
             uint64_t denom_a = val_a&0xffffffff;
             uint64_t denom_b = val_b&0xffffffff;
             // common cases
-            if (nom_a == 0) return b;
-            if (nom_b == 0) return a;
+            if (nom_a == 0) return _mtbdd_apply_callback_result(destination, b);
+            if (nom_b == 0) return _mtbdd_apply_callback_result(destination, a);
             // equalize denominators
             uint32_t c = gcd((uint32_t)denom_a, (uint32_t)denom_b);
             nom_a *= denom_b/c;
             nom_b *= denom_a/c;
             denom_a *= denom_b/c;
             // add
-            return mtbdd_fraction(nom_a + nom_b, denom_a);
+            return _mtbdd_apply_callback_result(destination, mtbdd_fraction(nom_a + nom_b, denom_a));
         } else {
-            assert(0); // failure
+            return SYLVAN_ERR_INVALID;
         }
     }
 
@@ -1365,7 +1526,7 @@ MTBDD mtbdd_op_plus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
         *pb = a;
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
@@ -1373,11 +1534,13 @@ MTBDD mtbdd_op_plus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
  * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
  * For Integer/Double MTBDDs, mtbdd_undefined is interpreted as "0" or "0.0".
  */
-MTBDD mtbdd_op_minus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
+int mtbdd_op_minus_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
+    (void)lace;
+
     MTBDD a = *pa, b = *pb;
-    if (a == mtbdd_undefined) return mtbdd_neg(b);
-    if (b == mtbdd_undefined) return a;
+    if (a == mtbdd_undefined) return mtbdd_neg(destination, b);
+    if (b == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, a);
 
     mtbddnode* na = MTBDD_GETNODE(a);
     mtbddnode* nb = MTBDD_GETNODE(b);
@@ -1387,10 +1550,10 @@ MTBDD mtbdd_op_minus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
         uint64_t val_b = mtbddnode_getvalue(nb);
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
             // both integer
-            return mtbdd_int64(*(int64_t*)(&val_a) - *(int64_t*)(&val_b));
+            return _mtbdd_apply_callback_result(destination, mtbdd_int64(*(int64_t*)(&val_a) - *(int64_t*)(&val_b)));
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // both double
-            return mtbdd_double(*(double*)(&val_a) - *(double*)(&val_b));
+            return _mtbdd_apply_callback_result(destination, mtbdd_double(*(double*)(&val_a) - *(double*)(&val_b)));
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // both fraction
             int64_t nom_a = (int32_t)(val_a>>32);
@@ -1398,20 +1561,20 @@ MTBDD mtbdd_op_minus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
             uint64_t denom_a = val_a&0xffffffff;
             uint64_t denom_b = val_b&0xffffffff;
             // common cases
-            if (nom_b == 0) return a;
+            if (nom_b == 0) return _mtbdd_apply_callback_result(destination, a);
             // equalize denominators
             uint32_t c = gcd((uint32_t)denom_a, (uint32_t)denom_b);
             nom_a *= denom_b/c;
             nom_b *= denom_a/c;
             denom_a *= denom_b/c;
             // subtract
-            return mtbdd_fraction(nom_a - nom_b, denom_a);
+            return _mtbdd_apply_callback_result(destination, mtbdd_fraction(nom_a - nom_b, denom_a));
         } else {
-            assert(0); // failure
+            return SYLVAN_ERR_INVALID;
         }
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
@@ -1420,14 +1583,16 @@ MTBDD mtbdd_op_minus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
  * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
  * then the result is mtbdd_undefined (i.e. not defined).
  */
-MTBDD mtbdd_op_times_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
+int mtbdd_op_times_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
+    (void)lace;
+
     MTBDD a = *pa, b = *pb;
-    if (a == mtbdd_undefined || b == mtbdd_undefined) return mtbdd_undefined;
+    if (a == mtbdd_undefined || b == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, mtbdd_undefined);
 
     // Handle Boolean MTBDDs: interpret as And
-    if (a == bdd_true) return b;
-    if (b == bdd_true) return a;
+    if (a == bdd_true) return _mtbdd_apply_callback_result(destination, b);
+    if (b == bdd_true) return _mtbdd_apply_callback_result(destination, a);
 
     mtbddnode* na = MTBDD_GETNODE(a);
     mtbddnode* nb = MTBDD_GETNODE(b);
@@ -1439,28 +1604,28 @@ MTBDD mtbdd_op_times_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
             // both integer
             int64_t i_a = *(int64_t*)(&val_a);
             int64_t i_b = *(int64_t*)(&val_b);
-            if (i_a == 0) return a;
-            if (i_b == 0) return b;
-            if (i_a == 1) return b;
-            if (i_b == 1) return a;
-            return mtbdd_int64(i_a * i_b);
+            if (i_a == 0) return _mtbdd_apply_callback_result(destination, a);
+            if (i_b == 0) return _mtbdd_apply_callback_result(destination, b);
+            if (i_a == 1) return _mtbdd_apply_callback_result(destination, b);
+            if (i_b == 1) return _mtbdd_apply_callback_result(destination, a);
+            return _mtbdd_apply_callback_result(destination, mtbdd_int64(i_a * i_b));
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // both double
             double d_a = *(double*)(&val_a);
             double d_b = *(double*)(&val_b);
-            if (d_a == 0.0) return a;
-            if (d_a == 1.0) return b;
-            if (d_b == 0.0) return b;
-            if (d_b == 1.0) return a;
-            return mtbdd_double(d_a * d_b);
+            if (d_a == 0.0) return _mtbdd_apply_callback_result(destination, a);
+            if (d_a == 1.0) return _mtbdd_apply_callback_result(destination, b);
+            if (d_b == 0.0) return _mtbdd_apply_callback_result(destination, b);
+            if (d_b == 1.0) return _mtbdd_apply_callback_result(destination, a);
+            return _mtbdd_apply_callback_result(destination, mtbdd_double(d_a * d_b));
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // both fraction
             int64_t nom_a = (int32_t)(val_a>>32);
             int64_t nom_b = (int32_t)(val_b>>32);
             uint64_t denom_a = val_a&0xffffffff;
             uint64_t denom_b = val_b&0xffffffff;
-            if (nom_a == 0) return a;
-            if (nom_b == 0) return b;
+            if (nom_a == 0) return _mtbdd_apply_callback_result(destination, a);
+            if (nom_b == 0) return _mtbdd_apply_callback_result(destination, b);
             // multiply!
             uint32_t c = gcd((uint32_t)(nom_b < 0 ? -nom_b : nom_b), (uint32_t)denom_a);
             uint32_t d = gcd((uint32_t)(nom_a < 0 ? -nom_a : nom_a), (uint32_t)denom_b);
@@ -1468,9 +1633,9 @@ MTBDD mtbdd_op_times_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
             denom_a /= c;
             nom_a *= (nom_b/c);
             denom_a *= (denom_b/d);
-            return mtbdd_fraction(nom_a, denom_a);
+            return _mtbdd_apply_callback_result(destination, mtbdd_fraction(nom_a, denom_a));
         } else {
-            assert(0); // failure
+            return SYLVAN_ERR_INVALID;
         }
     }
 
@@ -1479,7 +1644,7 @@ MTBDD mtbdd_op_times_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
         *pb = a;
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
@@ -1488,16 +1653,18 @@ MTBDD mtbdd_op_times_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
  * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
  * then the result is the other operand.
  */
-MTBDD mtbdd_op_min_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
+int mtbdd_op_min_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
+    (void)lace;
+
     MTBDD a = *pa, b = *pb;
-    if (a == bdd_true) return b;
-    if (b == bdd_true) return a;
-    if (a == b) return a;
+    if (a == bdd_true) return _mtbdd_apply_callback_result(destination, b);
+    if (b == bdd_true) return _mtbdd_apply_callback_result(destination, a);
+    if (a == b) return _mtbdd_apply_callback_result(destination, a);
 
     // Special case where "false" indicates a partial function
-    if (a == mtbdd_undefined && b != mtbdd_undefined && mtbddnode_isleaf(MTBDD_GETNODE(b))) return b;
-    if (b == mtbdd_undefined && a != mtbdd_undefined && mtbddnode_isleaf(MTBDD_GETNODE(a))) return a;
+    if (a == mtbdd_undefined && b != mtbdd_undefined && mtbddnode_isleaf(MTBDD_GETNODE(b))) return _mtbdd_apply_callback_result(destination, b);
+    if (b == mtbdd_undefined && a != mtbdd_undefined && mtbddnode_isleaf(MTBDD_GETNODE(a))) return _mtbdd_apply_callback_result(destination, a);
 
     mtbddnode* na = MTBDD_GETNODE(a);
     mtbddnode* nb = MTBDD_GETNODE(b);
@@ -1509,12 +1676,12 @@ MTBDD mtbdd_op_min_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
             // both integer
             int64_t va = *(int64_t*)(&val_a);
             int64_t vb = *(int64_t*)(&val_b);
-            return va < vb ? a : b;
+            return _mtbdd_apply_callback_result(destination, va < vb ? a : b);
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // both double
             double va = *(double*)&val_a;
             double vb = *(double*)&val_b;
-            return va < vb ? a : b;
+            return _mtbdd_apply_callback_result(destination, va < vb ? a : b);
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // both fraction
             int64_t nom_a = (int32_t)(val_a>>32);
@@ -1526,9 +1693,9 @@ MTBDD mtbdd_op_min_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
             nom_a *= denom_b/c;
             nom_b *= denom_a/c;
             // compute lowest
-            return nom_a < nom_b ? a : b;
+            return _mtbdd_apply_callback_result(destination, nom_a < nom_b ? a : b);
         } else {
-            assert(0); // failure
+            return SYLVAN_ERR_INVALID;
         }
     }
 
@@ -1537,7 +1704,7 @@ MTBDD mtbdd_op_min_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
         *pb = a;
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
@@ -1546,14 +1713,16 @@ MTBDD mtbdd_op_min_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
  * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
  * then the result is the other operand.
  */
-MTBDD mtbdd_op_max_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
+int mtbdd_op_max_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
+    (void)lace;
+
     MTBDD a = *pa, b = *pb;
-    if (a == bdd_true) return a;
-    if (b == bdd_true) return b;
-    if (a == mtbdd_undefined) return b;
-    if (b == mtbdd_undefined) return a;
-    if (a == b) return a;
+    if (a == bdd_true) return _mtbdd_apply_callback_result(destination, a);
+    if (b == bdd_true) return _mtbdd_apply_callback_result(destination, b);
+    if (a == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, b);
+    if (b == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, a);
+    if (a == b) return _mtbdd_apply_callback_result(destination, a);
 
     mtbddnode* na = MTBDD_GETNODE(a);
     mtbddnode* nb = MTBDD_GETNODE(b);
@@ -1565,12 +1734,12 @@ MTBDD mtbdd_op_max_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
             // both integer
             int64_t va = *(int64_t*)(&val_a);
             int64_t vb = *(int64_t*)(&val_b);
-            return va > vb ? a : b;
+            return _mtbdd_apply_callback_result(destination, va > vb ? a : b);
         } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
             // both double
             double vval_a = *(double*)&val_a;
             double vval_b = *(double*)&val_b;
-            return vval_a > vval_b ? a : b;
+            return _mtbdd_apply_callback_result(destination, vval_a > vval_b ? a : b);
         } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
             // both fraction
             int64_t nom_a = (int32_t)(val_a>>32);
@@ -1582,9 +1751,9 @@ MTBDD mtbdd_op_max_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
             nom_a *= denom_b/c;
             nom_b *= denom_a/c;
             // compute highest
-            return nom_a > nom_b ? a : b;
+            return _mtbdd_apply_callback_result(destination, nom_a > nom_b ? a : b);
         } else {
-            assert(0); // failure
+            return SYLVAN_ERR_INVALID;
         }
     }
 
@@ -1593,13 +1762,16 @@ MTBDD mtbdd_op_max_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
         *pb = a;
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
-MTBDD mtbdd_op_cmpl_CALL(lace_worker* lace, MTBDD a, size_t k)
+int mtbdd_op_cmpl_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, size_t k)
 {
+    (void)lace;
+    (void)k;
+
     // if a is false, then it is a partial function. Keep partial!
-    if (a == mtbdd_undefined) return mtbdd_undefined;
+    if (a == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, mtbdd_undefined);
 
     // a != constant
     mtbddnode* na = MTBDD_GETNODE(a);
@@ -1607,29 +1779,31 @@ MTBDD mtbdd_op_cmpl_CALL(lace_worker* lace, MTBDD a, size_t k)
     if (mtbddnode_isleaf(na)) {
         if (mtbddnode_gettype(na) == 0) {
             int64_t v = mtbdd_leaf_int64(a);
-            if (v == 0) return mtbdd_int64(1);
-            else return mtbdd_int64(0);
+            if (v == 0) return _mtbdd_apply_callback_result(destination, mtbdd_int64(1));
+            else return _mtbdd_apply_callback_result(destination, mtbdd_int64(0));
         } else if (mtbddnode_gettype(na) == 1) {
             double d = mtbdd_leaf_double(a);
-            if (d == 0.0) return mtbdd_double(1.0);
-            else return mtbdd_double(0.0);
+            if (d == 0.0) return _mtbdd_apply_callback_result(destination, mtbdd_double(1.0));
+            else return _mtbdd_apply_callback_result(destination, mtbdd_double(0.0));
         } else if (mtbddnode_gettype(na) == 2) {
             uint64_t v = mtbddnode_getvalue(na);
-            if (v == 1) return mtbdd_fraction(1, 1);
-            else return mtbdd_fraction(0, 1);
+            if (v == 1) return _mtbdd_apply_callback_result(destination, mtbdd_fraction(1, 1));
+            else return _mtbdd_apply_callback_result(destination, mtbdd_fraction(0, 1));
         } else {
-            assert(0); // failure
+            return SYLVAN_ERR_INVALID;
         }
     }
 
-    return mtbdd_invalid;
-    (void)k; // unused variable
+    return SYLVAN_APPLY_RECURSE;
 }
 
-MTBDD mtbdd_op_negate_CALL(lace_worker* lace, MTBDD a, size_t k)
+int mtbdd_op_negate_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, size_t k)
 {
+    (void)lace;
+    (void)k;
+
     // if a is false, then it is a partial function. Keep partial!
-    if (a == mtbdd_undefined) return mtbdd_undefined;
+    if (a == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, mtbdd_undefined);
 
     // a != constant
     mtbddnode* na = MTBDD_GETNODE(a);
@@ -1637,20 +1811,19 @@ MTBDD mtbdd_op_negate_CALL(lace_worker* lace, MTBDD a, size_t k)
     if (mtbddnode_isleaf(na)) {
         if (mtbddnode_gettype(na) == 0) {
             int64_t v = mtbdd_leaf_int64(a);
-            return mtbdd_int64(-v);
+            return _mtbdd_apply_callback_result(destination, mtbdd_int64(-v));
         } else if (mtbddnode_gettype(na) == 1) {
             double d = mtbdd_leaf_double(a);
-            return mtbdd_double(-d);
+            return _mtbdd_apply_callback_result(destination, mtbdd_double(-d));
         } else if (mtbddnode_gettype(na) == 2) {
             uint64_t v = mtbddnode_getvalue(na);
-            return mtbdd_fraction(-(int32_t)(v>>32), (uint32_t)v);
+            return _mtbdd_apply_callback_result(destination, mtbdd_fraction(-(int32_t)(v>>32), (uint32_t)v));
         } else {
-            assert(0); // failure
+            return SYLVAN_ERR_INVALID;
         }
     }
 
-    return mtbdd_invalid;
-    (void)k; // unused variable
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
@@ -1746,11 +1919,13 @@ int mtbdd_ite_CALL(lace_worker* lace, MTBDD *destination, BDD f, MTBDD g, MTBDD 
 /**
  * Monad that converts double/fraction to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
  */
-MTBDD mtbdd_op_threshold_double_CALL(lace_worker* lace, MTBDD a, size_t svalue)
+int mtbdd_op_threshold_double_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, size_t svalue)
 {
+    (void)lace;
+
     /* We only expect "double" terminals, or false */
-    if (a == mtbdd_undefined) return mtbdd_undefined;
-    if (a == bdd_true) return mtbdd_invalid;
+    if (a == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, mtbdd_undefined);
+    if (a == bdd_true) return SYLVAN_ERR_INVALID;
 
     // a != constant
     mtbddnode* na = MTBDD_GETNODE(a);
@@ -1758,27 +1933,29 @@ MTBDD mtbdd_op_threshold_double_CALL(lace_worker* lace, MTBDD a, size_t svalue)
     if (mtbddnode_isleaf(na)) {
         double value = *(double*)&svalue;
         if (mtbddnode_gettype(na) == 1) {
-            return mtbdd_leaf_double(a) >= value ? bdd_true : mtbdd_undefined;
+            return _mtbdd_apply_callback_result(destination, mtbdd_leaf_double(a) >= value ? bdd_true : mtbdd_undefined);
         } else if (mtbddnode_gettype(na) == 2) {
             double d = (double)mtbdd_fraction_numerator(a);
             d /= mtbdd_fraction_denominator(a);
-            return d >= value ? bdd_true : mtbdd_undefined;
+            return _mtbdd_apply_callback_result(destination, d >= value ? bdd_true : mtbdd_undefined);
         } else {
-            assert(0); // failure
+            return SYLVAN_ERR_INVALID;
         }
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
  * Monad that converts double/fraction to a Boolean BDD, translate terminals > value to 1 and to 0 otherwise;
  */
-MTBDD mtbdd_op_strict_threshold_double_CALL(lace_worker* lace, MTBDD a, size_t svalue)
+int mtbdd_op_strict_threshold_double_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, size_t svalue)
 {
+    (void)lace;
+
     /* We only expect "double" terminals, or false */
-    if (a == mtbdd_undefined) return mtbdd_undefined;
-    if (a == bdd_true) return mtbdd_invalid;
+    if (a == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, mtbdd_undefined);
+    if (a == bdd_true) return SYLVAN_ERR_INVALID;
 
     // a != constant
     mtbddnode* na = MTBDD_GETNODE(a);
@@ -1786,27 +1963,39 @@ MTBDD mtbdd_op_strict_threshold_double_CALL(lace_worker* lace, MTBDD a, size_t s
     if (mtbddnode_isleaf(na)) {
         double value = *(double*)&svalue;
         if (mtbddnode_gettype(na) == 1) {
-            return mtbdd_leaf_double(a) > value ? bdd_true : mtbdd_undefined;
+            return _mtbdd_apply_callback_result(destination, mtbdd_leaf_double(a) > value ? bdd_true : mtbdd_undefined);
         } else if (mtbddnode_gettype(na) == 2) {
             double d = (double)mtbdd_fraction_numerator(a);
             d /= mtbdd_fraction_denominator(a);
-            return d > value ? bdd_true : mtbdd_undefined;
+            return _mtbdd_apply_callback_result(destination, d > value ? bdd_true : mtbdd_undefined);
         } else {
-            assert(0); // failure
+            return SYLVAN_ERR_INVALID;
         }
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 MTBDD mtbdd_threshold_double_CALL(lace_worker* lace, MTBDD dd, double d)
 {
-    return mtbdd_apply_unary(dd, mtbdd_op_threshold_double_CALL, *(size_t*)&d);
+    (void)lace;
+
+    MTBDD result = mtbdd_invalid;
+    mtbdd_refs_pushptr(&result);
+    int status = mtbdd_apply_unary(&result, dd, mtbdd_op_threshold_double_CALL, *(size_t*)&d);
+    mtbdd_refs_popptr(1);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
 
 MTBDD mtbdd_strict_threshold_double_CALL(lace_worker* lace, MTBDD dd, double d)
 {
-    return mtbdd_apply_unary(dd, mtbdd_op_strict_threshold_double_CALL, *(size_t*)&d);
+    (void)lace;
+
+    MTBDD result = mtbdd_invalid;
+    mtbdd_refs_pushptr(&result);
+    int status = mtbdd_apply_unary(&result, dd, mtbdd_op_strict_threshold_double_CALL, *(size_t*)&d);
+    mtbdd_refs_popptr(1);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
 
 /**
@@ -2367,8 +2556,8 @@ MTBDD mtbdd_gt_CALL(lace_worker* lace, MTBDD a, MTBDD b)
 MTBDD mtbdd_mul_abstract_add_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
 {
     /* Check terminal case */
-    if (v == bdd_true) return mtbdd_apply(a, b, mtbdd_op_times_CALL);
-    MTBDD result = mtbdd_op_times_CALL(lace, &a, &b);
+    if (v == bdd_true) return _mtbdd_apply_value_CALL(lace, a, b, mtbdd_op_times_CALL);
+    MTBDD result = _mtbdd_apply_callback_value(lace, &a, &b, mtbdd_op_times_CALL);
     if (result != mtbdd_invalid) {
         mtbdd_refs_push(result);
         result = mtbdd_abstract(result, v, mtbdd_abstract_op_plus_CALL);
@@ -2406,7 +2595,7 @@ MTBDD mtbdd_mul_abstract_add_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
         /* Recursive, then abstract result */
         result = mtbdd_mul_abstract_add_CALL(lace, a, b, node_gethigh(v, nv));
         mtbdd_refs_push(result);
-        result = mtbdd_apply(result, result, mtbdd_op_plus_CALL);
+        result = _mtbdd_apply_value_CALL(lace, result, result, mtbdd_op_plus_CALL);
         mtbdd_refs_pop(1);
     } else {
         /* Get cofactors */
@@ -2421,7 +2610,7 @@ MTBDD mtbdd_mul_abstract_add_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
             mtbdd_refs_spawn(mtbdd_mul_abstract_add_SPAWN(lace, ahigh, bhigh, node_gethigh(v, nv)));
             MTBDD low = mtbdd_refs_push(mtbdd_mul_abstract_add_CALL(lace, alow, blow, node_gethigh(v, nv)));
             MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(mtbdd_mul_abstract_add_SYNC(lace)));
-            result = mtbdd_apply_CALL(lace, low, high, mtbdd_op_plus_CALL);
+            result = _mtbdd_apply_value_CALL(lace, low, high, mtbdd_op_plus_CALL);
             mtbdd_refs_pop(2);
         } else /* vv > v */ {
             /* Recursive, then create node */
@@ -2447,8 +2636,8 @@ MTBDD mtbdd_mul_abstract_add_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
 MTBDD mtbdd_mul_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
 {
     /* Check terminal case */
-    if (v == bdd_true) return mtbdd_apply(a, b, mtbdd_op_times_CALL);
-    MTBDD result = mtbdd_op_times_CALL(lace, &a, &b);
+    if (v == bdd_true) return _mtbdd_apply_value_CALL(lace, a, b, mtbdd_op_times_CALL);
+    MTBDD result = _mtbdd_apply_callback_value(lace, &a, &b, mtbdd_op_times_CALL);
     if (result != mtbdd_invalid) {
         mtbdd_refs_push(result);
         result = mtbdd_abstract(result, v, mtbdd_abstract_op_max_CALL);
@@ -2473,7 +2662,7 @@ MTBDD mtbdd_mul_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     while (vv < var) {
         /* we can skip variables, because max(r,r) = r */
         v = node_gethigh(v, nv);
-        if (v == bdd_true) return mtbdd_apply(a, b, mtbdd_op_times_CALL);
+        if (v == bdd_true) return _mtbdd_apply_value_CALL(lace, a, b, mtbdd_op_times_CALL);
         nv = MTBDD_GETNODE(v);
         vv = mtbddnode_getvariable(nv);
     }
@@ -2502,7 +2691,7 @@ MTBDD mtbdd_mul_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
         mtbdd_refs_spawn(mtbdd_mul_abstract_max_SPAWN(lace, ahigh, bhigh, node_gethigh(v, nv)));
         MTBDD low = mtbdd_refs_push(mtbdd_mul_abstract_max_CALL(lace, alow, blow, node_gethigh(v, nv)));
         MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(mtbdd_mul_abstract_max_SYNC(lace)));
-        result = mtbdd_apply_CALL(lace, low, high, mtbdd_op_max_CALL);
+        result = _mtbdd_apply_value_CALL(lace, low, high, mtbdd_op_max_CALL);
         mtbdd_refs_pop(2);
     } else /* vv > v */ {
         /* Recursive, then create node */

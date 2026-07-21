@@ -147,7 +147,7 @@ gmp_read_binary(FILE* in, uint64_t *val)
  * Initialize gmp custom leaves
  */
 void
-gmp_init()
+gmp_init(void)
 {
     /* Register custom leaf */
     gmp_type = sylvan_mt_create_type();
@@ -170,21 +170,61 @@ mtbdd_gmp(mpq_t val)
     return mtbdd_leaf(gmp_type, (size_t)val);
 }
 
+static int
+gmp_apply_result(MTBDD *destination, MTBDD result)
+{
+    if (result == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    *destination = result;
+    return SYLVAN_OK;
+}
+
+static MTBDD
+gmp_apply_value_CALL(lace_worker *lace, MTBDD a, MTBDD b, mtbdd_apply_cb op)
+{
+    MTBDD result = mtbdd_invalid;
+    mtbdd_refs_pushptr(&result);
+    int status = mtbdd_apply_CALL(lace, &result, a, b, op);
+    mtbdd_refs_popptr(1);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+static MTBDD
+gmp_apply_callback_value(lace_worker *lace, MTBDD *a, MTBDD *b, mtbdd_apply_cb op)
+{
+    MTBDD result = mtbdd_invalid;
+    mtbdd_refs_pushptr(&result);
+    int status = op(lace, &result, a, b);
+    mtbdd_refs_popptr(1);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+static MTBDD
+gmp_apply_unary_value(MTBDD dd, mtbdd_apply_unary_cb op, size_t param)
+{
+    MTBDD result = mtbdd_invalid;
+    mtbdd_refs_pushptr(&result);
+    int status = mtbdd_apply_unary(&result, dd, op, param);
+    mtbdd_refs_popptr(1);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
 /**
  * Operation "plus" for two mpq MTBDDs
  * Interpret partial function as "0"
  */
-MTBDD gmp_op_plus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
+int gmp_op_plus_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
+    (void)lace;
+
     MTBDD a = *pa, b = *pb;
 
     /* Check for partial functions */
-    if (a == mtbdd_undefined) return b;
-    if (b == mtbdd_undefined) return a;
+    if (a == mtbdd_undefined) return gmp_apply_result(destination, b);
+    if (b == mtbdd_undefined) return gmp_apply_result(destination, a);
 
     /* If both leaves, compute plus */
     if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
-        assert(mtbdd_leaf_type(a) == gmp_type && mtbdd_leaf_type(b) == gmp_type);
+        if (mtbdd_leaf_type(a) != gmp_type || mtbdd_leaf_type(b) != gmp_type) return SYLVAN_ERR_INVALID;
 
         mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_leaf_value(b);
@@ -194,7 +234,7 @@ MTBDD gmp_op_plus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
         mpq_add(mres, ma, mb);
         MTBDD res = mtbdd_gmp(mres);
         mpq_clear(mres);
-        return res;
+        return gmp_apply_result(destination, res);
     }
 
     /* Commutative, so swap a,b for better cache performance */
@@ -203,24 +243,26 @@ MTBDD gmp_op_plus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
         *pb = a;
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
  * Operation "minus" for two mpq MTBDDs
  * Interpret partial function as "0"
  */
-MTBDD gmp_op_minus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
+int gmp_op_minus_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
+    (void)lace;
+
     MTBDD a = *pa, b = *pb;
 
     /* Check for partial functions */
-    if (a == mtbdd_undefined) return gmp_neg(b);
-    if (b == mtbdd_undefined) return a;
+    if (a == mtbdd_undefined) return gmp_neg(destination, b);
+    if (b == mtbdd_undefined) return gmp_apply_result(destination, a);
 
     /* If both leaves, compute plus */
     if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
-        assert(mtbdd_leaf_type(a) == gmp_type && mtbdd_leaf_type(b) == gmp_type);
+        if (mtbdd_leaf_type(a) != gmp_type || mtbdd_leaf_type(b) != gmp_type) return SYLVAN_ERR_INVALID;
 
         mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_leaf_value(b);
@@ -230,10 +272,10 @@ MTBDD gmp_op_minus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
         mpq_sub(mres, ma, mb);
         MTBDD res = mtbdd_gmp(mres);
         mpq_clear(mres);
-        return res;
+        return gmp_apply_result(destination, res);
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
@@ -241,20 +283,22 @@ MTBDD gmp_op_minus_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
  * One of the parameters can be a BDD, then it is interpreted as a filter.
  * For partial functions, domain is intersection
  */
-MTBDD gmp_op_times_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
+int gmp_op_times_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
+    (void)lace;
+
     MTBDD a = *pa, b = *pb;
 
     /* Check for partial functions and for Boolean (filter) */
-    if (a == mtbdd_undefined || b == mtbdd_undefined) return mtbdd_undefined;
+    if (a == mtbdd_undefined || b == mtbdd_undefined) return gmp_apply_result(destination, mtbdd_undefined);
 
     /* If one of Boolean, interpret as filter */
-    if (a == bdd_true) return b;
-    if (b == bdd_true) return a;
+    if (a == bdd_true) return gmp_apply_result(destination, b);
+    if (b == bdd_true) return gmp_apply_result(destination, a);
 
     /* Handle multiplication of leaves */
     if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
-        assert(mtbdd_leaf_type(a) == gmp_type && mtbdd_leaf_type(b) == gmp_type);
+        if (mtbdd_leaf_type(a) != gmp_type || mtbdd_leaf_type(b) != gmp_type) return SYLVAN_ERR_INVALID;
 
         mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_leaf_value(b);
@@ -265,7 +309,7 @@ MTBDD gmp_op_times_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
         mpq_mul(mres, ma, mb);
         MTBDD res = mtbdd_gmp(mres);
         mpq_clear(mres);
-        return res;
+        return gmp_apply_result(destination, res);
     }
 
     /* Commutative, so make "a" the lowest for better cache performance */
@@ -274,23 +318,25 @@ MTBDD gmp_op_times_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
         *pb = a;
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
  * Operation "divide" for two mpq MTBDDs.
  * For partial functions, domain is intersection
  */
-MTBDD gmp_op_divide_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
+int gmp_op_divide_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
+    (void)lace;
+
     MTBDD a = *pa, b = *pb;
 
     /* Check for partial functions */
-    if (a == mtbdd_undefined || b == mtbdd_undefined) return mtbdd_undefined;
+    if (a == mtbdd_undefined || b == mtbdd_undefined) return gmp_apply_result(destination, mtbdd_undefined);
 
     /* Handle division of leaves */
     if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
-        assert(mtbdd_leaf_type(a) == gmp_type && mtbdd_leaf_type(b) == gmp_type);
+        if (mtbdd_leaf_type(a) != gmp_type || mtbdd_leaf_type(b) != gmp_type) return SYLVAN_ERR_INVALID;
 
         mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_leaf_value(b);
@@ -301,34 +347,36 @@ MTBDD gmp_op_divide_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
         mpq_div(mres, ma, mb);
         MTBDD res = mtbdd_gmp(mres);
         mpq_clear(mres);
-        return res;
+        return gmp_apply_result(destination, res);
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
  * Operation "min" for two mpq MTBDDs.
  */
-MTBDD gmp_op_min_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
+int gmp_op_min_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
+    (void)lace;
+
     MTBDD a = *pa, b = *pb;
 
     /* Handle partial functions */
-    if (a == mtbdd_undefined) return b;
-    if (b == mtbdd_undefined) return a;
+    if (a == mtbdd_undefined) return gmp_apply_result(destination, b);
+    if (b == mtbdd_undefined) return gmp_apply_result(destination, a);
 
     /* Handle trivial case */
-    if (a == b) return a;
+    if (a == b) return gmp_apply_result(destination, a);
 
     /* Compute result for leaves */
     if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
-        assert(mtbdd_leaf_type(a) == gmp_type && mtbdd_leaf_type(b) == gmp_type);
+        if (mtbdd_leaf_type(a) != gmp_type || mtbdd_leaf_type(b) != gmp_type) return SYLVAN_ERR_INVALID;
 
         mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_leaf_value(b);
         int cmp = mpq_cmp(ma, mb);
-        return cmp < 0 ? a : b;
+        return gmp_apply_result(destination, cmp < 0 ? a : b);
     }
 
     /* For cache performance */
@@ -337,31 +385,33 @@ MTBDD gmp_op_min_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
         *pb = a;
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
  * Operation "max" for two mpq MTBDDs.
  */
-MTBDD gmp_op_max_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
+int gmp_op_max_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
+    (void)lace;
+
     MTBDD a = *pa, b = *pb;
 
     /* Handle partial functions */
-    if (a == mtbdd_undefined) return b;
-    if (b == mtbdd_undefined) return a;
+    if (a == mtbdd_undefined) return gmp_apply_result(destination, b);
+    if (b == mtbdd_undefined) return gmp_apply_result(destination, a);
 
     /* Handle trivial case */
-    if (a == b) return a;
+    if (a == b) return gmp_apply_result(destination, a);
 
     /* Compute result for leaves */
     if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
-        assert(mtbdd_leaf_type(a) == gmp_type && mtbdd_leaf_type(b) == gmp_type);
+        if (mtbdd_leaf_type(a) != gmp_type || mtbdd_leaf_type(b) != gmp_type) return SYLVAN_ERR_INVALID;
 
         mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_leaf_value(b);
         int cmp = mpq_cmp(ma, mb);
-        return cmp > 0 ? a : b;
+        return gmp_apply_result(destination, cmp > 0 ? a : b);
     }
 
     /* For cache performance */
@@ -370,20 +420,23 @@ MTBDD gmp_op_max_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
         *pb = a;
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
  * Operation "neg" for one mpq MTBDD
  */
-MTBDD gmp_op_neg_CALL(lace_worker* lace, MTBDD dd, size_t p)
+int gmp_op_neg_CALL(lace_worker* lace, MTBDD *destination, MTBDD dd, size_t p)
 {
+    (void)lace;
+    (void)p;
+
     /* Handle partial functions */
-    if (dd == mtbdd_undefined) return mtbdd_undefined;
+    if (dd == mtbdd_undefined) return gmp_apply_result(destination, mtbdd_undefined);
 
     /* Compute result for leaf */
     if (mtbdd_is_leaf(dd)) {
-        assert(mtbdd_leaf_type(dd) == gmp_type);
+        if (mtbdd_leaf_type(dd) != gmp_type) return SYLVAN_ERR_INVALID;
 
         mpq_ptr m = (mpq_ptr)mtbdd_leaf_value(dd);
 
@@ -392,24 +445,26 @@ MTBDD gmp_op_neg_CALL(lace_worker* lace, MTBDD dd, size_t p)
         mpq_neg(mres, m);
         MTBDD res = mtbdd_gmp(mres);
         mpq_clear(mres);
-        return res;
+        return gmp_apply_result(destination, res);
     }
 
-    return mtbdd_invalid;
-    (void)p;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
  * Operation "abs" for one mpq MTBDD
  */
-MTBDD gmp_op_abs_CALL(lace_worker* lace, MTBDD dd, size_t p)
+int gmp_op_abs_CALL(lace_worker* lace, MTBDD *destination, MTBDD dd, size_t p)
 {
+    (void)lace;
+    (void)p;
+
     /* Handle partial functions */
-    if (dd == mtbdd_undefined) return mtbdd_undefined;
+    if (dd == mtbdd_undefined) return gmp_apply_result(destination, mtbdd_undefined);
 
     /* Compute result for leaf */
     if (mtbdd_is_leaf(dd)) {
-        assert(mtbdd_leaf_type(dd) == gmp_type);
+        if (mtbdd_leaf_type(dd) != gmp_type) return SYLVAN_ERR_INVALID;
 
         mpq_ptr m = (mpq_ptr)mtbdd_leaf_value(dd);
 
@@ -418,11 +473,10 @@ MTBDD gmp_op_abs_CALL(lace_worker* lace, MTBDD dd, size_t p)
         mpq_abs(mres, m);
         MTBDD res = mtbdd_gmp(mres);
         mpq_clear(mres);
-        return res;
+        return gmp_apply_result(destination, res);
     }
 
-    return mtbdd_invalid;
-    (void)p;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
@@ -434,12 +488,12 @@ MTBDD gmp_op_abs_CALL(lace_worker* lace, MTBDD dd, size_t p)
 MTBDD gmp_abstract_op_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 {
     if (k==0) {
-        return mtbdd_apply(a, b, gmp_op_plus_CALL);
+        return gmp_apply_value_CALL(lace, a, b, gmp_op_plus_CALL);
     } else {
         MTBDD res = a;
         for (int i=0; i<k; i++) {
             mtbdd_refs_push(res);
-            res = mtbdd_apply(res, res, gmp_op_plus_CALL);
+            res = gmp_apply_value_CALL(lace, res, res, gmp_op_plus_CALL);
             mtbdd_refs_pop(1);
         }
         return res;
@@ -449,12 +503,12 @@ MTBDD gmp_abstract_op_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 MTBDD gmp_abstract_op_times_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 {
     if (k==0) {
-        return mtbdd_apply(a, b, gmp_op_times_CALL);
+        return gmp_apply_value_CALL(lace, a, b, gmp_op_times_CALL);
     } else {
         MTBDD res = a;
         for (int i=0; i<k; i++) {
             mtbdd_refs_push(res);
-            res = mtbdd_apply(res, res, gmp_op_times_CALL);
+            res = gmp_apply_value_CALL(lace, res, res, gmp_op_times_CALL);
             mtbdd_refs_pop(1);
         }
         return res;
@@ -464,7 +518,7 @@ MTBDD gmp_abstract_op_times_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 MTBDD gmp_abstract_op_min_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 {
     if (k == 0) {
-        return mtbdd_apply(a, b, gmp_op_min_CALL);
+        return gmp_apply_value_CALL(lace, a, b, gmp_op_min_CALL);
     } else {
         // nothing to do: min(a, a) = a
         return a;
@@ -474,7 +528,7 @@ MTBDD gmp_abstract_op_min_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 MTBDD gmp_abstract_op_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 {
     if (k == 0) {
-        return mtbdd_apply(a, b, gmp_op_max_CALL);
+        return gmp_apply_value_CALL(lace, a, b, gmp_op_max_CALL);
     } else {
         // nothing to do: max(a, a) = a
         return a;
@@ -484,100 +538,110 @@ MTBDD gmp_abstract_op_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
 /**
  * Convert to Boolean MTBDD, terminals >= value (double) to True, or False otherwise.
  */
-MTBDD gmp_op_threshold_d_CALL(lace_worker* lace, MTBDD a, size_t svalue)
+int gmp_op_threshold_d_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, size_t svalue)
 {
+    (void)lace;
+
     /* Handle partial function */
-    if (a == mtbdd_undefined) return mtbdd_undefined;
+    if (a == mtbdd_undefined) return gmp_apply_result(destination, mtbdd_undefined);
 
     /* Compute result */
     if (mtbdd_is_leaf(a)) {
-        assert(mtbdd_leaf_type(a) == gmp_type);
+        if (mtbdd_leaf_type(a) != gmp_type) return SYLVAN_ERR_INVALID;
 
         double value = *(double*)&svalue;
         mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
-        return mpq_get_d(ma) >= value ? bdd_true : mtbdd_undefined;
+        return gmp_apply_result(destination, mpq_get_d(ma) >= value ? bdd_true : mtbdd_undefined);
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
  * Convert to Boolean MTBDD, terminals > value (double) to True, or False otherwise.
  */
-TASK(MTBDD, gmp_op_strict_threshold_d, MTBDD, a, size_t, svalue)
-MTBDD gmp_op_strict_threshold_d_CALL(lace_worker* lace, MTBDD a, size_t svalue)
+TASK(int, gmp_op_strict_threshold_d, MTBDD*, result, MTBDD, a, size_t, svalue)
+int gmp_op_strict_threshold_d_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, size_t svalue)
 {
+    (void)lace;
+
     /* Handle partial function */
-    if (a == mtbdd_undefined) return mtbdd_undefined;
+    if (a == mtbdd_undefined) return gmp_apply_result(destination, mtbdd_undefined);
 
     /* Compute result */
     if (mtbdd_is_leaf(a)) {
-        assert(mtbdd_leaf_type(a) == gmp_type);
+        if (mtbdd_leaf_type(a) != gmp_type) return SYLVAN_ERR_INVALID;
 
         double value = *(double*)&svalue;
         mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
-        return mpq_get_d(ma) > value ? bdd_true : mtbdd_undefined;
+        return gmp_apply_result(destination, mpq_get_d(ma) > value ? bdd_true : mtbdd_undefined);
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 MTBDD gmp_threshold_d_CALL(lace_worker* lace, MTBDD dd, double d)
 {
-    return mtbdd_apply_unary(dd, gmp_op_threshold_d_CALL, *(size_t*)&d);
+    (void)lace;
+    return gmp_apply_unary_value(dd, gmp_op_threshold_d_CALL, *(size_t*)&d);
 }
 
 MTBDD gmp_strict_threshold_d_CALL(lace_worker* lace, MTBDD dd, double d)
 {
-    return mtbdd_apply_unary(dd, gmp_op_strict_threshold_d_CALL, *(size_t*)&d);
+    (void)lace;
+    return gmp_apply_unary_value(dd, gmp_op_strict_threshold_d_CALL, *(size_t*)&d);
 }
 
 /**
  * Operation "threshold" for mpq MTBDDs.
  * The second parameter must be a mpq leaf.
  */
-MTBDD gmp_op_threshold_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
+int gmp_op_threshold_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
+    (void)lace;
+
     MTBDD a = *pa, b = *pb;
 
     /* Check for partial functions */
-    if (a == mtbdd_undefined) return mtbdd_undefined;
+    if (a == mtbdd_undefined) return gmp_apply_result(destination, mtbdd_undefined);
 
     /* Handle comparison of leaves */
     if (mtbdd_is_leaf(a)) {
-        assert(mtbdd_leaf_type(a) == gmp_type);
+        if (mtbdd_leaf_type(a) != gmp_type || !mtbdd_is_leaf(b) || mtbdd_leaf_type(b) != gmp_type) return SYLVAN_ERR_INVALID;
 
         mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_leaf_value(b);
         int cmp = mpq_cmp(ma, mb);
-        return cmp >= 0 ? bdd_true : mtbdd_undefined;
+        return gmp_apply_result(destination, cmp >= 0 ? bdd_true : mtbdd_undefined);
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
  * Operation "strict threshold" for mpq MTBDDs.
  * The second parameter must be a mpq leaf.
  */
-MTBDD gmp_op_strict_threshold_CALL(lace_worker* lace, MTBDD* pa, MTBDD* pb)
+int gmp_op_strict_threshold_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
+    (void)lace;
+
     MTBDD a = *pa, b = *pb;
 
     /* Check for partial functions */
-    if (a == mtbdd_undefined) return mtbdd_undefined;
+    if (a == mtbdd_undefined) return gmp_apply_result(destination, mtbdd_undefined);
 
     /* Handle comparison of leaves */
     if (mtbdd_is_leaf(a)) {
-        assert(mtbdd_leaf_type(a) == gmp_type);
+        if (mtbdd_leaf_type(a) != gmp_type || !mtbdd_is_leaf(b) || mtbdd_leaf_type(b) != gmp_type) return SYLVAN_ERR_INVALID;
 
         mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
         mpq_ptr mb = (mpq_ptr)mtbdd_leaf_value(b);
         int cmp = mpq_cmp(ma, mb);
-        return cmp > 0 ? bdd_true : mtbdd_undefined;
+        return gmp_apply_result(destination, cmp > 0 ? bdd_true : mtbdd_undefined);
     }
 
-    return mtbdd_invalid;
+    return SYLVAN_APPLY_RECURSE;
 }
 
 /**
@@ -589,10 +653,10 @@ MTBDD gmp_and_abstract_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     /* Check terminal cases */
 
     /* If v == true, then <vars> is an empty set */
-    if (v == bdd_true) return mtbdd_apply(a, b, gmp_op_times_CALL);
+    if (v == bdd_true) return gmp_apply_value_CALL(lace, a, b, gmp_op_times_CALL);
 
     /* Try the times operator on a and b */
-    MTBDD result = gmp_op_times_CALL(lace, &a, &b);
+    MTBDD result = gmp_apply_callback_value(lace, &a, &b, gmp_op_times_CALL);
     if (result != mtbdd_invalid) {
         /* Times operator successful, store reference (for garbage collection) */
         mtbdd_refs_push(result);
@@ -633,7 +697,7 @@ MTBDD gmp_and_abstract_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
         /* Recursive, then abstract result */
         result = gmp_and_abstract_plus_CALL(lace, a, b, node_gethigh(v, nv));
         mtbdd_refs_push(result);
-        result = mtbdd_apply(result, result, gmp_op_plus_CALL);
+        result = gmp_apply_value_CALL(lace, result, result, gmp_op_plus_CALL);
         mtbdd_refs_pop(1);
     } else {
         /* Get cofactors */
@@ -648,7 +712,7 @@ MTBDD gmp_and_abstract_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
             mtbdd_refs_spawn(gmp_and_abstract_plus_SPAWN(lace, ahigh, bhigh, node_gethigh(v, nv)));
             MTBDD low = mtbdd_refs_push(gmp_and_abstract_plus_CALL(lace, alow, blow, node_gethigh(v, nv)));
             MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(gmp_and_abstract_plus_SYNC(lace)));
-            result = mtbdd_apply_CALL(lace, low, high, gmp_op_plus_CALL);
+            result = gmp_apply_value_CALL(lace, low, high, gmp_op_plus_CALL);
             mtbdd_refs_pop(2);
         } else /* vv > v */ {
             /* Recursive, then create node */
@@ -676,10 +740,10 @@ MTBDD gmp_and_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     /* Check terminal cases */
 
     /* If v == true, then <vars> is an empty set */
-    if (v == bdd_true) return mtbdd_apply(a, b, gmp_op_times_CALL);
+    if (v == bdd_true) return gmp_apply_value_CALL(lace, a, b, gmp_op_times_CALL);
 
     /* Try the times operator on a and b */
-    MTBDD result = gmp_op_times_CALL(lace, &a, &b);
+    MTBDD result = gmp_apply_callback_value(lace, &a, &b, gmp_op_times_CALL);
     if (result != mtbdd_invalid) {
         /* Times operator successful, store reference (for garbage collection) */
         mtbdd_refs_push(result);
@@ -707,7 +771,7 @@ MTBDD gmp_and_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     while (vv < var) {
         /* we can skip variables, because max(r,r) = r */
         v = node_high(v, nv);
-        if (v == bdd_true) return mtbdd_apply(a, b, gmp_op_times_CALL);
+        if (v == bdd_true) return gmp_apply_value_CALL(lace, a, b, gmp_op_times_CALL);
         nv = MTBDD_GETNODE(v);
         vv = mtbddnode_getvariable(nv);
     }
@@ -736,7 +800,7 @@ MTBDD gmp_and_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
         mtbdd_refs_spawn(gmp_and_abstract_max_SPAWN(lace, ahigh, bhigh, node_gethigh(v, nv)));
         MTBDD low = mtbdd_refs_push(gmp_and_abstract_max_CALL(lace, alow, blow, node_gethigh(v, nv)));
         MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(gmp_and_abstract_max_SYNC(lace)));
-        result = mtbdd_apply_CALL(lace, low, high, gmp_op_max_CALL);
+        result = gmp_apply_value_CALL(lace, low, high, gmp_op_max_CALL);
         mtbdd_refs_pop(2);
     } else /* vv > v */ {
         /* Recursive, then create node */

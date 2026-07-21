@@ -1879,22 +1879,14 @@ int bdd_transitive_closure_CALL(lace_worker* lace, BDD *destination, BDD a)
     mtbdd_refs_pushptr(&r1);
 
     int status = bdd_transitive_closure_CALL(lace, &u1, a11);
-    int u3_spawned = 0;
     if (status == SYLVAN_OK) {
-        bdd_rel_prev_SPAWN(lace, &u3, a01, u1, bdd_false);
-        u3_spawned = 1;
-        status = bdd_rel_prev_CALL(lace, &u2, u1, a10, bdd_false);
+        status = bdd_rel_prev_CALL(lace, &u3, a01, u1, bdd_false);
     }
+    if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &u2, u1, a10, bdd_false);
     if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &e, a01, u2, bdd_false);
     if (status == SYLVAN_OK) status = bdd_ite_CALL(lace, &e, a00, bdd_true, e);
     if (status == SYLVAN_OK) status = bdd_transitive_closure_CALL(lace, &e, e);
     if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &g, u2, e, bdd_false);
-
-    if (u3_spawned) {
-        int u3_status = bdd_rel_prev_SYNC(lace);
-        if (status == SYLVAN_OK) status = u3_status;
-    }
-
     if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &f, e, u3, bdd_false);
     if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &h, u2, f, bdd_false);
     if (status == SYLVAN_OK) status = bdd_ite_CALL(lace, &h, u1, bdd_true, h);

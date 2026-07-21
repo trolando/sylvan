@@ -282,15 +282,19 @@ TASK(int, zdd_diff, ZDD*, result, ZDD, a, ZDD, b);
 
 /**
  * Compute \exists <vars>: <dd>.
- * (Stays in same variable domain.)
+ * (Stays in same variable domain.) The caller must protect <result>. Returns
+ * SYLVAN_OK on success or a negative status on failure, leaving <result>
+ * unchanged.
  */
-TASK(ZDD, zdd_exists, ZDD, dd, BDDSET, vars);
+TASK(int, zdd_exists, ZDD*, result, ZDD, dd, BDDSET, vars);
 
 /**
- * Project <dd> onto <domain>, existentially quantifying variables not in the domain.
- * (Changes to the new variable domain.)
+ * Project <dd> onto <domain>, existentially quantifying variables not in the
+ * domain. (Changes to the new variable domain.) The caller must protect
+ * <result>. Returns SYLVAN_OK on success or a negative status on failure,
+ * leaving <result> unchanged.
  */
-TASK(ZDD, zdd_project, ZDD, dd, BDDSET, domain);
+TASK(int, zdd_project, ZDD*, result, ZDD, dd, BDDSET, domain);
 
 /**
  * Compute \forall <vars>: <dd>.

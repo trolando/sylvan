@@ -28,20 +28,9 @@
 TASK(int, zdd_extend_domain_internal, ZDD*, result, ZDD, dd, ZDD, newvars, int, value)
 TASK(int, zdd_ite_internal, ZDD*, result, ZDD, f, ZDD, g, ZDD, h, ZDD, domain)
 TASK(int, zdd_not_internal, ZDD*, result, ZDD, dd, ZDD, domain)
-TASK(ZDD, zdd_exists_internal, ZDD, dd, ZDD, variables)
-TASK(ZDD, zdd_project_internal, ZDD, dd, ZDD, domain)
+TASK(int, zdd_exists_internal, ZDD*, result, ZDD, dd, ZDD, variables)
+TASK(int, zdd_project_internal, ZDD*, result, ZDD, dd, ZDD, domain)
 TASK(int, zdd_or_cube_leaf, ZDD*, result, ZDD, set, BDDSET, domain, uint8_t*, values, ZDD, leaf)
-
-/* Transitional value adapter for ZDD tasks that have not yet been converted. */
-static ZDD
-zdd_or_value_CALL(lace_worker *lace, ZDD a, ZDD b)
-{
-    ZDD result = zdd_invalid;
-    zdd_refs_pushptr(&result);
-    int status = zdd_or_CALL(lace, &result, a, b);
-    zdd_refs_popptr(1);
-    return status == SYLVAN_OK ? result : zdd_invalid;
-}
 
 #include "refs.h"
 #include "sl.h"
@@ -1727,28 +1716,29 @@ int zdd_diff_CALL(lace_worker* lace, ZDD *destination, ZDD a, ZDD b)
 /**
  * Compute existential quantification, but stay in same domain
  */
-ZDD
-zdd_exists_CALL(lace_worker* lace, ZDD dd, BDDSET variables)
+int
+zdd_exists_CALL(lace_worker* lace, ZDD *destination, ZDD dd, BDDSET variables)
 {
+    if (destination == NULL || dd == zdd_invalid || variables == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
     ZDD zdd_variables = zdd_invalid;
     zdd_refs_pushptr(&zdd_variables);
-    if (zdd_from_mtbdd_CALL(lace, &zdd_variables, bdd_true, variables) != SYLVAN_OK) {
-        zdd_refs_popptr(1);
-        return zdd_invalid;
-    }
-    ZDD result = zdd_exists_internal_CALL(lace, dd, zdd_variables);
+    int status = zdd_from_mtbdd_CALL(lace, &zdd_variables, bdd_true, variables);
+    if (status == SYLVAN_OK) status = zdd_exists_internal_CALL(lace, destination, dd, zdd_variables);
     zdd_refs_popptr(1);
-    return result;
+    return status;
 }
 
-ZDD zdd_exists_internal_CALL(lace_worker* lace, ZDD dd, ZDD vars)
+int zdd_exists_internal_CALL(lace_worker* lace, ZDD *destination, ZDD dd, ZDD vars)
 {
+    if (destination == NULL || dd == zdd_invalid || vars == zdd_invalid) return SYLVAN_ERR_INVALID;
+
     /**
      * Trivial cases
      */
-    if (dd == zdd_base) return vars; // <vars> now represents True for the variables in <vars>
-    if (dd == zdd_false) return dd;
-    if (vars == zdd_base) return dd;
+    if (dd == zdd_base) { *destination = vars; return SYLVAN_OK; }
+    if (dd == zdd_false) { *destination = dd; return SYLVAN_OK; }
+    if (vars == zdd_base) { *destination = dd; return SYLVAN_OK; }
 
     /**
      * Maybe run garbage collection
@@ -1763,10 +1753,13 @@ ZDD zdd_exists_internal_CALL(lace_worker* lace, ZDD dd, ZDD vars)
     /**
      * Check the cache
      */
-    ZDD result;
-    if (cache_get3(CACHE_ZDD_EXISTS, dd, vars, 0, &result)) {
+    ZDD computed = zdd_invalid;
+    zdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_ZDD_EXISTS, dd, vars, 0, &computed)) {
         sylvan_stats_count(ZDD_EXISTS_CACHED);
-        return result;
+        *destination = computed;
+        zdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /**
@@ -1780,9 +1773,10 @@ ZDD zdd_exists_internal_CALL(lace_worker* lace, ZDD dd, ZDD vars)
     /**
      * Compute pivot variable
      */
+    int status = SYLVAN_OK;
     if (vars_var < dd_var) {
-        result = zdd_exists_internal(dd, zddnode_high(vars, vars_node));
-        result = zdd_make_node(vars_var, result, result);
+        status = zdd_exists_internal_CALL(lace, &computed, dd, zddnode_high(vars, vars_node));
+        if (status == SYLVAN_OK) status = _zdd_try_make_node(&computed, vars_var, computed, computed);
     } else {
         /**
          * Get cofactors
@@ -1798,78 +1792,93 @@ ZDD zdd_exists_internal_CALL(lace_worker* lace, ZDD dd, ZDD vars)
              */
             const ZDD vars_next = zddnode_high(vars, vars_node);
             if (dd0 == dd1) {
-                result = zdd_exists_internal_CALL(lace, dd0, vars_next);
+                status = zdd_exists_internal_CALL(lace, &computed, dd0, vars_next);
             } else {
-                zdd_refs_spawn(zdd_exists_internal_SPAWN(lace, dd0, vars_next));
-                ZDD high = zdd_exists_internal_CALL(lace, dd1, vars_next);
-                zdd_refs_push(high);
-                ZDD low = zdd_refs_sync(zdd_exists_internal_SYNC(lace));
-                zdd_refs_push(low);
-                result = zdd_or_value_CALL(lace, low, high);
-                zdd_refs_pop(2);
+                ZDD low = zdd_invalid;
+                ZDD high = zdd_invalid;
+                zdd_refs_pushptr(&low);
+                zdd_refs_pushptr(&high);
+                zdd_exists_internal_SPAWN(lace, &low, dd0, vars_next);
+                status = zdd_exists_internal_CALL(lace, &high, dd1, vars_next);
+                int low_status = zdd_exists_internal_SYNC(lace);
+                if (status == SYLVAN_OK) status = low_status;
+                if (status == SYLVAN_OK) status = zdd_or_CALL(lace, &computed, low, high);
+                zdd_refs_popptr(2);
             }
 
-            result = zdd_make_node(vars_var, result, result);
+            if (status == SYLVAN_OK) status = _zdd_try_make_node(&computed, vars_var, computed, computed);
         } else {
             // Keep
 
             /**
              * Now we call recursive tasks
              */
-            ZDD low, high;
+            ZDD low = zdd_invalid;
+            ZDD high = zdd_invalid;
+            zdd_refs_pushptr(&low);
+            zdd_refs_pushptr(&high);
             if (dd0 == dd1) {
-                low = high = zdd_exists_internal_CALL(lace, dd0, vars);
+                status = zdd_exists_internal_CALL(lace, &low, dd0, vars);
+                high = low;
             } else {
-                zdd_refs_spawn(zdd_exists_internal_SPAWN(lace, dd0, vars));
-                high = zdd_exists_internal_CALL(lace, dd1, vars);
-                zdd_refs_push(high);
-                low = zdd_refs_sync(zdd_exists_internal_SYNC(lace));
-                zdd_refs_pop(1);
+                zdd_exists_internal_SPAWN(lace, &low, dd0, vars);
+                status = zdd_exists_internal_CALL(lace, &high, dd1, vars);
+                int low_status = zdd_exists_internal_SYNC(lace);
+                if (status == SYLVAN_OK) status = low_status;
             }
 
             /**
              * Compute result node
              */
-            result = zdd_make_node(dd_var, low, high);
+            if (status == SYLVAN_OK) status = _zdd_try_make_node(&computed, dd_var, low, high);
+            zdd_refs_popptr(2);
         }
+    }
+
+    if (status != SYLVAN_OK) {
+        zdd_refs_popptr(1);
+        return status;
     }
 
     /**
      * Cache the result
      */
-    if (cache_put3(CACHE_ZDD_EXISTS, dd, vars, 0, result)) {
+    if (cache_put3(CACHE_ZDD_EXISTS, dd, vars, 0, computed)) {
         sylvan_stats_count(ZDD_EXISTS_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    zdd_refs_popptr(1);
+    return SYLVAN_OK;
 }
 
 /**
  * Compute existential quantification to a smaller domain
  * Remove all variables from <dd> that are not in <newdom>
  */
-ZDD
-zdd_project_CALL(lace_worker* lace, ZDD dd, BDDSET domain)
+int
+zdd_project_CALL(lace_worker* lace, ZDD *destination, ZDD dd, BDDSET domain)
 {
+    if (destination == NULL || dd == zdd_invalid || domain == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
     ZDD zdd_domain = zdd_invalid;
     zdd_refs_pushptr(&zdd_domain);
-    if (zdd_from_mtbdd_CALL(lace, &zdd_domain, bdd_true, domain) != SYLVAN_OK) {
-        zdd_refs_popptr(1);
-        return zdd_invalid;
-    }
-    ZDD result = zdd_project_internal_CALL(lace, dd, zdd_domain);
+    int status = zdd_from_mtbdd_CALL(lace, &zdd_domain, bdd_true, domain);
+    if (status == SYLVAN_OK) status = zdd_project_internal_CALL(lace, destination, dd, zdd_domain);
     zdd_refs_popptr(1);
-    return result;
+    return status;
 }
 
-ZDD zdd_project_internal_CALL(lace_worker* lace, ZDD dd, ZDD dom)
+int zdd_project_internal_CALL(lace_worker* lace, ZDD *destination, ZDD dd, ZDD dom)
 {
+    if (destination == NULL || dd == zdd_invalid || dom == zdd_invalid) return SYLVAN_ERR_INVALID;
+
     /**
      * Trivial cases
      */
-    if (dd == zdd_base) return dd;
-    if (dd == zdd_false) return dd;
-    if (dom == zdd_base) return zdd_base; // assuming dd is indeed Boolean
+    if (dd == zdd_base) { *destination = dd; return SYLVAN_OK; }
+    if (dd == zdd_false) { *destination = dd; return SYLVAN_OK; }
+    if (dom == zdd_base) { *destination = zdd_base; return SYLVAN_OK; } // assuming dd is indeed Boolean
 
     /**
      * Maybe run garbage collection
@@ -1895,7 +1904,7 @@ ZDD zdd_project_internal_CALL(lace_worker* lace, ZDD dd, ZDD dom)
     ZDD dom_next = zddnode_high(dom, dom_node);
     while (dom_var < dd_var) {
         dom = dom_next;
-        if (dom == zdd_base) return zdd_base; // assuming dd is indeed Boolean
+        if (dom == zdd_base) { *destination = zdd_base; return SYLVAN_OK; } // assuming dd is indeed Boolean
         dom_node = ZDD_GETNODE(dom);
         dom_var = zddnode_getvariable(dom_node);
         dom_next = zddnode_high(dom, dom_node);
@@ -1904,10 +1913,13 @@ ZDD zdd_project_internal_CALL(lace_worker* lace, ZDD dd, ZDD dom)
     /**
      * Check the cache
      */
-    ZDD result;
-    if (cache_get3(CACHE_ZDD_PROJECT, dd, dom, 0, &result)) {
+    ZDD computed = zdd_invalid;
+    zdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_ZDD_PROJECT, dd, dom, 0, &computed)) {
         sylvan_stats_count(ZDD_PROJECT_CACHED);
-        return result;
+        *destination = computed;
+        zdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /**
@@ -1916,11 +1928,15 @@ ZDD zdd_project_internal_CALL(lace_worker* lace, ZDD dd, ZDD dom)
     const ZDD dd0 = zddnode_low(dd, dd_node);
     const ZDD dd1 = zddnode_high(dd, dd_node);
 
-    assert(dd_var <= dom_var);
+    if (dd_var > dom_var) {
+        zdd_refs_popptr(1);
+        return SYLVAN_ERR_INVALID;
+    }
 
     /**
      * Compute pivot variable
      */
+    int status = SYLVAN_OK;
     if (dd_var < dom_var) {
         // Quantify
 
@@ -1928,15 +1944,18 @@ ZDD zdd_project_internal_CALL(lace_worker* lace, ZDD dd, ZDD dom)
          * Now we call recursive tasks
          */
         if (dd0 == dd1) {
-            result = zdd_project_internal_CALL(lace, dd0, dom);
+            status = zdd_project_internal_CALL(lace, &computed, dd0, dom);
         } else {
-            zdd_refs_spawn(zdd_project_internal_SPAWN(lace, dd0, dom));
-            ZDD high = zdd_project_internal_CALL(lace, dd1, dom);
-            zdd_refs_push(high);
-            ZDD low = zdd_refs_sync(zdd_project_internal_SYNC(lace));
-            zdd_refs_push(low);
-            result = zdd_or_value_CALL(lace, low, high);
-            zdd_refs_pop(2);
+            ZDD low = zdd_invalid;
+            ZDD high = zdd_invalid;
+            zdd_refs_pushptr(&low);
+            zdd_refs_pushptr(&high);
+            zdd_project_internal_SPAWN(lace, &low, dd0, dom);
+            status = zdd_project_internal_CALL(lace, &high, dd1, dom);
+            int low_status = zdd_project_internal_SYNC(lace);
+            if (status == SYLVAN_OK) status = low_status;
+            if (status == SYLVAN_OK) status = zdd_or_CALL(lace, &computed, low, high);
+            zdd_refs_popptr(2);
         }
     } else {
         // Keep
@@ -1944,31 +1963,42 @@ ZDD zdd_project_internal_CALL(lace_worker* lace, ZDD dd, ZDD dom)
         /**
          * Now we call recursive tasks
          */
-        ZDD low, high;
+        ZDD low = zdd_invalid;
+        ZDD high = zdd_invalid;
+        zdd_refs_pushptr(&low);
+        zdd_refs_pushptr(&high);
         if (dd0 == dd1) {
-            low = high = zdd_project_internal_CALL(lace, dd0, dom_next);
+            status = zdd_project_internal_CALL(lace, &low, dd0, dom_next);
+            high = low;
         } else {
-            zdd_refs_spawn(zdd_project_internal_SPAWN(lace, dd0, dom_next));
-            high = zdd_project_internal_CALL(lace, dd1, dom_next);
-            zdd_refs_push(high);
-            low = zdd_refs_sync(zdd_project_internal_SYNC(lace));
-            zdd_refs_pop(1);
+            zdd_project_internal_SPAWN(lace, &low, dd0, dom_next);
+            status = zdd_project_internal_CALL(lace, &high, dd1, dom_next);
+            int low_status = zdd_project_internal_SYNC(lace);
+            if (status == SYLVAN_OK) status = low_status;
         }
 
         /**
          * Compute result node
          */
-        result = zdd_make_node(dd_var, low, high);
+        if (status == SYLVAN_OK) status = _zdd_try_make_node(&computed, dd_var, low, high);
+        zdd_refs_popptr(2);
+    }
+
+    if (status != SYLVAN_OK) {
+        zdd_refs_popptr(1);
+        return status;
     }
 
     /**
      * Cache the result
      */
-    if (cache_put3(CACHE_ZDD_PROJECT, dd, dom, 0, result)) {
+    if (cache_put3(CACHE_ZDD_PROJECT, dd, dom, 0, computed)) {
         sylvan_stats_count(ZDD_PROJECT_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    zdd_refs_popptr(1);
+    return SYLVAN_OK;
 }
 
 ZDD zdd_first_minterm(ZDD dd, BDDSET domain, uint8_t *arr, zdd_enum_filter_cb filter_cb)

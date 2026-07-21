@@ -25,7 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-TASK(ZDD, zdd_extend_domain_internal, ZDD, dd, ZDD, newvars, int, value)
+TASK(int, zdd_extend_domain_internal, ZDD*, result, ZDD, dd, ZDD, newvars, int, value)
 TASK(ZDD, zdd_ite_internal, ZDD, f, ZDD, g, ZDD, h, ZDD, domain)
 TASK(ZDD, zdd_not_internal, ZDD, dd, ZDD, domain)
 TASK(ZDD, zdd_exists_internal, ZDD, dd, ZDD, variables)
@@ -444,7 +444,25 @@ zdd_makeleaf(uint16_t type, uint64_t value)
 ZDD
 _zdd_make_node(uint32_t var, ZDD low, ZDD high)
 {
-    // Checked by macro: if (high == zdd_false) return low;
+    ZDD result;
+    if (_zdd_try_make_node(&result, var, low, high) != SYLVAN_OK) {
+        fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
+        exit(1);
+    }
+    return result;
+}
+
+int
+_zdd_try_make_node(ZDD *destination, uint32_t var, ZDD low, ZDD high)
+{
+    if (destination == NULL || var > UINT32_C(0x00ffffff) ||
+        low == zdd_invalid || high == zdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (high == zdd_false) {
+        *destination = low;
+        return SYLVAN_OK;
+    }
 
     struct zddnode n;
     zddnode_makenode(&n, var, low, high);
@@ -458,16 +476,14 @@ _zdd_make_node(uint32_t var, ZDD low, ZDD high)
         zdd_refs_pop(2);
 
         index = nodes_lookup(nodes, n.a, n.b, &created);
-        if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
-            exit(1);
-        }
+        if (index == 0) return SYLVAN_ERR_OOM;
     }
 
     if (created) sylvan_stats_count(ZDD_NODES_CREATED);
     else sylvan_stats_count(ZDD_NODES_REUSED);
 
-    return index;
+    *destination = index;
+    return SYLVAN_OK;
 }
 
 ZDD
@@ -500,15 +516,18 @@ zdd_makemapnode(uint32_t var, ZDD low, ZDD high)
 /**
  * Convert an MTBDD to a ZDD
  */
-ZDD zdd_from_mtbdd_CALL(lace_worker* lace, MTBDD dd, MTBDD dom)
+int zdd_from_mtbdd_CALL(lace_worker* lace, ZDD *destination, MTBDD dd, MTBDD dom)
 {
+    if (destination == NULL || dd == mtbdd_invalid || dom == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
     /* Special treatment for False */
-    if (dd == mtbdd_undefined) return zdd_false;
-    if (dd == bdd_true && dom == bdd_true) return zdd_base;
+    if (dd == mtbdd_undefined) { *destination = zdd_false; return SYLVAN_OK; }
+    if (dd == bdd_true && dom == bdd_true) { *destination = zdd_base; return SYLVAN_OK; }
     if (dom == bdd_true) {
-        assert(mtbdd_is_leaf(dd));
+        if (!mtbdd_is_leaf(dd)) return SYLVAN_ERR_INVALID;
         // A MTBDD leaf is identical to a ZDD leaf...
-        return dd;
+        *destination = dd;
+        return SYLVAN_OK;
     }
 
     /* Maybe perform garbage collection */
@@ -518,25 +537,32 @@ ZDD zdd_from_mtbdd_CALL(lace_worker* lace, MTBDD dd, MTBDD dom)
     sylvan_stats_count(ZDD_FROM_MTBDD);
 
     /* Check cache */
-    ZDD result;
-    if (cache_get3(CACHE_ZDD_FROM_MTBDD, dd, dom, 0, &result)) {
+    ZDD computed = zdd_invalid;
+    zdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_ZDD_FROM_MTBDD, dd, dom, 0, &computed)) {
         sylvan_stats_count(ZDD_FROM_MTBDD_CACHED);
-        return result;
+        *destination = computed;
+        zdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
+    int status = SYLVAN_OK;
     const mtbddnode* dd_node = dd == bdd_true ? NULL : MTBDD_GETNODE(dd);
     if (dd == bdd_true || mtbddnode_isleaf(dd_node)) {
         const mtbddnode* dom_node = MTBDD_GETNODE(dom);
         const uint32_t dom_var = mtbddnode_getvariable(dom_node);
         const MTBDD dom_next = mtbddnode_followhigh(dom, dom_node);
-        result = zdd_from_mtbdd(dd, dom_next);
-        result = zdd_make_node(dom_var, result, result);
+        status = zdd_from_mtbdd_CALL(lace, &computed, dd, dom_next);
+        if (status == SYLVAN_OK) status = _zdd_try_make_node(&computed, dom_var, computed, computed);
     } else {
         /* Get variables */
         const uint32_t var = mtbddnode_getvariable(dd_node);
         const mtbddnode* dom_node = MTBDD_GETNODE(dom);
         const uint32_t dom_var = mtbddnode_getvariable(dom_node);
-        assert(dom_var <= var);
+        if (dom_var > var) {
+            zdd_refs_popptr(1);
+            return SYLVAN_ERR_INVALID;
+        }
 
         /* Get cofactors */
         const MTBDD dd0 = dom_var == var ? mtbddnode_followlow(dd, dd_node) : dd;
@@ -544,52 +570,70 @@ ZDD zdd_from_mtbdd_CALL(lace_worker* lace, MTBDD dd, MTBDD dom)
 
         /* Recursive */
         const MTBDD dom_next = mtbddnode_followhigh(dom, dom_node);
-        zdd_refs_spawn(zdd_from_mtbdd_SPAWN(lace, dd1, dom_next));
-        const ZDD low = zdd_refs_push(zdd_from_mtbdd_CALL(lace, dd0, dom_next));
-        const ZDD high = zdd_refs_sync(zdd_from_mtbdd_SYNC(lace));
-        zdd_refs_pop(1);
-        result = zdd_make_node(dom_var, low, high);
+        ZDD low = zdd_invalid;
+        ZDD high = zdd_invalid;
+        zdd_refs_pushptr(&low);
+        zdd_refs_pushptr(&high);
+        zdd_from_mtbdd_SPAWN(lace, &high, dd1, dom_next);
+        status = zdd_from_mtbdd_CALL(lace, &low, dd0, dom_next);
+        int high_status = zdd_from_mtbdd_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+        if (status == SYLVAN_OK) status = _zdd_try_make_node(&computed, dom_var, low, high);
+        zdd_refs_popptr(2);
+    }
+
+    if (status != SYLVAN_OK) {
+        zdd_refs_popptr(1);
+        return status;
     }
 
     /* Store in cache */
-    if (cache_put3(CACHE_ZDD_FROM_MTBDD, dd, dom, 0, result)) {
+    if (cache_put3(CACHE_ZDD_FROM_MTBDD, dd, dom, 0, computed)) {
         sylvan_stats_count(ZDD_FROM_MTBDD_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    zdd_refs_popptr(1);
+    return SYLVAN_OK;
 }
 
-ZDD
-zdd_from_bdd_CALL(lace_worker* lace, BDD dd, BDDSET domain)
+int
+zdd_from_bdd_CALL(lace_worker* lace, ZDD *destination, BDD dd, BDDSET domain)
 {
+    if (destination == NULL || dd == mtbdd_invalid || domain == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
     BDDSET support = mtbdd_invalid;
     mtbdd_refs_pushptr(&support);
-    if (mtbdd_support_CALL(lace, &support, dd) != SYLVAN_OK) {
+    int status = mtbdd_support_CALL(lace, &support, dd);
+    if (status != SYLVAN_OK) {
         mtbdd_refs_popptr(1);
-        return zdd_invalid;
+        return status;
     }
     for (BDDSET remaining = support; !bdd_set_is_empty(remaining); remaining = bdd_set_next(remaining)) {
         if (!bdd_set_contains(domain, bdd_set_first(remaining))) {
             mtbdd_refs_popptr(1);
-            return zdd_invalid;
+            return SYLVAN_ERR_INVALID;
         }
     }
     mtbdd_refs_popptr(1);
-    return zdd_from_mtbdd_CALL(lace, dd, domain);
+    return zdd_from_mtbdd_CALL(lace, destination, dd, domain);
 }
 
 /**
  * Convert a ZDD to an MTBDD.
  */
-MTBDD zdd_to_mtbdd_CALL(lace_worker* lace, ZDD dd, BDDSET dom)
+int zdd_to_mtbdd_CALL(lace_worker* lace, MTBDD *destination, ZDD dd, BDDSET dom)
 {
+    if (destination == NULL || dd == zdd_invalid || dom == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
     /* Special treatment for True and False */
-    if (dd == zdd_false) return mtbdd_undefined;
-    if (dd == zdd_base && bdd_set_is_empty(dom)) return bdd_true;
+    if (dd == zdd_false) { *destination = mtbdd_undefined; return SYLVAN_OK; }
+    if (dd == zdd_base && bdd_set_is_empty(dom)) { *destination = bdd_true; return SYLVAN_OK; }
     if (bdd_set_is_empty(dom)) {
-        assert(zdd_is_leaf(dd));
+        if (!zdd_is_leaf(dd)) return SYLVAN_ERR_INVALID;
         // A MTBDD leaf is identical to a ZDD leaf...
-        return dd;
+        *destination = dd;
+        return SYLVAN_OK;
     }
 
     /* Maybe perform garbage collection */
@@ -599,23 +643,30 @@ MTBDD zdd_to_mtbdd_CALL(lace_worker* lace, ZDD dd, BDDSET dom)
     sylvan_stats_count(ZDD_TO_MTBDD);
 
     /* Check cache */
-    ZDD result;
-    if (cache_get3(CACHE_ZDD_TO_MTBDD, dd, dom, 0, &result)) {
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_ZDD_TO_MTBDD, dd, dom, 0, &computed)) {
         sylvan_stats_count(ZDD_TO_MTBDD_CACHED);
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
+    int status = SYLVAN_OK;
     const zddnode* dd_node = dd == zdd_base ? NULL : ZDD_GETNODE(dd);
     if (dd == zdd_base || zddnode_isleaf(dd_node)) {
         const uint32_t dom_var = bdd_set_first(dom);
         const BDDSET dom_next = bdd_set_next(dom);
-        result = zdd_to_mtbdd(dd, dom_next);
-        result = mtbdd_make_node(dom_var, result, mtbdd_undefined);
+        status = zdd_to_mtbdd_CALL(lace, &computed, dd, dom_next);
+        if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, dom_var, computed, mtbdd_undefined);
     } else {
         /* Get variables */
         const uint32_t dd_var = zddnode_getvariable(dd_node);
         const uint32_t dom_var = bdd_set_first(dom);
-        assert(dom_var <= dd_var);
+        if (dom_var > dd_var) {
+            mtbdd_refs_popptr(1);
+            return SYLVAN_ERR_INVALID;
+        }
 
         /* Get cofactors */
         const ZDD dd0 = dom_var == dd_var ? zddnode_low(dd, dd_node) : dd;
@@ -623,63 +674,78 @@ MTBDD zdd_to_mtbdd_CALL(lace_worker* lace, ZDD dd, BDDSET dom)
 
         /* Recursive */
         const BDDSET dom_next = bdd_set_next(dom);
-        mtbdd_refs_spawn(zdd_to_mtbdd_SPAWN(lace, dd1, dom_next));
-        const MTBDD low = mtbdd_refs_push(zdd_to_mtbdd(dd0, dom_next));
-        const MTBDD high = mtbdd_refs_sync(zdd_to_mtbdd_SYNC(lace));
-        mtbdd_refs_pop(1);
-        result = mtbdd_make_node(dom_var, low, high);
+        MTBDD low = mtbdd_invalid;
+        MTBDD high = mtbdd_invalid;
+        mtbdd_refs_pushptr(&low);
+        mtbdd_refs_pushptr(&high);
+        zdd_to_mtbdd_SPAWN(lace, &high, dd1, dom_next);
+        status = zdd_to_mtbdd_CALL(lace, &low, dd0, dom_next);
+        int high_status = zdd_to_mtbdd_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+        if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, dom_var, low, high);
+        mtbdd_refs_popptr(2);
+    }
+
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(1);
+        return status;
     }
 
     /* Store in cache */
-    if (cache_put3(CACHE_ZDD_TO_MTBDD, dd, dom, 0, result)) {
+    if (cache_put3(CACHE_ZDD_TO_MTBDD, dd, dom, 0, computed)) {
         sylvan_stats_count(ZDD_TO_MTBDD_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    mtbdd_refs_popptr(1);
+    return SYLVAN_OK;
 }
 
-BDD
-bdd_from_zdd_CALL(lace_worker* lace, ZDD dd, BDDSET domain)
+int
+bdd_from_zdd_CALL(lace_worker* lace, BDD *destination, ZDD dd, BDDSET domain)
 {
-    return zdd_to_mtbdd_CALL(lace, dd, domain);
+    return zdd_to_mtbdd_CALL(lace, destination, dd, domain);
 }
 
-ZDD
-zdd_cofactor_CALL(lace_worker* lace, ZDD dd, BDD cube, BDDSET domain)
+int
+zdd_cofactor_CALL(lace_worker* lace, ZDD *destination, ZDD dd, BDD cube, BDDSET domain)
 {
+    if (destination == NULL || dd == zdd_invalid || cube == mtbdd_invalid || domain == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
     BDDSET cube_support = mtbdd_invalid;
     mtbdd_refs_pushptr(&cube_support);
-    if (mtbdd_support_CALL(lace, &cube_support, cube) != SYLVAN_OK) {
+    int status = mtbdd_support_CALL(lace, &cube_support, cube);
+    if (status != SYLVAN_OK) {
         mtbdd_refs_popptr(1);
-        return zdd_invalid;
+        return status;
     }
     for (BDDSET remaining = cube_support; !bdd_set_is_empty(remaining); remaining = bdd_set_next(remaining)) {
         if (!bdd_set_contains(domain, bdd_set_first(remaining))) {
             mtbdd_refs_popptr(1);
-            return zdd_invalid;
+            return SYLVAN_ERR_INVALID;
         }
     }
 
-    BDD bdd = mtbdd_refs_push(bdd_from_zdd_CALL(lace, dd, domain));
+    BDD bdd = mtbdd_invalid;
     BDD cofactor = mtbdd_invalid;
-    mtbdd_refs_pushptr(&cofactor);
-    if (bdd_cofactor(&cofactor, bdd, cube) != SYLVAN_OK) {
-        mtbdd_refs_popptr(2);
-        mtbdd_refs_pop(1);
-        return zdd_invalid;
-    }
-
     BDDSET result_domain = mtbdd_invalid;
+    ZDD computed = zdd_invalid;
+    mtbdd_refs_pushptr(&bdd);
+    mtbdd_refs_pushptr(&cofactor);
     mtbdd_refs_pushptr(&result_domain);
-    if (bdd_set_difference(&result_domain, domain, cube_support) != SYLVAN_OK) {
-        mtbdd_refs_popptr(3);
-        mtbdd_refs_pop(1);
-        return zdd_invalid;
-    }
-    ZDD result = zdd_from_bdd_CALL(lace, cofactor, result_domain);
-    mtbdd_refs_popptr(3);
-    mtbdd_refs_pop(1);
-    return result;
+    zdd_refs_pushptr(&computed);
+
+    status = bdd_from_zdd_CALL(lace, &bdd, dd, domain);
+    if (status == SYLVAN_OK) status = bdd_cofactor(&cofactor, bdd, cube);
+    if (status == SYLVAN_OK) status = bdd_set_difference(&result_domain, domain, cube_support);
+    if (status == SYLVAN_OK) status = zdd_from_bdd_CALL(lace, &computed, cofactor, result_domain);
+    if (status == SYLVAN_OK) *destination = computed;
+
+    zdd_refs_popptr(1);
+    mtbdd_refs_popptr(4);
+    return status;
 }
 
 /**
@@ -769,59 +835,71 @@ zdd_or_cube_CALL(lace_worker* lace, ZDD set, BDDSET domain, uint8_t *values)
     return zdd_or_cube_leaf_CALL(lace, set, domain, values, zdd_base);
 }
 
-ZDD
-zdd_extend_domain_CALL(lace_worker* lace, ZDD dd, BDDSET newvars, int value)
+int
+zdd_extend_domain_CALL(lace_worker* lace, ZDD *destination, ZDD dd, BDDSET newvars, int value)
 {
-    ZDD zdd_newvars = zdd_refs_push(zdd_from_mtbdd_CALL(lace, bdd_true, newvars));
-    ZDD result = zdd_extend_domain_internal_CALL(lace, dd, zdd_newvars, value);
-    zdd_refs_pop(1);
-    return result;
+    if (destination == NULL || dd == zdd_invalid || newvars == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+
+    ZDD zdd_newvars = zdd_invalid;
+    zdd_refs_pushptr(&zdd_newvars);
+    int status = zdd_from_mtbdd_CALL(lace, &zdd_newvars, bdd_true, newvars);
+    if (status == SYLVAN_OK) status = zdd_extend_domain_internal_CALL(lace, destination, dd, zdd_newvars, value);
+    zdd_refs_popptr(1);
+    return status;
 }
 
-ZDD
-zdd_lift_CALL(lace_worker* lace, ZDD dd, BDDSET old_domain, BDDSET new_domain)
+int
+zdd_lift_CALL(lace_worker* lace, ZDD *destination, ZDD dd, BDDSET old_domain, BDDSET new_domain)
 {
-    BDDSET support = mtbdd_refs_push(zdd_support_CALL(lace, dd));
+    if (destination == NULL || dd == zdd_invalid ||
+        old_domain == mtbdd_invalid || new_domain == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    BDDSET support = mtbdd_invalid;
+    BDDSET added = mtbdd_invalid;
+    mtbdd_refs_pushptr(&support);
+    mtbdd_refs_pushptr(&added);
+    int status = zdd_support_CALL(lace, &support, dd);
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(2);
+        return status;
+    }
     for (BDDSET remaining = support; !bdd_set_is_empty(remaining); remaining = bdd_set_next(remaining)) {
         if (!bdd_set_contains(old_domain, bdd_set_first(remaining))) {
-            mtbdd_refs_pop(1);
-            return zdd_invalid;
+            mtbdd_refs_popptr(2);
+            return SYLVAN_ERR_INVALID;
         }
     }
 
     for (BDDSET remaining = old_domain; !bdd_set_is_empty(remaining); remaining = bdd_set_next(remaining)) {
         if (!bdd_set_contains(new_domain, bdd_set_first(remaining))) {
-            mtbdd_refs_pop(1);
-            return zdd_invalid;
+            mtbdd_refs_popptr(2);
+            return SYLVAN_ERR_INVALID;
         }
     }
 
-    BDDSET added = mtbdd_invalid;
-    mtbdd_refs_pushptr(&added);
-    if (bdd_set_difference(&added, new_domain, old_domain) != SYLVAN_OK) {
-        mtbdd_refs_popptr(1);
-        mtbdd_refs_pop(1);
-        return zdd_invalid;
-    }
-    ZDD result = zdd_extend_domain_CALL(lace, dd, added, 2);
-    mtbdd_refs_popptr(1);
-    mtbdd_refs_pop(1);
-    return result;
+    status = bdd_set_difference(&added, new_domain, old_domain);
+    if (status == SYLVAN_OK) status = zdd_extend_domain_CALL(lace, destination, dd, added, 2);
+    mtbdd_refs_popptr(2);
+    return status;
 }
 
 /**
  * Extend the domain of a ZDD, such that all new variables take the given value.
  * The given value can be 0 (always negative), 1 (always positive), 2 (always dontcare)
  */
-ZDD zdd_extend_domain_internal_CALL(lace_worker* lace, ZDD set, ZDD newvars, int value)
+int zdd_extend_domain_internal_CALL(lace_worker* lace, ZDD *destination, ZDD set, ZDD newvars, int value)
 {
+    if (destination == NULL || set == zdd_invalid || newvars == zdd_invalid) return SYLVAN_ERR_INVALID;
+
     /**
      * Terminal cases
      */
-    if (value == 0) return set;
-    if (value != 1 && value != 2) return zdd_invalid;
-    if (set == zdd_false) return zdd_false;
-    if (newvars == zdd_base) return set;
+    if (value == 0) { *destination = set; return SYLVAN_OK; }
+    if (value != 1 && value != 2) return SYLVAN_ERR_INVALID;
+    if (set == zdd_false) { *destination = zdd_false; return SYLVAN_OK; }
+    if (newvars == zdd_base) { *destination = set; return SYLVAN_OK; }
 
     /**
      * Test for garbage collection
@@ -836,10 +914,13 @@ ZDD zdd_extend_domain_internal_CALL(lace_worker* lace, ZDD set, ZDD newvars, int
     /**
      * Check the cache
      */
-    ZDD result;
-    if (cache_get3(CACHE_ZDD_EXTEND_DOMAIN, set, newvars, (uint64_t)(unsigned int)value, &result)) {
+    ZDD computed = zdd_invalid;
+    zdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_ZDD_EXTEND_DOMAIN, set, newvars, (uint64_t)(unsigned int)value, &computed)) {
         sylvan_stats_count(ZDD_EXTEND_DOMAIN_CACHED);
-        return result;
+        *destination = computed;
+        zdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /**
@@ -851,43 +932,66 @@ ZDD zdd_extend_domain_internal_CALL(lace_worker* lace, ZDD set, ZDD newvars, int
     const uint32_t nv_var = zddnode_getvariable(nv_node);
     const ZDD nv_next = zddnode_high(newvars, nv_node);
 
+    int status = SYLVAN_OK;
     if (nv_var < set_var) {
         if (value == 1) {
-            result = zdd_extend_domain_internal(set, nv_next, value);
-            result = zdd_make_node(nv_var, zdd_false, result);
+            status = zdd_extend_domain_internal_CALL(lace, &computed, set, nv_next, value);
+            if (status == SYLVAN_OK) status = _zdd_try_make_node(&computed, nv_var, zdd_false, computed);
         } else {
-            result = zdd_extend_domain_internal(set, nv_next, value);
-            result = zdd_make_node(nv_var, result, result);
+            status = zdd_extend_domain_internal_CALL(lace, &computed, set, nv_next, value);
+            if (status == SYLVAN_OK) status = _zdd_try_make_node(&computed, nv_var, computed, computed);
         }
     } else {
-        assert(nv_var != set_var);
+        if (nv_var == set_var) {
+            zdd_refs_popptr(1);
+            return SYLVAN_ERR_INVALID;
+        }
         const ZDD set0 = zddnode_low(set, set_node);
         const ZDD set1 = zddnode_high(set, set_node);
-        zdd_refs_spawn(zdd_extend_domain_internal_SPAWN(lace, set1, newvars, value));
-        ZDD low = zdd_refs_push(zdd_extend_domain_internal_CALL(lace, set0, newvars, value));
-        ZDD high = zdd_refs_sync(zdd_extend_domain_internal_SYNC(lace));
-        zdd_refs_pop(1);
-        result = zdd_make_node(set_var, low, high);
+        ZDD low = zdd_invalid;
+        ZDD high = zdd_invalid;
+        zdd_refs_pushptr(&low);
+        zdd_refs_pushptr(&high);
+        zdd_extend_domain_internal_SPAWN(lace, &high, set1, newvars, value);
+        status = zdd_extend_domain_internal_CALL(lace, &low, set0, newvars, value);
+        int high_status = zdd_extend_domain_internal_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+        if (status == SYLVAN_OK) status = _zdd_try_make_node(&computed, set_var, low, high);
+        zdd_refs_popptr(2);
+    }
+
+    if (status != SYLVAN_OK) {
+        zdd_refs_popptr(1);
+        return status;
     }
 
     /**
      * Put in cache
      */
-    if (cache_put3(CACHE_ZDD_EXTEND_DOMAIN, set, newvars, (uint64_t)(unsigned int)value, result)) {
+    if (cache_put3(CACHE_ZDD_EXTEND_DOMAIN, set, newvars, (uint64_t)(unsigned int)value, computed)) {
         sylvan_stats_count(ZDD_EXTEND_DOMAIN_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    zdd_refs_popptr(1);
+    return SYLVAN_OK;
 }
 
 /**
  * Calculate the support of a ZDD, i.e. the cube of all variables that appear in the ZDD nodes.
  */
-BDDSET zdd_support_CALL(lace_worker* lace, ZDD dd)
+int zdd_support_CALL(lace_worker* lace, BDDSET *destination, ZDD dd)
 {
-    if (dd == zdd_base || dd == zdd_false) return bdd_set_empty();
+    if (destination == NULL || dd == zdd_invalid) return SYLVAN_ERR_INVALID;
+    if (dd == zdd_base || dd == zdd_false) {
+        *destination = bdd_set_empty();
+        return SYLVAN_OK;
+    }
     const zddnode* dd_node = ZDD_GETNODE(dd);
-    if (zddnode_isleaf(dd_node)) return bdd_set_empty();
+    if (zddnode_isleaf(dd_node)) {
+        *destination = bdd_set_empty();
+        return SYLVAN_OK;
+    }
 
     /**
      * Perhaps execute garbage collection
@@ -902,39 +1006,43 @@ BDDSET zdd_support_CALL(lace_worker* lace, ZDD dd)
     /**
      * Consult cache
      */
-    BDDSET result;
-    if (cache_get3(CACHE_ZDD_SUPPORT, dd, 0, 0, &result)) {
+    BDDSET computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_ZDD_SUPPORT, dd, 0, 0, &computed)) {
         sylvan_stats_count(ZDD_SUPPORT_CACHED);
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     const ZDD dd0 = zddnode_low(dd, dd_node);
     const ZDD dd1 = zddnode_high(dd, dd_node);
-    mtbdd_refs_spawn(zdd_support_SPAWN(lace, dd0));
-    BDDSET high = mtbdd_refs_push(zdd_support_CALL(lace, dd1));
-    BDDSET low = mtbdd_refs_push(mtbdd_refs_sync(zdd_support_SYNC(lace)));
-    result = mtbdd_invalid;
-    mtbdd_refs_pushptr(&result);
-    if (bdd_set_union(&result, low, high) != SYLVAN_OK) {
+    BDDSET low = mtbdd_invalid;
+    BDDSET high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+    zdd_support_SPAWN(lace, &low, dd0);
+    int status = zdd_support_CALL(lace, &high, dd1);
+    int low_status = zdd_support_SYNC(lace);
+    if (status == SYLVAN_OK) status = low_status;
+    if (status == SYLVAN_OK) status = bdd_set_union(&computed, low, high);
+    if (status == SYLVAN_OK) status = bdd_set_add(&computed, computed, zddnode_getvariable(dd_node));
+    mtbdd_refs_popptr(2);
+    if (status != SYLVAN_OK) {
         mtbdd_refs_popptr(1);
-        mtbdd_refs_pop(2);
-        return mtbdd_invalid;
+        return status;
     }
-    mtbdd_refs_pop(2);
-    if (bdd_set_add(&result, result, zddnode_getvariable(dd_node)) != SYLVAN_OK) {
-        mtbdd_refs_popptr(1);
-        return mtbdd_invalid;
-    }
-    mtbdd_refs_popptr(1);
 
     /**
      * Put in cache
      */
-    if (cache_put3(CACHE_ZDD_SUPPORT, dd, 0, 0, result)) {
+    if (cache_put3(CACHE_ZDD_SUPPORT, dd, 0, 0, computed)) {
         sylvan_stats_count(ZDD_SUPPORT_CACHEDPUT);
     }
 
-    return result;
+    *destination = computed;
+    mtbdd_refs_popptr(1);
+    return SYLVAN_OK;
 }
 
 /**
@@ -1129,9 +1237,14 @@ ZDD zdd_and_CALL(lace_worker* lace, ZDD a, ZDD b)
 ZDD
 zdd_ite_CALL(lace_worker* lace, ZDD a, ZDD b, ZDD c, BDDSET domain)
 {
-    ZDD zdd_domain = zdd_refs_push(zdd_from_mtbdd_CALL(lace, bdd_true, domain));
+    ZDD zdd_domain = zdd_invalid;
+    zdd_refs_pushptr(&zdd_domain);
+    if (zdd_from_mtbdd_CALL(lace, &zdd_domain, bdd_true, domain) != SYLVAN_OK) {
+        zdd_refs_popptr(1);
+        return zdd_invalid;
+    }
     ZDD result = zdd_ite_internal_CALL(lace, a, b, c, zdd_domain);
-    zdd_refs_pop(1);
+    zdd_refs_popptr(1);
     return result;
 }
 
@@ -1317,9 +1430,14 @@ ZDD zdd_or_CALL(lace_worker* lace, ZDD a, ZDD b)
 ZDD
 zdd_not_CALL(lace_worker* lace, ZDD dd, BDDSET domain)
 {
-    ZDD zdd_domain = zdd_refs_push(zdd_from_mtbdd_CALL(lace, bdd_true, domain));
+    ZDD zdd_domain = zdd_invalid;
+    zdd_refs_pushptr(&zdd_domain);
+    if (zdd_from_mtbdd_CALL(lace, &zdd_domain, bdd_true, domain) != SYLVAN_OK) {
+        zdd_refs_popptr(1);
+        return zdd_invalid;
+    }
     ZDD result = zdd_not_internal_CALL(lace, dd, zdd_domain);
-    zdd_refs_pop(1);
+    zdd_refs_popptr(1);
     return result;
 }
 
@@ -1477,9 +1595,14 @@ ZDD zdd_diff_CALL(lace_worker* lace, ZDD a, ZDD b)
 ZDD
 zdd_exists_CALL(lace_worker* lace, ZDD dd, BDDSET variables)
 {
-    ZDD zdd_variables = zdd_refs_push(zdd_from_mtbdd_CALL(lace, bdd_true, variables));
+    ZDD zdd_variables = zdd_invalid;
+    zdd_refs_pushptr(&zdd_variables);
+    if (zdd_from_mtbdd_CALL(lace, &zdd_variables, bdd_true, variables) != SYLVAN_OK) {
+        zdd_refs_popptr(1);
+        return zdd_invalid;
+    }
     ZDD result = zdd_exists_internal_CALL(lace, dd, zdd_variables);
-    zdd_refs_pop(1);
+    zdd_refs_popptr(1);
     return result;
 }
 
@@ -1593,9 +1716,14 @@ ZDD zdd_exists_internal_CALL(lace_worker* lace, ZDD dd, ZDD vars)
 ZDD
 zdd_project_CALL(lace_worker* lace, ZDD dd, BDDSET domain)
 {
-    ZDD zdd_domain = zdd_refs_push(zdd_from_mtbdd_CALL(lace, bdd_true, domain));
+    ZDD zdd_domain = zdd_invalid;
+    zdd_refs_pushptr(&zdd_domain);
+    if (zdd_from_mtbdd_CALL(lace, &zdd_domain, bdd_true, domain) != SYLVAN_OK) {
+        zdd_refs_popptr(1);
+        return zdd_invalid;
+    }
     ZDD result = zdd_project_internal_CALL(lace, dd, zdd_domain);
-    zdd_refs_pop(1);
+    zdd_refs_popptr(1);
     return result;
 }
 

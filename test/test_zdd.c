@@ -105,6 +105,26 @@ test_bdd_ite(BDD a, BDD b, BDD c)
     return result;
 }
 
+static ZDD
+test_zdd_from_bdd_value(BDD dd, BDDSET domain)
+{
+    ZDD result = zdd_invalid;
+    zdd_protect(&result);
+    int status = zdd_from_bdd(&result, dd, domain);
+    zdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : zdd_invalid;
+}
+
+static BDD
+test_bdd_from_zdd_value(ZDD dd, BDDSET domain)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = bdd_from_zdd(&result, dd, domain);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
 static void*
 test_alloc_array(size_t count, size_t size)
 {
@@ -166,15 +186,52 @@ void test_zdd_enum_cb_CALL(lace_worker* lace, void* ctx, uint8_t* arr, size_t le
 TASK(int, test_zdd_conversion)
 int test_zdd_conversion_CALL(lace_worker* lace)
 {
-    BDDSET dom = test_bdd_set_from_levels((uint32_t[]){0,1,2,3,4,5,6}, 7);
-    BDD dd = test_mtbdd_cube(dom, (uint8_t[]){0,0,2,2,0,2,0}, bdd_true);
-    ZDD zdd = zdd_from_bdd(dd, dom);
-    test_assert(zdd != zdd_invalid);
-    test_assert(bdd_from_zdd(zdd, dom) == dd);
-    test_assert(zdd_true(dom) == zdd_from_bdd(bdd_true, dom));
+    BDDSET dom = mtbdd_invalid;
+    BDD dd = mtbdd_invalid;
+    BDD outside = mtbdd_invalid;
+    ZDD zdd = zdd_invalid;
+    ZDD parallel_zdd = zdd_invalid;
+    ZDD true_zdd = zdd_invalid;
+    ZDD unchanged = zdd_base;
+    BDD roundtrip = mtbdd_invalid;
+
+    mtbdd_refs_pushptr(&dom);
+    mtbdd_refs_pushptr(&dd);
+    mtbdd_refs_pushptr(&outside);
+    mtbdd_refs_pushptr(&roundtrip);
+    zdd_refs_pushptr(&zdd);
+    zdd_refs_pushptr(&parallel_zdd);
+    zdd_refs_pushptr(&true_zdd);
+    zdd_refs_pushptr(&unchanged);
+
+    dom = test_bdd_set_from_levels((uint32_t[]){0,1,2,3,4,5,6}, 7);
+    dd = test_mtbdd_cube(dom, (uint8_t[]){0,0,2,2,0,2,0}, bdd_true);
+    outside = test_bdd_var(7);
+
+    zdd_from_bdd_SPAWN(lace, &parallel_zdd, dd, dom);
+    int status = zdd_from_bdd_CALL(lace, &zdd, dd, dom);
+    int parallel_status = zdd_from_bdd_SYNC(lace);
+    test_assert(status == SYLVAN_OK && zdd != zdd_invalid);
+    test_assert(parallel_status == SYLVAN_OK && parallel_zdd == zdd);
+    test_assert(bdd_from_zdd_CALL(lace, &roundtrip, zdd, dom) == SYLVAN_OK && roundtrip == dd);
+    test_assert(zdd_true(&true_zdd, dom) == SYLVAN_OK);
+    test_assert(true_zdd == test_zdd_from_bdd_value(bdd_true, dom));
+
+    sylvan_gc_CALL(lace);
+    test_assert(parallel_zdd == zdd && roundtrip == dd);
+
+    test_assert(zdd_from_bdd(NULL, dd, dom) == SYLVAN_ERR_INVALID);
+    test_assert(zdd_from_bdd(&unchanged, mtbdd_invalid, dom) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_from_bdd(&unchanged, outside, dom) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(bdd_from_zdd(&roundtrip, zdd_invalid, dom) == SYLVAN_ERR_INVALID);
+    test_assert(roundtrip == dd);
+
+    zdd_refs_popptr(4);
+    mtbdd_refs_popptr(4);
 
     return 0;
-    (void)lace;
 }
 
 TASK(int, test_zdd_variable)
@@ -182,7 +239,7 @@ int test_zdd_variable_CALL(lace_worker* lace)
 {
     uint32_t var = rng(0, 0xfffff);
     ZDD a = zdd_make_node(var, zdd_false, zdd_base);
-    test_assert(a == zdd_from_bdd(test_bdd_var(var), test_bdd_var(var)));
+    test_assert(a == test_zdd_from_bdd_value(test_bdd_var(var), test_bdd_var(var)));
 
     return 0;
     (void)lace;
@@ -191,21 +248,46 @@ int test_zdd_variable_CALL(lace_worker* lace)
 TASK(int, test_zdd_cofactor)
 int test_zdd_cofactor_CALL(lace_worker* lace)
 {
-    BDDSET domain = test_bdd_set_from_levels((uint32_t[]){0,1,2}, 3);
-    BDD x0 = test_bdd_var(0);
-    BDD x1 = test_bdd_var(1);
-    BDD x2 = test_bdd_var(2);
-    BDD function = test_bdd_xor(x0, x1);
-    BDD cube = test_bdd_and(x0, bdd_not(x2));
-    ZDD zdd = zdd_from_bdd(function, domain);
+    BDDSET domain = mtbdd_invalid;
+    BDD x0 = mtbdd_invalid;
+    BDD x1 = mtbdd_invalid;
+    BDD x2 = mtbdd_invalid;
+    BDD function = mtbdd_invalid;
+    BDD cube = mtbdd_invalid;
+    BDDSET result_domain = mtbdd_invalid;
+    ZDD zdd = zdd_invalid;
+    ZDD result = zdd_invalid;
+    ZDD unchanged = zdd_base;
 
-    BDDSET result_domain = test_bdd_set_from_levels((uint32_t[]){1}, 1);
-    ZDD result = zdd_cofactor_CALL(lace, zdd, cube, domain);
-    test_assert(result != zdd_invalid);
-    test_assert(bdd_from_zdd(result, result_domain) == bdd_not(x1));
+    mtbdd_refs_pushptr(&domain);
+    mtbdd_refs_pushptr(&x0);
+    mtbdd_refs_pushptr(&x1);
+    mtbdd_refs_pushptr(&x2);
+    mtbdd_refs_pushptr(&function);
+    mtbdd_refs_pushptr(&cube);
+    mtbdd_refs_pushptr(&result_domain);
+    zdd_refs_pushptr(&zdd);
+    zdd_refs_pushptr(&result);
+    zdd_refs_pushptr(&unchanged);
 
-    test_assert(zdd_cofactor_CALL(lace, zdd, test_bdd_or(x0, x1), domain) == zdd_invalid);
-    test_assert(zdd_cofactor_CALL(lace, zdd, test_bdd_var(3), domain) == zdd_invalid);
+    domain = test_bdd_set_from_levels((uint32_t[]){0,1,2}, 3);
+    x0 = test_bdd_var(0);
+    x1 = test_bdd_var(1);
+    x2 = test_bdd_var(2);
+    function = test_bdd_xor(x0, x1);
+    cube = test_bdd_and(x0, bdd_not(x2));
+    zdd = test_zdd_from_bdd_value(function, domain);
+    result_domain = test_bdd_set_from_levels((uint32_t[]){1}, 1);
+
+    test_assert(zdd_cofactor_CALL(lace, &result, zdd, cube, domain) == SYLVAN_OK);
+    test_assert(test_bdd_from_zdd_value(result, result_domain) == bdd_not(x1));
+
+    test_assert(zdd_cofactor_CALL(lace, &unchanged, zdd, test_bdd_or(x0, x1), domain) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_cofactor_CALL(lace, &unchanged, zdd, test_bdd_var(3), domain) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    zdd_refs_popptr(3);
+    mtbdd_refs_popptr(7);
     return 0;
 }
 
@@ -225,8 +307,8 @@ int test_zdd_from_mtbdd_CALL(lace_worker* lace)
         for (int j=0; j<8; j++) arr[j] = (uint8_t)rng(0, 2);
         BDD bdd_set = test_bdd_cube(bdd_dom, arr);
         ZDD zdd_set = zdd_cube(zdd_dom, arr);
-        test_assert(zdd_from_bdd(bdd_set, bdd_dom) == zdd_set);
-        test_assert(bdd_from_zdd(zdd_set, zdd_dom) == bdd_set);
+        test_assert(test_zdd_from_bdd_value(bdd_set, bdd_dom) == zdd_set);
+        test_assert(test_bdd_from_zdd_value(zdd_set, zdd_dom) == bdd_set);
     }
 
     return 0;
@@ -273,16 +355,57 @@ int test_zdd_merge_domains_CALL(lace_worker* lace)
 TASK(int, test_zdd_extend_domain)
 int test_zdd_extend_domain_CALL(lace_worker* lace)
 {
-    BDD subdomain = test_bdd_set_from_levels((uint32_t[]){1}, 1);
-    BDD domain = test_bdd_set_from_levels((uint32_t[]){0,1,2}, 3);
-    BDDSET newvars = test_bdd_set_from_levels((uint32_t[]){0,2}, 2);
-    ZDD set = zdd_from_bdd(test_bdd_var(1), subdomain);
-    ZDD expected = zdd_from_bdd(test_bdd_var(1), domain);
+    BDD subdomain = mtbdd_invalid;
+    BDD domain = mtbdd_invalid;
+    BDDSET newvars = mtbdd_invalid;
+    BDD variable = mtbdd_invalid;
+    ZDD set = zdd_invalid;
+    ZDD expected = zdd_invalid;
+    ZDD result = zdd_invalid;
+    ZDD parallel_result = zdd_invalid;
+    ZDD unchanged = zdd_base;
+    BDDSET support = mtbdd_invalid;
 
-    test_assert(zdd_extend_domain_CALL(lace, set, newvars, 2) == expected);
-    test_assert(zdd_lift_CALL(lace, set, subdomain, domain) == expected);
-    test_assert(zdd_lift_CALL(lace, set, domain, subdomain) == zdd_invalid);
-    test_assert(zdd_extend_domain_CALL(lace, set, newvars, 3) == zdd_invalid);
+    mtbdd_refs_pushptr(&subdomain);
+    mtbdd_refs_pushptr(&domain);
+    mtbdd_refs_pushptr(&newvars);
+    mtbdd_refs_pushptr(&variable);
+    mtbdd_refs_pushptr(&support);
+    zdd_refs_pushptr(&set);
+    zdd_refs_pushptr(&expected);
+    zdd_refs_pushptr(&result);
+    zdd_refs_pushptr(&parallel_result);
+    zdd_refs_pushptr(&unchanged);
+
+    subdomain = test_bdd_set_from_levels((uint32_t[]){1}, 1);
+    domain = test_bdd_set_from_levels((uint32_t[]){0,1,2}, 3);
+    newvars = test_bdd_set_from_levels((uint32_t[]){0,2}, 2);
+    variable = test_bdd_var(1);
+    set = test_zdd_from_bdd_value(variable, subdomain);
+    expected = test_zdd_from_bdd_value(variable, domain);
+
+    zdd_extend_domain_SPAWN(lace, &parallel_result, set, newvars, 2);
+    int status = zdd_lift_CALL(lace, &result, set, subdomain, domain);
+    int parallel_status = zdd_extend_domain_SYNC(lace);
+    test_assert(status == SYLVAN_OK && result == expected);
+    test_assert(parallel_status == SYLVAN_OK && parallel_result == expected);
+    test_assert(zdd_support_CALL(lace, &support, set) == SYLVAN_OK && support == subdomain);
+
+    result = set;
+    test_assert(zdd_lift(&result, result, subdomain, domain) == SYLVAN_OK && result == expected);
+    sylvan_gc_CALL(lace);
+    test_assert(result == expected);
+
+    test_assert(zdd_lift_CALL(lace, &unchanged, set, domain, subdomain) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_extend_domain_CALL(lace, &unchanged, set, newvars, 3) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_support(NULL, set) == SYLVAN_ERR_INVALID);
+    test_assert(zdd_extend_domain(&unchanged, zdd_invalid, newvars, 2) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+
+    zdd_refs_popptr(5);
+    mtbdd_refs_popptr(5);
     return 0;
 }
 
@@ -360,7 +483,7 @@ int test_zdd_union_cube_CALL(lace_worker* lace)
         for (int j=0; j<8; j++) arr[j] = (uint8_t)rng(0, 3);
         bdd_set = test_bdd_or_cube(bdd_set, bdd_dom, arr);
         zdd_set = zdd_or_cube(zdd_set, zdd_dom, arr);
-        test_assert(zdd_from_bdd(bdd_set, bdd_dom) == zdd_set);
+        test_assert(test_zdd_from_bdd_value(bdd_set, bdd_dom) == zdd_set);
     }
 
     return 0;
@@ -385,7 +508,7 @@ int test_zdd_satcount_CALL(lace_worker* lace)
         bdd_set = test_bdd_or_cube(bdd_set, bdd_dom, arr);
     }
 
-    ZDD zdd_set = zdd_from_bdd(bdd_set, bdd_dom);
+    ZDD zdd_set = test_zdd_from_bdd_value(bdd_set, bdd_dom);
 
     test_assert((size_t)mtbdd_sat_count(bdd_set, 8) == (size_t)zdd_path_count(zdd_set));
 
@@ -461,9 +584,9 @@ int test_zdd_and_CALL(lace_worker* lace)
 
     BDD bdd_set = test_bdd_and(bdd_set_a, bdd_set_b);
 
-    ZDD zdd_set_a = zdd_from_bdd(bdd_set_a, bdd_dom);
-    ZDD zdd_set_b = zdd_from_bdd(bdd_set_b, bdd_dom);
-    ZDD zdd_set = zdd_from_bdd(bdd_set, bdd_dom);
+    ZDD zdd_set_a = test_zdd_from_bdd_value(bdd_set_a, bdd_dom);
+    ZDD zdd_set_b = test_zdd_from_bdd_value(bdd_set_b, bdd_dom);
+    ZDD zdd_set = test_zdd_from_bdd_value(bdd_set, bdd_dom);
 
     ZDD zdd_test_result = zdd_and(zdd_set_a, zdd_set_b);
     test_assert(zdd_set == zdd_test_result);
@@ -503,9 +626,9 @@ int test_zdd_or_CALL(lace_worker* lace)
 
     BDD bdd_set = test_bdd_or(bdd_set_a, bdd_set_b);
 
-    ZDD zdd_set_a = zdd_from_bdd(bdd_set_a, bdd_dom);
-    ZDD zdd_set_b = zdd_from_bdd(bdd_set_b, bdd_dom);
-    ZDD zdd_set = zdd_from_bdd(bdd_set, bdd_dom);
+    ZDD zdd_set_a = test_zdd_from_bdd_value(bdd_set_a, bdd_dom);
+    ZDD zdd_set_b = test_zdd_from_bdd_value(bdd_set_b, bdd_dom);
+    ZDD zdd_set = test_zdd_from_bdd_value(bdd_set, bdd_dom);
 
     ZDD zdd_test_result = zdd_or(zdd_set_a, zdd_set_b);
     test_assert(zdd_set == zdd_test_result);
@@ -533,8 +656,8 @@ int test_zdd_not_CALL(lace_worker* lace)
         bdd_set = test_bdd_or_cube(bdd_set, bdd_dom, arr);
     }
 
-    ZDD zdd_set = zdd_from_bdd(bdd_set, bdd_dom);
-    ZDD zdd_set_inv = zdd_from_bdd(bdd_not(bdd_set), bdd_dom);
+    ZDD zdd_set = test_zdd_from_bdd_value(bdd_set, bdd_dom);
+    ZDD zdd_set_inv = test_zdd_from_bdd_value(bdd_not(bdd_set), bdd_dom);
     test_assert((size_t)mtbdd_sat_count(bdd_not(bdd_set), 8) == (size_t)zdd_path_count(zdd_set_inv));
     test_assert(zdd_set_inv == zdd_not(zdd_set, bdd_dom));
 
@@ -586,12 +709,12 @@ int test_zdd_ite_CALL(lace_worker* lace)
         }
     }
 
-    ZDD zdd_set_a = zdd_from_bdd(set_a, bdd_dom);
-    ZDD zdd_set_b = zdd_from_bdd(set_b, bdd_dom);
-    ZDD zdd_set_c = zdd_from_bdd(set_c, bdd_dom);
+    ZDD zdd_set_a = test_zdd_from_bdd_value(set_a, bdd_dom);
+    ZDD zdd_set_b = test_zdd_from_bdd_value(set_b, bdd_dom);
+    ZDD zdd_set_c = test_zdd_from_bdd_value(set_c, bdd_dom);
     MTBDD bdd_test_result = test_bdd_ite(set_a, set_b, set_c);
     ZDD zdd_test_result = zdd_ite(zdd_set_a, zdd_set_b, zdd_set_c, bdd_dom);
-    test_assert(zdd_from_bdd(bdd_test_result, bdd_dom) == zdd_test_result);
+    test_assert(test_zdd_from_bdd_value(bdd_test_result, bdd_dom) == zdd_test_result);
 
     free(arr);
     free(dom_arr);
@@ -641,13 +764,13 @@ int test_zdd_exists_CALL(lace_worker* lace)
         bdd_set = test_bdd_or_cube(bdd_set, bdd_dom, arr);
         zdd_set = zdd_or_cube(zdd_set, zdd_dom, arr);
     }
-    test_assert(zdd_set == zdd_from_bdd(bdd_set, bdd_dom));
+    test_assert(zdd_set == test_zdd_from_bdd_value(bdd_set, bdd_dom));
 
     BDD bdd_qset = test_bdd_exists(bdd_set, bdd_qdom);
     ZDD zdd_test_result = zdd_exists(zdd_set, zdd_qdom);
-    test_assert(zdd_test_result == zdd_from_bdd(bdd_qset, bdd_dom));
+    test_assert(zdd_test_result == test_zdd_from_bdd_value(bdd_qset, bdd_dom));
     ZDD zdd_test_result2 = zdd_project(zdd_set, zdd_subdom);
-    test_assert(zdd_test_result2 == zdd_from_bdd(bdd_qset, bdd_subdom));
+    test_assert(zdd_test_result2 == test_zdd_from_bdd_value(bdd_qset, bdd_subdom));
 
     free(arr);
     free(q_arr);

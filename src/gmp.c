@@ -23,6 +23,24 @@
 
 static uint32_t gmp_type;
 
+static_assert(sizeof(size_t) >= sizeof(double), "GMP double parameters require 64-bit size_t");
+
+static inline size_t
+gmp_double_parameter(double value)
+{
+    size_t parameter = 0;
+    memcpy(&parameter, &value, sizeof(value));
+    return parameter;
+}
+
+static inline double
+gmp_parameter_double(size_t parameter)
+{
+    double value;
+    memcpy(&value, &parameter, sizeof(value));
+    return value;
+}
+
 /**
  * helper function for hash
  */
@@ -176,16 +194,6 @@ gmp_apply_result(MTBDD *destination, MTBDD result)
     if (result == mtbdd_invalid) return SYLVAN_ERR_INVALID;
     *destination = result;
     return SYLVAN_OK;
-}
-
-static MTBDD
-gmp_apply_unary_value(MTBDD dd, mtbdd_apply_unary_cb op, size_t param)
-{
-    MTBDD result = mtbdd_invalid;
-    mtbdd_refs_pushptr(&result);
-    int status = mtbdd_apply_unary(&result, dd, op, param);
-    mtbdd_refs_popptr(1);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
 
 /**
@@ -545,7 +553,7 @@ int gmp_op_threshold_d_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, size
     if (mtbdd_is_leaf(a)) {
         if (mtbdd_leaf_type(a) != gmp_type) return SYLVAN_ERR_INVALID;
 
-        double value = *(double*)&svalue;
+        double value = gmp_parameter_double(svalue);
         mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
         return gmp_apply_result(destination, mpq_get_d(ma) >= value ? bdd_true : mtbdd_undefined);
     }
@@ -568,7 +576,7 @@ int gmp_op_strict_threshold_d_CALL(lace_worker* lace, MTBDD *destination, MTBDD 
     if (mtbdd_is_leaf(a)) {
         if (mtbdd_leaf_type(a) != gmp_type) return SYLVAN_ERR_INVALID;
 
-        double value = *(double*)&svalue;
+        double value = gmp_parameter_double(svalue);
         mpq_ptr ma = (mpq_ptr)mtbdd_leaf_value(a);
         return gmp_apply_result(destination, mpq_get_d(ma) > value ? bdd_true : mtbdd_undefined);
     }
@@ -576,16 +584,14 @@ int gmp_op_strict_threshold_d_CALL(lace_worker* lace, MTBDD *destination, MTBDD 
     return SYLVAN_APPLY_RECURSE;
 }
 
-MTBDD gmp_threshold_d_CALL(lace_worker* lace, MTBDD dd, double d)
+int gmp_threshold_d_CALL(lace_worker* lace, MTBDD *destination, MTBDD dd, double d)
 {
-    (void)lace;
-    return gmp_apply_unary_value(dd, gmp_op_threshold_d_CALL, *(size_t*)&d);
+    return mtbdd_apply_unary_CALL(lace, destination, dd, gmp_op_threshold_d_CALL, gmp_double_parameter(d));
 }
 
-MTBDD gmp_strict_threshold_d_CALL(lace_worker* lace, MTBDD dd, double d)
+int gmp_strict_threshold_d_CALL(lace_worker* lace, MTBDD *destination, MTBDD dd, double d)
 {
-    (void)lace;
-    return gmp_apply_unary_value(dd, gmp_op_strict_threshold_d_CALL, *(size_t*)&d);
+    return mtbdd_apply_unary_CALL(lace, destination, dd, gmp_op_strict_threshold_d_CALL, gmp_double_parameter(d));
 }
 
 /**

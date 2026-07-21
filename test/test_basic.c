@@ -183,6 +183,19 @@ test_mtbdd()
     test_assert(result != mtbdd_invalid);
     test_assert(mtbdd_getdouble(result) == 0.0);
 
+    uint32_t early_level[] = {0};
+    uint32_t late_level[] = {1};
+    MTBDD early_var = mtbdd_set_from_array(early_level, 1);
+    MTBDD late_var = mtbdd_set_from_array(late_level, 1);
+    MTBDD terminal = mtbdd_int64(42);
+    MTBDD other_terminal = mtbdd_int64(7);
+    MTBDD later_cube = mtbdd_cube(late_var, (uint8_t[]){1}, terminal);
+    MTBDD earlier_result = mtbdd_union_cube(later_cube, early_var, (uint8_t[]){0}, other_terminal);
+    test_assert(mtbdd_getvar(earlier_result) == 0);
+    test_assert(mtbdd_getlow(earlier_result) == other_terminal);
+    test_assert(mtbdd_gethigh(earlier_result) == later_cube);
+    test_assert(mtbdd_union_cube(later_cube, early_var, (uint8_t[]){2}, other_terminal) == other_terminal);
+
     return 0;
 }
 

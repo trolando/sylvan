@@ -658,8 +658,9 @@ TASK_IMPL_4(MTBDD, mtbdd_union_cube, MTBDD, mtbdd, MTBDD, vars, uint8_t*, cube, 
     mtbddnode_t nv = MTBDD_GETNODE(vars);
     uint32_t v = mtbddnode_getvariable(nv);
 
-    mtbddnode_t na = MTBDD_GETNODE(mtbdd);
-    uint32_t va = mtbddnode_getvariable(na);
+    const int is_leaf = mtbdd_isleaf(mtbdd);
+    mtbddnode_t na = is_leaf ? NULL : MTBDD_GETNODE(mtbdd);
+    uint32_t va = is_leaf ? UINT32_MAX : mtbddnode_getvariable(na);
 
     if (va < v) {
         MTBDD low = node_getlow(mtbdd, na);
@@ -709,22 +710,15 @@ TASK_IMPL_4(MTBDD, mtbdd_union_cube, MTBDD, mtbdd, MTBDD, vars, uint8_t*, cube, 
         case 0:
         {
             MTBDD new_low = mtbdd_union_cube(mtbdd, node_gethigh(vars, nv), cube+1, terminal);
-            return mtbdd_makenode(v, new_low, mtbdd_false);
+            return mtbdd_makenode(v, new_low, mtbdd);
         }
         case 1:
         {
             MTBDD new_high = mtbdd_union_cube(mtbdd, node_gethigh(vars, nv), cube+1, terminal);
-            return mtbdd_makenode(v, mtbdd_false, new_high);
+            return mtbdd_makenode(v, mtbdd, new_high);
         }
         case 2:
-        {
-            mtbdd_refs_spawn(SPAWN(mtbdd_union_cube, mtbdd, node_gethigh(vars, nv), cube+1, terminal));
-            MTBDD new_low = mtbdd_union_cube(mtbdd, node_gethigh(vars, nv), cube+1, terminal);
-            mtbdd_refs_push(new_low);
-            MTBDD new_high = mtbdd_refs_sync(SYNC(mtbdd_union_cube));
-            mtbdd_refs_pop(1);
-            return mtbdd_makenode(v, new_low, new_high);
-        }
+            return mtbdd_union_cube(mtbdd, node_gethigh(vars, nv), cube+1, terminal);
         case 3:
         {
             return mtbdd_false; // currently not implemented

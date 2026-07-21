@@ -10,6 +10,7 @@
 #include "test_assert.h"
 
 typedef int (*test_bdd_binary_op)(BDD*, BDD, BDD);
+typedef int (*test_zdd_binary_op)(ZDD*, ZDD, ZDD);
 
 static BDD
 test_bdd_var(uint32_t level)
@@ -131,6 +132,16 @@ test_zdd_or_cube_value(ZDD set, BDDSET variables, uint8_t *values)
     ZDD result = zdd_invalid;
     zdd_protect(&result);
     int status = zdd_or_cube(&result, set, variables, values);
+    zdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : zdd_invalid;
+}
+
+static ZDD
+test_zdd_binary(test_zdd_binary_op op, ZDD a, ZDD b)
+{
+    ZDD result = zdd_invalid;
+    zdd_protect(&result);
+    int status = op(&result, a, b);
     zdd_unprotect(&result);
     return status == SYLVAN_OK ? result : zdd_invalid;
 }
@@ -661,7 +672,7 @@ int test_zdd_and_CALL(lace_worker* lace)
     ZDD zdd_set_b = test_zdd_from_bdd_value(bdd_set_b, bdd_dom);
     ZDD zdd_set = test_zdd_from_bdd_value(bdd_set, bdd_dom);
 
-    ZDD zdd_test_result = zdd_and(zdd_set_a, zdd_set_b);
+    ZDD zdd_test_result = test_zdd_binary(zdd_and, zdd_set_a, zdd_set_b);
     test_assert(zdd_set == zdd_test_result);
 
     free(arr);
@@ -703,13 +714,98 @@ int test_zdd_or_CALL(lace_worker* lace)
     ZDD zdd_set_b = test_zdd_from_bdd_value(bdd_set_b, bdd_dom);
     ZDD zdd_set = test_zdd_from_bdd_value(bdd_set, bdd_dom);
 
-    ZDD zdd_test_result = zdd_or(zdd_set_a, zdd_set_b);
+    ZDD zdd_test_result = test_zdd_binary(zdd_or, zdd_set_a, zdd_set_b);
     test_assert(zdd_set == zdd_test_result);
 
     free(arr);
     free(dom_arr);
     return 0;
     (void)lace;
+}
+
+TASK(int, test_zdd_binary_destinations)
+int test_zdd_binary_destinations_CALL(lace_worker* lace)
+{
+    BDDSET domain = mtbdd_invalid;
+    BDD x0 = mtbdd_invalid;
+    BDD x1 = mtbdd_invalid;
+    BDD x2 = mtbdd_invalid;
+    BDD bdd_a = mtbdd_invalid;
+    BDD bdd_b = mtbdd_invalid;
+    BDD bdd_and_result = mtbdd_invalid;
+    BDD bdd_or_result = mtbdd_invalid;
+    BDD bdd_diff_result = mtbdd_invalid;
+    ZDD a = zdd_invalid;
+    ZDD b = zdd_invalid;
+    ZDD expected_and = zdd_invalid;
+    ZDD expected_or = zdd_invalid;
+    ZDD expected_diff = zdd_invalid;
+    ZDD and_result = zdd_invalid;
+    ZDD or_result = zdd_invalid;
+    ZDD diff_result = zdd_invalid;
+    ZDD inplace = zdd_invalid;
+    ZDD unchanged = zdd_base;
+
+    mtbdd_refs_pushptr(&domain);
+    mtbdd_refs_pushptr(&x0);
+    mtbdd_refs_pushptr(&x1);
+    mtbdd_refs_pushptr(&x2);
+    mtbdd_refs_pushptr(&bdd_a);
+    mtbdd_refs_pushptr(&bdd_b);
+    mtbdd_refs_pushptr(&bdd_and_result);
+    mtbdd_refs_pushptr(&bdd_or_result);
+    mtbdd_refs_pushptr(&bdd_diff_result);
+    zdd_refs_pushptr(&a);
+    zdd_refs_pushptr(&b);
+    zdd_refs_pushptr(&expected_and);
+    zdd_refs_pushptr(&expected_or);
+    zdd_refs_pushptr(&expected_diff);
+    zdd_refs_pushptr(&and_result);
+    zdd_refs_pushptr(&or_result);
+    zdd_refs_pushptr(&diff_result);
+    zdd_refs_pushptr(&inplace);
+    zdd_refs_pushptr(&unchanged);
+
+    domain = test_bdd_set_from_levels((uint32_t[]){0,1,2}, 3);
+    x0 = test_bdd_var(0);
+    x1 = test_bdd_var(1);
+    x2 = test_bdd_var(2);
+    bdd_a = test_bdd_or(x0, x1);
+    bdd_b = test_bdd_or(x1, x2);
+    bdd_and_result = test_bdd_and(bdd_a, bdd_b);
+    bdd_or_result = test_bdd_or(bdd_a, bdd_b);
+    bdd_diff_result = test_bdd_and(bdd_a, bdd_not(bdd_b));
+    a = test_zdd_from_bdd_value(bdd_a, domain);
+    b = test_zdd_from_bdd_value(bdd_b, domain);
+    expected_and = test_zdd_from_bdd_value(bdd_and_result, domain);
+    expected_or = test_zdd_from_bdd_value(bdd_or_result, domain);
+    expected_diff = test_zdd_from_bdd_value(bdd_diff_result, domain);
+
+    zdd_and_SPAWN(lace, &and_result, a, b);
+    int or_status = zdd_or_CALL(lace, &or_result, a, b);
+    int and_status = zdd_and_SYNC(lace);
+    int diff_status = zdd_diff_CALL(lace, &diff_result, a, b);
+    test_assert(and_status == SYLVAN_OK && and_result == expected_and);
+    test_assert(or_status == SYLVAN_OK && or_result == expected_or);
+    test_assert(diff_status == SYLVAN_OK && diff_result == expected_diff);
+
+    inplace = a;
+    test_assert(zdd_diff(&inplace, inplace, b) == SYLVAN_OK && inplace == expected_diff);
+    sylvan_gc_CALL(lace);
+    test_assert(and_result == expected_and && or_result == expected_or && inplace == expected_diff);
+
+    test_zdd_binary_op operations[] = {zdd_and, zdd_or, zdd_diff};
+    for (size_t i = 0; i < sizeof(operations) / sizeof(operations[0]); i++) {
+        test_assert(operations[i](&unchanged, zdd_invalid, b) == SYLVAN_ERR_INVALID);
+        test_assert(unchanged == zdd_base);
+        test_assert(operations[i](&unchanged, a, zdd_invalid) == SYLVAN_ERR_INVALID);
+        test_assert(unchanged == zdd_base);
+        test_assert(operations[i](NULL, a, b) == SYLVAN_ERR_INVALID);
+    }
+
+    zdd_refs_popptr(10);
+    mtbdd_refs_popptr(9);
+    return 0;
 }
 
 TASK(int, test_zdd_not)
@@ -1142,6 +1238,8 @@ int runtests_CALL(lace_worker* lace)
     for (int k=0; k<test_iterations; k++) if (test_zdd_and_CALL(lace)) return 1;
     printf("test_zdd_or...\n");
     for (int k=0; k<test_iterations; k++) if (test_zdd_or_CALL(lace)) return 1;
+    printf("test_zdd_binary_destinations...\n");
+    if (test_zdd_binary_destinations_CALL(lace)) return 1;
     printf("test_zdd_not...\n");
     for (int k=0; k<test_iterations; k++) if (test_zdd_not_CALL(lace)) return 1;
     printf("test_zdd_exists...\n");

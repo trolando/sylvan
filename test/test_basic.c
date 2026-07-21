@@ -2067,6 +2067,91 @@ test_map_reduce_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+TASK(int, test_listdd_set_destinations)
+int
+test_listdd_set_destinations_CALL(lace_worker *lace)
+{
+    LISTDD a = listdd_invalid;
+    LISTDD b = listdd_invalid;
+    LISTDD projection = listdd_invalid;
+    LISTDD united = listdd_invalid;
+    LISTDD difference = listdd_invalid;
+    LISTDD intersection = listdd_invalid;
+    LISTDD matched = listdd_invalid;
+    LISTDD spawned_union = listdd_invalid;
+    LISTDD spawned_difference = listdd_invalid;
+    LISTDD in_place = listdd_invalid;
+    LISTDD unchanged = listdd_empty;
+    LISTDD other_unchanged = listdd_empty_list;
+
+    listdd_refs_pushptr(&a);
+    listdd_refs_pushptr(&b);
+    listdd_refs_pushptr(&projection);
+    listdd_refs_pushptr(&united);
+    listdd_refs_pushptr(&difference);
+    listdd_refs_pushptr(&intersection);
+    listdd_refs_pushptr(&matched);
+    listdd_refs_pushptr(&spawned_union);
+    listdd_refs_pushptr(&spawned_difference);
+    listdd_refs_pushptr(&in_place);
+    listdd_refs_pushptr(&unchanged);
+    listdd_refs_pushptr(&other_unchanged);
+
+    a = listdd_singleton((uint32_t[]){1, 2}, 2);
+    a = listdd_add(a, (uint32_t[]){2, 3}, 2);
+    b = listdd_singleton((uint32_t[]){2, 3}, 2);
+    b = listdd_add(b, (uint32_t[]){4, 5}, 2);
+    projection = listdd_singleton((uint32_t[]){1, UINT32_MAX}, 2);
+
+    listdd_union_SPAWN(lace, &spawned_union, a, b);
+    test_assert(listdd_intersection_CALL(lace, &intersection, a, b) == SYLVAN_OK);
+    test_assert(listdd_union_SYNC(lace) == SYLVAN_OK);
+    test_assert(listdd_count(spawned_union) == 3);
+    test_assert(listdd_count(intersection) == 1);
+    test_assert(listdd_contains(intersection, (uint32_t[]){2, 3}, 2));
+
+    test_assert(listdd_diff(&difference, a, b) == SYLVAN_OK);
+    test_assert(listdd_count(difference) == 1);
+    test_assert(listdd_contains(difference, (uint32_t[]){1, 2}, 2));
+
+    test_assert(listdd_union_diff(&united, &spawned_difference, a, b) == SYLVAN_OK);
+    test_assert(united == spawned_union);
+    test_assert(listdd_count(spawned_difference) == 1);
+    test_assert(listdd_contains(spawned_difference, (uint32_t[]){4, 5}, 2));
+
+    test_assert(listdd_match(&matched, a, b, projection) == SYLVAN_OK);
+    test_assert(listdd_count(matched) == 1);
+    test_assert(listdd_contains(matched, (uint32_t[]){2, 3}, 2));
+
+    in_place = a;
+    test_assert(listdd_union(&in_place, in_place, b) == SYLVAN_OK);
+    test_assert(in_place == spawned_union);
+
+    sylvan_gc_CALL(lace);
+    test_assert(listdd_count(united) == 3);
+    test_assert(listdd_count(difference) == 1);
+    test_assert(listdd_count(intersection) == 1);
+    test_assert(listdd_count(matched) == 1);
+
+    test_assert(listdd_union(&unchanged, listdd_invalid, b) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_diff(&unchanged, a, listdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_union_diff(&unchanged, &other_unchanged, listdd_invalid, b) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(other_unchanged == listdd_empty_list);
+    test_assert(listdd_intersection(&unchanged, listdd_empty_list, b) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_match(&unchanged, a, b, listdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_union(NULL, a, b) == SYLVAN_ERR_INVALID);
+    test_assert(listdd_union_diff(&unchanged, NULL, a, b) == SYLVAN_ERR_INVALID);
+
+    sylvan_gc_CALL(lace);
+    listdd_refs_popptr(12);
+    return 0;
+}
+
 SYLVAN_TLS uint64_t seed = 1;
 
 uint64_t
@@ -2620,7 +2705,20 @@ test_ldd()
 
     // test simply transition relation
     {
-        LISTDD states, rel, meta, expected;
+        LISTDD states = listdd_invalid;
+        LISTDD rel = listdd_invalid;
+        LISTDD meta = listdd_invalid;
+        LISTDD expected = listdd_invalid;
+        LISTDD combined = listdd_invalid;
+        LISTDD statezero = listdd_invalid;
+        LISTDD states2 = listdd_invalid;
+        listdd_refs_pushptr(&states);
+        listdd_refs_pushptr(&rel);
+        listdd_refs_pushptr(&meta);
+        listdd_refs_pushptr(&expected);
+        listdd_refs_pushptr(&combined);
+        listdd_refs_pushptr(&statezero);
+        listdd_refs_pushptr(&states2);
 
         // relation: (0,0) to (1,1)
         rel = listdd_singleton((uint32_t[]){0,1,0,1}, 4);
@@ -2646,7 +2744,8 @@ test_ldd()
         states = listdd_singleton((uint32_t[]){0,0}, 2);
         states = listdd_rel_next_union(states, rel, meta, states);
         test_assert(listdd_count(states) == 3);
-        test_assert(states == listdd_union(states, expected));
+        test_assert(listdd_union(&combined, states, expected) == SYLVAN_OK);
+        test_assert(states == combined);
 
         // now create transition (1,1) --> (1,1) (using copy nodes)
         rel = listdd_relation_singleton((uint32_t[]){1,0,1,0}, (int[]){0,1,0,1}, 4);
@@ -2654,7 +2753,7 @@ test_ldd()
         // the result should be just state (1,1)
         test_assert(states == listdd_singleton((uint32_t[]){1,1}, 2));
 
-        LISTDD statezero = listdd_singleton((uint32_t[]){0,0}, 2);
+        statezero = listdd_singleton((uint32_t[]){0,0}, 2);
         states = listdd_add(statezero, (uint32_t[]){1,1}, 2);
         test_assert(listdd_rel_next_union(states, rel, meta, statezero) == states);
 
@@ -2662,8 +2761,11 @@ test_ldd()
         rel = listdd_relation_singleton((uint32_t[]){0,0}, (int[]){1,1}, 2);
         meta = listdd_singleton((uint32_t[]){4,4}, 2);
         states = make_random_ldd_set(2, 10, 10);
-        LISTDD states2 = make_random_ldd_set(2, 10, 10);
-        test_assert(listdd_union(states, states2) == listdd_rel_next_union(states, rel, meta, states2));
+        states2 = make_random_ldd_set(2, 10, 10);
+        test_assert(listdd_union(&combined, states, states2) == SYLVAN_OK);
+        test_assert(combined == listdd_rel_next_union(states, rel, meta, states2));
+
+        listdd_refs_popptr(7);
     }
 
     return 0;
@@ -2692,6 +2794,7 @@ int runtests_CALL(lace_worker* lace)
         if (test_cube_destinations_CALL(lace)) return 1;
         if (test_relational_destinations_CALL(lace)) return 1;
         if (test_map_reduce_destinations_CALL(lace)) return 1;
+        if (test_listdd_set_destinations_CALL(lace)) return 1;
     }
 
     // we are not testing garbage collection

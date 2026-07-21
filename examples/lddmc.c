@@ -135,6 +135,30 @@ static double t_start;
 #define INFO(s, ...) fprintf(stdout, "[% 8.2f] " s, wctime()-t_start, ##__VA_ARGS__)
 #define Abort(...) { fprintf(stderr, __VA_ARGS__); fprintf(stderr, "Abort at line %d!\n", __LINE__); exit(-1); }
 
+static LISTDD
+listdd_union_or_abort_CALL(lace_worker *lace, LISTDD a, LISTDD b)
+{
+    LISTDD result = listdd_invalid;
+    if (listdd_union_CALL(lace, &result, a, b) != SYLVAN_OK) Abort("ListDD union failed.\n");
+    return result;
+}
+
+static LISTDD
+listdd_diff_or_abort_CALL(lace_worker *lace, LISTDD a, LISTDD b)
+{
+    LISTDD result = listdd_invalid;
+    if (listdd_diff_CALL(lace, &result, a, b) != SYLVAN_OK) Abort("ListDD difference failed.\n");
+    return result;
+}
+
+static LISTDD
+listdd_intersection_or_abort_CALL(lace_worker *lace, LISTDD a, LISTDD b)
+{
+    LISTDD result = listdd_invalid;
+    if (listdd_intersection_CALL(lace, &result, a, b) != SYLVAN_OK) Abort("ListDD intersection failed.\n");
+    return result;
+}
+
 /**
  * Load a set from file
  */
@@ -367,10 +391,10 @@ LISTDD go_par_CALL(lace_worker* lace, LISTDD cur, LISTDD visited, size_t from, s
             // check which MDDs in deadlocks do not have a successor in this relation
             LISTDD anc = listdd_rel_prev_CALL(lace, succ, next[from]->dd, next[from]->meta, cur);
             listdd_refs_push(anc);
-            *deadlocks = listdd_diff_CALL(lace, *deadlocks, anc);
+            *deadlocks = listdd_diff_or_abort_CALL(lace, *deadlocks, anc);
             listdd_refs_pop(1);
         }
-        LISTDD result = listdd_diff_CALL(lace, succ, visited);
+        LISTDD result = listdd_diff_or_abort_CALL(lace, succ, visited);
         listdd_refs_pop(1);
         return result;
     } else if (deadlocks != NULL) {
@@ -387,12 +411,12 @@ LISTDD go_par_CALL(lace_worker* lace, LISTDD cur, LISTDD visited, size_t from, s
         listdd_refs_push(left);
 
         // Merge results of left+right
-        LISTDD result = listdd_union(left, right);
+        LISTDD result = listdd_union_or_abort_CALL(lace, left, right);
         listdd_refs_pop(2);
 
         // Intersect deadlock sets
         listdd_refs_push(result);
-        *deadlocks = listdd_intersection(deadlocks_left, deadlocks_right);
+        *deadlocks = listdd_intersection_or_abort_CALL(lace, deadlocks_left, deadlocks_right);
         listdd_refs_pop(1);
         listdd_refs_popptr(2);
 
@@ -407,7 +431,7 @@ LISTDD go_par_CALL(lace_worker* lace, LISTDD cur, LISTDD visited, size_t from, s
         listdd_refs_push(left);
 
         // Merge results of left+right
-        LISTDD result = listdd_union_CALL(lace, left, right);
+        LISTDD result = listdd_union_or_abort_CALL(lace, left, right);
         listdd_refs_pop(2);
 
         // Return result
@@ -449,7 +473,7 @@ void par_CALL(lace_worker* lace, set_t set)
         }
 
         // visited = visited + front
-        visited = listdd_union_CALL(lace, visited, front);
+        visited = listdd_union_or_abort_CALL(lace, visited, front);
 
         INFO("Level %d done", iteration);
         if (report_levels) {
@@ -484,10 +508,10 @@ LISTDD go_bfs_CALL(lace_worker* lace, LISTDD cur, LISTDD visited, size_t from, s
             // check which MDDs in deadlocks do not have a successor in this relation
             LISTDD anc = listdd_rel_prev_CALL(lace, succ, next[from]->dd, next[from]->meta, cur);
             listdd_refs_push(anc);
-            *deadlocks = listdd_diff_CALL(lace, *deadlocks, anc);
+            *deadlocks = listdd_diff_or_abort_CALL(lace, *deadlocks, anc);
             listdd_refs_pop(1);
         }
-        LISTDD result = listdd_diff_CALL(lace, succ, visited);
+        LISTDD result = listdd_diff_or_abort_CALL(lace, succ, visited);
         listdd_refs_pop(1);
         return result;
     } else if (deadlocks != NULL) {
@@ -503,12 +527,12 @@ LISTDD go_bfs_CALL(lace_worker* lace, LISTDD cur, LISTDD visited, size_t from, s
         listdd_refs_push(right);
 
         // Merge results of left+right
-        LISTDD result = listdd_union_CALL(lace, left, right);
+        LISTDD result = listdd_union_or_abort_CALL(lace, left, right);
         listdd_refs_pop(2);
 
         // Intersect deadlock sets
         listdd_refs_push(result);
-        *deadlocks = listdd_intersection_CALL(lace, deadlocks_left, deadlocks_right);
+        *deadlocks = listdd_intersection_or_abort_CALL(lace, deadlocks_left, deadlocks_right);
         listdd_refs_pop(1);
         listdd_refs_popptr(2);
 
@@ -522,7 +546,7 @@ LISTDD go_bfs_CALL(lace_worker* lace, LISTDD cur, LISTDD visited, size_t from, s
         listdd_refs_push(right);
 
         // Merge results of left+right
-        LISTDD result = listdd_union_CALL(lace, left, right);
+        LISTDD result = listdd_union_or_abort_CALL(lace, left, right);
         listdd_refs_pop(2);
 
         // Return result
@@ -562,7 +586,7 @@ void bfs_CALL(lace_worker* lace, set_t set)
         }
 
         // visited = visited + front
-        visited = listdd_union_CALL(lace, visited, front);
+        visited = listdd_union_or_abort_CALL(lace, visited, front);
 
         INFO("Level %d done", iteration);
         if (report_levels) {
@@ -674,14 +698,14 @@ void chaining_CALL(lace_worker* lace, set_t set)
         // calculate successors in parallel
         for (int i=0; i<next_count; i++) {
             succ = listdd_rel_next(front, next[i]->dd, next[i]->meta);
-            front = listdd_union(front, succ);
+            front = listdd_union_or_abort_CALL(lace, front, succ);
             succ = listdd_empty; // reset, for gc
         }
 
         // front = front - visited
         // visited = visited + front
-        front = listdd_diff(front, visited);
-        visited = listdd_union(visited, front);
+        front = listdd_diff_or_abort_CALL(lace, front, visited);
+        visited = listdd_union_or_abort_CALL(lace, visited, front);
 
         INFO("Level %d done", iteration);
         if (report_levels) {

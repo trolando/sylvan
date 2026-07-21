@@ -360,11 +360,23 @@ listdd_init(void)
 LISTDD
 listdd_make_node(uint32_t value, LISTDD ifeq, LISTDD ifneq)
 {
-    if (ifeq == listdd_empty) return ifneq;
+    LISTDD result;
+    if (_listdd_try_make_node(&result, value, ifeq, ifneq) != SYLVAN_OK) {
+        fprintf(stderr, "LISTDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
+        exit(1);
+    }
+    return result;
+}
+
+int
+_listdd_try_make_node(LISTDD *destination, uint32_t value, LISTDD ifeq, LISTDD ifneq)
+{
+    if (destination == NULL || ifeq == listdd_invalid || ifneq == listdd_invalid) return SYLVAN_ERR_INVALID;
+    if (ifeq == listdd_empty) { *destination = ifneq; return SYLVAN_OK; }
 
     // check if correct (should be false, or next in value)
-    assert(ifneq != listdd_empty_list);
-    if (ifneq != listdd_empty) assert(value < mddnode_getvalue(LDD_GETNODE(ifneq)));
+    if (ifneq == listdd_empty_list) return SYLVAN_ERR_INVALID;
+    if (ifneq != listdd_empty && value >= mddnode_getvalue(LDD_GETNODE(ifneq))) return SYLVAN_ERR_INVALID;
 
     struct mddnode n;
     mddnode_make(&n, value, ifneq, ifeq);
@@ -378,21 +390,31 @@ listdd_make_node(uint32_t value, LISTDD ifeq, LISTDD ifneq)
         listdd_refs_pop(2);
 
         index = nodes_lookup(nodes, n.a, n.b, &created);
-        if (index == 0) {
-            fprintf(stderr, "LISTDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
-            exit(1);
-        }
+        if (index == 0) return SYLVAN_ERR_OOM;
     }
 
     if (created) sylvan_stats_count(LDD_NODES_CREATED);
     else sylvan_stats_count(LDD_NODES_REUSED);
 
-    return (LISTDD)index;
+    *destination = (LISTDD)index;
+    return SYLVAN_OK;
 }
 
 LISTDD
 listdd_make_copy_node(LISTDD ifeq, LISTDD ifneq)
 {
+    LISTDD result;
+    if (_listdd_try_make_copy_node(&result, ifeq, ifneq) != SYLVAN_OK) {
+        fprintf(stderr, "LISTDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
+        exit(1);
+    }
+    return result;
+}
+
+int
+_listdd_try_make_copy_node(LISTDD *destination, LISTDD ifeq, LISTDD ifneq)
+{
+    if (destination == NULL || ifeq == listdd_invalid || ifneq == listdd_invalid) return SYLVAN_ERR_INVALID;
     struct mddnode n;
     mddnode_makecopy(&n, ifneq, ifeq);
 
@@ -405,16 +427,14 @@ listdd_make_copy_node(LISTDD ifeq, LISTDD ifneq)
         listdd_refs_pop(2);
 
         index = nodes_lookup(nodes, n.a, n.b, &created);
-        if (index == 0) {
-            fprintf(stderr, "LISTDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
-            exit(1);
-        }
+        if (index == 0) return SYLVAN_ERR_OOM;
     }
 
     if (created) sylvan_stats_count(LDD_NODES_CREATED);
     else sylvan_stats_count(LDD_NODES_REUSED);
 
-    return (LISTDD)index;
+    *destination = (LISTDD)index;
+    return SYLVAN_OK;
 }
 
 LISTDD
@@ -511,13 +531,15 @@ match_ldds(LISTDD *one, LISTDD *two)
     return 1;
 }
 
-LISTDD listdd_union_CALL(lace_worker* lace, LISTDD a, LISTDD b)
+int listdd_union_CALL(lace_worker* lace, LISTDD *destination, LISTDD a, LISTDD b)
 {
+    if (destination == NULL || a == listdd_invalid || b == listdd_invalid) return SYLVAN_ERR_INVALID;
+
     /* Terminal cases */
-    if (a == b) return a;
-    if (a == listdd_empty) return b;
-    if (b == listdd_empty) return a;
-    assert(a != listdd_empty_list && b != listdd_empty_list); // expecting same length
+    if (a == b) { *destination = a; return SYLVAN_OK; }
+    if (a == listdd_empty) { *destination = b; return SYLVAN_OK; }
+    if (b == listdd_empty) { *destination = a; return SYLVAN_OK; }
+    if (a == listdd_empty_list || b == listdd_empty_list) return SYLVAN_ERR_INVALID;
 
     /* Test gc */
     sylvan_gc_test(lace);
@@ -528,10 +550,13 @@ LISTDD listdd_union_CALL(lace_worker* lace, LISTDD a, LISTDD b)
     if (a < b) { LISTDD tmp=b; b=a; a=tmp; }
 
     /* Access cache */
-    LISTDD result;
-    if (cache_get3(CACHE_MDD_UNION, a, b, 0, &result)) {
+    LISTDD computed = listdd_invalid;
+    listdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_MDD_UNION, a, b, 0, &computed)) {
         sylvan_stats_count(LDD_UNION_CACHED);
-        return result;
+        *destination = computed;
+        listdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /* Get nodes */
@@ -543,49 +568,62 @@ LISTDD listdd_union_CALL(lace_worker* lace, LISTDD a, LISTDD b)
     const uint32_t na_value = mddnode_getvalue(na);
     const uint32_t nb_value = mddnode_getvalue(nb);
 
+    LISTDD down = listdd_invalid;
+    LISTDD right = listdd_invalid;
+    listdd_refs_pushptr(&down);
+    listdd_refs_pushptr(&right);
+    int status = SYLVAN_OK;
+
     /* Perform recursive calculation */
     if (na_copy && nb_copy) {
-        listdd_refs_spawn(listdd_union_SPAWN(lace, mddnode_getdown(na), mddnode_getdown(nb)));
-        LISTDD right = listdd_union_CALL(lace, mddnode_getright(na), mddnode_getright(nb));
-        listdd_refs_push(right);
-        LISTDD down = listdd_refs_sync(listdd_union_SYNC(lace));
-        listdd_refs_pop(1);
-        result = listdd_make_copy_node(down, right);
+        listdd_union_SPAWN(lace, &down, mddnode_getdown(na), mddnode_getdown(nb));
+        status = listdd_union_CALL(lace, &right, mddnode_getright(na), mddnode_getright(nb));
+        int down_status = listdd_union_SYNC(lace);
+        if (status == SYLVAN_OK) status = down_status;
+        if (status == SYLVAN_OK) status = _listdd_try_make_copy_node(&computed, down, right);
     } else if (na_copy) {
-        LISTDD right = listdd_union_CALL(lace, mddnode_getright(na), b);
-        result = listdd_make_copy_node(mddnode_getdown(na), right);
+        status = listdd_union_CALL(lace, &right, mddnode_getright(na), b);
+        if (status == SYLVAN_OK) status = _listdd_try_make_copy_node(&computed, mddnode_getdown(na), right);
     } else if (nb_copy) {
-        LISTDD right = listdd_union_CALL(lace, a, mddnode_getright(nb));
-        result = listdd_make_copy_node(mddnode_getdown(nb), right);
+        status = listdd_union_CALL(lace, &right, a, mddnode_getright(nb));
+        if (status == SYLVAN_OK) status = _listdd_try_make_copy_node(&computed, mddnode_getdown(nb), right);
     } else if (na_value < nb_value) {
-        LISTDD right = listdd_union_CALL(lace, mddnode_getright(na), b);
-        result = listdd_make_node(na_value, mddnode_getdown(na), right);
+        status = listdd_union_CALL(lace, &right, mddnode_getright(na), b);
+        if (status == SYLVAN_OK) status = _listdd_try_make_node(&computed, na_value, mddnode_getdown(na), right);
     } else if (na_value == nb_value) {
-        listdd_refs_spawn(listdd_union_SPAWN(lace, mddnode_getdown(na), mddnode_getdown(nb)));
-        LISTDD right = listdd_union_CALL(lace, mddnode_getright(na), mddnode_getright(nb));
-        listdd_refs_push(right);
-        LISTDD down = listdd_refs_sync(listdd_union_SYNC(lace));
-        listdd_refs_pop(1);
-        result = listdd_make_node(na_value, down, right);
+        listdd_union_SPAWN(lace, &down, mddnode_getdown(na), mddnode_getdown(nb));
+        status = listdd_union_CALL(lace, &right, mddnode_getright(na), mddnode_getright(nb));
+        int down_status = listdd_union_SYNC(lace);
+        if (status == SYLVAN_OK) status = down_status;
+        if (status == SYLVAN_OK) status = _listdd_try_make_node(&computed, na_value, down, right);
     } else /* na_value > nb_value */ {
-        LISTDD right = listdd_union_CALL(lace, a, mddnode_getright(nb));
-        result = listdd_make_node(nb_value, mddnode_getdown(nb), right);
+        status = listdd_union_CALL(lace, &right, a, mddnode_getright(nb));
+        if (status == SYLVAN_OK) status = _listdd_try_make_node(&computed, nb_value, mddnode_getdown(nb), right);
+    }
+
+    listdd_refs_popptr(2);
+    if (status != SYLVAN_OK) {
+        listdd_refs_popptr(1);
+        return status;
     }
 
     /* Write to cache */
-    if (cache_put3(CACHE_MDD_UNION, a, b, 0, result)) sylvan_stats_count(LDD_UNION_CACHEDPUT);
+    if (cache_put3(CACHE_MDD_UNION, a, b, 0, computed)) sylvan_stats_count(LDD_UNION_CACHEDPUT);
 
-    return result;
+    *destination = computed;
+    listdd_refs_popptr(1);
+    return SYLVAN_OK;
 }
 
-LISTDD listdd_diff_CALL(lace_worker* lace, LISTDD a, LISTDD b)
+int listdd_diff_CALL(lace_worker* lace, LISTDD *destination, LISTDD a, LISTDD b)
 {
+    if (destination == NULL || a == listdd_invalid || b == listdd_invalid) return SYLVAN_ERR_INVALID;
+
     /* Terminal cases */
-    if (a == b) return listdd_empty;
-    if (a == listdd_empty) return listdd_empty;
-    if (b == listdd_empty) return a;
-    assert(b != listdd_empty_list);
-    assert(a != listdd_empty_list); // Universe is unknown!! // Possibly depth issue?
+    if (a == b) { *destination = listdd_empty; return SYLVAN_OK; }
+    if (a == listdd_empty) { *destination = listdd_empty; return SYLVAN_OK; }
+    if (b == listdd_empty) { *destination = a; return SYLVAN_OK; }
+    if (a == listdd_empty_list || b == listdd_empty_list) return SYLVAN_ERR_INVALID;
 
     /* Test gc */
     sylvan_gc_test(lace);
@@ -593,10 +631,13 @@ LISTDD listdd_diff_CALL(lace_worker* lace, LISTDD a, LISTDD b)
     sylvan_stats_count(LDD_MINUS);
 
     /* Access cache */
-    LISTDD result;
-    if (cache_get3(CACHE_MDD_MINUS, a, b, 0, &result)) {
+    LISTDD computed = listdd_invalid;
+    listdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_MDD_MINUS, a, b, 0, &computed)) {
         sylvan_stats_count(LDD_MINUS_CACHED);
-        return result;
+        *destination = computed;
+        listdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /* Get nodes */
@@ -605,45 +646,66 @@ LISTDD listdd_diff_CALL(lace_worker* lace, LISTDD a, LISTDD b)
     uint32_t na_value = mddnode_getvalue(na);
     uint32_t nb_value = mddnode_getvalue(nb);
 
+    LISTDD down = listdd_invalid;
+    LISTDD right = listdd_invalid;
+    listdd_refs_pushptr(&down);
+    listdd_refs_pushptr(&right);
+    int status = SYLVAN_OK;
+
     /* Perform recursive calculation */
     if (na_value < nb_value) {
-        LISTDD right = listdd_diff_CALL(lace, mddnode_getright(na), b);
-        result = listdd_make_node(na_value, mddnode_getdown(na), right);
+        status = listdd_diff_CALL(lace, &right, mddnode_getright(na), b);
+        if (status == SYLVAN_OK) status = _listdd_try_make_node(&computed, na_value, mddnode_getdown(na), right);
     } else if (na_value == nb_value) {
-        listdd_refs_spawn(listdd_diff_SPAWN(lace, mddnode_getright(na), mddnode_getright(nb)));
-        LISTDD down = listdd_diff_CALL(lace, mddnode_getdown(na), mddnode_getdown(nb));
-        listdd_refs_push(down);
-        LISTDD right = listdd_refs_sync(listdd_diff_SYNC(lace));
-        listdd_refs_pop(1);
-        result = listdd_make_node(na_value, down, right);
+        listdd_diff_SPAWN(lace, &right, mddnode_getright(na), mddnode_getright(nb));
+        status = listdd_diff_CALL(lace, &down, mddnode_getdown(na), mddnode_getdown(nb));
+        int right_status = listdd_diff_SYNC(lace);
+        if (status == SYLVAN_OK) status = right_status;
+        if (status == SYLVAN_OK) status = _listdd_try_make_node(&computed, na_value, down, right);
     } else /* na_value > nb_value */ {
-        result = listdd_diff_CALL(lace, a, mddnode_getright(nb));
+        status = listdd_diff_CALL(lace, &computed, a, mddnode_getright(nb));
+    }
+
+    listdd_refs_popptr(2);
+    if (status != SYLVAN_OK) {
+        listdd_refs_popptr(1);
+        return status;
     }
 
     /* Write to cache */
-    if (cache_put3(CACHE_MDD_MINUS, a, b, 0, result)) sylvan_stats_count(LDD_MINUS_CACHEDPUT);
+    if (cache_put3(CACHE_MDD_MINUS, a, b, 0, computed)) sylvan_stats_count(LDD_MINUS_CACHEDPUT);
 
-    return result;
+    *destination = computed;
+    listdd_refs_popptr(1);
+    return SYLVAN_OK;
 }
 
-/* result: a plus b; res2: b minus a */
-LISTDD listdd_union_diff_CALL(lace_worker* lace, LISTDD a, LISTDD b, LISTDD* res2)
+/* result: a plus b; difference: b minus a */
+int listdd_union_diff_CALL(lace_worker* lace, LISTDD *destination, LISTDD *difference_destination, LISTDD a, LISTDD b)
 {
-    /* Terminal cases */
-    if (a == b) {
-        *res2 = listdd_empty;
-        return a;
-    }
-    if (a == listdd_empty) {
-        *res2 = b;
-        return b;
-    }
-    if (b == listdd_empty) {
-        *res2 = listdd_empty;
-        return a;
+    if (destination == NULL || difference_destination == NULL ||
+        a == listdd_invalid || b == listdd_invalid) {
+        return SYLVAN_ERR_INVALID;
     }
 
-    assert(a != listdd_empty_list && b != listdd_empty_list); // expecting same length
+    /* Terminal cases */
+    if (a == b) {
+        *destination = a;
+        *difference_destination = listdd_empty;
+        return SYLVAN_OK;
+    }
+    if (a == listdd_empty) {
+        *destination = b;
+        *difference_destination = b;
+        return SYLVAN_OK;
+    }
+    if (b == listdd_empty) {
+        *destination = a;
+        *difference_destination = listdd_empty;
+        return SYLVAN_OK;
+    }
+
+    if (a == listdd_empty_list || b == listdd_empty_list) return SYLVAN_ERR_INVALID;
 
     /* Test gc */
     sylvan_gc_test(lace);
@@ -652,11 +714,17 @@ LISTDD listdd_union_diff_CALL(lace_worker* lace, LISTDD a, LISTDD b, LISTDD* res
     sylvan_stats_count(LDD_ZIP);
 
     /* Access cache */
-    LISTDD result;
-    if (cache_get3(CACHE_MDD_UNION, a, b, 0, &result) &&
-        cache_get3(CACHE_MDD_MINUS, b, a, 0, res2)) {
+    LISTDD computed = listdd_invalid;
+    LISTDD difference = listdd_invalid;
+    listdd_refs_pushptr(&computed);
+    listdd_refs_pushptr(&difference);
+    if (cache_get3(CACHE_MDD_UNION, a, b, 0, &computed) &&
+        cache_get3(CACHE_MDD_MINUS, b, a, 0, &difference)) {
         sylvan_stats_count(LDD_ZIP);
-        return result;
+        *destination = computed;
+        *difference_destination = difference;
+        listdd_refs_popptr(2);
+        return SYLVAN_OK;
     }
 
     /* Get nodes */
@@ -665,41 +733,58 @@ LISTDD listdd_union_diff_CALL(lace_worker* lace, LISTDD a, LISTDD b, LISTDD* res
     uint32_t na_value = mddnode_getvalue(na);
     uint32_t nb_value = mddnode_getvalue(nb);
 
+    LISTDD down = listdd_invalid;
+    LISTDD down_difference = listdd_invalid;
+    LISTDD right = listdd_invalid;
+    LISTDD right_difference = listdd_invalid;
+    listdd_refs_pushptr(&down);
+    listdd_refs_pushptr(&down_difference);
+    listdd_refs_pushptr(&right);
+    listdd_refs_pushptr(&right_difference);
+    int status = SYLVAN_OK;
+
     /* Perform recursive calculation */
     if (na_value < nb_value) {
-        LISTDD right = listdd_union_diff_CALL(lace, mddnode_getright(na), b, res2);
-        result = listdd_make_node(na_value, mddnode_getdown(na), right);
+        status = listdd_union_diff_CALL(lace, &right, &difference, mddnode_getright(na), b);
+        if (status == SYLVAN_OK) status = _listdd_try_make_node(&computed, na_value, mddnode_getdown(na), right);
     } else if (na_value == nb_value) {
-        LISTDD down2, right2;
-        listdd_refs_spawn(listdd_union_diff_SPAWN(lace, mddnode_getdown(na), mddnode_getdown(nb), &down2));
-        LISTDD right = listdd_union_diff_CALL(lace, mddnode_getright(na), mddnode_getright(nb), &right2);
-        listdd_refs_push(right);
-        listdd_refs_push(right2);
-        LISTDD down = listdd_refs_sync(listdd_union_diff_SYNC(lace));
-        listdd_refs_pop(2);
-        result = listdd_make_node(na_value, down, right);
-        *res2 = listdd_make_node(na_value, down2, right2);
+        listdd_union_diff_SPAWN(lace, &down, &down_difference, mddnode_getdown(na), mddnode_getdown(nb));
+        status = listdd_union_diff_CALL(lace, &right, &right_difference, mddnode_getright(na), mddnode_getright(nb));
+        int down_status = listdd_union_diff_SYNC(lace);
+        if (status == SYLVAN_OK) status = down_status;
+        if (status == SYLVAN_OK) status = _listdd_try_make_node(&computed, na_value, down, right);
+        if (status == SYLVAN_OK) status = _listdd_try_make_node(&difference, na_value, down_difference, right_difference);
     } else /* na_value > nb_value */ {
-        LISTDD right2;
-        LISTDD right = listdd_union_diff_CALL(lace, a, mddnode_getright(nb), &right2);
-        result = listdd_make_node(nb_value, mddnode_getdown(nb), right);
-        *res2 = listdd_make_node(nb_value, mddnode_getdown(nb), right2);
+        status = listdd_union_diff_CALL(lace, &right, &right_difference, a, mddnode_getright(nb));
+        if (status == SYLVAN_OK) status = _listdd_try_make_node(&computed, nb_value, mddnode_getdown(nb), right);
+        if (status == SYLVAN_OK) status = _listdd_try_make_node(&difference, nb_value, mddnode_getdown(nb), right_difference);
+    }
+
+    listdd_refs_popptr(4);
+    if (status != SYLVAN_OK) {
+        listdd_refs_popptr(2);
+        return status;
     }
 
     /* Write to cache */
-    int c1 = cache_put3(CACHE_MDD_UNION, a, b, 0, result);
-    int c2 = cache_put3(CACHE_MDD_MINUS, b, a, 0, *res2);
+    int c1 = cache_put3(CACHE_MDD_UNION, a, b, 0, computed);
+    int c2 = cache_put3(CACHE_MDD_MINUS, b, a, 0, difference);
     if (c1 && c2) sylvan_stats_count(LDD_ZIP_CACHEDPUT);
 
-    return result;
+    *destination = computed;
+    *difference_destination = difference;
+    listdd_refs_popptr(2);
+    return SYLVAN_OK;
 }
 
-LISTDD listdd_intersection_CALL(lace_worker* lace, LISTDD a, LISTDD b)
+int listdd_intersection_CALL(lace_worker* lace, LISTDD *destination, LISTDD a, LISTDD b)
 {
+    if (destination == NULL || a == listdd_invalid || b == listdd_invalid) return SYLVAN_ERR_INVALID;
+
     /* Terminal cases */
-    if (a == b) return a;
-    if (a == listdd_empty || b == listdd_empty) return listdd_empty;
-    assert(a != listdd_empty_list && b != listdd_empty_list);
+    if (a == b) { *destination = a; return SYLVAN_OK; }
+    if (a == listdd_empty || b == listdd_empty) { *destination = listdd_empty; return SYLVAN_OK; }
+    if (a == listdd_empty_list || b == listdd_empty_list) return SYLVAN_ERR_INVALID;
 
     /* Test gc */
     sylvan_gc_test(lace);
@@ -716,90 +801,155 @@ LISTDD listdd_intersection_CALL(lace_worker* lace, LISTDD a, LISTDD b)
     while (na_value != nb_value) {
         if (na_value < nb_value) {
             a = mddnode_getright(na);
-            if (a == listdd_empty) return listdd_empty;
+            if (a == listdd_empty) { *destination = listdd_empty; return SYLVAN_OK; }
             na = LDD_GETNODE(a);
             na_value = mddnode_getvalue(na);
         }
         if (nb_value < na_value) {
             b = mddnode_getright(nb);
-            if (b == listdd_empty) return listdd_empty;
+            if (b == listdd_empty) { *destination = listdd_empty; return SYLVAN_OK; }
             nb = LDD_GETNODE(b);
             nb_value = mddnode_getvalue(nb);
         }
     }
 
     /* Access cache */
-    LISTDD result;
-    if (cache_get3(CACHE_MDD_INTERSECT, a, b, 0, &result)) {
+    LISTDD computed = listdd_invalid;
+    listdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_MDD_INTERSECT, a, b, 0, &computed)) {
         sylvan_stats_count(LDD_INTERSECT_CACHED);
-        return result;
+        *destination = computed;
+        listdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /* Perform recursive calculation */
-    listdd_refs_spawn(listdd_intersection_SPAWN(lace, mddnode_getright(na), mddnode_getright(nb)));
-    LISTDD down = listdd_intersection_CALL(lace, mddnode_getdown(na), mddnode_getdown(nb));
-    listdd_refs_push(down);
-    LISTDD right = listdd_refs_sync(listdd_intersection_SYNC(lace));
-    listdd_refs_pop(1);
-    result = listdd_make_node(na_value, down, right);
+    LISTDD down = listdd_invalid;
+    LISTDD right = listdd_invalid;
+    listdd_refs_pushptr(&down);
+    listdd_refs_pushptr(&right);
+    listdd_intersection_SPAWN(lace, &right, mddnode_getright(na), mddnode_getright(nb));
+    int status = listdd_intersection_CALL(lace, &down, mddnode_getdown(na), mddnode_getdown(nb));
+    int right_status = listdd_intersection_SYNC(lace);
+    if (status == SYLVAN_OK) status = right_status;
+    if (status == SYLVAN_OK) status = _listdd_try_make_node(&computed, na_value, down, right);
+    listdd_refs_popptr(2);
+    if (status != SYLVAN_OK) {
+        listdd_refs_popptr(1);
+        return status;
+    }
 
     /* Write to cache */
-    if (cache_put3(CACHE_MDD_INTERSECT, a, b, 0, result)) sylvan_stats_count(LDD_INTERSECT_CACHEDPUT);
+    if (cache_put3(CACHE_MDD_INTERSECT, a, b, 0, computed)) sylvan_stats_count(LDD_INTERSECT_CACHEDPUT);
 
-    return result;
+    *destination = computed;
+    listdd_refs_popptr(1);
+    return SYLVAN_OK;
 }
 
 // proj: -1 (rest 0), 0 (no match), 1 (match)
-LISTDD listdd_match_CALL(lace_worker* lace, LISTDD a, LISTDD b, LISTDD proj)
+int listdd_match_CALL(lace_worker* lace, LISTDD *destination, LISTDD a, LISTDD b, LISTDD proj)
 {
-    if (a == b) return a;
-    if (a == listdd_empty || b == listdd_empty) return listdd_empty;
+    if (destination == NULL || a == listdd_invalid || b == listdd_invalid || proj == listdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (a == b) { *destination = a; return SYLVAN_OK; }
+    if (a == listdd_empty || b == listdd_empty) { *destination = listdd_empty; return SYLVAN_OK; }
+    if (proj <= listdd_empty_list) return SYLVAN_ERR_INVALID;
 
     mddnode* p_node = LDD_GETNODE(proj);
     uint32_t p_val = mddnode_getvalue(p_node);
-    if (p_val == (uint32_t)-1) return a;
+    if (p_val == (uint32_t)-1) { *destination = a; return SYLVAN_OK; }
 
-    assert(a != listdd_empty_list);
-    if (p_val == 1) assert(b != listdd_empty_list);
+    if (a == listdd_empty_list || (p_val == 1 && b == listdd_empty_list)) return SYLVAN_ERR_INVALID;
 
     /* Test gc */
     sylvan_gc_test(lace);
 
     /* Skip nodes if possible */
     if (p_val == 1) {
-        if (!match_ldds(&a, &b)) return listdd_empty;
+        if (!match_ldds(&a, &b)) { *destination = listdd_empty; return SYLVAN_OK; }
     }
 
     sylvan_stats_count(LDD_MATCH);
 
     /* Access cache */
-    LISTDD result;
-    if (cache_get3(CACHE_MDD_MATCH, a, b, proj, &result)) {
+    LISTDD computed = listdd_invalid;
+    listdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_MDD_MATCH, a, b, proj, &computed)) {
         sylvan_stats_count(LDD_MATCH_CACHED);
-        return result;
+        *destination = computed;
+        listdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /* Perform recursive calculation */
     mddnode* na = LDD_GETNODE(a);
-    LISTDD down;
+    LISTDD down = listdd_invalid;
+    LISTDD right = listdd_invalid;
+    listdd_refs_pushptr(&down);
+    listdd_refs_pushptr(&right);
     if (p_val == 1) {
         mddnode* nb = LDD_GETNODE(b);
-        /* right = */ listdd_refs_spawn(listdd_match_SPAWN(lace, mddnode_getright(na), mddnode_getright(nb), proj));
-        down = listdd_match_CALL(lace, mddnode_getdown(na), mddnode_getdown(nb), mddnode_getdown(p_node));
+        listdd_match_SPAWN(lace, &right, mddnode_getright(na), mddnode_getright(nb), proj);
+        int status = listdd_match_CALL(lace, &down, mddnode_getdown(na), mddnode_getdown(nb), mddnode_getdown(p_node));
+        int right_status = listdd_match_SYNC(lace);
+        if (status == SYLVAN_OK) status = right_status;
+        if (status == SYLVAN_OK) status = _listdd_try_make_node(&computed, mddnode_getvalue(na), down, right);
+        listdd_refs_popptr(2);
+        if (status != SYLVAN_OK) { listdd_refs_popptr(1); return status; }
     } else {
-        /* right = */ listdd_refs_spawn(listdd_match_SPAWN(lace, mddnode_getright(na), b, proj));
-        down = listdd_match_CALL(lace, mddnode_getdown(na), b, mddnode_getdown(p_node));
+        listdd_match_SPAWN(lace, &right, mddnode_getright(na), b, proj);
+        int status = listdd_match_CALL(lace, &down, mddnode_getdown(na), b, mddnode_getdown(p_node));
+        int right_status = listdd_match_SYNC(lace);
+        if (status == SYLVAN_OK) status = right_status;
+        if (status == SYLVAN_OK) status = _listdd_try_make_node(&computed, mddnode_getvalue(na), down, right);
+        listdd_refs_popptr(2);
+        if (status != SYLVAN_OK) { listdd_refs_popptr(1); return status; }
     }
-    listdd_refs_push(down);
-    LISTDD right = listdd_refs_sync(listdd_match_SYNC(lace));
-    listdd_refs_pop(1);
-    result = listdd_make_node(mddnode_getvalue(na), down, right);
 
     /* Write to cache */
-    if (cache_put3(CACHE_MDD_MATCH, a, b, proj, result)) sylvan_stats_count(LDD_MATCH_CACHEDPUT);
+    if (cache_put3(CACHE_MDD_MATCH, a, b, proj, computed)) sylvan_stats_count(LDD_MATCH_CACHEDPUT);
 
-    return result;
+    *destination = computed;
+    listdd_refs_popptr(1);
+    return SYLVAN_OK;
 }
+
+/* Transitional value adapters for ListDD tasks not converted yet. */
+static LISTDD
+listdd_union_value_CALL(lace_worker *lace, LISTDD a, LISTDD b)
+{
+    LISTDD result = listdd_invalid;
+    listdd_refs_pushptr(&result);
+    int status = listdd_union_CALL(lace, &result, a, b);
+    listdd_refs_popptr(1);
+    return status == SYLVAN_OK ? result : listdd_invalid;
+}
+
+static LISTDD
+listdd_diff_value_CALL(lace_worker *lace, LISTDD a, LISTDD b)
+{
+    LISTDD result = listdd_invalid;
+    listdd_refs_pushptr(&result);
+    int status = listdd_diff_CALL(lace, &result, a, b);
+    listdd_refs_popptr(1);
+    return status == SYLVAN_OK ? result : listdd_invalid;
+}
+
+static LISTDD
+listdd_intersection_value_CALL(lace_worker *lace, LISTDD a, LISTDD b)
+{
+    LISTDD result = listdd_invalid;
+    listdd_refs_pushptr(&result);
+    int status = listdd_intersection_CALL(lace, &result, a, b);
+    listdd_refs_popptr(1);
+    return status == SYLVAN_OK ? result : listdd_invalid;
+}
+
+#define listdd_union_CALL(lace, a, b) listdd_union_value_CALL((lace), (a), (b))
+#define listdd_diff_CALL(lace, a, b) listdd_diff_value_CALL((lace), (a), (b))
+#define listdd_intersection_CALL(lace, a, b) listdd_intersection_value_CALL((lace), (a), (b))
 
 TASK(LISTDD, listdd_relprod_help, uint32_t, val, LISTDD, set, LISTDD, rel, LISTDD, proj)
 
@@ -1327,7 +1477,7 @@ LISTDD listdd_rel_prev_CALL(lace_worker* lace, LISTDD set, LISTDD rel, LISTDD me
     uint32_t m_val = mddnode_getvalue(n_meta);
     if (m_val == (uint32_t)-1) {
         if (set == uni) return set;
-        else return listdd_intersection(set, uni);
+        else return listdd_intersection_value_CALL(lace, set, uni);
     }
 
     if (m_val != 0 && m_val != 5) assert(set != listdd_empty_list && rel != listdd_empty_list && uni != listdd_empty_list);
@@ -1722,7 +1872,7 @@ LISTDD listdd_project_diff_CALL(lace_worker* lace, const LISTDD mdd, const LISTD
 
     mddnode* p_node = LDD_GETNODE(proj);
     uint32_t p_val = mddnode_getvalue(p_node);
-    if (p_val == (uint32_t)-1) return listdd_diff(mdd, avoid);
+    if (p_val == (uint32_t)-1) return listdd_diff_value_CALL(lace, mdd, avoid);
     if (p_val == (uint32_t)-2) return listdd_empty_list;
 
     sylvan_gc_test(lace);

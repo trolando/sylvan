@@ -2433,41 +2433,50 @@ long double listdd_count_CALL(lace_worker* lace, LISTDD mdd)
     return hack.d;
 }
 
-LISTDD listdd_map_reduce_union_CALL(lace_worker* lace, LISTDD mdd, listdd_map_reduce_union_cb cb, void* context, uint32_t* values, size_t count)
+int listdd_map_reduce_union_CALL(lace_worker* lace, LISTDD *destination, LISTDD mdd,
+    listdd_map_reduce_union_cb cb, void* context, uint32_t* values, size_t count)
 {
-    if (mdd == listdd_empty) return listdd_empty;
+    if (destination == NULL || mdd == listdd_invalid || cb == NULL || (count != 0 && values == NULL)) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (mdd == listdd_empty) { *destination = listdd_empty; return SYLVAN_OK; }
     if (mdd == listdd_empty_list) {
-        return cb(values, count, context);
+        LISTDD computed = listdd_invalid;
+        listdd_refs_pushptr(&computed);
+        int status = cb(&computed, values, count, context);
+        if (status == SYLVAN_OK && computed == listdd_invalid) status = SYLVAN_ERR_INVALID;
+        if (status == SYLVAN_OK) *destination = computed;
+        listdd_refs_popptr(1);
+        return status;
     }
 
     mddnode* n = LDD_GETNODE(mdd);
+    LISTDD down = listdd_invalid;
+    LISTDD right = listdd_invalid;
+    LISTDD computed = listdd_invalid;
+    listdd_refs_pushptr(&down);
+    listdd_refs_pushptr(&right);
+    listdd_refs_pushptr(&computed);
 
-    listdd_refs_spawn(listdd_map_reduce_union_SPAWN(lace, mddnode_getright(n), cb, context, values, count));
+    listdd_map_reduce_union_SPAWN(lace, &right, mddnode_getright(n), cb, context, values, count);
 
     void *scratch = lace_scratch_mark(lace);
     uint32_t *newvalues = LACE_SCRATCH_ARRAY(lace, uint32_t, count+1);
     if (count > 0) memcpy(newvalues, values, sizeof(uint32_t)*count);
     newvalues[count] = mddnode_getvalue(n);
-    LISTDD down = listdd_map_reduce_union_CALL(lace, mddnode_getdown(n), cb, context, newvalues, count+1);
+    int status = listdd_map_reduce_union_CALL(lace, &down, mddnode_getdown(n), cb, context, newvalues, count+1);
     lace_scratch_reset(lace, scratch);
 
-    if (down == listdd_empty) {
-        LISTDD result = listdd_refs_sync(listdd_map_reduce_union_SYNC(lace));
-        return result;
+    int right_status = listdd_map_reduce_union_SYNC(lace);
+    if (status == SYLVAN_OK) status = right_status;
+    if (status == SYLVAN_OK) {
+        if (down == listdd_empty) computed = right;
+        else if (right == listdd_empty) computed = down;
+        else status = listdd_union_destination_CALL(lace, &computed, down, right);
     }
-
-    listdd_refs_push(down);
-    LISTDD right = listdd_refs_sync(listdd_map_reduce_union_SYNC(lace));
-
-    if (right == listdd_empty) {
-        listdd_refs_pop(1);
-        return down;
-    } else {
-        listdd_refs_push(right);
-        LISTDD result = listdd_union_CALL(lace, down, right);
-        listdd_refs_pop(2);
-        return result;
-    }
+    if (status == SYLVAN_OK) *destination = computed;
+    listdd_refs_popptr(3);
+    return status;
 }
 
 TASK(void, _lddmc_sat_all_nopar, LISTDD, mdd, listdd_enum_cb, cb, void*, context, uint32_t*, values, size_t, count)

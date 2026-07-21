@@ -2087,6 +2087,17 @@ test_listdd_map_tuple(LISTDD *destination, uint32_t *values, size_t count, void 
     return SYLVAN_OK;
 }
 
+static int
+test_listdd_transform(LISTDD *destination, LISTDD dd, void *context)
+{
+    if (destination == NULL || context == NULL) return SYLVAN_ERR_INVALID;
+    int mode = *(const int*)context;
+    if (mode == 2) return SYLVAN_ERR_INVALID;
+    if (mode == 3) { *destination = listdd_invalid; return SYLVAN_OK; }
+    *destination = mode == 1 ? listdd_empty : dd;
+    return SYLVAN_OK;
+}
+
 int
 test_listdd_set_destinations_CALL(lace_worker *lace)
 {
@@ -2102,6 +2113,8 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     LISTDD spawned_union = listdd_invalid;
     LISTDD spawned_difference = listdd_invalid;
     LISTDD mapped = listdd_invalid;
+    LISTDD transformed = listdd_invalid;
+    LISTDD picked = listdd_invalid;
     LISTDD in_place = listdd_invalid;
     LISTDD empty_vector = listdd_invalid;
     LISTDD relation = listdd_invalid;
@@ -2126,6 +2139,8 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     listdd_refs_pushptr(&spawned_union);
     listdd_refs_pushptr(&spawned_difference);
     listdd_refs_pushptr(&mapped);
+    listdd_refs_pushptr(&transformed);
+    listdd_refs_pushptr(&picked);
     listdd_refs_pushptr(&in_place);
     listdd_refs_pushptr(&empty_vector);
     listdd_refs_pushptr(&relation);
@@ -2184,6 +2199,23 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(listdd_map_reduce_union_SYNC(lace) == SYLVAN_OK);
     test_assert(mapped == a);
     test_assert(in_place == a);
+
+    int transform_mode = 0;
+    listdd_transform_at_level_SPAWN(lace, &transformed, a, test_listdd_transform, &transform_mode, 1);
+    in_place = a;
+    test_assert(listdd_transform_at_level_CALL(lace, &in_place, in_place, test_listdd_transform, &transform_mode, 1) == SYLVAN_OK);
+    test_assert(listdd_transform_at_level_SYNC(lace) == SYLVAN_OK);
+    test_assert(transformed == a);
+    test_assert(in_place == a);
+    transform_mode = 1;
+    test_assert(listdd_transform_at_level(&transformed, a, test_listdd_transform, &transform_mode, 1) == SYLVAN_OK);
+    test_assert(transformed == listdd_empty);
+
+    test_assert(listdd_pick(&picked, a) == SYLVAN_OK);
+    test_assert(picked == difference);
+    in_place = a;
+    test_assert(listdd_pick(&in_place, in_place) == SYLVAN_OK);
+    test_assert(in_place == difference);
 
     listdd_project_SPAWN(lace, &projected, a, projection);
     test_assert(listdd_join_CALL(lace, &joined, a, b, projection, projection) == SYLVAN_OK);
@@ -2311,9 +2343,26 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(listdd_map_reduce_union(&unchanged, a, test_listdd_map_tuple, &map_context, NULL, 1) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == listdd_empty);
     test_assert(listdd_map_reduce_union(NULL, a, test_listdd_map_tuple, &map_context, NULL, 0) == SYLVAN_ERR_INVALID);
+    transform_mode = 2;
+    test_assert(listdd_transform_at_level(&unchanged, a, test_listdd_transform, &transform_mode, 1) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    transform_mode = 3;
+    test_assert(listdd_transform_at_level(&unchanged, a, test_listdd_transform, &transform_mode, 1) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    transform_mode = 0;
+    test_assert(listdd_transform_at_level(&unchanged, listdd_invalid, test_listdd_transform, &transform_mode, 1) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_transform_at_level(&unchanged, a, NULL, &transform_mode, 1) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_transform_at_level(&unchanged, a, test_listdd_transform, &transform_mode, -1) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_transform_at_level(NULL, a, test_listdd_transform, &transform_mode, 1) == SYLVAN_ERR_INVALID);
+    test_assert(listdd_pick(&unchanged, listdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_pick(NULL, a) == SYLVAN_ERR_INVALID);
 
     sylvan_gc_CALL(lace);
-    listdd_refs_popptr(23);
+    listdd_refs_popptr(25);
     return 0;
 }
 

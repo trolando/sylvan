@@ -191,7 +191,7 @@ TASK(int, listdd_map_reduce_union, LISTDD*, result, LISTDD, dd, listdd_map_reduc
 TASK(void, listdd_enumerate_matching_parallel, LISTDD, dd, LISTDD, match, LISTDD, proj, listdd_enum_cb, cb, void*, context);
 
 int listdd_pick_values(LISTDD mdd, uint32_t *values, size_t count);
-LISTDD listdd_pick(LISTDD mdd);
+int listdd_pick(LISTDD *result, LISTDD mdd);
 
 /**
  * Callback functions for visiting nodes.
@@ -217,11 +217,12 @@ void listdd_node_count_per_level(LISTDD mdd, size_t *variables);
 
 /**
  * Functional composition
- * For every node at depth <depth>, call function cb (LISTDD -> LISTDD).
- * and replace the node by the result of the function
+ * For every node at depth <depth>, call <cb> and replace the node by the
+ * callback result. The callback follows the protected-destination status
+ * convention used by ListDD operations.
  */
-typedef LISTDD (*listdd_transform_at_level_cb)(LISTDD, void*);
-TASK(LISTDD, listdd_transform_at_level, LISTDD, dd, listdd_transform_at_level_cb, cb, void*, context, int, depth);
+typedef int (*listdd_transform_at_level_cb)(LISTDD*, LISTDD, void*);
+TASK(int, listdd_transform_at_level, LISTDD*, result, LISTDD, dd, listdd_transform_at_level_cb, cb, void*, context, int, depth);
 
 /**
  * SAVING:

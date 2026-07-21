@@ -43,7 +43,7 @@ MTBDD mtbdd_gmp(mpq_t val);
  * Operation "plus" for two mpq MTBDDs
  */
 TASK(int, gmp_op_plus, MTBDD*, result, MTBDD*, a, MTBDD*, b);
-TASK(MTBDD, gmp_abstract_op_plus, MTBDD, a, MTBDD, b, int, k);
+TASK(int, gmp_abstract_op_plus, MTBDD*, result, MTBDD, a, MTBDD, b, int, k);
 
 /**
  * Operation "minus" for two mpq MTBDDs
@@ -54,7 +54,7 @@ TASK(int, gmp_op_minus, MTBDD*, result, MTBDD*, a, MTBDD*, b);
  * Operation "times" for two mpq MTBDDs
  */
 TASK(int, gmp_op_times, MTBDD*, result, MTBDD*, a, MTBDD*, b);
-TASK(MTBDD, gmp_abstract_op_times, MTBDD, a, MTBDD, c, int, k);
+TASK(int, gmp_abstract_op_times, MTBDD*, result, MTBDD, a, MTBDD, c, int, k);
 
 /**
  * Operation "divide" for two mpq MTBDDs
@@ -65,13 +65,13 @@ TASK(int, gmp_op_divide, MTBDD*, result, MTBDD*, a, MTBDD*, b);
  * Operation "min" for two mpq MTBDDs
  */
 TASK(int, gmp_op_min, MTBDD*, result, MTBDD*, a, MTBDD*, b);
-TASK(MTBDD, gmp_abstract_op_min, MTBDD, a, MTBDD, b, int, k);
+TASK(int, gmp_abstract_op_min, MTBDD*, result, MTBDD, a, MTBDD, b, int, k);
 
 /**
  * Operation "max" for two mpq MTBDDs
  */
 TASK(int, gmp_op_max, MTBDD*, result, MTBDD*, a, MTBDD*, b);
-TASK(MTBDD, gmp_abstract_op_max, MTBDD, a, MTBDD, b, int, k);
+TASK(int, gmp_abstract_op_max, MTBDD*, result, MTBDD, a, MTBDD, b, int, k);
 
 /**
  * Operation "negate" for one mpq MTBDD
@@ -150,33 +150,33 @@ static inline int gmp_abs(MTBDD *result, MTBDD dd)
 /**
  * Abstract the variables in <vars> from <dd> by taking the sum of all values
  */
-static inline MTBDD gmp_abstract_plus(MTBDD dd, MTBDD vars)
+static inline int gmp_abstract_plus(MTBDD *result, MTBDD dd, MTBDD vars)
 {
-    return mtbdd_abstract(dd, vars, gmp_abstract_op_plus_CALL);
+    return mtbdd_abstract(result, dd, vars, gmp_abstract_op_plus_CALL);
 }
 
 /**
  * Abstract the variables in <vars> from <dd> by taking the product of all values
  */
-static inline MTBDD gmp_abstract_times(MTBDD dd, MTBDD vars)
+static inline int gmp_abstract_times(MTBDD *result, MTBDD dd, MTBDD vars)
 {
-    return mtbdd_abstract(dd, vars, gmp_abstract_op_times_CALL);
+    return mtbdd_abstract(result, dd, vars, gmp_abstract_op_times_CALL);
 }
 
 /**
  * Abstract the variables in <vars> from <dd> by taking the minimum of all values
  */
-static inline MTBDD gmp_abstract_min(MTBDD dd, MTBDD vars)
+static inline int gmp_abstract_min(MTBDD *result, MTBDD dd, MTBDD vars)
 {
-    return mtbdd_abstract(dd, vars, gmp_abstract_op_min_CALL);
+    return mtbdd_abstract(result, dd, vars, gmp_abstract_op_min_CALL);
 }
 
 /**
  * Abstract the variables in <vars> from <dd> by taking the maximum of all values
  */
-static inline MTBDD gmp_abstract_max(MTBDD dd, MTBDD vars)
+static inline int gmp_abstract_max(MTBDD *result, MTBDD dd, MTBDD vars)
 {
-    return mtbdd_abstract(dd, vars, gmp_abstract_op_max_CALL);
+    return mtbdd_abstract(result, dd, vars, gmp_abstract_op_max_CALL);
 }
 
 /**

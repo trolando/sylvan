@@ -485,54 +485,81 @@ int gmp_op_abs_CALL(lace_worker* lace, MTBDD *destination, MTBDD dd, size_t p)
  * - with k<>0, then just calculate "a := a op a", k times
  */
 
-MTBDD gmp_abstract_op_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
+int gmp_abstract_op_plus_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, int k)
 {
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || k < 0) return SYLVAN_ERR_INVALID;
+
     if (k==0) {
-        return gmp_apply_value_CALL(lace, a, b, gmp_op_plus_CALL);
+        return mtbdd_apply_CALL(lace, destination, a, b, gmp_op_plus_CALL);
     } else {
         MTBDD res = a;
+        mtbdd_refs_pushptr(&res);
+        int status = SYLVAN_OK;
         for (int i=0; i<k; i++) {
-            mtbdd_refs_push(res);
-            res = gmp_apply_value_CALL(lace, res, res, gmp_op_plus_CALL);
-            mtbdd_refs_pop(1);
+            status = mtbdd_apply_CALL(lace, &res, res, res, gmp_op_plus_CALL);
+            if (status != SYLVAN_OK) break;
         }
-        return res;
+        if (status == SYLVAN_OK) *destination = res;
+        mtbdd_refs_popptr(1);
+        return status;
     }
 }
 
-MTBDD gmp_abstract_op_times_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
+int gmp_abstract_op_times_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, int k)
 {
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || k < 0) return SYLVAN_ERR_INVALID;
+
     if (k==0) {
-        return gmp_apply_value_CALL(lace, a, b, gmp_op_times_CALL);
+        return mtbdd_apply_CALL(lace, destination, a, b, gmp_op_times_CALL);
     } else {
         MTBDD res = a;
+        mtbdd_refs_pushptr(&res);
+        int status = SYLVAN_OK;
         for (int i=0; i<k; i++) {
-            mtbdd_refs_push(res);
-            res = gmp_apply_value_CALL(lace, res, res, gmp_op_times_CALL);
-            mtbdd_refs_pop(1);
+            status = mtbdd_apply_CALL(lace, &res, res, res, gmp_op_times_CALL);
+            if (status != SYLVAN_OK) break;
         }
-        return res;
+        if (status == SYLVAN_OK) *destination = res;
+        mtbdd_refs_popptr(1);
+        return status;
     }
 }
 
-MTBDD gmp_abstract_op_min_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
+int gmp_abstract_op_min_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, int k)
 {
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || k < 0) return SYLVAN_ERR_INVALID;
+
     if (k == 0) {
-        return gmp_apply_value_CALL(lace, a, b, gmp_op_min_CALL);
+        return mtbdd_apply_CALL(lace, destination, a, b, gmp_op_min_CALL);
     } else {
         // nothing to do: min(a, a) = a
-        return a;
+        *destination = a;
+        return SYLVAN_OK;
     }
 }
 
-MTBDD gmp_abstract_op_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, int k)
+int gmp_abstract_op_max_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, int k)
 {
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || k < 0) return SYLVAN_ERR_INVALID;
+
     if (k == 0) {
-        return gmp_apply_value_CALL(lace, a, b, gmp_op_max_CALL);
+        return mtbdd_apply_CALL(lace, destination, a, b, gmp_op_max_CALL);
     } else {
         // nothing to do: max(a, a) = a
-        return a;
+        *destination = a;
+        return SYLVAN_OK;
     }
+}
+
+/* Temporary bridge for result-returning fused GMP operations. */
+static MTBDD
+gmp_abstract_value_CALL(lace_worker *lace, MTBDD a, MTBDD v, mtbdd_abstract_cb op)
+{
+    MTBDD result = mtbdd_invalid;
+    mtbdd_refs_pushptr(&result);
+    int status = mtbdd_abstract_CALL(lace, &result, a, v, op);
+    mtbdd_refs_popptr(1);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
 
 /**
@@ -661,7 +688,7 @@ MTBDD gmp_and_abstract_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
         /* Times operator successful, store reference (for garbage collection) */
         mtbdd_refs_push(result);
         /* ... and perform abstraction */
-        result = mtbdd_abstract(result, v, gmp_abstract_op_plus_CALL);
+        result = gmp_abstract_value_CALL(lace, result, v, gmp_abstract_op_plus_CALL);
         mtbdd_refs_pop(1);
         /* Note that the operation cache is used in mtbdd_abstract */
         return result;
@@ -748,7 +775,7 @@ MTBDD gmp_and_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
         /* Times operator successful, store reference (for garbage collection) */
         mtbdd_refs_push(result);
         /* ... and perform abstraction */
-        result = mtbdd_abstract(result, v, gmp_abstract_op_max_CALL);
+        result = gmp_abstract_value_CALL(lace, result, v, gmp_abstract_op_max_CALL);
         mtbdd_refs_pop(1);
         /* Note that the operation cache is used in mtbdd_abstract */
         return result;

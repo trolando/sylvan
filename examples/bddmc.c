@@ -141,6 +141,21 @@ static double t_start;
 #define INFO(s, ...) fprintf(stdout, "[% 8.2f] " s, wctime()-t_start, ##__VA_ARGS__)
 #define Abort(...) { fprintf(stderr, __VA_ARGS__); fprintf(stderr, "Abort at line %d!\n", __LINE__); exit(-1); }
 
+static BDD
+bdd_and_or_abort_CALL(lace_worker *lace, BDD left, BDD right)
+{
+    BDD result = mtbdd_invalid;
+    if (bdd_and_CALL(lace, &result, left, right) != SYLVAN_OK) Abort("Out of memory!\n");
+    return result;
+}
+
+static BDD
+bdd_or_or_abort_CALL(lace_worker *lace, BDD left, BDD right)
+{
+    BDD result = bdd_and_or_abort_CALL(lace, bdd_not(left), bdd_not(right));
+    return bdd_not(result);
+}
+
 static char*
 to_h(double size, char *buf)
 {
@@ -342,18 +357,25 @@ void print_example_CALL(lace_worker* lace, BDD example, BDDSET variables)
  * Implementation of (parallel) saturation
  * (assumes relations are ordered on first variable)
  */
-TASK(BDD, go_sat, BDD, set, int, idx)
-BDD go_sat_CALL(lace_worker* lace, BDD set, int idx)
+TASK(int, go_sat, BDD*, result, BDD, set, int, idx)
+int go_sat_CALL(lace_worker* lace, BDD *destination, BDD set, int idx)
 {
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
     /* Terminal cases */
-    if (set == bdd_false) return bdd_false;
-    if (idx == next_count) return set;
+    if (set == bdd_false || idx == next_count) {
+        *destination = set;
+        return SYLVAN_OK;
+    }
 
     /* Consult the cache */
-    BDD result;
+    BDD computed = mtbdd_invalid;
     const BDD _set = set;
-    if (cache_get3(200LL<<40, _set, idx, 0, &result)) return result;
+    if (cache_get3(200LL<<40, _set, idx, 0, &computed)) {
+        *destination = computed;
+        return SYLVAN_OK;
+    }
     mtbdd_refs_pushptr(&_set);
+    mtbdd_refs_pushptr(&computed);
 
     /**
      * Possible improvement: cache more things (like intermediate results?)
@@ -377,34 +399,46 @@ BDD go_sat_CALL(lace_worker* lace, BDD set, int idx)
         mtbdd_refs_pushptr(&set);
         mtbdd_refs_pushptr(&prev);
         mtbdd_refs_pushptr(&step);
+        int status = SYLVAN_OK;
         while (prev != set) {
             prev = set;
             // SAT deeper
-            set = go_sat_CALL(lace, set, idx+count);
+            status = go_sat_CALL(lace, &set, set, idx+count);
+            if (status != SYLVAN_OK) break;
             // chain-apply all current level once
             for (int i=0;i<count;i++) {
                 if (bdd_rel_next_CALL(lace, &step, set, next[idx+i]->bdd, next[idx+i]->variables) != SYLVAN_OK) {
                     Abort("Out of memory!\n");
                 }
-                set = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(set), bdd_not(step)));
+                set = bdd_or_or_abort_CALL(lace, set, step);
                 step = bdd_false; // unset, for gc
             }
         }
         mtbdd_refs_popptr(3);
-        result = set;
+        if (status != SYLVAN_OK) { mtbdd_refs_popptr(2); return status; }
+        computed = set;
     } else {
         /* Recursive computation */
-        mtbdd_refs_spawn(go_sat_SPAWN(lace, mtbdd_node_low(set), idx));
-        BDD high = mtbdd_refs_push(go_sat_CALL(lace, mtbdd_node_high(set), idx));
-        BDD low = mtbdd_refs_sync(go_sat_SYNC(lace));
-        mtbdd_refs_pop(1);
-        result = mtbdd_make_node(mtbdd_node_variable(set), low, high);
+        BDD low = mtbdd_invalid;
+        BDD high = mtbdd_invalid;
+        mtbdd_refs_pushptr(&low);
+        mtbdd_refs_pushptr(&high);
+        go_sat_SPAWN(lace, &low, mtbdd_node_low(set), idx);
+        int status = go_sat_CALL(lace, &high, mtbdd_node_high(set), idx);
+        int low_status = go_sat_SYNC(lace);
+        if (status == SYLVAN_OK) status = low_status;
+        if (status == SYLVAN_OK) {
+            status = _mtbdd_try_make_node(&computed, mtbdd_node_variable(set), low, high);
+        }
+        mtbdd_refs_popptr(2);
+        if (status != SYLVAN_OK) { mtbdd_refs_popptr(2); return status; }
     }
 
     /* Store in cache */
-    cache_put3(200LL<<40, _set, idx, 0, result);
-    mtbdd_refs_popptr(1);
-    return result;
+    cache_put3(200LL<<40, _set, idx, 0, computed);
+    *destination = computed;
+    mtbdd_refs_popptr(2);
+    return SYLVAN_OK;
 }
 
 /**
@@ -413,64 +447,87 @@ BDD go_sat_CALL(lace_worker* lace, BDD set, int idx)
 TASK(void, sat, set_t, set)
 void sat_CALL(lace_worker* lace, set_t set)
 {
-    set->bdd = go_sat_CALL(lace, set->bdd, 0);
+    if (go_sat_CALL(lace, &set->bdd, set->bdd, 0) != SYLVAN_OK) Abort("Out of memory!\n");
 }
 
 /**
  * Implement parallel strategy (that performs the relnext operations in parallel)
  * This function does one level...
  */
-TASK(BDD, go_par, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, deadlocks)
-BDD go_par_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len, BDD* deadlocks)
+TASK(int, go_par, BDD*, result, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, deadlocks)
+int go_par_CALL(lace_worker* lace, BDD *destination, BDD cur, BDD visited, size_t from, size_t len, BDD* deadlocks)
 {
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
     if (len == 1) {
         // Calculate NEW successors (not in visited)
         BDD succ = mtbdd_invalid;
+        BDD anc = mtbdd_invalid;
+        BDD computed = mtbdd_invalid;
+        BDD updated_deadlocks = mtbdd_invalid;
         mtbdd_refs_pushptr(&succ);
-        if (bdd_rel_next_CALL(lace, &succ, cur, next[from]->bdd, next[from]->variables) != SYLVAN_OK) {
-            Abort("Out of memory!\n");
-        }
+        mtbdd_refs_pushptr(&anc);
+        mtbdd_refs_pushptr(&computed);
+        mtbdd_refs_pushptr(&updated_deadlocks);
+        int status = bdd_rel_next_CALL(lace, &succ, cur, next[from]->bdd, next[from]->variables);
         if (deadlocks) {
             // check which BDDs in deadlocks do not have a successor in this relation
-            BDD anc = mtbdd_invalid;
-            mtbdd_refs_pushptr(&anc);
-            if (bdd_rel_prev_CALL(lace, &anc, next[from]->bdd, succ, next[from]->variables) != SYLVAN_OK) {
-                Abort("Out of memory!\n");
+            if (status == SYLVAN_OK) {
+                status = bdd_rel_prev_CALL(lace, &anc, next[from]->bdd, succ, next[from]->variables);
             }
-            *deadlocks = bdd_and_legacy_CALL(lace, *deadlocks, bdd_not(anc));
-            mtbdd_refs_popptr(1);
+            if (status == SYLVAN_OK) {
+                status = bdd_and_CALL(lace, &updated_deadlocks, *deadlocks, bdd_not(anc));
+            }
         }
-        BDD result = bdd_and_legacy_CALL(lace, succ, bdd_not(visited));
-        mtbdd_refs_popptr(1);
-        return result;
+        if (status == SYLVAN_OK) status = bdd_and_CALL(lace, &computed, succ, bdd_not(visited));
+        if (status == SYLVAN_OK) {
+            if (deadlocks) *deadlocks = updated_deadlocks;
+            *destination = computed;
+        }
+        mtbdd_refs_popptr(4);
+        return status;
     } else {
-        BDD deadlocks_left;
-        BDD deadlocks_right;
+        BDD deadlocks_left = bdd_false;
+        BDD deadlocks_right = bdd_false;
+        BDD left = mtbdd_invalid;
+        BDD right = mtbdd_invalid;
+        BDD computed = mtbdd_invalid;
+        BDD updated_deadlocks = mtbdd_invalid;
+        mtbdd_refs_pushptr(&deadlocks_left);
+        mtbdd_refs_pushptr(&deadlocks_right);
+        mtbdd_refs_pushptr(&left);
+        mtbdd_refs_pushptr(&right);
+        mtbdd_refs_pushptr(&computed);
+        mtbdd_refs_pushptr(&updated_deadlocks);
         if (deadlocks) {
             deadlocks_left = *deadlocks;
             deadlocks_right = *deadlocks;
-            mtbdd_protect(&deadlocks_left);
-            mtbdd_protect(&deadlocks_right);
         }
 
         // Recursively calculate left+right
-        mtbdd_refs_spawn(go_par_SPAWN(lace, cur, visited, from, (len+1)/2, deadlocks ? &deadlocks_left: NULL));
-        BDD right = mtbdd_refs_push(go_par_CALL(lace, cur, visited, from+(len+1)/2, len/2, deadlocks ? &deadlocks_right : NULL));
-        BDD left = mtbdd_refs_push(mtbdd_refs_sync(go_par_SYNC(lace)));
+        go_par_SPAWN(lace, &left, cur, visited, from, (len+1)/2, deadlocks ? &deadlocks_left: NULL);
+        int status = go_par_CALL(lace, &right, cur, visited, from+(len+1)/2, len/2,
+            deadlocks ? &deadlocks_right : NULL);
+        int left_status = go_par_SYNC(lace);
+        if (status == SYLVAN_OK) status = left_status;
 
         // Merge results of left+right
-        BDD result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(left), bdd_not(right)));
-        mtbdd_refs_pop(2);
-
-        if (deadlocks) {
-            mtbdd_refs_push(result);
-            *deadlocks = bdd_and_legacy_CALL(lace, deadlocks_left, deadlocks_right);
-            mtbdd_unprotect(&deadlocks_left);
-            mtbdd_unprotect(&deadlocks_right);
-            mtbdd_refs_pop(1);
+        if (status == SYLVAN_OK) {
+            status = bdd_and_CALL(lace, &computed, bdd_not(left), bdd_not(right));
+            if (status == SYLVAN_OK) computed = bdd_not(computed);
         }
 
-        return result;
+        if (deadlocks) {
+            if (status == SYLVAN_OK) {
+                status = bdd_and_CALL(lace, &updated_deadlocks, deadlocks_left, deadlocks_right);
+            }
+        }
+
+        if (status == SYLVAN_OK) {
+            if (deadlocks) *deadlocks = updated_deadlocks;
+            *destination = computed;
+        }
+        mtbdd_refs_popptr(6);
+        return status;
     }
 }
 
@@ -496,7 +553,10 @@ void par_CALL(lace_worker* lace, set_t set)
         cur_level = next_level;
         deadlocks = cur_level;
 
-        next_level = go_par_CALL(lace, cur_level, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
+        if (go_par_CALL(lace, &next_level, cur_level, visited, 0, next_count,
+            check_deadlocks ? &deadlocks : NULL) != SYLVAN_OK) {
+            Abort("Out of memory!\n");
+        }
 
         if (check_deadlocks && deadlocks != bdd_false) {
             INFO("Found %0.0f deadlock states... ", bdd_sat_count_CALL(lace, deadlocks, set->variables));
@@ -509,7 +569,7 @@ void par_CALL(lace_worker* lace, set_t set)
         }
 
         // visited = visited + new
-        visited = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(visited), bdd_not(next_level)));
+        visited = bdd_or_or_abort_CALL(lace, visited, next_level);
 
         if (report_table && report_levels) {
             size_t filled, total;
@@ -543,58 +603,81 @@ void par_CALL(lace_worker* lace, set_t set)
  * Implement sequential strategy (that performs the relnext operations one by one)
  * This function does one level...
  */
-TASK(BDD, go_bfs, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, deadlocks)
-BDD go_bfs_CALL(lace_worker* lace, BDD cur, BDD visited, size_t from, size_t len, BDD* deadlocks)
+TASK(int, go_bfs, BDD*, result, BDD, cur, BDD, visited, size_t, from, size_t, len, BDD*, deadlocks)
+int go_bfs_CALL(lace_worker* lace, BDD *destination, BDD cur, BDD visited, size_t from, size_t len, BDD* deadlocks)
 {
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
     if (len == 1) {
         // Calculate NEW successors (not in visited)
         BDD succ = mtbdd_invalid;
+        BDD anc = mtbdd_invalid;
+        BDD computed = mtbdd_invalid;
+        BDD updated_deadlocks = mtbdd_invalid;
         mtbdd_refs_pushptr(&succ);
-        if (bdd_rel_next_CALL(lace, &succ, cur, next[from]->bdd, next[from]->variables) != SYLVAN_OK) {
-            Abort("Out of memory!\n");
-        }
+        mtbdd_refs_pushptr(&anc);
+        mtbdd_refs_pushptr(&computed);
+        mtbdd_refs_pushptr(&updated_deadlocks);
+        int status = bdd_rel_next_CALL(lace, &succ, cur, next[from]->bdd, next[from]->variables);
         if (deadlocks) {
             // check which BDDs in deadlocks do not have a successor in this relation
-            BDD anc = mtbdd_invalid;
-            mtbdd_refs_pushptr(&anc);
-            if (bdd_rel_prev_CALL(lace, &anc, next[from]->bdd, succ, next[from]->variables) != SYLVAN_OK) {
-                Abort("Out of memory!\n");
+            if (status == SYLVAN_OK) {
+                status = bdd_rel_prev_CALL(lace, &anc, next[from]->bdd, succ, next[from]->variables);
             }
-            *deadlocks = bdd_and_legacy_CALL(lace, *deadlocks, bdd_not(anc));
-            mtbdd_refs_popptr(1);
+            if (status == SYLVAN_OK) {
+                status = bdd_and_CALL(lace, &updated_deadlocks, *deadlocks, bdd_not(anc));
+            }
         }
-        BDD result = bdd_and_legacy_CALL(lace, succ, bdd_not(visited));
-        mtbdd_refs_popptr(1);
-        return result;
+        if (status == SYLVAN_OK) status = bdd_and_CALL(lace, &computed, succ, bdd_not(visited));
+        if (status == SYLVAN_OK) {
+            if (deadlocks) *deadlocks = updated_deadlocks;
+            *destination = computed;
+        }
+        mtbdd_refs_popptr(4);
+        return status;
     } else {
-        BDD deadlocks_left;
-        BDD deadlocks_right;
+        BDD deadlocks_left = bdd_false;
+        BDD deadlocks_right = bdd_false;
+        BDD left = mtbdd_invalid;
+        BDD right = mtbdd_invalid;
+        BDD computed = mtbdd_invalid;
+        BDD updated_deadlocks = mtbdd_invalid;
+        mtbdd_refs_pushptr(&deadlocks_left);
+        mtbdd_refs_pushptr(&deadlocks_right);
+        mtbdd_refs_pushptr(&left);
+        mtbdd_refs_pushptr(&right);
+        mtbdd_refs_pushptr(&computed);
+        mtbdd_refs_pushptr(&updated_deadlocks);
         if (deadlocks) {
             deadlocks_left = *deadlocks;
             deadlocks_right = *deadlocks;
-            mtbdd_protect(&deadlocks_left);
-            mtbdd_protect(&deadlocks_right);
         }
 
         // Recursively calculate left+right
-        BDD left = go_bfs_CALL(lace, cur, visited, from, (len+1)/2, deadlocks ? &deadlocks_left : NULL);
-        mtbdd_refs_push(left);
-        BDD right = go_bfs_CALL(lace, cur, visited, from+(len+1)/2, len/2, deadlocks ? &deadlocks_right : NULL);
-        mtbdd_refs_push(right);
-
-        // Merge results of left+right
-        BDD result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(left), bdd_not(right)));
-        mtbdd_refs_pop(2);
-
-        if (deadlocks) {
-            mtbdd_refs_push(result);
-            *deadlocks = bdd_and_legacy_CALL(lace, deadlocks_left, deadlocks_right);
-            mtbdd_unprotect(&deadlocks_left);
-            mtbdd_unprotect(&deadlocks_right);
-            mtbdd_refs_pop(1);
+        int status = go_bfs_CALL(lace, &left, cur, visited, from, (len+1)/2,
+            deadlocks ? &deadlocks_left : NULL);
+        if (status == SYLVAN_OK) {
+            status = go_bfs_CALL(lace, &right, cur, visited, from+(len+1)/2, len/2,
+                deadlocks ? &deadlocks_right : NULL);
         }
 
-        return result;
+        // Merge results of left+right
+        if (status == SYLVAN_OK) {
+            status = bdd_and_CALL(lace, &computed, bdd_not(left), bdd_not(right));
+            if (status == SYLVAN_OK) computed = bdd_not(computed);
+        }
+
+        if (deadlocks) {
+            if (status == SYLVAN_OK) {
+                status = bdd_and_CALL(lace, &updated_deadlocks, deadlocks_left, deadlocks_right);
+            }
+        }
+
+        if (status == SYLVAN_OK) {
+            if (deadlocks) *deadlocks = updated_deadlocks;
+            *destination = computed;
+        }
+        mtbdd_refs_popptr(6);
+        return status;
     }
 }
 
@@ -620,7 +703,10 @@ void bfs_CALL(lace_worker* lace, set_t set)
         cur_level = next_level;
         deadlocks = cur_level;
 
-        next_level = go_bfs_CALL(lace, cur_level, visited, 0, next_count, check_deadlocks ? &deadlocks : NULL);
+        if (go_bfs_CALL(lace, &next_level, cur_level, visited, 0, next_count,
+            check_deadlocks ? &deadlocks : NULL) != SYLVAN_OK) {
+            Abort("Out of memory!\n");
+        }
 
         if (check_deadlocks && deadlocks != bdd_false) {
             INFO("Found %0.0f deadlock states... ", bdd_sat_count_CALL(lace, deadlocks, set->variables));
@@ -633,7 +719,7 @@ void bfs_CALL(lace_worker* lace, set_t set)
         }
 
         // visited = visited + new
-        visited = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(visited), bdd_not(next_level)));
+        visited = bdd_or_or_abort_CALL(lace, visited, next_level);
 
         if (report_table && report_levels) {
             size_t filled, total;
@@ -684,14 +770,14 @@ void chaining_CALL(lace_worker* lace, set_t set)
             if (bdd_rel_next_CALL(lace, &succ, next_level, next[i]->bdd, next[i]->variables) != SYLVAN_OK) {
                 Abort("Out of memory!\n");
             }
-            next_level = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(next_level), bdd_not(succ)));
+            next_level = bdd_or_or_abort_CALL(lace, next_level, succ);
             succ = bdd_false; // reset, for gc
         }
 
         // new = new - visited
         // visited = visited + new
-        next_level = bdd_and_legacy_CALL(lace, next_level, bdd_not(visited));
-        visited = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(visited), bdd_not(next_level)));
+        next_level = bdd_and_or_abort_CALL(lace, next_level, bdd_not(visited));
+        visited = bdd_or_or_abort_CALL(lace, visited, next_level);
 
         if (report_table && report_levels) {
             size_t filled, total;
@@ -720,12 +806,13 @@ void chaining_CALL(lace_worker* lace, set_t set)
 /**
  * Extend a transition relation to a larger domain (using s=s')
  */
-TASK(BDD, extend_relation, MTBDD, relation, MTBDD, variables)
-BDD extend_relation_CALL(lace_worker* lace, MTBDD relation, MTBDD variables)
+TASK(int, extend_relation, BDD*, result, MTBDD, relation, MTBDD, variables)
+int extend_relation_CALL(lace_worker* lace, BDD *destination, MTBDD relation, MTBDD variables)
 {
+    if (destination == NULL || relation == mtbdd_invalid || variables == mtbdd_invalid) return SYLVAN_ERR_INVALID;
     /* first determine which state BDD variables are in rel */
     int *has = (int*)calloc((size_t)totalbits, sizeof(*has));
-    if (has == NULL) Abort("Out of memory!\n");
+    if (has == NULL) return SYLVAN_ERR_OOM;
     MTBDD s = variables;
     while (!bdd_set_is_empty(s)) {
         uint32_t v = bdd_set_first(s);
@@ -736,37 +823,58 @@ BDD extend_relation_CALL(lace_worker* lace, MTBDD relation, MTBDD variables)
 
     /* create "s=s'" for all variables not in rel */
     BDD eq = bdd_true;
-    for (int i=totalbits-1; i>=0; i--) {
+    BDD low = mtbdd_invalid;
+    BDD high = mtbdd_invalid;
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&eq);
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+    mtbdd_refs_pushptr(&computed);
+    int status = SYLVAN_OK;
+    for (int i=totalbits-1; status == SYLVAN_OK && i>=0; i--) {
         if (has[i]) continue;
-        BDD low = mtbdd_make_node(2*i+1, eq, bdd_false);
-        mtbdd_refs_push(low);
-        BDD high = mtbdd_make_node(2*i+1, bdd_false, eq);
-        mtbdd_refs_pop(1);
-        eq = mtbdd_make_node(2*i, low, high);
+        status = _mtbdd_try_make_node(&low, 2*i+1, eq, bdd_false);
+        if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&high, 2*i+1, bdd_false, eq);
+        if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&eq, 2*i, low, high);
     }
 
-    mtbdd_refs_push(eq);
-    BDD result = bdd_and_legacy_CALL(lace, relation, eq);
-    mtbdd_refs_pop(1);
+    if (status == SYLVAN_OK) status = bdd_and_CALL(lace, &computed, relation, eq);
+    if (status == SYLVAN_OK) *destination = computed;
 
+    mtbdd_refs_popptr(4);
     free(has);
-    return result;
+    return status;
 }
 
 /**
  * Compute \BigUnion ( sets[i] )
  */
-TASK(BDD, big_union, int, first, int, count)
-BDD big_union_CALL(lace_worker* lace, int first, int count)
+TASK(int, big_union, BDD*, result, int, first, int, count)
+int big_union_CALL(lace_worker* lace, BDD *destination, int first, int count)
 {
-    if (count == 1) return next[first]->bdd;
+    if (destination == NULL || count < 1) return SYLVAN_ERR_INVALID;
+    if (count == 1) {
+        *destination = next[first]->bdd;
+        return SYLVAN_OK;
+    }
 
-    mtbdd_refs_spawn(big_union_SPAWN(lace, first, count/2));
-    BDD right = mtbdd_refs_push(big_union_CALL(lace, first+count/2, count-count/2));
-    BDD left = mtbdd_refs_push(mtbdd_refs_sync(big_union_SYNC(lace)));
-    BDD result = bdd_not(bdd_and_legacy_CALL(lace, bdd_not(left), bdd_not(right)));
-    mtbdd_refs_pop(2);
-    return result;
+    BDD left = mtbdd_invalid;
+    BDD right = mtbdd_invalid;
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&left);
+    mtbdd_refs_pushptr(&right);
+    mtbdd_refs_pushptr(&computed);
+    big_union_SPAWN(lace, &left, first, count/2);
+    int status = big_union_CALL(lace, &right, first+count/2, count-count/2);
+    int left_status = big_union_SYNC(lace);
+    if (status == SYLVAN_OK) status = left_status;
+    if (status == SYLVAN_OK) {
+        status = bdd_and_CALL(lace, &computed, bdd_not(left), bdd_not(right));
+        if (status == SYLVAN_OK) computed = bdd_not(computed);
+    }
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(3);
+    return status;
 }
 
 /**
@@ -900,14 +1008,16 @@ void run_CALL(lace_worker* lace)
 
         INFO("Extending transition relations to full domain.\n");
         for (int i=0; i<next_count; i++) {
-            next[i]->bdd = extend_relation(next[i]->bdd, next[i]->variables);
+            if (extend_relation(&next[i]->bdd, next[i]->bdd, next[i]->variables) != SYLVAN_OK) {
+                Abort("Out of memory!\n");
+            }
             next[i]->variables = newvars;
         }
 
         mtbdd_refs_popptr(1);
 
         INFO("Taking union of all transition relations.\n");
-        next[0]->bdd = big_union(0, next_count);
+        if (big_union(&next[0]->bdd, 0, next_count) != SYLVAN_OK) Abort("Out of memory!\n");
 
         for (int i=1; i<next_count; i++) {
             next[i]->bdd = bdd_false;

@@ -852,6 +852,7 @@ test_mtbdd_abstract_destinations_CALL(lace_worker *lace)
     MTBDD minimum = mtbdd_invalid;
     MTBDD maximum = mtbdd_invalid;
     MTBDD inplace = mtbdd_invalid;
+    MTBDD mixed = mtbdd_invalid;
     MTBDD unchanged = bdd_true;
 
     mtbdd_refs_pushptr(&one);
@@ -873,6 +874,7 @@ test_mtbdd_abstract_destinations_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&minimum);
     mtbdd_refs_pushptr(&maximum);
     mtbdd_refs_pushptr(&inplace);
+    mtbdd_refs_pushptr(&mixed);
     mtbdd_refs_pushptr(&unchanged);
 
     test_assert(bdd_var_at_level(&x, 0) == SYLVAN_OK);
@@ -923,8 +925,41 @@ test_mtbdd_abstract_destinations_CALL(lace_worker *lace)
     test_assert(mtbdd_abstract(&unchanged, f, bdd_true, test_abstract_fail_on_four) == SYLVAN_OK);
     test_assert(unchanged == f);
 
+    mtbdd_mul_abstract_add_SPAWN(lace, &sum, f, f, y_vars);
+    max_status = mtbdd_mul_abstract_max_CALL(lace, &maximum, f, f, y_vars);
+    sum_status = mtbdd_mul_abstract_add_SYNC(lace);
+    test_assert(sum_status == SYLVAN_OK);
+    test_assert(max_status == SYLVAN_OK);
+    mtbdd_cofactors(sum, &low, &high);
+    test_assert(mtbdd_leaf_int64(low) == 5 && mtbdd_leaf_int64(high) == 25);
+    mtbdd_cofactors(maximum, &low, &high);
+    test_assert(mtbdd_leaf_int64(low) == 4 && mtbdd_leaf_int64(high) == 16);
+
+    test_assert(mtbdd_mul_abstract_add(&product, f, f, all_vars) == SYLVAN_OK);
+    test_assert(mtbdd_is_leaf(product) && mtbdd_leaf_int64(product) == 60);
+    test_assert(mtbdd_mul_abstract_max(&maximum, f, f, all_vars) == SYLVAN_OK);
+    test_assert(mtbdd_is_leaf(maximum) && mtbdd_leaf_int64(maximum) == 16);
+    test_assert(mtbdd_mul(&minimum, f, f) == SYLVAN_OK);
+    inplace = f;
+    test_assert(mtbdd_mul_abstract_add(&inplace, inplace, f, bdd_true) == SYLVAN_OK);
+    test_assert(inplace == minimum);
+    test_assert(mtbdd_mul_abstract_add(&product, two, three, y_vars) == SYLVAN_OK);
+    test_assert(mtbdd_is_leaf(product) && mtbdd_leaf_int64(product) == 12);
+
+    test_assert(mtbdd_mul_abstract_add(NULL, f, f, y_vars) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_mul_abstract_add(&unchanged, mtbdd_invalid, f, y_vars) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == f);
+    test_assert(mtbdd_mul_abstract_max(&unchanged, f, mtbdd_invalid, y_vars) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == f);
+    test_assert(mtbdd_mul_abstract_add(&unchanged, f, f, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == f);
+    mixed = mtbdd_double(2.0);
+    test_assert(mtbdd_mul_abstract_add(&unchanged, f, mixed, y_vars) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == f);
+
     sylvan_gc_CALL(lace);
-    mtbdd_refs_popptr(17);
+    test_assert(mtbdd_is_leaf(product) && mtbdd_leaf_int64(product) == 12);
+    mtbdd_refs_popptr(18);
     return 0;
 }
 

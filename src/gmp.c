@@ -179,26 +179,6 @@ gmp_apply_result(MTBDD *destination, MTBDD result)
 }
 
 static MTBDD
-gmp_apply_value_CALL(lace_worker *lace, MTBDD a, MTBDD b, mtbdd_apply_cb op)
-{
-    MTBDD result = mtbdd_invalid;
-    mtbdd_refs_pushptr(&result);
-    int status = mtbdd_apply_CALL(lace, &result, a, b, op);
-    mtbdd_refs_popptr(1);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
-}
-
-static MTBDD
-gmp_apply_callback_value(lace_worker *lace, MTBDD *a, MTBDD *b, mtbdd_apply_cb op)
-{
-    MTBDD result = mtbdd_invalid;
-    mtbdd_refs_pushptr(&result);
-    int status = op(lace, &result, a, b);
-    mtbdd_refs_popptr(1);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
-}
-
-static MTBDD
 gmp_apply_unary_value(MTBDD dd, mtbdd_apply_unary_cb op, size_t param)
 {
     MTBDD result = mtbdd_invalid;
@@ -551,17 +531,6 @@ int gmp_abstract_op_max_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTB
     }
 }
 
-/* Temporary bridge for result-returning fused GMP operations. */
-static MTBDD
-gmp_abstract_value_CALL(lace_worker *lace, MTBDD a, MTBDD v, mtbdd_abstract_cb op)
-{
-    MTBDD result = mtbdd_invalid;
-    mtbdd_refs_pushptr(&result);
-    int status = mtbdd_abstract_CALL(lace, &result, a, v, op);
-    mtbdd_refs_popptr(1);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
-}
-
 /**
  * Convert to Boolean MTBDD, terminals >= value (double) to True, or False otherwise.
  */
@@ -675,23 +644,36 @@ int gmp_op_strict_threshold_CALL(lace_worker* lace, MTBDD *destination, MTBDD* p
  * Multiply <a> and <b>, and abstract variables <vars> using summation.
  * This is similar to the "and_exists" operation in BDDs.
  */
-MTBDD gmp_and_abstract_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
+int gmp_and_abstract_plus_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, MTBDD v)
 {
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || v == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
     /* Check terminal cases */
 
     /* If v == true, then <vars> is an empty set */
-    if (v == bdd_true) return gmp_apply_value_CALL(lace, a, b, gmp_op_times_CALL);
+    if (v == bdd_true) return mtbdd_apply_CALL(lace, destination, a, b, gmp_op_times_CALL);
 
     /* Try the times operator on a and b */
-    MTBDD result = gmp_apply_callback_value(lace, &a, &b, gmp_op_times_CALL);
-    if (result != mtbdd_invalid) {
-        /* Times operator successful, store reference (for garbage collection) */
-        mtbdd_refs_push(result);
-        /* ... and perform abstraction */
-        result = gmp_abstract_value_CALL(lace, result, v, gmp_abstract_op_plus_CALL);
-        mtbdd_refs_pop(1);
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    int status = gmp_op_times_CALL(lace, &computed, &a, &b);
+    if (status == SYLVAN_OK) {
+        if (computed == mtbdd_invalid) status = SYLVAN_ERR_CALLBACK;
+        else status = mtbdd_abstract_CALL(lace, &computed, computed, v, gmp_abstract_op_plus_CALL);
         /* Note that the operation cache is used in mtbdd_abstract */
-        return result;
+        if (status == SYLVAN_OK) *destination = computed;
+        mtbdd_refs_popptr(1);
+        return status;
+    }
+    if (status != SYLVAN_APPLY_RECURSE) {
+        mtbdd_refs_popptr(1);
+        return status < 0 ? status : SYLVAN_ERR_CALLBACK;
+    }
+    if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
+        mtbdd_refs_popptr(1);
+        return SYLVAN_ERR_CALLBACK;
     }
 
     /* Maybe perform garbage collection */
@@ -701,9 +683,11 @@ MTBDD gmp_and_abstract_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     sylvan_stats_count(MTBDD_AND_ABSTRACT_PLUS);
 
     /* Check cache. Note that we do this now, since the times operator might swap a and b (commutative) */
-    if (cache_get3(CACHE_MTBDD_AND_ABSTRACT_PLUS, a, b, v, &result)) {
+    if (cache_get3(CACHE_MTBDD_AND_ABSTRACT_PLUS, a, b, v, &computed)) {
         sylvan_stats_count(MTBDD_AND_ABSTRACT_PLUS_CACHED);
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /* Now, v is not a constant, and either a or b is not a constant */
@@ -722,10 +706,8 @@ MTBDD gmp_and_abstract_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
 
     if (vv < var) {
         /* Recursive, then abstract result */
-        result = gmp_and_abstract_plus_CALL(lace, a, b, node_gethigh(v, nv));
-        mtbdd_refs_push(result);
-        result = gmp_apply_value_CALL(lace, result, result, gmp_op_plus_CALL);
-        mtbdd_refs_pop(1);
+        status = gmp_and_abstract_plus_CALL(lace, &computed, a, b, node_gethigh(v, nv));
+        if (status == SYLVAN_OK) status = mtbdd_apply_CALL(lace, &computed, computed, computed, gmp_op_plus_CALL);
     } else {
         /* Get cofactors */
         MTBDD alow, ahigh, blow, bhigh;
@@ -736,49 +718,75 @@ MTBDD gmp_and_abstract_plus_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
 
         if (vv == var) {
             /* Recursive, then abstract result */
-            mtbdd_refs_spawn(gmp_and_abstract_plus_SPAWN(lace, ahigh, bhigh, node_gethigh(v, nv)));
-            MTBDD low = mtbdd_refs_push(gmp_and_abstract_plus_CALL(lace, alow, blow, node_gethigh(v, nv)));
-            MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(gmp_and_abstract_plus_SYNC(lace)));
-            result = gmp_apply_value_CALL(lace, low, high, gmp_op_plus_CALL);
-            mtbdd_refs_pop(2);
+            MTBDD low = mtbdd_invalid;
+            MTBDD high = mtbdd_invalid;
+            mtbdd_refs_pushptr(&low);
+            mtbdd_refs_pushptr(&high);
+            MTBDD next_v = node_gethigh(v, nv);
+            gmp_and_abstract_plus_SPAWN(lace, &high, ahigh, bhigh, next_v);
+            status = gmp_and_abstract_plus_CALL(lace, &low, alow, blow, next_v);
+            int high_status = gmp_and_abstract_plus_SYNC(lace);
+            if (status == SYLVAN_OK) status = high_status;
+            if (status == SYLVAN_OK) status = mtbdd_apply_CALL(lace, &computed, low, high, gmp_op_plus_CALL);
+            mtbdd_refs_popptr(2);
         } else /* vv > v */ {
             /* Recursive, then create node */
-            mtbdd_refs_spawn(gmp_and_abstract_plus_SPAWN(lace, ahigh, bhigh, v));
-            MTBDD low = mtbdd_refs_push(gmp_and_abstract_plus_CALL(lace, alow, blow, v));
-            MTBDD high = mtbdd_refs_sync(gmp_and_abstract_plus_SYNC(lace));
-            mtbdd_refs_pop(1);
-            result = mtbdd_make_node(var, low, high);
+            MTBDD low = mtbdd_invalid;
+            MTBDD high = mtbdd_invalid;
+            mtbdd_refs_pushptr(&low);
+            mtbdd_refs_pushptr(&high);
+            gmp_and_abstract_plus_SPAWN(lace, &high, ahigh, bhigh, v);
+            status = gmp_and_abstract_plus_CALL(lace, &low, alow, blow, v);
+            int high_status = gmp_and_abstract_plus_SYNC(lace);
+            if (status == SYLVAN_OK) status = high_status;
+            if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, var, low, high);
+            mtbdd_refs_popptr(2);
         }
     }
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_AND_ABSTRACT_PLUS, a, b, v, result)) {
+    if (status == SYLVAN_OK && cache_put3(CACHE_MTBDD_AND_ABSTRACT_PLUS, a, b, v, computed)) {
         sylvan_stats_count(MTBDD_AND_ABSTRACT_PLUS_CACHEDPUT);
     }
 
-    return result;
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
 /**
  * Multiply <a> and <b>, and abstract variables <vars> by taking the maximum.
  */
-MTBDD gmp_and_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
+int gmp_and_abstract_max_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, MTBDD v)
 {
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || v == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
     /* Check terminal cases */
 
     /* If v == true, then <vars> is an empty set */
-    if (v == bdd_true) return gmp_apply_value_CALL(lace, a, b, gmp_op_times_CALL);
+    if (v == bdd_true) return mtbdd_apply_CALL(lace, destination, a, b, gmp_op_times_CALL);
 
     /* Try the times operator on a and b */
-    MTBDD result = gmp_apply_callback_value(lace, &a, &b, gmp_op_times_CALL);
-    if (result != mtbdd_invalid) {
-        /* Times operator successful, store reference (for garbage collection) */
-        mtbdd_refs_push(result);
-        /* ... and perform abstraction */
-        result = gmp_abstract_value_CALL(lace, result, v, gmp_abstract_op_max_CALL);
-        mtbdd_refs_pop(1);
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    int status = gmp_op_times_CALL(lace, &computed, &a, &b);
+    if (status == SYLVAN_OK) {
+        if (computed == mtbdd_invalid) status = SYLVAN_ERR_CALLBACK;
+        else status = mtbdd_abstract_CALL(lace, &computed, computed, v, gmp_abstract_op_max_CALL);
         /* Note that the operation cache is used in mtbdd_abstract */
-        return result;
+        if (status == SYLVAN_OK) *destination = computed;
+        mtbdd_refs_popptr(1);
+        return status;
+    }
+    if (status != SYLVAN_APPLY_RECURSE) {
+        mtbdd_refs_popptr(1);
+        return status < 0 ? status : SYLVAN_ERR_CALLBACK;
+    }
+    if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
+        mtbdd_refs_popptr(1);
+        return SYLVAN_ERR_CALLBACK;
     }
 
     /* Now, v is not a constant, and either a or b is not a constant */
@@ -798,7 +806,12 @@ MTBDD gmp_and_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     while (vv < var) {
         /* we can skip variables, because max(r,r) = r */
         v = node_high(v, nv);
-        if (v == bdd_true) return gmp_apply_value_CALL(lace, a, b, gmp_op_times_CALL);
+        if (v == bdd_true) {
+            status = mtbdd_apply_CALL(lace, &computed, a, b, gmp_op_times_CALL);
+            if (status == SYLVAN_OK) *destination = computed;
+            mtbdd_refs_popptr(1);
+            return status;
+        }
         nv = MTBDD_GETNODE(v);
         vv = mtbddnode_getvariable(nv);
     }
@@ -810,9 +823,11 @@ MTBDD gmp_and_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
     sylvan_stats_count(MTBDD_AND_ABSTRACT_MAX);
 
     /* Check cache. Note that we do this now, since the times operator might swap a and b (commutative) */
-    if (cache_get3(CACHE_MTBDD_AND_ABSTRACT_MAX, a, b, v, &result)) {
+    if (cache_get3(CACHE_MTBDD_AND_ABSTRACT_MAX, a, b, v, &computed)) {
         sylvan_stats_count(MTBDD_AND_ABSTRACT_MAX_CACHED);
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
     /* Get cofactors */
@@ -824,24 +839,37 @@ MTBDD gmp_and_abstract_max_CALL(lace_worker* lace, MTBDD a, MTBDD b, MTBDD v)
 
     if (vv == var) {
         /* Recursive, then abstract result */
-        mtbdd_refs_spawn(gmp_and_abstract_max_SPAWN(lace, ahigh, bhigh, node_gethigh(v, nv)));
-        MTBDD low = mtbdd_refs_push(gmp_and_abstract_max_CALL(lace, alow, blow, node_gethigh(v, nv)));
-        MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(gmp_and_abstract_max_SYNC(lace)));
-        result = gmp_apply_value_CALL(lace, low, high, gmp_op_max_CALL);
-        mtbdd_refs_pop(2);
+        MTBDD low = mtbdd_invalid;
+        MTBDD high = mtbdd_invalid;
+        mtbdd_refs_pushptr(&low);
+        mtbdd_refs_pushptr(&high);
+        MTBDD next_v = node_gethigh(v, nv);
+        gmp_and_abstract_max_SPAWN(lace, &high, ahigh, bhigh, next_v);
+        status = gmp_and_abstract_max_CALL(lace, &low, alow, blow, next_v);
+        int high_status = gmp_and_abstract_max_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+        if (status == SYLVAN_OK) status = mtbdd_apply_CALL(lace, &computed, low, high, gmp_op_max_CALL);
+        mtbdd_refs_popptr(2);
     } else /* vv > v */ {
         /* Recursive, then create node */
-        mtbdd_refs_spawn(gmp_and_abstract_max_SPAWN(lace, ahigh, bhigh, v));
-        MTBDD low = mtbdd_refs_push(gmp_and_abstract_max_CALL(lace, alow, blow, v));
-        MTBDD high = mtbdd_refs_sync(gmp_and_abstract_max_SYNC(lace));
-        mtbdd_refs_pop(1);
-        result = mtbdd_make_node(var, low, high);
+        MTBDD low = mtbdd_invalid;
+        MTBDD high = mtbdd_invalid;
+        mtbdd_refs_pushptr(&low);
+        mtbdd_refs_pushptr(&high);
+        gmp_and_abstract_max_SPAWN(lace, &high, ahigh, bhigh, v);
+        status = gmp_and_abstract_max_CALL(lace, &low, alow, blow, v);
+        int high_status = gmp_and_abstract_max_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+        if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, var, low, high);
+        mtbdd_refs_popptr(2);
     }
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_AND_ABSTRACT_MAX, a, b, v, result)) {
+    if (status == SYLVAN_OK && cache_put3(CACHE_MTBDD_AND_ABSTRACT_MAX, a, b, v, computed)) {
         sylvan_stats_count(MTBDD_AND_ABSTRACT_MAX_CACHEDPUT);
     }
 
-    return result;
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(1);
+    return status;
 }

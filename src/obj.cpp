@@ -881,7 +881,9 @@ Mtbdd::AbstractMax(const BddSet &variables) const
 Mtbdd
 Mtbdd::AndExists(const Mtbdd &other, const BddSet &variables) const
 {
-    return mtbdd_mul_abstract_add(mtbdd, other.mtbdd, variables.set.bdd);
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_mul_abstract_add(&result.mtbdd, mtbdd, other.mtbdd, variables.set.bdd);
+    return result;
 }
 
 bool

@@ -316,7 +316,7 @@ TASK(int, mtbdd_reader_frombinary, FILE*, file, MTBDD*, dds, int, count);
 
 TASK(uint64_t*, mtbdd_reader_readbinary, FILE*, file);
 
-TASK(MTBDD, mtbdd_eval_compose, MTBDD, dd, MTBDD, vars, mtbdd_eval_compose_cb, cb);
+TASK(int, mtbdd_eval_compose, MTBDD*, result, MTBDD, dd, MTBDD, vars, mtbdd_eval_compose_cb, cb);
 
 
 static inline MTBDD

@@ -3346,12 +3346,33 @@ void mtbdd_enumerate_parallel_CALL(lace_worker* lace, MTBDD dd, mtbdd_enumerate_
  * All variables X in <vars> must appear before all variables in f and g(f).
  *
  * Usage:
- * TASK(MTBDD, g, MTBDD, in) { ... return g of <in> ... }
+ * TASK(int, g, MTBDD*, result, MTBDD, in) { ... write g of <in> to result ... }
  * MTBDD x_vars = ...;  // the cube of variables x
- * MTBDD result = mtbdd_eval_compose(dd, x_vars, TASK(g));
+ * MTBDD result = mtbdd_invalid;
+ * int status = mtbdd_eval_compose(&result, dd, x_vars, TASK(g));
  */
-MTBDD mtbdd_eval_compose_CALL(lace_worker* lace, MTBDD dd, MTBDD vars, mtbdd_eval_compose_cb cb)
+static int
+_mtbdd_eval_compose_callback_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd, mtbdd_eval_compose_cb cb)
 {
+    MTBDD result = mtbdd_invalid;
+    mtbdd_refs_pushptr(&result);
+    int status = cb(lace, &result, dd);
+    if (status == SYLVAN_OK) {
+        if (result == mtbdd_invalid) status = SYLVAN_ERR_CALLBACK;
+        else *destination = result;
+    } else if (status > 0) {
+        status = SYLVAN_ERR_CALLBACK;
+    }
+    mtbdd_refs_popptr(1);
+    return status;
+}
+
+int mtbdd_eval_compose_CALL(lace_worker* lace, MTBDD *destination, MTBDD dd, MTBDD vars, mtbdd_eval_compose_cb cb)
+{
+    if (destination == NULL || dd == mtbdd_invalid || vars == mtbdd_invalid || cb == NULL) {
+        return SYLVAN_ERR_INVALID;
+    }
+
     /* Maybe perform garbage collection */
     sylvan_gc_test(lace);
 
@@ -3359,15 +3380,19 @@ MTBDD mtbdd_eval_compose_CALL(lace_worker* lace, MTBDD dd, MTBDD vars, mtbdd_eva
     sylvan_stats_count(MTBDD_EVAL_COMPOSE);
 
     /* Check cache */
-    MTBDD result;
-    if (cache_get3(CACHE_MTBDD_EVAL_COMPOSE, dd, vars, (size_t)cb, &result)) {
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_MTBDD_EVAL_COMPOSE, dd, vars, (size_t)cb, &computed)) {
         sylvan_stats_count(MTBDD_EVAL_COMPOSE_CACHED);
-        return result;
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
     }
 
+    int status = SYLVAN_OK;
     if (mtbdd_is_leaf(dd) || vars == bdd_true) {
         /* Apply */
-        result = cb(lace, dd);
+        status = _mtbdd_eval_compose_callback_CALL(lace, &computed, dd, cb);
     } else {
         /* Get top variable in dd */
         mtbddnode* ndd = MTBDD_GETNODE(dd);
@@ -3388,11 +3413,13 @@ MTBDD mtbdd_eval_compose_CALL(lace_worker* lace, MTBDD dd, MTBDD vars, mtbdd_eva
 
         if (_vars == bdd_true) {
             /* Apply */
-            result = cb(lace, dd);
+            status = _mtbdd_eval_compose_callback_CALL(lace, &computed, dd, cb);
         } else {
             /* If this fails, then there are variables in f/g BEFORE vars, which breaks functionality. */
-            assert(vv == var);
-            if (vv != var) return mtbdd_invalid;
+            if (vv != var) {
+                mtbdd_refs_popptr(1);
+                return SYLVAN_ERR_INVALID;
+            }
 
             /* Get cofactors */
             MTBDD ddlow = node_getlow(dd, ndd);
@@ -3400,20 +3427,27 @@ MTBDD mtbdd_eval_compose_CALL(lace_worker* lace, MTBDD dd, MTBDD vars, mtbdd_eva
 
             /* Recursive */
             _vars = node_gethigh(_vars, nvars);
-            mtbdd_refs_spawn(mtbdd_eval_compose_SPAWN(lace, ddhigh, _vars, cb));
-            MTBDD low = mtbdd_refs_push(mtbdd_eval_compose_CALL(lace, ddlow, _vars, cb));
-            MTBDD high = mtbdd_refs_sync(mtbdd_eval_compose_SYNC(lace));
-            mtbdd_refs_pop(1);
-            result = mtbdd_make_node(var, low, high);
+            MTBDD low = mtbdd_invalid;
+            MTBDD high = mtbdd_invalid;
+            mtbdd_refs_pushptr(&low);
+            mtbdd_refs_pushptr(&high);
+            mtbdd_eval_compose_SPAWN(lace, &high, ddhigh, _vars, cb);
+            status = mtbdd_eval_compose_CALL(lace, &low, ddlow, _vars, cb);
+            int high_status = mtbdd_eval_compose_SYNC(lace);
+            if (status == SYLVAN_OK) status = high_status;
+            if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, var, low, high);
+            mtbdd_refs_popptr(2);
         }
     }
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_EVAL_COMPOSE, dd, vars, (size_t)cb, result)) {
+    if (status == SYLVAN_OK && cache_put3(CACHE_MTBDD_EVAL_COMPOSE, dd, vars, (size_t)cb, computed)) {
         sylvan_stats_count(MTBDD_EVAL_COMPOSE_CACHEDPUT);
     }
 
-    return result;
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
 /**

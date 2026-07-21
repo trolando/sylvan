@@ -30,7 +30,7 @@ TASK(ZDD, zdd_ite_internal, ZDD, f, ZDD, g, ZDD, h, ZDD, domain)
 TASK(ZDD, zdd_not_internal, ZDD, dd, ZDD, domain)
 TASK(ZDD, zdd_exists_internal, ZDD, dd, ZDD, variables)
 TASK(ZDD, zdd_project_internal, ZDD, dd, ZDD, domain)
-TASK(ZDD, zdd_or_cube_leaf, ZDD, set, BDDSET, domain, uint8_t*, values, ZDD, leaf)
+TASK(int, zdd_or_cube_leaf, ZDD*, result, ZDD, set, BDDSET, domain, uint8_t*, values, ZDD, leaf)
 
 #include "refs.h"
 #include "sl.h"
@@ -752,40 +752,57 @@ zdd_cofactor_CALL(lace_worker* lace, ZDD *destination, ZDD dd, BDD cube, BDDSET 
  * Create a cube of literals of the given domain with the values given in <arr>.
  * Uses True as the leaf.
  */
-ZDD
-zdd_cube_leaf(BDDSET dom, uint8_t *arr, ZDD leaf)
+static int
+zdd_cube_leaf(ZDD *destination, BDDSET dom, uint8_t *arr, ZDD leaf)
 {
-    if (bdd_set_is_empty(dom)) return leaf;
+    if (destination == NULL || dom == mtbdd_invalid || leaf == zdd_invalid ||
+        (!bdd_set_is_empty(dom) && arr == NULL)) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (bdd_set_is_empty(dom)) {
+        *destination = leaf;
+        return SYLVAN_OK;
+    }
     const uint32_t dom_var = bdd_set_first(dom);
     const BDDSET dom_next = bdd_set_next(dom);
-    const ZDD res = zdd_cube_leaf(dom_next, arr+1, leaf);
+    ZDD computed = zdd_invalid;
+    zdd_refs_pushptr(&computed);
+    int status = zdd_cube_leaf(&computed, dom_next, arr+1, leaf);
     if (*arr == 0) {
-        return zdd_make_node(dom_var, res, zdd_false);
+        if (status == SYLVAN_OK) status = _zdd_try_make_node(&computed, dom_var, computed, zdd_false);
     } else if (*arr == 1) {
-        return zdd_make_node(dom_var, zdd_false, res);
+        if (status == SYLVAN_OK) status = _zdd_try_make_node(&computed, dom_var, zdd_false, computed);
     } else if (*arr == 2) {
-        return zdd_make_node(dom_var, res, res);
+        if (status == SYLVAN_OK) status = _zdd_try_make_node(&computed, dom_var, computed, computed);
     } else {
-        return zdd_invalid;
+        status = SYLVAN_ERR_INVALID;
     }
+    if (status == SYLVAN_OK) *destination = computed;
+    zdd_refs_popptr(1);
+    return status;
 }
 
-ZDD
-zdd_cube(BDDSET domain, uint8_t *values)
+int
+zdd_cube(ZDD *destination, BDDSET domain, uint8_t *values)
 {
-    return zdd_cube_leaf(domain, values, zdd_base);
+    return zdd_cube_leaf(destination, domain, values, zdd_base);
 }
 
 /**
  * Same as zdd_cube, but adds the cube to an existing set.
  */
-ZDD zdd_or_cube_leaf_CALL(lace_worker* lace, ZDD set, BDDSET dom, uint8_t* arr, ZDD leaf)
+int zdd_or_cube_leaf_CALL(lace_worker* lace, ZDD *destination, ZDD set, BDDSET dom, uint8_t* arr, ZDD leaf)
 {
+    if (destination == NULL || set == zdd_invalid || dom == mtbdd_invalid || leaf == zdd_invalid ||
+        (!bdd_set_is_empty(dom) && arr == NULL)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
     /**
      * Terminal cases
      */
-    if (bdd_set_is_empty(dom)) return leaf;
-    if (set == zdd_false) return zdd_cube_leaf(dom, arr, leaf);
+    if (bdd_set_is_empty(dom)) { *destination = leaf; return SYLVAN_OK; }
+    if (set == zdd_false) return zdd_cube_leaf(destination, dom, arr, leaf);
 
     /**
      * Test for garbage collection
@@ -805,34 +822,43 @@ ZDD zdd_or_cube_leaf_CALL(lace_worker* lace, ZDD set, BDDSET dom, uint8_t* arr, 
     const uint32_t dom_var = bdd_set_first(dom);
     const BDDSET dom_next = bdd_set_next(dom);
 
-    assert(dom_var <= set_var);
+    if (dom_var > set_var) return SYLVAN_ERR_INVALID;
 
     ZDD set0 = dom_var < set_var ? set : zddnode_low(set, set_node);
     ZDD set1 = dom_var < set_var ? zdd_false : zddnode_high(set, set_node);
 
+    ZDD computed = zdd_invalid;
+    zdd_refs_pushptr(&computed);
+    int status = SYLVAN_OK;
     if (*arr == 0) {
-        ZDD low = zdd_or_cube_leaf(set0, dom_next, arr+1, leaf);
-        return zdd_make_node(dom_var, low, set1);
+        status = zdd_or_cube_leaf_CALL(lace, &computed, set0, dom_next, arr+1, leaf);
+        if (status == SYLVAN_OK) status = _zdd_try_make_node(&computed, dom_var, computed, set1);
     } else if (*arr == 1) {
-        ZDD high = zdd_or_cube_leaf(set1, dom_next, arr+1, leaf);
-        return zdd_make_node(dom_var, set0, high);
+        status = zdd_or_cube_leaf_CALL(lace, &computed, set1, dom_next, arr+1, leaf);
+        if (status == SYLVAN_OK) status = _zdd_try_make_node(&computed, dom_var, set0, computed);
     } else if (*arr == 2) {
-        zdd_refs_spawn(zdd_or_cube_leaf_SPAWN(lace, set0, dom_next, arr+1, leaf));
-        ZDD high = zdd_or_cube_leaf_CALL(lace, set1, dom_next, arr+1, leaf);
-        zdd_refs_push(high);
-        ZDD low = zdd_refs_sync(zdd_or_cube_leaf_SYNC(lace));
-        zdd_refs_pop(1);
-        return zdd_make_node(dom_var, low, high);
+        ZDD low = zdd_invalid;
+        ZDD high = zdd_invalid;
+        zdd_refs_pushptr(&low);
+        zdd_refs_pushptr(&high);
+        zdd_or_cube_leaf_SPAWN(lace, &low, set0, dom_next, arr+1, leaf);
+        status = zdd_or_cube_leaf_CALL(lace, &high, set1, dom_next, arr+1, leaf);
+        int low_status = zdd_or_cube_leaf_SYNC(lace);
+        if (status == SYLVAN_OK) status = low_status;
+        if (status == SYLVAN_OK) status = _zdd_try_make_node(&computed, dom_var, low, high);
+        zdd_refs_popptr(2);
     } else {
-        assert(0);
-        return zdd_invalid;
+        status = SYLVAN_ERR_INVALID;
     }
+    if (status == SYLVAN_OK) *destination = computed;
+    zdd_refs_popptr(1);
+    return status;
 }
 
-ZDD
-zdd_or_cube_CALL(lace_worker* lace, ZDD set, BDDSET domain, uint8_t *values)
+int
+zdd_or_cube_CALL(lace_worker* lace, ZDD *destination, ZDD set, BDDSET domain, uint8_t *values)
 {
-    return zdd_or_cube_leaf_CALL(lace, set, domain, values, zdd_base);
+    return zdd_or_cube_leaf_CALL(lace, destination, set, domain, values, zdd_base);
 }
 
 int

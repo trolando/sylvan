@@ -2636,28 +2636,58 @@ listdd_pick_values(LISTDD mdd, uint32_t* values, size_t count)
     return listdd_pick_values(mddnode_getdown(n), values+1, count-1);
 }
 
-LISTDD
-listdd_pick(LISTDD mdd)
+int
+listdd_pick(LISTDD *destination, LISTDD mdd)
 {
-    if (mdd == listdd_empty) return listdd_empty;
-    if (mdd == listdd_empty_list) return listdd_empty_list;
+    if (destination == NULL || mdd == listdd_invalid) return SYLVAN_ERR_INVALID;
+    if (mdd == listdd_empty || mdd == listdd_empty_list) {
+        *destination = mdd;
+        return SYLVAN_OK;
+    }
     mddnode* n = LDD_GETNODE(mdd);
-    LISTDD down = listdd_pick(mddnode_getdown(n));
-    return listdd_make_node(mddnode_getvalue(n), down, listdd_empty);
+    LISTDD down = listdd_invalid;
+    LISTDD computed = listdd_invalid;
+    listdd_refs_pushptr(&down);
+    listdd_refs_pushptr(&computed);
+    int status = listdd_pick(&down, mddnode_getdown(n));
+    if (status == SYLVAN_OK) {
+        status = _listdd_try_make_node(&computed, mddnode_getvalue(n), down, listdd_empty);
+    }
+    if (status == SYLVAN_OK) *destination = computed;
+    listdd_refs_popptr(2);
+    return status;
 }
 
-LISTDD listdd_transform_at_level_CALL(lace_worker* lace, LISTDD mdd, listdd_transform_at_level_cb cb, void* context, int depth)
+int listdd_transform_at_level_CALL(lace_worker* lace, LISTDD *destination, LISTDD mdd,
+    listdd_transform_at_level_cb cb, void* context, int depth)
 {
+    if (destination == NULL || mdd == listdd_invalid || cb == NULL || depth < 0) return SYLVAN_ERR_INVALID;
     if (depth == 0 || mdd == listdd_empty || mdd == listdd_empty_list) {
-        return cb(mdd, context);
+        LISTDD computed = listdd_invalid;
+        listdd_refs_pushptr(&computed);
+        int status = cb(&computed, mdd, context);
+        if (status == SYLVAN_OK && computed == listdd_invalid) status = SYLVAN_ERR_INVALID;
+        if (status == SYLVAN_OK) *destination = computed;
+        listdd_refs_popptr(1);
+        return status;
     } else {
         mddnode* n = LDD_GETNODE(mdd);
-        listdd_refs_spawn(listdd_transform_at_level_SPAWN(lace, mddnode_getright(n), cb, context, depth));
-        LISTDD down = listdd_transform_at_level_CALL(lace, mddnode_getdown(n), cb, context, depth-1);
-        listdd_refs_push(down);
-        LISTDD right = listdd_refs_sync(listdd_transform_at_level_SYNC(lace));
-        listdd_refs_pop(1);
-        return listdd_make_node(mddnode_getvalue(n), down, right);
+        LISTDD down = listdd_invalid;
+        LISTDD right = listdd_invalid;
+        LISTDD computed = listdd_invalid;
+        listdd_refs_pushptr(&down);
+        listdd_refs_pushptr(&right);
+        listdd_refs_pushptr(&computed);
+        listdd_transform_at_level_SPAWN(lace, &right, mddnode_getright(n), cb, context, depth);
+        int status = listdd_transform_at_level_CALL(lace, &down, mddnode_getdown(n), cb, context, depth-1);
+        int right_status = listdd_transform_at_level_SYNC(lace);
+        if (status == SYLVAN_OK) status = right_status;
+        if (status == SYLVAN_OK) {
+            status = _listdd_try_make_node(&computed, mddnode_getvalue(n), down, right);
+        }
+        if (status == SYLVAN_OK) *destination = computed;
+        listdd_refs_popptr(3);
+        return status;
     }
 }
 

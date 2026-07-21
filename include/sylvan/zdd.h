@@ -222,19 +222,25 @@ TASK(ZDD, zdd_ite, ZDD, f, ZDD, g, ZDD, h, BDDSET, domain);
 TASK(ZDD, zdd_not, ZDD, dd, BDDSET, domain);
 
 /**
- * Compute logical AND of <a> and <b>.
+ * Compute logical AND of <a> and <b>. The caller must protect <result>.
+ * Returns SYLVAN_OK on success or a negative status on failure, leaving
+ * <result> unchanged.
  */
-TASK(ZDD, zdd_and, ZDD, a, ZDD, b);
+TASK(int, zdd_and, ZDD*, result, ZDD, a, ZDD, b);
 
 /**
- * Compute logical OR of <a> and <b>.
+ * Compute logical OR of <a> and <b>. The caller must protect <result>.
+ * Returns SYLVAN_OK on success or a negative status on failure, leaving
+ * <result> unchanged.
  */
-TASK(ZDD, zdd_or, ZDD, a, ZDD, b);
+TASK(int, zdd_or, ZDD*, result, ZDD, a, ZDD, b);
 
 /**
- * Compute logical DIFF of <a> and <b>. (set minus)
+ * Compute logical DIFF of <a> and <b> (set minus). The caller must protect
+ * <result>. Returns SYLVAN_OK on success or a negative status on failure,
+ * leaving <result> unchanged.
  */
-TASK(ZDD, zdd_diff, ZDD, a, ZDD, b);
+TASK(int, zdd_diff, ZDD*, result, ZDD, a, ZDD, b);
 
 /**
  * Compute logical XOR of <a> and <b>.

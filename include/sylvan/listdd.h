@@ -252,12 +252,11 @@ void listdd_serialize_fromfile_old(FILE *in);
 
 /**
  * Infrastructure for internal references.
- * Every thread has its own reference stacks. There are three stacks: pointer, values, tasks stack.
+ * Every thread has its own pointer and value reference stacks.
  * The pointers stack stores pointers to LDD variables, manipulated with pushptr and popptr.
  * The values stack stores LDD, manipulated with push and pop.
- * The tasks stack stores Lace tasks (that return LDD), manipulated with spawn and sync.
  *
- * It is recommended to use the pointers stack for local variables and the tasks stack for tasks.
+ * It is recommended to use the pointers stack for local variables and task destinations.
  */
 
 /**
@@ -281,18 +280,6 @@ LISTDD listdd_refs_push(LISTDD dd);
  * Pop the last <amount> LDD from the values reference stack.
  */
 void listdd_refs_pop(long amount);
-
-/**
- * Push a Task that returns an LDD to the tasks reference stack.
- * Usage: listdd_refs_spawn(SPAWN(function, ...));
- */
-void listdd_refs_spawn(lace_task* t);
-
-/**
- * Pop a Task from the task reference stack.
- * Usage: LISTDD result = listdd_refs_sync(SYNC(function));
- */
-LISTDD listdd_refs_sync(LISTDD dd);
 
 TASK(void, listdd_gc_mark, LISTDD, dd)
 TASK(int, listdd_union, LISTDD*, result, LISTDD, a, LISTDD, b);

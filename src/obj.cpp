@@ -30,6 +30,7 @@ using bdd_cube_op = int (*)(BDD*, BDDSET, const uint8_t*);
 using bdd_or_cube_op = int (*)(BDD*, BDD, BDDSET, const uint8_t*);
 using mtbdd_support_op = int (*)(BDDSET*, MTBDD);
 using mtbdd_compose_op = int (*)(MTBDD*, MTBDD, MTBDDMAP);
+using mtbdd_threshold_op = int (*)(MTBDD*, MTBDD, double);
 
 BDD
 apply_binary(bdd_binary_op op, BDD a, BDD b)
@@ -127,6 +128,16 @@ apply_mtbdd_compose(mtbdd_compose_op op, MTBDD dd, MTBDDMAP map)
     MTBDD result = mtbdd_invalid;
     mtbdd_protect(&result);
     int status = op(&result, dd, map);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+MTBDD
+apply_mtbdd_threshold(mtbdd_threshold_op op, MTBDD dd, double value)
+{
+    MTBDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = op(&result, dd, value);
     mtbdd_unprotect(&result);
     return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
@@ -965,25 +976,25 @@ Mtbdd::operator-=(const Mtbdd& other)
 Mtbdd
 Mtbdd::MtbddThreshold(double value) const
 {
-    return mtbdd_threshold_double(mtbdd, value);
+    return apply_mtbdd_threshold(mtbdd_threshold_double, mtbdd, value);
 }
 
 Mtbdd
 Mtbdd::MtbddStrictThreshold(double value) const
 {
-    return mtbdd_strict_threshold_double(mtbdd, value);
+    return apply_mtbdd_threshold(mtbdd_strict_threshold_double, mtbdd, value);
 }
 
 Bdd
 Mtbdd::BddThreshold(double value) const
 {
-    return mtbdd_threshold_double(mtbdd, value);
+    return apply_mtbdd_threshold(mtbdd_threshold_double, mtbdd, value);
 }
 
 Bdd
 Mtbdd::BddStrictThreshold(double value) const
 {
-    return mtbdd_strict_threshold_double(mtbdd, value);
+    return apply_mtbdd_threshold(mtbdd_strict_threshold_double, mtbdd, value);
 }
 
 Mtbdd

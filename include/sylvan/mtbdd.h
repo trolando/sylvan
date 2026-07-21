@@ -401,14 +401,20 @@ static inline int mtbdd_op_threshold_double(MTBDD *result, MTBDD a, size_t b);
 static inline int mtbdd_op_strict_threshold_double(MTBDD *result, MTBDD a, size_t b);
 
 /**
- * Convert double to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
+ * Convert double or fraction terminals to a Boolean MTBDD, translating values
+ * >= <b> to true and other values to undefined. The caller must protect
+ * <result>. Returns SYLVAN_OK on success or a negative status on failure,
+ * leaving <result> unchanged.
  */
-static inline MTBDD mtbdd_threshold_double(MTBDD a, double b);
+static inline int mtbdd_threshold_double(MTBDD *result, MTBDD a, double b);
 
 /**
- * Convert double to a Boolean MTBDD, translate terminals > value to 1 and to 0 otherwise;
+ * Convert double or fraction terminals to a Boolean MTBDD, translating values
+ * > <b> to true and other values to undefined. The caller must protect
+ * <result>. Returns SYLVAN_OK on success or a negative status on failure,
+ * leaving <result> unchanged.
  */
-static inline MTBDD mtbdd_strict_threshold_double(MTBDD a, double b);
+static inline int mtbdd_strict_threshold_double(MTBDD *result, MTBDD a, double b);
 
 /**
  * For two Double MTBDDs, calculate whether they are equal module some value epsilon

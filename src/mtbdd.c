@@ -26,6 +26,8 @@
 #include "sl.h"
 #include "sha2.h"
 
+static_assert(sizeof(size_t) >= sizeof(double), "MTBDD double parameters require 64-bit size_t");
+
 /* Primitives */
 int
 mtbdd_is_leaf(MTBDD bdd)
@@ -1965,26 +1967,18 @@ int mtbdd_op_strict_threshold_double_CALL(lace_worker* lace, MTBDD *destination,
     return SYLVAN_APPLY_RECURSE;
 }
 
-MTBDD mtbdd_threshold_double_CALL(lace_worker* lace, MTBDD dd, double d)
+int mtbdd_threshold_double_CALL(lace_worker* lace, MTBDD *destination, MTBDD dd, double d)
 {
-    (void)lace;
-
-    MTBDD result = mtbdd_invalid;
-    mtbdd_refs_pushptr(&result);
-    int status = mtbdd_apply_unary(&result, dd, mtbdd_op_threshold_double_CALL, *(size_t*)&d);
-    mtbdd_refs_popptr(1);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    size_t parameter = 0;
+    memcpy(&parameter, &d, sizeof(d));
+    return mtbdd_apply_unary_CALL(lace, destination, dd, mtbdd_op_threshold_double_CALL, parameter);
 }
 
-MTBDD mtbdd_strict_threshold_double_CALL(lace_worker* lace, MTBDD dd, double d)
+int mtbdd_strict_threshold_double_CALL(lace_worker* lace, MTBDD *destination, MTBDD dd, double d)
 {
-    (void)lace;
-
-    MTBDD result = mtbdd_invalid;
-    mtbdd_refs_pushptr(&result);
-    int status = mtbdd_apply_unary(&result, dd, mtbdd_op_strict_threshold_double_CALL, *(size_t*)&d);
-    mtbdd_refs_popptr(1);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    size_t parameter = 0;
+    memcpy(&parameter, &d, sizeof(d));
+    return mtbdd_apply_unary_CALL(lace, destination, dd, mtbdd_op_strict_threshold_double_CALL, parameter);
 }
 
 /**

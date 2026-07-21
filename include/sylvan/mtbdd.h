@@ -201,32 +201,40 @@ static inline size_t mtbdd_node_count(const MTBDD dd);
 
 /**
  * Callback function types for binary ("dyadic") and unary ("monadic") operations.
- * The callback function returns either the MTBDD that is the result of applying op to the MTBDDs,
- * or mtbdd_invalid if op cannot be applied.
+ * The callback writes its result to <result> and returns SYLVAN_OK when it
+ * handles the operands, SYLVAN_APPLY_RECURSE when generic apply must descend,
+ * or a negative status on failure. On recurse or failure, <result> is unchanged.
+ * Sylvan protects the callback's <result> destination while the callback runs.
  * The binary function may swap the two parameters (if commutative) to improve caching.
  * The unary function is allowed an extra parameter (be careful of caching)
  */
-typedef MTBDD (*mtbdd_apply_cb)(lace_worker* lace, MTBDD*, MTBDD*);
-typedef MTBDD (*mtbdd_apply_param_cb)(lace_worker* lace, MTBDD*, MTBDD*, size_t);
-typedef MTBDD (*mtbdd_apply_unary_cb)(lace_worker* lace, MTBDD, size_t);
+typedef int (*mtbdd_apply_cb)(lace_worker* lace, MTBDD *result, MTBDD*, MTBDD*);
+typedef int (*mtbdd_apply_param_cb)(lace_worker* lace, MTBDD *result, MTBDD*, MTBDD*, size_t);
+typedef int (*mtbdd_apply_unary_cb)(lace_worker* lace, MTBDD *result, MTBDD, size_t);
 
 /**
  * Apply a binary operation <op> to <a> and <b>.
  * Callback <op> is consulted before the cache, thus the application to terminals is not cached.
+ * The caller must protect <result>. Returns SYLVAN_OK on success. On failure,
+ * <result> is unchanged.
  */
-static inline MTBDD mtbdd_apply(MTBDD a, MTBDD b, mtbdd_apply_cb op);
+static inline int mtbdd_apply(MTBDD *result, MTBDD a, MTBDD b, mtbdd_apply_cb op);
 
 /**
  * Apply a binary operation <op> with id <opid> to <a> and <b> with parameter <p>
  * Callback <op> is consulted before the cache, thus the application to terminals is not cached.
+ * The caller must protect <result>. Returns SYLVAN_OK on success. On failure,
+ * <result> is unchanged.
  */
-static inline MTBDD mtbdd_apply_param(MTBDD a, MTBDD b, size_t p, mtbdd_apply_param_cb op, uint64_t opid);
+static inline int mtbdd_apply_param(MTBDD *result, MTBDD a, MTBDD b, size_t p, mtbdd_apply_param_cb op, uint64_t opid);
 
 /**
  * Apply a unary operation <op> to <dd>.
  * Callback <op> is consulted after the cache, thus the application to a terminal is cached.
+ * The caller must protect <result>. Returns SYLVAN_OK on success. On failure,
+ * <result> is unchanged.
  */
-static inline MTBDD mtbdd_apply_unary(MTBDD dd, mtbdd_apply_unary_cb op, size_t param);
+static inline int mtbdd_apply_unary(MTBDD *result, MTBDD dd, mtbdd_apply_unary_cb op, size_t param);
 
 /**
  * Callback function types for abstraction.
@@ -249,20 +257,20 @@ static inline MTBDD mtbdd_abstract(MTBDD a, MTBDD v, mtbdd_abstract_cb op);
  * Unary operation Negate.
  * Supported domains: Integer, Real, Fraction
  */
-static inline MTBDD mtbdd_op_negate(MTBDD a, size_t param);
+static inline int mtbdd_op_negate(MTBDD *result, MTBDD a, size_t param);
 
 /**
  * Unary opeation Complement.
  * Supported domains: Integer, Real, Fraction
  */
-static inline MTBDD mtbdd_op_cmpl(MTBDD a, size_t param);
+static inline int mtbdd_op_cmpl(MTBDD *result, MTBDD a, size_t param);
 
 /**
  * Binary operation Plus (for MTBDDs of same type)
  * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
  * For Integer/Double MTBDDs, mtbdd_undefined is interpreted as "0" or "0.0".
  */
-static inline MTBDD mtbdd_op_plus(MTBDD *a, MTBDD *b);
+static inline int mtbdd_op_plus(MTBDD *result, MTBDD *a, MTBDD *b);
 static inline MTBDD mtbdd_abstract_op_plus(MTBDD a, MTBDD b, int c);
 
 /**
@@ -270,7 +278,7 @@ static inline MTBDD mtbdd_abstract_op_plus(MTBDD a, MTBDD b, int c);
  * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
  * For Integer/Double MTBDDs, mtbdd_undefined is interpreted as "0" or "0.0".
  */
-static inline MTBDD mtbdd_op_minus(MTBDD *a, MTBDD *b);
+static inline int mtbdd_op_minus(MTBDD *result, MTBDD *a, MTBDD *b);
 
 /**
  * Binary operation Times (for MTBDDs of same type)
@@ -278,7 +286,7 @@ static inline MTBDD mtbdd_op_minus(MTBDD *a, MTBDD *b);
  * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
  * then the result is mtbdd_undefined (i.e. not defined).
  */
-static inline MTBDD mtbdd_op_times(MTBDD *a, MTBDD *b);
+static inline int mtbdd_op_times(MTBDD *result, MTBDD *a, MTBDD *b);
 static inline MTBDD mtbdd_abstract_op_times(MTBDD a, MTBDD b, int c);
 
 /**
@@ -287,7 +295,7 @@ static inline MTBDD mtbdd_abstract_op_times(MTBDD a, MTBDD b, int c);
  * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
  * then the result is the other operand.
  */
-static inline MTBDD mtbdd_op_min(MTBDD *a, MTBDD *b);
+static inline int mtbdd_op_min(MTBDD *result, MTBDD *a, MTBDD *b);
 static inline MTBDD mtbdd_abstract_op_min(MTBDD a, MTBDD b, int c);
 
 /**
@@ -296,46 +304,46 @@ static inline MTBDD mtbdd_abstract_op_min(MTBDD a, MTBDD b, int c);
  * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
  * then the result is the other operand.
  */
-static inline MTBDD mtbdd_op_max(MTBDD *a, MTBDD *b);
+static inline int mtbdd_op_max(MTBDD *result, MTBDD *a, MTBDD *b);
 static inline MTBDD mtbdd_abstract_op_max(MTBDD a, MTBDD b, int c);
 
 /**
  * Compute -a
  * (negation, where 0 stays 0, and x into -x)
  */
-static inline MTBDD mtbdd_neg(MTBDD a);
+static inline int mtbdd_neg(MTBDD *result, MTBDD a);
 
 /**
  * Compute ~a for partial MTBDDs.
  * Does not negate Boolean True/False.
  * (complement, where 0 is turned into 1, and non-0 into 0)
  */
-static inline MTBDD mtbdd_zero_indicator(MTBDD dd);
+static inline int mtbdd_zero_indicator(MTBDD *result, MTBDD dd);
 
 /**
  * Compute a + b
  */
-static inline MTBDD mtbdd_add(MTBDD a, MTBDD b);
+static inline int mtbdd_add(MTBDD *result, MTBDD a, MTBDD b);
 
 /**
  * Compute a - b
  */
-static inline MTBDD mtbdd_sub(MTBDD a, MTBDD b);
+static inline int mtbdd_sub(MTBDD *result, MTBDD a, MTBDD b);
 
 /**
  * Compute a * b
  */
-static inline MTBDD mtbdd_mul(MTBDD a, MTBDD b);
+static inline int mtbdd_mul(MTBDD *result, MTBDD a, MTBDD b);
 
 /**
  * Compute min(a, b)
  */
-static inline MTBDD mtbdd_min(MTBDD a, MTBDD b);
+static inline int mtbdd_min(MTBDD *result, MTBDD a, MTBDD b);
 
 /**
  * Compute max(a, b)
  */
-static inline MTBDD mtbdd_max(MTBDD a, MTBDD b);
+static inline int mtbdd_max(MTBDD *result, MTBDD a, MTBDD b);
 
 /**
  * Abstract the variables in <v> from <a> by taking the sum of all values
@@ -378,12 +386,12 @@ static inline MTBDD mtbdd_mul_abstract_max(MTBDD a, MTBDD b, MTBDD c);
 /**
  * Monad that converts double to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
  */
-static inline MTBDD mtbdd_op_threshold_double(MTBDD a, size_t b);
+static inline int mtbdd_op_threshold_double(MTBDD *result, MTBDD a, size_t b);
 
 /**
  * Monad that converts double to a Boolean MTBDD, translate terminals > value to 1 and to 0 otherwise;
  */
-static inline MTBDD mtbdd_op_strict_threshold_double(MTBDD a, size_t b);
+static inline int mtbdd_op_strict_threshold_double(MTBDD *result, MTBDD a, size_t b);
 
 /**
  * Convert double to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;

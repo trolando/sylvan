@@ -33,6 +33,11 @@ enum {
     SYLVAN_ERR_CALLBACK = -4
 };
 
+/** Apply callback control result: descend recursively instead of producing a result. */
+enum {
+    SYLVAN_APPLY_RECURSE = 1
+};
+
 /**
  * Initialize the Sylvan parallel decision diagrams package.
  *

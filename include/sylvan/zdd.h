@@ -146,14 +146,19 @@ TASK(int, zdd_or_cube, ZDD*, result, ZDD, set, BDDSET, variables, uint8_t*, valu
 
 /**
  * Compute the irredundant sum of products given lower and upper bounds as BDDs.
- * Returns a ZDD cover between the two bounds; if given bddresptr pointer, then that will have the BDD.
+ * Writes a ZDD cover between the two bounds to <result>. If <bdd_result> is not
+ * NULL, also writes the represented BDD there. The caller must protect both
+ * destinations. Returns SYLVAN_OK on success or a negative status on failure,
+ * leaving both destinations unchanged.
  */
-TASK(ZDD, zdd_isop, MTBDD, L, MTBDD, U, MTBDD*, bddresptr);
+TASK(int, zdd_isop, ZDD*, result, MTBDD*, bdd_result, MTBDD, L, MTBDD, U);
 
 /**
- * Compute the BDD representation of a given ZDD cover.
+ * Compute the BDD representation of a given ZDD cover. The caller must protect
+ * <result>. Returns SYLVAN_OK on success or a negative status on failure,
+ * leaving <result> unchanged.
  */
-TASK(MTBDD, bdd_from_zdd_cover, ZDD, dd);
+TASK(int, bdd_from_zdd_cover, MTBDD*, result, ZDD, dd);
 
 /**
  * Enumerate the cubes of a ZDD cover
@@ -598,12 +603,11 @@ size_t zdd_protected_count(void);
 
 /**
  * Infrastructure for internal references.
- * Every thread has its own reference stacks. There are three stacks: pointer, values, tasks stack.
+ * Every thread has its own pointer and value reference stacks.
  * The pointers stack stores pointers to ZDD variables, manipulated with pushptr and popptr.
  * The values stack stores ZDDs, manipulated with push and pop.
- * The tasks stack stores Lace tasks (that return ZDDs), manipulated with spawn and sync.
  *
- * It is recommended to use the pointers stack for local variables and the tasks stack for tasks.
+ * New code should use the pointer stack for local protected destinations.
  */
 
 /**
@@ -627,20 +631,6 @@ ZDD zdd_refs_push(ZDD zdd);
  * Pop the last <amount> ZDDs from the values reference stack.
  */
 void zdd_refs_pop(long amount);
-
-/**
- * Push a Task that returns an ZDD to the tasks reference stack.
- * Usage: zdd_refs_spawn(SPAWN(function, ...));
- */
-void zdd_refs_spawn(lace_task* t);
-
-/**
- * Pop a Task from the task reference stack.
- * Usage: ZDD result = zdd_refs_sync(SYNC(function));
- */
-ZDD zdd_refs_sync(ZDD mtbdd);
-
-
 
 #ifdef __cplusplus
 }

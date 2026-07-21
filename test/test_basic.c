@@ -512,6 +512,114 @@ test_mtbdd_map_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+TASK(int, test_mtbdd_extrema_destinations)
+int
+test_mtbdd_extrema_destinations_CALL(lace_worker *lace)
+{
+    MTBDD int_min = mtbdd_int64(-4);
+    MTBDD int_middle = mtbdd_invalid;
+    MTBDD int_max = mtbdd_invalid;
+    MTBDD double_low = mtbdd_invalid;
+    MTBDD double_high = mtbdd_invalid;
+    MTBDD fraction_low = mtbdd_invalid;
+    MTBDD fraction_high = mtbdd_invalid;
+    BDD x0 = mtbdd_invalid;
+    BDD x1 = mtbdd_invalid;
+    MTBDD int_branch = mtbdd_invalid;
+    MTBDD int_dd = mtbdd_invalid;
+    MTBDD double_dd = mtbdd_invalid;
+    MTBDD fraction_dd = mtbdd_invalid;
+    MTBDD mixed_dd = mtbdd_invalid;
+    MTBDD partial_dd = mtbdd_invalid;
+    MTBDD minimum = mtbdd_invalid;
+    MTBDD maximum = mtbdd_invalid;
+    MTBDD inplace = mtbdd_invalid;
+    MTBDD unchanged = bdd_true;
+
+    mtbdd_refs_pushptr(&int_min);
+    int_middle = mtbdd_int64(7);
+    mtbdd_refs_pushptr(&int_middle);
+    int_max = mtbdd_int64(42);
+    mtbdd_refs_pushptr(&int_max);
+    double_low = mtbdd_double(-1.5);
+    mtbdd_refs_pushptr(&double_low);
+    double_high = mtbdd_double(2.25);
+    mtbdd_refs_pushptr(&double_high);
+    fraction_low = mtbdd_fraction(-1, 2);
+    mtbdd_refs_pushptr(&fraction_low);
+    fraction_high = mtbdd_fraction(1, 3);
+    mtbdd_refs_pushptr(&fraction_high);
+    mtbdd_refs_pushptr(&x0);
+    mtbdd_refs_pushptr(&x1);
+    mtbdd_refs_pushptr(&int_branch);
+    mtbdd_refs_pushptr(&int_dd);
+    mtbdd_refs_pushptr(&double_dd);
+    mtbdd_refs_pushptr(&fraction_dd);
+    mtbdd_refs_pushptr(&mixed_dd);
+    mtbdd_refs_pushptr(&partial_dd);
+    mtbdd_refs_pushptr(&minimum);
+    mtbdd_refs_pushptr(&maximum);
+    mtbdd_refs_pushptr(&inplace);
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_assert(bdd_var_at_level(&x0, 0) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&x1, 1) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &int_branch, x1, int_min, int_middle) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &int_dd, x0, int_max, int_branch) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &double_dd, x0, double_high, double_low) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &fraction_dd, x1, fraction_high, fraction_low) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &mixed_dd, x0, double_high, int_min) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &partial_dd, x0, int_max, mtbdd_undefined) == SYLVAN_OK);
+
+    mtbdd_find_min_SPAWN(lace, &minimum, int_dd);
+    int maximum_status = mtbdd_find_max_CALL(lace, &maximum, int_dd);
+    int minimum_status = mtbdd_find_min_SYNC(lace);
+    test_assert(minimum_status == SYLVAN_OK);
+    test_assert(maximum_status == SYLVAN_OK);
+    test_assert(minimum == int_min);
+    test_assert(maximum == int_max);
+
+    test_assert(mtbdd_find_min_CALL(lace, &minimum, double_dd) == SYLVAN_OK);
+    test_assert(mtbdd_find_max_CALL(lace, &maximum, double_dd) == SYLVAN_OK);
+    test_assert(minimum == double_low);
+    test_assert(maximum == double_high);
+    test_assert(mtbdd_find_min_CALL(lace, &minimum, fraction_dd) == SYLVAN_OK);
+    test_assert(mtbdd_find_max_CALL(lace, &maximum, fraction_dd) == SYLVAN_OK);
+    test_assert(minimum == fraction_low);
+    test_assert(maximum == fraction_high);
+
+    inplace = int_dd;
+    test_assert(mtbdd_find_min_CALL(lace, &inplace, inplace) == SYLVAN_OK);
+    test_assert(inplace == int_min);
+    test_assert(mtbdd_find_max_CALL(lace, &maximum, int_middle) == SYLVAN_OK);
+    test_assert(maximum == int_middle);
+    test_assert(mtbdd_find_min_CALL(lace, &minimum, mtbdd_undefined) == SYLVAN_OK);
+    test_assert(minimum == mtbdd_undefined);
+    test_assert(mtbdd_find_min_CALL(lace, &minimum, partial_dd) == SYLVAN_OK);
+    test_assert(mtbdd_find_max_CALL(lace, &maximum, partial_dd) == SYLVAN_OK);
+    test_assert(minimum == int_max);
+    test_assert(maximum == int_max);
+
+    sylvan_gc_CALL(lace);
+    test_assert(inplace == int_min);
+    test_assert(maximum == int_max);
+
+    test_assert(mtbdd_find_min_CALL(lace, NULL, int_dd) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_find_max_CALL(lace, NULL, int_dd) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_find_min_CALL(lace, &unchanged, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_find_max_CALL(lace, &unchanged, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_find_min_CALL(lace, &unchanged, mixed_dd) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_find_max_CALL(lace, &unchanged, mixed_dd) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+
+    sylvan_gc_CALL(lace);
+    mtbdd_refs_popptr(19);
+    return 0;
+}
+
 static BDD
 test_bdd_binary(test_bdd_binary_op op, BDD a, BDD b)
 {
@@ -1856,6 +1964,7 @@ int runtests_CALL(lace_worker* lace)
         if (test_mtbdd_construction_destinations_CALL(lace)) return 1;
         if (test_mtbdd_structure_destinations_CALL(lace)) return 1;
         if (test_mtbdd_map_destinations_CALL(lace)) return 1;
+        if (test_mtbdd_extrema_destinations_CALL(lace)) return 1;
         if (test_protected_destinations_CALL(lace)) return 1;
         if (test_quantification_destinations_CALL(lace)) return 1;
         if (test_care_destinations_CALL(lace)) return 1;

@@ -67,16 +67,6 @@ static BDD test_bdd_xor(BDD a, BDD b) { return test_bdd_binary(bdd_xor, a, b); }
 static BDD test_bdd_or(BDD a, BDD b) { return test_bdd_binary(bdd_or, a, b); }
 
 static BDD
-test_bdd_cube(BDDSET vars, const uint8_t *cube)
-{
-    BDD result = mtbdd_invalid;
-    mtbdd_protect(&result);
-    int status = bdd_cube(&result, vars, cube);
-    mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
-}
-
-static BDD
 test_bdd_or_cube(BDD dd, BDDSET vars, const uint8_t *cube)
 {
     BDD result = mtbdd_invalid;
@@ -1213,46 +1203,88 @@ int test_zdd_exists_CALL(lace_worker* lace)
 TASK(int, test_zdd_isop_basic)
 int test_zdd_isop_basic_CALL(lace_worker* lace)
 {
-    BDD a = test_bdd_var(1);
-    BDD b = test_bdd_var(2);
+    BDD a = mtbdd_invalid;
+    BDD b = mtbdd_invalid;
+    BDD a_and_b = mtbdd_invalid;
+    BDD aNot_and_b = mtbdd_invalid;
+    BDD redundant_b = mtbdd_invalid;
+    MTBDD bddres = mtbdd_invalid;
+    MTBDD bdd2 = mtbdd_invalid;
+    MTBDD unchanged_bdd = bdd_true;
+    ZDD isop_zdd = zdd_invalid;
+    ZDD unchanged_zdd = zdd_base;
+    mtbdd_refs_pushptr(&a);
+    mtbdd_refs_pushptr(&b);
+    mtbdd_refs_pushptr(&a_and_b);
+    mtbdd_refs_pushptr(&aNot_and_b);
+    mtbdd_refs_pushptr(&redundant_b);
+    mtbdd_refs_pushptr(&bddres);
+    mtbdd_refs_pushptr(&bdd2);
+    mtbdd_refs_pushptr(&unchanged_bdd);
+    zdd_refs_pushptr(&isop_zdd);
+    zdd_refs_pushptr(&unchanged_zdd);
 
-    BDD a_and_b = test_bdd_and(a, b);
-    BDD aNot_and_b = test_bdd_and(bdd_not(a), b);
-    BDD redundant_b = test_bdd_or(a_and_b, aNot_and_b);
+    a = test_bdd_var(1);
+    b = test_bdd_var(2);
+    a_and_b = test_bdd_and(a, b);
+    aNot_and_b = test_bdd_and(bdd_not(a), b);
+    redundant_b = test_bdd_or(a_and_b, aNot_and_b);
 
     // ab + ~ab == b
 
-    MTBDD bddres;
-    ZDD isop_zdd = zdd_isop(redundant_b, redundant_b, &bddres);
-    MTBDD bdd2 = bdd_from_zdd_cover(isop_zdd);
+    test_assert(zdd_isop(&isop_zdd, &bddres, redundant_b, redundant_b) == SYLVAN_OK);
+    test_assert(bdd_from_zdd_cover(&bdd2, isop_zdd) == SYLVAN_OK);
 
     test_assert(bddres == redundant_b);
     test_assert(bdd2 == redundant_b);
     test_assert(zdd_top_var(isop_zdd) == 4);
     test_assert(zdd_node_high(isop_zdd) == zdd_base);
     test_assert(zdd_node_low(isop_zdd) == zdd_false);
+    sylvan_gc_CALL(lace);
+    test_assert(bddres == redundant_b && bdd2 == redundant_b);
+
+    test_assert(zdd_isop(&unchanged_zdd, &unchanged_bdd, mtbdd_invalid, redundant_b) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged_zdd == zdd_base && unchanged_bdd == bdd_true);
+    test_assert(zdd_isop(NULL, &unchanged_bdd, redundant_b, redundant_b) == SYLVAN_ERR_INVALID);
+    test_assert(bdd_from_zdd_cover(&unchanged_bdd, zdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged_bdd == bdd_true);
+    test_assert(bdd_from_zdd_cover(NULL, isop_zdd) == SYLVAN_ERR_INVALID);
+
+    zdd_refs_popptr(2);
+    mtbdd_refs_popptr(8);
     return 0;
-    (void)lace;
 }
 
 TASK(int, test_zdd_isop_random)
 int test_zdd_isop_random_CALL(lace_worker* lace)
 {
-    BDD bdd_dom = test_bdd_set_from_levels((uint32_t[]){0,1,2,3,4,5,6,7,8,9,10,11}, 12);
+    BDD bdd_dom = mtbdd_invalid;
+    MTBDD bdd_set = bdd_false;
+    MTBDD cube = mtbdd_invalid;
+    MTBDD isop_bdd = mtbdd_invalid;
+    MTBDD remade_bdd = mtbdd_invalid;
+    ZDD isop_zdd = zdd_invalid;
+    mtbdd_refs_pushptr(&bdd_dom);
+    mtbdd_refs_pushptr(&bdd_set);
+    mtbdd_refs_pushptr(&cube);
+    mtbdd_refs_pushptr(&isop_bdd);
+    mtbdd_refs_pushptr(&remade_bdd);
+    zdd_refs_pushptr(&isop_zdd);
+
+    bdd_dom = test_bdd_set_from_levels((uint32_t[]){0,1,2,3,4,5,6,7,8,9,10,11}, 12);
 
     // create a random BDD
-    MTBDD bdd_set = bdd_false;
     int cubecount = rng(1,200);
     for (int j=0; j<cubecount; j++) {
         uint8_t arr[12];
         for (int j=0; j<12; j++) arr[j] = (uint8_t)rng(0, 2);
-        bdd_set = test_bdd_or(bdd_set, test_bdd_cube(bdd_dom, arr));
+        test_assert(bdd_cube(&cube, bdd_dom, arr) == SYLVAN_OK);
+        test_assert(bdd_or(&bdd_set, bdd_set, cube) == SYLVAN_OK);
     }
 
     // convert to ISOP cover
-    MTBDD isop_bdd;
-    ZDD isop_zdd = zdd_isop(bdd_set, bdd_set, &isop_bdd);
-    MTBDD remade_bdd = bdd_from_zdd_cover(isop_zdd);
+    test_assert(zdd_isop(&isop_zdd, &isop_bdd, bdd_set, bdd_set) == SYLVAN_OK);
+    test_assert(bdd_from_zdd_cover(&remade_bdd, isop_zdd) == SYLVAN_OK);
 
     // manually count cubes
     int arr[13];
@@ -1273,9 +1305,13 @@ int test_zdd_isop_random_CALL(lace_worker* lace)
     test_assert(remade_bdd == bdd_set);
     test_assert(count1 <= cubecount);
     test_assert(count1 == zdd_cubes);
+    sylvan_gc_CALL(lace);
+    test_assert(isop_bdd == bdd_set && remade_bdd == bdd_set);
+
+    zdd_refs_popptr(1);
+    mtbdd_refs_popptr(5);
 
     return 0;
-    (void)lace;
 }
 
 TASK(int, test_zdd_read_write)

@@ -97,23 +97,33 @@ ZDD zdd_node_high(ZDD dd);
  * TODO: zdd_gettype, zdd_getvalue etc for leaves
  */
 
-/** Convert a Boolean BDD to the equivalent ZDD over <domain>. */
-TASK(ZDD, zdd_from_bdd, BDD, dd, BDDSET, domain);
+/**
+ * Convert a Boolean BDD to the equivalent ZDD over <domain>. The caller must
+ * protect <result>. Returns SYLVAN_OK on success or a negative status on
+ * failure, leaving <result> unchanged.
+ */
+TASK(int, zdd_from_bdd, ZDD*, result, BDD, dd, BDDSET, domain);
 
-/** Convert a Boolean ZDD over <domain> to the equivalent BDD. */
-TASK(BDD, bdd_from_zdd, ZDD, dd, BDDSET, domain);
+/**
+ * Convert a Boolean ZDD over <domain> to the equivalent BDD. The caller must
+ * protect <result>. Returns SYLVAN_OK on success or a negative status on
+ * failure, leaving <result> unchanged.
+ */
+TASK(int, bdd_from_zdd, BDD*, result, ZDD, dd, BDDSET, domain);
 
 /**
  * Substitute the literals fixed by <cube> in <dd> and remove those variables
  * from the result domain. The cube must be one conjunction of literals and
- * its support must be contained in <domain>. Returns zdd_invalid otherwise.
+ * its support must be contained in <domain>. The caller must protect <result>.
+ * Returns SYLVAN_OK on success or a negative status on failure, leaving
+ * <result> unchanged.
  */
-TASK(ZDD, zdd_cofactor, ZDD, dd, BDD, cube, BDDSET, domain);
+TASK(int, zdd_cofactor, ZDD*, result, ZDD, dd, BDD, cube, BDDSET, domain);
 
 /** Return Boolean true for the given ZDD domain. */
-static inline ZDD zdd_true(BDDSET domain)
+static inline int zdd_true(ZDD *result, BDDSET domain)
 {
-    return zdd_from_bdd(bdd_true, domain);
+    return zdd_from_bdd(result, bdd_true, domain);
 }
 
 /**
@@ -152,21 +162,27 @@ ZDD zdd_cover_next_cube(ZDD dd, int32_t *arr);
 
 /**
  * Extend the domain of a ZDD, such that all new variables take the given value.
- * The given value can be 0 (always negative), 1 (always positive), 2 (always dontcare)
+ * The given value can be 0 (always negative), 1 (always positive), 2 (always
+ * don't care). The caller must protect <result>. Returns SYLVAN_OK on success
+ * or a negative status on failure, leaving <result> unchanged.
  */
-TASK(ZDD, zdd_extend_domain, ZDD, dd, BDDSET, newvars, int, value);
+TASK(int, zdd_extend_domain, ZDD*, result, ZDD, dd, BDDSET, newvars, int, value);
 
 /**
  * Interpret <dd> over the larger <new_domain>, allowing every value for the
- * added variables. Returns zdd_invalid unless <old_domain> is a subset of
- * <new_domain> and contains the support of <dd>.
+ * added variables. The caller must protect <result>. Returns SYLVAN_OK on
+ * success or a negative status on failure, leaving <result> unchanged. The
+ * operation fails unless <old_domain> is a subset of <new_domain> and contains
+ * the support of <dd>.
  */
-TASK(ZDD, zdd_lift, ZDD, dd, BDDSET, old_domain, BDDSET, new_domain);
+TASK(int, zdd_lift, ZDD*, result, ZDD, dd, BDDSET, old_domain, BDDSET, new_domain);
 
 /**
- * Calculate the support of a ZDD, i.e. the cube of all variables that appear in the ZDD nodes.
+ * Calculate the support of a ZDD, i.e. the cube of all variables that appear
+ * in the ZDD nodes. The caller must protect <result>. Returns SYLVAN_OK on
+ * success or a negative status on failure, leaving <result> unchanged.
  */
-TASK(BDDSET, zdd_support, ZDD, dd);
+TASK(int, zdd_support, BDDSET*, result, ZDD, dd);
 
 /**
  * Count the number of satisfying assignments (minterms) leading to a non-False leaf.

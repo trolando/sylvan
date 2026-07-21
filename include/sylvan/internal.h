@@ -48,6 +48,7 @@ extern nodes_table* nodes;
 
 /* Fallible node construction for protected-destination operations. */
 int _mtbdd_try_make_node(MTBDD *destination, uint32_t var, MTBDD low, MTBDD high);
+int _zdd_try_make_node(ZDD *destination, uint32_t var, ZDD low, ZDD high);
 
 /* Transitional tasks for operations whose callers are not converted yet. */
 TASK(BDD, bdd_and_legacy, BDD, a, BDD, b)
@@ -57,8 +58,8 @@ TASK(BDD, bdd_ite_legacy, BDD, a, BDD, b, BDD, c)
 static const ZDD zdd_base = UINT64_C(1);
 
 /** Advanced multi-terminal ZDD conversion primitives. */
-TASK(ZDD, zdd_from_mtbdd, MTBDD, dd, BDDSET, domain)
-TASK(MTBDD, zdd_to_mtbdd, ZDD, dd, BDDSET, domain)
+TASK(int, zdd_from_mtbdd, ZDD*, result, MTBDD, dd, BDDSET, domain)
+TASK(int, zdd_to_mtbdd, MTBDD*, result, ZDD, dd, BDDSET, domain)
 
 /**
  * Macros for all operation identifiers for the operation cache

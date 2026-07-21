@@ -54,6 +54,9 @@ run_gmp_tests_CALL(lace_worker *lace)
     MTBDD abstract_product = mtbdd_invalid;
     MTBDD abstract_minimum = mtbdd_invalid;
     MTBDD abstract_maximum = mtbdd_invalid;
+    MTBDD threshold = mtbdd_invalid;
+    MTBDD parallel_threshold = mtbdd_invalid;
+    MTBDD threshold_inplace = mtbdd_invalid;
     MTBDD mixed = mtbdd_invalid;
     MTBDD unchanged = bdd_true;
 
@@ -73,6 +76,9 @@ run_gmp_tests_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&abstract_product);
     mtbdd_refs_pushptr(&abstract_minimum);
     mtbdd_refs_pushptr(&abstract_maximum);
+    mtbdd_refs_pushptr(&threshold);
+    mtbdd_refs_pushptr(&parallel_threshold);
+    mtbdd_refs_pushptr(&threshold_inplace);
     mtbdd_refs_pushptr(&mixed);
     mtbdd_refs_pushptr(&unchanged);
 
@@ -107,6 +113,19 @@ run_gmp_tests_CALL(lace_worker *lace)
     test_assert(gmp_leaf_equals(abstract_minimum, 1, 2));
     test_assert(gmp_leaf_equals(abstract_maximum, 3, 2));
 
+    gmp_threshold_d_SPAWN(lace, &parallel_threshold, f, 1.0);
+    int threshold_status = gmp_strict_threshold_d_CALL(lace, &threshold, f, 0.5);
+    int parallel_threshold_status = gmp_threshold_d_SYNC(lace);
+    test_assert(threshold_status == SYLVAN_OK && threshold == bdd_not(x));
+    test_assert(parallel_threshold_status == SYLVAN_OK && parallel_threshold == bdd_not(x));
+    test_assert(gmp_threshold_d(&threshold, f, 0.5) == SYLVAN_OK && threshold == bdd_true);
+    test_assert(gmp_strict_threshold_d(&threshold, f, 1.5) == SYLVAN_OK && threshold == mtbdd_undefined);
+    threshold_inplace = f;
+    test_assert(gmp_threshold_d(&threshold_inplace, threshold_inplace, 1.0) == SYLVAN_OK);
+    test_assert(threshold_inplace == bdd_not(x));
+    sylvan_gc_CALL(lace);
+    test_assert(threshold_inplace == bdd_not(x));
+
     MTBDD low, high;
     mtbdd_cofactors(difference, &low, &high);
     test_assert(gmp_leaf_equals(low, 1, 1));
@@ -139,6 +158,11 @@ run_gmp_tests_CALL(lace_worker *lace)
     mixed = mtbdd_int64(1);
     test_assert(gmp_and_abstract_plus(&unchanged, f, mixed, vars) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == bdd_true);
+    test_assert(gmp_threshold_d(NULL, f, 1.0) == SYLVAN_ERR_INVALID);
+    test_assert(gmp_threshold_d(&unchanged, mtbdd_invalid, 1.0) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(gmp_strict_threshold_d(&unchanged, mixed, 1.0) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
 
     test_assert(gmp_plus(&f, f, g) == SYLVAN_OK);
     test_assert(f == sum);
@@ -154,7 +178,7 @@ run_gmp_tests_CALL(lace_worker *lace)
     test_assert(gmp_abstract_plus(&unchanged, mtbdd_invalid, vars) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == bdd_true);
 
-    mtbdd_refs_popptr(20);
+    mtbdd_refs_popptr(23);
     return 0;
 }
 

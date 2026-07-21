@@ -208,14 +208,17 @@ TASK(int, gmp_op_threshold, MTBDD*, result, MTBDD*, dd, MTBDD*, value);
 TASK(int, gmp_op_strict_threshold, MTBDD*, result, MTBDD*, dd, MTBDD*, value);
 
 /**
- * Convert to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
+ * Convert to a Boolean MTBDD, translating terminals >= <value> to true and
+ * other terminals to undefined. The caller must protect <result>. Returns
+ * SYLVAN_OK on success or a negative status on failure, leaving <result>
+ * unchanged.
  */
-TASK(MTBDD, gmp_threshold_d, MTBDD, dd, double, value);
+TASK(int, gmp_threshold_d, MTBDD*, result, MTBDD, dd, double, value);
 
 /**
- * Convert to a Boolean MTBDD, translate terminals > value to 1 and to 0 otherwise;
+ * As gmp_threshold_d, using strict greater-than.
  */
-TASK(MTBDD, gmp_strict_threshold_d, MTBDD, dd, double, value);
+TASK(int, gmp_strict_threshold_d, MTBDD*, result, MTBDD, dd, double, value);
 
 #ifdef __cplusplus
 }

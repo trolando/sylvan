@@ -433,28 +433,27 @@ static inline int mtbdd_equal_abs_double(MTBDD *result, MTBDD a, MTBDD b, double
 static inline int mtbdd_equal_rel_double(MTBDD *result, MTBDD a, MTBDD b, double c);
 
 /**
- * For two MTBDDs a, b, return bdd_true if all common assignments a(s) <= b(s), mtbdd_undefined otherwise.
- * For domains not in a / b, assume True.
+ * For two MTBDDs a and b, write true if all common assignments satisfy
+ * a(s) <= b(s), and undefined otherwise. For domains absent from either
+ * operand, assume true. The caller must protect <result>. Returns SYLVAN_OK on
+ * success or a negative status on failure, leaving <result> unchanged.
  */
-static inline MTBDD mtbdd_leq(MTBDD a, MTBDD b);
+static inline int mtbdd_leq(MTBDD *result, MTBDD a, MTBDD b);
 
 /**
- * For two MTBDDs a, b, return bdd_true if all common assignments a(s) < b(s), mtbdd_undefined otherwise.
- * For domains not in a / b, assume True.
+ * As mtbdd_leq, using strict less-than.
  */
-static inline MTBDD mtbdd_lt(MTBDD a, MTBDD b);
+static inline int mtbdd_lt(MTBDD *result, MTBDD a, MTBDD b);
 
 /**
- * For two MTBDDs a, b, return bdd_true if all common assignments a(s) >= b(s), mtbdd_undefined otherwise.
- * For domains not in a / b, assume True.
+ * As mtbdd_leq, using greater-than-or-equal.
  */
-static inline MTBDD mtbdd_geq(MTBDD a, MTBDD b);
+static inline int mtbdd_geq(MTBDD *result, MTBDD a, MTBDD b);
 
 /**
- * For two MTBDDs a, b, return bdd_true if all common assignments a(s) > b(s), mtbdd_undefined otherwise.
- * For domains not in a / b, assume True.
+ * As mtbdd_leq, using strict greater-than.
  */
-static inline MTBDD mtbdd_gt(MTBDD a, MTBDD b);
+static inline int mtbdd_gt(MTBDD *result, MTBDD a, MTBDD b);
 
 /**
  * Calculate the support of a MTBDD, i.e. the cube of all variables that appear in the MTBDD nodes.

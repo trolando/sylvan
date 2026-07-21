@@ -167,6 +167,16 @@ listdd_rel_next_or_abort_CALL(lace_worker *lace, LISTDD set, LISTDD relation, LI
     return result;
 }
 
+static LISTDD
+listdd_rel_next_union_or_abort_CALL(lace_worker *lace, LISTDD set, LISTDD relation, LISTDD meta, LISTDD un)
+{
+    LISTDD result = listdd_invalid;
+    if (listdd_rel_next_union_CALL(lace, &result, set, relation, meta, un) != SYLVAN_OK) {
+        Abort("ListDD relational product failed.\n");
+    }
+    return result;
+}
+
 /**
  * Load a set from file
  */
@@ -662,7 +672,7 @@ LISTDD go_sat_CALL(lace_worker* lace, LISTDD set, int idx, int depth)
             set = go_sat_CALL(lace, set, idx + n, depth);
             // chain-apply all current level once
             for (int i=0; i<n; i++) {
-                set = listdd_rel_next_union_CALL(lace, set, next[idx+i]->dd, next[idx+i]->topmeta, set);
+                set = listdd_rel_next_union_or_abort_CALL(lace, set, next[idx+i]->dd, next[idx+i]->topmeta, set);
             }
         }
         listdd_refs_popptr(2);

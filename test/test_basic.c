@@ -327,8 +327,7 @@ test_mtbdd_structure_destinations_CALL(lace_worker *lace)
     test_assert(mtbdd_ite_CALL(lace, &source, x0, terminal, other_terminal) == SYLVAN_OK);
     test_assert(mtbdd_ite_CALL(lace, &nested, x2, source, terminal) == SYLVAN_OK);
 
-    map = mtbdd_map_set(mtbdd_map_empty(), 0, x1);
-    test_assert(map != mtbdd_invalid);
+    test_assert(mtbdd_map_set(&map, mtbdd_map_empty(), 0, x1) == SYLVAN_OK);
     mtbdd_compose_SPAWN(lace, &composed, nested, map);
     test_assert(mtbdd_support_CALL(lace, &support, nested) == SYLVAN_OK);
     test_assert(mtbdd_compose_SYNC(lace) == SYLVAN_OK);
@@ -343,8 +342,7 @@ test_mtbdd_structure_destinations_CALL(lace_worker *lace)
     test_assert(mtbdd_compose_CALL(lace, &inplace, inplace, map) == SYLVAN_OK);
     test_assert(inplace == composed);
 
-    map2 = mtbdd_map_set(mtbdd_map_empty(), 2, x1);
-    test_assert(map2 != mtbdd_invalid);
+    test_assert(mtbdd_map_set(&map2, mtbdd_map_empty(), 2, x1) == SYLVAN_OK);
     test_assert(mtbdd_compose_CALL(lace, &substituted, nested, map2) == SYLVAN_OK);
     test_assert(mtbdd_ite_CALL(lace, &expected_substituted, x1, source, terminal) == SYLVAN_OK);
     test_assert(substituted == expected_substituted);
@@ -384,6 +382,133 @@ test_mtbdd_structure_destinations_CALL(lace_worker *lace)
 
     sylvan_gc_CALL(lace);
     mtbdd_refs_popptr(22);
+    return 0;
+}
+
+TASK(int, test_mtbdd_map_destinations)
+int
+test_mtbdd_map_destinations_CALL(lace_worker *lace)
+{
+    const uint32_t removed_keys[] = {1, 5};
+    MTBDD one = mtbdd_int64(1);
+    MTBDD two = mtbdd_invalid;
+    MTBDD three = mtbdd_invalid;
+    MTBDDMAP map = mtbdd_map_empty();
+    MTBDDMAP original = mtbdd_invalid;
+    MTBDDMAP other = mtbdd_map_empty();
+    MTBDDMAP updated = mtbdd_invalid;
+    MTBDDMAP inplace = mtbdd_invalid;
+    MTBDDMAP removed = mtbdd_invalid;
+    BDDSET remove_set = mtbdd_invalid;
+    MTBDDMAP stripped = mtbdd_invalid;
+    MTBDDMAP max_key_map = mtbdd_map_empty();
+    MTBDDMAP unchanged = bdd_true;
+
+    mtbdd_refs_pushptr(&one);
+    two = mtbdd_int64(2);
+    mtbdd_refs_pushptr(&two);
+    three = mtbdd_int64(3);
+    mtbdd_refs_pushptr(&three);
+    mtbdd_refs_pushptr(&map);
+    mtbdd_refs_pushptr(&original);
+    mtbdd_refs_pushptr(&other);
+    mtbdd_refs_pushptr(&updated);
+    mtbdd_refs_pushptr(&inplace);
+    mtbdd_refs_pushptr(&removed);
+    mtbdd_refs_pushptr(&remove_set);
+    mtbdd_refs_pushptr(&stripped);
+    mtbdd_refs_pushptr(&max_key_map);
+    mtbdd_refs_pushptr(&unchanged);
+
+    /* Insertion order does not affect the sorted map representation. */
+    test_assert(mtbdd_map_set(&map, map, 5, one) == SYLVAN_OK);
+    test_assert(mtbdd_map_set(&map, map, 1, two) == SYLVAN_OK);
+    test_assert(mtbdd_map_set(&map, map, 3, three) == SYLVAN_OK);
+    test_assert(mtbdd_map_count(map) == 3);
+    test_assert(mtbdd_map_key(map) == 1);
+    test_assert(mtbdd_map_value(map) == two);
+    test_assert(mtbdd_map_key(mtbdd_map_next(map)) == 3);
+    test_assert(mtbdd_map_value(mtbdd_map_next(map)) == three);
+    test_assert(mtbdd_map_key(mtbdd_map_next(mtbdd_map_next(map))) == 5);
+    test_assert(mtbdd_map_value(mtbdd_map_next(mtbdd_map_next(map))) == one);
+    original = map;
+
+    test_assert(mtbdd_map_set(&map, map, 3, one) == SYLVAN_OK);
+    test_assert(mtbdd_map_count(map) == 3);
+    test_assert(mtbdd_map_value(mtbdd_map_next(map)) == one);
+    test_assert(mtbdd_map_set(&map, map, 3, one) == SYLVAN_OK);
+
+    test_assert(mtbdd_map_set(&other, other, 2, two) == SYLVAN_OK);
+    test_assert(mtbdd_map_set(&other, other, 3, three) == SYLVAN_OK);
+    test_assert(mtbdd_map_update(&updated, map, other) == SYLVAN_OK);
+    test_assert(mtbdd_map_count(updated) == 4);
+    test_assert(mtbdd_map_value(mtbdd_map_next(mtbdd_map_next(updated))) == three);
+    inplace = map;
+    test_assert(mtbdd_map_update(&inplace, inplace, other) == SYLVAN_OK);
+    test_assert(inplace == updated);
+
+    test_assert(mtbdd_map_remove(&removed, updated, 0) == SYLVAN_OK);
+    test_assert(removed == updated);
+    test_assert(mtbdd_map_remove(&removed, updated, UINT32_C(0x00ffffff)) == SYLVAN_OK);
+    test_assert(removed == updated);
+    test_assert(mtbdd_map_remove(&removed, updated, 2) == SYLVAN_OK);
+    test_assert(mtbdd_map_count(removed) == 3);
+    test_assert(!mtbdd_map_contains(removed, 2));
+    test_assert(mtbdd_map_contains(removed, 3));
+
+    test_assert(bdd_set_from_array(&remove_set, removed_keys, 2) == SYLVAN_OK);
+    test_assert(mtbdd_map_remove_all(&stripped, updated, remove_set) == SYLVAN_OK);
+    test_assert(mtbdd_map_count(stripped) == 2);
+    test_assert(!mtbdd_map_contains(stripped, 1));
+    test_assert(mtbdd_map_contains(stripped, 2));
+    test_assert(mtbdd_map_contains(stripped, 3));
+    test_assert(!mtbdd_map_contains(stripped, 5));
+    inplace = updated;
+    test_assert(mtbdd_map_remove_all(&inplace, inplace, remove_set) == SYLVAN_OK);
+    test_assert(inplace == stripped);
+
+    test_assert(mtbdd_map_set(&max_key_map, max_key_map, UINT32_C(0x00ffffff), one) == SYLVAN_OK);
+    test_assert(mtbdd_map_contains(max_key_map, UINT32_C(0x00ffffff)));
+    test_assert(mtbdd_map_update(&inplace, mtbdd_map_empty(), updated) == SYLVAN_OK);
+    test_assert(inplace == updated);
+    test_assert(mtbdd_map_update(&inplace, updated, mtbdd_map_empty()) == SYLVAN_OK);
+    test_assert(inplace == updated);
+    test_assert(mtbdd_map_remove(&inplace, mtbdd_map_empty(), 1) == SYLVAN_OK);
+    test_assert(mtbdd_map_is_empty(inplace));
+    test_assert(mtbdd_map_remove_all(&inplace, updated, bdd_set_empty()) == SYLVAN_OK);
+    test_assert(inplace == updated);
+
+    sylvan_gc_CALL(lace);
+    test_assert(mtbdd_map_count(original) == 3);
+    test_assert(mtbdd_map_count(updated) == 4);
+    test_assert(mtbdd_map_count(stripped) == 2);
+    test_assert(mtbdd_map_value(mtbdd_map_next(mtbdd_map_next(updated))) == three);
+
+    test_assert(mtbdd_map_set(NULL, map, 1, one) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_map_set(&unchanged, mtbdd_invalid, 1, one) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_map_set(&unchanged, map, 1, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_map_set(&unchanged, map, UINT32_C(0x01000000), one) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_map_update(NULL, map, other) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_map_update(&unchanged, mtbdd_invalid, other) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_map_update(&unchanged, map, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_map_remove(NULL, map, 1) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_map_remove(&unchanged, mtbdd_invalid, 1) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_map_remove(&unchanged, map, UINT32_C(0x01000000)) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_map_remove_all(NULL, map, remove_set) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_map_remove_all(&unchanged, mtbdd_invalid, remove_set) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_map_remove_all(&unchanged, map, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+
+    sylvan_gc_CALL(lace);
+    mtbdd_refs_popptr(13);
     return 0;
 }
 
@@ -846,7 +971,7 @@ test_compose_destinations_CALL(lace_worker *lace)
 
     test_assert(bdd_xor_CALL(lace, &f, x, y) == SYLVAN_OK);
     test_assert(bdd_xor_CALL(lace, &expected, z, y) == SYLVAN_OK);
-    map = mtbdd_map_set(map, 0, z);
+    test_assert(mtbdd_map_set(&map, map, 0, z) == SYLVAN_OK);
 
     bdd_compose_SPAWN(lace, &result, f, map);
     int identity_status = bdd_compose_CALL(lace, &identity, f, mtbdd_map_empty());
@@ -856,7 +981,7 @@ test_compose_destinations_CALL(lace_worker *lace)
     test_assert(identity == f);
 
     /* A map whose first key comes after the support must rebuild f unchanged. */
-    later_map = mtbdd_map_set(later_map, 2, x);
+    test_assert(mtbdd_map_set(&later_map, later_map, 2, x) == SYLVAN_OK);
     test_assert(bdd_compose_CALL(lace, &identity, f, later_map) == SYLVAN_OK);
 
     sylvan_gc_CALL(lace);
@@ -1591,9 +1716,10 @@ test_compose()
     BDD two = make_random(8, 24);
 
     MTBDDMAP map = mtbdd_map_empty();
+    mtbdd_protect(&map);
 
-    map = mtbdd_map_set(map, 1, one);
-    map = mtbdd_map_set(map, 2, two);
+    test_assert(mtbdd_map_set(&map, map, 1, one) == SYLVAN_OK);
+    test_assert(mtbdd_map_set(&map, map, 2, two) == SYLVAN_OK);
 
     test_assert(mtbdd_map_key(map) == 1);
     test_assert(mtbdd_map_value(map) == one);
@@ -1605,22 +1731,23 @@ test_compose()
 
     test_assert(testEqual(test_bdd_or(one, two), test_bdd_compose(a_or_b, map)));
 
-    map = mtbdd_map_set(map, 2, one);
+    test_assert(mtbdd_map_set(&map, map, 2, one) == SYLVAN_OK);
     test_assert(testEqual(test_bdd_compose(a_or_b, map), one));
 
-    map = mtbdd_map_set(map, 1, two);
+    test_assert(mtbdd_map_set(&map, map, 1, two) == SYLVAN_OK);
     test_assert(testEqual(test_bdd_or(one, two), test_bdd_compose(a_or_b, map)));
 
     test_assert(testEqual(test_bdd_and(one, two), test_bdd_compose(test_bdd_and(a, b), map)));
 
     // test that composing [0:=true] on "0" yields true
-    map = mtbdd_map_set(mtbdd_map_empty(), 1, bdd_true);
+    test_assert(mtbdd_map_set(&map, mtbdd_map_empty(), 1, bdd_true) == SYLVAN_OK);
     test_assert(testEqual(test_bdd_compose(a, map), bdd_true));
 
     // test that composing [0:=false] on "0" yields false
-    map = mtbdd_map_set(mtbdd_map_empty(), 1, bdd_false);
+    test_assert(mtbdd_map_set(&map, mtbdd_map_empty(), 1, bdd_false) == SYLVAN_OK);
     test_assert(testEqual(test_bdd_compose(a, map), bdd_false));
 
+    mtbdd_unprotect(&map);
     return 0;
 }
 
@@ -1728,6 +1855,7 @@ int runtests_CALL(lace_worker* lace)
         if (test_variable_set_destinations_CALL(lace)) return 1;
         if (test_mtbdd_construction_destinations_CALL(lace)) return 1;
         if (test_mtbdd_structure_destinations_CALL(lace)) return 1;
+        if (test_mtbdd_map_destinations_CALL(lace)) return 1;
         if (test_protected_destinations_CALL(lace)) return 1;
         if (test_quantification_destinations_CALL(lace)) return 1;
         if (test_care_destinations_CALL(lace)) return 1;

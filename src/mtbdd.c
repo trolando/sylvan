@@ -525,35 +525,32 @@ _mtbdd_try_make_node(MTBDD *destination, uint32_t var, MTBDD low, MTBDD high)
     return SYLVAN_OK;
 }
 
-MTBDD
-mtbdd_makemapnode(uint32_t var, MTBDD low, MTBDD high)
+static int
+_mtbdd_try_make_map_node(MTBDDMAP *destination, uint32_t key, MTBDDMAP next, MTBDD value)
 {
+    if (destination == NULL || key > UINT32_C(0x00ffffff) ||
+        next == mtbdd_invalid || value == mtbdd_invalid || MTBDD_HASMARK(next)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
     struct mtbddnode n;
     uint64_t index;
     int created;
 
     // in an MTBDDMAP, the low edges eventually lead to 0 and cannot have a low mark
-    assert(!MTBDD_HASMARK(low));
-
-    mtbddnode_makemapnode(&n, var, low, high);
+    mtbddnode_makemapnode(&n, key, next, value);
     index = nodes_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
-        mtbdd_refs_push(low);
-        mtbdd_refs_push(high);
-        sylvan_gc(); //FIXME
-        mtbdd_refs_pop(2);
-
+        _mtbdd_makenode_gc(next, value);
         index = nodes_lookup(nodes, n.a, n.b, &created);
-        if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
-            exit(1);
-        }
+        if (index == 0) return SYLVAN_ERR_OOM;
     }
 
     if (created) sylvan_stats_count(BDD_NODES_CREATED);
     else sylvan_stats_count(BDD_NODES_REUSED);
 
-    return index;
+    *destination = index;
+    return SYLVAN_OK;
 }
 
 int
@@ -3935,86 +3932,131 @@ mtbdd_map_count(MTBDDMAP map)
 /**
  * Add the pair <key,value> to the map, overwrites if key already in map.
  */
-MTBDDMAP
-mtbdd_map_set(MTBDDMAP map, uint32_t key, MTBDD value)
+int
+mtbdd_map_set(MTBDDMAP *destination, MTBDDMAP map, uint32_t key, MTBDD value)
 {
+    if (destination == NULL || map == mtbdd_invalid || value == mtbdd_invalid ||
+        key > UINT32_C(0x00ffffff)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    MTBDDMAP computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    int status = SYLVAN_OK;
+
     if (mtbdd_map_is_empty(map)) {
-        return mtbdd_makemapnode(key, mtbdd_map_empty(), value);
-    }
-
-    mtbddnode* n = MTBDD_GETNODE(map);
-    uint32_t k = mtbddnode_getvariable(n);
-
-    if (k < key) {
-        // add recursively and rebuild tree
-        MTBDDMAP low = mtbdd_map_set(node_getlow(map, n), key, value);
-        return mtbdd_makemapnode(k, low, node_gethigh(map, n));
-    } else if (k > key) {
-        return mtbdd_makemapnode(key, map, value);
+        status = _mtbdd_try_make_map_node(&computed, key, mtbdd_map_empty(), value);
     } else {
-        // replace old
-        return mtbdd_makemapnode(key, node_getlow(map, n), value);
+        mtbddnode* n = MTBDD_GETNODE(map);
+        uint32_t k = mtbddnode_getvariable(n);
+
+        if (k < key) {
+            // add recursively and rebuild tree
+            MTBDDMAP next = mtbdd_invalid;
+            mtbdd_refs_pushptr(&next);
+            status = mtbdd_map_set(&next, node_getlow(map, n), key, value);
+            if (status == SYLVAN_OK) {
+                status = _mtbdd_try_make_map_node(&computed, k, next, node_gethigh(map, n));
+            }
+            mtbdd_refs_popptr(1);
+        } else if (k > key) {
+            status = _mtbdd_try_make_map_node(&computed, key, map, value);
+        } else {
+            // replace old
+            status = _mtbdd_try_make_map_node(&computed, key, node_getlow(map, n), value);
+        }
     }
+
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
 /**
  * Add all values from map2 to map1, overwrites if key already in map1.
  */
-MTBDDMAP
-mtbdd_map_update(MTBDDMAP map1, MTBDDMAP map2)
+int
+mtbdd_map_update(MTBDDMAP *destination, MTBDDMAP map1, MTBDDMAP map2)
 {
-    if (mtbdd_map_is_empty(map1)) return map2;
-    if (mtbdd_map_is_empty(map2)) return map1;
+    if (destination == NULL || map1 == mtbdd_invalid || map2 == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    if (mtbdd_map_is_empty(map1)) { *destination = map2; return SYLVAN_OK; }
+    if (mtbdd_map_is_empty(map2)) { *destination = map1; return SYLVAN_OK; }
 
     mtbddnode* n1 = MTBDD_GETNODE(map1);
     mtbddnode* n2 = MTBDD_GETNODE(map2);
     uint32_t k1 = mtbddnode_getvariable(n1);
     uint32_t k2 = mtbddnode_getvariable(n2);
 
-    MTBDDMAP result;
+    MTBDDMAP next = mtbdd_invalid;
+    MTBDDMAP computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&next);
+    mtbdd_refs_pushptr(&computed);
+    int status;
     if (k1 < k2) {
-        MTBDDMAP low = mtbdd_map_update(node_getlow(map1, n1), map2);
-        result = mtbdd_makemapnode(k1, low, node_gethigh(map1, n1));
+        status = mtbdd_map_update(&next, node_getlow(map1, n1), map2);
+        if (status == SYLVAN_OK) {
+            status = _mtbdd_try_make_map_node(&computed, k1, next, node_gethigh(map1, n1));
+        }
     } else if (k1 > k2) {
-        MTBDDMAP low = mtbdd_map_update(map1, node_getlow(map2, n2));
-        result = mtbdd_makemapnode(k2, low, node_gethigh(map2, n2));
+        status = mtbdd_map_update(&next, map1, node_getlow(map2, n2));
+        if (status == SYLVAN_OK) {
+            status = _mtbdd_try_make_map_node(&computed, k2, next, node_gethigh(map2, n2));
+        }
     } else {
-        MTBDDMAP low = mtbdd_map_update(node_getlow(map1, n1), node_getlow(map2, n2));
-        result = mtbdd_makemapnode(k2, low, node_gethigh(map2, n2));
+        status = mtbdd_map_update(&next, node_getlow(map1, n1), node_getlow(map2, n2));
+        if (status == SYLVAN_OK) {
+            status = _mtbdd_try_make_map_node(&computed, k2, next, node_gethigh(map2, n2));
+        }
     }
 
-    return result;
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(2);
+    return status;
 }
 
 /**
  * Remove the key <key> from the map and return the result
  */
-MTBDDMAP
-mtbdd_map_remove(MTBDDMAP map, uint32_t key)
+int
+mtbdd_map_remove(MTBDDMAP *destination, MTBDDMAP map, uint32_t key)
 {
-    if (mtbdd_map_is_empty(map)) return map;
+    if (destination == NULL || map == mtbdd_invalid || key > UINT32_C(0x00ffffff)) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (mtbdd_map_is_empty(map)) { *destination = map; return SYLVAN_OK; }
 
     mtbddnode* n = MTBDD_GETNODE(map);
     uint32_t k = mtbddnode_getvariable(n);
 
     if (k < key) {
-        MTBDDMAP low = mtbdd_map_remove(node_getlow(map, n), key);
-        return mtbdd_makemapnode(k, low, node_gethigh(map, n));
+        MTBDDMAP next = mtbdd_invalid;
+        MTBDDMAP computed = mtbdd_invalid;
+        mtbdd_refs_pushptr(&next);
+        mtbdd_refs_pushptr(&computed);
+        int status = mtbdd_map_remove(&next, node_getlow(map, n), key);
+        if (status == SYLVAN_OK) {
+            status = _mtbdd_try_make_map_node(&computed, k, next, node_gethigh(map, n));
+        }
+        if (status == SYLVAN_OK) *destination = computed;
+        mtbdd_refs_popptr(2);
+        return status;
     } else if (k > key) {
-        return map;
+        *destination = map;
+        return SYLVAN_OK;
     } else {
-        return node_getlow(map, n);
+        *destination = node_getlow(map, n);
+        return SYLVAN_OK;
     }
 }
 
 /**
- * Remove all keys in the cube <variables> from the map and return the result
+ * Remove all keys in the variable set <variables> from the map.
  */
-MTBDDMAP
-mtbdd_map_remove_all(MTBDDMAP map, MTBDD variables)
+int
+mtbdd_map_remove_all(MTBDDMAP *destination, MTBDDMAP map, BDDSET variables)
 {
-    if (mtbdd_map_is_empty(map)) return map;
-    if (variables == bdd_true) return map;
+    if (destination == NULL || map == mtbdd_invalid || variables == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    if (mtbdd_map_is_empty(map) || variables == bdd_true) { *destination = map; return SYLVAN_OK; }
 
     mtbddnode* n1 = MTBDD_GETNODE(map);
     mtbddnode* n2 = MTBDD_GETNODE(variables);
@@ -4022,11 +4064,20 @@ mtbdd_map_remove_all(MTBDDMAP map, MTBDD variables)
     uint32_t k2 = mtbddnode_getvariable(n2);
 
     if (k1 < k2) {
-        MTBDDMAP low = mtbdd_map_remove_all(node_getlow(map, n1), variables);
-        return mtbdd_makemapnode(k1, low, node_gethigh(map, n1));
+        MTBDDMAP next = mtbdd_invalid;
+        MTBDDMAP computed = mtbdd_invalid;
+        mtbdd_refs_pushptr(&next);
+        mtbdd_refs_pushptr(&computed);
+        int status = mtbdd_map_remove_all(&next, node_getlow(map, n1), variables);
+        if (status == SYLVAN_OK) {
+            status = _mtbdd_try_make_map_node(&computed, k1, next, node_gethigh(map, n1));
+        }
+        if (status == SYLVAN_OK) *destination = computed;
+        mtbdd_refs_popptr(2);
+        return status;
     } else if (k1 > k2) {
-        return mtbdd_map_remove_all(map, node_gethigh(variables, n2));
+        return mtbdd_map_remove_all(destination, map, node_gethigh(variables, n2));
     } else {
-        return mtbdd_map_remove_all(node_getlow(map, n1), node_gethigh(variables, n2));
+        return mtbdd_map_remove_all(destination, node_getlow(map, n1), node_gethigh(variables, n2));
     }
 }

@@ -752,24 +752,27 @@ size_t mtbdd_map_count(MTBDDMAP map);
 
 /**
  * Add the pair <key,value> to the map, overwrites if key already in map.
+ * Keys are limited to 24 bits. On failure, <result> is unchanged.
  */
-MTBDDMAP mtbdd_map_set(MTBDDMAP map, uint32_t key, MTBDD value);
+int mtbdd_map_set(MTBDDMAP *result, MTBDDMAP map, uint32_t key, MTBDD value);
 
 /**
  * Add all values from map2 to map1, overwrites if key already in map1.
+ * On failure, <result> is unchanged.
  */
-MTBDDMAP mtbdd_map_update(MTBDDMAP map1, MTBDDMAP map2);
-#define mtbdd_map_update mtbdd_map_update
+int mtbdd_map_update(MTBDDMAP *result, MTBDDMAP map1, MTBDDMAP map2);
 
 /**
- * Remove the key <key> from the map and return the result
+ * Remove the key <key> from the map. Keys are limited to 24 bits.
+ * On failure, <result> is unchanged.
  */
-MTBDDMAP mtbdd_map_remove(MTBDDMAP map, uint32_t key);
+int mtbdd_map_remove(MTBDDMAP *result, MTBDDMAP map, uint32_t key);
 
 /**
- * Remove all keys in the cube <variables> from the map and return the result
+ * Remove all keys in the variable set <variables> from the map.
+ * On failure, <result> is unchanged.
  */
-MTBDDMAP mtbdd_map_remove_all(MTBDDMAP map, MTBDD variables);
+int mtbdd_map_remove_all(MTBDDMAP *result, MTBDDMAP map, BDDSET variables);
 
 /**
  * Garbage collection

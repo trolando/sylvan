@@ -26,6 +26,7 @@ extern "C" {
 
 static const LISTDD listdd_empty = 0;
 static const LISTDD listdd_empty_list = 1;
+static const LISTDD listdd_invalid = UINT64_MAX;
 
 /* Initialize ListDD functionality. */
 void listdd_init(void);
@@ -99,16 +100,26 @@ static inline void listdd_gc_mark(LISTDD dd);
 size_t listdd_is_valid(LISTDD mdd);
 #endif
 
-/* Operations for model checking */
-static inline LISTDD listdd_union(LISTDD a, LISTDD b);
+/**
+ * ListDD set operations write to caller-protected destinations and return
+ * SYLVAN_OK on success or a negative status code on failure. Destinations are
+ * left unchanged on failure.
+ */
 
-static inline LISTDD listdd_diff(LISTDD a, LISTDD b);
+/* Compute the union of <a> and <b>. */
+static inline int listdd_union(LISTDD *result, LISTDD a, LISTDD b);
 
-static inline LISTDD listdd_union_diff(LISTDD a, LISTDD b, LISTDD* res);
+/* Compute the elements in <a> that are not in <b>. */
+static inline int listdd_diff(LISTDD *result, LISTDD a, LISTDD b);
 
-static inline LISTDD listdd_intersection(LISTDD a, LISTDD b);
+/* Compute <a> union <b> and, simultaneously, the elements in <b> not in <a>. */
+static inline int listdd_union_diff(LISTDD *result, LISTDD *difference, LISTDD a, LISTDD b);
 
-static inline LISTDD listdd_match(LISTDD a, LISTDD b, LISTDD proj);
+/* Compute the intersection of <a> and <b>. */
+static inline int listdd_intersection(LISTDD *result, LISTDD a, LISTDD b);
+
+/* Keep vectors from <a> that match a vector in <b> at levels selected by <proj>. */
+static inline int listdd_match(LISTDD *result, LISTDD a, LISTDD b, LISTDD proj);
 
 LISTDD listdd_add(LISTDD a, uint32_t* values, size_t count);
 int listdd_contains(LISTDD a, uint32_t* values, size_t count);
@@ -277,11 +288,11 @@ void listdd_refs_spawn(lace_task* t);
 LISTDD listdd_refs_sync(LISTDD dd);
 
 TASK(void, listdd_gc_mark, LISTDD, dd)
-TASK(LISTDD, listdd_union, LISTDD, a, LISTDD, b);
-TASK(LISTDD, listdd_diff, LISTDD, a, LISTDD, b);
-TASK(LISTDD, listdd_union_diff, LISTDD, a, LISTDD, b, LISTDD*, res);
-TASK(LISTDD, listdd_intersection, LISTDD, a, LISTDD, b);
-TASK(LISTDD, listdd_match, LISTDD, a, LISTDD, b, LISTDD, proj);
+TASK(int, listdd_union, LISTDD*, result, LISTDD, a, LISTDD, b);
+TASK(int, listdd_diff, LISTDD*, result, LISTDD, a, LISTDD, b);
+TASK(int, listdd_union_diff, LISTDD*, result, LISTDD*, difference, LISTDD, a, LISTDD, b);
+TASK(int, listdd_intersection, LISTDD*, result, LISTDD, a, LISTDD, b);
+TASK(int, listdd_match, LISTDD*, result, LISTDD, a, LISTDD, b, LISTDD, proj);
 
 
 

@@ -49,6 +49,8 @@ extern nodes_table* nodes;
 /* Fallible node construction for protected-destination operations. */
 int _mtbdd_try_make_node(MTBDD *destination, uint32_t var, MTBDD low, MTBDD high);
 int _zdd_try_make_node(ZDD *destination, uint32_t var, ZDD low, ZDD high);
+int _listdd_try_make_node(LISTDD *destination, uint32_t value, LISTDD down, LISTDD right);
+int _listdd_try_make_copy_node(LISTDD *destination, LISTDD down, LISTDD right);
 
 /* Transitional tasks for operations whose callers are not converted yet. */
 TASK(BDD, bdd_and_legacy, BDD, a, BDD, b)

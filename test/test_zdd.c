@@ -125,6 +125,16 @@ test_bdd_from_zdd_value(ZDD dd, BDDSET domain)
     return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
 
+static ZDD
+test_zdd_or_cube_value(ZDD set, BDDSET variables, uint8_t *values)
+{
+    ZDD result = zdd_invalid;
+    zdd_protect(&result);
+    int status = zdd_or_cube(&result, set, variables, values);
+    zdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : zdd_invalid;
+}
+
 static void*
 test_alloc_array(size_t count, size_t size)
 {
@@ -298,18 +308,47 @@ int test_zdd_from_mtbdd_CALL(lace_worker* lace)
      * Test zdd_from_bdd, bdd_from_zdd and zdd_cube with random sets
      */
 
-    BDD bdd_dom = test_bdd_set_from_levels((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
-    BDDSET zdd_dom = test_bdd_set_from_levels((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+    BDD bdd_dom = mtbdd_invalid;
+    BDDSET zdd_dom = mtbdd_invalid;
+    BDD bdd_set = mtbdd_invalid;
+    BDD roundtrip = mtbdd_invalid;
+    ZDD zdd_set = zdd_invalid;
+    ZDD converted = zdd_invalid;
+    ZDD unchanged = zdd_base;
+    mtbdd_refs_pushptr(&bdd_dom);
+    mtbdd_refs_pushptr(&zdd_dom);
+    mtbdd_refs_pushptr(&bdd_set);
+    mtbdd_refs_pushptr(&roundtrip);
+    zdd_refs_pushptr(&zdd_set);
+    zdd_refs_pushptr(&converted);
+    zdd_refs_pushptr(&unchanged);
+
+    bdd_dom = test_bdd_set_from_levels((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+    zdd_dom = test_bdd_set_from_levels((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
 
     int count = rng(10,100);
     for (int i=0; i<count; i++) {
         uint8_t arr[8];
         for (int j=0; j<8; j++) arr[j] = (uint8_t)rng(0, 2);
-        BDD bdd_set = test_bdd_cube(bdd_dom, arr);
-        ZDD zdd_set = zdd_cube(zdd_dom, arr);
-        test_assert(test_zdd_from_bdd_value(bdd_set, bdd_dom) == zdd_set);
-        test_assert(test_bdd_from_zdd_value(zdd_set, zdd_dom) == bdd_set);
+        test_assert(bdd_cube(&bdd_set, bdd_dom, arr) == SYLVAN_OK);
+        test_assert(zdd_cube(&zdd_set, zdd_dom, arr) == SYLVAN_OK);
+        test_assert(zdd_from_bdd(&converted, bdd_set, bdd_dom) == SYLVAN_OK);
+        test_assert(converted == zdd_set);
+        test_assert(bdd_from_zdd(&roundtrip, zdd_set, zdd_dom) == SYLVAN_OK);
+        test_assert(roundtrip == bdd_set);
     }
+
+    uint8_t invalid_values[8] = {3,0,0,0,0,0,0,0};
+    test_assert(zdd_cube(&unchanged, zdd_dom, invalid_values) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_cube(&unchanged, zdd_dom, NULL) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_cube(NULL, zdd_dom, invalid_values) == SYLVAN_ERR_INVALID);
+    test_assert(zdd_cube(&unchanged, mtbdd_invalid, invalid_values) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+
+    zdd_refs_popptr(3);
+    mtbdd_refs_popptr(4);
 
     return 0;
     (void)lace;
@@ -472,19 +511,53 @@ int test_zdd_union_cube_CALL(lace_worker* lace)
      * This also tests zdd_from_bdd...
      */
 
-    BDD bdd_dom = test_bdd_set_from_levels((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
-    BDDSET zdd_dom = test_bdd_set_from_levels((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
-
+    BDD bdd_dom = mtbdd_invalid;
+    BDDSET zdd_dom = mtbdd_invalid;
     BDD bdd_set = bdd_false;
     ZDD zdd_set = zdd_false;
+    ZDD converted = zdd_invalid;
+    ZDD parallel_result = zdd_invalid;
+    ZDD unchanged = zdd_base;
+    mtbdd_refs_pushptr(&bdd_dom);
+    mtbdd_refs_pushptr(&zdd_dom);
+    mtbdd_refs_pushptr(&bdd_set);
+    zdd_refs_pushptr(&zdd_set);
+    zdd_refs_pushptr(&converted);
+    zdd_refs_pushptr(&parallel_result);
+    zdd_refs_pushptr(&unchanged);
+
+    bdd_dom = test_bdd_set_from_levels((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+    zdd_dom = test_bdd_set_from_levels((uint32_t[]){0,1,2,3,4,5,6,7}, 8);
+
     int count = rng(100,1000);
     for (int i=0; i<count; i++) {
         uint8_t arr[8];
         for (int j=0; j<8; j++) arr[j] = (uint8_t)rng(0, 3);
-        bdd_set = test_bdd_or_cube(bdd_set, bdd_dom, arr);
-        zdd_set = zdd_or_cube(zdd_set, zdd_dom, arr);
-        test_assert(test_zdd_from_bdd_value(bdd_set, bdd_dom) == zdd_set);
+        test_assert(bdd_or_cube(&bdd_set, bdd_set, bdd_dom, arr) == SYLVAN_OK);
+        test_assert(zdd_or_cube(&zdd_set, zdd_set, zdd_dom, arr) == SYLVAN_OK);
+        test_assert(zdd_from_bdd(&converted, bdd_set, bdd_dom) == SYLVAN_OK);
+        test_assert(converted == zdd_set);
     }
+
+    uint8_t values[8] = {2,1,0,2,1,0,2,1};
+    zdd_or_cube_SPAWN(lace, &parallel_result, zdd_set, zdd_dom, values);
+    int parallel_status = zdd_or_cube_SYNC(lace);
+    test_assert(parallel_status == SYLVAN_OK);
+    test_assert(zdd_or_cube(&converted, zdd_set, zdd_dom, values) == SYLVAN_OK);
+    test_assert(parallel_result == converted);
+
+    uint8_t invalid_values[8] = {3,0,0,0,0,0,0,0};
+    test_assert(zdd_or_cube(&unchanged, zdd_set, zdd_dom, invalid_values) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_or_cube(NULL, zdd_set, zdd_dom, values) == SYLVAN_ERR_INVALID);
+    test_assert(zdd_or_cube(&unchanged, zdd_invalid, zdd_dom, values) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+
+    sylvan_gc_CALL(lace);
+    test_assert(parallel_result == converted);
+
+    zdd_refs_popptr(4);
+    mtbdd_refs_popptr(3);
 
     return 0;
     (void)lace;;
@@ -537,7 +610,7 @@ int test_zdd_enum_CALL(lace_worker* lace)
     int count = rng(0,1000);
     for (int i=0; i<count; i++) {
         for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-        zdd_set = zdd_or_cube(zdd_set, zdd_dom, arr);
+        zdd_set = test_zdd_or_cube_value(zdd_set, zdd_dom, arr);
     }
 
     size_t expected = (size_t)zdd_path_count(zdd_set);
@@ -762,7 +835,7 @@ int test_zdd_exists_CALL(lace_worker* lace)
     for (int i=0; i<count; i++) {
         for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
         bdd_set = test_bdd_or_cube(bdd_set, bdd_dom, arr);
-        zdd_set = zdd_or_cube(zdd_set, zdd_dom, arr);
+        zdd_set = test_zdd_or_cube_value(zdd_set, zdd_dom, arr);
     }
     test_assert(zdd_set == test_zdd_from_bdd_value(bdd_set, bdd_dom));
 
@@ -1015,7 +1088,7 @@ int test_zdd_read_write_CALL(lace_worker* lace)
         int count = rng(4,100);
         for (int i=0; i<count; i++) {
             for (int j=0; j<nvars; j++) arr[j] = (uint8_t)rng(0, 2);
-            zdd_set[k] = zdd_or_cube(zdd_set[k], zdd_dom, arr);
+            zdd_set[k] = test_zdd_or_cube_value(zdd_set[k], zdd_dom, arr);
         }
     }
 

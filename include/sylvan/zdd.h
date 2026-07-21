@@ -130,15 +130,19 @@ static inline int zdd_true(ZDD *result, BDDSET domain)
  * Create a cube of literals of the given domain with the values given in <arr>.
  * Uses the given leaf as leaf.
  * For values, 0 (negative literal), 1 (positive), 2 (both values).
- * The resulting ZDD is defined on the domain <variables>.
+ * The resulting ZDD is defined on the domain <variables>. The caller must
+ * protect <result>. Returns SYLVAN_OK on success or a negative status on
+ * failure, leaving <result> unchanged.
  */
-ZDD zdd_cube(BDDSET variables, uint8_t *values);
+int zdd_cube(ZDD *result, BDDSET variables, uint8_t *values);
 
 /**
  * Same as zdd_cube, but adds the cube to an existing set of the same domain.
- * Elements already in the set are updated with the given leaf.
+ * Elements already in the set are updated with the given leaf. The caller must
+ * protect <result>. Returns SYLVAN_OK on success or a negative status on
+ * failure, leaving <result> unchanged.
  */
-TASK(ZDD, zdd_or_cube, ZDD, set, BDDSET, variables, uint8_t*, values);
+TASK(int, zdd_or_cube, ZDD*, result, ZDD, set, BDDSET, variables, uint8_t*, values);
 
 /**
  * Compute the irredundant sum of products given lower and upper bounds as BDDs.

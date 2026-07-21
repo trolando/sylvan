@@ -542,12 +542,17 @@ static inline void mtbdd_enumerate_parallel(MTBDD dd, mtbdd_enumerate_cb cb, voi
  * All variables X in <vars> must appear before all variables in f and g(f).
  *
  * Usage:
- * TASK(MTBDD, g, MTBDD, in) { ... return g of <in> ... }
+ * TASK(int, g, MTBDD*, result, MTBDD, in) { ... write g of <in> to result ... }
  * MTBDD x_vars = ...;  // the cube of variables x
- * MTBDD result = mtbdd_eval_compose(dd, x_vars, TASK(g));
+ * MTBDD result = mtbdd_invalid;
+ * int status = mtbdd_eval_compose(&result, dd, x_vars, TASK(g));
+ *
+ * The callback writes to Sylvan's protected <result> destination and returns
+ * SYLVAN_OK on success or a negative status on failure. The caller must protect
+ * the operation's <result>. On failure, <result> is unchanged.
  */
-typedef MTBDD (*mtbdd_eval_compose_cb)(lace_worker* lace, MTBDD);
-static inline MTBDD mtbdd_eval_compose(MTBDD dd, MTBDD vars, mtbdd_eval_compose_cb cb);
+typedef int (*mtbdd_eval_compose_cb)(lace_worker* lace, MTBDD *result, MTBDD);
+static inline int mtbdd_eval_compose(MTBDD *result, MTBDD dd, MTBDD vars, mtbdd_eval_compose_cb cb);
 
 /**
  * For debugging.

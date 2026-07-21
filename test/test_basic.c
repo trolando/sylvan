@@ -963,6 +963,137 @@ test_mtbdd_abstract_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+static int
+test_eval_compose_square(lace_worker *lace, MTBDD *destination, MTBDD dd)
+{
+    return mtbdd_apply_CALL(lace, destination, dd, dd, mtbdd_op_times_CALL);
+}
+
+static int
+test_eval_compose_fail_on_four(lace_worker *lace, MTBDD *destination, MTBDD dd)
+{
+    (void)lace;
+    if (mtbdd_is_leaf(dd) && dd != mtbdd_undefined &&
+        mtbdd_leaf_type(dd) == 0 && mtbdd_leaf_int64(dd) == 4) {
+        return SYLVAN_ERR_IO;
+    }
+    *destination = dd;
+    return SYLVAN_OK;
+}
+
+static int
+test_eval_compose_empty_success(lace_worker *lace, MTBDD *destination, MTBDD dd)
+{
+    (void)lace;
+    (void)destination;
+    (void)dd;
+    return SYLVAN_OK;
+}
+
+static int
+test_eval_compose_positive_status(lace_worker *lace, MTBDD *destination, MTBDD dd)
+{
+    (void)lace;
+    (void)destination;
+    (void)dd;
+    return SYLVAN_APPLY_RECURSE;
+}
+
+TASK(int, test_mtbdd_eval_compose_destinations)
+int
+test_mtbdd_eval_compose_destinations_CALL(lace_worker *lace)
+{
+    const uint32_t all_levels[] = {0, 1};
+    const uint32_t x0_level[] = {0};
+    const uint32_t x1_level[] = {1};
+    MTBDD one = mtbdd_int64(1);
+    MTBDD two = mtbdd_invalid;
+    MTBDD three = mtbdd_invalid;
+    MTBDD four = mtbdd_invalid;
+    BDD x0 = mtbdd_invalid;
+    BDD x1 = mtbdd_invalid;
+    MTBDD low_branch = mtbdd_invalid;
+    MTBDD high_branch = mtbdd_invalid;
+    MTBDD dd = mtbdd_invalid;
+    BDDSET all_vars = mtbdd_invalid;
+    BDDSET x0_vars = mtbdd_invalid;
+    BDDSET x1_vars = mtbdd_invalid;
+    MTBDD expected = mtbdd_invalid;
+    MTBDD result = mtbdd_invalid;
+    MTBDD parallel_result = mtbdd_invalid;
+    MTBDD inplace = mtbdd_invalid;
+    MTBDD unchanged = bdd_true;
+
+    mtbdd_refs_pushptr(&one);
+    two = mtbdd_int64(2);
+    mtbdd_refs_pushptr(&two);
+    three = mtbdd_int64(3);
+    mtbdd_refs_pushptr(&three);
+    four = mtbdd_int64(4);
+    mtbdd_refs_pushptr(&four);
+    mtbdd_refs_pushptr(&x0);
+    mtbdd_refs_pushptr(&x1);
+    mtbdd_refs_pushptr(&low_branch);
+    mtbdd_refs_pushptr(&high_branch);
+    mtbdd_refs_pushptr(&dd);
+    mtbdd_refs_pushptr(&all_vars);
+    mtbdd_refs_pushptr(&x0_vars);
+    mtbdd_refs_pushptr(&x1_vars);
+    mtbdd_refs_pushptr(&expected);
+    mtbdd_refs_pushptr(&result);
+    mtbdd_refs_pushptr(&parallel_result);
+    mtbdd_refs_pushptr(&inplace);
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_assert(bdd_var_at_level(&x0, 0) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&x1, 1) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &low_branch, x1, two, one) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &high_branch, x1, four, three) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &dd, x0, high_branch, low_branch) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(&all_vars, all_levels, 2) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(&x0_vars, x0_level, 1) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(&x1_vars, x1_level, 1) == SYLVAN_OK);
+    test_assert(mtbdd_mul(&expected, dd, dd) == SYLVAN_OK);
+
+    mtbdd_eval_compose_SPAWN(lace, &parallel_result, dd, all_vars, test_eval_compose_square);
+    int status = mtbdd_eval_compose_CALL(lace, &result, dd, x0_vars, test_eval_compose_square);
+    int parallel_status = mtbdd_eval_compose_SYNC(lace);
+    test_assert(status == SYLVAN_OK && result == expected);
+    test_assert(parallel_status == SYLVAN_OK && parallel_result == expected);
+    test_assert(mtbdd_eval_compose(&result, dd, bdd_true, test_eval_compose_square) == SYLVAN_OK);
+    test_assert(result == expected);
+
+    inplace = dd;
+    test_assert(mtbdd_eval_compose(&inplace, inplace, all_vars, test_eval_compose_square) == SYLVAN_OK);
+    test_assert(inplace == expected);
+    sylvan_gc_CALL(lace);
+    test_assert(inplace == expected);
+
+    test_assert(mtbdd_mul(&expected, low_branch, low_branch) == SYLVAN_OK);
+    test_assert(mtbdd_eval_compose(&result, low_branch, all_vars, test_eval_compose_square) == SYLVAN_OK);
+    test_assert(result == expected);
+
+    test_assert(mtbdd_eval_compose(NULL, dd, all_vars, test_eval_compose_square) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_eval_compose(&unchanged, mtbdd_invalid, all_vars, test_eval_compose_square) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_eval_compose(&unchanged, dd, mtbdd_invalid, test_eval_compose_square) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_eval_compose(&unchanged, dd, all_vars, NULL) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_eval_compose(&unchanged, dd, x1_vars, test_eval_compose_square) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_eval_compose(&unchanged, dd, all_vars, test_eval_compose_fail_on_four) == SYLVAN_ERR_IO);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_eval_compose(&unchanged, one, bdd_true, test_eval_compose_empty_success) == SYLVAN_ERR_CALLBACK);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_eval_compose(&unchanged, one, bdd_true, test_eval_compose_positive_status) == SYLVAN_ERR_CALLBACK);
+    test_assert(unchanged == bdd_true);
+
+    sylvan_gc_CALL(lace);
+    mtbdd_refs_popptr(17);
+    return 0;
+}
+
 static BDD
 test_bdd_binary(test_bdd_binary_op op, BDD a, BDD b)
 {
@@ -2311,6 +2442,7 @@ int runtests_CALL(lace_worker* lace)
         if (test_mtbdd_extrema_destinations_CALL(lace)) return 1;
         if (test_mtbdd_apply_destinations_CALL(lace)) return 1;
         if (test_mtbdd_abstract_destinations_CALL(lace)) return 1;
+        if (test_mtbdd_eval_compose_destinations_CALL(lace)) return 1;
         if (test_protected_destinations_CALL(lace)) return 1;
         if (test_quantification_destinations_CALL(lace)) return 1;
         if (test_care_destinations_CALL(lace)) return 1;

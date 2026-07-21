@@ -121,17 +121,10 @@ void listdd_gc_mark_protected(lace_worker* lace)
 }
 
 /* Infrastructure for internal markings */
-typedef struct listdd_refs_task
-{
-    lace_task* t;
-    void* f;
-} *listdd_refs_task_t;
-
 typedef struct listdd_refs_internal
 {
     const LISTDD **pbegin, **pend, **pcur;
     LISTDD *rbegin, *rend, *rcur;
-    listdd_refs_task_t sbegin, send, scur;
 } *listdd_refs_internal_t;
 
 SYLVAN_TLS listdd_refs_internal_t listdd_refs_key;
@@ -168,36 +161,12 @@ void listdd_refs_mark_r_par_CALL(lace_worker* lace, LISTDD* begin, size_t count)
     }
 }
 
-TASK(void, listdd_refs_mark_s_par, listdd_refs_task_t, begin, size_t, count)
-
-void listdd_refs_mark_s_par_CALL(lace_worker* lace, listdd_refs_task_t begin, size_t count)
-{
-    if (count < 32) {
-        while (count) {
-            lace_task* t = begin->t;
-            if (!lace_is_stolen_task(t)) return;
-            if (t->f == begin->f && lace_is_completed_task(t)) {
-                listdd_gc_mark_CALL(lace, *(BDD*)lace_task_result(t));
-            }
-            begin += 1;
-            count -= 1;
-        }
-    } else {
-        if (!lace_is_stolen_task(begin->t)) return;
-        listdd_refs_mark_s_par_SPAWN(lace, begin, count / 2);
-        listdd_refs_mark_s_par_CALL(lace, begin + (count / 2), count - count / 2);
-        listdd_refs_mark_s_par_SYNC(lace);
-    }
-}
-
 TASK(void, listdd_refs_mark_task)
 
 void listdd_refs_mark_task_CALL(lace_worker* lace)
 {
     listdd_refs_mark_p_par_SPAWN(lace, listdd_refs_key->pbegin, (size_t)(listdd_refs_key->pcur-listdd_refs_key->pbegin));
-    listdd_refs_mark_r_par_SPAWN(lace, listdd_refs_key->rbegin, (size_t)(listdd_refs_key->rcur-listdd_refs_key->rbegin));
-    listdd_refs_mark_s_par_CALL(lace, listdd_refs_key->sbegin, (size_t)(listdd_refs_key->scur-listdd_refs_key->sbegin));
-    listdd_refs_mark_r_par_SYNC(lace);
+    listdd_refs_mark_r_par_CALL(lace, listdd_refs_key->rbegin, (size_t)(listdd_refs_key->rcur-listdd_refs_key->rbegin));
     listdd_refs_mark_p_par_SYNC(lace);
 }
 
@@ -217,8 +186,6 @@ listdd_refs_init_key(void)
     s->pend = s->pbegin + 1024;
     s->rcur = s->rbegin = (LISTDD*)malloc(sizeof(LISTDD) * 1024);
     s->rend = s->rbegin + 1024;
-    s->scur = s->sbegin = (listdd_refs_task_t)malloc(sizeof(struct listdd_refs_task) * 1024);
-    s->send = s->sbegin + 1024;
     listdd_refs_key = s;
 }
 
@@ -228,7 +195,6 @@ void listdd_refs_free_CALL(lace_worker* lace)
 {
     free(listdd_refs_key->pbegin);
     free(listdd_refs_key->rbegin);
-    free(listdd_refs_key->sbegin);
     free(listdd_refs_key);
 }
 
@@ -264,15 +230,6 @@ listdd_refs_refs_up(listdd_refs_internal_t refs, LISTDD res)
     return res;
 }
 
-void SYLVAN_NOINLINE
-listdd_refs_tasks_up(listdd_refs_internal_t refs)
-{
-    size_t size = (size_t)(refs->send - refs->sbegin);
-    refs->sbegin = (listdd_refs_task_t)realloc(refs->sbegin, sizeof(struct listdd_refs_task) * size * 2);
-    refs->scur = refs->sbegin + size;
-    refs->send = refs->sbegin + (size * 2);
-}
-
 void
 listdd_refs_pushptr(const LISTDD *ptr)
 {
@@ -300,22 +257,6 @@ void
 listdd_refs_pop(long amount)
 {
     listdd_refs_key->rcur -= amount;
-}
-
-void
-listdd_refs_spawn(lace_task *t)
-{
-    listdd_refs_key->scur->t = t;
-    listdd_refs_key->scur->f = t->f;
-    listdd_refs_key->scur += 1;
-    if (listdd_refs_key->scur == listdd_refs_key->send) listdd_refs_tasks_up(listdd_refs_key);
-}
-
-LISTDD
-listdd_refs_sync(LISTDD result)
-{
-    listdd_refs_key->scur -= 1;
-    return result;
 }
 
 TASK(void, listdd_gc_mark_serialize)

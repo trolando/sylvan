@@ -168,16 +168,6 @@ listdd_rel_next_or_abort_CALL(lace_worker *lace, LISTDD set, LISTDD relation, LI
 }
 
 static LISTDD
-listdd_rel_prev_or_abort_CALL(lace_worker *lace, LISTDD set, LISTDD relation, LISTDD meta, LISTDD universe)
-{
-    LISTDD result = listdd_invalid;
-    if (listdd_rel_prev_CALL(lace, &result, set, relation, meta, universe) != SYLVAN_OK) {
-        Abort("ListDD predecessor computation failed.\n");
-    }
-    return result;
-}
-
-static LISTDD
 listdd_rel_next_union_or_abort_CALL(lace_worker *lace, LISTDD set, LISTDD relation, LISTDD meta, LISTDD un)
 {
     LISTDD result = listdd_invalid;
@@ -412,62 +402,89 @@ print_matrix(size_t size, LISTDD meta)
 /**
  * Implement parallel strategy (that performs the relprod operations in parallel)
  */
-TASK(LISTDD, go_par, LISTDD, cur, LISTDD, visited, size_t, from, size_t, len, LISTDD*, deadlocks)
-LISTDD go_par_CALL(lace_worker* lace, LISTDD cur, LISTDD visited, size_t from, size_t len, LISTDD* deadlocks)
+TASK(int, go_par, LISTDD*, result, LISTDD, cur, LISTDD, visited, size_t, from, size_t, len, LISTDD*, deadlocks)
+int go_par_CALL(lace_worker* lace, LISTDD *destination, LISTDD cur, LISTDD visited, size_t from, size_t len, LISTDD* deadlocks)
 {
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        LISTDD succ = listdd_rel_next_or_abort_CALL(lace, cur, next[from]->dd, next[from]->meta);
-        listdd_refs_push(succ);
+        LISTDD succ = listdd_invalid;
+        LISTDD anc = listdd_invalid;
+        LISTDD computed = listdd_invalid;
+        LISTDD updated_deadlocks = listdd_invalid;
+        listdd_refs_pushptr(&succ);
+        listdd_refs_pushptr(&anc);
+        listdd_refs_pushptr(&computed);
+        listdd_refs_pushptr(&updated_deadlocks);
+        int status = listdd_rel_next_CALL(lace, &succ, cur, next[from]->dd, next[from]->meta);
         if (deadlocks) {
             // check which MDDs in deadlocks do not have a successor in this relation
-            LISTDD anc = listdd_rel_prev_or_abort_CALL(lace, succ, next[from]->dd, next[from]->meta, cur);
-            listdd_refs_push(anc);
-            *deadlocks = listdd_diff_or_abort_CALL(lace, *deadlocks, anc);
-            listdd_refs_pop(1);
+            if (status == SYLVAN_OK) {
+                status = listdd_rel_prev_CALL(lace, &anc, succ, next[from]->dd, next[from]->meta, cur);
+            }
+            if (status == SYLVAN_OK) {
+                status = listdd_diff_CALL(lace, &updated_deadlocks, *deadlocks, anc);
+            }
         }
-        LISTDD result = listdd_diff_or_abort_CALL(lace, succ, visited);
-        listdd_refs_pop(1);
-        return result;
+        if (status == SYLVAN_OK) status = listdd_diff_CALL(lace, &computed, succ, visited);
+        if (status == SYLVAN_OK) {
+            if (deadlocks) *deadlocks = updated_deadlocks;
+            *destination = computed;
+        }
+        listdd_refs_popptr(4);
+        return status;
     } else if (deadlocks != NULL) {
         LISTDD deadlocks_left = *deadlocks;
         LISTDD deadlocks_right = *deadlocks;
+        LISTDD left = listdd_invalid;
+        LISTDD right = listdd_invalid;
+        LISTDD computed = listdd_invalid;
+        LISTDD updated_deadlocks = listdd_invalid;
         listdd_refs_pushptr(&deadlocks_left);
         listdd_refs_pushptr(&deadlocks_right);
+        listdd_refs_pushptr(&left);
+        listdd_refs_pushptr(&right);
+        listdd_refs_pushptr(&computed);
+        listdd_refs_pushptr(&updated_deadlocks);
 
         // Recursively compute left+right
-        listdd_refs_spawn(go_par_SPAWN(lace, cur, visited, from, len/2, &deadlocks_left));
-        LISTDD right = go_par_CALL(lace, cur, visited, from+len/2, len-len/2, &deadlocks_right);
-        listdd_refs_push(right);
-        LISTDD left = listdd_refs_sync(go_par_SYNC(lace));
-        listdd_refs_push(left);
+        go_par_SPAWN(lace, &left, cur, visited, from, len/2, &deadlocks_left);
+        int status = go_par_CALL(lace, &right, cur, visited, from+len/2, len-len/2, &deadlocks_right);
+        int left_status = go_par_SYNC(lace);
+        if (status == SYLVAN_OK) status = left_status;
 
         // Merge results of left+right
-        LISTDD result = listdd_union_or_abort_CALL(lace, left, right);
-        listdd_refs_pop(2);
+        if (status == SYLVAN_OK) status = listdd_union_CALL(lace, &computed, left, right);
 
         // Intersect deadlock sets
-        listdd_refs_push(result);
-        *deadlocks = listdd_intersection_or_abort_CALL(lace, deadlocks_left, deadlocks_right);
-        listdd_refs_pop(1);
-        listdd_refs_popptr(2);
-
-        // Return result
-        return result;
+        if (status == SYLVAN_OK) {
+            status = listdd_intersection_CALL(lace, &updated_deadlocks, deadlocks_left, deadlocks_right);
+        }
+        if (status == SYLVAN_OK) {
+            *deadlocks = updated_deadlocks;
+            *destination = computed;
+        }
+        listdd_refs_popptr(6);
+        return status;
     } else {
+        LISTDD left = listdd_invalid;
+        LISTDD right = listdd_invalid;
+        LISTDD computed = listdd_invalid;
+        listdd_refs_pushptr(&left);
+        listdd_refs_pushptr(&right);
+        listdd_refs_pushptr(&computed);
+
         // Recursively compute left+right
-        listdd_refs_spawn(go_par_SPAWN(lace, cur, visited, from, len/2, NULL));
-        LISTDD right = go_par_CALL(lace, cur, visited, from+len/2, len-len/2, NULL);
-        listdd_refs_push(right);
-        LISTDD left = listdd_refs_sync(go_par_SYNC(lace));
-        listdd_refs_push(left);
+        go_par_SPAWN(lace, &left, cur, visited, from, len/2, NULL);
+        int status = go_par_CALL(lace, &right, cur, visited, from+len/2, len-len/2, NULL);
+        int left_status = go_par_SYNC(lace);
+        if (status == SYLVAN_OK) status = left_status;
 
         // Merge results of left+right
-        LISTDD result = listdd_union_or_abort_CALL(lace, left, right);
-        listdd_refs_pop(2);
-
-        // Return result
-        return result;
+        if (status == SYLVAN_OK) status = listdd_union_CALL(lace, &computed, left, right);
+        if (status == SYLVAN_OK) *destination = computed;
+        listdd_refs_popptr(3);
+        return status;
     }
 }
 
@@ -489,7 +506,9 @@ void par_CALL(lace_worker* lace, set_t set)
             // compute successors in parallel
             LISTDD deadlocks = front;
             listdd_refs_pushptr(&deadlocks);
-            front = go_par_CALL(lace, front, visited, 0, next_count, &deadlocks);
+            if (go_par_CALL(lace, &front, front, visited, 0, next_count, &deadlocks) != SYLVAN_OK) {
+                Abort("Parallel ListDD exploration failed.\n");
+            }
             listdd_refs_popptr(1);
 
             if (deadlocks != listdd_empty) {
@@ -501,7 +520,9 @@ void par_CALL(lace_worker* lace, set_t set)
             }
         } else {
             // compute successors in parallel
-            front = go_par_CALL(lace, front, visited, 0, next_count, NULL);
+            if (go_par_CALL(lace, &front, front, visited, 0, next_count, NULL) != SYLVAN_OK) {
+                Abort("Parallel ListDD exploration failed.\n");
+            }
         }
 
         // visited = visited + front
@@ -529,60 +550,89 @@ void par_CALL(lace_worker* lace, set_t set)
 /**
  * Implement sequential strategy (that performs the relprod operations one by one)
  */
-TASK(LISTDD, go_bfs, LISTDD, cur, LISTDD, visited, size_t, from, size_t, len, LISTDD*, deadlocks)
-LISTDD go_bfs_CALL(lace_worker* lace, LISTDD cur, LISTDD visited, size_t from, size_t len, LISTDD* deadlocks)
+TASK(int, go_bfs, LISTDD*, result, LISTDD, cur, LISTDD, visited, size_t, from, size_t, len, LISTDD*, deadlocks)
+int go_bfs_CALL(lace_worker* lace, LISTDD *destination, LISTDD cur, LISTDD visited, size_t from, size_t len, LISTDD* deadlocks)
 {
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        LISTDD succ = listdd_rel_next_or_abort_CALL(lace, cur, next[from]->dd, next[from]->meta);
-        listdd_refs_push(succ);
+        LISTDD succ = listdd_invalid;
+        LISTDD anc = listdd_invalid;
+        LISTDD computed = listdd_invalid;
+        LISTDD updated_deadlocks = listdd_invalid;
+        listdd_refs_pushptr(&succ);
+        listdd_refs_pushptr(&anc);
+        listdd_refs_pushptr(&computed);
+        listdd_refs_pushptr(&updated_deadlocks);
+        int status = listdd_rel_next_CALL(lace, &succ, cur, next[from]->dd, next[from]->meta);
         if (deadlocks) {
             // check which MDDs in deadlocks do not have a successor in this relation
-            LISTDD anc = listdd_rel_prev_or_abort_CALL(lace, succ, next[from]->dd, next[from]->meta, cur);
-            listdd_refs_push(anc);
-            *deadlocks = listdd_diff_or_abort_CALL(lace, *deadlocks, anc);
-            listdd_refs_pop(1);
+            if (status == SYLVAN_OK) {
+                status = listdd_rel_prev_CALL(lace, &anc, succ, next[from]->dd, next[from]->meta, cur);
+            }
+            if (status == SYLVAN_OK) {
+                status = listdd_diff_CALL(lace, &updated_deadlocks, *deadlocks, anc);
+            }
         }
-        LISTDD result = listdd_diff_or_abort_CALL(lace, succ, visited);
-        listdd_refs_pop(1);
-        return result;
+        if (status == SYLVAN_OK) status = listdd_diff_CALL(lace, &computed, succ, visited);
+        if (status == SYLVAN_OK) {
+            if (deadlocks) *deadlocks = updated_deadlocks;
+            *destination = computed;
+        }
+        listdd_refs_popptr(4);
+        return status;
     } else if (deadlocks != NULL) {
         LISTDD deadlocks_left = *deadlocks;
         LISTDD deadlocks_right = *deadlocks;
+        LISTDD left = listdd_invalid;
+        LISTDD right = listdd_invalid;
+        LISTDD computed = listdd_invalid;
+        LISTDD updated_deadlocks = listdd_invalid;
         listdd_refs_pushptr(&deadlocks_left);
         listdd_refs_pushptr(&deadlocks_right);
+        listdd_refs_pushptr(&left);
+        listdd_refs_pushptr(&right);
+        listdd_refs_pushptr(&computed);
+        listdd_refs_pushptr(&updated_deadlocks);
 
         // Recursively compute left+right
-        LISTDD left = go_par_CALL(lace, cur, visited, from, len/2, &deadlocks_left);
-        listdd_refs_push(left);
-        LISTDD right = go_par_CALL(lace, cur, visited, from+len/2, len-len/2, &deadlocks_right);
-        listdd_refs_push(right);
+        int status = go_par_CALL(lace, &left, cur, visited, from, len/2, &deadlocks_left);
+        if (status == SYLVAN_OK) {
+            status = go_par_CALL(lace, &right, cur, visited, from+len/2, len-len/2, &deadlocks_right);
+        }
 
         // Merge results of left+right
-        LISTDD result = listdd_union_or_abort_CALL(lace, left, right);
-        listdd_refs_pop(2);
+        if (status == SYLVAN_OK) status = listdd_union_CALL(lace, &computed, left, right);
 
         // Intersect deadlock sets
-        listdd_refs_push(result);
-        *deadlocks = listdd_intersection_or_abort_CALL(lace, deadlocks_left, deadlocks_right);
-        listdd_refs_pop(1);
-        listdd_refs_popptr(2);
-
-        // Return result
-        return result;
+        if (status == SYLVAN_OK) {
+            status = listdd_intersection_CALL(lace, &updated_deadlocks, deadlocks_left, deadlocks_right);
+        }
+        if (status == SYLVAN_OK) {
+            *deadlocks = updated_deadlocks;
+            *destination = computed;
+        }
+        listdd_refs_popptr(6);
+        return status;
     } else {
+        LISTDD left = listdd_invalid;
+        LISTDD right = listdd_invalid;
+        LISTDD computed = listdd_invalid;
+        listdd_refs_pushptr(&left);
+        listdd_refs_pushptr(&right);
+        listdd_refs_pushptr(&computed);
+
         // Recursively compute left+right
-        LISTDD left = go_par_CALL(lace, cur, visited, from, len/2, NULL);
-        listdd_refs_push(left);
-        LISTDD right = go_par_CALL(lace, cur, visited, from+len/2, len-len/2, NULL);
-        listdd_refs_push(right);
+        int status = go_par_CALL(lace, &left, cur, visited, from, len/2, NULL);
+        if (status == SYLVAN_OK) {
+            status = go_par_CALL(lace, &right, cur, visited, from+len/2, len-len/2, NULL);
+        }
 
         // Merge results of left+right
-        LISTDD result = listdd_union_or_abort_CALL(lace, left, right);
-        listdd_refs_pop(2);
-
-        // Return result
-        return result;
+        if (status == SYLVAN_OK) status = listdd_union_CALL(lace, &computed, left, right);
+        if (status == SYLVAN_OK) *destination = computed;
+        listdd_refs_popptr(3);
+        return status;
     }
 }
 
@@ -602,7 +652,9 @@ void bfs_CALL(lace_worker* lace, set_t set)
             // compute successors
             LISTDD deadlocks = front;
             listdd_refs_pushptr(&deadlocks);
-            front = go_bfs_CALL(lace, front, visited, 0, next_count, &deadlocks);
+            if (go_bfs_CALL(lace, &front, front, visited, 0, next_count, &deadlocks) != SYLVAN_OK) {
+                Abort("Sequential ListDD exploration failed.\n");
+            }
             listdd_refs_popptr(1);
 
             if (deadlocks != listdd_empty) {
@@ -614,7 +666,9 @@ void bfs_CALL(lace_worker* lace, set_t set)
             }
         } else {
             // compute successors
-            front = go_bfs_CALL(lace, front, visited, 0, next_count, NULL);
+            if (go_bfs_CALL(lace, &front, front, visited, 0, next_count, NULL) != SYLVAN_OK) {
+                Abort("Sequential ListDD exploration failed.\n");
+            }
         }
 
         // visited = visited + front
@@ -643,18 +697,25 @@ void bfs_CALL(lace_worker* lace, set_t set)
  * Implementation of (parallel) saturation
  * (assumes relations are ordered on first variable)
  */
-TASK(LISTDD, go_sat, LISTDD, set, int, idx, int, depth)
-LISTDD go_sat_CALL(lace_worker* lace, LISTDD set, int idx, int depth)
+TASK(int, go_sat, LISTDD*, result, LISTDD, set, int, idx, int, depth)
+int go_sat_CALL(lace_worker* lace, LISTDD *destination, LISTDD set, int idx, int depth)
 {
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
     /* Terminal cases */
-    if (set == listdd_empty) return listdd_empty;
-    if (idx == next_count) return set;
+    if (set == listdd_empty || idx == next_count) {
+        *destination = set;
+        return SYLVAN_OK;
+    }
 
     /* Consult the cache */
-    LISTDD result;
+    LISTDD computed = listdd_invalid;
     const LISTDD _set = set;
-    if (cache_get3(201LL<<40, _set, idx, 0, &result)) return result;
+    if (cache_get3(201LL<<40, _set, idx, 0, &computed)) {
+        *destination = computed;
+        return SYLVAN_OK;
+    }
     listdd_refs_pushptr(&_set);
+    listdd_refs_pushptr(&computed);
 
     /**
      * Possible improvement: cache more things (like intermediate results?)
@@ -676,30 +737,42 @@ LISTDD go_sat_CALL(lace_worker* lace, LISTDD set, int idx, int depth)
         LISTDD prev = listdd_empty;
         listdd_refs_pushptr(&set);
         listdd_refs_pushptr(&prev);
+        int status = SYLVAN_OK;
         while (prev != set) {
             prev = set;
             // SAT deeper
-            set = go_sat_CALL(lace, set, idx + n, depth);
+            status = go_sat_CALL(lace, &set, set, idx + n, depth);
+            if (status != SYLVAN_OK) break;
             // chain-apply all current level once
             for (int i=0; i<n; i++) {
                 set = listdd_rel_next_union_or_abort_CALL(lace, set, next[idx+i]->dd, next[idx+i]->topmeta, set);
             }
         }
         listdd_refs_popptr(2);
-        result = set;
+        if (status != SYLVAN_OK) { listdd_refs_popptr(2); return status; }
+        computed = set;
     } else {
         /* Recursive computation */
-        listdd_refs_spawn(go_sat_SPAWN(lace, listdd_node_right(set), idx, depth));
-        LISTDD down = listdd_refs_push(go_sat_CALL(lace, listdd_node_down(set), idx, depth+1));
-        LISTDD right = listdd_refs_sync(go_sat_SYNC(lace));
-        listdd_refs_pop(1);
-        result = listdd_make_node(listdd_node_value(set), down, right);
+        LISTDD down = listdd_invalid;
+        LISTDD right = listdd_invalid;
+        listdd_refs_pushptr(&down);
+        listdd_refs_pushptr(&right);
+        go_sat_SPAWN(lace, &right, listdd_node_right(set), idx, depth);
+        int status = go_sat_CALL(lace, &down, listdd_node_down(set), idx, depth+1);
+        int right_status = go_sat_SYNC(lace);
+        if (status == SYLVAN_OK) status = right_status;
+        if (status == SYLVAN_OK) {
+            status = _listdd_try_make_node(&computed, listdd_node_value(set), down, right);
+        }
+        listdd_refs_popptr(2);
+        if (status != SYLVAN_OK) { listdd_refs_popptr(2); return status; }
     }
 
     /* Store in cache */
-    cache_put3(201LL<<40, _set, idx, 0, result);
-    listdd_refs_popptr(1);
-    return result;
+    cache_put3(201LL<<40, _set, idx, 0, computed);
+    *destination = computed;
+    listdd_refs_popptr(2);
+    return SYLVAN_OK;
 }
 
 /**
@@ -708,7 +781,9 @@ LISTDD go_sat_CALL(lace_worker* lace, LISTDD set, int idx, int depth)
 TASK(void, sat, set_t, set)
 void sat_CALL(lace_worker* lace, set_t set)
 {
-    set->dd = go_sat_CALL(lace, set->dd, 0, 0);
+    if (go_sat_CALL(lace, &set->dd, set->dd, 0, 0) != SYLVAN_OK) {
+        Abort("ListDD saturation failed.\n");
+    }
 }
 
 /**

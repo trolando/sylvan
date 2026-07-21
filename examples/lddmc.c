@@ -159,6 +159,14 @@ listdd_intersection_or_abort_CALL(lace_worker *lace, LISTDD a, LISTDD b)
     return result;
 }
 
+static LISTDD
+listdd_rel_next_or_abort_CALL(lace_worker *lace, LISTDD set, LISTDD relation, LISTDD meta)
+{
+    LISTDD result = listdd_invalid;
+    if (listdd_rel_next_CALL(lace, &result, set, relation, meta) != SYLVAN_OK) Abort("ListDD relational product failed.\n");
+    return result;
+}
+
 /**
  * Load a set from file
  */
@@ -389,7 +397,7 @@ LISTDD go_par_CALL(lace_worker* lace, LISTDD cur, LISTDD visited, size_t from, s
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        LISTDD succ = listdd_rel_next_CALL(lace, cur, next[from]->dd, next[from]->meta);
+        LISTDD succ = listdd_rel_next_or_abort_CALL(lace, cur, next[from]->dd, next[from]->meta);
         listdd_refs_push(succ);
         if (deadlocks) {
             // check which MDDs in deadlocks do not have a successor in this relation
@@ -506,7 +514,7 @@ LISTDD go_bfs_CALL(lace_worker* lace, LISTDD cur, LISTDD visited, size_t from, s
 {
     if (len == 1) {
         // Calculate NEW successors (not in visited)
-        LISTDD succ = listdd_rel_next_CALL(lace, cur, next[from]->dd, next[from]->meta);
+        LISTDD succ = listdd_rel_next_or_abort_CALL(lace, cur, next[from]->dd, next[from]->meta);
         listdd_refs_push(succ);
         if (deadlocks) {
             // check which MDDs in deadlocks do not have a successor in this relation
@@ -701,7 +709,7 @@ void chaining_CALL(lace_worker* lace, set_t set)
     do {
         // calculate successors in parallel
         for (int i=0; i<next_count; i++) {
-            succ = listdd_rel_next(front, next[i]->dd, next[i]->meta);
+            succ = listdd_rel_next_or_abort_CALL(lace, front, next[i]->dd, next[i]->meta);
             front = listdd_union_or_abort_CALL(lace, front, succ);
             succ = listdd_empty; // reset, for gc
         }

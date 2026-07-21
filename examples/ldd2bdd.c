@@ -758,11 +758,12 @@ void run_CALL(lace_worker* lace)
             MTBDD test = mtbdd_invalid;
             mtbdd_refs_pushptr(&test);
             if (bdd_rel_next(&test, new_states, new_rel, new_vars) != SYLVAN_OK) Abort("Out of memory!\n");
-            LISTDD succ = listdd_rel_next(states->dd, next[i]->dd, next[i]->meta);
-            listdd_refs_push(succ);
+            LISTDD succ = listdd_invalid;
+            listdd_refs_pushptr(&succ);
+            if (listdd_rel_next(&succ, states->dd, next[i]->dd, next[i]->meta) != SYLVAN_OK) Abort("Out of memory!\n");
             MTBDD test2 = bdd_from_ldd(succ, bits_dd, 0);
             if (test != test2) Abort("Conversion error!\n");
-            listdd_refs_pop(1);
+            listdd_refs_popptr(1);
             mtbdd_refs_pop(1);
             mtbdd_refs_popptr(1);
         }

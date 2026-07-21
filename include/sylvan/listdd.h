@@ -133,7 +133,8 @@ int listdd_relation_contains(LISTDD a, const uint32_t *values, const int *copy, 
 /* Construct a singleton relation; nonzero entries in <copy> create copy nodes. */
 int listdd_relation_singleton(LISTDD *result, const uint32_t *values, const int *copy, size_t count);
 
-TASK(LISTDD, listdd_rel_next, LISTDD, a, LISTDD, b, LISTDD, proj)
+/** Compute the successors of <set> under <relation> described by <meta>. */
+TASK(int, listdd_rel_next, LISTDD*, result, LISTDD, set, LISTDD, relation, LISTDD, meta)
 
 TASK(LISTDD, listdd_rel_next_union, LISTDD, a, LISTDD, b, LISTDD, meta, LISTDD, un)
 

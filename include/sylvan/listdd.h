@@ -176,17 +176,17 @@ TASK(long double, listdd_count, LISTDD, dd);
  * A callback for enumerating functions like sat_all_par, collect and match
  * Example:
  * TASK(void*, my_function, uint32_t*, values, size_t, count, void*, context) ...
- * For collect, use:
- * TASK(LISTDD, ...)
+ * Map/reduce callbacks write their result to a caller-protected destination
+ * and return SYLVAN_OK or a negative status code.
  */
 typedef void (*listdd_enum_cb)(uint32_t*, size_t, void*);
-typedef LISTDD (*listdd_map_reduce_union_cb)(uint32_t*, size_t, void*);
+typedef int (*listdd_map_reduce_union_cb)(LISTDD*, uint32_t*, size_t, void*);
 
 TASK(void, listdd_enumerate_parallel, LISTDD, dd, listdd_enum_cb, cb, void*, context, uint32_t*, arr, size_t, len);
 
 TASK(void, listdd_enumerate, LISTDD, dd, listdd_enum_cb, cb, void*, context);
 
-TASK(LISTDD, listdd_map_reduce_union, LISTDD, dd, listdd_map_reduce_union_cb, cb, void*, context, uint32_t*, arr, size_t, len);
+TASK(int, listdd_map_reduce_union, LISTDD*, result, LISTDD, dd, listdd_map_reduce_union_cb, cb, void*, context, uint32_t*, arr, size_t, len);
 
 TASK(void, listdd_enumerate_matching_parallel, LISTDD, dd, LISTDD, match, LISTDD, proj, listdd_enum_cb, cb, void*, context);
 

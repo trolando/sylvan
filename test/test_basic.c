@@ -2068,6 +2068,25 @@ test_map_reduce_destinations_CALL(lace_worker *lace)
 }
 
 TASK(int, test_listdd_set_destinations)
+
+struct test_listdd_map_context {
+    LISTDD first;
+    LISTDD second;
+    uint32_t fail_value;
+};
+
+static int
+test_listdd_map_tuple(LISTDD *destination, uint32_t *values, size_t count, void *context)
+{
+    struct test_listdd_map_context *info = context;
+    if (destination == NULL || values == NULL || count != 2 || info == NULL) return SYLVAN_ERR_INVALID;
+    if (values[0] == info->fail_value) return SYLVAN_ERR_INVALID;
+    if (values[0] == 1) *destination = info->first;
+    else if (values[0] == 2) *destination = info->second;
+    else *destination = listdd_empty;
+    return SYLVAN_OK;
+}
+
 int
 test_listdd_set_destinations_CALL(lace_worker *lace)
 {
@@ -2082,6 +2101,7 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     LISTDD joined = listdd_invalid;
     LISTDD spawned_union = listdd_invalid;
     LISTDD spawned_difference = listdd_invalid;
+    LISTDD mapped = listdd_invalid;
     LISTDD in_place = listdd_invalid;
     LISTDD empty_vector = listdd_invalid;
     LISTDD relation = listdd_invalid;
@@ -2105,6 +2125,7 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     listdd_refs_pushptr(&joined);
     listdd_refs_pushptr(&spawned_union);
     listdd_refs_pushptr(&spawned_difference);
+    listdd_refs_pushptr(&mapped);
     listdd_refs_pushptr(&in_place);
     listdd_refs_pushptr(&empty_vector);
     listdd_refs_pushptr(&relation);
@@ -2155,6 +2176,14 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(listdd_match(&matched, a, b, projection) == SYLVAN_OK);
     test_assert(listdd_count(matched) == 1);
     test_assert(listdd_contains(matched, (uint32_t[]){2, 3}, 2));
+
+    struct test_listdd_map_context map_context = {difference, intersection, UINT32_MAX};
+    listdd_map_reduce_union_SPAWN(lace, &mapped, a, test_listdd_map_tuple, &map_context, NULL, 0);
+    in_place = a;
+    test_assert(listdd_map_reduce_union_CALL(lace, &in_place, in_place, test_listdd_map_tuple, &map_context, NULL, 0) == SYLVAN_OK);
+    test_assert(listdd_map_reduce_union_SYNC(lace) == SYLVAN_OK);
+    test_assert(mapped == a);
+    test_assert(in_place == a);
 
     listdd_project_SPAWN(lace, &projected, a, projection);
     test_assert(listdd_join_CALL(lace, &joined, a, b, projection, projection) == SYLVAN_OK);
@@ -2272,9 +2301,19 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(listdd_rel_prev(&unchanged, successors, relation, projection, source) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == listdd_empty);
     test_assert(listdd_rel_prev(NULL, successors, relation, predecessor_meta, source) == SYLVAN_ERR_INVALID);
+    map_context.fail_value = 2;
+    test_assert(listdd_map_reduce_union(&unchanged, a, test_listdd_map_tuple, &map_context, NULL, 0) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_map_reduce_union(&unchanged, listdd_invalid, test_listdd_map_tuple, &map_context, NULL, 0) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_map_reduce_union(&unchanged, a, NULL, &map_context, NULL, 0) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_map_reduce_union(&unchanged, a, test_listdd_map_tuple, &map_context, NULL, 1) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_map_reduce_union(NULL, a, test_listdd_map_tuple, &map_context, NULL, 0) == SYLVAN_ERR_INVALID);
 
     sylvan_gc_CALL(lace);
-    listdd_refs_popptr(22);
+    listdd_refs_popptr(23);
     return 0;
 }
 

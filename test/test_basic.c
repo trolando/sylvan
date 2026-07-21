@@ -2078,6 +2078,8 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     LISTDD difference = listdd_invalid;
     LISTDD intersection = listdd_invalid;
     LISTDD matched = listdd_invalid;
+    LISTDD projected = listdd_invalid;
+    LISTDD joined = listdd_invalid;
     LISTDD spawned_union = listdd_invalid;
     LISTDD spawned_difference = listdd_invalid;
     LISTDD in_place = listdd_invalid;
@@ -2097,6 +2099,8 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     listdd_refs_pushptr(&difference);
     listdd_refs_pushptr(&intersection);
     listdd_refs_pushptr(&matched);
+    listdd_refs_pushptr(&projected);
+    listdd_refs_pushptr(&joined);
     listdd_refs_pushptr(&spawned_union);
     listdd_refs_pushptr(&spawned_difference);
     listdd_refs_pushptr(&in_place);
@@ -2148,6 +2152,20 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(listdd_count(matched) == 1);
     test_assert(listdd_contains(matched, (uint32_t[]){2, 3}, 2));
 
+    listdd_project_SPAWN(lace, &projected, a, projection);
+    test_assert(listdd_join_CALL(lace, &joined, a, b, projection, projection) == SYLVAN_OK);
+    test_assert(listdd_project_SYNC(lace) == SYLVAN_OK);
+    test_assert(projected == a);
+    test_assert(joined == intersection);
+    test_assert(listdd_project_diff(&projected, a, projection, b) == SYLVAN_OK);
+    test_assert(projected == difference);
+
+    test_assert(listdd_singleton(&projection, (uint32_t[]){0, UINT32_MAX}, 2) == SYLVAN_OK);
+    test_assert(listdd_project(&projected, a, projection) == SYLVAN_OK);
+    test_assert(listdd_count(projected) == 2);
+    test_assert(listdd_contains(projected, (uint32_t[]){2}, 1));
+    test_assert(listdd_contains(projected, (uint32_t[]){3}, 1));
+
     in_place = a;
     test_assert(listdd_union(&in_place, in_place, b) == SYLVAN_OK);
     test_assert(in_place == spawned_union);
@@ -2183,6 +2201,7 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(listdd_count(difference) == 1);
     test_assert(listdd_count(intersection) == 1);
     test_assert(listdd_count(matched) == 1);
+    test_assert(listdd_count(projected) == 2);
     test_assert(listdd_count(successors) == 2);
     test_assert(listdd_count(in_place) == 3);
 
@@ -2197,6 +2216,13 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(unchanged == listdd_empty);
     test_assert(listdd_match(&unchanged, a, b, listdd_invalid) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == listdd_empty);
+    test_assert(listdd_project(&unchanged, listdd_invalid, projection) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_project_diff(&unchanged, a, projection, listdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_join(&unchanged, a, b, listdd_invalid, projection) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_project(NULL, a, projection) == SYLVAN_ERR_INVALID);
     test_assert(listdd_union(NULL, a, b) == SYLVAN_ERR_INVALID);
     test_assert(listdd_union_diff(&unchanged, NULL, a, b) == SYLVAN_ERR_INVALID);
     test_assert(listdd_singleton(&unchanged, NULL, 1) == SYLVAN_ERR_INVALID);
@@ -2226,7 +2252,7 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(listdd_rel_next_union(NULL, source, relation, transition_meta, source) == SYLVAN_ERR_INVALID);
 
     sylvan_gc_CALL(lace);
-    listdd_refs_popptr(18);
+    listdd_refs_popptr(20);
     return 0;
 }
 

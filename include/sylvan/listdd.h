@@ -147,11 +147,11 @@ TASK(int, listdd_rel_next_union, LISTDD*, result, LISTDD, set, LISTDD, relation,
 TASK(LISTDD, listdd_rel_prev, LISTDD, dd, LISTDD, rel, LISTDD, proj, LISTDD, uni);
 
 // so: proj: -2 (end; quantify rest), -1 (end; keep rest), 0 (quantify), 1 (keep)
-TASK(LISTDD, listdd_project, LISTDD, dd, LISTDD, proj);
+TASK(int, listdd_project, LISTDD*, result, LISTDD, dd, LISTDD, proj);
 
-TASK(LISTDD, listdd_project_diff, LISTDD, dd, LISTDD, proj, LISTDD, avoid);
+TASK(int, listdd_project_diff, LISTDD*, result, LISTDD, dd, LISTDD, proj, LISTDD, avoid);
 
-TASK(LISTDD, listdd_join, LISTDD, a, LISTDD, b, LISTDD, a_proj, LISTDD, b_proj);
+TASK(int, listdd_join, LISTDD*, result, LISTDD, a, LISTDD, b, LISTDD, a_proj, LISTDD, b_proj);
 
 /* Write a DOT representation */
 void listdd_print_dot(LISTDD mdd);

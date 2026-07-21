@@ -232,12 +232,12 @@ TASK(int, mtbdd_op_strict_threshold_double, MTBDD*, result, MTBDD, a, size_t, b)
 /**
  * Convert double to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
  */
-TASK(MTBDD, mtbdd_threshold_double, MTBDD, a, double, b);
+TASK(int, mtbdd_threshold_double, MTBDD*, result, MTBDD, a, double, b);
 
 /**
  * Convert double to a Boolean MTBDD, translate terminals > value to 1 and to 0 otherwise;
  */
-TASK(MTBDD, mtbdd_strict_threshold_double, MTBDD, a, double, b);
+TASK(int, mtbdd_strict_threshold_double, MTBDD*, result, MTBDD, a, double, b);
 
 /**
  * For two Double MTBDDs, calculate whether they are equal module some value epsilon

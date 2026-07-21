@@ -798,6 +798,78 @@ test_mtbdd_apply_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+TASK(int, test_mtbdd_threshold_destinations)
+int
+test_mtbdd_threshold_destinations_CALL(lace_worker *lace)
+{
+    MTBDD low = mtbdd_double(2.0);
+    MTBDD high = mtbdd_invalid;
+    MTBDD integer = mtbdd_invalid;
+    BDD x = mtbdd_invalid;
+    MTBDD dd = mtbdd_invalid;
+    MTBDD result = mtbdd_invalid;
+    MTBDD parallel_result = mtbdd_invalid;
+    MTBDD inplace = mtbdd_invalid;
+    MTBDD fraction_low = mtbdd_invalid;
+    MTBDD fraction_high = mtbdd_invalid;
+    MTBDD fraction_dd = mtbdd_invalid;
+    MTBDD unchanged = bdd_true;
+
+    mtbdd_refs_pushptr(&low);
+    high = mtbdd_double(3.0);
+    mtbdd_refs_pushptr(&high);
+    integer = mtbdd_int64(2);
+    mtbdd_refs_pushptr(&integer);
+    mtbdd_refs_pushptr(&x);
+    mtbdd_refs_pushptr(&dd);
+    mtbdd_refs_pushptr(&result);
+    mtbdd_refs_pushptr(&parallel_result);
+    mtbdd_refs_pushptr(&inplace);
+    fraction_low = mtbdd_fraction(1, 2);
+    mtbdd_refs_pushptr(&fraction_low);
+    fraction_high = mtbdd_fraction(3, 2);
+    mtbdd_refs_pushptr(&fraction_high);
+    mtbdd_refs_pushptr(&fraction_dd);
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_assert(bdd_var_at_level(&x, 0) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &dd, x, high, low) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &fraction_dd, x, fraction_high, fraction_low) == SYLVAN_OK);
+
+    mtbdd_threshold_double_SPAWN(lace, &parallel_result, dd, 2.5);
+    int status = mtbdd_strict_threshold_double_CALL(lace, &result, dd, 2.5);
+    int parallel_status = mtbdd_threshold_double_SYNC(lace);
+    test_assert(status == SYLVAN_OK && result == x);
+    test_assert(parallel_status == SYLVAN_OK && parallel_result == x);
+
+    test_assert(mtbdd_threshold_double(&result, dd, 2.0) == SYLVAN_OK);
+    test_assert(result == bdd_true);
+    test_assert(mtbdd_strict_threshold_double(&result, dd, 3.0) == SYLVAN_OK);
+    test_assert(result == mtbdd_undefined);
+    test_assert(mtbdd_threshold_double(&result, fraction_dd, 1.0) == SYLVAN_OK);
+    test_assert(result == x);
+
+    inplace = dd;
+    test_assert(mtbdd_threshold_double(&inplace, inplace, 2.5) == SYLVAN_OK);
+    test_assert(inplace == x);
+    sylvan_gc_CALL(lace);
+    test_assert(inplace == x);
+
+    test_assert(mtbdd_threshold_double(&result, mtbdd_undefined, 2.5) == SYLVAN_OK);
+    test_assert(result == mtbdd_undefined);
+    test_assert(mtbdd_threshold_double(NULL, dd, 2.5) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_threshold_double(&unchanged, mtbdd_invalid, 2.5) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_threshold_double(&unchanged, integer, 2.5) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_strict_threshold_double(&unchanged, bdd_true, 2.5) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+
+    sylvan_gc_CALL(lace);
+    mtbdd_refs_popptr(12);
+    return 0;
+}
+
 static int
 test_abstract_fail_on_four(lace_worker *lace, MTBDD *destination, MTBDD a, MTBDD b, int k)
 {
@@ -2441,6 +2513,7 @@ int runtests_CALL(lace_worker* lace)
         if (test_mtbdd_map_destinations_CALL(lace)) return 1;
         if (test_mtbdd_extrema_destinations_CALL(lace)) return 1;
         if (test_mtbdd_apply_destinations_CALL(lace)) return 1;
+        if (test_mtbdd_threshold_destinations_CALL(lace)) return 1;
         if (test_mtbdd_abstract_destinations_CALL(lace)) return 1;
         if (test_mtbdd_eval_compose_destinations_CALL(lace)) return 1;
         if (test_protected_destinations_CALL(lace)) return 1;

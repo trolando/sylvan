@@ -2083,6 +2083,10 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     LISTDD in_place = listdd_invalid;
     LISTDD empty_vector = listdd_invalid;
     LISTDD relation = listdd_invalid;
+    LISTDD source = listdd_invalid;
+    LISTDD transition_meta = listdd_invalid;
+    LISTDD successors = listdd_invalid;
+    LISTDD spawned_successors = listdd_invalid;
     LISTDD unchanged = listdd_empty;
     LISTDD other_unchanged = listdd_empty_list;
 
@@ -2098,6 +2102,10 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     listdd_refs_pushptr(&in_place);
     listdd_refs_pushptr(&empty_vector);
     listdd_refs_pushptr(&relation);
+    listdd_refs_pushptr(&source);
+    listdd_refs_pushptr(&transition_meta);
+    listdd_refs_pushptr(&successors);
+    listdd_refs_pushptr(&spawned_successors);
     listdd_refs_pushptr(&unchanged);
     listdd_refs_pushptr(&other_unchanged);
 
@@ -2144,12 +2152,31 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(listdd_union(&in_place, in_place, b) == SYLVAN_OK);
     test_assert(in_place == spawned_union);
 
+    test_assert(listdd_singleton(&source, (uint32_t[]){0, 0}, 2) == SYLVAN_OK);
+    test_assert(listdd_singleton(&transition_meta, (uint32_t[]){1, 2, 1, 2}, 4) == SYLVAN_OK);
+    test_assert(listdd_singleton(&successors, (uint32_t[]){0, 1, 0, 1}, 4) == SYLVAN_OK);
+    test_assert(listdd_add(&successors, successors, (uint32_t[]){0, 2, 0, 2}, 4) == SYLVAN_OK);
+    relation = successors;
+    successors = listdd_invalid;
+    listdd_rel_next_SPAWN(lace, &spawned_successors, source, relation, transition_meta);
+    test_assert(listdd_rel_next_CALL(lace, &successors, source, relation, transition_meta) == SYLVAN_OK);
+    test_assert(listdd_rel_next_SYNC(lace) == SYLVAN_OK);
+    test_assert(successors == spawned_successors);
+    test_assert(listdd_count(successors) == 2);
+    in_place = source;
+    test_assert(listdd_rel_next(&in_place, in_place, relation, transition_meta) == SYLVAN_OK);
+    test_assert(in_place == successors);
+    test_assert(listdd_rel_next(&in_place, source, relation, listdd_empty_list) == SYLVAN_OK);
+    test_assert(in_place == source);
+    test_assert(listdd_rel_next(&in_place, listdd_empty, relation, transition_meta) == SYLVAN_OK);
+    test_assert(in_place == listdd_empty);
+
     sylvan_gc_CALL(lace);
     test_assert(listdd_count(united) == 3);
     test_assert(listdd_count(difference) == 1);
     test_assert(listdd_count(intersection) == 1);
     test_assert(listdd_count(matched) == 1);
-    test_assert(listdd_relation_contains(relation, (uint32_t[]){3, 0, 7}, (int[]){0, 1, 0}, 3));
+    test_assert(listdd_count(successors) == 2);
 
     test_assert(listdd_union(&unchanged, listdd_invalid, b) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == listdd_empty);
@@ -2177,9 +2204,16 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(listdd_relation_add(&unchanged, relation, NULL, (int[]){0}, 1) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == listdd_empty);
     test_assert(listdd_relation_add(NULL, relation, (uint32_t[]){1}, (int[]){0}, 1) == SYLVAN_ERR_INVALID);
+    test_assert(listdd_rel_next(&unchanged, listdd_invalid, relation, transition_meta) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_rel_next(&unchanged, source, relation, listdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_rel_next(&unchanged, source, relation, listdd_empty) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_rel_next(NULL, source, relation, transition_meta) == SYLVAN_ERR_INVALID);
 
     sylvan_gc_CALL(lace);
-    listdd_refs_popptr(14);
+    listdd_refs_popptr(18);
     return 0;
 }
 
@@ -2764,7 +2798,7 @@ test_ldd()
         test_assert(listdd_singleton(&states, (uint32_t[]){0,0}, 2) == SYLVAN_OK);
         test_assert(listdd_count(states) == 1);
         // relprod should give two states
-        states = listdd_rel_next(states, rel, meta);
+        test_assert(listdd_rel_next(&states, states, rel, meta) == SYLVAN_OK);
         test_assert(listdd_count(states) == 2);
         // relprod should give states (1,1) and (2,2)
         test_assert(listdd_singleton(&expected, (uint32_t[]){1,1}, 2) == SYLVAN_OK);
@@ -2780,7 +2814,7 @@ test_ldd()
 
         // now create transition (1,1) --> (1,1) (using copy nodes)
         test_assert(listdd_relation_singleton(&rel, (uint32_t[]){1,0,1,0}, (int[]){0,1,0,1}, 4) == SYLVAN_OK);
-        states = listdd_rel_next(states, rel, meta);
+        test_assert(listdd_rel_next(&states, states, rel, meta) == SYLVAN_OK);
         // the result should be just state (1,1)
         test_assert(listdd_singleton(&combined, (uint32_t[]){1,1}, 2) == SYLVAN_OK);
         test_assert(states == combined);

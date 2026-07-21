@@ -607,48 +607,53 @@ Bdd::Else() const
  * Implementation of class BddMap
  */
 
-BddMap::BddMap(uint32_t key_variable, const Bdd value)
+BddMap::BddMap(uint32_t key_variable, const Bdd value) : bdd(mtbdd_invalid)
 {
-    bdd = mtbdd_map_set(mtbdd_map_empty(), key_variable, value.bdd);
+    mtbdd_protect(&bdd);
+    (void)mtbdd_map_set(&bdd, mtbdd_map_empty(), key_variable, value.bdd);
 }
 
 
 BddMap
 BddMap::operator+(const Bdd& other) const
 {
-    return BddMap(mtbdd_map_update(bdd, other.bdd));
+    BddMap result;
+    (void)mtbdd_map_update(&result.bdd, bdd, other.bdd);
+    return result;
 }
 
 BddMap&
 BddMap::operator+=(const Bdd& other)
 {
-    bdd = mtbdd_map_update(bdd, other.bdd);
+    (void)mtbdd_map_update(&bdd, bdd, other.bdd);
     return *this;
 }
 
 BddMap
 BddMap::operator-(const Bdd& other) const
 {
-    return BddMap(mtbdd_map_remove_all(bdd, other.bdd));
+    BddMap result;
+    (void)mtbdd_map_remove_all(&result.bdd, bdd, other.bdd);
+    return result;
 }
 
 BddMap&
 BddMap::operator-=(const Bdd& other)
 {
-    bdd = mtbdd_map_remove_all(bdd, other.bdd);
+    (void)mtbdd_map_remove_all(&bdd, bdd, other.bdd);
     return *this;
 }
 
 void
 BddMap::put(uint32_t key, Bdd value)
 {
-    bdd = mtbdd_map_set(bdd, key, value.bdd);
+    (void)mtbdd_map_set(&bdd, bdd, key, value.bdd);
 }
 
 void
 BddMap::removeKey(uint32_t key)
 {
-    bdd = mtbdd_map_remove(bdd, key);
+    (void)mtbdd_map_remove(&bdd, bdd, key);
 }
 
 size_t
@@ -1002,47 +1007,52 @@ Mtbdd::NodeCount() const
  * Implementation of class MtbddMap
  */
 
-MtbddMap::MtbddMap(uint32_t key_variable, Mtbdd value)
+MtbddMap::MtbddMap(uint32_t key_variable, Mtbdd value) : mtbdd(mtbdd_invalid)
 {
-    mtbdd = mtbdd_map_set(mtbdd_map_empty(), key_variable, value.mtbdd);
+    mtbdd_protect(&mtbdd);
+    (void)mtbdd_map_set(&mtbdd, mtbdd_map_empty(), key_variable, value.mtbdd);
 }
 
 MtbddMap
 MtbddMap::operator+(const Mtbdd& other) const
 {
-    return MtbddMap(mtbdd_map_update(mtbdd, other.mtbdd));
+    MtbddMap result;
+    (void)mtbdd_map_update(&result.mtbdd, mtbdd, other.mtbdd);
+    return result;
 }
 
 MtbddMap&
 MtbddMap::operator+=(const Mtbdd& other)
 {
-    mtbdd = mtbdd_map_update(mtbdd, other.mtbdd);
+    (void)mtbdd_map_update(&mtbdd, mtbdd, other.mtbdd);
     return *this;
 }
 
 MtbddMap
 MtbddMap::operator-(const Mtbdd& other) const
 {
-    return MtbddMap(mtbdd_map_remove_all(mtbdd, other.mtbdd));
+    MtbddMap result;
+    (void)mtbdd_map_remove_all(&result.mtbdd, mtbdd, other.mtbdd);
+    return result;
 }
 
 MtbddMap&
 MtbddMap::operator-=(const Mtbdd& other)
 {
-    mtbdd = mtbdd_map_remove_all(mtbdd, other.mtbdd);
+    (void)mtbdd_map_remove_all(&mtbdd, mtbdd, other.mtbdd);
     return *this;
 }
 
 void
 MtbddMap::put(uint32_t key, Mtbdd value)
 {
-    mtbdd = mtbdd_map_set(mtbdd, key, value.mtbdd);
+    (void)mtbdd_map_set(&mtbdd, mtbdd, key, value.mtbdd);
 }
 
 void
 MtbddMap::removeKey(uint32_t key)
 {
-    mtbdd = mtbdd_map_remove(mtbdd, key);
+    (void)mtbdd_map_remove(&mtbdd, mtbdd, key);
 }
 
 size_t

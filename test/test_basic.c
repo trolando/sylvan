@@ -2087,8 +2087,10 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     LISTDD relation = listdd_invalid;
     LISTDD source = listdd_invalid;
     LISTDD transition_meta = listdd_invalid;
+    LISTDD predecessor_meta = listdd_invalid;
     LISTDD successors = listdd_invalid;
     LISTDD spawned_successors = listdd_invalid;
+    LISTDD predecessors = listdd_invalid;
     LISTDD unchanged = listdd_empty;
     LISTDD other_unchanged = listdd_empty_list;
 
@@ -2108,8 +2110,10 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     listdd_refs_pushptr(&relation);
     listdd_refs_pushptr(&source);
     listdd_refs_pushptr(&transition_meta);
+    listdd_refs_pushptr(&predecessor_meta);
     listdd_refs_pushptr(&successors);
     listdd_refs_pushptr(&spawned_successors);
+    listdd_refs_pushptr(&predecessors);
     listdd_refs_pushptr(&unchanged);
     listdd_refs_pushptr(&other_unchanged);
 
@@ -2172,6 +2176,7 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
 
     test_assert(listdd_singleton(&source, (uint32_t[]){0, 0}, 2) == SYLVAN_OK);
     test_assert(listdd_singleton(&transition_meta, (uint32_t[]){1, 2, 1, 2}, 4) == SYLVAN_OK);
+    test_assert(listdd_singleton(&predecessor_meta, (uint32_t[]){1, 2, 1, 2, UINT32_MAX}, 5) == SYLVAN_OK);
     test_assert(listdd_singleton(&successors, (uint32_t[]){0, 1, 0, 1}, 4) == SYLVAN_OK);
     test_assert(listdd_add(&successors, successors, (uint32_t[]){0, 2, 0, 2}, 4) == SYLVAN_OK);
     relation = successors;
@@ -2181,6 +2186,14 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(listdd_rel_next_SYNC(lace) == SYLVAN_OK);
     test_assert(successors == spawned_successors);
     test_assert(listdd_count(successors) == 2);
+    listdd_rel_prev_SPAWN(lace, &predecessors, successors, relation, predecessor_meta, source);
+    in_place = successors;
+    int prev_status = listdd_rel_prev_CALL(lace, &in_place, in_place, relation, predecessor_meta, source);
+    int spawned_prev_status = listdd_rel_prev_SYNC(lace);
+    test_assert(prev_status == SYLVAN_OK);
+    test_assert(spawned_prev_status == SYLVAN_OK);
+    test_assert(predecessors == source);
+    test_assert(in_place == source);
     in_place = source;
     test_assert(listdd_rel_next(&in_place, in_place, relation, transition_meta) == SYLVAN_OK);
     test_assert(in_place == successors);
@@ -2203,6 +2216,7 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(listdd_count(matched) == 1);
     test_assert(listdd_count(projected) == 2);
     test_assert(listdd_count(successors) == 2);
+    test_assert(listdd_count(predecessors) == 1);
     test_assert(listdd_count(in_place) == 3);
 
     test_assert(listdd_union(&unchanged, listdd_invalid, b) == SYLVAN_ERR_INVALID);
@@ -2250,9 +2264,17 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(listdd_rel_next_union(&unchanged, source, relation, listdd_empty, source) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == listdd_empty);
     test_assert(listdd_rel_next_union(NULL, source, relation, transition_meta, source) == SYLVAN_ERR_INVALID);
+    test_assert(listdd_rel_prev(&unchanged, listdd_invalid, relation, predecessor_meta, source) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_rel_prev(&unchanged, successors, relation, listdd_empty_list, source) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_singleton(&projection, (uint32_t[]){6, UINT32_MAX}, 2) == SYLVAN_OK);
+    test_assert(listdd_rel_prev(&unchanged, successors, relation, projection, source) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
+    test_assert(listdd_rel_prev(NULL, successors, relation, predecessor_meta, source) == SYLVAN_ERR_INVALID);
 
     sylvan_gc_CALL(lace);
-    listdd_refs_popptr(20);
+    listdd_refs_popptr(22);
     return 0;
 }
 

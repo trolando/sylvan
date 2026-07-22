@@ -3034,26 +3034,28 @@ TASK(int, runtests)
 int runtests_CALL(lace_worker* lace)
 {
     printf("Testing protected destinations.\n");
+    if (test_variable_set_destinations_CALL(lace)) return 1;
+    if (test_mtbdd_construction_destinations_CALL(lace)) return 1;
+    if (test_mtbdd_structure_destinations_CALL(lace)) return 1;
+    if (test_mtbdd_map_destinations_CALL(lace)) return 1;
+    if (test_mtbdd_extrema_destinations_CALL(lace)) return 1;
+    if (test_mtbdd_apply_destinations_CALL(lace)) return 1;
+    if (test_mtbdd_threshold_destinations_CALL(lace)) return 1;
+    if (test_mtbdd_equal_double_destinations_CALL(lace)) return 1;
+    if (test_mtbdd_order_destinations_CALL(lace)) return 1;
+    if (test_mtbdd_abstract_destinations_CALL(lace)) return 1;
+    if (test_mtbdd_eval_compose_destinations_CALL(lace)) return 1;
+    if (test_quantification_destinations_CALL(lace)) return 1;
+    if (test_care_destinations_CALL(lace)) return 1;
+    if (test_compose_destinations_CALL(lace)) return 1;
+    if (test_cube_destinations_CALL(lace)) return 1;
+    if (test_relational_destinations_CALL(lace)) return 1;
+    if (test_map_reduce_destinations_CALL(lace)) return 1;
+    if (test_listdd_set_destinations_CALL(lace)) return 1;
+
+    /* Repeatedly exercise the core SPAWN/SYNC and forced-GC contract. */
     for (int j = 0; j < 10; j++) {
-        if (test_variable_set_destinations_CALL(lace)) return 1;
-        if (test_mtbdd_construction_destinations_CALL(lace)) return 1;
-        if (test_mtbdd_structure_destinations_CALL(lace)) return 1;
-        if (test_mtbdd_map_destinations_CALL(lace)) return 1;
-        if (test_mtbdd_extrema_destinations_CALL(lace)) return 1;
-        if (test_mtbdd_apply_destinations_CALL(lace)) return 1;
-        if (test_mtbdd_threshold_destinations_CALL(lace)) return 1;
-        if (test_mtbdd_equal_double_destinations_CALL(lace)) return 1;
-        if (test_mtbdd_order_destinations_CALL(lace)) return 1;
-        if (test_mtbdd_abstract_destinations_CALL(lace)) return 1;
-        if (test_mtbdd_eval_compose_destinations_CALL(lace)) return 1;
         if (test_protected_destinations_CALL(lace)) return 1;
-        if (test_quantification_destinations_CALL(lace)) return 1;
-        if (test_care_destinations_CALL(lace)) return 1;
-        if (test_compose_destinations_CALL(lace)) return 1;
-        if (test_cube_destinations_CALL(lace)) return 1;
-        if (test_relational_destinations_CALL(lace)) return 1;
-        if (test_map_reduce_destinations_CALL(lace)) return 1;
-        if (test_listdd_set_destinations_CALL(lace)) return 1;
     }
 
     // we are not testing garbage collection

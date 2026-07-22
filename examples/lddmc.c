@@ -512,7 +512,7 @@ void par_CALL(lace_worker* lace, set_t set)
             listdd_refs_popptr(1);
 
             if (deadlocks != listdd_empty) {
-                INFO("Found %0.0Lf deadlock states... ", listdd_count_CALL(lace, deadlocks));
+                INFO("Found %0.0f deadlock states... ", (double)listdd_count_CALL(lace, deadlocks));
                 printf("example: ");
                 print_example(deadlocks);
                 printf("\n");
@@ -530,7 +530,7 @@ void par_CALL(lace_worker* lace, set_t set)
 
         INFO("Level %d done", iteration);
         if (report_levels) {
-            printf(", %0.0Lf states explored", listdd_count_CALL(lace, visited));
+            printf(", %0.0f states explored", (double)listdd_count_CALL(lace, visited));
         }
         if (report_table) {
             size_t filled, total;
@@ -658,7 +658,7 @@ void bfs_CALL(lace_worker* lace, set_t set)
             listdd_refs_popptr(1);
 
             if (deadlocks != listdd_empty) {
-                INFO("Found %0.0Lf deadlock states... ", listdd_count_CALL(lace, deadlocks));
+                INFO("Found %0.0f deadlock states... ", (double)listdd_count_CALL(lace, deadlocks));
                 printf("example: ");
                 print_example(deadlocks);
                 printf("\n");
@@ -676,7 +676,7 @@ void bfs_CALL(lace_worker* lace, set_t set)
 
         INFO("Level %d done", iteration);
         if (report_levels) {
-            printf(", %0.0Lf states explored", listdd_count_CALL(lace, visited));
+            printf(", %0.0f states explored", (double)listdd_count_CALL(lace, visited));
         }
         if (report_table) {
             size_t filled, total;
@@ -816,7 +816,7 @@ void chaining_CALL(lace_worker* lace, set_t set)
 
         INFO("Level %d done", iteration);
         if (report_levels) {
-            printf(", %0.0Lf states explored", listdd_count(visited));
+            printf(", %0.0f states explored", (double)listdd_count(visited));
         }
         if (report_table) {
             size_t filled, total;
@@ -951,7 +951,7 @@ int run_CALL(lace_worker* lace)
     }
 
     // Now we just have states
-    INFO("Final states: %0.0Lf states\n", listdd_count(states->dd));
+    INFO("Final states: %0.0f states\n", (double)listdd_count(states->dd));
     if (report_nodes) {
         INFO("Final states: %zu LISTDD nodes\n", listdd_node_count(states->dd));
     }

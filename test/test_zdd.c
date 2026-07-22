@@ -1249,6 +1249,8 @@ int test_zdd_isop_basic_CALL(lace_worker* lace)
     test_assert(zdd_isop(&unchanged_zdd, &unchanged_bdd, mtbdd_invalid, redundant_b) == SYLVAN_ERR_INVALID);
     test_assert(unchanged_zdd == zdd_base && unchanged_bdd == bdd_true);
     test_assert(zdd_isop(NULL, &unchanged_bdd, redundant_b, redundant_b) == SYLVAN_ERR_INVALID);
+    test_assert(zdd_isop(&unchanged_zdd, &unchanged_zdd, redundant_b, redundant_b) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged_zdd == zdd_base);
     test_assert(bdd_from_zdd_cover(&unchanged_bdd, zdd_invalid) == SYLVAN_ERR_INVALID);
     test_assert(unchanged_bdd == bdd_true);
     test_assert(bdd_from_zdd_cover(NULL, isop_zdd) == SYLVAN_ERR_INVALID);

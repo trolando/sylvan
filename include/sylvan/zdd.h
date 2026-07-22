@@ -148,8 +148,8 @@ TASK(int, zdd_or_cube, ZDD*, result, ZDD, set, BDDSET, variables, uint8_t*, valu
  * Compute the irredundant sum of products given lower and upper bounds as BDDs.
  * Writes a ZDD cover between the two bounds to <result>. If <bdd_result> is not
  * NULL, also writes the represented BDD there. The caller must protect both
- * destinations. Returns SYLVAN_OK on success or a negative status on failure,
- * leaving both destinations unchanged.
+ * destinations, which must be distinct. Returns SYLVAN_OK on success or a
+ * negative status on failure, leaving both destinations unchanged.
  */
 TASK(int, zdd_isop, ZDD*, result, MTBDD*, bdd_result, MTBDD, L, MTBDD, U);
 

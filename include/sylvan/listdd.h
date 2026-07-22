@@ -112,7 +112,8 @@ static inline int listdd_union(LISTDD *result, LISTDD a, LISTDD b);
 /* Compute the elements in <a> that are not in <b>. */
 static inline int listdd_diff(LISTDD *result, LISTDD a, LISTDD b);
 
-/* Compute <a> union <b> and, simultaneously, the elements in <b> not in <a>. */
+/* Compute <a> union <b> and, simultaneously, the elements in <b> not in <a>.
+ * The two destinations must be distinct. */
 static inline int listdd_union_diff(LISTDD *result, LISTDD *difference, LISTDD a, LISTDD b);
 
 /* Compute the intersection of <a> and <b>. */
@@ -177,7 +178,8 @@ TASK(long double, listdd_count, LISTDD, dd);
  * Example:
  * TASK(void*, my_function, uint32_t*, values, size_t, count, void*, context) ...
  * Map/reduce callbacks write their result to a caller-protected destination
- * and return SYLVAN_OK or a negative status code.
+ * and return SYLVAN_OK or a negative status code. A positive status or success
+ * without a result is reported as SYLVAN_ERR_CALLBACK.
  */
 typedef void (*listdd_enum_cb)(uint32_t*, size_t, void*);
 typedef int (*listdd_map_reduce_union_cb)(LISTDD*, uint32_t*, size_t, void*);
@@ -219,7 +221,8 @@ void listdd_node_count_per_level(LISTDD mdd, size_t *variables);
  * Functional composition
  * For every node at depth <depth>, call <cb> and replace the node by the
  * callback result. The callback follows the protected-destination status
- * convention used by ListDD operations.
+ * convention used by ListDD operations. A positive status or success without
+ * a result is reported as SYLVAN_ERR_CALLBACK.
  */
 typedef int (*listdd_transform_at_level_cb)(LISTDD*, LISTDD, void*);
 TASK(int, listdd_transform_at_level, LISTDD*, result, LISTDD, dd, listdd_transform_at_level_cb, cb, void*, context, int, depth);

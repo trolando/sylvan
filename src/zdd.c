@@ -2317,7 +2317,10 @@ int zdd_read_binary_CALL(lace_worker* lace, FILE* in, ZDD* dds, int count)
  */
 int zdd_isop_CALL(lace_worker* lace, ZDD *destination, MTBDD *bdd_destination, MTBDD L, MTBDD U)
 {
-    if (destination == NULL || L == mtbdd_invalid || U == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    if (destination == NULL || (void*)destination == (void*)bdd_destination ||
+        L == mtbdd_invalid || U == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
 
     if (L == mtbdd_undefined) {
         *destination = zdd_false;

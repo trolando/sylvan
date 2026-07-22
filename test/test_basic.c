@@ -2090,6 +2090,8 @@ test_listdd_map_tuple(LISTDD *destination, uint32_t *values, size_t count, void 
 {
     struct test_listdd_map_context *info = context;
     if (destination == NULL || values == NULL || count != 2 || info == NULL) return SYLVAN_ERR_INVALID;
+    if (info->fail_value == UINT32_MAX-1) return SYLVAN_APPLY_RECURSE;
+    if (info->fail_value == UINT32_MAX-2) return SYLVAN_OK;
     if (values[0] == info->fail_value) return SYLVAN_ERR_INVALID;
     if (values[0] == 1) *destination = info->first;
     else if (values[0] == 2) *destination = info->second;
@@ -2104,6 +2106,7 @@ test_listdd_transform(LISTDD *destination, LISTDD dd, void *context)
     int mode = *(const int*)context;
     if (mode == 2) return SYLVAN_ERR_INVALID;
     if (mode == 3) { *destination = listdd_invalid; return SYLVAN_OK; }
+    if (mode == 4) return SYLVAN_APPLY_RECURSE;
     *destination = mode == 1 ? listdd_empty : dd;
     return SYLVAN_OK;
 }
@@ -2326,6 +2329,8 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(listdd_project(NULL, a, projection) == SYLVAN_ERR_INVALID);
     test_assert(listdd_union(NULL, a, b) == SYLVAN_ERR_INVALID);
     test_assert(listdd_union_diff(&unchanged, NULL, a, b) == SYLVAN_ERR_INVALID);
+    test_assert(listdd_union_diff(&unchanged, &unchanged, a, b) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == listdd_empty);
     test_assert(listdd_singleton(&unchanged, NULL, 1) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == listdd_empty);
     test_assert(listdd_add(&unchanged, listdd_invalid, (uint32_t[]){1}, 1) == SYLVAN_ERR_INVALID);
@@ -2362,6 +2367,13 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     map_context.fail_value = 2;
     test_assert(listdd_map_reduce_union(&unchanged, a, test_listdd_map_tuple, &map_context, NULL, 0) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == listdd_empty);
+    map_context.fail_value = UINT32_MAX-1;
+    test_assert(listdd_map_reduce_union(&unchanged, a, test_listdd_map_tuple, &map_context, NULL, 0) == SYLVAN_ERR_CALLBACK);
+    test_assert(unchanged == listdd_empty);
+    map_context.fail_value = UINT32_MAX-2;
+    test_assert(listdd_map_reduce_union(&unchanged, a, test_listdd_map_tuple, &map_context, NULL, 0) == SYLVAN_ERR_CALLBACK);
+    test_assert(unchanged == listdd_empty);
+    map_context.fail_value = 2;
     test_assert(listdd_map_reduce_union(&unchanged, listdd_invalid, test_listdd_map_tuple, &map_context, NULL, 0) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == listdd_empty);
     test_assert(listdd_map_reduce_union(&unchanged, a, NULL, &map_context, NULL, 0) == SYLVAN_ERR_INVALID);
@@ -2373,7 +2385,10 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(listdd_transform_at_level(&unchanged, a, test_listdd_transform, &transform_mode, 1) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == listdd_empty);
     transform_mode = 3;
-    test_assert(listdd_transform_at_level(&unchanged, a, test_listdd_transform, &transform_mode, 1) == SYLVAN_ERR_INVALID);
+    test_assert(listdd_transform_at_level(&unchanged, a, test_listdd_transform, &transform_mode, 1) == SYLVAN_ERR_CALLBACK);
+    test_assert(unchanged == listdd_empty);
+    transform_mode = 4;
+    test_assert(listdd_transform_at_level(&unchanged, a, test_listdd_transform, &transform_mode, 1) == SYLVAN_ERR_CALLBACK);
     test_assert(unchanged == listdd_empty);
     transform_mode = 0;
     test_assert(listdd_transform_at_level(&unchanged, listdd_invalid, test_listdd_transform, &transform_mode, 1) == SYLVAN_ERR_INVALID);

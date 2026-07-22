@@ -626,6 +626,7 @@ int listdd_diff_CALL(lace_worker* lace, LISTDD *destination, LISTDD a, LISTDD b)
 int listdd_union_diff_CALL(lace_worker* lace, LISTDD *destination, LISTDD *difference_destination, LISTDD a, LISTDD b)
 {
     if (destination == NULL || difference_destination == NULL ||
+        destination == difference_destination ||
         a == listdd_invalid || b == listdd_invalid) {
         return SYLVAN_ERR_INVALID;
     }
@@ -2386,7 +2387,8 @@ int listdd_map_reduce_union_CALL(lace_worker* lace, LISTDD *destination, LISTDD 
         LISTDD computed = listdd_invalid;
         listdd_refs_pushptr(&computed);
         int status = cb(&computed, values, count, context);
-        if (status == SYLVAN_OK && computed == listdd_invalid) status = SYLVAN_ERR_INVALID;
+        if (status == SYLVAN_OK && computed == listdd_invalid) status = SYLVAN_ERR_CALLBACK;
+        else if (status > SYLVAN_OK) status = SYLVAN_ERR_CALLBACK;
         if (status == SYLVAN_OK) *destination = computed;
         listdd_refs_popptr(1);
         return status;
@@ -2608,7 +2610,8 @@ int listdd_transform_at_level_CALL(lace_worker* lace, LISTDD *destination, LISTD
         LISTDD computed = listdd_invalid;
         listdd_refs_pushptr(&computed);
         int status = cb(&computed, mdd, context);
-        if (status == SYLVAN_OK && computed == listdd_invalid) status = SYLVAN_ERR_INVALID;
+        if (status == SYLVAN_OK && computed == listdd_invalid) status = SYLVAN_ERR_CALLBACK;
+        else if (status > SYLVAN_OK) status = SYLVAN_ERR_CALLBACK;
         if (status == SYLVAN_OK) *destination = computed;
         listdd_refs_popptr(1);
         return status;

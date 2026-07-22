@@ -33,6 +33,7 @@
 /* Recursively mark LISTDD nodes as 'in use' */
 void listdd_gc_mark_CALL(lace_worker* lace, LISTDD mdd)
 {
+    if (mdd == listdd_invalid) return;
     if (mdd <= listdd_empty_list) return;
 
     nodes_mark_rec_CALL(lace, nodes, mdd);
@@ -1208,8 +1209,8 @@ listdd_rel_next_union_CALL(lace_worker *lace, LISTDD *destination, LISTDD set, L
     mddnode *n_meta = LDD_GETNODE(meta);
     uint32_t m_val = mddnode_getvalue(n_meta);
     if (m_val == UINT32_MAX) return listdd_union_destination_CALL(lace, destination, set, un);
-    if (rel == listdd_empty_list || un == listdd_empty_list) return SYLVAN_ERR_INVALID;
-    if (m_val != 5 && set == listdd_empty_list) return SYLVAN_ERR_INVALID;
+    if (rel == listdd_empty_list) return SYLVAN_ERR_INVALID;
+    if (m_val != 5 && (set == listdd_empty_list || un == listdd_empty_list)) return SYLVAN_ERR_INVALID;
 
     mddnode *n_rel = LDD_GETNODE(rel);
     if (!mddnode_getcopy(n_rel) && (m_val == 1 || m_val == 3)) {
@@ -1233,7 +1234,7 @@ listdd_rel_next_union_CALL(lace_worker *lace, LISTDD *destination, LISTDD set, L
     }
 
     mddnode *n_set = set == listdd_empty_list ? NULL : LDD_GETNODE(set);
-    mddnode *n_un = LDD_GETNODE(un);
+    mddnode *n_un = un == listdd_empty_list ? NULL : LDD_GETNODE(un);
     int status = SYLVAN_OK;
 
     if (m_val == 0 || m_val == 3) {

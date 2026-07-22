@@ -2124,6 +2124,9 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     LISTDD successors = listdd_invalid;
     LISTDD spawned_successors = listdd_invalid;
     LISTDD predecessors = listdd_invalid;
+    LISTDD action_relation = listdd_invalid;
+    LISTDD action_meta = listdd_invalid;
+    LISTDD action_result = listdd_invalid;
     LISTDD unchanged = listdd_empty;
     LISTDD other_unchanged = listdd_empty_list;
 
@@ -2150,6 +2153,9 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     listdd_refs_pushptr(&successors);
     listdd_refs_pushptr(&spawned_successors);
     listdd_refs_pushptr(&predecessors);
+    listdd_refs_pushptr(&action_relation);
+    listdd_refs_pushptr(&action_meta);
+    listdd_refs_pushptr(&action_result);
     listdd_refs_pushptr(&unchanged);
     listdd_refs_pushptr(&other_unchanged);
 
@@ -2270,7 +2276,17 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(listdd_rel_next_union_CALL(lace, &in_place, in_place, relation, transition_meta, in_place) == SYLVAN_OK);
     test_assert(in_place == united);
 
+    /* Action-label layers occur after the state vector, where set and union
+     * operands are the empty-vector terminal. */
+    test_assert(listdd_singleton(&action_relation, (uint32_t[]){7}, 1) == SYLVAN_OK);
+    test_assert(listdd_singleton(&action_meta, (uint32_t[]){5}, 1) == SYLVAN_OK);
+    test_assert(listdd_rel_next_union(&action_result, listdd_empty_list, action_relation,
+        action_meta, listdd_empty_list) == SYLVAN_OK);
+    test_assert(action_result == listdd_empty_list);
+
+    action_result = listdd_invalid;
     sylvan_gc_CALL(lace);
+    test_assert(action_result == listdd_invalid);
     test_assert(listdd_count(united) == 3);
     test_assert(listdd_count(difference) == 1);
     test_assert(listdd_count(intersection) == 1);
@@ -2362,7 +2378,7 @@ test_listdd_set_destinations_CALL(lace_worker *lace)
     test_assert(listdd_pick(NULL, a) == SYLVAN_ERR_INVALID);
 
     sylvan_gc_CALL(lace);
-    listdd_refs_popptr(25);
+    listdd_refs_popptr(28);
     return 0;
 }
 

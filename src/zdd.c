@@ -118,6 +118,7 @@ zdd_getdouble(ZDD leaf)
  */
 void zdd_gc_mark_CALL(lace_worker* lace, ZDD zdd)
 {
+    if (zdd == zdd_invalid) return;
     if (zdd == zdd_base) return;
     if (zdd == zdd_false) return;
     nodes_mark_rec_CALL(lace, nodes, ZDD_GETINDEX(zdd));

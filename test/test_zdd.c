@@ -781,9 +781,12 @@ int test_zdd_binary_destinations_CALL(lace_worker* lace)
 
     inplace = a;
     test_assert(zdd_diff(&inplace, inplace, b) == SYLVAN_OK && inplace == expected_diff);
+    unchanged = zdd_invalid;
     sylvan_gc_CALL(lace);
+    test_assert(unchanged == zdd_invalid);
     test_assert(and_result == expected_and && or_result == expected_or && inplace == expected_diff);
 
+    unchanged = zdd_base;
     test_zdd_binary_op operations[] = {zdd_and, zdd_or, zdd_diff};
     for (size_t i = 0; i < sizeof(operations) / sizeof(operations[0]); i++) {
         test_assert(operations[i](&unchanged, zdd_invalid, b) == SYLVAN_ERR_INVALID);

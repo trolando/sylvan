@@ -2171,8 +2171,9 @@ bdd_pick_cube_CALL(lace_worker* lace, BDD *destination, BDD bdd, BDDSET vars)
 int
 bdd_cube_CALL(lace_worker* lace, BDD *destination, BDDSET vars, const uint8_t *cube)
 {
-    if (destination == NULL || vars == mtbdd_invalid || cube == NULL) return SYLVAN_ERR_INVALID;
+    if (destination == NULL || vars == mtbdd_invalid) return SYLVAN_ERR_INVALID;
     if (bdd_set_is_empty(vars)) { *destination = bdd_true; return SYLVAN_OK; }
+    if (cube == NULL) return SYLVAN_ERR_INVALID;
     if (*cube > 2) return SYLVAN_ERR_INVALID;
 
     bddnode* n = MTBDD_GETNODE(vars);
@@ -2194,14 +2195,15 @@ bdd_cube_CALL(lace_worker* lace, BDD *destination, BDDSET vars, const uint8_t *c
 int
 bdd_or_cube_CALL(lace_worker* lace, BDD *destination, BDD bdd, BDDSET vars, const uint8_t *cube)
 {
-    if (destination == NULL || bdd == mtbdd_invalid || vars == mtbdd_invalid || cube == NULL) {
+    if (destination == NULL || bdd == mtbdd_invalid || vars == mtbdd_invalid) {
         return SYLVAN_ERR_INVALID;
     }
 
     /* Terminal cases */
     if (bdd == bdd_true) { *destination = bdd_true; return SYLVAN_OK; }
-    if (bdd == bdd_false) return bdd_cube_CALL(lace, destination, vars, cube);
     if (bdd_set_is_empty(vars)) { *destination = bdd_true; return SYLVAN_OK; }
+    if (cube == NULL) return SYLVAN_ERR_INVALID;
+    if (bdd == bdd_false) return bdd_cube_CALL(lace, destination, vars, cube);
 
     bddnode* nv = MTBDD_GETNODE(vars);
     for (;;) {

@@ -1885,6 +1885,16 @@ test_cube_destinations_CALL(lace_worker *lace)
     test_assert(bdd_or_cube_CALL(lace, &union_result, union_result, vars, path_values) == SYLVAN_OK);
     test_assert(union_result == expected_union);
 
+    unchanged = bdd_false;
+    test_assert(bdd_cube_CALL(lace, &unchanged, bdd_set_empty(), NULL) == SYLVAN_OK);
+    test_assert(unchanged == bdd_true);
+    unchanged = bdd_false;
+    test_assert(bdd_or_cube_CALL(lace, &unchanged, bdd_true, vars, NULL) == SYLVAN_OK);
+    test_assert(unchanged == bdd_true);
+    unchanged = bdd_false;
+    test_assert(bdd_or_cube_CALL(lace, &unchanged, z, bdd_set_empty(), NULL) == SYLVAN_OK);
+    test_assert(unchanged == bdd_true);
+
     const uint8_t invalid_values[] = {0, 3, 2};
     test_assert(bdd_cube_CALL(lace, &unchanged, vars, invalid_values) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == bdd_true);

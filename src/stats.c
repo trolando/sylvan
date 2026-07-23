@@ -137,6 +137,9 @@ struct
     {2, ZDD_ISOP, "zdd isop"},
     {2, ZDD_COVER_TO_BDD, "zdd cover_to_bdd"},
 
+    {1, SYLVAN_ITERATOR_CREATED, "Sylvan iterators created"},
+    {1, SYLVAN_ITERATOR_ITEMS, "Sylvan iterator items"},
+
     {0, 0, "Garbage collection"},
     {1, SYLVAN_GC_COUNT, "GC executions"},
     {3, SYLVAN_GC, "Total time spent"},

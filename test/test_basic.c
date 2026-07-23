@@ -1676,6 +1676,143 @@ test_count_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+TASK(int, test_iterator_destinations)
+int
+test_iterator_destinations_CALL(lace_worker *lace)
+{
+    BDD x = test_bdd_var(1);
+    mtbdd_protect(&x);
+    BDDSET variables = test_bdd_set_from_levels((uint32_t[]){0, 1, 2}, 3);
+    mtbdd_protect(&variables);
+    BDDSET missing = test_bdd_set_from_levels((uint32_t[]){0, 2}, 2);
+    mtbdd_protect(&missing);
+    sylvan_iterator *iterator = NULL;
+    uint8_t values[3] = {9, 9, 9};
+    int has_item = -1;
+
+    test_assert(bdd_iterator_create(&iterator, x, variables, SYLVAN_ITERATOR_CUBES) == SYLVAN_OK);
+    sylvan_gc_CALL(lace);
+    test_assert(bdd_iterator_next(iterator, values, 3, &has_item) == SYLVAN_OK);
+    test_assert(has_item == 1);
+    test_assert(values[0] == 2 && values[1] == 1 && values[2] == 2);
+    values[0] = 0;
+    test_assert(bdd_iterator_next(iterator, values, 3, &has_item) == SYLVAN_OK);
+    test_assert(has_item == 0);
+    sylvan_iterator_destroy(iterator);
+
+    BDD x0 = test_bdd_var(0);
+    mtbdd_protect(&x0);
+    BDD x2 = test_bdd_var(2);
+    mtbdd_protect(&x2);
+    BDD left = test_bdd_and(x0, x);
+    mtbdd_protect(&left);
+    BDD right = test_bdd_and(bdd_not(x0), x2);
+    mtbdd_protect(&right);
+    BDD formula = test_bdd_or(left, right);
+    mtbdd_protect(&formula);
+    BDD covered = bdd_false;
+    mtbdd_protect(&covered);
+    BDD cube = mtbdd_invalid;
+    mtbdd_protect(&cube);
+    iterator = NULL;
+    test_assert(bdd_iterator_create(&iterator, formula, variables, SYLVAN_ITERATOR_CUBES) == SYLVAN_OK);
+    size_t cube_count = 0;
+    for (;;) {
+        test_assert(bdd_iterator_next(iterator, values, 3, &has_item) == SYLVAN_OK);
+        if (!has_item) break;
+        cube = test_bdd_cube(variables, values);
+        covered = test_bdd_or(covered, cube);
+        cube_count++;
+    }
+    test_assert(cube_count == 2);
+    test_assert(covered == formula);
+    sylvan_iterator_destroy(iterator);
+
+    iterator = NULL;
+    test_assert(bdd_iterator_create(&iterator, x, variables, SYLVAN_ITERATOR_MINTERMS) == SYLVAN_OK);
+    const uint8_t expected[][3] = {
+        {0, 1, 0},
+        {0, 1, 1},
+        {1, 1, 0},
+        {1, 1, 1}
+    };
+    for (size_t i = 0; i < 4; i++) {
+        test_assert(bdd_iterator_next(iterator, values, 3, &has_item) == SYLVAN_OK);
+        test_assert(has_item == 1 && memcmp(values, expected[i], 3) == 0);
+        memset(values, 7, sizeof(values));
+    }
+    test_assert(bdd_iterator_next(iterator, values, 3, &has_item) == SYLVAN_OK);
+    test_assert(has_item == 0);
+    sylvan_iterator_destroy(iterator);
+
+    MTBDD seven = mtbdd_int64(7);
+    mtbdd_protect(&seven);
+    MTBDD nine = mtbdd_int64(9);
+    mtbdd_protect(&nine);
+    MTBDD function = mtbdd_make_node(1, seven, nine);
+    mtbdd_protect(&function);
+    MTBDD leaf = mtbdd_invalid;
+    iterator = NULL;
+    test_assert(mtbdd_iterator_create(&iterator, function, variables, SYLVAN_ITERATOR_CUBES) == SYLVAN_OK);
+    test_assert(mtbdd_iterator_next(iterator, values, 3, &leaf, &has_item) == SYLVAN_OK);
+    test_assert(has_item == 1 && leaf == seven);
+    test_assert(values[0] == 2 && values[1] == 0 && values[2] == 2);
+    test_assert(mtbdd_iterator_next(iterator, values, 3, &leaf, &has_item) == SYLVAN_OK);
+    test_assert(has_item == 1 && leaf == nine);
+    test_assert(values[0] == 2 && values[1] == 1 && values[2] == 2);
+    test_assert(mtbdd_iterator_next(iterator, values, 3, &leaf, &has_item) == SYLVAN_OK);
+    test_assert(has_item == 0);
+    test_assert(bdd_iterator_next(iterator, values, 3, &has_item) == SYLVAN_ERR_INVALID);
+    sylvan_iterator_destroy(iterator);
+
+    iterator = NULL;
+    test_assert(mtbdd_iterator_create(&iterator, function, variables, SYLVAN_ITERATOR_MINTERMS) == SYLVAN_OK);
+    for (size_t i = 0; i < 8; i++) {
+        test_assert(mtbdd_iterator_next(iterator, values, 3, &leaf, &has_item) == SYLVAN_OK);
+        test_assert(has_item == 1);
+        test_assert(values[1] == (leaf == nine ? 1 : 0));
+    }
+    test_assert(mtbdd_iterator_next(iterator, values, 3, &leaf, &has_item) == SYLVAN_OK);
+    test_assert(has_item == 0);
+    sylvan_iterator_destroy(iterator);
+
+    iterator = (sylvan_iterator*)(uintptr_t)1;
+    test_assert(bdd_iterator_create(&iterator, x, missing, SYLVAN_ITERATOR_CUBES) == SYLVAN_ERR_INVALID);
+    test_assert(iterator == (sylvan_iterator*)(uintptr_t)1);
+    test_assert(bdd_iterator_create(&iterator, x, variables, (sylvan_iterator_mode)2) == SYLVAN_ERR_INVALID);
+    test_assert(iterator == (sylvan_iterator*)(uintptr_t)1);
+
+    iterator = NULL;
+    test_assert(bdd_iterator_create(&iterator, bdd_true, bdd_true, SYLVAN_ITERATOR_CUBES) == SYLVAN_OK);
+    test_assert(bdd_iterator_next(iterator, NULL, 0, &has_item) == SYLVAN_OK && has_item == 1);
+    test_assert(bdd_iterator_next(iterator, NULL, 0, &has_item) == SYLVAN_OK && has_item == 0);
+    sylvan_iterator_destroy(iterator);
+
+    iterator = NULL;
+    test_assert(bdd_iterator_create(&iterator, bdd_false, variables, SYLVAN_ITERATOR_MINTERMS) == SYLVAN_OK);
+    has_item = 17;
+    test_assert(bdd_iterator_next(iterator, values, 2, &has_item) == SYLVAN_ERR_INVALID);
+    test_assert(has_item == 17);
+    test_assert(bdd_iterator_next(iterator, values, 3, &has_item) == SYLVAN_OK && has_item == 0);
+    sylvan_iterator_destroy(iterator);
+    sylvan_iterator_destroy(NULL);
+
+    mtbdd_unprotect(&function);
+    mtbdd_unprotect(&nine);
+    mtbdd_unprotect(&seven);
+    mtbdd_unprotect(&cube);
+    mtbdd_unprotect(&covered);
+    mtbdd_unprotect(&formula);
+    mtbdd_unprotect(&right);
+    mtbdd_unprotect(&left);
+    mtbdd_unprotect(&x2);
+    mtbdd_unprotect(&x0);
+    mtbdd_unprotect(&missing);
+    mtbdd_unprotect(&variables);
+    mtbdd_unprotect(&x);
+    return 0;
+}
+
 TASK(int, test_quantification_destinations)
 int
 test_quantification_destinations_CALL(lace_worker *lace)
@@ -2886,33 +3023,6 @@ test_cube()
     test_assert(mtbdd_node_count(simplified) <= mtbdd_node_count(bdd));
     test_assert(test_bdd_and(simplified, picked) == test_bdd_and(bdd, picked));
 
-    // simple test for mtbdd_enum_all
-    uint8_t arr[6];
-    MTBDD leaf = mtbdd_first_minterm(bdd_true, vars, arr, NULL);
-    test_assert(leaf == bdd_true);
-    test_assert(mtbdd_first_minterm(bdd_true, vars, arr, NULL) == bdd_true);
-    test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 0 && arr[4] == 0 && arr[5] == 0);
-    test_assert(mtbdd_next_minterm(bdd_true, vars, arr, NULL) == bdd_true);
-    test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 0 && arr[4] == 0 && arr[5] == 1);
-    test_assert(mtbdd_next_minterm(bdd_true, vars, arr, NULL) == bdd_true);
-    test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 0 && arr[4] == 1 && arr[5] == 0);
-    test_assert(mtbdd_next_minterm(bdd_true, vars, arr, NULL) == bdd_true);
-    test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 0 && arr[4] == 1 && arr[5] == 1);
-    test_assert(mtbdd_next_minterm(bdd_true, vars, arr, NULL) == bdd_true);
-    test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 1 && arr[4] == 0 && arr[5] == 0);
-    test_assert(mtbdd_next_minterm(bdd_true, vars, arr, NULL) == bdd_true);
-    test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 1 && arr[4] == 0 && arr[5] == 1);
-    test_assert(mtbdd_next_minterm(bdd_true, vars, arr, NULL) == bdd_true);
-    test_assert(arr[0] == 0 && arr[1] == 0 && arr[2] == 0 && arr[3] == 1 && arr[4] == 1 && arr[5] == 0);
-
-    mtbdd_first_minterm(bdd_true, vars, arr, NULL);
-    size_t count = 1;
-    while (mtbdd_next_minterm(bdd_true, vars, arr, NULL) != mtbdd_undefined) {
-        test_assert(count < 64);
-        count++;
-    }
-    test_assert(count == 64);
-
     return 0;
 }
 
@@ -3243,6 +3353,7 @@ int runtests_CALL(lace_worker* lace)
     if (test_eval_destinations_CALL(lace)) return 1;
     if (test_mtbdd_eval_compose_destinations_CALL(lace)) return 1;
     if (test_count_destinations_CALL(lace)) return 1;
+    if (test_iterator_destinations_CALL(lace)) return 1;
     if (test_quantification_destinations_CALL(lace)) return 1;
     if (test_care_destinations_CALL(lace)) return 1;
     if (test_compose_destinations_CALL(lace)) return 1;

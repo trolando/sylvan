@@ -127,6 +127,8 @@ typedef enum {
     OPCOUNTER(ZDD_COVER_TO_BDD),
 
     /* Other counters */
+    SYLVAN_ITERATOR_CREATED,
+    SYLVAN_ITERATOR_ITEMS,
     SYLVAN_GC_COUNT,
     LLMSSET_LOOKUP,
 

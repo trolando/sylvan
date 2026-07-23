@@ -199,6 +199,27 @@ static inline int mtbdd_sat_count_u64(uint64_t *result, MTBDD dd, BDDSET variabl
 static inline double mtbdd_sat_count_double(MTBDD dd, BDDSET variables);
 
 /**
+ * Create a low-first iterator over assignments leading to every leaf of <dd>
+ * except mtbdd_undefined. <variables> must contain the complete support. In
+ * cube mode, emitted values are 0, 1, or 2 (don't-care); in minterm mode, they
+ * are only 0 or 1.
+ *
+ * The iterator protects <dd> and <variables> until it is destroyed. Reordering,
+ * manager destruction, and concurrent use of the iterator are forbidden while
+ * it is live. On failure, <result> is unchanged.
+ */
+int mtbdd_iterator_create(sylvan_iterator **result, MTBDD dd, BDDSET variables,
+                          sylvan_iterator_mode mode);
+
+/**
+ * Write the next assignment and associated leaf. <count> must equal the number
+ * of iterator variables. Sets <has_item> to 1 when an item was written, or 0
+ * at the end. This operation does not allocate.
+ */
+int mtbdd_iterator_next(sylvan_iterator *iterator, uint8_t *values, size_t count,
+                        MTBDD *leaf, int *has_item);
+
+/**
  * Count the number of MTBDD leaves (excluding mtbdd_undefined and bdd_true) in the given <count> MTBDDs
  */
 size_t mtbdd_shared_leaf_count(const MTBDD *mtbdds, size_t count);
@@ -512,50 +533,6 @@ static inline int mtbdd_find_min(MTBDD *result, MTBDD dd);
  * Returns SYLVAN_OK on success. On failure, <result> is unchanged.
  */
 static inline int mtbdd_find_max(MTBDD *result, MTBDD dd);
-
-/**
- * Given a MTBDD <dd> and a cube of variables <variables> expected in <dd>,
- * mtbdd_first_cube and mtbdd_next_cube enumerates the unique paths in <dd> that lead to a non-False leaf.
- * 
- * The function returns the leaf (or mtbdd_undefined if no new path is found) and encodes the path
- * in the supplied array <arr>: 0 for a low edge, 1 for a high edge, and 2 if the variable is skipped.
- *
- * The supplied array <arr> must be large enough for all variables in <variables>.
- *
- * Usage:
- * MTBDD leaf = mtbdd_first_cube(dd, variables, arr, NULL);
- * while (leaf != mtbdd_undefined) {
- *     .... // do something with arr/leaf
- *     leaf = mtbdd_next_cube(dd, variables, arr, NULL);
- * }
- *
- * The callback is an optional function that returns 0 when the given terminal node should be skipped.
- */
-typedef int (*mtbdd_enum_filter_cb)(MTBDD);
-MTBDD mtbdd_first_cube(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb);
-MTBDD mtbdd_next_cube(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb);
-
-/**
- * Given an MTBDD <dd> and a cube of variables <variables> expected in <dd>,
- * mtbdd_first_minterm and mtbdd_next_minterm enumerate all satisfying assignments in <dd> that lead
- * to a non-False leaf.
- *
- * The functions return the leaf (or mtbdd_undefined if no new satisfying assignment is found) and encodes
- * the assignment in the supplied array <arr>, 0 for False and 1 for True.
- *
- * The supplied array <arr> must be large enough for all variables in <variables>.
- *
- * Usage:
- * MTBDD leaf = mtbdd_first_cube(dd, variables, arr, NULL);
- * while (leaf != mtbdd_undefined) {
- *     .... // do something with arr/leaf
- *     leaf = mtbdd_next_cube(dd, variables, arr, NULL);
- * }
- *
- * The callback is an optional function that returns 0 when the given terminal node should be skipped.
- */
-MTBDD mtbdd_first_minterm(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb);
-MTBDD mtbdd_next_minterm(MTBDD dd, MTBDD variables, uint8_t *arr, mtbdd_enum_filter_cb filter_cb);
 
 /**
  * Given a MTBDD <dd>, call <cb> with context <context> for every unique path in <dd> ending in leaf <leaf>.

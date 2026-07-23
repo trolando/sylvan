@@ -39,6 +39,20 @@ enum {
     SYLVAN_APPLY_RECURSE = 1
 };
 
+/** Opaque state for BDD and MTBDD assignment iteration. */
+typedef struct sylvan_iterator sylvan_iterator;
+
+/** Output representation produced by a Sylvan iterator. */
+typedef enum {
+    SYLVAN_ITERATOR_CUBES = 0,
+    SYLVAN_ITERATOR_MINTERMS = 1
+} sylvan_iterator_mode;
+
+/**
+ * Destroy an iterator. Passing NULL is allowed.
+ */
+void sylvan_iterator_destroy(sylvan_iterator *iterator);
+
 /**
  * Initialize the Sylvan parallel decision diagrams package.
  *

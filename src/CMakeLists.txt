@@ -41,6 +41,7 @@ target_sources(sylvan
     cache.c
     common.c
     hash.c
+    iterator.c
     listdd.c
     mt.c
     mtbdd.c

@@ -311,6 +311,26 @@ static inline int bdd_sat_count_u64(uint64_t *result, BDD dd, BDDSET variables);
 static inline double bdd_sat_count_double(BDD dd, BDDSET variables);
 
 /**
+ * Create a low-first iterator over the satisfying assignments of <dd>.
+ * <variables> must contain the complete support. In cube mode, emitted values
+ * are 0, 1, or 2 (don't-care); in minterm mode, they are only 0 or 1.
+ *
+ * The iterator protects <dd> and <variables> until it is destroyed. Reordering,
+ * manager destruction, and concurrent use of the iterator are forbidden while
+ * it is live. On failure, <result> is unchanged.
+ */
+int bdd_iterator_create(sylvan_iterator **result, BDD dd, BDDSET variables,
+                        sylvan_iterator_mode mode);
+
+/**
+ * Write the next assignment to <values>. <count> must equal the number of
+ * iterator variables. Sets <has_item> to 1 when an item was written, or 0 at
+ * the end. This operation does not allocate.
+ */
+int bdd_iterator_next(sylvan_iterator *iterator, uint8_t *values, size_t count,
+                      int *has_item);
+
+/**
  * Create a BDD cube representing the conjunction of variables in their positive or negative
  * form depending on whether the cube[idx] equals 0 (negative), 1 (positive) or 2 (any).
  * Returns SYLVAN_ERR_INVALID and leaves <result> unchanged for any other value.

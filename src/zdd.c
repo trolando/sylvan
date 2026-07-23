@@ -29,11 +29,17 @@ TASK(int, zdd_extend_domain_internal, ZDD*, result, ZDD, dd, ZDD, newvars, int, 
 TASK(int, zdd_ite_internal, ZDD*, result, ZDD, f, ZDD, g, ZDD, h, ZDD, domain)
 TASK(int, zdd_not_internal, ZDD*, result, ZDD, dd, ZDD, domain)
 TASK(int, zdd_exists_internal, ZDD*, result, ZDD, dd, ZDD, variables)
+TASK(int, zdd_quantify_internal, ZDD*, result, ZDD, dd, ZDD, variables, int, op)
 TASK(int, zdd_project_internal, ZDD*, result, ZDD, dd, ZDD, domain)
 TASK(int, zdd_or_cube_leaf, ZDD*, result, ZDD, set, BDDSET, domain, uint8_t*, values, ZDD, leaf)
 
 #include "refs.h"
 #include "sl.h"
+
+enum zdd_quantify_op {
+    ZDD_QUANTIFY_FORALL,
+    ZDD_QUANTIFY_UNIQUE
+};
 
 /**
  * Basic ZDD node manipulation
@@ -1106,6 +1112,101 @@ zdd_shared_node_count(const ZDD *zdds, size_t count)
     return result;
 }
 
+double
+zdd_count_double_CALL(lace_worker* lace, ZDD dd)
+{
+    if (dd == zdd_invalid) return NAN;
+    return zdd_path_count_CALL(lace, dd);
+}
+
+int
+zdd_eval(int *destination, ZDD dd, BDDSET domain, const uint8_t *values, size_t count)
+{
+    if (destination == NULL || dd == zdd_invalid || domain == mtbdd_invalid ||
+        count != bdd_set_count(domain) || (count != 0 && values == NULL)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    BDDSET support = mtbdd_invalid;
+    BDDSET missing = mtbdd_invalid;
+    mtbdd_protect(&support);
+    mtbdd_protect(&missing);
+    int status = zdd_support(&support, dd);
+    if (status == SYLVAN_OK) {
+        status = bdd_set_difference(&missing, support, domain);
+    }
+    if (status == SYLVAN_OK && !bdd_set_is_empty(missing)) {
+        status = SYLVAN_ERR_INVALID;
+    }
+    mtbdd_unprotect(&missing);
+    mtbdd_unprotect(&support);
+    if (status != SYLVAN_OK) return status;
+
+    BDDSET remaining = domain;
+    for (size_t i = 0; i < count; i++) {
+        const uint8_t value = values[i];
+        if (value > 1) return SYLVAN_ERR_INVALID;
+
+        const uint32_t level = bdd_set_first(remaining);
+        remaining = bdd_set_next(remaining);
+
+        if (dd == zdd_false) continue;
+        if (dd == zdd_base) {
+            if (value != 0) dd = zdd_false;
+            continue;
+        }
+        if (zdd_is_leaf(dd)) return SYLVAN_ERR_INVALID;
+
+        const uint32_t node_level = zdd_top_var(dd);
+        if (node_level < level) return SYLVAN_ERR_INVALID;
+        if (node_level == level) {
+            dd = value == 0 ? zdd_node_low(dd) : zdd_node_high(dd);
+        } else if (value != 0) {
+            dd = zdd_false;
+        }
+    }
+
+    if (dd != zdd_false && dd != zdd_base) return SYLVAN_ERR_INVALID;
+    *destination = dd == zdd_base;
+    return SYLVAN_OK;
+}
+
+int
+zdd_count_u64_CALL(lace_worker* lace, uint64_t *destination, ZDD dd)
+{
+    if (destination == NULL || dd == zdd_invalid) return SYLVAN_ERR_INVALID;
+    if (dd == zdd_false) { *destination = 0; return SYLVAN_OK; }
+    if (dd == zdd_base) { *destination = 1; return SYLVAN_OK; }
+    if (zdd_is_leaf(dd)) { *destination = 1; return SYLVAN_OK; }
+
+    sylvan_gc_test(lace);
+    sylvan_stats_count(ZDD_COUNT_U64);
+
+    uint64_t computed;
+    if (cache_get3(CACHE_ZDD_COUNT_U64, dd, 0, 0, &computed)) {
+        sylvan_stats_count(ZDD_COUNT_U64_CACHED);
+        *destination = computed;
+        return SYLVAN_OK;
+    }
+
+    uint64_t low;
+    uint64_t high;
+    zdd_count_u64_SPAWN(lace, &high, zdd_node_high(dd));
+    int status = zdd_count_u64_CALL(lace, &low, zdd_node_low(dd));
+    int high_status = zdd_count_u64_SYNC(lace);
+    if (status == SYLVAN_OK) status = high_status;
+    if (status != SYLVAN_OK) return status;
+    if (UINT64_MAX - low < high) return SYLVAN_ERR_OVERFLOW;
+
+    computed = low + high;
+    if (cache_put3(CACHE_ZDD_COUNT_U64, dd, 0, 0, computed)) {
+        sylvan_stats_count(ZDD_COUNT_U64_CACHEDPUT);
+    }
+
+    *destination = computed;
+    return SYLVAN_OK;
+}
+
 /**
  * Implementation of the AND operator for Boolean ZDDs
  */
@@ -1658,6 +1759,131 @@ int zdd_diff_CALL(lace_worker* lace, ZDD *destination, ZDD a, ZDD b)
     return SYLVAN_OK;
 }
 
+int
+zdd_xor_CALL(lace_worker* lace, ZDD *destination, ZDD a, ZDD b)
+{
+    if (destination == NULL || a == zdd_invalid || b == zdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    sylvan_stats_count(ZDD_XOR);
+    if (a == b) { *destination = zdd_false; return SYLVAN_OK; }
+
+    ZDD left = zdd_invalid;
+    ZDD right = zdd_invalid;
+    ZDD computed = zdd_invalid;
+    zdd_refs_pushptr(&left);
+    zdd_refs_pushptr(&right);
+    zdd_refs_pushptr(&computed);
+
+    zdd_diff_SPAWN(lace, &right, b, a);
+    int status = zdd_diff_CALL(lace, &left, a, b);
+    int right_status = zdd_diff_SYNC(lace);
+    if (status == SYLVAN_OK) status = right_status;
+    if (status == SYLVAN_OK) status = zdd_or_CALL(lace, &computed, left, right);
+    if (status == SYLVAN_OK) *destination = computed;
+
+    zdd_refs_popptr(3);
+    return status;
+}
+
+int
+zdd_xnor_CALL(lace_worker* lace, ZDD *destination, ZDD a, ZDD b, BDDSET domain)
+{
+    if (destination == NULL || a == zdd_invalid || b == zdd_invalid ||
+        domain == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    ZDD computed = zdd_invalid;
+    zdd_refs_pushptr(&computed);
+    int status = zdd_xor_CALL(lace, &computed, a, b);
+    if (status == SYLVAN_OK) status = zdd_not_CALL(lace, &computed, computed, domain);
+    if (status == SYLVAN_OK) *destination = computed;
+    zdd_refs_popptr(1);
+    return status;
+}
+
+int
+zdd_nand_CALL(lace_worker* lace, ZDD *destination, ZDD a, ZDD b, BDDSET domain)
+{
+    if (destination == NULL || a == zdd_invalid || b == zdd_invalid ||
+        domain == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    ZDD computed = zdd_invalid;
+    zdd_refs_pushptr(&computed);
+    int status = zdd_and_CALL(lace, &computed, a, b);
+    if (status == SYLVAN_OK) status = zdd_not_CALL(lace, &computed, computed, domain);
+    if (status == SYLVAN_OK) *destination = computed;
+    zdd_refs_popptr(1);
+    return status;
+}
+
+int
+zdd_nor_CALL(lace_worker* lace, ZDD *destination, ZDD a, ZDD b, BDDSET domain)
+{
+    if (destination == NULL || a == zdd_invalid || b == zdd_invalid ||
+        domain == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    ZDD computed = zdd_invalid;
+    zdd_refs_pushptr(&computed);
+    int status = zdd_or_CALL(lace, &computed, a, b);
+    if (status == SYLVAN_OK) status = zdd_not_CALL(lace, &computed, computed, domain);
+    if (status == SYLVAN_OK) *destination = computed;
+    zdd_refs_popptr(1);
+    return status;
+}
+
+int
+zdd_imp_CALL(lace_worker* lace, ZDD *destination, ZDD a, ZDD b, BDDSET domain)
+{
+    if (destination == NULL || a == zdd_invalid || b == zdd_invalid ||
+        domain == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    ZDD computed = zdd_invalid;
+    zdd_refs_pushptr(&computed);
+    int status = zdd_diff_CALL(lace, &computed, a, b);
+    if (status == SYLVAN_OK) status = zdd_not_CALL(lace, &computed, computed, domain);
+    if (status == SYLVAN_OK) *destination = computed;
+    zdd_refs_popptr(1);
+    return status;
+}
+
+int
+zdd_disjoint_CALL(lace_worker* lace, int *destination, ZDD a, ZDD b)
+{
+    if (destination == NULL || a == zdd_invalid || b == zdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    ZDD intersection = zdd_invalid;
+    zdd_refs_pushptr(&intersection);
+    int status = zdd_and_CALL(lace, &intersection, a, b);
+    if (status == SYLVAN_OK) *destination = intersection == zdd_false;
+    zdd_refs_popptr(1);
+    return status;
+}
+
+int
+zdd_subseteq_CALL(lace_worker* lace, int *destination, ZDD a, ZDD b)
+{
+    if (destination == NULL || a == zdd_invalid || b == zdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    ZDD difference = zdd_invalid;
+    zdd_refs_pushptr(&difference);
+    int status = zdd_diff_CALL(lace, &difference, a, b);
+    if (status == SYLVAN_OK) *destination = difference == zdd_false;
+    zdd_refs_popptr(1);
+    return status;
+}
+
 /**
  * Compute existential quantification, but stay in same domain
  */
@@ -1795,6 +2021,139 @@ int zdd_exists_internal_CALL(lace_worker* lace, ZDD *destination, ZDD dd, ZDD va
     *destination = computed;
     zdd_refs_popptr(1);
     return SYLVAN_OK;
+}
+
+int
+zdd_forall_CALL(lace_worker* lace, ZDD *destination, ZDD dd, BDDSET variables)
+{
+    if (destination == NULL || dd == zdd_invalid || variables == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    ZDD zdd_variables = zdd_invalid;
+    zdd_refs_pushptr(&zdd_variables);
+    int status = zdd_from_mtbdd_CALL(lace, &zdd_variables, bdd_true, variables);
+    if (status == SYLVAN_OK) {
+        status = zdd_quantify_internal_CALL(
+            lace, destination, dd, zdd_variables, ZDD_QUANTIFY_FORALL);
+    }
+    zdd_refs_popptr(1);
+    return status;
+}
+
+int
+zdd_unique_CALL(lace_worker* lace, ZDD *destination, ZDD dd, BDDSET variables)
+{
+    if (destination == NULL || dd == zdd_invalid || variables == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    ZDD zdd_variables = zdd_invalid;
+    zdd_refs_pushptr(&zdd_variables);
+    int status = zdd_from_mtbdd_CALL(lace, &zdd_variables, bdd_true, variables);
+    if (status == SYLVAN_OK) {
+        status = zdd_quantify_internal_CALL(
+            lace, destination, dd, zdd_variables, ZDD_QUANTIFY_UNIQUE);
+    }
+    zdd_refs_popptr(1);
+    return status;
+}
+
+int
+zdd_quantify_internal_CALL(lace_worker* lace, ZDD *destination, ZDD dd,
+                           ZDD variables, int op)
+{
+    if (destination == NULL || dd == zdd_invalid || variables == zdd_invalid ||
+        (op != ZDD_QUANTIFY_FORALL && op != ZDD_QUANTIFY_UNIQUE)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    if (dd == zdd_false || variables == zdd_base) {
+        *destination = dd;
+        return SYLVAN_OK;
+    }
+    if (dd == zdd_base) {
+        *destination = op == ZDD_QUANTIFY_FORALL ? zdd_false : variables;
+        return SYLVAN_OK;
+    }
+    if (zdd_is_leaf(dd) || zdd_is_leaf(variables)) return SYLVAN_ERR_INVALID;
+
+    sylvan_gc_test(lace);
+    const uint64_t cache_id =
+        op == ZDD_QUANTIFY_FORALL ? CACHE_ZDD_FORALL : CACHE_ZDD_UNIQUE;
+    const Sylvan_Counters counter =
+        op == ZDD_QUANTIFY_FORALL ? ZDD_FORALL : ZDD_UNIQUE;
+    sylvan_stats_count(counter);
+
+    ZDD computed = zdd_invalid;
+    zdd_refs_pushptr(&computed);
+    if (cache_get3(cache_id, dd, variables, 0, &computed)) {
+        sylvan_stats_count(counter + 2);
+        *destination = computed;
+        zdd_refs_popptr(1);
+        return SYLVAN_OK;
+    }
+
+    const uint32_t dd_var = zdd_top_var(dd);
+    const uint32_t variables_var = zdd_top_var(variables);
+    const ZDD variables_next = zdd_node_high(variables);
+    int status = SYLVAN_OK;
+
+    if (variables_var < dd_var) {
+        if (op == ZDD_QUANTIFY_FORALL) {
+            computed = zdd_false;
+        } else {
+            status = zdd_quantify_internal_CALL(
+                lace, &computed, dd, variables_next, op);
+            if (status == SYLVAN_OK) {
+                status = _zdd_try_make_node(
+                    &computed, variables_var, computed, computed);
+            }
+        }
+    } else if (variables_var == dd_var) {
+        ZDD low = zdd_invalid;
+        ZDD high = zdd_invalid;
+        zdd_refs_pushptr(&low);
+        zdd_refs_pushptr(&high);
+        zdd_quantify_internal_SPAWN(
+            lace, &high, zdd_node_high(dd), variables_next, op);
+        status = zdd_quantify_internal_CALL(
+            lace, &low, zdd_node_low(dd), variables_next, op);
+        int high_status = zdd_quantify_internal_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+        if (status == SYLVAN_OK) {
+            status = op == ZDD_QUANTIFY_FORALL
+                ? zdd_and_CALL(lace, &computed, low, high)
+                : zdd_xor_CALL(lace, &computed, low, high);
+        }
+        zdd_refs_popptr(2);
+        if (status == SYLVAN_OK) {
+            status = _zdd_try_make_node(
+                &computed, variables_var, computed, computed);
+        }
+    } else {
+        ZDD low = zdd_invalid;
+        ZDD high = zdd_invalid;
+        zdd_refs_pushptr(&low);
+        zdd_refs_pushptr(&high);
+        zdd_quantify_internal_SPAWN(
+            lace, &high, zdd_node_high(dd), variables, op);
+        status = zdd_quantify_internal_CALL(
+            lace, &low, zdd_node_low(dd), variables, op);
+        int high_status = zdd_quantify_internal_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+        if (status == SYLVAN_OK) {
+            status = _zdd_try_make_node(&computed, dd_var, low, high);
+        }
+        zdd_refs_popptr(2);
+    }
+
+    if (status == SYLVAN_OK && cache_put3(cache_id, dd, variables, 0, computed)) {
+        sylvan_stats_count(counter + 1);
+    }
+    if (status == SYLVAN_OK) *destination = computed;
+    zdd_refs_popptr(1);
+    return status;
 }
 
 /**

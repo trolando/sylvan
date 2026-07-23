@@ -194,14 +194,55 @@ TASK(int, zdd_lift, ZDD*, result, ZDD, dd, BDDSET, old_domain, BDDSET, new_domai
 TASK(int, zdd_support, BDDSET*, result, ZDD, dd)
 
 /**
- * Count the number of satisfying assignments (minterms) leading to a non-False leaf.
- * We do not need to give the domain, as skipped variables do not increase the number of minterms.
- * Fun fact: this is the same as zdd_path_count!
+ * Evaluate <dd> under one complete assignment over <domain>.
+ *
+ * <values> is packed in domain order, contains only 0 and 1, and <count> must
+ * equal bdd_set_count(<domain>). Variables skipped by the ZDD are false.
+ * Writes 1 if the assignment belongs to the represented family and 0
+ * otherwise. Returns SYLVAN_ERR_INVALID and leaves <value> unchanged for
+ * malformed arguments, a domain that omits the support, or a non-Boolean leaf.
  */
+int zdd_eval(int *value, ZDD dd, BDDSET domain, const uint8_t *values, size_t count);
+
 /**
  * Count the number of distinct paths leading to a non-False leaf.
+ * For Boolean ZDDs this equals the number of represented assignments. A
+ * custom non-False leaf counts as one accepting path.
  */
 TASK(double, zdd_path_count, ZDD, dd)
+
+/**
+ * Count the represented assignments exactly.
+ * A custom non-False leaf counts as one accepting assignment.
+ * Returns SYLVAN_ERR_OVERFLOW if the result does not fit in uint64_t.
+ * On failure, <result> is unchanged.
+ */
+TASK(int, zdd_count_u64, uint64_t*, result, ZDD, dd)
+
+/**
+ * Count the represented assignments approximately.
+ * A custom non-False leaf counts as one accepting assignment. Returns NaN for
+ * an invalid argument.
+ */
+TASK(double, zdd_count_double, ZDD, dd)
+
+/**
+ * Create a low-first iterator over all complete assignments represented by
+ * <dd>. <domain> must contain the complete support. Skipped variables are
+ * emitted as 0. This Boolean iterator rejects ZDDs with custom leaves; the
+ * count functions still treat every custom non-False leaf as one accepting
+ * path. The iterator protects <dd> and <domain> until destruction. On failure,
+ * <result> is unchanged.
+ */
+int zdd_iterator_create(sylvan_iterator **result, ZDD dd, BDDSET domain);
+
+/**
+ * Write the next complete assignment to <values>. <count> must equal the
+ * number of domain variables. Sets <has_item> to 1 when an item was written,
+ * or 0 after exhaustion.
+ */
+int zdd_iterator_next(sylvan_iterator *iterator, uint8_t *values, size_t count,
+                      int *has_item);
 
 /**
  * Count the number of nodes (internal nodes plus leaves) in ZDDs.
@@ -252,38 +293,44 @@ TASK(int, zdd_or, ZDD*, result, ZDD, a, ZDD, b)
 TASK(int, zdd_diff, ZDD*, result, ZDD, a, ZDD, b)
 
 /**
- * Compute logical XOR of <a> and <b>.
+ * Compute logical XOR (symmetric difference) of <a> and <b>.
+ * The caller must protect <result>. Returns SYLVAN_OK on success or a negative
+ * status on failure, leaving <result> unchanged.
  */
-// TASK(ZDD, zdd_xor, ZDD, ZDD);
-// #define zdd_xor(a, b) RUN(zdd_xor, a, b)
+TASK(int, zdd_xor, ZDD*, result, ZDD, a, ZDD, b)
 
 /**
- * Compute logical EQUIV of <a> and <b>.
- * Also called bi-implication. (a <-> b)
- * This operation requires the variable domain <dom>.
+ * Compute logical XNOR (equivalence) of <a> and <b> over <domain>.
  */
-// TASK(ZDD, zdd_equiv, ZDD, ZDD, ZDD);
-// #define zdd_equiv(a, b, dom) RUN(zdd_equiv, a, b, dom)
+TASK(int, zdd_xnor, ZDD*, result, ZDD, a, ZDD, b, BDDSET, domain)
 
 /**
- * Compute logical IMP of <a> and <b>. (a -> b)
- * This operation requires the variable domain <dom>.
+ * Compute logical NAND of <a> and <b> over <domain>.
  */
-// TASK(ZDD, zdd_imp, ZDD, ZDD, ZDD);
-// #define zdd_imp(a, b, dom) RUN(zdd_imp, a, b, dom)
+TASK(int, zdd_nand, ZDD*, result, ZDD, a, ZDD, b, BDDSET, domain)
 
 /**
- * Compute logical INVIMP of <a> and <b>. (b <- a)
- * This operation requires the variable domain <dom>.
+ * Compute logical NOR of <a> and <b> over <domain>.
  */
-// TASK(ZDD, zdd_invimp, ZDD, ZDD, ZDD);
-// #define zdd_invimp(a, b, dom) RUN(zdd_invimp, a, b, dom)
+TASK(int, zdd_nor, ZDD*, result, ZDD, a, ZDD, b, BDDSET, domain)
 
-// add binary operators
-// zdd_diff (no domain) == a and not b
-// zdd_less (no domain) == not a and b
-// zdd_nand (domain)    == not (a and b)
-// zdd_nor  (domain)    == not a and not b
+/**
+ * Compute logical implication <a> -> <b> over <domain>.
+ */
+TASK(int, zdd_imp, ZDD*, result, ZDD, a, ZDD, b, BDDSET, domain)
+
+/**
+ * Determine whether <a> and <b> represent disjoint assignment families.
+ * Writes 1 when disjoint and 0 otherwise. On failure, <result> is unchanged.
+ */
+TASK(int, zdd_disjoint, int*, result, ZDD, a, ZDD, b)
+
+/**
+ * Determine whether every assignment represented by <a> is represented by
+ * <b>. Writes 1 when <a> is a subset of <b> and 0 otherwise. On failure,
+ * <result> is unchanged.
+ */
+TASK(int, zdd_subseteq, int*, result, ZDD, a, ZDD, b)
 
 /**
  * Compute \exists <vars>: <dd>.
@@ -302,10 +349,17 @@ TASK(int, zdd_exists, ZDD*, result, ZDD, dd, BDDSET, vars)
 TASK(int, zdd_project, ZDD*, result, ZDD, dd, BDDSET, domain)
 
 /**
- * Compute \forall <vars>: <dd>.
+ * Universal quantification: compute \forall <vars>: <dd>, retaining the
+ * original variable domain.
  */
-// TASK(ZDD, zdd_forall, ZDD, ZDD);
-// #define zdd_forall(dd, vars) RUN(zdd_forall, dd, vars)
+TASK(int, zdd_forall, ZDD*, result, ZDD, dd, BDDSET, vars)
+
+/**
+ * Unique (parity) quantification, retaining the original variable domain.
+ * For one variable x this computes dd[x=0] XOR dd[x=1]. For several
+ * variables it is true where an odd number of extensions satisfy <dd>.
+ */
+TASK(int, zdd_unique, ZDD*, result, ZDD, dd, BDDSET, vars)
 
 /**
  * Compute \exists <vars>: <a> and <b>.
@@ -374,16 +428,6 @@ ZDDMAP zdd_map_set(ZDDMAP map, uint32_t key, ZDD value);
  * Add all values from map2 to map1, overwrites if key already in map1.
  */
 ZDDMAP zdd_map_update(ZDDMAP map1, ZDDMAP map2);
-
-/**
- * Remove the key <key> from the map and return the result
- */
-ZDDMAP zdd_map_remove(ZDDMAP map, uint32_t key);
-
-/**
- * Remove all keys in the cube <variables> from the map and return the result
- */
-ZDDMAP zdd_map_remove_all(ZDDMAP map, ZDD variables);
 
 /**
  * Enumerate all minterms (non-False assignments)

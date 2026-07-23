@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -1063,6 +1064,184 @@ int test_zdd_exists_CALL(lace_worker* lace)
     return 0;
 }
 
+TASK(int, test_zdd_boolean_parity)
+int
+test_zdd_boolean_parity_CALL(lace_worker* lace)
+{
+    BDDSET domain = mtbdd_invalid;
+    BDDSET quantified = mtbdd_invalid;
+    BDD x0 = mtbdd_invalid;
+    BDD x1 = mtbdd_invalid;
+    BDD x2 = mtbdd_invalid;
+    BDD a_bdd = mtbdd_invalid;
+    BDD b_bdd = mtbdd_invalid;
+    BDD expected_bdd = mtbdd_invalid;
+    ZDD a = zdd_invalid;
+    ZDD b = zdd_invalid;
+    ZDD expected = zdd_invalid;
+    ZDD result = zdd_invalid;
+    ZDD unchanged = zdd_base;
+    mtbdd_refs_pushptr(&domain);
+    mtbdd_refs_pushptr(&quantified);
+    mtbdd_refs_pushptr(&x0);
+    mtbdd_refs_pushptr(&x1);
+    mtbdd_refs_pushptr(&x2);
+    mtbdd_refs_pushptr(&a_bdd);
+    mtbdd_refs_pushptr(&b_bdd);
+    mtbdd_refs_pushptr(&expected_bdd);
+    zdd_refs_pushptr(&a);
+    zdd_refs_pushptr(&b);
+    zdd_refs_pushptr(&expected);
+    zdd_refs_pushptr(&result);
+    zdd_refs_pushptr(&unchanged);
+
+    domain = test_bdd_set_from_levels((uint32_t[]){0,1,2}, 3);
+    quantified = test_bdd_set_from_levels((uint32_t[]){0,2}, 2);
+    x0 = test_bdd_var(0);
+    x1 = test_bdd_var(1);
+    x2 = test_bdd_var(2);
+    test_assert(bdd_xor(&a_bdd, x0, x1) == SYLVAN_OK);
+    test_assert(bdd_or(&b_bdd, x1, x2) == SYLVAN_OK);
+    a = test_zdd_from_bdd_value(a_bdd, domain);
+    b = test_zdd_from_bdd_value(b_bdd, domain);
+
+#define TEST_ZDD_BOOLEAN_BINARY(zdd_op, bdd_op) \
+    do { \
+        test_assert(bdd_op(&expected_bdd, a_bdd, b_bdd) == SYLVAN_OK); \
+        expected = test_zdd_from_bdd_value(expected_bdd, domain); \
+        test_assert(zdd_op(&result, a, b, domain) == SYLVAN_OK); \
+        test_assert(result == expected); \
+    } while (0)
+
+    test_assert(bdd_xor(&expected_bdd, a_bdd, b_bdd) == SYLVAN_OK);
+    expected = test_zdd_from_bdd_value(expected_bdd, domain);
+    test_assert(zdd_xor(&result, a, b) == SYLVAN_OK && result == expected);
+    TEST_ZDD_BOOLEAN_BINARY(zdd_xnor, bdd_xnor);
+    TEST_ZDD_BOOLEAN_BINARY(zdd_nand, bdd_nand);
+    TEST_ZDD_BOOLEAN_BINARY(zdd_nor, bdd_nor);
+    TEST_ZDD_BOOLEAN_BINARY(zdd_imp, bdd_imp);
+
+#undef TEST_ZDD_BOOLEAN_BINARY
+
+    int predicate = -1;
+    test_assert(zdd_disjoint(&predicate, a, b) == SYLVAN_OK);
+    test_assert(predicate == bdd_disjoint(a_bdd, b_bdd));
+    test_assert(zdd_subseteq(&predicate, a, b) == SYLVAN_OK);
+    test_assert(predicate == bdd_subseteq(a_bdd, b_bdd));
+    test_assert(zdd_subseteq(&predicate, a, a) == SYLVAN_OK && predicate == 1);
+
+    test_assert(bdd_forall(&expected_bdd, a_bdd, quantified) == SYLVAN_OK);
+    expected = test_zdd_from_bdd_value(expected_bdd, domain);
+    result = a;
+    test_assert(zdd_forall(&result, result, quantified) == SYLVAN_OK);
+    test_assert(result == expected);
+
+    test_assert(bdd_unique(&expected_bdd, a_bdd, quantified) == SYLVAN_OK);
+    expected = test_zdd_from_bdd_value(expected_bdd, domain);
+    result = a;
+    test_assert(zdd_unique(&result, result, quantified) == SYLVAN_OK);
+    test_assert(result == expected);
+
+    sylvan_gc_CALL(lace);
+    test_assert(result == expected);
+
+    test_assert(zdd_xor(&unchanged, zdd_invalid, b) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_forall(&unchanged, a, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    predicate = 17;
+    test_assert(zdd_disjoint(&predicate, zdd_invalid, b) == SYLVAN_ERR_INVALID);
+    test_assert(predicate == 17);
+
+    zdd_refs_popptr(5);
+    mtbdd_refs_popptr(8);
+    return 0;
+}
+
+TASK(int, test_zdd_eval_count_iterator)
+int
+test_zdd_eval_count_iterator_CALL(lace_worker* lace)
+{
+    BDDSET domain = mtbdd_invalid;
+    BDDSET missing = mtbdd_invalid;
+    BDDSET wide_domain = mtbdd_invalid;
+    ZDD set = zdd_false;
+    ZDD universe = zdd_invalid;
+    ZDD custom = zdd_invalid;
+    mtbdd_refs_pushptr(&domain);
+    mtbdd_refs_pushptr(&missing);
+    mtbdd_refs_pushptr(&wide_domain);
+    zdd_refs_pushptr(&set);
+    zdd_refs_pushptr(&universe);
+    zdd_refs_pushptr(&custom);
+
+    domain = test_bdd_set_from_levels((uint32_t[]){0,2,5}, 3);
+    missing = test_bdd_set_from_levels((uint32_t[]){0,2}, 2);
+    uint8_t first[3] = {0,1,0};
+    uint8_t second[3] = {1,0,1};
+    test_assert(zdd_or_cube(&set, set, domain, first) == SYLVAN_OK);
+    test_assert(zdd_or_cube(&set, set, domain, second) == SYLVAN_OK);
+
+    int value = -1;
+    test_assert(zdd_eval(&value, set, domain, first, 3) == SYLVAN_OK && value == 1);
+    test_assert(zdd_eval(&value, set, domain, second, 3) == SYLVAN_OK && value == 1);
+    test_assert(zdd_eval(&value, set, domain, (uint8_t[]){0,0,0}, 3) == SYLVAN_OK);
+    test_assert(value == 0);
+
+    value = 19;
+    test_assert(zdd_eval(&value, set, domain, (uint8_t[]){0,2,0}, 3) == SYLVAN_ERR_INVALID);
+    test_assert(value == 19);
+    test_assert(zdd_eval(&value, set, domain, first, 2) == SYLVAN_ERR_INVALID);
+    test_assert(value == 19);
+    test_assert(zdd_eval(&value, set, missing, first, 2) == SYLVAN_ERR_INVALID);
+    test_assert(value == 19);
+
+    uint64_t exact = 0;
+    test_assert(zdd_count_u64(&exact, set) == SYLVAN_OK && exact == 2);
+    test_assert(zdd_count_double(set) == 2.0);
+    test_assert(isnan(zdd_count_double(zdd_invalid)));
+
+    sylvan_iterator *iterator = NULL;
+    test_assert(zdd_iterator_create(&iterator, set, domain) == SYLVAN_OK);
+    sylvan_gc_CALL(lace);
+    uint8_t values[3] = {9,9,9};
+    int has_item = -1;
+    test_assert(zdd_iterator_next(iterator, values, 3, &has_item) == SYLVAN_OK);
+    test_assert(has_item == 1 && memcmp(values, first, 3) == 0);
+    test_assert(zdd_iterator_next(iterator, values, 3, &has_item) == SYLVAN_OK);
+    test_assert(has_item == 1 && memcmp(values, second, 3) == 0);
+    test_assert(zdd_iterator_next(iterator, values, 3, &has_item) == SYLVAN_OK);
+    test_assert(has_item == 0);
+    test_assert(zdd_iterator_next(iterator, values, 3, &has_item) == SYLVAN_OK);
+    test_assert(has_item == 0);
+    sylvan_iterator_destroy(iterator);
+
+    iterator = (sylvan_iterator*)(uintptr_t)1;
+    test_assert(zdd_iterator_create(&iterator, set, missing) == SYLVAN_ERR_INVALID);
+    test_assert(iterator == (sylvan_iterator*)(uintptr_t)1);
+
+    custom = mtbdd_int64(7);
+    exact = 0;
+    test_assert(zdd_count_u64(&exact, custom) == SYLVAN_OK && exact == 1);
+    iterator = (sylvan_iterator*)(uintptr_t)1;
+    test_assert(zdd_iterator_create(&iterator, custom, bdd_set_empty()) ==
+        SYLVAN_ERR_INVALID);
+    test_assert(iterator == (sylvan_iterator*)(uintptr_t)1);
+
+    uint32_t levels[65];
+    for (size_t i = 0; i < 65; i++) levels[i] = (uint32_t)i;
+    wide_domain = test_bdd_set_from_levels(levels, 65);
+    test_assert(zdd_true(&universe, wide_domain) == SYLVAN_OK);
+    exact = 123;
+    test_assert(zdd_count_u64(&exact, universe) == SYLVAN_ERR_OVERFLOW);
+    test_assert(exact == 123);
+    test_assert(zdd_count_double(universe) == ldexp(1.0, 65));
+
+    zdd_refs_popptr(3);
+    mtbdd_refs_popptr(3);
+    return 0;
+}
+
 // TASK(int, test_zdd_relnext)
 // {
 //     /**
@@ -1406,6 +1585,10 @@ int runtests_CALL(lace_worker* lace)
     for (int k=0; k<test_iterations; k++) if (test_zdd_not_CALL(lace)) return 1;
     printf("test_zdd_exists...\n");
     for (int k=0; k<test_iterations; k++) if (test_zdd_exists_CALL(lace)) return 1;
+    printf("test_zdd_boolean_parity...\n");
+    if (test_zdd_boolean_parity_CALL(lace)) return 1;
+    printf("test_zdd_eval_count_iterator...\n");
+    if (test_zdd_eval_count_iterator_CALL(lace)) return 1;
     // for (int k=0; k<test_iterations; k++) if (test_zdd_relnext_CALL(lace)) return 1;
     // for (int k=0; k<test_iterations; k++) if (test_zdd_and_dom_CALL(lace)) return 1;
     // printf("test_zdd_read_write...\n");

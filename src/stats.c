@@ -54,6 +54,7 @@ struct
     {2, BDD_XOR, "BDD xor"},
     {2, BDD_ITE, "BDD ite"},
     {2, BDD_EXISTS, "BDD exists"},
+    {2, BDD_UNIQUE, "BDD unique"},
     {2, BDD_PROJECT, "BDD project"},
     {2, BDD_AND_EXISTS, "BDD andexists"},
     {2, BDD_AND_PROJECT, "BDD andproject"},

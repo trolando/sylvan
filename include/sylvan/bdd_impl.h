@@ -133,6 +133,7 @@ TASK(int, bdd_and, BDD*, result, BDD, a, BDD, b)
 TASK(int, bdd_xor, BDD*, result, BDD, a, BDD, b)
 TASK(char, bdd_disjoint, BDD, a, BDD, b)
 TASK(int, bdd_exists, BDD*, result, BDD, dd, BDD, vars)
+TASK(int, bdd_unique, BDD*, result, BDD, dd, BDDSET, vars)
 TASK(int, bdd_project, BDD*, result, BDD, dd, BDD, vars);
 TASK(int, bdd_and_exists, BDD*, result, BDD, a, BDD, b, BDDSET, vars)
 TASK(int, bdd_and_project, BDD*, result, BDD, a, BDD, b, BDDSET, vars);

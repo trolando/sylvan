@@ -150,6 +150,11 @@ public:
     Bdd ExistAbstract(const BddSet& cube) const;
 
     /**
+     * @brief Computes parity abstraction over cube.
+     */
+    Bdd UniqueAbstract(const BddSet& cube) const;
+
+    /**
      * @brief Computes \forall cube: f
      */
     Bdd UnivAbstract(const BddSet& cube) const;

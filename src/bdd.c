@@ -852,6 +852,72 @@ int bdd_exists_CALL(lace_worker* lace, BDD *destination, BDD a, BDD variables)
     return SYLVAN_OK;
 }
 
+/**
+ * Calculate the parity abstraction of <a> over <variables>.
+ */
+int
+bdd_unique_CALL(lace_worker* lace, BDD *destination, BDD a, BDDSET variables)
+{
+    if (destination == NULL || a == mtbdd_invalid || variables == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    if (bdd_set_is_empty(variables)) { *destination = a; return SYLVAN_OK; }
+    if (a == bdd_false || a == bdd_true) { *destination = bdd_false; return SYLVAN_OK; }
+
+    bddnode* na = MTBDD_GETNODE(a);
+    uint32_t level = bddnode_getvariable(na);
+    uint32_t variable = bdd_set_first(variables);
+
+    /* An absent quantified variable contributes two equal cofactors. */
+    if (variable < level) { *destination = bdd_false; return SYLVAN_OK; }
+
+    sylvan_gc_test(lace);
+    sylvan_stats_count(BDD_UNIQUE);
+
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_BDD_UNIQUE, a, variables, 0, &computed)) {
+        sylvan_stats_count(BDD_UNIQUE_CACHED);
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
+    }
+
+    BDD low = mtbdd_invalid;
+    BDD high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+
+    BDDSET next_variables = variable == level ? bdd_set_next(variables) : variables;
+    bdd_unique_SPAWN(lace, &high, node_high(a, na), next_variables);
+    int low_status = bdd_unique_CALL(lace, &low, node_low(a, na), next_variables);
+    int high_status = bdd_unique_SYNC(lace);
+    if (low_status != SYLVAN_OK || high_status != SYLVAN_OK) {
+        mtbdd_refs_popptr(3);
+        return low_status != SYLVAN_OK ? low_status : high_status;
+    }
+
+    int status;
+    if (variable == level) {
+        status = bdd_xor_CALL(lace, &computed, low, high);
+    } else {
+        status = _mtbdd_try_make_node(&computed, level, low, high);
+    }
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(3);
+        return status;
+    }
+
+    if (cache_put3(CACHE_BDD_UNIQUE, a, variables, 0, computed)) {
+        sylvan_stats_count(BDD_UNIQUE_CACHEDPUT);
+    }
+
+    *destination = computed;
+    mtbdd_refs_popptr(3);
+    return SYLVAN_OK;
+}
+
 
 /**
  * Calculate projection of <a> unto <v>

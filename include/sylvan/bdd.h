@@ -161,6 +161,18 @@ static inline char bdd_subseteq(BDD a, BDD b);
 static inline int bdd_exists(BDD *result, BDD dd, BDDSET vars);
 
 /**
+ * Unique (parity) quantification.
+ *
+ * For one variable x, this computes dd[x=0] XOR dd[x=1]. For several
+ * variables, it computes the XOR of all cofactors, and is therefore true
+ * exactly where an odd number of extensions over <vars> satisfy <dd>.
+ * This is not an "exactly one assignment" test except for one variable.
+ *
+ * Returns SYLVAN_OK on success. On failure, <result> is unchanged.
+ */
+static inline int bdd_unique(BDD *result, BDD dd, BDDSET vars);
+
+/**
  * Universal quantification: compute ∀ <vars> : <dd>.
  */
 static inline int bdd_forall(BDD *result, BDD dd, BDDSET vars);

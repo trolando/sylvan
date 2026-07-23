@@ -40,6 +40,8 @@ int runtest_CALL(lace_worker* lace)
     variables.add(2);
     test_assert(t.Eval(variables, {0, 1}) == one);
     test_assert(t.Eval(variables, {0}) == Bdd(mtbdd_invalid));
+    test_assert(t.UniqueAbstract(variables) == one);
+    test_assert(t.UniqueAbstract(BddSet(v1)) == !v2);
 
     Mtbdd seven = Mtbdd::int64Terminal(7);
     Mtbdd nine = Mtbdd::int64Terminal(9);

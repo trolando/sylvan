@@ -1597,6 +1597,7 @@ test_quantification_destinations_CALL(lace_worker *lace)
     BDD conjunction = mtbdd_invalid;
     BDD disjoint_constraint = mtbdd_invalid;
     BDD exists_result = mtbdd_invalid;
+    BDD unique_result = mtbdd_invalid;
     BDD forall_result = mtbdd_invalid;
     BDD project_result = mtbdd_invalid;
     BDD and_exists_result = mtbdd_invalid;
@@ -1607,6 +1608,7 @@ test_quantification_destinations_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&conjunction);
     mtbdd_refs_pushptr(&disjoint_constraint);
     mtbdd_refs_pushptr(&exists_result);
+    mtbdd_refs_pushptr(&unique_result);
     mtbdd_refs_pushptr(&forall_result);
     mtbdd_refs_pushptr(&project_result);
     mtbdd_refs_pushptr(&and_exists_result);
@@ -1616,15 +1618,18 @@ test_quantification_destinations_CALL(lace_worker *lace)
     test_assert(bdd_and_CALL(lace, &disjoint_constraint, bdd_not(a), b) == SYLVAN_OK);
 
     bdd_exists_SPAWN(lace, &exists_result, conjunction, a);
+    bdd_unique_SPAWN(lace, &unique_result, conjunction, a);
     bdd_project_SPAWN(lace, &project_result, conjunction, a);
     bdd_and_exists_SPAWN(lace, &and_exists_result, a, b, a);
     int and_project_status = bdd_and_project_CALL(lace, &and_project_result, a, b, a);
     int and_exists_status = bdd_and_exists_SYNC(lace);
     int project_status = bdd_project_SYNC(lace);
+    int unique_status = bdd_unique_SYNC(lace);
     int exists_status = bdd_exists_SYNC(lace);
     int forall_status = bdd_forall(&forall_result, conjunction, a);
 
     test_assert(exists_status == SYLVAN_OK);
+    test_assert(unique_status == SYLVAN_OK);
     test_assert(forall_status == SYLVAN_OK);
     test_assert(project_status == SYLVAN_OK);
     test_assert(and_exists_status == SYLVAN_OK);
@@ -1632,6 +1637,7 @@ test_quantification_destinations_CALL(lace_worker *lace)
 
     sylvan_gc_CALL(lace);
     test_assert(exists_result == b);
+    test_assert(unique_result == b);
     test_assert(forall_result == bdd_false);
     test_assert(project_result == a);
     test_assert(and_exists_result == b);
@@ -1640,7 +1646,7 @@ test_quantification_destinations_CALL(lace_worker *lace)
     BDD unchanged = bdd_true;
     mtbdd_refs_pushptr(&unchanged);
 
-    test_bdd_unary_set_op unary_ops[] = {bdd_exists, bdd_forall, bdd_project};
+    test_bdd_unary_set_op unary_ops[] = {bdd_exists, bdd_unique, bdd_forall, bdd_project};
     for (size_t i = 0; i < sizeof(unary_ops) / sizeof(unary_ops[0]); i++) {
         test_assert(unary_ops[i](&unchanged, mtbdd_invalid, a) == SYLVAN_ERR_INVALID);
         test_assert(unchanged == bdd_true);
@@ -1692,6 +1698,22 @@ test_quantification_destinations_CALL(lace_worker *lace)
     test_assert(bdd_and_CALL(lace, &set_ad, a, d) == SYLVAN_OK);
     test_assert(bdd_and_CALL(lace, &set_abc, conjunction, c) == SYLVAN_OK);
 
+    test_assert(bdd_unique_CALL(lace, &unique_result, conjunction, conjunction) == SYLVAN_OK);
+    test_assert(unique_result == bdd_true);
+    test_assert(bdd_unique_CALL(lace, &unique_result, xor_ab, conjunction) == SYLVAN_OK);
+    test_assert(unique_result == bdd_false);
+    test_assert(bdd_unique_CALL(lace, &unique_result, a, c) == SYLVAN_OK);
+    test_assert(unique_result == bdd_false);
+    test_assert(bdd_unique_CALL(lace, &unique_result, b, a) == SYLVAN_OK);
+    test_assert(unique_result == bdd_false);
+    test_assert(bdd_unique_CALL(lace, &unique_result, bdd_true, a) == SYLVAN_OK);
+    test_assert(unique_result == bdd_false);
+    test_assert(bdd_unique_CALL(lace, &unique_result, a, bdd_set_empty()) == SYLVAN_OK);
+    test_assert(unique_result == a);
+    unchanged = conjunction;
+    test_assert(bdd_unique_CALL(lace, &unchanged, unchanged, a) == SYLVAN_OK);
+    test_assert(unchanged == b);
+
     BDD samples[] = {
         bdd_false, bdd_true,
         a, bdd_not(a), b, bdd_not(b), c, bdd_not(c),
@@ -1724,7 +1746,7 @@ test_quantification_destinations_CALL(lace_worker *lace)
     /* Leave the cache empty for the cache unit test that follows. */
     sylvan_gc_CALL(lace);
 
-    mtbdd_refs_popptr(18);
+    mtbdd_refs_popptr(19);
     return 0;
 }
 

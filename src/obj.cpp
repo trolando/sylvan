@@ -295,6 +295,12 @@ Bdd::ExistAbstract(const BddSet &cube) const
 }
 
 Bdd
+Bdd::UniqueAbstract(const BddSet &cube) const
+{
+    return apply_unary_set(bdd_unique, bdd, cube.set.bdd);
+}
+
+Bdd
 Bdd::UnivAbstract(const BddSet &cube) const
 {
     return apply_unary_set(bdd_forall, bdd, cube.set.bdd);

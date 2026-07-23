@@ -56,46 +56,46 @@ MTBDD mtbdd_gmp(mpq_t val);
 /**
  * Operation "plus" for two mpq MTBDDs
  */
-TASK(int, gmp_op_plus, MTBDD*, result, MTBDD*, a, MTBDD*, b);
-TASK(int, gmp_abstract_op_plus, MTBDD*, result, MTBDD, a, MTBDD, b, int, k);
+TASK(int, gmp_op_plus, MTBDD*, result, MTBDD*, a, MTBDD*, b)
+TASK(int, gmp_abstract_op_plus, MTBDD*, result, MTBDD, a, MTBDD, b, int, k)
 
 /**
  * Operation "minus" for two mpq MTBDDs
  */
-TASK(int, gmp_op_minus, MTBDD*, result, MTBDD*, a, MTBDD*, b);
+TASK(int, gmp_op_minus, MTBDD*, result, MTBDD*, a, MTBDD*, b)
 
 /**
  * Operation "times" for two mpq MTBDDs
  */
-TASK(int, gmp_op_times, MTBDD*, result, MTBDD*, a, MTBDD*, b);
-TASK(int, gmp_abstract_op_times, MTBDD*, result, MTBDD, a, MTBDD, c, int, k);
+TASK(int, gmp_op_times, MTBDD*, result, MTBDD*, a, MTBDD*, b)
+TASK(int, gmp_abstract_op_times, MTBDD*, result, MTBDD, a, MTBDD, c, int, k)
 
 /**
  * Operation "divide" for two mpq MTBDDs
  */
-TASK(int, gmp_op_divide, MTBDD*, result, MTBDD*, a, MTBDD*, b);
+TASK(int, gmp_op_divide, MTBDD*, result, MTBDD*, a, MTBDD*, b)
 
 /**
  * Operation "min" for two mpq MTBDDs
  */
-TASK(int, gmp_op_min, MTBDD*, result, MTBDD*, a, MTBDD*, b);
-TASK(int, gmp_abstract_op_min, MTBDD*, result, MTBDD, a, MTBDD, b, int, k);
+TASK(int, gmp_op_min, MTBDD*, result, MTBDD*, a, MTBDD*, b)
+TASK(int, gmp_abstract_op_min, MTBDD*, result, MTBDD, a, MTBDD, b, int, k)
 
 /**
  * Operation "max" for two mpq MTBDDs
  */
-TASK(int, gmp_op_max, MTBDD*, result, MTBDD*, a, MTBDD*, b);
-TASK(int, gmp_abstract_op_max, MTBDD*, result, MTBDD, a, MTBDD, b, int, k);
+TASK(int, gmp_op_max, MTBDD*, result, MTBDD*, a, MTBDD*, b)
+TASK(int, gmp_abstract_op_max, MTBDD*, result, MTBDD, a, MTBDD, b, int, k)
 
 /**
  * Operation "negate" for one mpq MTBDD
  */
-TASK(int, gmp_op_neg, MTBDD*, result, MTBDD, dd, size_t, p);
+TASK(int, gmp_op_neg, MTBDD*, result, MTBDD, dd, size_t, p)
 
 /**
  * Operation "abs" for one mpq MTBDD
  */
-TASK(int, gmp_op_abs, MTBDD*, result, MTBDD, dd, size_t, p);
+TASK(int, gmp_op_abs, MTBDD*, result, MTBDD, dd, size_t, p)
 
 /**
  * Compute a + b
@@ -207,19 +207,19 @@ TASK(int, gmp_and_abstract_plus, MTBDD*, result, MTBDD, a, MTBDD, b, MTBDD, vars
  * The caller must protect <result>. Returns SYLVAN_OK on success or a negative
  * status on failure, leaving <result> unchanged.
  */
-TASK(int, gmp_and_abstract_max, MTBDD*, result, MTBDD, a, MTBDD, b, MTBDD, vars);
+TASK(int, gmp_and_abstract_max, MTBDD*, result, MTBDD, a, MTBDD, b, MTBDD, vars)
 
 /**
  * Convert to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
  * Parameter <dd> is the MTBDD to convert; parameter <value> is an GMP mpq leaf
  */
-TASK(int, gmp_op_threshold, MTBDD*, result, MTBDD*, dd, MTBDD*, value);
+TASK(int, gmp_op_threshold, MTBDD*, result, MTBDD*, dd, MTBDD*, value)
 
 /**
  * Convert to a Boolean MTBDD, translate terminals > value to 1 and to 0 otherwise;
  * Parameter <dd> is the MTBDD to convert; parameter <value> is an GMP mpq leaf
  */
-TASK(int, gmp_op_strict_threshold, MTBDD*, result, MTBDD*, dd, MTBDD*, value);
+TASK(int, gmp_op_strict_threshold, MTBDD*, result, MTBDD*, dd, MTBDD*, value)
 
 /**
  * Convert to a Boolean MTBDD, translating terminals >= <value> to true and
@@ -227,12 +227,12 @@ TASK(int, gmp_op_strict_threshold, MTBDD*, result, MTBDD*, dd, MTBDD*, value);
  * SYLVAN_OK on success or a negative status on failure, leaving <result>
  * unchanged.
  */
-TASK(int, gmp_threshold_d, MTBDD*, result, MTBDD, dd, double, value);
+TASK(int, gmp_threshold_d, MTBDD*, result, MTBDD, dd, double, value)
 
 /**
  * As gmp_threshold_d, using strict greater-than.
  */
-TASK(int, gmp_strict_threshold_d, MTBDD*, result, MTBDD, dd, double, value);
+TASK(int, gmp_strict_threshold_d, MTBDD*, result, MTBDD, dd, double, value)
 
 #ifdef __cplusplus
 }

@@ -175,6 +175,7 @@ TASK(void, listdd_refs_mark)
 
 void listdd_refs_mark_CALL(lace_worker* lace)
 {
+    (void)lace;
     listdd_refs_mark_task_TOGETHER();
 }
 
@@ -194,6 +195,7 @@ TASK(void, listdd_refs_free)
 
 void listdd_refs_free_CALL(lace_worker* lace)
 {
+    (void)lace;
     free(listdd_refs_key->pbegin);
     free(listdd_refs_key->rbegin);
     free(listdd_refs_key);
@@ -202,12 +204,14 @@ void listdd_refs_free_CALL(lace_worker* lace)
 TASK(void, listdd_refs_init_task)
 void listdd_refs_init_task_CALL(lace_worker* lace)
 {
+    (void)lace;
     listdd_refs_init_key();
 }
 
 TASK(void, listdd_refs_init)
 void listdd_refs_init_CALL(lace_worker* lace)
 {
+    (void)lace;
     listdd_refs_init_task_TOGETHER();
     sylvan_gc_add_mark(listdd_refs_mark_CALL);
 }
@@ -859,37 +863,6 @@ int listdd_match_CALL(lace_worker* lace, LISTDD *destination, LISTDD a, LISTDD b
     return SYLVAN_OK;
 }
 
-/* Transitional value adapters for ListDD tasks not converted yet. */
-static LISTDD
-listdd_union_value_CALL(lace_worker *lace, LISTDD a, LISTDD b)
-{
-    LISTDD result = listdd_invalid;
-    listdd_refs_pushptr(&result);
-    int status = listdd_union_CALL(lace, &result, a, b);
-    listdd_refs_popptr(1);
-    return status == SYLVAN_OK ? result : listdd_invalid;
-}
-
-static LISTDD
-listdd_diff_value_CALL(lace_worker *lace, LISTDD a, LISTDD b)
-{
-    LISTDD result = listdd_invalid;
-    listdd_refs_pushptr(&result);
-    int status = listdd_diff_CALL(lace, &result, a, b);
-    listdd_refs_popptr(1);
-    return status == SYLVAN_OK ? result : listdd_invalid;
-}
-
-static LISTDD
-listdd_intersection_value_CALL(lace_worker *lace, LISTDD a, LISTDD b)
-{
-    LISTDD result = listdd_invalid;
-    listdd_refs_pushptr(&result);
-    int status = listdd_intersection_CALL(lace, &result, a, b);
-    listdd_refs_popptr(1);
-    return status == SYLVAN_OK ? result : listdd_invalid;
-}
-
 static int
 listdd_union_destination_CALL(lace_worker *lace, LISTDD *destination, LISTDD a, LISTDD b)
 {
@@ -907,10 +880,6 @@ listdd_diff_destination_CALL(lace_worker *lace, LISTDD *destination, LISTDD a, L
 {
     return listdd_diff_CALL(lace, destination, a, b);
 }
-
-#define listdd_union_CALL(lace, a, b) listdd_union_value_CALL((lace), (a), (b))
-#define listdd_diff_CALL(lace, a, b) listdd_diff_value_CALL((lace), (a), (b))
-#define listdd_intersection_CALL(lace, a, b) listdd_intersection_value_CALL((lace), (a), (b))
 
 TASK(int, listdd_relprod_help, LISTDD*, result, uint32_t, val, LISTDD, set, LISTDD, rel, LISTDD, proj)
 
@@ -1139,23 +1108,11 @@ listdd_rel_next_CALL(lace_worker *lace, LISTDD *destination, LISTDD set, LISTDD 
     return SYLVAN_OK;
 }
 
-static LISTDD
-listdd_rel_next_value_CALL(lace_worker *lace, LISTDD set, LISTDD rel, LISTDD meta)
-{
-    LISTDD result = listdd_invalid;
-    listdd_refs_pushptr(&result);
-    int status = listdd_rel_next_CALL(lace, &result, set, rel, meta);
-    listdd_refs_popptr(1);
-    return status == SYLVAN_OK ? result : listdd_invalid;
-}
-
 static int
 listdd_rel_next_destination_CALL(lace_worker *lace, LISTDD *destination, LISTDD set, LISTDD rel, LISTDD meta)
 {
     return listdd_rel_next_CALL(lace, destination, set, rel, meta);
 }
-
-#define listdd_rel_next_CALL(lace, set, rel, meta) listdd_rel_next_value_CALL((lace), (set), (rel), (meta))
 
 TASK(int, listdd_relprod_union_help, LISTDD*, result, uint32_t, val, LISTDD, set, LISTDD, rel, LISTDD, proj, LISTDD, un)
 
@@ -1496,19 +1453,6 @@ listdd_rel_next_union_CALL(lace_worker *lace, LISTDD *destination, LISTDD set, L
     listdd_refs_popptr(1);
     return SYLVAN_OK;
 }
-
-static LISTDD
-listdd_rel_next_union_value_CALL(lace_worker *lace, LISTDD set, LISTDD rel, LISTDD meta, LISTDD un)
-{
-    LISTDD result = listdd_invalid;
-    listdd_refs_pushptr(&result);
-    int status = listdd_rel_next_union_CALL(lace, &result, set, rel, meta, un);
-    listdd_refs_popptr(1);
-    return status == SYLVAN_OK ? result : listdd_invalid;
-}
-
-#define listdd_rel_next_union_CALL(lace, set, rel, meta, un) \
-    listdd_rel_next_union_value_CALL((lace), (set), (rel), (meta), (un))
 
 TASK(int, listdd_relprev_help, LISTDD*, result, uint32_t, val, LISTDD, set, LISTDD, rel, LISTDD, proj, LISTDD, uni)
 

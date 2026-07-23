@@ -56,8 +56,8 @@ bdd_is_complemented(MTBDD dd)
 
 TASK(int, mtbdd_set_cube, MTBDD*, result, MTBDD, mtbdd, BDDSET, variables, const uint8_t*, cube, MTBDD, terminal)
 
-TASK(int, mtbdd_sat_count_u64, uint64_t*, result, MTBDD, dd, BDDSET, variables);
-TASK(double, mtbdd_sat_count_double, MTBDD, dd, BDDSET, variables);
+TASK(int, mtbdd_sat_count_u64, uint64_t*, result, MTBDD, dd, BDDSET, variables)
+TASK(double, mtbdd_sat_count_double, MTBDD, dd, BDDSET, variables)
 
 static inline size_t mtbdd_leaf_count(MTBDD dd)
 {
@@ -68,22 +68,22 @@ static inline size_t mtbdd_node_count(const MTBDD dd) {
     return mtbdd_shared_node_count(&dd, 1);
 }
 
-TASK(int, mtbdd_apply, MTBDD*, result, MTBDD, a, MTBDD, b, mtbdd_apply_cb, op);
+TASK(int, mtbdd_apply, MTBDD*, result, MTBDD, a, MTBDD, b, mtbdd_apply_cb, op)
 
-TASK(int, mtbdd_apply_param, MTBDD*, result, MTBDD, a, MTBDD, b, size_t, p, mtbdd_apply_param_cb, op, uint64_t, opid);
+TASK(int, mtbdd_apply_param, MTBDD*, result, MTBDD, a, MTBDD, b, size_t, p, mtbdd_apply_param_cb, op, uint64_t, opid)
 
-TASK(int, mtbdd_apply_unary, MTBDD*, result, MTBDD, dd, mtbdd_apply_unary_cb, op, size_t, param);
+TASK(int, mtbdd_apply_unary, MTBDD*, result, MTBDD, dd, mtbdd_apply_unary_cb, op, size_t, param)
 
-TASK(int, mtbdd_abstract, MTBDD*, result, MTBDD, a, MTBDD, v, mtbdd_abstract_cb, op);
+TASK(int, mtbdd_abstract, MTBDD*, result, MTBDD, a, MTBDD, v, mtbdd_abstract_cb, op)
 
-TASK(int, mtbdd_op_negate, MTBDD*, result, MTBDD, a, size_t, param);
+TASK(int, mtbdd_op_negate, MTBDD*, result, MTBDD, a, size_t, param)
 
-TASK(int, mtbdd_op_cmpl, MTBDD*, result, MTBDD, a, size_t, param);
+TASK(int, mtbdd_op_cmpl, MTBDD*, result, MTBDD, a, size_t, param)
 
-TASK(int, mtbdd_op_plus, MTBDD*, result, MTBDD*, a, MTBDD*, b);
-TASK(int, mtbdd_abstract_op_plus, MTBDD*, result, MTBDD, a, MTBDD, b, int, c);
+TASK(int, mtbdd_op_plus, MTBDD*, result, MTBDD*, a, MTBDD*, b)
+TASK(int, mtbdd_abstract_op_plus, MTBDD*, result, MTBDD, a, MTBDD, b, int, c)
 
-TASK(int, mtbdd_op_minus, MTBDD*, result, MTBDD*, a, MTBDD*, b);
+TASK(int, mtbdd_op_minus, MTBDD*, result, MTBDD*, a, MTBDD*, b)
 
 /**
  * Binary operation Times (for MTBDDs of same type)
@@ -91,10 +91,10 @@ TASK(int, mtbdd_op_minus, MTBDD*, result, MTBDD*, a, MTBDD*, b);
  * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
  * then the result is mtbdd_undefined (i.e. not defined).
  */
-TASK(int, mtbdd_op_times, MTBDD*, result, MTBDD*, a, MTBDD*, b);
-TASK(int, mtbdd_abstract_op_times, MTBDD*, result, MTBDD, a, MTBDD, b, int, c);
+TASK(int, mtbdd_op_times, MTBDD*, result, MTBDD*, a, MTBDD*, b)
+TASK(int, mtbdd_abstract_op_times, MTBDD*, result, MTBDD, a, MTBDD, b, int, c)
 
-TASK(int, mtbdd_op_divide, MTBDD*, result, MTBDD*, a, MTBDD*, b);
+TASK(int, mtbdd_op_divide, MTBDD*, result, MTBDD*, a, MTBDD*, b)
 
 /**
  * Binary operation Minimum (for MTBDDs of same type)
@@ -102,8 +102,8 @@ TASK(int, mtbdd_op_divide, MTBDD*, result, MTBDD*, a, MTBDD*, b);
  * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
  * then the result is the other operand.
  */
-TASK(int, mtbdd_op_min, MTBDD*, result, MTBDD*, a, MTBDD*, b);
-TASK(int, mtbdd_abstract_op_min, MTBDD*, result, MTBDD, a, MTBDD, b, int, c);
+TASK(int, mtbdd_op_min, MTBDD*, result, MTBDD*, a, MTBDD*, b)
+TASK(int, mtbdd_abstract_op_min, MTBDD*, result, MTBDD, a, MTBDD, b, int, c)
 
 /**
  * Binary operation Maximum (for MTBDDs of same type)
@@ -111,8 +111,8 @@ TASK(int, mtbdd_abstract_op_min, MTBDD*, result, MTBDD, a, MTBDD, b, int, c);
  * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
  * then the result is the other operand.
  */
-TASK(int, mtbdd_op_max, MTBDD*, result, MTBDD*, a, MTBDD*, b);
-TASK(int, mtbdd_abstract_op_max, MTBDD*, result, MTBDD, a, MTBDD, b, int, c);
+TASK(int, mtbdd_op_max, MTBDD*, result, MTBDD*, a, MTBDD*, b)
+TASK(int, mtbdd_abstract_op_max, MTBDD*, result, MTBDD, a, MTBDD, b, int, c)
 
 /**
  * Compute -a
@@ -214,18 +214,18 @@ static inline int mtbdd_abstract_max(MTBDD *result, MTBDD dd, MTBDD vars)
  * Compute IF <f> THEN <g> ELSE <h>.
  * <f> must be a Boolean MTBDD (or standard BDD).
  */
-TASK(int, mtbdd_ite, MTBDD*, result, BDD, condition, MTBDD, if_true, MTBDD, if_false);
+TASK(int, mtbdd_ite, MTBDD*, result, BDD, condition, MTBDD, if_true, MTBDD, if_false)
 
 /**
  * Multiply <a> and <b>, and abstract variables <vars> using summation.
  * This is similar to the "and_exists" operation in BDDs.
  */
-TASK(int, mtbdd_mul_abstract_add, MTBDD*, result, MTBDD, a, MTBDD, b, MTBDD, vars);
+TASK(int, mtbdd_mul_abstract_add, MTBDD*, result, MTBDD, a, MTBDD, b, MTBDD, vars)
 
 /**
  * Multiply <a> and <b>, and abstract variables <vars> by taking the maximum.
  */
-TASK(int, mtbdd_mul_abstract_max, MTBDD*, result, MTBDD, a, MTBDD, b, MTBDD, vars);
+TASK(int, mtbdd_mul_abstract_max, MTBDD*, result, MTBDD, a, MTBDD, b, MTBDD, vars)
 
 /**
  * Monad that converts double to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
@@ -240,109 +240,109 @@ TASK(int, mtbdd_op_strict_threshold_double, MTBDD*, result, MTBDD, a, size_t, b)
 /**
  * Convert double to a Boolean MTBDD, translate terminals >= value to 1 and to 0 otherwise;
  */
-TASK(int, mtbdd_threshold_double, MTBDD*, result, MTBDD, a, double, b);
+TASK(int, mtbdd_threshold_double, MTBDD*, result, MTBDD, a, double, b)
 
 /**
  * Convert double to a Boolean MTBDD, translate terminals > value to 1 and to 0 otherwise;
  */
-TASK(int, mtbdd_strict_threshold_double, MTBDD*, result, MTBDD, a, double, b);
+TASK(int, mtbdd_strict_threshold_double, MTBDD*, result, MTBDD, a, double, b)
 
 /**
  * For two Double MTBDDs, calculate whether they are equal module some value epsilon
  * i.e. abs(a-b) < e
  */
-TASK(int, mtbdd_all_equal_abs_double, int*, result, MTBDD, a, MTBDD, b, double, c);
+TASK(int, mtbdd_all_equal_abs_double, int*, result, MTBDD, a, MTBDD, b, double, c)
 
 /**
  * For two Double MTBDDs, calculate whether they are equal modulo some value epsilon
  * This version computes the relative difference vs the value in a.
  * i.e. abs((a-b)/a) < e
  */
-TASK(int, mtbdd_all_equal_rel_double, int*, result, MTBDD, a, MTBDD, b, double, c);
+TASK(int, mtbdd_all_equal_rel_double, int*, result, MTBDD, a, MTBDD, b, double, c)
 
 /**
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) <= b(s), mtbdd_undefined otherwise.
  * For domains not in a / b, assume True.
  */
-TASK(int, mtbdd_all_leq, int*, result, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_all_leq, int*, result, MTBDD, a, MTBDD, b)
 
 /**
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) < b(s), mtbdd_undefined otherwise.
  * For domains not in a / b, assume True.
  */
-TASK(int, mtbdd_all_lt, int*, result, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_all_lt, int*, result, MTBDD, a, MTBDD, b)
 
 /**
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) >= b(s), mtbdd_undefined otherwise.
  * For domains not in a / b, assume True.
  */
-TASK(int, mtbdd_all_geq, int*, result, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_all_geq, int*, result, MTBDD, a, MTBDD, b)
 
 /**
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) > b(s), mtbdd_undefined otherwise.
  * For domains not in a / b, assume True.
  */
-TASK(int, mtbdd_all_gt, int*, result, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_all_gt, int*, result, MTBDD, a, MTBDD, b)
 
-TASK(int, mtbdd_any_leq, int*, result, MTBDD, a, MTBDD, b);
-TASK(int, mtbdd_any_lt, int*, result, MTBDD, a, MTBDD, b);
-TASK(int, mtbdd_any_geq, int*, result, MTBDD, a, MTBDD, b);
-TASK(int, mtbdd_any_gt, int*, result, MTBDD, a, MTBDD, b);
-TASK(int, mtbdd_any_equal_abs_double, int*, result, MTBDD, a, MTBDD, b, double, c);
-TASK(int, mtbdd_any_equal_rel_double, int*, result, MTBDD, a, MTBDD, b, double, c);
+TASK(int, mtbdd_any_leq, int*, result, MTBDD, a, MTBDD, b)
+TASK(int, mtbdd_any_lt, int*, result, MTBDD, a, MTBDD, b)
+TASK(int, mtbdd_any_geq, int*, result, MTBDD, a, MTBDD, b)
+TASK(int, mtbdd_any_gt, int*, result, MTBDD, a, MTBDD, b)
+TASK(int, mtbdd_any_equal_abs_double, int*, result, MTBDD, a, MTBDD, b, double, c)
+TASK(int, mtbdd_any_equal_rel_double, int*, result, MTBDD, a, MTBDD, b, double, c)
 
-TASK(int, mtbdd_compare_leq, BDD*, result, MTBDD, a, MTBDD, b);
-TASK(int, mtbdd_compare_lt, BDD*, result, MTBDD, a, MTBDD, b);
-TASK(int, mtbdd_compare_geq, BDD*, result, MTBDD, a, MTBDD, b);
-TASK(int, mtbdd_compare_gt, BDD*, result, MTBDD, a, MTBDD, b);
-TASK(int, mtbdd_compare_equal_abs_double, BDD*, result, MTBDD, a, MTBDD, b, double, c);
-TASK(int, mtbdd_compare_equal_rel_double, BDD*, result, MTBDD, a, MTBDD, b, double, c);
+TASK(int, mtbdd_compare_leq, BDD*, result, MTBDD, a, MTBDD, b)
+TASK(int, mtbdd_compare_lt, BDD*, result, MTBDD, a, MTBDD, b)
+TASK(int, mtbdd_compare_geq, BDD*, result, MTBDD, a, MTBDD, b)
+TASK(int, mtbdd_compare_gt, BDD*, result, MTBDD, a, MTBDD, b)
+TASK(int, mtbdd_compare_equal_abs_double, BDD*, result, MTBDD, a, MTBDD, b, double, c)
+TASK(int, mtbdd_compare_equal_rel_double, BDD*, result, MTBDD, a, MTBDD, b, double, c)
 
 /**
  * Calculate the support of a MTBDD, i.e. the cube of all variables that appear in the MTBDD nodes.
  */
-TASK(int, mtbdd_support, BDDSET*, result, MTBDD, dd);
+TASK(int, mtbdd_support, BDDSET*, result, MTBDD, dd)
 
 /**
  * Function composition, for each node with variable <key> which has a <key,value> pair in <map>,
  * replace the node by the result of mtbdd_ite(<value>, <high>, <low>).
  * Each <value> in <map> must be a Boolean MTBDD.
  */
-TASK(int, mtbdd_compose, MTBDD*, result, MTBDD, dd, MTBDDMAP, map);
+TASK(int, mtbdd_compose, MTBDD*, result, MTBDD, dd, MTBDDMAP, map)
 
 /**
  * Compute minimal leaf in the MTBDD (for Integer, Double, Rational MTBDDs)
  */
-TASK(int, mtbdd_find_min, MTBDD*, result, MTBDD, dd);
+TASK(int, mtbdd_find_min, MTBDD*, result, MTBDD, dd)
 
 /**
  * Compute maximal leaf in the MTBDD (for Integer, Double, Rational MTBDDs)
  */
-TASK(int, mtbdd_find_max, MTBDD*, result, MTBDD, dd);
+TASK(int, mtbdd_find_max, MTBDD*, result, MTBDD, dd)
 
-TASK(void, mtbdd_enumerate_parallel, MTBDD, dd, mtbdd_enumerate_cb, cb, void*, context);
+TASK(void, mtbdd_enumerate_parallel, MTBDD, dd, mtbdd_enumerate_cb, cb, void*, context)
 
-TASK(int, mtbdd_is_valid, MTBDD, dd);
+TASK(int, mtbdd_is_valid, MTBDD, dd)
 
-TASK(void, mtbdd_visit, MTBDD, dd, mtbdd_visit_pre_cb, precb, mtbdd_visit_post_cb, postcb, void*, context);
+TASK(void, mtbdd_visit, MTBDD, dd, mtbdd_visit_pre_cb, precb, mtbdd_visit_post_cb, postcb, void*, context)
 
-TASK(void, mtbdd_visit_parallel, MTBDD, dd, mtbdd_visit_pre_cb, precb, mtbdd_visit_post_cb, postcb, void*, context);
+TASK(void, mtbdd_visit_parallel, MTBDD, dd, mtbdd_visit_pre_cb, precb, mtbdd_visit_post_cb, postcb, void*, context)
 
-TASK(void, mtbdd_writer_tobinary, FILE *, file, MTBDD *, dds, int, count);
+TASK(void, mtbdd_writer_tobinary, FILE *, file, MTBDD *, dds, int, count)
 
-TASK(void, mtbdd_writer_totext, FILE *, file, MTBDD *, dds, int, count);
+TASK(void, mtbdd_writer_totext, FILE *, file, MTBDD *, dds, int, count)
 
-TASK(void, mtbdd_writer_add, sylvan_skiplist_t, sl, MTBDD, dd);
+TASK(void, mtbdd_writer_add, sylvan_skiplist_t, sl, MTBDD, dd)
 
-TASK(int, mtbdd_reader_frombinary, FILE*, file, MTBDD*, dds, int, count);
+TASK(int, mtbdd_reader_frombinary, FILE*, file, MTBDD*, dds, int, count)
 
-TASK(uint64_t*, mtbdd_reader_readbinary, FILE*, file);
+TASK(uint64_t*, mtbdd_reader_readbinary, FILE*, file)
 
-TASK(int, mtbdd_eval_compose, MTBDD*, result, MTBDD, dd, MTBDD, vars, mtbdd_eval_compose_cb, cb);
+TASK(int, mtbdd_eval_compose, MTBDD*, result, MTBDD, dd, MTBDD, vars, mtbdd_eval_compose_cb, cb)
 
 
 static inline MTBDD
-mtbdd_map_empty()
+mtbdd_map_empty(void)
 {
     return mtbdd_undefined;
 }
@@ -371,7 +371,7 @@ mtbdd_map_next(MTBDD map)
     return mtbdd_node_low(map);
 }
 
-TASK(void, mtbdd_gc_mark, MTBDD, dd);
+TASK(void, mtbdd_gc_mark, MTBDD, dd)
 
 #ifdef __cplusplus
 }

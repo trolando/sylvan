@@ -1282,7 +1282,7 @@ int test_zdd_isop_random_CALL(lace_worker* lace)
     int cubecount = rng(1,200);
     for (int j=0; j<cubecount; j++) {
         uint8_t arr[12];
-        for (int j=0; j<12; j++) arr[j] = (uint8_t)rng(0, 2);
+        for (int k=0; k<12; k++) arr[k] = (uint8_t)rng(0, 2);
         test_assert(bdd_cube(&cube, bdd_dom, arr) == SYLVAN_OK);
         test_assert(bdd_or(&bdd_set, bdd_set, cube) == SYLVAN_OK);
     }

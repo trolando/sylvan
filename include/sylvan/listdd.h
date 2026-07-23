@@ -145,14 +145,14 @@ TASK(int, listdd_rel_next_union, LISTDD*, result, LISTDD, set, LISTDD, relation,
  * <proj> follows the same semantics as relprod
  * i.e. 0 (not in rel), 1 (read+write), 2 (read), 3 (write), -1 (end; rest=0)
  */
-TASK(int, listdd_rel_prev, LISTDD*, result, LISTDD, dd, LISTDD, rel, LISTDD, proj, LISTDD, uni);
+TASK(int, listdd_rel_prev, LISTDD*, result, LISTDD, dd, LISTDD, rel, LISTDD, proj, LISTDD, uni)
 
 // so: proj: -2 (end; quantify rest), -1 (end; keep rest), 0 (quantify), 1 (keep)
-TASK(int, listdd_project, LISTDD*, result, LISTDD, dd, LISTDD, proj);
+TASK(int, listdd_project, LISTDD*, result, LISTDD, dd, LISTDD, proj)
 
-TASK(int, listdd_project_diff, LISTDD*, result, LISTDD, dd, LISTDD, proj, LISTDD, avoid);
+TASK(int, listdd_project_diff, LISTDD*, result, LISTDD, dd, LISTDD, proj, LISTDD, avoid)
 
-TASK(int, listdd_join, LISTDD*, result, LISTDD, a, LISTDD, b, LISTDD, a_proj, LISTDD, b_proj);
+TASK(int, listdd_join, LISTDD*, result, LISTDD, a, LISTDD, b, LISTDD, a_proj, LISTDD, b_proj)
 
 /* Write a DOT representation */
 void listdd_print_dot(LISTDD mdd);
@@ -171,7 +171,7 @@ void listdd_sha256(LISTDD mdd, char *target); // at least 65 bytes...
  * (i.e. all variables in the LISTDD must be in variables)
  *
  */
-TASK(long double, listdd_count, LISTDD, dd);
+TASK(long double, listdd_count, LISTDD, dd)
 
 /**
  * A callback for enumerating functions like sat_all_par, collect and match
@@ -184,13 +184,13 @@ TASK(long double, listdd_count, LISTDD, dd);
 typedef void (*listdd_enum_cb)(uint32_t*, size_t, void*);
 typedef int (*listdd_map_reduce_union_cb)(LISTDD*, uint32_t*, size_t, void*);
 
-TASK(void, listdd_enumerate_parallel, LISTDD, dd, listdd_enum_cb, cb, void*, context, uint32_t*, arr, size_t, len);
+TASK(void, listdd_enumerate_parallel, LISTDD, dd, listdd_enum_cb, cb, void*, context, uint32_t*, arr, size_t, len)
 
-TASK(void, listdd_enumerate, LISTDD, dd, listdd_enum_cb, cb, void*, context);
+TASK(void, listdd_enumerate, LISTDD, dd, listdd_enum_cb, cb, void*, context)
 
-TASK(int, listdd_map_reduce_union, LISTDD*, result, LISTDD, dd, listdd_map_reduce_union_cb, cb, void*, context, uint32_t*, arr, size_t, len);
+TASK(int, listdd_map_reduce_union, LISTDD*, result, LISTDD, dd, listdd_map_reduce_union_cb, cb, void*, context, uint32_t*, arr, size_t, len)
 
-TASK(void, listdd_enumerate_matching_parallel, LISTDD, dd, LISTDD, match, LISTDD, proj, listdd_enum_cb, cb, void*, context);
+TASK(void, listdd_enumerate_matching_parallel, LISTDD, dd, LISTDD, match, LISTDD, proj, listdd_enum_cb, cb, void*, context)
 
 int listdd_pick_values(LISTDD mdd, uint32_t *values, size_t count);
 int listdd_pick(LISTDD *result, LISTDD mdd);
@@ -210,9 +210,9 @@ typedef struct listdd_visit_node_callbacks {
     listdd_visit_init_context_cb listdd_visit_init_context;
 } listdd_visit_callbacks;
 
-TASK(void, listdd_visit_parallel, LISTDD, dd, listdd_visit_callbacks*, cbs, size_t, ctx_size, void*, context);
+TASK(void, listdd_visit_parallel, LISTDD, dd, listdd_visit_callbacks*, cbs, size_t, ctx_size, void*, context)
 
-TASK(void, listdd_visit, LISTDD, dd, listdd_visit_callbacks*, cbs, size_t, ctx_size, void*, context);
+TASK(void, listdd_visit, LISTDD, dd, listdd_visit_callbacks*, cbs, size_t, ctx_size, void*, context)
 
 size_t listdd_node_count(LISTDD mdd);
 void listdd_node_count_per_level(LISTDD mdd, size_t *variables);
@@ -225,7 +225,7 @@ void listdd_node_count_per_level(LISTDD mdd, size_t *variables);
  * a result is reported as SYLVAN_ERR_CALLBACK.
  */
 typedef int (*listdd_transform_at_level_cb)(LISTDD*, LISTDD, void*);
-TASK(int, listdd_transform_at_level, LISTDD*, result, LISTDD, dd, listdd_transform_at_level_cb, cb, void*, context, int, depth);
+TASK(int, listdd_transform_at_level, LISTDD*, result, LISTDD, dd, listdd_transform_at_level_cb, cb, void*, context, int, depth)
 
 /**
  * SAVING:
@@ -285,11 +285,11 @@ LISTDD listdd_refs_push(LISTDD dd);
 void listdd_refs_pop(long amount);
 
 TASK(void, listdd_gc_mark, LISTDD, dd)
-TASK(int, listdd_union, LISTDD*, result, LISTDD, a, LISTDD, b);
-TASK(int, listdd_diff, LISTDD*, result, LISTDD, a, LISTDD, b);
-TASK(int, listdd_union_diff, LISTDD*, result, LISTDD*, difference, LISTDD, a, LISTDD, b);
-TASK(int, listdd_intersection, LISTDD*, result, LISTDD, a, LISTDD, b);
-TASK(int, listdd_match, LISTDD*, result, LISTDD, a, LISTDD, b, LISTDD, proj);
+TASK(int, listdd_union, LISTDD*, result, LISTDD, a, LISTDD, b)
+TASK(int, listdd_diff, LISTDD*, result, LISTDD, a, LISTDD, b)
+TASK(int, listdd_union_diff, LISTDD*, result, LISTDD*, difference, LISTDD, a, LISTDD, b)
+TASK(int, listdd_intersection, LISTDD*, result, LISTDD, a, LISTDD, b)
+TASK(int, listdd_match, LISTDD*, result, LISTDD, a, LISTDD, b, LISTDD, proj)
 
 
 

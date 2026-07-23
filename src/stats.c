@@ -310,14 +310,17 @@ sylvan_stats_report(FILE *target)
 
 void sylvan_stats_init_CALL(lace_worker* lace)
 {
+    (void)lace;
 }
 
 void sylvan_stats_reset_CALL(lace_worker* lace)
 {
+    (void)lace;
 }
 
 void sylvan_stats_snapshot_CALL(lace_worker* lace, sylvan_stats_t* target)
 {
+    (void)lace;
     memset(target, 0, sizeof(sylvan_stats_t));
 }
 

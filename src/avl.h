@@ -76,7 +76,7 @@ typedef struct avl_node
     struct avl_node *left, *right;
     unsigned int height;
     char pad[8-sizeof(unsigned int)];
-    char data[0];
+    char data[];
 } avl_node;
 
 /* Retrieve the height of a tree */
@@ -203,7 +203,7 @@ avl_count(avl_node *node)
 typedef struct avl_iter
 {
     size_t height;
-    avl_node *nodes[0];
+    avl_node *nodes[];
 } avl_iter_t;
 
 /**

@@ -101,6 +101,7 @@ sylvan_gc_hook_main(gc_hook_cb callback)
  */
 void sylvan_clear_cache_CALL(lace_worker* lace)
 {
+   (void)lace;
    cache_clear();
 }
 
@@ -127,6 +128,7 @@ void sylvan_clear_and_mark_CALL(lace_worker* lace)
  */
 void sylvan_rehash_all_CALL(lace_worker* lace)
 {
+    (void)lace;
     // rebuild the nodes table with the marked nodes
     if (nodes_rebuild(nodes) != 0) {
         fprintf(stderr, "sylvan_rebuild error: not all nodes could be rehashed!\n");
@@ -163,6 +165,7 @@ next_size(size_t current_size)
  */
 void sylvan_gc_aggressive_resize_CALL(lace_worker* lace)
 {
+    (void)lace;
     size_t nodes_size = nodes_get_size(nodes);
     size_t nodes_max = nodes_get_max_size(nodes);
     if (nodes_size < nodes_max) {
@@ -185,6 +188,7 @@ void sylvan_gc_aggressive_resize_CALL(lace_worker* lace)
  */
 void sylvan_gc_normal_resize_CALL(lace_worker* lace)
 {
+    (void)lace;
     size_t nodes_size = nodes_get_size(nodes);
     size_t nodes_max = nodes_get_max_size(nodes);
     if (nodes_size < nodes_max) {
@@ -434,6 +438,7 @@ sylvan_quit(void)
  */
 void sylvan_table_usage_CALL(lace_worker* lace, size_t* filled, size_t* total)
 {
+    (void)lace;
     size_t tot = nodes_get_size(nodes);
     if (filled != NULL) *filled = nodes_count_nodes(nodes);
     if (total != NULL) *total = tot;

@@ -2864,9 +2864,9 @@ xorshift_rand(void)
 }
 
 double
-uniform_deviate(uint64_t seed)
+uniform_deviate(uint64_t value)
 {
-    return seed * (1.0 / ((double)(UINT64_MAX) + 1.0));
+    return value * (1.0 / ((double)(UINT64_MAX) + 1.0));
 }
 
 int
@@ -3083,7 +3083,7 @@ test_cube()
 
     uint8_t cube[6], check[6];
     int i, j;
-    for (i=0;i<6;i++) cube[i] = rng(0,3);
+    for (i=0;i<6;i++) cube[i] = (uint8_t)rng(0,3);
     BDD bdd = test_bdd_cube(vars, cube);
 
     bdd_pick_cube_values(bdd, vars, check);
@@ -3108,7 +3108,7 @@ test_cube()
     const BDDSET all_vars = test_bdd_set_from_levels(
         ((uint32_t[]){1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}), 15);
     for (j=0;j<10;j++) {
-        for (i=0;i<6;i++) cube[i] = rng(0,3);
+        for (i=0;i<6;i++) cube[i] = (uint8_t)rng(0,3);
         BDD c = test_bdd_cube(vars, cube);
         test_assert(test_bdd_or_cube(bdd, vars, cube) == test_bdd_or(bdd, c));
     }

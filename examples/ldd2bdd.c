@@ -695,12 +695,12 @@ void run_CALL(lace_worker* lace)
     // Compute highest value at each level (from reachable states)
     _Atomic(uint32_t) *highest = (_Atomic(uint32_t)*)xmalloc_array((size_t)vector_size, sizeof(*highest));
     for (int i=0; i<vector_size; i++) atomic_store_explicit(&highest[i], 0, memory_order_relaxed);
-    compute_highest(states->dd, highest);
+    compute_highest_CALL(lace, states->dd, highest);
 
     // Compute highest action label value (from transition relations)
     _Atomic(uint32_t) highest_action = 0;
     for (int i=0; i<next_count; i++) {
-        compute_highest_action(next[i]->dd, next[i]->meta, &highest_action);
+        compute_highest_action_CALL(lace, next[i]->dd, next[i]->meta, &highest_action);
     }
 
     // Compute number of bits for each level
@@ -862,7 +862,7 @@ void run_CALL(lace_worker* lace)
     }
     free(action_labels);
     free(bits);
-    free(highest);
+    free((void*)highest);
 
     // Close the file
     fclose(f);

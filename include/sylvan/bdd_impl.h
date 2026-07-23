@@ -22,7 +22,7 @@
 extern "C" {
 #endif /* __cplusplus */
 
-static void SYLVAN_UNUSED bdd_fprint(FILE* f, BDD bdd)
+static inline void SYLVAN_UNUSED bdd_fprint(FILE* f, BDD bdd)
 {
     bdd_serialize_reset();
     size_t v = bdd_serialize_add(bdd);
@@ -30,7 +30,7 @@ static void SYLVAN_UNUSED bdd_fprint(FILE* f, BDD bdd)
     bdd_serialize_totext(f);
 }
 
-static void SYLVAN_UNUSED bdd_print(BDD bdd)
+static inline void SYLVAN_UNUSED bdd_print(BDD bdd)
 {
     bdd_fprint(stdout, bdd);
 }
@@ -135,9 +135,9 @@ TASK(char, bdd_disjoint, BDD, a, BDD, b)
 TASK(int, bdd_intersection_witness, BDD*, result, BDD, a, BDD, b)
 TASK(int, bdd_exists, BDD*, result, BDD, dd, BDD, vars)
 TASK(int, bdd_unique, BDD*, result, BDD, dd, BDDSET, vars)
-TASK(int, bdd_project, BDD*, result, BDD, dd, BDD, vars);
+TASK(int, bdd_project, BDD*, result, BDD, dd, BDD, vars)
 TASK(int, bdd_and_exists, BDD*, result, BDD, a, BDD, b, BDDSET, vars)
-TASK(int, bdd_and_project, BDD*, result, BDD, a, BDD, b, BDDSET, vars);
+TASK(int, bdd_and_project, BDD*, result, BDD, a, BDD, b, BDDSET, vars)
 TASK(int, bdd_rel_prev, BDD*, result, BDD, a, BDD, b, BDDSET, vars)
 TASK(int, bdd_rel_next, BDD*, result, BDD, a, BDD, b, BDDSET, vars)
 TASK(int, bdd_transitive_closure, BDD*, result, BDD, a)

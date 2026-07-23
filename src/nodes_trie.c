@@ -77,6 +77,7 @@ TASK(void, nodes_reset_region)
 
 void nodes_reset_region_CALL(lace_worker* lace)
 {
+    (void)lace;
     // we don't actually need Lace, but it's a Lace task to run for initialisation
     my_region = UINT64_MAX; // no region
 }
@@ -93,7 +94,6 @@ static uint64_t claim_next_region(const nodes_table* dbs, uint64_t start_region)
 
     // start word index and bit index
     const uint64_t start_word = start_region / 64u;
-    const uint64_t start_bit  = start_region % 64u;
 
     // Scan words
     //for (uint64_t w_offset = 0; w_offset < words; ++w_offset) {
@@ -418,6 +418,7 @@ void nodes_free(nodes_table* dbs)
 
 void nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
 {
+    (void)lace;
     sylvan_clear_aligned((void*)dbs->bitmap1, dbs->max_size / (512*8));
     sylvan_clear_aligned((void*)dbs->bitmap2, dbs->max_size / 8);
     sylvan_clear_aligned((void*)dbs->first, dbs->max_size * 8);

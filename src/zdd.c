@@ -230,12 +230,14 @@ TASK(void, zdd_refs_mark)
 
 void zdd_refs_mark_CALL(lace_worker* lace)
 {
+    (void)lace;
     zdd_refs_mark_task_TOGETHER();
 }
 
 TASK(void, zdd_refs_init_task)
 void zdd_refs_init_task_CALL(lace_worker* lace)
 {
+    (void)lace;
     zdd_refs_internal_t s = (zdd_refs_internal_t)malloc(sizeof(struct zdd_refs_internal));
     s->pcur = s->pbegin = (ZDD**)malloc(sizeof(ZDD*) * 1024);
     s->pend = s->pbegin + 1024;
@@ -248,6 +250,7 @@ TASK(void, zdd_refs_free)
 
 void zdd_refs_free_CALL(lace_worker* lace)
 {
+    (void)lace;
     free(zdd_refs_key->pbegin);
     free(zdd_refs_key->rbegin);
     free(zdd_refs_key);
@@ -256,6 +259,7 @@ void zdd_refs_free_CALL(lace_worker* lace)
 TASK(void, zdd_refs_init)
 void zdd_refs_init_CALL(lace_worker* lace)
 {
+    (void)lace;
     zdd_refs_init_task_TOGETHER();
 }
 
@@ -2107,16 +2111,18 @@ void zdd_visit_parallel_CALL(lace_worker* lace, ZDD dd, zdd_visit_pre_cb pre_cb,
  * Writing ZDD files using a skiplist as a backend
  */
 
-TASK(int, zdd_writer_add_visitor_pre, ZDD, dd, sylvan_skiplist_t, sl)
-int zdd_writer_add_visitor_pre_CALL(lace_worker* lace, ZDD dd, sylvan_skiplist_t sl)
+static int
+zdd_writer_add_visitor_pre(ZDD dd, void *context)
 {
+    sylvan_skiplist_t sl = (sylvan_skiplist_t)context;
     if (zdd_is_leaf(dd)) return 0;
     return sylvan_skiplist_get(sl, ZDD_GETINDEX(dd)) == 0 ? 1 : 0;
 }
 
-TASK(void, zdd_writer_add_visitor_post, ZDD, dd, sylvan_skiplist_t, sl)
-void zdd_writer_add_visitor_post_CALL(lace_worker* lace, ZDD dd, sylvan_skiplist_t sl)
+static void
+zdd_writer_add_visitor_post(ZDD dd, void *context)
 {
+    sylvan_skiplist_t sl = (sylvan_skiplist_t)context;
     if (ZDD_GETINDEX(dd) <= 1) return;
     sylvan_skiplist_assign_next(sl, ZDD_GETINDEX(dd));
 }
@@ -2130,7 +2136,8 @@ zdd_writer_start(void)
 
 void zdd_writer_add_CALL(lace_worker* lace, sylvan_skiplist_t sl, ZDD dd)
 {
-    zdd_visit(dd, (zdd_visit_pre_cb)zdd_writer_add_visitor_pre_CALL, (zdd_visit_post_cb)zdd_writer_add_visitor_post_CALL, (void*)sl);
+    (void)lace;
+    zdd_visit(dd, zdd_writer_add_visitor_pre, zdd_writer_add_visitor_post, (void*)sl);
 }
 
 void
@@ -2233,6 +2240,7 @@ void zdd_write_text_CALL(lace_worker* lace, FILE* out, ZDD* dds, int count)
  */
 uint64_t* zdd_reader_readbinary_CALL(lace_worker* lace, FILE* in)
 {
+    (void)lace;
     size_t nodecount;
     if (fread(&nodecount, sizeof(size_t), 1, in) != 1) {
         return NULL;

@@ -102,14 +102,14 @@ ZDD zdd_node_high(ZDD dd);
  * protect <result>. Returns SYLVAN_OK on success or a negative status on
  * failure, leaving <result> unchanged.
  */
-TASK(int, zdd_from_bdd, ZDD*, result, BDD, dd, BDDSET, domain);
+TASK(int, zdd_from_bdd, ZDD*, result, BDD, dd, BDDSET, domain)
 
 /**
  * Convert a Boolean ZDD over <domain> to the equivalent BDD. The caller must
  * protect <result>. Returns SYLVAN_OK on success or a negative status on
  * failure, leaving <result> unchanged.
  */
-TASK(int, bdd_from_zdd, BDD*, result, ZDD, dd, BDDSET, domain);
+TASK(int, bdd_from_zdd, BDD*, result, ZDD, dd, BDDSET, domain)
 
 /**
  * Substitute the literals fixed by <cube> in <dd> and remove those variables
@@ -118,7 +118,7 @@ TASK(int, bdd_from_zdd, BDD*, result, ZDD, dd, BDDSET, domain);
  * Returns SYLVAN_OK on success or a negative status on failure, leaving
  * <result> unchanged.
  */
-TASK(int, zdd_cofactor, ZDD*, result, ZDD, dd, BDD, cube, BDDSET, domain);
+TASK(int, zdd_cofactor, ZDD*, result, ZDD, dd, BDD, cube, BDDSET, domain)
 
 /** Return Boolean true for the given ZDD domain. */
 static inline int zdd_true(ZDD *result, BDDSET domain)
@@ -142,7 +142,7 @@ int zdd_cube(ZDD *result, BDDSET variables, uint8_t *values);
  * protect <result>. Returns SYLVAN_OK on success or a negative status on
  * failure, leaving <result> unchanged.
  */
-TASK(int, zdd_or_cube, ZDD*, result, ZDD, set, BDDSET, variables, uint8_t*, values);
+TASK(int, zdd_or_cube, ZDD*, result, ZDD, set, BDDSET, variables, uint8_t*, values)
 
 /**
  * Compute the irredundant sum of products given lower and upper bounds as BDDs.
@@ -151,14 +151,14 @@ TASK(int, zdd_or_cube, ZDD*, result, ZDD, set, BDDSET, variables, uint8_t*, valu
  * destinations, which must be distinct. Returns SYLVAN_OK on success or a
  * negative status on failure, leaving both destinations unchanged.
  */
-TASK(int, zdd_isop, ZDD*, result, MTBDD*, bdd_result, MTBDD, L, MTBDD, U);
+TASK(int, zdd_isop, ZDD*, result, MTBDD*, bdd_result, MTBDD, L, MTBDD, U)
 
 /**
  * Compute the BDD representation of a given ZDD cover. The caller must protect
  * <result>. Returns SYLVAN_OK on success or a negative status on failure,
  * leaving <result> unchanged.
  */
-TASK(int, bdd_from_zdd_cover, MTBDD*, result, ZDD, dd);
+TASK(int, bdd_from_zdd_cover, MTBDD*, result, ZDD, dd)
 
 /**
  * Enumerate the cubes of a ZDD cover
@@ -175,7 +175,7 @@ ZDD zdd_cover_next_cube(ZDD dd, int32_t *arr);
  * don't care). The caller must protect <result>. Returns SYLVAN_OK on success
  * or a negative status on failure, leaving <result> unchanged.
  */
-TASK(int, zdd_extend_domain, ZDD*, result, ZDD, dd, BDDSET, newvars, int, value);
+TASK(int, zdd_extend_domain, ZDD*, result, ZDD, dd, BDDSET, newvars, int, value)
 
 /**
  * Interpret <dd> over the larger <new_domain>, allowing every value for the
@@ -184,14 +184,14 @@ TASK(int, zdd_extend_domain, ZDD*, result, ZDD, dd, BDDSET, newvars, int, value)
  * operation fails unless <old_domain> is a subset of <new_domain> and contains
  * the support of <dd>.
  */
-TASK(int, zdd_lift, ZDD*, result, ZDD, dd, BDDSET, old_domain, BDDSET, new_domain);
+TASK(int, zdd_lift, ZDD*, result, ZDD, dd, BDDSET, old_domain, BDDSET, new_domain)
 
 /**
  * Calculate the support of a ZDD, i.e. the cube of all variables that appear
  * in the ZDD nodes. The caller must protect <result>. Returns SYLVAN_OK on
  * success or a negative status on failure, leaving <result> unchanged.
  */
-TASK(int, zdd_support, BDDSET*, result, ZDD, dd);
+TASK(int, zdd_support, BDDSET*, result, ZDD, dd)
 
 /**
  * Count the number of satisfying assignments (minterms) leading to a non-False leaf.
@@ -201,7 +201,7 @@ TASK(int, zdd_support, BDDSET*, result, ZDD, dd);
 /**
  * Count the number of distinct paths leading to a non-False leaf.
  */
-TASK(double, zdd_path_count, ZDD, dd);
+TASK(double, zdd_path_count, ZDD, dd)
 
 /**
  * Count the number of nodes (internal nodes plus leaves) in ZDDs.
@@ -221,35 +221,35 @@ zdd_node_count(const ZDD dd)
  * must protect <result>. Returns SYLVAN_OK on success or a negative status on
  * failure, leaving <result> unchanged.
  */
-TASK(int, zdd_ite, ZDD*, result, ZDD, f, ZDD, g, ZDD, h, BDDSET, domain);
+TASK(int, zdd_ite, ZDD*, result, ZDD, f, ZDD, g, ZDD, h, BDDSET, domain)
 
 /**
  * Compute the negation of a ZDD with respect to the given domain. The caller
  * must protect <result>. Returns SYLVAN_OK on success or a negative status on
  * failure, leaving <result> unchanged.
  */
-TASK(int, zdd_not, ZDD*, result, ZDD, dd, BDDSET, domain);
+TASK(int, zdd_not, ZDD*, result, ZDD, dd, BDDSET, domain)
 
 /**
  * Compute logical AND of <a> and <b>. The caller must protect <result>.
  * Returns SYLVAN_OK on success or a negative status on failure, leaving
  * <result> unchanged.
  */
-TASK(int, zdd_and, ZDD*, result, ZDD, a, ZDD, b);
+TASK(int, zdd_and, ZDD*, result, ZDD, a, ZDD, b)
 
 /**
  * Compute logical OR of <a> and <b>. The caller must protect <result>.
  * Returns SYLVAN_OK on success or a negative status on failure, leaving
  * <result> unchanged.
  */
-TASK(int, zdd_or, ZDD*, result, ZDD, a, ZDD, b);
+TASK(int, zdd_or, ZDD*, result, ZDD, a, ZDD, b)
 
 /**
  * Compute logical DIFF of <a> and <b> (set minus). The caller must protect
  * <result>. Returns SYLVAN_OK on success or a negative status on failure,
  * leaving <result> unchanged.
  */
-TASK(int, zdd_diff, ZDD*, result, ZDD, a, ZDD, b);
+TASK(int, zdd_diff, ZDD*, result, ZDD, a, ZDD, b)
 
 /**
  * Compute logical XOR of <a> and <b>.
@@ -291,7 +291,7 @@ TASK(int, zdd_diff, ZDD*, result, ZDD, a, ZDD, b);
  * SYLVAN_OK on success or a negative status on failure, leaving <result>
  * unchanged.
  */
-TASK(int, zdd_exists, ZDD*, result, ZDD, dd, BDDSET, vars);
+TASK(int, zdd_exists, ZDD*, result, ZDD, dd, BDDSET, vars)
 
 /**
  * Project <dd> onto <domain>, existentially quantifying variables not in the
@@ -299,7 +299,7 @@ TASK(int, zdd_exists, ZDD*, result, ZDD, dd, BDDSET, vars);
  * <result>. Returns SYLVAN_OK on success or a negative status on failure,
  * leaving <result> unchanged.
  */
-TASK(int, zdd_project, ZDD*, result, ZDD, dd, BDDSET, domain);
+TASK(int, zdd_project, ZDD*, result, ZDD, dd, BDDSET, domain)
 
 /**
  * Compute \forall <vars>: <dd>.
@@ -427,14 +427,14 @@ typedef struct zdd_trace {
 } zdd_trace;
 
 LACE_TYPEDEF_CB(void, zdd_enum_cb, void*, uint8_t*, size_t);
-TASK(void, zdd_enum, ZDD, ZDD, zdd_enum_cb, void*);
+TASK(void, zdd_enum, ZDD, ZDD, zdd_enum_cb, void*)
 #define zdd_enum(dd, dom, cb, context) RUN(zdd_enum, dd, dom, cb, context)
 
-TASK(void, zdd_enum_seq, ZDD, ZDD, zdd_enum_cb, void*);
+TASK(void, zdd_enum_seq, ZDD, ZDD, zdd_enum_cb, void*)
 #define zdd_enum_seq(dd, dom, cb, context) RUN(zdd_enum_seq, dd, dom, cb, context)
 
 LACE_TYPEDEF_CB(ZDD, zdd_collect_cb, void*, uint8_t*, size_t);
-TASK(ZDD, zdd_collect, ZDD, ZDD, ZDD, zdd_collect_cb, void*);
+TASK(ZDD, zdd_collect, ZDD, ZDD, ZDD, zdd_collect_cb, void*)
 #define zdd_collect(dd, dom, res_dom, cb, context) RUN(zdd_collect, dd, dom, res_dom, cb, context)
 */
 
@@ -458,12 +458,12 @@ typedef void (*zdd_visit_post_cb)(ZDD, void*);
 /**
  * Sequential visit operation
  */
-TASK(void, zdd_visit, ZDD, dd, zdd_visit_pre_cb, precb, zdd_visit_post_cb, postcb, void*, context);
+TASK(void, zdd_visit, ZDD, dd, zdd_visit_pre_cb, precb, zdd_visit_post_cb, postcb, void*, context)
 
 /**
  * Parallel visit operation
  */
-TASK(void, zdd_visit_parallel, ZDD, dd, zdd_visit_pre_cb, precb, zdd_visit_post_cb, postcb, void*, context);
+TASK(void, zdd_visit_parallel, ZDD, dd, zdd_visit_pre_cb, precb, zdd_visit_post_cb, postcb, void*, context)
 
 /**
  * Writing ZDDs to file.
@@ -495,7 +495,7 @@ TASK(void, zdd_visit_parallel, ZDD, dd, zdd_visit_pre_cb, precb, zdd_visit_post_
  * uint64_t: count -- number of stored decision diagrams
  * <count> times uint64_t: each stored decision diagram
  */
-TASK(void, zdd_write_binary, FILE *, file, ZDD *, dds, int, count);
+TASK(void, zdd_write_binary, FILE *, file, ZDD *, dds, int, count)
 
 /**
  * Write <count> decision diagrams given in <dds> in ASCII form to <file>.
@@ -507,7 +507,7 @@ TASK(void, zdd_write_binary, FILE *, file, ZDD *, dds, int, count);
  * ],[dd1, dd2, dd3, ...,] -- and each the stored decision diagram.
  */
 
-TASK(void, zdd_write_text, FILE *, file, ZDD *, dds, int, count);
+TASK(void, zdd_write_text, FILE *, file, ZDD *, dds, int, count)
 
 /**
  * Skeleton typedef for the skiplist
@@ -522,7 +522,7 @@ sylvan_skiplist* zdd_writer_start(void);
 /**
  * Add the given ZDD to the skiplist.
  */
-TASK(void, zdd_writer_add, sylvan_skiplist*, sl, ZDD, dd);
+TASK(void, zdd_writer_add, sylvan_skiplist*, sl, ZDD, dd)
 
 /**
  * Write all assigned ZDD nodes in binary format to the file.
@@ -556,7 +556,7 @@ void zdd_writer_end(sylvan_skiplist* sl);
 /*
  * Read <count> decision diagrams to <dds> from <file> in internal binary form.
  */
-TASK(int, zdd_read_binary, FILE*, file, ZDD*, dds, int, count);
+TASK(int, zdd_read_binary, FILE*, file, ZDD*, dds, int, count)
 
 /**
  * Reading a file earlier written with zdd_writer_writebinary
@@ -565,7 +565,7 @@ TASK(int, zdd_read_binary, FILE*, file, ZDD*, dds, int, count);
  * Returns NULL if there was an error.
  */
 
-TASK(uint64_t*, zdd_reader_readbinary, FILE*, file);
+TASK(uint64_t*, zdd_reader_readbinary, FILE*, file)
 
 /**
  * Retrieve the ZDD of the given stored identifier.
@@ -584,7 +584,7 @@ void zdd_reader_end(uint64_t *arr);
 /**
  * Call zdd_gc_mark for every zdd you want to keep in your custom mark functions.
  */
-TASK(void, zdd_gc_mark, ZDD, dd);
+TASK(void, zdd_gc_mark, ZDD, dd)
 
 /**
  * Default external pointer referencing. During garbage collection, the pointers are followed and the ZDD

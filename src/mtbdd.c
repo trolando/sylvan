@@ -318,6 +318,7 @@ TASK(void, mtbdd_refs_mark)
 
 void mtbdd_refs_mark_CALL(lace_worker* lace)
 {
+    (void)lace;
     mtbdd_refs_mark_task_TOGETHER();
 }
 
@@ -337,6 +338,7 @@ TASK(void, mtbdd_refs_free)
 
 void mtbdd_refs_free_CALL(lace_worker* lace)
 {
+    (void)lace;
     free(mtbdd_refs_key->pbegin);
     free(mtbdd_refs_key->rbegin);
     free(mtbdd_refs_key);
@@ -346,6 +348,7 @@ TASK(void, mtbdd_refs_init_task)
 
 void mtbdd_refs_init_task_CALL(lace_worker* lace)
 {
+    (void)lace;
     mtbdd_refs_init_key();
 }
 
@@ -353,6 +356,7 @@ TASK(void, mtbdd_refs_init)
 
 void mtbdd_refs_init_CALL(lace_worker* lace)
 {
+    (void)lace;
     mtbdd_refs_init_task_TOGETHER();
     sylvan_gc_add_mark(mtbdd_refs_mark_CALL);
 }
@@ -4534,6 +4538,7 @@ mtbdd_writer_start(void)
 
 void mtbdd_writer_add_CALL(lace_worker* lace, sylvan_skiplist_t sl, MTBDD dd)
 {
+    (void)lace;
     mtbdd_visit(dd, (mtbdd_visit_pre_cb)mtbdd_writer_add_visitor_pre, (mtbdd_visit_post_cb)mtbdd_writer_add_visitor_post, (void*)sl);
 }
 
@@ -4652,6 +4657,7 @@ void mtbdd_writer_totext_CALL(lace_worker* lace, FILE * out, MTBDD * dds, int co
  */
 uint64_t* mtbdd_reader_readbinary_CALL(lace_worker* lace, FILE* in)
 {
+    (void)lace;
     size_t nodecount;
     if (fread(&nodecount, sizeof(size_t), 1, in) != 1) {
         return NULL;

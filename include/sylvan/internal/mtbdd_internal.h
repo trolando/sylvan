@@ -88,9 +88,14 @@ MTBDD_EQUALM(MTBDD a, MTBDD b)
     return ((a^b)&(~bdd_complement)) ? 0 : 1;
 }
 
-// Leaf: a = L=1, M, type; b = value
+// Leaf: a = L=1, M, kind, type; b = value
 // Node: a = L=0, C, M, high; b = variable, low
 // Only complement edge on "high"
+
+enum mtbdd_leaf_kind {
+    MTBDD_LEAF_KIND_VALUE = 0,
+    MTBDD_LEAF_KIND_NAN = 1
+};
 
 static inline int SYLVAN_UNUSED
 mtbddnode_isleaf(const mtbddnode* n)
@@ -102,6 +107,18 @@ static inline uint32_t SYLVAN_UNUSED
 mtbddnode_gettype(const mtbddnode* n)
 {
     return n->a & 0x00000000ffffffff;
+}
+
+static inline uint32_t SYLVAN_UNUSED
+mtbddnode_getleafkind(const mtbddnode* n)
+{
+    return (uint32_t)((n->a >> 58) & 0x3);
+}
+
+static inline int SYLVAN_UNUSED
+mtbddnode_isnan(const mtbddnode* n)
+{
+    return mtbddnode_isleaf(n) && mtbddnode_getleafkind(n) == MTBDD_LEAF_KIND_NAN;
 }
 
 static inline uint64_t SYLVAN_UNUSED
@@ -152,6 +169,14 @@ mtbddnode_makeleaf(mtbddnode* n, uint32_t type, uint64_t value)
 {
     n->a = 0x4000000000000000 | (uint64_t)type;
     n->b = value;
+}
+
+static inline void SYLVAN_UNUSED
+mtbddnode_makenan(mtbddnode* n, uint32_t type)
+{
+    n->a = 0x4000000000000000 |
+           ((uint64_t)MTBDD_LEAF_KIND_NAN << 58) | (uint64_t)type;
+    n->b = 0;
 }
 
 static inline void SYLVAN_UNUSED

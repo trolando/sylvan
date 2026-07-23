@@ -50,6 +50,9 @@ int runtest_CALL(lace_worker* lace)
 
     Mtbdd seven = Mtbdd::int64Terminal(7);
     Mtbdd nine = Mtbdd::int64Terminal(9);
+    Mtbdd two = Mtbdd::int64Terminal(2);
+    test_assert(mtbdd_leaf_int64((seven / two).GetMTBDD()) == 3);
+    test_assert(mtbdd_leaf_int64(seven.Divide(two).GetMTBDD()) == 3);
     Mtbdd integer_function = Mtbdd::mtbddVar(1).Ite(seven, nine);
     test_assert(integer_function.Eval(variables, {0, 1}) == nine);
     test_assert(integer_function.Eval(variables, {1, 0}) == seven);

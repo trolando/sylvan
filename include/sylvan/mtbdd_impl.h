@@ -94,6 +94,8 @@ TASK(int, mtbdd_op_minus, MTBDD*, result, MTBDD*, a, MTBDD*, b);
 TASK(int, mtbdd_op_times, MTBDD*, result, MTBDD*, a, MTBDD*, b);
 TASK(int, mtbdd_abstract_op_times, MTBDD*, result, MTBDD, a, MTBDD, b, int, c);
 
+TASK(int, mtbdd_op_divide, MTBDD*, result, MTBDD*, a, MTBDD*, b);
+
 /**
  * Binary operation Minimum (for MTBDDs of same type)
  * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
@@ -153,6 +155,11 @@ static inline int mtbdd_sub(MTBDD *result, MTBDD a, MTBDD b)
 static inline int mtbdd_mul(MTBDD *result, MTBDD a, MTBDD b)
 {
     return mtbdd_apply(result, a, b, mtbdd_op_times_CALL);
+}
+
+static inline int mtbdd_div(MTBDD *result, MTBDD a, MTBDD b)
+{
+    return mtbdd_apply(result, a, b, mtbdd_op_divide_CALL);
 }
 
 /**

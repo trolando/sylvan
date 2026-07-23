@@ -627,6 +627,8 @@ public:
     Mtbdd& operator+=(const Mtbdd& other);
     Mtbdd operator-(const Mtbdd& other) const;
     Mtbdd& operator-=(const Mtbdd& other);
+    Mtbdd operator/(const Mtbdd& other) const;
+    Mtbdd& operator/=(const Mtbdd& other);
 
     // not implemented (compared to Bdd): <=, >=, <, >, &, &=, |, |=, ^, ^=
 
@@ -702,6 +704,11 @@ public:
      * @brief Computes f * g
      */
     Mtbdd Times(const Mtbdd &other) const;
+
+    /**
+     * @brief Computes f / g
+     */
+    Mtbdd Divide(const Mtbdd &other) const;
 
     /**
      * @brief Computes min(f, g)

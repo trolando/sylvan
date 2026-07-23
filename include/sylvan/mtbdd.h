@@ -71,6 +71,17 @@ void mtbdd_init(void);
 MTBDD mtbdd_leaf(uint32_t type, uint64_t value);
 
 /**
+ * Create the canonical NaN leaf associated with <type>.
+ * NaN is an ordinary canonical leaf that preserves its originating type.
+ */
+MTBDD mtbdd_nan(uint32_t type);
+
+/**
+ * Return 1 if <leaf> is a typed NaN leaf, or 0 otherwise.
+ */
+int mtbdd_is_nan(MTBDD leaf);
+
+/**
  * Create an internal MTBDD node of Boolean variable <var>, with low edge <low> and high edge <high>.
  * <var> is a 24-bit integer.
  * Please note that this does NOT check variable ordering!
@@ -143,17 +154,19 @@ MTBDD mtbdd_fraction(int64_t numer, uint64_t denom);
 
 /**
  * Obtain the value of an Integer leaf.
+ * Call mtbdd_is_nan first when the leaf may be an Integer NaN.
  */
 int64_t mtbdd_leaf_int64(MTBDD terminal);
 
 /**
- * Obtain the value of a Real leaf.
+ * Obtain the value of a Real leaf. Returns the C NAN value for a Real NaN.
  */
 double mtbdd_leaf_double(MTBDD terminal);
 
 /**
  * Obtain both components of a Fraction leaf.
- * Returns 0 on success and -1 if <leaf> is not a Fraction leaf.
+ * Returns 0 on success and -1 if <leaf> is not a numeric Fraction value,
+ * including when it is a Fraction NaN.
  */
 int mtbdd_leaf_fraction(MTBDD leaf, int32_t *numerator, uint32_t *denominator);
 
@@ -304,42 +317,44 @@ static inline int mtbdd_op_cmpl(MTBDD *result, MTBDD a, size_t param);
 
 /**
  * Binary operation Plus (for MTBDDs of same type)
- * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
- * For Integer/Double MTBDDs, mtbdd_undefined is interpreted as "0" or "0.0".
+ * Numeric operands must have the same built-in type. Undefined and NaN values
+ * propagate; fixed-width overflow produces that type's canonical NaN.
  */
 static inline int mtbdd_op_plus(MTBDD *result, MTBDD *a, MTBDD *b);
 static inline int mtbdd_abstract_op_plus(MTBDD *result, MTBDD a, MTBDD b, int c);
 
 /**
  * Binary operation Minus (for MTBDDs of same type)
- * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
- * For Integer/Double MTBDDs, mtbdd_undefined is interpreted as "0" or "0.0".
+ * Numeric operands must have the same built-in type. Undefined and NaN values
+ * propagate; fixed-width overflow produces that type's canonical NaN.
  */
 static inline int mtbdd_op_minus(MTBDD *result, MTBDD *a, MTBDD *b);
 
 /**
  * Binary operation Times (for MTBDDs of same type)
- * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
- * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
- * then the result is mtbdd_undefined (i.e. not defined).
+ * Numeric operands must have the same built-in type. Undefined and NaN values
+ * propagate; fixed-width overflow produces that type's canonical NaN.
  */
 static inline int mtbdd_op_times(MTBDD *result, MTBDD *a, MTBDD *b);
 static inline int mtbdd_abstract_op_times(MTBDD *result, MTBDD a, MTBDD b, int c);
 
 /**
+ * Binary operation Divide for numeric MTBDDs of the same built-in type.
+ * Undefined and NaN values propagate. Integer division truncates toward zero.
+ * Division by zero and fixed-width overflow produce a typed NaN.
+ */
+static inline int mtbdd_op_divide(MTBDD *result, MTBDD *a, MTBDD *b);
+
+/**
  * Binary operation Minimum (for MTBDDs of same type)
- * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
- * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
- * then the result is the other operand.
+ * Undefined and NaN values propagate.
  */
 static inline int mtbdd_op_min(MTBDD *result, MTBDD *a, MTBDD *b);
 static inline int mtbdd_abstract_op_min(MTBDD *result, MTBDD a, MTBDD b, int c);
 
 /**
  * Binary operation Maximum (for MTBDDs of same type)
- * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
- * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
- * then the result is the other operand.
+ * Undefined and NaN values propagate.
  */
 static inline int mtbdd_op_max(MTBDD *result, MTBDD *a, MTBDD *b);
 static inline int mtbdd_abstract_op_max(MTBDD *result, MTBDD a, MTBDD b, int c);
@@ -371,6 +386,12 @@ static inline int mtbdd_sub(MTBDD *result, MTBDD a, MTBDD b);
  * Compute a * b
  */
 static inline int mtbdd_mul(MTBDD *result, MTBDD a, MTBDD b);
+
+/**
+ * Compute a / b. Undefined values propagate. Integer division truncates toward
+ * zero. Division by zero and fixed-width overflow produce a typed NaN leaf.
+ */
+static inline int mtbdd_div(MTBDD *result, MTBDD a, MTBDD b);
 
 /**
  * Compute min(a, b)

@@ -918,6 +918,14 @@ Mtbdd::Max(const Mtbdd &other) const
     return result;
 }
 
+Mtbdd
+Mtbdd::Divide(const Mtbdd &other) const
+{
+    Mtbdd result(mtbdd_invalid);
+    (void)mtbdd_div(&result.mtbdd, mtbdd, other.mtbdd);
+    return result;
+}
+
 bool Mtbdd::AllLeq(const Mtbdd &other) const { return apply_mtbdd_predicate(mtbdd_all_leq, mtbdd, other.mtbdd); }
 bool Mtbdd::AllLt(const Mtbdd &other) const { return apply_mtbdd_predicate(mtbdd_all_lt, mtbdd, other.mtbdd); }
 bool Mtbdd::AllGeq(const Mtbdd &other) const { return apply_mtbdd_predicate(mtbdd_all_geq, mtbdd, other.mtbdd); }
@@ -1081,6 +1089,19 @@ Mtbdd&
 Mtbdd::operator-=(const Mtbdd& other)
 {
     (void)mtbdd_sub(&mtbdd, mtbdd, other.mtbdd);
+    return *this;
+}
+
+Mtbdd
+Mtbdd::operator/(const Mtbdd& other) const
+{
+    return Divide(other);
+}
+
+Mtbdd&
+Mtbdd::operator/=(const Mtbdd& other)
+{
+    (void)mtbdd_div(&mtbdd, mtbdd, other.mtbdd);
     return *this;
 }
 

@@ -52,6 +52,13 @@ mtbdd_is_leaf(MTBDD bdd)
     return mtbddnode_isleaf(MTBDD_GETNODE(bdd));
 }
 
+int
+mtbdd_is_nan(MTBDD leaf)
+{
+    return leaf != mtbdd_invalid && leaf != mtbdd_undefined && leaf != bdd_true &&
+           mtbdd_is_leaf(leaf) && mtbddnode_isnan(MTBDD_GETNODE(leaf));
+}
+
 // for nodes
 uint32_t
 mtbdd_node_variable(MTBDD node)
@@ -152,6 +159,7 @@ mtbdd_leaf_int64(MTBDD leaf)
 double
 mtbdd_leaf_double(MTBDD leaf)
 {
+    if (mtbdd_is_nan(leaf)) return NAN;
     uint64_t value = mtbdd_leaf_value(leaf);
     return *(double*)&value;
 }
@@ -468,6 +476,29 @@ mtbdd_leaf(uint32_t type, uint64_t value)
     return (MTBDD)index;
 }
 
+MTBDD
+mtbdd_nan(uint32_t type)
+{
+    struct mtbddnode n;
+    mtbddnode_makenan(&n, type);
+
+    int created;
+    uint64_t index = nodes_lookup(nodes, n.a, n.b, &created);
+    if (index == 0) {
+        sylvan_gc();
+        index = nodes_lookup(nodes, n.a, n.b, &created);
+        if (index == 0) {
+            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n",
+                    nodes_count_nodes(nodes), nodes_get_size(nodes));
+            exit(1);
+        }
+    }
+
+    if (created) sylvan_stats_count(BDD_NODES_CREATED);
+    else sylvan_stats_count(BDD_NODES_REUSED);
+    return (MTBDD)index;
+}
+
 void SYLVAN_NOINLINE
 _mtbdd_makenode_gc(MTBDD low, MTBDD high)
 {
@@ -575,7 +606,8 @@ int
 mtbdd_leaf_fraction(MTBDD leaf, int32_t *numerator, uint32_t *denominator)
 {
     if (numerator == NULL || denominator == NULL || !mtbdd_is_leaf(leaf) ||
-        leaf == mtbdd_undefined || leaf == bdd_true || mtbdd_leaf_type(leaf) != 2) {
+        leaf == mtbdd_undefined || leaf == bdd_true || mtbdd_is_nan(leaf) ||
+        mtbdd_leaf_type(leaf) != 2) {
         return -1;
     }
     *numerator = mtbdd_fraction_numerator(leaf);
@@ -651,6 +683,7 @@ mtbdd_int64(int64_t value)
 MTBDD
 mtbdd_double(double value)
 {
+    if (isnan(value)) return mtbdd_nan(1);
     // normalize all 0.0 to 0.0
     if (value == 0.0) value = 0.0;
     return mtbdd_leaf(1, *(uint64_t*)&value);
@@ -680,6 +713,200 @@ mtbdd_fraction(int64_t nom, uint64_t denom)
     const int32_t numerator = negative ? -(int32_t)magnitude : (int32_t)magnitude;
     const uint64_t value = ((uint64_t)(uint32_t)numerator << 32) | denom;
     return mtbdd_leaf(2, value);
+}
+
+static int
+int64_add_checked(int64_t a, int64_t b, int64_t *result)
+{
+    if ((b > 0 && a > INT64_MAX - b) || (b < 0 && a < INT64_MIN - b)) return 0;
+    *result = a + b;
+    return 1;
+}
+
+static int
+int64_sub_checked(int64_t a, int64_t b, int64_t *result)
+{
+    if ((b < 0 && a > INT64_MAX + b) || (b > 0 && a < INT64_MIN + b)) return 0;
+    *result = a - b;
+    return 1;
+}
+
+static uint64_t
+int64_magnitude(int64_t value)
+{
+    return value < 0 ? (uint64_t)(-(value + 1)) + 1 : (uint64_t)value;
+}
+
+static int
+int64_mul_checked(int64_t a, int64_t b, int64_t *result)
+{
+    const int negative = (a < 0) != (b < 0);
+    const uint64_t magnitude_a = int64_magnitude(a);
+    const uint64_t magnitude_b = int64_magnitude(b);
+    const uint64_t limit = negative ? (UINT64_C(1) << 63) : INT64_MAX;
+
+    if (magnitude_a != 0 && magnitude_b > limit / magnitude_a) return 0;
+    const uint64_t magnitude = magnitude_a * magnitude_b;
+    if (negative) {
+        *result = magnitude == (UINT64_C(1) << 63)
+            ? INT64_MIN : -(int64_t)magnitude;
+    } else {
+        *result = (int64_t)magnitude;
+    }
+    return 1;
+}
+
+static int
+uint64_mul_checked(uint64_t a, uint64_t b, uint64_t *result)
+{
+    if (a != 0 && b > UINT64_MAX / a) return 0;
+    *result = a * b;
+    return 1;
+}
+
+static int
+int64_pow_checked(int64_t base, size_t exponent, int64_t *result)
+{
+    int64_t value = 1;
+    while (exponent != 0) {
+        if (exponent & 1) {
+            if (!int64_mul_checked(value, base, &value)) return 0;
+        }
+        exponent >>= 1;
+        if (exponent != 0 && !int64_mul_checked(base, base, &base)) return 0;
+    }
+    *result = value;
+    return 1;
+}
+
+static int
+uint64_pow_checked(uint64_t base, size_t exponent, uint64_t *result)
+{
+    uint64_t value = 1;
+    while (exponent != 0) {
+        if (exponent & 1) {
+            if (!uint64_mul_checked(value, base, &value)) return 0;
+        }
+        exponent >>= 1;
+        if (exponent != 0 && !uint64_mul_checked(base, base, &base)) return 0;
+    }
+    *result = value;
+    return 1;
+}
+
+static MTBDD
+mtbdd_fraction_magnitude_result(int negative, uint64_t magnitude, uint64_t denominator)
+{
+    if (denominator == 0) return mtbdd_nan(2);
+    if (magnitude == 0) return mtbdd_fraction(0, 1);
+
+    const uint64_t divisor = gcd64(magnitude, denominator);
+    magnitude /= divisor;
+    denominator /= divisor;
+    if (magnitude > INT32_MAX || denominator > UINT32_MAX) return mtbdd_nan(2);
+
+    const int32_t reduced_numerator = negative ? -(int32_t)magnitude : (int32_t)magnitude;
+    const uint64_t value = ((uint64_t)(uint32_t)reduced_numerator << 32) | denominator;
+    return mtbdd_leaf(2, value);
+}
+
+static MTBDD
+mtbdd_fraction_result(int64_t numerator, uint64_t denominator)
+{
+    return mtbdd_fraction_magnitude_result(
+        numerator < 0, int64_magnitude(numerator), denominator);
+}
+
+static MTBDD
+mtbdd_fraction_add_result(MTBDD a, MTBDD b, int subtract)
+{
+    const int64_t numerator_a = mtbdd_fraction_numerator(a);
+    const int64_t numerator_b = mtbdd_fraction_numerator(b);
+    const uint64_t denominator_a = mtbdd_fraction_denominator(a);
+    const uint64_t denominator_b = mtbdd_fraction_denominator(b);
+    const uint64_t divisor = gcd((uint32_t)denominator_a, (uint32_t)denominator_b);
+    int64_t scaled_a, scaled_b;
+    uint64_t denominator;
+
+    if (!int64_mul_checked(numerator_a, (int64_t)(denominator_b / divisor), &scaled_a) ||
+        !int64_mul_checked(numerator_b, (int64_t)(denominator_a / divisor), &scaled_b) ||
+        !uint64_mul_checked(denominator_a, denominator_b / divisor, &denominator)) {
+        return mtbdd_nan(2);
+    }
+
+    const int negative_a = scaled_a < 0;
+    const int negative_b = (scaled_b < 0) != subtract;
+    const uint64_t magnitude_a = int64_magnitude(scaled_a);
+    const uint64_t magnitude_b = int64_magnitude(scaled_b);
+    int negative;
+    uint64_t magnitude;
+    if (negative_a == negative_b) {
+        negative = negative_a;
+        if (UINT64_MAX - magnitude_a < magnitude_b) return mtbdd_nan(2);
+        magnitude = magnitude_a + magnitude_b;
+    } else if (magnitude_a >= magnitude_b) {
+        negative = negative_a;
+        magnitude = magnitude_a - magnitude_b;
+    } else {
+        negative = negative_b;
+        magnitude = magnitude_b - magnitude_a;
+    }
+    return mtbdd_fraction_magnitude_result(negative, magnitude, denominator);
+}
+
+static MTBDD
+mtbdd_fraction_mul_result(MTBDD a, MTBDD b)
+{
+    int64_t numerator_a = mtbdd_fraction_numerator(a);
+    int64_t numerator_b = mtbdd_fraction_numerator(b);
+    uint64_t denominator_a = mtbdd_fraction_denominator(a);
+    uint64_t denominator_b = mtbdd_fraction_denominator(b);
+    const uint64_t divisor_a = gcd64(int64_magnitude(numerator_a), denominator_b);
+    const uint64_t divisor_b = gcd64(int64_magnitude(numerator_b), denominator_a);
+    int64_t numerator;
+    uint64_t denominator;
+
+    numerator_a /= (int64_t)divisor_a;
+    numerator_b /= (int64_t)divisor_b;
+    denominator_a /= divisor_b;
+    denominator_b /= divisor_a;
+    if (!int64_mul_checked(numerator_a, numerator_b, &numerator) ||
+        !uint64_mul_checked(denominator_a, denominator_b, &denominator)) {
+        return mtbdd_nan(2);
+    }
+    return mtbdd_fraction_result(numerator, denominator);
+}
+
+static MTBDD
+mtbdd_fraction_div_result(MTBDD a, MTBDD b)
+{
+    int64_t numerator_a = mtbdd_fraction_numerator(a);
+    int64_t numerator_b = mtbdd_fraction_numerator(b);
+    uint64_t denominator_a = mtbdd_fraction_denominator(a);
+    uint64_t denominator_b = mtbdd_fraction_denominator(b);
+    if (numerator_b == 0) return mtbdd_nan(2);
+
+    const int negative = (numerator_a < 0) != (numerator_b < 0);
+    uint64_t magnitude_a = int64_magnitude(numerator_a);
+    uint64_t magnitude_b = int64_magnitude(numerator_b);
+    const uint64_t divisor_a = gcd64(magnitude_a, magnitude_b);
+    const uint64_t divisor_b = gcd64(denominator_a, denominator_b);
+    magnitude_a /= divisor_a;
+    magnitude_b /= divisor_a;
+    denominator_a /= divisor_b;
+    denominator_b /= divisor_b;
+
+    uint64_t numerator_magnitude, denominator;
+    if (!uint64_mul_checked(magnitude_a, denominator_b, &numerator_magnitude) ||
+        !uint64_mul_checked(denominator_a, magnitude_b, &denominator) ||
+        numerator_magnitude > (negative ? (UINT64_C(1) << 63) : INT64_MAX)) {
+        return mtbdd_nan(2);
+    }
+    const int64_t numerator = negative
+        ? (numerator_magnitude == (UINT64_C(1) << 63)
+            ? INT64_MIN : -(int64_t)numerator_magnitude)
+        : (int64_t)numerator_magnitude;
+    return mtbdd_fraction_result(numerator, denominator);
 }
 
 /**
@@ -1209,18 +1436,33 @@ int mtbdd_uop_times_uint_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, si
     mtbddnode* na = MTBDD_GETNODE(a);
 
     if (mtbddnode_isleaf(na)) {
+        if (mtbddnode_isnan(na)) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_nan(mtbddnode_gettype(na)));
+        }
         if (mtbddnode_gettype(na) == 0) {
             int64_t v = mtbdd_leaf_int64(a);
-            return _mtbdd_apply_callback_result(destination, mtbdd_int64(v*k));
+            int64_t result;
+            if (v == 0) return _mtbdd_apply_callback_result(destination, a);
+            if (k > INT64_MAX || !int64_mul_checked(v, (int64_t)k, &result)) {
+                return _mtbdd_apply_callback_result(destination, mtbdd_nan(0));
+            }
+            return _mtbdd_apply_callback_result(destination, mtbdd_int64(result));
         } else if (mtbddnode_gettype(na) == 1) {
             double d = mtbdd_leaf_double(a);
             return _mtbdd_apply_callback_result(destination, mtbdd_double(d*k));
         } else if (mtbddnode_gettype(na) == 2) {
-            uint64_t v = mtbddnode_getvalue(na);
-            int64_t n = (int32_t)(v>>32);
-            uint32_t d = (uint32_t)v;
-            uint32_t c = gcd(d, (uint32_t)k);
-            return _mtbdd_apply_callback_result(destination, mtbdd_fraction(n*(k/c), d/c));
+            int64_t numerator = mtbdd_fraction_numerator(a);
+            uint64_t denominator = mtbdd_fraction_denominator(a);
+            if (numerator == 0) return _mtbdd_apply_callback_result(destination, a);
+            const uint64_t divisor = gcd64(denominator, (uint64_t)k);
+            int64_t scaled;
+            const uint64_t factor = (uint64_t)k / divisor;
+            if (factor > INT64_MAX ||
+                !int64_mul_checked(numerator, (int64_t)factor, &scaled)) {
+                return _mtbdd_apply_callback_result(destination, mtbdd_nan(2));
+            }
+            return _mtbdd_apply_callback_result(
+                destination, mtbdd_fraction_result(scaled, denominator / divisor));
         } else {
             return SYLVAN_ERR_INVALID;
         }
@@ -1242,15 +1484,26 @@ int mtbdd_uop_pow_uint_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, size
     mtbddnode* na = MTBDD_GETNODE(a);
 
     if (mtbddnode_isleaf(na)) {
+        if (mtbddnode_isnan(na)) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_nan(mtbddnode_gettype(na)));
+        }
         if (mtbddnode_gettype(na) == 0) {
             int64_t v = mtbdd_leaf_int64(a);
-            return _mtbdd_apply_callback_result(destination, mtbdd_int64(pow(v, k)));
+            int64_t result;
+            return _mtbdd_apply_callback_result(destination,
+                int64_pow_checked(v, k, &result) ? mtbdd_int64(result) : mtbdd_nan(0));
         } else if (mtbddnode_gettype(na) == 1) {
             double d = mtbdd_leaf_double(a);
             return _mtbdd_apply_callback_result(destination, mtbdd_double(pow(d, k)));
         } else if (mtbddnode_gettype(na) == 2) {
-            uint64_t v = mtbddnode_getvalue(na);
-            return _mtbdd_apply_callback_result(destination, mtbdd_fraction(pow((int32_t)(v>>32), k), (uint32_t)v));
+            int64_t numerator;
+            uint64_t denominator;
+            if (!int64_pow_checked(mtbdd_fraction_numerator(a), k, &numerator) ||
+                !uint64_pow_checked(mtbdd_fraction_denominator(a), k, &denominator)) {
+                return _mtbdd_apply_callback_result(destination, mtbdd_nan(2));
+            }
+            return _mtbdd_apply_callback_result(
+                destination, mtbdd_fraction_result(numerator, denominator));
         } else {
             return SYLVAN_ERR_INVALID;
         }
@@ -1466,52 +1719,45 @@ int mtbdd_abstract_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD v,
 
 /**
  * Binary operation Plus (for MTBDDs of same type)
- * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
- * For Integer/Double MTBDDs, mtbdd_undefined is interpreted as "0" or "0.0".
+ * Numeric operands must have the same built-in type.
+ * Undefined values propagate for numeric MTBDDs.
  */
 int mtbdd_op_plus_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
     (void)lace;
 
     MTBDD a = *pa, b = *pb;
-    if (a == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, b);
-    if (b == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, a);
 
     // Handle Boolean MTBDDs: interpret as Or
     if (a == bdd_true) return _mtbdd_apply_callback_result(destination, bdd_true);
     if (b == bdd_true) return _mtbdd_apply_callback_result(destination, bdd_true);
+    if (a == mtbdd_undefined || b == mtbdd_undefined) {
+        return _mtbdd_apply_callback_result(destination, mtbdd_undefined);
+    }
 
     mtbddnode* na = MTBDD_GETNODE(a);
     mtbddnode* nb = MTBDD_GETNODE(b);
 
     if (mtbddnode_isleaf(na) && mtbddnode_isleaf(nb)) {
-        uint64_t val_a = mtbddnode_getvalue(na);
-        uint64_t val_b = mtbddnode_getvalue(nb);
-        if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
-            // both integer
-            return _mtbdd_apply_callback_result(destination, mtbdd_int64(*(int64_t*)(&val_a) + *(int64_t*)(&val_b)));
-        } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
-            // both double
-            return _mtbdd_apply_callback_result(destination, mtbdd_double(*(double*)(&val_a) + *(double*)(&val_b)));
-        } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
-            // both fraction
-            int64_t nom_a = (int32_t)(val_a>>32);
-            int64_t nom_b = (int32_t)(val_b>>32);
-            uint64_t denom_a = val_a&0xffffffff;
-            uint64_t denom_b = val_b&0xffffffff;
-            // common cases
-            if (nom_a == 0) return _mtbdd_apply_callback_result(destination, b);
-            if (nom_b == 0) return _mtbdd_apply_callback_result(destination, a);
-            // equalize denominators
-            uint32_t c = gcd((uint32_t)denom_a, (uint32_t)denom_b);
-            nom_a *= denom_b/c;
-            nom_b *= denom_a/c;
-            denom_a *= denom_b/c;
-            // add
-            return _mtbdd_apply_callback_result(destination, mtbdd_fraction(nom_a + nom_b, denom_a));
-        } else {
-            return SYLVAN_ERR_INVALID;
+        const uint32_t type = mtbddnode_gettype(na);
+        if (type != mtbddnode_gettype(nb)) return SYLVAN_ERR_INVALID;
+        if (mtbddnode_isnan(na) || mtbddnode_isnan(nb)) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_nan(type));
         }
+        if (type == 0) {
+            int64_t value;
+            return _mtbdd_apply_callback_result(destination,
+                int64_add_checked(mtbdd_leaf_int64(a), mtbdd_leaf_int64(b), &value)
+                    ? mtbdd_int64(value) : mtbdd_nan(0));
+        }
+        if (type == 1) {
+            return _mtbdd_apply_callback_result(
+                destination, mtbdd_double(mtbdd_leaf_double(a) + mtbdd_leaf_double(b)));
+        }
+        if (type == 2) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_fraction_add_result(a, b, 0));
+        }
+        return SYLVAN_ERR_INVALID;
     }
 
     if (a < b) {
@@ -1524,47 +1770,41 @@ int mtbdd_op_plus_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* 
 
 /**
  * Binary operation Minus (for MTBDDs of same type)
- * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
- * For Integer/Double MTBDDs, mtbdd_undefined is interpreted as "0" or "0.0".
+ * Numeric operands must have the same built-in type.
+ * Undefined values propagate.
  */
 int mtbdd_op_minus_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
     (void)lace;
 
     MTBDD a = *pa, b = *pb;
-    if (a == mtbdd_undefined) return mtbdd_neg(destination, b);
-    if (b == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, a);
+    if (a == mtbdd_undefined || b == mtbdd_undefined) {
+        return _mtbdd_apply_callback_result(destination, mtbdd_undefined);
+    }
 
     mtbddnode* na = MTBDD_GETNODE(a);
     mtbddnode* nb = MTBDD_GETNODE(b);
 
     if (mtbddnode_isleaf(na) && mtbddnode_isleaf(nb)) {
-        uint64_t val_a = mtbddnode_getvalue(na);
-        uint64_t val_b = mtbddnode_getvalue(nb);
-        if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
-            // both integer
-            return _mtbdd_apply_callback_result(destination, mtbdd_int64(*(int64_t*)(&val_a) - *(int64_t*)(&val_b)));
-        } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
-            // both double
-            return _mtbdd_apply_callback_result(destination, mtbdd_double(*(double*)(&val_a) - *(double*)(&val_b)));
-        } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
-            // both fraction
-            int64_t nom_a = (int32_t)(val_a>>32);
-            int64_t nom_b = (int32_t)(val_b>>32);
-            uint64_t denom_a = val_a&0xffffffff;
-            uint64_t denom_b = val_b&0xffffffff;
-            // common cases
-            if (nom_b == 0) return _mtbdd_apply_callback_result(destination, a);
-            // equalize denominators
-            uint32_t c = gcd((uint32_t)denom_a, (uint32_t)denom_b);
-            nom_a *= denom_b/c;
-            nom_b *= denom_a/c;
-            denom_a *= denom_b/c;
-            // subtract
-            return _mtbdd_apply_callback_result(destination, mtbdd_fraction(nom_a - nom_b, denom_a));
-        } else {
-            return SYLVAN_ERR_INVALID;
+        const uint32_t type = mtbddnode_gettype(na);
+        if (type != mtbddnode_gettype(nb)) return SYLVAN_ERR_INVALID;
+        if (mtbddnode_isnan(na) || mtbddnode_isnan(nb)) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_nan(type));
         }
+        if (type == 0) {
+            int64_t value;
+            return _mtbdd_apply_callback_result(destination,
+                int64_sub_checked(mtbdd_leaf_int64(a), mtbdd_leaf_int64(b), &value)
+                    ? mtbdd_int64(value) : mtbdd_nan(0));
+        }
+        if (type == 1) {
+            return _mtbdd_apply_callback_result(
+                destination, mtbdd_double(mtbdd_leaf_double(a) - mtbdd_leaf_double(b)));
+        }
+        if (type == 2) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_fraction_add_result(a, b, 1));
+        }
+        return SYLVAN_ERR_INVALID;
     }
 
     return SYLVAN_APPLY_RECURSE;
@@ -1572,7 +1812,7 @@ int mtbdd_op_minus_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD*
 
 /**
  * Binary operation Times (for MTBDDs of same type)
- * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
+ * Numeric operands must have the same built-in type.
  * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
  * then the result is mtbdd_undefined (i.e. not defined).
  */
@@ -1591,45 +1831,25 @@ int mtbdd_op_times_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD*
     mtbddnode* nb = MTBDD_GETNODE(b);
 
     if (mtbddnode_isleaf(na) && mtbddnode_isleaf(nb)) {
-        uint64_t val_a = mtbddnode_getvalue(na);
-        uint64_t val_b = mtbddnode_getvalue(nb);
-        if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
-            // both integer
-            int64_t i_a = *(int64_t*)(&val_a);
-            int64_t i_b = *(int64_t*)(&val_b);
-            if (i_a == 0) return _mtbdd_apply_callback_result(destination, a);
-            if (i_b == 0) return _mtbdd_apply_callback_result(destination, b);
-            if (i_a == 1) return _mtbdd_apply_callback_result(destination, b);
-            if (i_b == 1) return _mtbdd_apply_callback_result(destination, a);
-            return _mtbdd_apply_callback_result(destination, mtbdd_int64(i_a * i_b));
-        } else if (mtbddnode_gettype(na) == 1 && mtbddnode_gettype(nb) == 1) {
-            // both double
-            double d_a = *(double*)(&val_a);
-            double d_b = *(double*)(&val_b);
-            if (d_a == 0.0) return _mtbdd_apply_callback_result(destination, a);
-            if (d_a == 1.0) return _mtbdd_apply_callback_result(destination, b);
-            if (d_b == 0.0) return _mtbdd_apply_callback_result(destination, b);
-            if (d_b == 1.0) return _mtbdd_apply_callback_result(destination, a);
-            return _mtbdd_apply_callback_result(destination, mtbdd_double(d_a * d_b));
-        } else if (mtbddnode_gettype(na) == 2 && mtbddnode_gettype(nb) == 2) {
-            // both fraction
-            int64_t nom_a = (int32_t)(val_a>>32);
-            int64_t nom_b = (int32_t)(val_b>>32);
-            uint64_t denom_a = val_a&0xffffffff;
-            uint64_t denom_b = val_b&0xffffffff;
-            if (nom_a == 0) return _mtbdd_apply_callback_result(destination, a);
-            if (nom_b == 0) return _mtbdd_apply_callback_result(destination, b);
-            // multiply!
-            uint32_t c = gcd((uint32_t)(nom_b < 0 ? -nom_b : nom_b), (uint32_t)denom_a);
-            uint32_t d = gcd((uint32_t)(nom_a < 0 ? -nom_a : nom_a), (uint32_t)denom_b);
-            nom_a /= d;
-            denom_a /= c;
-            nom_a *= (nom_b/c);
-            denom_a *= (denom_b/d);
-            return _mtbdd_apply_callback_result(destination, mtbdd_fraction(nom_a, denom_a));
-        } else {
-            return SYLVAN_ERR_INVALID;
+        const uint32_t type = mtbddnode_gettype(na);
+        if (type != mtbddnode_gettype(nb)) return SYLVAN_ERR_INVALID;
+        if (mtbddnode_isnan(na) || mtbddnode_isnan(nb)) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_nan(type));
         }
+        if (type == 0) {
+            int64_t value;
+            return _mtbdd_apply_callback_result(destination,
+                int64_mul_checked(mtbdd_leaf_int64(a), mtbdd_leaf_int64(b), &value)
+                    ? mtbdd_int64(value) : mtbdd_nan(0));
+        }
+        if (type == 1) {
+            return _mtbdd_apply_callback_result(
+                destination, mtbdd_double(mtbdd_leaf_double(a) * mtbdd_leaf_double(b)));
+        }
+        if (type == 2) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_fraction_mul_result(a, b));
+        }
+        return SYLVAN_ERR_INVALID;
     }
 
     if (a < b) {
@@ -1641,28 +1861,73 @@ int mtbdd_op_times_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD*
 }
 
 /**
+ * Binary operation Divide (for numeric MTBDDs of the same type).
+ * Undefined and NaN values propagate. Integer and fraction division by zero
+ * and fixed-width overflow produce a typed NaN.
+ */
+int mtbdd_op_divide_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
+{
+    (void)lace;
+
+    const MTBDD a = *pa, b = *pb;
+    if (a == mtbdd_undefined || b == mtbdd_undefined) {
+        return _mtbdd_apply_callback_result(destination, mtbdd_undefined);
+    }
+
+    mtbddnode* na = MTBDD_GETNODE(a);
+    mtbddnode* nb = MTBDD_GETNODE(b);
+    if (mtbddnode_isleaf(na) && mtbddnode_isleaf(nb)) {
+        const uint32_t type = mtbddnode_gettype(na);
+        if (type != mtbddnode_gettype(nb)) return SYLVAN_ERR_INVALID;
+        if (mtbddnode_isnan(na) || mtbddnode_isnan(nb)) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_nan(type));
+        }
+        if (type == 0) {
+            const int64_t numerator = mtbdd_leaf_int64(a);
+            const int64_t denominator = mtbdd_leaf_int64(b);
+            if (denominator == 0 || (numerator == INT64_MIN && denominator == -1)) {
+                return _mtbdd_apply_callback_result(destination, mtbdd_nan(0));
+            }
+            return _mtbdd_apply_callback_result(
+                destination, mtbdd_int64(numerator / denominator));
+        }
+        if (type == 1) {
+            return _mtbdd_apply_callback_result(
+                destination, mtbdd_double(mtbdd_leaf_double(a) / mtbdd_leaf_double(b)));
+        }
+        if (type == 2) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_fraction_div_result(a, b));
+        }
+        return SYLVAN_ERR_INVALID;
+    }
+
+    return SYLVAN_APPLY_RECURSE;
+}
+
+/**
  * Binary operation Minimum (for MTBDDs of same type)
- * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
- * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
- * then the result is the other operand.
+ * Numeric operands must have the same built-in type. Undefined values
+ * propagate.
  */
 int mtbdd_op_min_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
     (void)lace;
 
     MTBDD a = *pa, b = *pb;
-    if (a == bdd_true) return _mtbdd_apply_callback_result(destination, b);
-    if (b == bdd_true) return _mtbdd_apply_callback_result(destination, a);
+    if (a == mtbdd_undefined || b == mtbdd_undefined) {
+        return _mtbdd_apply_callback_result(destination, mtbdd_undefined);
+    }
+    if (a == bdd_true || b == bdd_true) return SYLVAN_ERR_INVALID;
     if (a == b) return _mtbdd_apply_callback_result(destination, a);
-
-    // Special case where "false" indicates a partial function
-    if (a == mtbdd_undefined && b != mtbdd_undefined && mtbddnode_isleaf(MTBDD_GETNODE(b))) return _mtbdd_apply_callback_result(destination, b);
-    if (b == mtbdd_undefined && a != mtbdd_undefined && mtbddnode_isleaf(MTBDD_GETNODE(a))) return _mtbdd_apply_callback_result(destination, a);
 
     mtbddnode* na = MTBDD_GETNODE(a);
     mtbddnode* nb = MTBDD_GETNODE(b);
 
     if (mtbddnode_isleaf(na) && mtbddnode_isleaf(nb)) {
+        if (mtbddnode_gettype(na) != mtbddnode_gettype(nb)) return SYLVAN_ERR_INVALID;
+        if (mtbddnode_isnan(na) || mtbddnode_isnan(nb)) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_nan(mtbddnode_gettype(na)));
+        }
         uint64_t val_a = mtbddnode_getvalue(na);
         uint64_t val_b = mtbddnode_getvalue(nb);
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
@@ -1702,25 +1967,28 @@ int mtbdd_op_min_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* p
 
 /**
  * Binary operation Maximum (for MTBDDs of same type)
- * Only for MTBDDs where either all leaves are Boolean, or Integer, or Double.
- * For Integer/Double MTBDD, if either operand is mtbdd_undefined (not defined),
- * then the result is the other operand.
+ * Numeric operands must have the same built-in type. Undefined values
+ * propagate.
  */
 int mtbdd_op_max_CALL(lace_worker* lace, MTBDD *destination, MTBDD* pa, MTBDD* pb)
 {
     (void)lace;
 
     MTBDD a = *pa, b = *pb;
-    if (a == bdd_true) return _mtbdd_apply_callback_result(destination, a);
-    if (b == bdd_true) return _mtbdd_apply_callback_result(destination, b);
-    if (a == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, b);
-    if (b == mtbdd_undefined) return _mtbdd_apply_callback_result(destination, a);
+    if (a == mtbdd_undefined || b == mtbdd_undefined) {
+        return _mtbdd_apply_callback_result(destination, mtbdd_undefined);
+    }
+    if (a == bdd_true || b == bdd_true) return SYLVAN_ERR_INVALID;
     if (a == b) return _mtbdd_apply_callback_result(destination, a);
 
     mtbddnode* na = MTBDD_GETNODE(a);
     mtbddnode* nb = MTBDD_GETNODE(b);
 
     if (mtbddnode_isleaf(na) && mtbddnode_isleaf(nb)) {
+        if (mtbddnode_gettype(na) != mtbddnode_gettype(nb)) return SYLVAN_ERR_INVALID;
+        if (mtbddnode_isnan(na) || mtbddnode_isnan(nb)) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_nan(mtbddnode_gettype(na)));
+        }
         uint64_t val_a = mtbddnode_getvalue(na);
         uint64_t val_b = mtbddnode_getvalue(nb);
         if (mtbddnode_gettype(na) == 0 && mtbddnode_gettype(nb) == 0) {
@@ -1770,6 +2038,9 @@ int mtbdd_op_cmpl_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, size_t k)
     mtbddnode* na = MTBDD_GETNODE(a);
 
     if (mtbddnode_isleaf(na)) {
+        if (mtbddnode_isnan(na)) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_nan(mtbddnode_gettype(na)));
+        }
         if (mtbddnode_gettype(na) == 0) {
             int64_t v = mtbdd_leaf_int64(a);
             if (v == 0) return _mtbdd_apply_callback_result(destination, mtbdd_int64(1));
@@ -1802,9 +2073,13 @@ int mtbdd_op_negate_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, size_t 
     mtbddnode* na = MTBDD_GETNODE(a);
 
     if (mtbddnode_isleaf(na)) {
+        if (mtbddnode_isnan(na)) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_nan(mtbddnode_gettype(na)));
+        }
         if (mtbddnode_gettype(na) == 0) {
             int64_t v = mtbdd_leaf_int64(a);
-            return _mtbdd_apply_callback_result(destination, mtbdd_int64(-v));
+            return _mtbdd_apply_callback_result(
+                destination, v == INT64_MIN ? mtbdd_nan(0) : mtbdd_int64(-v));
         } else if (mtbddnode_gettype(na) == 1) {
             double d = mtbdd_leaf_double(a);
             return _mtbdd_apply_callback_result(destination, mtbdd_double(-d));
@@ -1924,6 +2199,9 @@ int mtbdd_op_threshold_double_CALL(lace_worker* lace, MTBDD *destination, MTBDD 
     mtbddnode* na = MTBDD_GETNODE(a);
 
     if (mtbddnode_isleaf(na)) {
+        if (mtbddnode_isnan(na)) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_undefined);
+        }
         double value = mtbdd_parameter_double(svalue);
         if (mtbddnode_gettype(na) == 1) {
             return _mtbdd_apply_callback_result(destination, mtbdd_leaf_double(a) >= value ? bdd_true : mtbdd_undefined);
@@ -1954,6 +2232,9 @@ int mtbdd_op_strict_threshold_double_CALL(lace_worker* lace, MTBDD *destination,
     mtbddnode* na = MTBDD_GETNODE(a);
 
     if (mtbddnode_isleaf(na)) {
+        if (mtbddnode_isnan(na)) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_undefined);
+        }
         double value = mtbdd_parameter_double(svalue);
         if (mtbddnode_gettype(na) == 1) {
             return _mtbdd_apply_callback_result(destination, mtbdd_leaf_double(a) > value ? bdd_true : mtbdd_undefined);
@@ -1997,7 +2278,10 @@ int mtbdd_equal_norm_d2_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTB
     }
 
     /* Check terminal case */
-    if (a == b) { *destination = bdd_true; return SYLVAN_OK; }
+    if (a == b) {
+        *destination = mtbdd_is_nan(a) ? mtbdd_undefined : bdd_true;
+        return SYLVAN_OK;
+    }
     if (a == mtbdd_undefined || b == mtbdd_undefined) {
         *destination = bdd_true;
         return SYLVAN_OK;
@@ -2111,7 +2395,10 @@ int mtbdd_equal_norm_rel_d2_CALL(lace_worker* lace, MTBDD *destination, MTBDD a,
     }
 
     /* Check terminal case */
-    if (a == b) { *destination = bdd_true; return SYLVAN_OK; }
+    if (a == b) {
+        *destination = mtbdd_is_nan(a) ? mtbdd_undefined : bdd_true;
+        return SYLVAN_OK;
+    }
     if (a == mtbdd_undefined || b == mtbdd_undefined) {
         *destination = bdd_true;
         return SYLVAN_OK;
@@ -2221,7 +2508,10 @@ int mtbdd_leq_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, 
     }
 
     /* Check terminal case */
-    if (a == b) { *destination = bdd_true; return SYLVAN_OK; }
+    if (a == b) {
+        *destination = mtbdd_is_nan(a) ? mtbdd_undefined : bdd_true;
+        return SYLVAN_OK;
+    }
 
     /* For partial functions, just return true */
     if (a == mtbdd_undefined || b == mtbdd_undefined) {
@@ -2477,7 +2767,10 @@ int mtbdd_geq_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, 
     }
 
     /* Check terminal case */
-    if (a == b) { *destination = bdd_true; return SYLVAN_OK; }
+    if (a == b) {
+        *destination = mtbdd_is_nan(a) ? mtbdd_undefined : bdd_true;
+        return SYLVAN_OK;
+    }
 
     /* For partial functions, just return true */
     if (a == mtbdd_undefined || b == mtbdd_undefined) {
@@ -2736,6 +3029,10 @@ mtbdd_compare_leaf_relation(MTBDD a, MTBDD b, size_t parameter,
     uint32_t type_a = mtbddnode_gettype(na);
     uint32_t type_b = mtbddnode_gettype(nb);
     if (type_a != type_b) return SYLVAN_ERR_INVALID;
+    if (mtbddnode_isnan(na) || mtbddnode_isnan(nb)) {
+        *result = 0;
+        return SYLVAN_OK;
+    }
 
     if (relation == MTBDD_COMPARE_REL_EQUAL_ABS || relation == MTBDD_COMPARE_REL_EQUAL_REL) {
         if (type_a != 1) return SYLVAN_ERR_INVALID;
@@ -3445,6 +3742,11 @@ int mtbdd_find_min_CALL(lace_worker* lace, MTBDD *destination, MTBDD a)
         result = high;
     } else if (high == mtbdd_undefined) {
         result = low;
+    } else if (mtbddnode_gettype(nl) != mtbddnode_gettype(nh)) {
+        mtbdd_refs_popptr(2);
+        return SYLVAN_ERR_INVALID;
+    } else if (mtbddnode_isnan(nl) || mtbddnode_isnan(nh)) {
+        result = mtbdd_nan(mtbddnode_gettype(nl));
     } else if (mtbddnode_gettype(nl) == 0 && mtbddnode_gettype(nh) == 0) {
         result = mtbdd_leaf_int64(low) < mtbdd_leaf_int64(high) ? low : high;
     } else if (mtbddnode_gettype(nl) == 1 && mtbddnode_gettype(nh) == 1) {
@@ -3523,6 +3825,11 @@ int mtbdd_find_max_CALL(lace_worker* lace, MTBDD *destination, MTBDD a)
         result = high;
     } else if (high == mtbdd_undefined) {
         result = low;
+    } else if (mtbddnode_gettype(nl) != mtbddnode_gettype(nh)) {
+        mtbdd_refs_popptr(2);
+        return SYLVAN_ERR_INVALID;
+    } else if (mtbddnode_isnan(nl) || mtbddnode_isnan(nh)) {
+        result = mtbdd_nan(mtbddnode_gettype(nl));
     } else if (mtbddnode_gettype(nl) == 0 && mtbddnode_gettype(nh) == 0) {
         result = mtbdd_leaf_int64(low) > mtbdd_leaf_int64(high) ? low : high;
     } else if (mtbddnode_gettype(nl) == 1 && mtbddnode_gettype(nh) == 1) {
@@ -3558,6 +3865,7 @@ mtbdd_count_leaf_is_nonzero(MTBDD dd)
 {
     if (dd == mtbdd_undefined) return 0;
     if (dd == bdd_true) return 1;
+    if (mtbdd_is_nan(dd)) return 1;
 
     mtbddnode *node = MTBDD_GETNODE(dd);
     switch (mtbddnode_gettype(node)) {
@@ -4001,6 +4309,15 @@ char *
 mtbdd_leaf_to_string(MTBDD leaf, char *buf, size_t buflen)
 {
     mtbddnode* n = MTBDD_GETNODE(leaf);
+    if (mtbddnode_isnan(n)) {
+        if (buflen >= 4) {
+            memcpy(buf, "nan", 4);
+            return buf;
+        }
+        char *result = (char*)malloc(4);
+        if (result != NULL) memcpy(result, "nan", 4);
+        return result;
+    }
     uint32_t type = mtbddnode_gettype(n);
     uint64_t value = mtbddnode_getvalue(n);
     int complement = MTBDD_HASMARK(leaf) ? 1 : 0;
@@ -4122,8 +4439,15 @@ mtbdd_sha2_rec(MTBDD dd, SHA256_CTX *ctx)
         if (mtbddnode_isleaf(node)) {
             uint32_t type = mtbddnode_gettype(node);
             SHA256_Update(ctx, (void*)&type, sizeof(uint32_t));
-            uint64_t value = mtbddnode_getvalue(node);
-            value = sylvan_mt_hash(type, value, value);
+            uint64_t value;
+            if (mtbddnode_isnan(node)) {
+                const uint32_t kind = mtbddnode_getleafkind(node);
+                SHA256_Update(ctx, (void*)&kind, sizeof(uint32_t));
+                value = 0;
+            } else {
+                value = mtbddnode_getvalue(node);
+                value = sylvan_mt_hash(type, value, value);
+            }
             SHA256_Update(ctx, (void*)&value, sizeof(uint64_t));
         } else {
             uint32_t level = mtbddnode_getvariable(node);
@@ -4225,9 +4549,11 @@ mtbdd_writer_writebinary(FILE *out, sylvan_skiplist_t sl)
         if (mtbddnode_isleaf(n)) {
             /* write leaf */
             fwrite(n, sizeof(struct mtbddnode), 1, out);
-            uint32_t type = mtbddnode_gettype(n);
-            uint64_t value = mtbddnode_getvalue(n);
-            sylvan_mt_write_binary(type, value, out);
+            if (!mtbddnode_isnan(n)) {
+                uint32_t type = mtbddnode_gettype(n);
+                uint64_t value = mtbddnode_getvalue(n);
+                sylvan_mt_write_binary(type, value, out);
+            }
         } else {
             struct mtbddnode node;
             MTBDD low = sylvan_skiplist_get(sl, mtbddnode_getlow(n));
@@ -4343,9 +4669,13 @@ uint64_t* mtbdd_reader_readbinary_CALL(lace_worker* lace, FILE* in)
         if (mtbddnode_isleaf(&node)) {
             /* serialize leaf */
             uint32_t type = mtbddnode_gettype(&node);
-            uint64_t value = mtbddnode_getvalue(&node);
-            sylvan_mt_read_binary(type, &value, in);
-            arr[i] = mtbdd_leaf(type, value);
+            if (mtbddnode_isnan(&node)) {
+                arr[i] = mtbdd_nan(type);
+            } else {
+                uint64_t value = mtbddnode_getvalue(&node);
+                sylvan_mt_read_binary(type, &value, in);
+                arr[i] = mtbdd_leaf(type, value);
+            }
         } else {
             MTBDD low = arr[mtbddnode_getlow(&node)];
             MTBDD high = mtbddnode_gethigh(&node);

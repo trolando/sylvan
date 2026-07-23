@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <gmp.h>
 #include <lace.h>
 
@@ -11,7 +12,8 @@ static uint32_t gmp_test_type;
 static int
 gmp_leaf_equals(MTBDD leaf, long numerator, unsigned long denominator)
 {
-    if (!mtbdd_is_leaf(leaf) || leaf == mtbdd_undefined || mtbdd_leaf_type(leaf) != gmp_test_type) return 0;
+    if (!mtbdd_is_leaf(leaf) || leaf == mtbdd_undefined || mtbdd_is_nan(leaf) ||
+        mtbdd_leaf_type(leaf) != gmp_test_type) return 0;
 
     mpq_t expected;
     mpq_init(expected);
@@ -60,6 +62,9 @@ run_gmp_tests_CALL(lace_worker *lace)
     MTBDD mixed = mtbdd_invalid;
     MTBDD unchanged = bdd_true;
     BDDSET wide_vars = mtbdd_invalid;
+    MTBDD gmp_nan = mtbdd_invalid;
+    MTBDD gmp_zero = mtbdd_invalid;
+    MTBDD roundtrip = mtbdd_invalid;
 
     mtbdd_refs_pushptr(&x);
     mtbdd_refs_pushptr(&f);
@@ -83,6 +88,14 @@ run_gmp_tests_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&mixed);
     mtbdd_refs_pushptr(&unchanged);
     mtbdd_refs_pushptr(&wide_vars);
+    gmp_nan = mtbdd_nan(gmp_test_type);
+    mtbdd_refs_pushptr(&gmp_nan);
+    mpq_t zero_value;
+    mpq_init(zero_value);
+    gmp_zero = mtbdd_gmp(zero_value);
+    mpq_clear(zero_value);
+    mtbdd_refs_pushptr(&gmp_zero);
+    mtbdd_refs_pushptr(&roundtrip);
 
     mpq_clear(three_halves);
     mpq_clear(one_half);
@@ -114,6 +127,21 @@ run_gmp_tests_CALL(lace_worker *lace)
     test_assert(gmp_leaf_equals(abstract_product, 3, 4));
     test_assert(gmp_leaf_equals(abstract_minimum, 1, 2));
     test_assert(gmp_leaf_equals(abstract_maximum, 3, 2));
+    test_assert(mtbdd_is_nan(gmp_nan));
+    test_assert(mtbdd_leaf_type(gmp_nan) == gmp_test_type);
+    test_assert(gmp_divide(&quotient, a, gmp_zero) == SYLVAN_OK && quotient == gmp_nan);
+    test_assert(gmp_plus(&quotient, a, gmp_nan) == SYLVAN_OK && quotient == gmp_nan);
+    test_assert(gmp_min(&quotient, gmp_nan, a) == SYLVAN_OK && quotient == gmp_nan);
+    test_assert(gmp_threshold_d(&threshold, gmp_nan, 0.0) == SYLVAN_OK);
+    test_assert(threshold == mtbdd_undefined);
+    test_assert(gmp_divide(&quotient, f, g) == SYLVAN_OK);
+    FILE *serialized = tmpfile();
+    test_assert(serialized != NULL);
+    mtbdd_writer_tobinary(serialized, &gmp_nan, 1);
+    rewind(serialized);
+    test_assert(mtbdd_reader_frombinary(serialized, &roundtrip, 1) == 0);
+    test_assert(roundtrip == gmp_nan);
+    fclose(serialized);
 
     mpz_t exact_count;
     mpz_init_set_ui(exact_count, 17);
@@ -206,7 +234,7 @@ run_gmp_tests_CALL(lace_worker *lace)
     test_assert(gmp_abstract_plus(&unchanged, mtbdd_invalid, vars) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == bdd_true);
 
-    mtbdd_refs_popptr(24);
+    mtbdd_refs_popptr(27);
     return 0;
 }
 

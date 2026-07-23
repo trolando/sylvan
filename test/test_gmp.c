@@ -65,6 +65,8 @@ run_gmp_tests_CALL(lace_worker *lace)
     MTBDD gmp_nan = mtbdd_invalid;
     MTBDD gmp_zero = mtbdd_invalid;
     MTBDD roundtrip = mtbdd_invalid;
+    ZDD wide_zdd = zdd_invalid;
+    LISTDD wide_listdd = listdd_empty_list;
 
     mtbdd_refs_pushptr(&x);
     mtbdd_refs_pushptr(&f);
@@ -96,6 +98,8 @@ run_gmp_tests_CALL(lace_worker *lace)
     mpq_clear(zero_value);
     mtbdd_refs_pushptr(&gmp_zero);
     mtbdd_refs_pushptr(&roundtrip);
+    zdd_refs_pushptr(&wide_zdd);
+    listdd_refs_pushptr(&wide_listdd);
 
     mpq_clear(three_halves);
     mpq_clear(one_half);
@@ -156,6 +160,18 @@ run_gmp_tests_CALL(lace_worker *lace)
     for (uint32_t i = 0; i < 70; i++) wide_levels[i] = i;
     test_assert(bdd_set_from_array(&wide_vars, wide_levels, 70) == SYLVAN_OK);
     test_assert(bdd_sat_count_gmp(exact_count, bdd_true, wide_vars) == SYLVAN_OK);
+    test_assert(zdd_true(&wide_zdd, wide_vars) == SYLVAN_OK);
+    test_assert(zdd_count_gmp(exact_count, wide_zdd) == SYLVAN_OK);
+    for (size_t i = 0; i < 70; i++) {
+        LISTDD one = listdd_invalid;
+        listdd_refs_pushptr(&one);
+        test_assert(_listdd_try_make_node(
+            &one, 1, wide_listdd, listdd_empty) == SYLVAN_OK);
+        test_assert(_listdd_try_make_node(
+            &wide_listdd, 0, wide_listdd, one) == SYLVAN_OK);
+        listdd_refs_popptr(1);
+    }
+    test_assert(listdd_count_gmp(exact_count, wide_listdd) == SYLVAN_OK);
     mpz_t expected_count;
     mpz_init_set_ui(expected_count, 1);
     mpz_mul_2exp(expected_count, expected_count, 70);
@@ -166,6 +182,10 @@ run_gmp_tests_CALL(lace_worker *lace)
     test_assert(bdd_sat_count_gmp(exact_count, x, bdd_true) == SYLVAN_ERR_INVALID);
     test_assert(mpz_cmp_ui(exact_count, 17) == 0);
     test_assert(mtbdd_sat_count_gmp(exact_count, mtbdd_invalid, vars) == SYLVAN_ERR_INVALID);
+    test_assert(mpz_cmp_ui(exact_count, 17) == 0);
+    test_assert(zdd_count_gmp(exact_count, zdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(mpz_cmp_ui(exact_count, 17) == 0);
+    test_assert(listdd_count_gmp(exact_count, listdd_invalid) == SYLVAN_ERR_INVALID);
     test_assert(mpz_cmp_ui(exact_count, 17) == 0);
     mpz_clear(exact_count);
 
@@ -234,6 +254,8 @@ run_gmp_tests_CALL(lace_worker *lace)
     test_assert(gmp_abstract_plus(&unchanged, mtbdd_invalid, vars) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == bdd_true);
 
+    listdd_refs_popptr(1);
+    zdd_refs_popptr(1);
     mtbdd_refs_popptr(27);
     return 0;
 }
@@ -245,6 +267,8 @@ main(void)
     sylvan_set_sizes(1LL << 20, 1LL << 20, 1LL << 16, 1LL << 16);
     sylvan_init_package();
     mtbdd_init();
+    zdd_init();
+    listdd_init();
     gmp_init();
 
     int result = run_gmp_tests();

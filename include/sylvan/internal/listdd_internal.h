@@ -124,4 +124,39 @@ mddnode_makecopy(mddnode* n, uint64_t right, uint64_t down)
     n->b = down;
 }
 
+/**
+ * Advanced migration access to canonical metadata encodings.
+ *
+ * New code should use the typed builders in <sylvan/listdd.h>.
+ */
+int listdd_projection_create_raw(listdd_projection **result, LISTDD raw);
+LISTDD listdd_projection_raw(const listdd_projection *projection);
+int listdd_relation_layout_create_raw(listdd_relation_layout **result, LISTDD raw);
+LISTDD listdd_relation_layout_raw(const listdd_relation_layout *layout);
+
+int listdd_relation_add_raw(
+    LISTDD *result,
+    LISTDD relation,
+    const uint32_t *values,
+    const int *copy,
+    size_t count);
+int listdd_relation_contains_raw(
+    LISTDD relation,
+    const uint32_t *values,
+    const int *copy,
+    size_t count);
+int listdd_relation_singleton_raw(
+    LISTDD *result,
+    const uint32_t *values,
+    const int *copy,
+    size_t count);
+
+TASK(int, listdd_match_raw, LISTDD*, result, LISTDD, a, LISTDD, b, LISTDD, projection)
+TASK(int, listdd_rel_next_raw, LISTDD*, result, LISTDD, set, LISTDD, relation, LISTDD, metadata)
+TASK(int, listdd_rel_next_union_raw, LISTDD*, result, LISTDD, set, LISTDD, relation, LISTDD, metadata, LISTDD, un)
+TASK(int, listdd_rel_prev_raw, LISTDD*, result, LISTDD, dd, LISTDD, relation, LISTDD, metadata, LISTDD, universe)
+TASK(int, listdd_project_raw, LISTDD*, result, LISTDD, dd, LISTDD, projection)
+TASK(int, listdd_project_diff_raw, LISTDD*, result, LISTDD, dd, LISTDD, projection, LISTDD, avoid)
+TASK(int, listdd_join_raw, LISTDD*, result, LISTDD, a, LISTDD, b, LISTDD, a_projection, LISTDD, b_projection)
+
 #endif

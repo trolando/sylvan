@@ -153,6 +153,9 @@ static const uint64_t CACHE_ZDD_EXISTS              = (90LL<<40);
 static const uint64_t CACHE_ZDD_PROJECT             = (91LL<<40);
 static const uint64_t CACHE_ZDD_ISOP                = (92LL<<40);
 static const uint64_t CACHE_ZDD_COVER_TO_BDD        = (93LL<<40);
+static const uint64_t CACHE_ZDD_COUNT_U64           = (94LL<<40);
+static const uint64_t CACHE_ZDD_FORALL              = (95LL<<40);
+static const uint64_t CACHE_ZDD_UNIQUE              = (96LL<<40);
 
 #ifdef __cplusplus
 }

@@ -259,6 +259,114 @@ mtbdd_sat_count_gmp(mpz_t destination, MTBDD dd, BDDSET variables)
     return status;
 }
 
+static int
+zdd_count_gmp_rec(struct gmp_count_cache *cache, mpz_t result, ZDD dd)
+{
+    if (dd == zdd_false) {
+        mpz_set_ui(result, 0);
+        return SYLVAN_OK;
+    }
+    if (zdd_is_leaf(dd)) {
+        mpz_set_ui(result, 1);
+        return SYLVAN_OK;
+    }
+    if (gmp_count_cache_get(cache, result, dd, bdd_true)) return SYLVAN_OK;
+
+    mpz_t low;
+    mpz_t high;
+    mpz_init(low);
+    mpz_init(high);
+    int status = zdd_count_gmp_rec(cache, low, zdd_node_low(dd));
+    if (status == SYLVAN_OK) {
+        status = zdd_count_gmp_rec(cache, high, zdd_node_high(dd));
+    }
+    if (status == SYLVAN_OK) {
+        mpz_add(result, low, high);
+        status = gmp_count_cache_put(cache, dd, bdd_true, result);
+    }
+    mpz_clear(low);
+    mpz_clear(high);
+    return status;
+}
+
+int
+zdd_count_gmp(mpz_t destination, ZDD dd)
+{
+    if (destination == NULL || dd == zdd_invalid) return SYLVAN_ERR_INVALID;
+
+    struct gmp_count_cache cache;
+    int status = gmp_count_cache_init(&cache);
+    if (status != SYLVAN_OK) return status;
+
+    mpz_t result;
+    mpz_init(result);
+    status = zdd_count_gmp_rec(&cache, result, dd);
+    if (status == SYLVAN_OK) {
+        mpz_set(destination, result);
+        sylvan_stats_count(ZDD_COUNT_GMP);
+    }
+    mpz_clear(result);
+    gmp_count_cache_clear(&cache);
+    return status;
+}
+
+static int
+listdd_count_gmp_rec(struct gmp_count_cache *cache, mpz_t result, LISTDD dd)
+{
+    if (dd == listdd_empty) {
+        mpz_set_ui(result, 0);
+        return SYLVAN_OK;
+    }
+    if (dd == listdd_empty_list) {
+        mpz_set_ui(result, 1);
+        return SYLVAN_OK;
+    }
+    if (gmp_count_cache_get(cache, result, dd, listdd_empty_list)) {
+        return SYLVAN_OK;
+    }
+
+    const mddnode *node = LDD_GETNODE(dd);
+    mpz_t down;
+    mpz_t right;
+    mpz_init(down);
+    mpz_init(right);
+    int status = listdd_count_gmp_rec(
+        cache, down, mddnode_getdown(node));
+    if (status == SYLVAN_OK) {
+        status = listdd_count_gmp_rec(
+            cache, right, mddnode_getright(node));
+    }
+    if (status == SYLVAN_OK) {
+        mpz_add(result, down, right);
+        status = gmp_count_cache_put(
+            cache, dd, listdd_empty_list, result);
+    }
+    mpz_clear(down);
+    mpz_clear(right);
+    return status;
+}
+
+int
+listdd_count_gmp(mpz_t destination, LISTDD dd)
+{
+    if (destination == NULL || dd == listdd_invalid) return SYLVAN_ERR_INVALID;
+
+    struct gmp_count_cache cache;
+    int status = gmp_count_cache_init(&cache);
+    if (status != SYLVAN_OK) return status;
+
+    mpz_t result;
+    mpz_init(result);
+    status = listdd_count_gmp_rec(&cache, result, dd);
+    if (status == SYLVAN_OK) {
+        mpz_set(destination, result);
+        sylvan_stats_count(LDD_SATCOUNT_GMP);
+    }
+    mpz_clear(result);
+    gmp_count_cache_clear(&cache);
+    return status;
+}
+
 /**
  * helper function for hash
  */

@@ -163,7 +163,7 @@ static LISTDD
 listdd_rel_next_or_abort_CALL(lace_worker *lace, LISTDD set, LISTDD relation, LISTDD meta)
 {
     LISTDD result = listdd_invalid;
-    if (listdd_rel_next_CALL(lace, &result, set, relation, meta) != SYLVAN_OK) Abort("ListDD relational product failed.\n");
+    if (listdd_rel_next_raw_CALL(lace, &result, set, relation, meta) != SYLVAN_OK) Abort("ListDD relational product failed.\n");
     return result;
 }
 
@@ -171,7 +171,7 @@ static LISTDD
 listdd_rel_next_union_or_abort_CALL(lace_worker *lace, LISTDD set, LISTDD relation, LISTDD meta, LISTDD un)
 {
     LISTDD result = listdd_invalid;
-    if (listdd_rel_next_union_CALL(lace, &result, set, relation, meta, un) != SYLVAN_OK) {
+    if (listdd_rel_next_union_raw_CALL(lace, &result, set, relation, meta, un) != SYLVAN_OK) {
         Abort("ListDD relational product failed.\n");
     }
     return result;
@@ -416,11 +416,11 @@ int go_par_CALL(lace_worker* lace, LISTDD *destination, LISTDD cur, LISTDD visit
         listdd_refs_pushptr(&anc);
         listdd_refs_pushptr(&computed);
         listdd_refs_pushptr(&updated_deadlocks);
-        int status = listdd_rel_next_CALL(lace, &succ, cur, next[from]->dd, next[from]->meta);
+        int status = listdd_rel_next_raw_CALL(lace, &succ, cur, next[from]->dd, next[from]->meta);
         if (deadlocks) {
             // check which MDDs in deadlocks do not have a successor in this relation
             if (status == SYLVAN_OK) {
-                status = listdd_rel_prev_CALL(lace, &anc, succ, next[from]->dd, next[from]->meta, cur);
+                status = listdd_rel_prev_raw_CALL(lace, &anc, succ, next[from]->dd, next[from]->meta, cur);
             }
             if (status == SYLVAN_OK) {
                 status = listdd_diff_CALL(lace, &updated_deadlocks, *deadlocks, anc);
@@ -564,11 +564,11 @@ int go_bfs_CALL(lace_worker* lace, LISTDD *destination, LISTDD cur, LISTDD visit
         listdd_refs_pushptr(&anc);
         listdd_refs_pushptr(&computed);
         listdd_refs_pushptr(&updated_deadlocks);
-        int status = listdd_rel_next_CALL(lace, &succ, cur, next[from]->dd, next[from]->meta);
+        int status = listdd_rel_next_raw_CALL(lace, &succ, cur, next[from]->dd, next[from]->meta);
         if (deadlocks) {
             // check which MDDs in deadlocks do not have a successor in this relation
             if (status == SYLVAN_OK) {
-                status = listdd_rel_prev_CALL(lace, &anc, succ, next[from]->dd, next[from]->meta, cur);
+                status = listdd_rel_prev_raw_CALL(lace, &anc, succ, next[from]->dd, next[from]->meta, cur);
             }
             if (status == SYLVAN_OK) {
                 status = listdd_diff_CALL(lace, &updated_deadlocks, *deadlocks, anc);

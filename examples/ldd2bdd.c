@@ -825,7 +825,7 @@ void run_CALL(lace_worker* lace)
             if (bdd_rel_next(&test, new_states, new_rel, new_vars) != SYLVAN_OK) Abort("Out of memory!\n");
             LISTDD succ = listdd_invalid;
             listdd_refs_pushptr(&succ);
-            if (listdd_rel_next(&succ, states->dd, next[i]->dd, next[i]->meta) != SYLVAN_OK) Abort("Out of memory!\n");
+            if (listdd_rel_next_raw(&succ, states->dd, next[i]->dd, next[i]->meta) != SYLVAN_OK) Abort("Out of memory!\n");
             MTBDD test2 = mtbdd_invalid;
             mtbdd_refs_pushptr(&test2);
             if (bdd_from_ldd(&test2, succ, bits_dd, 0) != SYLVAN_OK) Abort("Out of memory!\n");

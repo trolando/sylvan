@@ -28,8 +28,44 @@ static const LISTDD listdd_empty = 0;
 static const LISTDD listdd_empty_list = 1;
 static const LISTDD listdd_invalid = UINT64_MAX;
 
+typedef struct listdd_projection listdd_projection;
+typedef struct listdd_relation_layout listdd_relation_layout;
+
+/** How a tuple position is treated by a projection. */
+typedef enum {
+    LISTDD_PROJECT_POSITION = 0,
+    LISTDD_KEEP_POSITION = 1
+} listdd_projection_kind;
+
+/** How a state-vector position occurs in a relation. */
+typedef enum {
+    LISTDD_RELATION_UNUSED = 0,
+    LISTDD_RELATION_READ = 1,
+    LISTDD_RELATION_WRITE = 2,
+    LISTDD_RELATION_READ_WRITE = 3
+} listdd_relation_access;
+
 /* Initialize ListDD functionality. */
 void listdd_init(void);
+
+/**
+ * Create immutable ListDD metadata.
+ *
+ * The returned object owns and protects its canonical ListDD representation
+ * until it is destroyed. The input arrays are copied.
+ */
+int listdd_projection_create(
+    listdd_projection **result,
+    const listdd_projection_kind *positions,
+    size_t count);
+void listdd_projection_destroy(listdd_projection *projection);
+
+int listdd_relation_layout_create(
+    listdd_relation_layout **result,
+    const listdd_relation_access *positions,
+    size_t count,
+    int has_action_label);
+void listdd_relation_layout_destroy(listdd_relation_layout *layout);
 
 /* Primitives */
 LISTDD listdd_make_node(uint32_t value, LISTDD ifeq, LISTDD ifneq);
@@ -119,8 +155,12 @@ static inline int listdd_union_diff(LISTDD *result, LISTDD *difference, LISTDD a
 /* Compute the intersection of <a> and <b>. */
 static inline int listdd_intersection(LISTDD *result, LISTDD a, LISTDD b);
 
-/* Keep vectors from <a> that match a vector in <b> at levels selected by <proj>. */
-static inline int listdd_match(LISTDD *result, LISTDD a, LISTDD b, LISTDD proj);
+/* Keep vectors from <a> that match a vector in <b> at selected positions. */
+static inline int listdd_match(
+    LISTDD *result,
+    LISTDD a,
+    LISTDD b,
+    const listdd_projection *projection);
 
 /* Add one <count>-element state vector to <a>. */
 int listdd_add(LISTDD *result, LISTDD a, const uint32_t *values, size_t count);
@@ -128,31 +168,56 @@ int listdd_contains(LISTDD a, const uint32_t *values, size_t count);
 /* Construct the singleton set containing one <count>-element state vector. */
 int listdd_singleton(LISTDD *result, const uint32_t *values, size_t count);
 
-/* Add a relation vector; nonzero entries in <copy> create copy nodes. */
-int listdd_relation_add(LISTDD *result, LISTDD a, const uint32_t *values, const int *copy, size_t count);
-int listdd_relation_contains(LISTDD a, const uint32_t *values, const int *copy, size_t count);
-/* Construct a singleton relation; nonzero entries in <copy> create copy nodes. */
-int listdd_relation_singleton(LISTDD *result, const uint32_t *values, const int *copy, size_t count);
+/**
+ * Add or inspect a relation tuple described by <layout>.
+ *
+ * The read and write arrays are indexed by state-vector position. <count>
+ * must equal the number of positions in <layout>. If <retain_source>[i] is
+ * nonzero, position i must be read/write and its two relation levels are COPY
+ * nodes. <action_label> must be non-NULL exactly when the layout has an action
+ * label.
+ */
+int listdd_relation_add(
+    LISTDD *result,
+    LISTDD relation,
+    const listdd_relation_layout *layout,
+    const uint32_t *read_values,
+    const uint32_t *write_values,
+    const uint8_t *retain_source,
+    size_t count,
+    const uint32_t *action_label);
+int listdd_relation_contains(
+    int *result,
+    LISTDD relation,
+    const listdd_relation_layout *layout,
+    const uint32_t *read_values,
+    const uint32_t *write_values,
+    const uint8_t *retain_source,
+    size_t count,
+    const uint32_t *action_label);
+int listdd_relation_singleton(
+    LISTDD *result,
+    const listdd_relation_layout *layout,
+    const uint32_t *read_values,
+    const uint32_t *write_values,
+    const uint8_t *retain_source,
+    size_t count,
+    const uint32_t *action_label);
 
-/** Compute the successors of <set> under <relation> described by <meta>. */
-TASK(int, listdd_rel_next, LISTDD*, result, LISTDD, set, LISTDD, relation, LISTDD, meta)
+/** Compute the successors of <set> under <relation>. */
+TASK(int, listdd_rel_next, LISTDD*, result, LISTDD, set, LISTDD, relation, const listdd_relation_layout*, layout)
 
 /** Compute the successors of <set> and unite them with <un>. */
-TASK(int, listdd_rel_next_union, LISTDD*, result, LISTDD, set, LISTDD, relation, LISTDD, meta, LISTDD, un)
+TASK(int, listdd_rel_next_union, LISTDD*, result, LISTDD, set, LISTDD, relation, const listdd_relation_layout*, layout, LISTDD, un)
 
-/**
- * Calculate all predecessors to a in uni according to rel[proj]
- * <proj> follows the same semantics as relprod
- * i.e. 0 (not in rel), 1 (read+write), 2 (read), 3 (write), -1 (end; rest=0)
- */
-TASK(int, listdd_rel_prev, LISTDD*, result, LISTDD, dd, LISTDD, rel, LISTDD, proj, LISTDD, uni)
+/** Compute predecessors in <universe> under <relation>. */
+TASK(int, listdd_rel_prev, LISTDD*, result, LISTDD, dd, LISTDD, relation, const listdd_relation_layout*, layout, LISTDD, universe)
 
-// so: proj: -2 (end; quantify rest), -1 (end; keep rest), 0 (quantify), 1 (keep)
-TASK(int, listdd_project, LISTDD*, result, LISTDD, dd, LISTDD, proj)
+TASK(int, listdd_project, LISTDD*, result, LISTDD, dd, const listdd_projection*, projection)
 
-TASK(int, listdd_project_diff, LISTDD*, result, LISTDD, dd, LISTDD, proj, LISTDD, avoid)
+TASK(int, listdd_project_diff, LISTDD*, result, LISTDD, dd, const listdd_projection*, projection, LISTDD, avoid)
 
-TASK(int, listdd_join, LISTDD*, result, LISTDD, a, LISTDD, b, LISTDD, a_proj, LISTDD, b_proj)
+TASK(int, listdd_join, LISTDD*, result, LISTDD, a, LISTDD, b, const listdd_projection*, a_projection, const listdd_projection*, b_projection)
 
 /* Write a DOT representation */
 void listdd_print_dot(LISTDD mdd);
@@ -165,13 +230,33 @@ void listdd_print_sha256(LISTDD mdd);
 void listdd_fprint_sha256(FILE *out, LISTDD mdd);
 void listdd_sha256(LISTDD mdd, char *target); // at least 65 bytes...
 
-/**
- * Calculate number of satisfying variable assignments.
- * The set of variables must be >= the support of the LISTDD.
- * (i.e. all variables in the LISTDD must be in variables)
- *
- */
+/** Return the exact tuple count, or SYLVAN_ERR_OVERFLOW. */
+TASK(int, listdd_count_u64, uint64_t*, result, LISTDD, dd)
+
+/** Return an approximate tuple count. Invalid input produces NaN. */
+TASK(double, listdd_count_double, LISTDD, dd)
+
+/** Legacy extended-precision tuple count. */
 TASK(long double, listdd_count, LISTDD, dd)
+
+/**
+ * Create a pull iterator over complete concrete tuples in lexicographic order.
+ * ListDDs containing relation COPY nodes are not iterable as concrete tuples.
+ */
+int listdd_iterator_create(sylvan_iterator **result, LISTDD dd);
+
+/**
+ * Advance a ListDD tuple iterator.
+ *
+ * <count> must equal the tuple width determined at creation. On success,
+ * <has_item> is set to one and <values> receives the tuple, or <has_item> is
+ * set to zero after exhaustion.
+ */
+int listdd_iterator_next(
+    sylvan_iterator *iterator,
+    uint32_t *values,
+    size_t count,
+    int *has_item);
 
 /**
  * A callback for enumerating functions like sat_all_par, collect and match
@@ -289,7 +374,7 @@ TASK(int, listdd_union, LISTDD*, result, LISTDD, a, LISTDD, b)
 TASK(int, listdd_diff, LISTDD*, result, LISTDD, a, LISTDD, b)
 TASK(int, listdd_union_diff, LISTDD*, result, LISTDD*, difference, LISTDD, a, LISTDD, b)
 TASK(int, listdd_intersection, LISTDD*, result, LISTDD, a, LISTDD, b)
-TASK(int, listdd_match, LISTDD*, result, LISTDD, a, LISTDD, b, LISTDD, proj)
+TASK(int, listdd_match, LISTDD*, result, LISTDD, a, LISTDD, b, const listdd_projection*, projection)
 
 
 

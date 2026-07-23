@@ -49,6 +49,19 @@ int bdd_sat_count_gmp(mpz_t result, BDD dd, BDDSET variables);
 int mtbdd_sat_count_gmp(mpz_t result, MTBDD dd, BDDSET variables);
 
 /**
+ * Count the assignments represented by <dd> exactly.
+ * A custom non-False leaf counts as one accepting assignment.
+ * On failure, <result> is unchanged.
+ */
+int zdd_count_gmp(mpz_t result, ZDD dd);
+
+/**
+ * Count the tuples represented by <dd> exactly.
+ * On failure, <result> is unchanged.
+ */
+int listdd_count_gmp(mpz_t result, LISTDD dd);
+
+/**
  * Create MPQ leaf
  */
 MTBDD mtbdd_gmp(mpq_t val);

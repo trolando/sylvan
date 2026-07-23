@@ -259,6 +259,20 @@ static inline int bdd_simplify(BDD *result, BDD f, BDD c);
 static inline int bdd_compose(BDD *result, BDD f, MTBDDMAP map);
 
 /**
+ * Evaluate <f> under a complete assignment.
+ *
+ * <values> is packed in the order of <variables>, contains only 0 and 1, and
+ * <count> must equal bdd_set_count(<variables>). The variables must contain
+ * the complete support of <f>; additional variables are ignored. The result
+ * is bdd_false or bdd_true.
+ *
+ * This is a sequential, non-allocating operation. Returns SYLVAN_OK on success
+ * or SYLVAN_ERR_INVALID for invalid arguments or an encountered unassigned
+ * variable. On failure, <result> is unchanged.
+ */
+int bdd_eval(BDD *result, BDD f, BDDSET variables, const uint8_t *values, size_t count);
+
+/**
  * Calculate number of satisfying variable assignments.
  * The set of variables must be >= the support of the BDD.
  */

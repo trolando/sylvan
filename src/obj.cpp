@@ -391,6 +391,16 @@ Bdd::Compose(const BddMap &m) const
 }
 
 Bdd
+Bdd::Eval(const BddSet &variables, const std::vector<uint8_t> &values) const
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = bdd_eval(&result, bdd, variables.set.bdd, values.data(), values.size());
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+Bdd
 Bdd::Permute(const std::vector<uint32_t>& from, const std::vector<uint32_t>& to) const
 {
     /* Create a map */
@@ -1013,6 +1023,16 @@ Mtbdd
 Mtbdd::Compose(MtbddMap &m) const
 {
     return apply_mtbdd_compose(mtbdd_compose, mtbdd, m.mtbdd);
+}
+
+Mtbdd
+Mtbdd::Eval(const BddSet &variables, const std::vector<uint8_t> &values) const
+{
+    MTBDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = mtbdd_eval(&result, mtbdd, variables.set.bdd, values.data(), values.size());
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
 
 Mtbdd

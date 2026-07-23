@@ -83,6 +83,50 @@ mtbdd_cofactors(MTBDD dd, MTBDD *if_false, MTBDD *if_true)
     }
 }
 
+int
+_mtbdd_eval(MTBDD *destination, MTBDD dd, BDDSET variables, const uint8_t *values, size_t count)
+{
+    if (destination == NULL || dd == mtbdd_invalid || variables == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (count != bdd_set_count(variables) || (count != 0 && values == NULL)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        if (values[i] > 1) return SYLVAN_ERR_INVALID;
+    }
+
+    size_t index = 0;
+    while (!mtbdd_is_leaf(dd)) {
+        uint32_t dd_level = mtbdd_node_variable(dd);
+
+        while (!bdd_set_is_empty(variables) && bdd_set_first(variables) < dd_level) {
+            variables = bdd_set_next(variables);
+            index++;
+        }
+
+        if (bdd_set_is_empty(variables) || bdd_set_first(variables) != dd_level) {
+            return SYLVAN_ERR_INVALID;
+        }
+
+        dd = values[index] ? mtbdd_node_high(dd) : mtbdd_node_low(dd);
+        variables = bdd_set_next(variables);
+        index++;
+    }
+
+    *destination = dd;
+    return SYLVAN_OK;
+}
+
+int
+mtbdd_eval(MTBDD *destination, MTBDD dd, BDDSET variables, const uint8_t *values, size_t count)
+{
+    int status = _mtbdd_eval(destination, dd, variables, values, count);
+    if (status == SYLVAN_OK) sylvan_stats_count(MTBDD_EVAL);
+    return status;
+}
+
 // for leaves
 uint32_t
 mtbdd_leaf_type(MTBDD leaf)

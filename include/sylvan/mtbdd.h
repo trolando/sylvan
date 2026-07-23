@@ -470,6 +470,20 @@ static inline int mtbdd_support(BDDSET *result, MTBDD dd);
 static inline int mtbdd_compose(MTBDD *result, MTBDD dd, MTBDDMAP map);
 
 /**
+ * Evaluate <dd> under a complete assignment.
+ *
+ * <values> is packed in the order of <variables>, contains only 0 and 1, and
+ * <count> must equal bdd_set_count(<variables>). The variables must contain
+ * the complete support of <dd>; additional variables are ignored. The result
+ * is the reached terminal, which may be mtbdd_undefined.
+ *
+ * This is a sequential, non-allocating operation. Returns SYLVAN_OK on success
+ * or SYLVAN_ERR_INVALID for invalid arguments or an encountered unassigned
+ * variable. On failure, <result> is unchanged.
+ */
+int mtbdd_eval(MTBDD *result, MTBDD dd, BDDSET variables, const uint8_t *values, size_t count);
+
+/**
  * Compute minimal leaf in the MTBDD. All leaves must have the same supported
  * numeric type: Integer, Double, or Rational.
  * Returns SYLVAN_OK on success. On failure, <result> is unchanged.

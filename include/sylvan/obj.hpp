@@ -250,6 +250,12 @@ public:
     Bdd Compose(const BddMap &m) const;
 
     /**
+     * @brief Evaluate this BDD under the complete assignment in values.
+     * Values are packed in the variable order of variables.
+     */
+    Bdd Eval(const BddSet &variables, const std::vector<uint8_t> &values) const;
+
+    /**
      * @brief Substitute all variables in the array from by the corresponding variables in to.
      */
     Bdd Permute(const std::vector<uint32_t>& from, const std::vector<uint32_t>& to) const;
@@ -760,6 +766,12 @@ public:
      * You can also use this function to implement variable reordering.
      */
     Mtbdd Compose(MtbddMap &m) const;
+
+    /**
+     * @brief Evaluate this MTBDD under the complete assignment in values.
+     * Values are packed in the variable order of variables.
+     */
+    Mtbdd Eval(const BddSet &variables, const std::vector<uint8_t> &values) const;
 
     /**
      * @brief Substitute all variables in the array from by the corresponding variables in to.

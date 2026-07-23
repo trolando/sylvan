@@ -52,6 +52,9 @@ int _zdd_try_make_node(ZDD *destination, uint32_t var, ZDD low, ZDD high);
 int _listdd_try_make_node(LISTDD *destination, uint32_t value, LISTDD down, LISTDD right);
 int _listdd_try_make_copy_node(LISTDD *destination, LISTDD down, LISTDD right);
 
+/* Shared implementation for BDD and MTBDD evaluation. */
+int _mtbdd_eval(MTBDD *destination, MTBDD dd, BDDSET variables, const uint8_t *values, size_t count);
+
 /** Assert that <set> is a referenced conjunction of positive variables. */
 void bdd_set_assert_valid(BDDSET set);
 

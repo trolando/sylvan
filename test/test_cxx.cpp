@@ -35,6 +35,18 @@ int runtest_CALL(lace_worker* lace)
     test_assert(v2.Compose(map) == (v1 + v2));
     test_assert((t * v2) == v2);
 
+    BddSet variables;
+    variables.add(1);
+    variables.add(2);
+    test_assert(t.Eval(variables, {0, 1}) == one);
+    test_assert(t.Eval(variables, {0}) == Bdd(mtbdd_invalid));
+
+    Mtbdd seven = Mtbdd::int64Terminal(7);
+    Mtbdd nine = Mtbdd::int64Terminal(9);
+    Mtbdd integer_function = Mtbdd::mtbddVar(1).Ite(seven, nine);
+    test_assert(integer_function.Eval(variables, {0, 1}) == nine);
+    test_assert(integer_function.Eval(variables, {1, 0}) == seven);
+
     return 0;
 }
 

@@ -23,6 +23,21 @@
 
 #include <avl.h>
 
+int
+bdd_eval(BDD *destination, BDD dd, BDDSET variables, const uint8_t *values, size_t count)
+{
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
+
+    BDD evaluated = mtbdd_invalid;
+    int status = _mtbdd_eval(&evaluated, dd, variables, values, count);
+    if (status != SYLVAN_OK) return status;
+    if (evaluated != bdd_false && evaluated != bdd_true) return SYLVAN_ERR_INVALID;
+
+    *destination = evaluated;
+    sylvan_stats_count(BDD_EVAL);
+    return SYLVAN_OK;
+}
+
 /**
  * Implementation of unary, binary and if-then-else operators.
  */

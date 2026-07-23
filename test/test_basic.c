@@ -1234,6 +1234,92 @@ test_eval_compose_positive_status(lace_worker *lace, MTBDD *destination, MTBDD d
     return SYLVAN_APPLY_RECURSE;
 }
 
+TASK(int, test_eval_destinations)
+int
+test_eval_destinations_CALL(lace_worker *lace)
+{
+    const uint32_t all_levels[] = {0, 1, 2, 3};
+    const uint32_t missing_levels[] = {0, 2};
+    const uint8_t true_values[] = {0, 0, 1, 1};
+    const uint8_t false_values[] = {1, 0, 0, 0};
+    const uint8_t missing_values[] = {1, 1};
+    const uint8_t invalid_values[] = {0, 0, 1, 2};
+    BDD x0 = mtbdd_invalid;
+    BDD x1 = mtbdd_invalid;
+    BDD x2 = mtbdd_invalid;
+    BDD function = mtbdd_invalid;
+    BDDSET all_vars = mtbdd_invalid;
+    BDDSET missing_vars = mtbdd_invalid;
+    BDD bdd_result = mtbdd_invalid;
+    MTBDD seven = mtbdd_int64(7);
+    MTBDD nine = mtbdd_invalid;
+    MTBDD integer_function = mtbdd_invalid;
+    MTBDD mtbdd_result = mtbdd_invalid;
+    MTBDD unchanged = bdd_true;
+
+    mtbdd_refs_pushptr(&x0);
+    mtbdd_refs_pushptr(&x1);
+    mtbdd_refs_pushptr(&x2);
+    mtbdd_refs_pushptr(&function);
+    mtbdd_refs_pushptr(&all_vars);
+    mtbdd_refs_pushptr(&missing_vars);
+    mtbdd_refs_pushptr(&bdd_result);
+    mtbdd_refs_pushptr(&seven);
+    nine = mtbdd_int64(9);
+    mtbdd_refs_pushptr(&nine);
+    mtbdd_refs_pushptr(&integer_function);
+    mtbdd_refs_pushptr(&mtbdd_result);
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_assert(bdd_var_at_level(&x0, 0) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&x1, 1) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&x2, 2) == SYLVAN_OK);
+    test_assert(bdd_ite_CALL(lace, &function, x0, x1, x2) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(&all_vars, all_levels, 4) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(&missing_vars, missing_levels, 2) == SYLVAN_OK);
+
+    test_assert(bdd_eval(&bdd_result, function, all_vars, true_values, 4) == SYLVAN_OK);
+    test_assert(bdd_result == bdd_true);
+    test_assert(bdd_eval(&bdd_result, function, all_vars, false_values, 4) == SYLVAN_OK);
+    test_assert(bdd_result == bdd_false);
+
+    bdd_result = function;
+    test_assert(bdd_eval(&bdd_result, bdd_result, all_vars, true_values, 4) == SYLVAN_OK);
+    test_assert(bdd_result == bdd_true);
+
+    test_assert(mtbdd_ite_CALL(lace, &integer_function, x0, seven, nine) == SYLVAN_OK);
+    test_assert(mtbdd_eval(&mtbdd_result, integer_function, all_vars, true_values, 4) == SYLVAN_OK);
+    test_assert(mtbdd_result == nine);
+    test_assert(mtbdd_eval(&mtbdd_result, integer_function, all_vars, false_values, 4) == SYLVAN_OK);
+    test_assert(mtbdd_result == seven);
+    test_assert(mtbdd_eval(&mtbdd_result, mtbdd_undefined, bdd_set_empty(), NULL, 0) == SYLVAN_OK);
+    test_assert(mtbdd_result == mtbdd_undefined);
+
+    test_assert(bdd_eval(NULL, function, all_vars, true_values, 4) == SYLVAN_ERR_INVALID);
+    test_assert(bdd_eval(&unchanged, mtbdd_invalid, all_vars, true_values, 4) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_eval(&unchanged, function, mtbdd_invalid, true_values, 4) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_eval(&unchanged, function, all_vars, NULL, 4) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_eval(&unchanged, function, all_vars, true_values, 3) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_eval(&unchanged, function, all_vars, invalid_values, 4) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_eval(&unchanged, function, missing_vars, missing_values, 2) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_eval(&unchanged, integer_function, all_vars, true_values, 4) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_eval(NULL, integer_function, all_vars, true_values, 4) == SYLVAN_ERR_INVALID);
+
+    sylvan_gc_CALL(lace);
+    test_assert(bdd_result == bdd_true);
+    test_assert(mtbdd_result == mtbdd_undefined);
+
+    mtbdd_refs_popptr(12);
+    return 0;
+}
+
 TASK(int, test_mtbdd_eval_compose_destinations)
 int
 test_mtbdd_eval_compose_destinations_CALL(lace_worker *lace)
@@ -3044,6 +3130,7 @@ int runtests_CALL(lace_worker* lace)
     if (test_mtbdd_equal_double_destinations_CALL(lace)) return 1;
     if (test_mtbdd_order_destinations_CALL(lace)) return 1;
     if (test_mtbdd_abstract_destinations_CALL(lace)) return 1;
+    if (test_eval_destinations_CALL(lace)) return 1;
     if (test_mtbdd_eval_compose_destinations_CALL(lace)) return 1;
     if (test_quantification_destinations_CALL(lace)) return 1;
     if (test_care_destinations_CALL(lace)) return 1;

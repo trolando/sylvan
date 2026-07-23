@@ -175,7 +175,7 @@ void run_CALL(lace_worker* lace)
         printf("\n");
     }
     if (report_minterms) {
-        INFO("We have %.0f minterms\n", bdd_sat_count_CALL(lace, res, vars));
+        INFO("We have %.0f minterms\n", bdd_sat_count_double_CALL(lace, res, vars));
     }
     if (report_minor) {
         INFO("Encoding columns... ");
@@ -206,7 +206,7 @@ void run_CALL(lace_worker* lace)
         printf("\n");
     }
     if (report_minterms) {
-        INFO("We have %.0f minterms\n", bdd_sat_count_CALL(lace, res, vars));
+        INFO("We have %.0f minterms\n", bdd_sat_count_double_CALL(lace, res, vars));
     }
     if (report_minor) {
         INFO("Encoding rising diagonals... ");
@@ -238,7 +238,7 @@ void run_CALL(lace_worker* lace)
         printf("\n");
     }
     if (report_minterms) {
-        INFO("We have %.0f minterms\n", bdd_sat_count_CALL(lace, res, vars));
+        INFO("We have %.0f minterms\n", bdd_sat_count_double_CALL(lace, res, vars));
     }
     if (report_minor) {
         INFO("Encoding falling diagonals... ");
@@ -270,7 +270,7 @@ void run_CALL(lace_worker* lace)
         printf("\n");
     }
     if (report_minterms) {
-        INFO("We have %.0f minterms\n", bdd_sat_count_CALL(lace, res, vars));
+        INFO("We have %.0f minterms\n", bdd_sat_count_double_CALL(lace, res, vars));
     }
     if (report_minor) {
         INFO("Final computation to place a queen on every row... ");
@@ -299,7 +299,7 @@ void run_CALL(lace_worker* lace)
 
     double t2 = wctime();
 
-    INFO("Result: NQueens(%zu) has %.0f solutions.\n", size, bdd_sat_count_CALL(lace, res, vars));
+    INFO("Result: NQueens(%zu) has %.0f solutions.\n", size, bdd_sat_count_double_CALL(lace, res, vars));
     INFO("Result BDD has %zu nodes.\n", mtbdd_node_count(res));
     INFO("Computation time: %f sec.\n", t2-t1);
 }

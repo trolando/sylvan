@@ -30,7 +30,8 @@ enum {
     SYLVAN_ERR_OOM = -1,
     SYLVAN_ERR_INVALID = -2,
     SYLVAN_ERR_IO = -3,
-    SYLVAN_ERR_CALLBACK = -4
+    SYLVAN_ERR_CALLBACK = -4,
+    SYLVAN_ERR_OVERFLOW = -5
 };
 
 /** Apply callback control result: descend recursively instead of producing a result. */

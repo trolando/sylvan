@@ -559,7 +559,7 @@ void par_CALL(lace_worker* lace, set_t set)
         }
 
         if (check_deadlocks && deadlocks != bdd_false) {
-            INFO("Found %0.0f deadlock states... ", bdd_sat_count_CALL(lace, deadlocks, set->variables));
+            INFO("Found %0.0f deadlock states... ", bdd_sat_count_double_CALL(lace, deadlocks, set->variables));
             if (deadlocks != bdd_false) {
                 printf("example: ");
                 print_example(deadlocks, set->variables);
@@ -575,7 +575,7 @@ void par_CALL(lace_worker* lace, set_t set)
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
             INFO("Level %d done, %0.0f states explored, table: %0.1f%% full (%zu nodes)\n",
-                iteration, bdd_sat_count_CALL(lace, visited, set->variables),
+                iteration, bdd_sat_count_double_CALL(lace, visited, set->variables),
                 100.0*(double)filled/total, filled);
         } else if (report_table) {
             size_t filled, total;
@@ -584,7 +584,7 @@ void par_CALL(lace_worker* lace, set_t set)
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %0.0f states explored\n", iteration, bdd_sat_count_CALL(lace, visited, set->variables));
+            INFO("Level %d done, %0.0f states explored\n", iteration, bdd_sat_count_double_CALL(lace, visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
@@ -709,7 +709,7 @@ void bfs_CALL(lace_worker* lace, set_t set)
         }
 
         if (check_deadlocks && deadlocks != bdd_false) {
-            INFO("Found %0.0f deadlock states... ", bdd_sat_count_CALL(lace, deadlocks, set->variables));
+            INFO("Found %0.0f deadlock states... ", bdd_sat_count_double_CALL(lace, deadlocks, set->variables));
             if (deadlocks != bdd_false) {
                 printf("example: ");
                 print_example(deadlocks, set->variables);
@@ -725,7 +725,7 @@ void bfs_CALL(lace_worker* lace, set_t set)
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
             INFO("Level %d done, %0.0f states explored, table: %0.1f%% full (%zu nodes)\n",
-                iteration, bdd_sat_count_CALL(lace, visited, set->variables),
+                iteration, bdd_sat_count_double_CALL(lace, visited, set->variables),
                 100.0*(double)filled/total, filled);
         } else if (report_table) {
             size_t filled, total;
@@ -734,7 +734,7 @@ void bfs_CALL(lace_worker* lace, set_t set)
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %0.0f states explored\n", iteration, bdd_sat_count_CALL(lace, visited, set->variables));
+            INFO("Level %d done, %0.0f states explored\n", iteration, bdd_sat_count_double_CALL(lace, visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
@@ -783,7 +783,7 @@ void chaining_CALL(lace_worker* lace, set_t set)
             size_t filled, total;
             sylvan_table_usage(&filled, &total);
             INFO("Level %d done, %0.0f states explored, table: %0.1f%% full (%zu nodes)\n",
-                iteration, bdd_sat_count_CALL(lace, visited, set->variables),
+                iteration, bdd_sat_count_double_CALL(lace, visited, set->variables),
                 100.0*(double)filled/total, filled);
         } else if (report_table) {
             size_t filled, total;
@@ -792,7 +792,7 @@ void chaining_CALL(lace_worker* lace, set_t set)
                 iteration,
                 100.0*(double)filled/total, filled);
         } else if (report_levels) {
-            INFO("Level %d done, %0.0f states explored\n", iteration, bdd_sat_count_CALL(lace, visited, set->variables));
+            INFO("Level %d done, %0.0f states explored\n", iteration, bdd_sat_count_double_CALL(lace, visited, set->variables));
         } else {
             INFO("Level %d done\n", iteration);
         }
@@ -1061,7 +1061,7 @@ void run_CALL(lace_worker* lace)
     }
 
     // Now we just have states
-    INFO("Final states: %0.0f states\n", bdd_sat_count_CALL(lace, states->bdd, states->variables));
+    INFO("Final states: %0.0f states\n", bdd_sat_count_double_CALL(lace, states->bdd, states->variables));
     if (report_nodes) {
         INFO("Final states: %zu BDD nodes\n", mtbdd_node_count(states->bdd));
     }

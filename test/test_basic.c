@@ -1630,6 +1630,52 @@ test_protected_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+TASK(int, test_count_destinations)
+int
+test_count_destinations_CALL(lace_worker *lace)
+{
+    BDD x = test_bdd_var(5);
+    BDDSET variables = test_bdd_set_from_levels((uint32_t[]){1, 5, 9}, 3);
+    BDDSET missing = test_bdd_set_from_levels((uint32_t[]){1, 9}, 2);
+    BDDSET wide = test_bdd_set_from_levels(
+        (uint32_t[]){
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+            16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+            32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+            48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63
+        }, 64);
+
+    MTBDD integer = mtbdd_make_node(5, mtbdd_int64(0), mtbdd_int64(7));
+    uint64_t count = 99;
+    test_assert(bdd_sat_count_u64_CALL(lace, &count, x, variables) == SYLVAN_OK);
+    test_assert(count == 4);
+    test_assert(bdd_sat_count_double_CALL(lace, x, variables) == 4.0);
+    test_assert(mtbdd_sat_count_u64_CALL(lace, &count, integer, variables) == SYLVAN_OK);
+    test_assert(count == 4);
+    test_assert(mtbdd_sat_count_double_CALL(lace, integer, variables) == 4.0);
+
+    count = 99;
+    test_assert(bdd_sat_count_u64_CALL(lace, &count, x, missing) == SYLVAN_ERR_INVALID);
+    test_assert(count == 99);
+    test_assert(isnan(bdd_sat_count_double_CALL(lace, x, missing)));
+    test_assert(mtbdd_sat_count_u64_CALL(lace, &count, integer, missing) == SYLVAN_ERR_INVALID);
+    test_assert(count == 99);
+    test_assert(isnan(mtbdd_sat_count_double_CALL(lace, integer, missing)));
+
+    test_assert(bdd_sat_count_u64_CALL(lace, &count, bdd_true, wide) == SYLVAN_ERR_OVERFLOW);
+    test_assert(count == 99);
+    test_assert(mtbdd_sat_count_u64_CALL(lace, &count, mtbdd_int64(1), wide) == SYLVAN_ERR_OVERFLOW);
+    test_assert(count == 99);
+    test_assert(mtbdd_sat_count_u64_CALL(lace, &count, mtbdd_int64(0), wide) == SYLVAN_OK);
+    test_assert(count == 0);
+
+    test_assert(bdd_sat_count_u64_CALL(lace, NULL, x, variables) == SYLVAN_ERR_INVALID);
+    test_assert(bdd_sat_count_u64_CALL(lace, &count, mtbdd_int64(1), variables) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_sat_count_u64_CALL(lace, &count, mtbdd_invalid, variables) == SYLVAN_ERR_INVALID);
+
+    return 0;
+}
+
 TASK(int, test_quantification_destinations)
 int
 test_quantification_destinations_CALL(lace_worker *lace)
@@ -2799,7 +2845,7 @@ test_cube()
 
     BDD picked_single = test_bdd_pick_minterm(bdd, vars);
     test_assert(testEqual(test_bdd_and(picked_single, bdd), picked_single));
-    assert(bdd_sat_count(picked_single, vars)==1);
+    assert(bdd_sat_count_double(picked_single, vars)==1);
 
     BDD picked = test_bdd_pick_cube(bdd, vars);
     test_assert(testEqual(test_bdd_and(picked, bdd), picked));
@@ -3196,6 +3242,7 @@ int runtests_CALL(lace_worker* lace)
     if (test_mtbdd_abstract_destinations_CALL(lace)) return 1;
     if (test_eval_destinations_CALL(lace)) return 1;
     if (test_mtbdd_eval_compose_destinations_CALL(lace)) return 1;
+    if (test_count_destinations_CALL(lace)) return 1;
     if (test_quantification_destinations_CALL(lace)) return 1;
     if (test_care_destinations_CALL(lace)) return 1;
     if (test_compose_destinations_CALL(lace)) return 1;

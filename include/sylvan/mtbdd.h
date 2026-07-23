@@ -181,9 +181,22 @@ int mtbdd_cube(MTBDD *result, BDDSET variables, const uint8_t *cube, MTBDD termi
 static inline int mtbdd_set_cube(MTBDD *result, MTBDD mtbdd, BDDSET variables, const uint8_t *cube, MTBDD terminal);
 
 /**
- * Count the number of satisfying assignments (minterms) leading to a non-false leaf
+ * Calculate the exact number of assignments over <variables> that lead to a
+ * nonzero built-in leaf. Custom leaves other than mtbdd_undefined are counted.
+ * The set must contain the support of <dd>.
+ *
+ * Returns SYLVAN_ERR_OVERFLOW if the exact result does not fit in uint64_t.
+ * On failure, <result> is unchanged.
  */
-static inline double mtbdd_sat_count(MTBDD dd, size_t nvars);
+static inline int mtbdd_sat_count_u64(uint64_t *result, MTBDD dd, BDDSET variables);
+
+/**
+ * Calculate an approximate number of assignments over <variables> that lead
+ * to a nonzero built-in leaf. Custom leaves other than mtbdd_undefined are
+ * counted. The set must contain the support of <dd>. Returns NaN for invalid
+ * arguments or when the set does not contain the support.
+ */
+static inline double mtbdd_sat_count_double(MTBDD dd, BDDSET variables);
 
 /**
  * Count the number of MTBDD leaves (excluding mtbdd_undefined and bdd_true) in the given <count> MTBDDs

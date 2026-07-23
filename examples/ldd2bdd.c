@@ -771,7 +771,7 @@ void run_CALL(lace_worker* lace)
     MTBDD new_initial = mtbdd_invalid;
     mtbdd_refs_pushptr(&new_initial);
     if (bdd_from_ldd(&new_initial, initial->dd, bits_dd, 0) != SYLVAN_OK) Abort("Out of memory!\n");
-    assert((size_t)mtbdd_sat_count(new_initial, totalbits) == (size_t)listdd_count(initial->dd));
+    assert((size_t)bdd_sat_count_double(new_initial, state_vars) == (size_t)listdd_count(initial->dd));
     {
         int k = -1;
         fwrite(&k, sizeof(int), 1, f);
@@ -782,7 +782,7 @@ void run_CALL(lace_worker* lace)
     MTBDD new_states = mtbdd_invalid;
     mtbdd_refs_pushptr(&new_states);
     if (bdd_from_ldd(&new_states, states->dd, bits_dd, 0) != SYLVAN_OK) Abort("Out of memory!\n");
-    assert((size_t)mtbdd_sat_count(new_states, totalbits) == (size_t)listdd_count(states->dd));
+    assert((size_t)bdd_sat_count_double(new_states, state_vars) == (size_t)listdd_count(states->dd));
 
     // Report size of BDD
     if (verbose) {

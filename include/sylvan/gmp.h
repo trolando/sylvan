@@ -35,6 +35,20 @@ extern "C" {
 void gmp_init(void);
 
 /**
+ * Calculate the exact number of satisfying assignments over <variables>.
+ * The set must contain the support of <dd>. On failure, <result> is unchanged.
+ */
+int bdd_sat_count_gmp(mpz_t result, BDD dd, BDDSET variables);
+
+/**
+ * Calculate the exact number of assignments over <variables> that lead to a
+ * nonzero built-in MTBDD leaf. Custom leaves other than mtbdd_undefined are
+ * counted. The set must contain the support of <dd>. On failure, <result> is
+ * unchanged.
+ */
+int mtbdd_sat_count_gmp(mpz_t result, MTBDD dd, BDDSET variables);
+
+/**
  * Create MPQ leaf
  */
 MTBDD mtbdd_gmp(mpq_t val);

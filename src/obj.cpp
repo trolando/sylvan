@@ -499,14 +499,13 @@ Bdd::GetShaHash() const
 double
 Bdd::SatCount(const BddSet &variables) const
 {
-    return bdd_sat_count(bdd, variables.set.bdd);
+    return bdd_sat_count_double(bdd, variables.set.bdd);
 }
 
-double
-Bdd::SatCount(size_t nvars) const
+bool
+Bdd::SatCountU64(uint64_t &result, const BddSet &variables) const
 {
-    // Note: the mtbdd_sat_count can be called without initializing the MTBDD module.
-    return mtbdd_sat_count(bdd, nvars);
+    return bdd_sat_count_u64(&result, bdd, variables.set.bdd) == SYLVAN_OK;
 }
 
 void
@@ -1150,15 +1149,15 @@ Mtbdd::Permute(const std::vector<uint32_t>& from, const std::vector<uint32_t>& t
 }
 
 double
-Mtbdd::SatCount(size_t nvars) const
-{
-    return mtbdd_sat_count(mtbdd, nvars);
-}
-
-double
 Mtbdd::SatCount(const BddSet &variables) const
 {
-    return SatCount(bdd_set_count(variables.set.bdd));
+    return mtbdd_sat_count_double(mtbdd, variables.set.bdd);
+}
+
+bool
+Mtbdd::SatCountU64(uint64_t &result, const BddSet &variables) const
+{
+    return mtbdd_sat_count_u64(&result, mtbdd, variables.set.bdd) == SYLVAN_OK;
 }
 
 size_t

@@ -44,12 +44,17 @@ int runtest_CALL(lace_worker* lace)
     test_assert(t.Eval(variables, {0}) == Bdd(mtbdd_invalid));
     test_assert(t.UniqueAbstract(variables) == one);
     test_assert(t.UniqueAbstract(BddSet(v1)) == !v2);
+    uint64_t count;
+    test_assert(t.SatCount(variables) == 3.0);
+    test_assert(t.SatCountU64(count, variables) && count == 3);
 
     Mtbdd seven = Mtbdd::int64Terminal(7);
     Mtbdd nine = Mtbdd::int64Terminal(9);
     Mtbdd integer_function = Mtbdd::mtbddVar(1).Ite(seven, nine);
     test_assert(integer_function.Eval(variables, {0, 1}) == nine);
     test_assert(integer_function.Eval(variables, {1, 0}) == seven);
+    test_assert(integer_function.SatCount(variables) == 4.0);
+    test_assert(integer_function.SatCountU64(count, variables) && count == 4);
     test_assert(seven.AllLt(nine));
     test_assert(seven.AnyLeq(nine));
     test_assert(!seven.AnyGt(nine));

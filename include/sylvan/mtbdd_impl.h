@@ -56,7 +56,8 @@ bdd_is_complemented(MTBDD dd)
 
 TASK(int, mtbdd_set_cube, MTBDD*, result, MTBDD, mtbdd, BDDSET, variables, const uint8_t*, cube, MTBDD, terminal)
 
-TASK(double, mtbdd_sat_count, MTBDD, dd, size_t, nvars);
+TASK(int, mtbdd_sat_count_u64, uint64_t*, result, MTBDD, dd, BDDSET, variables);
+TASK(double, mtbdd_sat_count_double, MTBDD, dd, BDDSET, variables);
 
 static inline size_t mtbdd_leaf_count(MTBDD dd)
 {

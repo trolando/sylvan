@@ -79,7 +79,7 @@ static const uint64_t CACHE_BDD_AND_EXISTS          = (5LL<<40);
 static const uint64_t CACHE_BDD_AND_PROJECT         = (6LL<<40);
 static const uint64_t CACHE_BDD_RELNEXT             = (7LL<<40);
 static const uint64_t CACHE_BDD_RELPREV             = (8LL<<40);
-static const uint64_t CACHE_BDD_SATCOUNT            = (9LL<<40);
+static const uint64_t CACHE_BDD_SAT_COUNT_DOUBLE    = (9LL<<40);
 static const uint64_t CACHE_BDD_COMPOSE             = (10LL<<40);
 static const uint64_t CACHE_BDD_SIMPLIFY            = (11LL<<40);
 static const uint64_t CACHE_BDD_CONSTRAIN           = (12LL<<40);
@@ -90,6 +90,7 @@ static const uint64_t CACHE_BDD_PATHCOUNT           = (16LL<<40);
 static const uint64_t CACHE_BDD_DISJOINT            = (17LL<<40);
 static const uint64_t CACHE_BDD_UNIQUE              = (18LL<<40);
 static const uint64_t CACHE_BDD_INTERSECTION_WITNESS = (19LL<<40);
+static const uint64_t CACHE_BDD_SAT_COUNT_U64       = (31LL<<40);
 
 // LISTDD operations
 static const uint64_t CACHE_MDD_RELPROD             = (20LL<<40);
@@ -134,6 +135,8 @@ static const uint64_t CACHE_MTBDD_COMPARE_GEQ        = (65LL<<40);
 static const uint64_t CACHE_MTBDD_COMPARE_GT         = (66LL<<40);
 static const uint64_t CACHE_MTBDD_COMPARE_EQUAL_ABS  = (67LL<<40);
 static const uint64_t CACHE_MTBDD_COMPARE_EQUAL_REL  = (68LL<<40);
+static const uint64_t CACHE_MTBDD_SAT_COUNT_DOUBLE   = (69LL<<40);
+static const uint64_t CACHE_MTBDD_SAT_COUNT_U64      = (70LL<<40);
 
 // ZDD operations
 static const uint64_t CACHE_ZDD_FROM_MTBDD          = (80LL<<40);

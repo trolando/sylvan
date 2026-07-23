@@ -300,9 +300,9 @@ public:
     double SatCount(const BddSet &cube) const;
 
     /**
-     * @brief Compute the number of satisfying variable assignments, using the given number of variables.
+     * @brief Compute the exact number of satisfying variable assignments.
      */
-    double SatCount(const size_t nvars) const;
+    bool SatCountU64(uint64_t &result, const BddSet &variables) const;
 
     /**
      * @brief Gets one satisfying assignment according to the variables.
@@ -814,9 +814,9 @@ public:
     double SatCount(const BddSet &variables) const;
 
     /**
-     * @brief Compute the number of satisfying variable assignments, using the given number of variables.
+     * @brief Compute the exact number of satisfying variable assignments.
      */
-    double SatCount(const size_t nvars) const;
+    bool SatCountU64(uint64_t &result, const BddSet &variables) const;
 
     /**
      * @brief Gets the number of nodes in this Bdd. Not thread-safe!

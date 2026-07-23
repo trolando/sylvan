@@ -295,10 +295,20 @@ static inline int bdd_compose(BDD *result, BDD f, MTBDDMAP map);
 int bdd_eval(BDD *result, BDD f, BDDSET variables, const uint8_t *values, size_t count);
 
 /**
- * Calculate number of satisfying variable assignments.
- * The set of variables must be >= the support of the BDD.
+ * Calculate the exact number of satisfying assignments over <variables>.
+ * The set must contain the support of <dd>.
+ *
+ * Returns SYLVAN_ERR_OVERFLOW if the exact result does not fit in uint64_t.
+ * On failure, <result> is unchanged.
  */
-static inline double bdd_sat_count(BDD dd, BDDSET variables);
+static inline int bdd_sat_count_u64(uint64_t *result, BDD dd, BDDSET variables);
+
+/**
+ * Calculate an approximate number of satisfying assignments over <variables>.
+ * The set must contain the support of <dd>. Returns NaN for invalid arguments
+ * or when the set does not contain the support.
+ */
+static inline double bdd_sat_count_double(BDD dd, BDDSET variables);
 
 /**
  * Create a BDD cube representing the conjunction of variables in their positive or negative

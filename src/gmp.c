@@ -19,6 +19,7 @@
 #include <sylvan/gmp.h>
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 static uint32_t gmp_type;
@@ -39,6 +40,223 @@ gmp_parameter_double(size_t parameter)
     double value;
     memcpy(&value, &parameter, sizeof(value));
     return value;
+}
+
+static int
+gmp_count_leaf_is_nonzero(MTBDD dd)
+{
+    if (dd == mtbdd_undefined) return 0;
+    if (dd == bdd_true) return 1;
+
+    switch (mtbdd_leaf_type(dd)) {
+    case 0:
+        return mtbdd_leaf_int64(dd) != 0;
+    case 1:
+        return mtbdd_leaf_double(dd) != 0.0;
+    case 2:
+        return mtbdd_fraction_numerator(dd) != 0;
+    default:
+        return 1;
+    }
+}
+
+struct gmp_count_entry {
+    MTBDD dd;
+    BDDSET variables;
+    mpz_t count;
+    struct gmp_count_entry *next;
+};
+
+struct gmp_count_cache {
+    size_t bucket_count;
+    size_t entry_count;
+    struct gmp_count_entry **buckets;
+};
+
+static size_t
+gmp_count_hash(MTBDD dd, BDDSET variables, size_t bucket_count)
+{
+    uint64_t hash = dd ^ (variables + UINT64_C(0x9e3779b97f4a7c15) + (dd << 6) + (dd >> 2));
+    hash ^= hash >> 33;
+    hash *= UINT64_C(0xff51afd7ed558ccd);
+    hash ^= hash >> 33;
+    return (size_t)(hash & (bucket_count - 1));
+}
+
+static int
+gmp_count_cache_init(struct gmp_count_cache *cache)
+{
+    cache->bucket_count = 1024;
+    cache->entry_count = 0;
+    cache->buckets = calloc(cache->bucket_count, sizeof(*cache->buckets));
+    return cache->buckets == NULL ? SYLVAN_ERR_OOM : SYLVAN_OK;
+}
+
+static void
+gmp_count_cache_clear(struct gmp_count_cache *cache)
+{
+    for (size_t i = 0; i < cache->bucket_count; i++) {
+        struct gmp_count_entry *entry = cache->buckets[i];
+        while (entry != NULL) {
+            struct gmp_count_entry *next = entry->next;
+            mpz_clear(entry->count);
+            free(entry);
+            entry = next;
+        }
+    }
+    free(cache->buckets);
+}
+
+static int
+gmp_count_cache_get(struct gmp_count_cache *cache, mpz_t result, MTBDD dd, BDDSET variables)
+{
+    const size_t bucket = gmp_count_hash(dd, variables, cache->bucket_count);
+    for (struct gmp_count_entry *entry = cache->buckets[bucket];
+         entry != NULL; entry = entry->next) {
+        if (entry->dd == dd && entry->variables == variables) {
+            mpz_set(result, entry->count);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void
+gmp_count_cache_grow(struct gmp_count_cache *cache)
+{
+    if (cache->bucket_count > SIZE_MAX / 2 ||
+        cache->entry_count < 2 * cache->bucket_count) return;
+
+    const size_t bucket_count = 2 * cache->bucket_count;
+    struct gmp_count_entry **buckets = calloc(bucket_count, sizeof(*buckets));
+    if (buckets == NULL) return;
+
+    for (size_t i = 0; i < cache->bucket_count; i++) {
+        struct gmp_count_entry *entry = cache->buckets[i];
+        while (entry != NULL) {
+            struct gmp_count_entry *next = entry->next;
+            const size_t bucket = gmp_count_hash(entry->dd, entry->variables, bucket_count);
+            entry->next = buckets[bucket];
+            buckets[bucket] = entry;
+            entry = next;
+        }
+    }
+    free(cache->buckets);
+    cache->buckets = buckets;
+    cache->bucket_count = bucket_count;
+}
+
+static int
+gmp_count_cache_put(struct gmp_count_cache *cache, MTBDD dd, BDDSET variables, const mpz_t count)
+{
+    gmp_count_cache_grow(cache);
+    const size_t bucket = gmp_count_hash(dd, variables, cache->bucket_count);
+    struct gmp_count_entry *entry = malloc(sizeof(*entry));
+    if (entry == NULL) return SYLVAN_ERR_OOM;
+
+    entry->dd = dd;
+    entry->variables = variables;
+    mpz_init_set(entry->count, count);
+    entry->next = cache->buckets[bucket];
+    cache->buckets[bucket] = entry;
+    cache->entry_count++;
+    return SYLVAN_OK;
+}
+
+static int
+sat_count_gmp_rec(struct gmp_count_cache *cache, mpz_t result,
+                  MTBDD dd, BDDSET variables, int bdd_only)
+{
+    if (mtbdd_is_leaf(dd)) {
+        if (bdd_only && dd != bdd_false && dd != bdd_true) return SYLVAN_ERR_INVALID;
+        if ((bdd_only && dd == bdd_false) || (!bdd_only && !gmp_count_leaf_is_nonzero(dd))) {
+            mpz_set_ui(result, 0);
+        } else {
+            mpz_set_ui(result, 1);
+            mpz_mul_2exp(result, result, (mp_bitcnt_t)bdd_set_count(variables));
+        }
+        return SYLVAN_OK;
+    }
+
+    size_t skipped = 0;
+    const uint32_t variable = mtbdd_node_variable(dd);
+    while (!bdd_set_is_empty(variables) && bdd_set_first(variables) < variable) {
+        skipped++;
+        variables = bdd_set_next(variables);
+    }
+    if (bdd_set_is_empty(variables) || bdd_set_first(variables) != variable) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    if (gmp_count_cache_get(cache, result, dd, variables)) {
+        mpz_mul_2exp(result, result, (mp_bitcnt_t)skipped);
+        return SYLVAN_OK;
+    }
+
+    const BDDSET next = bdd_set_next(variables);
+    mpz_t low, high;
+    mpz_init(low);
+    mpz_init(high);
+    int status = sat_count_gmp_rec(cache, low, mtbdd_node_low(dd), next, bdd_only);
+    if (status == SYLVAN_OK) {
+        status = sat_count_gmp_rec(cache, high, mtbdd_node_high(dd), next, bdd_only);
+    }
+    if (status == SYLVAN_OK) {
+        mpz_add(result, low, high);
+        status = gmp_count_cache_put(cache, dd, variables, result);
+        if (status == SYLVAN_OK) {
+            mpz_mul_2exp(result, result, (mp_bitcnt_t)skipped);
+        }
+    }
+    mpz_clear(low);
+    mpz_clear(high);
+    return status;
+}
+
+int
+bdd_sat_count_gmp(mpz_t destination, BDD dd, BDDSET variables)
+{
+    if (destination == NULL || dd == mtbdd_invalid || variables == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    struct gmp_count_cache cache;
+    int status = gmp_count_cache_init(&cache);
+    if (status != SYLVAN_OK) return status;
+
+    mpz_t result;
+    mpz_init(result);
+    status = sat_count_gmp_rec(&cache, result, dd, variables, 1);
+    if (status == SYLVAN_OK) {
+        mpz_set(destination, result);
+        sylvan_stats_count(BDD_SAT_COUNT_GMP);
+    }
+    mpz_clear(result);
+    gmp_count_cache_clear(&cache);
+    return status;
+}
+
+int
+mtbdd_sat_count_gmp(mpz_t destination, MTBDD dd, BDDSET variables)
+{
+    if (destination == NULL || dd == mtbdd_invalid || variables == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    struct gmp_count_cache cache;
+    int status = gmp_count_cache_init(&cache);
+    if (status != SYLVAN_OK) return status;
+
+    mpz_t result;
+    mpz_init(result);
+    status = sat_count_gmp_rec(&cache, result, dd, variables, 0);
+    if (status == SYLVAN_OK) {
+        mpz_set(destination, result);
+        sylvan_stats_count(MTBDD_SAT_COUNT_GMP);
+    }
+    mpz_clear(result);
+    gmp_count_cache_clear(&cache);
+    return status;
 }
 
 /**

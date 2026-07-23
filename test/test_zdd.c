@@ -584,7 +584,7 @@ int test_zdd_satcount_CALL(lace_worker* lace)
 
     ZDD zdd_set = test_zdd_from_bdd_value(bdd_set, bdd_dom);
 
-    test_assert((size_t)mtbdd_sat_count(bdd_set, 8) == (size_t)zdd_path_count(zdd_set));
+    test_assert((size_t)bdd_sat_count_double(bdd_set, bdd_dom) == (size_t)zdd_path_count(zdd_set));
 
     return 0;
     (void)lace;
@@ -834,7 +834,7 @@ int test_zdd_not_CALL(lace_worker* lace)
 
     zdd_set = test_zdd_from_bdd_value(bdd_set, bdd_dom);
     expected = test_zdd_from_bdd_value(bdd_not(bdd_set), bdd_dom);
-    test_assert((size_t)mtbdd_sat_count(bdd_not(bdd_set), 8) == (size_t)zdd_path_count(expected));
+    test_assert((size_t)bdd_sat_count_double(bdd_not(bdd_set), bdd_dom) == (size_t)zdd_path_count(expected));
 
     zdd_not_SPAWN(lace, &parallel_result, zdd_set, bdd_dom);
     int status = zdd_not_CALL(lace, &result, zdd_set, bdd_dom);

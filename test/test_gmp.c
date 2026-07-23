@@ -59,6 +59,7 @@ run_gmp_tests_CALL(lace_worker *lace)
     MTBDD threshold_inplace = mtbdd_invalid;
     MTBDD mixed = mtbdd_invalid;
     MTBDD unchanged = bdd_true;
+    BDDSET wide_vars = mtbdd_invalid;
 
     mtbdd_refs_pushptr(&x);
     mtbdd_refs_pushptr(&f);
@@ -81,6 +82,7 @@ run_gmp_tests_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&threshold_inplace);
     mtbdd_refs_pushptr(&mixed);
     mtbdd_refs_pushptr(&unchanged);
+    mtbdd_refs_pushptr(&wide_vars);
 
     mpq_clear(three_halves);
     mpq_clear(one_half);
@@ -112,6 +114,32 @@ run_gmp_tests_CALL(lace_worker *lace)
     test_assert(gmp_leaf_equals(abstract_product, 3, 4));
     test_assert(gmp_leaf_equals(abstract_minimum, 1, 2));
     test_assert(gmp_leaf_equals(abstract_maximum, 3, 2));
+
+    mpz_t exact_count;
+    mpz_init_set_ui(exact_count, 17);
+    test_assert(bdd_sat_count_gmp(exact_count, x, vars) == SYLVAN_OK);
+    test_assert(mpz_cmp_ui(exact_count, 1) == 0);
+    test_assert(mtbdd_sat_count_gmp(exact_count, f, vars) == SYLVAN_OK);
+    test_assert(mpz_cmp_ui(exact_count, 2) == 0);
+    test_assert(mtbdd_sat_count_gmp(exact_count, mtbdd_int64(0), vars) == SYLVAN_OK);
+    test_assert(mpz_cmp_ui(exact_count, 0) == 0);
+
+    uint32_t wide_levels[70];
+    for (uint32_t i = 0; i < 70; i++) wide_levels[i] = i;
+    test_assert(bdd_set_from_array(&wide_vars, wide_levels, 70) == SYLVAN_OK);
+    test_assert(bdd_sat_count_gmp(exact_count, bdd_true, wide_vars) == SYLVAN_OK);
+    mpz_t expected_count;
+    mpz_init_set_ui(expected_count, 1);
+    mpz_mul_2exp(expected_count, expected_count, 70);
+    test_assert(mpz_cmp(exact_count, expected_count) == 0);
+    mpz_clear(expected_count);
+
+    mpz_set_ui(exact_count, 17);
+    test_assert(bdd_sat_count_gmp(exact_count, x, bdd_true) == SYLVAN_ERR_INVALID);
+    test_assert(mpz_cmp_ui(exact_count, 17) == 0);
+    test_assert(mtbdd_sat_count_gmp(exact_count, mtbdd_invalid, vars) == SYLVAN_ERR_INVALID);
+    test_assert(mpz_cmp_ui(exact_count, 17) == 0);
+    mpz_clear(exact_count);
 
     gmp_threshold_d_SPAWN(lace, &parallel_threshold, f, 1.0);
     int threshold_status = gmp_strict_threshold_d_CALL(lace, &threshold, f, 0.5);
@@ -178,7 +206,7 @@ run_gmp_tests_CALL(lace_worker *lace)
     test_assert(gmp_abstract_plus(&unchanged, mtbdd_invalid, vars) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == bdd_true);
 
-    mtbdd_refs_popptr(23);
+    mtbdd_refs_popptr(24);
     return 0;
 }
 

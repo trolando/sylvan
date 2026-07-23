@@ -3553,27 +3553,121 @@ int mtbdd_find_max_CALL(lace_worker* lace, MTBDD *destination, MTBDD a)
     return SYLVAN_OK;
 }
 
-/**
- * Calculate the number of satisfying variable assignments according to <variables>.
- */
-double mtbdd_sat_count_CALL(lace_worker* lace, MTBDD dd, size_t nvars)
+static int
+mtbdd_count_leaf_is_nonzero(MTBDD dd)
 {
-    /* Trivial cases */
-    if (dd == mtbdd_undefined) return 0.0;
+    if (dd == mtbdd_undefined) return 0;
+    if (dd == bdd_true) return 1;
+
+    mtbddnode *node = MTBDD_GETNODE(dd);
+    switch (mtbddnode_gettype(node)) {
+    case 0:
+        return mtbdd_leaf_int64(dd) != 0;
+    case 1:
+        return mtbdd_leaf_double(dd) != 0.0;
+    case 2:
+        return mtbdd_fraction_numerator(dd) != 0;
+    default:
+        return 1;
+    }
+}
+
+static int
+mtbdd_count_shift_u64(uint64_t *result, uint64_t value, size_t shift)
+{
+    if (value == 0) {
+        *result = 0;
+        return SYLVAN_OK;
+    }
+    if (shift >= 64 || value > (UINT64_MAX >> shift)) return SYLVAN_ERR_OVERFLOW;
+    *result = value << shift;
+    return SYLVAN_OK;
+}
+
+int
+mtbdd_sat_count_u64_CALL(lace_worker* lace, uint64_t *destination, MTBDD dd, BDDSET variables)
+{
+    if (destination == NULL || dd == mtbdd_invalid || variables == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
 
     if (mtbdd_is_leaf(dd)) {
-        // test if 0
-        mtbddnode* dd_node = MTBDD_GETNODE(dd);
-        if (dd != bdd_true) {
-            if (mtbddnode_gettype(dd_node) == 0 && mtbdd_leaf_int64(dd) == 0) return 0.0;
-            else if (mtbddnode_gettype(dd_node) == 1 && mtbdd_leaf_double(dd) == 0.0) return 0.0;
-            else if (mtbddnode_gettype(dd_node) == 2 && mtbdd_leaf_value(dd) == 1) return 0.0;
-        }
-        return (double)powl(2.0L, (long double)nvars);
+        uint64_t result;
+        int status = mtbdd_count_shift_u64(
+            &result, mtbdd_count_leaf_is_nonzero(dd) ? 1 : 0, bdd_set_count(variables));
+        if (status == SYLVAN_OK) *destination = result;
+        return status;
+    }
+
+    sylvan_stats_count(MTBDD_SAT_COUNT_U64);
+
+    size_t skipped = 0;
+    const uint32_t variable = mtbdd_node_variable(dd);
+    while (!bdd_set_is_empty(variables) && bdd_set_first(variables) < variable) {
+        skipped++;
+        variables = bdd_set_next(variables);
+    }
+    if (bdd_set_is_empty(variables) || bdd_set_first(variables) != variable) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    uint64_t cached;
+    if (cache_get3(CACHE_MTBDD_SAT_COUNT_U64, dd, variables, 0, &cached)) {
+        sylvan_stats_count(MTBDD_SAT_COUNT_U64_CACHED);
+        uint64_t result;
+        int status = mtbdd_count_shift_u64(&result, cached, skipped);
+        if (status == SYLVAN_OK) *destination = result;
+        return status;
+    }
+
+    const BDDSET next = bdd_set_next(variables);
+    uint64_t low, high;
+    mtbdd_sat_count_u64_SPAWN(lace, &high, mtbdd_node_high(dd), next);
+    int low_status = mtbdd_sat_count_u64_CALL(lace, &low, mtbdd_node_low(dd), next);
+    int high_status = mtbdd_sat_count_u64_SYNC(lace);
+    if (low_status != SYLVAN_OK) return low_status;
+    if (high_status != SYLVAN_OK) return high_status;
+    if (UINT64_MAX - low < high) return SYLVAN_ERR_OVERFLOW;
+
+    const uint64_t sum = low + high;
+    if (cache_put3(CACHE_MTBDD_SAT_COUNT_U64, dd, variables, 0, sum)) {
+        sylvan_stats_count(MTBDD_SAT_COUNT_U64_CACHEDPUT);
+    }
+
+    uint64_t result;
+    int status = mtbdd_count_shift_u64(&result, sum, skipped);
+    if (status == SYLVAN_OK) *destination = result;
+    return status;
+}
+
+/**
+ * Calculate an approximate number of satisfying variable assignments according
+ * to <variables>.
+ */
+double
+mtbdd_sat_count_double_CALL(lace_worker* lace, MTBDD dd, BDDSET variables)
+{
+    if (dd == mtbdd_invalid || variables == mtbdd_invalid) return NAN;
+
+    /* Trivial cases */
+    if (mtbdd_is_leaf(dd)) {
+        return mtbdd_count_leaf_is_nonzero(dd)
+            ? (double)powl(2.0L, (long double)bdd_set_count(variables))
+            : 0.0;
     }
 
     /* Perhaps execute garbage collection */
     sylvan_gc_test(lace);
+
+    sylvan_stats_count(MTBDD_SAT_COUNT_DOUBLE);
+
+    size_t skipped = 0;
+    const uint32_t variable = mtbdd_node_variable(dd);
+    while (!bdd_set_is_empty(variables) && bdd_set_first(variables) < variable) {
+        skipped++;
+        variables = bdd_set_next(variables);
+    }
+    if (bdd_set_is_empty(variables) || bdd_set_first(variables) != variable) return NAN;
 
     union {
         double d;
@@ -3581,20 +3675,21 @@ double mtbdd_sat_count_CALL(lace_worker* lace, MTBDD dd, size_t nvars)
     } hack;
 
     /* Consult cache */
-    if (cache_get3(CACHE_BDD_SATCOUNT, dd, 0, nvars, &hack.s)) {
-        sylvan_stats_count(BDD_SATCOUNT_CACHED);
-        return hack.d;
+    if (cache_get3(CACHE_MTBDD_SAT_COUNT_DOUBLE, dd, variables, 0, &hack.s)) {
+        sylvan_stats_count(MTBDD_SAT_COUNT_DOUBLE_CACHED);
+        return (double)((long double)hack.d * powl(2.0L, (long double)skipped));
     }
 
-    mtbdd_sat_count_SPAWN(lace, mtbdd_node_high(dd), nvars-1);
-    double low = mtbdd_sat_count_CALL(lace, mtbdd_node_low(dd), nvars-1);
-    hack.d = low + mtbdd_sat_count_SYNC(lace);
+    const BDDSET next = bdd_set_next(variables);
+    mtbdd_sat_count_double_SPAWN(lace, mtbdd_node_high(dd), next);
+    double low = mtbdd_sat_count_double_CALL(lace, mtbdd_node_low(dd), next);
+    hack.d = low + mtbdd_sat_count_double_SYNC(lace);
 
-    if (cache_put3(CACHE_BDD_SATCOUNT, dd, 0, nvars, hack.s)) {
-        sylvan_stats_count(BDD_SATCOUNT_CACHEDPUT);
+    if (cache_put3(CACHE_MTBDD_SAT_COUNT_DOUBLE, dd, variables, 0, hack.s)) {
+        sylvan_stats_count(MTBDD_SAT_COUNT_DOUBLE_CACHEDPUT);
     }
 
-    return hack.d;
+    return (double)((long double)hack.d * powl(2.0L, (long double)skipped));
 }
 
 MTBDD

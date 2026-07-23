@@ -260,6 +260,53 @@ typedef int (*mtbdd_apply_param_cb)(lace_worker* lace, MTBDD *result, MTBDD*, MT
 typedef int (*mtbdd_apply_unary_cb)(lace_worker* lace, MTBDD *result, MTBDD, size_t);
 
 /**
+ * Callback types for mtbdd_map_reduce.
+ *
+ * The mapper is called for every kind of leaf, including mtbdd_undefined,
+ * bdd_true, and typed NaN leaves. It must produce a leaf. This lets the caller
+ * choose whether undefined and NaN values propagate, map to the identity, or
+ * become another value.
+ *
+ * The reducer is called with skipped == 0 to combine two mapped results in
+ * low-before-high order. With skipped > 0, both operands are equal and the
+ * callback must compute the reduction of 2^skipped copies of that operand.
+ * This form permits efficient handling of reduction variables absent from the
+ * MTBDD. Both callbacks write to a protected destination and return SYLVAN_OK
+ * or a negative status. Positive callback results are invalid.
+ */
+typedef int (*mtbdd_map_reduce_map_cb)(
+    lace_worker *lace, MTBDD *result, MTBDD leaf, void *context);
+typedef int (*mtbdd_map_reduce_reduce_cb)(
+    lace_worker *lace, MTBDD *result, MTBDD a, MTBDD b,
+    size_t skipped, void *context);
+
+/**
+ * Description of a fused MTBDD map/reduce operation.
+ *
+ * <identity> must be a protected leaf and a two-sided identity of <reduce>.
+ * Sylvan may omit reducer calls involving the identity. <reduce> must be
+ * associative; commutativity is not required. Neither callback may introduce
+ * decision variables that are absent from its operands.
+ *
+ * The descriptor and <context> are borrowed for the duration of the operation,
+ * including until a spawned call is synchronized. Callbacks may run
+ * concurrently on multiple Lace workers, so both objects must remain valid
+ * and any mutable context state must be thread-safe.
+ *
+ * Set <cache_id> to zero to disable caching. A nonzero value must come from
+ * cache_next_opid() in the advanced <sylvan/internal.h> API and must uniquely
+ * identify the callbacks and the complete semantic state of <context> until
+ * the operation cache is cleared. Cached callbacks must be pure.
+ */
+typedef struct mtbdd_map_reduce_op {
+    mtbdd_map_reduce_map_cb map;
+    mtbdd_map_reduce_reduce_cb reduce;
+    MTBDD identity;
+    void *context;
+    uint64_t cache_id;
+} mtbdd_map_reduce_op;
+
+/**
  * Apply a binary operation <op> to <a> and <b>.
  * Callback <op> is consulted before the cache, thus the application to terminals is not cached.
  * The caller must protect <result>. Returns SYLVAN_OK on success. On failure,
@@ -282,6 +329,20 @@ static inline int mtbdd_apply_param(MTBDD *result, MTBDD a, MTBDD b, size_t p, m
  * <result> is unchanged.
  */
 static inline int mtbdd_apply_unary(MTBDD *result, MTBDD dd, mtbdd_apply_unary_cb op, size_t param);
+
+/**
+ * Map the leaves of <dd> and reduce the variables in <variables> in one
+ * recursive traversal. The mapper is applied before reduction. Reduction uses
+ * deterministic low-before-high grouping, although callback invocations may
+ * run in parallel and therefore have no deterministic temporal order.
+ *
+ * The caller must protect <result>, <dd>, <variables>, and
+ * <operation->identity>. Returns SYLVAN_OK on success or a negative status on
+ * failure, leaving <result> unchanged.
+ */
+static inline int mtbdd_map_reduce(
+    MTBDD *result, MTBDD dd, BDDSET variables,
+    const mtbdd_map_reduce_op *operation);
 
 /**
  * Callback function types for abstraction.

@@ -1419,6 +1419,189 @@ int mtbdd_apply_unary_CALL(lace_worker* lace, MTBDD *destination, MTBDD dd, mtbd
     return SYLVAN_OK;
 }
 
+TASK(int, mtbdd_map_reduce_rec, MTBDD*, result, MTBDD, dd, BDDSET, variables, const mtbdd_map_reduce_op*, operation)
+
+static int
+mtbdd_map_reduce_map_leaf_CALL(lace_worker *lace, MTBDD *destination, MTBDD leaf,
+                               const mtbdd_map_reduce_op *operation)
+{
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    int status = operation->map(lace, &computed, leaf, operation->context);
+    if (status == SYLVAN_OK) {
+        if (computed == mtbdd_invalid || !mtbdd_is_leaf(computed)) {
+            status = SYLVAN_ERR_CALLBACK;
+        } else {
+            *destination = computed;
+        }
+    } else if (status > SYLVAN_OK) {
+        status = SYLVAN_ERR_CALLBACK;
+    }
+    mtbdd_refs_popptr(1);
+    return status;
+}
+
+static int
+mtbdd_map_reduce_reduce_CALL(lace_worker *lace, MTBDD *destination,
+                             MTBDD a, MTBDD b, size_t skipped,
+                             const mtbdd_map_reduce_op *operation)
+{
+    if (a == operation->identity) {
+        *destination = skipped == 0 ? b : a;
+        return SYLVAN_OK;
+    }
+    if (skipped == 0 && b == operation->identity) {
+        *destination = a;
+        return SYLVAN_OK;
+    }
+
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    int status = operation->reduce(
+        lace, &computed, a, b, skipped, operation->context);
+    if (status == SYLVAN_OK) {
+        if (computed == mtbdd_invalid) {
+            status = SYLVAN_ERR_CALLBACK;
+        } else {
+            *destination = computed;
+        }
+    } else if (status > SYLVAN_OK) {
+        status = SYLVAN_ERR_CALLBACK;
+    }
+    mtbdd_refs_popptr(1);
+    return status;
+}
+
+int
+mtbdd_map_reduce_rec_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd,
+                          BDDSET variables,
+                          const mtbdd_map_reduce_op *operation)
+{
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+
+    sylvan_gc_test(lace);
+    sylvan_stats_count(MTBDD_MAP_REDUCE);
+
+    if (operation->cache_id != 0 &&
+        cache_get3(operation->cache_id, dd, variables, 0, &computed)) {
+        sylvan_stats_count(MTBDD_MAP_REDUCE_CACHED);
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
+    }
+
+    BDDSET remaining = variables;
+    size_t skipped = 0;
+    int status = SYLVAN_OK;
+
+    if (mtbdd_is_leaf(dd)) {
+        while (!bdd_set_is_empty(remaining)) {
+            if (skipped == SIZE_MAX) {
+                mtbdd_refs_popptr(1);
+                return SYLVAN_ERR_OVERFLOW;
+            }
+            skipped++;
+            remaining = bdd_set_next(remaining);
+        }
+        status = mtbdd_map_reduce_map_leaf_CALL(
+            lace, &computed, dd, operation);
+    } else {
+        const mtbddnode *node = MTBDD_GETNODE(dd);
+        const uint32_t level = mtbddnode_getvariable(node);
+        while (!bdd_set_is_empty(remaining) &&
+               bdd_set_first(remaining) < level) {
+            if (skipped == SIZE_MAX) {
+                mtbdd_refs_popptr(1);
+                return SYLVAN_ERR_OVERFLOW;
+            }
+            skipped++;
+            remaining = bdd_set_next(remaining);
+        }
+
+        MTBDD low = mtbdd_invalid;
+        MTBDD high = mtbdd_invalid;
+        mtbdd_refs_pushptr(&low);
+        mtbdd_refs_pushptr(&high);
+
+        if (bdd_set_is_empty(remaining) ||
+            level < bdd_set_first(remaining)) {
+            mtbdd_map_reduce_rec_SPAWN(
+                lace, &high, node_gethigh(dd, node), remaining, operation);
+            status = mtbdd_map_reduce_rec_CALL(
+                lace, &low, node_getlow(dd, node), remaining, operation);
+            const int high_status = mtbdd_map_reduce_rec_SYNC(lace);
+            if (status == SYLVAN_OK) status = high_status;
+            if (status == SYLVAN_OK) {
+                status = _mtbdd_try_make_node(
+                    &computed, level, low, high);
+            }
+        } else {
+            const BDDSET next = bdd_set_next(remaining);
+            mtbdd_map_reduce_rec_SPAWN(
+                lace, &high, node_gethigh(dd, node), next, operation);
+            status = mtbdd_map_reduce_rec_CALL(
+                lace, &low, node_getlow(dd, node), next, operation);
+            const int high_status = mtbdd_map_reduce_rec_SYNC(lace);
+            if (status == SYLVAN_OK) status = high_status;
+            if (status == SYLVAN_OK) {
+                status = mtbdd_map_reduce_reduce_CALL(
+                    lace, &computed, low, high, 0, operation);
+            }
+        }
+
+        mtbdd_refs_popptr(2);
+    }
+
+    if (status == SYLVAN_OK && skipped != 0) {
+        MTBDD reduced = mtbdd_invalid;
+        mtbdd_refs_pushptr(&reduced);
+        status = mtbdd_map_reduce_reduce_CALL(
+            lace, &reduced, computed, computed, skipped, operation);
+        if (status == SYLVAN_OK) computed = reduced;
+        mtbdd_refs_popptr(1);
+    }
+
+    if (status == SYLVAN_OK && operation->cache_id != 0) {
+        if (cache_put3(operation->cache_id, dd, variables, 0, computed)) {
+            sylvan_stats_count(MTBDD_MAP_REDUCE_CACHEDPUT);
+        }
+    }
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(1);
+    return status;
+}
+
+int
+mtbdd_map_reduce_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd,
+                      BDDSET variables,
+                      const mtbdd_map_reduce_op *operation)
+{
+    if (destination == NULL || dd == mtbdd_invalid ||
+        variables == mtbdd_invalid || operation == NULL ||
+        operation->map == NULL || operation->reduce == NULL ||
+        operation->identity == mtbdd_invalid ||
+        !mtbdd_is_leaf(operation->identity)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    if (operation->cache_id != 0 &&
+        (operation->cache_id < (UINT64_C(512) << 40) ||
+         (operation->cache_id & UINT64_C(0x000000ffffffffff)) != 0)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    MTBDD computed = mtbdd_invalid;
+    MTBDD identity = operation->identity;
+    mtbdd_refs_pushptr(&computed);
+    mtbdd_refs_pushptr(&identity);
+    const int status = mtbdd_map_reduce_rec_CALL(
+        lace, &computed, dd, variables, operation);
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(2);
+    return status;
+}
+
 static int
 _mtbdd_apply_callback_result(MTBDD *destination, MTBDD result)
 {

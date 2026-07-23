@@ -77,6 +77,7 @@ struct
     {2, MTBDD_APPLY, "MTBDD binary apply"},
     {2, MTBDD_UAPPLY, "MTBDD unary apply"},
     {2, MTBDD_ABSTRACT, "MTBDD abstract"},
+    {2, MTBDD_MAP_REDUCE, "MTBDD map reduce"},
     {2, MTBDD_ITE, "MTBDD ite"},
     {2, MTBDD_ALL_EQUAL_ABS, "MTBDD all equal abs"},
     {2, MTBDD_ALL_EQUAL_REL, "MTBDD all equal rel"},

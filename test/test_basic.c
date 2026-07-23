@@ -5,6 +5,7 @@
 #include <time.h>
 #include <sys/types.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <math.h>
 
 #include <lace.h>
@@ -1317,6 +1318,277 @@ test_mtbdd_abstract_destinations_CALL(lace_worker *lace)
     sylvan_gc_CALL(lace);
     test_assert(mtbdd_is_leaf(product) && mtbdd_leaf_int64(product) == 12);
     mtbdd_refs_popptr(18);
+    return 0;
+}
+
+struct test_map_reduce_context {
+    int64_t addend;
+    int64_t undefined_value;
+    int64_t fail_map_value;
+    int fail_reduce;
+};
+
+static int
+test_map_reduce_map(lace_worker *lace, MTBDD *destination, MTBDD leaf,
+                    void *context)
+{
+    (void)lace;
+    const struct test_map_reduce_context *state =
+        (const struct test_map_reduce_context*)context;
+    if (leaf == mtbdd_undefined) {
+        *destination = mtbdd_int64(state->undefined_value);
+        return SYLVAN_OK;
+    }
+    if (leaf == bdd_true) {
+        *destination = mtbdd_int64(1 + state->addend);
+        return SYLVAN_OK;
+    }
+    if (mtbdd_is_nan(leaf)) {
+        *destination = leaf;
+        return SYLVAN_OK;
+    }
+    if (mtbdd_leaf_type(leaf) != 0) return SYLVAN_ERR_INVALID;
+    const int64_t value = mtbdd_leaf_int64(leaf);
+    if (value == state->fail_map_value) return SYLVAN_ERR_IO;
+    *destination = mtbdd_int64(value + state->addend);
+    return SYLVAN_OK;
+}
+
+static int
+test_map_reduce_sum(lace_worker *lace, MTBDD *destination, MTBDD a, MTBDD b,
+                    size_t skipped, void *context)
+{
+    const struct test_map_reduce_context *state =
+        (const struct test_map_reduce_context*)context;
+    if (state->fail_reduce) return SYLVAN_ERR_IO;
+    if (skipped > (size_t)INT_MAX) return SYLVAN_ERR_OVERFLOW;
+    return mtbdd_abstract_op_plus_CALL(
+        lace, destination, a, b, (int)skipped);
+}
+
+static int
+test_map_reduce_nonleaf(lace_worker *lace, MTBDD *destination, MTBDD leaf,
+                        void *context)
+{
+    (void)lace;
+    (void)leaf;
+    (void)context;
+    return bdd_var_at_level(destination, 7);
+}
+
+static int
+test_map_reduce_empty_success(lace_worker *lace, MTBDD *destination, MTBDD leaf,
+                              void *context)
+{
+    (void)lace;
+    (void)destination;
+    (void)leaf;
+    (void)context;
+    return SYLVAN_OK;
+}
+
+static int
+test_map_reduce_positive_status(lace_worker *lace, MTBDD *destination,
+                                MTBDD leaf, void *context)
+{
+    (void)lace;
+    (void)destination;
+    (void)leaf;
+    (void)context;
+    return SYLVAN_APPLY_RECURSE;
+}
+
+static int
+test_map_reduce_reduce_empty_success(
+    lace_worker *lace, MTBDD *destination, MTBDD a, MTBDD b,
+    size_t skipped, void *context)
+{
+    (void)lace;
+    (void)destination;
+    (void)a;
+    (void)b;
+    (void)skipped;
+    (void)context;
+    return SYLVAN_OK;
+}
+
+TASK(int, test_mtbdd_map_reduce_destinations)
+int
+test_mtbdd_map_reduce_destinations_CALL(lace_worker *lace)
+{
+    const uint32_t all_levels[] = {0, 1, 2};
+    const uint32_t y_level[] = {2};
+    const uint32_t skipped_level[] = {1};
+    MTBDD zero = mtbdd_int64(0);
+    MTBDD one = mtbdd_invalid;
+    MTBDD two = mtbdd_invalid;
+    MTBDD three = mtbdd_invalid;
+    MTBDD four = mtbdd_invalid;
+    BDD x = mtbdd_invalid;
+    BDD y = mtbdd_invalid;
+    MTBDD low_branch = mtbdd_invalid;
+    MTBDD high_branch = mtbdd_invalid;
+    MTBDD function = mtbdd_invalid;
+    BDDSET all_variables = mtbdd_invalid;
+    BDDSET y_variables = mtbdd_invalid;
+    BDDSET skipped_variables = mtbdd_invalid;
+    MTBDD result = mtbdd_invalid;
+    MTBDD mapped = mtbdd_invalid;
+    MTBDD skipped = mtbdd_invalid;
+    MTBDD undefined_result = mtbdd_invalid;
+    MTBDD cached = mtbdd_invalid;
+    MTBDD unchanged = bdd_true;
+
+    mtbdd_refs_pushptr(&zero);
+    one = mtbdd_int64(1);
+    mtbdd_refs_pushptr(&one);
+    two = mtbdd_int64(2);
+    mtbdd_refs_pushptr(&two);
+    three = mtbdd_int64(3);
+    mtbdd_refs_pushptr(&three);
+    four = mtbdd_int64(4);
+    mtbdd_refs_pushptr(&four);
+    mtbdd_refs_pushptr(&x);
+    mtbdd_refs_pushptr(&y);
+    mtbdd_refs_pushptr(&low_branch);
+    mtbdd_refs_pushptr(&high_branch);
+    mtbdd_refs_pushptr(&function);
+    mtbdd_refs_pushptr(&all_variables);
+    mtbdd_refs_pushptr(&y_variables);
+    mtbdd_refs_pushptr(&skipped_variables);
+    mtbdd_refs_pushptr(&result);
+    mtbdd_refs_pushptr(&mapped);
+    mtbdd_refs_pushptr(&skipped);
+    mtbdd_refs_pushptr(&undefined_result);
+    mtbdd_refs_pushptr(&cached);
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_assert(bdd_var_at_level(&x, 0) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&y, 2) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &low_branch, y, two, one) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &high_branch, y, four, three) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &function, x, high_branch, low_branch) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(&all_variables, all_levels, 3) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(&y_variables, y_level, 1) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(&skipped_variables, skipped_level, 1) == SYLVAN_OK);
+
+    struct test_map_reduce_context context = {1, 7, INT64_MIN, 0};
+    mtbdd_map_reduce_op operation = {
+        test_map_reduce_map,
+        test_map_reduce_sum,
+        zero,
+        &context,
+        0
+    };
+
+    mtbdd_map_reduce_SPAWN(
+        lace, &result, function, all_variables, &operation);
+    mapped = function;
+    int status = mtbdd_map_reduce_CALL(
+        lace, &mapped, mapped, bdd_true, &operation);
+    int parallel_status = mtbdd_map_reduce_SYNC(lace);
+    test_assert(status == SYLVAN_OK);
+    test_assert(parallel_status == SYLVAN_OK);
+    test_assert(mtbdd_is_leaf(result) && mtbdd_leaf_int64(result) == 28);
+
+    MTBDD x_low, x_high, y_low, y_high;
+    mtbdd_cofactors(mapped, &x_low, &x_high);
+    mtbdd_cofactors(x_low, &y_low, &y_high);
+    test_assert(mtbdd_leaf_int64(y_low) == 2);
+    test_assert(mtbdd_leaf_int64(y_high) == 3);
+    mtbdd_cofactors(x_high, &y_low, &y_high);
+    test_assert(mtbdd_leaf_int64(y_low) == 4);
+    test_assert(mtbdd_leaf_int64(y_high) == 5);
+
+    test_assert(mtbdd_map_reduce(
+        &result, function, y_variables, &operation) == SYLVAN_OK);
+    mtbdd_cofactors(result, &x_low, &x_high);
+    test_assert(mtbdd_leaf_int64(x_low) == 5);
+    test_assert(mtbdd_leaf_int64(x_high) == 9);
+
+    test_assert(mtbdd_map_reduce(
+        &skipped, function, skipped_variables, &operation) == SYLVAN_OK);
+    mtbdd_cofactors(skipped, &x_low, &x_high);
+    mtbdd_cofactors(x_low, &y_low, &y_high);
+    test_assert(mtbdd_leaf_int64(y_low) == 4);
+    test_assert(mtbdd_leaf_int64(y_high) == 6);
+    mtbdd_cofactors(x_high, &y_low, &y_high);
+    test_assert(mtbdd_leaf_int64(y_low) == 8);
+    test_assert(mtbdd_leaf_int64(y_high) == 10);
+
+    test_assert(mtbdd_map_reduce(
+        &undefined_result, mtbdd_undefined, y_variables, &operation) == SYLVAN_OK);
+    test_assert(mtbdd_is_leaf(undefined_result));
+    test_assert(mtbdd_leaf_int64(undefined_result) == 14);
+
+    operation.cache_id = cache_next_opid();
+    test_assert(mtbdd_map_reduce(
+        &cached, function, all_variables, &operation) == SYLVAN_OK);
+    test_assert(mtbdd_is_leaf(cached) && mtbdd_leaf_int64(cached) == 28);
+    sylvan_gc_CALL(lace);
+    test_assert(mtbdd_map_reduce(
+        &cached, function, all_variables, &operation) == SYLVAN_OK);
+    test_assert(mtbdd_is_leaf(cached) && mtbdd_leaf_int64(cached) == 28);
+
+    operation.cache_id = 0;
+    context.fail_map_value = 4;
+    test_assert(mtbdd_map_reduce(
+        &unchanged, function, all_variables, &operation) == SYLVAN_ERR_IO);
+    test_assert(unchanged == bdd_true);
+    context.fail_map_value = INT64_MIN;
+    context.fail_reduce = 1;
+    test_assert(mtbdd_map_reduce(
+        &unchanged, function, all_variables, &operation) == SYLVAN_ERR_IO);
+    test_assert(unchanged == bdd_true);
+    context.fail_reduce = 0;
+    operation.reduce = test_map_reduce_reduce_empty_success;
+    test_assert(mtbdd_map_reduce(
+        &unchanged, function, all_variables, &operation) == SYLVAN_ERR_CALLBACK);
+    test_assert(unchanged == bdd_true);
+    operation.reduce = test_map_reduce_sum;
+
+    operation.map = test_map_reduce_nonleaf;
+    test_assert(mtbdd_map_reduce(
+        &unchanged, one, bdd_true, &operation) == SYLVAN_ERR_CALLBACK);
+    test_assert(unchanged == bdd_true);
+    operation.map = test_map_reduce_empty_success;
+    test_assert(mtbdd_map_reduce(
+        &unchanged, one, bdd_true, &operation) == SYLVAN_ERR_CALLBACK);
+    test_assert(unchanged == bdd_true);
+    operation.map = test_map_reduce_positive_status;
+    test_assert(mtbdd_map_reduce(
+        &unchanged, one, bdd_true, &operation) == SYLVAN_ERR_CALLBACK);
+    test_assert(unchanged == bdd_true);
+    operation.map = test_map_reduce_map;
+
+    test_assert(mtbdd_map_reduce(
+        NULL, function, all_variables, &operation) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_map_reduce(
+        &unchanged, mtbdd_invalid, all_variables, &operation) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_map_reduce(
+        &unchanged, function, mtbdd_invalid, &operation) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_map_reduce(
+        &unchanged, function, all_variables, NULL) == SYLVAN_ERR_INVALID);
+    operation.map = NULL;
+    test_assert(mtbdd_map_reduce(
+        &unchanged, function, all_variables, &operation) == SYLVAN_ERR_INVALID);
+    operation.map = test_map_reduce_map;
+    operation.reduce = NULL;
+    test_assert(mtbdd_map_reduce(
+        &unchanged, function, all_variables, &operation) == SYLVAN_ERR_INVALID);
+    operation.reduce = test_map_reduce_sum;
+    operation.identity = x;
+    test_assert(mtbdd_map_reduce(
+        &unchanged, function, all_variables, &operation) == SYLVAN_ERR_INVALID);
+    operation.identity = zero;
+    operation.cache_id = 1;
+    test_assert(mtbdd_map_reduce(
+        &unchanged, function, all_variables, &operation) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+
+    sylvan_gc_CALL(lace);
+    test_assert(mtbdd_is_leaf(cached) && mtbdd_leaf_int64(cached) == 28);
+    mtbdd_refs_popptr(19);
     return 0;
 }
 
@@ -3460,6 +3732,7 @@ int runtests_CALL(lace_worker* lace)
     if (test_mtbdd_equal_double_destinations_CALL(lace)) return 1;
     if (test_mtbdd_order_destinations_CALL(lace)) return 1;
     if (test_mtbdd_abstract_destinations_CALL(lace)) return 1;
+    if (test_mtbdd_map_reduce_destinations_CALL(lace)) return 1;
     if (test_eval_destinations_CALL(lace)) return 1;
     if (test_mtbdd_eval_compose_destinations_CALL(lace)) return 1;
     if (test_count_destinations_CALL(lace)) return 1;

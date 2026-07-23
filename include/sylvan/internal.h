@@ -52,6 +52,9 @@ int _zdd_try_make_node(ZDD *destination, uint32_t var, ZDD low, ZDD high);
 int _listdd_try_make_node(LISTDD *destination, uint32_t value, LISTDD down, LISTDD right);
 int _listdd_try_make_copy_node(LISTDD *destination, LISTDD down, LISTDD right);
 
+/** Assert that <set> is a referenced conjunction of positive variables. */
+void bdd_set_assert_valid(BDDSET set);
+
 /** The ZDD terminal representing the family containing only the empty set. */
 static const ZDD zdd_base = UINT64_C(1);
 
@@ -75,7 +78,7 @@ static const uint64_t CACHE_BDD_RELNEXT             = (7LL<<40);
 static const uint64_t CACHE_BDD_RELPREV             = (8LL<<40);
 static const uint64_t CACHE_BDD_SATCOUNT            = (9LL<<40);
 static const uint64_t CACHE_BDD_COMPOSE             = (10LL<<40);
-static const uint64_t CACHE_BDD_RESTRICT            = (11LL<<40);
+static const uint64_t CACHE_BDD_SIMPLIFY            = (11LL<<40);
 static const uint64_t CACHE_BDD_CONSTRAIN           = (12LL<<40);
 static const uint64_t CACHE_BDD_CLOSURE             = (13LL<<40);
 static const uint64_t CACHE_BDD_ISBDD               = (14LL<<40);

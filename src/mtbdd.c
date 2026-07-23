@@ -4290,7 +4290,7 @@ bdd_set_count(MTBDD set)
  * and if all nodes are marked in the nodes table (detects violations after garbage collection).
  */
 void
-bdd_set_is_valid(MTBDD set)
+bdd_set_assert_valid(MTBDD set)
 {
     while (set != bdd_true) {
         assert(set != mtbdd_undefined);

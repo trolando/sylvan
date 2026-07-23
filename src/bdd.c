@@ -597,11 +597,11 @@ int bdd_constrain_CALL(lace_worker* lace, BDD *destination, BDD f, BDD c)
 }
 
 /**
- * Compute restrict f@c, which uses a heuristic to try and minimize a BDD f with respect to a care function c
+ * Simplify f with respect to the care function c using Coudert-Madre.
  */
-TASK(int, bdd_restrict_internal, BDD*, result, BDD, f, BDD, c)
+TASK(int, bdd_simplify_internal, BDD*, result, BDD, f, BDD, c)
 
-int bdd_restrict_internal_CALL(lace_worker* lace, BDD *destination, BDD f, BDD c)
+int bdd_simplify_internal_CALL(lace_worker* lace, BDD *destination, BDD f, BDD c)
 {
     if (destination == NULL || f == mtbdd_invalid || c == mtbdd_invalid) return SYLVAN_ERR_INVALID;
 
@@ -616,7 +616,7 @@ int bdd_restrict_internal_CALL(lace_worker* lace, BDD *destination, BDD f, BDD c
     sylvan_gc_test(lace);
 
     /* Count operation */
-    sylvan_stats_count(BDD_RESTRICT);
+    sylvan_stats_count(BDD_SIMPLIFY);
 
     bddnode* nf = MTBDD_GETNODE(f);
     bddnode* nc = MTBDD_GETNODE(c);
@@ -640,8 +640,8 @@ int bdd_restrict_internal_CALL(lace_worker* lace, BDD *destination, BDD f, BDD c
     mtbdd_refs_pushptr(&high);
 
     /* Consult cache */
-    if (cache_get3(CACHE_BDD_RESTRICT, f, c, 0, &computed)) {
-        sylvan_stats_count(BDD_RESTRICT_CACHED);
+    if (cache_get3(CACHE_BDD_SIMPLIFY, f, c, 0, &computed)) {
+        sylvan_stats_count(BDD_SIMPLIFY_CACHED);
         *destination = mark ? bdd_not(computed) : computed;
         mtbdd_refs_popptr(3);
         return SYLVAN_OK;
@@ -653,7 +653,7 @@ int bdd_restrict_internal_CALL(lace_worker* lace, BDD *destination, BDD f, BDD c
         status = bdd_and_CALL(lace, &low, bdd_not(node_low(c, nc)), bdd_not(node_high(c, nc)));
         if (status == SYLVAN_OK) {
             low = bdd_not(low);
-            status = bdd_restrict_internal_CALL(lace, &computed, f, low);
+            status = bdd_simplify_internal_CALL(lace, &computed, f, low);
         }
     } else {
         BDD fLow = node_low(f,nf), fHigh = node_high(f,nf);
@@ -666,15 +666,15 @@ int bdd_restrict_internal_CALL(lace_worker* lace, BDD *destination, BDD f, BDD c
         }
         if (cLow == bdd_false) {
             /* sibling-substitution */
-            status = bdd_restrict_internal_CALL(lace, &computed, fHigh, cHigh);
+            status = bdd_simplify_internal_CALL(lace, &computed, fHigh, cHigh);
         } else if (cHigh == bdd_false) {
             /* sibling-substitution */
-            status = bdd_restrict_internal_CALL(lace, &computed, fLow, cLow);
+            status = bdd_simplify_internal_CALL(lace, &computed, fLow, cLow);
         } else {
             /* parallel recursion */
-            bdd_restrict_internal_SPAWN(lace, &low, fLow, cLow);
-            int high_status = bdd_restrict_internal_CALL(lace, &high, fHigh, cHigh);
-            int low_status = bdd_restrict_internal_SYNC(lace);
+            bdd_simplify_internal_SPAWN(lace, &low, fLow, cLow);
+            int high_status = bdd_simplify_internal_CALL(lace, &high, fHigh, cHigh);
+            int low_status = bdd_simplify_internal_SYNC(lace);
             if (low_status != SYLVAN_OK || high_status != SYLVAN_OK) {
                 status = high_status != SYLVAN_OK ? high_status : low_status;
             } else {
@@ -688,7 +688,7 @@ int bdd_restrict_internal_CALL(lace_worker* lace, BDD *destination, BDD f, BDD c
         return status;
     }
 
-    if (cache_put3(CACHE_BDD_RESTRICT, f, c, 0, computed)) sylvan_stats_count(BDD_RESTRICT_CACHEDPUT);
+    if (cache_put3(CACHE_BDD_SIMPLIFY, f, c, 0, computed)) sylvan_stats_count(BDD_SIMPLIFY_CACHEDPUT);
 
     *destination = mark ? bdd_not(computed) : computed;
     mtbdd_refs_popptr(3);
@@ -696,13 +696,13 @@ int bdd_restrict_internal_CALL(lace_worker* lace, BDD *destination, BDD f, BDD c
 }
 
 int
-bdd_restrict_CALL(lace_worker* lace, BDD *destination, BDD f, BDD c)
+bdd_simplify_CALL(lace_worker* lace, BDD *destination, BDD f, BDD c)
 {
     if (destination == NULL || f == mtbdd_invalid || c == mtbdd_invalid) return SYLVAN_ERR_INVALID;
 
     BDD computed = mtbdd_invalid;
     mtbdd_refs_pushptr(&computed);
-    int status = bdd_restrict_internal_CALL(lace, &computed, f, c);
+    int status = bdd_simplify_internal_CALL(lace, &computed, f, c);
     if (status == SYLVAN_OK) {
         *destination = mtbdd_node_count(computed) <= mtbdd_node_count(f) ? computed : f;
     }

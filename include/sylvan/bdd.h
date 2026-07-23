@@ -76,18 +76,11 @@ int bdd_set_add(BDDSET *result, BDDSET set, uint32_t level);
 /** Remove the variable at level from set. */
 int bdd_set_remove(BDDSET *result, BDDSET set, uint32_t level);
 
-/** Check that set is a valid, referenced conjunction of positive variables. */
-void bdd_set_is_valid(BDDSET set);
-
 /**
  * Check if the BDD represents constants true or false.
  * For strictly non-MT BDDs (does not test if terminal)
  */
 static inline int bdd_is_leaf(MTBDD bdd);
-
-/**
- * Return 1 if the given BDD is a node instead of a leaf/terminal
- */
 
 /**
  * Returns the negation of the BDD (using complement edge)
@@ -148,21 +141,9 @@ static inline int bdd_nor(BDD *result, BDD a, BDD b);
 static inline int bdd_imp(BDD *result, BDD a, BDD b);
 
 /**
- * Compute reverse implication b → a.
- */
-
-/**
- * Compute bi-implication (logical equivalence) of two BDDs.
- */
-
-/**
  * Compute a ∧ ¬b (set difference when BDDs encode sets).
  */
 static inline int bdd_diff(BDD *result, BDD a, BDD b);
-
-/**
- * Compute ¬a ∧ b (reverse difference).
- */
 
 /**
  * Return 1 if a and b have no satisfying assignment in common, 0 otherwise.
@@ -173,10 +154,6 @@ static inline char bdd_disjoint(BDD a, BDD b);
  * Return 1 if a implies b (every assignment satisfying a also satisfies b).
  */
 static inline char bdd_subseteq(BDD a, BDD b);
-
-/**
- * Create a BDD representing just the negation of <var>.
- */
 
 /**
  * Existential quantification: compute ∃ <vars> : <dd>.
@@ -268,12 +245,11 @@ static inline int bdd_constrain(BDD *result, BDD f, BDD c);
 int bdd_cofactor(BDD *result, BDD f, BDD cube);
 
 /**
- * Compute restrict f@c, which uses a heuristic to try and minimize a BDD f
- * with respect to a care function c.
- * Similar to constrain, but avoids introducing variables from c into f.
- * The public operation returns <f> unchanged if the computed result is larger.
+ * Simplify <f> with respect to the care function <c> using the Coudert-Madre
+ * algorithm. The result agrees with <f> wherever <c> is true, does not
+ * introduce variables that occur only in <c>, and is never larger than <f>.
  */
-static inline int bdd_restrict(BDD *result, BDD f, BDD c);
+static inline int bdd_simplify(BDD *result, BDD f, BDD c);
 
 /**
  * Function composition.

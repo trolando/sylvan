@@ -238,9 +238,9 @@ public:
     Bdd Constrain(const Bdd &c) const;
 
     /**
-     * @brief Computes the BDD restrict according to Coudert and Madre's algorithm (ICCAD90).
+     * @brief Simplifies the BDD using Coudert and Madre's algorithm (ICCAD90).
      */
-    Bdd Restrict(const Bdd &c) const;
+    Bdd Simplify(const Bdd &c) const;
 
     /**
      * @brief Functional composition. Whenever a variable v in the map m is found in the BDD,

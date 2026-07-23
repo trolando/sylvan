@@ -379,9 +379,9 @@ Bdd::Constrain(const Bdd &c) const
 }
 
 Bdd
-Bdd::Restrict(const Bdd &c) const
+Bdd::Simplify(const Bdd &c) const
 {
-    return apply_binary(bdd_restrict, bdd, c.bdd);
+    return apply_binary(bdd_simplify, bdd, c.bdd);
 }
 
 Bdd

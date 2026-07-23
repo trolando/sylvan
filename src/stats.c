@@ -61,7 +61,7 @@ struct
     {2, BDD_RELPREV, "BDD relprev"},
     {2, BDD_CLOSURE, "BDD closure"},
     {2, BDD_COMPOSE, "BDD compose"},
-    {2, BDD_RESTRICT, "BDD restrict"},
+    {2, BDD_SIMPLIFY, "BDD simplify"},
     {2, BDD_CONSTRAIN, "BDD constrain"},
     {2, BDD_SUPPORT, "BDD support"},
     {2, BDD_SATCOUNT, "BDD satcount"},

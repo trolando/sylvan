@@ -31,6 +31,10 @@ using bdd_or_cube_op = int (*)(BDD*, BDD, BDDSET, const uint8_t*);
 using mtbdd_support_op = int (*)(BDDSET*, MTBDD);
 using mtbdd_compose_op = int (*)(MTBDD*, MTBDD, MTBDDMAP);
 using mtbdd_threshold_op = int (*)(MTBDD*, MTBDD, double);
+using mtbdd_predicate_op = int (*)(int*, MTBDD, MTBDD);
+using mtbdd_tolerance_predicate_op = int (*)(int*, MTBDD, MTBDD, double);
+using mtbdd_compare_op = int (*)(BDD*, MTBDD, MTBDD);
+using mtbdd_tolerance_compare_op = int (*)(BDD*, MTBDD, MTBDD, double);
 
 BDD
 apply_binary(bdd_binary_op op, BDD a, BDD b)
@@ -138,6 +142,42 @@ apply_mtbdd_threshold(mtbdd_threshold_op op, MTBDD dd, double value)
     MTBDD result = mtbdd_invalid;
     mtbdd_protect(&result);
     int status = op(&result, dd, value);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+bool
+apply_mtbdd_predicate(mtbdd_predicate_op op, MTBDD a, MTBDD b)
+{
+    int result = 0;
+    return op(&result, a, b) == SYLVAN_OK && result != 0;
+}
+
+bool
+apply_mtbdd_tolerance_predicate(mtbdd_tolerance_predicate_op op,
+                                MTBDD a, MTBDD b, double tolerance)
+{
+    int result = 0;
+    return op(&result, a, b, tolerance) == SYLVAN_OK && result != 0;
+}
+
+Bdd
+apply_mtbdd_compare(mtbdd_compare_op op, MTBDD a, MTBDD b)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = op(&result, a, b);
+    mtbdd_unprotect(&result);
+    return status == SYLVAN_OK ? result : mtbdd_invalid;
+}
+
+Bdd
+apply_mtbdd_tolerance_compare(mtbdd_tolerance_compare_op op,
+                              MTBDD a, MTBDD b, double tolerance)
+{
+    BDD result = mtbdd_invalid;
+    mtbdd_protect(&result);
+    int status = op(&result, a, b, tolerance);
     mtbdd_unprotect(&result);
     return status == SYLVAN_OK ? result : mtbdd_invalid;
 }
@@ -871,6 +911,56 @@ Mtbdd::Max(const Mtbdd &other) const
     Mtbdd result(mtbdd_invalid);
     (void)mtbdd_max(&result.mtbdd, mtbdd, other.mtbdd);
     return result;
+}
+
+bool Mtbdd::AllLeq(const Mtbdd &other) const { return apply_mtbdd_predicate(mtbdd_all_leq, mtbdd, other.mtbdd); }
+bool Mtbdd::AllLt(const Mtbdd &other) const { return apply_mtbdd_predicate(mtbdd_all_lt, mtbdd, other.mtbdd); }
+bool Mtbdd::AllGeq(const Mtbdd &other) const { return apply_mtbdd_predicate(mtbdd_all_geq, mtbdd, other.mtbdd); }
+bool Mtbdd::AllGt(const Mtbdd &other) const { return apply_mtbdd_predicate(mtbdd_all_gt, mtbdd, other.mtbdd); }
+bool Mtbdd::AnyLeq(const Mtbdd &other) const { return apply_mtbdd_predicate(mtbdd_any_leq, mtbdd, other.mtbdd); }
+bool Mtbdd::AnyLt(const Mtbdd &other) const { return apply_mtbdd_predicate(mtbdd_any_lt, mtbdd, other.mtbdd); }
+bool Mtbdd::AnyGeq(const Mtbdd &other) const { return apply_mtbdd_predicate(mtbdd_any_geq, mtbdd, other.mtbdd); }
+bool Mtbdd::AnyGt(const Mtbdd &other) const { return apply_mtbdd_predicate(mtbdd_any_gt, mtbdd, other.mtbdd); }
+
+bool
+Mtbdd::AllEqualAbs(const Mtbdd &other, double tolerance) const
+{
+    return apply_mtbdd_tolerance_predicate(mtbdd_all_equal_abs_double, mtbdd, other.mtbdd, tolerance);
+}
+
+bool
+Mtbdd::AllEqualRel(const Mtbdd &other, double tolerance) const
+{
+    return apply_mtbdd_tolerance_predicate(mtbdd_all_equal_rel_double, mtbdd, other.mtbdd, tolerance);
+}
+
+bool
+Mtbdd::AnyEqualAbs(const Mtbdd &other, double tolerance) const
+{
+    return apply_mtbdd_tolerance_predicate(mtbdd_any_equal_abs_double, mtbdd, other.mtbdd, tolerance);
+}
+
+bool
+Mtbdd::AnyEqualRel(const Mtbdd &other, double tolerance) const
+{
+    return apply_mtbdd_tolerance_predicate(mtbdd_any_equal_rel_double, mtbdd, other.mtbdd, tolerance);
+}
+
+Bdd Mtbdd::CompareLeq(const Mtbdd &other) const { return apply_mtbdd_compare(mtbdd_compare_leq, mtbdd, other.mtbdd); }
+Bdd Mtbdd::CompareLt(const Mtbdd &other) const { return apply_mtbdd_compare(mtbdd_compare_lt, mtbdd, other.mtbdd); }
+Bdd Mtbdd::CompareGeq(const Mtbdd &other) const { return apply_mtbdd_compare(mtbdd_compare_geq, mtbdd, other.mtbdd); }
+Bdd Mtbdd::CompareGt(const Mtbdd &other) const { return apply_mtbdd_compare(mtbdd_compare_gt, mtbdd, other.mtbdd); }
+
+Bdd
+Mtbdd::CompareEqualAbs(const Mtbdd &other, double tolerance) const
+{
+    return apply_mtbdd_tolerance_compare(mtbdd_compare_equal_abs_double, mtbdd, other.mtbdd, tolerance);
+}
+
+Bdd
+Mtbdd::CompareEqualRel(const Mtbdd &other, double tolerance) const
+{
+    return apply_mtbdd_tolerance_compare(mtbdd_compare_equal_rel_double, mtbdd, other.mtbdd, tolerance);
 }
 
 Mtbdd

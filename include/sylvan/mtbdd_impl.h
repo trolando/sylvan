@@ -243,38 +243,52 @@ TASK(int, mtbdd_strict_threshold_double, MTBDD*, result, MTBDD, a, double, b);
  * For two Double MTBDDs, calculate whether they are equal module some value epsilon
  * i.e. abs(a-b) < e
  */
-TASK(int, mtbdd_equal_abs_double, MTBDD*, result, MTBDD, a, MTBDD, b, double, c);
+TASK(int, mtbdd_all_equal_abs_double, int*, result, MTBDD, a, MTBDD, b, double, c);
 
 /**
  * For two Double MTBDDs, calculate whether they are equal modulo some value epsilon
  * This version computes the relative difference vs the value in a.
  * i.e. abs((a-b)/a) < e
  */
-TASK(int, mtbdd_equal_rel_double, MTBDD*, result, MTBDD, a, MTBDD, b, double, c);
+TASK(int, mtbdd_all_equal_rel_double, int*, result, MTBDD, a, MTBDD, b, double, c);
 
 /**
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) <= b(s), mtbdd_undefined otherwise.
  * For domains not in a / b, assume True.
  */
-TASK(int, mtbdd_leq, MTBDD*, result, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_all_leq, int*, result, MTBDD, a, MTBDD, b);
 
 /**
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) < b(s), mtbdd_undefined otherwise.
  * For domains not in a / b, assume True.
  */
-TASK(int, mtbdd_lt, MTBDD*, result, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_all_lt, int*, result, MTBDD, a, MTBDD, b);
 
 /**
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) >= b(s), mtbdd_undefined otherwise.
  * For domains not in a / b, assume True.
  */
-TASK(int, mtbdd_geq, MTBDD*, result, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_all_geq, int*, result, MTBDD, a, MTBDD, b);
 
 /**
  * For two MTBDDs a, b, return bdd_true if all common assignments a(s) > b(s), mtbdd_undefined otherwise.
  * For domains not in a / b, assume True.
  */
-TASK(int, mtbdd_gt, MTBDD*, result, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_all_gt, int*, result, MTBDD, a, MTBDD, b);
+
+TASK(int, mtbdd_any_leq, int*, result, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_any_lt, int*, result, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_any_geq, int*, result, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_any_gt, int*, result, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_any_equal_abs_double, int*, result, MTBDD, a, MTBDD, b, double, c);
+TASK(int, mtbdd_any_equal_rel_double, int*, result, MTBDD, a, MTBDD, b, double, c);
+
+TASK(int, mtbdd_compare_leq, BDD*, result, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_compare_lt, BDD*, result, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_compare_geq, BDD*, result, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_compare_gt, BDD*, result, MTBDD, a, MTBDD, b);
+TASK(int, mtbdd_compare_equal_abs_double, BDD*, result, MTBDD, a, MTBDD, b, double, c);
+TASK(int, mtbdd_compare_equal_rel_double, BDD*, result, MTBDD, a, MTBDD, b, double, c);
 
 /**
  * Calculate the support of a MTBDD, i.e. the cube of all variables that appear in the MTBDD nodes.

@@ -883,9 +883,9 @@ test_mtbdd_equal_double_destinations_CALL(lace_worker *lace)
     BDD x = mtbdd_invalid;
     MTBDD a = mtbdd_invalid;
     MTBDD b = mtbdd_invalid;
-    MTBDD result = mtbdd_invalid;
-    MTBDD parallel_result = mtbdd_invalid;
-    MTBDD inplace = mtbdd_invalid;
+    int result = -1;
+    int parallel_result = -1;
+    BDD comparison = mtbdd_invalid;
     MTBDD unchanged = bdd_true;
 
     mtbdd_refs_pushptr(&a_low);
@@ -902,48 +902,50 @@ test_mtbdd_equal_double_destinations_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&x);
     mtbdd_refs_pushptr(&a);
     mtbdd_refs_pushptr(&b);
-    mtbdd_refs_pushptr(&result);
-    mtbdd_refs_pushptr(&parallel_result);
-    mtbdd_refs_pushptr(&inplace);
+    mtbdd_refs_pushptr(&comparison);
     mtbdd_refs_pushptr(&unchanged);
 
     test_assert(bdd_var_at_level(&x, 0) == SYLVAN_OK);
     test_assert(mtbdd_ite_CALL(lace, &a, x, a_high, a_low) == SYLVAN_OK);
     test_assert(mtbdd_ite_CALL(lace, &b, x, b_high, b_low) == SYLVAN_OK);
 
-    mtbdd_equal_abs_double_SPAWN(lace, &parallel_result, a, b, 0.1);
-    int status = mtbdd_equal_rel_double_CALL(lace, &result, a, b, 0.01);
-    int parallel_status = mtbdd_equal_abs_double_SYNC(lace);
-    test_assert(status == SYLVAN_OK && result == mtbdd_undefined);
-    test_assert(parallel_status == SYLVAN_OK && parallel_result == bdd_true);
+    mtbdd_all_equal_abs_double_SPAWN(lace, &parallel_result, a, b, 0.1);
+    int status = mtbdd_all_equal_rel_double_CALL(lace, &result, a, b, 0.01);
+    int parallel_status = mtbdd_all_equal_abs_double_SYNC(lace);
+    test_assert(status == SYLVAN_OK && result == 0);
+    test_assert(parallel_status == SYLVAN_OK && parallel_result == 1);
 
-    test_assert(mtbdd_equal_abs_double(&result, a, b, 0.01) == SYLVAN_OK);
-    test_assert(result == mtbdd_undefined);
-    test_assert(mtbdd_equal_rel_double(&result, a, b, 0.1) == SYLVAN_OK);
-    test_assert(result == bdd_true);
-    test_assert(mtbdd_equal_abs_double(&result, a, a, 0.0) == SYLVAN_OK);
-    test_assert(result == bdd_true);
-    test_assert(mtbdd_equal_abs_double(&result, a, mtbdd_undefined, 0.1) == SYLVAN_OK);
-    test_assert(result == mtbdd_undefined);
+    test_assert(mtbdd_all_equal_abs_double(&result, a, b, 0.01) == SYLVAN_OK && result == 0);
+    test_assert(mtbdd_all_equal_rel_double(&result, a, b, 0.1) == SYLVAN_OK && result == 1);
+    test_assert(mtbdd_all_equal_abs_double(&result, a, a, 0.0) == SYLVAN_OK && result == 1);
+    test_assert(mtbdd_all_equal_abs_double(&result, a, mtbdd_undefined, 0.1) == SYLVAN_OK && result == 1);
+    test_assert(mtbdd_any_equal_abs_double(&result, a, b, 0.01) == SYLVAN_OK && result == 0);
+    test_assert(mtbdd_any_equal_rel_double(&result, a, b, 0.03) == SYLVAN_OK && result == 1);
+    test_assert(mtbdd_any_equal_abs_double(&result, a, mtbdd_undefined, 0.1) == SYLVAN_OK && result == 0);
 
-    inplace = a;
-    test_assert(mtbdd_equal_abs_double(&inplace, inplace, b, 0.1) == SYLVAN_OK);
-    test_assert(inplace == bdd_true);
+    test_assert(mtbdd_compare_equal_abs_double(&comparison, a, b, 0.1) == SYLVAN_OK);
+    test_assert(comparison == bdd_true);
+    test_assert(mtbdd_compare_equal_abs_double(&comparison, a, b, 0.01) == SYLVAN_OK);
+    test_assert(comparison == bdd_false);
+    test_assert(mtbdd_compare_equal_rel_double(&comparison, a, b, 0.03) == SYLVAN_OK);
+    test_assert(comparison == x);
+    test_assert(mtbdd_compare_equal_abs_double(&comparison, a, mtbdd_undefined, 0.1) == SYLVAN_OK);
+    test_assert(comparison == bdd_false);
+
+    int scalar_unchanged = 7;
+    test_assert(mtbdd_all_equal_abs_double(NULL, a, b, 0.1) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_all_equal_abs_double(&scalar_unchanged, mtbdd_invalid, b, 0.1) == SYLVAN_ERR_INVALID);
+    test_assert(scalar_unchanged == 7);
+    test_assert(mtbdd_any_equal_rel_double(&scalar_unchanged, a, mtbdd_invalid, 0.1) == SYLVAN_ERR_INVALID);
+    test_assert(scalar_unchanged == 7);
+    test_assert(mtbdd_all_equal_abs_double(&scalar_unchanged, int_one, int_two, 0.1) == SYLVAN_ERR_INVALID);
+    test_assert(scalar_unchanged == 7);
+    test_assert(mtbdd_compare_equal_rel_double(&unchanged, int_one, int_two, 0.1) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+
     sylvan_gc_CALL(lace);
-    test_assert(inplace == bdd_true);
-
-    test_assert(mtbdd_equal_abs_double(NULL, a, b, 0.1) == SYLVAN_ERR_INVALID);
-    test_assert(mtbdd_equal_abs_double(&unchanged, mtbdd_invalid, b, 0.1) == SYLVAN_ERR_INVALID);
-    test_assert(unchanged == bdd_true);
-    test_assert(mtbdd_equal_rel_double(&unchanged, a, mtbdd_invalid, 0.1) == SYLVAN_ERR_INVALID);
-    test_assert(unchanged == bdd_true);
-    test_assert(mtbdd_equal_abs_double(&unchanged, int_one, int_two, 0.1) == SYLVAN_ERR_INVALID);
-    test_assert(unchanged == bdd_true);
-    test_assert(mtbdd_equal_rel_double(&unchanged, int_one, int_two, 0.1) == SYLVAN_ERR_INVALID);
-    test_assert(unchanged == bdd_true);
-
-    sylvan_gc_CALL(lace);
-    mtbdd_refs_popptr(13);
+    test_assert(comparison == bdd_false);
+    mtbdd_refs_popptr(11);
     return 0;
 }
 
@@ -962,9 +964,10 @@ test_mtbdd_order_destinations_CALL(lace_worker *lace)
     BDD x = mtbdd_invalid;
     MTBDD a = mtbdd_invalid;
     MTBDD b = mtbdd_invalid;
-    MTBDD result = mtbdd_invalid;
-    MTBDD parallel_result = mtbdd_invalid;
-    MTBDD inplace = mtbdd_invalid;
+    MTBDD crossed = mtbdd_invalid;
+    int result = -1;
+    int parallel_result = -1;
+    BDD comparison = mtbdd_invalid;
     MTBDD unchanged = bdd_true;
 
     mtbdd_refs_pushptr(&one);
@@ -985,51 +988,61 @@ test_mtbdd_order_destinations_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&x);
     mtbdd_refs_pushptr(&a);
     mtbdd_refs_pushptr(&b);
-    mtbdd_refs_pushptr(&result);
-    mtbdd_refs_pushptr(&parallel_result);
-    mtbdd_refs_pushptr(&inplace);
+    mtbdd_refs_pushptr(&crossed);
+    mtbdd_refs_pushptr(&comparison);
     mtbdd_refs_pushptr(&unchanged);
 
     test_assert(bdd_var_at_level(&x, 0) == SYLVAN_OK);
     test_assert(mtbdd_ite_CALL(lace, &a, x, three, one) == SYLVAN_OK);
     test_assert(mtbdd_ite_CALL(lace, &b, x, four, two) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &crossed, x, two, four) == SYLVAN_OK);
 
-    mtbdd_leq_SPAWN(lace, &parallel_result, a, b);
-    int status = mtbdd_gt_CALL(lace, &result, b, a);
-    int parallel_status = mtbdd_leq_SYNC(lace);
-    test_assert(status == SYLVAN_OK && result == bdd_true);
-    test_assert(parallel_status == SYLVAN_OK && parallel_result == bdd_true);
+    mtbdd_all_leq_SPAWN(lace, &parallel_result, a, b);
+    int status = mtbdd_any_gt_CALL(lace, &result, b, a);
+    int parallel_status = mtbdd_all_leq_SYNC(lace);
+    test_assert(status == SYLVAN_OK && result == 1);
+    test_assert(parallel_status == SYLVAN_OK && parallel_result == 1);
 
-    test_assert(mtbdd_lt(&result, a, b) == SYLVAN_OK && result == bdd_true);
-    test_assert(mtbdd_geq(&result, a, b) == SYLVAN_OK && result == mtbdd_undefined);
-    test_assert(mtbdd_gt(&result, a, b) == SYLVAN_OK && result == mtbdd_undefined);
-    test_assert(mtbdd_leq(&result, a, a) == SYLVAN_OK && result == bdd_true);
-    test_assert(mtbdd_lt(&result, a, a) == SYLVAN_OK && result == mtbdd_undefined);
-    test_assert(mtbdd_geq(&result, a, a) == SYLVAN_OK && result == bdd_true);
-    test_assert(mtbdd_gt(&result, a, a) == SYLVAN_OK && result == mtbdd_undefined);
-    test_assert(mtbdd_lt(&result, fraction_one_half, fraction_two_thirds) == SYLVAN_OK);
-    test_assert(result == bdd_true);
-    test_assert(mtbdd_geq(&result, double_two, double_one) == SYLVAN_OK);
-    test_assert(result == bdd_true);
-    test_assert(mtbdd_leq(&result, mtbdd_undefined, one) == SYLVAN_OK);
-    test_assert(result == bdd_true);
+    test_assert(mtbdd_all_lt(&result, a, b) == SYLVAN_OK && result == 1);
+    test_assert(mtbdd_all_geq(&result, a, b) == SYLVAN_OK && result == 0);
+    test_assert(mtbdd_all_gt(&result, a, b) == SYLVAN_OK && result == 0);
+    test_assert(mtbdd_any_leq(&result, a, b) == SYLVAN_OK && result == 1);
+    test_assert(mtbdd_any_lt(&result, a, b) == SYLVAN_OK && result == 1);
+    test_assert(mtbdd_any_geq(&result, a, b) == SYLVAN_OK && result == 0);
+    test_assert(mtbdd_any_gt(&result, a, b) == SYLVAN_OK && result == 0);
 
-    inplace = a;
-    test_assert(mtbdd_lt(&inplace, inplace, b) == SYLVAN_OK);
-    test_assert(inplace == bdd_true);
+    test_assert(mtbdd_all_leq(&result, a, a) == SYLVAN_OK && result == 1);
+    test_assert(mtbdd_all_lt(&result, a, a) == SYLVAN_OK && result == 0);
+    test_assert(mtbdd_any_geq(&result, a, a) == SYLVAN_OK && result == 1);
+    test_assert(mtbdd_any_gt(&result, a, a) == SYLVAN_OK && result == 0);
+    test_assert(mtbdd_all_lt(&result, fraction_one_half, fraction_two_thirds) == SYLVAN_OK && result == 1);
+    test_assert(mtbdd_any_geq(&result, double_two, double_one) == SYLVAN_OK && result == 1);
+    test_assert(mtbdd_all_leq(&result, mtbdd_undefined, one) == SYLVAN_OK && result == 1);
+    test_assert(mtbdd_any_leq(&result, mtbdd_undefined, one) == SYLVAN_OK && result == 0);
+
+    test_assert(mtbdd_compare_leq(&comparison, a, b) == SYLVAN_OK);
+    test_assert(comparison == bdd_true);
+    test_assert(mtbdd_compare_gt(&comparison, a, b) == SYLVAN_OK);
+    test_assert(comparison == bdd_false);
+    test_assert(mtbdd_compare_leq(&comparison, a, crossed) == SYLVAN_OK);
+    test_assert(comparison == bdd_not(x));
+    test_assert(mtbdd_compare_lt(&comparison, mtbdd_undefined, one) == SYLVAN_OK);
+    test_assert(comparison == bdd_false);
+
+    int scalar_unchanged = 7;
+    test_assert(mtbdd_all_leq(NULL, a, b) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_all_lt(&scalar_unchanged, mtbdd_invalid, b) == SYLVAN_ERR_INVALID);
+    test_assert(scalar_unchanged == 7);
+    test_assert(mtbdd_any_geq(&scalar_unchanged, a, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(scalar_unchanged == 7);
+    test_assert(mtbdd_any_gt(&scalar_unchanged, one, double_one) == SYLVAN_ERR_INVALID);
+    test_assert(scalar_unchanged == 7);
+    test_assert(mtbdd_compare_geq(&unchanged, one, double_one) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+
     sylvan_gc_CALL(lace);
-    test_assert(inplace == bdd_true);
-
-    test_assert(mtbdd_leq(NULL, a, b) == SYLVAN_ERR_INVALID);
-    test_assert(mtbdd_lt(&unchanged, mtbdd_invalid, b) == SYLVAN_ERR_INVALID);
-    test_assert(unchanged == bdd_true);
-    test_assert(mtbdd_geq(&unchanged, a, mtbdd_invalid) == SYLVAN_ERR_INVALID);
-    test_assert(unchanged == bdd_true);
-    test_assert(mtbdd_gt(&unchanged, one, double_one) == SYLVAN_ERR_INVALID);
-    test_assert(unchanged == bdd_true);
-
-    sylvan_gc_CALL(lace);
-    mtbdd_refs_popptr(15);
+    test_assert(comparison == bdd_false);
+    mtbdd_refs_popptr(14);
     return 0;
 }
 

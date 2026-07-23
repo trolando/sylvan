@@ -1999,7 +1999,7 @@ int mtbdd_equal_norm_d2_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTB
     /* Check terminal case */
     if (a == b) { *destination = bdd_true; return SYLVAN_OK; }
     if (a == mtbdd_undefined || b == mtbdd_undefined) {
-        *destination = mtbdd_undefined;
+        *destination = bdd_true;
         return SYLVAN_OK;
     }
 
@@ -2028,12 +2028,12 @@ int mtbdd_equal_norm_d2_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTB
     sylvan_gc_test(lace);
 
     /* Count operation */
-    sylvan_stats_count(MTBDD_EQUAL_NORM);
+    sylvan_stats_count(MTBDD_ALL_EQUAL_ABS);
 
     /* Check cache */
     MTBDD computed = mtbdd_invalid;
-    if (cache_get3(CACHE_MTBDD_EQUAL_NORM, a, b, svalue, &computed)) {
-        sylvan_stats_count(MTBDD_EQUAL_NORM_CACHED);
+    if (cache_get3(CACHE_MTBDD_ALL_EQUAL_ABS, a, b, svalue, &computed)) {
+        sylvan_stats_count(MTBDD_ALL_EQUAL_ABS_CACHED);
         *destination = computed;
         return SYLVAN_OK;
     }
@@ -2069,8 +2069,8 @@ int mtbdd_equal_norm_d2_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTB
     if (computed == mtbdd_undefined) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_EQUAL_NORM, a, b, svalue, computed)) {
-        sylvan_stats_count(MTBDD_EQUAL_NORM_CACHEDPUT);
+    if (cache_put3(CACHE_MTBDD_ALL_EQUAL_ABS, a, b, svalue, computed)) {
+        sylvan_stats_count(MTBDD_ALL_EQUAL_ABS_CACHEDPUT);
     }
 
     *destination = computed;
@@ -2078,12 +2078,19 @@ int mtbdd_equal_norm_d2_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTB
     return SYLVAN_OK;
 }
 
-int mtbdd_equal_abs_double_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, double d)
+int mtbdd_all_equal_abs_double_CALL(lace_worker* lace, int *destination, MTBDD a, MTBDD b, double d)
 {
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
+
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
     atomic_int shortcircuit = 0;
-    return mtbdd_equal_norm_d2_CALL(lace, destination, a, b, mtbdd_double_parameter(d), &shortcircuit);
+    MTBDD comparison = mtbdd_invalid;
+    mtbdd_refs_pushptr(&comparison);
+    int status = mtbdd_equal_norm_d2_CALL(lace, &comparison, a, b, mtbdd_double_parameter(d), &shortcircuit);
+    if (status == SYLVAN_OK) *destination = comparison == bdd_true;
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
 /**
@@ -2106,7 +2113,7 @@ int mtbdd_equal_norm_rel_d2_CALL(lace_worker* lace, MTBDD *destination, MTBDD a,
     /* Check terminal case */
     if (a == b) { *destination = bdd_true; return SYLVAN_OK; }
     if (a == mtbdd_undefined || b == mtbdd_undefined) {
-        *destination = mtbdd_undefined;
+        *destination = bdd_true;
         return SYLVAN_OK;
     }
 
@@ -2130,12 +2137,12 @@ int mtbdd_equal_norm_rel_d2_CALL(lace_worker* lace, MTBDD *destination, MTBDD a,
     sylvan_gc_test(lace);
 
     /* Count operation */
-    sylvan_stats_count(MTBDD_EQUAL_NORM_REL);
+    sylvan_stats_count(MTBDD_ALL_EQUAL_REL);
 
     /* Check cache */
     MTBDD computed = mtbdd_invalid;
-    if (cache_get3(CACHE_MTBDD_EQUAL_NORM_REL, a, b, svalue, &computed)) {
-        sylvan_stats_count(MTBDD_EQUAL_NORM_REL_CACHED);
+    if (cache_get3(CACHE_MTBDD_ALL_EQUAL_REL, a, b, svalue, &computed)) {
+        sylvan_stats_count(MTBDD_ALL_EQUAL_REL_CACHED);
         *destination = computed;
         return SYLVAN_OK;
     }
@@ -2171,8 +2178,8 @@ int mtbdd_equal_norm_rel_d2_CALL(lace_worker* lace, MTBDD *destination, MTBDD a,
     if (computed == mtbdd_undefined) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_EQUAL_NORM_REL, a, b, svalue, computed)) {
-        sylvan_stats_count(MTBDD_EQUAL_NORM_REL_CACHEDPUT);
+    if (cache_put3(CACHE_MTBDD_ALL_EQUAL_REL, a, b, svalue, computed)) {
+        sylvan_stats_count(MTBDD_ALL_EQUAL_REL_CACHEDPUT);
     }
 
     *destination = computed;
@@ -2180,12 +2187,19 @@ int mtbdd_equal_norm_rel_d2_CALL(lace_worker* lace, MTBDD *destination, MTBDD a,
     return SYLVAN_OK;
 }
 
-int mtbdd_equal_rel_double_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, double d)
+int mtbdd_all_equal_rel_double_CALL(lace_worker* lace, int *destination, MTBDD a, MTBDD b, double d)
 {
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
+
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
     atomic_int shortcircuit = 0;
-    return mtbdd_equal_norm_rel_d2_CALL(lace, destination, a, b, mtbdd_double_parameter(d), &shortcircuit);
+    MTBDD comparison = mtbdd_invalid;
+    mtbdd_refs_pushptr(&comparison);
+    int status = mtbdd_equal_norm_rel_d2_CALL(lace, &comparison, a, b, mtbdd_double_parameter(d), &shortcircuit);
+    if (status == SYLVAN_OK) *destination = comparison == bdd_true;
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
 /**
@@ -2219,12 +2233,12 @@ int mtbdd_leq_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, 
     sylvan_gc_test(lace);
 
     /* Count operation */
-    sylvan_stats_count(MTBDD_LEQ);
+    sylvan_stats_count(MTBDD_ALL_LEQ);
 
     /* Check cache */
     MTBDD computed = mtbdd_invalid;
-    if (cache_get3(CACHE_MTBDD_LEQ, a, b, 0, &computed)) {
-        sylvan_stats_count(MTBDD_LEQ_CACHED);
+    if (cache_get3(CACHE_MTBDD_ALL_LEQ, a, b, 0, &computed)) {
+        sylvan_stats_count(MTBDD_ALL_LEQ_CACHED);
         *destination = computed;
         return SYLVAN_OK;
     }
@@ -2293,20 +2307,27 @@ int mtbdd_leq_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, 
     if (computed == mtbdd_undefined) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_LEQ, a, b, 0, computed)) {
-        sylvan_stats_count(MTBDD_LEQ_CACHEDPUT);
+    if (cache_put3(CACHE_MTBDD_ALL_LEQ, a, b, 0, computed)) {
+        sylvan_stats_count(MTBDD_ALL_LEQ_CACHEDPUT);
     }
 
     *destination = computed;
     return SYLVAN_OK;
 }
 
-int mtbdd_leq_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b)
+int mtbdd_all_leq_CALL(lace_worker* lace, int *destination, MTBDD a, MTBDD b)
 {
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
+
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
     atomic_int shortcircuit = 0;
-    return mtbdd_leq_rec_CALL(lace, destination, a, b, &shortcircuit);
+    MTBDD comparison = mtbdd_invalid;
+    mtbdd_refs_pushptr(&comparison);
+    int status = mtbdd_leq_rec_CALL(lace, &comparison, a, b, &shortcircuit);
+    if (status == SYLVAN_OK) *destination = comparison == bdd_true;
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
 /**
@@ -2340,12 +2361,12 @@ int mtbdd_less_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b,
     sylvan_gc_test(lace);
 
     /* Count operation */
-    sylvan_stats_count(MTBDD_LESS);
+    sylvan_stats_count(MTBDD_ALL_LT);
 
     /* Check cache */
     MTBDD computed = mtbdd_invalid;
-    if (cache_get3(CACHE_MTBDD_LESS, a, b, 0, &computed)) {
-        sylvan_stats_count(MTBDD_LESS_CACHED);
+    if (cache_get3(CACHE_MTBDD_ALL_LT, a, b, 0, &computed)) {
+        sylvan_stats_count(MTBDD_ALL_LT_CACHED);
         *destination = computed;
         return SYLVAN_OK;
     }
@@ -2414,20 +2435,27 @@ int mtbdd_less_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b,
     if (computed == mtbdd_undefined) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_LESS, a, b, 0, computed)) {
-        sylvan_stats_count(MTBDD_LESS_CACHEDPUT);
+    if (cache_put3(CACHE_MTBDD_ALL_LT, a, b, 0, computed)) {
+        sylvan_stats_count(MTBDD_ALL_LT_CACHEDPUT);
     }
 
     *destination = computed;
     return SYLVAN_OK;
 }
 
-int mtbdd_lt_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b)
+int mtbdd_all_lt_CALL(lace_worker* lace, int *destination, MTBDD a, MTBDD b)
 {
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
+
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
     atomic_int shortcircuit = 0;
-    return mtbdd_less_rec_CALL(lace, destination, a, b, &shortcircuit);
+    MTBDD comparison = mtbdd_invalid;
+    mtbdd_refs_pushptr(&comparison);
+    int status = mtbdd_less_rec_CALL(lace, &comparison, a, b, &shortcircuit);
+    if (status == SYLVAN_OK) *destination = comparison == bdd_true;
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
 /**
@@ -2461,12 +2489,12 @@ int mtbdd_geq_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, 
     sylvan_gc_test(lace);
 
     /* Count operation */
-    sylvan_stats_count(MTBDD_GEQ);
+    sylvan_stats_count(MTBDD_ALL_GEQ);
 
     /* Check cache */
     MTBDD computed = mtbdd_invalid;
-    if (cache_get3(CACHE_MTBDD_GEQ, a, b, 0, &computed)) {
-        sylvan_stats_count(MTBDD_GEQ_CACHED);
+    if (cache_get3(CACHE_MTBDD_ALL_GEQ, a, b, 0, &computed)) {
+        sylvan_stats_count(MTBDD_ALL_GEQ_CACHED);
         *destination = computed;
         return SYLVAN_OK;
     }
@@ -2535,20 +2563,27 @@ int mtbdd_geq_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, 
     if (computed == mtbdd_undefined) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_GEQ, a, b, 0, computed)) {
-        sylvan_stats_count(MTBDD_GEQ_CACHEDPUT);
+    if (cache_put3(CACHE_MTBDD_ALL_GEQ, a, b, 0, computed)) {
+        sylvan_stats_count(MTBDD_ALL_GEQ_CACHEDPUT);
     }
 
     *destination = computed;
     return SYLVAN_OK;
 }
 
-int mtbdd_geq_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b)
+int mtbdd_all_geq_CALL(lace_worker* lace, int *destination, MTBDD a, MTBDD b)
 {
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
+
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
     atomic_int shortcircuit = 0;
-    return mtbdd_geq_rec_CALL(lace, destination, a, b, &shortcircuit);
+    MTBDD comparison = mtbdd_invalid;
+    mtbdd_refs_pushptr(&comparison);
+    int status = mtbdd_geq_rec_CALL(lace, &comparison, a, b, &shortcircuit);
+    if (status == SYLVAN_OK) *destination = comparison == bdd_true;
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
 /**
@@ -2582,12 +2617,12 @@ int mtbdd_greater_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD
     sylvan_gc_test(lace);
 
     /* Count operation */
-    sylvan_stats_count(MTBDD_GREATER);
+    sylvan_stats_count(MTBDD_ALL_GT);
 
     /* Check cache */
     MTBDD computed = mtbdd_invalid;
-    if (cache_get3(CACHE_MTBDD_GREATER, a, b, 0, &computed)) {
-        sylvan_stats_count(MTBDD_GREATER_CACHED);
+    if (cache_get3(CACHE_MTBDD_ALL_GT, a, b, 0, &computed)) {
+        sylvan_stats_count(MTBDD_ALL_GT_CACHED);
         *destination = computed;
         return SYLVAN_OK;
     }
@@ -2656,20 +2691,350 @@ int mtbdd_greater_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD
     if (computed == mtbdd_undefined) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
 
     /* Store in cache */
-    if (cache_put3(CACHE_MTBDD_GREATER, a, b, 0, computed)) {
-        sylvan_stats_count(MTBDD_GREATER_CACHEDPUT);
+    if (cache_put3(CACHE_MTBDD_ALL_GT, a, b, 0, computed)) {
+        sylvan_stats_count(MTBDD_ALL_GT_CACHEDPUT);
     }
 
     *destination = computed;
     return SYLVAN_OK;
 }
 
-int mtbdd_gt_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b)
+int mtbdd_all_gt_CALL(lace_worker* lace, int *destination, MTBDD a, MTBDD b)
 {
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
+
     /* the implementation checks shortcircuit in every task and if the two
        MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
     atomic_int shortcircuit = 0;
-    return mtbdd_greater_rec_CALL(lace, destination, a, b, &shortcircuit);
+    MTBDD comparison = mtbdd_invalid;
+    mtbdd_refs_pushptr(&comparison);
+    int status = mtbdd_greater_rec_CALL(lace, &comparison, a, b, &shortcircuit);
+    if (status == SYLVAN_OK) *destination = comparison == bdd_true;
+    mtbdd_refs_popptr(1);
+    return status;
+}
+
+enum mtbdd_compare_relation {
+    MTBDD_COMPARE_REL_LEQ,
+    MTBDD_COMPARE_REL_LT,
+    MTBDD_COMPARE_REL_GEQ,
+    MTBDD_COMPARE_REL_GT,
+    MTBDD_COMPARE_REL_EQUAL_ABS,
+    MTBDD_COMPARE_REL_EQUAL_REL
+};
+
+static int
+mtbdd_compare_leaf_relation(MTBDD a, MTBDD b, size_t parameter,
+                            enum mtbdd_compare_relation relation, int *result)
+{
+    if (a == mtbdd_undefined || b == mtbdd_undefined || a == bdd_true || b == bdd_true) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    mtbddnode* na = MTBDD_GETNODE(a);
+    mtbddnode* nb = MTBDD_GETNODE(b);
+    uint32_t type_a = mtbddnode_gettype(na);
+    uint32_t type_b = mtbddnode_gettype(nb);
+    if (type_a != type_b) return SYLVAN_ERR_INVALID;
+
+    if (relation == MTBDD_COMPARE_REL_EQUAL_ABS || relation == MTBDD_COMPARE_REL_EQUAL_REL) {
+        if (type_a != 1) return SYLVAN_ERR_INVALID;
+
+        double value_a = mtbdd_leaf_double(a);
+        double value_b = mtbdd_leaf_double(b);
+        double tolerance = mtbdd_parameter_double(parameter);
+        if (relation == MTBDD_COMPARE_REL_EQUAL_ABS) {
+            *result = fabs(value_a - value_b) < tolerance;
+        } else if (value_a == value_b) {
+            *result = 1;
+        } else if (value_a == 0.0) {
+            *result = 0;
+        } else {
+            *result = fabs((value_a - value_b) / value_a) < tolerance;
+        }
+        return SYLVAN_OK;
+    }
+
+    int comparison;
+    if (type_a == 0) {
+        int64_t value_a = mtbdd_leaf_int64(a);
+        int64_t value_b = mtbdd_leaf_int64(b);
+        comparison = value_a < value_b ? -1 : value_a > value_b;
+    } else if (type_a == 1) {
+        double value_a = mtbdd_leaf_double(a);
+        double value_b = mtbdd_leaf_double(b);
+        comparison = value_a < value_b ? -1 : value_a > value_b;
+    } else if (type_a == 2) {
+        int64_t numerator_a = mtbdd_fraction_numerator(a);
+        int64_t numerator_b = mtbdd_fraction_numerator(b);
+        uint64_t denominator_a = mtbdd_fraction_denominator(a);
+        uint64_t denominator_b = mtbdd_fraction_denominator(b);
+        uint32_t divisor = gcd((uint32_t)denominator_a, (uint32_t)denominator_b);
+        numerator_a *= denominator_b / divisor;
+        numerator_b *= denominator_a / divisor;
+        comparison = numerator_a < numerator_b ? -1 : numerator_a > numerator_b;
+    } else {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    switch (relation) {
+    case MTBDD_COMPARE_REL_LEQ: *result = comparison <= 0; break;
+    case MTBDD_COMPARE_REL_LT:  *result = comparison < 0; break;
+    case MTBDD_COMPARE_REL_GEQ: *result = comparison >= 0; break;
+    case MTBDD_COMPARE_REL_GT:  *result = comparison > 0; break;
+    default: return SYLVAN_ERR_INVALID;
+    }
+    return SYLVAN_OK;
+}
+
+struct mtbdd_compare_config {
+    size_t parameter;
+    uint64_t cache_id;
+    size_t counter;
+    uint32_t relation;
+};
+
+TASK(int, mtbdd_any_relation_rec, int*, result, MTBDD, a, MTBDD, b,
+     struct mtbdd_compare_config*, config, atomic_int*, shortcircuit)
+
+int
+mtbdd_any_relation_rec_CALL(lace_worker* lace, int *destination, MTBDD a, MTBDD b,
+                            struct mtbdd_compare_config *config, atomic_int *shortcircuit)
+{
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid ||
+        config == NULL || shortcircuit == NULL) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (atomic_load_explicit(shortcircuit, memory_order_relaxed)) {
+        *destination = 1;
+        return SYLVAN_OK;
+    }
+    if (a == mtbdd_undefined || b == mtbdd_undefined) {
+        *destination = 0;
+        return SYLVAN_OK;
+    }
+
+    int leaf_a = mtbdd_is_leaf(a);
+    int leaf_b = mtbdd_is_leaf(b);
+    if (leaf_a && leaf_b) {
+        int status = mtbdd_compare_leaf_relation(a, b, config->parameter,
+                                                 (enum mtbdd_compare_relation)config->relation,
+                                                 destination);
+        if (status == SYLVAN_OK && *destination) {
+            atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
+        }
+        return status;
+    }
+
+    sylvan_stats_count(config->counter);
+
+    uint64_t cached;
+    if (cache_get3(config->cache_id, a, b, config->parameter, &cached)) {
+        sylvan_stats_count(config->counter + 2);
+        *destination = (int)cached;
+        if (*destination) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
+        return SYLVAN_OK;
+    }
+
+    mtbddnode* node_a = leaf_a ? NULL : MTBDD_GETNODE(a);
+    mtbddnode* node_b = leaf_b ? NULL : MTBDD_GETNODE(b);
+    uint32_t level_a = leaf_a ? UINT32_MAX : mtbddnode_getvariable(node_a);
+    uint32_t level_b = leaf_b ? UINT32_MAX : mtbddnode_getvariable(node_b);
+    uint32_t level = level_a < level_b ? level_a : level_b;
+
+    MTBDD low_a = level_a == level ? node_getlow(a, node_a) : a;
+    MTBDD high_a = level_a == level ? node_gethigh(a, node_a) : a;
+    MTBDD low_b = level_b == level ? node_getlow(b, node_b) : b;
+    MTBDD high_b = level_b == level ? node_gethigh(b, node_b) : b;
+
+    int low = 0;
+    int high = 0;
+    mtbdd_any_relation_rec_SPAWN(lace, &high, high_a, high_b, config, shortcircuit);
+    int status = mtbdd_any_relation_rec_CALL(lace, &low, low_a, low_b, config, shortcircuit);
+    if (status == SYLVAN_OK && low) {
+        atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
+    }
+    int high_status = mtbdd_any_relation_rec_SYNC(lace);
+    if (status == SYLVAN_OK) status = high_status;
+    if (status != SYLVAN_OK) return status;
+
+    *destination = low || high;
+    if (*destination) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
+    if (cache_put3(config->cache_id, a, b, config->parameter, (uint64_t)*destination)) {
+        sylvan_stats_count(config->counter + 1);
+    }
+    return SYLVAN_OK;
+}
+
+static int
+mtbdd_any_relation(lace_worker* lace, int *destination, MTBDD a, MTBDD b,
+                   size_t parameter, enum mtbdd_compare_relation relation,
+                   uint64_t cache_id, size_t counter)
+{
+    if (destination == NULL) return SYLVAN_ERR_INVALID;
+    atomic_int shortcircuit = 0;
+    struct mtbdd_compare_config config = {parameter, cache_id, counter, (uint32_t)relation};
+    return mtbdd_any_relation_rec_CALL(lace, destination, a, b, &config, &shortcircuit);
+}
+
+int mtbdd_any_leq_CALL(lace_worker* lace, int *destination, MTBDD a, MTBDD b)
+{
+    return mtbdd_any_relation(lace, destination, a, b, 0, MTBDD_COMPARE_REL_LEQ,
+                              CACHE_MTBDD_ANY_LEQ, MTBDD_ANY_LEQ);
+}
+
+int mtbdd_any_lt_CALL(lace_worker* lace, int *destination, MTBDD a, MTBDD b)
+{
+    return mtbdd_any_relation(lace, destination, a, b, 0, MTBDD_COMPARE_REL_LT,
+                              CACHE_MTBDD_ANY_LT, MTBDD_ANY_LT);
+}
+
+int mtbdd_any_geq_CALL(lace_worker* lace, int *destination, MTBDD a, MTBDD b)
+{
+    return mtbdd_any_relation(lace, destination, a, b, 0, MTBDD_COMPARE_REL_GEQ,
+                              CACHE_MTBDD_ANY_GEQ, MTBDD_ANY_GEQ);
+}
+
+int mtbdd_any_gt_CALL(lace_worker* lace, int *destination, MTBDD a, MTBDD b)
+{
+    return mtbdd_any_relation(lace, destination, a, b, 0, MTBDD_COMPARE_REL_GT,
+                              CACHE_MTBDD_ANY_GT, MTBDD_ANY_GT);
+}
+
+int mtbdd_any_equal_abs_double_CALL(lace_worker* lace, int *destination, MTBDD a, MTBDD b, double tolerance)
+{
+    return mtbdd_any_relation(lace, destination, a, b, mtbdd_double_parameter(tolerance),
+                              MTBDD_COMPARE_REL_EQUAL_ABS,
+                              CACHE_MTBDD_ANY_EQUAL_ABS, MTBDD_ANY_EQUAL_ABS);
+}
+
+int mtbdd_any_equal_rel_double_CALL(lace_worker* lace, int *destination, MTBDD a, MTBDD b, double tolerance)
+{
+    return mtbdd_any_relation(lace, destination, a, b, mtbdd_double_parameter(tolerance),
+                              MTBDD_COMPARE_REL_EQUAL_REL,
+                              CACHE_MTBDD_ANY_EQUAL_REL, MTBDD_ANY_EQUAL_REL);
+}
+
+TASK(int, mtbdd_compare_relation_rec, BDD*, result, MTBDD, a, MTBDD, b,
+     struct mtbdd_compare_config*, config)
+
+int
+mtbdd_compare_relation_rec_CALL(lace_worker* lace, BDD *destination, MTBDD a, MTBDD b,
+                                struct mtbdd_compare_config *config)
+{
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || config == NULL) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (a == mtbdd_undefined || b == mtbdd_undefined) {
+        *destination = bdd_false;
+        return SYLVAN_OK;
+    }
+
+    int leaf_a = mtbdd_is_leaf(a);
+    int leaf_b = mtbdd_is_leaf(b);
+    if (leaf_a && leaf_b) {
+        int comparison;
+        int status = mtbdd_compare_leaf_relation(a, b, config->parameter,
+                                                 (enum mtbdd_compare_relation)config->relation,
+                                                 &comparison);
+        if (status == SYLVAN_OK) *destination = comparison ? bdd_true : bdd_false;
+        return status;
+    }
+
+    sylvan_gc_test(lace);
+    sylvan_stats_count(config->counter);
+
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(config->cache_id, a, b, config->parameter, &computed)) {
+        sylvan_stats_count(config->counter + 2);
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
+    }
+
+    mtbddnode* node_a = leaf_a ? NULL : MTBDD_GETNODE(a);
+    mtbddnode* node_b = leaf_b ? NULL : MTBDD_GETNODE(b);
+    uint32_t level_a = leaf_a ? UINT32_MAX : mtbddnode_getvariable(node_a);
+    uint32_t level_b = leaf_b ? UINT32_MAX : mtbddnode_getvariable(node_b);
+    uint32_t level = level_a < level_b ? level_a : level_b;
+
+    MTBDD low_a = level_a == level ? node_getlow(a, node_a) : a;
+    MTBDD high_a = level_a == level ? node_gethigh(a, node_a) : a;
+    MTBDD low_b = level_b == level ? node_getlow(b, node_b) : b;
+    MTBDD high_b = level_b == level ? node_gethigh(b, node_b) : b;
+
+    BDD low = mtbdd_invalid;
+    BDD high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+    mtbdd_compare_relation_rec_SPAWN(lace, &high, high_a, high_b, config);
+    int status = mtbdd_compare_relation_rec_CALL(lace, &low, low_a, low_b, config);
+    int high_status = mtbdd_compare_relation_rec_SYNC(lace);
+    if (status == SYLVAN_OK) status = high_status;
+    if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, level, low, high);
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(3);
+        return status;
+    }
+
+    if (cache_put3(config->cache_id, a, b, config->parameter, computed)) {
+        sylvan_stats_count(config->counter + 1);
+    }
+    *destination = computed;
+    mtbdd_refs_popptr(3);
+    return SYLVAN_OK;
+}
+
+static int
+mtbdd_compare_relation(lace_worker* lace, BDD *destination, MTBDD a, MTBDD b,
+                       size_t parameter, enum mtbdd_compare_relation relation,
+                       uint64_t cache_id, size_t counter)
+{
+    struct mtbdd_compare_config config = {parameter, cache_id, counter, (uint32_t)relation};
+    return mtbdd_compare_relation_rec_CALL(lace, destination, a, b, &config);
+}
+
+int mtbdd_compare_leq_CALL(lace_worker* lace, BDD *destination, MTBDD a, MTBDD b)
+{
+    return mtbdd_compare_relation(lace, destination, a, b, 0, MTBDD_COMPARE_REL_LEQ,
+                                  CACHE_MTBDD_COMPARE_LEQ, MTBDD_COMPARE_LEQ);
+}
+
+int mtbdd_compare_lt_CALL(lace_worker* lace, BDD *destination, MTBDD a, MTBDD b)
+{
+    return mtbdd_compare_relation(lace, destination, a, b, 0, MTBDD_COMPARE_REL_LT,
+                                  CACHE_MTBDD_COMPARE_LT, MTBDD_COMPARE_LT);
+}
+
+int mtbdd_compare_geq_CALL(lace_worker* lace, BDD *destination, MTBDD a, MTBDD b)
+{
+    return mtbdd_compare_relation(lace, destination, a, b, 0, MTBDD_COMPARE_REL_GEQ,
+                                  CACHE_MTBDD_COMPARE_GEQ, MTBDD_COMPARE_GEQ);
+}
+
+int mtbdd_compare_gt_CALL(lace_worker* lace, BDD *destination, MTBDD a, MTBDD b)
+{
+    return mtbdd_compare_relation(lace, destination, a, b, 0, MTBDD_COMPARE_REL_GT,
+                                  CACHE_MTBDD_COMPARE_GT, MTBDD_COMPARE_GT);
+}
+
+int
+mtbdd_compare_equal_abs_double_CALL(lace_worker* lace, BDD *destination,
+                                    MTBDD a, MTBDD b, double tolerance)
+{
+    return mtbdd_compare_relation(lace, destination, a, b, mtbdd_double_parameter(tolerance),
+                                  MTBDD_COMPARE_REL_EQUAL_ABS,
+                                  CACHE_MTBDD_COMPARE_EQUAL_ABS, MTBDD_COMPARE_EQUAL_ABS);
+}
+
+int
+mtbdd_compare_equal_rel_double_CALL(lace_worker* lace, BDD *destination,
+                                    MTBDD a, MTBDD b, double tolerance)
+{
+    return mtbdd_compare_relation(lace, destination, a, b, mtbdd_double_parameter(tolerance),
+                                  MTBDD_COMPARE_REL_EQUAL_REL,
+                                  CACHE_MTBDD_COMPARE_EQUAL_REL, MTBDD_COMPARE_EQUAL_REL);
 }
 
 /**

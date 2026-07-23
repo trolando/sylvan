@@ -417,43 +417,46 @@ static inline int mtbdd_threshold_double(MTBDD *result, MTBDD a, double b);
 static inline int mtbdd_strict_threshold_double(MTBDD *result, MTBDD a, double b);
 
 /**
- * For two Double MTBDDs, write true if all common assignments differ by less
- * than <c>, and undefined otherwise. The caller must protect <result>. Returns
- * SYLVAN_OK on success or a negative status on failure, leaving <result>
- * unchanged.
+ * Scalar comparisons over the common domain of two MTBDDs.
+ *
+ * The all-family writes 1 exactly when the relation holds at every assignment
+ * where both operands are defined. The any-family writes 1 exactly when it
+ * holds at some common assignment. Thus all is vacuously true and any is false
+ * when the common domain is empty. The function return is a status; on failure
+ * the integer destination is unchanged.
  */
-static inline int mtbdd_equal_abs_double(MTBDD *result, MTBDD a, MTBDD b, double c);
+static inline int mtbdd_all_leq(int *result, MTBDD a, MTBDD b);
+static inline int mtbdd_all_lt(int *result, MTBDD a, MTBDD b);
+static inline int mtbdd_all_geq(int *result, MTBDD a, MTBDD b);
+static inline int mtbdd_all_gt(int *result, MTBDD a, MTBDD b);
+static inline int mtbdd_any_leq(int *result, MTBDD a, MTBDD b);
+static inline int mtbdd_any_lt(int *result, MTBDD a, MTBDD b);
+static inline int mtbdd_any_geq(int *result, MTBDD a, MTBDD b);
+static inline int mtbdd_any_gt(int *result, MTBDD a, MTBDD b);
 
 /**
- * For two Double MTBDDs, write true if all common assignments have relative
- * difference abs((a-b)/a) less than <c>, and undefined otherwise. The caller
- * must protect <result>. Returns SYLVAN_OK on success or a negative status on
- * failure, leaving <result> unchanged.
+ * Scalar tolerance comparisons for Double MTBDDs over their common domain.
+ * Absolute equality tests abs(a-b) < tolerance. Relative equality tests
+ * abs((a-b)/a) < tolerance, with equal values (including zero) accepted.
  */
-static inline int mtbdd_equal_rel_double(MTBDD *result, MTBDD a, MTBDD b, double c);
+static inline int mtbdd_all_equal_abs_double(int *result, MTBDD a, MTBDD b, double tolerance);
+static inline int mtbdd_all_equal_rel_double(int *result, MTBDD a, MTBDD b, double tolerance);
+static inline int mtbdd_any_equal_abs_double(int *result, MTBDD a, MTBDD b, double tolerance);
+static inline int mtbdd_any_equal_rel_double(int *result, MTBDD a, MTBDD b, double tolerance);
 
 /**
- * For two MTBDDs a and b, write true if all common assignments satisfy
- * a(s) <= b(s), and undefined otherwise. For domains absent from either
- * operand, assume true. The caller must protect <result>. Returns SYLVAN_OK on
- * success or a negative status on failure, leaving <result> unchanged.
+ * Pointwise comparisons.
+ *
+ * These construct the BDD of assignments in the common domain where the
+ * relation holds. Assignments where either operand is undefined are false.
+ * The caller must protect <result>. On failure, <result> is unchanged.
  */
-static inline int mtbdd_leq(MTBDD *result, MTBDD a, MTBDD b);
-
-/**
- * As mtbdd_leq, using strict less-than.
- */
-static inline int mtbdd_lt(MTBDD *result, MTBDD a, MTBDD b);
-
-/**
- * As mtbdd_leq, using greater-than-or-equal.
- */
-static inline int mtbdd_geq(MTBDD *result, MTBDD a, MTBDD b);
-
-/**
- * As mtbdd_leq, using strict greater-than.
- */
-static inline int mtbdd_gt(MTBDD *result, MTBDD a, MTBDD b);
+static inline int mtbdd_compare_leq(BDD *result, MTBDD a, MTBDD b);
+static inline int mtbdd_compare_lt(BDD *result, MTBDD a, MTBDD b);
+static inline int mtbdd_compare_geq(BDD *result, MTBDD a, MTBDD b);
+static inline int mtbdd_compare_gt(BDD *result, MTBDD a, MTBDD b);
+static inline int mtbdd_compare_equal_abs_double(BDD *result, MTBDD a, MTBDD b, double tolerance);
+static inline int mtbdd_compare_equal_rel_double(BDD *result, MTBDD a, MTBDD b, double tolerance);
 
 /**
  * Calculate the support of a MTBDD, i.e. the cube of all variables that appear in the MTBDD nodes.

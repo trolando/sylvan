@@ -48,6 +48,17 @@ int runtest_CALL(lace_worker* lace)
     Mtbdd integer_function = Mtbdd::mtbddVar(1).Ite(seven, nine);
     test_assert(integer_function.Eval(variables, {0, 1}) == nine);
     test_assert(integer_function.Eval(variables, {1, 0}) == seven);
+    test_assert(seven.AllLt(nine));
+    test_assert(seven.AnyLeq(nine));
+    test_assert(!seven.AnyGt(nine));
+    test_assert(seven.CompareLt(nine) == one);
+    test_assert(seven.CompareGeq(nine) == zero);
+
+    Mtbdd one_double = Mtbdd::doubleTerminal(1.0);
+    Mtbdd close_double = Mtbdd::doubleTerminal(1.05);
+    test_assert(one_double.AllEqualAbs(close_double, 0.1));
+    test_assert(one_double.AnyEqualRel(close_double, 0.1));
+    test_assert(one_double.CompareEqualAbs(close_double, 0.01) == zero);
 
     return 0;
 }

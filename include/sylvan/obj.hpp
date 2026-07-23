@@ -708,6 +708,26 @@ public:
      */
     Mtbdd Max(const Mtbdd &other) const;
 
+    bool AllLeq(const Mtbdd &other) const;
+    bool AllLt(const Mtbdd &other) const;
+    bool AllGeq(const Mtbdd &other) const;
+    bool AllGt(const Mtbdd &other) const;
+    bool AnyLeq(const Mtbdd &other) const;
+    bool AnyLt(const Mtbdd &other) const;
+    bool AnyGeq(const Mtbdd &other) const;
+    bool AnyGt(const Mtbdd &other) const;
+    bool AllEqualAbs(const Mtbdd &other, double tolerance) const;
+    bool AllEqualRel(const Mtbdd &other, double tolerance) const;
+    bool AnyEqualAbs(const Mtbdd &other, double tolerance) const;
+    bool AnyEqualRel(const Mtbdd &other, double tolerance) const;
+
+    Bdd CompareLeq(const Mtbdd &other) const;
+    Bdd CompareLt(const Mtbdd &other) const;
+    Bdd CompareGeq(const Mtbdd &other) const;
+    Bdd CompareGt(const Mtbdd &other) const;
+    Bdd CompareEqualAbs(const Mtbdd &other, double tolerance) const;
+    Bdd CompareEqualRel(const Mtbdd &other, double tolerance) const;
+
     /**
      * @brief Computes abstraction by summation (existential quantification)
      */

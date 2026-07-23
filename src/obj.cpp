@@ -394,6 +394,12 @@ Bdd::Disjoint(const Bdd &g) const
     return bdd_disjoint(bdd, g.bdd) == 1;
 }
 
+Bdd
+Bdd::IntersectionWitness(const Bdd &g) const
+{
+    return apply_binary(bdd_intersection_witness, bdd, g.bdd);
+}
+
 bool
 Bdd::Leq(const Bdd &g) const
 {

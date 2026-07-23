@@ -34,6 +34,8 @@ int runtest_CALL(lace_worker* lace)
 
     test_assert(v2.Compose(map) == (v1 + v2));
     test_assert((t * v2) == v2);
+    test_assert(t.IntersectionWitness(v2) != zero);
+    test_assert(t.IntersectionWitness(!t) == zero);
 
     BddSet variables;
     variables.add(1);

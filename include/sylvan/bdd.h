@@ -151,6 +151,16 @@ static inline int bdd_diff(BDD *result, BDD a, BDD b);
 static inline char bdd_disjoint(BDD a, BDD b);
 
 /**
+ * Find a non-false witness contained in the intersection of <a> and <b>, or
+ * bdd_false when they are disjoint. The result need not be the complete
+ * intersection or a single cube. The search prefers low branches and avoids
+ * constructing branches after a witness has been found.
+ *
+ * Returns SYLVAN_OK on success. On failure, <result> is unchanged.
+ */
+static inline int bdd_intersection_witness(BDD *result, BDD a, BDD b);
+
+/**
  * Return 1 if a implies b (every assignment satisfying a also satisfies b).
  */
 static inline char bdd_subseteq(BDD a, BDD b);

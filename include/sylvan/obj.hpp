@@ -200,6 +200,11 @@ public:
     bool Disjoint(const Bdd& g) const;
 
     /**
+     * @brief Finds a non-false subset of the intersection, or false if disjoint.
+     */
+    Bdd IntersectionWitness(const Bdd& g) const;
+
+    /**
      * @brief Returns whether all elements in f are also in g
      */
     bool Leq(const Bdd& g) const;

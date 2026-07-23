@@ -248,6 +248,75 @@ char bdd_disjoint_CALL(lace_worker* lace, BDD a, BDD b)
     return (char)result;
 }
 
+int
+bdd_intersection_witness_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b)
+{
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    if (a == bdd_false || b == bdd_false || a == BDD_TOGGLEMARK(b)) {
+        *destination = bdd_false;
+        return SYLVAN_OK;
+    }
+    if (a == bdd_true) { *destination = b; return SYLVAN_OK; }
+    if (b == bdd_true || a == b) { *destination = a; return SYLVAN_OK; }
+
+    sylvan_gc_test(lace);
+    sylvan_stats_count(BDD_INTERSECTION_WITNESS);
+
+    if (BDD_STRIPMARK(a) > BDD_STRIPMARK(b)) {
+        BDD temporary = a;
+        a = b;
+        b = temporary;
+    }
+
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_BDD_INTERSECTION_WITNESS, a, b, 0, &computed)) {
+        sylvan_stats_count(BDD_INTERSECTION_WITNESS_CACHED);
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
+    }
+
+    bddnode* node_a = MTBDD_GETNODE(a);
+    bddnode* node_b = MTBDD_GETNODE(b);
+    uint32_t level_a = bddnode_getvariable(node_a);
+    uint32_t level_b = bddnode_getvariable(node_b);
+    uint32_t level = level_a < level_b ? level_a : level_b;
+
+    BDD low_a = level_a == level ? node_low(a, node_a) : a;
+    BDD high_a = level_a == level ? node_high(a, node_a) : a;
+    BDD low_b = level_b == level ? node_low(b, node_b) : b;
+    BDD high_b = level_b == level ? node_high(b, node_b) : b;
+
+    BDD witness = mtbdd_invalid;
+    mtbdd_refs_pushptr(&witness);
+    int status = bdd_intersection_witness_CALL(lace, &witness, low_a, low_b);
+    if (status == SYLVAN_OK && witness != bdd_false) {
+        status = _mtbdd_try_make_node(&computed, level, witness, bdd_false);
+    } else if (status == SYLVAN_OK) {
+        status = bdd_intersection_witness_CALL(lace, &witness, high_a, high_b);
+        if (status == SYLVAN_OK && witness != bdd_false) {
+            status = _mtbdd_try_make_node(&computed, level, bdd_false, witness);
+        } else if (status == SYLVAN_OK) {
+            computed = bdd_false;
+        }
+    }
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(2);
+        return status;
+    }
+
+    if (cache_put3(CACHE_BDD_INTERSECTION_WITNESS, a, b, 0, computed)) {
+        sylvan_stats_count(BDD_INTERSECTION_WITNESS_CACHEDPUT);
+    }
+    *destination = computed;
+    mtbdd_refs_popptr(2);
+    return SYLVAN_OK;
+}
+
 int bdd_xor_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b)
 {
     if (destination == NULL) return SYLVAN_ERR_INVALID;

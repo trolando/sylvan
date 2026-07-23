@@ -1542,6 +1542,10 @@ test_protected_destinations_CALL(lace_worker *lace)
     BDD expected_and = mtbdd_make_node(0, bdd_false, b);
     BDD expected_ite = mtbdd_make_node(0, c, b);
     BDD expected_xor = mtbdd_make_node(0, b, bdd_not(b));
+    BDD left = mtbdd_invalid;
+    BDD right = mtbdd_invalid;
+    BDD witness = mtbdd_invalid;
+    BDD intersection = mtbdd_invalid;
 
     mtbdd_refs_pushptr(&a);
     mtbdd_refs_pushptr(&b);
@@ -1552,6 +1556,10 @@ test_protected_destinations_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&expected_and);
     mtbdd_refs_pushptr(&expected_ite);
     mtbdd_refs_pushptr(&expected_xor);
+    mtbdd_refs_pushptr(&left);
+    mtbdd_refs_pushptr(&right);
+    mtbdd_refs_pushptr(&witness);
+    mtbdd_refs_pushptr(&intersection);
 
     BDD pending = mtbdd_invalid;
     mtbdd_refs_pushptr(&pending);
@@ -1584,6 +1592,27 @@ test_protected_destinations_CALL(lace_worker *lace)
     test_assert(bdd_xor_CALL(lace, &unchanged, mtbdd_invalid, b) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == bdd_true);
 
+    test_assert(bdd_or(&left, a, b) == SYLVAN_OK);
+    test_assert(bdd_or(&right, bdd_not(a), b) == SYLVAN_OK);
+    test_assert(bdd_intersection_witness_CALL(lace, &witness, left, right) == SYLVAN_OK);
+    test_assert(witness != bdd_false);
+    test_assert(bdd_subseteq(witness, left));
+    test_assert(bdd_subseteq(witness, right));
+    test_assert(bdd_and_CALL(lace, &intersection, left, right) == SYLVAN_OK);
+    test_assert(bdd_subseteq(witness, intersection));
+    test_assert(bdd_intersection_witness_CALL(lace, &witness, a, bdd_not(a)) == SYLVAN_OK);
+    test_assert(witness == bdd_false);
+    test_assert(bdd_intersection_witness_CALL(lace, &witness, bdd_true, left) == SYLVAN_OK);
+    test_assert(witness == left);
+    witness = left;
+    test_assert(bdd_intersection_witness_CALL(lace, &witness, witness, right) == SYLVAN_OK);
+    test_assert(witness != bdd_false && bdd_subseteq(witness, intersection));
+    test_assert(bdd_intersection_witness_CALL(lace, &unchanged, mtbdd_invalid, b) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_intersection_witness_CALL(lace, NULL, a, b) == SYLVAN_ERR_INVALID);
+    sylvan_gc_CALL(lace);
+    test_assert(witness != bdd_false);
+
     test_bdd_binary_op derived_ops[] = {
         bdd_xnor, bdd_or, bdd_nand, bdd_nor, bdd_imp, bdd_diff
     };
@@ -1597,7 +1626,7 @@ test_protected_destinations_CALL(lace_worker *lace)
     test_assert(bdd_ite_CALL(lace, NULL, a, b, c) == SYLVAN_ERR_INVALID);
     test_assert(bdd_xor_CALL(lace, NULL, a, b) == SYLVAN_ERR_INVALID);
 
-    mtbdd_refs_popptr(11);
+    mtbdd_refs_popptr(15);
     return 0;
 }
 

@@ -70,6 +70,7 @@ struct
     {2, BDD_PATHCOUNT, "BDD pathcount"},
     {2, BDD_ISBDD, "BDD isbdd"},
     {2, BDD_DISJOINT, "BDD disjoint"},
+    {2, BDD_INTERSECTION_WITNESS, "BDD intersection witness"},
 
     {2, MTBDD_APPLY, "MTBDD binary apply"},
     {2, MTBDD_UAPPLY, "MTBDD unary apply"},

@@ -93,6 +93,41 @@ TASK(int, bdd_apply_abstract, BDD*, result, BDD, a, BDD, b,
      bdd_abstract_operator, abstract)
 
 /**
+ * Experimental fused binary MTBDD combine/reduce engine.
+ *
+ * The combine callback follows the mtbdd_apply callback contract, with an
+ * additional borrowed context: it writes a handled result and returns
+ * SYLVAN_OK, returns SYLVAN_APPLY_RECURSE to request structural recursion, or
+ * returns a negative status. It may swap its local operand handles to
+ * canonicalize a commutative operation. A handled result must not introduce
+ * decision variables absent from the operands.
+ *
+ * Reduction has the same identity, associativity, skipped-variable, context,
+ * thread-safety, and cache-identity contract as mtbdd_map_reduce.
+ */
+typedef int (*mtbdd_combine_reduce_combine_cb)(
+    lace_worker *lace, MTBDD *result, MTBDD *a, MTBDD *b, void *context);
+
+typedef struct mtbdd_combine_reduce_op {
+    mtbdd_combine_reduce_combine_cb combine;
+    mtbdd_map_reduce_reduce_cb reduce;
+    MTBDD identity;
+    void *context;
+    uint64_t cache_id;
+} mtbdd_combine_reduce_op;
+
+/**
+ * Pointwise combine <a> and <b>, then reduce <variables>, in one recursive
+ * traversal without constructing the complete intermediate MTBDD.
+ *
+ * The caller must protect <result>, <a>, <b>, <variables>, and
+ * <operation->identity>. Returns SYLVAN_OK on success or a negative status on
+ * failure, leaving <result> unchanged.
+ */
+TASK(int, mtbdd_combine_reduce, MTBDD*, result, MTBDD, a, MTBDD, b,
+     BDDSET, variables, const mtbdd_combine_reduce_op*, operation)
+
+/**
  * Macros for all operation identifiers for the operation cache
  */
 

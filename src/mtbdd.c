@@ -462,7 +462,7 @@ mtbdd_leaf(uint32_t type, uint64_t value)
 
     int custom = sylvan_mt_has_custom_hash(type);
 
-    int created;
+    int created = 0;
     uint64_t index = custom ? nodes_lookupc(nodes, n.a, n.b, &created) : nodes_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
         if (custom && created < 0) return mtbdd_invalid;
@@ -1599,6 +1599,218 @@ mtbdd_map_reduce_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd,
     mtbdd_refs_pushptr(&identity);
     const int status = mtbdd_map_reduce_rec_CALL(
         lace, &computed, dd, variables, operation);
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(2);
+    return status;
+}
+
+TASK(int, mtbdd_combine_reduce_rec, MTBDD*, result, MTBDD, a, MTBDD, b,
+     BDDSET, variables, const mtbdd_combine_reduce_op*, operation)
+
+static int
+mtbdd_combine_reduce_identity_map(
+    lace_worker *lace, MTBDD *destination, MTBDD leaf, void *context)
+{
+    (void)lace;
+    (void)context;
+    *destination = leaf;
+    return SYLVAN_OK;
+}
+
+static int
+mtbdd_combine_reduce_reduce_CALL(
+    lace_worker *lace, MTBDD *destination, MTBDD a, MTBDD b,
+    size_t skipped, const mtbdd_combine_reduce_op *operation)
+{
+    if (a == operation->identity) {
+        *destination = skipped == 0 ? b : a;
+        return SYLVAN_OK;
+    }
+    if (skipped == 0 && b == operation->identity) {
+        *destination = a;
+        return SYLVAN_OK;
+    }
+
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    int status = operation->reduce(
+        lace, &computed, a, b, skipped, operation->context);
+    if (status == SYLVAN_OK) {
+        if (computed == mtbdd_invalid) {
+            status = SYLVAN_ERR_CALLBACK;
+        } else {
+            *destination = computed;
+        }
+    } else if (status > SYLVAN_OK) {
+        status = SYLVAN_ERR_CALLBACK;
+    }
+    mtbdd_refs_popptr(1);
+    return status;
+}
+
+static int
+mtbdd_combine_reduce_abstract_CALL(
+    lace_worker *lace, MTBDD *destination, MTBDD dd, BDDSET variables,
+    const mtbdd_combine_reduce_op *operation)
+{
+    const mtbdd_map_reduce_op abstraction = {
+        mtbdd_combine_reduce_identity_map,
+        operation->reduce,
+        operation->identity,
+        operation->context,
+        0
+    };
+    return mtbdd_map_reduce_CALL(
+        lace, destination, dd, variables, &abstraction);
+}
+
+int
+mtbdd_combine_reduce_rec_CALL(
+    lace_worker *lace, MTBDD *destination, MTBDD a, MTBDD b,
+    BDDSET variables, const mtbdd_combine_reduce_op *operation)
+{
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+
+    int status = operation->combine(
+        lace, &computed, &a, &b, operation->context);
+    if (status == SYLVAN_OK) {
+        if (computed == mtbdd_invalid) {
+            mtbdd_refs_popptr(1);
+            return SYLVAN_ERR_CALLBACK;
+        }
+        if (!bdd_set_is_empty(variables)) {
+            MTBDD reduced = mtbdd_invalid;
+            mtbdd_refs_pushptr(&reduced);
+            status = mtbdd_combine_reduce_abstract_CALL(
+                lace, &reduced, computed, variables, operation);
+            if (status == SYLVAN_OK) computed = reduced;
+            mtbdd_refs_popptr(1);
+        }
+        if (status == SYLVAN_OK) *destination = computed;
+        mtbdd_refs_popptr(1);
+        return status;
+    }
+    if (status != SYLVAN_APPLY_RECURSE) {
+        mtbdd_refs_popptr(1);
+        return status < SYLVAN_OK ? status : SYLVAN_ERR_CALLBACK;
+    }
+    if (mtbdd_is_leaf(a) && mtbdd_is_leaf(b)) {
+        mtbdd_refs_popptr(1);
+        return SYLVAN_ERR_CALLBACK;
+    }
+
+    sylvan_gc_test(lace);
+    sylvan_stats_count(MTBDD_COMBINE_REDUCE);
+
+    const BDDSET cache_variables = variables;
+    if (operation->cache_id != 0 &&
+        cache_get3(operation->cache_id, a, b, cache_variables, &computed)) {
+        sylvan_stats_count(MTBDD_COMBINE_REDUCE_CACHED);
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
+    }
+
+    const int a_is_leaf = mtbdd_is_leaf(a);
+    const int b_is_leaf = mtbdd_is_leaf(b);
+    const mtbddnode *a_node = a_is_leaf ? NULL : MTBDD_GETNODE(a);
+    const mtbddnode *b_node = b_is_leaf ? NULL : MTBDD_GETNODE(b);
+    const uint32_t a_level = a_is_leaf
+        ? UINT32_MAX : mtbddnode_getvariable(a_node);
+    const uint32_t b_level = b_is_leaf
+        ? UINT32_MAX : mtbddnode_getvariable(b_node);
+    const uint32_t level = a_level < b_level ? a_level : b_level;
+
+    BDDSET remaining = variables;
+    size_t skipped = 0;
+    while (!bdd_set_is_empty(remaining) &&
+           bdd_set_first(remaining) < level) {
+        if (skipped == SIZE_MAX) {
+            mtbdd_refs_popptr(1);
+            return SYLVAN_ERR_OVERFLOW;
+        }
+        skipped++;
+        remaining = bdd_set_next(remaining);
+    }
+
+    if (skipped != 0) {
+        status = mtbdd_combine_reduce_rec_CALL(
+            lace, &computed, a, b, remaining, operation);
+        if (status == SYLVAN_OK) {
+            MTBDD reduced = mtbdd_invalid;
+            mtbdd_refs_pushptr(&reduced);
+            status = mtbdd_combine_reduce_reduce_CALL(
+                lace, &reduced, computed, computed, skipped, operation);
+            if (status == SYLVAN_OK) computed = reduced;
+            mtbdd_refs_popptr(1);
+        }
+    } else {
+        const MTBDD a_low =
+            a_level == level ? node_getlow(a, a_node) : a;
+        const MTBDD a_high =
+            a_level == level ? node_gethigh(a, a_node) : a;
+        const MTBDD b_low =
+            b_level == level ? node_getlow(b, b_node) : b;
+        const MTBDD b_high =
+            b_level == level ? node_gethigh(b, b_node) : b;
+        const int quantify = !bdd_set_is_empty(remaining) &&
+                             bdd_set_first(remaining) == level;
+        const BDDSET next_variables =
+            quantify ? bdd_set_next(remaining) : remaining;
+        MTBDD low = mtbdd_invalid;
+        MTBDD high = mtbdd_invalid;
+        mtbdd_refs_pushptr(&low);
+        mtbdd_refs_pushptr(&high);
+        mtbdd_combine_reduce_rec_SPAWN(
+            lace, &high, a_high, b_high, next_variables, operation);
+        status = mtbdd_combine_reduce_rec_CALL(
+            lace, &low, a_low, b_low, next_variables, operation);
+        const int high_status = mtbdd_combine_reduce_rec_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+        if (status == SYLVAN_OK && quantify) {
+            status = mtbdd_combine_reduce_reduce_CALL(
+                lace, &computed, low, high, 0, operation);
+        } else if (status == SYLVAN_OK) {
+            status = _mtbdd_try_make_node(
+                &computed, level, low, high);
+        }
+        mtbdd_refs_popptr(2);
+    }
+
+    if (status == SYLVAN_OK && operation->cache_id != 0 &&
+        cache_put3(operation->cache_id, a, b, cache_variables, computed)) {
+        sylvan_stats_count(MTBDD_COMBINE_REDUCE_CACHEDPUT);
+    }
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(1);
+    return status;
+}
+
+int
+mtbdd_combine_reduce_CALL(
+    lace_worker *lace, MTBDD *destination, MTBDD a, MTBDD b,
+    BDDSET variables, const mtbdd_combine_reduce_op *operation)
+{
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid ||
+        variables == mtbdd_invalid || operation == NULL ||
+        operation->combine == NULL || operation->reduce == NULL ||
+        operation->identity == mtbdd_invalid ||
+        !mtbdd_is_leaf(operation->identity)) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (operation->cache_id != 0 &&
+        (operation->cache_id < (UINT64_C(512) << 40) ||
+         (operation->cache_id & UINT64_C(0x000000ffffffffff)) != 0)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    MTBDD computed = mtbdd_invalid;
+    MTBDD identity = operation->identity;
+    mtbdd_refs_pushptr(&computed);
+    mtbdd_refs_pushptr(&identity);
+    const int status = mtbdd_combine_reduce_rec_CALL(
+        lace, &computed, a, b, variables, operation);
     if (status == SYLVAN_OK) *destination = computed;
     mtbdd_refs_popptr(2);
     return status;

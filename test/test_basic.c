@@ -1716,6 +1716,170 @@ test_mtbdd_map_reduce_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+static int
+test_combine_reduce_multiply(
+    lace_worker *lace, MTBDD *destination, MTBDD *a, MTBDD *b, void *context)
+{
+    (void)context;
+    return mtbdd_op_times_CALL(lace, destination, a, b);
+}
+
+static int
+test_combine_reduce_fail(
+    lace_worker *lace, MTBDD *destination, MTBDD *a, MTBDD *b, void *context)
+{
+    (void)lace;
+    (void)destination;
+    (void)a;
+    (void)b;
+    (void)context;
+    return SYLVAN_ERR_IO;
+}
+
+static int
+test_combine_reduce_always_recurse(
+    lace_worker *lace, MTBDD *destination, MTBDD *a, MTBDD *b, void *context)
+{
+    (void)lace;
+    (void)destination;
+    (void)a;
+    (void)b;
+    (void)context;
+    return SYLVAN_APPLY_RECURSE;
+}
+
+static int
+test_combine_reduce_empty_success(
+    lace_worker *lace, MTBDD *destination, MTBDD *a, MTBDD *b, void *context)
+{
+    (void)lace;
+    (void)destination;
+    (void)a;
+    (void)b;
+    (void)context;
+    return SYLVAN_OK;
+}
+
+TASK(int, test_mtbdd_combine_reduce_destinations)
+int
+test_mtbdd_combine_reduce_destinations_CALL(lace_worker *lace)
+{
+    MTBDD zero = mtbdd_int64(0);
+    MTBDD one = mtbdd_invalid;
+    MTBDD two = mtbdd_invalid;
+    MTBDD three = mtbdd_invalid;
+    MTBDD four = mtbdd_invalid;
+    BDD x = mtbdd_invalid;
+    BDD y = mtbdd_invalid;
+    MTBDD low = mtbdd_invalid;
+    MTBDD high = mtbdd_invalid;
+    MTBDD function = mtbdd_invalid;
+    BDDSET y_variables = mtbdd_invalid;
+    BDDSET skipped_variable = mtbdd_invalid;
+    MTBDD expected = mtbdd_invalid;
+    MTBDD actual = mtbdd_invalid;
+    MTBDD product = mtbdd_invalid;
+    MTBDD unchanged = bdd_true;
+    mtbdd_refs_pushptr(&zero);
+    one = mtbdd_int64(1);
+    mtbdd_refs_pushptr(&one);
+    two = mtbdd_int64(2);
+    mtbdd_refs_pushptr(&two);
+    three = mtbdd_int64(3);
+    mtbdd_refs_pushptr(&three);
+    four = mtbdd_int64(4);
+    mtbdd_refs_pushptr(&four);
+    mtbdd_refs_pushptr(&x);
+    mtbdd_refs_pushptr(&y);
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+    mtbdd_refs_pushptr(&function);
+    mtbdd_refs_pushptr(&y_variables);
+    mtbdd_refs_pushptr(&skipped_variable);
+    mtbdd_refs_pushptr(&expected);
+    mtbdd_refs_pushptr(&actual);
+    mtbdd_refs_pushptr(&product);
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_assert(bdd_var_at_level(&x, 0) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&y, 2) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &low, y, two, one) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(lace, &high, y, four, three) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(
+        lace, &function, x, high, low) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(
+        &y_variables, (uint32_t[]){2}, 1) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(
+        &skipped_variable, (uint32_t[]){1}, 1) == SYLVAN_OK);
+
+    struct test_map_reduce_context context = {0, 0, INT64_MIN, 0};
+    mtbdd_combine_reduce_op operation = {
+        test_combine_reduce_multiply,
+        test_map_reduce_sum,
+        zero,
+        &context,
+        0
+    };
+    mtbdd_combine_reduce_SPAWN(
+        lace, &actual, function, function, y_variables, &operation);
+    test_assert(mtbdd_mul_abstract_add_CALL(
+        lace, &expected, function, function, y_variables) == SYLVAN_OK);
+    test_assert(mtbdd_combine_reduce_SYNC(lace) == SYLVAN_OK);
+    test_assert(actual == expected);
+
+    test_assert(mtbdd_combine_reduce_CALL(
+        lace, &product, function, function, bdd_set_empty(),
+        &operation) == SYLVAN_OK);
+    test_assert(mtbdd_mul_CALL(
+        lace, &expected, function, function) == SYLVAN_OK);
+    test_assert(product == expected);
+
+    test_assert(mtbdd_combine_reduce_CALL(
+        lace, &actual, two, three, skipped_variable,
+        &operation) == SYLVAN_OK);
+    test_assert(mtbdd_is_leaf(actual) && mtbdd_leaf_int64(actual) == 12);
+    test_assert(mtbdd_mul_abstract_add_CALL(
+        lace, &expected, function, function, y_variables) == SYLVAN_OK);
+    actual = function;
+    test_assert(mtbdd_combine_reduce_CALL(
+        lace, &actual, actual, function, y_variables,
+        &operation) == SYLVAN_OK);
+    test_assert(actual == expected);
+
+    context.fail_reduce = 1;
+    test_assert(mtbdd_combine_reduce_CALL(
+        lace, &unchanged, function, function, y_variables,
+        &operation) == SYLVAN_ERR_IO);
+    test_assert(unchanged == bdd_true);
+    context.fail_reduce = 0;
+    operation.combine = test_combine_reduce_fail;
+    test_assert(mtbdd_combine_reduce_CALL(
+        lace, &unchanged, function, function, y_variables,
+        &operation) == SYLVAN_ERR_IO);
+    test_assert(unchanged == bdd_true);
+    operation.combine = test_combine_reduce_empty_success;
+    test_assert(mtbdd_combine_reduce_CALL(
+        lace, &unchanged, one, two, y_variables,
+        &operation) == SYLVAN_ERR_CALLBACK);
+    test_assert(unchanged == bdd_true);
+    operation.combine = test_combine_reduce_always_recurse;
+    test_assert(mtbdd_combine_reduce_CALL(
+        lace, &unchanged, one, two, y_variables,
+        &operation) == SYLVAN_ERR_CALLBACK);
+    test_assert(unchanged == bdd_true);
+    operation.combine = test_combine_reduce_multiply;
+    operation.cache_id = 1;
+    test_assert(mtbdd_combine_reduce_CALL(
+        lace, &unchanged, one, two, y_variables,
+        &operation) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+
+    sylvan_gc_CALL(lace);
+    test_assert(mtbdd_is_valid(product));
+    mtbdd_refs_popptr(16);
+    return 0;
+}
+
 TASK(int, test_bdd_apply_abstract_engine)
 int
 test_bdd_apply_abstract_engine_CALL(lace_worker *lace)
@@ -4064,6 +4228,7 @@ int runtests_CALL(lace_worker* lace)
     if (test_mtbdd_order_destinations_CALL(lace)) return 1;
     if (test_mtbdd_abstract_destinations_CALL(lace)) return 1;
     if (test_mtbdd_map_reduce_destinations_CALL(lace)) return 1;
+    if (test_mtbdd_combine_reduce_destinations_CALL(lace)) return 1;
     if (test_bdd_apply_abstract_engine_CALL(lace)) return 1;
     if (test_eval_destinations_CALL(lace)) return 1;
     if (test_mtbdd_eval_compose_destinations_CALL(lace)) return 1;

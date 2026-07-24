@@ -127,12 +127,13 @@ TASK(void, nodes_cleanup_custom, nodes_table*, dbs)
  * hash(a, b, seed)
  * equals(lhs_a, lhs_b, rhs_a, rhs_b)
  * create(a, b) -- with a,b pointers, allows changing pointers on create of node,
- *                 but must keep hash/equals same!
+ *                 but must keep hash/equals same; returns 0 on success and a
+ *                 negative error code on failure
  * destroy(a, b)
  */
 typedef uint64_t (*nodes_hash_cb)(uint64_t, uint64_t, uint64_t);
 typedef int (*nodes_equals_cb)(uint64_t, uint64_t, uint64_t, uint64_t);
-typedef void (*nodes_create_cb)(uint64_t *, uint64_t *);
+typedef int (*nodes_create_cb)(uint64_t *, uint64_t *);
 typedef void (*nodes_destroy_cb)(uint64_t, uint64_t);
 
 /**

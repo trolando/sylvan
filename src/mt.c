@@ -26,6 +26,15 @@
 
 typedef struct
 {
+    char *name;
+    uint64_t cache_id;
+    void *context;
+    sylvan_mt_descriptor_hash_cb descriptor_hash;
+    sylvan_mt_descriptor_equal_cb descriptor_equal;
+    sylvan_mt_descriptor_clone_cb descriptor_clone;
+    sylvan_mt_descriptor_destroy_cb descriptor_destroy;
+    sylvan_mt_descriptor_to_string_cb descriptor_to_string;
+    sylvan_mt_descriptor_string_free_cb descriptor_string_free;
     sylvan_mt_hash_cb hash_cb;
     sylvan_mt_equals_cb equals_cb;
     sylvan_mt_create_cb create_cb;
@@ -55,11 +64,21 @@ sylvan_mt_from_node(uint64_t a, uint64_t b)
     (void)b;
 }
 
-static void
+static int
 _sylvan_create_cb(uint64_t *a, uint64_t *b)
 {
     customleaf_t *c = sylvan_mt_from_node(*a, *b);
-    if (c->create_cb != NULL) c->create_cb(b);
+    if (c->descriptor_clone != NULL) {
+        uint64_t result;
+        const int status = c->descriptor_clone(c->context, *b, &result);
+        if (status != SYLVAN_OK) {
+            return status < 0 ? status : SYLVAN_ERR_CALLBACK;
+        }
+        *b = result;
+    } else if (c->create_cb != NULL) {
+        c->create_cb(b);
+    }
+    return SYLVAN_OK;
 }
 
 static void
@@ -67,14 +86,20 @@ _sylvan_destroy_cb(uint64_t a, uint64_t b)
 {
     // for leaf
     customleaf_t *c = sylvan_mt_from_node(a, b);
-    if (c->destroy_cb != NULL) c->destroy_cb(b);
+    if (c->descriptor_destroy != NULL) {
+        c->descriptor_destroy(c->context, b);
+    } else if (c->destroy_cb != NULL) {
+        c->destroy_cb(b);
+    }
 }
 
 static uint64_t
 _sylvan_hash_cb(uint64_t a, uint64_t b, uint64_t seed)
 {
     customleaf_t *c = sylvan_mt_from_node(a, b);
-    if (c->hash_cb != NULL) return c->hash_cb(b, seed ^ a);
+    if (c->descriptor_hash != NULL) {
+        return c->descriptor_hash(c->context, b, seed ^ a);
+    } else if (c->hash_cb != NULL) return c->hash_cb(b, seed ^ a);
     else return sylvan_tabhash16(a, b, seed);
 }
 
@@ -83,66 +108,145 @@ _sylvan_equals_cb(uint64_t a, uint64_t b, uint64_t aa, uint64_t bb)
 {
     if (a != aa) return 0;
     customleaf_t *c = sylvan_mt_from_node(a, b);
-    if (c->equals_cb != NULL) return c->equals_cb(b, bb);
+    if (c->descriptor_equal != NULL) {
+        return c->descriptor_equal(c->context, b, bb);
+    } else if (c->equals_cb != NULL) return c->equals_cb(b, bb);
     else return b == bb ? 1 : 0;
+}
+
+static int
+sylvan_mt_reserve_type(void)
+{
+    if (cl_registry_count > UINT32_MAX) return SYLVAN_ERR_OVERFLOW;
+    if (cl_registry_count == cl_registry_size) {
+        const size_t new_size = cl_registry_size + 8;
+        customleaf_t *grown = (customleaf_t*)realloc(
+            cl_registry, sizeof(customleaf_t) * new_size);
+        if (grown == NULL) return SYLVAN_ERR_OOM;
+        cl_registry = grown;
+        memset(cl_registry + cl_registry_size, 0,
+               sizeof(customleaf_t) * (new_size - cl_registry_size));
+        cl_registry_size = new_size;
+    }
+    return SYLVAN_OK;
+}
+
+int
+sylvan_mt_register_type(uint32_t *destination,
+                        const sylvan_mt_type_descriptor *descriptor)
+{
+    if (destination == NULL || descriptor == NULL ||
+        descriptor->name == NULL || descriptor->name[0] == '\0' ||
+        descriptor->cache_id == 0 ||
+        ((descriptor->hash == NULL) != (descriptor->equal == NULL)) ||
+        ((descriptor->clone == NULL) != (descriptor->destroy == NULL)) ||
+        ((descriptor->to_string == NULL) !=
+         (descriptor->string_free == NULL)) ||
+        (descriptor->clone != NULL && descriptor->hash == NULL)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    for (size_t i = 3; i < cl_registry_count; i++) {
+        customleaf_t *registered = cl_registry + i;
+        if ((registered->name != NULL &&
+             strcmp(registered->name, descriptor->name) == 0) ||
+            registered->cache_id == descriptor->cache_id) {
+            return SYLVAN_ERR_INVALID;
+        }
+    }
+
+    const int reserve_status = sylvan_mt_reserve_type();
+    if (reserve_status != SYLVAN_OK) return reserve_status;
+
+    const size_t name_size = strlen(descriptor->name) + 1;
+    char *name = (char*)malloc(name_size);
+    if (name == NULL) return SYLVAN_ERR_OOM;
+    memcpy(name, descriptor->name, name_size);
+
+    customleaf_t *entry = cl_registry + cl_registry_count;
+    entry->name = name;
+    entry->cache_id = descriptor->cache_id;
+    entry->context = descriptor->context;
+    entry->descriptor_hash = descriptor->hash;
+    entry->descriptor_equal = descriptor->equal;
+    entry->descriptor_clone = descriptor->clone;
+    entry->descriptor_destroy = descriptor->destroy;
+    entry->descriptor_to_string = descriptor->to_string;
+    entry->descriptor_string_free = descriptor->string_free;
+    *destination = (uint32_t)cl_registry_count++;
+    return SYLVAN_OK;
+}
+
+const char *
+sylvan_mt_type_name(uint32_t type)
+{
+    return type < cl_registry_count ? cl_registry[type].name : NULL;
+}
+
+uint64_t
+sylvan_mt_type_cache_id(uint32_t type)
+{
+    return type < cl_registry_count ? cl_registry[type].cache_id : 0;
 }
 
 uint32_t
 sylvan_mt_create_type(void)
 {
-    if (cl_registry_count > UINT32_MAX) {
-        fprintf(stderr, "sylvan: Too many custom terminal types\n");
+    if (sylvan_mt_reserve_type() != SYLVAN_OK) {
+        fprintf(stderr, "sylvan: Unable to create custom terminal type\n");
         exit(1);
-    }
-    if (cl_registry_count == cl_registry_size) {
-        // resize registry array
-        cl_registry_size += 8;
-        cl_registry = (customleaf_t *)realloc(cl_registry, sizeof(customleaf_t) * (cl_registry_size));
-        memset(cl_registry + cl_registry_count, 0, sizeof(customleaf_t) * (cl_registry_size-cl_registry_count));
     }
     return (uint32_t)cl_registry_count++;
 }
 
+static customleaf_t *
+sylvan_mt_legacy_entry(uint32_t type)
+{
+    assert(type < cl_registry_count);
+    customleaf_t *entry = cl_registry + type;
+    return entry->name == NULL ? entry : NULL;
+}
+
 void sylvan_mt_set_hash(uint32_t type, sylvan_mt_hash_cb hash_cb)
 {
-    customleaf_t *c = cl_registry + type;
-    c->hash_cb = hash_cb;
+    customleaf_t *c = sylvan_mt_legacy_entry(type);
+    if (c != NULL) c->hash_cb = hash_cb;
 }
 
 void sylvan_mt_set_equals(uint32_t type, sylvan_mt_equals_cb equals_cb)
 {
-    customleaf_t *c = cl_registry + type;
-    c->equals_cb = equals_cb;
+    customleaf_t *c = sylvan_mt_legacy_entry(type);
+    if (c != NULL) c->equals_cb = equals_cb;
 }
 
 void sylvan_mt_set_create(uint32_t type, sylvan_mt_create_cb create_cb)
 {
-    customleaf_t *c = cl_registry + type;
-    c->create_cb = create_cb;
+    customleaf_t *c = sylvan_mt_legacy_entry(type);
+    if (c != NULL) c->create_cb = create_cb;
 }
 
 void sylvan_mt_set_destroy(uint32_t type, sylvan_mt_destroy_cb destroy_cb)
 {
-    customleaf_t *c = cl_registry + type;
-    c->destroy_cb = destroy_cb;
+    customleaf_t *c = sylvan_mt_legacy_entry(type);
+    if (c != NULL) c->destroy_cb = destroy_cb;
 }
 
 void sylvan_mt_set_to_str(uint32_t type, sylvan_mt_to_str_cb to_str_cb)
 {
-    customleaf_t *c = cl_registry + type;
-    c->to_str_cb = to_str_cb;
+    customleaf_t *c = sylvan_mt_legacy_entry(type);
+    if (c != NULL) c->to_str_cb = to_str_cb;
 }
 
 void sylvan_mt_set_write_binary(uint32_t type, sylvan_mt_write_binary_cb write_binary_cb)
 {
-    customleaf_t *c = cl_registry + type;
-    c->write_binary_cb = write_binary_cb;
+    customleaf_t *c = sylvan_mt_legacy_entry(type);
+    if (c != NULL) c->write_binary_cb = write_binary_cb;
 }
 
 void sylvan_mt_set_read_binary(uint32_t type, sylvan_mt_read_binary_cb read_binary_cb)
 {
-    customleaf_t *c = cl_registry + type;
-    c->read_binary_cb = read_binary_cb;
+    customleaf_t *c = sylvan_mt_legacy_entry(type);
+    if (c != NULL) c->read_binary_cb = read_binary_cb;
 }
 
 /**
@@ -157,6 +261,9 @@ sylvan_mt_quit(void)
     if (mt_initialized == 0) return;
     mt_initialized = 0;
 
+    for (size_t i = 0; i < cl_registry_count; i++) {
+        free(cl_registry[i].name);
+    }
     free(cl_registry);
     cl_registry = NULL;
     cl_registry_count = 0;
@@ -189,7 +296,7 @@ sylvan_mt_has_custom_hash(uint32_t type)
 {
     assert(type < cl_registry_count);
     customleaf_t *c = cl_registry + type;
-    return c->hash_cb != NULL ? 1 : 0;
+    return c->descriptor_hash != NULL || c->hash_cb != NULL ? 1 : 0;
 }
 
 /**
@@ -230,6 +337,17 @@ sylvan_mt_to_str(int complement, uint32_t type, uint64_t value, char* buf, size_
         }
         if (ptr != NULL) snprintf(ptr, buflen, "%" PRId32 "/%" PRIu32, num, denom);
         return ptr;
+    } else if (c->descriptor_to_string != NULL) {
+        char *formatted = NULL;
+        const int status = c->descriptor_to_string(
+            c->context, complement, value, &formatted);
+        if (status != SYLVAN_OK || formatted == NULL) return NULL;
+        const size_t required = strlen(formatted) + 1;
+        char *result = buf;
+        if (buflen < required) result = (char*)malloc(required);
+        if (result != NULL) memcpy(result, formatted, required);
+        c->descriptor_string_free(c->context, formatted);
+        return result;
     } else if (c->to_str_cb != NULL) {
         return c->to_str_cb(complement, value, buf, buflen);
     } else {
@@ -242,7 +360,9 @@ sylvan_mt_hash(uint32_t type, uint64_t value, uint64_t seed)
 {
     assert(type < cl_registry_count);
     customleaf_t *c = cl_registry + type;
-    if (c->hash_cb != NULL) return c->hash_cb(value, seed);
+    if (c->descriptor_hash != NULL) {
+        return c->descriptor_hash(c->context, value, seed);
+    } else if (c->hash_cb != NULL) return c->hash_cb(value, seed);
     else return sylvan_tabhash16((uint64_t)type, value, seed);
 }
 

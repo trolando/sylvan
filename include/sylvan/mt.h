@@ -76,12 +76,66 @@ typedef int (*sylvan_mt_write_binary_cb)(FILE*, uint64_t);
 typedef int (*sylvan_mt_read_binary_cb)(FILE*, uint64_t*);
 
 /**
+ * Immutable custom-leaf type descriptor.
+ *
+ * Registration copies the descriptor and its name. The context remains
+ * caller-owned and must outlive Sylvan. Callback pairs are inseparable:
+ * hash/equal, clone/destroy, and to_string/string_free must either both be
+ * present or both be absent. Clone returns 0 on success and a negative Sylvan
+ * error code on failure. Its input remains caller-owned; its output becomes
+ * Sylvan-owned until destroy.
+ */
+typedef uint64_t (*sylvan_mt_descriptor_hash_cb)(
+    void *context, uint64_t value, uint64_t seed);
+typedef int (*sylvan_mt_descriptor_equal_cb)(
+    void *context, uint64_t left, uint64_t right);
+typedef int (*sylvan_mt_descriptor_clone_cb)(
+    void *context, uint64_t value, uint64_t *result);
+typedef void (*sylvan_mt_descriptor_destroy_cb)(
+    void *context, uint64_t value);
+typedef int (*sylvan_mt_descriptor_to_string_cb)(
+    void *context, int complement, uint64_t value, char **result);
+typedef void (*sylvan_mt_descriptor_string_free_cb)(
+    void *context, char *string);
+
+typedef struct sylvan_mt_type_descriptor
+{
+    const char *name;
+    uint64_t cache_id;
+    void *context;
+    sylvan_mt_descriptor_hash_cb hash;
+    sylvan_mt_descriptor_equal_cb equal;
+    sylvan_mt_descriptor_clone_cb clone;
+    sylvan_mt_descriptor_destroy_cb destroy;
+    sylvan_mt_descriptor_to_string_cb to_string;
+    sylvan_mt_descriptor_string_free_cb string_free;
+} sylvan_mt_type_descriptor;
+
+/**
  * Initialize the multi-terminal subsystem
  */
 void sylvan_init_mt(void);
 
 /**
+ * Register an immutable custom-leaf type descriptor.
+ *
+ * Names and nonzero cache identities must be unique. This function is intended
+ * for initialization and must not run concurrently with leaf operations.
+ */
+int sylvan_mt_register_type(
+    uint32_t *type, const sylvan_mt_type_descriptor *descriptor);
+
+/**
+ * Return the stable registered name or cache identity of a custom type.
+ * Built-in and legacy types have no registered name or cache identity.
+ */
+const char *sylvan_mt_type_name(uint32_t type);
+uint64_t sylvan_mt_type_cache_id(uint32_t type);
+
+/**
  * Register a new leaf type.
+ *
+ * Legacy mutable registration API. Prefer sylvan_mt_register_type.
  */
 uint32_t sylvan_mt_create_type(void);
 

@@ -465,10 +465,12 @@ mtbdd_leaf(uint32_t type, uint64_t value)
     int created;
     uint64_t index = custom ? nodes_lookupc(nodes, n.a, n.b, &created) : nodes_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
+        if (custom && created < 0) return mtbdd_invalid;
         sylvan_gc(); // FIXME ?
 
         index = custom ? nodes_lookupc(nodes, n.a, n.b, &created) : nodes_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
+            if (custom && created < 0) return mtbdd_invalid;
             fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
             exit(1);
         }
@@ -1600,6 +1602,88 @@ mtbdd_map_reduce_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd,
     if (status == SYLVAN_OK) *destination = computed;
     mtbdd_refs_popptr(2);
     return status;
+}
+
+int
+mtbdd_neg_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd)
+{
+    return mtbdd_apply_unary_CALL(
+        lace, destination, dd, mtbdd_op_negate_CALL, 0);
+}
+
+int
+mtbdd_zero_indicator_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd)
+{
+    return mtbdd_apply_unary_CALL(
+        lace, destination, dd, mtbdd_op_cmpl_CALL, 0);
+}
+
+int
+mtbdd_add_CALL(lace_worker *lace, MTBDD *destination, MTBDD a, MTBDD b)
+{
+    return mtbdd_apply_CALL(lace, destination, a, b, mtbdd_op_plus_CALL);
+}
+
+int
+mtbdd_sub_CALL(lace_worker *lace, MTBDD *destination, MTBDD a, MTBDD b)
+{
+    return mtbdd_apply_CALL(lace, destination, a, b, mtbdd_op_minus_CALL);
+}
+
+int
+mtbdd_mul_CALL(lace_worker *lace, MTBDD *destination, MTBDD a, MTBDD b)
+{
+    return mtbdd_apply_CALL(lace, destination, a, b, mtbdd_op_times_CALL);
+}
+
+int
+mtbdd_div_CALL(lace_worker *lace, MTBDD *destination, MTBDD a, MTBDD b)
+{
+    return mtbdd_apply_CALL(lace, destination, a, b, mtbdd_op_divide_CALL);
+}
+
+int
+mtbdd_min_CALL(lace_worker *lace, MTBDD *destination, MTBDD a, MTBDD b)
+{
+    return mtbdd_apply_CALL(lace, destination, a, b, mtbdd_op_min_CALL);
+}
+
+int
+mtbdd_max_CALL(lace_worker *lace, MTBDD *destination, MTBDD a, MTBDD b)
+{
+    return mtbdd_apply_CALL(lace, destination, a, b, mtbdd_op_max_CALL);
+}
+
+int
+mtbdd_abstract_add_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd,
+                        BDDSET variables)
+{
+    return mtbdd_abstract_CALL(
+        lace, destination, dd, variables, mtbdd_abstract_op_plus_CALL);
+}
+
+int
+mtbdd_abstract_mul_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd,
+                        BDDSET variables)
+{
+    return mtbdd_abstract_CALL(
+        lace, destination, dd, variables, mtbdd_abstract_op_times_CALL);
+}
+
+int
+mtbdd_abstract_min_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd,
+                        BDDSET variables)
+{
+    return mtbdd_abstract_CALL(
+        lace, destination, dd, variables, mtbdd_abstract_op_min_CALL);
+}
+
+int
+mtbdd_abstract_max_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd,
+                        BDDSET variables)
+{
+    return mtbdd_abstract_CALL(
+        lace, destination, dd, variables, mtbdd_abstract_op_max_CALL);
 }
 
 static int
@@ -5037,6 +5121,13 @@ bdd_set_remove(BDDSET *destination, BDDSET set, uint32_t var)
 /**
  * Remove variables in <set2> from <set1>.
  */
+int
+bdd_set_union_CALL(lace_worker *lace, BDDSET *destination,
+                   BDDSET set1, BDDSET set2)
+{
+    return bdd_and_CALL(lace, destination, set1, set2);
+}
+
 int bdd_set_difference_CALL(lace_worker* lace, BDDSET *destination, BDDSET set1, BDDSET set2)
 {
     if (destination == NULL || set1 == mtbdd_invalid || set2 == mtbdd_invalid) return SYLVAN_ERR_INVALID;

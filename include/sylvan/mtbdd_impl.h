@@ -120,97 +120,61 @@ TASK(int, mtbdd_abstract_op_max, MTBDD*, result, MTBDD, a, MTBDD, b, int, c)
  * Compute -a
  * (negation, where 0 stays 0, and x into -x)
  */
-static inline int mtbdd_neg(MTBDD *result, MTBDD a)
-{
-    return mtbdd_apply_unary(result, a, mtbdd_op_negate_CALL, 0);
-}
+TASK(int, mtbdd_neg, MTBDD*, result, MTBDD, a)
 
 /**
  * Compute ~a for partial MTBDDs.
  * Does not negate Boolean True/False.
  * (complement, where 0 is turned into 1, and non-0 into 0)
  */
-static inline int mtbdd_zero_indicator(MTBDD *result, MTBDD dd)
-{
-    return mtbdd_apply_unary(result, dd, mtbdd_op_cmpl_CALL, 0);
-}
+TASK(int, mtbdd_zero_indicator, MTBDD*, result, MTBDD, dd)
 
 /**
  * Compute a + b
  */
-static inline int mtbdd_add(MTBDD *result, MTBDD a, MTBDD b)
-{
-    return mtbdd_apply(result, a, b, mtbdd_op_plus_CALL);
-}
+TASK(int, mtbdd_add, MTBDD*, result, MTBDD, a, MTBDD, b)
 
 /**
  * Compute a - b
  */
-static inline int mtbdd_sub(MTBDD *result, MTBDD a, MTBDD b)
-{
-    return mtbdd_apply(result, a, b, mtbdd_op_minus_CALL);
-}
+TASK(int, mtbdd_sub, MTBDD*, result, MTBDD, a, MTBDD, b)
 
 /**
  * Compute a * b
  */
-static inline int mtbdd_mul(MTBDD *result, MTBDD a, MTBDD b)
-{
-    return mtbdd_apply(result, a, b, mtbdd_op_times_CALL);
-}
+TASK(int, mtbdd_mul, MTBDD*, result, MTBDD, a, MTBDD, b)
 
-static inline int mtbdd_div(MTBDD *result, MTBDD a, MTBDD b)
-{
-    return mtbdd_apply(result, a, b, mtbdd_op_divide_CALL);
-}
+TASK(int, mtbdd_div, MTBDD*, result, MTBDD, a, MTBDD, b)
 
 /**
  * Compute min(a, b)
  */
-static inline int mtbdd_min(MTBDD *result, MTBDD a, MTBDD b)
-{
-    return mtbdd_apply(result, a, b, mtbdd_op_min_CALL);
-}
+TASK(int, mtbdd_min, MTBDD*, result, MTBDD, a, MTBDD, b)
 
 /**
  * Compute max(a, b)
  */
-static inline int mtbdd_max(MTBDD *result, MTBDD a, MTBDD b)
-{
-    return mtbdd_apply(result, a, b, mtbdd_op_max_CALL);
-}
+TASK(int, mtbdd_max, MTBDD*, result, MTBDD, a, MTBDD, b)
 
 /**
  * Abstract the variables in <v> from <a> by taking the sum of all values
  */
-static inline int mtbdd_abstract_add(MTBDD *result, MTBDD dd, MTBDD vars)
-{
-    return mtbdd_abstract(result, dd, vars, mtbdd_abstract_op_plus_CALL);
-}
+TASK(int, mtbdd_abstract_add, MTBDD*, result, MTBDD, dd, BDDSET, vars)
 
 /**
  * Abstract the variables in <v> from <a> by taking the product of all values
  */
-static inline int mtbdd_abstract_mul(MTBDD *result, MTBDD dd, MTBDD vars)
-{
-    return mtbdd_abstract(result, dd, vars, mtbdd_abstract_op_times_CALL);
-}
+TASK(int, mtbdd_abstract_mul, MTBDD*, result, MTBDD, dd, BDDSET, vars)
 
 /**
  * Abstract the variables in <v> from <a> by taking the minimum of all values
  */
-static inline int mtbdd_abstract_min(MTBDD *result, MTBDD dd, MTBDD vars)
-{
-    return mtbdd_abstract(result, dd, vars, mtbdd_abstract_op_min_CALL);
-}
+TASK(int, mtbdd_abstract_min, MTBDD*, result, MTBDD, dd, BDDSET, vars)
 
 /**
  * Abstract the variables in <v> from <a> by taking the maximum of all values
  */
-static inline int mtbdd_abstract_max(MTBDD *result, MTBDD dd, MTBDD vars)
-{
-    return mtbdd_abstract(result, dd, vars, mtbdd_abstract_op_max_CALL);
-}
+TASK(int, mtbdd_abstract_max, MTBDD*, result, MTBDD, dd, BDDSET, vars)
 
 /**
  * Compute IF <f> THEN <g> ELSE <h>.

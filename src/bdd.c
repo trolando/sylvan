@@ -402,6 +402,68 @@ int bdd_xor_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b)
     return SYLVAN_OK;
 }
 
+int
+bdd_xnor_CALL(lace_worker *lace, BDD *destination, BDD a, BDD b)
+{
+    int status = bdd_xor_CALL(lace, destination, a, b);
+    if (status == SYLVAN_OK) *destination = bdd_not(*destination);
+    return status;
+}
+
+int
+bdd_or_CALL(lace_worker *lace, BDD *destination, BDD a, BDD b)
+{
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    int status = bdd_and_CALL(lace, destination, bdd_not(a), bdd_not(b));
+    if (status == SYLVAN_OK) *destination = bdd_not(*destination);
+    return status;
+}
+
+int
+bdd_nand_CALL(lace_worker *lace, BDD *destination, BDD a, BDD b)
+{
+    int status = bdd_and_CALL(lace, destination, a, b);
+    if (status == SYLVAN_OK) *destination = bdd_not(*destination);
+    return status;
+}
+
+int
+bdd_nor_CALL(lace_worker *lace, BDD *destination, BDD a, BDD b)
+{
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    return bdd_and_CALL(lace, destination, bdd_not(a), bdd_not(b));
+}
+
+int
+bdd_imp_CALL(lace_worker *lace, BDD *destination, BDD a, BDD b)
+{
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    int status = bdd_and_CALL(lace, destination, a, bdd_not(b));
+    if (status == SYLVAN_OK) *destination = bdd_not(*destination);
+    return status;
+}
+
+int
+bdd_diff_CALL(lace_worker *lace, BDD *destination, BDD a, BDD b)
+{
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    return bdd_and_CALL(lace, destination, a, bdd_not(b));
+}
+
+char
+bdd_subseteq_CALL(lace_worker *lace, BDD a, BDD b)
+{
+    return bdd_disjoint_CALL(lace, a, bdd_not(b));
+}
+
 int bdd_ite_CALL(lace_worker *lace, BDD *destination, BDD a, BDD b, BDD c)
 {
     if (destination == NULL) return SYLVAN_ERR_INVALID;
@@ -919,6 +981,18 @@ int bdd_exists_CALL(lace_worker* lace, BDD *destination, BDD a, BDD variables)
     *destination = computed;
     mtbdd_refs_popptr(3);
     return SYLVAN_OK;
+}
+
+int
+bdd_forall_CALL(lace_worker *lace, BDD *destination, BDD dd, BDDSET variables)
+{
+    if (destination == NULL || dd == mtbdd_invalid ||
+        variables == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    int status = bdd_exists_CALL(lace, destination, bdd_not(dd), variables);
+    if (status == SYLVAN_OK) *destination = bdd_not(*destination);
+    return status;
 }
 
 /**

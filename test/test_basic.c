@@ -46,6 +46,128 @@ test_new_var_CALL(lace_worker *lace, BDD *result)
     return bdd_new_var(result);
 }
 
+struct test_leaf_descriptor_context {
+    size_t clones;
+    size_t destroys;
+    size_t strings;
+};
+
+static struct test_leaf_descriptor_context test_leaf_descriptor_context;
+
+static uint64_t
+test_leaf_descriptor_hash(void *context, uint64_t value, uint64_t seed)
+{
+    (void)context;
+    return sylvan_tabhash16(
+        *(const uint64_t*)(uintptr_t)value, UINT64_C(0), seed);
+}
+
+static int
+test_leaf_descriptor_equal(void *context, uint64_t left, uint64_t right)
+{
+    (void)context;
+    return *(const uint64_t*)(uintptr_t)left ==
+           *(const uint64_t*)(uintptr_t)right;
+}
+
+static int
+test_leaf_descriptor_clone(void *context, uint64_t value, uint64_t *result)
+{
+    struct test_leaf_descriptor_context *state = context;
+    const uint64_t source = *(const uint64_t*)(uintptr_t)value;
+    if (source == 13) return SYLVAN_ERR_OOM;
+    uint64_t *copy = malloc(sizeof(*copy));
+    if (copy == NULL) return SYLVAN_ERR_OOM;
+    *copy = source;
+    *result = (uint64_t)(uintptr_t)copy;
+    state->clones++;
+    return SYLVAN_OK;
+}
+
+static void
+test_leaf_descriptor_destroy(void *context, uint64_t value)
+{
+    struct test_leaf_descriptor_context *state = context;
+    state->destroys++;
+    free((void*)(uintptr_t)value);
+}
+
+static int
+test_leaf_descriptor_to_string(void *context, int complement,
+                               uint64_t value, char **result)
+{
+    struct test_leaf_descriptor_context *state = context;
+    char *text = malloc(32);
+    if (text == NULL) return SYLVAN_ERR_OOM;
+    snprintf(text, 32, "%s%" PRIu64, complement ? "~" : "",
+             *(const uint64_t*)(uintptr_t)value);
+    *result = text;
+    state->strings++;
+    return SYLVAN_OK;
+}
+
+static void
+test_leaf_descriptor_string_free(void *context, char *string)
+{
+    struct test_leaf_descriptor_context *state = context;
+    state->strings--;
+    free(string);
+}
+
+TASK(int, test_leaf_descriptor)
+int
+test_leaf_descriptor_CALL(lace_worker *lace)
+{
+    (void)lace;
+    uint32_t type = UINT32_MAX;
+    const sylvan_mt_type_descriptor descriptor = {
+        "test.uint64.pointer",
+        UINT64_C(0x8d6b7c2154e390af),
+        &test_leaf_descriptor_context,
+        test_leaf_descriptor_hash,
+        test_leaf_descriptor_equal,
+        test_leaf_descriptor_clone,
+        test_leaf_descriptor_destroy,
+        test_leaf_descriptor_to_string,
+        test_leaf_descriptor_string_free
+    };
+    test_assert(sylvan_mt_register_type(&type, &descriptor) == SYLVAN_OK);
+    test_assert(type >= 3);
+    test_assert(strcmp(sylvan_mt_type_name(type), descriptor.name) == 0);
+    test_assert(sylvan_mt_type_cache_id(type) == descriptor.cache_id);
+
+    uint32_t unchanged_type = 17;
+    test_assert(sylvan_mt_register_type(
+        &unchanged_type, &descriptor) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged_type == 17);
+
+    const uint64_t seven_a = 7;
+    const uint64_t seven_b = 7;
+    const uint64_t nine = 9;
+    const uint64_t failure = 13;
+    MTBDD seven = mtbdd_leaf(type, (uint64_t)(uintptr_t)&seven_a);
+    mtbdd_refs_pushptr(&seven);
+    MTBDD same_seven = mtbdd_leaf(type, (uint64_t)(uintptr_t)&seven_b);
+    mtbdd_refs_pushptr(&same_seven);
+    MTBDD other = mtbdd_leaf(type, (uint64_t)(uintptr_t)&nine);
+    mtbdd_refs_pushptr(&other);
+    test_assert(seven != mtbdd_invalid && same_seven == seven);
+    test_assert(other != mtbdd_invalid && other != seven);
+    test_assert(test_leaf_descriptor_context.clones == 2);
+    test_assert(mtbdd_leaf(
+        type, (uint64_t)(uintptr_t)&failure) == mtbdd_invalid);
+    test_assert(test_leaf_descriptor_context.clones == 2);
+
+    char buffer[32];
+    test_assert(mtbdd_leaf_to_string(
+        seven, buffer, sizeof(buffer)) == buffer);
+    test_assert(strcmp(buffer, "7") == 0);
+    test_assert(test_leaf_descriptor_context.strings == 0);
+
+    mtbdd_refs_popptr(3);
+    return 0;
+}
+
 TASK(int, test_variable_set_destinations)
 int
 test_variable_set_destinations_CALL(lace_worker *lace)
@@ -104,7 +226,9 @@ test_variable_set_destinations_CALL(lace_worker *lace)
     removed = added;
     test_assert(bdd_set_remove(&removed, removed, 3) == SYLVAN_OK);
     test_assert(bdd_set_from_array(&other, other_levels, 2) == SYLVAN_OK);
-    test_assert(bdd_set_union(&united, set, other) == SYLVAN_OK);
+    bdd_set_union_SPAWN(lace, &united, set, other);
+    test_assert(bdd_set_count(other) == 2);
+    test_assert(bdd_set_union_SYNC(lace) == SYLVAN_OK);
     bdd_set_difference_SPAWN(lace, &difference, united, set);
     int difference_status = bdd_set_difference_SYNC(lace);
     test_assert(difference_status == SYLVAN_OK);
@@ -737,9 +861,9 @@ test_mtbdd_apply_destinations_CALL(lace_worker *lace)
     test_assert(mtbdd_ite_CALL(lace, &a, x, two, one) == SYLVAN_OK);
     test_assert(mtbdd_ite_CALL(lace, &b, x, four, three) == SYLVAN_OK);
 
-    mtbdd_apply_SPAWN(lace, &sum, a, b, mtbdd_op_plus_CALL);
-    int product_status = mtbdd_apply_CALL(lace, &product, a, b, mtbdd_op_times_CALL);
-    int sum_status = mtbdd_apply_SYNC(lace);
+    mtbdd_add_SPAWN(lace, &sum, a, b);
+    int product_status = mtbdd_mul_CALL(lace, &product, a, b);
+    int sum_status = mtbdd_add_SYNC(lace);
     test_assert(sum_status == SYLVAN_OK);
     test_assert(product_status == SYLVAN_OK);
     test_assert(mtbdd_sub(&difference, a, b) == SYLVAN_OK);
@@ -1243,9 +1367,9 @@ test_mtbdd_abstract_destinations_CALL(lace_worker *lace)
     test_assert(bdd_set_from_array(&all_vars, all_levels, 3) == SYLVAN_OK);
     test_assert(bdd_set_from_array(&y_vars, y_level, 1) == SYLVAN_OK);
 
-    mtbdd_abstract_SPAWN(lace, &sum, f, all_vars, mtbdd_abstract_op_plus_CALL);
-    int max_status = mtbdd_abstract_max(&maximum, f, all_vars);
-    int sum_status = mtbdd_abstract_SYNC(lace);
+    mtbdd_abstract_add_SPAWN(lace, &sum, f, all_vars);
+    int max_status = mtbdd_abstract_max_CALL(lace, &maximum, f, all_vars);
+    int sum_status = mtbdd_abstract_add_SYNC(lace);
     test_assert(sum_status == SYLVAN_OK);
     test_assert(max_status == SYLVAN_OK);
     test_assert(mtbdd_abstract_mul(&product, f, all_vars) == SYLVAN_OK);
@@ -2305,6 +2429,7 @@ test_quantification_destinations_CALL(lace_worker *lace)
     BDD a = test_bdd_var(0);
     BDD b = test_bdd_var(1);
     BDD conjunction = mtbdd_invalid;
+    BDD disjunction = mtbdd_invalid;
     BDD disjoint_constraint = mtbdd_invalid;
     BDD exists_result = mtbdd_invalid;
     BDD unique_result = mtbdd_invalid;
@@ -2316,6 +2441,7 @@ test_quantification_destinations_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&a);
     mtbdd_refs_pushptr(&b);
     mtbdd_refs_pushptr(&conjunction);
+    mtbdd_refs_pushptr(&disjunction);
     mtbdd_refs_pushptr(&disjoint_constraint);
     mtbdd_refs_pushptr(&exists_result);
     mtbdd_refs_pushptr(&unique_result);
@@ -2324,19 +2450,22 @@ test_quantification_destinations_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&and_exists_result);
     mtbdd_refs_pushptr(&and_project_result);
 
+    bdd_or_SPAWN(lace, &disjunction, a, b);
     test_assert(bdd_and_CALL(lace, &conjunction, a, b) == SYLVAN_OK);
     test_assert(bdd_and_CALL(lace, &disjoint_constraint, bdd_not(a), b) == SYLVAN_OK);
+    test_assert(bdd_or_SYNC(lace) == SYLVAN_OK);
 
     bdd_exists_SPAWN(lace, &exists_result, conjunction, a);
     bdd_unique_SPAWN(lace, &unique_result, conjunction, a);
     bdd_project_SPAWN(lace, &project_result, conjunction, a);
     bdd_and_exists_SPAWN(lace, &and_exists_result, a, b, a);
+    bdd_forall_SPAWN(lace, &forall_result, conjunction, a);
     int and_project_status = bdd_and_project_CALL(lace, &and_project_result, a, b, a);
+    int forall_status = bdd_forall_SYNC(lace);
     int and_exists_status = bdd_and_exists_SYNC(lace);
     int project_status = bdd_project_SYNC(lace);
     int unique_status = bdd_unique_SYNC(lace);
     int exists_status = bdd_exists_SYNC(lace);
-    int forall_status = bdd_forall(&forall_result, conjunction, a);
 
     test_assert(exists_status == SYLVAN_OK);
     test_assert(unique_status == SYLVAN_OK);
@@ -2347,6 +2476,8 @@ test_quantification_destinations_CALL(lace_worker *lace)
 
     sylvan_gc_CALL(lace);
     test_assert(exists_result == b);
+    test_assert(bdd_not(disjunction) ==
+                test_bdd_and(bdd_not(a), bdd_not(b)));
     test_assert(unique_result == b);
     test_assert(forall_result == bdd_false);
     test_assert(project_result == a);
@@ -2456,7 +2587,7 @@ test_quantification_destinations_CALL(lace_worker *lace)
     /* Leave the cache empty for the cache unit test that follows. */
     sylvan_gc_CALL(lace);
 
-    mtbdd_refs_popptr(19);
+    mtbdd_refs_popptr(20);
     return 0;
 }
 
@@ -3825,6 +3956,7 @@ TASK(int, runtests)
 int runtests_CALL(lace_worker* lace)
 {
     printf("Testing protected destinations.\n");
+    if (test_leaf_descriptor_CALL(lace)) return 1;
     if (test_variable_set_destinations_CALL(lace)) return 1;
     if (test_mtbdd_construction_destinations_CALL(lace)) return 1;
     if (test_mtbdd_structure_destinations_CALL(lace)) return 1;

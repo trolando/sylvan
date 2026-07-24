@@ -45,63 +45,6 @@ static inline BDD bdd_not(BDD dd)
     return dd ^ bdd_complement;
 }
 
-static inline int bdd_xnor(BDD *result, BDD a, BDD b)
-{
-    if (result == NULL || a == mtbdd_invalid || b == mtbdd_invalid) return SYLVAN_ERR_INVALID;
-    int status = bdd_xor(result, a, b);
-    if (status == SYLVAN_OK) *result = bdd_not(*result);
-    return status;
-}
-
-static inline int bdd_or(BDD *result, BDD a, BDD b)
-{
-    if (result == NULL || a == mtbdd_invalid || b == mtbdd_invalid) return SYLVAN_ERR_INVALID;
-    int status = bdd_and(result, bdd_not(a), bdd_not(b));
-    if (status == SYLVAN_OK) *result = bdd_not(*result);
-    return status;
-}
-
-static inline int bdd_nand(BDD *result, BDD a, BDD b)
-{
-    if (result == NULL || a == mtbdd_invalid || b == mtbdd_invalid) return SYLVAN_ERR_INVALID;
-    int status = bdd_and(result, a, b);
-    if (status == SYLVAN_OK) *result = bdd_not(*result);
-    return status;
-}
-
-static inline int bdd_nor(BDD *result, BDD a, BDD b)
-{
-    if (result == NULL || a == mtbdd_invalid || b == mtbdd_invalid) return SYLVAN_ERR_INVALID;
-    return bdd_and(result, bdd_not(a), bdd_not(b));
-}
-
-static inline int bdd_imp(BDD *result, BDD a, BDD b)
-{
-    if (result == NULL || a == mtbdd_invalid || b == mtbdd_invalid) return SYLVAN_ERR_INVALID;
-    int status = bdd_and(result, a, bdd_not(b));
-    if (status == SYLVAN_OK) *result = bdd_not(*result);
-    return status;
-}
-
-static inline int bdd_diff(BDD *result, BDD a, BDD b)
-{
-    if (result == NULL || a == mtbdd_invalid || b == mtbdd_invalid) return SYLVAN_ERR_INVALID;
-    return bdd_and(result, a, bdd_not(b));
-}
-
-static inline char bdd_subseteq(BDD a, BDD b)
-{
-    return bdd_disjoint(a, bdd_not(b));
-}
-
-static inline int bdd_forall(BDD *result, BDD dd, BDDSET vars)
-{
-    if (result == NULL || dd == mtbdd_invalid || vars == mtbdd_invalid) return SYLVAN_ERR_INVALID;
-    int status = bdd_exists(result, bdd_not(dd), vars);
-    if (status == SYLVAN_OK) *result = bdd_not(*result);
-    return status;
-}
-
 static inline BDDSET bdd_set_empty(void)
 {
     return bdd_true;
@@ -122,18 +65,20 @@ static inline BDDSET bdd_set_next(BDDSET set)
     return mtbdd_node_high(set);
 }
 
-static inline int bdd_set_union(BDDSET *result, BDDSET set1, BDDSET set2)
-{
-    if (result == NULL || set1 == mtbdd_invalid || set2 == mtbdd_invalid) return SYLVAN_ERR_INVALID;
-    return bdd_and(result, set1, set2);
-}
-
 TASK(int, bdd_ite, BDD*, result, BDD, a, BDD, b, BDD, c)
 TASK(int, bdd_and, BDD*, result, BDD, a, BDD, b)
 TASK(int, bdd_xor, BDD*, result, BDD, a, BDD, b)
+TASK(int, bdd_xnor, BDD*, result, BDD, a, BDD, b)
+TASK(int, bdd_or, BDD*, result, BDD, a, BDD, b)
+TASK(int, bdd_nand, BDD*, result, BDD, a, BDD, b)
+TASK(int, bdd_nor, BDD*, result, BDD, a, BDD, b)
+TASK(int, bdd_imp, BDD*, result, BDD, a, BDD, b)
+TASK(int, bdd_diff, BDD*, result, BDD, a, BDD, b)
 TASK(char, bdd_disjoint, BDD, a, BDD, b)
+TASK(char, bdd_subseteq, BDD, a, BDD, b)
 TASK(int, bdd_intersection_witness, BDD*, result, BDD, a, BDD, b)
 TASK(int, bdd_exists, BDD*, result, BDD, dd, BDD, vars)
+TASK(int, bdd_forall, BDD*, result, BDD, dd, BDDSET, vars)
 TASK(int, bdd_unique, BDD*, result, BDD, dd, BDDSET, vars)
 TASK(int, bdd_project, BDD*, result, BDD, dd, BDD, vars)
 TASK(int, bdd_and_exists, BDD*, result, BDD, a, BDD, b, BDDSET, vars)
@@ -154,6 +99,7 @@ TASK(int, bdd_cube, BDD*, result, BDDSET, vars, const uint8_t*, cube)
 TASK(int, bdd_or_cube, BDD*, result, BDD, dd, BDDSET, vars, const uint8_t*, cube)
 TASK(int, bdd_pick_cube, BDD*, result, BDD, dd, BDDSET, vars)
 TASK(int, bdd_pick_minterm, BDD*, result, BDD, dd, BDDSET, vars)
+TASK(int, bdd_set_union, BDDSET*, result, BDDSET, set1, BDDSET, set2)
 TASK(int, bdd_set_difference, BDDSET*, result, BDDSET, set1, BDDSET, set2)
 
 #ifdef __cplusplus

@@ -1592,6 +1592,110 @@ test_mtbdd_map_reduce_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+TASK(int, test_bdd_apply_abstract_engine)
+int
+test_bdd_apply_abstract_engine_CALL(lace_worker *lace)
+{
+    BDD x0 = mtbdd_invalid;
+    BDD x1 = mtbdd_invalid;
+    BDD x2 = mtbdd_invalid;
+    BDD a = mtbdd_invalid;
+    BDD b = mtbdd_invalid;
+    BDD applied = mtbdd_invalid;
+    BDD expected = mtbdd_invalid;
+    BDD actual = mtbdd_invalid;
+    BDDSET variables = mtbdd_invalid;
+    BDDSET absent = mtbdd_invalid;
+    mtbdd_refs_pushptr(&x0);
+    mtbdd_refs_pushptr(&x1);
+    mtbdd_refs_pushptr(&x2);
+    mtbdd_refs_pushptr(&a);
+    mtbdd_refs_pushptr(&b);
+    mtbdd_refs_pushptr(&applied);
+    mtbdd_refs_pushptr(&expected);
+    mtbdd_refs_pushptr(&actual);
+    mtbdd_refs_pushptr(&variables);
+    mtbdd_refs_pushptr(&absent);
+
+    test_assert(bdd_var_at_level(&x0, 0) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&x1, 1) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&x2, 2) == SYLVAN_OK);
+    test_assert(bdd_xor_CALL(lace, &a, x0, x1) == SYLVAN_OK);
+    test_assert(bdd_or(&b, x1, x2) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(
+        &variables, (uint32_t[]){0, 2}, 2) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(
+        &absent, (uint32_t[]){5}, 1) == SYLVAN_OK);
+
+    for (int apply = BDD_APPLY_AND; apply <= BDD_APPLY_DIFF; apply++) {
+        switch ((bdd_apply_operator)apply) {
+        case BDD_APPLY_AND:
+            test_assert(bdd_and_CALL(lace, &applied, a, b) == SYLVAN_OK);
+            break;
+        case BDD_APPLY_XOR:
+            test_assert(bdd_xor_CALL(lace, &applied, a, b) == SYLVAN_OK);
+            break;
+        case BDD_APPLY_OR:
+            test_assert(bdd_or(&applied, a, b) == SYLVAN_OK);
+            break;
+        case BDD_APPLY_XNOR:
+            test_assert(bdd_xnor(&applied, a, b) == SYLVAN_OK);
+            break;
+        case BDD_APPLY_NAND:
+            test_assert(bdd_nand(&applied, a, b) == SYLVAN_OK);
+            break;
+        case BDD_APPLY_NOR:
+            test_assert(bdd_nor(&applied, a, b) == SYLVAN_OK);
+            break;
+        case BDD_APPLY_IMP:
+            test_assert(bdd_imp(&applied, a, b) == SYLVAN_OK);
+            break;
+        case BDD_APPLY_DIFF:
+            test_assert(bdd_diff(&applied, a, b) == SYLVAN_OK);
+            break;
+        }
+
+        for (int abstract = BDD_ABSTRACT_EXISTS;
+             abstract <= BDD_ABSTRACT_UNIQUE; abstract++) {
+            switch ((bdd_abstract_operator)abstract) {
+            case BDD_ABSTRACT_EXISTS:
+                test_assert(bdd_exists_CALL(
+                    lace, &expected, applied, variables) == SYLVAN_OK);
+                break;
+            case BDD_ABSTRACT_FORALL:
+                test_assert(bdd_forall(
+                    &expected, applied, variables) == SYLVAN_OK);
+                break;
+            case BDD_ABSTRACT_UNIQUE:
+                test_assert(bdd_unique_CALL(
+                    lace, &expected, applied, variables) == SYLVAN_OK);
+                break;
+            }
+            actual = a;
+            test_assert(bdd_apply_abstract_CALL(
+                lace, &actual, actual, b, variables,
+                (bdd_apply_operator)apply,
+                (bdd_abstract_operator)abstract) == SYLVAN_OK);
+            test_assert(actual == expected);
+        }
+    }
+
+    actual = bdd_true;
+    test_assert(bdd_apply_abstract_CALL(
+        lace, &actual, a, b, absent, BDD_APPLY_IMP,
+        BDD_ABSTRACT_UNIQUE) == SYLVAN_OK);
+    test_assert(actual == bdd_false);
+    test_assert(bdd_apply_abstract_CALL(
+        lace, &actual, mtbdd_invalid, b, variables, BDD_APPLY_AND,
+        BDD_ABSTRACT_EXISTS) == SYLVAN_ERR_INVALID);
+    test_assert(actual == bdd_false);
+
+    sylvan_gc_CALL(lace);
+    test_assert(expected != mtbdd_invalid);
+    mtbdd_refs_popptr(10);
+    return 0;
+}
+
 static int
 test_eval_compose_square(lace_worker *lace, MTBDD *destination, MTBDD dd)
 {
@@ -3733,6 +3837,7 @@ int runtests_CALL(lace_worker* lace)
     if (test_mtbdd_order_destinations_CALL(lace)) return 1;
     if (test_mtbdd_abstract_destinations_CALL(lace)) return 1;
     if (test_mtbdd_map_reduce_destinations_CALL(lace)) return 1;
+    if (test_bdd_apply_abstract_engine_CALL(lace)) return 1;
     if (test_eval_destinations_CALL(lace)) return 1;
     if (test_mtbdd_eval_compose_destinations_CALL(lace)) return 1;
     if (test_count_destinations_CALL(lace)) return 1;

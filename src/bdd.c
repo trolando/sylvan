@@ -1394,6 +1394,167 @@ int bdd_and_project_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDS
     return SYLVAN_OK;
 }
 
+static int
+bdd_apply_operator_CALL(lace_worker *lace, BDD *destination, BDD a, BDD b,
+                        bdd_apply_operator apply)
+{
+    int status;
+    switch (apply) {
+    case BDD_APPLY_AND:
+        return bdd_and_CALL(lace, destination, a, b);
+    case BDD_APPLY_XOR:
+        return bdd_xor_CALL(lace, destination, a, b);
+    case BDD_APPLY_OR:
+        status = bdd_and_CALL(lace, destination, bdd_not(a), bdd_not(b));
+        if (status == SYLVAN_OK) *destination = bdd_not(*destination);
+        return status;
+    case BDD_APPLY_XNOR:
+        status = bdd_xor_CALL(lace, destination, a, b);
+        if (status == SYLVAN_OK) *destination = bdd_not(*destination);
+        return status;
+    case BDD_APPLY_NAND:
+        status = bdd_and_CALL(lace, destination, a, b);
+        if (status == SYLVAN_OK) *destination = bdd_not(*destination);
+        return status;
+    case BDD_APPLY_NOR:
+        return bdd_and_CALL(lace, destination, bdd_not(a), bdd_not(b));
+    case BDD_APPLY_IMP:
+        status = bdd_and_CALL(lace, destination, a, bdd_not(b));
+        if (status == SYLVAN_OK) *destination = bdd_not(*destination);
+        return status;
+    case BDD_APPLY_DIFF:
+        return bdd_and_CALL(lace, destination, a, bdd_not(b));
+    default:
+        return SYLVAN_ERR_INVALID;
+    }
+}
+
+static int
+bdd_apply_is_commutative(bdd_apply_operator apply)
+{
+    return apply == BDD_APPLY_AND || apply == BDD_APPLY_XOR ||
+           apply == BDD_APPLY_OR || apply == BDD_APPLY_XNOR ||
+           apply == BDD_APPLY_NAND || apply == BDD_APPLY_NOR;
+}
+
+int
+bdd_apply_abstract_CALL(lace_worker *lace, BDD *destination, BDD a, BDD b,
+                        BDDSET variables, bdd_apply_operator apply,
+                        bdd_abstract_operator abstract)
+{
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid ||
+        variables == mtbdd_invalid ||
+        apply < BDD_APPLY_AND || apply > BDD_APPLY_DIFF ||
+        abstract < BDD_ABSTRACT_EXISTS || abstract > BDD_ABSTRACT_UNIQUE) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    if (bdd_set_is_empty(variables)) {
+        return bdd_apply_operator_CALL(lace, destination, a, b, apply);
+    }
+
+    if (bdd_apply_is_commutative(apply) &&
+        BDD_STRIPMARK(a) > BDD_STRIPMARK(b)) {
+        const BDD swap = a;
+        a = b;
+        b = swap;
+    }
+
+    if ((a == bdd_false || a == bdd_true) &&
+        (b == bdd_false || b == bdd_true)) {
+        if (abstract == BDD_ABSTRACT_UNIQUE) {
+            *destination = bdd_false;
+            return SYLVAN_OK;
+        }
+        return bdd_apply_operator_CALL(lace, destination, a, b, apply);
+    }
+
+    bddnode *a_node =
+        (a == bdd_false || a == bdd_true) ? NULL : MTBDD_GETNODE(a);
+    bddnode *b_node =
+        (b == bdd_false || b == bdd_true) ? NULL : MTBDD_GETNODE(b);
+    const uint32_t a_level =
+        a_node == NULL ? UINT32_MAX : bddnode_getvariable(a_node);
+    const uint32_t b_level =
+        b_node == NULL ? UINT32_MAX : bddnode_getvariable(b_node);
+    const uint32_t level = a_level < b_level ? a_level : b_level;
+
+    while (!bdd_set_is_empty(variables) &&
+           bdd_set_first(variables) < level) {
+        if (abstract == BDD_ABSTRACT_UNIQUE) {
+            *destination = bdd_false;
+            return SYLVAN_OK;
+        }
+        variables = bdd_set_next(variables);
+    }
+    if (bdd_set_is_empty(variables)) {
+        return bdd_apply_operator_CALL(lace, destination, a, b, apply);
+    }
+
+    sylvan_gc_test(lace);
+    sylvan_stats_count(BDD_APPLY_ABSTRACT);
+
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    const uint64_t operation =
+        ((uint64_t)(unsigned)abstract << 8) | (uint64_t)(unsigned)apply;
+    if (cache_get4(CACHE_BDD_APPLY_ABSTRACT, a, b, variables, operation,
+                   &computed)) {
+        sylvan_stats_count(BDD_APPLY_ABSTRACT_CACHED);
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
+    }
+
+    const BDD a_low = a_level == level ? node_low(a, a_node) : a;
+    const BDD a_high = a_level == level ? node_high(a, a_node) : a;
+    const BDD b_low = b_level == level ? node_low(b, b_node) : b;
+    const BDD b_high = b_level == level ? node_high(b, b_node) : b;
+    const int quantify = bdd_set_first(variables) == level;
+    const BDDSET next_variables =
+        quantify ? bdd_set_next(variables) : variables;
+
+    BDD low = mtbdd_invalid;
+    BDD high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+    bdd_apply_abstract_SPAWN(
+        lace, &high, a_high, b_high, next_variables, apply, abstract);
+    int status = bdd_apply_abstract_CALL(
+        lace, &low, a_low, b_low, next_variables, apply, abstract);
+    const int high_status = bdd_apply_abstract_SYNC(lace);
+    if (status == SYLVAN_OK) status = high_status;
+
+    if (status == SYLVAN_OK && quantify) {
+        switch (abstract) {
+        case BDD_ABSTRACT_EXISTS:
+            status = bdd_apply_operator_CALL(
+                lace, &computed, low, high, BDD_APPLY_OR);
+            break;
+        case BDD_ABSTRACT_FORALL:
+            status = bdd_and_CALL(lace, &computed, low, high);
+            break;
+        case BDD_ABSTRACT_UNIQUE:
+            status = bdd_xor_CALL(lace, &computed, low, high);
+            break;
+        default:
+            status = SYLVAN_ERR_INVALID;
+            break;
+        }
+    } else if (status == SYLVAN_OK) {
+        status = _mtbdd_try_make_node(&computed, level, low, high);
+    }
+
+    if (status == SYLVAN_OK &&
+        cache_put4(CACHE_BDD_APPLY_ABSTRACT, a, b, variables, operation,
+                   computed)) {
+        sylvan_stats_count(BDD_APPLY_ABSTRACT_CACHEDPUT);
+    }
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(3);
+    return status;
+}
+
 
 int bdd_rel_next_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET vars)
 {

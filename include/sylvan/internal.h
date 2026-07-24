@@ -66,6 +66,33 @@ TASK(int, zdd_from_mtbdd, ZDD*, result, MTBDD, dd, BDDSET, domain)
 TASK(int, zdd_to_mtbdd, MTBDD*, result, ZDD, dd, BDDSET, domain)
 
 /**
+ * Experimental generic Boolean apply/abstract engine.
+ *
+ * This remains in the advanced API until representative benchmarks justify
+ * exposing it as part of the normal operation surface.
+ */
+typedef enum {
+    BDD_APPLY_AND,
+    BDD_APPLY_XOR,
+    BDD_APPLY_OR,
+    BDD_APPLY_XNOR,
+    BDD_APPLY_NAND,
+    BDD_APPLY_NOR,
+    BDD_APPLY_IMP,
+    BDD_APPLY_DIFF
+} bdd_apply_operator;
+
+typedef enum {
+    BDD_ABSTRACT_EXISTS,
+    BDD_ABSTRACT_FORALL,
+    BDD_ABSTRACT_UNIQUE
+} bdd_abstract_operator;
+
+TASK(int, bdd_apply_abstract, BDD*, result, BDD, a, BDD, b,
+     BDDSET, variables, bdd_apply_operator, apply,
+     bdd_abstract_operator, abstract)
+
+/**
  * Macros for all operation identifiers for the operation cache
  */
 
@@ -91,6 +118,7 @@ static const uint64_t CACHE_BDD_DISJOINT            = (17LL<<40);
 static const uint64_t CACHE_BDD_UNIQUE              = (18LL<<40);
 static const uint64_t CACHE_BDD_INTERSECTION_WITNESS = (19LL<<40);
 static const uint64_t CACHE_BDD_SAT_COUNT_U64       = (31LL<<40);
+static const uint64_t CACHE_BDD_APPLY_ABSTRACT      = (32LL<<40);
 
 // LISTDD operations
 static const uint64_t CACHE_MDD_RELPROD             = (20LL<<40);

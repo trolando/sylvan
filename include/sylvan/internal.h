@@ -119,6 +119,7 @@ static const uint64_t CACHE_BDD_UNIQUE              = (18LL<<40);
 static const uint64_t CACHE_BDD_INTERSECTION_WITNESS = (19LL<<40);
 static const uint64_t CACHE_BDD_SAT_COUNT_U64       = (31LL<<40);
 static const uint64_t CACHE_BDD_APPLY_ABSTRACT      = (32LL<<40);
+static const uint64_t CACHE_BDD_PICK_REPRESENTATIVES = (33LL<<40);
 
 // LISTDD operations
 static const uint64_t CACHE_MDD_RELPROD             = (20LL<<40);

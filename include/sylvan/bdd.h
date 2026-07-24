@@ -188,6 +188,19 @@ static inline int bdd_unique(BDD *result, BDD dd, BDDSET vars);
 static inline int bdd_forall(BDD *result, BDD dd, BDDSET vars);
 
 /**
+ * Select one satisfying assignment of <variables> for every assignment to the
+ * remaining variables that can be extended to satisfy <dd>.
+ *
+ * The result is a subset of <dd> and has the same existential abstraction over
+ * <variables>. Selection is deterministic and prefers false at the first
+ * differing selected variable. Selected variables absent from <dd> are still
+ * assigned false. The caller must protect <result>. Returns SYLVAN_OK on
+ * success or a negative status on failure, leaving <result> unchanged.
+ */
+static inline int bdd_pick_representatives(
+    BDD *result, BDD dd, BDDSET variables);
+
+/**
  * Projection. Same as existential quantification, but <vars> contains
  * the variables to keep rather than eliminate.
  */

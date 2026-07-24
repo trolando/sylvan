@@ -995,6 +995,111 @@ bdd_forall_CALL(lace_worker *lace, BDD *destination, BDD dd, BDDSET variables)
     return status;
 }
 
+int
+bdd_pick_representatives_CALL(lace_worker *lace, BDD *destination, BDD dd,
+                              BDDSET variables)
+{
+    if (destination == NULL || dd == mtbdd_invalid ||
+        variables == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (dd == bdd_false || bdd_set_is_empty(variables)) {
+        *destination = dd;
+        return SYLVAN_OK;
+    }
+
+    sylvan_gc_test(lace);
+    sylvan_stats_count(BDD_PICK_REPRESENTATIVES);
+
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_BDD_PICK_REPRESENTATIVES, dd, variables, 0,
+                   &computed)) {
+        sylvan_stats_count(BDD_PICK_REPRESENTATIVES_CACHED);
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
+    }
+
+    const uint32_t selected_level = bdd_set_first(variables);
+    const uint32_t dd_level = dd == bdd_true
+        ? UINT32_MAX : bddnode_getvariable(MTBDD_GETNODE(dd));
+    int status = SYLVAN_OK;
+
+    if (selected_level < dd_level) {
+        BDD next = mtbdd_invalid;
+        mtbdd_refs_pushptr(&next);
+        status = bdd_pick_representatives_CALL(
+            lace, &next, dd, bdd_set_next(variables));
+        if (status == SYLVAN_OK) {
+            status = _mtbdd_try_make_node(
+                &computed, selected_level, next, bdd_false);
+        }
+        mtbdd_refs_popptr(1);
+    } else if (dd_level < selected_level) {
+        const bddnode *node = MTBDD_GETNODE(dd);
+        BDD low = mtbdd_invalid;
+        BDD high = mtbdd_invalid;
+        mtbdd_refs_pushptr(&low);
+        mtbdd_refs_pushptr(&high);
+        bdd_pick_representatives_SPAWN(
+            lace, &high, node_high(dd, node), variables);
+        status = bdd_pick_representatives_CALL(
+            lace, &low, node_low(dd, node), variables);
+        const int high_status = bdd_pick_representatives_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+        if (status == SYLVAN_OK) {
+            status = _mtbdd_try_make_node(
+                &computed, dd_level, low, high);
+        }
+        mtbdd_refs_popptr(2);
+    } else {
+        const bddnode *node = MTBDD_GETNODE(dd);
+        const BDDSET next_variables = bdd_set_next(variables);
+        const BDD dd_low = node_low(dd, node);
+        const BDD dd_high = node_high(dd, node);
+        BDD low_representatives = mtbdd_invalid;
+        BDD low_exists = mtbdd_invalid;
+        BDD uncovered_high = mtbdd_invalid;
+        BDD high_representatives = mtbdd_invalid;
+        mtbdd_refs_pushptr(&low_representatives);
+        mtbdd_refs_pushptr(&low_exists);
+        mtbdd_refs_pushptr(&uncovered_high);
+        mtbdd_refs_pushptr(&high_representatives);
+
+        bdd_pick_representatives_SPAWN(
+            lace, &low_representatives, dd_low, next_variables);
+        status = bdd_exists_CALL(
+            lace, &low_exists, dd_low, next_variables);
+        const int low_status = bdd_pick_representatives_SYNC(lace);
+        if (status == SYLVAN_OK) status = low_status;
+        if (status == SYLVAN_OK) {
+            status = bdd_and_CALL(
+                lace, &uncovered_high, dd_high, bdd_not(low_exists));
+        }
+        if (status == SYLVAN_OK) {
+            status = bdd_pick_representatives_CALL(
+                lace, &high_representatives, uncovered_high,
+                next_variables);
+        }
+        if (status == SYLVAN_OK) {
+            status = _mtbdd_try_make_node(
+                &computed, selected_level, low_representatives,
+                high_representatives);
+        }
+        mtbdd_refs_popptr(4);
+    }
+
+    if (status == SYLVAN_OK &&
+        cache_put3(CACHE_BDD_PICK_REPRESENTATIVES, dd, variables, 0,
+                   computed)) {
+        sylvan_stats_count(BDD_PICK_REPRESENTATIVES_CACHEDPUT);
+    }
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(1);
+    return status;
+}
+
 /**
  * Calculate the parity abstraction of <a> over <variables>.
  */

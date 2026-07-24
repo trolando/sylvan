@@ -79,6 +79,8 @@ TASK(char, bdd_subseteq, BDD, a, BDD, b)
 TASK(int, bdd_intersection_witness, BDD*, result, BDD, a, BDD, b)
 TASK(int, bdd_exists, BDD*, result, BDD, dd, BDD, vars)
 TASK(int, bdd_forall, BDD*, result, BDD, dd, BDDSET, vars)
+TASK(int, bdd_pick_representatives, BDD*, result, BDD, dd,
+     BDDSET, variables)
 TASK(int, bdd_unique, BDD*, result, BDD, dd, BDDSET, vars)
 TASK(int, bdd_project, BDD*, result, BDD, dd, BDD, vars)
 TASK(int, bdd_and_exists, BDD*, result, BDD, a, BDD, b, BDDSET, vars)

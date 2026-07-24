@@ -2591,6 +2591,101 @@ test_quantification_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+TASK(int, test_bdd_representatives_destinations)
+int
+test_bdd_representatives_destinations_CALL(lace_worker *lace)
+{
+    BDD x = mtbdd_invalid;
+    BDD y = mtbdd_invalid;
+    BDD z = mtbdd_invalid;
+    BDD dd = mtbdd_invalid;
+    BDD representatives = mtbdd_invalid;
+    BDD repeated = mtbdd_invalid;
+    BDD expected_xy = mtbdd_invalid;
+    BDD expected = mtbdd_invalid;
+    BDD abstract_dd = mtbdd_invalid;
+    BDD abstract_representatives = mtbdd_invalid;
+    BDD true_representative = mtbdd_invalid;
+    BDD true_expected = mtbdd_invalid;
+    BDD z_false = mtbdd_invalid;
+    BDD unchanged = bdd_true;
+    BDDSET selected = mtbdd_invalid;
+    BDDSET all = mtbdd_invalid;
+    mtbdd_refs_pushptr(&x);
+    mtbdd_refs_pushptr(&y);
+    mtbdd_refs_pushptr(&z);
+    mtbdd_refs_pushptr(&dd);
+    mtbdd_refs_pushptr(&representatives);
+    mtbdd_refs_pushptr(&repeated);
+    mtbdd_refs_pushptr(&expected_xy);
+    mtbdd_refs_pushptr(&expected);
+    mtbdd_refs_pushptr(&abstract_dd);
+    mtbdd_refs_pushptr(&abstract_representatives);
+    mtbdd_refs_pushptr(&true_representative);
+    mtbdd_refs_pushptr(&true_expected);
+    mtbdd_refs_pushptr(&z_false);
+    mtbdd_refs_pushptr(&unchanged);
+    mtbdd_refs_pushptr(&selected);
+    mtbdd_refs_pushptr(&all);
+
+    test_assert(bdd_var_at_level(&x, 0) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&y, 1) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&z, 2) == SYLVAN_OK);
+    test_assert(bdd_ite_CALL(lace, &dd, x, bdd_true, y) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(
+        &selected, (uint32_t[]){0, 2}, 2) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(
+        &all, (uint32_t[]){0, 1, 2}, 3) == SYLVAN_OK);
+
+    bdd_pick_representatives_SPAWN(
+        lace, &representatives, dd, selected);
+    test_assert(bdd_xor_CALL(lace, &expected_xy, x, y) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(
+        lace, &expected, expected_xy, bdd_not(z)) == SYLVAN_OK);
+    test_assert(bdd_pick_representatives_SYNC(lace) == SYLVAN_OK);
+    test_assert(representatives == expected);
+    test_assert(bdd_subseteq(representatives, dd));
+
+    test_assert(bdd_exists_CALL(
+        lace, &abstract_dd, dd, selected) == SYLVAN_OK);
+    test_assert(bdd_exists_CALL(
+        lace, &abstract_representatives,
+        representatives, selected) == SYLVAN_OK);
+    test_assert(abstract_representatives == abstract_dd);
+    uint64_t count = 0;
+    test_assert(bdd_sat_count_u64_CALL(
+        lace, &count, representatives, all) == SYLVAN_OK);
+    test_assert(count == 2);
+
+    test_assert(bdd_pick_representatives_CALL(
+        lace, &repeated, dd, selected) == SYLVAN_OK);
+    test_assert(repeated == representatives);
+    repeated = dd;
+    test_assert(bdd_pick_representatives_CALL(
+        lace, &repeated, repeated, selected) == SYLVAN_OK);
+    test_assert(repeated == representatives);
+
+    test_assert(bdd_pick_representatives_CALL(
+        lace, &true_representative, bdd_true, selected) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(
+        lace, &true_expected, bdd_not(x), bdd_not(z)) == SYLVAN_OK);
+    test_assert(true_representative == true_expected);
+    test_assert(bdd_cofactor(&z_false, representatives, bdd_not(z)) ==
+                SYLVAN_OK);
+    test_assert(z_false == expected_xy);
+
+    test_assert(bdd_pick_representatives_CALL(
+        lace, &unchanged, mtbdd_invalid, selected) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_pick_representatives_CALL(
+        lace, NULL, dd, selected) == SYLVAN_ERR_INVALID);
+
+    sylvan_gc_CALL(lace);
+    test_assert(representatives == expected);
+    mtbdd_refs_popptr(16);
+    return 0;
+}
+
 TASK(int, test_care_destinations)
 int
 test_care_destinations_CALL(lace_worker *lace)
@@ -3975,6 +4070,7 @@ int runtests_CALL(lace_worker* lace)
     if (test_count_destinations_CALL(lace)) return 1;
     if (test_iterator_destinations_CALL(lace)) return 1;
     if (test_quantification_destinations_CALL(lace)) return 1;
+    if (test_bdd_representatives_destinations_CALL(lace)) return 1;
     if (test_care_destinations_CALL(lace)) return 1;
     if (test_compose_destinations_CALL(lace)) return 1;
     if (test_cube_destinations_CALL(lace)) return 1;

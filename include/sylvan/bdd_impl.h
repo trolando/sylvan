@@ -93,6 +93,8 @@ TASK(int, bdd_simplify, BDD*, result, BDD, f, BDD, c)
 TASK(int, bdd_compose, BDD*, result, BDD, f, MTBDDMAP, m)
 TASK(int, bdd_sat_count_u64, uint64_t*, result, BDD, dd, BDDSET, variables)
 TASK(double, bdd_sat_count_double, BDD, dd, BDDSET, variables)
+TASK(int, bdd_probability, double*, result, BDD, dd, BDDSET, variables,
+     const double*, probabilities, size_t, count)
 TASK(void, bdd_enumerate_minterms, BDD, dd, BDDSET, vars, bdd_enumerate_cb, cb, void*, context)
 TASK(void, bdd_enumerate_minterms_parallel, BDD, dd, BDDSET, vars, bdd_enumerate_cb, cb, void*, context)
 TASK(int, bdd_map_reduce_or, BDD*, result, BDD, dd, BDDSET, vars, bdd_map_reduce_or_cb, cb, void*, context)

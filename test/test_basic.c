@@ -2449,6 +2449,154 @@ test_count_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+TASK(int, test_probability_destinations)
+int
+test_probability_destinations_CALL(lace_worker *lace)
+{
+    BDD a = mtbdd_invalid;
+    BDD b = mtbdd_invalid;
+    BDD c = mtbdd_invalid;
+    BDD bc = mtbdd_invalid;
+    BDD function = mtbdd_invalid;
+    BDDSET variables = mtbdd_invalid;
+    BDDSET three_variables = mtbdd_invalid;
+    BDDSET missing = mtbdd_invalid;
+    MTBDD non_boolean = mtbdd_invalid;
+    mtbdd_refs_pushptr(&a);
+    mtbdd_refs_pushptr(&b);
+    mtbdd_refs_pushptr(&c);
+    mtbdd_refs_pushptr(&bc);
+    mtbdd_refs_pushptr(&function);
+    mtbdd_refs_pushptr(&variables);
+    mtbdd_refs_pushptr(&three_variables);
+    mtbdd_refs_pushptr(&missing);
+    mtbdd_refs_pushptr(&non_boolean);
+
+    test_assert(bdd_var_at_level(&a, 0) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&b, 1) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&c, 2) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(lace, &bc, b, c) == SYLVAN_OK);
+    test_assert(bdd_or_CALL(lace, &function, a, bc) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(
+        &variables, (uint32_t[]){0, 1, 2, 4}, 4) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(
+        &three_variables, (uint32_t[]){0, 1, 2}, 3) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(
+        &missing, (uint32_t[]){0, 1, 4}, 3) == SYLVAN_OK);
+    non_boolean = mtbdd_int64(1);
+
+    const double probabilities[] = {0.1, 0.2, 0.3, 0.9};
+    const double other_probabilities[] = {0.8, 0.7, 0.6, 0.1};
+    double result = -1.0;
+    double other_result = -1.0;
+    bdd_probability_SPAWN(
+        lace, &result, function, variables, probabilities, 4);
+    test_assert(bdd_probability_CALL(
+        lace, &other_result, function, variables,
+        other_probabilities, 4) == SYLVAN_OK);
+    test_assert(bdd_probability_SYNC(lace) == SYLVAN_OK);
+    test_assert(fabs(result - 0.154) < 1e-12);
+    test_assert(fabs(other_result - 0.884) < 1e-12);
+
+    double repeated = -1.0;
+    test_assert(bdd_probability_CALL(
+        lace, &repeated, function, variables, probabilities, 4) ==
+        SYLVAN_OK);
+    test_assert(fabs(repeated - result) < 1e-12);
+    test_assert(bdd_probability_CALL(
+        lace, &repeated, bdd_not(function), variables,
+        probabilities, 4) == SYLVAN_OK);
+    test_assert(fabs(repeated - (1.0 - result)) < 1e-12);
+
+    const double boundary[] = {0.0, 1.0, 1.0, 0.5};
+    test_assert(bdd_probability_CALL(
+        lace, &repeated, function, variables, boundary, 4) == SYLVAN_OK);
+    test_assert(repeated == 1.0);
+    test_assert(bdd_probability_CALL(
+        lace, &repeated, bdd_false, bdd_set_empty(), NULL, 0) ==
+        SYLVAN_OK);
+    test_assert(repeated == 0.0);
+    test_assert(bdd_probability_CALL(
+        lace, &repeated, bdd_true, bdd_set_empty(), NULL, 0) ==
+        SYLVAN_OK);
+    test_assert(repeated == 1.0);
+
+    /*
+     * Exhaust all three-variable Boolean functions and compare the symbolic
+     * recurrence with explicit weighted model enumeration.
+     */
+    const double exhaustive_probabilities[] = {0.17, 0.41, 0.73};
+    for (uint32_t table = 0; table < 256; table++) {
+        function = bdd_false;
+        double expected = 0.0;
+        for (uint32_t assignment = 0; assignment < 8; assignment++) {
+            uint8_t values[3] = {
+                (uint8_t)(assignment & 1),
+                (uint8_t)((assignment >> 1) & 1),
+                (uint8_t)((assignment >> 2) & 1)
+            };
+            if ((table & (UINT32_C(1) << assignment)) != 0) {
+                test_assert(bdd_or_cube_CALL(
+                    lace, &function, function, three_variables, values) ==
+                    SYLVAN_OK);
+                double weight = 1.0;
+                for (size_t i = 0; i < 3; i++) {
+                    weight *= values[i]
+                        ? exhaustive_probabilities[i]
+                        : 1.0 - exhaustive_probabilities[i];
+                }
+                expected += weight;
+            }
+        }
+        test_assert(bdd_probability_CALL(
+            lace, &repeated, function, three_variables,
+            exhaustive_probabilities, 3) == SYLVAN_OK);
+        test_assert(fabs(repeated - expected) < 1e-12);
+    }
+
+    test_assert(bdd_or_CALL(lace, &function, a, bc) == SYLVAN_OK);
+    const double negative[] = {0.1, -0.1, 0.3, 0.9};
+    const double too_large[] = {0.1, 0.2, 1.1, 0.9};
+    const double not_a_number[] = {0.1, 0.2, NAN, 0.9};
+    const double infinite[] = {0.1, 0.2, 0.3, INFINITY};
+    double unchanged = 17.0;
+    test_assert(bdd_probability_CALL(
+        lace, &unchanged, function, missing, probabilities, 3) ==
+        SYLVAN_ERR_INVALID);
+    test_assert(unchanged == 17.0);
+    test_assert(bdd_probability_CALL(
+        lace, &unchanged, non_boolean, variables, probabilities, 4) ==
+        SYLVAN_ERR_INVALID);
+    test_assert(unchanged == 17.0);
+    test_assert(bdd_probability_CALL(
+        lace, &unchanged, function, variables, negative, 4) ==
+        SYLVAN_ERR_INVALID);
+    test_assert(bdd_probability_CALL(
+        lace, &unchanged, function, variables, too_large, 4) ==
+        SYLVAN_ERR_INVALID);
+    test_assert(bdd_probability_CALL(
+        lace, &unchanged, function, variables, not_a_number, 4) ==
+        SYLVAN_ERR_INVALID);
+    test_assert(bdd_probability_CALL(
+        lace, &unchanged, function, variables, infinite, 4) ==
+        SYLVAN_ERR_INVALID);
+    test_assert(unchanged == 17.0);
+    test_assert(bdd_probability_CALL(
+        lace, &unchanged, function, variables, probabilities, 3) ==
+        SYLVAN_ERR_INVALID);
+    test_assert(bdd_probability_CALL(
+        lace, &unchanged, function, variables, NULL, 4) ==
+        SYLVAN_ERR_INVALID);
+    test_assert(bdd_probability_CALL(
+        lace, NULL, function, variables, probabilities, 4) ==
+        SYLVAN_ERR_INVALID);
+    test_assert(unchanged == 17.0);
+
+    sylvan_gc_CALL(lace);
+    mtbdd_refs_popptr(9);
+    return 0;
+}
+
 TASK(int, test_iterator_destinations)
 int
 test_iterator_destinations_CALL(lace_worker *lace)
@@ -4397,6 +4545,7 @@ int runtests_CALL(lace_worker* lace)
     if (test_eval_destinations_CALL(lace)) return 1;
     if (test_mtbdd_eval_compose_destinations_CALL(lace)) return 1;
     if (test_count_destinations_CALL(lace)) return 1;
+    if (test_probability_destinations_CALL(lace)) return 1;
     if (test_iterator_destinations_CALL(lace)) return 1;
     if (test_quantification_destinations_CALL(lace)) return 1;
     if (test_bdd_representatives_destinations_CALL(lace)) return 1;

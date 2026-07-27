@@ -75,6 +75,7 @@ struct
     {2, BDD_INTERSECTION_WITNESS, "BDD intersection witness"},
     {2, BDD_APPLY_ABSTRACT, "BDD apply abstract"},
     {2, BDD_PICK_REPRESENTATIVES, "BDD pick representatives"},
+    {2, BDD_PROBABILITY, "BDD probability"},
 
     {2, MTBDD_APPLY, "MTBDD binary apply"},
     {2, MTBDD_UAPPLY, "MTBDD unary apply"},

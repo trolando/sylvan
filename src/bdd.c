@@ -23,6 +23,11 @@
 
 #include <avl.h>
 
+TASK(int, bdd_probability_rec, double*, result, BDD, dd, BDDSET, variables,
+     const double*, probabilities, size_t, count, uint64_t, call_id)
+
+static _Atomic(uint64_t) bdd_probability_call_id;
+
 int
 bdd_eval(BDD *destination, BDD dd, BDDSET variables, const uint8_t *values, size_t count)
 {
@@ -2616,6 +2621,103 @@ bdd_sat_count_double_CALL(lace_worker* lace, BDD bdd, BDDSET variables)
     }
 
     return (double)((long double)result * powl(2.0L, (long double)skipped));
+}
+
+int
+bdd_probability_rec_CALL(
+    lace_worker *lace, double *destination, BDD dd, BDDSET variables,
+    const double *probabilities, size_t count, uint64_t call_id)
+{
+    if (destination == NULL || dd == mtbdd_invalid ||
+        variables == mtbdd_invalid ||
+        (count != 0 && probabilities == NULL)) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (dd == bdd_false) {
+        *destination = 0.0;
+        return SYLVAN_OK;
+    }
+    if (dd == bdd_true) {
+        *destination = 1.0;
+        return SYLVAN_OK;
+    }
+    if (mtbdd_is_leaf(dd)) return SYLVAN_ERR_INVALID;
+
+    sylvan_gc_test(lace);
+    sylvan_stats_count(BDD_PROBABILITY);
+
+    const uint32_t level = mtbdd_node_variable(dd);
+    while (!bdd_set_is_empty(variables) &&
+           bdd_set_first(variables) < level) {
+        if (count == 0) return SYLVAN_ERR_INVALID;
+        variables = bdd_set_next(variables);
+        probabilities++;
+        count--;
+    }
+    if (count == 0 || bdd_set_is_empty(variables) ||
+        bdd_set_first(variables) != level) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    union {
+        double value;
+        uint64_t bits;
+    } cached;
+    if (cache_get3(
+            CACHE_BDD_PROBABILITY, dd, variables, call_id, &cached.bits)) {
+        sylvan_stats_count(BDD_PROBABILITY_CACHED);
+        *destination = cached.value;
+        return SYLVAN_OK;
+    }
+
+    const double probability = *probabilities;
+    const BDDSET next_variables = bdd_set_next(variables);
+    double low = 0.0;
+    double high = 0.0;
+    bdd_probability_rec_SPAWN(
+        lace, &high, mtbdd_node_high(dd), next_variables,
+        probabilities + 1, count - 1, call_id);
+    int status = bdd_probability_rec_CALL(
+        lace, &low, mtbdd_node_low(dd), next_variables,
+        probabilities + 1, count - 1, call_id);
+    const int high_status = bdd_probability_rec_SYNC(lace);
+    if (status == SYLVAN_OK) status = high_status;
+    if (status != SYLVAN_OK) return status;
+
+    cached.value = low + probability * (high - low);
+    if (cache_put3(
+            CACHE_BDD_PROBABILITY, dd, variables, call_id, cached.bits)) {
+        sylvan_stats_count(BDD_PROBABILITY_CACHEDPUT);
+    }
+    *destination = cached.value;
+    return SYLVAN_OK;
+}
+
+int
+bdd_probability_CALL(
+    lace_worker *lace, double *destination, BDD dd, BDDSET variables,
+    const double *probabilities, size_t count)
+{
+    if (destination == NULL || dd == mtbdd_invalid ||
+        variables == mtbdd_invalid ||
+        count != bdd_set_count(variables) ||
+        (count != 0 && probabilities == NULL)) {
+        return SYLVAN_ERR_INVALID;
+    }
+    for (size_t i = 0; i < count; i++) {
+        if (!isfinite(probabilities[i]) ||
+            probabilities[i] < 0.0 || probabilities[i] > 1.0) {
+            return SYLVAN_ERR_INVALID;
+        }
+    }
+
+    double computed;
+    const uint64_t call_id = atomic_fetch_add_explicit(
+        &bdd_probability_call_id, 1, memory_order_relaxed) + 1;
+    const int status = bdd_probability_rec_CALL(
+        lace, &computed, dd, variables, probabilities, count, call_id);
+    if (status == SYLVAN_OK) *destination = computed;
+    return status;
 }
 
 int

@@ -324,6 +324,23 @@ static inline int bdd_sat_count_u64(uint64_t *result, BDD dd, BDDSET variables);
 static inline double bdd_sat_count_double(BDD dd, BDDSET variables);
 
 /**
+ * Evaluate the exact probability that <dd> is true under independent Boolean
+ * variables.
+ *
+ * <probabilities> is packed in the order of <variables> and gives the
+ * probability that each variable is true. <count> must equal
+ * bdd_set_count(<variables>), and <variables> must contain the complete
+ * support of <dd>. Variables absent from <dd> are ignored. Every probability
+ * must be finite and in the closed interval [0, 1].
+ *
+ * Returns SYLVAN_OK on success or a negative status on failure, leaving
+ * <result> unchanged.
+ */
+static inline int bdd_probability(
+    double *result, BDD dd, BDDSET variables,
+    const double *probabilities, size_t count);
+
+/**
  * Create a low-first iterator over the satisfying assignments of <dd>.
  * <variables> must contain the complete support. In cube mode, emitted values
  * are 0, 1, or 2 (don't-care); in minterm mode, they are only 0 or 1.

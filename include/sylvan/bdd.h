@@ -211,6 +211,37 @@ static inline int bdd_project(BDD *result, BDD dd, BDDSET vars);
  */
 static inline int bdd_and_exists(BDD *result, BDD a, BDD b, BDDSET vars);
 
+/** Boolean operation used by bdd_apply_abstract. */
+typedef enum {
+    BDD_APPLY_AND,
+    BDD_APPLY_XOR,
+    BDD_APPLY_OR,
+    BDD_APPLY_XNOR,
+    BDD_APPLY_NAND,
+    BDD_APPLY_NOR,
+    BDD_APPLY_IMP,
+    BDD_APPLY_DIFF
+} bdd_apply_operator;
+
+/** Quantification used by bdd_apply_abstract. */
+typedef enum {
+    BDD_ABSTRACT_EXISTS,
+    BDD_ABSTRACT_FORALL,
+    BDD_ABSTRACT_UNIQUE
+} bdd_abstract_operator;
+
+/**
+ * Apply a Boolean operation to <a> and <b>, then abstract <variables> from the
+ * result in one traversal. Unique abstraction combines cofactors using XOR.
+ *
+ * This is the general fused operation. Prefer bdd_and_exists for AND followed
+ * by existential abstraction: its additional terminal shortcuts remain
+ * important for image computation.
+ */
+static inline int bdd_apply_abstract(
+    BDD *result, BDD a, BDD b, BDDSET variables,
+    bdd_apply_operator apply, bdd_abstract_operator abstract);
+
 /**
  * Compute and_exists, but as a projection (only keep given variables).
  */

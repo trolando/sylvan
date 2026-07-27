@@ -84,6 +84,9 @@ TASK(int, bdd_pick_representatives, BDD*, result, BDD, dd,
 TASK(int, bdd_unique, BDD*, result, BDD, dd, BDDSET, vars)
 TASK(int, bdd_project, BDD*, result, BDD, dd, BDD, vars)
 TASK(int, bdd_and_exists, BDD*, result, BDD, a, BDD, b, BDDSET, vars)
+TASK(int, bdd_apply_abstract, BDD*, result, BDD, a, BDD, b,
+     BDDSET, variables, bdd_apply_operator, apply,
+     bdd_abstract_operator, abstract)
 TASK(int, bdd_and_project, BDD*, result, BDD, a, BDD, b, BDDSET, vars)
 TASK(int, bdd_rel_prev, BDD*, result, BDD, a, BDD, b, BDDSET, vars)
 TASK(int, bdd_rel_next, BDD*, result, BDD, a, BDD, b, BDDSET, vars)

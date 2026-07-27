@@ -78,33 +78,6 @@ TASK(int, zdd_from_mtbdd, ZDD*, result, MTBDD, dd, BDDSET, domain)
 TASK(int, zdd_to_mtbdd, MTBDD*, result, ZDD, dd, BDDSET, domain)
 
 /**
- * Experimental generic Boolean apply/abstract engine.
- *
- * This remains in the advanced API until representative benchmarks justify
- * exposing it as part of the normal operation surface.
- */
-typedef enum {
-    BDD_APPLY_AND,
-    BDD_APPLY_XOR,
-    BDD_APPLY_OR,
-    BDD_APPLY_XNOR,
-    BDD_APPLY_NAND,
-    BDD_APPLY_NOR,
-    BDD_APPLY_IMP,
-    BDD_APPLY_DIFF
-} bdd_apply_operator;
-
-typedef enum {
-    BDD_ABSTRACT_EXISTS,
-    BDD_ABSTRACT_FORALL,
-    BDD_ABSTRACT_UNIQUE
-} bdd_abstract_operator;
-
-TASK(int, bdd_apply_abstract, BDD*, result, BDD, a, BDD, b,
-     BDDSET, variables, bdd_apply_operator, apply,
-     bdd_abstract_operator, abstract)
-
-/**
  * Experimental fused binary MTBDD combine/reduce engine.
  *
  * The combine callback follows the mtbdd_apply callback contract, with an

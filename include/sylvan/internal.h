@@ -52,6 +52,18 @@ int _zdd_try_make_node(ZDD *destination, uint32_t var, ZDD low, ZDD high);
 int _listdd_try_make_node(LISTDD *destination, uint32_t value, LISTDD down, LISTDD right);
 int _listdd_try_make_copy_node(LISTDD *destination, LISTDD down, LISTDD right);
 
+/**
+ * Advanced structural unary apply.
+ *
+ * The callback is consulted for every subdiagram and may return
+ * SYLVAN_APPLY_RECURSE to descend. Ordinary leaf transformations should use
+ * mtbdd_map instead.
+ */
+typedef int (*mtbdd_apply_unary_cb)(
+    lace_worker *lace, MTBDD *result, MTBDD dd, size_t parameter);
+TASK(int, mtbdd_apply_unary, MTBDD*, result, MTBDD, dd,
+     mtbdd_apply_unary_cb, op, size_t, parameter)
+
 /* Shared implementation for BDD and MTBDD evaluation. */
 int _mtbdd_eval(MTBDD *destination, MTBDD dd, BDDSET variables, const uint8_t *values, size_t count);
 

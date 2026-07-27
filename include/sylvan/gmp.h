@@ -161,18 +161,12 @@ static inline int gmp_max(MTBDD *result, MTBDD a, MTBDD b)
 /**
  * Compute -a
  */
-static inline int gmp_neg(MTBDD *result, MTBDD dd)
-{
-    return mtbdd_apply_unary(result, dd, gmp_op_neg_CALL, 0);
-}
+TASK(int, gmp_neg, MTBDD*, result, MTBDD, dd)
 
 /**
  * Compute abs(a)
  */
-static inline int gmp_abs(MTBDD *result, MTBDD dd)
-{
-    return mtbdd_apply_unary(result, dd, gmp_op_abs_CALL, 0);
-}
+TASK(int, gmp_abs, MTBDD*, result, MTBDD, dd)
 
 /**
  * Abstract the variables in <vars> from <dd> by taking the sum of all values

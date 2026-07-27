@@ -247,20 +247,18 @@ size_t mtbdd_shared_node_count(const MTBDD *mtbdds, size_t count);
 static inline size_t mtbdd_node_count(const MTBDD dd);
 
 /**
- * Callback function types for binary ("dyadic") and unary ("monadic") operations.
+ * Callback function types for binary ("dyadic") operations.
  * The callback writes its result to <result> and returns SYLVAN_OK when it
  * handles the operands, SYLVAN_APPLY_RECURSE when generic apply must descend,
  * or a negative status on failure. On recurse or failure, <result> is unchanged.
  * Sylvan protects the callback's <result> destination while the callback runs.
  * The binary function may swap the two parameters (if commutative) to improve caching.
- * The unary function is allowed an extra parameter (be careful of caching)
  */
 typedef int (*mtbdd_apply_cb)(lace_worker* lace, MTBDD *result, MTBDD*, MTBDD*);
 typedef int (*mtbdd_apply_param_cb)(lace_worker* lace, MTBDD *result, MTBDD*, MTBDD*, size_t);
-typedef int (*mtbdd_apply_unary_cb)(lace_worker* lace, MTBDD *result, MTBDD, size_t);
 
 /**
- * Callback types for mtbdd_map_reduce.
+ * Callback types for mtbdd_map and mtbdd_map_reduce.
  *
  * The mapper is called for every kind of leaf, including mtbdd_undefined,
  * bdd_true, and typed NaN leaves. It must produce a leaf. This lets the caller
@@ -274,11 +272,30 @@ typedef int (*mtbdd_apply_unary_cb)(lace_worker* lace, MTBDD *result, MTBDD, siz
  * MTBDD. Both callbacks write to a protected destination and return SYLVAN_OK
  * or a negative status. Positive callback results are invalid.
  */
-typedef int (*mtbdd_map_reduce_map_cb)(
+typedef int (*mtbdd_map_cb)(
     lace_worker *lace, MTBDD *result, MTBDD leaf, void *context);
 typedef int (*mtbdd_map_reduce_reduce_cb)(
     lace_worker *lace, MTBDD *result, MTBDD a, MTBDD b,
     size_t skipped, void *context);
+
+/**
+ * Description of a unary MTBDD leaf map.
+ *
+ * The callback is invoked only for leaves; it cannot intercept internal
+ * subdiagrams. The descriptor and <context> are borrowed through
+ * synchronization. Callbacks may run concurrently on several Lace workers, so
+ * both must remain valid and mutable context state must be thread-safe.
+ *
+ * Set <cache_id> to zero to disable caching. A nonzero value must come from
+ * cache_next_opid() in the advanced <sylvan/internal.h> API and must uniquely
+ * identify the callback and complete semantic state of <context> until the
+ * operation cache is cleared. Cached callbacks must be pure.
+ */
+typedef struct mtbdd_map_op {
+    mtbdd_map_cb map;
+    void *context;
+    uint64_t cache_id;
+} mtbdd_map_op;
 
 /**
  * Description of a fused MTBDD map/reduce operation.
@@ -299,7 +316,7 @@ typedef int (*mtbdd_map_reduce_reduce_cb)(
  * the operation cache is cleared. Cached callbacks must be pure.
  */
 typedef struct mtbdd_map_reduce_op {
-    mtbdd_map_reduce_map_cb map;
+    mtbdd_map_cb map;
     mtbdd_map_reduce_reduce_cb reduce;
     MTBDD identity;
     void *context;
@@ -323,12 +340,13 @@ static inline int mtbdd_apply(MTBDD *result, MTBDD a, MTBDD b, mtbdd_apply_cb op
 static inline int mtbdd_apply_param(MTBDD *result, MTBDD a, MTBDD b, size_t p, mtbdd_apply_param_cb op, uint64_t opid);
 
 /**
- * Apply a unary operation <op> to <dd>.
- * Callback <op> is consulted after the cache, thus the application to a terminal is cached.
- * The caller must protect <result>. Returns SYLVAN_OK on success. On failure,
- * <result> is unchanged.
+ * Map every leaf of <dd> with <operation>.
+ *
+ * The caller must protect <result> and <dd>. Returns SYLVAN_OK on success or a
+ * negative status on failure, leaving <result> unchanged.
  */
-static inline int mtbdd_apply_unary(MTBDD *result, MTBDD dd, mtbdd_apply_unary_cb op, size_t param);
+static inline int mtbdd_map(
+    MTBDD *result, MTBDD dd, const mtbdd_map_op *operation);
 
 /**
  * Map the leaves of <dd> and reduce the variables in <variables> in one

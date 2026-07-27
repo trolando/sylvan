@@ -1421,6 +1421,92 @@ int mtbdd_apply_unary_CALL(lace_worker* lace, MTBDD *destination, MTBDD dd, mtbd
     return SYLVAN_OK;
 }
 
+TASK(int, mtbdd_map_rec, MTBDD*, result, MTBDD, dd,
+     const mtbdd_map_op*, operation)
+
+int
+mtbdd_map_rec_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd,
+                   const mtbdd_map_op *operation)
+{
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+
+    sylvan_gc_test(lace);
+    sylvan_stats_count(MTBDD_MAP);
+
+    if (operation->cache_id != 0 &&
+        cache_get3(operation->cache_id, dd, 0, 0, &computed)) {
+        sylvan_stats_count(MTBDD_MAP_CACHED);
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
+    }
+
+    int status;
+    if (mtbdd_is_leaf(dd)) {
+        status = operation->map(
+            lace, &computed, dd, operation->context);
+        if (status == SYLVAN_OK) {
+            if (computed == mtbdd_invalid || !mtbdd_is_leaf(computed)) {
+                status = SYLVAN_ERR_CALLBACK;
+            }
+        } else if (status > SYLVAN_OK) {
+            status = SYLVAN_ERR_CALLBACK;
+        }
+    } else {
+        const mtbddnode *node = MTBDD_GETNODE(dd);
+        MTBDD low = mtbdd_invalid;
+        MTBDD high = mtbdd_invalid;
+        mtbdd_refs_pushptr(&low);
+        mtbdd_refs_pushptr(&high);
+
+        mtbdd_map_rec_SPAWN(
+            lace, &high, node_gethigh(dd, node), operation);
+        status = mtbdd_map_rec_CALL(
+            lace, &low, node_getlow(dd, node), operation);
+        const int high_status = mtbdd_map_rec_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+        if (status == SYLVAN_OK) {
+            status = _mtbdd_try_make_node(
+                &computed, mtbddnode_getvariable(node), low, high);
+        }
+
+        mtbdd_refs_popptr(2);
+    }
+
+    if (status == SYLVAN_OK && operation->cache_id != 0) {
+        if (cache_put3(operation->cache_id, dd, 0, 0, computed)) {
+            sylvan_stats_count(MTBDD_MAP_CACHEDPUT);
+        }
+    }
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(1);
+    return status;
+}
+
+int
+mtbdd_map_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd,
+               const mtbdd_map_op *operation)
+{
+    if (destination == NULL || dd == mtbdd_invalid || operation == NULL ||
+        operation->map == NULL) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (operation->cache_id != 0 &&
+        (operation->cache_id < (UINT64_C(512) << 40) ||
+         (operation->cache_id & UINT64_C(0x000000ffffffffff)) != 0)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    MTBDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    const int status = mtbdd_map_rec_CALL(
+        lace, &computed, dd, operation);
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(1);
+    return status;
+}
+
 TASK(int, mtbdd_map_reduce_rec, MTBDD*, result, MTBDD, dd, BDDSET, variables, const mtbdd_map_reduce_op*, operation)
 
 static int

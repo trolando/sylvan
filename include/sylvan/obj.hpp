@@ -679,9 +679,9 @@ public:
     Mtbdd Apply(const Mtbdd &other, mtbdd_apply_cb op) const;
 
     /**
-     * @brief Applies the unary operation <op> with parameter <param>
+     * @brief Maps every leaf with <operation>
      */
-    Mtbdd UApply(mtbdd_apply_unary_cb op, size_t param) const;
+    Mtbdd Map(const mtbdd_map_op &operation) const;
 
     /**
      * @brief Computers the abstraction on variables <variables> using operator <op>.

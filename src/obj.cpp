@@ -863,10 +863,10 @@ Mtbdd::Apply(const Mtbdd &other, mtbdd_apply_cb op) const
 }
 
 Mtbdd
-Mtbdd::UApply(mtbdd_apply_unary_cb op, size_t param) const
+Mtbdd::Map(const mtbdd_map_op &operation) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_apply_unary(&result.mtbdd, mtbdd, op, param);
+    (void)mtbdd_map(&result.mtbdd, mtbdd, &operation);
     return result;
 }
 

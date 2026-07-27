@@ -1597,6 +1597,11 @@ test_mtbdd_map_reduce_destinations_CALL(lace_worker *lace)
     test_assert(bdd_set_from_array(&skipped_variables, skipped_level, 1) == SYLVAN_OK);
 
     struct test_map_reduce_context context = {1, 7, INT64_MIN, 0};
+    mtbdd_map_op map_operation = {
+        test_map_reduce_map,
+        &context,
+        0
+    };
     mtbdd_map_reduce_op operation = {
         test_map_reduce_map,
         test_map_reduce_sum,
@@ -1608,8 +1613,8 @@ test_mtbdd_map_reduce_destinations_CALL(lace_worker *lace)
     mtbdd_map_reduce_SPAWN(
         lace, &result, function, all_variables, &operation);
     mapped = function;
-    int status = mtbdd_map_reduce_CALL(
-        lace, &mapped, mapped, bdd_true, &operation);
+    int status = mtbdd_map_CALL(
+        lace, &mapped, mapped, &map_operation);
     int parallel_status = mtbdd_map_reduce_SYNC(lace);
     test_assert(status == SYLVAN_OK);
     test_assert(parallel_status == SYLVAN_OK);
@@ -1644,6 +1649,48 @@ test_mtbdd_map_reduce_destinations_CALL(lace_worker *lace)
         &undefined_result, mtbdd_undefined, y_variables, &operation) == SYLVAN_OK);
     test_assert(mtbdd_is_leaf(undefined_result));
     test_assert(mtbdd_leaf_int64(undefined_result) == 14);
+
+    map_operation.cache_id = cache_next_opid();
+    test_assert(mtbdd_map(&cached, function, &map_operation) == SYLVAN_OK);
+    sylvan_gc_CALL(lace);
+    test_assert(mtbdd_map(&cached, function, &map_operation) == SYLVAN_OK);
+    mtbdd_cofactors(cached, &x_low, &x_high);
+    mtbdd_cofactors(x_low, &y_low, &y_high);
+    test_assert(mtbdd_leaf_int64(y_low) == 2);
+    test_assert(mtbdd_leaf_int64(y_high) == 3);
+
+    map_operation.cache_id = 0;
+    context.fail_map_value = 4;
+    test_assert(mtbdd_map(
+        &unchanged, function, &map_operation) == SYLVAN_ERR_IO);
+    test_assert(unchanged == bdd_true);
+    context.fail_map_value = INT64_MIN;
+    map_operation.map = test_map_reduce_nonleaf;
+    test_assert(mtbdd_map(
+        &unchanged, one, &map_operation) == SYLVAN_ERR_CALLBACK);
+    test_assert(unchanged == bdd_true);
+    map_operation.map = test_map_reduce_empty_success;
+    test_assert(mtbdd_map(
+        &unchanged, one, &map_operation) == SYLVAN_ERR_CALLBACK);
+    test_assert(unchanged == bdd_true);
+    map_operation.map = test_map_reduce_positive_status;
+    test_assert(mtbdd_map(
+        &unchanged, one, &map_operation) == SYLVAN_ERR_CALLBACK);
+    test_assert(unchanged == bdd_true);
+    map_operation.map = test_map_reduce_map;
+    test_assert(mtbdd_map(NULL, function, &map_operation) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_map(
+        &unchanged, mtbdd_invalid, &map_operation) == SYLVAN_ERR_INVALID);
+    test_assert(mtbdd_map(
+        &unchanged, function, NULL) == SYLVAN_ERR_INVALID);
+    map_operation.map = NULL;
+    test_assert(mtbdd_map(
+        &unchanged, function, &map_operation) == SYLVAN_ERR_INVALID);
+    map_operation.map = test_map_reduce_map;
+    map_operation.cache_id = 1;
+    test_assert(mtbdd_map(
+        &unchanged, function, &map_operation) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
 
     operation.cache_id = cache_next_opid();
     test_assert(mtbdd_map_reduce(

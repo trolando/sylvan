@@ -81,6 +81,7 @@ struct
 
     {2, MTBDD_APPLY, "MTBDD binary apply"},
     {2, MTBDD_UAPPLY, "MTBDD unary apply"},
+    {2, MTBDD_MAP, "MTBDD map"},
     {2, MTBDD_ABSTRACT, "MTBDD abstract"},
     {2, MTBDD_MAP_REDUCE, "MTBDD map reduce"},
     {2, MTBDD_COMBINE_REDUCE, "MTBDD combine reduce"},

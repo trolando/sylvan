@@ -72,7 +72,7 @@ TASK(int, mtbdd_apply, MTBDD*, result, MTBDD, a, MTBDD, b, mtbdd_apply_cb, op)
 
 TASK(int, mtbdd_apply_param, MTBDD*, result, MTBDD, a, MTBDD, b, size_t, p, mtbdd_apply_param_cb, op, uint64_t, opid)
 
-TASK(int, mtbdd_apply_unary, MTBDD*, result, MTBDD, dd, mtbdd_apply_unary_cb, op, size_t, param)
+TASK(int, mtbdd_map, MTBDD*, result, MTBDD, dd, const mtbdd_map_op*, operation)
 
 TASK(int, mtbdd_map_reduce, MTBDD*, result, MTBDD, dd, BDDSET, variables, const mtbdd_map_reduce_op*, operation)
 

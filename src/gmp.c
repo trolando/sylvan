@@ -820,6 +820,20 @@ int gmp_op_abs_CALL(lace_worker* lace, MTBDD *destination, MTBDD dd, size_t p)
     return SYLVAN_APPLY_RECURSE;
 }
 
+int
+gmp_neg_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd)
+{
+    return mtbdd_apply_unary_CALL(
+        lace, destination, dd, gmp_op_neg_CALL, 0);
+}
+
+int
+gmp_abs_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd)
+{
+    return mtbdd_apply_unary_CALL(
+        lace, destination, dd, gmp_op_abs_CALL, 0);
+}
+
 /**
  * The abstraction operators are called in either of two ways:
  * - with k=0, then just calculate "a op b"

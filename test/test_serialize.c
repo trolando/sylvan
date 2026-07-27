@@ -240,7 +240,7 @@ test_bdd_serialization(void)
         &application) == SYLVAN_OK);
 
     sylvan_serialization_root root = {
-        SYLVAN_DD_LISTDD, UINT64_MAX, mtbdd_invalid, mtbdd_invalid
+        SYLVAN_DD_LISTDD, UINT64_MAX, mtbdd_invalid, mtbdd_invalid, NULL
     };
     int has_root = -1;
     test_assert(sylvan_serialization_reader_next(
@@ -326,7 +326,7 @@ test_mtbdd_serialization(void)
         &reader, framed_reader, NULL, NULL) == SYLVAN_OK);
 
     sylvan_serialization_root root = {
-        SYLVAN_DD_BDD, UINT64_MAX, mtbdd_invalid, mtbdd_invalid
+        SYLVAN_DD_BDD, UINT64_MAX, mtbdd_invalid, mtbdd_invalid, NULL
     };
     int has_root = -1;
     test_assert(sylvan_serialization_reader_next(
@@ -477,7 +477,7 @@ test_custom_leaf_serialization(void)
         reader, &codec) == SYLVAN_OK);
 
     sylvan_serialization_root decoded = {
-        SYLVAN_DD_BDD, UINT64_MAX, mtbdd_invalid, mtbdd_invalid
+        SYLVAN_DD_BDD, UINT64_MAX, mtbdd_invalid, mtbdd_invalid, NULL
     };
     int has_root = -1;
     test_assert(sylvan_serialization_reader_next(
@@ -547,7 +547,7 @@ test_zdd_serialization(void)
         &reader, framed_reader, NULL, NULL) == SYLVAN_OK);
 
     sylvan_serialization_root root = {
-        SYLVAN_DD_BDD, UINT64_MAX, mtbdd_invalid, mtbdd_invalid
+        SYLVAN_DD_BDD, UINT64_MAX, mtbdd_invalid, mtbdd_invalid, NULL
     };
     int has_root = -1;
     test_assert(sylvan_serialization_reader_next(
@@ -591,9 +591,12 @@ test_listdd_serialization(void)
     LISTDD first = listdd_empty;
     LISTDD second = listdd_empty;
     LISTDD copy = listdd_invalid;
+    LISTDD relation = listdd_invalid;
+    listdd_relation_layout *layout = NULL;
     listdd_protect(&first);
     listdd_protect(&second);
     listdd_protect(&copy);
+    listdd_protect(&relation);
 
     const uint32_t one[] = {1, 2, 3};
     const uint32_t two[] = {1, 4, 3};
@@ -606,6 +609,20 @@ test_listdd_serialization(void)
         &second, first, three, 3) == SYLVAN_OK);
     copy = listdd_make_copy_node(
         listdd_empty_list, listdd_empty);
+    const listdd_relation_access accesses[] = {
+        LISTDD_RELATION_READ_WRITE,
+        LISTDD_RELATION_UNUSED,
+        LISTDD_RELATION_WRITE
+    };
+    const uint32_t read_values[] = {10, 0, 0};
+    const uint32_t write_values[] = {10, 0, 20};
+    const uint8_t retain_source[] = {1, 0, 0};
+    const uint32_t action_label = 7;
+    test_assert(listdd_relation_layout_create(
+        &layout, accesses, 3, 1) == SYLVAN_OK);
+    test_assert(listdd_relation_singleton(
+        &relation, layout, read_values, write_values,
+        retain_source, 3, &action_label) == SYLVAN_OK);
 
     struct memory_stream stream = {
         NULL, 0, 0, 0, SIZE_MAX
@@ -627,7 +644,7 @@ test_listdd_serialization(void)
         &reader, framed_reader, NULL, NULL) == SYLVAN_OK);
 
     sylvan_serialization_root root = {
-        SYLVAN_DD_BDD, UINT64_MAX, mtbdd_invalid, mtbdd_invalid
+        SYLVAN_DD_BDD, UINT64_MAX, mtbdd_invalid, mtbdd_invalid, NULL
     };
     int has_root = -1;
     test_assert(sylvan_serialization_reader_next(
@@ -635,7 +652,8 @@ test_listdd_serialization(void)
     test_assert(
         has_root == 1 && root.family == SYLVAN_DD_LISTDD &&
         root.key == 401 && root.dd == first &&
-        root.domain == mtbdd_invalid);
+        root.domain == mtbdd_invalid &&
+        root.listdd_layout == NULL);
 
     test_assert(sylvan_serialization_write_listdd(
         writer, second, 402) == SYLVAN_OK);
@@ -643,6 +661,8 @@ test_listdd_serialization(void)
         writer, copy, 403) == SYLVAN_OK);
     test_assert(sylvan_serialization_write_listdd(
         writer, listdd_empty_list, 404) == SYLVAN_OK);
+    test_assert(sylvan_serialization_write_listdd_relation(
+        writer, relation, layout, 405) == SYLVAN_OK);
     test_assert(sylvan_framed_writer_finish(framed_writer) == SYLVAN_OK);
     sylvan_gc();
 
@@ -664,12 +684,26 @@ test_listdd_serialization(void)
         root.key == 404 && root.dd == listdd_empty_list);
     test_assert(sylvan_serialization_reader_next(
         reader, &root, &has_root) == SYLVAN_OK);
+    int contains = 0;
+    test_assert(
+        has_root == 1 && root.family == SYLVAN_DD_LISTDD &&
+        root.key == 405 && root.dd == relation &&
+        root.listdd_layout != NULL);
+    test_assert(listdd_relation_contains(
+        &contains, (LISTDD)root.dd, root.listdd_layout,
+        read_values, write_values, retain_source, 3,
+        &action_label) == SYLVAN_OK);
+    test_assert(contains);
+    test_assert(sylvan_serialization_reader_next(
+        reader, &root, &has_root) == SYLVAN_OK);
     test_assert(has_root == 0);
 
     sylvan_serialization_reader_destroy(reader);
     sylvan_framed_reader_destroy(framed_reader);
     sylvan_serialization_writer_destroy(writer);
     sylvan_framed_writer_destroy(framed_writer);
+    listdd_relation_layout_destroy(layout);
+    listdd_unprotect(&relation);
     listdd_unprotect(&copy);
     listdd_unprotect(&second);
     listdd_unprotect(&first);

@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "listdd_private.h"
 #include "refs.h"
 
 static const uint8_t sylvan_stream_magic[8] = {
@@ -370,6 +371,13 @@ struct sylvan_serialization_leaf_codec_entry {
     sylvan_serialization_leaf_read_cb read;
 };
 
+struct sylvan_serialization_listdd_layout_entry {
+    listdd_relation_access *positions;
+    size_t count;
+    int has_action_label;
+    listdd_relation_layout *layout;
+};
+
 struct sylvan_serialization_writer {
     sylvan_framed_writer *stream;
     struct sylvan_serialization_dictionary dictionary;
@@ -381,6 +389,9 @@ struct sylvan_serialization_writer {
     struct sylvan_serialization_leaf_codec_entry *codecs;
     size_t codec_count;
     size_t codec_capacity;
+    struct sylvan_serialization_listdd_layout_entry *layouts;
+    size_t layout_count;
+    size_t layout_capacity;
     int failed;
 };
 
@@ -394,6 +405,9 @@ struct sylvan_serialization_reader {
     struct sylvan_serialization_leaf_codec_entry *codecs;
     size_t codec_count;
     size_t codec_capacity;
+    struct sylvan_serialization_listdd_layout_entry *layouts;
+    size_t layout_count;
+    size_t layout_capacity;
     int failed;
 };
 
@@ -424,6 +438,47 @@ sylvan_serialization_codec_reserve(
     *codecs = grown;
     *capacity = new_capacity;
     return SYLVAN_OK;
+}
+
+static int
+sylvan_serialization_layout_reserve(
+    struct sylvan_serialization_listdd_layout_entry **layouts,
+    size_t *capacity, size_t count)
+{
+    if (count < *capacity) return SYLVAN_OK;
+    const size_t old_capacity = *capacity;
+    const size_t new_capacity =
+        old_capacity == 0 ? 4 : old_capacity * 2;
+    if (new_capacity < old_capacity ||
+        new_capacity > SIZE_MAX / sizeof(**layouts)) {
+        return SYLVAN_ERR_OOM;
+    }
+    struct sylvan_serialization_listdd_layout_entry *grown = realloc(
+        *layouts, new_capacity * sizeof(**layouts));
+    if (grown == NULL) return SYLVAN_ERR_OOM;
+    *layouts = grown;
+    *capacity = new_capacity;
+    return SYLVAN_OK;
+}
+
+static void
+sylvan_serialization_writer_layouts_clear(
+    sylvan_serialization_writer *writer)
+{
+    for (size_t i = 0; i < writer->layout_count; i++) {
+        free(writer->layouts[i].positions);
+    }
+    free(writer->layouts);
+}
+
+static void
+sylvan_serialization_reader_layouts_clear(
+    sylvan_serialization_reader *reader)
+{
+    for (size_t i = 0; i < reader->layout_count; i++) {
+        listdd_relation_layout_destroy(reader->layouts[i].layout);
+    }
+    free(reader->layouts);
 }
 
 static int
@@ -1082,6 +1137,7 @@ sylvan_serialization_writer_destroy(sylvan_serialization_writer *writer)
     free(writer->listdd_dictionary.ids);
     free(writer->listdd_dictionary.nodes);
     sylvan_serialization_codec_clear(writer->codecs, writer->codec_count);
+    sylvan_serialization_writer_layouts_clear(writer);
     free(writer);
 }
 
@@ -1517,12 +1573,115 @@ sylvan_serialization_write_listdd_node_batch(
     return status;
 }
 
-int
-sylvan_serialization_write_listdd_CALL(
+static int
+sylvan_serialization_is_typed_listdd_layout(
+    const listdd_relation_layout *layout)
+{
+    if (layout == NULL || layout->count == SIZE_MAX ||
+        (layout->count != 0 && layout->positions == NULL) ||
+        (layout->has_action_label != 0 &&
+         layout->has_action_label != 1)) {
+        return 0;
+    }
+    for (size_t i = 0; i < layout->count; i++) {
+        if ((unsigned int)layout->positions[i] >
+            (unsigned int)LISTDD_RELATION_READ_WRITE) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int
+sylvan_serialization_write_listdd_layout(
+    sylvan_serialization_writer *writer,
+    const listdd_relation_layout *layout, uint64_t *identifier)
+{
+    if (!sylvan_serialization_is_typed_listdd_layout(layout)) {
+        return SYLVAN_ERR_INVALID;
+    }
+    for (size_t i = 0; i < writer->layout_count; i++) {
+        const struct sylvan_serialization_listdd_layout_entry *entry =
+            writer->layouts + i;
+        if (entry->count == layout->count &&
+            entry->has_action_label == layout->has_action_label &&
+            (layout->count == 0 ||
+             memcmp(entry->positions, layout->positions,
+                    layout->count * sizeof(*layout->positions)) == 0)) {
+            *identifier = (uint64_t)i + 1;
+            return SYLVAN_OK;
+        }
+    }
+
+    if (layout->count > UINT64_MAX - 24 ||
+        layout->count > SIZE_MAX / sizeof(*layout->positions)) {
+        return SYLVAN_ERR_OVERFLOW;
+    }
+    int status = sylvan_serialization_layout_reserve(
+        &writer->layouts, &writer->layout_capacity,
+        writer->layout_count);
+    if (status != SYLVAN_OK) return status;
+
+    listdd_relation_access *positions = layout->count == 0 ? NULL :
+        malloc(layout->count * sizeof(*positions));
+    uint8_t *payload = layout->count == 0 ? NULL :
+        malloc(layout->count);
+    if (layout->count != 0 &&
+        (positions == NULL || payload == NULL)) {
+        free(payload);
+        free(positions);
+        return SYLVAN_ERR_OOM;
+    }
+    if (layout->count != 0) {
+        memcpy(positions, layout->positions,
+               layout->count * sizeof(*positions));
+        for (size_t i = 0; i < layout->count; i++) {
+            payload[i] = (uint8_t)layout->positions[i];
+        }
+    }
+
+    const uint64_t id = (uint64_t)writer->layout_count + 1;
+    uint8_t header[24] = {0};
+    sylvan_store_u64(header, id);
+    sylvan_store_u64(header + 8, layout->count);
+    sylvan_store_u32(
+        header + 16, (uint32_t)layout->has_action_label);
+    status = sylvan_framed_writer_begin(
+        writer->stream, SYLVAN_SERIALIZATION_LISTDD_LAYOUT,
+        24 + (uint64_t)layout->count);
+    if (status == SYLVAN_OK) {
+        status = sylvan_framed_writer_append(
+            writer->stream, header, sizeof(header));
+    }
+    if (status == SYLVAN_OK) {
+        status = sylvan_framed_writer_append(
+            writer->stream, payload, layout->count);
+    }
+    free(payload);
+    if (status != SYLVAN_OK) {
+        free(positions);
+        return status;
+    }
+
+    struct sylvan_serialization_listdd_layout_entry *entry =
+        writer->layouts + writer->layout_count;
+    entry->positions = positions;
+    entry->count = layout->count;
+    entry->has_action_label = layout->has_action_label;
+    entry->layout = NULL;
+    writer->layout_count++;
+    *identifier = id;
+    return SYLVAN_OK;
+}
+
+static int
+sylvan_serialization_write_listdd_root_CALL(
     lace_worker *lace, sylvan_serialization_writer *writer,
-    LISTDD dd, uint64_t key)
+    LISTDD dd, const listdd_relation_layout *layout, uint64_t key)
 {
     if (writer == NULL || writer->failed || dd == listdd_invalid ||
+        (layout != NULL &&
+         !sylvan_serialization_is_typed_listdd_layout(layout)) ||
         sylvan_framed_writer_remaining(writer->stream) != 0) {
         return SYLVAN_ERR_INVALID;
     }
@@ -1542,21 +1701,46 @@ sylvan_serialization_write_listdd_CALL(
     }
 
     uint64_t root_reference;
+    uint64_t layout_identifier = 0;
     if (status == SYLVAN_OK) {
         status = sylvan_serialization_encode_listdd_reference(
             &writer->listdd_dictionary, dd, &root_reference);
     }
+    if (status == SYLVAN_OK && layout != NULL) {
+        status = sylvan_serialization_write_listdd_layout(
+            writer, layout, &layout_identifier);
+    }
     if (status == SYLVAN_OK) {
-        uint8_t root_record[24] = {0};
+        uint8_t root_record[32] = {0};
         sylvan_store_u32(root_record, SYLVAN_DD_LISTDD);
         sylvan_store_u64(root_record + 8, key);
         sylvan_store_u64(root_record + 16, root_reference);
+        sylvan_store_u64(root_record + 24, layout_identifier);
         status = sylvan_framed_writer_write(
             writer->stream, SYLVAN_SERIALIZATION_ROOT,
-            root_record, sizeof(root_record));
+            root_record, layout == NULL ? 24 : 32);
     }
     if (status != SYLVAN_OK) writer->failed = 1;
     return status;
+}
+
+int
+sylvan_serialization_write_listdd_CALL(
+    lace_worker *lace, sylvan_serialization_writer *writer,
+    LISTDD dd, uint64_t key)
+{
+    return sylvan_serialization_write_listdd_root_CALL(
+        lace, writer, dd, NULL, key);
+}
+
+int
+sylvan_serialization_write_listdd_relation_CALL(
+    lace_worker *lace, sylvan_serialization_writer *writer,
+    LISTDD dd, const listdd_relation_layout *layout, uint64_t key)
+{
+    if (layout == NULL) return SYLVAN_ERR_INVALID;
+    return sylvan_serialization_write_listdd_root_CALL(
+        lace, writer, dd, layout, key);
 }
 
 static int
@@ -1836,6 +2020,73 @@ sylvan_serialization_read_listdd_nodes_CALL(
 }
 
 static int
+sylvan_serialization_read_listdd_layout(
+    sylvan_serialization_reader *reader, const sylvan_frame *frame)
+{
+    if (frame->payload_size < 24) return SYLVAN_ERR_INVALID;
+
+    uint8_t header[24];
+    int status = sylvan_framed_reader_read(
+        reader->stream, header, sizeof(header));
+    if (status != SYLVAN_OK) return status;
+
+    const uint64_t identifier = sylvan_load_u64(header);
+    const uint64_t count = sylvan_load_u64(header + 8);
+    const uint32_t has_action_label = sylvan_load_u32(header + 16);
+    if (identifier != (uint64_t)reader->layout_count + 1 ||
+        count != frame->payload_size - 24 ||
+        count > SIZE_MAX ||
+        count > SIZE_MAX / sizeof(listdd_relation_access) ||
+        has_action_label > 1 ||
+        sylvan_load_u32(header + 20) != 0) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    uint8_t *payload = count == 0 ? NULL : malloc((size_t)count);
+    listdd_relation_access *positions = count == 0 ? NULL :
+        malloc((size_t)count * sizeof(*positions));
+    if (count != 0 && (payload == NULL || positions == NULL)) {
+        free(positions);
+        free(payload);
+        return SYLVAN_ERR_OOM;
+    }
+    status = sylvan_framed_reader_read(
+        reader->stream, payload, (size_t)count);
+    for (size_t i = 0; i < (size_t)count && status == SYLVAN_OK; i++) {
+        if (payload[i] > LISTDD_RELATION_READ_WRITE) {
+            status = SYLVAN_ERR_INVALID;
+        } else {
+            positions[i] = (listdd_relation_access)payload[i];
+        }
+    }
+    free(payload);
+    if (status != SYLVAN_OK) {
+        free(positions);
+        return status;
+    }
+
+    listdd_relation_layout *layout = NULL;
+    status = listdd_relation_layout_create(
+        &layout, positions, (size_t)count, (int)has_action_label);
+    free(positions);
+    if (status != SYLVAN_OK) return status;
+
+    status = sylvan_serialization_layout_reserve(
+        &reader->layouts, &reader->layout_capacity,
+        reader->layout_count);
+    if (status != SYLVAN_OK) {
+        listdd_relation_layout_destroy(layout);
+        return status;
+    }
+    struct sylvan_serialization_listdd_layout_entry *entry =
+        reader->layouts + reader->layout_count;
+    memset(entry, 0, sizeof(*entry));
+    entry->layout = layout;
+    reader->layout_count++;
+    return SYLVAN_OK;
+}
+
+static int
 sylvan_serialization_read_mtbdd_type(
     sylvan_serialization_reader *reader, const sylvan_frame *frame)
 {
@@ -2005,6 +2256,7 @@ sylvan_serialization_reader_destroy(sylvan_serialization_reader *reader)
     sylvan_serialization_handle_clear(&reader->zdd_nodes);
     sylvan_serialization_handle_clear(&reader->listdd_nodes);
     sylvan_serialization_codec_clear(reader->codecs, reader->codec_count);
+    sylvan_serialization_reader_layouts_clear(reader);
     free(reader);
 }
 
@@ -2051,6 +2303,9 @@ sylvan_serialization_reader_next_CALL(
         } else if (frame.type == SYLVAN_SERIALIZATION_LISTDD_NODES) {
             status = sylvan_serialization_read_listdd_nodes_CALL(
                 lace, reader, &frame);
+        } else if (frame.type == SYLVAN_SERIALIZATION_LISTDD_LAYOUT) {
+            status = sylvan_serialization_read_listdd_layout(
+                reader, &frame);
         } else if (frame.type == SYLVAN_SERIALIZATION_ROOT) {
             if (frame.payload_size != 24 &&
                 frame.payload_size != 32) {
@@ -2065,10 +2320,12 @@ sylvan_serialization_reader_next_CALL(
                 }
                 if (status == SYLVAN_OK &&
                     (((family == SYLVAN_DD_BDD ||
-                       family == SYLVAN_DD_MTBDD ||
-                       family == SYLVAN_DD_LISTDD) &&
+                       family == SYLVAN_DD_MTBDD) &&
                       frame.payload_size != 24) ||
                      (family == SYLVAN_DD_ZDD &&
+                      frame.payload_size != 32) ||
+                     (family == SYLVAN_DD_LISTDD &&
+                      frame.payload_size != 24 &&
                       frame.payload_size != 32) ||
                      (family != SYLVAN_DD_BDD &&
                       family != SYLVAN_DD_MTBDD &&
@@ -2079,6 +2336,7 @@ sylvan_serialization_reader_next_CALL(
                 }
                 MTBDD dd = mtbdd_invalid;
                 BDDSET domain = mtbdd_invalid;
+                const listdd_relation_layout *listdd_layout = NULL;
                 if (status == SYLVAN_OK) {
                     if (family == SYLVAN_DD_ZDD) {
                         status = sylvan_serialization_decode_zdd_reference(
@@ -2107,6 +2365,19 @@ sylvan_serialization_reader_next_CALL(
                                 &reader->listdd_nodes,
                                 sylvan_load_u64(record + 16),
                                 (LISTDD*)&dd);
+                        if (status == SYLVAN_OK &&
+                            frame.payload_size == 32) {
+                            const uint64_t layout_identifier =
+                                sylvan_load_u64(record + 24);
+                            if (layout_identifier == 0 ||
+                                layout_identifier >
+                                    reader->layout_count) {
+                                status = SYLVAN_ERR_INVALID;
+                            } else {
+                                listdd_layout = reader->layouts[
+                                    (size_t)layout_identifier - 1].layout;
+                            }
+                        }
                     } else {
                         status = sylvan_serialization_decode_reference(
                             &reader->nodes,
@@ -2118,6 +2389,7 @@ sylvan_serialization_reader_next_CALL(
                     root->key = sylvan_load_u64(record + 8);
                     root->dd = dd;
                     root->domain = domain;
+                    root->listdd_layout = listdd_layout;
                     *has_root = 1;
                     return SYLVAN_OK;
                 }

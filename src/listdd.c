@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "avl.h"
+#include "listdd_private.h"
 #include "refs.h"
 #include "sha2.h"
 
@@ -303,14 +304,6 @@ struct listdd_projection {
     LISTDD root;
     LISTDD match_root;
     size_t count;
-};
-
-struct listdd_relation_layout {
-    LISTDD root;
-    listdd_relation_access *positions;
-    size_t count;
-    size_t field_count;
-    int has_action_label;
 };
 
 static int

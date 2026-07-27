@@ -170,6 +170,7 @@ int sylvan_stream_read_file(
 #define SYLVAN_SERIALIZATION_MTBDD_CUSTOM_LEAF UINT32_C(0x00001005)
 #define SYLVAN_SERIALIZATION_ZDD_NODES UINT32_C(0x00001006)
 #define SYLVAN_SERIALIZATION_LISTDD_NODES UINT32_C(0x00001007)
+#define SYLVAN_SERIALIZATION_LISTDD_LAYOUT UINT32_C(0x00001008)
 #define SYLVAN_SERIALIZATION_APPLICATION UINT32_C(0x80000000)
 
 typedef enum sylvan_dd_family {
@@ -217,15 +218,18 @@ typedef struct sylvan_serialization_leaf_codec {
  * One committed root returned by the incremental reader.
  *
  * <key> is the caller-supplied stream identifier. <domain> is the decoded
- * BDDSET for a ZDD root and mtbdd_invalid for other families. Decoded handles
- * remain protected by the reader until it is destroyed. Protect them
- * separately before destroying the reader if they must survive longer.
+ * BDDSET for a ZDD root and mtbdd_invalid for other families.
+ * <listdd_layout> is the decoded relation layout for a ListDD relation root
+ * and NULL otherwise. Decoded handles and metadata remain protected and owned
+ * by the reader until it is destroyed. Protect handles separately before
+ * destroying the reader if they must survive longer.
  */
 typedef struct sylvan_serialization_root {
     sylvan_dd_family family;
     uint64_t key;
     MTBDD dd;
     BDDSET domain;
+    const listdd_relation_layout *listdd_layout;
 } sylvan_serialization_root;
 
 /**
@@ -306,6 +310,16 @@ static inline int sylvan_serialization_write_zdd(
 static inline int sylvan_serialization_write_listdd(
     sylvan_serialization_writer *writer,
     LISTDD dd,
+    uint64_t key);
+
+/**
+ * Incrementally write a ListDD relation and its typed layout, then commit it
+ * with <key>. The layout must have been created by the normal typed builder.
+ */
+static inline int sylvan_serialization_write_listdd_relation(
+    sylvan_serialization_writer *writer,
+    LISTDD dd,
+    const listdd_relation_layout *layout,
     uint64_t key);
 
 /**

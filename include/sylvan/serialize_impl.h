@@ -26,6 +26,10 @@ TASK(int, sylvan_serialization_write_zdd,
 TASK(int, sylvan_serialization_write_listdd,
      sylvan_serialization_writer*, writer, LISTDD, dd, uint64_t, key)
 
+TASK(int, sylvan_serialization_write_listdd_relation,
+     sylvan_serialization_writer*, writer, LISTDD, dd,
+     const listdd_relation_layout*, layout, uint64_t, key)
+
 TASK(int, sylvan_serialization_reader_next,
      sylvan_serialization_reader*, reader,
      sylvan_serialization_root*, root, int*, has_root)

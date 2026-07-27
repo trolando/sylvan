@@ -21,4 +21,7 @@ typedef uint64_t ZDD;
 typedef ZDD ZDDMAP;
 typedef uint64_t LISTDD;
 
+typedef struct listdd_projection listdd_projection;
+typedef struct listdd_relation_layout listdd_relation_layout;
+
 #endif

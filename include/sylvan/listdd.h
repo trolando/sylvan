@@ -28,9 +28,6 @@ static const LISTDD listdd_empty = 0;
 static const LISTDD listdd_empty_list = 1;
 static const LISTDD listdd_invalid = UINT64_MAX;
 
-typedef struct listdd_projection listdd_projection;
-typedef struct listdd_relation_layout listdd_relation_layout;
-
 /** How a tuple position is treated by a projection. */
 typedef enum {
     LISTDD_PROJECT_POSITION = 0,

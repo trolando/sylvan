@@ -2386,9 +2386,7 @@ int bdd_transitive_closure_CALL(lace_worker* lace, BDD *destination, BDD a)
 }
 
 
-/**
- * Function composition
- */
+/** Simultaneous function composition. */
 int bdd_compose_CALL(lace_worker* lace, BDD *destination, BDD a, MTBDDMAP map)
 {
     if (destination == NULL || a == mtbdd_invalid || map == mtbdd_invalid) return SYLVAN_ERR_INVALID;

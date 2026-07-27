@@ -4599,11 +4599,7 @@ int mtbdd_support_CALL(lace_worker* lace, BDDSET *destination, MTBDD dd)
     return SYLVAN_OK;
 }
 
-/**
- * Function composition, for each node with variable <key> which has a <key,value> pair in <map>,
- * replace the node by the result of mtbdd_ite(<value>, <high>, <low>).
- * Each <value> in <map> must be a Boolean MTBDD.
- */
+/** Simultaneous function composition with Boolean replacement functions. */
 int mtbdd_compose_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDDMAP map)
 {
     if (destination == NULL || a == mtbdd_invalid || map == mtbdd_invalid) return SYLVAN_ERR_INVALID;

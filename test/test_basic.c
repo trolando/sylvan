@@ -486,6 +486,15 @@ test_mtbdd_structure_destinations_CALL(lace_worker *lace)
     test_assert(mtbdd_compose_CALL(lace, &inplace, inplace, map) == SYLVAN_OK);
     test_assert(inplace == composed);
 
+    /*
+     * Composition is simultaneous: the x0 replacement x1 is not subsequently
+     * replaced by the x1 -> x2 entry in the same map.
+     */
+    test_assert(mtbdd_map_set(&map, map, 1, x2) == SYLVAN_OK);
+    test_assert(mtbdd_compose_CALL(
+        lace, &substituted, source, map) == SYLVAN_OK);
+    test_assert(substituted == expected_inner);
+
     test_assert(mtbdd_map_set(&map2, mtbdd_map_empty(), 2, x1) == SYLVAN_OK);
     test_assert(mtbdd_compose_CALL(lace, &substituted, nested, map2) == SYLVAN_OK);
     test_assert(mtbdd_ite_CALL(lace, &expected_substituted, x1, source, terminal) == SYLVAN_OK);
@@ -3961,6 +3970,11 @@ test_compose_destinations_CALL(lace_worker *lace)
     BDD expected = mtbdd_invalid;
     MTBDDMAP map = mtbdd_map_empty();
     MTBDDMAP later_map = mtbdd_map_empty();
+    MTBDDMAP simultaneous_map = mtbdd_map_empty();
+    MTBDDMAP reversed_map = mtbdd_map_empty();
+    MTBDDMAP base_map = mtbdd_map_empty();
+    MTBDDMAP override_map = mtbdd_map_empty();
+    MTBDDMAP merged_map = mtbdd_invalid;
     BDD result = mtbdd_invalid;
     BDD identity = mtbdd_invalid;
     BDD inplace = mtbdd_invalid;
@@ -3973,6 +3987,11 @@ test_compose_destinations_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&expected);
     mtbdd_refs_pushptr(&map);
     mtbdd_refs_pushptr(&later_map);
+    mtbdd_refs_pushptr(&simultaneous_map);
+    mtbdd_refs_pushptr(&reversed_map);
+    mtbdd_refs_pushptr(&base_map);
+    mtbdd_refs_pushptr(&override_map);
+    mtbdd_refs_pushptr(&merged_map);
     mtbdd_refs_pushptr(&result);
     mtbdd_refs_pushptr(&identity);
     mtbdd_refs_pushptr(&inplace);
@@ -4001,6 +4020,35 @@ test_compose_destinations_CALL(lace_worker *lace)
     test_assert(bdd_compose_CALL(lace, &inplace, inplace, map) == SYLVAN_OK);
     test_assert(inplace == expected);
 
+    test_assert(mtbdd_map_set(
+        &simultaneous_map, simultaneous_map, 0, y) == SYLVAN_OK);
+    test_assert(mtbdd_map_set(
+        &simultaneous_map, simultaneous_map, 1, z) == SYLVAN_OK);
+    test_assert(mtbdd_map_set(
+        &reversed_map, reversed_map, 1, z) == SYLVAN_OK);
+    test_assert(mtbdd_map_set(
+        &reversed_map, reversed_map, 0, y) == SYLVAN_OK);
+    test_assert(simultaneous_map == reversed_map);
+
+    /* Replacement values are not recursively substituted by the same map. */
+    test_assert(bdd_compose_CALL(
+        lace, &result, x, simultaneous_map) == SYLVAN_OK);
+    test_assert(result == y);
+    test_assert(bdd_compose_CALL(
+        lace, &result, f, simultaneous_map) == SYLVAN_OK);
+    test_assert(bdd_xor_CALL(lace, &expected, y, z) == SYLVAN_OK);
+    test_assert(result == expected);
+
+    /* mtbdd_map_update gives the second map precedence on duplicate keys. */
+    test_assert(mtbdd_map_set(&base_map, base_map, 0, y) == SYLVAN_OK);
+    test_assert(mtbdd_map_set(
+        &override_map, override_map, 0, z) == SYLVAN_OK);
+    test_assert(mtbdd_map_update(
+        &merged_map, base_map, override_map) == SYLVAN_OK);
+    test_assert(bdd_compose_CALL(
+        lace, &result, x, merged_map) == SYLVAN_OK);
+    test_assert(result == z);
+
     test_assert(bdd_compose_CALL(lace, &unchanged, mtbdd_invalid, map) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == bdd_true);
     test_assert(bdd_compose_CALL(lace, &unchanged, f, mtbdd_invalid) == SYLVAN_ERR_INVALID);
@@ -4010,7 +4058,7 @@ test_compose_destinations_CALL(lace_worker *lace)
     /* Leave the cache empty for the cache unit test that follows. */
     sylvan_gc_CALL(lace);
 
-    mtbdd_refs_popptr(11);
+    mtbdd_refs_popptr(16);
     return 0;
 }
 

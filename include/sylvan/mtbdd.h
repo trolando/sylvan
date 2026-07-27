@@ -701,9 +701,11 @@ static inline int mtbdd_compare_equal_rel_double(BDD *result, MTBDD a, MTBDD b, 
 static inline int mtbdd_support(BDDSET *result, MTBDD dd);
 
 /**
- * Function composition, for each node with variable <key> which has a <key,value> pair in <map>,
- * replace the node by the result of mtbdd_ite(<value>, <high>, <low>).
- * Each <value> in <map> must be a Boolean MTBDD.
+ * Simultaneously substitute every variable <key> in <dd> for the Boolean
+ * function stored at <key> in <map>. A replacement function is inserted as
+ * written and is not itself composed with the map. Equivalently, a replaced
+ * node becomes mtbdd_ite(<value>, <high>, <low>). Every map value must be a
+ * Boolean MTBDD.
  * Returns SYLVAN_OK on success. On failure, <result> is unchanged.
  */
 static inline int mtbdd_compose(MTBDD *result, MTBDD dd, MTBDDMAP map);
@@ -969,7 +971,10 @@ void mtbdd_reader_end(uint64_t *arr);
 
 /**
  * MTBDDMAP, maps uint32_t variables to MTBDDs.
- * A MTBDDMAP node has variable level, low edge going to the next MTBDDMAP, high edge to the mapped MTBDD.
+ *
+ * Maps are immutable, canonical values stored in the unique table. Insertion
+ * order therefore does not affect map identity. A map can safely form part of
+ * an operation-cache key.
  */
 static inline MTBDD mtbdd_map_empty(void);
 
@@ -998,8 +1003,8 @@ size_t mtbdd_map_count(MTBDDMAP map);
 int mtbdd_map_set(MTBDDMAP *result, MTBDDMAP map, uint32_t key, MTBDD value);
 
 /**
- * Add all values from map2 to map1, overwrites if key already in map1.
- * On failure, <result> is unchanged.
+ * Add all entries from <map2> to <map1>. Entries from <map2> take precedence
+ * when both maps contain the same key. On failure, <result> is unchanged.
  */
 int mtbdd_map_update(MTBDDMAP *result, MTBDDMAP map1, MTBDDMAP map2);
 

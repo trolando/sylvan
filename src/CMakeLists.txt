@@ -47,6 +47,7 @@ target_sources(sylvan
     mtbdd.c
     platform.c
     refs.c
+    serialize.c
     sha2.c
     sl.c
     stats.c
@@ -69,6 +70,7 @@ target_sources(sylvan
       ${PROJECT_SOURCE_DIR}/include/sylvan/mtbdd_impl.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/nodes.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/platform.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/serialize.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/stats.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/types.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/zdd.h

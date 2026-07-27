@@ -35,6 +35,7 @@
 
 #include <sylvan/types.h>
 #include <sylvan/common.h>
+#include <sylvan/serialize.h>
 #include <sylvan/stats.h>
 #include <sylvan/mt.h>
 #include <sylvan/mtbdd.h>

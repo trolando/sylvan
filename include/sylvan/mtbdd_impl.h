@@ -167,6 +167,16 @@ TASK(int, mtbdd_mul, MTBDD*, result, MTBDD, a, MTBDD, b)
 TASK(int, mtbdd_div, MTBDD*, result, MTBDD, a, MTBDD, b)
 
 /**
+ * Compute the pointwise power base^exponent.
+ */
+TASK(int, mtbdd_pow, MTBDD*, result, MTBDD, base, MTBDD, exponent)
+
+/**
+ * Compute the pointwise remainder after division truncating toward zero.
+ */
+TASK(int, mtbdd_mod, MTBDD*, result, MTBDD, dividend, MTBDD, divisor)
+
+/**
  * Compute min(a, b)
  */
 TASK(int, mtbdd_min, MTBDD*, result, MTBDD, a, MTBDD, b)

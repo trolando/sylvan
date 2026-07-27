@@ -529,6 +529,24 @@ static inline int mtbdd_mul(MTBDD *result, MTBDD a, MTBDD b);
 static inline int mtbdd_div(MTBDD *result, MTBDD a, MTBDD b);
 
 /**
+ * Compute the pointwise power base^exponent.
+ *
+ * Operands must have the same built-in numeric type. Integer exponents must be
+ * nonnegative. Fraction exponents must be integral, but may be negative.
+ * Doubles use the platform pow function. Undefined and NaN values propagate;
+ * invalid domains and fixed-width overflow produce a typed NaN.
+ */
+static inline int mtbdd_pow(MTBDD *result, MTBDD base, MTBDD exponent);
+
+/**
+ * Compute the pointwise remainder after division truncating toward zero.
+ *
+ * Operands must have the same built-in numeric type. Undefined and NaN values
+ * propagate. A zero divisor and fixed-width overflow produce a typed NaN.
+ */
+static inline int mtbdd_mod(MTBDD *result, MTBDD dividend, MTBDD divisor);
+
+/**
  * Compute min(a, b)
  */
 static inline int mtbdd_min(MTBDD *result, MTBDD a, MTBDD b);

@@ -424,6 +424,7 @@ static int mtbdd_ceil_leaf(
     lace_worker*, MTBDD*, MTBDD, void*);
 static int mtbdd_log_leaf(
     lace_worker*, MTBDD*, MTBDD, void*);
+static int _mtbdd_apply_callback_result(MTBDD*, MTBDD);
 static mtbdd_map_op mtbdd_abs_operation;
 static mtbdd_map_op mtbdd_floor_operation;
 static mtbdd_map_op mtbdd_ceil_operation;
@@ -936,6 +937,57 @@ mtbdd_fraction_div_result(MTBDD a, MTBDD b)
             ? INT64_MIN : -(int64_t)numerator_magnitude)
         : (int64_t)numerator_magnitude;
     return mtbdd_fraction_result(numerator, denominator);
+}
+
+static MTBDD
+mtbdd_fraction_pow_result(MTBDD base, int32_t exponent)
+{
+    const int64_t base_numerator = mtbdd_fraction_numerator(base);
+    const uint64_t base_denominator = mtbdd_fraction_denominator(base);
+    const size_t magnitude = exponent < 0
+        ? (size_t)(-(int64_t)exponent) : (size_t)exponent;
+    uint64_t numerator_magnitude;
+    uint64_t denominator;
+
+    if (exponent < 0 && base_numerator == 0) return mtbdd_nan(2);
+    if (exponent < 0) {
+        if (!uint64_pow_checked(base_denominator, magnitude,
+                                &numerator_magnitude) ||
+            !uint64_pow_checked(int64_magnitude(base_numerator), magnitude,
+                                &denominator)) {
+            return mtbdd_nan(2);
+        }
+    } else {
+        if (!uint64_pow_checked(int64_magnitude(base_numerator), magnitude,
+                                &numerator_magnitude) ||
+            !uint64_pow_checked(base_denominator, magnitude, &denominator)) {
+            return mtbdd_nan(2);
+        }
+    }
+
+    return mtbdd_fraction_magnitude_result(
+        base_numerator < 0 && (magnitude & 1),
+        numerator_magnitude, denominator);
+}
+
+static MTBDD
+mtbdd_fraction_mod_result(MTBDD dividend, MTBDD divisor)
+{
+    const int64_t numerator_a = mtbdd_fraction_numerator(dividend);
+    const int64_t numerator_b = mtbdd_fraction_numerator(divisor);
+    const uint64_t denominator_a = mtbdd_fraction_denominator(dividend);
+    const uint64_t denominator_b = mtbdd_fraction_denominator(divisor);
+    int64_t scaled_a, scaled_b;
+    uint64_t denominator;
+
+    if (numerator_b == 0 ||
+        !int64_mul_checked(numerator_a, (int64_t)denominator_b, &scaled_a) ||
+        !int64_mul_checked(numerator_b, (int64_t)denominator_a, &scaled_b) ||
+        !uint64_mul_checked(denominator_a, denominator_b, &denominator)) {
+        return mtbdd_nan(2);
+    }
+
+    return mtbdd_fraction_result(scaled_a % scaled_b, denominator);
 }
 
 /**
@@ -2124,6 +2176,126 @@ int
 mtbdd_div_CALL(lace_worker *lace, MTBDD *destination, MTBDD a, MTBDD b)
 {
     return mtbdd_apply_CALL(lace, destination, a, b, mtbdd_op_divide_CALL);
+}
+
+TASK(int, mtbdd_op_power, MTBDD*, result, MTBDD*, base, MTBDD*, exponent)
+
+int
+mtbdd_op_power_CALL(lace_worker *lace, MTBDD *destination,
+                    MTBDD *base_pointer, MTBDD *exponent_pointer)
+{
+    (void)lace;
+
+    const MTBDD base = *base_pointer;
+    const MTBDD exponent = *exponent_pointer;
+    if (base == mtbdd_undefined || exponent == mtbdd_undefined) {
+        return _mtbdd_apply_callback_result(destination, mtbdd_undefined);
+    }
+    if (base == bdd_true || exponent == bdd_true) return SYLVAN_ERR_INVALID;
+
+    const mtbddnode *base_node = MTBDD_GETNODE(base);
+    const mtbddnode *exponent_node = MTBDD_GETNODE(exponent);
+    if (mtbddnode_isleaf(base_node) && mtbddnode_isleaf(exponent_node)) {
+        const uint32_t type = mtbddnode_gettype(base_node);
+        if (type != mtbddnode_gettype(exponent_node)) return SYLVAN_ERR_INVALID;
+        if (mtbddnode_isnan(base_node) || mtbddnode_isnan(exponent_node)) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_nan(type));
+        }
+        if (type == 0) {
+            const int64_t integer_exponent = mtbdd_leaf_int64(exponent);
+            int64_t value;
+            if (integer_exponent < 0 ||
+                !int64_pow_checked(
+                    mtbdd_leaf_int64(base), (size_t)integer_exponent, &value)) {
+                return _mtbdd_apply_callback_result(
+                    destination, mtbdd_nan(0));
+            }
+            return _mtbdd_apply_callback_result(
+                destination, mtbdd_int64(value));
+        }
+        if (type == 1) {
+            return _mtbdd_apply_callback_result(
+                destination, mtbdd_double(pow(
+                    mtbdd_leaf_double(base), mtbdd_leaf_double(exponent))));
+        }
+        if (type == 2) {
+            if (mtbdd_fraction_denominator(exponent) != 1) {
+                return _mtbdd_apply_callback_result(
+                    destination, mtbdd_nan(2));
+            }
+            return _mtbdd_apply_callback_result(
+                destination, mtbdd_fraction_pow_result(
+                    base, mtbdd_fraction_numerator(exponent)));
+        }
+        return SYLVAN_ERR_INVALID;
+    }
+
+    return SYLVAN_APPLY_RECURSE;
+}
+
+TASK(int, mtbdd_op_modulo, MTBDD*, result, MTBDD*, dividend, MTBDD*, divisor)
+
+int
+mtbdd_op_modulo_CALL(lace_worker *lace, MTBDD *destination,
+                     MTBDD *dividend_pointer, MTBDD *divisor_pointer)
+{
+    (void)lace;
+
+    const MTBDD dividend = *dividend_pointer;
+    const MTBDD divisor = *divisor_pointer;
+    if (dividend == mtbdd_undefined || divisor == mtbdd_undefined) {
+        return _mtbdd_apply_callback_result(destination, mtbdd_undefined);
+    }
+    if (dividend == bdd_true || divisor == bdd_true) return SYLVAN_ERR_INVALID;
+
+    const mtbddnode *dividend_node = MTBDD_GETNODE(dividend);
+    const mtbddnode *divisor_node = MTBDD_GETNODE(divisor);
+    if (mtbddnode_isleaf(dividend_node) && mtbddnode_isleaf(divisor_node)) {
+        const uint32_t type = mtbddnode_gettype(dividend_node);
+        if (type != mtbddnode_gettype(divisor_node)) return SYLVAN_ERR_INVALID;
+        if (mtbddnode_isnan(dividend_node) || mtbddnode_isnan(divisor_node)) {
+            return _mtbdd_apply_callback_result(destination, mtbdd_nan(type));
+        }
+        if (type == 0) {
+            const int64_t numerator = mtbdd_leaf_int64(dividend);
+            const int64_t denominator = mtbdd_leaf_int64(divisor);
+            if (denominator == 0 ||
+                (numerator == INT64_MIN && denominator == -1)) {
+                return _mtbdd_apply_callback_result(
+                    destination, mtbdd_nan(0));
+            }
+            return _mtbdd_apply_callback_result(
+                destination, mtbdd_int64(numerator % denominator));
+        }
+        if (type == 1) {
+            return _mtbdd_apply_callback_result(
+                destination, mtbdd_double(fmod(
+                    mtbdd_leaf_double(dividend), mtbdd_leaf_double(divisor))));
+        }
+        if (type == 2) {
+            return _mtbdd_apply_callback_result(
+                destination, mtbdd_fraction_mod_result(dividend, divisor));
+        }
+        return SYLVAN_ERR_INVALID;
+    }
+
+    return SYLVAN_APPLY_RECURSE;
+}
+
+int
+mtbdd_pow_CALL(lace_worker *lace, MTBDD *destination,
+               MTBDD base, MTBDD exponent)
+{
+    return mtbdd_apply_CALL(
+        lace, destination, base, exponent, mtbdd_op_power_CALL);
+}
+
+int
+mtbdd_mod_CALL(lace_worker *lace, MTBDD *destination,
+               MTBDD dividend, MTBDD divisor)
+{
+    return mtbdd_apply_CALL(
+        lace, destination, dividend, divisor, mtbdd_op_modulo_CALL);
 }
 
 int

@@ -45,6 +45,7 @@
 
 #include <sylvan/bdd_impl.h>
 #include <sylvan/mtbdd_impl.h>
+#include <sylvan/serialize_impl.h>
 
 
  // TODO: separate headers that declare functions (even static inline) from the implementations

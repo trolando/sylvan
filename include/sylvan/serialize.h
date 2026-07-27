@@ -24,6 +24,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <sylvan/types.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
@@ -156,6 +158,99 @@ int sylvan_stream_write_file(
     void *file, const void *data, size_t size);
 int sylvan_stream_read_file(
     void *file, void *data, size_t size);
+
+/**
+ * Reserved version-1 serialization frame types. Applications may interleave
+ * their own frames using types at or above SYLVAN_SERIALIZATION_APPLICATION.
+ */
+#define SYLVAN_SERIALIZATION_BDD_NODES UINT32_C(0x00001001)
+#define SYLVAN_SERIALIZATION_ROOT UINT32_C(0x00001002)
+#define SYLVAN_SERIALIZATION_APPLICATION UINT32_C(0x80000000)
+
+typedef enum sylvan_dd_family {
+    SYLVAN_DD_BDD = 1,
+    SYLVAN_DD_MTBDD = 2,
+    SYLVAN_DD_ZDD = 3,
+    SYLVAN_DD_LISTDD = 4
+} sylvan_dd_family;
+
+typedef struct sylvan_serialization_writer sylvan_serialization_writer;
+typedef struct sylvan_serialization_reader sylvan_serialization_reader;
+
+/**
+ * One committed root returned by the incremental reader.
+ *
+ * <key> is the caller-supplied stream identifier. The decoded handle remains
+ * protected by the reader until it is destroyed. Protect the handle separately
+ * before destroying the reader if it must survive longer.
+ */
+typedef struct sylvan_serialization_root {
+    sylvan_dd_family family;
+    uint64_t key;
+    MTBDD dd;
+} sylvan_serialization_root;
+
+/**
+ * Parser hook for application or future frame types.
+ *
+ * The callback must consume or skip the complete payload through <stream> and
+ * return SYLVAN_OK or a negative status. A positive result is a callback error.
+ */
+typedef int (*sylvan_serialization_frame_cb)(
+    sylvan_framed_reader *stream,
+    const sylvan_frame *frame,
+    void *context);
+
+/**
+ * Create an incremental DD writer over a caller-owned framed stream.
+ *
+ * The caller may write application frames directly to <stream> between
+ * complete root writes. The writer retains and protects earlier roots so later
+ * roots emit only previously unseen nodes. It is not thread-safe and does not
+ * finish or destroy the framed stream.
+ */
+int sylvan_serialization_writer_create(
+    sylvan_serialization_writer **result,
+    sylvan_framed_writer *stream);
+
+void sylvan_serialization_writer_destroy(
+    sylvan_serialization_writer *writer);
+
+/**
+ * Incrementally write a BDD and commit it with <key>.
+ *
+ * A reader can return this root as soon as the root frame arrives; no later
+ * root or stream end marker is required. The caller must protect <dd>.
+ */
+static inline int sylvan_serialization_write_bdd(
+    sylvan_serialization_writer *writer,
+    BDD dd,
+    uint64_t key);
+
+/**
+ * Create an incremental DD reader over a caller-owned framed stream.
+ *
+ * Unknown frames are skipped when <frame_callback> is null, or delegated to
+ * the callback otherwise. The reader is not thread-safe and does not destroy
+ * the framed stream.
+ */
+int sylvan_serialization_reader_create(
+    sylvan_serialization_reader **result,
+    sylvan_framed_reader *stream,
+    sylvan_serialization_frame_cb frame_callback,
+    void *context);
+
+void sylvan_serialization_reader_destroy(
+    sylvan_serialization_reader *reader);
+
+/**
+ * Consume frames until the next committed DD root or the stream end marker.
+ * Sets <has_root> to zero only at the end marker.
+ */
+static inline int sylvan_serialization_reader_next(
+    sylvan_serialization_reader *reader,
+    sylvan_serialization_root *root,
+    int *has_root);
 
 #ifdef __cplusplus
 }

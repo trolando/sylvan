@@ -5134,6 +5134,109 @@ test_ldd()
 }
 
 TASK(int, runtests)
+TASK(int, test_level_statistics)
+
+int
+test_level_statistics_CALL(lace_worker *lace)
+{
+    BDD x = mtbdd_invalid;
+    BDD y = mtbdd_invalid;
+    BDD z = mtbdd_invalid;
+    BDD root = mtbdd_invalid;
+    BDDSET domain = mtbdd_invalid;
+    ZDD zdd = zdd_invalid;
+    mtbdd_protect(&x);
+    mtbdd_protect(&y);
+    mtbdd_protect(&z);
+    mtbdd_protect(&root);
+    mtbdd_protect(&domain);
+    zdd_protect(&zdd);
+
+    test_assert(bdd_var_at_level(&x, 1) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&y, 5) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&z, 9) == SYLVAN_OK);
+    test_assert(bdd_ite(&root, x, y, z) == SYLVAN_OK);
+    const uint32_t domain_levels[] = {1, 5, 9};
+    test_assert(
+        bdd_set_from_array(&domain, domain_levels, 3) == SYLVAN_OK);
+
+    size_t level_count = 0;
+    uint64_t leaf_count = UINT64_MAX;
+    test_assert(
+        mtbdd_level_statistics_CALL(
+            lace, &root, 1, NULL, 0,
+            &level_count, &leaf_count) == SYLVAN_OK);
+    test_assert(level_count == 3 && leaf_count == 1);
+
+    sylvan_level_statistic entries[3] = {
+        {UINT32_MAX, 7, UINT64_MAX},
+        {UINT32_MAX, 7, UINT64_MAX},
+        {UINT32_MAX, 7, UINT64_MAX}
+    };
+    size_t required = level_count;
+    test_assert(
+        mtbdd_level_statistics_CALL(
+            lace, &root, 1, entries, 2,
+            &required, &leaf_count) == SYLVAN_ERR_OVERFLOW);
+    test_assert(
+        entries[0].level == UINT32_MAX &&
+        entries[0].reserved == 7 &&
+        entries[0].node_count == UINT64_MAX);
+    test_assert(
+        mtbdd_level_statistics_CALL(
+            lace, &root, 1, entries, 3,
+            &level_count, &leaf_count) == SYLVAN_OK);
+    uint64_t internal_count = 0;
+    for (size_t i = 0; i < level_count; i++) {
+        test_assert(entries[i].level == domain_levels[i]);
+        test_assert(entries[i].reserved == 0);
+        test_assert(entries[i].node_count == 1);
+        internal_count += entries[i].node_count;
+    }
+    test_assert(
+        internal_count + leaf_count == mtbdd_node_count(root));
+
+    const MTBDD complemented_roots[] = {root, bdd_not(root)};
+    test_assert(
+        mtbdd_level_statistics_CALL(
+            lace, complemented_roots, 2, entries, 3,
+            &level_count, &leaf_count) == SYLVAN_OK);
+    test_assert(level_count == 3 && leaf_count == 1);
+
+    test_assert(zdd_from_bdd(&zdd, root, domain) == SYLVAN_OK);
+    test_assert(
+        zdd_level_statistics_CALL(
+            lace, &zdd, 1, NULL, 0,
+            &level_count, &leaf_count) == SYLVAN_OK);
+    test_assert(level_count == 3);
+    test_assert(
+        zdd_level_statistics_CALL(
+            lace, &zdd, 1, entries, 3,
+            &level_count, &leaf_count) == SYLVAN_OK);
+    internal_count = 0;
+    for (size_t i = 0; i < level_count; i++) {
+        test_assert(entries[i].level == domain_levels[i]);
+        test_assert(entries[i].reserved == 0);
+        internal_count += entries[i].node_count;
+    }
+    test_assert(
+        internal_count + leaf_count == zdd_node_count(zdd));
+
+    const MTBDD invalid = mtbdd_invalid;
+    test_assert(
+        mtbdd_level_statistics_CALL(
+            lace, &invalid, 1, NULL, 0,
+            &level_count, &leaf_count) == SYLVAN_ERR_INVALID);
+
+    zdd_unprotect(&zdd);
+    mtbdd_unprotect(&domain);
+    mtbdd_unprotect(&root);
+    mtbdd_unprotect(&z);
+    mtbdd_unprotect(&y);
+    mtbdd_unprotect(&x);
+    return 0;
+}
+
 int runtests_CALL(lace_worker* lace)
 {
     sylvan_statistics statistics = SYLVAN_STATISTICS_INIT;
@@ -5203,6 +5306,8 @@ int runtests_CALL(lace_worker* lace)
     }
     test_assert(found_gc_count && found_bdd_and);
     free(statistics_entries);
+
+    if (test_level_statistics_CALL(lace)) return 1;
 
     printf("Testing protected destinations.\n");
     if (test_leaf_descriptor_CALL(lace)) return 1;
@@ -5280,6 +5385,7 @@ int main()
     sylvan_init_package();
     mtbdd_init();
     listdd_init();
+    zdd_init();
 
     printf("Sylvan initialization complete.\n");
 

@@ -428,3 +428,306 @@ sylvan_statistics_read_CALL(
     }
     return SYLVAN_OK;
 }
+
+struct sylvan_index_set {
+    uint64_t *slots;
+    size_t capacity;
+    size_t count;
+};
+
+struct sylvan_level_table {
+    uint32_t *levels;
+    uint64_t *counts;
+    size_t capacity;
+    size_t count;
+};
+
+struct sylvan_handle_stack {
+    uint64_t *handles;
+    size_t capacity;
+    size_t count;
+};
+
+static uint64_t
+sylvan_statistics_hash(uint64_t value)
+{
+    value ^= value >> 30;
+    value *= UINT64_C(0xbf58476d1ce4e5b9);
+    value ^= value >> 27;
+    value *= UINT64_C(0x94d049bb133111eb);
+    return value ^ (value >> 31);
+}
+
+static int
+sylvan_index_set_grow(struct sylvan_index_set *set)
+{
+    const size_t old_capacity = set->capacity;
+    const size_t new_capacity = old_capacity == 0 ? 16 : old_capacity * 2;
+    if (new_capacity < old_capacity ||
+        new_capacity > SIZE_MAX / sizeof(*set->slots)) {
+        return SYLVAN_ERR_OOM;
+    }
+    uint64_t *slots = calloc(new_capacity, sizeof(*slots));
+    if (slots == NULL) return SYLVAN_ERR_OOM;
+    for (size_t i = 0; i < old_capacity; i++) {
+        const uint64_t stored = set->slots[i];
+        if (stored == 0) continue;
+        size_t position =
+            (size_t)sylvan_statistics_hash(stored - 1) &
+            (new_capacity - 1);
+        while (slots[position] != 0) {
+            position = (position + 1) & (new_capacity - 1);
+        }
+        slots[position] = stored;
+    }
+    free(set->slots);
+    set->slots = slots;
+    set->capacity = new_capacity;
+    return SYLVAN_OK;
+}
+
+static int
+sylvan_index_set_insert(
+    struct sylvan_index_set *set, uint64_t index, int *inserted)
+{
+    if (index == UINT64_MAX) return SYLVAN_ERR_INVALID;
+    if (set->capacity == 0 ||
+        set->count + 1 > set->capacity / 2) {
+        int status = sylvan_index_set_grow(set);
+        if (status != SYLVAN_OK) return status;
+    }
+    const uint64_t stored = index + 1;
+    size_t position =
+        (size_t)sylvan_statistics_hash(index) & (set->capacity - 1);
+    while (set->slots[position] != 0) {
+        if (set->slots[position] == stored) {
+            *inserted = 0;
+            return SYLVAN_OK;
+        }
+        position = (position + 1) & (set->capacity - 1);
+    }
+    set->slots[position] = stored;
+    set->count++;
+    *inserted = 1;
+    return SYLVAN_OK;
+}
+
+static int
+sylvan_level_table_grow(struct sylvan_level_table *table)
+{
+    const size_t old_capacity = table->capacity;
+    const size_t new_capacity = old_capacity == 0 ? 16 : old_capacity * 2;
+    if (new_capacity < old_capacity ||
+        new_capacity > SIZE_MAX / sizeof(*table->levels) ||
+        new_capacity > SIZE_MAX / sizeof(*table->counts)) {
+        return SYLVAN_ERR_OOM;
+    }
+    uint32_t *levels = calloc(new_capacity, sizeof(*levels));
+    uint64_t *counts = calloc(new_capacity, sizeof(*counts));
+    if (levels == NULL || counts == NULL) {
+        free(counts);
+        free(levels);
+        return SYLVAN_ERR_OOM;
+    }
+    for (size_t i = 0; i < old_capacity; i++) {
+        const uint32_t stored = table->levels[i];
+        if (stored == 0) continue;
+        const uint32_t level = stored - 1;
+        size_t position =
+            (size_t)sylvan_statistics_hash(level) & (new_capacity - 1);
+        while (levels[position] != 0) {
+            position = (position + 1) & (new_capacity - 1);
+        }
+        levels[position] = stored;
+        counts[position] = table->counts[i];
+    }
+    free(table->levels);
+    free(table->counts);
+    table->levels = levels;
+    table->counts = counts;
+    table->capacity = new_capacity;
+    return SYLVAN_OK;
+}
+
+static int
+sylvan_level_table_increment(
+    struct sylvan_level_table *table, uint32_t level)
+{
+    if (level == UINT32_MAX) return SYLVAN_ERR_INVALID;
+    if (table->capacity == 0 ||
+        table->count + 1 > table->capacity / 2) {
+        int status = sylvan_level_table_grow(table);
+        if (status != SYLVAN_OK) return status;
+    }
+    const uint32_t stored = level + 1;
+    size_t position =
+        (size_t)sylvan_statistics_hash(level) & (table->capacity - 1);
+    while (table->levels[position] != 0) {
+        if (table->levels[position] == stored) {
+            if (table->counts[position] == UINT64_MAX) {
+                return SYLVAN_ERR_OVERFLOW;
+            }
+            table->counts[position]++;
+            return SYLVAN_OK;
+        }
+        position = (position + 1) & (table->capacity - 1);
+    }
+    table->levels[position] = stored;
+    table->counts[position] = 1;
+    table->count++;
+    return SYLVAN_OK;
+}
+
+static int
+sylvan_handle_stack_push(
+    struct sylvan_handle_stack *stack, uint64_t handle)
+{
+    if (stack->count == stack->capacity) {
+        const size_t old_capacity = stack->capacity;
+        const size_t new_capacity =
+            old_capacity == 0 ? 64 : old_capacity * 2;
+        if (new_capacity < old_capacity ||
+            new_capacity > SIZE_MAX / sizeof(*stack->handles)) {
+            return SYLVAN_ERR_OOM;
+        }
+        uint64_t *handles = realloc(
+            stack->handles, new_capacity * sizeof(*handles));
+        if (handles == NULL) return SYLVAN_ERR_OOM;
+        stack->handles = handles;
+        stack->capacity = new_capacity;
+    }
+    stack->handles[stack->count++] = handle;
+    return SYLVAN_OK;
+}
+
+static int
+sylvan_level_statistic_compare(const void *left, const void *right)
+{
+    const sylvan_level_statistic *a = left;
+    const sylvan_level_statistic *b = right;
+    return a->level < b->level ? -1 : a->level != b->level;
+}
+
+static int
+sylvan_level_statistics_collect(
+    lace_worker *lace, const uint64_t *roots, size_t root_count,
+    sylvan_level_statistic *entries, size_t capacity,
+    size_t *count, uint64_t *leaf_count, int zdd)
+{
+    if (count == NULL || leaf_count == NULL ||
+        (root_count != 0 && roots == NULL) ||
+        (entries == NULL && capacity != 0)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    int status = SYLVAN_OK;
+    struct sylvan_index_set visited = {0};
+    struct sylvan_level_table levels = {0};
+    struct sylvan_handle_stack stack = {0};
+    uint64_t leaves = 0;
+    for (size_t i = 0; i < root_count && status == SYLVAN_OK; i++) {
+        if (roots[i] == UINT64_MAX) {
+            status = SYLVAN_ERR_INVALID;
+        } else {
+            status = sylvan_handle_stack_push(&stack, roots[i]);
+        }
+    }
+
+    size_t yielded_at = 0;
+    while (stack.count != 0 && status == SYLVAN_OK) {
+        const uint64_t handle = stack.handles[--stack.count];
+        const uint64_t index = zdd
+            ? ZDD_GETINDEX((ZDD)handle)
+            : (handle & UINT64_C(0x000000ffffffffff));
+        int inserted;
+        status = sylvan_index_set_insert(&visited, index, &inserted);
+        if (status != SYLVAN_OK || !inserted) continue;
+
+        if ((zdd && zdd_is_leaf((ZDD)handle)) ||
+            (!zdd && mtbdd_is_leaf((MTBDD)handle))) {
+            if (leaves == UINT64_MAX) {
+                status = SYLVAN_ERR_OVERFLOW;
+            } else {
+                leaves++;
+            }
+            continue;
+        }
+
+        if (zdd) {
+            const zddnode *node = ZDD_GETNODE((ZDD)handle);
+            status = sylvan_level_table_increment(
+                &levels, zddnode_getvariable(node));
+            if (status == SYLVAN_OK) {
+                status = sylvan_handle_stack_push(
+                    &stack, zddnode_getlow(node));
+            }
+            if (status == SYLVAN_OK) {
+                status = sylvan_handle_stack_push(
+                    &stack, zddnode_gethigh(node));
+            }
+        } else {
+            const mtbddnode *node = MTBDD_GETNODE((MTBDD)handle);
+            status = sylvan_level_table_increment(
+                &levels, mtbddnode_getvariable(node));
+            if (status == SYLVAN_OK) {
+                status = sylvan_handle_stack_push(
+                    &stack, mtbddnode_getlow(node));
+            }
+            if (status == SYLVAN_OK) {
+                status = sylvan_handle_stack_push(
+                    &stack, mtbddnode_gethigh(node));
+            }
+        }
+        if (++yielded_at == 4096) {
+            lace_check_yield(lace);
+            yielded_at = 0;
+        }
+    }
+
+    if (status == SYLVAN_OK) {
+        *count = levels.count;
+        *leaf_count = leaves;
+        if (entries != NULL && capacity < levels.count) {
+            status = SYLVAN_ERR_OVERFLOW;
+        } else if (entries != NULL) {
+            size_t output = 0;
+            for (size_t i = 0; i < levels.capacity; i++) {
+                if (levels.levels[i] == 0) continue;
+                entries[output].level = levels.levels[i] - 1;
+                entries[output].reserved = 0;
+                entries[output].node_count = levels.counts[i];
+                output++;
+            }
+            qsort(entries, levels.count, sizeof(*entries),
+                  sylvan_level_statistic_compare);
+        }
+    }
+
+    free(stack.handles);
+    free(levels.counts);
+    free(levels.levels);
+    free(visited.slots);
+    return status;
+}
+
+int
+mtbdd_level_statistics_CALL(
+    lace_worker *lace, const MTBDD *roots, size_t root_count,
+    sylvan_level_statistic *entries, size_t capacity,
+    size_t *count, uint64_t *leaf_count)
+{
+    return sylvan_level_statistics_collect(
+        lace, roots, root_count, entries, capacity,
+        count, leaf_count, 0);
+}
+
+int
+zdd_level_statistics_CALL(
+    lace_worker *lace, const ZDD *roots, size_t root_count,
+    sylvan_level_statistic *entries, size_t capacity,
+    size_t *count, uint64_t *leaf_count)
+{
+    return sylvan_level_statistics_collect(
+        lace, roots, root_count, entries, capacity,
+        count, leaf_count, 1);
+}

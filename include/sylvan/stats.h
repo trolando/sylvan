@@ -228,6 +228,13 @@ typedef struct sylvan_statistic {
     uint64_t cache_puts;
 } sylvan_statistic;
 
+/** Unique reachable decision nodes at one sparse variable level. */
+typedef struct sylvan_level_statistic {
+    uint32_t level;
+    uint32_t reserved;
+    uint64_t node_count;
+} sylvan_level_statistic;
+
 /**
  * Initialize stats system (done by sylvan_init_package)
  */
@@ -262,6 +269,33 @@ static inline int sylvan_statistics_read(
     sylvan_statistic *entries, size_t capacity, size_t *count);
 
 /**
+ * Profile unique physical nodes reachable from several MTBDD/BDD roots.
+ *
+ * Entries are sorted by sparse variable level; terminals are excluded from
+ * the entries and reported separately through <leaf_count>. Complemented
+ * edges do not duplicate physical nodes. The caller must protect every root.
+ *
+ * With <entries> NULL and <capacity> zero, writes the required number of
+ * levels to <count>. Insufficient capacity returns SYLVAN_ERR_OVERFLOW without
+ * modifying entries. A successful empty-root profile has zero levels/leaves.
+ */
+static inline int mtbdd_level_statistics(
+    const MTBDD *roots, size_t root_count,
+    sylvan_level_statistic *entries, size_t capacity,
+    size_t *count, uint64_t *leaf_count);
+
+/**
+ * ZDD counterpart of mtbdd_level_statistics.
+ *
+ * ZDD terminals are excluded from level entries and counted in <leaf_count>.
+ * The caller must protect every root.
+ */
+static inline int zdd_level_statistics(
+    const ZDD *roots, size_t root_count,
+    sylvan_level_statistic *entries, size_t capacity,
+    size_t *count, uint64_t *leaf_count);
+
+/**
  * Write statistic report to file (stdout, stderr, etc)
  */
 void sylvan_stats_report(FILE* target);
@@ -272,6 +306,12 @@ TASK(void, sylvan_stats_snapshot, sylvan_stats_t*, target)
 TASK(int, sylvan_statistics_snapshot, sylvan_statistics*, target)
 TASK(int, sylvan_statistics_read, sylvan_statistic*, entries,
      size_t, capacity, size_t*, count)
+TASK(int, mtbdd_level_statistics, const MTBDD*, roots, size_t, root_count,
+     sylvan_level_statistic*, entries, size_t, capacity,
+     size_t*, count, uint64_t*, leaf_count)
+TASK(int, zdd_level_statistics, const ZDD*, roots, size_t, root_count,
+     sylvan_level_statistic*, entries, size_t, capacity,
+     size_t*, count, uint64_t*, leaf_count)
 
 #if SYLVAN_STATS
 

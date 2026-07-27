@@ -73,6 +73,12 @@ jobs:
         export CMAKE_PREFIX_PATH=$HOME/sylvan-install
         ./test.sh
 
+    - name: Run installed consumer canaries
+      working-directory: test/install/consumer-canaries
+      run: |
+        export CMAKE_PREFIX_PATH=$HOME/sylvan-install
+        ./test.sh
+
   msvc-build:
     name: '🧱 MSVC ${{ matrix.build_type }}'
     runs-on: windows-latest
@@ -138,3 +144,11 @@ jobs:
         cmake -S . -B build -G Ninja
         cmake --build build
         .\build\test.exe
+
+    - name: Run installed consumer canaries
+      working-directory: test/install/consumer-canaries
+      run: |
+        $env:CMAKE_PREFIX_PATH = "$env:RUNNER_TEMP\sylvan-install"
+        cmake -S . -B build -G Ninja
+        cmake --build build
+        ctest --test-dir build --output-on-failure

@@ -50,3 +50,9 @@ jobs:
       run: |
         export CMAKE_PREFIX_PATH=$HOME/sylvan-install
         ./test.sh
+
+    - name: Run installed consumer canaries
+      working-directory: test/install/consumer-canaries
+      run: |
+        export CMAKE_PREFIX_PATH=$HOME/sylvan-install
+        ./test.sh

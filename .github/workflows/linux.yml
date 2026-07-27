@@ -54,6 +54,12 @@ jobs:
         export CMAKE_PREFIX_PATH=$HOME/sylvan-install
         ./test.sh
 
+    - name: Run installed consumer canaries
+      working-directory: test/install/consumer-canaries
+      run: |
+        export CMAKE_PREFIX_PATH=$HOME/sylvan-install
+        ./test.sh
+
   clang-build:
     name: 'Linux CLang-${{matrix.version}} ${{matrix.build_type}}'
     runs-on: ubuntu-latest
@@ -74,6 +80,7 @@ jobs:
         export CC=clang-${{matrix.version}} CXX=clang++-${{matrix.version}}
         cmake -S . -B build \
           -DCMAKE_BUILD_TYPE=${{matrix.build_type}} \
+          -DCMAKE_INSTALL_PREFIX=$HOME/sylvan-install \
           -DLACE_NATIVE_OPT=OFF \
           -DSYLVAN_GMP=ON
 
@@ -88,3 +95,12 @@ jobs:
         examples/nqueens -w 2 9 | tee /dev/fd/2 | grep -q "352 solutions"
         examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee /dev/fd/2 | grep -q "1570340"
         examples/lddmc ../models/blocks.2.ldd -w 2 | tee /dev/fd/2 | grep -q "7057 states"
+
+    - name: Install
+      run: cmake --install build
+
+    - name: Run installed consumer canaries
+      working-directory: test/install/consumer-canaries
+      run: |
+        export CMAKE_PREFIX_PATH=$HOME/sylvan-install
+        ./test.sh

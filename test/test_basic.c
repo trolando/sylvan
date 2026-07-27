@@ -2489,6 +2489,9 @@ test_probability_destinations_CALL(lace_worker *lace)
     const double other_probabilities[] = {0.8, 0.7, 0.6, 0.1};
     double result = -1.0;
     double other_result = -1.0;
+    double gradient[4] = {-1.0, -1.0, -1.0, -1.0};
+    double parallel_result = -1.0;
+    double parallel_gradient[4] = {-1.0, -1.0, -1.0, -1.0};
     bdd_probability_SPAWN(
         lace, &result, function, variables, probabilities, 4);
     test_assert(bdd_probability_CALL(
@@ -2497,6 +2500,26 @@ test_probability_destinations_CALL(lace_worker *lace)
     test_assert(bdd_probability_SYNC(lace) == SYLVAN_OK);
     test_assert(fabs(result - 0.154) < 1e-12);
     test_assert(fabs(other_result - 0.884) < 1e-12);
+    test_assert(bdd_probability_gradient_CALL(
+        lace, &other_result, gradient, function, variables,
+        probabilities, 4) == SYLVAN_OK);
+    test_assert(fabs(other_result - result) < 1e-12);
+    test_assert(fabs(gradient[0] - 0.94) < 1e-12);
+    test_assert(fabs(gradient[1] - 0.27) < 1e-12);
+    test_assert(fabs(gradient[2] - 0.18) < 1e-12);
+    test_assert(gradient[3] == 0.0);
+    bdd_probability_gradient_SPAWN(
+        lace, &parallel_result, parallel_gradient, function, variables,
+        probabilities, 4);
+    test_assert(bdd_probability_gradient_CALL(
+        lace, &other_result, gradient, function, variables,
+        other_probabilities, 4) == SYLVAN_OK);
+    test_assert(bdd_probability_gradient_SYNC(lace) == SYLVAN_OK);
+    test_assert(fabs(parallel_result - result) < 1e-12);
+    test_assert(fabs(parallel_gradient[0] - 0.94) < 1e-12);
+    test_assert(fabs(parallel_gradient[1] - 0.27) < 1e-12);
+    test_assert(fabs(parallel_gradient[2] - 0.18) < 1e-12);
+    test_assert(parallel_gradient[3] == 0.0);
 
     double repeated = -1.0;
     test_assert(bdd_probability_CALL(
@@ -2507,6 +2530,14 @@ test_probability_destinations_CALL(lace_worker *lace)
         lace, &repeated, bdd_not(function), variables,
         probabilities, 4) == SYLVAN_OK);
     test_assert(fabs(repeated - (1.0 - result)) < 1e-12);
+    test_assert(bdd_probability_gradient_CALL(
+        lace, &repeated, gradient, bdd_not(function), variables,
+        probabilities, 4) == SYLVAN_OK);
+    test_assert(fabs(repeated - (1.0 - result)) < 1e-12);
+    test_assert(fabs(gradient[0] + 0.94) < 1e-12);
+    test_assert(fabs(gradient[1] + 0.27) < 1e-12);
+    test_assert(fabs(gradient[2] + 0.18) < 1e-12);
+    test_assert(gradient[3] == 0.0);
 
     const double boundary[] = {0.0, 1.0, 1.0, 0.5};
     test_assert(bdd_probability_CALL(
@@ -2520,6 +2551,14 @@ test_probability_destinations_CALL(lace_worker *lace)
         lace, &repeated, bdd_true, bdd_set_empty(), NULL, 0) ==
         SYLVAN_OK);
     test_assert(repeated == 1.0);
+    test_assert(bdd_probability_gradient_CALL(
+        lace, &repeated, NULL, bdd_false, bdd_set_empty(), NULL, 0) ==
+        SYLVAN_OK);
+    test_assert(repeated == 0.0);
+    test_assert(bdd_probability_gradient_CALL(
+        lace, &repeated, NULL, bdd_true, bdd_set_empty(), NULL, 0) ==
+        SYLVAN_OK);
+    test_assert(repeated == 1.0);
 
     /*
      * Exhaust all three-variable Boolean functions and compare the symbolic
@@ -2529,6 +2568,7 @@ test_probability_destinations_CALL(lace_worker *lace)
     for (uint32_t table = 0; table < 256; table++) {
         function = bdd_false;
         double expected = 0.0;
+        double expected_gradient[3] = {0.0, 0.0, 0.0};
         for (uint32_t assignment = 0; assignment < 8; assignment++) {
             uint8_t values[3] = {
                 (uint8_t)(assignment & 1),
@@ -2548,10 +2588,45 @@ test_probability_destinations_CALL(lace_worker *lace)
                 expected += weight;
             }
         }
+        for (size_t variable = 0; variable < 3; variable++) {
+            for (uint32_t assignment = 0; assignment < 8; assignment++) {
+                if ((assignment & (UINT32_C(1) << variable)) != 0) continue;
+                double weight = 1.0;
+                for (size_t i = 0; i < 3; i++) {
+                    if (i == variable) continue;
+                    weight *= (assignment & (UINT32_C(1) << i))
+                        ? exhaustive_probabilities[i]
+                        : 1.0 - exhaustive_probabilities[i];
+                }
+                const double low =
+                    (table & (UINT32_C(1) << assignment)) != 0 ? 1.0 : 0.0;
+                const double high =
+                    (table & (UINT32_C(1) <<
+                        (assignment | (UINT32_C(1) << variable)))) != 0
+                    ? 1.0 : 0.0;
+                expected_gradient[variable] += weight * (high - low);
+            }
+        }
         test_assert(bdd_probability_CALL(
             lace, &repeated, function, three_variables,
             exhaustive_probabilities, 3) == SYLVAN_OK);
         test_assert(fabs(repeated - expected) < 1e-12);
+        double exhaustive_gradient[3] = {9.0, 9.0, 9.0};
+        test_assert(bdd_probability_gradient_CALL(
+            lace, &repeated, exhaustive_gradient, function, three_variables,
+            exhaustive_probabilities, 3) == SYLVAN_OK);
+        test_assert(fabs(repeated - expected) < 1e-12);
+        for (size_t i = 0; i < 3; i++) {
+            test_assert(fabs(
+                exhaustive_gradient[i] - expected_gradient[i]) < 1e-12);
+            const double q0 =
+                repeated - exhaustive_probabilities[i] *
+                exhaustive_gradient[i];
+            const double q1 =
+                repeated + (1.0 - exhaustive_probabilities[i]) *
+                exhaustive_gradient[i];
+            test_assert(fabs((q1 - q0) - exhaustive_gradient[i]) < 1e-12);
+        }
     }
 
     test_assert(bdd_or_CALL(lace, &function, a, bc) == SYLVAN_OK);
@@ -2560,6 +2635,7 @@ test_probability_destinations_CALL(lace_worker *lace)
     const double not_a_number[] = {0.1, 0.2, NAN, 0.9};
     const double infinite[] = {0.1, 0.2, 0.3, INFINITY};
     double unchanged = 17.0;
+    double unchanged_gradient[] = {17.0, 17.0, 17.0, 17.0};
     test_assert(bdd_probability_CALL(
         lace, &unchanged, function, missing, probabilities, 3) ==
         SYLVAN_ERR_INVALID);
@@ -2591,6 +2667,35 @@ test_probability_destinations_CALL(lace_worker *lace)
         lace, NULL, function, variables, probabilities, 4) ==
         SYLVAN_ERR_INVALID);
     test_assert(unchanged == 17.0);
+    test_assert(bdd_probability_gradient_CALL(
+        lace, &unchanged, unchanged_gradient, function, missing,
+        probabilities, 3) == SYLVAN_ERR_INVALID);
+    test_assert(bdd_probability_gradient_CALL(
+        lace, &unchanged, unchanged_gradient, non_boolean, variables,
+        probabilities, 4) == SYLVAN_ERR_INVALID);
+    test_assert(bdd_probability_gradient_CALL(
+        lace, &unchanged, unchanged_gradient, function, variables,
+        negative, 4) == SYLVAN_ERR_INVALID);
+    test_assert(bdd_probability_gradient_CALL(
+        lace, &unchanged, NULL, function, variables,
+        probabilities, 4) == SYLVAN_ERR_INVALID);
+    test_assert(bdd_probability_gradient_CALL(
+        lace, NULL, unchanged_gradient, function, variables,
+        probabilities, 4) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == 17.0);
+    for (size_t i = 0; i < 4; i++) {
+        test_assert(unchanged_gradient[i] == 17.0);
+    }
+
+    double aliased[] = {0.1, 0.2, 0.3, 0.9};
+    test_assert(bdd_probability_gradient_CALL(
+        lace, &unchanged, aliased, function, variables, aliased, 4) ==
+        SYLVAN_OK);
+    test_assert(fabs(unchanged - result) < 1e-12);
+    test_assert(fabs(aliased[0] - 0.94) < 1e-12);
+    test_assert(fabs(aliased[1] - 0.27) < 1e-12);
+    test_assert(fabs(aliased[2] - 0.18) < 1e-12);
+    test_assert(aliased[3] == 0.0);
 
     sylvan_gc_CALL(lace);
     mtbdd_refs_popptr(9);

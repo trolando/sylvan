@@ -19,6 +19,7 @@
 
 #include <inttypes.h>
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <avl.h>
@@ -2719,6 +2720,286 @@ bdd_probability_CALL(
     const int status = bdd_probability_rec_CALL(
         lace, &computed, dd, variables, probabilities, count, call_id);
     if (status == SYLVAN_OK) *destination = computed;
+    return status;
+}
+
+struct bdd_probability_graph_node {
+    BDD dd;
+    double value;
+    double adjoint;
+    size_t variable;
+};
+
+struct bdd_probability_graph {
+    struct bdd_probability_graph_node *nodes;
+    size_t count;
+    size_t capacity;
+    size_t *buckets;
+    size_t bucket_count;
+    const uint32_t *levels;
+    size_t level_count;
+};
+
+static uint64_t
+bdd_probability_graph_hash(BDD dd)
+{
+    uint64_t value = dd;
+    value ^= value >> 30;
+    value *= UINT64_C(0xbf58476d1ce4e5b9);
+    value ^= value >> 27;
+    value *= UINT64_C(0x94d049bb133111eb);
+    return value ^ (value >> 31);
+}
+
+static size_t
+bdd_probability_graph_find(
+    const struct bdd_probability_graph *graph, BDD dd)
+{
+    if (graph->bucket_count == 0) return SIZE_MAX;
+    size_t slot = (size_t)bdd_probability_graph_hash(dd) &
+                  (graph->bucket_count - 1);
+    while (graph->buckets[slot] != 0) {
+        const size_t index = graph->buckets[slot] - 1;
+        if (graph->nodes[index].dd == dd) return index;
+        slot = (slot + 1) & (graph->bucket_count - 1);
+    }
+    return SIZE_MAX;
+}
+
+static int
+bdd_probability_graph_grow_buckets(struct bdd_probability_graph *graph)
+{
+    const size_t old_count = graph->bucket_count;
+    const size_t new_count = old_count == 0 ? 64 : old_count * 2;
+    if (new_count < old_count ||
+        new_count > SIZE_MAX / sizeof(*graph->buckets)) {
+        return SYLVAN_ERR_OOM;
+    }
+    size_t *buckets = calloc(new_count, sizeof(*buckets));
+    if (buckets == NULL) return SYLVAN_ERR_OOM;
+
+    for (size_t i = 0; i < graph->count; i++) {
+        size_t slot = (size_t)bdd_probability_graph_hash(
+            graph->nodes[i].dd) & (new_count - 1);
+        while (buckets[slot] != 0) {
+            slot = (slot + 1) & (new_count - 1);
+        }
+        buckets[slot] = i + 1;
+    }
+    free(graph->buckets);
+    graph->buckets = buckets;
+    graph->bucket_count = new_count;
+    return SYLVAN_OK;
+}
+
+static int
+bdd_probability_graph_grow_nodes(struct bdd_probability_graph *graph)
+{
+    const size_t old_capacity = graph->capacity;
+    const size_t new_capacity = old_capacity == 0 ? 64 : old_capacity * 2;
+    if (new_capacity < old_capacity ||
+        new_capacity > SIZE_MAX / sizeof(*graph->nodes)) {
+        return SYLVAN_ERR_OOM;
+    }
+    struct bdd_probability_graph_node *nodes =
+        realloc(graph->nodes, new_capacity * sizeof(*nodes));
+    if (nodes == NULL) return SYLVAN_ERR_OOM;
+    graph->nodes = nodes;
+    graph->capacity = new_capacity;
+    return SYLVAN_OK;
+}
+
+static size_t
+bdd_probability_graph_variable(
+    const struct bdd_probability_graph *graph, uint32_t level)
+{
+    size_t begin = 0;
+    size_t end = graph->level_count;
+    while (begin < end) {
+        const size_t middle = begin + (end - begin) / 2;
+        if (graph->levels[middle] < level) begin = middle + 1;
+        else end = middle;
+    }
+    return begin < graph->level_count && graph->levels[begin] == level
+        ? begin : SIZE_MAX;
+}
+
+static int
+bdd_probability_graph_collect(
+    struct bdd_probability_graph *graph, BDD dd, size_t *result)
+{
+    const BDD regular = MTBDD_STRIPMARK(dd);
+    if (regular == bdd_false) {
+        *result = SIZE_MAX;
+        return SYLVAN_OK;
+    }
+    if (mtbdd_is_leaf(regular)) return SYLVAN_ERR_INVALID;
+
+    size_t index = bdd_probability_graph_find(graph, regular);
+    if (index != SIZE_MAX) {
+        *result = index;
+        return SYLVAN_OK;
+    }
+
+    const size_t variable = bdd_probability_graph_variable(
+        graph, mtbdd_node_variable(regular));
+    if (variable == SIZE_MAX) return SYLVAN_ERR_INVALID;
+
+    size_t ignored;
+    int status = bdd_probability_graph_collect(
+        graph, mtbdd_node_low(regular), &ignored);
+    if (status != SYLVAN_OK) return status;
+    status = bdd_probability_graph_collect(
+        graph, mtbdd_node_high(regular), &ignored);
+    if (status != SYLVAN_OK) return status;
+
+    /*
+     * A shared descendant may have inserted this node only if the graph were
+     * cyclic, which ordered BDDs are not. Keep the lookup here defensive.
+     */
+    index = bdd_probability_graph_find(graph, regular);
+    if (index != SIZE_MAX) {
+        *result = index;
+        return SYLVAN_OK;
+    }
+    if (graph->bucket_count == 0 ||
+        graph->count + 1 > graph->bucket_count / 2) {
+        status = bdd_probability_graph_grow_buckets(graph);
+        if (status != SYLVAN_OK) return status;
+    }
+    if (graph->count == graph->capacity) {
+        status = bdd_probability_graph_grow_nodes(graph);
+        if (status != SYLVAN_OK) return status;
+    }
+
+    index = graph->count++;
+    graph->nodes[index] = (struct bdd_probability_graph_node){
+        regular, 0.0, 0.0, variable
+    };
+    size_t slot = (size_t)bdd_probability_graph_hash(regular) &
+                  (graph->bucket_count - 1);
+    while (graph->buckets[slot] != 0) {
+        slot = (slot + 1) & (graph->bucket_count - 1);
+    }
+    graph->buckets[slot] = index + 1;
+    *result = index;
+    return SYLVAN_OK;
+}
+
+static double
+bdd_probability_graph_value(
+    const struct bdd_probability_graph *graph, BDD dd)
+{
+    if (dd == bdd_false) return 0.0;
+    if (dd == bdd_true) return 1.0;
+    const size_t index = bdd_probability_graph_find(
+        graph, MTBDD_STRIPMARK(dd));
+    const double value = graph->nodes[index].value;
+    return MTBDD_HASMARK(dd) ? 1.0 - value : value;
+}
+
+static void
+bdd_probability_graph_add_adjoint(
+    struct bdd_probability_graph *graph, BDD dd, double value)
+{
+    if (dd == bdd_false || dd == bdd_true) return;
+    const size_t index = bdd_probability_graph_find(
+        graph, MTBDD_STRIPMARK(dd));
+    graph->nodes[index].adjoint += MTBDD_HASMARK(dd) ? -value : value;
+}
+
+int
+bdd_probability_gradient_CALL(
+    lace_worker *lace, double *destination, double *gradient,
+    BDD dd, BDDSET variables, const double *probabilities, size_t count)
+{
+    (void)lace;
+    if (destination == NULL || dd == mtbdd_invalid ||
+        variables == mtbdd_invalid ||
+        count != bdd_set_count(variables) ||
+        (count != 0 && (probabilities == NULL || gradient == NULL)) ||
+        count > SIZE_MAX / sizeof(uint32_t) ||
+        count > SIZE_MAX / sizeof(double)) {
+        return SYLVAN_ERR_INVALID;
+    }
+    for (size_t i = 0; i < count; i++) {
+        if (!isfinite(probabilities[i]) ||
+            probabilities[i] < 0.0 || probabilities[i] > 1.0) {
+            return SYLVAN_ERR_INVALID;
+        }
+    }
+
+    uint32_t *levels = count == 0
+        ? NULL : malloc(count * sizeof(*levels));
+    double *computed_gradient = count == 0
+        ? NULL : calloc(count, sizeof(*computed_gradient));
+    if (count != 0 && (levels == NULL || computed_gradient == NULL)) {
+        free(levels);
+        free(computed_gradient);
+        return SYLVAN_ERR_OOM;
+    }
+    BDDSET cursor = variables;
+    for (size_t i = 0; i < count; i++) {
+        levels[i] = bdd_set_first(cursor);
+        cursor = bdd_set_next(cursor);
+    }
+
+    struct bdd_probability_graph graph = {
+        NULL, 0, 0, NULL, 0, levels, count
+    };
+    size_t root = SIZE_MAX;
+    int status = bdd_probability_graph_collect(&graph, dd, &root);
+    if (status == SYLVAN_OK) {
+        for (size_t i = 0; i < graph.count; i++) {
+            struct bdd_probability_graph_node *node = &graph.nodes[i];
+            const BDD low = mtbdd_node_low(node->dd);
+            const BDD high = mtbdd_node_high(node->dd);
+            const double low_value =
+                bdd_probability_graph_value(&graph, low);
+            const double high_value =
+                bdd_probability_graph_value(&graph, high);
+            const double probability = probabilities[node->variable];
+            node->value =
+                low_value + probability * (high_value - low_value);
+        }
+
+        double computed;
+        if (dd == bdd_false) computed = 0.0;
+        else if (dd == bdd_true) computed = 1.0;
+        else {
+            computed = graph.nodes[root].value;
+            if (MTBDD_HASMARK(dd)) computed = 1.0 - computed;
+            graph.nodes[root].adjoint = MTBDD_HASMARK(dd) ? -1.0 : 1.0;
+        }
+
+        for (size_t i = graph.count; i != 0; i--) {
+            struct bdd_probability_graph_node *node = &graph.nodes[i - 1];
+            const BDD low = mtbdd_node_low(node->dd);
+            const BDD high = mtbdd_node_high(node->dd);
+            const double low_value =
+                bdd_probability_graph_value(&graph, low);
+            const double high_value =
+                bdd_probability_graph_value(&graph, high);
+            const double probability = probabilities[node->variable];
+            computed_gradient[node->variable] +=
+                node->adjoint * (high_value - low_value);
+            bdd_probability_graph_add_adjoint(
+                &graph, low, node->adjoint * (1.0 - probability));
+            bdd_probability_graph_add_adjoint(
+                &graph, high, node->adjoint * probability);
+        }
+
+        if (count != 0) {
+            memcpy(gradient, computed_gradient, count * sizeof(*gradient));
+        }
+        *destination = computed;
+        sylvan_stats_count(BDD_PROBABILITY_GRADIENT);
+    }
+
+    free(graph.nodes);
+    free(graph.buckets);
+    free(computed_gradient);
+    free(levels);
     return status;
 }
 

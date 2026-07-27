@@ -95,6 +95,8 @@ TASK(int, bdd_sat_count_u64, uint64_t*, result, BDD, dd, BDDSET, variables)
 TASK(double, bdd_sat_count_double, BDD, dd, BDDSET, variables)
 TASK(int, bdd_probability, double*, result, BDD, dd, BDDSET, variables,
      const double*, probabilities, size_t, count)
+TASK(int, bdd_probability_gradient, double*, result, double*, gradient,
+     BDD, dd, BDDSET, variables, const double*, probabilities, size_t, count)
 TASK(int, bdd_cardinality, BDD*, result, BDDSET, variables,
      size_t, minimum, size_t, maximum)
 TASK(void, bdd_enumerate_minterms, BDD, dd, BDDSET, vars, bdd_enumerate_cb, cb, void*, context)

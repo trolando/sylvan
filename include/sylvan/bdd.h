@@ -341,6 +341,23 @@ static inline int bdd_probability(
     const double *probabilities, size_t count);
 
 /**
+ * Evaluate the probability of <dd> and its derivative with respect to every
+ * independent variable probability.
+ *
+ * Inputs have the same contract as bdd_probability(). <gradient> receives
+ * <count> derivatives in the order of <variables>. A variable absent from
+ * <dd> has derivative zero. For probability p and derivative d, callers can
+ * recover the conditional results as Q0 = result - p*d and
+ * Q1 = result + (1-p)*d.
+ *
+ * Returns SYLVAN_OK on success or a negative status on failure, leaving
+ * <result> and <gradient> unchanged.
+ */
+static inline int bdd_probability_gradient(
+    double *result, double *gradient, BDD dd, BDDSET variables,
+    const double *probabilities, size_t count);
+
+/**
  * Construct the BDD whose satisfying assignments set between <minimum> and
  * <maximum> variables in <variables> to true, inclusive.
  *

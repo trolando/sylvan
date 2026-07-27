@@ -341,6 +341,20 @@ static inline int bdd_probability(
     const double *probabilities, size_t count);
 
 /**
+ * Construct the BDD whose satisfying assignments set between <minimum> and
+ * <maximum> variables in <variables> to true, inclusive.
+ *
+ * This single constructor covers exact-k, at-most-k, at-least-k, and voting
+ * constraints. <minimum> must not exceed <maximum>, and <maximum> must not
+ * exceed bdd_set_count(<variables>).
+ *
+ * The caller must protect <result>. Returns SYLVAN_OK on success or a negative
+ * status on failure, leaving <result> unchanged.
+ */
+static inline int bdd_cardinality(
+    BDD *result, BDDSET variables, size_t minimum, size_t maximum);
+
+/**
  * Create a low-first iterator over the satisfying assignments of <dd>.
  * <variables> must contain the complete support. In cube mode, emitted values
  * are 0, 1, or 2 (don't-care); in minterm mode, they are only 0 or 1.

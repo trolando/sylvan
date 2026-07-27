@@ -76,6 +76,7 @@ struct
     {2, BDD_APPLY_ABSTRACT, "BDD apply abstract"},
     {2, BDD_PICK_REPRESENTATIVES, "BDD pick representatives"},
     {2, BDD_PROBABILITY, "BDD probability"},
+    {2, BDD_CARDINALITY, "BDD cardinality"},
 
     {2, MTBDD_APPLY, "MTBDD binary apply"},
     {2, MTBDD_UAPPLY, "MTBDD unary apply"},

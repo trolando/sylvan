@@ -2597,6 +2597,107 @@ test_probability_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+TASK(int, test_cardinality_destinations)
+int
+test_cardinality_destinations_CALL(lace_worker *lace)
+{
+    BDDSET variables = mtbdd_invalid;
+    BDD result = mtbdd_invalid;
+    BDD parallel = mtbdd_invalid;
+    BDD expected = mtbdd_invalid;
+    BDD inplace = mtbdd_invalid;
+    BDD unchanged = bdd_true;
+    mtbdd_refs_pushptr(&variables);
+    mtbdd_refs_pushptr(&result);
+    mtbdd_refs_pushptr(&parallel);
+    mtbdd_refs_pushptr(&expected);
+    mtbdd_refs_pushptr(&inplace);
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_assert(bdd_set_from_array(
+        &variables, (uint32_t[]){0, 2, 5}, 3) == SYLVAN_OK);
+    const uint64_t exact_counts[] = {1, 3, 3, 1};
+
+    for (size_t minimum = 0; minimum <= 3; minimum++) {
+        for (size_t maximum = minimum; maximum <= 3; maximum++) {
+            test_assert(bdd_cardinality_CALL(
+                lace, &result, variables, minimum, maximum) == SYLVAN_OK);
+
+            uint64_t expected_count = 0;
+            for (size_t i = minimum; i <= maximum; i++) {
+                expected_count += exact_counts[i];
+            }
+            uint64_t count = 0;
+            test_assert(bdd_sat_count_u64_CALL(
+                lace, &count, result, variables) == SYLVAN_OK);
+            test_assert(count == expected_count);
+
+            for (uint32_t assignment = 0; assignment < 8; assignment++) {
+                const uint8_t values[3] = {
+                    (uint8_t)(assignment & 1),
+                    (uint8_t)((assignment >> 1) & 1),
+                    (uint8_t)((assignment >> 2) & 1)
+                };
+                const size_t cardinality =
+                    (size_t)values[0] + values[1] + values[2];
+                BDD value = mtbdd_invalid;
+                test_assert(bdd_eval(
+                    &value, result, variables, values, 3) == SYLVAN_OK);
+                test_assert(
+                    value == (cardinality >= minimum &&
+                              cardinality <= maximum
+                        ? bdd_true : bdd_false));
+            }
+        }
+    }
+
+    test_assert(bdd_cardinality_CALL(
+        lace, &result, variables, 0, 3) == SYLVAN_OK);
+    test_assert(result == bdd_true);
+    test_assert(bdd_cube_CALL(
+        lace, &expected, variables, (uint8_t[]){0, 0, 0}) == SYLVAN_OK);
+    test_assert(bdd_cardinality_CALL(
+        lace, &result, variables, 0, 0) == SYLVAN_OK);
+    test_assert(result == expected);
+    test_assert(bdd_cube_CALL(
+        lace, &expected, variables, (uint8_t[]){1, 1, 1}) == SYLVAN_OK);
+    test_assert(bdd_cardinality_CALL(
+        lace, &result, variables, 3, 3) == SYLVAN_OK);
+    test_assert(result == expected);
+
+    bdd_cardinality_SPAWN(lace, &parallel, variables, 1, 2);
+    test_assert(bdd_cardinality_CALL(
+        lace, &result, variables, 1, 1) == SYLVAN_OK);
+    test_assert(bdd_cardinality_SYNC(lace) == SYLVAN_OK);
+    inplace = variables;
+    test_assert(bdd_cardinality_CALL(
+        lace, &inplace, inplace, 1, 2) == SYLVAN_OK);
+    test_assert(inplace == parallel);
+
+    test_assert(bdd_cardinality_CALL(
+        lace, &result, bdd_set_empty(), 0, 0) == SYLVAN_OK);
+    test_assert(result == bdd_true);
+    test_assert(bdd_cardinality_CALL(
+        lace, &unchanged, variables, 2, 1) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_cardinality_CALL(
+        lace, &unchanged, variables, 0, 4) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_cardinality_CALL(
+        lace, &unchanged, bdd_set_empty(), 0, 1) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_cardinality_CALL(
+        lace, &unchanged, mtbdd_invalid, 0, 0) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(bdd_cardinality_CALL(
+        lace, NULL, variables, 0, 3) == SYLVAN_ERR_INVALID);
+
+    sylvan_gc_CALL(lace);
+    test_assert(inplace == parallel);
+    mtbdd_refs_popptr(6);
+    return 0;
+}
+
 TASK(int, test_iterator_destinations)
 int
 test_iterator_destinations_CALL(lace_worker *lace)
@@ -4546,6 +4647,7 @@ int runtests_CALL(lace_worker* lace)
     if (test_mtbdd_eval_compose_destinations_CALL(lace)) return 1;
     if (test_count_destinations_CALL(lace)) return 1;
     if (test_probability_destinations_CALL(lace)) return 1;
+    if (test_cardinality_destinations_CALL(lace)) return 1;
     if (test_iterator_destinations_CALL(lace)) return 1;
     if (test_quantification_destinations_CALL(lace)) return 1;
     if (test_bdd_representatives_destinations_CALL(lace)) return 1;

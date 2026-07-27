@@ -25,6 +25,8 @@
 
 TASK(int, bdd_probability_rec, double*, result, BDD, dd, BDDSET, variables,
      const double*, probabilities, size_t, count, uint64_t, call_id)
+TASK(int, bdd_cardinality_rec, BDD*, result, BDDSET, variables,
+     size_t, minimum, size_t, maximum, size_t, remaining)
 
 static _Atomic(uint64_t) bdd_probability_call_id;
 
@@ -2717,6 +2719,101 @@ bdd_probability_CALL(
     const int status = bdd_probability_rec_CALL(
         lace, &computed, dd, variables, probabilities, count, call_id);
     if (status == SYLVAN_OK) *destination = computed;
+    return status;
+}
+
+int
+bdd_cardinality_rec_CALL(
+    lace_worker *lace, BDD *destination, BDDSET variables,
+    size_t minimum, size_t maximum, size_t remaining)
+{
+    if (destination == NULL || variables == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (minimum > maximum || minimum > remaining) {
+        *destination = bdd_false;
+        return SYLVAN_OK;
+    }
+    if (maximum > remaining) maximum = remaining;
+    if (minimum == 0 && maximum == remaining) {
+        *destination = bdd_true;
+        return SYLVAN_OK;
+    }
+    if (remaining == 0 || bdd_set_is_empty(variables)) {
+        *destination = bdd_false;
+        return SYLVAN_OK;
+    }
+
+    sylvan_gc_test(lace);
+    sylvan_stats_count(BDD_CARDINALITY);
+
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(
+            CACHE_BDD_CARDINALITY, variables,
+            minimum, maximum, &computed)) {
+        sylvan_stats_count(BDD_CARDINALITY_CACHED);
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
+    }
+
+    const uint32_t level = bdd_set_first(variables);
+    const BDDSET next = bdd_set_next(variables);
+    BDD low = mtbdd_invalid;
+    BDD high = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+
+    int status;
+    if (maximum == 0) {
+        high = bdd_false;
+        status = bdd_cardinality_rec_CALL(
+            lace, &low, next, minimum, maximum, remaining - 1);
+    } else {
+        bdd_cardinality_rec_SPAWN(
+            lace, &high, next,
+            minimum == 0 ? 0 : minimum - 1,
+            maximum - 1, remaining - 1);
+        status = bdd_cardinality_rec_CALL(
+            lace, &low, next, minimum, maximum, remaining - 1);
+        const int high_status = bdd_cardinality_rec_SYNC(lace);
+        if (status == SYLVAN_OK) status = high_status;
+    }
+    if (status == SYLVAN_OK) {
+        status = _mtbdd_try_make_node(
+            &computed, level, low, high);
+    }
+    mtbdd_refs_popptr(2);
+
+    if (status == SYLVAN_OK &&
+        cache_put3(
+            CACHE_BDD_CARDINALITY, variables,
+            minimum, maximum, computed)) {
+        sylvan_stats_count(BDD_CARDINALITY_CACHEDPUT);
+    }
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(1);
+    return status;
+}
+
+int
+bdd_cardinality_CALL(
+    lace_worker *lace, BDD *destination, BDDSET variables,
+    size_t minimum, size_t maximum)
+{
+    if (destination == NULL || variables == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    const size_t count = bdd_set_count(variables);
+    if (minimum > maximum || maximum > count) return SYLVAN_ERR_INVALID;
+
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    const int status = bdd_cardinality_rec_CALL(
+        lace, &computed, variables, minimum, maximum, count);
+    if (status == SYLVAN_OK) *destination = computed;
+    mtbdd_refs_popptr(1);
     return status;
 }
 

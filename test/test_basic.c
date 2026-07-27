@@ -5136,6 +5136,74 @@ test_ldd()
 TASK(int, runtests)
 int runtests_CALL(lace_worker* lace)
 {
+    sylvan_statistics statistics = SYLVAN_STATISTICS_INIT;
+    test_assert(
+        sylvan_statistics_snapshot_CALL(lace, &statistics) == SYLVAN_OK);
+    test_assert(statistics.nodes_used <= statistics.nodes_capacity);
+    test_assert(
+        statistics.nodes_capacity <= statistics.nodes_max_capacity);
+    test_assert(statistics.cache_used <= statistics.cache_capacity);
+    test_assert(
+        statistics.cache_capacity <= statistics.cache_max_capacity);
+    test_assert(statistics.worker_count == 4);
+    test_assert(
+        statistics.statistics_enabled == (SYLVAN_STATS ? 1u : 0u));
+
+    sylvan_statistics invalid_statistics = SYLVAN_STATISTICS_INIT;
+    invalid_statistics.version++;
+    test_assert(
+        sylvan_statistics_snapshot_CALL(
+            lace, &invalid_statistics) == SYLVAN_ERR_INVALID);
+    invalid_statistics = (sylvan_statistics)SYLVAN_STATISTICS_INIT;
+    invalid_statistics.size = SYLVAN_STATISTICS_V1_SIZE - 1;
+    test_assert(
+        sylvan_statistics_snapshot_CALL(
+            lace, &invalid_statistics) == SYLVAN_ERR_INVALID);
+
+    size_t statistic_count = 0;
+    test_assert(
+        sylvan_statistics_read_CALL(
+            lace, NULL, 0, &statistic_count) == SYLVAN_OK);
+    test_assert(statistic_count > 0);
+    sylvan_statistic sentinel = {
+        "unchanged", SYLVAN_STATISTIC_TIMER, 17, 1, 2, 3
+    };
+    test_assert(
+        sylvan_statistics_read_CALL(
+            lace, &sentinel, statistic_count - 1,
+            &statistic_count) == SYLVAN_ERR_OVERFLOW);
+    test_assert(
+        strcmp(sentinel.name, "unchanged") == 0 &&
+        sentinel.reserved == 17 && sentinel.value == 1 &&
+        sentinel.cache_hits == 2 && sentinel.cache_puts == 3);
+
+    sylvan_statistic *statistics_entries =
+        malloc(statistic_count * sizeof(*statistics_entries));
+    test_assert(statistics_entries != NULL);
+    size_t written_statistics = statistic_count;
+    test_assert(
+        sylvan_statistics_read_CALL(
+            lace, statistics_entries, statistic_count,
+            &written_statistics) == SYLVAN_OK);
+    test_assert(written_statistics == statistic_count);
+    int found_gc_count = 0;
+    int found_bdd_and = 0;
+    for (size_t i = 0; i < statistic_count; i++) {
+        test_assert(statistics_entries[i].name != NULL);
+        test_assert(statistics_entries[i].reserved == 0);
+        if (strcmp(
+                statistics_entries[i].name, "GC executions") == 0) {
+            found_gc_count =
+                statistics_entries[i].kind == SYLVAN_STATISTIC_COUNTER;
+        } else if (strcmp(
+                       statistics_entries[i].name, "BDD and") == 0) {
+            found_bdd_and =
+                statistics_entries[i].kind == SYLVAN_STATISTIC_OPERATION;
+        }
+    }
+    test_assert(found_gc_count && found_bdd_and);
+    free(statistics_entries);
+
     printf("Testing protected destinations.\n");
     if (test_leaf_descriptor_CALL(lace)) return 1;
     if (test_variable_set_destinations_CALL(lace)) return 1;

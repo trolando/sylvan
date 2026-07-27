@@ -170,6 +170,65 @@ typedef struct
 } sylvan_stats_t;
 
 /**
+ * Stable, named runtime diagnostics.
+ *
+ * Initialize <version> and <size> with SYLVAN_STATISTICS_INIT before calling
+ * sylvan_statistics_snapshot. The versioned, sized structure may be extended
+ * without making callers depend on the internal counter-array layout above.
+ * Counter aggregation stops the workers. Table and cache occupancies are
+ * exact when no concurrent external caller mutates them; otherwise they are
+ * observational diagnostics. Statistics fields are zero when Sylvan was
+ * built without statistics.
+ */
+#define SYLVAN_STATISTICS_VERSION UINT32_C(1)
+
+typedef struct sylvan_statistics {
+    uint32_t version;
+    uint32_t size;
+    uint64_t nodes_used;
+    uint64_t nodes_capacity;
+    uint64_t nodes_max_capacity;
+    uint64_t cache_used;
+    uint64_t cache_capacity;
+    uint64_t cache_max_capacity;
+    uint64_t gc_count;
+    uint64_t gc_time_ns;
+    uint32_t worker_count;
+    uint32_t statistics_enabled;
+} sylvan_statistics;
+
+#define SYLVAN_STATISTICS_V1_SIZE \
+    ((uint32_t)(offsetof(sylvan_statistics, statistics_enabled) + \
+                sizeof(((sylvan_statistics*)0)->statistics_enabled)))
+
+#define SYLVAN_STATISTICS_INIT \
+    { SYLVAN_STATISTICS_VERSION, (uint32_t)sizeof(sylvan_statistics), \
+      UINT64_C(0), UINT64_C(0), UINT64_C(0), UINT64_C(0), UINT64_C(0), \
+      UINT64_C(0), UINT64_C(0), UINT64_C(0), UINT32_C(0), UINT32_C(0) }
+
+typedef enum sylvan_statistic_kind {
+    SYLVAN_STATISTIC_COUNTER = 0,
+    SYLVAN_STATISTIC_OPERATION = 1,
+    SYLVAN_STATISTIC_TIMER = 2
+} sylvan_statistic_kind;
+
+/**
+ * One programmatic statistics record.
+ *
+ * <name> is a borrowed, process-lifetime label. For a counter, <value> is the
+ * count. For an operation, <value> is the call count and the cache fields are
+ * populated. For a timer, <value> is nanoseconds. Unused fields are zero.
+ */
+typedef struct sylvan_statistic {
+    const char *name;
+    sylvan_statistic_kind kind;
+    uint32_t reserved;
+    uint64_t value;
+    uint64_t cache_hits;
+    uint64_t cache_puts;
+} sylvan_statistic;
+
+/**
  * Initialize stats system (done by sylvan_init_package)
  */
 static inline void sylvan_stats_init(void);
@@ -185,6 +244,24 @@ static inline void sylvan_stats_reset(void);
 static inline void sylvan_stats_snapshot(sylvan_stats_t* target);
 
 /**
+ * Obtain a stable runtime-diagnostics snapshot.
+ *
+ * Returns SYLVAN_OK on success or SYLVAN_ERR_INVALID for a null target, an
+ * unsupported version, or a structure smaller than version 1.
+ */
+static inline int sylvan_statistics_snapshot(sylvan_statistics *target);
+
+/**
+ * Obtain all named counters, operation counts, and timers.
+ *
+ * With <entries> NULL and <capacity> zero, writes the required number of
+ * entries to <count>. If the supplied capacity is too small, writes the
+ * required count and returns SYLVAN_ERR_OVERFLOW without modifying entries.
+ */
+static inline int sylvan_statistics_read(
+    sylvan_statistic *entries, size_t capacity, size_t *count);
+
+/**
  * Write statistic report to file (stdout, stderr, etc)
  */
 void sylvan_stats_report(FILE* target);
@@ -192,6 +269,9 @@ void sylvan_stats_report(FILE* target);
 TASK(void, sylvan_stats_init)
 TASK(void, sylvan_stats_reset)
 TASK(void, sylvan_stats_snapshot, sylvan_stats_t*, target)
+TASK(int, sylvan_statistics_snapshot, sylvan_statistics*, target)
+TASK(int, sylvan_statistics_read, sylvan_statistic*, entries,
+     size_t, capacity, size_t*, count)
 
 #if SYLVAN_STATS
 

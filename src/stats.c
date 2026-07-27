@@ -22,18 +22,10 @@
 #include <string.h> // memset
 #include <inttypes.h>
 
-#if SYLVAN_STATS
-
-#ifdef __ELF__
-__thread sylvan_stats_t sylvan_stats;
-#else
-pthread_key_t sylvan_stats_key;
-#endif
-
 /**
  * Instructions for sylvan_stats_report
  */
-struct
+static const struct
 {
     int type; /* 0 for print line, 1 for simple counter, 2 for operation with CACHED and CACHEDPUT */
               /* 3 for timer, 4 for report table data */
@@ -164,10 +156,19 @@ struct
     {-1, -1, NULL},
 };
 
+#if SYLVAN_STATS
+
+#ifdef __ELF__
+__thread sylvan_stats_t sylvan_stats;
+#else
+pthread_key_t sylvan_stats_key;
+#endif
+
 TASK(void, sylvan_stats_reset_perthread)
 
 void sylvan_stats_reset_perthread_CALL(lace_worker* lace)
 {
+    (void)lace;
 #ifdef __ELF__
     for (int i=0; i<SYLVAN_COUNTER_COUNTER; i++) {
         sylvan_stats.counters[i] = 0;
@@ -196,6 +197,7 @@ void sylvan_stats_reset_perthread_CALL(lace_worker* lace)
 
 void sylvan_stats_init_CALL(lace_worker* lace)
 {
+    (void)lace;
 #ifndef __ELF__
     pthread_key_create(&sylvan_stats_key, NULL);
 #endif
@@ -207,12 +209,14 @@ void sylvan_stats_init_CALL(lace_worker* lace)
  */
 void sylvan_stats_reset_CALL(lace_worker* lace)
 {
+    (void)lace;
     sylvan_stats_reset_perthread_TOGETHER();
 }
 
 TASK(void, sylvan_stats_sum, sylvan_stats_t*, target)
 void sylvan_stats_sum_CALL(lace_worker* lace, sylvan_stats_t* target)
 {
+    (void)lace;
 #ifdef __ELF__
     for (int i=0; i<SYLVAN_COUNTER_COUNTER; i++) {
         atomic_fetch_add((_Atomic(uint64_t)*)target->counters + i, sylvan_stats.counters[i]);
@@ -235,6 +239,7 @@ void sylvan_stats_sum_CALL(lace_worker* lace, sylvan_stats_t* target)
 
 void sylvan_stats_snapshot_CALL(lace_worker* lace, sylvan_stats_t* target)
 {
+    (void)lace;
     memset(target, 0, sizeof(sylvan_stats_t));
     sylvan_stats_sum_TOGETHER(target);
 }
@@ -298,19 +303,19 @@ sylvan_stats_report(FILE *target)
             else fprintf(target, "\n%s\n", sylvan_report_info[i].key);
         } else if (type == 1) {
             if (totals.counters[id] > 0) {
-                fprintf(target, "%-20s %'-16"PRIu64"\n", sylvan_report_info[i].key, totals.counters[id]);
+                fprintf(target, "%-20s %-16"PRIu64"\n", sylvan_report_info[i].key, totals.counters[id]);
             }
         } else if (type == 2) {
             if (totals.counters[id] > 0) {
-                fprintf(target, "%-20s %'-16"PRIu64 " %'-16"PRIu64" %'-16"PRIu64 "\n", sylvan_report_info[i].key, totals.counters[id], totals.counters[id+1], totals.counters[id+2]);
+                fprintf(target, "%-20s %-16"PRIu64 " %-16"PRIu64" %-16"PRIu64 "\n", sylvan_report_info[i].key, totals.counters[id], totals.counters[id+2], totals.counters[id+1]);
             }
         } else if (type == 3) {
             if (totals.timers[id] > 0) {
-                fprintf(target, "%-20s %'.6Lf sec.\n", sylvan_report_info[i].key, (long double)totals.timers[id]/1000000000);
+                fprintf(target, "%-20s %.6Lf sec.\n", sylvan_report_info[i].key, (long double)totals.timers[id]/1000000000);
             }
         } else if (type == 4) {
-            fprintf(target, "%-20s %'zu of %'zu buckets filled.\n", "Unique nodes table", nodes_count_nodes(nodes), nodes_get_size(nodes));
-            fprintf(target, "%-20s %'zu of %'zu buckets filled.\n", "Operation cache", cache_getused(), cache_getsize());
+            fprintf(target, "%-20s %zu of %zu buckets filled.\n", "Unique nodes table", nodes_count_nodes(nodes), nodes_get_size(nodes));
+            fprintf(target, "%-20s %zu of %zu buckets filled.\n", "Operation cache", cache_getused(), cache_getsize());
             char buf[64], buf2[64];
             to_h(24ULL * nodes_get_size(nodes), buf);
             to_h(24ULL * nodes_get_max_size(nodes), buf2);
@@ -348,3 +353,78 @@ sylvan_stats_report(FILE* target)
 }
 
 #endif
+
+int
+sylvan_statistics_snapshot_CALL(
+    lace_worker *lace, sylvan_statistics *target)
+{
+    if (target == NULL ||
+        target->version != SYLVAN_STATISTICS_VERSION ||
+        target->size < SYLVAN_STATISTICS_V1_SIZE) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    sylvan_stats_t totals;
+    sylvan_stats_snapshot_CALL(lace, &totals);
+
+    const uint32_t version = target->version;
+    const uint32_t size = target->size;
+    const size_t writable =
+        size < sizeof(*target) ? (size_t)size : sizeof(*target);
+    memset(target, 0, writable);
+    target->version = version;
+    target->size = size;
+    target->nodes_used = (uint64_t)nodes_count_nodes_CALL(lace, nodes);
+    target->nodes_capacity = (uint64_t)nodes_get_size(nodes);
+    target->nodes_max_capacity = (uint64_t)nodes_get_max_size(nodes);
+    target->cache_used = (uint64_t)cache_getused();
+    target->cache_capacity = (uint64_t)cache_getsize();
+    target->cache_max_capacity = (uint64_t)cache_getmaxsize();
+    target->gc_count = totals.counters[SYLVAN_GC_COUNT];
+    target->gc_time_ns = totals.timers[SYLVAN_GC];
+    target->worker_count = lace_worker_count();
+    target->statistics_enabled = SYLVAN_STATS ? 1u : 0u;
+    return SYLVAN_OK;
+}
+
+int
+sylvan_statistics_read_CALL(
+    lace_worker *lace, sylvan_statistic *entries,
+    size_t capacity, size_t *count)
+{
+    if (count == NULL || (entries == NULL && capacity != 0)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    size_t required = 0;
+    for (size_t i = 0; sylvan_report_info[i].id != -1; i++) {
+        const int type = sylvan_report_info[i].type;
+        if (type == 1 || type == 2 || type == 3) required++;
+    }
+    *count = required;
+    if (entries == NULL) return SYLVAN_OK;
+    if (capacity < required) return SYLVAN_ERR_OVERFLOW;
+
+    sylvan_stats_t totals;
+    sylvan_stats_snapshot_CALL(lace, &totals);
+    size_t output = 0;
+    for (size_t i = 0; sylvan_report_info[i].id != -1; i++) {
+        const int type = sylvan_report_info[i].type;
+        const int id = sylvan_report_info[i].id;
+        if (type != 1 && type != 2 && type != 3) continue;
+
+        sylvan_statistic *entry = entries + output++;
+        entry->name = sylvan_report_info[i].key;
+        entry->reserved = 0;
+        entry->value = type == 3
+            ? totals.timers[id] : totals.counters[id];
+        entry->cache_hits =
+            type == 2 ? totals.counters[id + 2] : 0;
+        entry->cache_puts =
+            type == 2 ? totals.counters[id + 1] : 0;
+        entry->kind = type == 1 ? SYLVAN_STATISTIC_COUNTER :
+            type == 2 ? SYLVAN_STATISTIC_OPERATION :
+                        SYLVAN_STATISTIC_TIMER;
+    }
+    return SYLVAN_OK;
+}

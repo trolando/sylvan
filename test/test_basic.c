@@ -3904,6 +3904,45 @@ test_care_destinations_CALL(lace_worker *lace)
         }
     }
 
+    /*
+     * CUDD f54f533 conformance vector:
+     *   f = !y & !z, care = !z & (x xor y)
+     * Cudd_bddConstrain chooses x, while Cudd_bddRestrict chooses !y.
+     * Both agree with f on care; only the latter avoids introducing x.
+     */
+    test_assert(bdd_and_CALL(
+        lace, &f, bdd_not(y), bdd_not(z)) == SYLVAN_OK);
+    test_assert(bdd_xor_CALL(lace, &cube, x, y) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(
+        lace, &care, bdd_not(z), cube) == SYLVAN_OK);
+    test_assert(bdd_constrain_CALL(
+        lace, &constrain_result, f, care) == SYLVAN_OK);
+    test_assert(bdd_simplify_CALL(
+        lace, &simplify_result, f, care) == SYLVAN_OK);
+    test_assert(constrain_result == x);
+    test_assert(simplify_result == bdd_not(y));
+    test_assert(mtbdd_support_CALL(
+        lace, &simplify_slice, simplify_result) == SYLVAN_OK);
+    test_assert(!bdd_set_contains(simplify_slice, 0));
+
+    /*
+     * Exact cofactoring substitutes every literal in a multi-variable cube
+     * and removes those variables from the result.
+     */
+    test_assert(bdd_xor_CALL(lace, &constrain_slice, y, z) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(lace, &source_slice, y, z) == SYLVAN_OK);
+    test_assert(bdd_ite_CALL(
+        lace, &f, x, constrain_slice, source_slice) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(
+        lace, &care, x, bdd_not(z)) == SYLVAN_OK);
+    test_assert(bdd_cofactor(&cofactor_result, f, care) == SYLVAN_OK);
+    test_assert(cofactor_result == y);
+    test_assert(mtbdd_support_CALL(
+        lace, &simplify_slice, cofactor_result) == SYLVAN_OK);
+    test_assert(!bdd_set_contains(simplify_slice, 0));
+    test_assert(bdd_set_contains(simplify_slice, 1));
+    test_assert(!bdd_set_contains(simplify_slice, 2));
+
     /* Leave the cache empty for the cache unit test that follows. */
     sylvan_gc_CALL(lace);
 

@@ -388,14 +388,6 @@ TASK(int, zdd_unique, ZDD*, result, ZDD, dd, BDDSET, vars)
 // #define zdd_and_project(a, b, domain) RUN(zdd_and_project, a, b, domain)
 
 /**
- * Function composition, for each node with variable <key> which has a <key,value> pair in <map>,
- * replace the node by the result of zdd_ite(<value>, <low>, <high>).
- * Each <value> in <map> must be a Boolean ZDD.
- */
-// TASK(ZDD, zdd_compose, ZDD, ZDDMAP);
-// #define zdd_compose(dd, map) RUN(zdd_compose, dd, map)
-
-/**
  * For debugging.
  * Tests if all nodes in the ZDD are correctly ``marked'' in the nodes table.
  * Tests if variables in the internal nodes appear in-order.
@@ -411,36 +403,6 @@ TASK(int, zdd_unique, ZDD*, result, ZDD, dd, BDDSET, vars)
  */
 void zdd_fprint_dot(FILE *out, ZDD zdd);
 #define zdd_print_dot(zdd) zdd_fprint_dot(stdout, zdd)
-
-/**
- * ZDDMAP, maps uint32_t variables to ZDDs.
- * A ZDDMAP node has variable level, low edge going to the next ZDDMAP, high edge to the mapped ZDD
- */
-#define zdd_map_empty() zdd_false
-#define zdd_map_is_empty(map) (map == zdd_false ? 1 : 0)
-#define zdd_map_key(map) zdd_top_var(map)
-#define zdd_map_value(map) zdd_node_high(map)
-#define zdd_map_next(map) zdd_node_low(map)
-
-/**
- * Return 1 if the map contains the key, 0 otherwise.
- */
-int zdd_map_contains(ZDDMAP map, uint32_t key);
-
-/**
- * Retrieve the number of keys in the map.
- */
-size_t zdd_map_count(ZDDMAP map);
-
-/**
- * Add the pair <key,value> to the map, overwrites if key already in map.
- */
-ZDDMAP zdd_map_set(ZDDMAP map, uint32_t key, ZDD value);
-
-/**
- * Add all values from map2 to map1, overwrites if key already in map1.
- */
-ZDDMAP zdd_map_update(ZDDMAP map1, ZDDMAP map2);
 
 /**
  * Enumerate all minterms (non-False assignments)

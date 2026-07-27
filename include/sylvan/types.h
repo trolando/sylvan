@@ -18,7 +18,6 @@ typedef MTBDD BDD;
 typedef BDD BDDSET;
 typedef MTBDD MTBDDMAP;
 typedef uint64_t ZDD;
-typedef ZDD ZDDMAP;
 typedef uint64_t LISTDD;
 
 typedef struct listdd_projection listdd_projection;

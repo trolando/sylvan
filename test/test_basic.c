@@ -2850,6 +2850,170 @@ test_bdd_representatives_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+TASK(int, test_mtbdd_arg_extrema_destinations)
+int
+test_mtbdd_arg_extrema_destinations_CALL(lace_worker *lace)
+{
+    BDD x = mtbdd_invalid;
+    BDD y = mtbdd_invalid;
+    BDD z = mtbdd_invalid;
+    MTBDD one = mtbdd_invalid;
+    MTBDD two = mtbdd_invalid;
+    MTBDD three = mtbdd_invalid;
+    MTBDD four = mtbdd_invalid;
+    MTBDD low_branch = mtbdd_invalid;
+    MTBDD high_branch = mtbdd_invalid;
+    MTBDD dd = mtbdd_invalid;
+    BDDSET selected = mtbdd_invalid;
+    BDDSET all = mtbdd_invalid;
+    BDD min_witness = mtbdd_invalid;
+    BDD max_witness = mtbdd_invalid;
+    BDD min_expected_base = mtbdd_invalid;
+    BDD max_expected_base = mtbdd_invalid;
+    BDD min_expected = mtbdd_invalid;
+    BDD max_expected = mtbdd_invalid;
+    MTBDD min_value = mtbdd_invalid;
+    MTBDD max_value = mtbdd_invalid;
+    BDD candidate = mtbdd_invalid;
+    BDD abstract_witness = mtbdd_invalid;
+    MTBDD partial = mtbdd_invalid;
+    MTBDD nan = mtbdd_invalid;
+    MTBDD mixed = mtbdd_invalid;
+    BDD no_witness = mtbdd_invalid;
+    BDD constant_witness = mtbdd_invalid;
+    BDD constant_expected = mtbdd_invalid;
+    BDD inplace = mtbdd_invalid;
+    BDD unchanged = bdd_true;
+    mtbdd_refs_pushptr(&x);
+    mtbdd_refs_pushptr(&y);
+    mtbdd_refs_pushptr(&z);
+    mtbdd_refs_pushptr(&one);
+    mtbdd_refs_pushptr(&two);
+    mtbdd_refs_pushptr(&three);
+    mtbdd_refs_pushptr(&four);
+    mtbdd_refs_pushptr(&low_branch);
+    mtbdd_refs_pushptr(&high_branch);
+    mtbdd_refs_pushptr(&dd);
+    mtbdd_refs_pushptr(&selected);
+    mtbdd_refs_pushptr(&all);
+    mtbdd_refs_pushptr(&min_witness);
+    mtbdd_refs_pushptr(&max_witness);
+    mtbdd_refs_pushptr(&min_expected_base);
+    mtbdd_refs_pushptr(&max_expected_base);
+    mtbdd_refs_pushptr(&min_expected);
+    mtbdd_refs_pushptr(&max_expected);
+    mtbdd_refs_pushptr(&min_value);
+    mtbdd_refs_pushptr(&max_value);
+    mtbdd_refs_pushptr(&candidate);
+    mtbdd_refs_pushptr(&abstract_witness);
+    mtbdd_refs_pushptr(&partial);
+    mtbdd_refs_pushptr(&nan);
+    mtbdd_refs_pushptr(&mixed);
+    mtbdd_refs_pushptr(&no_witness);
+    mtbdd_refs_pushptr(&constant_witness);
+    mtbdd_refs_pushptr(&constant_expected);
+    mtbdd_refs_pushptr(&inplace);
+    mtbdd_refs_pushptr(&unchanged);
+
+    test_assert(bdd_var_at_level(&x, 0) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&y, 1) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&z, 2) == SYLVAN_OK);
+    one = mtbdd_int64(1);
+    two = mtbdd_int64(2);
+    three = mtbdd_int64(3);
+    four = mtbdd_int64(4);
+    test_assert(mtbdd_ite_CALL(
+        lace, &low_branch, y, two, one) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(
+        lace, &high_branch, y, three, four) == SYLVAN_OK);
+    test_assert(mtbdd_ite_CALL(
+        lace, &dd, x, high_branch, low_branch) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(
+        &selected, (uint32_t[]){1, 2}, 2) == SYLVAN_OK);
+    test_assert(bdd_set_from_array(
+        &all, (uint32_t[]){0, 1, 2}, 3) == SYLVAN_OK);
+
+    mtbdd_argmin_SPAWN(lace, &min_witness, dd, selected);
+    test_assert(mtbdd_argmax_CALL(
+        lace, &max_witness, dd, selected) == SYLVAN_OK);
+    test_assert(mtbdd_argmin_SYNC(lace) == SYLVAN_OK);
+    test_assert(bdd_xnor_CALL(
+        lace, &min_expected_base, x, y) == SYLVAN_OK);
+    test_assert(bdd_xor_CALL(
+        lace, &max_expected_base, x, y) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(
+        lace, &min_expected, min_expected_base, bdd_not(z)) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(
+        lace, &max_expected, max_expected_base, bdd_not(z)) == SYLVAN_OK);
+    test_assert(min_witness == min_expected);
+    test_assert(max_witness == max_expected);
+
+    test_assert(mtbdd_abstract_min_CALL(
+        lace, &min_value, dd, selected) == SYLVAN_OK);
+    test_assert(mtbdd_compare_leq_CALL(
+        lace, &candidate, dd, min_value) == SYLVAN_OK);
+    test_assert(bdd_subseteq(min_witness, candidate));
+    test_assert(bdd_exists_CALL(
+        lace, &abstract_witness, min_witness, selected) == SYLVAN_OK);
+    test_assert(abstract_witness == bdd_true);
+    test_assert(mtbdd_abstract_max_CALL(
+        lace, &max_value, dd, selected) == SYLVAN_OK);
+    test_assert(mtbdd_compare_geq_CALL(
+        lace, &candidate, dd, max_value) == SYLVAN_OK);
+    test_assert(bdd_subseteq(max_witness, candidate));
+    test_assert(bdd_exists_CALL(
+        lace, &abstract_witness, max_witness, selected) == SYLVAN_OK);
+    test_assert(abstract_witness == bdd_true);
+    uint64_t count = 0;
+    test_assert(bdd_sat_count_u64_CALL(
+        lace, &count, min_witness, all) == SYLVAN_OK);
+    test_assert(count == 2);
+
+    test_assert(mtbdd_ite_CALL(
+        lace, &partial, y, one, mtbdd_undefined) == SYLVAN_OK);
+    test_assert(mtbdd_argmin_CALL(
+        lace, &no_witness, partial, selected) == SYLVAN_OK);
+    test_assert(no_witness == bdd_false);
+    test_assert(mtbdd_argmax_CALL(
+        lace, &no_witness, partial, selected) == SYLVAN_OK);
+    test_assert(no_witness == bdd_false);
+
+    nan = mtbdd_nan(0);
+    test_assert(mtbdd_ite_CALL(
+        lace, &mixed, y, nan, one) == SYLVAN_OK);
+    test_assert(mtbdd_argmin_CALL(
+        lace, &no_witness, mixed, selected) == SYLVAN_OK);
+    test_assert(no_witness == bdd_false);
+    test_assert(mtbdd_argmax_CALL(
+        lace, &no_witness, mixed, selected) == SYLVAN_OK);
+    test_assert(no_witness == bdd_false);
+
+    test_assert(mtbdd_argmin_CALL(
+        lace, &constant_witness, one, selected) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(
+        lace, &constant_expected, bdd_not(y), bdd_not(z)) == SYLVAN_OK);
+    test_assert(constant_witness == constant_expected);
+
+    inplace = dd;
+    test_assert(mtbdd_argmin_CALL(
+        lace, &inplace, inplace, selected) == SYLVAN_OK);
+    test_assert(inplace == min_expected);
+    test_assert(mtbdd_argmin_CALL(
+        lace, &unchanged, mtbdd_invalid, selected) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_argmax_CALL(
+        lace, &unchanged, dd, mtbdd_invalid) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_argmin_CALL(
+        lace, NULL, dd, selected) == SYLVAN_ERR_INVALID);
+
+    sylvan_gc_CALL(lace);
+    test_assert(min_witness == min_expected);
+    test_assert(max_witness == max_expected);
+    mtbdd_refs_popptr(30);
+    return 0;
+}
+
 TASK(int, test_care_destinations)
 int
 test_care_destinations_CALL(lace_worker *lace)
@@ -4236,6 +4400,7 @@ int runtests_CALL(lace_worker* lace)
     if (test_iterator_destinations_CALL(lace)) return 1;
     if (test_quantification_destinations_CALL(lace)) return 1;
     if (test_bdd_representatives_destinations_CALL(lace)) return 1;
+    if (test_mtbdd_arg_extrema_destinations_CALL(lace)) return 1;
     if (test_care_destinations_CALL(lace)) return 1;
     if (test_compose_destinations_CALL(lace)) return 1;
     if (test_cube_destinations_CALL(lace)) return 1;

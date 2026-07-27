@@ -177,6 +177,16 @@ TASK(int, mtbdd_abstract_min, MTBDD*, result, MTBDD, dd, BDDSET, vars)
 TASK(int, mtbdd_abstract_max, MTBDD*, result, MTBDD, dd, BDDSET, vars)
 
 /**
+ * Select one assignment that attains each abstracted minimum.
+ */
+TASK(int, mtbdd_argmin, BDD*, result, MTBDD, dd, BDDSET, variables)
+
+/**
+ * Select one assignment that attains each abstracted maximum.
+ */
+TASK(int, mtbdd_argmax, BDD*, result, MTBDD, dd, BDDSET, variables)
+
+/**
  * Compute IF <f> THEN <g> ELSE <h>.
  * <f> must be a Boolean MTBDD (or standard BDD).
  */

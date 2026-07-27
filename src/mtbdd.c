@@ -1899,6 +1899,56 @@ mtbdd_abstract_max_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd,
 }
 
 static int
+mtbdd_arg_extremum_CALL(lace_worker *lace, BDD *destination, MTBDD dd,
+                        BDDSET variables, int maximum)
+{
+    if (destination == NULL || dd == mtbdd_invalid ||
+        variables == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    MTBDD extremum = mtbdd_invalid;
+    BDD candidates = mtbdd_invalid;
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&extremum);
+    mtbdd_refs_pushptr(&candidates);
+    mtbdd_refs_pushptr(&computed);
+
+    int status = maximum
+        ? mtbdd_abstract_max_CALL(lace, &extremum, dd, variables)
+        : mtbdd_abstract_min_CALL(lace, &extremum, dd, variables);
+    if (status == SYLVAN_OK) {
+        status = maximum
+            ? mtbdd_compare_geq_CALL(lace, &candidates, dd, extremum)
+            : mtbdd_compare_leq_CALL(lace, &candidates, dd, extremum);
+    }
+    if (status == SYLVAN_OK) {
+        status = bdd_pick_representatives_CALL(
+            lace, &computed, candidates, variables);
+    }
+    if (status == SYLVAN_OK) *destination = computed;
+
+    mtbdd_refs_popptr(3);
+    return status;
+}
+
+int
+mtbdd_argmin_CALL(lace_worker *lace, BDD *destination, MTBDD dd,
+                  BDDSET variables)
+{
+    return mtbdd_arg_extremum_CALL(
+        lace, destination, dd, variables, 0);
+}
+
+int
+mtbdd_argmax_CALL(lace_worker *lace, BDD *destination, MTBDD dd,
+                  BDDSET variables)
+{
+    return mtbdd_arg_extremum_CALL(
+        lace, destination, dd, variables, 1);
+}
+
+static int
 _mtbdd_apply_callback_result(MTBDD *destination, MTBDD result)
 {
     if (result == mtbdd_invalid) return SYLVAN_ERR_INVALID;

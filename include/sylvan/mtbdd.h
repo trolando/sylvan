@@ -485,6 +485,34 @@ static inline int mtbdd_abstract_min(MTBDD *result, MTBDD dd, MTBDD vars);
 static inline int mtbdd_abstract_max(MTBDD *result, MTBDD dd, MTBDD vars);
 
 /**
+ * Select one assignment to <variables> that attains the pointwise minimum of
+ * <dd> for every assignment to the remaining variables.
+ *
+ * The result is a BDD. Selection is deterministic and prefers false at the
+ * first differing selected variable. Selected variables absent from <dd> are
+ * assigned false. A remaining-variable assignment whose abstracted minimum is
+ * undefined or NaN has no numeric witness and is false in the result.
+ *
+ * The caller must protect <result>. Returns SYLVAN_OK on success or a negative
+ * status on failure, leaving <result> unchanged.
+ */
+static inline int mtbdd_argmin(BDD *result, MTBDD dd, BDDSET variables);
+
+/**
+ * Select one assignment to <variables> that attains the pointwise maximum of
+ * <dd> for every assignment to the remaining variables.
+ *
+ * The result is a BDD. Selection is deterministic and prefers false at the
+ * first differing selected variable. Selected variables absent from <dd> are
+ * assigned false. A remaining-variable assignment whose abstracted maximum is
+ * undefined or NaN has no numeric witness and is false in the result.
+ *
+ * The caller must protect <result>. Returns SYLVAN_OK on success or a negative
+ * status on failure, leaving <result> unchanged.
+ */
+static inline int mtbdd_argmax(BDD *result, MTBDD dd, BDDSET variables);
+
+/**
  * Compute IF <f> THEN <g> ELSE <h>.
  * <f> must be a Boolean MTBDD (or standard BDD).
  * Returns SYLVAN_OK on success. On failure, <result> is unchanged.

@@ -2898,6 +2898,136 @@ bdd_probability_graph_value(
     return MTBDD_HASMARK(dd) ? 1.0 - value : value;
 }
 
+static double
+bdd_probability_batch_value(
+    const struct bdd_probability_graph *graph, const double *values,
+    size_t tile_width, size_t lane, BDD dd)
+{
+    if (dd == bdd_false) return 0.0;
+    if (dd == bdd_true) return 1.0;
+    const size_t index = bdd_probability_graph_find(
+        graph, MTBDD_STRIPMARK(dd));
+    assert(index != SIZE_MAX);
+    const double value = values[index * tile_width + lane];
+    return MTBDD_HASMARK(dd) ? 1.0 - value : value;
+}
+
+int
+bdd_probability_batch_CALL(
+    lace_worker *lace, double *results, BDD dd, BDDSET variables,
+    const bdd_probability_batch_input *input)
+{
+    (void)lace;
+    if (dd == mtbdd_invalid || variables == mtbdd_invalid || input == NULL) {
+        return SYLVAN_ERR_INVALID;
+    }
+    const double *probabilities = input->probabilities;
+    const size_t variable_count = input->variable_count;
+    const size_t vector_count = input->vector_count;
+    const size_t probability_stride = input->probability_stride;
+    if (variable_count != bdd_set_count(variables) ||
+        probability_stride < variable_count ||
+        (vector_count != 0 && results == NULL) ||
+        (vector_count != 0 && variable_count != 0 &&
+         probabilities == NULL) ||
+        variable_count > SIZE_MAX / sizeof(uint32_t)) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (vector_count > 1 && probability_stride != 0 &&
+        vector_count - 1 > SIZE_MAX / probability_stride) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    if (variable_count != 0) {
+        for (size_t vector = 0; vector < vector_count; vector++) {
+            const double *row =
+                probabilities + vector * probability_stride;
+            for (size_t variable = 0;
+                 variable < variable_count; variable++) {
+                if (!isfinite(row[variable]) ||
+                    row[variable] < 0.0 || row[variable] > 1.0) {
+                    return SYLVAN_ERR_INVALID;
+                }
+            }
+        }
+    }
+
+    uint32_t *levels = variable_count == 0
+        ? NULL : malloc(variable_count * sizeof(*levels));
+    if (variable_count != 0 && levels == NULL) return SYLVAN_ERR_OOM;
+
+    BDDSET cursor = variables;
+    for (size_t i = 0; i < variable_count; i++) {
+        levels[i] = bdd_set_first(cursor);
+        cursor = bdd_set_next(cursor);
+    }
+
+    struct bdd_probability_graph graph = {
+        NULL, 0, 0, NULL, 0, levels, variable_count
+    };
+    size_t root = SIZE_MAX;
+    int status = bdd_probability_graph_collect(&graph, dd, &root);
+
+    size_t tile_width = vector_count < 64 ? vector_count : 64;
+    double *values = NULL;
+    if (status == SYLVAN_OK && graph.count != 0 && tile_width != 0) {
+        const size_t target_values =
+            (size_t)(8 * 1024 * 1024) / sizeof(*values);
+        size_t memory_tile = target_values / graph.count;
+        if (memory_tile == 0) memory_tile = 1;
+        if (tile_width > memory_tile) tile_width = memory_tile;
+        if (graph.count > SIZE_MAX / tile_width) {
+            status = SYLVAN_ERR_OOM;
+        } else {
+            values = malloc(
+                graph.count * tile_width * sizeof(*values));
+            if (values == NULL) status = SYLVAN_ERR_OOM;
+        }
+    }
+
+    if (status == SYLVAN_OK) {
+        for (size_t base = 0; base < vector_count; base += tile_width) {
+            size_t lanes = vector_count - base;
+            if (lanes > tile_width) lanes = tile_width;
+
+            for (size_t i = 0; i < graph.count; i++) {
+                const struct bdd_probability_graph_node *node =
+                    &graph.nodes[i];
+                const BDD low = mtbdd_node_low(node->dd);
+                const BDD high = mtbdd_node_high(node->dd);
+                for (size_t lane = 0; lane < lanes; lane++) {
+                    const double *row = probabilities +
+                        (base + lane) * probability_stride;
+                    const double low_value = bdd_probability_batch_value(
+                        &graph, values, tile_width, lane, low);
+                    const double high_value = bdd_probability_batch_value(
+                        &graph, values, tile_width, lane, high);
+                    const double probability = row[node->variable];
+                    values[i * tile_width + lane] =
+                        low_value + probability * (high_value - low_value);
+                }
+            }
+
+            for (size_t lane = 0; lane < lanes; lane++) {
+                if (dd == bdd_false) results[base + lane] = 0.0;
+                else if (dd == bdd_true) results[base + lane] = 1.0;
+                else {
+                    double result = values[root * tile_width + lane];
+                    if (MTBDD_HASMARK(dd)) result = 1.0 - result;
+                    results[base + lane] = result;
+                }
+            }
+        }
+        sylvan_stats_count(BDD_PROBABILITY_BATCH);
+    }
+
+    free(values);
+    free(graph.nodes);
+    free(graph.buckets);
+    free(levels);
+    return status;
+}
+
 static void
 bdd_probability_graph_add_adjoint(
     struct bdd_probability_graph *graph, BDD dd, double value)

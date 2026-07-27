@@ -341,6 +341,36 @@ static inline int bdd_probability(
     const double *probabilities, size_t count);
 
 /**
+ * Description of strided independent-variable probability vectors.
+ *
+ * Each vector starts at <probabilities> + i * <probability_stride> and
+ * contains <variable_count> entries packed in the order of <variables>.
+ */
+typedef struct bdd_probability_batch_input {
+    const double *probabilities;
+    size_t variable_count;
+    size_t vector_count;
+    size_t probability_stride;
+} bdd_probability_batch_input;
+
+/**
+ * Evaluate a batch described by <input>.
+ *
+ * <input->variable_count> must equal bdd_set_count(<variables>) and
+ * <input->probability_stride> must be at least <input->variable_count>. Every
+ * probability must be finite and in [0, 1]. The input descriptor and its
+ * probability array are borrowed through synchronization.
+ *
+ * The implementation collects the reachable BDD DAG once and evaluates the
+ * vectors in bounded tiles. Result and probability arrays must not overlap.
+ * Zero vectors are allowed. Returns SYLVAN_OK on success or a negative status
+ * on failure, leaving <results> unchanged.
+ */
+static inline int bdd_probability_batch(
+    double *results, BDD dd, BDDSET variables,
+    const bdd_probability_batch_input *input);
+
+/**
  * Evaluate the probability of <dd> and its derivative with respect to every
  * independent variable probability.
  *

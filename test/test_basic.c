@@ -2547,6 +2547,40 @@ test_probability_destinations_CALL(lace_worker *lace)
     test_assert(bdd_probability_SYNC(lace) == SYLVAN_OK);
     test_assert(fabs(result - 0.154) < 1e-12);
     test_assert(fabs(other_result - 0.884) < 1e-12);
+
+    const double batch_probabilities[][5] = {
+        {0.1, 0.2, 0.3, 0.9, 17.0},
+        {0.8, 0.7, 0.6, 0.1, 18.0},
+        {0.0, 1.0, 1.0, 0.5, 19.0}
+    };
+    const bdd_probability_batch_input batch_input = {
+        &batch_probabilities[0][0], 4, 3, 5
+    };
+    double batch_results[3] = {-1.0, -1.0, -1.0};
+    test_assert(bdd_probability_batch_CALL(
+        lace, batch_results, function, variables, &batch_input) == SYLVAN_OK);
+    test_assert(fabs(batch_results[0] - 0.154) < 1e-12);
+    test_assert(fabs(batch_results[1] - 0.884) < 1e-12);
+    test_assert(batch_results[2] == 1.0);
+
+    double many_probabilities[65 * 4];
+    double many_results[65];
+    for (size_t i = 0; i < 65; i++) {
+        const double *source =
+            (i & 1) == 0 ? probabilities : other_probabilities;
+        memcpy(many_probabilities + i * 4, source, 4 * sizeof(double));
+        many_results[i] = -1.0;
+    }
+    const bdd_probability_batch_input many_input = {
+        many_probabilities, 4, 65, 4
+    };
+    test_assert(bdd_probability_batch_CALL(
+        lace, many_results, function, variables, &many_input) == SYLVAN_OK);
+    for (size_t i = 0; i < 65; i++) {
+        const double expected = (i & 1) == 0 ? 0.154 : 0.884;
+        test_assert(fabs(many_results[i] - expected) < 1e-12);
+    }
+
     test_assert(bdd_probability_gradient_CALL(
         lace, &other_result, gradient, function, variables,
         probabilities, 4) == SYLVAN_OK);
@@ -2606,6 +2640,23 @@ test_probability_destinations_CALL(lace_worker *lace)
         lace, &repeated, NULL, bdd_true, bdd_set_empty(), NULL, 0) ==
         SYLVAN_OK);
     test_assert(repeated == 1.0);
+    double constant_results[3] = {-1.0, -1.0, -1.0};
+    const bdd_probability_batch_input constant_input = {
+        NULL, 0, 3, 0
+    };
+    test_assert(bdd_probability_batch_CALL(
+        lace, constant_results, bdd_true, bdd_set_empty(),
+        &constant_input) == SYLVAN_OK);
+    test_assert(
+        constant_results[0] == 1.0 &&
+        constant_results[1] == 1.0 &&
+        constant_results[2] == 1.0);
+    const bdd_probability_batch_input empty_input = {
+        NULL, 0, 0, 0
+    };
+    test_assert(bdd_probability_batch_CALL(
+        lace, NULL, bdd_true, bdd_set_empty(),
+        &empty_input) == SYLVAN_OK);
 
     /*
      * Exhaust all three-variable Boolean functions and compare the symbolic
@@ -2714,6 +2765,51 @@ test_probability_destinations_CALL(lace_worker *lace)
         lace, NULL, function, variables, probabilities, 4) ==
         SYLVAN_ERR_INVALID);
     test_assert(unchanged == 17.0);
+
+    double unchanged_batch[] = {17.0, 17.0};
+    const double invalid_batch[][4] = {
+        {0.1, 0.2, 0.3, 0.9},
+        {0.8, -0.1, 0.6, 0.1}
+    };
+    bdd_probability_batch_input invalid_input = {
+        &invalid_batch[0][0], 4, 2, 4
+    };
+    test_assert(bdd_probability_batch_CALL(
+        lace, unchanged_batch, function, variables,
+        &invalid_input) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged_batch[0] == 17.0 && unchanged_batch[1] == 17.0);
+    invalid_input.probabilities = probabilities;
+    invalid_input.variable_count = 3;
+    invalid_input.vector_count = 1;
+    test_assert(bdd_probability_batch_CALL(
+        lace, unchanged_batch, function, missing,
+        &invalid_input) == SYLVAN_ERR_INVALID);
+    invalid_input.variable_count = 4;
+    test_assert(bdd_probability_batch_CALL(
+        lace, unchanged_batch, non_boolean, variables,
+        &invalid_input) == SYLVAN_ERR_INVALID);
+    invalid_input.probability_stride = 3;
+    test_assert(bdd_probability_batch_CALL(
+        lace, unchanged_batch, function, variables,
+        &invalid_input) == SYLVAN_ERR_INVALID);
+    invalid_input.probability_stride = 4;
+    invalid_input.probabilities = NULL;
+    test_assert(bdd_probability_batch_CALL(
+        lace, unchanged_batch, function, variables,
+        &invalid_input) == SYLVAN_ERR_INVALID);
+    invalid_input.probabilities = probabilities;
+    test_assert(bdd_probability_batch_CALL(
+        lace, NULL, function, variables,
+        &invalid_input) == SYLVAN_ERR_INVALID);
+    invalid_input.vector_count = SIZE_MAX;
+    test_assert(bdd_probability_batch_CALL(
+        lace, unchanged_batch, function, variables,
+        &invalid_input) == SYLVAN_ERR_INVALID);
+    test_assert(bdd_probability_batch_CALL(
+        lace, unchanged_batch, function, variables,
+        NULL) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged_batch[0] == 17.0 && unchanged_batch[1] == 17.0);
+
     test_assert(bdd_probability_gradient_CALL(
         lace, &unchanged, unchanged_gradient, function, missing,
         probabilities, 3) == SYLVAN_ERR_INVALID);

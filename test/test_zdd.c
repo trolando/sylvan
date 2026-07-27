@@ -257,6 +257,170 @@ int test_zdd_variable_CALL(lace_worker* lace)
     (void)lace;
 }
 
+static int
+test_truth_table_is_monotone(uint32_t table)
+{
+    for (uint32_t assignment = 0; assignment < 8; assignment++) {
+        if ((table & (UINT32_C(1) << assignment)) == 0) continue;
+        for (uint32_t variable = 0; variable < 3; variable++) {
+            const uint32_t bit = UINT32_C(1) << variable;
+            if ((assignment & bit) == 0 &&
+                (table & (UINT32_C(1) << (assignment | bit))) == 0) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+static int
+test_truth_table_assignment_is_minimal(uint32_t table, uint32_t assignment)
+{
+    if ((table & (UINT32_C(1) << assignment)) == 0) return 0;
+    for (uint32_t subset = 0; subset < 8; subset++) {
+        if (subset != assignment && (subset & assignment) == subset &&
+            (table & (UINT32_C(1) << subset)) != 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+TASK(int, test_zdd_minimal_sets)
+int
+test_zdd_minimal_sets_CALL(lace_worker* lace)
+{
+    BDD a = mtbdd_invalid;
+    BDD b = mtbdd_invalid;
+    BDD c = mtbdd_invalid;
+    BDD bc = mtbdd_invalid;
+    BDD function = mtbdd_invalid;
+    BDD nonmonotone = mtbdd_invalid;
+    BDDSET domain = mtbdd_invalid;
+    BDDSET exhaustive_domain = mtbdd_invalid;
+    BDDSET missing_domain = mtbdd_invalid;
+    ZDD result = zdd_invalid;
+    ZDD repeated = zdd_invalid;
+    ZDD set_a = zdd_invalid;
+    ZDD set_bc = zdd_invalid;
+    ZDD expected = zdd_invalid;
+    ZDD unchanged = zdd_base;
+    mtbdd_refs_pushptr(&a);
+    mtbdd_refs_pushptr(&b);
+    mtbdd_refs_pushptr(&c);
+    mtbdd_refs_pushptr(&bc);
+    mtbdd_refs_pushptr(&function);
+    mtbdd_refs_pushptr(&nonmonotone);
+    mtbdd_refs_pushptr(&domain);
+    mtbdd_refs_pushptr(&exhaustive_domain);
+    mtbdd_refs_pushptr(&missing_domain);
+    zdd_refs_pushptr(&result);
+    zdd_refs_pushptr(&repeated);
+    zdd_refs_pushptr(&set_a);
+    zdd_refs_pushptr(&set_bc);
+    zdd_refs_pushptr(&expected);
+    zdd_refs_pushptr(&unchanged);
+
+    a = test_bdd_var(0);
+    b = test_bdd_var(1);
+    c = test_bdd_var(2);
+    domain = test_bdd_set_from_levels((uint32_t[]){0, 1, 2, 3}, 4);
+    exhaustive_domain =
+        test_bdd_set_from_levels((uint32_t[]){0, 1, 2}, 3);
+    missing_domain = test_bdd_set_from_levels((uint32_t[]){0, 1}, 2);
+    test_assert(bdd_and_CALL(lace, &bc, b, c) == SYLVAN_OK);
+    test_assert(bdd_or_CALL(lace, &function, a, bc) == SYLVAN_OK);
+
+    zdd_minimal_sets_SPAWN(lace, &result, function, domain);
+    test_assert(zdd_cube(
+        &set_a, domain, (uint8_t[]){1, 0, 0, 0}) == SYLVAN_OK);
+    test_assert(zdd_cube(
+        &set_bc, domain, (uint8_t[]){0, 1, 1, 0}) == SYLVAN_OK);
+    test_assert(zdd_or_CALL(lace, &expected, set_a, set_bc) == SYLVAN_OK);
+    test_assert(zdd_minimal_sets_SYNC(lace) == SYLVAN_OK);
+    test_assert(result == expected);
+    uint64_t count = 0;
+    test_assert(zdd_count_u64_CALL(lace, &count, result) == SYLVAN_OK);
+    test_assert(count == 2);
+    test_assert(zdd_minimal_sets_CALL(
+        lace, &repeated, function, domain) == SYLVAN_OK);
+    test_assert(repeated == result);
+
+    test_assert(bdd_xor_CALL(lace, &nonmonotone, a, b) == SYLVAN_OK);
+    test_assert(zdd_minimal_sets_CALL(
+        lace, &unchanged, nonmonotone, domain) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_minimal_sets_CALL(
+        lace, &unchanged, function, missing_domain) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    nonmonotone = mtbdd_int64(1);
+    test_assert(zdd_minimal_sets_CALL(
+        lace, &unchanged, nonmonotone, domain) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_minimal_sets_CALL(
+        lace, &unchanged, mtbdd_invalid, domain) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == zdd_base);
+    test_assert(zdd_minimal_sets_CALL(
+        lace, NULL, function, domain) == SYLVAN_ERR_INVALID);
+
+    /*
+     * Exhaust all three-variable Boolean functions. Exactly the 20 monotone
+     * functions must be accepted, and every represented assignment must be
+     * an inclusion-minimal satisfying assignment.
+     */
+    size_t monotone_count = 0;
+    for (uint32_t table = 0; table < 256; table++) {
+        function = bdd_false;
+        for (uint32_t assignment = 0; assignment < 8; assignment++) {
+            if ((table & (UINT32_C(1) << assignment)) == 0) continue;
+            uint8_t values[3] = {
+                (uint8_t)(assignment & 1),
+                (uint8_t)((assignment >> 1) & 1),
+                (uint8_t)((assignment >> 2) & 1)
+            };
+            test_assert(bdd_or_cube_CALL(
+                lace, &function, function, exhaustive_domain, values) ==
+                SYLVAN_OK);
+        }
+
+        result = zdd_base;
+        const int monotone = test_truth_table_is_monotone(table);
+        const int status = zdd_minimal_sets_CALL(
+            lace, &result, function, exhaustive_domain);
+        if (!monotone) {
+            test_assert(status == SYLVAN_ERR_INVALID);
+            test_assert(result == zdd_base);
+            continue;
+        }
+
+        monotone_count++;
+        test_assert(status == SYLVAN_OK);
+        uint64_t expected_count = 0;
+        for (uint32_t assignment = 0; assignment < 8; assignment++) {
+            const uint8_t values[3] = {
+                (uint8_t)(assignment & 1),
+                (uint8_t)((assignment >> 1) & 1),
+                (uint8_t)((assignment >> 2) & 1)
+            };
+            const int minimal =
+                test_truth_table_assignment_is_minimal(table, assignment);
+            int value = -1;
+            test_assert(zdd_eval(
+                &value, result, exhaustive_domain, values, 3) == SYLVAN_OK);
+            test_assert(value == minimal);
+            expected_count += (uint64_t)minimal;
+        }
+        test_assert(zdd_count_u64_CALL(
+            lace, &count, result) == SYLVAN_OK);
+        test_assert(count == expected_count);
+    }
+    test_assert(monotone_count == 20);
+
+    zdd_refs_popptr(6);
+    mtbdd_refs_popptr(9);
+    return 0;
+}
+
 TASK(int, test_zdd_cofactor)
 int test_zdd_cofactor_CALL(lace_worker* lace)
 {
@@ -1557,6 +1721,8 @@ int runtests_CALL(lace_worker* lace)
     for (int i=0; i<test_iterations; i++) if (test_zdd_conversion_CALL(lace)) return 1;
     printf("test_zdd_variable...\n");
     for (int i=0; i<test_iterations; i++) if (test_zdd_variable_CALL(lace)) return 1;
+    printf("test_zdd_minimal_sets...\n");
+    if (test_zdd_minimal_sets_CALL(lace)) return 1;
     printf("test_zdd_cofactor...\n");
     if (test_zdd_cofactor_CALL(lace)) return 1;
     printf("test_zdd_from_mtbdd...\n");

@@ -32,6 +32,8 @@ TASK(int, zdd_exists_internal, ZDD*, result, ZDD, dd, ZDD, variables)
 TASK(int, zdd_quantify_internal, ZDD*, result, ZDD, dd, ZDD, variables, int, op)
 TASK(int, zdd_project_internal, ZDD*, result, ZDD, dd, ZDD, domain)
 TASK(int, zdd_or_cube_leaf, ZDD*, result, ZDD, set, BDDSET, domain, uint8_t*, values, ZDD, leaf)
+TASK(int, zdd_without_supersets, ZDD*, result, ZDD, family, ZDD, subsets)
+TASK(int, zdd_minimal_sets_rec, ZDD*, result, BDD, dd)
 
 #include "refs.h"
 #include "sl.h"
@@ -568,6 +570,194 @@ zdd_from_bdd_CALL(lace_worker* lace, ZDD *destination, BDD dd, BDDSET domain)
     }
     mtbdd_refs_popptr(1);
     return zdd_from_mtbdd_CALL(lace, destination, dd, domain);
+}
+
+/**
+ * Remove every member of <family> that is a superset of some member of
+ * <subsets>.
+ */
+int
+zdd_without_supersets_CALL(lace_worker *lace, ZDD *destination, ZDD family,
+                           ZDD subsets)
+{
+    if (destination == NULL || family == zdd_invalid ||
+        subsets == zdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (family == zdd_false || subsets == zdd_base) {
+        *destination = zdd_false;
+        return SYLVAN_OK;
+    }
+    if (subsets == zdd_false) {
+        *destination = family;
+        return SYLVAN_OK;
+    }
+    if ((zdd_is_leaf(family) && family != zdd_base) ||
+        zdd_is_leaf(subsets)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    sylvan_gc_test(lace);
+    sylvan_stats_count(ZDD_WITHOUT_SUPERSETS);
+
+    const ZDD cache_subsets = subsets;
+    ZDD computed = zdd_invalid;
+    zdd_refs_pushptr(&computed);
+    if (cache_get3(
+            CACHE_ZDD_WITHOUT_SUPERSETS, family, cache_subsets, 0, &computed)) {
+        sylvan_stats_count(ZDD_WITHOUT_SUPERSETS_CACHED);
+        *destination = computed;
+        zdd_refs_popptr(1);
+        return SYLVAN_OK;
+    }
+
+    const zddnode *family_node =
+        family == zdd_base ? NULL : ZDD_GETNODE(family);
+    const zddnode *subsets_node = ZDD_GETNODE(subsets);
+    const uint32_t family_level = family_node == NULL
+        ? UINT32_MAX : zddnode_getvariable(family_node);
+    const uint32_t subsets_level = zddnode_getvariable(subsets_node);
+    int status = SYLVAN_OK;
+
+    if (subsets_level < family_level) {
+        status = zdd_without_supersets_CALL(
+            lace, &computed, family, zddnode_low(subsets, subsets_node));
+    } else {
+        const ZDD family_low = zddnode_low(family, family_node);
+        const ZDD family_high = zddnode_high(family, family_node);
+        ZDD low = zdd_invalid;
+        ZDD high = zdd_invalid;
+        ZDD high_subsets = zdd_invalid;
+        zdd_refs_pushptr(&low);
+        zdd_refs_pushptr(&high);
+        zdd_refs_pushptr(&high_subsets);
+
+        if (family_level < subsets_level) {
+            high_subsets = subsets;
+        } else {
+            status = zdd_or_CALL(
+                lace, &high_subsets,
+                zddnode_low(subsets, subsets_node),
+                zddnode_high(subsets, subsets_node));
+            subsets = zddnode_low(subsets, subsets_node);
+        }
+
+        if (status == SYLVAN_OK) {
+            zdd_without_supersets_SPAWN(
+                lace, &high, family_high, high_subsets);
+            status = zdd_without_supersets_CALL(
+                lace, &low, family_low, subsets);
+            const int high_status = zdd_without_supersets_SYNC(lace);
+            if (status == SYLVAN_OK) status = high_status;
+        }
+        if (status == SYLVAN_OK) {
+            status = _zdd_try_make_node(
+                &computed, family_level, low, high);
+        }
+        zdd_refs_popptr(3);
+    }
+
+    if (status == SYLVAN_OK &&
+        cache_put3(
+            CACHE_ZDD_WITHOUT_SUPERSETS, family, cache_subsets, 0, computed)) {
+        sylvan_stats_count(ZDD_WITHOUT_SUPERSETS_CACHEDPUT);
+    }
+    if (status == SYLVAN_OK) *destination = computed;
+    zdd_refs_popptr(1);
+    return status;
+}
+
+int
+zdd_minimal_sets_rec_CALL(lace_worker *lace, ZDD *destination, BDD dd)
+{
+    if (destination == NULL || dd == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    if (dd == bdd_false) {
+        *destination = zdd_false;
+        return SYLVAN_OK;
+    }
+    if (dd == bdd_true) {
+        *destination = zdd_base;
+        return SYLVAN_OK;
+    }
+    if (mtbdd_is_leaf(dd)) return SYLVAN_ERR_INVALID;
+
+    sylvan_gc_test(lace);
+    sylvan_stats_count(ZDD_MINIMAL_SETS);
+
+    ZDD computed = zdd_invalid;
+    zdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_ZDD_MINIMAL_SETS, dd, 0, 0, &computed)) {
+        sylvan_stats_count(ZDD_MINIMAL_SETS_CACHED);
+        *destination = computed;
+        zdd_refs_popptr(1);
+        return SYLVAN_OK;
+    }
+
+    const mtbddnode *node = MTBDD_GETNODE(dd);
+    const uint32_t level = mtbddnode_getvariable(node);
+    const BDD low_dd = node_low(dd, node);
+    const BDD high_dd = node_high(dd, node);
+
+    ZDD low = zdd_invalid;
+    ZDD high = zdd_invalid;
+    ZDD filtered_high = zdd_invalid;
+    zdd_refs_pushptr(&low);
+    zdd_refs_pushptr(&high);
+    zdd_refs_pushptr(&filtered_high);
+    zdd_minimal_sets_rec_SPAWN(lace, &high, high_dd);
+    int status = zdd_minimal_sets_rec_CALL(lace, &low, low_dd);
+    const int high_status = zdd_minimal_sets_rec_SYNC(lace);
+    if (status == SYLVAN_OK) status = high_status;
+    if (status == SYLVAN_OK && !bdd_subseteq(low_dd, high_dd)) {
+        status = SYLVAN_ERR_INVALID;
+    }
+    if (status == SYLVAN_OK) {
+        status = zdd_without_supersets_CALL(
+            lace, &filtered_high, high, low);
+    }
+    if (status == SYLVAN_OK) {
+        status = _zdd_try_make_node(
+            &computed, level, low, filtered_high);
+    }
+    zdd_refs_popptr(3);
+
+    if (status == SYLVAN_OK &&
+        cache_put3(CACHE_ZDD_MINIMAL_SETS, dd, 0, 0, computed)) {
+        sylvan_stats_count(ZDD_MINIMAL_SETS_CACHEDPUT);
+    }
+    if (status == SYLVAN_OK) *destination = computed;
+    zdd_refs_popptr(1);
+    return status;
+}
+
+int
+zdd_minimal_sets_CALL(lace_worker *lace, ZDD *destination, BDD dd,
+                      BDDSET domain)
+{
+    if (destination == NULL || dd == mtbdd_invalid ||
+        domain == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    BDDSET support = mtbdd_invalid;
+    ZDD computed = zdd_invalid;
+    mtbdd_refs_pushptr(&support);
+    zdd_refs_pushptr(&computed);
+    int status = mtbdd_support_CALL(lace, &support, dd);
+    for (BDDSET remaining = support;
+         status == SYLVAN_OK && !bdd_set_is_empty(remaining);
+         remaining = bdd_set_next(remaining)) {
+        if (!bdd_set_contains(domain, bdd_set_first(remaining))) {
+            status = SYLVAN_ERR_INVALID;
+        }
+    }
+    if (status == SYLVAN_OK) {
+        status = zdd_minimal_sets_rec_CALL(lace, &computed, dd);
+    }
+    if (status == SYLVAN_OK) *destination = computed;
+    zdd_refs_popptr(1);
+    mtbdd_refs_popptr(1);
+    return status;
 }
 
 /**

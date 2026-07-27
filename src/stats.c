@@ -146,6 +146,8 @@ struct
     {2, ZDD_COUNT_GMP, "ZDD count_gmp" },
     {2, ZDD_ISOP, "zdd isop"},
     {2, ZDD_COVER_TO_BDD, "zdd cover_to_bdd"},
+    {2, ZDD_WITHOUT_SUPERSETS, "ZDD without supersets"},
+    {2, ZDD_MINIMAL_SETS, "ZDD minimal sets"},
 
     {1, SYLVAN_ITERATOR_CREATED, "Sylvan iterators created"},
     {1, SYLVAN_ITERATOR_ITEMS, "Sylvan iterator items"},

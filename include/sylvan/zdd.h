@@ -105,6 +105,19 @@ ZDD zdd_node_high(ZDD dd);
 TASK(int, zdd_from_bdd, ZDD*, result, BDD, dd, BDDSET, domain)
 
 /**
+ * Convert a monotone Boolean BDD to the ZDD family containing exactly its
+ * inclusion-minimal satisfying sets.
+ *
+ * <domain> must contain the complete BDD support. Variables in <domain> that
+ * are absent from <dd> are absent (false) in every represented set.
+ * Non-monotone inputs are rejected with SYLVAN_ERR_INVALID.
+ *
+ * The caller must protect <result>. Returns SYLVAN_OK on success or a negative
+ * status on failure, leaving <result> unchanged.
+ */
+TASK(int, zdd_minimal_sets, ZDD*, result, BDD, dd, BDDSET, domain)
+
+/**
  * Convert a Boolean ZDD over <domain> to the equivalent BDD. The caller must
  * protect <result>. Returns SYLVAN_OK on success or a negative status on
  * failure, leaving <result> unchanged.

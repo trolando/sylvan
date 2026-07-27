@@ -41,6 +41,8 @@ struct sylvan_iterator {
     size_t count;
     size_t depth;
     sylvan_iterator_mode mode;
+    mtbdd_iterator_leaf_filter_cb accept_leaf;
+    void *filter_context;
     enum iterator_family family;
     int resume;
     int finished;
@@ -250,7 +252,9 @@ iterator_validate_support(MTBDD dd, BDDSET variables, enum iterator_family famil
 
 static int
 iterator_create(sylvan_iterator **destination, MTBDD dd, BDDSET variables,
-                sylvan_iterator_mode mode, enum iterator_family family)
+                sylvan_iterator_mode mode, enum iterator_family family,
+                mtbdd_iterator_leaf_filter_cb accept_leaf,
+                void *filter_context)
 {
     if (destination == NULL || dd == mtbdd_invalid || variables == mtbdd_invalid ||
         (mode != SYLVAN_ITERATOR_CUBES && mode != SYLVAN_ITERATOR_MINTERMS)) {
@@ -273,6 +277,8 @@ iterator_create(sylvan_iterator **destination, MTBDD dd, BDDSET variables,
     iterator->current = dd;
     iterator->count = bdd_set_count(variables);
     iterator->mode = mode;
+    iterator->accept_leaf = accept_leaf;
+    iterator->filter_context = filter_context;
     iterator->family = family;
 
     if (family == ITERATOR_ZDD) zdd_protect((ZDD*)&iterator->root);
@@ -306,21 +312,26 @@ int
 bdd_iterator_create(sylvan_iterator **destination, BDD dd, BDDSET variables,
                     sylvan_iterator_mode mode)
 {
-    return iterator_create(destination, dd, variables, mode, ITERATOR_BDD);
+    return iterator_create(
+        destination, dd, variables, mode, ITERATOR_BDD, NULL, NULL);
 }
 
 int
 mtbdd_iterator_create(sylvan_iterator **destination, MTBDD dd, BDDSET variables,
-                      sylvan_iterator_mode mode)
+                      const mtbdd_iterator_options *options)
 {
-    return iterator_create(destination, dd, variables, mode, ITERATOR_MTBDD);
+    if (options == NULL) return SYLVAN_ERR_INVALID;
+    return iterator_create(
+        destination, dd, variables, options->mode, ITERATOR_MTBDD,
+        options->accept_leaf, options->context);
 }
 
 int
 zdd_iterator_create(sylvan_iterator **destination, ZDD dd, BDDSET domain)
 {
     return iterator_create(
-        destination, (MTBDD)dd, domain, SYLVAN_ITERATOR_MINTERMS, ITERATOR_ZDD);
+        destination, (MTBDD)dd, domain, SYLVAN_ITERATOR_MINTERMS, ITERATOR_ZDD,
+        NULL, NULL);
 }
 
 int
@@ -457,6 +468,16 @@ iterator_next(sylvan_iterator *iterator, uint8_t *values, size_t count,
             iterator->current != zdd_base) {
             iterator->finished = 1;
             return SYLVAN_ERR_INVALID;
+        }
+        if (is_leaf && iterator->family == ITERATOR_MTBDD &&
+            iterator->accept_leaf != NULL &&
+            !iterator->accept_leaf(
+                iterator->current, iterator->filter_context)) {
+            if (!iterator_backtrack(iterator)) {
+                *has_item = 0;
+                return SYLVAN_OK;
+            }
+            continue;
         }
 
         if ((iterator->mode == SYLVAN_ITERATOR_CUBES && is_leaf) ||

@@ -2850,6 +2850,12 @@ test_cardinality_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+static int
+test_iterator_accept_leaf(MTBDD leaf, void *context)
+{
+    return leaf == *(const MTBDD*)context;
+}
+
 TASK(int, test_iterator_destinations)
 int
 test_iterator_destinations_CALL(lace_worker *lace)
@@ -2927,7 +2933,13 @@ test_iterator_destinations_CALL(lace_worker *lace)
     mtbdd_protect(&function);
     MTBDD leaf = mtbdd_invalid;
     iterator = NULL;
-    test_assert(mtbdd_iterator_create(&iterator, function, variables, SYLVAN_ITERATOR_CUBES) == SYLVAN_OK);
+    mtbdd_iterator_options mtbdd_options = {
+        SYLVAN_ITERATOR_CUBES,
+        NULL,
+        NULL
+    };
+    test_assert(mtbdd_iterator_create(
+        &iterator, function, variables, &mtbdd_options) == SYLVAN_OK);
     test_assert(mtbdd_iterator_next(iterator, values, 3, &leaf, &has_item) == SYLVAN_OK);
     test_assert(has_item == 1 && leaf == seven);
     test_assert(values[0] == 2 && values[1] == 0 && values[2] == 2);
@@ -2940,7 +2952,9 @@ test_iterator_destinations_CALL(lace_worker *lace)
     sylvan_iterator_destroy(iterator);
 
     iterator = NULL;
-    test_assert(mtbdd_iterator_create(&iterator, function, variables, SYLVAN_ITERATOR_MINTERMS) == SYLVAN_OK);
+    mtbdd_options.mode = SYLVAN_ITERATOR_MINTERMS;
+    test_assert(mtbdd_iterator_create(
+        &iterator, function, variables, &mtbdd_options) == SYLVAN_OK);
     for (size_t i = 0; i < 8; i++) {
         test_assert(mtbdd_iterator_next(iterator, values, 3, &leaf, &has_item) == SYLVAN_OK);
         test_assert(has_item == 1);
@@ -2949,6 +2963,45 @@ test_iterator_destinations_CALL(lace_worker *lace)
     test_assert(mtbdd_iterator_next(iterator, values, 3, &leaf, &has_item) == SYLVAN_OK);
     test_assert(has_item == 0);
     sylvan_iterator_destroy(iterator);
+
+    iterator = NULL;
+    mtbdd_options.mode = SYLVAN_ITERATOR_CUBES;
+    mtbdd_options.accept_leaf = test_iterator_accept_leaf;
+    mtbdd_options.context = &nine;
+    test_assert(mtbdd_iterator_create(
+        &iterator, function, variables, &mtbdd_options) == SYLVAN_OK);
+    test_assert(mtbdd_iterator_next(
+        iterator, values, 3, &leaf, &has_item) == SYLVAN_OK);
+    test_assert(has_item == 1 && leaf == nine);
+    test_assert(values[0] == 2 && values[1] == 1 && values[2] == 2);
+    test_assert(mtbdd_iterator_next(
+        iterator, values, 3, &leaf, &has_item) == SYLVAN_OK);
+    test_assert(has_item == 0);
+    sylvan_iterator_destroy(iterator);
+
+    iterator = NULL;
+    mtbdd_options.mode = SYLVAN_ITERATOR_MINTERMS;
+    size_t filtered_count = 0;
+    test_assert(mtbdd_iterator_create(
+        &iterator, function, variables, &mtbdd_options) == SYLVAN_OK);
+    for (;;) {
+        test_assert(mtbdd_iterator_next(
+            iterator, values, 3, &leaf, &has_item) == SYLVAN_OK);
+        if (!has_item) break;
+        test_assert(leaf == nine && values[1] == 1);
+        filtered_count++;
+    }
+    test_assert(filtered_count == 4);
+    sylvan_iterator_destroy(iterator);
+
+    iterator = (sylvan_iterator*)(uintptr_t)1;
+    test_assert(mtbdd_iterator_create(
+        &iterator, function, variables, NULL) == SYLVAN_ERR_INVALID);
+    test_assert(iterator == (sylvan_iterator*)(uintptr_t)1);
+    mtbdd_options.mode = (sylvan_iterator_mode)2;
+    test_assert(mtbdd_iterator_create(
+        &iterator, function, variables, &mtbdd_options) == SYLVAN_ERR_INVALID);
+    test_assert(iterator == (sylvan_iterator*)(uintptr_t)1);
 
     iterator = (sylvan_iterator*)(uintptr_t)1;
     test_assert(bdd_iterator_create(&iterator, x, missing, SYLVAN_ITERATOR_CUBES) == SYLVAN_ERR_INVALID);

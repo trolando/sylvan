@@ -212,17 +212,41 @@ static inline int mtbdd_sat_count_u64(uint64_t *result, MTBDD dd, BDDSET variabl
 static inline double mtbdd_sat_count_double(MTBDD dd, BDDSET variables);
 
 /**
- * Create a low-first iterator over assignments leading to every leaf of <dd>
- * except mtbdd_undefined. <variables> must contain the complete support. In
- * cube mode, emitted values are 0, 1, or 2 (don't-care); in minterm mode, they
- * are only 0 or 1.
+ * Pure predicate used to select MTBDD iterator leaves.
+ *
+ * Return nonzero to enumerate assignments leading to <leaf>, or zero to prune
+ * that complete terminal subspace. The callback must not allocate DD nodes,
+ * mutate Sylvan state, or throw through C. It is never called for
+ * mtbdd_undefined.
+ */
+typedef int (*mtbdd_iterator_leaf_filter_cb)(MTBDD leaf, void *context);
+
+/**
+ * Options for MTBDD assignment iteration.
+ *
+ * A null <accept_leaf> accepts every leaf except mtbdd_undefined. The options
+ * are copied when the iterator is created. <context> remains caller-owned and
+ * must outlive the iterator.
+ */
+typedef struct mtbdd_iterator_options {
+    sylvan_iterator_mode mode;
+    mtbdd_iterator_leaf_filter_cb accept_leaf;
+    void *context;
+} mtbdd_iterator_options;
+
+/**
+ * Create a low-first iterator over assignments leading to accepted leaves of
+ * <dd>. <variables> must contain the complete support. In cube mode, emitted
+ * values are 0, 1, or 2 (don't-care); in minterm mode, they are only 0 or 1.
  *
  * The iterator protects <dd> and <variables> until it is destroyed. Reordering,
  * manager destruction, and concurrent use of the iterator are forbidden while
- * it is live. On failure, <result> is unchanged.
+ * it is live. The leaf filter runs immediately when a terminal is reached,
+ * before skipped variables are expanded into minterms. On failure, <result> is
+ * unchanged.
  */
 int mtbdd_iterator_create(sylvan_iterator **result, MTBDD dd, BDDSET variables,
-                          sylvan_iterator_mode mode);
+                          const mtbdd_iterator_options *options);
 
 /**
  * Write the next assignment and associated leaf. <count> must equal the number

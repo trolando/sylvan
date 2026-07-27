@@ -8,5 +8,11 @@ add_executable(storm-rational storm-rational.cpp)
 target_link_libraries(storm-rational PRIVATE sylvan::sylvan)
 target_compile_features(storm-rational PRIVATE cxx_std_17)
 
+add_executable(storm-recursion storm-recursion.cpp)
+target_link_libraries(storm-recursion PRIVATE sylvan::sylvan)
+target_compile_features(storm-recursion PRIVATE cxx_std_17)
+
 add_test(NAME storm-rational-one-worker COMMAND storm-rational 1)
 add_test(NAME storm-rational-two-workers COMMAND storm-rational 2)
+add_test(NAME storm-recursion-one-worker COMMAND storm-recursion 1)
+add_test(NAME storm-recursion-two-workers COMMAND storm-recursion 2)

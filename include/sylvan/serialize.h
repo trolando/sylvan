@@ -168,6 +168,7 @@ int sylvan_stream_read_file(
 #define SYLVAN_SERIALIZATION_MTBDD_LEAF UINT32_C(0x00001003)
 #define SYLVAN_SERIALIZATION_MTBDD_TYPE UINT32_C(0x00001004)
 #define SYLVAN_SERIALIZATION_MTBDD_CUSTOM_LEAF UINT32_C(0x00001005)
+#define SYLVAN_SERIALIZATION_ZDD_NODES UINT32_C(0x00001006)
 #define SYLVAN_SERIALIZATION_APPLICATION UINT32_C(0x80000000)
 
 typedef enum sylvan_dd_family {
@@ -214,14 +215,16 @@ typedef struct sylvan_serialization_leaf_codec {
 /**
  * One committed root returned by the incremental reader.
  *
- * <key> is the caller-supplied stream identifier. The decoded handle remains
- * protected by the reader until it is destroyed. Protect the handle separately
- * before destroying the reader if it must survive longer.
+ * <key> is the caller-supplied stream identifier. <domain> is the decoded
+ * BDDSET for a ZDD root and mtbdd_invalid for other families. Decoded handles
+ * remain protected by the reader until it is destroyed. Protect them
+ * separately before destroying the reader if they must survive longer.
  */
 typedef struct sylvan_serialization_root {
     sylvan_dd_family family;
     uint64_t key;
     MTBDD dd;
+    BDDSET domain;
 } sylvan_serialization_root;
 
 /**
@@ -280,6 +283,18 @@ static inline int sylvan_serialization_write_bdd(
 static inline int sylvan_serialization_write_mtbdd(
     sylvan_serialization_writer *writer,
     MTBDD dd,
+    uint64_t key);
+
+/**
+ * Incrementally write a ZDD over <domain> and commit it with <key>.
+ *
+ * The domain is serialized with the root and must be a BDDSET: a conjunction
+ * of positive variables. MTZDD leaves are not supported.
+ */
+static inline int sylvan_serialization_write_zdd(
+    sylvan_serialization_writer *writer,
+    ZDD dd,
+    BDDSET domain,
     uint64_t key);
 
 /**

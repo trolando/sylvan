@@ -240,7 +240,7 @@ test_bdd_serialization(void)
         &application) == SYLVAN_OK);
 
     sylvan_serialization_root root = {
-        SYLVAN_DD_LISTDD, UINT64_MAX, mtbdd_invalid
+        SYLVAN_DD_LISTDD, UINT64_MAX, mtbdd_invalid, mtbdd_invalid
     };
     int has_root = -1;
     test_assert(sylvan_serialization_reader_next(
@@ -326,7 +326,7 @@ test_mtbdd_serialization(void)
         &reader, framed_reader, NULL, NULL) == SYLVAN_OK);
 
     sylvan_serialization_root root = {
-        SYLVAN_DD_BDD, UINT64_MAX, mtbdd_invalid
+        SYLVAN_DD_BDD, UINT64_MAX, mtbdd_invalid, mtbdd_invalid
     };
     int has_root = -1;
     test_assert(sylvan_serialization_reader_next(
@@ -477,7 +477,7 @@ test_custom_leaf_serialization(void)
         reader, &codec) == SYLVAN_OK);
 
     sylvan_serialization_root decoded = {
-        SYLVAN_DD_BDD, UINT64_MAX, mtbdd_invalid
+        SYLVAN_DD_BDD, UINT64_MAX, mtbdd_invalid, mtbdd_invalid
     };
     int has_root = -1;
     test_assert(sylvan_serialization_reader_next(
@@ -499,6 +499,105 @@ test_custom_leaf_serialization(void)
     return 0;
 }
 
+static int
+test_zdd_serialization(void)
+{
+    BDDSET domain = mtbdd_invalid;
+    BDD x = mtbdd_invalid;
+    BDD y = mtbdd_invalid;
+    BDD function = mtbdd_invalid;
+    BDD invalid_domain = mtbdd_invalid;
+    ZDD first = zdd_invalid;
+    mtbdd_protect(&domain);
+    mtbdd_protect(&x);
+    mtbdd_protect(&y);
+    mtbdd_protect(&function);
+    mtbdd_protect(&invalid_domain);
+    zdd_protect(&first);
+
+    const uint32_t levels[] = {2, 5, 9};
+    test_assert(bdd_set_from_array(
+        &domain, levels, 3) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&x, 2) == SYLVAN_OK);
+    test_assert(bdd_var_at_level(&y, 9) == SYLVAN_OK);
+    test_assert(bdd_xor(&function, x, y) == SYLVAN_OK);
+    test_assert(bdd_or(&invalid_domain, x, y) == SYLVAN_OK);
+    test_assert(zdd_from_bdd(
+        &first, function, domain) == SYLVAN_OK);
+
+    struct memory_stream stream = {
+        NULL, 0, 0, 0, SIZE_MAX
+    };
+    sylvan_framed_writer *framed_writer = NULL;
+    sylvan_serialization_writer *writer = NULL;
+    test_assert(sylvan_framed_writer_create(
+        &framed_writer, memory_write, &stream) == SYLVAN_OK);
+    test_assert(sylvan_serialization_writer_create(
+        &writer, framed_writer) == SYLVAN_OK);
+    test_assert(sylvan_serialization_write_zdd(
+        writer, first, invalid_domain, 300) == SYLVAN_ERR_INVALID);
+    test_assert(sylvan_serialization_write_zdd(
+        writer, first, domain, 301) == SYLVAN_OK);
+
+    sylvan_framed_reader *framed_reader = NULL;
+    sylvan_serialization_reader *reader = NULL;
+    test_assert(sylvan_framed_reader_create(
+        &framed_reader, memory_read, &stream) == SYLVAN_OK);
+    test_assert(sylvan_serialization_reader_create(
+        &reader, framed_reader, NULL, NULL) == SYLVAN_OK);
+
+    sylvan_serialization_root root = {
+        SYLVAN_DD_BDD, UINT64_MAX, mtbdd_invalid, mtbdd_invalid
+    };
+    int has_root = -1;
+    test_assert(sylvan_serialization_reader_next(
+        reader, &root, &has_root) == SYLVAN_OK);
+    test_assert(
+        has_root == 1 && root.family == SYLVAN_DD_ZDD &&
+        root.key == 301 && root.dd == first && root.domain == domain);
+
+    test_assert(sylvan_serialization_write_zdd(
+        writer, zdd_false, domain, 302) == SYLVAN_OK);
+    test_assert(sylvan_framed_writer_finish(framed_writer) == SYLVAN_OK);
+    sylvan_gc();
+
+    test_assert(sylvan_serialization_reader_next(
+        reader, &root, &has_root) == SYLVAN_OK);
+    test_assert(
+        has_root == 1 && root.family == SYLVAN_DD_ZDD &&
+        root.key == 302 && root.dd == zdd_false &&
+        root.domain == domain);
+    test_assert(sylvan_serialization_reader_next(
+        reader, &root, &has_root) == SYLVAN_OK);
+    test_assert(has_root == 0);
+
+    sylvan_serialization_reader_destroy(reader);
+    sylvan_framed_reader_destroy(framed_reader);
+    sylvan_serialization_writer_destroy(writer);
+    sylvan_framed_writer_destroy(framed_writer);
+    zdd_unprotect(&first);
+    mtbdd_unprotect(&invalid_domain);
+    mtbdd_unprotect(&function);
+    mtbdd_unprotect(&y);
+    mtbdd_unprotect(&x);
+    mtbdd_unprotect(&domain);
+    free(stream.data);
+    return 0;
+}
+
+TASK(int, test_dd_serialization)
+
+int
+test_dd_serialization_CALL(lace_worker *lace)
+{
+    (void)lace;
+    int result = test_bdd_serialization();
+    if (result == 0) result = test_mtbdd_serialization();
+    if (result == 0) result = test_custom_leaf_serialization();
+    if (result == 0) result = test_zdd_serialization();
+    return result;
+}
+
 int
 main(void)
 {
@@ -511,9 +610,8 @@ main(void)
         (size_t)1 << 16, (size_t)1 << 16);
     sylvan_init_package();
     mtbdd_init();
-    int result = test_bdd_serialization();
-    if (result == 0) result = test_mtbdd_serialization();
-    if (result == 0) result = test_custom_leaf_serialization();
+    zdd_init();
+    int result = test_dd_serialization();
     sylvan_quit();
     lace_stop();
     return result;

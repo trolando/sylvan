@@ -346,6 +346,7 @@ struct sylvan_serialization_handle_table {
     size_t count;
     size_t block_count;
     size_t block_capacity;
+    sylvan_dd_family family;
 };
 
 struct sylvan_serialization_dictionary {
@@ -372,7 +373,9 @@ struct sylvan_serialization_leaf_codec_entry {
 struct sylvan_serialization_writer {
     sylvan_framed_writer *stream;
     struct sylvan_serialization_dictionary dictionary;
+    struct sylvan_serialization_dictionary zdd_dictionary;
     struct sylvan_serialization_handle_table roots;
+    struct sylvan_serialization_handle_table zdd_roots;
     struct sylvan_serialization_leaf_codec_entry *codecs;
     size_t codec_count;
     size_t codec_capacity;
@@ -384,6 +387,7 @@ struct sylvan_serialization_reader {
     sylvan_serialization_frame_cb frame_callback;
     void *context;
     struct sylvan_serialization_handle_table nodes;
+    struct sylvan_serialization_handle_table zdd_nodes;
     struct sylvan_serialization_leaf_codec_entry *codecs;
     size_t codec_count;
     size_t codec_capacity;
@@ -476,8 +480,13 @@ sylvan_serialization_hash(MTBDD dd)
 
 static int
 sylvan_serialization_handle_add(
-    struct sylvan_serialization_handle_table *table, MTBDD dd)
+    struct sylvan_serialization_handle_table *table, MTBDD dd,
+    sylvan_dd_family family)
 {
+    if (family == SYLVAN_DD_BDD) family = SYLVAN_DD_MTBDD;
+    if (table->count == 0) table->family = family;
+    else if (table->family != family) return SYLVAN_ERR_INVALID;
+
     if (table->count % SYLVAN_SERIALIZATION_HANDLE_BLOCK == 0) {
         if (table->block_count == table->block_capacity) {
             const size_t old_capacity = table->block_capacity;
@@ -503,7 +512,9 @@ sylvan_serialization_handle_add(
         table->count / SYLVAN_SERIALIZATION_HANDLE_BLOCK] +
         table->count % SYLVAN_SERIALIZATION_HANDLE_BLOCK;
     *slot = dd;
-    mtbdd_protect(slot);
+    if (family == SYLVAN_DD_ZDD) zdd_protect((ZDD*)slot);
+    else if (family == SYLVAN_DD_LISTDD) listdd_protect((LISTDD*)slot);
+    else mtbdd_protect(slot);
     table->count++;
     return SYLVAN_OK;
 }
@@ -527,7 +538,10 @@ sylvan_serialization_handle_clear(
         MTBDD *slot = table->blocks[
             i / SYLVAN_SERIALIZATION_HANDLE_BLOCK] +
             i % SYLVAN_SERIALIZATION_HANDLE_BLOCK;
-        mtbdd_unprotect(slot);
+        if (table->family == SYLVAN_DD_ZDD) zdd_unprotect((ZDD*)slot);
+        else if (table->family == SYLVAN_DD_LISTDD) {
+            listdd_unprotect((LISTDD*)slot);
+        } else mtbdd_unprotect(slot);
     }
     for (size_t i = 0; i < table->block_count; i++) {
         free(table->blocks[i]);
@@ -772,6 +786,106 @@ sylvan_serialization_collect_mtbdd(
 }
 
 static int
+sylvan_serialization_is_bdd_set(BDDSET set)
+{
+    if (set == mtbdd_invalid ||
+        (set != bdd_true && MTBDD_HASMARK(set))) {
+        return 0;
+    }
+    uint32_t previous = 0;
+    int has_previous = 0;
+    while (set != bdd_true) {
+        if (set == bdd_false || mtbdd_is_leaf(set) ||
+            mtbdd_node_low(set) != bdd_false) {
+            return 0;
+        }
+        const uint32_t level = mtbdd_node_variable(set);
+        if (has_previous && level <= previous) return 0;
+        previous = level;
+        has_previous = 1;
+        set = mtbdd_node_high(set);
+        if (set != bdd_true && MTBDD_HASMARK(set)) return 0;
+    }
+    return 1;
+}
+
+static int
+sylvan_serialization_collect_zdd(
+    struct sylvan_serialization_dictionary *dictionary,
+    ZDD root, BDDSET domain)
+{
+    size_t count = 0;
+    size_t capacity = 64;
+    struct sylvan_serialization_visit *stack =
+        malloc(capacity * sizeof(*stack));
+    if (stack == NULL) return SYLVAN_ERR_OOM;
+    stack[count++] = (struct sylvan_serialization_visit){root, 0};
+
+    int status = SYLVAN_OK;
+    while (count != 0) {
+        const struct sylvan_serialization_visit visit = stack[--count];
+        const ZDD dd = visit.dd;
+        if (dd == zdd_false || dd == zdd_base ||
+            sylvan_serialization_dictionary_find(dictionary, dd) != 0) {
+            continue;
+        }
+        if (MTBDD_HASMARK(dd) || zdd_is_leaf(dd)) {
+            status = SYLVAN_ERR_INVALID;
+            break;
+        }
+        if (visit.expanded) {
+            status = sylvan_serialization_dictionary_add(dictionary, dd);
+            if (status != SYLVAN_OK) break;
+            continue;
+        }
+        const uint32_t level = zdd_top_var(dd);
+        const ZDD low = zdd_node_low(dd);
+        const ZDD high = zdd_node_high(dd);
+        if (!bdd_set_contains(domain, level) || high == zdd_false ||
+            (!zdd_is_leaf(low) && zdd_top_var(low) <= level) ||
+            (!zdd_is_leaf(high) && zdd_top_var(high) <= level)) {
+            status = SYLVAN_ERR_INVALID;
+            break;
+        }
+
+        if (count > SIZE_MAX - 3) {
+            status = SYLVAN_ERR_OOM;
+            break;
+        }
+        if (count + 3 > capacity) {
+            size_t new_capacity = capacity * 2;
+            while (new_capacity < count + 3) {
+                if (new_capacity > SIZE_MAX / 2) {
+                    status = SYLVAN_ERR_OOM;
+                    break;
+                }
+                new_capacity *= 2;
+            }
+            if (status != SYLVAN_OK ||
+                new_capacity > SIZE_MAX / sizeof(*stack)) {
+                status = SYLVAN_ERR_OOM;
+                break;
+            }
+            struct sylvan_serialization_visit *grown = realloc(
+                stack, new_capacity * sizeof(*stack));
+            if (grown == NULL) {
+                status = SYLVAN_ERR_OOM;
+                break;
+            }
+            stack = grown;
+            capacity = new_capacity;
+        }
+
+        stack[count++] = (struct sylvan_serialization_visit){dd, 1};
+        stack[count++] = (struct sylvan_serialization_visit){high, 0};
+        stack[count++] = (struct sylvan_serialization_visit){low, 0};
+    }
+
+    free(stack);
+    return status;
+}
+
+static int
 sylvan_serialization_encode_reference(
     const struct sylvan_serialization_dictionary *dictionary,
     BDD dd,
@@ -783,6 +897,29 @@ sylvan_serialization_encode_reference(
     if (regular != bdd_false && id == 0) return SYLVAN_ERR_INVALID;
     if (id > UINT64_MAX / 2) return SYLVAN_ERR_OVERFLOW;
     *result = (id << 1) | (MTBDD_HASMARK(dd) ? 1 : 0);
+    return SYLVAN_OK;
+}
+
+static int
+sylvan_serialization_encode_zdd_reference(
+    const struct sylvan_serialization_dictionary *dictionary,
+    ZDD dd, uint64_t *result)
+{
+    if (MTBDD_HASMARK(dd)) return SYLVAN_ERR_INVALID;
+    if (dd == zdd_false) {
+        *result = 0;
+        return SYLVAN_OK;
+    }
+    if (dd == zdd_base) {
+        *result = 1;
+        return SYLVAN_OK;
+    }
+
+    const uint64_t id =
+        sylvan_serialization_dictionary_find(dictionary, dd);
+    if (id == 0) return SYLVAN_ERR_INVALID;
+    if (id > UINT64_MAX / 2) return SYLVAN_ERR_OVERFLOW;
+    *result = id << 1;
     return SYLVAN_OK;
 }
 
@@ -839,9 +976,13 @@ sylvan_serialization_writer_destroy(sylvan_serialization_writer *writer)
 {
     if (writer == NULL) return;
     sylvan_serialization_handle_clear(&writer->roots);
+    sylvan_serialization_handle_clear(&writer->zdd_roots);
     free(writer->dictionary.keys);
     free(writer->dictionary.ids);
     free(writer->dictionary.nodes);
+    free(writer->zdd_dictionary.keys);
+    free(writer->zdd_dictionary.ids);
+    free(writer->zdd_dictionary.nodes);
     sylvan_serialization_codec_clear(writer->codecs, writer->codec_count);
     free(writer);
 }
@@ -856,7 +997,8 @@ sylvan_serialization_write_bdd_CALL(
         return SYLVAN_ERR_INVALID;
     }
 
-    int status = sylvan_serialization_handle_add(&writer->roots, dd);
+    int status = sylvan_serialization_handle_add(
+        &writer->roots, dd, SYLVAN_DD_MTBDD);
     if (status != SYLVAN_OK) return status;
     sylvan_gc_test(lace);
 
@@ -1072,7 +1214,8 @@ sylvan_serialization_write_mtbdd_CALL(
         return SYLVAN_ERR_INVALID;
     }
 
-    int status = sylvan_serialization_handle_add(&writer->roots, dd);
+    int status = sylvan_serialization_handle_add(
+        &writer->roots, dd, SYLVAN_DD_MTBDD);
     if (status != SYLVAN_OK) return status;
     sylvan_gc_test(lace);
 
@@ -1125,6 +1268,111 @@ sylvan_serialization_write_mtbdd_CALL(
 }
 
 static int
+sylvan_serialization_write_zdd_node_batch(
+    sylvan_serialization_writer *writer, size_t first, size_t count)
+{
+    if (count == 0) return SYLVAN_OK;
+    if (count > (UINT64_MAX - 16) / 24) return SYLVAN_ERR_OVERFLOW;
+
+    uint8_t batch_header[16];
+    sylvan_store_u64(batch_header, (uint64_t)first + 1);
+    sylvan_store_u64(batch_header + 8, count);
+    int status = sylvan_framed_writer_begin(
+        writer->stream, SYLVAN_SERIALIZATION_ZDD_NODES,
+        16 + (uint64_t)count * 24);
+    if (status == SYLVAN_OK) {
+        status = sylvan_framed_writer_append(
+            writer->stream, batch_header, sizeof(batch_header));
+    }
+
+    const size_t end = first + count;
+    for (size_t i = first; i < end && status == SYLVAN_OK; i++) {
+        const ZDD node = writer->zdd_dictionary.nodes[i];
+        uint64_t low;
+        uint64_t high;
+        status = sylvan_serialization_encode_zdd_reference(
+            &writer->zdd_dictionary, zdd_node_low(node), &low);
+        if (status == SYLVAN_OK) {
+            status = sylvan_serialization_encode_zdd_reference(
+                &writer->zdd_dictionary, zdd_node_high(node), &high);
+        }
+        if (status != SYLVAN_OK) break;
+
+        uint8_t record[24] = {0};
+        sylvan_store_u32(record, zdd_top_var(node));
+        sylvan_store_u64(record + 8, low);
+        sylvan_store_u64(record + 16, high);
+        status = sylvan_framed_writer_append(
+            writer->stream, record, sizeof(record));
+    }
+    return status;
+}
+
+int
+sylvan_serialization_write_zdd_CALL(
+    lace_worker *lace, sylvan_serialization_writer *writer,
+    ZDD dd, BDDSET domain, uint64_t key)
+{
+    if (writer == NULL || writer->failed || dd == zdd_invalid ||
+        !sylvan_serialization_is_bdd_set(domain) ||
+        sylvan_framed_writer_remaining(writer->stream) != 0) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    int status = sylvan_serialization_handle_add(
+        &writer->roots, domain, SYLVAN_DD_MTBDD);
+    if (status == SYLVAN_OK) {
+        status = sylvan_serialization_handle_add(
+            &writer->zdd_roots, dd, SYLVAN_DD_ZDD);
+    }
+    if (status != SYLVAN_OK) return status;
+    sylvan_gc_test(lace);
+
+    const size_t old_domain_count = writer->dictionary.count;
+    status = sylvan_serialization_collect_bdd(
+        &writer->dictionary, domain);
+    if (status == SYLVAN_OK) {
+        status = sylvan_serialization_write_node_batch(
+            writer, old_domain_count,
+            writer->dictionary.count - old_domain_count);
+    }
+
+    const size_t old_count = writer->zdd_dictionary.count;
+    if (status == SYLVAN_OK) {
+        status = sylvan_serialization_collect_zdd(
+            &writer->zdd_dictionary, dd, domain);
+    }
+    if (status == SYLVAN_OK) {
+        status = sylvan_serialization_write_zdd_node_batch(
+            writer, old_count,
+            writer->zdd_dictionary.count - old_count);
+    }
+
+    uint64_t root_reference;
+    uint64_t domain_reference;
+    if (status == SYLVAN_OK) {
+        status = sylvan_serialization_encode_zdd_reference(
+            &writer->zdd_dictionary, dd, &root_reference);
+    }
+    if (status == SYLVAN_OK) {
+        status = sylvan_serialization_encode_reference(
+            &writer->dictionary, domain, &domain_reference);
+    }
+    if (status == SYLVAN_OK) {
+        uint8_t root_record[32] = {0};
+        sylvan_store_u32(root_record, SYLVAN_DD_ZDD);
+        sylvan_store_u64(root_record + 8, key);
+        sylvan_store_u64(root_record + 16, root_reference);
+        sylvan_store_u64(root_record + 24, domain_reference);
+        status = sylvan_framed_writer_write(
+            writer->stream, SYLVAN_SERIALIZATION_ROOT,
+            root_record, sizeof(root_record));
+    }
+    if (status != SYLVAN_OK) writer->failed = 1;
+    return status;
+}
+
+static int
 sylvan_serialization_decode_reference(
     const struct sylvan_serialization_handle_table *nodes,
     uint64_t reference,
@@ -1138,6 +1386,24 @@ sylvan_serialization_decode_reference(
         if (dd == mtbdd_invalid) return SYLVAN_ERR_INVALID;
     }
     if ((reference & 1) != 0) dd = bdd_not(dd);
+    *result = dd;
+    return SYLVAN_OK;
+}
+
+static int
+sylvan_serialization_decode_zdd_reference(
+    const struct sylvan_serialization_handle_table *nodes,
+    uint64_t reference, ZDD *result)
+{
+    const uint64_t id = reference >> 1;
+    if (id == 0) {
+        *result = (reference & 1) != 0 ? zdd_base : zdd_false;
+        return SYLVAN_OK;
+    }
+    if ((reference & 1) != 0) return SYLVAN_ERR_INVALID;
+
+    const ZDD dd = sylvan_serialization_handle_get(nodes, id);
+    if (dd == zdd_invalid) return SYLVAN_ERR_INVALID;
     *result = dd;
     return SYLVAN_OK;
 }
@@ -1194,7 +1460,7 @@ sylvan_serialization_read_bdd_nodes_CALL(
         }
         if (status == SYLVAN_OK) {
             status = sylvan_serialization_handle_add(
-                &reader->nodes, node);
+                &reader->nodes, node, SYLVAN_DD_MTBDD);
         }
         mtbdd_refs_popptr(1);
         if (status != SYLVAN_OK) return status;
@@ -1227,10 +1493,75 @@ sylvan_serialization_read_mtbdd_leaf_CALL(
     }
 
     MTBDD leaf = flags == 0 ? mtbdd_leaf(type, value) : mtbdd_nan(type);
-    status = sylvan_serialization_handle_add(&reader->nodes, leaf);
+    status = sylvan_serialization_handle_add(
+        &reader->nodes, leaf, SYLVAN_DD_MTBDD);
     if (status != SYLVAN_OK) return status;
     sylvan_gc_test(lace);
     return SYLVAN_OK;
+}
+
+static int
+sylvan_serialization_read_zdd_nodes_CALL(
+    lace_worker *lace, sylvan_serialization_reader *reader,
+    const sylvan_frame *frame)
+{
+    uint8_t batch_header[16];
+    int status = sylvan_framed_reader_read(
+        reader->stream, batch_header, sizeof(batch_header));
+    if (status != SYLVAN_OK) return status;
+
+    const uint64_t first = sylvan_load_u64(batch_header);
+    const uint64_t count = sylvan_load_u64(batch_header + 8);
+    if (first != (uint64_t)reader->zdd_nodes.count + 1 ||
+        count > (UINT64_MAX - 16) / 24 ||
+        frame->payload_size != 16 + count * 24 ||
+        count > SIZE_MAX - reader->zdd_nodes.count) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    for (uint64_t i = 0; i < count; i++) {
+        uint8_t record[24];
+        status = sylvan_framed_reader_read(
+            reader->stream, record, sizeof(record));
+        if (status != SYLVAN_OK) return status;
+        const uint32_t level = sylvan_load_u32(record);
+        if (sylvan_load_u32(record + 4) != 0) {
+            return SYLVAN_ERR_INVALID;
+        }
+
+        ZDD low;
+        ZDD high;
+        status = sylvan_serialization_decode_zdd_reference(
+            &reader->zdd_nodes, sylvan_load_u64(record + 8), &low);
+        if (status == SYLVAN_OK) {
+            status = sylvan_serialization_decode_zdd_reference(
+                &reader->zdd_nodes,
+                sylvan_load_u64(record + 16), &high);
+        }
+        if (status != SYLVAN_OK || high == zdd_false ||
+            (!zdd_is_leaf(low) && zdd_top_var(low) <= level) ||
+            (!zdd_is_leaf(high) && zdd_top_var(high) <= level)) {
+            return SYLVAN_ERR_INVALID;
+        }
+
+        ZDD node = zdd_invalid;
+        zdd_refs_pushptr(&node);
+        status = _zdd_try_make_node(&node, level, low, high);
+        if (status == SYLVAN_OK &&
+            (node == zdd_false || node == zdd_base)) {
+            status = SYLVAN_ERR_INVALID;
+        }
+        if (status == SYLVAN_OK) {
+            status = sylvan_serialization_handle_add(
+                &reader->zdd_nodes, node, SYLVAN_DD_ZDD);
+        }
+        zdd_refs_popptr(1);
+        if (status != SYLVAN_OK) return status;
+        sylvan_gc_test(lace);
+    }
+
+    return sylvan_framed_reader_remaining(reader->stream) == 0
+        ? SYLVAN_OK : SYLVAN_ERR_INVALID;
 }
 
 static int
@@ -1334,7 +1665,8 @@ sylvan_serialization_read_mtbdd_custom_leaf_CALL(
     }
     if (status != SYLVAN_OK) return status;
 
-    status = sylvan_serialization_handle_add(&reader->nodes, leaf);
+    status = sylvan_serialization_handle_add(
+        &reader->nodes, leaf, SYLVAN_DD_MTBDD);
     if (status != SYLVAN_OK) return status;
     sylvan_gc_test(lace);
     return SYLVAN_OK;
@@ -1399,6 +1731,7 @@ sylvan_serialization_reader_destroy(sylvan_serialization_reader *reader)
 {
     if (reader == NULL) return;
     sylvan_serialization_handle_clear(&reader->nodes);
+    sylvan_serialization_handle_clear(&reader->zdd_nodes);
     sylvan_serialization_codec_clear(reader->codecs, reader->codec_count);
     free(reader);
 }
@@ -1440,32 +1773,68 @@ sylvan_serialization_reader_next_CALL(
                    SYLVAN_SERIALIZATION_MTBDD_CUSTOM_LEAF) {
             status = sylvan_serialization_read_mtbdd_custom_leaf_CALL(
                 lace, reader, &frame);
+        } else if (frame.type == SYLVAN_SERIALIZATION_ZDD_NODES) {
+            status = sylvan_serialization_read_zdd_nodes_CALL(
+                lace, reader, &frame);
         } else if (frame.type == SYLVAN_SERIALIZATION_ROOT) {
-            if (frame.payload_size != 24) {
+            if (frame.payload_size != 24 &&
+                frame.payload_size != 32) {
                 status = SYLVAN_ERR_INVALID;
             } else {
-                uint8_t record[24];
+                uint8_t record[32] = {0};
                 status = sylvan_framed_reader_read(
-                    reader->stream, record, sizeof(record));
+                    reader->stream, record, (size_t)frame.payload_size);
                 uint32_t family = 0;
                 if (status == SYLVAN_OK) {
                     family = sylvan_load_u32(record);
                 }
                 if (status == SYLVAN_OK &&
-                    ((family != SYLVAN_DD_BDD &&
-                      family != SYLVAN_DD_MTBDD) ||
+                    (((family == SYLVAN_DD_BDD ||
+                       family == SYLVAN_DD_MTBDD) &&
+                      frame.payload_size != 24) ||
+                     (family == SYLVAN_DD_ZDD &&
+                      frame.payload_size != 32) ||
+                     (family != SYLVAN_DD_BDD &&
+                      family != SYLVAN_DD_MTBDD &&
+                      family != SYLVAN_DD_ZDD) ||
                      sylvan_load_u32(record + 4) != 0)) {
                     status = SYLVAN_ERR_INVALID;
                 }
                 MTBDD dd = mtbdd_invalid;
+                BDDSET domain = mtbdd_invalid;
                 if (status == SYLVAN_OK) {
-                    status = sylvan_serialization_decode_reference(
-                        &reader->nodes, sylvan_load_u64(record + 16), &dd);
+                    if (family == SYLVAN_DD_ZDD) {
+                        status = sylvan_serialization_decode_zdd_reference(
+                            &reader->zdd_nodes,
+                            sylvan_load_u64(record + 16), (ZDD*)&dd);
+                        if (status == SYLVAN_OK) {
+                            status = sylvan_serialization_decode_reference(
+                                &reader->nodes,
+                                sylvan_load_u64(record + 24), &domain);
+                        }
+                        if (status == SYLVAN_OK &&
+                            !sylvan_serialization_is_bdd_set(domain)) {
+                            status = SYLVAN_ERR_INVALID;
+                        }
+                        if (status == SYLVAN_OK) {
+                            struct sylvan_serialization_dictionary check = {0};
+                            status = sylvan_serialization_collect_zdd(
+                                &check, (ZDD)dd, domain);
+                            free(check.keys);
+                            free(check.ids);
+                            free(check.nodes);
+                        }
+                    } else {
+                        status = sylvan_serialization_decode_reference(
+                            &reader->nodes,
+                            sylvan_load_u64(record + 16), &dd);
+                    }
                 }
                 if (status == SYLVAN_OK) {
                     root->family = (sylvan_dd_family)family;
                     root->key = sylvan_load_u64(record + 8);
                     root->dd = dd;
+                    root->domain = domain;
                     *has_root = 1;
                     return SYLVAN_OK;
                 }

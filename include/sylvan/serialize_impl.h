@@ -16,6 +16,9 @@ extern "C" {
 TASK(int, sylvan_serialization_write_bdd,
      sylvan_serialization_writer*, writer, BDD, dd, uint64_t, key)
 
+TASK(int, sylvan_serialization_write_mtbdd,
+     sylvan_serialization_writer*, writer, MTBDD, dd, uint64_t, key)
+
 TASK(int, sylvan_serialization_reader_next,
      sylvan_serialization_reader*, reader,
      sylvan_serialization_root*, root, int*, has_root)

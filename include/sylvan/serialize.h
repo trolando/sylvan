@@ -165,6 +165,7 @@ int sylvan_stream_read_file(
  */
 #define SYLVAN_SERIALIZATION_BDD_NODES UINT32_C(0x00001001)
 #define SYLVAN_SERIALIZATION_ROOT UINT32_C(0x00001002)
+#define SYLVAN_SERIALIZATION_MTBDD_LEAF UINT32_C(0x00001003)
 #define SYLVAN_SERIALIZATION_APPLICATION UINT32_C(0x80000000)
 
 typedef enum sylvan_dd_family {
@@ -225,6 +226,17 @@ void sylvan_serialization_writer_destroy(
 static inline int sylvan_serialization_write_bdd(
     sylvan_serialization_writer *writer,
     BDD dd,
+    uint64_t key);
+
+/**
+ * Incrementally write an MTBDD and commit it with <key>.
+ *
+ * Integer, double, and fraction leaves, including their typed NaN values, are
+ * supported. Custom leaves are rejected.
+ */
+static inline int sylvan_serialization_write_mtbdd(
+    sylvan_serialization_writer *writer,
+    MTBDD dd,
     uint64_t key);
 
 /**

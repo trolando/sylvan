@@ -289,6 +289,84 @@ test_bdd_serialization(void)
     return 0;
 }
 
+static int
+test_mtbdd_serialization(void)
+{
+    struct memory_stream stream = {
+        NULL, 0, 0, 0, SIZE_MAX
+    };
+    sylvan_framed_writer *framed_writer = NULL;
+    sylvan_serialization_writer *writer = NULL;
+    test_assert(sylvan_framed_writer_create(
+        &framed_writer, memory_write, &stream) == SYLVAN_OK);
+    test_assert(sylvan_serialization_writer_create(
+        &writer, framed_writer) == SYLVAN_OK);
+
+    MTBDD shared = mtbdd_invalid;
+    MTBDD first = mtbdd_invalid;
+    MTBDD second = mtbdd_invalid;
+    mtbdd_protect(&shared);
+    mtbdd_protect(&first);
+    mtbdd_protect(&second);
+    shared = mtbdd_make_node(
+        4, mtbdd_int64(-17), mtbdd_double(2.5));
+    first = mtbdd_make_node(
+        1, shared, mtbdd_fraction(5, 7));
+    second = mtbdd_make_node(
+        2, shared, mtbdd_nan(1));
+
+    test_assert(sylvan_serialization_write_mtbdd(
+        writer, first, 101) == SYLVAN_OK);
+
+    sylvan_framed_reader *framed_reader = NULL;
+    sylvan_serialization_reader *reader = NULL;
+    test_assert(sylvan_framed_reader_create(
+        &framed_reader, memory_read, &stream) == SYLVAN_OK);
+    test_assert(sylvan_serialization_reader_create(
+        &reader, framed_reader, NULL, NULL) == SYLVAN_OK);
+
+    sylvan_serialization_root root = {
+        SYLVAN_DD_BDD, UINT64_MAX, mtbdd_invalid
+    };
+    int has_root = -1;
+    test_assert(sylvan_serialization_reader_next(
+        reader, &root, &has_root) == SYLVAN_OK);
+    test_assert(
+        has_root == 1 && root.family == SYLVAN_DD_MTBDD &&
+        root.key == 101 && root.dd == first);
+
+    test_assert(sylvan_serialization_write_mtbdd(
+        writer, second, 102) == SYLVAN_OK);
+    test_assert(sylvan_serialization_write_mtbdd(
+        writer, mtbdd_undefined, 103) == SYLVAN_OK);
+    test_assert(sylvan_framed_writer_finish(framed_writer) == SYLVAN_OK);
+
+    sylvan_gc();
+    test_assert(sylvan_serialization_reader_next(
+        reader, &root, &has_root) == SYLVAN_OK);
+    test_assert(
+        has_root == 1 && root.family == SYLVAN_DD_MTBDD &&
+        root.key == 102 && root.dd == second);
+    test_assert(sylvan_serialization_reader_next(
+        reader, &root, &has_root) == SYLVAN_OK);
+    test_assert(
+        has_root == 1 && root.family == SYLVAN_DD_MTBDD &&
+        root.key == 103 && root.dd == mtbdd_undefined);
+    test_assert(sylvan_serialization_reader_next(
+        reader, &root, &has_root) == SYLVAN_OK);
+    test_assert(has_root == 0);
+
+    sylvan_serialization_reader_destroy(reader);
+    sylvan_framed_reader_destroy(framed_reader);
+    sylvan_serialization_writer_destroy(writer);
+    sylvan_framed_writer_destroy(framed_writer);
+    mtbdd_unprotect(&second);
+    mtbdd_unprotect(&first);
+    mtbdd_unprotect(&shared);
+    free(stream.data);
+    return 0;
+}
+
 int
 main(void)
 {
@@ -301,7 +379,8 @@ main(void)
         (size_t)1 << 16, (size_t)1 << 16);
     sylvan_init_package();
     mtbdd_init();
-    const int result = test_bdd_serialization();
+    int result = test_bdd_serialization();
+    if (result == 0) result = test_mtbdd_serialization();
     sylvan_quit();
     lace_stop();
     return result;

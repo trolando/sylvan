@@ -610,6 +610,81 @@ sylvan_serialization_collect_bdd(
 }
 
 static int
+sylvan_serialization_collect_mtbdd(
+    struct sylvan_serialization_dictionary *dictionary, MTBDD root)
+{
+    size_t count = 0;
+    size_t capacity = 64;
+    struct sylvan_serialization_visit *stack =
+        malloc(capacity * sizeof(*stack));
+    if (stack == NULL) return SYLVAN_ERR_OOM;
+    stack[count++] = (struct sylvan_serialization_visit){root, 0};
+
+    int status = SYLVAN_OK;
+    while (count != 0) {
+        const struct sylvan_serialization_visit visit = stack[--count];
+        const MTBDD dd = MTBDD_STRIPMARK(visit.dd);
+        if (dd == mtbdd_undefined ||
+            sylvan_serialization_dictionary_find(dictionary, dd) != 0) {
+            continue;
+        }
+        if (visit.expanded) {
+            status = sylvan_serialization_dictionary_add(dictionary, dd);
+            if (status != SYLVAN_OK) break;
+            continue;
+        }
+        if (mtbdd_is_leaf(dd)) {
+            if (dd != bdd_true && mtbdd_leaf_type(dd) > 2) {
+                status = SYLVAN_ERR_INVALID;
+                break;
+            }
+            status = sylvan_serialization_dictionary_add(dictionary, dd);
+            if (status != SYLVAN_OK) break;
+            continue;
+        }
+
+        if (count > SIZE_MAX - 3) {
+            status = SYLVAN_ERR_OOM;
+            break;
+        }
+        if (count + 3 > capacity) {
+            size_t new_capacity = capacity * 2;
+            while (new_capacity < count + 3) {
+                if (new_capacity > SIZE_MAX / 2) {
+                    status = SYLVAN_ERR_OOM;
+                    break;
+                }
+                new_capacity *= 2;
+            }
+            if (status != SYLVAN_OK ||
+                new_capacity > SIZE_MAX / sizeof(*stack)) {
+                status = SYLVAN_ERR_OOM;
+                break;
+            }
+            struct sylvan_serialization_visit *grown = realloc(
+                stack, new_capacity * sizeof(*stack));
+            if (grown == NULL) {
+                status = SYLVAN_ERR_OOM;
+                break;
+            }
+            stack = grown;
+            capacity = new_capacity;
+        }
+
+        stack[count++] = (struct sylvan_serialization_visit){dd, 1};
+        stack[count++] = (struct sylvan_serialization_visit){
+            mtbdd_node_high(dd), 0
+        };
+        stack[count++] = (struct sylvan_serialization_visit){
+            mtbdd_node_low(dd), 0
+        };
+    }
+
+    free(stack);
+    return status;
+}
+
+static int
 sylvan_serialization_encode_reference(
     const struct sylvan_serialization_dictionary *dictionary,
     BDD dd,
@@ -730,6 +805,123 @@ sylvan_serialization_write_bdd_CALL(
 }
 
 static int
+sylvan_serialization_write_mtbdd_leaf(
+    sylvan_serialization_writer *writer, uint64_t id, MTBDD leaf)
+{
+    const uint32_t type = mtbdd_leaf_type(leaf);
+    if (type > 2) return SYLVAN_ERR_INVALID;
+
+    uint8_t record[24] = {0};
+    sylvan_store_u64(record, id);
+    sylvan_store_u32(record + 8, type);
+    sylvan_store_u32(record + 12, mtbdd_is_nan(leaf) ? 1 : 0);
+    if (!mtbdd_is_nan(leaf)) {
+        sylvan_store_u64(record + 16, mtbdd_leaf_value(leaf));
+    }
+    return sylvan_framed_writer_write(
+        writer->stream, SYLVAN_SERIALIZATION_MTBDD_LEAF,
+        record, sizeof(record));
+}
+
+static int
+sylvan_serialization_write_node_batch(
+    sylvan_serialization_writer *writer, size_t first, size_t count)
+{
+    if (count == 0) return SYLVAN_OK;
+    if (count > (UINT64_MAX - 16) / 24) return SYLVAN_ERR_OVERFLOW;
+
+    uint8_t batch_header[16];
+    sylvan_store_u64(batch_header, (uint64_t)first + 1);
+    sylvan_store_u64(batch_header + 8, count);
+    int status = sylvan_framed_writer_begin(
+        writer->stream, SYLVAN_SERIALIZATION_BDD_NODES,
+        16 + (uint64_t)count * 24);
+    if (status == SYLVAN_OK) {
+        status = sylvan_framed_writer_append(
+            writer->stream, batch_header, sizeof(batch_header));
+    }
+
+    const size_t end = first + count;
+    for (size_t i = first; i < end && status == SYLVAN_OK; i++) {
+        const MTBDD node = writer->dictionary.nodes[i];
+        uint64_t low;
+        uint64_t high;
+        status = sylvan_serialization_encode_reference(
+            &writer->dictionary, mtbdd_node_low(node), &low);
+        if (status == SYLVAN_OK) {
+            status = sylvan_serialization_encode_reference(
+                &writer->dictionary, mtbdd_node_high(node), &high);
+        }
+        if (status != SYLVAN_OK) break;
+
+        uint8_t record[24] = {0};
+        sylvan_store_u32(record, mtbdd_node_variable(node));
+        sylvan_store_u64(record + 8, low);
+        sylvan_store_u64(record + 16, high);
+        status = sylvan_framed_writer_append(
+            writer->stream, record, sizeof(record));
+    }
+    return status;
+}
+
+int
+sylvan_serialization_write_mtbdd_CALL(
+    lace_worker *lace, sylvan_serialization_writer *writer,
+    MTBDD dd, uint64_t key)
+{
+    if (writer == NULL || writer->failed || dd == mtbdd_invalid ||
+        sylvan_framed_writer_remaining(writer->stream) != 0) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    int status = sylvan_serialization_handle_add(&writer->roots, dd);
+    if (status != SYLVAN_OK) return status;
+    sylvan_gc_test(lace);
+
+    const size_t old_count = writer->dictionary.count;
+    status = sylvan_serialization_collect_mtbdd(&writer->dictionary, dd);
+    if (status != SYLVAN_OK) {
+        writer->failed = 1;
+        return status;
+    }
+
+    size_t i = old_count;
+    while (i < writer->dictionary.count && status == SYLVAN_OK) {
+        const MTBDD item = writer->dictionary.nodes[i];
+        if (mtbdd_is_leaf(item)) {
+            status = sylvan_serialization_write_mtbdd_leaf(
+                writer, (uint64_t)i + 1, item);
+            i++;
+        } else {
+            const size_t first = i;
+            do {
+                i++;
+            } while (i < writer->dictionary.count &&
+                     !mtbdd_is_leaf(writer->dictionary.nodes[i]));
+            status = sylvan_serialization_write_node_batch(
+                writer, first, i - first);
+        }
+    }
+
+    uint64_t root_reference;
+    if (status == SYLVAN_OK) {
+        status = sylvan_serialization_encode_reference(
+            &writer->dictionary, dd, &root_reference);
+    }
+    if (status == SYLVAN_OK) {
+        uint8_t root_record[24] = {0};
+        sylvan_store_u32(root_record, SYLVAN_DD_MTBDD);
+        sylvan_store_u64(root_record + 8, key);
+        sylvan_store_u64(root_record + 16, root_reference);
+        status = sylvan_framed_writer_write(
+            writer->stream, SYLVAN_SERIALIZATION_ROOT,
+            root_record, sizeof(root_record));
+    }
+    if (status != SYLVAN_OK) writer->failed = 1;
+    return status;
+}
+
+static int
 sylvan_serialization_decode_reference(
     const struct sylvan_serialization_handle_table *nodes,
     uint64_t reference,
@@ -810,6 +1002,34 @@ sylvan_serialization_read_bdd_nodes_CALL(
         ? SYLVAN_OK : SYLVAN_ERR_INVALID;
 }
 
+static int
+sylvan_serialization_read_mtbdd_leaf_CALL(
+    lace_worker *lace, sylvan_serialization_reader *reader,
+    const sylvan_frame *frame)
+{
+    if (frame->payload_size != 24) return SYLVAN_ERR_INVALID;
+
+    uint8_t record[24];
+    int status = sylvan_framed_reader_read(
+        reader->stream, record, sizeof(record));
+    if (status != SYLVAN_OK) return status;
+
+    const uint64_t id = sylvan_load_u64(record);
+    const uint32_t type = sylvan_load_u32(record + 8);
+    const uint32_t flags = sylvan_load_u32(record + 12);
+    const uint64_t value = sylvan_load_u64(record + 16);
+    if (id != (uint64_t)reader->nodes.count + 1 ||
+        type > 2 || flags > 1 || (flags != 0 && value != 0)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    MTBDD leaf = flags == 0 ? mtbdd_leaf(type, value) : mtbdd_nan(type);
+    status = sylvan_serialization_handle_add(&reader->nodes, leaf);
+    if (status != SYLVAN_OK) return status;
+    sylvan_gc_test(lace);
+    return SYLVAN_OK;
+}
+
 int
 sylvan_serialization_reader_create(
     sylvan_serialization_reader **destination,
@@ -865,6 +1085,9 @@ sylvan_serialization_reader_next_CALL(
         if (frame.type == SYLVAN_SERIALIZATION_BDD_NODES) {
             status = sylvan_serialization_read_bdd_nodes_CALL(
                 lace, reader, &frame);
+        } else if (frame.type == SYLVAN_SERIALIZATION_MTBDD_LEAF) {
+            status = sylvan_serialization_read_mtbdd_leaf_CALL(
+                lace, reader, &frame);
         } else if (frame.type == SYLVAN_SERIALIZATION_ROOT) {
             if (frame.payload_size != 24) {
                 status = SYLVAN_ERR_INVALID;
@@ -877,7 +1100,8 @@ sylvan_serialization_reader_next_CALL(
                     family = sylvan_load_u32(record);
                 }
                 if (status == SYLVAN_OK &&
-                    (family != SYLVAN_DD_BDD ||
+                    ((family != SYLVAN_DD_BDD &&
+                      family != SYLVAN_DD_MTBDD) ||
                      sylvan_load_u32(record + 4) != 0)) {
                     status = SYLVAN_ERR_INVALID;
                 }

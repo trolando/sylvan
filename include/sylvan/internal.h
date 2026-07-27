@@ -241,11 +241,16 @@ static const uint64_t CACHE_ZDD_MINIMAL_SETS        = (98LL<<40);
 }
 #endif /* __cplusplus */
 
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
 #include <sylvan/internal/mtbdd_internal.h>
 #include <sylvan/internal/listdd_internal.h>
 #include <sylvan/internal/zdd_internal.h>
 
 #ifdef __cplusplus
+} /* extern "C" */
 } /* namespace */
 #endif
 

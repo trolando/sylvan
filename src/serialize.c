@@ -33,6 +33,7 @@ enum {
 struct sylvan_framed_writer {
     sylvan_stream_write_cb write;
     void *context;
+    uint64_t remaining;
     int finished;
     int failed;
 };
@@ -143,14 +144,13 @@ sylvan_framed_writer_create(
 }
 
 int
-sylvan_framed_writer_write(
+sylvan_framed_writer_begin(
     sylvan_framed_writer *writer,
     uint32_t type,
-    const void *payload,
-    size_t payload_size)
+    uint64_t payload_size)
 {
     if (writer == NULL || writer->failed || writer->finished ||
-        type == 0 || (payload_size != 0 && payload == NULL)) {
+        writer->remaining != 0 || type == 0) {
         return SYLVAN_ERR_INVALID;
     }
 
@@ -158,9 +158,46 @@ sylvan_framed_writer_write(
     sylvan_store_u32(header, type);
     sylvan_store_u32(header + 4, 0);
     sylvan_store_u64(header + 8, payload_size);
-    int status = sylvan_writer_output(writer, header, sizeof(header));
-    if (status == SYLVAN_OK && payload_size != 0) {
-        status = sylvan_writer_output(writer, payload, payload_size);
+    const int status = sylvan_writer_output(writer, header, sizeof(header));
+    if (status == SYLVAN_OK) writer->remaining = payload_size;
+    return status;
+}
+
+int
+sylvan_framed_writer_append(
+    sylvan_framed_writer *writer,
+    const void *data,
+    size_t size)
+{
+    if (writer == NULL || writer->failed || writer->finished ||
+        (size != 0 && data == NULL) || (uint64_t)size > writer->remaining) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (size == 0) return SYLVAN_OK;
+
+    const int status = sylvan_writer_output(writer, data, size);
+    if (status == SYLVAN_OK) writer->remaining -= size;
+    return status;
+}
+
+uint64_t
+sylvan_framed_writer_remaining(const sylvan_framed_writer *writer)
+{
+    return writer == NULL ? 0 : writer->remaining;
+}
+
+int
+sylvan_framed_writer_write(
+    sylvan_framed_writer *writer,
+    uint32_t type,
+    const void *payload,
+    size_t payload_size)
+{
+    if (payload_size != 0 && payload == NULL) return SYLVAN_ERR_INVALID;
+    int status = sylvan_framed_writer_begin(writer, type, payload_size);
+    if (status == SYLVAN_OK) {
+        status = sylvan_framed_writer_append(
+            writer, payload, payload_size);
     }
     return status;
 }
@@ -168,7 +205,8 @@ sylvan_framed_writer_write(
 int
 sylvan_framed_writer_finish(sylvan_framed_writer *writer)
 {
-    if (writer == NULL || writer->failed || writer->finished) {
+    if (writer == NULL || writer->failed || writer->finished ||
+        writer->remaining != 0) {
         return SYLVAN_ERR_INVALID;
     }
     uint8_t header[SYLVAN_FRAME_HEADER_SIZE] = {0};

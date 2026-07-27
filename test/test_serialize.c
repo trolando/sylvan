@@ -63,8 +63,17 @@ test_roundtrip(void)
     test_assert(sylvan_framed_writer_create(
         &writer, memory_write, &stream) == SYLVAN_OK);
     const uint8_t first[] = {1, 2, 3, 4, 5};
-    test_assert(sylvan_framed_writer_write(
-        writer, 17, first, sizeof(first)) == SYLVAN_OK);
+    test_assert(sylvan_framed_writer_begin(
+        writer, 17, sizeof(first)) == SYLVAN_OK);
+    test_assert(sylvan_framed_writer_remaining(writer) == sizeof(first));
+    test_assert(sylvan_framed_writer_append(
+        writer, first, 2) == SYLVAN_OK);
+    test_assert(sylvan_framed_writer_begin(
+        writer, 18, 0) == SYLVAN_ERR_INVALID);
+    test_assert(sylvan_framed_writer_finish(writer) == SYLVAN_ERR_INVALID);
+    test_assert(sylvan_framed_writer_append(
+        writer, first + 2, 3) == SYLVAN_OK);
+    test_assert(sylvan_framed_writer_remaining(writer) == 0);
     test_assert(sylvan_framed_writer_write(
         writer, UINT32_C(0x80000001), NULL, 0) == SYLVAN_OK);
     test_assert(sylvan_framed_writer_finish(writer) == SYLVAN_OK);

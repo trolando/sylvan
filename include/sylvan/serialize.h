@@ -67,7 +67,29 @@ int sylvan_framed_writer_create(
     void *context);
 
 /**
- * Write one complete frame. <type> must be nonzero.
+ * Begin a frame whose payload will be supplied incrementally. No other frame
+ * can begin until exactly <payload_size> bytes have been appended.
+ */
+int sylvan_framed_writer_begin(
+    sylvan_framed_writer *writer,
+    uint32_t type,
+    uint64_t payload_size);
+
+/**
+ * Append bytes to the current frame payload. <size> must not exceed the
+ * remaining payload size.
+ */
+int sylvan_framed_writer_append(
+    sylvan_framed_writer *writer,
+    const void *data,
+    size_t size);
+
+uint64_t sylvan_framed_writer_remaining(
+    const sylvan_framed_writer *writer);
+
+/**
+ * Write one complete frame. This is a convenience composition of begin and
+ * append for payloads that already occupy one contiguous buffer.
  */
 int sylvan_framed_writer_write(
     sylvan_framed_writer *writer,

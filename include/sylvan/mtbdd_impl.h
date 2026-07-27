@@ -123,6 +123,26 @@ TASK(int, mtbdd_abstract_op_max, MTBDD*, result, MTBDD, a, MTBDD, b, int, c)
 TASK(int, mtbdd_neg, MTBDD*, result, MTBDD, a)
 
 /**
+ * Compute the pointwise absolute value of <dd>.
+ */
+TASK(int, mtbdd_abs, MTBDD*, result, MTBDD, dd)
+
+/**
+ * Compute the pointwise floor of <dd>.
+ */
+TASK(int, mtbdd_floor, MTBDD*, result, MTBDD, dd)
+
+/**
+ * Compute the pointwise ceiling of <dd>.
+ */
+TASK(int, mtbdd_ceil, MTBDD*, result, MTBDD, dd)
+
+/**
+ * Compute the pointwise natural logarithm of a double MTBDD.
+ */
+TASK(int, mtbdd_log, MTBDD*, result, MTBDD, dd)
+
+/**
  * Compute ~a for partial MTBDDs.
  * Does not negate Boolean True/False.
  * (complement, where 0 is turned into 1, and non-0 into 0)

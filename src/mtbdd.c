@@ -416,6 +416,18 @@ mtbdd_refs_pop(long amount)
 
 static int mtbdd_initialized = 0;
 static _Atomic(uint32_t) bdd_next_level;
+static int mtbdd_abs_leaf(
+    lace_worker*, MTBDD*, MTBDD, void*);
+static int mtbdd_floor_leaf(
+    lace_worker*, MTBDD*, MTBDD, void*);
+static int mtbdd_ceil_leaf(
+    lace_worker*, MTBDD*, MTBDD, void*);
+static int mtbdd_log_leaf(
+    lace_worker*, MTBDD*, MTBDD, void*);
+static mtbdd_map_op mtbdd_abs_operation;
+static mtbdd_map_op mtbdd_floor_operation;
+static mtbdd_map_op mtbdd_ceil_operation;
+static mtbdd_map_op mtbdd_log_operation;
 
 static void
 mtbdd_quit(void)
@@ -446,6 +458,17 @@ mtbdd_init(void)
     if (!mtbdd_protected_created) {
         protect_create(&mtbdd_protected, 4096);
         mtbdd_protected_created = 1;
+    }
+
+    if (mtbdd_abs_operation.cache_id == 0) {
+        mtbdd_abs_operation.map = mtbdd_abs_leaf;
+        mtbdd_abs_operation.cache_id = cache_next_opid();
+        mtbdd_floor_operation.map = mtbdd_floor_leaf;
+        mtbdd_floor_operation.cache_id = cache_next_opid();
+        mtbdd_ceil_operation.map = mtbdd_ceil_leaf;
+        mtbdd_ceil_operation.cache_id = cache_next_opid();
+        mtbdd_log_operation.map = mtbdd_log_leaf;
+        mtbdd_log_operation.cache_id = cache_next_opid();
     }
 
     mtbdd_refs_init();
@@ -1907,6 +1930,169 @@ mtbdd_neg_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd)
 {
     return mtbdd_apply_unary_CALL(
         lace, destination, dd, mtbdd_op_negate_CALL, 0);
+}
+
+static int
+mtbdd_abs_leaf(lace_worker *lace, MTBDD *destination, MTBDD leaf,
+               void *context)
+{
+    (void)lace;
+    (void)context;
+
+    if (leaf == mtbdd_undefined) {
+        *destination = mtbdd_undefined;
+        return SYLVAN_OK;
+    }
+    if (leaf == bdd_true) return SYLVAN_ERR_INVALID;
+
+    const uint32_t type = mtbdd_leaf_type(leaf);
+    if (mtbdd_is_nan(leaf)) {
+        *destination = mtbdd_nan(type);
+        return SYLVAN_OK;
+    }
+
+    if (type == 0) {
+        const int64_t value = mtbdd_leaf_int64(leaf);
+        *destination = value == INT64_MIN
+            ? mtbdd_nan(0) : mtbdd_int64(value < 0 ? -value : value);
+        return SYLVAN_OK;
+    }
+    if (type == 1) {
+        *destination = mtbdd_double(fabs(mtbdd_leaf_double(leaf)));
+        return SYLVAN_OK;
+    }
+    if (type == 2) {
+        const int32_t numerator = mtbdd_fraction_numerator(leaf);
+        *destination = numerator < 0
+            ? mtbdd_fraction(-(int64_t)numerator,
+                             mtbdd_fraction_denominator(leaf))
+            : leaf;
+        return SYLVAN_OK;
+    }
+    return SYLVAN_ERR_INVALID;
+}
+
+static int
+mtbdd_floor_leaf(lace_worker *lace, MTBDD *destination, MTBDD leaf,
+                 void *context)
+{
+    (void)lace;
+    (void)context;
+
+    if (leaf == mtbdd_undefined) {
+        *destination = mtbdd_undefined;
+        return SYLVAN_OK;
+    }
+    if (leaf == bdd_true) return SYLVAN_ERR_INVALID;
+
+    const uint32_t type = mtbdd_leaf_type(leaf);
+    if (mtbdd_is_nan(leaf)) {
+        *destination = mtbdd_nan(type);
+        return SYLVAN_OK;
+    }
+    if (type == 0) {
+        *destination = leaf;
+        return SYLVAN_OK;
+    }
+    if (type == 1) {
+        *destination = mtbdd_double(floor(mtbdd_leaf_double(leaf)));
+        return SYLVAN_OK;
+    }
+    if (type == 2) {
+        const int64_t numerator = mtbdd_fraction_numerator(leaf);
+        const int64_t denominator = mtbdd_fraction_denominator(leaf);
+        int64_t integral = numerator / denominator;
+        if (numerator % denominator < 0) integral--;
+        *destination = mtbdd_fraction(integral, 1);
+        return SYLVAN_OK;
+    }
+    return SYLVAN_ERR_INVALID;
+}
+
+static int
+mtbdd_ceil_leaf(lace_worker *lace, MTBDD *destination, MTBDD leaf,
+                void *context)
+{
+    (void)lace;
+    (void)context;
+
+    if (leaf == mtbdd_undefined) {
+        *destination = mtbdd_undefined;
+        return SYLVAN_OK;
+    }
+    if (leaf == bdd_true) return SYLVAN_ERR_INVALID;
+
+    const uint32_t type = mtbdd_leaf_type(leaf);
+    if (mtbdd_is_nan(leaf)) {
+        *destination = mtbdd_nan(type);
+        return SYLVAN_OK;
+    }
+    if (type == 0) {
+        *destination = leaf;
+        return SYLVAN_OK;
+    }
+    if (type == 1) {
+        *destination = mtbdd_double(ceil(mtbdd_leaf_double(leaf)));
+        return SYLVAN_OK;
+    }
+    if (type == 2) {
+        const int64_t numerator = mtbdd_fraction_numerator(leaf);
+        const int64_t denominator = mtbdd_fraction_denominator(leaf);
+        int64_t integral = numerator / denominator;
+        if (numerator % denominator > 0) integral++;
+        *destination = mtbdd_fraction(integral, 1);
+        return SYLVAN_OK;
+    }
+    return SYLVAN_ERR_INVALID;
+}
+
+static int
+mtbdd_log_leaf(lace_worker *lace, MTBDD *destination, MTBDD leaf,
+               void *context)
+{
+    (void)lace;
+    (void)context;
+
+    if (leaf == mtbdd_undefined) {
+        *destination = mtbdd_undefined;
+        return SYLVAN_OK;
+    }
+    if (leaf == bdd_true || mtbdd_leaf_type(leaf) != 1) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (mtbdd_is_nan(leaf)) {
+        *destination = mtbdd_nan(1);
+        return SYLVAN_OK;
+    }
+
+    const double value = mtbdd_leaf_double(leaf);
+    *destination = value < 0.0
+        ? mtbdd_nan(1) : mtbdd_double(log(value));
+    return SYLVAN_OK;
+}
+
+int
+mtbdd_abs_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd)
+{
+    return mtbdd_map_CALL(lace, destination, dd, &mtbdd_abs_operation);
+}
+
+int
+mtbdd_floor_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd)
+{
+    return mtbdd_map_CALL(lace, destination, dd, &mtbdd_floor_operation);
+}
+
+int
+mtbdd_ceil_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd)
+{
+    return mtbdd_map_CALL(lace, destination, dd, &mtbdd_ceil_operation);
+}
+
+int
+mtbdd_log_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd)
+{
+    return mtbdd_map_CALL(lace, destination, dd, &mtbdd_log_operation);
 }
 
 int

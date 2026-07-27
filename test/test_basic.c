@@ -1032,6 +1032,89 @@ test_mtbdd_arithmetic_nan_destinations_CALL(lace_worker *lace)
     return 0;
 }
 
+TASK(int, test_mtbdd_unary_arithmetic_destinations)
+int
+test_mtbdd_unary_arithmetic_destinations_CALL(lace_worker *lace)
+{
+    MTBDD input = mtbdd_invalid;
+    MTBDD result = mtbdd_invalid;
+    MTBDD unchanged = bdd_true;
+    BDD variable = mtbdd_invalid;
+    MTBDD function = mtbdd_invalid;
+
+    mtbdd_refs_pushptr(&input);
+    mtbdd_refs_pushptr(&result);
+    mtbdd_refs_pushptr(&unchanged);
+    mtbdd_refs_pushptr(&variable);
+    mtbdd_refs_pushptr(&function);
+
+    input = mtbdd_int64(-7);
+    test_assert(mtbdd_abs(&result, input) == SYLVAN_OK);
+    test_assert(mtbdd_leaf_int64(result) == 7);
+    test_assert(mtbdd_floor(&result, input) == SYLVAN_OK && result == input);
+    test_assert(mtbdd_ceil(&result, input) == SYLVAN_OK && result == input);
+    input = mtbdd_int64(INT64_MIN);
+    test_assert(mtbdd_abs(&result, input) == SYLVAN_OK);
+    test_assert(result == mtbdd_nan(0));
+
+    input = mtbdd_double(-2.75);
+    test_assert(mtbdd_abs(&result, input) == SYLVAN_OK);
+    test_assert(mtbdd_leaf_double(result) == 2.75);
+    test_assert(mtbdd_floor(&result, input) == SYLVAN_OK);
+    test_assert(mtbdd_leaf_double(result) == -3.0);
+    test_assert(mtbdd_ceil(&result, input) == SYLVAN_OK);
+    test_assert(mtbdd_leaf_double(result) == -2.0);
+    input = mtbdd_double(exp(2.0));
+    test_assert(mtbdd_log(&result, input) == SYLVAN_OK);
+    test_assert(fabs(mtbdd_leaf_double(result) - 2.0) < 1e-12);
+    input = mtbdd_double(-1.0);
+    test_assert(mtbdd_log(&result, input) == SYLVAN_OK);
+    test_assert(result == mtbdd_nan(1));
+    input = mtbdd_double(0.0);
+    test_assert(mtbdd_log(&result, input) == SYLVAN_OK);
+    test_assert(isinf(mtbdd_leaf_double(result)));
+    test_assert(mtbdd_leaf_double(result) < 0.0);
+
+    input = mtbdd_fraction(-7, 3);
+    test_assert(mtbdd_abs(&result, input) == SYLVAN_OK);
+    test_assert(mtbdd_fraction_numerator(result) == 7);
+    test_assert(mtbdd_fraction_denominator(result) == 3);
+    test_assert(mtbdd_floor(&result, input) == SYLVAN_OK);
+    test_assert(mtbdd_fraction_numerator(result) == -3);
+    test_assert(mtbdd_fraction_denominator(result) == 1);
+    test_assert(mtbdd_ceil(&result, input) == SYLVAN_OK);
+    test_assert(mtbdd_fraction_numerator(result) == -2);
+    test_assert(mtbdd_fraction_denominator(result) == 1);
+
+    test_assert(mtbdd_abs(&result, mtbdd_undefined) == SYLVAN_OK);
+    test_assert(result == mtbdd_undefined);
+    input = mtbdd_nan(2);
+    test_assert(mtbdd_floor(&result, input) == SYLVAN_OK && result == input);
+    test_assert(mtbdd_ceil(&result, input) == SYLVAN_OK && result == input);
+
+    input = mtbdd_int64(2);
+    test_assert(mtbdd_log(&unchanged, input) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_abs(&unchanged, bdd_true) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_true);
+    test_assert(mtbdd_abs(NULL, input) == SYLVAN_ERR_INVALID);
+
+    test_assert(bdd_var_at_level(&variable, 0) == SYLVAN_OK);
+    input = mtbdd_fraction(-7, 3);
+    result = mtbdd_fraction(5, 2);
+    test_assert(mtbdd_ite(&function, variable, result, input) == SYLVAN_OK);
+    test_assert(mtbdd_floor(&function, function) == SYLVAN_OK);
+    MTBDD low, high;
+    mtbdd_cofactors(function, &low, &high);
+    test_assert(mtbdd_fraction_numerator(low) == -3);
+    test_assert(mtbdd_fraction_numerator(high) == 2);
+    sylvan_gc_CALL(lace);
+    test_assert(mtbdd_is_valid(function));
+
+    mtbdd_refs_popptr(5);
+    return 0;
+}
+
 TASK(int, test_mtbdd_threshold_destinations)
 int
 test_mtbdd_threshold_destinations_CALL(lace_worker *lace)
@@ -4937,6 +5020,7 @@ int runtests_CALL(lace_worker* lace)
     if (test_mtbdd_extrema_destinations_CALL(lace)) return 1;
     if (test_mtbdd_apply_destinations_CALL(lace)) return 1;
     if (test_mtbdd_arithmetic_nan_destinations_CALL(lace)) return 1;
+    if (test_mtbdd_unary_arithmetic_destinations_CALL(lace)) return 1;
     if (test_mtbdd_threshold_destinations_CALL(lace)) return 1;
     if (test_mtbdd_equal_double_destinations_CALL(lace)) return 1;
     if (test_mtbdd_order_destinations_CALL(lace)) return 1;

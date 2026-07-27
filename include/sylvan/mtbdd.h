@@ -469,6 +469,38 @@ static inline int mtbdd_abstract_op_max(MTBDD *result, MTBDD a, MTBDD b, int c);
 static inline int mtbdd_neg(MTBDD *result, MTBDD a);
 
 /**
+ * Compute the pointwise absolute value of <dd>.
+ *
+ * Supports built-in integer, double, and fraction leaves. Undefined and NaN
+ * leaves propagate. Fixed-width overflow produces a typed NaN.
+ */
+static inline int mtbdd_abs(MTBDD *result, MTBDD dd);
+
+/**
+ * Compute the pointwise floor of <dd>, preserving its built-in numeric type.
+ *
+ * Integer leaves are unchanged; double leaves remain doubles; fraction leaves
+ * become fractions with denominator one. Undefined and NaN leaves propagate.
+ */
+static inline int mtbdd_floor(MTBDD *result, MTBDD dd);
+
+/**
+ * Compute the pointwise ceiling of <dd>, preserving its built-in numeric type.
+ *
+ * Integer leaves are unchanged; double leaves remain doubles; fraction leaves
+ * become fractions with denominator one. Undefined and NaN leaves propagate.
+ */
+static inline int mtbdd_ceil(MTBDD *result, MTBDD dd);
+
+/**
+ * Compute the pointwise natural logarithm of a double MTBDD.
+ *
+ * Zero maps to negative infinity, negative values map to the canonical double
+ * NaN, and undefined and NaN leaves propagate. Other leaf types are rejected.
+ */
+static inline int mtbdd_log(MTBDD *result, MTBDD dd);
+
+/**
  * Compute ~a for partial MTBDDs.
  * Does not negate Boolean True/False.
  * (complement, where 0 is turned into 1, and non-0 into 0)

@@ -17,6 +17,20 @@
 
 #include <sylvan/internal.h>
 
+const char *
+sylvan_status_string(int status)
+{
+    switch (status) {
+    case SYLVAN_OK: return "success";
+    case SYLVAN_ERR_OOM: return "out of memory";
+    case SYLVAN_ERR_INVALID: return "invalid argument";
+    case SYLVAN_ERR_IO: return "I/O error";
+    case SYLVAN_ERR_CALLBACK: return "callback error";
+    case SYLVAN_ERR_OVERFLOW: return "overflow";
+    default: return "unknown Sylvan status";
+    }
+}
+
 /**
  * Implementation of garbage collection
  */

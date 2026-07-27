@@ -18,6 +18,25 @@ typedef int (*test_bdd_binary_op)(BDD*, BDD, BDD);
 typedef int (*test_bdd_unary_set_op)(BDD*, BDD, BDDSET);
 typedef int (*test_bdd_binary_set_op)(BDD*, BDD, BDD, BDDSET);
 
+static int
+test_status_strings(void)
+{
+    test_assert(strcmp(sylvan_status_string(SYLVAN_OK), "success") == 0);
+    test_assert(strcmp(
+        sylvan_status_string(SYLVAN_ERR_OOM), "out of memory") == 0);
+    test_assert(strcmp(
+        sylvan_status_string(SYLVAN_ERR_INVALID), "invalid argument") == 0);
+    test_assert(strcmp(
+        sylvan_status_string(SYLVAN_ERR_IO), "I/O error") == 0);
+    test_assert(strcmp(
+        sylvan_status_string(SYLVAN_ERR_CALLBACK), "callback error") == 0);
+    test_assert(strcmp(
+        sylvan_status_string(SYLVAN_ERR_OVERFLOW), "overflow") == 0);
+    test_assert(strcmp(
+        sylvan_status_string(INT_MAX), "unknown Sylvan status") == 0);
+    return 0;
+}
+
 static BDD
 test_bdd_var(uint32_t level)
 {
@@ -5377,6 +5396,8 @@ int runtests_CALL(lace_worker* lace)
 
 int main()
 {
+    if (test_status_strings()) return 1;
+
     // Use multiple workers to exercise the protected-destination SPAWN/SYNC path.
     lace_start(4, 0, 0);
 

@@ -34,6 +34,12 @@ enum {
     SYLVAN_ERR_OVERFLOW = -5
 };
 
+/**
+ * Return a stable human-readable description of a Sylvan status code.
+ * The returned string is static and must not be freed.
+ */
+const char *sylvan_status_string(int status);
+
 /** Apply callback control result: descend recursively instead of producing a result. */
 enum {
     SYLVAN_APPLY_RECURSE = 1

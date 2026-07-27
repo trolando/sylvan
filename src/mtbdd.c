@@ -2206,6 +2206,7 @@ mtbdd_op_power_CALL(lace_worker *lace, MTBDD *destination,
             const int64_t integer_exponent = mtbdd_leaf_int64(exponent);
             int64_t value;
             if (integer_exponent < 0 ||
+                (uint64_t)integer_exponent > (uint64_t)SIZE_MAX ||
                 !int64_pow_checked(
                     mtbdd_leaf_int64(base), (size_t)integer_exponent, &value)) {
                 return _mtbdd_apply_callback_result(

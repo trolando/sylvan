@@ -495,8 +495,9 @@ static inline int mtbdd_ceil(MTBDD *result, MTBDD dd);
 /**
  * Compute the pointwise natural logarithm of a double MTBDD.
  *
- * Zero maps to negative infinity, negative values map to the canonical double
- * NaN, and undefined and NaN leaves propagate. Other leaf types are rejected.
+ * Positive infinity remains positive infinity, positive or negative zero maps
+ * to negative infinity, and negative values map to the canonical double NaN.
+ * Undefined and NaN leaves propagate. Other leaf types are rejected.
  */
 static inline int mtbdd_log(MTBDD *result, MTBDD dd);
 
@@ -532,17 +533,21 @@ static inline int mtbdd_div(MTBDD *result, MTBDD a, MTBDD b);
  * Compute the pointwise power base^exponent.
  *
  * Operands must have the same built-in numeric type. Integer exponents must be
- * nonnegative. Fraction exponents must be integral, but may be negative.
- * Doubles use the platform pow function. Undefined and NaN values propagate;
- * invalid domains and fixed-width overflow produce a typed NaN.
+ * nonnegative; fraction exponents must be integral, but may be negative.
+ * Integer and fraction 0^0 is one. Doubles use the C pow function, including
+ * its infinity and 0^0 behavior. Undefined and NaN values propagate. Invalid
+ * domains and fixed-width overflow produce a typed NaN; a double NaN result is
+ * canonicalized to the typed double NaN.
  */
 static inline int mtbdd_pow(MTBDD *result, MTBDD base, MTBDD exponent);
 
 /**
  * Compute the pointwise remainder after division truncating toward zero.
  *
- * Operands must have the same built-in numeric type. Undefined and NaN values
- * propagate. A zero divisor and fixed-width overflow produce a typed NaN.
+ * Integer and fraction results have the sign of the dividend. Doubles use the
+ * C fmod function. Operands must have the same built-in numeric type.
+ * Undefined and NaN values propagate. A zero divisor, invalid double domain,
+ * or fixed-width overflow produces the corresponding typed NaN.
  */
 static inline int mtbdd_mod(MTBDD *result, MTBDD dividend, MTBDD divisor);
 

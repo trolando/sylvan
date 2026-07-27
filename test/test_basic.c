@@ -1102,6 +1102,18 @@ test_mtbdd_unary_arithmetic_destinations_CALL(lace_worker *lace)
     test_assert(mtbdd_log(&result, input) == SYLVAN_OK);
     test_assert(isinf(mtbdd_leaf_double(result)));
     test_assert(mtbdd_leaf_double(result) < 0.0);
+    input = mtbdd_double(INFINITY);
+    test_assert(mtbdd_log(&result, input) == SYLVAN_OK);
+    test_assert(isinf(mtbdd_leaf_double(result)));
+    test_assert(mtbdd_leaf_double(result) > 0.0);
+    input = mtbdd_double(-INFINITY);
+    test_assert(mtbdd_log(&result, input) == SYLVAN_OK);
+    test_assert(result == mtbdd_nan(1));
+    input = mtbdd_nan(1);
+    test_assert(mtbdd_log(&result, input) == SYLVAN_OK);
+    test_assert(result == input);
+    test_assert(mtbdd_log(&result, mtbdd_undefined) == SYLVAN_OK);
+    test_assert(result == mtbdd_undefined);
 
     input = mtbdd_fraction(-7, 3);
     test_assert(mtbdd_abs(&result, input) == SYLVAN_OK);
@@ -1178,6 +1190,9 @@ test_mtbdd_binary_arithmetic_destinations_CALL(lace_worker *lace)
     right = mtbdd_int64(63);
     test_assert(mtbdd_pow(&result, left, right) == SYLVAN_OK);
     test_assert(result == mtbdd_nan(0));
+    left = mtbdd_int64(-2);
+    test_assert(mtbdd_pow(&result, left, right) == SYLVAN_OK);
+    test_assert(mtbdd_leaf_int64(result) == INT64_MIN);
     left = mtbdd_int64(0);
     right = mtbdd_int64(0);
     test_assert(mtbdd_pow(&result, left, right) == SYLVAN_OK);
@@ -1187,6 +1202,10 @@ test_mtbdd_binary_arithmetic_destinations_CALL(lace_worker *lace)
     test_assert(mtbdd_mod(&result, left, right) == SYLVAN_OK);
     test_assert(mtbdd_leaf_int64(result) == -1);
     right = mtbdd_int64(0);
+    test_assert(mtbdd_mod(&result, left, right) == SYLVAN_OK);
+    test_assert(result == mtbdd_nan(0));
+    left = mtbdd_int64(INT64_MIN);
+    right = mtbdd_int64(-1);
     test_assert(mtbdd_mod(&result, left, right) == SYLVAN_OK);
     test_assert(result == mtbdd_nan(0));
 
@@ -1204,6 +1223,21 @@ test_mtbdd_binary_arithmetic_destinations_CALL(lace_worker *lace)
     right = mtbdd_double(0.0);
     test_assert(mtbdd_mod(&result, left, right) == SYLVAN_OK);
     test_assert(result == mtbdd_nan(1));
+    left = mtbdd_double(0.0);
+    right = mtbdd_double(-1.0);
+    test_assert(mtbdd_pow(&result, left, right) == SYLVAN_OK);
+    test_assert(isinf(mtbdd_leaf_double(result)));
+    left = mtbdd_double(INFINITY);
+    right = mtbdd_double(2.0);
+    test_assert(mtbdd_mod(&result, left, right) == SYLVAN_OK);
+    test_assert(result == mtbdd_nan(1));
+    left = mtbdd_double(-5.5);
+    test_assert(mtbdd_mod(&result, left, right) == SYLVAN_OK);
+    test_assert(mtbdd_leaf_double(result) == -1.5);
+    left = mtbdd_double(5.5);
+    right = mtbdd_double(INFINITY);
+    test_assert(mtbdd_mod(&result, left, right) == SYLVAN_OK);
+    test_assert(mtbdd_leaf_double(result) == 5.5);
 
     left = mtbdd_fraction(2, 3);
     right = mtbdd_fraction(3, 1);
@@ -1230,6 +1264,23 @@ test_mtbdd_binary_arithmetic_destinations_CALL(lace_worker *lace)
     test_assert(mtbdd_mod(&result, left, right) == SYLVAN_OK);
     test_assert(mtbdd_fraction_numerator(result) == -1);
     test_assert(mtbdd_fraction_denominator(result) == 3);
+    left = mtbdd_fraction(0, 1);
+    right = mtbdd_fraction(0, 1);
+    test_assert(mtbdd_pow(&result, left, right) == SYLVAN_OK);
+    test_assert(mtbdd_fraction_numerator(result) == 1);
+    test_assert(mtbdd_fraction_denominator(result) == 1);
+    test_assert(mtbdd_mod(&result, left, right) == SYLVAN_OK);
+    test_assert(result == mtbdd_nan(2));
+
+    left = mtbdd_nan(0);
+    right = mtbdd_int64(2);
+    test_assert(mtbdd_pow(&result, left, right) == SYLVAN_OK);
+    test_assert(result == left);
+    test_assert(mtbdd_mod(&result, left, right) == SYLVAN_OK);
+    test_assert(result == left);
+    test_assert(mtbdd_pow(
+        &result, mtbdd_undefined, right) == SYLVAN_OK);
+    test_assert(result == mtbdd_undefined);
 
     left = mtbdd_int64(2);
     right = mtbdd_double(3.0);

@@ -20,6 +20,8 @@
 #include <inttypes.h>
 #include <string.h>
 
+#include "mt_private.h"
+
 /**
  * Handling of custom leaves "registry"
  */
@@ -249,6 +251,39 @@ void sylvan_mt_set_read_binary(uint32_t type, sylvan_mt_read_binary_cb read_bina
     if (c != NULL) c->read_binary_cb = read_binary_cb;
 }
 
+int
+sylvan_mt_bind_legacy_binary(
+    uint32_t type, sylvan_mt_write_binary_cb write_binary,
+    sylvan_mt_read_binary_cb read_binary)
+{
+    if (type < 3 || type >= cl_registry_count ||
+        write_binary == NULL || read_binary == NULL) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    customleaf_t *entry = cl_registry + type;
+    if (entry->write_binary_cb != NULL || entry->read_binary_cb != NULL) {
+        return SYLVAN_ERR_INVALID;
+    }
+    entry->write_binary_cb = write_binary;
+    entry->read_binary_cb = read_binary;
+    return SYLVAN_OK;
+}
+
+void
+sylvan_mt_release_legacy_binary_value(uint32_t type, uint64_t value)
+{
+    assert(type < cl_registry_count);
+    customleaf_t *entry = cl_registry + type;
+    if (entry->read_binary_cb == NULL) return;
+
+    if (entry->descriptor_destroy != NULL) {
+        entry->descriptor_destroy(entry->context, value);
+    } else if (entry->destroy_cb != NULL) {
+        entry->destroy_cb(value);
+    }
+}
+
 /**
  * Initialize and quit functions
  */
@@ -260,6 +295,14 @@ sylvan_mt_quit(void)
 {
     if (mt_initialized == 0) return;
     mt_initialized = 0;
+
+    /*
+     * Garbage collection destroys unreachable custom values, but live custom
+     * leaves also remain owned by Sylvan until shutdown. Clear all marks and
+     * release those values before discarding their callback registry.
+     */
+    nodes_clear(nodes);
+    nodes_cleanup_custom(nodes);
 
     for (size_t i = 0; i < cl_registry_count; i++) {
         free(cl_registry[i].name);

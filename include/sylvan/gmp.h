@@ -30,9 +30,11 @@ extern "C" {
 #endif /* __cplusplus */
 
 /**
- * Initialize GMP custom leaves
+ * Initialize GMP rational custom leaves.
+ *
+ * Returns SYLVAN_OK on success or a negative status on failure.
  */
-void gmp_init(void);
+int gmp_init(void);
 
 /**
  * Calculate the exact number of satisfying assignments over <variables>.
@@ -62,9 +64,12 @@ int zdd_count_gmp(mpz_t result, ZDD dd);
 int listdd_count_gmp(mpz_t result, LISTDD dd);
 
 /**
- * Create MPQ leaf
+ * Create a canonical rational leaf by copying <value>.
+ *
+ * The caller retains ownership and <value> is not modified. Returns
+ * mtbdd_invalid if GMP support is not initialized or allocation fails.
  */
-MTBDD mtbdd_gmp(mpq_t val);
+MTBDD mtbdd_gmp(mpq_t value);
 
 /**
  * Operation "plus" for two mpq MTBDDs

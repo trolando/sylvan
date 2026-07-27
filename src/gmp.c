@@ -22,7 +22,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mt_private.h"
+
 static uint32_t gmp_type;
+static uint64_t gmp_cache_id;
+static int gmp_initialized;
 
 static_assert(sizeof(size_t) >= sizeof(double), "GMP double parameters require 64-bit size_t");
 
@@ -379,8 +383,10 @@ rotl64(uint64_t x, int8_t r)
 #endif
 
 static uint64_t
-gmp_hash(const uint64_t v, const uint64_t seed)
+gmp_hash(void *context, const uint64_t v, const uint64_t seed)
 {
+    (void)context;
+
     /* Hash the mpq in pointer v 
      * A simpler way would be to hash the result of mpq_get_d.
      * We just hash on the contents of the memory */
@@ -393,7 +399,9 @@ gmp_hash(const uint64_t v, const uint64_t seed)
 
     // hash "numerator" limbs
     limbs = x[0]._mp_num._mp_d;
-    for (int i=0; i<abs(x[0]._mp_num._mp_size); i++) {
+    mp_size_t numerator_size = x[0]._mp_num._mp_size;
+    if (numerator_size < 0) numerator_size = -numerator_size;
+    for (mp_size_t i = 0; i < numerator_size; i++) {
         hash = hash ^ limbs[i];
         hash = rotl64(hash, 47);
         hash = hash * prime;
@@ -401,7 +409,9 @@ gmp_hash(const uint64_t v, const uint64_t seed)
 
     // hash "denominator" limbs
     limbs = x[0]._mp_den._mp_d;
-    for (int i=0; i<abs(x[0]._mp_den._mp_size); i++) {
+    mp_size_t denominator_size = x[0]._mp_den._mp_size;
+    if (denominator_size < 0) denominator_size = -denominator_size;
+    for (mp_size_t i = 0; i < denominator_size; i++) {
         hash = hash ^ limbs[i];
         hash = rotl64(hash, 31);
         hash = hash * prime;
@@ -411,8 +421,10 @@ gmp_hash(const uint64_t v, const uint64_t seed)
 }
 
 static int
-gmp_equals(const uint64_t left, const uint64_t right)
+gmp_equals(void *context, const uint64_t left, const uint64_t right)
 {
+    (void)context;
+
     /* This function is called by the unique table when comparing a new
        leaf with an existing leaf */
     mpq_ptr x = (mpq_ptr)(size_t)left;
@@ -422,86 +434,141 @@ gmp_equals(const uint64_t left, const uint64_t right)
     return mpq_equal(x, y) ? 1 : 0;
 }
 
-static void
-gmp_create(uint64_t *val)
+static int
+gmp_clone(void *context, uint64_t value, uint64_t *result)
 {
+    (void)context;
+
     /* This function is called by the unique table when a leaf does not yet exist.
        We make a copy, which will be stored in the hash table. */
     mpq_ptr x = (mpq_ptr)malloc(sizeof(__mpq_struct));
+    if (x == NULL) return SYLVAN_ERR_OOM;
     mpq_init(x);
-    mpq_set(x, *(mpq_ptr*)val);
-    *(mpq_ptr*)val = x;
+    mpq_set(x, (mpq_ptr)(size_t)value);
+    mpq_canonicalize(x);
+    *result = (uint64_t)(size_t)x;
+    return SYLVAN_OK;
 }
 
 static void
-gmp_destroy(uint64_t val)
+gmp_destroy(void *context, uint64_t value)
 {
+    (void)context;
+
     /* This function is called by the unique table
        when a leaf is removed during garbage collection. */
-    mpq_clear((mpq_ptr)val);
-    free((void*)val);
+    mpq_clear((mpq_ptr)(size_t)value);
+    free((void*)(size_t)value);
 }
 
-static char*
-gmp_to_str(int comp, uint64_t val, char *buf, size_t buflen)
+static int
+gmp_to_string(void *context, int complement, uint64_t value, char **result)
 {
-    mpq_ptr op = (mpq_ptr)val;
-    size_t minsize = mpz_sizeinbase(mpq_numref(op), 10) + mpz_sizeinbase (mpq_denref(op), 10) + 3;
-    if (buflen >= minsize) return mpq_get_str(buf, 10, op);
-    else return mpq_get_str(NULL, 10, op);
-    (void)comp;
+    (void)context;
+    (void)complement;
+
+    char *text = mpq_get_str(NULL, 10, (mpq_ptr)(size_t)value);
+    if (text == NULL) return SYLVAN_ERR_OOM;
+    *result = text;
+    return SYLVAN_OK;
+}
+
+static void
+gmp_string_free(void *context, char *string)
+{
+    (void)context;
+
+    void (*free_function)(void*, size_t);
+    mp_get_memory_functions(NULL, NULL, &free_function);
+    free_function(string, strlen(string) + 1);
 }
 
 static int
 gmp_write_binary(FILE* out, uint64_t val)
 {
-    mpq_ptr op = (mpq_ptr)val;
+    mpq_ptr op = (mpq_ptr)(size_t)val;
 
     mpz_t i;
     mpz_init(i);
     mpq_get_num(i, op);
-    if (mpz_out_raw(out, i) == 0) return -1;
-    mpq_get_den(i, op);
-    if (mpz_out_raw(out, i) == 0) return -1;
+    int status = mpz_out_raw(out, i) == 0 ? -1 : 0;
+    if (status == 0) {
+        mpq_get_den(i, op);
+        if (mpz_out_raw(out, i) == 0) status = -1;
+    }
     mpz_clear(i);
 
-    return 0;
+    return status;
 }
 
 static int
 gmp_read_binary(FILE* in, uint64_t *val)
 {
     mpq_ptr mres = (mpq_ptr)malloc(sizeof(__mpq_struct));
+    if (mres == NULL) return -1;
     mpq_init(mres);
 
     mpz_t i;
     mpz_init(i);
-    if (mpz_inp_raw(i, in) == 0) return -1;
-    mpq_set_num(mres, i);
-    if (mpz_inp_raw(i, in) == 0) return -1;
-    mpq_set_den(mres, i);
+    int status = mpz_inp_raw(i, in) == 0 ? -1 : 0;
+    if (status == 0) {
+        mpq_set_num(mres, i);
+        if (mpz_inp_raw(i, in) == 0) {
+            status = -1;
+        } else {
+            mpq_set_den(mres, i);
+            mpq_canonicalize(mres);
+        }
+    }
     mpz_clear(i);
 
-    *(mpq_ptr*)val = mres;
+    if (status != 0) {
+        mpq_clear(mres);
+        free(mres);
+        return status;
+    }
 
+    *val = (uint64_t)(size_t)mres;
     return 0;
+}
+
+static void
+gmp_quit(void)
+{
+    gmp_type = 0;
+    gmp_initialized = 0;
 }
 
 /**
  * Initialize gmp custom leaves
  */
-void
+int
 gmp_init(void)
 {
-    /* Register custom leaf */
-    gmp_type = sylvan_mt_create_type();
-    sylvan_mt_set_hash(gmp_type, gmp_hash);
-    sylvan_mt_set_equals(gmp_type, gmp_equals);
-    sylvan_mt_set_create(gmp_type, gmp_create);
-    sylvan_mt_set_destroy(gmp_type, gmp_destroy);
-    sylvan_mt_set_to_str(gmp_type, gmp_to_str);
-    sylvan_mt_set_write_binary(gmp_type, gmp_write_binary);
-    sylvan_mt_set_read_binary(gmp_type, gmp_read_binary);
+    if (gmp_initialized) return SYLVAN_OK;
+    if (gmp_cache_id == 0) gmp_cache_id = cache_next_opid();
+
+    const sylvan_mt_type_descriptor descriptor = {
+        "sylvan.gmp.rational",
+        gmp_cache_id,
+        NULL,
+        gmp_hash,
+        gmp_equals,
+        gmp_clone,
+        gmp_destroy,
+        gmp_to_string,
+        gmp_string_free
+    };
+    int status = sylvan_mt_register_type(&gmp_type, &descriptor);
+    if (status != SYLVAN_OK) return status;
+
+    status = sylvan_mt_bind_legacy_binary(
+        gmp_type, gmp_write_binary, gmp_read_binary);
+    if (status != SYLVAN_OK) return status;
+
+    sylvan_register_quit(gmp_quit);
+    gmp_initialized = 1;
+    return SYLVAN_OK;
 }
 
 /**
@@ -510,8 +577,15 @@ gmp_init(void)
 MTBDD
 mtbdd_gmp(mpq_t val)
 {
-    mpq_canonicalize(val);
-    return mtbdd_leaf(gmp_type, (size_t)val);
+    if (!gmp_initialized) return mtbdd_invalid;
+
+    mpq_t canonical;
+    mpq_init(canonical);
+    mpq_set(canonical, val);
+    mpq_canonicalize(canonical);
+    const MTBDD result = mtbdd_leaf(gmp_type, (uint64_t)(size_t)canonical);
+    mpq_clear(canonical);
+    return result;
 }
 
 static int

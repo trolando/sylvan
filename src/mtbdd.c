@@ -25,6 +25,7 @@
 #include "refs.h"
 #include "sl.h"
 #include "sha2.h"
+#include "mt_private.h"
 
 static_assert(sizeof(size_t) >= sizeof(double), "MTBDD double parameters require 64-bit size_t");
 
@@ -5652,8 +5653,16 @@ uint64_t* mtbdd_reader_readbinary_CALL(lace_worker* lace, FILE* in)
                 arr[i] = mtbdd_nan(type);
             } else {
                 uint64_t value = mtbddnode_getvalue(&node);
-                sylvan_mt_read_binary(type, &value, in);
+                if (sylvan_mt_read_binary(type, &value, in) != 0) {
+                    free(arr);
+                    return NULL;
+                }
                 arr[i] = mtbdd_leaf(type, value);
+                sylvan_mt_release_legacy_binary_value(type, value);
+                if (arr[i] == mtbdd_invalid) {
+                    free(arr);
+                    return NULL;
+                }
             }
         } else {
             MTBDD low = arr[mtbddnode_getlow(&node)];

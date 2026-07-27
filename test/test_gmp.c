@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <gmp.h>
 #include <lace.h>
 
@@ -39,7 +41,18 @@ run_gmp_tests_CALL(lace_worker *lace)
     mtbdd_refs_pushptr(&a);
     MTBDD b = mtbdd_gmp(one_half);
     mtbdd_refs_pushptr(&b);
+    mpq_t two_fourths;
+    mpq_init(two_fourths);
+    mpz_set_ui(mpq_numref(two_fourths), 2);
+    mpz_set_ui(mpq_denref(two_fourths), 4);
+    test_assert(mtbdd_gmp(two_fourths) == b);
+    test_assert(mpz_cmp_ui(mpq_numref(two_fourths), 2) == 0);
+    test_assert(mpz_cmp_ui(mpq_denref(two_fourths), 4) == 0);
+    mpq_clear(two_fourths);
     gmp_test_type = mtbdd_leaf_type(a);
+    test_assert(strcmp(
+        sylvan_mt_type_name(gmp_test_type), "sylvan.gmp.rational") == 0);
+    test_assert(sylvan_mt_type_cache_id(gmp_test_type) != 0);
     BDD x = mtbdd_invalid;
     MTBDD f = mtbdd_invalid;
     MTBDD g = mtbdd_invalid;
@@ -141,11 +154,17 @@ run_gmp_tests_CALL(lace_worker *lace)
     test_assert(gmp_divide(&quotient, f, g) == SYLVAN_OK);
     FILE *serialized = tmpfile();
     test_assert(serialized != NULL);
-    mtbdd_writer_tobinary(serialized, &gmp_nan, 1);
+    mtbdd_writer_tobinary(serialized, &a, 1);
     rewind(serialized);
     test_assert(mtbdd_reader_frombinary(serialized, &roundtrip, 1) == 0);
-    test_assert(roundtrip == gmp_nan);
+    test_assert(roundtrip == a);
     fclose(serialized);
+    char small_text[2];
+    char *formatted = mtbdd_leaf_to_string(a, small_text, sizeof(small_text));
+    test_assert(formatted != NULL);
+    test_assert(strcmp(formatted, "3/2") == 0);
+    test_assert(formatted != small_text);
+    free(formatted);
 
     mpz_t exact_count;
     mpz_init_set_ui(exact_count, 17);
@@ -269,7 +288,8 @@ main(void)
     mtbdd_init();
     zdd_init();
     listdd_init();
-    gmp_init();
+    if (gmp_init() != SYLVAN_OK) return 1;
+    if (gmp_init() != SYLVAN_OK) return 1;
 
     int result = run_gmp_tests();
 

@@ -29,6 +29,7 @@ option(SYLVAN_ENABLE_PIC          "Build with -fPIC (for embedding in shared lib
 option(SYLVAN_BUILD_CPP           "Build Sylvan C++ bindings"                        ON)
 option(BUILD_TESTING              "Build Sylvan tests"          ${PROJECT_IS_TOP_LEVEL})
 option(SYLVAN_BUILD_EXAMPLES      "Build Sylvan examples"       ${PROJECT_IS_TOP_LEVEL})
+option(SYLVAN_BUILD_BENCHMARKS    "Build Sylvan microbenchmarks"                     OFF)
 option(SYLVAN_BUILD_DOCS          "Build Sylvan documentation"                      OFF)
 
 # Enable C++ only for the optional bindings and their test/example
@@ -179,6 +180,7 @@ if(NOT sylvan_IS_TOP_LEVEL)
         SYLVAN_ENABLE_PIC
         SYLVAN_BUILD_CPP
         SYLVAN_BUILD_EXAMPLES
+        SYLVAN_BUILD_BENCHMARKS
         SYLVAN_BUILD_DOCS
     )
 endif()
@@ -197,6 +199,10 @@ endif()
 
 if(SYLVAN_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+if(SYLVAN_BUILD_BENCHMARKS)
+    add_subdirectory(benchmark)
 endif()
 
 if(SYLVAN_BUILD_DOCS)

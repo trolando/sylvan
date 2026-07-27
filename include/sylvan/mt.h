@@ -133,6 +133,11 @@ const char *sylvan_mt_type_name(uint32_t type);
 uint64_t sylvan_mt_type_cache_id(uint32_t type);
 
 /**
+ * Look up an immutable custom-leaf type by its stable registered name.
+ */
+int sylvan_mt_find_type(const char *name, uint32_t *type);
+
+/**
  * Register a new leaf type.
  *
  * Legacy mutable registration API. Prefer sylvan_mt_register_type.

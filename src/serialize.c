@@ -357,10 +357,25 @@ struct sylvan_serialization_dictionary {
     size_t node_capacity;
 };
 
+struct sylvan_serialization_leaf_codec_entry {
+    char *type_name;
+    uint32_t type;
+    uint32_t format_version;
+    uint32_t wire_type;
+    int declared;
+    void *context;
+    sylvan_serialization_leaf_size_cb size;
+    sylvan_serialization_leaf_write_cb write;
+    sylvan_serialization_leaf_read_cb read;
+};
+
 struct sylvan_serialization_writer {
     sylvan_framed_writer *stream;
     struct sylvan_serialization_dictionary dictionary;
     struct sylvan_serialization_handle_table roots;
+    struct sylvan_serialization_leaf_codec_entry *codecs;
+    size_t codec_count;
+    size_t codec_capacity;
     int failed;
 };
 
@@ -369,8 +384,84 @@ struct sylvan_serialization_reader {
     sylvan_serialization_frame_cb frame_callback;
     void *context;
     struct sylvan_serialization_handle_table nodes;
+    struct sylvan_serialization_leaf_codec_entry *codecs;
+    size_t codec_count;
+    size_t codec_capacity;
     int failed;
 };
+
+static void
+sylvan_serialization_codec_clear(
+    struct sylvan_serialization_leaf_codec_entry *codecs, size_t count)
+{
+    for (size_t i = 0; i < count; i++) free(codecs[i].type_name);
+    free(codecs);
+}
+
+static int
+sylvan_serialization_codec_reserve(
+    struct sylvan_serialization_leaf_codec_entry **codecs,
+    size_t *capacity, size_t count)
+{
+    if (count < *capacity) return SYLVAN_OK;
+    const size_t old_capacity = *capacity;
+    const size_t new_capacity =
+        old_capacity == 0 ? 4 : old_capacity * 2;
+    if (new_capacity < old_capacity ||
+        new_capacity > SIZE_MAX / sizeof(**codecs)) {
+        return SYLVAN_ERR_OOM;
+    }
+    struct sylvan_serialization_leaf_codec_entry *grown = realloc(
+        *codecs, new_capacity * sizeof(**codecs));
+    if (grown == NULL) return SYLVAN_ERR_OOM;
+    *codecs = grown;
+    *capacity = new_capacity;
+    return SYLVAN_OK;
+}
+
+static int
+sylvan_serialization_codec_copy(
+    struct sylvan_serialization_leaf_codec_entry *destination,
+    const sylvan_serialization_leaf_codec *codec, uint32_t type)
+{
+    const size_t name_size = strlen(codec->type_name) + 1;
+    char *name = malloc(name_size);
+    if (name == NULL) return SYLVAN_ERR_OOM;
+    memcpy(name, codec->type_name, name_size);
+
+    memset(destination, 0, sizeof(*destination));
+    destination->type_name = name;
+    destination->type = type;
+    destination->format_version = codec->format_version;
+    destination->context = codec->context;
+    destination->size = codec->size;
+    destination->write = codec->write;
+    destination->read = codec->read;
+    return SYLVAN_OK;
+}
+
+static struct sylvan_serialization_leaf_codec_entry *
+sylvan_serialization_writer_codec(
+    sylvan_serialization_writer *writer, uint32_t type)
+{
+    for (size_t i = 0; i < writer->codec_count; i++) {
+        if (writer->codecs[i].type == type) return writer->codecs + i;
+    }
+    return NULL;
+}
+
+static struct sylvan_serialization_leaf_codec_entry *
+sylvan_serialization_reader_codec_by_wire(
+    sylvan_serialization_reader *reader, uint32_t wire_type)
+{
+    for (size_t i = 0; i < reader->codec_count; i++) {
+        if (reader->codecs[i].declared &&
+            reader->codecs[i].wire_type == wire_type) {
+            return reader->codecs + i;
+        }
+    }
+    return NULL;
+}
 
 static uint64_t
 sylvan_serialization_hash(MTBDD dd)
@@ -634,10 +725,6 @@ sylvan_serialization_collect_mtbdd(
             continue;
         }
         if (mtbdd_is_leaf(dd)) {
-            if (dd != bdd_true && mtbdd_leaf_type(dd) > 2) {
-                status = SYLVAN_ERR_INVALID;
-                break;
-            }
             status = sylvan_serialization_dictionary_add(dictionary, dd);
             if (status != SYLVAN_OK) break;
             continue;
@@ -715,6 +802,38 @@ sylvan_serialization_writer_create(
     return SYLVAN_OK;
 }
 
+int
+sylvan_serialization_writer_add_leaf_codec(
+    sylvan_serialization_writer *writer,
+    const sylvan_serialization_leaf_codec *codec)
+{
+    if (writer == NULL || codec == NULL || codec->type_name == NULL ||
+        codec->type_name[0] == '\0' || codec->size == NULL ||
+        codec->write == NULL || writer->failed ||
+        sylvan_framed_writer_remaining(writer->stream) != 0) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    uint32_t type;
+    if (sylvan_mt_find_type(codec->type_name, &type) != SYLVAN_OK ||
+        type < 3 ||
+        sylvan_serialization_writer_codec(writer, type) != NULL ||
+        writer->codec_count > UINT32_MAX - 3) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    int status = sylvan_serialization_codec_reserve(
+        &writer->codecs, &writer->codec_capacity, writer->codec_count);
+    if (status != SYLVAN_OK) return status;
+    status = sylvan_serialization_codec_copy(
+        writer->codecs + writer->codec_count, codec, type);
+    if (status != SYLVAN_OK) return status;
+    writer->codecs[writer->codec_count].wire_type =
+        (uint32_t)writer->codec_count + 3;
+    writer->codec_count++;
+    return SYLVAN_OK;
+}
+
 void
 sylvan_serialization_writer_destroy(sylvan_serialization_writer *writer)
 {
@@ -723,6 +842,7 @@ sylvan_serialization_writer_destroy(sylvan_serialization_writer *writer)
     free(writer->dictionary.keys);
     free(writer->dictionary.ids);
     free(writer->dictionary.nodes);
+    sylvan_serialization_codec_clear(writer->codecs, writer->codec_count);
     free(writer);
 }
 
@@ -824,6 +944,84 @@ sylvan_serialization_write_mtbdd_leaf(
 }
 
 static int
+sylvan_serialization_write_mtbdd_type(
+    sylvan_serialization_writer *writer,
+    struct sylvan_serialization_leaf_codec_entry *codec)
+{
+    const size_t name_size = strlen(codec->type_name);
+    if ((uint64_t)name_size > UINT64_MAX - 16) {
+        return SYLVAN_ERR_OVERFLOW;
+    }
+
+    uint8_t header[16];
+    sylvan_store_u32(header, codec->wire_type);
+    sylvan_store_u32(header + 4, codec->format_version);
+    sylvan_store_u64(header + 8, name_size);
+    int status = sylvan_framed_writer_begin(
+        writer->stream, SYLVAN_SERIALIZATION_MTBDD_TYPE,
+        16 + (uint64_t)name_size);
+    if (status == SYLVAN_OK) {
+        status = sylvan_framed_writer_append(
+            writer->stream, header, sizeof(header));
+    }
+    if (status == SYLVAN_OK) {
+        status = sylvan_framed_writer_append(
+            writer->stream, codec->type_name, name_size);
+    }
+    if (status == SYLVAN_OK) codec->declared = 1;
+    return status;
+}
+
+static int
+sylvan_serialization_write_mtbdd_custom_leaf(
+    sylvan_serialization_writer *writer, uint64_t id, MTBDD leaf)
+{
+    const uint32_t type = mtbdd_leaf_type(leaf);
+    struct sylvan_serialization_leaf_codec_entry *codec =
+        sylvan_serialization_writer_codec(writer, type);
+    if (codec == NULL) return SYLVAN_ERR_INVALID;
+
+    int status = SYLVAN_OK;
+    if (!codec->declared) {
+        status = sylvan_serialization_write_mtbdd_type(writer, codec);
+    }
+
+    const int is_nan = mtbdd_is_nan(leaf);
+    uint64_t size = 0;
+    if (status == SYLVAN_OK && !is_nan) {
+        status = codec->size(codec->context, leaf, &size);
+        if (status > SYLVAN_OK) status = SYLVAN_ERR_CALLBACK;
+    }
+    if (status == SYLVAN_OK && size > UINT64_MAX - 24) {
+        status = SYLVAN_ERR_OVERFLOW;
+    }
+
+    uint8_t header[24] = {0};
+    if (status == SYLVAN_OK) {
+        sylvan_store_u64(header, id);
+        sylvan_store_u32(header + 8, codec->wire_type);
+        sylvan_store_u32(header + 12, is_nan ? 1 : 0);
+        sylvan_store_u64(header + 16, size);
+        status = sylvan_framed_writer_begin(
+            writer->stream, SYLVAN_SERIALIZATION_MTBDD_CUSTOM_LEAF,
+            24 + size);
+    }
+    if (status == SYLVAN_OK) {
+        status = sylvan_framed_writer_append(
+            writer->stream, header, sizeof(header));
+    }
+    if (status == SYLVAN_OK && !is_nan) {
+        status = codec->write(codec->context, leaf, writer->stream);
+        if (status > SYLVAN_OK) status = SYLVAN_ERR_CALLBACK;
+        if (status == SYLVAN_OK &&
+            sylvan_framed_writer_remaining(writer->stream) != 0) {
+            status = SYLVAN_ERR_CALLBACK;
+        }
+    }
+    return status;
+}
+
+static int
 sylvan_serialization_write_node_batch(
     sylvan_serialization_writer *writer, size_t first, size_t count)
 {
@@ -889,8 +1087,13 @@ sylvan_serialization_write_mtbdd_CALL(
     while (i < writer->dictionary.count && status == SYLVAN_OK) {
         const MTBDD item = writer->dictionary.nodes[i];
         if (mtbdd_is_leaf(item)) {
-            status = sylvan_serialization_write_mtbdd_leaf(
-                writer, (uint64_t)i + 1, item);
+            if (mtbdd_leaf_type(item) <= 2) {
+                status = sylvan_serialization_write_mtbdd_leaf(
+                    writer, (uint64_t)i + 1, item);
+            } else {
+                status = sylvan_serialization_write_mtbdd_custom_leaf(
+                    writer, (uint64_t)i + 1, item);
+            }
             i++;
         } else {
             const size_t first = i;
@@ -1030,6 +1233,113 @@ sylvan_serialization_read_mtbdd_leaf_CALL(
     return SYLVAN_OK;
 }
 
+static int
+sylvan_serialization_read_mtbdd_type(
+    sylvan_serialization_reader *reader, const sylvan_frame *frame)
+{
+    if (frame->payload_size < 16) return SYLVAN_ERR_INVALID;
+
+    uint8_t header[16];
+    int status = sylvan_framed_reader_read(
+        reader->stream, header, sizeof(header));
+    if (status != SYLVAN_OK) return status;
+
+    const uint32_t wire_type = sylvan_load_u32(header);
+    const uint32_t format_version = sylvan_load_u32(header + 4);
+    const uint64_t name_size = sylvan_load_u64(header + 8);
+    if (wire_type < 3 || name_size == 0 ||
+        name_size != frame->payload_size - 16 ||
+        name_size > SIZE_MAX - 1 ||
+        sylvan_serialization_reader_codec_by_wire(
+            reader, wire_type) != NULL) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    char *name = malloc((size_t)name_size + 1);
+    if (name == NULL) return SYLVAN_ERR_OOM;
+    status = sylvan_framed_reader_read(
+        reader->stream, name, (size_t)name_size);
+    if (status == SYLVAN_OK &&
+        memchr(name, '\0', (size_t)name_size) != NULL) {
+        status = SYLVAN_ERR_INVALID;
+    }
+    name[(size_t)name_size] = '\0';
+
+    struct sylvan_serialization_leaf_codec_entry *match = NULL;
+    if (status == SYLVAN_OK) {
+        for (size_t i = 0; i < reader->codec_count; i++) {
+            struct sylvan_serialization_leaf_codec_entry *codec =
+                reader->codecs + i;
+            if (!codec->declared &&
+                codec->format_version == format_version &&
+                strcmp(codec->type_name, name) == 0) {
+                match = codec;
+                break;
+            }
+        }
+        if (match == NULL) status = SYLVAN_ERR_INVALID;
+    }
+    free(name);
+
+    if (status == SYLVAN_OK) {
+        match->wire_type = wire_type;
+        match->declared = 1;
+    }
+    return status;
+}
+
+static int
+sylvan_serialization_read_mtbdd_custom_leaf_CALL(
+    lace_worker *lace, sylvan_serialization_reader *reader,
+    const sylvan_frame *frame)
+{
+    if (frame->payload_size < 24) return SYLVAN_ERR_INVALID;
+
+    uint8_t header[24];
+    int status = sylvan_framed_reader_read(
+        reader->stream, header, sizeof(header));
+    if (status != SYLVAN_OK) return status;
+
+    const uint64_t id = sylvan_load_u64(header);
+    const uint32_t wire_type = sylvan_load_u32(header + 8);
+    const uint32_t flags = sylvan_load_u32(header + 12);
+    const uint64_t size = sylvan_load_u64(header + 16);
+    struct sylvan_serialization_leaf_codec_entry *codec =
+        sylvan_serialization_reader_codec_by_wire(reader, wire_type);
+    if (id != (uint64_t)reader->nodes.count + 1 ||
+        codec == NULL || flags > 1 ||
+        size != frame->payload_size - 24 ||
+        (flags != 0 && size != 0)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    MTBDD leaf = mtbdd_invalid;
+    if (flags != 0) {
+        leaf = mtbdd_nan(codec->type);
+    } else {
+        status = codec->read(
+            codec->context, reader->stream, size, &leaf);
+        if (status > SYLVAN_OK) status = SYLVAN_ERR_CALLBACK;
+        if (status == SYLVAN_OK &&
+            sylvan_framed_reader_remaining(reader->stream) != 0) {
+            status = SYLVAN_ERR_CALLBACK;
+        }
+        if (status == SYLVAN_OK &&
+            (leaf == mtbdd_invalid || leaf == mtbdd_undefined ||
+             leaf == bdd_true || MTBDD_HASMARK(leaf) ||
+             !mtbdd_is_leaf(leaf) || mtbdd_is_nan(leaf) ||
+             mtbdd_leaf_type(leaf) != codec->type)) {
+            status = SYLVAN_ERR_CALLBACK;
+        }
+    }
+    if (status != SYLVAN_OK) return status;
+
+    status = sylvan_serialization_handle_add(&reader->nodes, leaf);
+    if (status != SYLVAN_OK) return status;
+    sylvan_gc_test(lace);
+    return SYLVAN_OK;
+}
+
 int
 sylvan_serialization_reader_create(
     sylvan_serialization_reader **destination,
@@ -1050,11 +1360,46 @@ sylvan_serialization_reader_create(
     return SYLVAN_OK;
 }
 
+int
+sylvan_serialization_reader_add_leaf_codec(
+    sylvan_serialization_reader *reader,
+    const sylvan_serialization_leaf_codec *codec)
+{
+    if (reader == NULL || codec == NULL || codec->type_name == NULL ||
+        codec->type_name[0] == '\0' || codec->read == NULL ||
+        reader->failed ||
+        sylvan_framed_reader_remaining(reader->stream) != 0) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    uint32_t type;
+    if (sylvan_mt_find_type(codec->type_name, &type) != SYLVAN_OK ||
+        type < 3) {
+        return SYLVAN_ERR_INVALID;
+    }
+    for (size_t i = 0; i < reader->codec_count; i++) {
+        if (reader->codecs[i].type == type &&
+            reader->codecs[i].format_version == codec->format_version) {
+            return SYLVAN_ERR_INVALID;
+        }
+    }
+
+    int status = sylvan_serialization_codec_reserve(
+        &reader->codecs, &reader->codec_capacity, reader->codec_count);
+    if (status != SYLVAN_OK) return status;
+    status = sylvan_serialization_codec_copy(
+        reader->codecs + reader->codec_count, codec, type);
+    if (status != SYLVAN_OK) return status;
+    reader->codec_count++;
+    return SYLVAN_OK;
+}
+
 void
 sylvan_serialization_reader_destroy(sylvan_serialization_reader *reader)
 {
     if (reader == NULL) return;
     sylvan_serialization_handle_clear(&reader->nodes);
+    sylvan_serialization_codec_clear(reader->codecs, reader->codec_count);
     free(reader);
 }
 
@@ -1087,6 +1432,13 @@ sylvan_serialization_reader_next_CALL(
                 lace, reader, &frame);
         } else if (frame.type == SYLVAN_SERIALIZATION_MTBDD_LEAF) {
             status = sylvan_serialization_read_mtbdd_leaf_CALL(
+                lace, reader, &frame);
+        } else if (frame.type == SYLVAN_SERIALIZATION_MTBDD_TYPE) {
+            status = sylvan_serialization_read_mtbdd_type(
+                reader, &frame);
+        } else if (frame.type ==
+                   SYLVAN_SERIALIZATION_MTBDD_CUSTOM_LEAF) {
+            status = sylvan_serialization_read_mtbdd_custom_leaf_CALL(
                 lace, reader, &frame);
         } else if (frame.type == SYLVAN_SERIALIZATION_ROOT) {
             if (frame.payload_size != 24) {

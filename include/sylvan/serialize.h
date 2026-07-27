@@ -166,6 +166,8 @@ int sylvan_stream_read_file(
 #define SYLVAN_SERIALIZATION_BDD_NODES UINT32_C(0x00001001)
 #define SYLVAN_SERIALIZATION_ROOT UINT32_C(0x00001002)
 #define SYLVAN_SERIALIZATION_MTBDD_LEAF UINT32_C(0x00001003)
+#define SYLVAN_SERIALIZATION_MTBDD_TYPE UINT32_C(0x00001004)
+#define SYLVAN_SERIALIZATION_MTBDD_CUSTOM_LEAF UINT32_C(0x00001005)
 #define SYLVAN_SERIALIZATION_APPLICATION UINT32_C(0x80000000)
 
 typedef enum sylvan_dd_family {
@@ -177,6 +179,37 @@ typedef enum sylvan_dd_family {
 
 typedef struct sylvan_serialization_writer sylvan_serialization_writer;
 typedef struct sylvan_serialization_reader sylvan_serialization_reader;
+
+/**
+ * Custom MTBDD leaf codec.
+ *
+ * <type_name> is the stable name registered in sylvan_mt_type_descriptor.
+ * <format_version> describes this codec's payload, independently of the
+ * enclosing stream version. The context remains caller-owned and must outlive
+ * every writer or reader to which the codec is added.
+ *
+ * For writing, <size> reports the exact payload size and <write> appends
+ * exactly that many bytes to <stream>. For reading, <read> consumes exactly
+ * <size> bytes and returns a leaf of the registered type in <result>.
+ * Callbacks use SYLVAN_OK or a negative status; positive results are treated
+ * as callback errors. Typed NaNs carry no payload and bypass the callbacks.
+ */
+typedef int (*sylvan_serialization_leaf_size_cb)(
+    void *context, MTBDD leaf, uint64_t *size);
+typedef int (*sylvan_serialization_leaf_write_cb)(
+    void *context, MTBDD leaf, sylvan_framed_writer *stream);
+typedef int (*sylvan_serialization_leaf_read_cb)(
+    void *context, sylvan_framed_reader *stream,
+    uint64_t size, MTBDD *result);
+
+typedef struct sylvan_serialization_leaf_codec {
+    const char *type_name;
+    uint32_t format_version;
+    void *context;
+    sylvan_serialization_leaf_size_cb size;
+    sylvan_serialization_leaf_write_cb write;
+    sylvan_serialization_leaf_read_cb read;
+} sylvan_serialization_leaf_codec;
 
 /**
  * One committed root returned by the incremental reader.
@@ -218,6 +251,16 @@ void sylvan_serialization_writer_destroy(
     sylvan_serialization_writer *writer);
 
 /**
+ * Add a custom-leaf codec to a writer.
+ *
+ * The type must already be registered through sylvan_mt_register_type.
+ * Registration copies the codec and its name. <size> and <write> are required.
+ */
+int sylvan_serialization_writer_add_leaf_codec(
+    sylvan_serialization_writer *writer,
+    const sylvan_serialization_leaf_codec *codec);
+
+/**
  * Incrementally write a BDD and commit it with <key>.
  *
  * A reader can return this root as soon as the root frame arrives; no later
@@ -232,7 +275,7 @@ static inline int sylvan_serialization_write_bdd(
  * Incrementally write an MTBDD and commit it with <key>.
  *
  * Integer, double, and fraction leaves, including their typed NaN values, are
- * supported. Custom leaves are rejected.
+ * supported. A custom leaf requires a matching writer codec.
  */
 static inline int sylvan_serialization_write_mtbdd(
     sylvan_serialization_writer *writer,
@@ -254,6 +297,16 @@ int sylvan_serialization_reader_create(
 
 void sylvan_serialization_reader_destroy(
     sylvan_serialization_reader *reader);
+
+/**
+ * Add a custom-leaf codec to a reader.
+ *
+ * The type must already be registered through sylvan_mt_register_type.
+ * Registration copies the codec and its name. <read> is required.
+ */
+int sylvan_serialization_reader_add_leaf_codec(
+    sylvan_serialization_reader *reader,
+    const sylvan_serialization_leaf_codec *codec);
 
 /**
  * Consume frames until the next committed DD root or the stream end marker.

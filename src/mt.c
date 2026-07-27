@@ -191,6 +191,20 @@ sylvan_mt_type_cache_id(uint32_t type)
     return type < cl_registry_count ? cl_registry[type].cache_id : 0;
 }
 
+int
+sylvan_mt_find_type(const char *name, uint32_t *destination)
+{
+    if (name == NULL || destination == NULL) return SYLVAN_ERR_INVALID;
+    for (size_t i = 3; i < cl_registry_count; i++) {
+        if (cl_registry[i].name != NULL &&
+            strcmp(cl_registry[i].name, name) == 0) {
+            *destination = (uint32_t)i;
+            return SYLVAN_OK;
+        }
+    }
+    return SYLVAN_ERR_INVALID;
+}
+
 uint32_t
 sylvan_mt_create_type(void)
 {

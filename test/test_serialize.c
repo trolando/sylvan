@@ -367,6 +367,138 @@ test_mtbdd_serialization(void)
     return 0;
 }
 
+struct scalar_codec_context {
+    uint32_t type;
+    unsigned int size_calls;
+    unsigned int write_calls;
+    unsigned int read_calls;
+};
+
+static int
+scalar_leaf_size(void *context, MTBDD leaf, uint64_t *size)
+{
+    struct scalar_codec_context *codec = context;
+    if (mtbdd_leaf_type(leaf) != codec->type || mtbdd_is_nan(leaf)) {
+        return SYLVAN_ERR_INVALID;
+    }
+    codec->size_calls++;
+    *size = 8;
+    return SYLVAN_OK;
+}
+
+static int
+scalar_leaf_write(
+    void *context, MTBDD leaf, sylvan_framed_writer *stream)
+{
+    struct scalar_codec_context *codec = context;
+    uint8_t bytes[8];
+    uint64_t value = mtbdd_leaf_value(leaf);
+    for (unsigned int i = 0; i < 8; i++) {
+        bytes[i] = (uint8_t)(value >> (8 * i));
+    }
+    codec->write_calls++;
+    return sylvan_framed_writer_append(stream, bytes, sizeof(bytes));
+}
+
+static int
+scalar_leaf_read(
+    void *context, sylvan_framed_reader *stream,
+    uint64_t size, MTBDD *result)
+{
+    struct scalar_codec_context *codec = context;
+    if (size != 8) return SYLVAN_ERR_INVALID;
+
+    uint8_t bytes[8];
+    int status = sylvan_framed_reader_read(
+        stream, bytes, sizeof(bytes));
+    if (status != SYLVAN_OK) return status;
+    uint64_t value = 0;
+    for (unsigned int i = 0; i < 8; i++) {
+        value |= (uint64_t)bytes[i] << (8 * i);
+    }
+    codec->read_calls++;
+    *result = mtbdd_leaf(codec->type, value);
+    return SYLVAN_OK;
+}
+
+static int
+test_custom_leaf_serialization(void)
+{
+    uint32_t type = UINT32_MAX;
+    const sylvan_mt_type_descriptor descriptor = {
+        "sylvan.test.scalar",
+        UINT64_C(0xd479c2f5a161054d),
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL
+    };
+    test_assert(sylvan_mt_register_type(
+        &type, &descriptor) == SYLVAN_OK);
+    uint32_t found = UINT32_MAX;
+    test_assert(sylvan_mt_find_type(
+        descriptor.name, &found) == SYLVAN_OK && found == type);
+
+    struct scalar_codec_context codec_context = {
+        type, 0, 0, 0
+    };
+    const sylvan_serialization_leaf_codec codec = {
+        descriptor.name, 7, &codec_context,
+        scalar_leaf_size, scalar_leaf_write, scalar_leaf_read
+    };
+
+    struct memory_stream stream = {
+        NULL, 0, 0, 0, SIZE_MAX
+    };
+    sylvan_framed_writer *framed_writer = NULL;
+    sylvan_serialization_writer *writer = NULL;
+    test_assert(sylvan_framed_writer_create(
+        &framed_writer, memory_write, &stream) == SYLVAN_OK);
+    test_assert(sylvan_serialization_writer_create(
+        &writer, framed_writer) == SYLVAN_OK);
+    test_assert(sylvan_serialization_writer_add_leaf_codec(
+        writer, &codec) == SYLVAN_OK);
+
+    MTBDD root = mtbdd_make_node(
+        6, mtbdd_leaf(type, UINT64_C(0x123456789abcdef0)),
+        mtbdd_nan(type));
+    mtbdd_protect(&root);
+    test_assert(sylvan_serialization_write_mtbdd(
+        writer, root, 201) == SYLVAN_OK);
+    test_assert(sylvan_framed_writer_finish(framed_writer) == SYLVAN_OK);
+    test_assert(
+        codec_context.size_calls == 1 &&
+        codec_context.write_calls == 1);
+
+    sylvan_framed_reader *framed_reader = NULL;
+    sylvan_serialization_reader *reader = NULL;
+    test_assert(sylvan_framed_reader_create(
+        &framed_reader, memory_read, &stream) == SYLVAN_OK);
+    test_assert(sylvan_serialization_reader_create(
+        &reader, framed_reader, NULL, NULL) == SYLVAN_OK);
+    test_assert(sylvan_serialization_reader_add_leaf_codec(
+        reader, &codec) == SYLVAN_OK);
+
+    sylvan_serialization_root decoded = {
+        SYLVAN_DD_BDD, UINT64_MAX, mtbdd_invalid
+    };
+    int has_root = -1;
+    test_assert(sylvan_serialization_reader_next(
+        reader, &decoded, &has_root) == SYLVAN_OK);
+    test_assert(
+        has_root == 1 && decoded.family == SYLVAN_DD_MTBDD &&
+        decoded.key == 201 && decoded.dd == root &&
+        codec_context.read_calls == 1);
+    test_assert(sylvan_serialization_reader_next(
+        reader, &decoded, &has_root) == SYLVAN_OK);
+    test_assert(has_root == 0);
+
+    sylvan_serialization_reader_destroy(reader);
+    sylvan_framed_reader_destroy(framed_reader);
+    sylvan_serialization_writer_destroy(writer);
+    sylvan_framed_writer_destroy(framed_writer);
+    mtbdd_unprotect(&root);
+    free(stream.data);
+    return 0;
+}
+
 int
 main(void)
 {
@@ -381,6 +513,7 @@ main(void)
     mtbdd_init();
     int result = test_bdd_serialization();
     if (result == 0) result = test_mtbdd_serialization();
+    if (result == 0) result = test_custom_leaf_serialization();
     sylvan_quit();
     lace_stop();
     return result;

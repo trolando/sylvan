@@ -23,6 +23,9 @@ TASK(int, sylvan_serialization_write_zdd,
      sylvan_serialization_writer*, writer,
      ZDD, dd, BDDSET, domain, uint64_t, key)
 
+TASK(int, sylvan_serialization_write_listdd,
+     sylvan_serialization_writer*, writer, LISTDD, dd, uint64_t, key)
+
 TASK(int, sylvan_serialization_reader_next,
      sylvan_serialization_reader*, reader,
      sylvan_serialization_root*, root, int*, has_root)

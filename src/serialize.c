@@ -374,8 +374,10 @@ struct sylvan_serialization_writer {
     sylvan_framed_writer *stream;
     struct sylvan_serialization_dictionary dictionary;
     struct sylvan_serialization_dictionary zdd_dictionary;
+    struct sylvan_serialization_dictionary listdd_dictionary;
     struct sylvan_serialization_handle_table roots;
     struct sylvan_serialization_handle_table zdd_roots;
+    struct sylvan_serialization_handle_table listdd_roots;
     struct sylvan_serialization_leaf_codec_entry *codecs;
     size_t codec_count;
     size_t codec_capacity;
@@ -388,6 +390,7 @@ struct sylvan_serialization_reader {
     void *context;
     struct sylvan_serialization_handle_table nodes;
     struct sylvan_serialization_handle_table zdd_nodes;
+    struct sylvan_serialization_handle_table listdd_nodes;
     struct sylvan_serialization_leaf_codec_entry *codecs;
     size_t codec_count;
     size_t codec_capacity;
@@ -886,6 +889,76 @@ sylvan_serialization_collect_zdd(
 }
 
 static int
+sylvan_serialization_collect_listdd(
+    struct sylvan_serialization_dictionary *dictionary, LISTDD root)
+{
+    size_t count = 0;
+    size_t capacity = 64;
+    struct sylvan_serialization_visit *stack =
+        malloc(capacity * sizeof(*stack));
+    if (stack == NULL) return SYLVAN_ERR_OOM;
+    stack[count++] = (struct sylvan_serialization_visit){root, 0};
+
+    int status = SYLVAN_OK;
+    while (count != 0) {
+        const struct sylvan_serialization_visit visit = stack[--count];
+        const LISTDD dd = visit.dd;
+        if (dd == listdd_empty || dd == listdd_empty_list ||
+            sylvan_serialization_dictionary_find(dictionary, dd) != 0) {
+            continue;
+        }
+        if (dd == listdd_invalid || MTBDD_HASMARK(dd)) {
+            status = SYLVAN_ERR_INVALID;
+            break;
+        }
+        if (visit.expanded) {
+            status = sylvan_serialization_dictionary_add(dictionary, dd);
+            if (status != SYLVAN_OK) break;
+            continue;
+        }
+
+        if (count > SIZE_MAX - 3) {
+            status = SYLVAN_ERR_OOM;
+            break;
+        }
+        if (count + 3 > capacity) {
+            size_t new_capacity = capacity * 2;
+            while (new_capacity < count + 3) {
+                if (new_capacity > SIZE_MAX / 2) {
+                    status = SYLVAN_ERR_OOM;
+                    break;
+                }
+                new_capacity *= 2;
+            }
+            if (status != SYLVAN_OK ||
+                new_capacity > SIZE_MAX / sizeof(*stack)) {
+                status = SYLVAN_ERR_OOM;
+                break;
+            }
+            struct sylvan_serialization_visit *grown = realloc(
+                stack, new_capacity * sizeof(*stack));
+            if (grown == NULL) {
+                status = SYLVAN_ERR_OOM;
+                break;
+            }
+            stack = grown;
+            capacity = new_capacity;
+        }
+
+        stack[count++] = (struct sylvan_serialization_visit){dd, 1};
+        stack[count++] = (struct sylvan_serialization_visit){
+            listdd_node_right(dd), 0
+        };
+        stack[count++] = (struct sylvan_serialization_visit){
+            listdd_node_down(dd), 0
+        };
+    }
+
+    free(stack);
+    return status;
+}
+
+static int
 sylvan_serialization_encode_reference(
     const struct sylvan_serialization_dictionary *dictionary,
     BDD dd,
@@ -920,6 +993,27 @@ sylvan_serialization_encode_zdd_reference(
     if (id == 0) return SYLVAN_ERR_INVALID;
     if (id > UINT64_MAX / 2) return SYLVAN_ERR_OVERFLOW;
     *result = id << 1;
+    return SYLVAN_OK;
+}
+
+static int
+sylvan_serialization_encode_listdd_reference(
+    const struct sylvan_serialization_dictionary *dictionary,
+    LISTDD dd, uint64_t *result)
+{
+    if (dd == listdd_empty || dd == listdd_empty_list) {
+        *result = dd;
+        return SYLVAN_OK;
+    }
+    if (dd == listdd_invalid || MTBDD_HASMARK(dd)) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    const uint64_t id =
+        sylvan_serialization_dictionary_find(dictionary, dd);
+    if (id == 0) return SYLVAN_ERR_INVALID;
+    if (id == UINT64_MAX) return SYLVAN_ERR_OVERFLOW;
+    *result = id + 1;
     return SYLVAN_OK;
 }
 
@@ -977,12 +1071,16 @@ sylvan_serialization_writer_destroy(sylvan_serialization_writer *writer)
     if (writer == NULL) return;
     sylvan_serialization_handle_clear(&writer->roots);
     sylvan_serialization_handle_clear(&writer->zdd_roots);
+    sylvan_serialization_handle_clear(&writer->listdd_roots);
     free(writer->dictionary.keys);
     free(writer->dictionary.ids);
     free(writer->dictionary.nodes);
     free(writer->zdd_dictionary.keys);
     free(writer->zdd_dictionary.ids);
     free(writer->zdd_dictionary.nodes);
+    free(writer->listdd_dictionary.keys);
+    free(writer->listdd_dictionary.ids);
+    free(writer->listdd_dictionary.nodes);
     sylvan_serialization_codec_clear(writer->codecs, writer->codec_count);
     free(writer);
 }
@@ -1373,6 +1471,95 @@ sylvan_serialization_write_zdd_CALL(
 }
 
 static int
+sylvan_serialization_write_listdd_node_batch(
+    sylvan_serialization_writer *writer, size_t first, size_t count)
+{
+    if (count == 0) return SYLVAN_OK;
+    if (count > (UINT64_MAX - 16) / 24) return SYLVAN_ERR_OVERFLOW;
+
+    uint8_t batch_header[16];
+    sylvan_store_u64(batch_header, (uint64_t)first + 1);
+    sylvan_store_u64(batch_header + 8, count);
+    int status = sylvan_framed_writer_begin(
+        writer->stream, SYLVAN_SERIALIZATION_LISTDD_NODES,
+        16 + (uint64_t)count * 24);
+    if (status == SYLVAN_OK) {
+        status = sylvan_framed_writer_append(
+            writer->stream, batch_header, sizeof(batch_header));
+    }
+
+    const size_t end = first + count;
+    for (size_t i = first; i < end && status == SYLVAN_OK; i++) {
+        const LISTDD node = writer->listdd_dictionary.nodes[i];
+        uint64_t down;
+        uint64_t right;
+        status = sylvan_serialization_encode_listdd_reference(
+            &writer->listdd_dictionary,
+            listdd_node_down(node), &down);
+        if (status == SYLVAN_OK) {
+            status = sylvan_serialization_encode_listdd_reference(
+                &writer->listdd_dictionary,
+                listdd_node_right(node), &right);
+        }
+        if (status != SYLVAN_OK) break;
+
+        uint8_t record[24] = {0};
+        if (listdd_is_copy_node(node)) {
+            sylvan_store_u32(record + 4, 1);
+        } else {
+            sylvan_store_u32(record, listdd_node_value(node));
+        }
+        sylvan_store_u64(record + 8, down);
+        sylvan_store_u64(record + 16, right);
+        status = sylvan_framed_writer_append(
+            writer->stream, record, sizeof(record));
+    }
+    return status;
+}
+
+int
+sylvan_serialization_write_listdd_CALL(
+    lace_worker *lace, sylvan_serialization_writer *writer,
+    LISTDD dd, uint64_t key)
+{
+    if (writer == NULL || writer->failed || dd == listdd_invalid ||
+        sylvan_framed_writer_remaining(writer->stream) != 0) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    int status = sylvan_serialization_handle_add(
+        &writer->listdd_roots, dd, SYLVAN_DD_LISTDD);
+    if (status != SYLVAN_OK) return status;
+    sylvan_gc_test(lace);
+
+    const size_t old_count = writer->listdd_dictionary.count;
+    status = sylvan_serialization_collect_listdd(
+        &writer->listdd_dictionary, dd);
+    if (status == SYLVAN_OK) {
+        status = sylvan_serialization_write_listdd_node_batch(
+            writer, old_count,
+            writer->listdd_dictionary.count - old_count);
+    }
+
+    uint64_t root_reference;
+    if (status == SYLVAN_OK) {
+        status = sylvan_serialization_encode_listdd_reference(
+            &writer->listdd_dictionary, dd, &root_reference);
+    }
+    if (status == SYLVAN_OK) {
+        uint8_t root_record[24] = {0};
+        sylvan_store_u32(root_record, SYLVAN_DD_LISTDD);
+        sylvan_store_u64(root_record + 8, key);
+        sylvan_store_u64(root_record + 16, root_reference);
+        status = sylvan_framed_writer_write(
+            writer->stream, SYLVAN_SERIALIZATION_ROOT,
+            root_record, sizeof(root_record));
+    }
+    if (status != SYLVAN_OK) writer->failed = 1;
+    return status;
+}
+
+static int
 sylvan_serialization_decode_reference(
     const struct sylvan_serialization_handle_table *nodes,
     uint64_t reference,
@@ -1404,6 +1591,23 @@ sylvan_serialization_decode_zdd_reference(
 
     const ZDD dd = sylvan_serialization_handle_get(nodes, id);
     if (dd == zdd_invalid) return SYLVAN_ERR_INVALID;
+    *result = dd;
+    return SYLVAN_OK;
+}
+
+static int
+sylvan_serialization_decode_listdd_reference(
+    const struct sylvan_serialization_handle_table *nodes,
+    uint64_t reference, LISTDD *result)
+{
+    if (reference <= 1) {
+        *result = reference;
+        return SYLVAN_OK;
+    }
+
+    const LISTDD dd =
+        sylvan_serialization_handle_get(nodes, reference - 1);
+    if (dd == listdd_invalid) return SYLVAN_ERR_INVALID;
     *result = dd;
     return SYLVAN_OK;
 }
@@ -1556,6 +1760,73 @@ sylvan_serialization_read_zdd_nodes_CALL(
                 &reader->zdd_nodes, node, SYLVAN_DD_ZDD);
         }
         zdd_refs_popptr(1);
+        if (status != SYLVAN_OK) return status;
+        sylvan_gc_test(lace);
+    }
+
+    return sylvan_framed_reader_remaining(reader->stream) == 0
+        ? SYLVAN_OK : SYLVAN_ERR_INVALID;
+}
+
+static int
+sylvan_serialization_read_listdd_nodes_CALL(
+    lace_worker *lace, sylvan_serialization_reader *reader,
+    const sylvan_frame *frame)
+{
+    uint8_t batch_header[16];
+    int status = sylvan_framed_reader_read(
+        reader->stream, batch_header, sizeof(batch_header));
+    if (status != SYLVAN_OK) return status;
+
+    const uint64_t first = sylvan_load_u64(batch_header);
+    const uint64_t count = sylvan_load_u64(batch_header + 8);
+    if (first != (uint64_t)reader->listdd_nodes.count + 1 ||
+        count > (UINT64_MAX - 16) / 24 ||
+        frame->payload_size != 16 + count * 24 ||
+        count > SIZE_MAX - reader->listdd_nodes.count) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    for (uint64_t i = 0; i < count; i++) {
+        uint8_t record[24];
+        status = sylvan_framed_reader_read(
+            reader->stream, record, sizeof(record));
+        if (status != SYLVAN_OK) return status;
+        const uint32_t value = sylvan_load_u32(record);
+        const uint32_t flags = sylvan_load_u32(record + 4);
+        if (flags > 1 || (flags != 0 && value != 0)) {
+            return SYLVAN_ERR_INVALID;
+        }
+
+        LISTDD down;
+        LISTDD right;
+        status = sylvan_serialization_decode_listdd_reference(
+            &reader->listdd_nodes,
+            sylvan_load_u64(record + 8), &down);
+        if (status == SYLVAN_OK) {
+            status = sylvan_serialization_decode_listdd_reference(
+                &reader->listdd_nodes,
+                sylvan_load_u64(record + 16), &right);
+        }
+        if (status != SYLVAN_OK) return status;
+
+        LISTDD node = listdd_invalid;
+        listdd_refs_pushptr(&node);
+        if (flags != 0) {
+            status = _listdd_try_make_copy_node(&node, down, right);
+        } else {
+            status = _listdd_try_make_node(
+                &node, value, down, right);
+        }
+        if (status == SYLVAN_OK &&
+            (node == listdd_empty || node == listdd_empty_list)) {
+            status = SYLVAN_ERR_INVALID;
+        }
+        if (status == SYLVAN_OK) {
+            status = sylvan_serialization_handle_add(
+                &reader->listdd_nodes, node, SYLVAN_DD_LISTDD);
+        }
+        listdd_refs_popptr(1);
         if (status != SYLVAN_OK) return status;
         sylvan_gc_test(lace);
     }
@@ -1732,6 +2003,7 @@ sylvan_serialization_reader_destroy(sylvan_serialization_reader *reader)
     if (reader == NULL) return;
     sylvan_serialization_handle_clear(&reader->nodes);
     sylvan_serialization_handle_clear(&reader->zdd_nodes);
+    sylvan_serialization_handle_clear(&reader->listdd_nodes);
     sylvan_serialization_codec_clear(reader->codecs, reader->codec_count);
     free(reader);
 }
@@ -1776,6 +2048,9 @@ sylvan_serialization_reader_next_CALL(
         } else if (frame.type == SYLVAN_SERIALIZATION_ZDD_NODES) {
             status = sylvan_serialization_read_zdd_nodes_CALL(
                 lace, reader, &frame);
+        } else if (frame.type == SYLVAN_SERIALIZATION_LISTDD_NODES) {
+            status = sylvan_serialization_read_listdd_nodes_CALL(
+                lace, reader, &frame);
         } else if (frame.type == SYLVAN_SERIALIZATION_ROOT) {
             if (frame.payload_size != 24 &&
                 frame.payload_size != 32) {
@@ -1790,13 +2065,15 @@ sylvan_serialization_reader_next_CALL(
                 }
                 if (status == SYLVAN_OK &&
                     (((family == SYLVAN_DD_BDD ||
-                       family == SYLVAN_DD_MTBDD) &&
+                       family == SYLVAN_DD_MTBDD ||
+                       family == SYLVAN_DD_LISTDD) &&
                       frame.payload_size != 24) ||
                      (family == SYLVAN_DD_ZDD &&
                       frame.payload_size != 32) ||
                      (family != SYLVAN_DD_BDD &&
                       family != SYLVAN_DD_MTBDD &&
-                      family != SYLVAN_DD_ZDD) ||
+                      family != SYLVAN_DD_ZDD &&
+                      family != SYLVAN_DD_LISTDD) ||
                      sylvan_load_u32(record + 4) != 0)) {
                     status = SYLVAN_ERR_INVALID;
                 }
@@ -1824,6 +2101,12 @@ sylvan_serialization_reader_next_CALL(
                             free(check.ids);
                             free(check.nodes);
                         }
+                    } else if (family == SYLVAN_DD_LISTDD) {
+                        status =
+                            sylvan_serialization_decode_listdd_reference(
+                                &reader->listdd_nodes,
+                                sylvan_load_u64(record + 16),
+                                (LISTDD*)&dd);
                     } else {
                         status = sylvan_serialization_decode_reference(
                             &reader->nodes,

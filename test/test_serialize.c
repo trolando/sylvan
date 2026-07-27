@@ -585,6 +585,98 @@ test_zdd_serialization(void)
     return 0;
 }
 
+static int
+test_listdd_serialization(void)
+{
+    LISTDD first = listdd_empty;
+    LISTDD second = listdd_empty;
+    LISTDD copy = listdd_invalid;
+    listdd_protect(&first);
+    listdd_protect(&second);
+    listdd_protect(&copy);
+
+    const uint32_t one[] = {1, 2, 3};
+    const uint32_t two[] = {1, 4, 3};
+    const uint32_t three[] = {5, 6, 7};
+    test_assert(listdd_add(
+        &first, first, one, 3) == SYLVAN_OK);
+    test_assert(listdd_add(
+        &first, first, two, 3) == SYLVAN_OK);
+    test_assert(listdd_add(
+        &second, first, three, 3) == SYLVAN_OK);
+    copy = listdd_make_copy_node(
+        listdd_empty_list, listdd_empty);
+
+    struct memory_stream stream = {
+        NULL, 0, 0, 0, SIZE_MAX
+    };
+    sylvan_framed_writer *framed_writer = NULL;
+    sylvan_serialization_writer *writer = NULL;
+    test_assert(sylvan_framed_writer_create(
+        &framed_writer, memory_write, &stream) == SYLVAN_OK);
+    test_assert(sylvan_serialization_writer_create(
+        &writer, framed_writer) == SYLVAN_OK);
+    test_assert(sylvan_serialization_write_listdd(
+        writer, first, 401) == SYLVAN_OK);
+
+    sylvan_framed_reader *framed_reader = NULL;
+    sylvan_serialization_reader *reader = NULL;
+    test_assert(sylvan_framed_reader_create(
+        &framed_reader, memory_read, &stream) == SYLVAN_OK);
+    test_assert(sylvan_serialization_reader_create(
+        &reader, framed_reader, NULL, NULL) == SYLVAN_OK);
+
+    sylvan_serialization_root root = {
+        SYLVAN_DD_BDD, UINT64_MAX, mtbdd_invalid, mtbdd_invalid
+    };
+    int has_root = -1;
+    test_assert(sylvan_serialization_reader_next(
+        reader, &root, &has_root) == SYLVAN_OK);
+    test_assert(
+        has_root == 1 && root.family == SYLVAN_DD_LISTDD &&
+        root.key == 401 && root.dd == first &&
+        root.domain == mtbdd_invalid);
+
+    test_assert(sylvan_serialization_write_listdd(
+        writer, second, 402) == SYLVAN_OK);
+    test_assert(sylvan_serialization_write_listdd(
+        writer, copy, 403) == SYLVAN_OK);
+    test_assert(sylvan_serialization_write_listdd(
+        writer, listdd_empty_list, 404) == SYLVAN_OK);
+    test_assert(sylvan_framed_writer_finish(framed_writer) == SYLVAN_OK);
+    sylvan_gc();
+
+    test_assert(sylvan_serialization_reader_next(
+        reader, &root, &has_root) == SYLVAN_OK);
+    test_assert(
+        has_root == 1 && root.family == SYLVAN_DD_LISTDD &&
+        root.key == 402 && root.dd == second);
+    test_assert(sylvan_serialization_reader_next(
+        reader, &root, &has_root) == SYLVAN_OK);
+    test_assert(
+        has_root == 1 && root.family == SYLVAN_DD_LISTDD &&
+        root.key == 403 && root.dd == copy &&
+        listdd_is_copy_node((LISTDD)root.dd));
+    test_assert(sylvan_serialization_reader_next(
+        reader, &root, &has_root) == SYLVAN_OK);
+    test_assert(
+        has_root == 1 && root.family == SYLVAN_DD_LISTDD &&
+        root.key == 404 && root.dd == listdd_empty_list);
+    test_assert(sylvan_serialization_reader_next(
+        reader, &root, &has_root) == SYLVAN_OK);
+    test_assert(has_root == 0);
+
+    sylvan_serialization_reader_destroy(reader);
+    sylvan_framed_reader_destroy(framed_reader);
+    sylvan_serialization_writer_destroy(writer);
+    sylvan_framed_writer_destroy(framed_writer);
+    listdd_unprotect(&copy);
+    listdd_unprotect(&second);
+    listdd_unprotect(&first);
+    free(stream.data);
+    return 0;
+}
+
 TASK(int, test_dd_serialization)
 
 int
@@ -595,6 +687,7 @@ test_dd_serialization_CALL(lace_worker *lace)
     if (result == 0) result = test_mtbdd_serialization();
     if (result == 0) result = test_custom_leaf_serialization();
     if (result == 0) result = test_zdd_serialization();
+    if (result == 0) result = test_listdd_serialization();
     return result;
 }
 
@@ -611,6 +704,7 @@ main(void)
     sylvan_init_package();
     mtbdd_init();
     zdd_init();
+    listdd_init();
     int result = test_dd_serialization();
     sylvan_quit();
     lace_stop();

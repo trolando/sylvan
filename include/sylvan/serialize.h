@@ -169,6 +169,7 @@ int sylvan_stream_read_file(
 #define SYLVAN_SERIALIZATION_MTBDD_TYPE UINT32_C(0x00001004)
 #define SYLVAN_SERIALIZATION_MTBDD_CUSTOM_LEAF UINT32_C(0x00001005)
 #define SYLVAN_SERIALIZATION_ZDD_NODES UINT32_C(0x00001006)
+#define SYLVAN_SERIALIZATION_LISTDD_NODES UINT32_C(0x00001007)
 #define SYLVAN_SERIALIZATION_APPLICATION UINT32_C(0x80000000)
 
 typedef enum sylvan_dd_family {
@@ -295,6 +296,16 @@ static inline int sylvan_serialization_write_zdd(
     sylvan_serialization_writer *writer,
     ZDD dd,
     BDDSET domain,
+    uint64_t key);
+
+/**
+ * Incrementally write a ListDD and commit it with <key>.
+ *
+ * Both ordinary value nodes and relation COPY nodes are preserved.
+ */
+static inline int sylvan_serialization_write_listdd(
+    sylvan_serialization_writer *writer,
+    LISTDD dd,
     uint64_t key);
 
 /**

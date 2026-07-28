@@ -89,61 +89,71 @@ void nodes_reset_region_CALL(lace_worker* lace)
  */
 static uint64_t claim_next_region(const nodes_table* dbs, uint64_t start_region)
 {
-    const uint64_t regions = dbs->table_size / (64u * 8u); // regions in table
-    const uint64_t words   = (regions + 63u) / 64u;        // bitmap1 word count
+    const uint64_t regions = dbs->table_size / (64u * 8u);
+    if (regions == 0) return UINT64_MAX;
 
-    // start word index and bit index
-    const uint64_t start_word = start_region / 64u;
+    start_region %= regions;
 
-    // Scan words
-    //for (uint64_t w_offset = 0; w_offset < words; ++w_offset) {
-    //    uint64_t w = (start_word + w_offset) % words;
-    for (uint64_t w = start_word; w < words;) {
-        _Atomic(uint64_t) *word = dbs->bitmap1 + w;
+    for (uint64_t offset = 0; offset < regions; offset++) {
+        const uint64_t region = (start_region + offset) % regions;
+        _Atomic(uint64_t)*ptr = dbs->bitmap1 + (region / 64u);
+        const uint64_t mask =
+            UINT64_C(0x8000000000000000) >> (region & 63u);
 
-        uint64_t v = atomic_load_explicit(word, memory_order_relaxed);
-        while (v != UINT64_MAX) {
-            // There is at least one free bit
-            int bit = ctz_uint64(~v); // least-significant free bit
-            uint64_t mask = UINT64_C(1) << bit;
+        uint64_t v = atomic_load_explicit(ptr, memory_order_relaxed);
+        for (;;) {
+            if (v & mask) break;
 
-            // Try to claim
             if (atomic_compare_exchange_weak_explicit(
-                         word, &v, v | mask,
-                         memory_order_acq_rel, memory_order_relaxed)) {
-                // Claimed successfully
-                return w * 64 + bit;
+                    ptr, &v, v | mask,
+                    memory_order_acq_rel, memory_order_relaxed)) {
+                return region;
             }
         }
-        w++;
     }
 
-    return UINT64_MAX; // full
+    return UINT64_MAX;
 }
 
 static uint64_t claim_data_bucket(const nodes_table* dbs)
 {
-    // First-time (or post-GC) init: everyone starts at region 0
-    if (my_region == UINT64_MAX) {
-        my_region = claim_next_region(dbs, 0);
-        if (my_region == UINT64_MAX) return UINT64_MAX;
-    }
-
     for (;;) {
-        // find empty bucket in region <my_region>
-        _Atomic(uint64_t)* ptr = dbs->bitmap2 + (my_region * 8u);
-        for (int i=0; i<8; i++) {
-            uint64_t v = atomic_load_explicit(ptr, memory_order_relaxed);
-            if (v != UINT64_MAX) {
-                int j = clz_uint64(~v);
-                *ptr |= UINT64_C(1) << (63 - j);
-                return (8 * my_region + i) * 64 + j;
+        if (my_region != UINT64_MAX) {
+            _Atomic(uint64_t)*ptr = dbs->bitmap2 + (my_region * 8u);
+
+            for (int i = 0; i < 8; i++) {
+                uint64_t v = atomic_load_explicit(ptr, memory_order_relaxed);
+                if (v != UINT64_MAX) {
+                    unsigned int j = clz_uint64(~v);
+                    atomic_fetch_or_explicit(
+                        ptr,
+                        UINT64_C(0x8000000000000000) >> j,
+                        memory_order_relaxed
+                    );
+                    return (8u * my_region + (uint64_t)i) * 64u +
+                           (uint64_t)j;
+                }
+                ptr++;
             }
-            ptr++;
+
+            uint64_t claimed = claim_next_region(dbs, my_region + 1u);
+            if (claimed == UINT64_MAX) return UINT64_MAX;
+            my_region = claimed;
+        } else {
+            const uint64_t regions = dbs->table_size / (64u * 8u);
+            uint64_t start_region = 0;
+            lace_worker *worker = lace_get_worker();
+
+            if (regions != 0 && worker != NULL) {
+                start_region =
+                    ((uint64_t)worker->worker * regions) /
+                    (uint64_t)lace_worker_count();
+            }
+
+            uint64_t claimed = claim_next_region(dbs, start_region);
+            if (claimed == UINT64_MAX) return UINT64_MAX;
+            my_region = claimed;
         }
-        uint64_t claimed = claim_next_region(dbs, my_region);
-        if (claimed == UINT64_MAX) return UINT64_MAX;
-        my_region = claimed;
     }
 }
 
@@ -151,8 +161,7 @@ static void release_data_bucket(const nodes_table* dbs, uint64_t index)
 {
     _Atomic(uint64_t)* ptr = dbs->bitmap2 + (index/64);
     uint64_t mask = UINT64_C(0x8000000000000000) >> (index&63);
-    atomic_fetch_and(ptr, ~mask);
-    // FIXME should not be seq_cst when just local, only when reinserting
+    atomic_fetch_and_explicit(ptr, ~mask, memory_order_relaxed);
 }
 
 static void set_custom_bucket(const nodes_table* dbs, uint64_t index, int on)

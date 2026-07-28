@@ -235,7 +235,14 @@ static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_
                 // Claim data bucket and write data
                 cidx = claim_data_bucket(dbs);
                 if (cidx == (uint64_t)-1) return 0;
-                if (custom) dbs->create_cb(&a, &b);
+                if (custom) {
+                    const int status = dbs->create_cb(&a, &b);
+                    if (status != 0) {
+                        release_data_bucket(dbs, cidx);
+                        *created = status;
+                        return 0;
+                    }
+                }
                 // FIXME ensure a acquire_release fence
                 uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*cidx;
                 d_ptr[0] = a;

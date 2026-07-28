@@ -38,6 +38,33 @@ find_colliding_keys(uint64_t *keys)
     }
 }
 
+static uint64_t
+custom_hash(uint64_t a, uint64_t b, uint64_t seed)
+{
+    return sylvan_tabhash16(a, b, seed);
+}
+
+static int
+custom_equals(uint64_t lhs_a, uint64_t lhs_b, uint64_t rhs_a, uint64_t rhs_b)
+{
+    return lhs_a == rhs_a && lhs_b == rhs_b;
+}
+
+static int
+custom_create_failure(uint64_t *a, uint64_t *b)
+{
+    (void)a;
+    (void)b;
+    return -7;
+}
+
+static void
+custom_destroy(uint64_t a, uint64_t b)
+{
+    (void)a;
+    (void)b;
+}
+
 int
 main(void)
 {
@@ -76,6 +103,18 @@ main(void)
     }
 
     nodes_free(table);
+
+    table = nodes_create(TEST_TABLE_SIZE, TEST_TABLE_SIZE);
+    nodes_set_custom(
+        table, custom_hash, custom_equals,
+        custom_create_failure, custom_destroy);
+    const size_t nodes_before_failure = nodes_count_nodes(table);
+    int created = 0;
+    test_assert(nodes_lookupc(table, 42, 24, &created) == 0);
+    test_assert(created == -7);
+    test_assert(nodes_count_nodes(table) == nodes_before_failure);
+    nodes_free(table);
+
     lace_stop();
 
     return 0;

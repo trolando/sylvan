@@ -209,7 +209,14 @@ static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_
         // Claim data bucket and write data
         created_idx = claim_data_bucket(dbs);
         if (created_idx == UINT64_MAX) return 0; // failed to claim a data bucket!!
-        if (custom) dbs->create_cb(&a, &b);
+        if (custom) {
+            const int status = dbs->create_cb(&a, &b);
+            if (status != 0) {
+                release_data_bucket(dbs, created_idx);
+                *created = status;
+                return 0;
+            }
+        }
         uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*created_idx;
         d_ptr[0] = a;
         d_ptr[1] = b;
@@ -256,7 +263,14 @@ static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_
                 // Claim data bucket and write data
                 created_idx = claim_data_bucket(dbs);
                 if (created_idx == UINT64_MAX) return 0; // failed to claim a data bucket!!
-                if (custom) dbs->create_cb(&a, &b);
+                if (custom) {
+                    const int status = dbs->create_cb(&a, &b);
+                    if (status != 0) {
+                        release_data_bucket(dbs, created_idx);
+                        *created = status;
+                        return 0;
+                    }
+                }
                 uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*created_idx;
                 d_ptr[0] = a;
                 d_ptr[1] = b;

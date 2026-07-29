@@ -1568,9 +1568,7 @@ mtbdd_map_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd,
         operation->map == NULL) {
         return SYLVAN_ERR_INVALID;
     }
-    if (operation->cache_id != 0 &&
-        (operation->cache_id < (UINT64_C(512) << 40) ||
-         (operation->cache_id & UINT64_C(0x000000ffffffffff)) != 0)) {
+    if (operation->cache_id != 0 && operation->cache_id < UINT64_C(512)) {
         return SYLVAN_ERR_INVALID;
     }
 
@@ -1749,9 +1747,7 @@ mtbdd_map_reduce_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd,
         return SYLVAN_ERR_INVALID;
     }
 
-    if (operation->cache_id != 0 &&
-        (operation->cache_id < (UINT64_C(512) << 40) ||
-         (operation->cache_id & UINT64_C(0x000000ffffffffff)) != 0)) {
+    if (operation->cache_id != 0 && operation->cache_id < UINT64_C(512)) {
         return SYLVAN_ERR_INVALID;
     }
 
@@ -1961,9 +1957,7 @@ mtbdd_combine_reduce_CALL(
         !mtbdd_is_leaf(operation->identity)) {
         return SYLVAN_ERR_INVALID;
     }
-    if (operation->cache_id != 0 &&
-        (operation->cache_id < (UINT64_C(512) << 40) ||
-         (operation->cache_id & UINT64_C(0x000000ffffffffff)) != 0)) {
+    if (operation->cache_id != 0 && operation->cache_id < UINT64_C(512)) {
         return SYLVAN_ERR_INVALID;
     }
 

@@ -76,7 +76,8 @@ void sylvan_iterator_destroy(sylvan_iterator *iterator);
  *
  * Memory usage:
  * Every node requires 24 bytes memory. (16 bytes data + 8 bytes table overhead)
- * Every operation cache entry requires 36 bytes memory. (32 bytes data + 4 bytes table overhead)
+ * Every operation cache entry requires 44 bytes memory. (32 bytes data +
+ * 8 bytes operation identifier + 4 bytes table overhead)
  */
 void sylvan_init_package(void);
 

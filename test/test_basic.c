@@ -4726,6 +4726,30 @@ test_cache()
     test_assert(cache_getused() == 0);
 
     /**
+     * Operation identifiers and all handle bits are exact cache-key words.
+     */
+
+    uint64_t value;
+    test_assert(cache_put_op(700, 11, 22, 33, 44));
+    test_assert(cache_get_op(700, 11, 22, 33, &value) && value == 44);
+    test_assert(!cache_get_op(701, 11, 22, 33, &value));
+
+    const uint64_t first_handle = UINT64_C(0x0000010000000011);
+    const uint64_t second_handle = UINT64_C(0x0000020000000022);
+    const uint64_t third_handle = UINT64_C(0x0000030000000033);
+    const uint64_t fourth_handle = UINT64_C(0x8000040000000044);
+    test_assert(cache_put4(
+        702, first_handle, second_handle, third_handle, fourth_handle, 55));
+    test_assert(cache_get4(
+        702, first_handle, second_handle, third_handle, fourth_handle, &value));
+    test_assert(value == 55);
+    test_assert(!cache_get4(
+        702, first_handle, second_handle ^ (UINT64_C(1) << 40),
+        third_handle, fourth_handle, &value));
+
+    cache_clear();
+
+    /**
      * Test cache for large number of random entries
      */
 

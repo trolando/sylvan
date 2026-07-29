@@ -50,6 +50,15 @@ int cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res);
 int cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res);
 
 /**
+ * Primitives with an exact, separately stored operation identifier.
+ *
+ * Keeping the operation identifier separate leaves all 64 bits of every
+ * decision-diagram handle available to the node representation.
+ */
+int cache_get_op(uint64_t opid, uint64_t a, uint64_t b, uint64_t c, uint64_t *res);
+int cache_put_op(uint64_t opid, uint64_t a, uint64_t b, uint64_t c, uint64_t res);
+
+/**
  * Primitives for cache get/put that use two buckets
  */
 int cache_get6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t f, uint64_t *res1, uint64_t *res2);
@@ -66,7 +75,7 @@ uint64_t cache_next_opid(void);
 static inline int SYLVAN_UNUSED
 cache_get3(uint64_t opid, uint64_t dd, uint64_t d2, uint64_t d3, uint64_t *res)
 {
-    return cache_get(dd | opid, d2, d3, res);
+    return cache_get_op(opid, dd, d2, d3, res);
 }
 
 /**
@@ -75,11 +84,7 @@ cache_get3(uint64_t opid, uint64_t dd, uint64_t d2, uint64_t d3, uint64_t *res)
 static inline int SYLVAN_UNUSED
 cache_get4(uint64_t opid, uint64_t dd, uint64_t dd2, uint64_t dd3, uint64_t dd4, uint64_t *res)
 {
-    uint64_t p2 = dd2 | ((dd4 & 0x00000000000fffff) << 40); // 20 bits and complement bit
-    if (dd4 & 0x8000000000000000) p2 |= 0x4000000000000000;
-    uint64_t p3 = dd3 | ((dd4 & 0x000000fffff00000) << 20); // 20 bits
-
-    return cache_get3(opid, dd, p2, p3, res);
+    return cache_get6(opid, dd, dd2, dd3, dd4, 0, res, NULL);
 }
 
 /**
@@ -88,7 +93,7 @@ cache_get4(uint64_t opid, uint64_t dd, uint64_t dd2, uint64_t dd3, uint64_t dd4,
 static inline int SYLVAN_UNUSED
 cache_put3(uint64_t opid, uint64_t dd, uint64_t d2, uint64_t d3, uint64_t res)
 {
-    return cache_put(dd | opid, d2, d3, res);
+    return cache_put_op(opid, dd, d2, d3, res);
 }
 
 /**
@@ -97,11 +102,7 @@ cache_put3(uint64_t opid, uint64_t dd, uint64_t d2, uint64_t d3, uint64_t res)
 static inline int SYLVAN_UNUSED
 cache_put4(uint64_t opid, uint64_t dd, uint64_t dd2, uint64_t dd3, uint64_t dd4, uint64_t res)
 {
-    uint64_t p2 = dd2 | ((dd4 & 0x00000000000fffff) << 40); // 20 bits and complement bit
-    if (dd4 & 0x8000000000000000) p2 |= 0x4000000000000000;
-    uint64_t p3 = dd3 | ((dd4 & 0x000000fffff00000) << 20); // 20 bits
-
-    return cache_put3(opid, dd, p2, p3, res);
+    return cache_put6(opid, dd, dd2, dd3, dd4, 0, res, 0);
 }
 /**
  * Functions for Sylvan for cache management

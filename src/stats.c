@@ -320,8 +320,8 @@ sylvan_stats_report(FILE *target)
             to_h(24ULL * nodes_get_size(nodes), buf);
             to_h(24ULL * nodes_get_max_size(nodes), buf2);
             fprintf(target, "%-20s %s (max real) of %s (allocated virtual memory).\n", "Memory (nodes)", buf, buf2);
-            to_h(36ULL * cache_getsize(), buf);
-            to_h(36ULL * cache_getmaxsize(), buf2);
+            to_h(44ULL * cache_getsize(), buf);
+            to_h(44ULL * cache_getmaxsize(), buf2);
             fprintf(target, "%-20s %s (max real) of %s (allocated virtual memory).\n", "Memory (cache)", buf, buf2);
         }
         i++;

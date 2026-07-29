@@ -341,7 +341,7 @@ sylvan_set_limits(size_t memorycap, int table_ratio, int initial_ratio)
         max_c <<= -table_ratio;
     }
 
-    size_t cur = max_t * 24 + max_c * 36;
+    size_t cur = max_t * 24 + max_c * 44;
     if (cur > memorycap) {
         fprintf(stderr, "sylvan_set_limits: memory cap incompatible with requested table ratio\n");
     }

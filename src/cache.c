@@ -24,9 +24,10 @@
 /**
  * This cache is designed to store a,b,c->res, with a,b,c,res 64-bit integers.
  *
- * Each cache bucket takes 32 bytes, 2 per cache line.
+ * Each cache bucket takes 32 bytes for its operands and result, plus 8 bytes
+ * for an exact operation identifier.
  * Each cache status bucket takes 4 bytes, 16 per cache line.
- * Therefore, size 2^N = 36*(2^N) bytes.
+ * Therefore, size 2^N = 44*(2^N) bytes.
  */
 
 typedef struct cache6_entry {
@@ -58,6 +59,7 @@ static size_t             cache_max;          // power of 2
 static size_t             cache_mask;         // cache_size-1
 #endif
 static cache_entry*      cache_table;
+static uint64_t*         cache_op;
 static uint32_t*          cache_status;
 
 static _Atomic(uint64_t)  next_opid;
@@ -65,7 +67,7 @@ static _Atomic(uint64_t)  next_opid;
 uint64_t
 cache_next_opid(void)
 {
-    return atomic_fetch_add(&next_opid, 1LL<<40);
+    return atomic_fetch_add(&next_opid, 1);
 }
 
 // status: 0x80000000 - bitlock
@@ -76,11 +78,12 @@ static inline uint64_t rotl64(uint64_t x, unsigned k) {
     return (x << k) | (x >> (64 - k));
 }
 
-static inline uint64_t cache_hash(uint64_t a, uint64_t b, uint64_t c)
+static inline uint64_t
+cache_hash_op(uint64_t opid, uint64_t a, uint64_t b, uint64_t c)
 {
-    uint64_t h = a ^ rotl64(b, 21) ^ rotl64(c, 43);
+    uint64_t h = opid ^ rotl64(a, 13) ^ rotl64(b, 31) ^ rotl64(c, 47);
     h ^= h >> 17;
-    h *= 0x9E3779B97F4A7C15ULL; // golden ratio constant
+    h *= UINT64_C(0x9e3779b97f4a7c15);
     h ^= h >> 31;
     return h;
 }
@@ -163,16 +166,18 @@ cache_put6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t 
 }
 
 int
-cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
+cache_get_op(
+    uint64_t opid, uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
 {
-    const uint64_t hash = cache_hash(a, b, c);
+    const uint64_t hash = cache_hash_op(opid, a, b, c);
 #if CACHE_MASK
-    _Atomic(uint32_t) *s_bucket = (_Atomic(uint32_t)*)cache_status + (hash & cache_mask);
-    cache_entry* bucket = cache_table + (hash & cache_mask);
+    const size_t index = hash & cache_mask;
 #else
-    _Atomic(uint32_t) *s_bucket = (_Atomic(uint32_t)*)cache_status + (hash % cache_size);
-    cache_entry* bucket = cache_table + (hash % cache_size);
+    const size_t index = hash % cache_size;
 #endif
+    _Atomic(uint32_t) *s_bucket =
+        (_Atomic(uint32_t)*)cache_status + index;
+    cache_entry* bucket = cache_table + index;
     const uint32_t s = atomic_load_explicit(s_bucket, memory_order_relaxed);
     // abort if locked or if part of a 2-part cache entry
     if (s & 0xc0000000) return 0;
@@ -180,7 +185,8 @@ cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
     if ((s ^ (hash>>32)) & 0x3fff0000) return 0;
     atomic_thread_fence(memory_order_acquire); // prevent LoadLoad reordering
     // abort if key different
-    if (bucket->a != a || bucket->b != b || bucket->c != c) return 0;
+    if (cache_op[index] != opid ||
+        bucket->a != a || bucket->b != b || bucket->c != c) return 0;
     *res = bucket->res;
     atomic_thread_fence(memory_order_acquire); // prevent LoadLoad reordering
     // abort if status field changed after compiler_barrier()
@@ -188,16 +194,18 @@ cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
 }
 
 int
-cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
+cache_put_op(
+    uint64_t opid, uint64_t a, uint64_t b, uint64_t c, uint64_t res)
 {
-    const uint64_t hash = cache_hash(a, b, c);
+    const uint64_t hash = cache_hash_op(opid, a, b, c);
 #if CACHE_MASK
-    _Atomic(uint32_t) *s_bucket = (_Atomic(uint32_t)*)cache_status + (hash & cache_mask);
-    cache_entry* bucket = cache_table + (hash & cache_mask);
+    const size_t index = hash & cache_mask;
 #else
-    _Atomic(uint32_t) *s_bucket = (_Atomic(uint32_t)*)cache_status + (hash % cache_size);
-    cache_entry* bucket = cache_table + (hash % cache_size);
+    const size_t index = hash % cache_size;
 #endif
+    _Atomic(uint32_t) *s_bucket =
+        (_Atomic(uint32_t)*)cache_status + index;
+    cache_entry* bucket = cache_table + index;
     uint32_t s = atomic_load_explicit(s_bucket, memory_order_relaxed);
     // abort if locked
     if (s & 0x80000000) return 0;
@@ -208,6 +216,7 @@ cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
     const uint32_t new_s = ((s+1) & 0x0000ffff) | hash_mask;
     if (!atomic_compare_exchange_weak_explicit(s_bucket, &s, new_s | 0x80000000, memory_order_acq_rel, memory_order_relaxed)) return 0;
     // cas succesful: write data
+    cache_op[index] = opid;
     bucket->a = a;
     bucket->b = b;
     bucket->c = c;
@@ -215,6 +224,18 @@ cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
     // unlock status field
     atomic_store_explicit(s_bucket, new_s, memory_order_release);
     return 1;
+}
+
+int
+cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
+{
+    return cache_get_op(0, a, b, c, res);
+}
+
+int
+cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
+{
+    return cache_put_op(0, a, b, c, res);
 }
 
 
@@ -244,19 +265,21 @@ cache_create(size_t _cache_size, size_t _max_size)
     }
 
     cache_table = (cache_entry*)sylvan_alloc_aligned(cache_max * sizeof(struct cache_entry));
+    cache_op = (uint64_t*)sylvan_alloc_aligned(cache_max * sizeof(*cache_op));
     cache_status = (uint32_t*)sylvan_alloc_aligned(cache_max * sizeof(uint32_t));
-    if (cache_table == 0 || cache_status == 0) {
+    if (cache_table == 0 || cache_op == 0 || cache_status == 0) {
         fprintf(stderr, "cache_create: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
     }
 
-    next_opid = 512LL << 40;
+    next_opid = 512;
 }
 
 void
 cache_free(void)
 {
     sylvan_free_aligned(cache_table, cache_max * sizeof(struct cache_entry));
+    sylvan_free_aligned(cache_op, cache_max * sizeof(*cache_op));
     sylvan_free_aligned(cache_status, cache_max * sizeof(uint32_t));
 }
 

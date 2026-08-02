@@ -87,7 +87,8 @@ void nodes_set_size(nodes_table* dbs, size_t size)
         dbs->mask = dbs->table_size - 1;
 #endif
         /* Set threshold: number of cache lines to probe before giving up on node insertion */
-        dbs->threshold = 192 - 2 * ctz_uint64(dbs->table_size);
+        const int threshold = 192 - 2 * (int)ctz_uint64(dbs->table_size);
+        atomic_store_explicit(&dbs->threshold, (int16_t)threshold, memory_order_relaxed);
     }
 }
 
@@ -97,6 +98,7 @@ TASK(void, nodes_reset_region)
 
 void nodes_reset_region_CALL(lace_worker* lace)
 {
+    (void)lace;
     // we don't actually need Lace, but it's a Lace task to run for initialisation
     my_region = UINT64_MAX; // no region
 }
@@ -225,6 +227,7 @@ static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_
     const uint64_t masked_hash = hash_rehash & MASK_HASH;
     uint64_t idx, last, cidx = 0;
     int i=0;
+    const int threshold = atomic_load_explicit(&dbs->threshold, memory_order_relaxed);
 
 #if LLMSSET_MASK
     last = idx = hash_rehash & dbs->mask;
@@ -287,7 +290,7 @@ static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_
         // find next idx on probe sequence
         idx = (idx & CL_MASK) | ((idx+1) & CL_MASK_R);
         if (idx == last) {
-            if (++i == atomic_load_explicit(&dbs->threshold, memory_order_relaxed)) {
+            if (++i == threshold) {
                 // failed to find empty spot in probe sequence
                 if (cidx != 0) {
                     if (custom) dbs->destroy_cb(a, b);
@@ -331,8 +334,6 @@ int nodes_rehash_bucket(nodes_table* dbs, uint64_t d_idx)
     else hash_rehash = sylvan_tabhash16(a, b, hash_rehash);
     const uint64_t step = ((hash_rehash >> 20) | 1) * CL_WORDS;
     const uint64_t new_v = (hash_rehash & MASK_HASH) | d_idx;
-    int i=0;
-
     uint64_t idx, last;
 #if LLMSSET_MASK
     last = idx = hash_rehash & dbs->mask;
@@ -356,12 +357,6 @@ int nodes_rehash_bucket(nodes_table* dbs, uint64_t d_idx)
         // find next idx on probe sequence
         idx = (idx & CL_MASK) | ((idx+1) & CL_MASK_R);
         if (idx == last) {
-            if (++i == atomic_load_explicit(&dbs->threshold, memory_order_relaxed)) {
-                // failed to find empty spot in probe sequence
-                // solution: increase probe sequence length...
-                atomic_fetch_add_explicit(&dbs->threshold, 1, memory_order_relaxed);
-            }
-
             // go to next cache line in probe sequence
             hash_rehash += step;
 
@@ -466,6 +461,7 @@ void nodes_free(nodes_table* dbs)
 
 void nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
 {
+    (void)lace;
     sylvan_clear_aligned((void*)dbs->bitmap1, region_bitmap_size(dbs->max_size));
     sylvan_clear_aligned((void*)dbs->bitmap2, dbs->max_size / 8);
     sylvan_clear_aligned((void*)dbs->table, dbs->max_size * 8);

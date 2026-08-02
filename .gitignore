@@ -8,6 +8,7 @@
 
 # CMake files
 build/
+/build-msvc/
 cmake-build-*/
 out/
 

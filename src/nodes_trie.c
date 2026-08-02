@@ -554,27 +554,33 @@ size_t nodes_count_nodes_CALL(lace_worker* lace, nodes_table* dbs)
     return nodes_count_nodes_par_CALL(lace, dbs, 0, dbs->table_size);
 }
 
-TASK(void, nodes_destroy_par, nodes_table*, dbs, size_t, first, size_t, count)
+TASK(void, nodes_destroy_par, nodes_table*, dbs, size_t, first_word, size_t, word_count)
 
-void nodes_destroy_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first, size_t count)
+void nodes_destroy_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first_word, size_t word_count)
 {
-    if (count > 1024) {
-        size_t split = count/2;
-        nodes_destroy_par_SPAWN(lace, dbs, first, split);
-        nodes_destroy_par_CALL(lace, dbs, first + split, count - split);
+    if (word_count > 16) {
+        size_t split = word_count/2;
+        nodes_destroy_par_SPAWN(lace, dbs, first_word, split);
+        nodes_destroy_par_CALL(lace, dbs, first_word + split, word_count - split);
         nodes_destroy_par_SYNC(lace);
     } else {
-        for (size_t k=first; k<first+count; k++) {
-            _Atomic(uint64_t)* ptr2 = dbs->bitmap2 + (k/64);
-            uint64_t *ptrc = dbs->bitmapc + (k/64);
-            uint64_t mask = UINT64_C(0x8000000000000000) >> (k&63);
+        for (size_t word=first_word; word<first_word+word_count; word++) {
+            const uint64_t marked = atomic_load_explicit(dbs->bitmap2 + word, memory_order_relaxed);
+            const uint64_t custom = dbs->bitmapc[word];
+            uint64_t dead = custom & ~marked;
 
-            // if not marked but is custom
-            if ((*ptr2 & mask) == 0 && (*ptrc & mask)) {
-                uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*k;
-                dbs->destroy_cb(d_ptr[0], d_ptr[1]);
-                *ptrc &= ~mask;
+            while (dead != 0) {
+                const unsigned int bit = clz_uint64(dead);
+                const size_t index = word * 64 + bit;
+                const uint64_t mask = UINT64_C(0x8000000000000000) >> bit;
+                if (index < dbs->table_size) {
+                    uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*index;
+                    dbs->destroy_cb(d_ptr[0], d_ptr[1]);
+                }
+                dead &= ~mask;
             }
+
+            dbs->bitmapc[word] = custom & marked;
         }
     }
 }
@@ -582,7 +588,7 @@ void nodes_destroy_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first, s
 void nodes_cleanup_custom_CALL(lace_worker* lace, nodes_table* dbs)
 {
     if (dbs->destroy_cb == NULL) return; // no custom function
-    nodes_destroy_par_CALL(lace, dbs, 0, dbs->table_size);
+    nodes_destroy_par_CALL(lace, dbs, 0, (dbs->table_size + 63) / 64);
 }
 
 /**

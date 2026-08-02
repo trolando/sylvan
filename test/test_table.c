@@ -65,6 +65,24 @@ custom_destroy(uint64_t a, uint64_t b)
     (void)b;
 }
 
+static size_t custom_destroy_count;
+
+static int
+custom_create(uint64_t *a, uint64_t *b)
+{
+    (void)a;
+    (void)b;
+    return 0;
+}
+
+static void
+custom_destroy_counted(uint64_t a, uint64_t b)
+{
+    (void)a;
+    (void)b;
+    custom_destroy_count++;
+}
+
 int
 main(void)
 {
@@ -113,6 +131,32 @@ main(void)
     test_assert(nodes_lookupc(table, 42, 24, &created) == 0);
     test_assert(created == -7);
     test_assert(nodes_count_nodes(table) == nodes_before_failure);
+    nodes_free(table);
+
+    enum { custom_node_count = 128 };
+    uint64_t custom_indices[custom_node_count];
+    table = nodes_create(TEST_TABLE_SIZE, TEST_TABLE_SIZE);
+    nodes_set_custom(
+        table, custom_hash, custom_equals,
+        custom_create, custom_destroy_counted);
+    for (uint64_t i = 0; i < custom_node_count; i++) {
+        created = 0;
+        custom_indices[i] = nodes_lookupc(
+            table, UINT64_C(0x4000000000000000) | i, i, &created);
+        test_assert(custom_indices[i] > 1 && created == 1);
+    }
+
+    nodes_clear(table);
+    for (size_t i = 0; i < custom_node_count; i += 2) {
+        nodes_mark_rec(table, custom_indices[i]);
+    }
+    custom_destroy_count = 0;
+    nodes_cleanup_custom(table);
+    test_assert(custom_destroy_count == custom_node_count / 2);
+
+    nodes_clear(table);
+    nodes_cleanup_custom(table);
+    test_assert(custom_destroy_count == custom_node_count);
     nodes_free(table);
 
     lace_stop();

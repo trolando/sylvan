@@ -113,7 +113,7 @@ static uint64_t claim_next_region(const nodes_table* dbs, uint64_t start_region)
 
             if (atomic_compare_exchange_weak_explicit(
                     ptr, &v, v | mask,
-                    memory_order_acq_rel, memory_order_relaxed)) {
+                    memory_order_relaxed, memory_order_relaxed)) {
                 return region;
             }
         }
@@ -132,11 +132,9 @@ static uint64_t claim_data_bucket(const nodes_table* dbs)
                 uint64_t v = atomic_load_explicit(ptr, memory_order_relaxed);
                 if (v != UINT64_MAX) {
                     unsigned int j = clz_uint64(~v);
-                    atomic_fetch_or_explicit(
-                        ptr,
-                        UINT64_C(0x8000000000000000) >> j,
-                        memory_order_relaxed
-                    );
+                    const uint64_t mask =
+                        UINT64_C(0x8000000000000000) >> j;
+                    atomic_store_explicit(ptr, v | mask, memory_order_relaxed);
                     return (8u * my_region + (uint64_t)i) * 64u +
                            (uint64_t)j;
                 }
@@ -168,7 +166,8 @@ static void release_data_bucket(const nodes_table* dbs, uint64_t index)
 {
     _Atomic(uint64_t)* ptr = dbs->bitmap2 + (index/64);
     uint64_t mask = UINT64_C(0x8000000000000000) >> (index&63);
-    atomic_fetch_and_explicit(ptr, ~mask, memory_order_relaxed);
+    uint64_t v = atomic_load_explicit(ptr, memory_order_relaxed);
+    atomic_store_explicit(ptr, v & ~mask, memory_order_relaxed);
 }
 
 static void set_custom_bucket(const nodes_table* dbs, uint64_t index, int on)

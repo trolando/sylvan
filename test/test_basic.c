@@ -4747,7 +4747,9 @@ test_cache()
         702, first_handle, second_handle ^ (UINT64_C(1) << 40),
         third_handle, fourth_handle, &value));
 
+    const uint64_t opid_before_clear = cache_next_opid();
     cache_clear();
+    test_assert(cache_next_opid() == opid_before_clear + 1);
 
     /**
      * Test cache for large number of random entries

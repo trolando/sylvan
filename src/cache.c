@@ -296,17 +296,29 @@ cache_free(void)
 void
 cache_clear(void)
 {
-    // a bit silly, but this works just fine, and does not require writing 0 everywhere...
-    cache_free();
-    cache_create(cache_size, cache_max);
+    /* A zero status makes the corresponding payload unreachable. */
+    sylvan_clear_aligned(cache_status, cache_size * sizeof(*cache_status));
 }
 
 void
 cache_setsize(size_t size)
 {
-    // easy solution
-    cache_free();
-    cache_create(size, cache_max);
+    if (size == 0 || size > cache_max) {
+        fprintf(stderr, "cache_setsize: Table size must be nonzero and <= max size!\n");
+        exit(1);
+    }
+#if CACHE_MASK
+    if (!IS_POWER_OF_TWO(size)) {
+        fprintf(stderr, "cache_setsize: Table size must be a power of 2!\n");
+        exit(1);
+    }
+#endif
+
+    cache_size = size;
+#if CACHE_MASK
+    cache_mask = cache_size - 1;
+#endif
+    cache_clear();
 }
 
 size_t

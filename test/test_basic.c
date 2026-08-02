@@ -4750,6 +4750,7 @@ test_cache()
     const uint64_t opid_before_clear = cache_next_opid();
     cache_clear();
     test_assert(cache_next_opid() == opid_before_clear + 1);
+    test_assert(cache_getused() == 0);
 
     /**
      * Test cache for large number of random entries

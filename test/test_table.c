@@ -9,7 +9,7 @@
 
 #include "test_assert.h"
 
-#define TEST_TABLE_SIZE 4096
+#define TEST_TABLE_SIZE 512
 #define TEST_CACHE_LINE_WORDS (SYLVAN_CACHE_LINE_SIZE / sizeof(uint64_t))
 #define TEST_COLLIDING_KEYS (TEST_CACHE_LINE_WORDS + 1)
 

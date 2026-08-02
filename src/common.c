@@ -306,8 +306,8 @@ sylvan_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cachesiz
         exit(1);
     }
 
-    if (max_tablesize > 0x0000040000000000) {
-        fprintf(stderr, "sylvan_set_sizes error: tablesize must be <= 42 bits!\n");
+    if (max_tablesize > UINT64_C(0x0000010000000000)) {
+        fprintf(stderr, "sylvan_set_sizes error: tablesize must be <= 40 bits!\n");
         exit(1);
     }
 
@@ -346,7 +346,7 @@ sylvan_set_limits(size_t memorycap, int table_ratio, int initial_ratio)
         fprintf(stderr, "sylvan_set_limits: memory cap incompatible with requested table ratio\n");
     }
 
-    while (2*cur < memorycap && max_t < 0x0000040000000000) {
+    while (2*cur < memorycap && max_t < UINT64_C(0x0000010000000000)) {
         max_t *= 2;
         max_c *= 2;
         cur *= 2;

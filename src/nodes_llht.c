@@ -24,7 +24,7 @@
 
 /**
  * Lockless hash table (set) to store 16-byte keys.
- * Each unique key is associated with a 42-bit number.
+ * Each unique key is associated with a 40-bit number.
  *
  * The set has support for stop-the-world garbage collection.
  * Methods nodes_clear, nodes_mark and nodes_rehash implement garbage collection.
@@ -54,6 +54,13 @@ typedef struct nodes_table
     nodes_destroy_cb   destroy_cb;   // custom destroy function
     _Atomic(int16_t)   threshold;    // number of iterations for insertion until returning error
 } nodes_table;
+
+static size_t
+region_bitmap_size(size_t table_size)
+{
+    const size_t regions = table_size / 512u;
+    return ((regions + 63u) / 64u) * sizeof(uint64_t);
+}
 
 void* nodes_get_pointer(const nodes_table* dbs, size_t index)
 {
@@ -248,7 +255,7 @@ static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_
                 d_ptr[0] = a;
                 d_ptr[1] = b;
             }
-            if (atomic_compare_exchange_strong_explicit(bucket, &v, masked_hash | cidx, memory_order_release, memory_order_acquire)) {
+            if (atomic_compare_exchange_strong_explicit(bucket, &v, masked_hash | cidx, memory_order_acq_rel, memory_order_acquire)) {
                 if (custom) set_custom_bucket(dbs, cidx, custom);
                 *created = 1;
                 return cidx;
@@ -415,7 +422,7 @@ nodes_table* nodes_create(size_t initial_size, size_t max_size)
        Overhead of bitmap2: 1 bit per bucket.
        Overhead of bitmapc: 1 bit per bucket. */
 
-    dbs->bitmap1 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(dbs->max_size / (512*8));
+    dbs->bitmap1 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(region_bitmap_size(dbs->max_size));
     dbs->bitmap2 = (_Atomic(uint64_t)*)sylvan_alloc_aligned((dbs->max_size / 64) * sizeof(*dbs->bitmap2));
     dbs->bitmapc = (uint64_t*)sylvan_alloc_aligned(dbs->max_size / 8);
 
@@ -452,7 +459,7 @@ void nodes_free(nodes_table* dbs)
 {
     sylvan_free_aligned((void*)dbs->table, dbs->max_size * sizeof(*dbs->table));
     sylvan_free_aligned(dbs->data, dbs->max_size * 2 * sizeof(uint64_t));
-    sylvan_free_aligned((void*)dbs->bitmap1, dbs->max_size / (512 * 8));
+    sylvan_free_aligned((void*)dbs->bitmap1, region_bitmap_size(dbs->max_size));
     sylvan_free_aligned((void*)dbs->bitmap2, (dbs->max_size / 64) * sizeof(*dbs->bitmap2));
     sylvan_free_aligned(dbs->bitmapc, dbs->max_size / 8);
     sylvan_free_aligned(dbs, sizeof(struct nodes_table));
@@ -460,7 +467,7 @@ void nodes_free(nodes_table* dbs)
 
 void nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    sylvan_clear_aligned((void*)dbs->bitmap1, dbs->max_size / (512*8));
+    sylvan_clear_aligned((void*)dbs->bitmap1, region_bitmap_size(dbs->max_size));
     sylvan_clear_aligned((void*)dbs->bitmap2, dbs->max_size / 8);
     sylvan_clear_aligned((void*)dbs->table, dbs->max_size * 8);
 

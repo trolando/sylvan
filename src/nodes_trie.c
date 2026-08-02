@@ -48,6 +48,13 @@ typedef struct nodes_table
     nodes_destroy_cb   destroy_cb;   // custom destroy function
 } nodes_table;
 
+static size_t
+region_bitmap_size(size_t table_size)
+{
+    const size_t regions = table_size / 512u;
+    return ((regions + 63u) / 64u) * sizeof(uint64_t);
+}
+
 void* nodes_get_pointer(const nodes_table* dbs, size_t index)
 {
     return dbs->data + index * 16;
@@ -396,7 +403,7 @@ nodes_table* nodes_create(size_t initial_size, size_t max_size)
        Overhead of bitmap2: 1 bit per bucket.
        Overhead of bitmapc: 1 bit per bucket. */
 
-    dbs->bitmap1 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(dbs->max_size / (512*8));
+    dbs->bitmap1 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(region_bitmap_size(dbs->max_size));
     dbs->bitmap2 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(dbs->max_size / 8);
     dbs->bitmapc = (uint64_t*)sylvan_alloc_aligned(dbs->max_size / 8);
 
@@ -433,7 +440,7 @@ void nodes_free(nodes_table* dbs)
     sylvan_free_aligned((void*)dbs->data, dbs->max_size * 16);
     sylvan_free_aligned((void*)dbs->first, dbs->max_size * 8);
     sylvan_free_aligned((void*)dbs->next, dbs->max_size * 16);
-    sylvan_free_aligned((void*)dbs->bitmap1, dbs->max_size / (512*8));
+    sylvan_free_aligned((void*)dbs->bitmap1, region_bitmap_size(dbs->max_size));
     sylvan_free_aligned((void*)dbs->bitmap2, dbs->max_size / 8);
     sylvan_free_aligned((void*)dbs->bitmapc, dbs->max_size / 8);
     sylvan_free_aligned(dbs, sizeof(struct nodes_table));
@@ -442,7 +449,7 @@ void nodes_free(nodes_table* dbs)
 void nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
 {
     (void)lace;
-    sylvan_clear_aligned((void*)dbs->bitmap1, dbs->max_size / (512*8));
+    sylvan_clear_aligned((void*)dbs->bitmap1, region_bitmap_size(dbs->max_size));
     sylvan_clear_aligned((void*)dbs->bitmap2, dbs->max_size / 8);
     sylvan_clear_aligned((void*)dbs->first, dbs->max_size * 8);
     sylvan_clear_aligned((void*)dbs->next, dbs->max_size * 16);

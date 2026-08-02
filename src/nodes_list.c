@@ -479,6 +479,7 @@ void nodes_mark_rec_CALL(lace_worker* lace, const nodes_table* dbs, uint64_t ind
             nodes_mark_rec_SPAWN(lace, dbs, b & 0x000000ffffffffff);
             nodes_mark_rec_CALL(lace, dbs, a & 0x000000ffffffffff);
             nodes_mark_rec_SYNC(lace);
+            return;
         }
     }
 }

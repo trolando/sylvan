@@ -212,6 +212,10 @@ endif()
 
 # ── Installation ─────────────────────────────────────────────────────────────
 
+if(NOT SYLVAN_INSTALL)
+    return()
+endif()
+
 include(GNUInstallDirs)
 
 install(TARGETS sylvan

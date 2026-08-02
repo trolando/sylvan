@@ -31,6 +31,7 @@ option(BUILD_TESTING              "Build Sylvan tests"          ${PROJECT_IS_TOP
 option(SYLVAN_BUILD_EXAMPLES      "Build Sylvan examples"       ${PROJECT_IS_TOP_LEVEL})
 option(SYLVAN_BUILD_BENCHMARKS    "Build Sylvan microbenchmarks"                     OFF)
 option(SYLVAN_BUILD_DOCS          "Build Sylvan documentation"                      OFF)
+option(SYLVAN_INSTALL             "Generate Sylvan installation rules" ${PROJECT_IS_TOP_LEVEL})
 
 # Enable C++ only for the optional bindings and their test/example
 if(SYLVAN_BUILD_CPP)
@@ -182,6 +183,7 @@ if(NOT sylvan_IS_TOP_LEVEL)
         SYLVAN_BUILD_EXAMPLES
         SYLVAN_BUILD_BENCHMARKS
         SYLVAN_BUILD_DOCS
+        SYLVAN_INSTALL
     )
 endif()
 

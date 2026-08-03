@@ -72,12 +72,22 @@ sylvan_status_string(int status)
 static int gc_enabled = 1;
 
 /**
+ * Number of consecutive collections that reclaimed almost nothing from a
+ * full-size nodes table, and the flag that stops collecting once there have
+ * been too many. See gc_note_progress below.
+ */
+static int gc_unproductive;
+static int gc_wedged;
+
+/**
  * Enable garbage collection (both automatic and manual).
  */
 void
 sylvan_gc_enable(void)
 {
     gc_enabled = 1;
+    gc_unproductive = 0;
+    gc_wedged = 0;
 }
 
 /**
@@ -205,30 +215,135 @@ next_size(size_t current_size)
 }
 
 /**
- * Resizing heuristic that always doubles the tables when running gc (until max).
+ * Bookkeeping of the collection that is currently running.
+ *
+ * These are written by sylvan_gc_go before it calls the main hook and are only
+ * read while the world is stopped, so they need no synchronisation. They let
+ * the resizing heuristics see how much the collection they are part of
+ * actually reclaimed, which is the signal the heuristics below are built on.
+ */
+static size_t gc_table_before;  /* nodes table size the collection ran on */
+static size_t gc_used_before;   /* occupied buckets before marking */
+static size_t gc_live_after;    /* occupied buckets after marking */
+
+/**
+ * How much the collection currently running reclaimed, as a fraction of the
+ * nodes table it ran on. Returns nonzero if that is at least `percent`.
+ */
+static int
+gc_reclaimed_at_least(size_t percent)
+{
+    if (gc_table_before == 0) return 0;
+    const size_t reclaimed =
+        gc_used_before > gc_live_after ? gc_used_before - gc_live_after : 0;
+    return reclaimed >= (gc_table_before / 100) * percent;
+}
+
+/**
+ * WHY THE HEURISTICS BELOW GROW IN MORE THAN ONE STEP
+ *
+ * Every collection throws away the *entire* operation cache (see
+ * sylvan_gc_go). That is not an incidental cost: it is by far the dominant
+ * one. Marking and rehashing are linear in the table, but losing memoisation
+ * means work that was already done has to be done again, which allocates nodes
+ * again, which brings the next collection forward, which throws the cache away
+ * again. A run that collects often does not merely pay for the collections; it
+ * can fail to make progress at all.
+ *
+ * The number of collections a run performs is therefore the quantity worth
+ * minimising, and when a workload is churn dominated that number is decided
+ * entirely by the size of the nodes table. If a collection reclaims most of
+ * the table, then almost everything in the table was temporary: the table is
+ * acting as a nursery, and the next collection will happen once another
+ * table_size nodes have been allocated. Growing by a single doubling per
+ * collection then costs log2(total_allocations / initial_size) collections.
+ * That is not a small number, because sylvan_set_limits' initial_ratio
+ * deliberately starts the table three to four orders of magnitude below the
+ * maximum: ten to twelve collections just to reach the size the run was always
+ * going to need, each one discarding the cache.
+ *
+ * So when a collection reclaimed at least SYLVAN_GC_CHURN_PERCENT of the
+ * table, we take SYLVAN_GC_CHURN_DOUBLINGS doublings at once instead of one.
+ * This collapses the ramp-up to two or three collections.
+ *
+ * Growing early is close to free in resident memory. nodes_create reserves the
+ * maximum size in virtual memory up front, and sylvan_clear_aligned hands the
+ * physical pages back to the operating system on every collection, so a table
+ * that is larger than the workload needs only costs the pages the workload
+ * actually touches. What it does cost is locality: a sparsely filled table
+ * spreads probes over more cache lines. That is why the growth is tied to
+ * observed churn rather than applied unconditionally.
+ */
+
+/* Fraction of the table a collection must reclaim to count as churn
+ * dominated, in percent. */
+#ifndef SYLVAN_GC_CHURN_PERCENT
+#define SYLVAN_GC_CHURN_PERCENT 50
+#endif
+
+/* Number of doublings to take at once when a collection was churn dominated. */
+#ifndef SYLVAN_GC_CHURN_DOUBLINGS
+#define SYLVAN_GC_CHURN_DOUBLINGS 4
+#endif
+
+/* Fraction of the table below which a collection counts as having failed to
+ * relieve the pressure, in percent. The conservative heuristic grows on this
+ * even when its "more than half is live" test says otherwise, so that it
+ * cannot settle into an equilibrium where every collection reclaims just
+ * enough to continue and never enough to stop collecting. */
+#ifndef SYLVAN_GC_STARVED_PERCENT
+#define SYLVAN_GC_STARVED_PERCENT 25
+#endif
+
+/**
+ * Apply up to `doublings` growth steps to `current`, never exceeding `max`.
+ */
+static size_t
+gc_grown_size(size_t current, size_t max, int doublings)
+{
+    while (doublings-- > 0 && current < max) {
+        const size_t next = next_size(current);
+        current = next > max ? max : next;
+    }
+    return current;
+}
+
+/**
+ * How many doublings this collection has earned.
+ */
+static int
+gc_growth_doublings(void)
+{
+    return gc_reclaimed_at_least(SYLVAN_GC_CHURN_PERCENT)
+        ? SYLVAN_GC_CHURN_DOUBLINGS : 1;
+}
+
+/**
+ * Resizing heuristic that always grows the tables when running gc (until max).
  * The nodes table and operation cache are both resized until their maximum size.
+ * A collection that reclaimed most of the table grows it by several doublings
+ * at once; see the commentary above.
  */
 void sylvan_gc_aggressive_resize_CALL(lace_worker* lace)
 {
     (void)lace;
+    const int doublings = gc_growth_doublings();
+
     size_t nodes_size = nodes_get_size(nodes);
     size_t nodes_max = nodes_get_max_size(nodes);
     if (nodes_size < nodes_max) {
-        size_t new_size = next_size(nodes_size);
-        if (new_size > nodes_max) new_size = nodes_max;
-        nodes_set_size(nodes, new_size);
+        nodes_set_size(nodes, gc_grown_size(nodes_size, nodes_max, doublings));
     }
     size_t cache_size = cache_getsize();
     size_t cache_max = cache_getmaxsize();
     if (cache_size < cache_max) {
-        size_t new_size = next_size(cache_size);
-        if (new_size > cache_max) new_size = cache_max;
-        cache_setsize(new_size);
+        cache_setsize(gc_grown_size(cache_size, cache_max, doublings));
     }
 }
 
 /**
- * Resizing heuristic that only resizes when more than 50% is marked.
+ * Resizing heuristic that only resizes when more than 50% is marked, or when
+ * the collection failed to reclaim a worthwhile fraction of the table.
  * The operation cache is only resized if the nodes table is resized.
  */
 void sylvan_gc_normal_resize_CALL(lace_worker* lace)
@@ -237,22 +352,79 @@ void sylvan_gc_normal_resize_CALL(lace_worker* lace)
     size_t nodes_size = nodes_get_size(nodes);
     size_t nodes_max = nodes_get_max_size(nodes);
     if (nodes_size < nodes_max) {
-        size_t marked = nodes_count_nodes(nodes);
-        if (marked*2 > nodes_size) {
-            size_t new_size = next_size(nodes_size);
-            if (new_size > nodes_max) new_size = nodes_max;
-            nodes_set_size(nodes, new_size);
+        const size_t marked = gc_live_after;
+        if (marked*2 > nodes_size ||
+            !gc_reclaimed_at_least(SYLVAN_GC_STARVED_PERCENT)) {
+            const int doublings = gc_growth_doublings();
+            nodes_set_size(nodes, gc_grown_size(nodes_size, nodes_max, doublings));
 
             // also increase the operation cache
             size_t cache_size = cache_getsize();
             size_t cache_max = cache_getmaxsize();
             if (cache_size < cache_max) {
-                new_size = next_size(cache_size);
-                if (new_size > cache_max) new_size = cache_max;
-                cache_setsize(new_size);
+                cache_setsize(gc_grown_size(cache_size, cache_max, doublings));
             }
         }
     }
+}
+
+/**
+ * GIVING UP HONESTLY
+ *
+ * When the tables are at their maximum and every collection reclaims almost
+ * nothing, Sylvan cannot make progress: each collection frees just enough for
+ * the one insertion that triggered it, the retry succeeds, and the table is
+ * full again immediately. Nothing in that loop ever reaches the "Unique table
+ * full" path, so the run grinds on indefinitely instead of reporting that it
+ * needs a larger memory budget.
+ *
+ * After SYLVAN_GC_MAX_UNPRODUCTIVE consecutive collections that ran on a
+ * full-size table that really was full and reclaimed less than
+ * SYLVAN_GC_UNPRODUCTIVE_PERCENT of it, we stop collecting. The next
+ * allocation failure then takes the existing table-full path and reports the
+ * size the run could not fit in. The defaults are deliberately generous: a
+ * workload that is merely slow keeps running, only one that is genuinely stuck
+ * stops. sylvan_gc_enable() clears the state for callers that want to retry
+ * after dropping references themselves.
+ */
+
+/* Fraction of a full-size table a collection must reclaim to count as
+ * productive, in percent. */
+#ifndef SYLVAN_GC_UNPRODUCTIVE_PERCENT
+#define SYLVAN_GC_UNPRODUCTIVE_PERCENT 5
+#endif
+
+/* Occupancy at which the table counts as full, in percent. Collections of a
+ * table that still had room say nothing about whether progress is possible:
+ * they reclaim little because there was little to reclaim. */
+#ifndef SYLVAN_GC_FULL_PERCENT
+#define SYLVAN_GC_FULL_PERCENT 90
+#endif
+
+/* Number of consecutive unproductive collections tolerated before Sylvan
+ * stops collecting and lets the allocation failure be reported. */
+#ifndef SYLVAN_GC_MAX_UNPRODUCTIVE
+#define SYLVAN_GC_MAX_UNPRODUCTIVE 12
+#endif
+
+static void
+gc_note_progress(void)
+{
+    if (gc_table_before < nodes_get_max_size(nodes) ||
+        gc_used_before < (gc_table_before / 100) * SYLVAN_GC_FULL_PERCENT ||
+        gc_reclaimed_at_least(SYLVAN_GC_UNPRODUCTIVE_PERCENT)) {
+        gc_unproductive = 0;
+        return;
+    }
+
+    if (++gc_unproductive < SYLVAN_GC_MAX_UNPRODUCTIVE) return;
+
+    gc_wedged = 1;
+    fprintf(stderr,
+            "sylvan_gc: %d consecutive collections of the full %zu-bucket nodes "
+            "table each reclaimed less than %d%% of it; giving up on garbage "
+            "collection so that the next allocation failure is reported\n",
+            gc_unproductive, gc_table_before, SYLVAN_GC_UNPRODUCTIVE_PERCENT);
 }
 
 /**
@@ -277,11 +449,15 @@ void sylvan_gc_go_CALL(lace_worker* lace)
      */
     sylvan_clear_cache_CALL(lace);
 
-#if SYLVAN_GC_DIAGNOSTICS
-    const size_t diag_used = nodes_count_nodes_CALL(lace, nodes);
-#endif
+    /* Occupied buckets before marking. Together with the number that survive
+     * marking this tells the resizing heuristic how much this collection
+     * reclaimed, which is what it sizes the tables on. */
+    gc_used_before = nodes_count_nodes_CALL(lace, nodes);
 
     sylvan_clear_and_mark_CALL(lace);
+
+    gc_live_after = nodes_count_nodes_CALL(lace, nodes);
+    gc_table_before = nodes_get_size(nodes);
 
 #if SYLVAN_GC_DIAGNOSTICS
     const uint64_t diag_seq = atomic_fetch_add(&gc_diag_count, 1) + 1;
@@ -291,13 +467,13 @@ void sylvan_gc_go_CALL(lace_worker* lace)
         fprintf(stderr, "[sylvan-gc] sylvan_gc_go_CALL=%p\n",
                 (void*)(uintptr_t)&sylvan_gc_go_CALL);
     }
-    const size_t diag_live = nodes_count_nodes_CALL(lace, nodes);
-    const size_t diag_table_before = nodes_get_size(nodes);
     const size_t diag_cache_before = cache_getsize();
 #endif
 
     // call hooks for resizing and all that
     main_hook(lace);
+
+    gc_note_progress();
 
 #if SYLVAN_GC_DIAGNOSTICS
     {
@@ -310,10 +486,10 @@ void sylvan_gc_go_CALL(lace_worker* lace)
                 diag_seq, diag_now - gc_diag_epoch,
                 gc_diag_previous == 0.0 ? 0.0 : diag_now - gc_diag_previous,
                 gc_diag_caller,
-                diag_used, diag_live, diag_used - diag_live,
-                100.0 * (double)(diag_used - diag_live) / (double)diag_table_before,
-                diag_table_before, diag_table_after, nodes_get_max_size(nodes),
-                100.0 * (double)diag_live / (double)diag_table_before,
+                gc_used_before, gc_live_after, gc_used_before - gc_live_after,
+                100.0 * (double)(gc_used_before - gc_live_after) / (double)gc_table_before,
+                gc_table_before, diag_table_after, nodes_get_max_size(nodes),
+                100.0 * (double)gc_live_after / (double)gc_table_before,
                 diag_cache_before, diag_cache_after, cache_getmaxsize());
         fflush(stderr);
         gc_diag_previous = diag_now;
@@ -335,7 +511,7 @@ void sylvan_gc_go_CALL(lace_worker* lace)
  */
 void sylvan_gc_CALL(lace_worker* lace)
 {
-    if (gc_enabled) {
+    if (gc_enabled && !gc_wedged) {
         int zero = 0;
         if (atomic_compare_exchange_strong(&gc, &zero, 1)) {
 #if SYLVAN_GC_DIAGNOSTICS
@@ -468,6 +644,11 @@ sylvan_init_package(void)
 
     /* Initialize garbage collection */
     gc = 0;
+    gc_unproductive = 0;
+    gc_wedged = 0;
+    gc_table_before = 0;
+    gc_used_before = 0;
+    gc_live_after = 0;
 
     // FIXME better configuration!!
 #if SYLVAN_AGGRESSIVE_RESIZE

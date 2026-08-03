@@ -29,19 +29,27 @@
  *
  * Decision nodes are routed to independently sized subtables. Leaves, maps,
  * ListDD nodes, and legacy direct users have auxiliary subtables. Each node
- * has one immutable 24-bit-fingerprint/40-bit-next link. Chains only grow by
- * prepending between stop-the-world collections.
+ * has one immutable link with a 3-bit owner class, 21-bit hash fingerprint,
+ * and 40-bit next index. Chains only grow by prepending between stop-the-world
+ * collections.
  *
- * Descriptor membership is the owner enumeration: GC retains the old head
- * arrays long enough to count and rebuild marked nodes into replacement head
- * arrays. No identity bits or per-node owner array are needed.
+ * GC estimates ordinary populations from contiguous head arrays, retains an
+ * exact chain walk for initial/saturated tables, and rebuilds normal marked
+ * nodes by scanning the node bitmap. Explicitly routed non-canonical decision
+ * entries use the old chains as a compatibility fallback. No identity bits or
+ * per-node owner array are needed.
  *
  * WARNING: Like the other nodes tables, allocation currently uses a global
  * thread-local region. Do not use multiple nodes tables concurrently.
  */
 
 #define MASK_INDEX UINT64_C(0x000000ffffffffff)
-#define MASK_HASH  UINT64_C(0xffffff0000000000)
+#define MASK_HASH  UINT64_C(0x1fffff0000000000)
+#define MASK_OWNER UINT64_C(0xe000000000000000)
+#define MASK_LINK  (MASK_HASH | MASK_INDEX)
+#define OWNER_RAW_DECISION UINT64_C(0xa000000000000000)
+#define LLCHST_HEAD_LOG2_MASK UINT32_C(0x0000003f)
+#define LLCHST_HAS_RAW        UINT32_C(0x80000000)
 
 #define LLCHST_INDEX_BITS       40u
 #define LLCHST_LEVEL_BITS       24u
@@ -77,10 +85,12 @@ static_assert(SYLVAN_LLCHST_DENSE_LEVELS <= NODES_SUBTABLE_LEAF,
               "SYLVAN_LLCHST_DENSE_LEVELS exceeds the level space");
 static_assert(SYLVAN_LLCHST_HEAD_SLACK_LOG2 < 16,
               "SYLVAN_LLCHST_HEAD_SLACK_LOG2 is unreasonable");
+static_assert(LLCHST_AUX_COUNT <= 7,
+              "LLCHST owner tag has three bits");
 
 typedef struct llchst_subtable {
     _Atomic(uintptr_t) heads;
-    uint32_t head_log2;
+    _Atomic(uint32_t) head_log2;
     uint32_t route;
 } llchst_subtable;
 
@@ -126,7 +136,9 @@ node_bitmap_size(size_t table_size)
 static inline size_t
 head_count(const llchst_subtable* subtable)
 {
-    return (size_t)1 << subtable->head_log2;
+    const uint32_t value = atomic_load_explicit(
+        &subtable->head_log2, memory_order_relaxed);
+    return (size_t)1 << (value & LLCHST_HEAD_LOG2_MASK);
 }
 
 static inline _Atomic(uint64_t)*
@@ -140,7 +152,8 @@ static void
 initialize_descriptor(llchst_subtable* subtable, uint32_t route)
 {
     atomic_init(&subtable->heads, (uintptr_t)0);
-    subtable->head_log2 = SYLVAN_LLCHST_INITIAL_HEAD_LOG2;
+    atomic_init(
+        &subtable->head_log2, SYLVAN_LLCHST_INITIAL_HEAD_LOG2);
     subtable->route = route;
 }
 
@@ -404,11 +417,32 @@ hash_key(const nodes_table* dbs, uint32_t route,
 }
 
 static inline uint64_t
+owner_tag(uint32_t route, uint64_t b)
+{
+    if (route < NODES_SUBTABLE_LEAF) {
+        if ((uint32_t)(b >> LLCHST_INDEX_BITS) == route) return 0;
+        return OWNER_RAW_DECISION;
+    }
+    return (uint64_t)(route - NODES_SUBTABLE_LEAF + 1u) << 61;
+}
+
+static inline uint32_t
+owner_route(uint64_t tagged_next, const uint64_t* data)
+{
+    const uint32_t owner = (uint32_t)(
+        (tagged_next & MASK_OWNER) >> 61);
+    if (owner == 0) {
+        return (uint32_t)(data[1] >> LLCHST_INDEX_BITS);
+    }
+    return NODES_SUBTABLE_LEAF + owner - 1u;
+}
+
+static inline uint64_t
 find_in_chain(const nodes_table* dbs, uint64_t link, uint64_t stop,
               uint64_t masked_hash, uint64_t a, uint64_t b, int custom)
 {
-    while (link != stop) {
-        assert(stop == 0 || link != 0);
+    while ((link & MASK_LINK) != stop) {
+        assert(stop == 0 || (link & MASK_LINK) != 0);
         const uint64_t index = link & MASK_INDEX;
         if ((link & MASK_HASH) == masked_hash) {
             const uint64_t* data =
@@ -463,13 +497,20 @@ nodes_lookup2(const nodes_table* dbs, uint32_t route,
     data[0] = a;
     data[1] = b;
     const uint64_t candidate_link = masked_hash | candidate;
+    const uint64_t candidate_owner = owner_tag(route, b);
 
     for (;;) {
-        dbs->next[candidate] = observed;
+        dbs->next[candidate] =
+            candidate_owner | (observed & MASK_LINK);
         uint64_t expected = observed;
         if (atomic_compare_exchange_strong_explicit(
                 head, &expected, candidate_link,
                 memory_order_acq_rel, memory_order_acquire)) {
+            if (candidate_owner == OWNER_RAW_DECISION) {
+                atomic_fetch_or_explicit(
+                    &subtable->head_log2, LLCHST_HAS_RAW,
+                    memory_order_relaxed);
+            }
             if (custom) set_custom_bucket(dbs, candidate, 1);
             *created = 1;
             return candidate;
@@ -697,10 +738,12 @@ struct llchst_rebuild_entry {
     llchst_subtable* subtable;
     _Atomic(uint64_t)* old_heads;
     size_t old_count;
-    size_t live;
+    int active;
     size_t population;
     size_t target;
+    _Atomic(uint64_t)* new_heads;
     uint32_t new_log2;
+    int has_raw;
 };
 
 struct llchst_measure_context {
@@ -708,7 +751,41 @@ struct llchst_measure_context {
     const _Atomic(uint64_t)* heads;
     _Atomic(size_t) live;
     _Atomic(size_t) population;
+    _Atomic(int) has_raw;
 };
+
+struct llchst_head_measure_context {
+    const _Atomic(uint64_t)* heads;
+    _Atomic(size_t) occupied;
+};
+
+TASK(void, llchst_measure_heads,
+     struct llchst_head_measure_context*, context,
+     size_t, first, size_t, count)
+
+void
+llchst_measure_heads_CALL(
+    lace_worker* lace, struct llchst_head_measure_context* context,
+    size_t first, size_t count)
+{
+    if (count > LLCHST_REBUILD_GRAIN && lace_worker_count() > 1) {
+        const size_t split = count / 2u;
+        llchst_measure_heads_SPAWN(
+            lace, context, first, split);
+        llchst_measure_heads_CALL(
+            lace, context, first + split, count - split);
+        llchst_measure_heads_SYNC(lace);
+        return;
+    }
+
+    size_t occupied = 0;
+    for (size_t i = first; i < first + count; i++) {
+        occupied += atomic_load_explicit(
+            context->heads + i, memory_order_relaxed) != 0;
+    }
+    atomic_fetch_add_explicit(
+        &context->occupied, occupied, memory_order_relaxed);
+}
 
 TASK(void, llchst_measure_chains,
      struct llchst_measure_context*, context,
@@ -731,6 +808,7 @@ llchst_measure_chains_CALL(
 
     size_t live = 0;
     size_t population = 0;
+    int has_raw = 0;
     for (size_t i = first; i < first + count; i++) {
         uint64_t link = atomic_load_explicit(
             context->heads + i, memory_order_relaxed);
@@ -738,31 +816,95 @@ llchst_measure_chains_CALL(
             const uint64_t index = link & MASK_INDEX;
             live += (size_t)nodes_is_marked(context->dbs, index);
             population++;
-            link = context->dbs->next[index];
+            const uint64_t next = context->dbs->next[index];
+            has_raw |= (next & MASK_OWNER) == OWNER_RAW_DECISION;
+            link = next;
         }
     }
     atomic_fetch_add_explicit(
         &context->live, live, memory_order_relaxed);
     atomic_fetch_add_explicit(
         &context->population, population, memory_order_relaxed);
+    if (has_raw) {
+        atomic_store_explicit(
+            &context->has_raw, 1, memory_order_relaxed);
+    }
+}
+
+static size_t
+estimate_population(size_t heads, size_t occupied)
+{
+    if (occupied == 0) return 0;
+    if (occupied == heads) {
+        if (heads > SIZE_MAX / 8u) return SIZE_MAX;
+        return heads * 8u;
+    }
+
+    /* Sixteen terms of -log(1-x) stay within a few percent below the exact
+       measurement threshold and avoid a libm dependency in the backend. */
+    const long double x =
+        (long double)occupied / (long double)heads;
+    long double term = x;
+    long double series = 0.0L;
+    for (unsigned int i = 1; i <= 16; i++) {
+        series += term / (long double)i;
+        term *= x;
+    }
+    const long double estimate = (long double)heads * series;
+    const size_t result = (size_t)(estimate + 0.999999L);
+    return result < occupied ? occupied : result;
 }
 
 static void
 measure_entry(lace_worker* lace, const nodes_table* dbs,
               struct llchst_rebuild_entry* entry)
 {
+    struct llchst_head_measure_context head_context = {
+        .heads = entry->old_heads
+    };
+    atomic_init(&head_context.occupied, 0);
+    llchst_measure_heads_CALL(
+        lace, &head_context, 0, entry->old_count);
+    const size_t occupied = atomic_load_explicit(
+        &head_context.occupied, memory_order_relaxed);
+    const uint32_t descriptor_state = atomic_load_explicit(
+        &entry->subtable->head_log2, memory_order_relaxed);
+    entry->has_raw = (descriptor_state & LLCHST_HAS_RAW) != 0;
+
+    const size_t initial_count =
+        (size_t)1 << SYLVAN_LLCHST_INITIAL_HEAD_LOG2;
+    if (occupied == 0) {
+        entry->active = 0;
+        entry->population = 0;
+        return;
+    }
+
+    /* The small initial table does not encode the level's activity yet,
+       and a nearly saturated table cannot be estimated reliably from its
+       occupied heads. Pay for an exact chain walk only in those cases. */
+    if (entry->old_count != initial_count &&
+        occupied < entry->old_count - entry->old_count / 8u) {
+        entry->population = estimate_population(
+            entry->old_count, occupied);
+        entry->active = 1;
+        return;
+    }
+
     struct llchst_measure_context context = {
         .dbs = dbs,
         .heads = entry->old_heads
     };
     atomic_init(&context.live, 0);
     atomic_init(&context.population, 0);
+    atomic_init(&context.has_raw, 0);
     llchst_measure_chains_CALL(
         lace, &context, 0, entry->old_count);
-    entry->live = atomic_load_explicit(
-        &context.live, memory_order_relaxed);
+    entry->active = atomic_load_explicit(
+        &context.live, memory_order_relaxed) != 0;
     entry->population = atomic_load_explicit(
         &context.population, memory_order_relaxed);
+    entry->has_raw |= atomic_load_explicit(
+        &context.has_raw, memory_order_relaxed);
 }
 
 TASK(void, llchst_measure_entries,
@@ -823,9 +965,9 @@ compare_promotion_priority(const void* left, const void* right)
         (const struct llchst_rebuild_entry*)right;
     const size_t a_count = (size_t)1 << a->new_log2;
     const size_t b_count = (size_t)1 << b->new_log2;
-    const long double a_priority = a->live == 0 ? 0.0L :
+    const long double a_priority = !a->active ? 0.0L :
         (long double)a->target / (long double)a_count;
-    const long double b_priority = b->live == 0 ? 0.0L :
+    const long double b_priority = !b->active ? 0.0L :
         (long double)b->target / (long double)b_count;
     if (a_priority < b_priority) return 1;
     if (a_priority > b_priority) return -1;
@@ -840,7 +982,7 @@ allocate_head_budget(struct llchst_rebuild_entry* entries,
     size_t active = 0;
     for (size_t i = 0; i < count; i++) {
         population += entries[i].population;
-        active += entries[i].live != 0;
+        active += entries[i].active != 0;
     }
     if (population == 0) return;
 
@@ -849,7 +991,7 @@ allocate_head_budget(struct llchst_rebuild_entry* entries,
     size_t used = 0;
     for (size_t i = 0; i < count; i++) {
         struct llchst_rebuild_entry* entry = entries + i;
-        if (entry->live == 0) {
+        if (!entry->active) {
             entry->target = 0;
             entry->new_log2 = SYLVAN_LLCHST_INITIAL_HEAD_LOG2;
             continue;
@@ -870,7 +1012,7 @@ allocate_head_budget(struct llchst_rebuild_entry* entries,
     qsort(entries, count, sizeof(*entries), compare_promotion_priority);
     for (size_t i = 0; i < count; i++) {
         struct llchst_rebuild_entry* entry = entries + i;
-        if (entry->live == 0) continue;
+        if (!entry->active) continue;
         const size_t current = (size_t)1 << entry->new_log2;
         if (current < entry->target && used <= budget &&
             current <= budget - used) {
@@ -894,133 +1036,179 @@ rehash_node(nodes_table* dbs, uint32_t route,
 
     uint64_t observed = atomic_load_explicit(head, memory_order_relaxed);
     if (!parallel) {
-        dbs->next[index] = observed;
+        dbs->next[index] =
+            owner_tag(route, data[1]) | (observed & MASK_LINK);
         atomic_store_explicit(head, link, memory_order_relaxed);
     } else {
-        do {
-            dbs->next[index] = observed;
-        } while (!atomic_compare_exchange_weak_explicit(
-            head, &observed, link,
-            memory_order_release, memory_order_relaxed));
+        /* Rebuild is stop-the-world: no lookup can observe the temporary
+           head-before-link order, and all link stores complete before the
+           Lace join publishes the rebuilt table. One exchange is therefore
+           sufficient; a compare/exchange retry loop only adds contention. */
+        observed = atomic_exchange_explicit(
+            head, link, memory_order_relaxed);
+        dbs->next[index] =
+            owner_tag(route, data[1]) | (observed & MASK_LINK);
     }
     sylvan_stats_count(LLCHST_NODE_REHASHED);
 }
 
-struct llchst_rehash_context {
-    nodes_table* dbs;
-    uint32_t route;
-    const _Atomic(uint64_t)* old_heads;
-    _Atomic(uint64_t)* new_heads;
-    size_t new_mask;
-    int parallel;
-};
-
-TASK(void, llchst_rehash_marked,
-     struct llchst_rehash_context*, context,
-     size_t, first, size_t, count)
-
-void
-llchst_rehash_marked_CALL(
-    lace_worker* lace, struct llchst_rehash_context* context,
-    size_t first, size_t count)
-{
-    if (count > LLCHST_REBUILD_GRAIN && context->parallel) {
-        const size_t split = count / 2;
-        llchst_rehash_marked_SPAWN(
-            lace, context, first, split);
-        llchst_rehash_marked_CALL(
-            lace, context, first + split, count - split);
-        llchst_rehash_marked_SYNC(lace);
-        return;
-    }
-
-    for (size_t i = first; i < first + count; i++) {
-        uint64_t link = atomic_load_explicit(
-            context->old_heads + i, memory_order_relaxed);
-        while (link != 0) {
-            const uint64_t index = link & MASK_INDEX;
-            const uint64_t next = context->dbs->next[index];
-            if (nodes_is_marked(context->dbs, index)) {
-                rehash_node(
-                    context->dbs, context->route,
-                    context->new_heads, context->new_mask, index,
-                    context->parallel);
-            }
-            link = next;
-        }
-    }
-}
-
 static int
-rebuild_entry(lace_worker* lace, nodes_table* dbs,
-              struct llchst_rebuild_entry* entry)
+prepare_entry(struct llchst_rebuild_entry* entry)
 {
-    llchst_subtable* subtable = entry->subtable;
-    if (entry->live == 0) {
-        subtable->head_log2 = SYLVAN_LLCHST_INITIAL_HEAD_LOG2;
-        atomic_store_explicit(
-            &subtable->heads, (uintptr_t)0, memory_order_release);
-        sylvan_free_aligned(
-            (void*)entry->old_heads,
-            entry->old_count * sizeof(*entry->old_heads));
-        return 0;
-    }
+    entry->new_heads = NULL;
+    if (!entry->active) return 0;
 
     sylvan_stats_count(LLCHST_SUBTABLE_REBUILT);
-
-    const uint32_t new_log2 = entry->new_log2;
-    const size_t new_count = (size_t)1 << new_log2;
-    _Atomic(uint64_t)* new_heads =
+    const size_t new_count = (size_t)1 << entry->new_log2;
+    entry->new_heads =
         (_Atomic(uint64_t)*)sylvan_alloc_aligned(
-            new_count * sizeof(*new_heads));
-    if (new_heads == NULL) return 1;
-
-    struct llchst_rehash_context context = {
-        .dbs = dbs,
-        .route = subtable->route,
-        .old_heads = entry->old_heads,
-        .new_heads = new_heads,
-        .new_mask = new_count - 1u,
-        .parallel =
-            lace_worker_count() > 1 &&
-            entry->old_count > LLCHST_REBUILD_GRAIN
-    };
-    llchst_rehash_marked_CALL(
-        lace, &context, 0, entry->old_count);
-
-    subtable->head_log2 = new_log2;
-    atomic_store_explicit(
-        &subtable->heads, (uintptr_t)new_heads, memory_order_release);
-    sylvan_free_aligned(
-        (void*)entry->old_heads,
-        entry->old_count * sizeof(*entry->old_heads));
-    return 0;
+            new_count * sizeof(*entry->new_heads));
+    return entry->new_heads == NULL;
 }
 
-TASK(int, llchst_rebuild_entries,
-     nodes_table*, dbs, struct llchst_rebuild_entry*, entries,
+TASK(int, llchst_prepare_entries,
+     struct llchst_rebuild_entry*, entries,
      size_t, first, size_t, count)
 
 int
-llchst_rebuild_entries_CALL(
-    lace_worker* lace, nodes_table* dbs,
-    struct llchst_rebuild_entry* entries,
+llchst_prepare_entries_CALL(
+    lace_worker* lace, struct llchst_rebuild_entry* entries,
     size_t first, size_t count)
 {
     if (count > 1 && lace_worker_count() > 1) {
         const size_t split = count / 2u;
-        llchst_rebuild_entries_SPAWN(
-            lace, dbs, entries, first, split);
-        const int right = llchst_rebuild_entries_CALL(
-            lace, dbs, entries, first + split, count - split);
-        return right + llchst_rebuild_entries_SYNC(lace);
+        llchst_prepare_entries_SPAWN(
+            lace, entries, first, split);
+        const int right = llchst_prepare_entries_CALL(
+            lace, entries, first + split, count - split);
+        return right + llchst_prepare_entries_SYNC(lace);
     }
 
     int bad = 0;
     for (size_t i = first; i < first + count; i++) {
-        bad += rebuild_entry(lace, dbs, entries + i);
+        bad += prepare_entry(entries + i);
     }
     return bad;
+}
+
+TASK(void, llchst_rehash_nodes,
+     nodes_table*, dbs, size_t, first, size_t, count, int, parallel)
+
+TASK(void, llchst_rehash_raw_entries,
+     nodes_table*, dbs, struct llchst_rebuild_entry*, entries,
+     size_t, first, size_t, count, int, parallel)
+
+void
+llchst_rehash_raw_entries_CALL(
+    lace_worker* lace, nodes_table* dbs,
+    struct llchst_rebuild_entry* entries,
+    size_t first, size_t count, int parallel)
+{
+    if (count > 1 && parallel) {
+        const size_t split = count / 2u;
+        llchst_rehash_raw_entries_SPAWN(
+            lace, dbs, entries, first, split, parallel);
+        llchst_rehash_raw_entries_CALL(
+            lace, dbs, entries, first + split, count - split, parallel);
+        llchst_rehash_raw_entries_SYNC(lace);
+        return;
+    }
+
+    for (size_t e = first; e < first + count; e++) {
+        struct llchst_rebuild_entry* entry = entries + e;
+        if (!entry->has_raw || !entry->active) continue;
+
+        const uint32_t route = entry->subtable->route;
+        const size_t new_mask =
+            ((size_t)1 << entry->new_log2) - 1u;
+        for (size_t i = 0; i < entry->old_count; i++) {
+            uint64_t link = atomic_load_explicit(
+                entry->old_heads + i, memory_order_relaxed);
+            while (link != 0) {
+                const uint64_t index = link & MASK_INDEX;
+                const uint64_t next = dbs->next[index];
+                if ((next & MASK_OWNER) == OWNER_RAW_DECISION &&
+                    nodes_is_marked(dbs, index)) {
+                    rehash_node(
+                        dbs, route, entry->new_heads, new_mask,
+                        index, parallel);
+                }
+                link = next;
+            }
+        }
+    }
+}
+
+void
+llchst_rehash_nodes_CALL(
+    lace_worker* lace, nodes_table* dbs,
+    size_t first, size_t count, int parallel)
+{
+    if (count > LLCHST_REBUILD_GRAIN && parallel) {
+        const size_t split = count / 2u;
+        llchst_rehash_nodes_SPAWN(
+            lace, dbs, first, split, parallel);
+        llchst_rehash_nodes_CALL(
+            lace, dbs, first + split, count - split, parallel);
+        llchst_rehash_nodes_SYNC(lace);
+        return;
+    }
+
+    const _Atomic(uint64_t)* marked = dbs->bitmap2 + first / 64u;
+    uint64_t mask =
+        UINT64_C(0x8000000000000000) >> (first & 63u);
+    for (size_t offset = 0; offset < count; offset++) {
+        const size_t index = first + offset;
+        if (index > 1 &&
+            (atomic_load_explicit(marked, memory_order_relaxed) & mask)) {
+            const uint64_t tagged_next = dbs->next[index];
+            if ((tagged_next & MASK_OWNER) == OWNER_RAW_DECISION) {
+                goto next_index;
+            }
+            const uint64_t* data =
+                ((const uint64_t*)dbs->data) + 2 * index;
+            const uint32_t route = owner_route(tagged_next, data);
+            llchst_subtable* subtable = get_subtable(dbs, route, 0);
+            assert(subtable != NULL);
+            _Atomic(uint64_t)* heads = subtable_heads(subtable);
+            assert(heads != NULL);
+            rehash_node(
+                dbs, route, heads, head_count(subtable) - 1u,
+                index, parallel);
+        }
+next_index:
+        mask >>= 1;
+        if (mask == 0) {
+            marked++;
+            mask = UINT64_C(0x8000000000000000);
+        }
+    }
+}
+
+TASK(void, llchst_free_old_entries,
+     struct llchst_rebuild_entry*, entries,
+     size_t, first, size_t, count)
+
+void
+llchst_free_old_entries_CALL(
+    lace_worker* lace, struct llchst_rebuild_entry* entries,
+    size_t first, size_t count)
+{
+    if (count > 8 && lace_worker_count() > 1) {
+        const size_t split = count / 2u;
+        llchst_free_old_entries_SPAWN(
+            lace, entries, first, split);
+        llchst_free_old_entries_CALL(
+            lace, entries, first + split, count - split);
+        llchst_free_old_entries_SYNC(lace);
+        return;
+    }
+
+    for (size_t i = first; i < first + count; i++) {
+        sylvan_free_aligned(
+            (void*)entries[i].old_heads,
+            entries[i].old_count * sizeof(*entries[i].old_heads));
+    }
 }
 
 static size_t
@@ -1100,10 +1288,78 @@ nodes_rebuild_CALL(lace_worker* lace, nodes_table* dbs)
 
     llchst_measure_entries_CALL(lace, dbs, entries, 0, count);
     allocate_head_budget(entries, count, dbs->table_size);
-    const int bad = llchst_rebuild_entries_CALL(
-        lace, dbs, entries, 0, count);
+    const int bad = llchst_prepare_entries_CALL(
+        lace, entries, 0, count);
+    if (bad != 0) {
+        for (size_t i = 0; i < count; i++) {
+            if (entries[i].new_heads != NULL) {
+                sylvan_free_aligned(
+                    (void*)entries[i].new_heads,
+                    ((size_t)1 << entries[i].new_log2) *
+                    sizeof(*entries[i].new_heads));
+            }
+        }
+        sylvan_free_aligned(entries, count * sizeof(*entries));
+        return bad;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        llchst_subtable* subtable = entries[i].subtable;
+        if (!entries[i].active) {
+            atomic_store_explicit(
+                &subtable->head_log2,
+                SYLVAN_LLCHST_INITIAL_HEAD_LOG2,
+                memory_order_relaxed);
+            atomic_store_explicit(
+                &subtable->heads, (uintptr_t)0, memory_order_release);
+        } else {
+            atomic_store_explicit(
+                &subtable->head_log2,
+                entries[i].new_log2 |
+                    (entries[i].has_raw ? LLCHST_HAS_RAW : 0u),
+                memory_order_relaxed);
+            atomic_store_explicit(
+                &subtable->heads, (uintptr_t)entries[i].new_heads,
+                memory_order_release);
+        }
+    }
+
+    const int parallel = lace_worker_count() > 1;
+    llchst_rehash_raw_entries_CALL(
+        lace, dbs, entries, 0, count, parallel);
+    /* Owner tags make the direct marked-node pass independent of the old
+       chains. Release those pages before touching the replacement heads so
+       GC does not keep both generations resident at once. */
+    llchst_free_old_entries_CALL(lace, entries, 0, count);
+    llchst_rehash_nodes_CALL(
+        lace, dbs, 0, dbs->table_size, parallel);
+
+    for (size_t i = 0; i < count; i++) {
+        struct llchst_rebuild_entry* entry = entries + i;
+        if (entry->new_heads == NULL) continue;
+        const size_t new_count = (size_t)1 << entry->new_log2;
+        size_t j = 0;
+        while (j < new_count && atomic_load_explicit(
+               entry->new_heads + j, memory_order_relaxed) == 0) {
+            j++;
+        }
+        if (j == new_count) {
+            atomic_store_explicit(
+                &entry->subtable->heads, (uintptr_t)0,
+                memory_order_release);
+            atomic_store_explicit(
+                &entry->subtable->head_log2,
+                SYLVAN_LLCHST_INITIAL_HEAD_LOG2,
+                memory_order_relaxed);
+            sylvan_free_aligned(
+                (void*)entry->new_heads,
+                new_count * sizeof(*entry->new_heads));
+            entry->new_heads = NULL;
+        }
+    }
+
     sylvan_free_aligned(entries, count * sizeof(*entries));
-    return bad;
+    return 0;
 }
 
 TASK(size_t, nodes_count_nodes_par,

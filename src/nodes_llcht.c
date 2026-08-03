@@ -19,6 +19,7 @@
 #include <sylvan/internal.h>
 #include <sylvan/platform.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <string.h>
 
@@ -34,6 +35,10 @@
  * Nodes are prepended with one successful compare-and-swap on the chain head.
  * Links are never changed while lookups are running; garbage collection clears
  * and rebuilds all chains while lookups are stopped.
+ *
+ * This global control allocates one head and one node slot per table bucket,
+ * so its load factor cannot exceed one. Per-identity subtables must separate
+ * head capacity from the global node capacity to exercise denser chaining.
  *
  * WARNING: Like the other nodes tables, this implementation currently uses a
  * global thread-local allocation region. Do not use multiple tables.
@@ -69,6 +74,12 @@ region_bitmap_size(size_t table_size)
     return ((regions + 63u) / 64u) * sizeof(uint64_t);
 }
 
+static size_t
+node_bitmap_size(size_t table_size)
+{
+    return ((table_size + 63u) / 64u) * sizeof(uint64_t);
+}
+
 void*
 nodes_get_pointer(const nodes_table* dbs, size_t index)
 {
@@ -87,11 +98,18 @@ nodes_get_size(const nodes_table* dbs)
     return dbs->table_size;
 }
 
+size_t
+nodes_get_capacity_bytes(size_t capacity)
+{
+    return capacity * (2 * sizeof(uint64_t) + 2 * sizeof(uint64_t)) +
+           region_bitmap_size(capacity) + 2 * node_bitmap_size(capacity);
+}
+
 void
 nodes_set_size(nodes_table* dbs, size_t size)
 {
     /* Check bounds (don't be ridiculous). */
-    if (size > 128 && size <= dbs->max_size) {
+    if (size > 128 && size >= dbs->table_size && size <= dbs->max_size) {
         dbs->table_size = size;
 #if LLMSSET_MASK
         /* When masking is enabled, size must be a power of two. */
@@ -100,7 +118,7 @@ nodes_set_size(nodes_table* dbs, size_t size)
     }
 }
 
-SYLVAN_TLS uint64_t my_region = UINT64_MAX;
+static SYLVAN_TLS uint64_t my_region = UINT64_MAX;
 
 TASK(void, nodes_reset_region)
 
@@ -120,6 +138,9 @@ claim_next_region(const nodes_table* dbs, uint64_t start_region)
 
     start_region %= regions;
 
+    /* A claimed region remains owned by that worker for the complete GC
+       epoch. Whole-region ownership makes the bitmap2 and bitmapc updates in
+       the allocation path word-disjoint even though they are not RMWs. */
     for (uint64_t offset = 0; offset < regions; offset++) {
         const uint64_t region = (start_region + offset) % regions;
         _Atomic(uint64_t)* ptr = dbs->bitmap1 + (region / 64u);
@@ -216,7 +237,7 @@ is_custom_bucket(const nodes_table* dbs, uint64_t index)
     return (*ptr & mask) ? 1 : 0;
 }
 
-static uint64_t
+static inline uint64_t
 hash_key(const nodes_table* dbs, uint64_t a, uint64_t b, int custom)
 {
     const uint64_t seed = UINT64_C(14695981039346656037);
@@ -224,7 +245,7 @@ hash_key(const nodes_table* dbs, uint64_t a, uint64_t b, int custom)
     return sylvan_tabhash16(a, b, seed);
 }
 
-static size_t
+static inline size_t
 head_index(const nodes_table* dbs, uint64_t hash)
 {
 #if LLMSSET_MASK
@@ -238,11 +259,13 @@ head_index(const nodes_table* dbs, uint64_t hash)
  * Search links in [link, stop). Chains only grow by prepending, so after a
  * failed head CAS this can search just the newly published prefix.
  */
-static uint64_t
+static inline uint64_t
 find_in_chain(const nodes_table* dbs, uint64_t link, uint64_t stop,
               uint64_t masked_hash, uint64_t a, uint64_t b, int custom)
 {
     while (link != stop) {
+        /* A nonzero stop must be an ancestor in this prepend-only chain. */
+        assert(stop == 0 || link != 0);
         const uint64_t index = link & MASK_INDEX;
 
         if ((link & MASK_HASH) == masked_hash) {
@@ -261,9 +284,12 @@ find_in_chain(const nodes_table* dbs, uint64_t link, uint64_t stop,
     return 0;
 }
 
-static uint64_t
+/* This function must not contain a Lace yield point. A worker can own an
+   unpublished candidate and, for custom nodes, publication intentionally
+   precedes setting its word-disjoint bitmapc bit. */
+static inline uint64_t
 nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_t b,
-              int* created, int custom)
+              int* created, const int custom)
 {
     const uint64_t hash = hash_key(dbs, a, b, custom);
     const uint64_t masked_hash = hash & MASK_HASH;
@@ -296,13 +322,15 @@ nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_t b,
     const uint64_t candidate_link = masked_hash | candidate;
 
     for (;;) {
-        /* The candidate is unpublished, so this link may still be changed. */
+        /* The candidate is unpublished, so this link may still be changed.
+           A successful CAS establishes next[index(new_head)] == old_head,
+           which makes the failed-CAS prefix scan below complete. */
         dbs->next[candidate] = observed;
 
         uint64_t expected = observed;
         if (atomic_compare_exchange_strong_explicit(
                 head, &expected, candidate_link,
-                memory_order_release, memory_order_acquire)) {
+                memory_order_acq_rel, memory_order_acquire)) {
             if (custom) set_custom_bucket(dbs, candidate, 1);
             *created = 1;
             return candidate;
@@ -383,6 +411,11 @@ nodes_create(size_t initial_size, size_t max_size)
         exit(1);
     }
 
+    if (max_size > UINT64_C(0x0000010000000000)) {
+        fprintf(stderr, "nodes_create: max_size exceeds the 40-bit index!\n");
+        exit(1);
+    }
+
     if (initial_size < 512) {
         fprintf(stderr, "nodes_create: initial_size too small!\n");
         exit(1);
@@ -402,8 +435,9 @@ nodes_create(size_t initial_size, size_t max_size)
     dbs->bitmap1 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(
         region_bitmap_size(dbs->max_size));
     dbs->bitmap2 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(
-        (dbs->max_size / 64) * sizeof(*dbs->bitmap2));
-    dbs->bitmapc = (uint64_t*)sylvan_alloc_aligned(dbs->max_size / 8);
+        node_bitmap_size(dbs->max_size));
+    dbs->bitmapc = (uint64_t*)sylvan_alloc_aligned(
+        node_bitmap_size(dbs->max_size));
 
     if (dbs->heads == NULL || dbs->next == NULL || dbs->data == NULL ||
         dbs->bitmap1 == NULL || dbs->bitmap2 == NULL ||
@@ -412,11 +446,6 @@ nodes_create(size_t initial_size, size_t max_size)
                 strerror(errno));
         exit(1);
     }
-
-#if defined(madvise) && defined(MADV_RANDOM)
-    madvise(dbs->heads, dbs->max_size * sizeof(*dbs->heads), MADV_RANDOM);
-    madvise(dbs->next, dbs->max_size * sizeof(*dbs->next), MADV_RANDOM);
-#endif
 
     /* Forbid first two node indices. */
     dbs->bitmap2[0] = UINT64_C(0xc000000000000000);
@@ -444,9 +473,8 @@ nodes_free(nodes_table* dbs)
     sylvan_free_aligned(
         (void*)dbs->bitmap1, region_bitmap_size(dbs->max_size));
     sylvan_free_aligned(
-        (void*)dbs->bitmap2,
-        (dbs->max_size / 64) * sizeof(*dbs->bitmap2));
-    sylvan_free_aligned(dbs->bitmapc, dbs->max_size / 8);
+        (void*)dbs->bitmap2, node_bitmap_size(dbs->max_size));
+    sylvan_free_aligned(dbs->bitmapc, node_bitmap_size(dbs->max_size));
     sylvan_free_aligned(dbs, sizeof(struct nodes_table));
 }
 
@@ -456,7 +484,8 @@ nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
     (void)lace;
     sylvan_clear_aligned(
         (void*)dbs->bitmap1, region_bitmap_size(dbs->max_size));
-    sylvan_clear_aligned((void*)dbs->bitmap2, dbs->max_size / 8);
+    sylvan_clear_aligned(
+        (void*)dbs->bitmap2, node_bitmap_size(dbs->max_size));
     sylvan_clear_aligned(
         (void*)dbs->heads, dbs->max_size * sizeof(*dbs->heads));
 
@@ -557,7 +586,7 @@ nodes_count_nodes_par_CALL(lace_worker* lace, nodes_table* dbs,
 
     size_t result = 0;
     const _Atomic(uint64_t)* ptr = dbs->bitmap2 + (first / 64);
-    if (count == 512) {
+    if (count == 512 && (first & 63) == 0) {
         result += popcnt_uint64(atomic_load_explicit(ptr + 0, memory_order_relaxed));
         result += popcnt_uint64(atomic_load_explicit(ptr + 1, memory_order_relaxed));
         result += popcnt_uint64(atomic_load_explicit(ptr + 2, memory_order_relaxed));
@@ -615,7 +644,7 @@ nodes_destroy_par_CALL(lace_worker* lace, nodes_table* dbs,
             const size_t index = word * 64 + bit;
             const uint64_t mask =
                 UINT64_C(0x8000000000000000) >> bit;
-            if (index < dbs->table_size) {
+            if (index < dbs->table_size && dbs->destroy_cb != NULL) {
                 uint64_t* data = ((uint64_t*)dbs->data) + 2 * index;
                 dbs->destroy_cb(data[0], data[1]);
             }
@@ -629,7 +658,6 @@ nodes_destroy_par_CALL(lace_worker* lace, nodes_table* dbs,
 void
 nodes_cleanup_custom_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    if (dbs->destroy_cb == NULL) return;
     nodes_destroy_par_CALL(
         lace, dbs, 0, (dbs->table_size + 63) / 64);
 }

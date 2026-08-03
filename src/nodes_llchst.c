@@ -50,6 +50,10 @@
 #define OWNER_RAW_DECISION UINT64_C(0xa000000000000000)
 #define LLCHST_HEAD_LOG2_MASK UINT32_C(0x0000003f)
 #define LLCHST_HAS_RAW        UINT32_C(0x80000000)
+/* The descriptor size has been fixed and must not be reseeded. */
+#define LLCHST_HEAD_SIZED     UINT32_C(0x40000000)
+/* The size came from a measured rebuild rather than from a seed estimate. */
+#define LLCHST_HEAD_MEASURED  UINT32_C(0x20000000)
 
 #define LLCHST_INDEX_BITS       40u
 #define LLCHST_LEVEL_BITS       24u
@@ -67,6 +71,16 @@
 #define SYLVAN_LLCHST_INITIAL_HEAD_LOG2 8u
 #endif
 
+/**
+ * Upper bound on the adaptively seeded size of a fresh subtable, as a log2
+ * head count. A new subtable has no measurement to go on, so its seed is a
+ * guess; this caps how much a single guess may claim before the first
+ * measurement corrects it. 2^16 heads is 512 KiB.
+ */
+#ifndef SYLVAN_LLCHST_SEED_HEAD_LOG2_MAX
+#define SYLVAN_LLCHST_SEED_HEAD_LOG2_MAX 16u
+#endif
+
 #ifndef SYLVAN_LLCHST_DENSE_LEVELS
 #define SYLVAN_LLCHST_DENSE_LEVELS UINT32_C(65536)
 #endif
@@ -81,6 +95,11 @@ static_assert(SYLVAN_LLCHST_LOAD_FACTOR >= 1 &&
 static_assert(SYLVAN_LLCHST_INITIAL_HEAD_LOG2 >= 3 &&
               SYLVAN_LLCHST_INITIAL_HEAD_LOG2 < 40,
               "SYLVAN_LLCHST_INITIAL_HEAD_LOG2 must be in [3, 39]");
+static_assert(SYLVAN_LLCHST_SEED_HEAD_LOG2_MAX >=
+                  SYLVAN_LLCHST_INITIAL_HEAD_LOG2 &&
+              SYLVAN_LLCHST_SEED_HEAD_LOG2_MAX < 40,
+              "SYLVAN_LLCHST_SEED_HEAD_LOG2_MAX must be in "
+              "[SYLVAN_LLCHST_INITIAL_HEAD_LOG2, 39]");
 static_assert(SYLVAN_LLCHST_DENSE_LEVELS <= NODES_SUBTABLE_LEAF,
               "SYLVAN_LLCHST_DENSE_LEVELS exceeds the level space");
 static_assert(SYLVAN_LLCHST_HEAD_SLACK_LOG2 < 16,
@@ -113,6 +132,13 @@ typedef struct nodes_table {
     _Atomic(uint32_t) decision_highwater;
     _Atomic(uintptr_t)* pages;
     _Atomic(uint32_t) page_highwater;
+    /* Subtables that currently own a head array, and the total number of head
+       slots those arrays hold. Both are maintained off the lookup fast path:
+       they change only when a subtable first allocates and at stop-the-world
+       rebuilds. They exist to seed a new subtable from the table's actual
+       shape instead of from a fixed constant. */
+    _Atomic(uint32_t) live_subtables;
+    _Atomic(uint64_t) allocated_heads;
     llchst_subtable aux[LLCHST_AUX_COUNT];
     nodes_hash_cb hash_cb;
     nodes_equals_cb equals_cb;
@@ -131,6 +157,30 @@ static size_t
 node_bitmap_size(size_t table_size)
 {
     return ((table_size + 63u) / 64u) * sizeof(uint64_t);
+}
+
+static size_t
+head_budget(size_t table_size)
+{
+    size_t budget =
+        (table_size + SYLVAN_LLCHST_LOAD_FACTOR - 1u) /
+        SYLVAN_LLCHST_LOAD_FACTOR;
+    const size_t maximum = (size_t)1 << LLCHST_INDEX_BITS;
+    if (budget > (maximum >> SYLVAN_LLCHST_HEAD_SLACK_LOG2)) {
+        return maximum;
+    }
+    return budget << SYLVAN_LLCHST_HEAD_SLACK_LOG2;
+}
+
+static uint32_t
+floor_log2(size_t value)
+{
+    uint32_t result = 0;
+    while (value > 1) {
+        value >>= 1;
+        result++;
+    }
+    return result;
 }
 
 static inline size_t
@@ -233,32 +283,96 @@ get_subtable(const nodes_table* dbs, uint32_t route, int create)
     return NULL;
 }
 
+/**
+ * Choose the size of a subtable that is about to allocate its first head
+ * array. A fresh subtable has no measurement of its own, so it takes an equal
+ * share of the global head budget with the subtables that already exist, plus
+ * room for the ones that do not exist yet.
+ *
+ * Memory: the share never exceeds what is left of head_budget(table_size),
+ * which nodes_get_capacity_bytes already reports, so seeding cannot push the
+ * table past its advertised footprint. Once the budget is exhausted new
+ * subtables fall back to SYLVAN_LLCHST_INITIAL_HEAD_LOG2, which is the
+ * unbudgeted worst case and is unchanged from before adaptive seeding: at
+ * most 2 KiB for every subtable that ever allocates heads, bounded by
+ * SYLVAN_LLCHST_DENSE_LEVELS plus the sparse pages actually touched.
+ * A single seed is additionally capped at SYLVAN_LLCHST_SEED_HEAD_LOG2_MAX so
+ * an early guess made when few subtables exist cannot claim the whole budget.
+ */
+static uint32_t
+seed_head_log2(const nodes_table* dbs)
+{
+    const size_t budget = head_budget(dbs->table_size);
+    const size_t used = (size_t)atomic_load_explicit(
+        &dbs->allocated_heads, memory_order_relaxed);
+    const size_t live = (size_t)atomic_load_explicit(
+        &dbs->live_subtables, memory_order_relaxed);
+
+    /* Reserve for the auxiliary routes, which every workload eventually
+       touches, so that the very first subtable does not take everything. */
+    size_t share = budget / (live + LLCHST_AUX_COUNT);
+    const size_t remaining = budget > used ? budget - used : 0;
+    if (share > remaining) share = remaining;
+
+    uint32_t result = share == 0 ? 0 : floor_log2(share);
+    if (result < SYLVAN_LLCHST_INITIAL_HEAD_LOG2) {
+        result = SYLVAN_LLCHST_INITIAL_HEAD_LOG2;
+    }
+    if (result > SYLVAN_LLCHST_SEED_HEAD_LOG2_MAX) {
+        result = SYLVAN_LLCHST_SEED_HEAD_LOG2_MAX;
+    }
+    return result;
+}
+
 static _Atomic(uint64_t)*
 ensure_heads(nodes_table* dbs, llchst_subtable* subtable)
 {
-    _Atomic(uint64_t)* heads = subtable_heads(subtable);
-    if (heads != NULL) return heads;
+    for (;;) {
+        _Atomic(uint64_t)* heads = subtable_heads(subtable);
+        if (heads != NULL) return heads;
 
-    const size_t bytes = head_count(subtable) * sizeof(*heads);
-    _Atomic(uint64_t)* candidate =
-        (_Atomic(uint64_t)*)sylvan_alloc_aligned(bytes);
-    if (candidate == NULL) return NULL;
+        uint32_t state = atomic_load_explicit(
+            &subtable->head_log2, memory_order_relaxed);
+        if ((state & LLCHST_HEAD_SIZED) == 0) {
+            /* Fix the size before the array can be observed. Readers derive
+               their bucket mask from a relaxed load of head_log2 after an
+               acquire load of heads, so the low bits must already be final
+               when the pointer is published. Racing threads may compute
+               different seeds, so exactly one of them wins this
+               compare-exchange and everyone allocates the size it fixed. */
+            const uint32_t sized =
+                seed_head_log2(dbs) | LLCHST_HEAD_SIZED;
+            atomic_compare_exchange_strong_explicit(
+                &subtable->head_log2, &state, sized,
+                memory_order_relaxed, memory_order_relaxed);
+            continue;
+        }
 
-    uintptr_t expected = 0;
-    if (!atomic_compare_exchange_strong_explicit(
-            &subtable->heads, &expected, (uintptr_t)candidate,
-            memory_order_acq_rel, memory_order_acquire)) {
-        sylvan_free_aligned((void*)candidate, bytes);
-        heads = (_Atomic(uint64_t)*)expected;
-    } else {
+        const size_t count =
+            (size_t)1 << (state & LLCHST_HEAD_LOG2_MASK);
+        const size_t bytes = count * sizeof(uint64_t);
+        _Atomic(uint64_t)* candidate =
+            (_Atomic(uint64_t)*)sylvan_alloc_aligned(bytes);
+        if (candidate == NULL) return NULL;
+
+        uintptr_t expected = 0;
+        if (!atomic_compare_exchange_strong_explicit(
+                &subtable->heads, &expected, (uintptr_t)candidate,
+                memory_order_acq_rel, memory_order_acquire)) {
+            sylvan_free_aligned((void*)candidate, bytes);
+            return (_Atomic(uint64_t)*)expected;
+        }
+
         if (subtable->route < SYLVAN_LLCHST_DENSE_LEVELS) {
             raise_decision_highwater(dbs, subtable->route + 1u);
         }
+        atomic_fetch_add_explicit(
+            &dbs->live_subtables, 1u, memory_order_relaxed);
+        atomic_fetch_add_explicit(
+            &dbs->allocated_heads, (uint64_t)count, memory_order_relaxed);
         sylvan_stats_count(LLCHST_SUBTABLE_CREATED);
-        heads = candidate;
+        return candidate;
     }
-
-    return heads;
 }
 
 void*
@@ -611,6 +725,8 @@ nodes_create(size_t initial_size, size_t max_size)
 
     atomic_init(&dbs->decision_highwater, 0);
     atomic_init(&dbs->page_highwater, 0);
+    atomic_init(&dbs->live_subtables, 0);
+    atomic_init(&dbs->allocated_heads, 0);
     for (uint32_t i = 0; i < SYLVAN_LLCHST_DENSE_LEVELS; i++) {
         initialize_descriptor(dbs->decision + i, i);
     }
@@ -876,18 +992,17 @@ measure_entry(lace_worker* lace, const nodes_table* dbs,
         &entry->subtable->head_log2, memory_order_relaxed);
     entry->has_raw = (descriptor_state & LLCHST_HAS_RAW) != 0;
 
-    const size_t initial_count =
-        (size_t)1 << SYLVAN_LLCHST_INITIAL_HEAD_LOG2;
     if (occupied == 0) {
         entry->active = 0;
         entry->population = 0;
         return;
     }
 
-    /* The small initial table does not encode the level's activity yet,
-       and a nearly saturated table cannot be estimated reliably from its
-       occupied heads. Pay for an exact chain walk only in those cases. */
-    if (entry->old_count != initial_count &&
+    /* A size that came from a seed rather than from a previous measurement
+       does not encode the level's activity yet, and a nearly saturated table
+       cannot be estimated reliably from its occupied heads. Pay for an exact
+       chain walk only in those cases. */
+    if ((descriptor_state & LLCHST_HEAD_MEASURED) != 0 &&
         occupied < entry->old_count - entry->old_count / 8u) {
         entry->population = estimate_population(
             entry->old_count, occupied);
@@ -935,30 +1050,6 @@ llchst_measure_entries_CALL(
     for (size_t i = first; i < first + count; i++) {
         measure_entry(lace, dbs, entries + i);
     }
-}
-
-static size_t
-head_budget(size_t table_size)
-{
-    size_t budget =
-        (table_size + SYLVAN_LLCHST_LOAD_FACTOR - 1u) /
-        SYLVAN_LLCHST_LOAD_FACTOR;
-    const size_t maximum = (size_t)1 << LLCHST_INDEX_BITS;
-    if (budget > (maximum >> SYLVAN_LLCHST_HEAD_SLACK_LOG2)) {
-        return maximum;
-    }
-    return budget << SYLVAN_LLCHST_HEAD_SLACK_LOG2;
-}
-
-static uint32_t
-floor_log2(size_t value)
-{
-    uint32_t result = 0;
-    while (value > 1) {
-        value >>= 1;
-        result++;
-    }
-    return result;
 }
 
 static int
@@ -1334,7 +1425,8 @@ nodes_rebuild_CALL(lace_worker* lace, nodes_table* dbs)
         } else {
             atomic_store_explicit(
                 &subtable->head_log2,
-                entries[i].new_log2 |
+                entries[i].new_log2 | LLCHST_HEAD_SIZED |
+                    LLCHST_HEAD_MEASURED |
                     (entries[i].has_raw ? LLCHST_HAS_RAW : 0u),
                 memory_order_relaxed);
             atomic_store_explicit(
@@ -1376,6 +1468,20 @@ nodes_rebuild_CALL(lace_worker* lace, nodes_table* dbs)
             entry->new_heads = NULL;
         }
     }
+
+    /* Rebuilding replaced every head array, so the seeding accounting starts
+       again from what this collection actually handed out. */
+    uint32_t live = 0;
+    uint64_t heads_total = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (entries[i].new_heads == NULL) continue;
+        live++;
+        heads_total += (uint64_t)1 << entries[i].new_log2;
+    }
+    atomic_store_explicit(
+        &dbs->live_subtables, live, memory_order_relaxed);
+    atomic_store_explicit(
+        &dbs->allocated_heads, heads_total, memory_order_relaxed);
 
     sylvan_free_aligned(entries, count * sizeof(*entries));
     return 0;

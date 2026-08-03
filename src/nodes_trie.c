@@ -517,16 +517,14 @@ void nodes_mark_rec_CALL(lace_worker* lace, const nodes_table* dbs, uint64_t ind
     }
 }
 
-int nodes_rebuild_CALL(lace_worker* lace, nodes_table* dbs)
+/**
+ * Reinsert every marked bucket in the given range of mark words.
+ * Scanning mark words avoids walking every empty bucket.
+ */
+static int nodes_rebuild_words(nodes_table* dbs, size_t first_word, size_t word_count)
 {
-    (void)lace;
     int bad = 0;
-
-    /* Reinsert deterministically: concurrent trie reconstruction can make a
-       marked canonical node unreachable. Scan mark words to avoid walking
-       every empty bucket. */
-    const size_t words = (dbs->table_size + 63) / 64;
-    for (size_t word = 0; word < words; word++) {
+    for (size_t word = first_word; word < first_word + word_count; word++) {
         uint64_t marked = atomic_load_explicit(dbs->bitmap2 + word, memory_order_relaxed);
         if (word == 0) marked &= UINT64_C(0x3fffffffffffffff); // skip reserved indices 0 and 1
         while (marked != 0) {
@@ -537,6 +535,15 @@ int nodes_rebuild_CALL(lace_worker* lace, nodes_table* dbs)
         }
     }
     return bad;
+}
+
+int nodes_rebuild_CALL(lace_worker* lace, nodes_table* dbs)
+{
+    (void)lace;
+
+    /* Reinsert deterministically: concurrent trie reconstruction can make a
+       marked canonical node unreachable. */
+    return nodes_rebuild_words(dbs, 0, (dbs->table_size + 63) / 64);
 }
 
 TASK(size_t, nodes_count_nodes_par, nodes_table*, dbs, size_t, first, size_t, count)

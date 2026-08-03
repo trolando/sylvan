@@ -39,6 +39,10 @@ static const struct
     {1, LDD_NODES_CREATED, "LDD nodes created"},
     {1, LDD_NODES_REUSED, "LDD nodes reused"},
     {1, LLMSSET_LOOKUP, "Unique lookup steps"},
+    {1, LLCHST_HEAD_CAS_FAILURE, "LLCHST head CAS failures"},
+    {1, LLCHST_SUBTABLE_CREATED, "LLCHST subtables created"},
+    {1, LLCHST_SUBTABLE_REBUILT, "LLCHST subtables rebuilt"},
+    {1, LLCHST_NODE_REHASHED, "LLCHST nodes rehashed"},
     {4, 0, NULL}, /* trigger to report unique nodes and operation cache */
 
     {0, 0, "Operation            Count            Cache get        Cache put"},

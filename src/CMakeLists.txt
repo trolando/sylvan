@@ -112,9 +112,9 @@ endif()
 # ── Nodes table implementation ───────────────────────────────────────────────
 
 # Choose the nodes table implementation
-# Valid values: list, llcht, llht, trie
-set(SYLVAN_NODES_TABLE "trie" CACHE STRING "Nodes table implementation (llht|llcht|trie|list)")
-set_property(CACHE SYLVAN_NODES_TABLE PROPERTY STRINGS llht llcht trie list)
+# Valid values: list, llchst, llcht, llht, trie
+set(SYLVAN_NODES_TABLE "trie" CACHE STRING "Nodes table implementation (llht|llcht|llchst|trie|list)")
+set_property(CACHE SYLVAN_NODES_TABLE PROPERTY STRINGS llht llcht llchst trie list)
 
 # Normalize and select the source + an identifying macro
 string(TOLOWER "${SYLVAN_NODES_TABLE}" _sylvan_nodes_table)
@@ -124,6 +124,40 @@ if(_sylvan_nodes_table STREQUAL "llht")
 elseif(_sylvan_nodes_table STREQUAL "llcht")
     set(_sylvan_nodes_src nodes_llcht.c)
     set(_sylvan_nodes_def SYLVAN_NODES_TABLE_LLCHT=1)
+elseif(_sylvan_nodes_table STREQUAL "llchst")
+    set(_sylvan_nodes_src nodes_llchst.c)
+    set(_sylvan_nodes_def SYLVAN_NODES_TABLE_LLCHST=1)
+    set(SYLVAN_LLCHST_LOAD_FACTOR "2" CACHE STRING
+        "Target live nodes per LLCHST head after garbage collection")
+    set(SYLVAN_LLCHST_INITIAL_HEAD_LOG2 "8" CACHE STRING
+        "Initial log2 head count for a newly used LLCHST subtable")
+    set(SYLVAN_LLCHST_DENSE_LEVELS "65536" CACHE STRING
+        "Number of directly indexed LLCHST decision descriptors")
+    set(SYLVAN_LLCHST_HEAD_SLACK_LOG2 "0" CACHE STRING
+        "Extra power-of-two head capacity after LLCHST garbage collection")
+    if(NOT SYLVAN_LLCHST_LOAD_FACTOR MATCHES "^[1-9][0-9]*$" OR
+       SYLVAN_LLCHST_LOAD_FACTOR GREATER 1048576)
+        message(FATAL_ERROR "SYLVAN_LLCHST_LOAD_FACTOR must be in [1, 1048576]")
+    endif()
+    if(NOT SYLVAN_LLCHST_INITIAL_HEAD_LOG2 MATCHES "^[0-9]+$" OR
+       SYLVAN_LLCHST_INITIAL_HEAD_LOG2 LESS 3 OR
+       SYLVAN_LLCHST_INITIAL_HEAD_LOG2 GREATER 39)
+        message(FATAL_ERROR "SYLVAN_LLCHST_INITIAL_HEAD_LOG2 must be in [3, 39]")
+    endif()
+    if(NOT SYLVAN_LLCHST_DENSE_LEVELS MATCHES "^[0-9]+$" OR
+       SYLVAN_LLCHST_DENSE_LEVELS LESS 1 OR
+       SYLVAN_LLCHST_DENSE_LEVELS GREATER 16777216)
+        message(FATAL_ERROR "SYLVAN_LLCHST_DENSE_LEVELS must be in [1, 16777216]")
+    endif()
+    if(NOT SYLVAN_LLCHST_HEAD_SLACK_LOG2 MATCHES "^[0-9]+$" OR
+       SYLVAN_LLCHST_HEAD_SLACK_LOG2 GREATER 15)
+        message(FATAL_ERROR "SYLVAN_LLCHST_HEAD_SLACK_LOG2 must be in [0, 15]")
+    endif()
+    list(APPEND _sylvan_nodes_def
+        SYLVAN_LLCHST_LOAD_FACTOR=${SYLVAN_LLCHST_LOAD_FACTOR}
+        SYLVAN_LLCHST_INITIAL_HEAD_LOG2=${SYLVAN_LLCHST_INITIAL_HEAD_LOG2}
+        SYLVAN_LLCHST_DENSE_LEVELS=${SYLVAN_LLCHST_DENSE_LEVELS}
+        SYLVAN_LLCHST_HEAD_SLACK_LOG2=${SYLVAN_LLCHST_HEAD_SLACK_LOG2})
 elseif(_sylvan_nodes_table STREQUAL "trie")
     set(_sylvan_nodes_src nodes_trie.c)
     set(_sylvan_nodes_def SYLVAN_NODES_TABLE_TRIE=1)
@@ -131,7 +165,7 @@ elseif(_sylvan_nodes_table STREQUAL "list")
     set(_sylvan_nodes_src nodes_list.c)
     set(_sylvan_nodes_def SYLVAN_NODES_TABLE_LIST=1)
 else()
-    message(FATAL_ERROR "Invalid SYLVAN_NODES_TABLE='${SYLVAN_NODES_TABLE}'. Valid: list, llcht, llht, trie")
+    message(FATAL_ERROR "Invalid SYLVAN_NODES_TABLE='${SYLVAN_NODES_TABLE}'. Valid: list, llchst, llcht, llht, trie")
 endif()
 
 message(STATUS "Sylvan: using '${_sylvan_nodes_table}' nodes table implementation (${_sylvan_nodes_src})")

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include <lace.h>
 
@@ -12,11 +13,25 @@
 #define TEST_TABLE_SIZE 512
 #define TEST_CACHE_LINE_WORDS (SYLVAN_CACHE_LINE_SIZE / sizeof(uint64_t))
 #define TEST_COLLIDING_KEYS (TEST_CACHE_LINE_WORDS + 1)
-#define TEST_RACE_WORKERS 4
+#define TEST_MAX_WORKERS 64
+#define TEST_DEFAULT_WORKERS 4
 #define TEST_RACE_KEYS 128
 #define TEST_RACE_TABLE_SIZE 4096
 #define TEST_DEEP_CHAIN_KEYS 200
 #define TEST_CUSTOM_RACE_KEYS 32
+
+/* Number of Lace workers this run was started with. */
+static unsigned int test_workers = TEST_DEFAULT_WORKERS;
+
+/* Nodes are handed out per 512-bucket region, one region per worker at a
+   time, so a table used concurrently needs at least that much room per
+   worker. */
+static size_t
+race_table_size(void)
+{
+    const size_t needed = (size_t)test_workers * 512;
+    return needed > TEST_RACE_TABLE_SIZE ? needed : TEST_RACE_TABLE_SIZE;
+}
 
 static void
 find_colliding_keys(uint64_t *keys)
@@ -42,8 +57,8 @@ struct lookup_race {
     nodes_table *table;
     uint64_t key;
     _Atomic(unsigned int) arrived;
-    uint64_t indices[TEST_RACE_WORKERS];
-    int created[TEST_RACE_WORKERS];
+    uint64_t indices[TEST_MAX_WORKERS];
+    int created[TEST_MAX_WORKERS];
 };
 
 TASK(void, lookup_race_worker, struct lookup_race*, race)
@@ -54,7 +69,7 @@ lookup_race_worker_CALL(lace_worker *lace, struct lookup_race *race)
     const unsigned int slot = (unsigned int)lace->worker;
     atomic_fetch_add_explicit(&race->arrived, 1, memory_order_acq_rel);
     while (atomic_load_explicit(
-               &race->arrived, memory_order_acquire) < TEST_RACE_WORKERS) {
+               &race->arrived, memory_order_acquire) < test_workers) {
     }
 
     race->created[slot] = 0;
@@ -157,8 +172,8 @@ custom_race_destroy(uint64_t a, uint64_t b)
 struct custom_lookup_race {
     nodes_table *table;
     _Atomic(unsigned int) arrived;
-    uint64_t indices[TEST_RACE_WORKERS][TEST_CUSTOM_RACE_KEYS];
-    int created[TEST_RACE_WORKERS][TEST_CUSTOM_RACE_KEYS];
+    uint64_t indices[TEST_MAX_WORKERS][TEST_CUSTOM_RACE_KEYS];
+    int created[TEST_MAX_WORKERS][TEST_CUSTOM_RACE_KEYS];
 };
 
 TASK(void, custom_lookup_race_worker, struct custom_lookup_race*, race)
@@ -170,7 +185,7 @@ custom_lookup_race_worker_CALL(
     const unsigned int slot = (unsigned int)lace->worker;
     atomic_fetch_add_explicit(&race->arrived, 1, memory_order_acq_rel);
     while (atomic_load_explicit(
-               &race->arrived, memory_order_acquire) < TEST_RACE_WORKERS) {
+               &race->arrived, memory_order_acquire) < test_workers) {
     }
 
     for (uint64_t i = 0; i < TEST_CUSTOM_RACE_KEYS; i++) {
@@ -287,8 +302,8 @@ test_custom_metadata_cleanup(void)
 static int
 test_custom_race(void)
 {
-    nodes_table *table = nodes_create(
-        TEST_RACE_TABLE_SIZE, TEST_RACE_TABLE_SIZE);
+    const size_t table_size = race_table_size();
+    nodes_table *table = nodes_create(table_size, table_size);
     nodes_set_custom(
         table, custom_hash_degenerate, custom_equals,
         custom_race_create, custom_race_destroy);
@@ -308,7 +323,7 @@ test_custom_race(void)
     size_t winners = 0;
     for (size_t key = 0; key < TEST_CUSTOM_RACE_KEYS; key++) {
         size_t key_winners = 0;
-        for (size_t worker = 0; worker < TEST_RACE_WORKERS; worker++) {
+        for (size_t worker = 0; worker < test_workers; worker++) {
             test_assert(race.indices[worker][key] > 1);
             test_assert(race.indices[worker][key] == race.indices[0][key]);
             if (race.created[worker][key] == 1) key_winners++;
@@ -376,6 +391,186 @@ test_exhaustion_and_resize(void)
             &created) == indices[i]);
         test_assert(created == 0);
     }
+    nodes_free(table);
+    return 0;
+}
+
+/**
+ * Rebuild stress test with adversarial node shapes.
+ *
+ * The shapes are chosen to maximise structural interference during a
+ * (possibly parallel) rebuild:
+ *   - many leaves, which all share a single canonical family;
+ *   - a long chain of nodes that all share one maximum child, so they all
+ *     land in the same family and form a deep chain;
+ *   - nodes anchored on members of that deep chain, so a family root and the
+ *     interior of another family end up sharing branch slots;
+ *   - a wide fan of nodes with pairwise distinct maximum children;
+ *   - custom (leaf) nodes interleaved with plain ones, so the rebuild has to
+ *     consult the per-bucket custom bitmap.
+ *
+ * After clear/mark/rebuild every node must still be found at its original
+ * index without being recreated, and the node count must be unchanged.
+ */
+#define TEST_SHAPE_TABLE_SIZE 65536
+#define TEST_SHAPE_LEAVES 512
+#define TEST_SHAPE_CUSTOM_LEAVES 256
+#define TEST_SHAPE_CHAIN 1024
+#define TEST_SHAPE_SUBANCHORS 48
+#define TEST_SHAPE_SUBFAN 64
+#define TEST_SHAPE_TOTAL_LEAVES (TEST_SHAPE_LEAVES + TEST_SHAPE_CUSTOM_LEAVES)
+#define TEST_SHAPE_MAX_NODES \
+    (2 * TEST_SHAPE_TOTAL_LEAVES + TEST_SHAPE_CHAIN + \
+     TEST_SHAPE_SUBANCHORS * TEST_SHAPE_SUBFAN)
+
+struct shape_node {
+    uint64_t a;
+    uint64_t b;
+    uint64_t index;
+    int custom;
+};
+
+struct shape_set {
+    struct shape_node nodes[TEST_SHAPE_MAX_NODES];
+    size_t count;
+    size_t roots[TEST_SHAPE_MAX_NODES];
+    size_t root_count;
+};
+
+/* Internal nodes carry a tag above the 40-bit handle so that distinct nodes
+   can share the same children; the table only looks at the low 40 bits. */
+#define SHAPE_INTERNAL(tag, lo) (((uint64_t)(tag) << 40) | (uint64_t)(lo))
+
+static int
+shape_add(struct shape_set *set, nodes_table *table,
+          uint64_t a, uint64_t b, int custom, int is_root)
+{
+    test_assert(set->count < TEST_SHAPE_MAX_NODES);
+    int created = 0;
+    const uint64_t index = custom
+        ? nodes_lookupc(table, a, b, &created)
+        : nodes_lookup(table, a, b, &created);
+    test_assert(index > 1);
+    test_assert(created == 1);
+    struct shape_node *node = &set->nodes[set->count];
+    node->a = a;
+    node->b = b;
+    node->index = index;
+    node->custom = custom;
+    if (is_root) set->roots[set->root_count++] = set->count;
+    set->count++;
+    return 0;
+}
+
+static int
+shape_build(struct shape_set *set, nodes_table *table)
+{
+    set->count = 0;
+    set->root_count = 0;
+
+    /* Leaves: every leaf shares the same canonical family. */
+    for (uint64_t i = 0; i < TEST_SHAPE_LEAVES; i++) {
+        if (shape_add(set, table,
+                      UINT64_C(0x4000000000000000) | i, i, 0, 0)) return 1;
+    }
+    /* Custom leaves, interleaved into the same family. */
+    for (uint64_t i = 0; i < TEST_SHAPE_CUSTOM_LEAVES; i++) {
+        if (shape_add(set, table,
+                      UINT64_C(0x4000000000010000) | i, i, 1, 0)) return 1;
+    }
+
+    /* The hub is the leaf with the largest handle, so that it is the maximum
+       child of every node in the deep chain below. */
+    size_t hub_pos = 0;
+    size_t low_pos = 0;
+    for (size_t i = 1; i < TEST_SHAPE_TOTAL_LEAVES; i++) {
+        if (set->nodes[i].index > set->nodes[hub_pos].index) hub_pos = i;
+        if (set->nodes[i].index < set->nodes[low_pos].index) low_pos = i;
+    }
+    const uint64_t hub = set->nodes[hub_pos].index;
+    const uint64_t low = set->nodes[low_pos].index;
+    const size_t chain_first = set->count;
+
+    /* Deep chain: every node has `hub` as its maximum child. */
+    for (uint64_t i = 0; i < TEST_SHAPE_CHAIN; i++) {
+        size_t pos = (size_t)i % TEST_SHAPE_TOTAL_LEAVES;
+        if (pos == hub_pos) pos = (pos + 1) % TEST_SHAPE_TOTAL_LEAVES;
+        const uint64_t lo = set->nodes[pos].index;
+        test_assert(lo < hub);
+        if (shape_add(set, table, SHAPE_INTERNAL(i + 1, hub), lo, 0, 1)) {
+            return 1;
+        }
+    }
+
+    /* Families anchored on members of the deep chain: these share branch
+       slots with the interior of the chain above. */
+    for (uint64_t i = 0; i < TEST_SHAPE_SUBANCHORS; i++) {
+        const uint64_t anchor = set->nodes[chain_first + i].index;
+        for (uint64_t k = 0; k < TEST_SHAPE_SUBFAN; k++) {
+            const uint64_t lo =
+                set->nodes[(size_t)k % TEST_SHAPE_TOTAL_LEAVES].index;
+            test_assert(lo < anchor);
+            if (shape_add(set, table,
+                          SHAPE_INTERNAL(k + 1, anchor), lo, 0, 1)) {
+                return 1;
+            }
+        }
+    }
+
+    /* Wide fan: pairwise distinct maximum children, one per leaf. This also
+       makes every leaf reachable from a root, so marking covers them all. */
+    for (size_t i = 0; i < TEST_SHAPE_TOTAL_LEAVES; i++) {
+        if (i == low_pos) continue;
+        const uint64_t anchor = set->nodes[i].index;
+        test_assert(anchor > low);
+        if (shape_add(set, table, SHAPE_INTERNAL(0, anchor), low, 0, 1)) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int
+shape_verify(const struct shape_set *set, nodes_table *table)
+{
+    for (size_t i = 0; i < set->count; i++) {
+        const struct shape_node *node = &set->nodes[i];
+        int created = 1;
+        const uint64_t found = node->custom
+            ? nodes_lookupc(table, node->a, node->b, &created)
+            : nodes_lookup(table, node->a, node->b, &created);
+        test_assert(found == node->index);
+        test_assert(created == 0);
+    }
+    test_assert(nodes_count_nodes(table) == set->count + 2);
+    return 0;
+}
+
+static int
+test_rebuild_shapes(void)
+{
+    static struct shape_set set;
+    nodes_table *table = nodes_create(
+        TEST_SHAPE_TABLE_SIZE, TEST_SHAPE_TABLE_SIZE);
+    nodes_set_custom(
+        table, custom_hash, custom_equals, custom_create, custom_destroy);
+
+    if (shape_build(&set, table)) return 1;
+    if (shape_verify(&set, table)) return 1;
+
+    /* Repeat the collect cycle: each rebuild may lay out the structure
+       differently, so run it several times over the same node set. */
+    for (int round = 0; round < 8; round++) {
+        nodes_clear(table);
+        for (size_t i = 0; i < set.root_count; i++) {
+            nodes_mark_rec(table, set.nodes[set.roots[i]].index);
+        }
+        nodes_cleanup_custom(table);
+        test_assert(nodes_rebuild(table) == 0);
+        if (shape_verify(&set, table)) return 1;
+    }
+
     nodes_free(table);
     return 0;
 }
@@ -534,7 +729,8 @@ run_table_tests_CALL(lace_worker *lace)
 
     nodes_free(table);
 
-    table = nodes_create(TEST_RACE_TABLE_SIZE, TEST_RACE_TABLE_SIZE);
+    const size_t race_size = race_table_size();
+    table = nodes_create(race_size, race_size);
     uint64_t race_indices[TEST_RACE_KEYS];
     for (uint64_t i = 0; i < TEST_RACE_KEYS; i++) {
         struct lookup_race race = {
@@ -547,7 +743,7 @@ run_table_tests_CALL(lace_worker *lace)
         lookup_race_worker_TOGETHER(&race);
         unsigned int created = 0;
         for (unsigned int worker = 0;
-             worker < TEST_RACE_WORKERS; worker++) {
+             worker < test_workers; worker++) {
             test_assert(race.indices[worker] > 1);
             test_assert(race.indices[worker] == race.indices[0]);
             const uint64_t *data = nodes_get_pointer(
@@ -616,6 +812,7 @@ run_table_tests_CALL(lace_worker *lace)
     if (test_custom_metadata_cleanup()) return 1;
     if (test_custom_race()) return 1;
     if (test_exhaustion_and_resize()) return 1;
+    if (test_rebuild_shapes()) return 1;
 #if SYLVAN_NODES_TABLE_LLCHST
     if (test_subtable_routing()) return 1;
 #endif
@@ -624,9 +821,22 @@ run_table_tests_CALL(lace_worker *lace)
 }
 
 int
-main(void)
+main(int argc, char **argv)
 {
-    lace_start(TEST_RACE_WORKERS, 0, 0);
+    /* Optional argument: number of Lace workers (default TEST_DEFAULT_WORKERS).
+       The stress harness uses this to replay the tests at other worker
+       counts. */
+    if (argc > 1) {
+        const long requested = strtol(argv[1], NULL, 10);
+        if (requested < 1 || requested > TEST_MAX_WORKERS) {
+            fprintf(stderr, "test_table: workers must be 1..%d\n",
+                    TEST_MAX_WORKERS);
+            return 1;
+        }
+        test_workers = (unsigned int)requested;
+    }
+
+    lace_start(test_workers, 0, 0);
     const int result = run_table_tests();
 
     lace_stop();

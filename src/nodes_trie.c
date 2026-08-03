@@ -355,6 +355,57 @@ uint64_t nodes_lookupc_subtable(const nodes_table* dbs, uint32_t subtable,
     return nodes_lookup2(dbs, a, b, created, 1);
 }
 
+/**
+ * Reinsert one marked bucket into the (cleared) trie.
+ *
+ * This walks the same probe sequence as nodes_lookup2, but skips the equality
+ * checks: the marked buckets are the canonical nodes of the previous table, so
+ * they are pairwise distinct and no bucket can find itself already present.
+ *
+ * Concurrency. Several workers may run this at the same time on different
+ * buckets. Note that the families do not have disjoint slots: the family
+ * rooted at first[X] uses next[X*2+0] and next[X*2+1] as its depth-1 branch
+ * pair, and those are the very same words that the family of X's own anchor
+ * uses when its probe sequence passes through handle X. So workers cannot be
+ * partitioned by anchor; they genuinely share slots. It is nevertheless safe:
+ *
+ * 1. Slots are write-once. Every store is a CAS against the value 0, and the
+ *    value stored is (masked_hash | handle) with handle >= 2, so it is never
+ *    0. A slot therefore changes at most once, and any non-zero value read
+ *    from it is already its final value.
+ *
+ * 2. A walk never diverges from the final probe sequence. At each step the
+ *    worker either reads a non-zero (hence final) value and descends through
+ *    it, or reads 0 and attempts the CAS. If the CAS succeeds the node is
+ *    placed and the walk ends; if it fails, the CAS has written the current
+ *    (hence final) value into `value` and the walk descends through that. So
+ *    the slots a worker visits are always a prefix of the probe sequence that
+ *    a later nodes_lookup2 will follow for the same node.
+ *
+ *    This is what defeats the "lost node" interleaving: two workers reinserting
+ *    into a shared slot cannot both believe they own it, and the loser does not
+ *    abandon its node - it continues the descent from the winner's entry and
+ *    lands deeper on the same, now longer, sequence. Combined with (1), no
+ *    later insertion can re-route the prefix that led to a placed node, so a
+ *    node that has been placed stays reachable.
+ *
+ * 3. The walk terminates. Handles are unique and each is stored in exactly one
+ *    slot, so a probe sequence that revisited a handle would revisit the slot
+ *    holding it, which forces its two predecessors to be equal, and inductively
+ *    forces the anchor itself to occur as an interior handle of its own
+ *    sequence. That would make the "is stored in the branch pair of" relation
+ *    cyclic. It cannot be: publishing a handle is a release CAS that is
+ *    ordered after the acquire load which read its predecessor, so the relation
+ *    strictly decreases in the happens-before order. Sequences are finite and
+ *    the walk stops at the first empty slot. (The acquire/release pairs above
+ *    are what make this argument hold; plain relaxed accesses would not order
+ *    the two slots against each other.)
+ *
+ * Consequence: every marked node is reinserted exactly once and is found at
+ * its original index afterwards, for any interleaving. The *shape* of the trie
+ * does depend on the order in which buckets happen to be reinserted, so it is
+ * not bit-identical across worker counts; node handles are unaffected.
+ */
 static int nodes_reinsert_bucket(nodes_table* dbs, uint64_t d_idx)
 {
     const uint64_t * const d_ptr = ((uint64_t*)dbs->data) + 2*d_idx;
@@ -377,21 +428,21 @@ static int nodes_reinsert_bucket(nodes_table* dbs, uint64_t d_idx)
         trie = A > B ? A : B;
     }
 
-    uint64_t value = atomic_load_explicit(&dbs->first[trie], memory_order_relaxed);
+    uint64_t value = atomic_load_explicit(&dbs->first[trie], memory_order_acquire);
     if (value == 0) {
         if (atomic_compare_exchange_strong_explicit(
                 &dbs->first[trie], &value, masked_hash | d_idx,
-                memory_order_relaxed, memory_order_relaxed)) return 1;
+                memory_order_acq_rel, memory_order_acquire)) return 1;
     }
 
     for (;;) {
         uint64_t n_idx = trie*2 + (hash&1);
         hash = ror64(hash, 1);
-        value = atomic_load_explicit(&dbs->next[n_idx], memory_order_relaxed);
+        value = atomic_load_explicit(&dbs->next[n_idx], memory_order_acquire);
         if (value == 0) {
             if (atomic_compare_exchange_strong_explicit(
                     &dbs->next[n_idx], &value, masked_hash | d_idx,
-                    memory_order_relaxed, memory_order_relaxed)) return 1;
+                    memory_order_acq_rel, memory_order_acquire)) return 1;
         }
         trie = value&0x000000ffffffffff;
     }
@@ -537,13 +588,28 @@ static int nodes_rebuild_words(nodes_table* dbs, size_t first_word, size_t word_
     return bad;
 }
 
+TASK(int, nodes_rebuild_par, nodes_table*, dbs, size_t, first_word, size_t, word_count)
+
+int nodes_rebuild_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first_word, size_t word_count)
+{
+    if (word_count > 8) { // 8 mark words = 512 buckets
+        const size_t split = word_count / 2;
+        nodes_rebuild_par_SPAWN(lace, dbs, first_word, split);
+        const int bad = nodes_rebuild_par_CALL(lace, dbs, first_word + split, word_count - split);
+        return bad + nodes_rebuild_par_SYNC(lace);
+    } else {
+        return nodes_rebuild_words(dbs, first_word, word_count);
+    }
+}
+
+/**
+ * Reinsert all marked buckets. This runs concurrently; see the comment on
+ * nodes_reinsert_bucket for why concurrent reconstruction keeps every marked
+ * canonical node reachable at its original index.
+ */
 int nodes_rebuild_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    (void)lace;
-
-    /* Reinsert deterministically: concurrent trie reconstruction can make a
-       marked canonical node unreachable. */
-    return nodes_rebuild_words(dbs, 0, (dbs->table_size + 63) / 64);
+    return nodes_rebuild_par_CALL(lace, dbs, 0, (dbs->table_size + 63) / 64);
 }
 
 TASK(size_t, nodes_count_nodes_par, nodes_table*, dbs, size_t, first, size_t, count)

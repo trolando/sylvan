@@ -38,7 +38,7 @@ static const struct
     {1, BDD_NODES_REUSED, "MTBDD nodes reused"},
     {1, LDD_NODES_CREATED, "LDD nodes created"},
     {1, LDD_NODES_REUSED, "LDD nodes reused"},
-    {1, LLMSSET_LOOKUP, "Lookup iterations"},
+    {1, LLMSSET_LOOKUP, "Unique lookup steps"},
     {4, 0, NULL}, /* trigger to report unique nodes and operation cache */
 
     {0, 0, "Operation            Count            Cache get        Cache put"},
@@ -317,8 +317,8 @@ sylvan_stats_report(FILE *target)
             fprintf(target, "%-20s %zu of %zu buckets filled.\n", "Unique nodes table", nodes_count_nodes(nodes), nodes_get_size(nodes));
             fprintf(target, "%-20s %zu of %zu buckets filled.\n", "Operation cache", cache_getused(), cache_getsize());
             char buf[64], buf2[64];
-            to_h(24ULL * nodes_get_size(nodes), buf);
-            to_h(24ULL * nodes_get_max_size(nodes), buf2);
+            to_h(nodes_get_capacity_bytes(nodes_get_size(nodes)), buf);
+            to_h(nodes_get_capacity_bytes(nodes_get_max_size(nodes)), buf2);
             fprintf(target, "%-20s %s (max real) of %s (allocated virtual memory).\n", "Memory (nodes)", buf, buf2);
             to_h(44ULL * cache_getsize(), buf);
             to_h(44ULL * cache_getmaxsize(), buf2);

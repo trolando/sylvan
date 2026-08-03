@@ -57,6 +57,13 @@ size_t nodes_get_max_size(const nodes_table* dbs);
 size_t nodes_get_size(const nodes_table* dbs);
 
 /**
+ * Estimate the bytes reserved by this nodes backend for <capacity> buckets.
+ * This includes its node/index arrays and allocation/custom bitmaps, but not
+ * fixed-size descriptors or allocator page rounding.
+ */
+size_t nodes_get_capacity_bytes(size_t capacity);
+
+/**
  * Find or insert a decision diagram node.
  * Returns the index if successful, or 0 if the table is full!!
  * @ensures 2 <= \result < nodes_get_size(dbs);

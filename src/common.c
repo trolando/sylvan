@@ -287,6 +287,12 @@ nodes_table* nodes;
 
 static size_t table_min = 0, table_max = 0, cache_min = 0, cache_max = 0;
 
+static size_t
+table_memory_bytes(size_t node_capacity, size_t cache_capacity)
+{
+    return nodes_get_capacity_bytes(node_capacity) + cache_capacity * 44;
+}
+
 static int
 is_power_of_two(size_t size)
 {
@@ -341,15 +347,18 @@ sylvan_set_limits(size_t memorycap, int table_ratio, int initial_ratio)
         max_c <<= -table_ratio;
     }
 
-    size_t cur = max_t * 24 + max_c * 44;
+    const size_t cur = table_memory_bytes(max_t, max_c);
     if (cur > memorycap) {
         fprintf(stderr, "sylvan_set_limits: memory cap incompatible with requested table ratio\n");
     }
 
-    while (2*cur < memorycap && max_t < UINT64_C(0x0000010000000000)) {
-        max_t *= 2;
-        max_c *= 2;
-        cur *= 2;
+    while (max_t < UINT64_C(0x0000010000000000)) {
+        const size_t next_t = max_t * 2;
+        const size_t next_c = max_c * 2;
+        const size_t next_bytes = table_memory_bytes(next_t, next_c);
+        if (next_bytes > memorycap) break;
+        max_t = next_t;
+        max_c = next_c;
     }
 
     if (initial_ratio < 0) {

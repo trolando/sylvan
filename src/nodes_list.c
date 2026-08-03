@@ -54,6 +54,12 @@ region_bitmap_size(size_t table_size)
     return ((regions + 63u) / 64u) * sizeof(uint64_t);
 }
 
+static size_t
+node_bitmap_size(size_t table_size)
+{
+    return ((table_size + 63u) / 64u) * sizeof(uint64_t);
+}
+
 void* nodes_get_pointer(const nodes_table* dbs, size_t index)
 {
     return dbs->data + index * 16;
@@ -69,15 +75,22 @@ size_t nodes_get_size(const nodes_table* dbs)
     return dbs->table_size;
 }
 
+size_t
+nodes_get_capacity_bytes(size_t capacity)
+{
+    return capacity * (2 * sizeof(uint64_t) + 2 * sizeof(uint64_t)) +
+           region_bitmap_size(capacity) + 2 * node_bitmap_size(capacity);
+}
+
 void nodes_set_size(nodes_table* dbs, size_t size)
 {
     /* check bounds (don't be ridiculous) */
-    if (size > 128 && size <= dbs->max_size) {
+    if (size > 128 && size >= dbs->table_size && size <= dbs->max_size) {
         dbs->table_size = size;
     }
 }
 
-SYLVAN_TLS uint64_t my_region = UINT64_MAX;
+static SYLVAN_TLS uint64_t my_region = UINT64_MAX;
 
 TASK(void, nodes_reset_region)
 
@@ -378,6 +391,11 @@ nodes_table* nodes_create(size_t initial_size, size_t max_size)
         exit(1);
     }
 
+    if (max_size > UINT64_C(0x0000010000000000)) {
+        fprintf(stderr, "nodes_create: max_size exceeds the 40-bit index!\n");
+        exit(1);
+    }
+
     // minimum size is 512 buckets (region size)
 
     if (initial_size < 512) {
@@ -398,18 +416,13 @@ nodes_table* nodes_create(size_t initial_size, size_t max_size)
        Overhead of bitmapc: 1 bit per bucket. */
 
     dbs->bitmap1 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(region_bitmap_size(dbs->max_size));
-    dbs->bitmap2 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(dbs->max_size / 8);
-    dbs->bitmapc = (uint64_t*)sylvan_alloc_aligned(dbs->max_size / 8);
+    dbs->bitmap2 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(node_bitmap_size(dbs->max_size));
+    dbs->bitmapc = (uint64_t*)sylvan_alloc_aligned(node_bitmap_size(dbs->max_size));
 
     if (dbs->data == 0 || dbs->first == 0 || dbs->next == 0 || dbs->bitmap1 == 0 || dbs->bitmap2 == 0 || dbs->bitmapc == 0) {
         fprintf(stderr, "nodes_create: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
     }
-
-#if defined(madvise) && defined(MADV_RANDOM)
-    madvise(dbs->first, dbs->max_size * 8, MADV_RANDOM);
-    madvise(dbs->next, dbs->max_size * 16, MADV_RANDOM);
-#endif
 
     // forbid first two positions (index 0 and 1)
     dbs->bitmap2[0] = UINT64_C(0xc000000000000000);
@@ -434,15 +447,15 @@ void nodes_free(nodes_table* dbs)
     sylvan_free_aligned((void*)dbs->first, dbs->max_size * 8);
     sylvan_free_aligned((void*)dbs->next, dbs->max_size * 8);
     sylvan_free_aligned((void*)dbs->bitmap1, region_bitmap_size(dbs->max_size));
-    sylvan_free_aligned((void*)dbs->bitmap2, dbs->max_size / 8);
-    sylvan_free_aligned(dbs->bitmapc, dbs->max_size / 8);
+    sylvan_free_aligned((void*)dbs->bitmap2, node_bitmap_size(dbs->max_size));
+    sylvan_free_aligned(dbs->bitmapc, node_bitmap_size(dbs->max_size));
     sylvan_free_aligned(dbs, sizeof(struct nodes_table));
 }
 
 void nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
 {
     sylvan_clear_aligned((void*)dbs->bitmap1, region_bitmap_size(dbs->max_size));
-    sylvan_clear_aligned((void*)dbs->bitmap2, dbs->max_size / 8);
+    sylvan_clear_aligned((void*)dbs->bitmap2, node_bitmap_size(dbs->max_size));
     sylvan_clear_aligned((void*)dbs->first, dbs->max_size * 8);
     sylvan_clear_aligned((void*)dbs->next, dbs->max_size * 8);
 
@@ -525,7 +538,7 @@ size_t nodes_count_nodes_par_CALL(lace_worker* lace, nodes_table* dbs, size_t fi
     } else {
         size_t result = 0;
         _Atomic(uint64_t)* ptr = dbs->bitmap2 + (first / 64);
-        if (count == 512) {
+        if (count == 512 && (first & 63) == 0) {
             result += popcnt_uint64(atomic_load_explicit(ptr+0, memory_order_relaxed));
             result += popcnt_uint64(atomic_load_explicit(ptr+1, memory_order_relaxed));
             result += popcnt_uint64(atomic_load_explicit(ptr+2, memory_order_relaxed));
@@ -573,7 +586,7 @@ void nodes_destroy_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first_wo
                 const unsigned int bit = clz_uint64(dead);
                 const size_t index = word * 64 + bit;
                 const uint64_t mask = UINT64_C(0x8000000000000000) >> bit;
-                if (index < dbs->table_size) {
+                if (index < dbs->table_size && dbs->destroy_cb != NULL) {
                     uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*index;
                     dbs->destroy_cb(d_ptr[0], d_ptr[1]);
                 }
@@ -587,7 +600,6 @@ void nodes_destroy_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first_wo
 
 void nodes_cleanup_custom_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    if (dbs->destroy_cb == NULL) return; // no custom function
     nodes_destroy_par_CALL(lace, dbs, 0, (dbs->table_size + 63) / 64);
 }
 

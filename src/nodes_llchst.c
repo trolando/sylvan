@@ -201,7 +201,7 @@ get_page(const nodes_table* table, uint32_t page_index, int create)
     uintptr_t expected = 0;
     if (!atomic_compare_exchange_strong_explicit(
             dbs->pages + page_index, &expected, (uintptr_t)candidate,
-            memory_order_release, memory_order_acquire)) {
+            memory_order_acq_rel, memory_order_acquire)) {
         sylvan_free_aligned(candidate, sizeof(llchst_page));
         candidate = (llchst_page*)expected;
     } else {
@@ -247,7 +247,7 @@ ensure_heads(nodes_table* dbs, llchst_subtable* subtable)
     uintptr_t expected = 0;
     if (!atomic_compare_exchange_strong_explicit(
             &subtable->heads, &expected, (uintptr_t)candidate,
-            memory_order_release, memory_order_acquire)) {
+            memory_order_acq_rel, memory_order_acquire)) {
         sylvan_free_aligned((void*)candidate, bytes);
         heads = (_Atomic(uint64_t)*)expected;
     } else {

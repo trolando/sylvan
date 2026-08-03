@@ -983,11 +983,25 @@ static void
 allocate_head_budget(struct llchst_rebuild_entry* entries,
                      size_t count, size_t table_size)
 {
+    /* Only active subtables receive a share, so only they may contribute to
+       the divisor. Counting the population of subtables that are about to be
+       released diluted every surviving share by the dead levels' size.
+
+       The share uses <population>, the pre-collection chain length, and not
+       the live count that measure_entry computed alongside it. Two reasons:
+       the fast estimating path never produces a live count at all, so mixing
+       the two would systematically favour the estimated entries; and a
+       subtable's pre-collection size is the better predictor of what it will
+       hold again before the next collection. Over-provisioning only costs
+       head memory that the next collection reclaims, whereas
+       under-provisioning costs chain steps on every lookup until the next
+       maintenance pass. */
     size_t population = 0;
     size_t active = 0;
     for (size_t i = 0; i < count; i++) {
+        if (!entries[i].active) continue;
         population += entries[i].population;
-        active += entries[i].active != 0;
+        active++;
     }
     if (population == 0) return;
 

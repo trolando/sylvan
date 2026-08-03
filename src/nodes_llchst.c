@@ -202,8 +202,6 @@ get_subtable(const nodes_table* dbs, uint32_t route, int create)
 {
     if (route < NODES_SUBTABLE_LEAF) {
         if (route < SYLVAN_LLCHST_DENSE_LEVELS) {
-            if (create) raise_decision_highwater(
-                (nodes_table*)dbs, route + 1u);
             return (llchst_subtable*)dbs->decision + route;
         }
         const uint32_t page_index = route >> LLCHST_PAGE_BITS;
@@ -222,7 +220,7 @@ get_subtable(const nodes_table* dbs, uint32_t route, int create)
 }
 
 static _Atomic(uint64_t)*
-ensure_heads(llchst_subtable* subtable)
+ensure_heads(nodes_table* dbs, llchst_subtable* subtable)
 {
     _Atomic(uint64_t)* heads = subtable_heads(subtable);
     if (heads != NULL) return heads;
@@ -239,6 +237,9 @@ ensure_heads(llchst_subtable* subtable)
         sylvan_free_aligned((void*)candidate, bytes);
         heads = (_Atomic(uint64_t)*)expected;
     } else {
+        if (subtable->route < SYLVAN_LLCHST_DENSE_LEVELS) {
+            raise_decision_highwater(dbs, subtable->route + 1u);
+        }
         sylvan_stats_count(LLCHST_SUBTABLE_CREATED);
         heads = candidate;
     }
@@ -430,7 +431,7 @@ nodes_lookup2(const nodes_table* dbs, uint32_t route,
 {
     llchst_subtable* subtable = get_subtable(dbs, route, 1);
     if (subtable == NULL) return 0;
-    _Atomic(uint64_t)* heads = ensure_heads(subtable);
+    _Atomic(uint64_t)* heads = ensure_heads((nodes_table*)dbs, subtable);
     if (heads == NULL) return 0;
 
     const uint64_t hash = hash_key(dbs, route, a, b, custom);

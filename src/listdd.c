@@ -584,14 +584,16 @@ _listdd_try_make_node(LISTDD *destination, uint32_t value, LISTDD ifeq, LISTDD i
     mddnode_make(&n, value, ifneq, ifeq);
 
     int created;
-    uint64_t index = nodes_lookup(nodes, n.a, n.b, &created);
+    uint64_t index = nodes_lookup_subtable(
+        nodes, NODES_SUBTABLE_LISTDD, n.a, n.b, &created);
     if (index == 0) {
         listdd_refs_push(ifeq);
         listdd_refs_push(ifneq);
         sylvan_gc(); // FIXME can be just sylvan_gc_CALL?
         listdd_refs_pop(2);
 
-        index = nodes_lookup(nodes, n.a, n.b, &created);
+        index = nodes_lookup_subtable(
+            nodes, NODES_SUBTABLE_LISTDD, n.a, n.b, &created);
         if (index == 0) return SYLVAN_ERR_OOM;
     }
 
@@ -621,14 +623,16 @@ _listdd_try_make_copy_node(LISTDD *destination, LISTDD ifeq, LISTDD ifneq)
     mddnode_makecopy(&n, ifneq, ifeq);
 
     int created;
-    uint64_t index = nodes_lookup(nodes, n.a, n.b, &created);
+    uint64_t index = nodes_lookup_subtable(
+        nodes, NODES_SUBTABLE_LISTDD, n.a, n.b, &created);
     if (index == 0) {
         listdd_refs_push(ifeq);
         listdd_refs_push(ifneq);
         sylvan_gc();
         listdd_refs_pop(2);
 
-        index = nodes_lookup(nodes, n.a, n.b, &created);
+        index = nodes_lookup_subtable(
+            nodes, NODES_SUBTABLE_LISTDD, n.a, n.b, &created);
         if (index == 0) return SYLVAN_ERR_OOM;
     }
 

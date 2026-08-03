@@ -369,12 +369,20 @@ zdd_makeleaf(uint16_t type, uint64_t value)
     int custom = sylvan_mt_has_custom_hash(type);
 
     int created = 0;
-    uint64_t index = custom ? nodes_lookupc(nodes, n.a, n.b, &created) : nodes_lookup(nodes, n.a, n.b, &created);
+    uint64_t index = custom
+        ? nodes_lookupc_subtable(
+            nodes, NODES_SUBTABLE_LEAF, n.a, n.b, &created)
+        : nodes_lookup_subtable(
+            nodes, NODES_SUBTABLE_LEAF, n.a, n.b, &created);
     if (index == 0) {
         if (custom && created < 0) return zdd_invalid;
         sylvan_gc(); // FIXME
 
-        index = custom ? nodes_lookupc(nodes, n.a, n.b, &created) : nodes_lookup(nodes, n.a, n.b, &created);
+        index = custom
+            ? nodes_lookupc_subtable(
+                nodes, NODES_SUBTABLE_LEAF, n.a, n.b, &created)
+            : nodes_lookup_subtable(
+                nodes, NODES_SUBTABLE_LEAF, n.a, n.b, &created);
         if (index == 0) {
             if (custom && created < 0) return zdd_invalid;
             fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
@@ -423,14 +431,16 @@ _zdd_try_make_node(ZDD *destination, uint32_t var, ZDD low, ZDD high)
     zddnode_makenode(&n, var, low, high);
 
     int created;
-    uint64_t index = nodes_lookup(nodes, n.a, n.b, &created);
+    uint64_t index = nodes_lookup_subtable(
+        nodes, NODES_SUBTABLE_DECISION(var), n.a, n.b, &created);
     if (index == 0) {
         zdd_refs_push(low);
         zdd_refs_push(high);
         sylvan_gc(); //FIXME move to a mini function?
         zdd_refs_pop(2);
 
-        index = nodes_lookup(nodes, n.a, n.b, &created);
+        index = nodes_lookup_subtable(
+            nodes, NODES_SUBTABLE_DECISION(var), n.a, n.b, &created);
         if (index == 0) return SYLVAN_ERR_OOM;
     }
 
@@ -448,14 +458,16 @@ zdd_makemapnode(uint32_t var, ZDD low, ZDD high)
     zddnode_makemapnode(&n, var, low, high);
 
     int created;
-    uint64_t index = nodes_lookup(nodes, n.a, n.b, &created);
+    uint64_t index = nodes_lookup_subtable(
+        nodes, NODES_SUBTABLE_MAP, n.a, n.b, &created);
     if (index == 0) {
         zdd_refs_push(low);
         zdd_refs_push(high);
         sylvan_gc();
         zdd_refs_pop(2);
 
-        index = nodes_lookup(nodes, n.a, n.b, &created);
+        index = nodes_lookup_subtable(
+            nodes, NODES_SUBTABLE_MAP, n.a, n.b, &created);
         if (index == 0) {
             fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
             exit(1);

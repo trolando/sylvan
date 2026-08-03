@@ -488,12 +488,20 @@ mtbdd_leaf(uint32_t type, uint64_t value)
     int custom = sylvan_mt_has_custom_hash(type);
 
     int created = 0;
-    uint64_t index = custom ? nodes_lookupc(nodes, n.a, n.b, &created) : nodes_lookup(nodes, n.a, n.b, &created);
+    uint64_t index = custom
+        ? nodes_lookupc_subtable(
+            nodes, NODES_SUBTABLE_LEAF, n.a, n.b, &created)
+        : nodes_lookup_subtable(
+            nodes, NODES_SUBTABLE_LEAF, n.a, n.b, &created);
     if (index == 0) {
         if (custom && created < 0) return mtbdd_invalid;
         sylvan_gc(); // FIXME ?
 
-        index = custom ? nodes_lookupc(nodes, n.a, n.b, &created) : nodes_lookup(nodes, n.a, n.b, &created);
+        index = custom
+            ? nodes_lookupc_subtable(
+                nodes, NODES_SUBTABLE_LEAF, n.a, n.b, &created)
+            : nodes_lookup_subtable(
+                nodes, NODES_SUBTABLE_LEAF, n.a, n.b, &created);
         if (index == 0) {
             if (custom && created < 0) return mtbdd_invalid;
             fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", nodes_count_nodes(nodes), nodes_get_size(nodes));
@@ -514,10 +522,12 @@ mtbdd_nan(uint32_t type)
     mtbddnode_makenan(&n, type);
 
     int created;
-    uint64_t index = nodes_lookup(nodes, n.a, n.b, &created);
+    uint64_t index = nodes_lookup_subtable(
+        nodes, NODES_SUBTABLE_LEAF, n.a, n.b, &created);
     if (index == 0) {
         sylvan_gc();
-        index = nodes_lookup(nodes, n.a, n.b, &created);
+        index = nodes_lookup_subtable(
+            nodes, NODES_SUBTABLE_LEAF, n.a, n.b, &created);
         if (index == 0) {
             fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n",
                     nodes_count_nodes(nodes), nodes_get_size(nodes));
@@ -576,10 +586,12 @@ _mtbdd_try_make_node(MTBDD *destination, uint32_t var, MTBDD low, MTBDD high)
     mtbddnode_makenode(&n, var, low, high);
 
     int created;
-    uint64_t index = nodes_lookup(nodes, n.a, n.b, &created);
+    uint64_t index = nodes_lookup_subtable(
+        nodes, NODES_SUBTABLE_DECISION(var), n.a, n.b, &created);
     if (index == 0) {
         _mtbdd_makenode_gc(low, high);
-        index = nodes_lookup(nodes, n.a, n.b, &created);
+        index = nodes_lookup_subtable(
+            nodes, NODES_SUBTABLE_DECISION(var), n.a, n.b, &created);
         if (index == 0) return SYLVAN_ERR_OOM;
     }
 
@@ -605,10 +617,12 @@ _mtbdd_try_make_map_node(MTBDDMAP *destination, uint32_t key, MTBDDMAP next, MTB
 
     // in an MTBDDMAP, the low edges eventually lead to 0 and cannot have a low mark
     mtbddnode_makemapnode(&n, key, next, value);
-    index = nodes_lookup(nodes, n.a, n.b, &created);
+    index = nodes_lookup_subtable(
+        nodes, NODES_SUBTABLE_MAP, n.a, n.b, &created);
     if (index == 0) {
         _mtbdd_makenode_gc(next, value);
-        index = nodes_lookup(nodes, n.a, n.b, &created);
+        index = nodes_lookup_subtable(
+            nodes, NODES_SUBTABLE_MAP, n.a, n.b, &created);
         if (index == 0) return SYLVAN_ERR_OOM;
     }
 

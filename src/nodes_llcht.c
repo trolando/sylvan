@@ -364,6 +364,22 @@ nodes_lookupc(const nodes_table* dbs, const uint64_t a, const uint64_t b,
     return nodes_lookup2(dbs, a, b, created, 1);
 }
 
+uint64_t
+nodes_lookup_subtable(const nodes_table* dbs, uint32_t subtable,
+                      uint64_t a, uint64_t b, int* created)
+{
+    (void)subtable;
+    return nodes_lookup2(dbs, a, b, created, 0);
+}
+
+uint64_t
+nodes_lookupc_subtable(const nodes_table* dbs, uint32_t subtable,
+                       uint64_t a, uint64_t b, int* created)
+{
+    (void)subtable;
+    return nodes_lookup2(dbs, a, b, created, 1);
+}
+
 static int
 nodes_rehash_bucket(nodes_table* dbs, uint64_t index)
 {

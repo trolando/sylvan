@@ -58,8 +58,8 @@ size_t nodes_get_size(const nodes_table* dbs);
 
 /**
  * Estimate the bytes reserved by this nodes backend for <capacity> buckets.
- * This includes its node/index arrays and allocation/custom bitmaps, but not
- * fixed-size descriptors or allocator page rounding.
+ * This includes its node/index arrays, allocation/custom bitmaps, and any
+ * fixed routing metadata, but not allocator page rounding.
  */
 size_t nodes_get_capacity_bytes(size_t capacity);
 
@@ -77,6 +77,26 @@ uint64_t nodes_lookup(const nodes_table* dbs, const uint64_t a, const uint64_t b
  * @ensures 2 <= \result < nodes_get_size(dbs);
  */
 uint64_t nodes_lookupc(const nodes_table* dbs, const uint64_t a, const uint64_t b, int *created);
+
+/**
+ * Internal canonical-index routes. Decision routes use the node's variable
+ * identity (currently its var field). Auxiliary routes keep node families
+ * that do not belong to an ordered decision variable out of those subtables.
+ */
+#define NODES_SUBTABLE_DECISION(variable) ((uint32_t)(variable))
+#define NODES_SUBTABLE_LEAF             UINT32_C(0x01000000)
+#define NODES_SUBTABLE_MAP              UINT32_C(0x01000001)
+#define NODES_SUBTABLE_LISTDD           UINT32_C(0x01000002)
+#define NODES_SUBTABLE_DEFAULT          UINT32_C(0x01000003)
+
+/**
+ * Find or insert a node using a canonical-index routing hint. Backends without
+ * subtables deliberately ignore the hint and retain their normal behavior.
+ */
+uint64_t nodes_lookup_subtable(const nodes_table* dbs, uint32_t subtable,
+                               uint64_t a, uint64_t b, int *created);
+uint64_t nodes_lookupc_subtable(const nodes_table* dbs, uint32_t subtable,
+                                uint64_t a, uint64_t b, int *created);
 
 /**
  * To perform garbage collection, the user is responsible that no lookups are performed during the process.

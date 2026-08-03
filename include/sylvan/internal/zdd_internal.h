@@ -57,6 +57,9 @@ typedef struct zddnode {
 
 static_assert(sizeof(struct zddnode) == 16, "zddnode should be a 16 byte struct");
 
+/** Internal custom-leaf construction primitive. */
+ZDD zdd_makeleaf(uint16_t type, uint64_t value);
+
 /**
  * Some inlines to work with the ZDD type and the complement marks
  */

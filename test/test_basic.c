@@ -175,6 +175,8 @@ test_leaf_descriptor_CALL(lace_worker *lace)
     test_assert(test_leaf_descriptor_context.clones == 2);
     test_assert(mtbdd_leaf(
         type, (uint64_t)(uintptr_t)&failure) == mtbdd_invalid);
+    test_assert(zdd_makeleaf(
+        (uint16_t)type, (uint64_t)(uintptr_t)&failure) == zdd_invalid);
     test_assert(test_leaf_descriptor_context.clones == 2);
 
     char buffer[32];

@@ -262,6 +262,51 @@ void sylvan_gc_go_CALL(lace_worker* lace)
 }
 
 /**
+ * Table maintenance: a stop-the-world pass that lets the nodes table
+ * reorganize its own index. It reuses the garbage collection barrier and
+ * nothing else. In particular it does not clear the operation cache, does not
+ * touch the node bitmap and does not mark, which is what makes it cheap enough
+ * for the table to ask for it between collections.
+ */
+_Atomic(int) sylvan_maintenance_requested;
+
+/**
+ * Only one maintenance pass runs at a time.
+ */
+static _Atomic(int) maintenance;
+
+TASK(void, sylvan_maintenance_go)
+
+void sylvan_maintenance_go_CALL(lace_worker* lace)
+{
+    nodes_maintain_CALL(lace, nodes);
+}
+
+void sylvan_maintenance(lace_worker* lace)
+{
+    (void)lace;
+
+    /* A collection resizes everything anyway, and starting a maintenance frame
+       from inside a collection frame would deadlock on the Lace barrier. */
+    if (atomic_load_explicit(&gc, memory_order_relaxed) != 0) return;
+
+    int zero = 0;
+    if (!atomic_compare_exchange_strong(&maintenance, &zero, 1)) {
+        /* Another worker is running the pass. Do not wait for it: this worker
+           joins its frame at the next lace_check_yield, and unlike garbage
+           collection there is nothing here that the caller must observe before
+           continuing. */
+        return;
+    }
+
+    if (atomic_load_explicit(&gc, memory_order_relaxed) == 0) {
+        sylvan_maintenance_go_NEWFRAME();
+    }
+
+    maintenance = 0;
+}
+
+/**
  * Perform garbage collection
  */
 void sylvan_gc_CALL(lace_worker* lace)
@@ -396,6 +441,8 @@ sylvan_init_package(void)
 
     /* Initialize garbage collection */
     gc = 0;
+    maintenance = 0;
+    sylvan_maintenance_requested = 0;
 
     // FIXME better configuration!!
 #if SYLVAN_AGGRESSIVE_RESIZE

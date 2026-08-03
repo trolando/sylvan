@@ -641,6 +641,16 @@ void nodes_cleanup_custom_CALL(lace_worker* lace, nodes_table* dbs)
 }
 
 /**
+ * This backend never requests maintenance: its index is rebuilt in place on
+ * every insertion, so there is nothing to reorganize between collections.
+ */
+void nodes_maintain_CALL(lace_worker* lace, nodes_table* dbs)
+{
+    (void)lace;
+    (void)dbs;
+}
+
+/**
  * Set custom functions
  */
 void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb equals_cb, nodes_create_cb create_cb, nodes_destroy_cb destroy_cb)

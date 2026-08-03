@@ -54,6 +54,13 @@
 #define LLCHST_HEAD_SIZED     UINT32_C(0x40000000)
 /* The size came from a measured rebuild rather than from a seed estimate. */
 #define LLCHST_HEAD_MEASURED  UINT32_C(0x20000000)
+/* Routes fit in 25 bits (NODES_SUBTABLE_DEFAULT is 0x01000003), so the top
+   bits of the route word carry the maintenance state of the subtable. */
+#define LLCHST_ROUTE_MASK     UINT32_C(0x01ffffff)
+/* A lookup walked a chain far past its target length here. */
+#define LLCHST_WANTS_RESIZE   UINT32_C(0x80000000)
+/* A maintenance pass found that a larger head array would not help. */
+#define LLCHST_RESIZE_DENIED  UINT32_C(0x40000000)
 
 #define LLCHST_INDEX_BITS       40u
 #define LLCHST_LEVEL_BITS       24u
@@ -69,6 +76,22 @@
 
 #ifndef SYLVAN_LLCHST_INITIAL_HEAD_LOG2
 #define SYLVAN_LLCHST_INITIAL_HEAD_LOG2 8u
+#endif
+
+/**
+ * Chain length that makes a lookup ask for the subtable to be resized.
+ *
+ * Chains are Poisson distributed around the load factor, so the threshold has
+ * to sit far enough into the tail that a well sized subtable practically never
+ * trips it: every spurious request costs a stop-the-world pass. At a load
+ * factor of 2 the probability of a chain reaching 8 (the obvious "4x the load
+ * factor") is about 1e-3 per lookup, which would request maintenance
+ * continuously; reaching 16 has probability 5e-10, while an overloaded
+ * subtable at a load factor of 5 reaches it within a few thousand lookups.
+ * Hence 8x rather than 4x the load factor.
+ */
+#ifndef SYLVAN_LLCHST_RESIZE_CHAIN_STEPS
+#define SYLVAN_LLCHST_RESIZE_CHAIN_STEPS (8u * SYLVAN_LLCHST_LOAD_FACTOR)
 #endif
 
 /**
@@ -106,11 +129,16 @@ static_assert(SYLVAN_LLCHST_HEAD_SLACK_LOG2 < 16,
               "SYLVAN_LLCHST_HEAD_SLACK_LOG2 is unreasonable");
 static_assert(LLCHST_AUX_COUNT <= 7,
               "LLCHST owner tag has three bits");
+static_assert(SYLVAN_LLCHST_RESIZE_CHAIN_STEPS >= 2 &&
+              SYLVAN_LLCHST_RESIZE_CHAIN_STEPS <= 4096,
+              "SYLVAN_LLCHST_RESIZE_CHAIN_STEPS must be in [2, 4096]");
+static_assert(NODES_SUBTABLE_DEFAULT <= LLCHST_ROUTE_MASK,
+              "LLCHST route flags overlap the route space");
 
 typedef struct llchst_subtable {
     _Atomic(uintptr_t) heads;
     _Atomic(uint32_t) head_log2;
-    uint32_t route;
+    _Atomic(uint32_t) route;
 } llchst_subtable;
 
 static_assert(sizeof(llchst_subtable) == 16,
@@ -198,13 +226,20 @@ subtable_heads(const llchst_subtable* subtable)
         &subtable->heads, memory_order_acquire);
 }
 
+static inline uint32_t
+subtable_route(const llchst_subtable* subtable)
+{
+    return atomic_load_explicit(
+        &subtable->route, memory_order_relaxed) & LLCHST_ROUTE_MASK;
+}
+
 static void
 initialize_descriptor(llchst_subtable* subtable, uint32_t route)
 {
     atomic_init(&subtable->heads, (uintptr_t)0);
     atomic_init(
         &subtable->head_log2, SYLVAN_LLCHST_INITIAL_HEAD_LOG2);
-    subtable->route = route;
+    atomic_init(&subtable->route, route);
 }
 
 static void
@@ -363,8 +398,9 @@ ensure_heads(nodes_table* dbs, llchst_subtable* subtable)
             return (_Atomic(uint64_t)*)expected;
         }
 
-        if (subtable->route < SYLVAN_LLCHST_DENSE_LEVELS) {
-            raise_decision_highwater(dbs, subtable->route + 1u);
+        const uint32_t route = subtable_route(subtable);
+        if (route < SYLVAN_LLCHST_DENSE_LEVELS) {
+            raise_decision_highwater(dbs, route + 1u);
         }
         atomic_fetch_add_explicit(
             &dbs->live_subtables, 1u, memory_order_relaxed);
@@ -553,8 +589,10 @@ owner_route(uint64_t tagged_next, const uint64_t* data)
 
 static inline uint64_t
 find_in_chain(const nodes_table* dbs, uint64_t link, uint64_t stop,
-              uint64_t masked_hash, uint64_t a, uint64_t b, int custom)
+              uint64_t masked_hash, uint64_t a, uint64_t b, int custom,
+              size_t* steps)
 {
+    size_t walked = 0;
     while ((link & MASK_LINK) != stop) {
         assert(stop == 0 || (link & MASK_LINK) != 0);
         const uint64_t index = link & MASK_INDEX;
@@ -562,22 +600,54 @@ find_in_chain(const nodes_table* dbs, uint64_t link, uint64_t stop,
             const uint64_t* data =
                 ((const uint64_t*)dbs->data) + 2 * index;
             if (custom) {
-                if (dbs->equals_cb(a, b, data[0], data[1])) return index;
+                if (dbs->equals_cb(a, b, data[0], data[1])) {
+                    *steps = walked;
+                    return index;
+                }
             } else if (data[0] == a && data[1] == b) {
+                *steps = walked;
                 return index;
             }
         }
 
+        walked++;
         sylvan_stats_count(LLMSSET_LOOKUP);
         link = dbs->next[index];
     }
+    *steps = walked;
     return 0;
+}
+
+/**
+ * Ask for this subtable to be given a larger head array.
+ *
+ * This runs on the lookup path, so it must not do a read-modify-write: the
+ * request is a plain relaxed store, and every thread that reaches it stores
+ * the same value. The bits it writes are only ever cleared while the world is
+ * stopped, so there is nothing for the store to lose. The global flag is what
+ * sylvan_gc_test polls; the per-subtable bit is what tells the maintenance
+ * pass which chains to walk, so that the pass costs nothing for the subtables
+ * that are fine.
+ */
+static void
+request_resize(llchst_subtable* subtable)
+{
+    const uint32_t route = atomic_load_explicit(
+        &subtable->route, memory_order_relaxed);
+    if ((route & (LLCHST_WANTS_RESIZE | LLCHST_RESIZE_DENIED)) != 0) return;
+    atomic_store_explicit(
+        &subtable->route, route | LLCHST_WANTS_RESIZE,
+        memory_order_relaxed);
+    atomic_store_explicit(
+        &sylvan_maintenance_requested, 1, memory_order_relaxed);
+    sylvan_stats_count(LLCHST_RESIZE_REQUESTED);
 }
 
 static inline uint64_t
 nodes_lookup2(const nodes_table* dbs, uint32_t route,
               uint64_t a, uint64_t b, int* created, const int custom)
 {
+    sylvan_stats_count(LLMSSET_LOOKUP_CALLS);
     llchst_subtable* subtable = get_subtable(dbs, route, 1);
     if (subtable == NULL) return 0;
     _Atomic(uint64_t)* heads = ensure_heads((nodes_table*)dbs, subtable);
@@ -588,8 +658,14 @@ nodes_lookup2(const nodes_table* dbs, uint32_t route,
     _Atomic(uint64_t)* head = heads + (hash & (head_count(subtable) - 1u));
 
     uint64_t observed = atomic_load_explicit(head, memory_order_acquire);
+    size_t steps = 0;
     uint64_t found = find_in_chain(
-        dbs, observed, 0, masked_hash, a, b, custom);
+        dbs, observed, 0, masked_hash, a, b, custom, &steps);
+    /* The walk above already measured this chain, so noticing that the
+       subtable has outgrown its head array is free. */
+    if (SYLVAN_UNLIKELY(steps >= SYLVAN_LLCHST_RESIZE_CHAIN_STEPS)) {
+        request_resize(subtable);
+    }
     if (found != 0) {
         *created = 0;
         return found;
@@ -633,7 +709,7 @@ nodes_lookup2(const nodes_table* dbs, uint32_t route,
         sylvan_stats_count(LLCHST_HEAD_CAS_FAILURE);
 
         found = find_in_chain(
-            dbs, expected, observed, masked_hash, a, b, custom);
+            dbs, expected, observed, masked_hash, a, b, custom, &steps);
         if (found != 0) {
             if (custom) dbs->destroy_cb(a, b);
             release_data_bucket(dbs, candidate);
@@ -1228,7 +1304,7 @@ llchst_rehash_raw_entries_CALL(
         struct llchst_rebuild_entry* entry = entries + e;
         if (!entry->has_raw || !entry->active) continue;
 
-        const uint32_t route = entry->subtable->route;
+        const uint32_t route = subtable_route(entry->subtable);
         const size_t new_mask =
             ((size_t)1 << entry->new_log2) - 1u;
         for (size_t i = 0; i < entry->old_count; i++) {
@@ -1321,25 +1397,25 @@ llchst_free_old_entries_CALL(
     }
 }
 
-static size_t
-collect_rebuild_entries(const nodes_table* dbs,
-                        struct llchst_rebuild_entry* entries)
+/**
+ * Visit every subtable that currently owns a head array.
+ * The three storage regions (dense decision levels, sparse decision pages,
+ * auxiliary routes) are enumerated in that order, which is the order in which
+ * both the rebuild and the maintenance pass expect their entries.
+ */
+typedef void (*llchst_subtable_visitor)(
+    llchst_subtable* subtable, _Atomic(uint64_t)* heads, void* context);
+
+static void
+for_each_live_subtable(const nodes_table* dbs,
+                       llchst_subtable_visitor visit, void* context)
 {
-    size_t count = 0;
     const uint32_t decision_highwater = atomic_load_explicit(
         &dbs->decision_highwater, memory_order_relaxed);
     for (uint32_t i = 0; i < decision_highwater; i++) {
         llchst_subtable* subtable = dbs->decision + i;
         _Atomic(uint64_t)* heads = subtable_heads(subtable);
-        if (heads == NULL) continue;
-        if (entries != NULL) {
-            entries[count] = (struct llchst_rebuild_entry) {
-                .subtable = subtable,
-                .old_heads = heads,
-                .old_count = head_count(subtable)
-            };
-        }
-        count++;
+        if (heads != NULL) visit(subtable, heads, context);
     }
 
     const uint32_t highwater = atomic_load_explicit(
@@ -1351,32 +1427,47 @@ collect_rebuild_entries(const nodes_table* dbs,
         for (uint32_t i = 0; i < LLCHST_PAGE_SIZE; i++) {
             llchst_subtable* subtable = page->entries + i;
             _Atomic(uint64_t)* heads = subtable_heads(subtable);
-            if (heads == NULL) continue;
-            if (entries != NULL) {
-                entries[count] = (struct llchst_rebuild_entry) {
-                    .subtable = subtable,
-                    .old_heads = heads,
-                    .old_count = head_count(subtable)
-                };
-            }
-            count++;
+            if (heads != NULL) visit(subtable, heads, context);
         }
     }
 
     for (uint32_t i = 0; i < LLCHST_AUX_COUNT; i++) {
         llchst_subtable* subtable = (llchst_subtable*)dbs->aux + i;
         _Atomic(uint64_t)* heads = subtable_heads(subtable);
-        if (heads == NULL) continue;
-        if (entries != NULL) {
-            entries[count] = (struct llchst_rebuild_entry) {
-                .subtable = subtable,
-                .old_heads = heads,
-                .old_count = head_count(subtable)
-            };
-        }
-        count++;
+        if (heads != NULL) visit(subtable, heads, context);
     }
-    return count;
+}
+
+struct llchst_collect_context {
+    struct llchst_rebuild_entry* entries;
+    size_t count;
+};
+
+static void
+collect_rebuild_entry(llchst_subtable* subtable,
+                      _Atomic(uint64_t)* heads, void* context)
+{
+    struct llchst_collect_context* collect =
+        (struct llchst_collect_context*)context;
+    if (collect->entries != NULL) {
+        collect->entries[collect->count] = (struct llchst_rebuild_entry) {
+            .subtable = subtable,
+            .old_heads = heads,
+            .old_count = head_count(subtable)
+        };
+    }
+    collect->count++;
+}
+
+static size_t
+collect_rebuild_entries(const nodes_table* dbs,
+                        struct llchst_rebuild_entry* entries)
+{
+    struct llchst_collect_context collect = {
+        .entries = entries, .count = 0
+    };
+    for_each_live_subtable(dbs, collect_rebuild_entry, &collect);
+    return collect.count;
 }
 
 int
@@ -1415,6 +1506,12 @@ nodes_rebuild_CALL(lace_worker* lace, nodes_table* dbs)
 
     for (size_t i = 0; i < count; i++) {
         llchst_subtable* subtable = entries[i].subtable;
+        /* Every subtable is about to be resized to its measured population,
+           so any outstanding maintenance request is satisfied by definition,
+           and a subtable that was refused a resize gets to ask again. */
+        atomic_store_explicit(
+            &subtable->route, subtable_route(subtable),
+            memory_order_relaxed);
         if (!entries[i].active) {
             atomic_store_explicit(
                 &subtable->head_log2,
@@ -1482,9 +1579,267 @@ nodes_rebuild_CALL(lace_worker* lace, nodes_table* dbs)
         &dbs->live_subtables, live, memory_order_relaxed);
     atomic_store_explicit(
         &dbs->allocated_heads, heads_total, memory_order_relaxed);
+    atomic_store_explicit(
+        &sylvan_maintenance_requested, 0, memory_order_relaxed);
 
     sylvan_free_aligned(entries, count * sizeof(*entries));
     return 0;
+}
+
+/**
+ * Table maintenance: grow the head arrays of subtables that outgrew them,
+ * without collecting anything.
+ *
+ * A subtable that keeps accumulating nodes between collections used to stay at
+ * whatever size it was given, because head_log2 was only ever written by
+ * nodes_rebuild. Lookups now notice, for free, when a chain has grown far past
+ * the target load factor and flag the subtable; this pass, which Sylvan runs
+ * from the same stop-the-world Lace frame that garbage collection uses, gives
+ * those subtables a head array that matches their measured population.
+ *
+ * The pass deliberately does not touch the node bitmap, does not mark and does
+ * not clear the operation cache. It only walks the chains of the flagged
+ * subtables, which is what makes it cheap enough to trigger on chain length.
+ *
+ * Memory: a resized subtable receives at most <population> heads, and
+ * populations are disjoint, so the head arrays handed out by maintenance sum
+ * to at most table_size entries. Together with the arrays of the subtables
+ * that were not resized, head memory between two collections is bounded by
+ * twice head_budget(table_size); the next collection brings it back under the
+ * budget.
+ */
+struct llchst_resize_entry {
+    llchst_subtable* subtable;
+    _Atomic(uint64_t)* old_heads;
+    size_t old_count;
+    size_t population;
+    _Atomic(uint64_t)* new_heads;
+    uint32_t new_log2;
+};
+
+struct llchst_resize_collect {
+    struct llchst_resize_entry* entries;
+    size_t count;
+};
+
+static void
+collect_resize_entry(llchst_subtable* subtable,
+                     _Atomic(uint64_t)* heads, void* context)
+{
+    struct llchst_resize_collect* collect =
+        (struct llchst_resize_collect*)context;
+    const uint32_t route = atomic_load_explicit(
+        &subtable->route, memory_order_relaxed);
+    if ((route & LLCHST_WANTS_RESIZE) == 0) return;
+    if (collect->entries != NULL) {
+        collect->entries[collect->count] = (struct llchst_resize_entry) {
+            .subtable = subtable,
+            .old_heads = heads,
+            .old_count = head_count(subtable)
+        };
+    }
+    collect->count++;
+}
+
+static size_t
+collect_resize_entries(const nodes_table* dbs,
+                       struct llchst_resize_entry* entries)
+{
+    struct llchst_resize_collect collect = {
+        .entries = entries, .count = 0
+    };
+    for_each_live_subtable(dbs, collect_resize_entry, &collect);
+    return collect.count;
+}
+
+struct llchst_population_context {
+    const nodes_table* dbs;
+    const _Atomic(uint64_t)* heads;
+    _Atomic(size_t) population;
+};
+
+TASK(void, llchst_count_population,
+     struct llchst_population_context*, context,
+     size_t, first, size_t, count)
+
+void
+llchst_count_population_CALL(
+    lace_worker* lace, struct llchst_population_context* context,
+    size_t first, size_t count)
+{
+    if (count > LLCHST_REBUILD_GRAIN && lace_worker_count() > 1) {
+        const size_t split = count / 2u;
+        llchst_count_population_SPAWN(lace, context, first, split);
+        llchst_count_population_CALL(
+            lace, context, first + split, count - split);
+        llchst_count_population_SYNC(lace);
+        return;
+    }
+
+    size_t population = 0;
+    for (size_t i = first; i < first + count; i++) {
+        uint64_t link = atomic_load_explicit(
+            context->heads + i, memory_order_relaxed);
+        while ((link & MASK_LINK) != 0) {
+            population++;
+            link = context->dbs->next[link & MASK_INDEX];
+        }
+    }
+    atomic_fetch_add_explicit(
+        &context->population, population, memory_order_relaxed);
+}
+
+TASK(void, llchst_migrate_chains,
+     nodes_table*, dbs, struct llchst_resize_entry*, entry,
+     uint32_t, route, size_t, first, size_t, count, int, parallel)
+
+void
+llchst_migrate_chains_CALL(
+    lace_worker* lace, nodes_table* dbs,
+    struct llchst_resize_entry* entry, uint32_t route,
+    size_t first, size_t count, int parallel)
+{
+    if (count > LLCHST_REBUILD_GRAIN && parallel) {
+        const size_t split = count / 2u;
+        llchst_migrate_chains_SPAWN(
+            lace, dbs, entry, route, first, split, parallel);
+        llchst_migrate_chains_CALL(
+            lace, dbs, entry, route, first + split, count - split, parallel);
+        llchst_migrate_chains_SYNC(lace);
+        return;
+    }
+
+    const size_t new_mask = ((size_t)1 << entry->new_log2) - 1u;
+    for (size_t i = first; i < first + count; i++) {
+        uint64_t link = atomic_load_explicit(
+            entry->old_heads + i, memory_order_relaxed);
+        while ((link & MASK_LINK) != 0) {
+            const uint64_t index = link & MASK_INDEX;
+            /* rehash_node overwrites next[index], so read the rest of the old
+               chain out of the way first. */
+            const uint64_t next = dbs->next[index];
+            rehash_node(
+                dbs, route, entry->new_heads, new_mask, index, parallel);
+            link = next;
+        }
+    }
+}
+
+/**
+ * Round the target head count up to a power of two, so that the load factor
+ * after the pass lands in (LOAD_FACTOR/2, LOAD_FACTOR]. Rounding down instead
+ * would leave the subtable at up to twice the target load factor, which is
+ * close enough to the request threshold to make it ask again immediately.
+ */
+static uint32_t
+resize_target_log2(size_t population)
+{
+    size_t target =
+        (population + SYLVAN_LLCHST_LOAD_FACTOR - 1u) /
+        SYLVAN_LLCHST_LOAD_FACTOR;
+    if (target == 0) target = 1;
+    uint32_t result = floor_log2(target);
+    if (((size_t)1 << result) < target) result++;
+    if (result >= LLCHST_INDEX_BITS) result = LLCHST_INDEX_BITS - 1u;
+    return result;
+}
+
+void
+nodes_maintain_CALL(lace_worker* lace, nodes_table* dbs)
+{
+    atomic_store_explicit(
+        &sylvan_maintenance_requested, 0, memory_order_relaxed);
+
+    const size_t count = collect_resize_entries(dbs, NULL);
+    if (count == 0) return;
+
+    struct llchst_resize_entry* entries =
+        (struct llchst_resize_entry*)sylvan_alloc_aligned(
+            count * sizeof(*entries));
+    if (entries == NULL) return;
+    const size_t filled = collect_resize_entries(dbs, entries);
+    assert(filled == count);
+    if (filled != count) {
+        sylvan_free_aligned(entries, count * sizeof(*entries));
+        return;
+    }
+
+    const int parallel = lace_worker_count() > 1;
+    for (size_t i = 0; i < count; i++) {
+        struct llchst_resize_entry* entry = entries + i;
+        llchst_subtable* subtable = entry->subtable;
+        const uint32_t route = subtable_route(subtable);
+
+        struct llchst_population_context context = {
+            .dbs = dbs, .heads = entry->old_heads
+        };
+        atomic_init(&context.population, 0);
+        llchst_count_population_CALL(
+            lace, &context, 0, entry->old_count);
+        entry->population = atomic_load_explicit(
+            &context.population, memory_order_relaxed);
+        entry->new_log2 = resize_target_log2(entry->population);
+
+        if (((size_t)1 << entry->new_log2) <= entry->old_count) {
+            /* Not actually overloaded. Either the request was a statistical
+               accident, or the keys in this subtable collide beyond what a
+               bigger array can separate; in the latter case, refuse further
+               requests until the next collection rather than walk these
+               chains again on every lookup. */
+            uint32_t state = subtable_route(subtable);
+            if (entry->population <= entry->old_count) {
+                state |= LLCHST_RESIZE_DENIED;
+                sylvan_stats_count(LLCHST_RESIZE_REFUSED);
+            }
+            atomic_store_explicit(
+                &subtable->route, state, memory_order_relaxed);
+            continue;
+        }
+
+        const size_t new_count = (size_t)1 << entry->new_log2;
+        entry->new_heads = (_Atomic(uint64_t)*)sylvan_alloc_aligned(
+            new_count * sizeof(*entry->new_heads));
+        if (entry->new_heads == NULL) {
+            /* Out of memory for the bigger array; the subtable keeps working,
+               just more slowly. Clear the request rather than leave it set,
+               because request_resize will not raise the global flag again
+               while this subtable already has one outstanding. */
+            atomic_store_explicit(
+                &subtable->route, route, memory_order_relaxed);
+            continue;
+        }
+
+        llchst_migrate_chains_CALL(
+            lace, dbs, entry, route, 0, entry->old_count, parallel);
+
+        /* Publish the size before the pointer: readers acquire <heads> and
+           then take a relaxed load of head_log2, so the array they find must
+           already match the mask they will build. Nothing observes either
+           until this frame ends, but keep the order that lookups require. */
+        const uint32_t old_state = atomic_load_explicit(
+            &subtable->head_log2, memory_order_relaxed);
+        atomic_store_explicit(
+            &subtable->head_log2,
+            entry->new_log2 | LLCHST_HEAD_SIZED | LLCHST_HEAD_MEASURED |
+                (old_state & LLCHST_HAS_RAW),
+            memory_order_relaxed);
+        atomic_store_explicit(
+            &subtable->heads, (uintptr_t)entry->new_heads,
+            memory_order_release);
+        atomic_store_explicit(
+            &subtable->route, route, memory_order_relaxed);
+
+        sylvan_free_aligned(
+            (void*)entry->old_heads,
+            entry->old_count * sizeof(*entry->old_heads));
+        atomic_fetch_add_explicit(
+            &dbs->allocated_heads,
+            (uint64_t)new_count - (uint64_t)entry->old_count,
+            memory_order_relaxed);
+        sylvan_stats_count(LLCHST_SUBTABLE_RESIZED);
+    }
+
+    sylvan_free_aligned(entries, count * sizeof(*entries));
 }
 
 TASK(size_t, nodes_count_nodes_par,

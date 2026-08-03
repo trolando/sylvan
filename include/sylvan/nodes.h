@@ -141,12 +141,31 @@ static inline size_t nodes_count_nodes(nodes_table* dbs);
  */
 static inline void nodes_cleanup_custom(nodes_table* dbs);
 
+/**
+ * Perform table maintenance requested by the table itself.
+ *
+ * A backend may notice during a lookup that its internal index has degraded,
+ * for example that a hash chain has grown far past its target length, and ask
+ * for a maintenance pass by setting sylvan_maintenance_requested. Sylvan then
+ * calls this from a stop-the-world Lace frame, exactly like garbage
+ * collection, but without clearing the node bitmap, without marking and
+ * without clearing the operation cache.
+ *
+ * Maintenance may only reorganize the backend's own index. It must not free,
+ * move or renumber nodes: every node index that was valid before the pass is
+ * still valid and still denotes the same node afterwards.
+ *
+ * Backends that never need this leave it empty and never set the flag.
+ */
+static inline void nodes_maintain(nodes_table* dbs);
+
 // Definitions of tasks
 TASK(void, nodes_clear, nodes_table*, dbs)
 TASK(void, nodes_mark_rec, const nodes_table*, dbs, uint64_t, index)
 TASK(int, nodes_rebuild, nodes_table*, dbs)
 TASK(size_t, nodes_count_nodes, nodes_table*, dbs)
 TASK(void, nodes_cleanup_custom, nodes_table*, dbs)
+TASK(void, nodes_maintain, nodes_table*, dbs)
 
 /**
  * Helper callbacks for dealing with custom leaves.

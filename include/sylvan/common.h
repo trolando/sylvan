@@ -169,13 +169,39 @@ void sylvan_gc_enable(void);
 void sylvan_gc_disable(void);
 
 /**
+ * Set by the nodes table when it wants a stop-the-world maintenance pass.
+ *
+ * Maintenance is not garbage collection: it only lets the table reorganize its
+ * own index (see nodes_maintain), so it neither collects nor invalidates
+ * anything. The flag lives here, rather than next to the table, because
+ * sylvan_gc_test is the safepoint that services it and is inlined into every
+ * caller. Only the nodes table sets and clears it; Sylvan only reads it.
+ * Backends that never request maintenance leave it zero forever.
+ */
+extern _Atomic(int) sylvan_maintenance_requested;
+
+/**
+ * Run a requested table maintenance pass in a new Lace frame.
+ * Called by sylvan_gc_test; there is no reason to call this directly.
+ */
+void sylvan_maintenance(lace_worker* lace);
+
+/**
  * Test if garbage collection must happen now.
  * This is just a call to the Lace framework to see if NEWFRAME has been used.
  * Before calling this, make sure all used BDDs are referenced.
+ *
+ * This is also where a pending table maintenance request is serviced, because
+ * this is the one place every decision diagram operation passes through at a
+ * point where interrupting it is known to be safe.
  */
 static inline void sylvan_gc_test(lace_worker* lace)
 {
     lace_check_yield(lace);
+    if (LACE_UNLIKELY(atomic_load_explicit(
+            &sylvan_maintenance_requested, memory_order_relaxed) != 0)) {
+        sylvan_maintenance(lace);
+    }
 }
 
 /**

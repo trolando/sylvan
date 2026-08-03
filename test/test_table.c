@@ -380,6 +380,104 @@ test_exhaustion_and_resize(void)
     return 0;
 }
 
+#if SYLVAN_NODES_TABLE_LLCHST
+static int
+test_subtable_routing(void)
+{
+    nodes_table *table = nodes_create(
+        TEST_RACE_TABLE_SIZE, TEST_RACE_TABLE_SIZE);
+    const uint64_t a = UINT64_C(0x4000000000000042);
+    const uint64_t b = UINT64_C(0x1234);
+
+    int created = 0;
+    const uint64_t at_seven = nodes_lookup_subtable(
+        table, NODES_SUBTABLE_DECISION(7), a, b, &created);
+    test_assert(at_seven > 1 && created == 1);
+
+    created = 1;
+    test_assert(nodes_lookup_subtable(
+        table, NODES_SUBTABLE_DECISION(7), a, b,
+        &created) == at_seven);
+    test_assert(created == 0);
+
+    created = 0;
+    const uint64_t at_eight = nodes_lookup_subtable(
+        table, NODES_SUBTABLE_DECISION(8), a, b, &created);
+    test_assert(at_eight > 1 && at_eight != at_seven && created == 1);
+
+    created = 0;
+    const uint64_t at_sparse = nodes_lookup_subtable(
+        table, NODES_SUBTABLE_DECISION(1000000), a, b, &created);
+    test_assert(
+        at_sparse > 1 && at_sparse != at_seven && at_sparse != at_eight &&
+        created == 1);
+
+    created = 0;
+    const uint64_t at_leaf = nodes_lookup_subtable(
+        table, NODES_SUBTABLE_LEAF, a, b, &created);
+    test_assert(at_leaf > 1 && at_leaf != at_sparse && created == 1);
+
+    created = 0;
+    const uint64_t at_map = nodes_lookup_subtable(
+        table, NODES_SUBTABLE_MAP, a, b, &created);
+    test_assert(at_map > 1 && at_map != at_leaf && created == 1);
+
+    /* Populate an additional route, then let GC discard it entirely. */
+    for (uint64_t i = 0; i < 700; i++) {
+        created = 0;
+        test_assert(nodes_lookup_subtable(
+            table, NODES_SUBTABLE_DECISION(9),
+            UINT64_C(0x4000000000010000) | i, i,
+            &created) > 1);
+        test_assert(created == 1);
+    }
+
+    nodes_clear(table);
+    nodes_mark_rec(table, at_seven);
+    nodes_mark_rec(table, at_eight);
+    nodes_mark_rec(table, at_sparse);
+    nodes_mark_rec(table, at_leaf);
+    nodes_mark_rec(table, at_map);
+    test_assert(nodes_rebuild(table) == 0);
+
+    created = 1;
+    test_assert(nodes_lookup_subtable(
+        table, NODES_SUBTABLE_DECISION(7), a, b,
+        &created) == at_seven);
+    test_assert(created == 0);
+    created = 1;
+    test_assert(nodes_lookup_subtable(
+        table, NODES_SUBTABLE_DECISION(8), a, b,
+        &created) == at_eight);
+    test_assert(created == 0);
+    created = 1;
+    test_assert(nodes_lookup_subtable(
+        table, NODES_SUBTABLE_DECISION(1000000), a, b,
+        &created) == at_sparse);
+    test_assert(created == 0);
+    created = 1;
+    test_assert(nodes_lookup_subtable(
+        table, NODES_SUBTABLE_LEAF, a, b,
+        &created) == at_leaf);
+    test_assert(created == 0);
+    created = 1;
+    test_assert(nodes_lookup_subtable(
+        table, NODES_SUBTABLE_MAP, a, b,
+        &created) == at_map);
+    test_assert(created == 0);
+
+    created = 0;
+    test_assert(nodes_lookup_subtable(
+        table, NODES_SUBTABLE_DECISION(9),
+        UINT64_C(0x4000000000010000), 0,
+        &created) > 1);
+    test_assert(created == 1);
+
+    nodes_free(table);
+    return 0;
+}
+#endif
+
 TASK(int, run_table_tests)
 
 int
@@ -392,10 +490,16 @@ run_table_tests_CALL(lace_worker *lace)
         2 * ((TEST_TABLE_SIZE + 63) / 64) * sizeof(uint64_t);
     const size_t region_bytes = sizeof(uint64_t);
     const size_t capacity_bytes = nodes_get_capacity_bytes(TEST_TABLE_SIZE);
+#if SYLVAN_NODES_TABLE_LLCHST
+    test_assert(
+        capacity_bytes >=
+        TEST_TABLE_SIZE * 24 + bitmap_bytes + region_bytes);
+#else
     test_assert(
         capacity_bytes == TEST_TABLE_SIZE * 24 + bitmap_bytes + region_bytes ||
         capacity_bytes == TEST_TABLE_SIZE * 32 + bitmap_bytes + region_bytes ||
         capacity_bytes == TEST_TABLE_SIZE * 40 + bitmap_bytes + region_bytes);
+#endif
 
     uint64_t *memory = sylvan_alloc_aligned(4096);
     test_assert(memory != NULL);
@@ -512,6 +616,9 @@ run_table_tests_CALL(lace_worker *lace)
     if (test_custom_metadata_cleanup()) return 1;
     if (test_custom_race()) return 1;
     if (test_exhaustion_and_resize()) return 1;
+#if SYLVAN_NODES_TABLE_LLCHST
+    if (test_subtable_routing()) return 1;
+#endif
 
     return 0;
 }

@@ -17,6 +17,37 @@
 
 #include <sylvan/internal.h>
 
+/**
+ * Optional garbage collection diagnostics.
+ *
+ * Compile with -DSYLVAN_GC_DIAGNOSTICS=1 to make Sylvan write one line to
+ * stderr for every garbage collection, reporting the trigger site, the number
+ * of live (marked) nodes, and the nodes table / operation cache sizes before
+ * and after the resize hook ran. This is a diagnostic aid only; it is disabled
+ * by default and costs nothing when disabled.
+ */
+#ifndef SYLVAN_GC_DIAGNOSTICS
+#define SYLVAN_GC_DIAGNOSTICS 0
+#endif
+
+#if SYLVAN_GC_DIAGNOSTICS
+#include <inttypes.h>
+#include <time.h>
+
+static _Atomic(uint64_t) gc_diag_count;
+static void*             gc_diag_caller;
+static double            gc_diag_epoch;
+static double            gc_diag_previous;
+
+static double
+gc_diag_now(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + 1e-9 * (double)ts.tv_nsec;
+}
+#endif
+
 const char *
 sylvan_status_string(int status)
 {
@@ -246,10 +277,48 @@ void sylvan_gc_go_CALL(lace_worker* lace)
      */
     sylvan_clear_cache_CALL(lace);
 
+#if SYLVAN_GC_DIAGNOSTICS
+    const size_t diag_used = nodes_count_nodes_CALL(lace, nodes);
+#endif
+
     sylvan_clear_and_mark_CALL(lace);
+
+#if SYLVAN_GC_DIAGNOSTICS
+    const uint64_t diag_seq = atomic_fetch_add(&gc_diag_count, 1) + 1;
+    const double diag_now = gc_diag_now();
+    if (gc_diag_epoch == 0.0) {
+        gc_diag_epoch = diag_now;
+        fprintf(stderr, "[sylvan-gc] sylvan_gc_go_CALL=%p\n",
+                (void*)(uintptr_t)&sylvan_gc_go_CALL);
+    }
+    const size_t diag_live = nodes_count_nodes_CALL(lace, nodes);
+    const size_t diag_table_before = nodes_get_size(nodes);
+    const size_t diag_cache_before = cache_getsize();
+#endif
 
     // call hooks for resizing and all that
     main_hook(lace);
+
+#if SYLVAN_GC_DIAGNOSTICS
+    {
+        const size_t diag_table_after = nodes_get_size(nodes);
+        const size_t diag_cache_after = cache_getsize();
+        fprintf(stderr,
+                "[sylvan-gc] #%" PRIu64 " t=%.3f dt=%.3f caller=%p "
+                "used=%zu live=%zu freed=%zu (%.1f%% of table) "
+                "table=%zu->%zu/%zu (%.1f%% live) cache=%zu->%zu/%zu\n",
+                diag_seq, diag_now - gc_diag_epoch,
+                gc_diag_previous == 0.0 ? 0.0 : diag_now - gc_diag_previous,
+                gc_diag_caller,
+                diag_used, diag_live, diag_used - diag_live,
+                100.0 * (double)(diag_used - diag_live) / (double)diag_table_before,
+                diag_table_before, diag_table_after, nodes_get_max_size(nodes),
+                100.0 * (double)diag_live / (double)diag_table_before,
+                diag_cache_before, diag_cache_after, cache_getmaxsize());
+        fflush(stderr);
+        gc_diag_previous = diag_now;
+    }
+#endif
 
     sylvan_rehash_all_CALL(lace);
 
@@ -269,6 +338,9 @@ void sylvan_gc_CALL(lace_worker* lace)
     if (gc_enabled) {
         int zero = 0;
         if (atomic_compare_exchange_strong(&gc, &zero, 1)) {
+#if SYLVAN_GC_DIAGNOSTICS
+            gc_diag_caller = __builtin_return_address(0);
+#endif
             sylvan_gc_go_NEWFRAME();
             gc = 0;
         } else {

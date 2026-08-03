@@ -806,13 +806,18 @@ llchst_measure_chains_CALL(
         return;
     }
 
+    /* The chain terminates on a zero *link*, not a zero word: every auxiliary
+       route and OWNER_RAW_DECISION keeps a nonzero owner tag in the top three
+       bits, so the last node's next word is "tag | 0". Testing the raw word
+       walks one step past the end onto index 0, which nodes_clear keeps marked
+       and which therefore inflates both the live count and the population. */
     size_t live = 0;
     size_t population = 0;
     int has_raw = 0;
     for (size_t i = first; i < first + count; i++) {
         uint64_t link = atomic_load_explicit(
             context->heads + i, memory_order_relaxed);
-        while (link != 0) {
+        while ((link & MASK_LINK) != 0) {
             const uint64_t index = link & MASK_INDEX;
             live += (size_t)nodes_is_marked(context->dbs, index);
             population++;
@@ -1124,7 +1129,7 @@ llchst_rehash_raw_entries_CALL(
         for (size_t i = 0; i < entry->old_count; i++) {
             uint64_t link = atomic_load_explicit(
                 entry->old_heads + i, memory_order_relaxed);
-            while (link != 0) {
+            while ((link & MASK_LINK) != 0) {
                 const uint64_t index = link & MASK_INDEX;
                 const uint64_t next = dbs->next[index];
                 if ((next & MASK_OWNER) == OWNER_RAW_DECISION &&

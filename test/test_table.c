@@ -1004,6 +1004,108 @@ test_reorder_race(void)
 }
 
 /**
+ * Remove, release, and (after a simulated barrier) claim the slot again: the
+ * recycled index must come back for a different key, and the old key must be
+ * gone. Releasing a node that is still in the index must be refused.
+ */
+static int
+test_reorder_release(void)
+{
+    nodes_table *table = nodes_create(TEST_TABLE_SIZE, TEST_TABLE_SIZE);
+    if ((nodes_reorder_caps(table) & NODES_CAP_RELEASE) == 0) {
+        nodes_free(table);
+        return 0;
+    }
+
+    uint64_t keys[TEST_COLLIDING_KEYS];
+    uint64_t indices[TEST_COLLIDING_KEYS];
+    find_colliding_keys(keys);
+    for (unsigned int i = 0; i < TEST_COLLIDING_KEYS; i++) {
+        int created = 0;
+        indices[i] = nodes_lookup(table, keys[i], 0, &created);
+        test_assert(indices[i] > 1 && created == 1);
+    }
+
+    const size_t before = nodes_count_nodes(table);
+    test_assert(nodes_release(table, indices[1]) == SYLVAN_ERR_INVALID);
+    test_assert(nodes_count_nodes(table) == before);
+
+    test_assert(nodes_remove(table, indices[1]) == SYLVAN_OK);
+    test_assert(nodes_release(table, indices[1]) == SYLVAN_OK);
+    test_assert(nodes_count_nodes(table) == before - 1);
+
+    /* Simulated barrier: every removal of this phase is complete, so the slot
+       may be handed out again. */
+    int created = 0;
+    const uint64_t fresh = nodes_lookup(
+        table, UINT64_C(0x4000000000098765), 5, &created);
+    test_assert(created == 1 && fresh == indices[1]);
+
+    /* The old key is gone, and its neighbours in the chain survived. */
+    created = 0;
+    test_assert(nodes_lookup(table, keys[1], 0, &created) != indices[1]);
+    test_assert(created == 1);
+    for (unsigned int i = 0; i < TEST_COLLIDING_KEYS; i++) {
+        if (i == 1) continue;
+        created = 1;
+        test_assert(nodes_lookup(table, keys[i], 0, &created) == indices[i]);
+        test_assert(created == 0);
+    }
+
+    nodes_free(table);
+    return 0;
+}
+
+/**
+ * Releasing a custom node destroys its payload once and clears its custom
+ * bit, so that the recycled slot is an ordinary node afterwards: with a stale
+ * bit the rebuild would hash it through the custom callback and lose it, and
+ * the next cleanup would destroy a payload that is not there.
+ */
+static int
+test_reorder_release_custom(void)
+{
+    nodes_table *table = nodes_create(TEST_TABLE_SIZE, TEST_TABLE_SIZE);
+    if ((nodes_reorder_caps(table) & NODES_CAP_RELEASE) == 0) {
+        nodes_free(table);
+        return 0;
+    }
+    nodes_set_custom(
+        table, custom_hash, custom_equals,
+        custom_create, custom_destroy_counted);
+
+    int created = 0;
+    const uint64_t index = nodes_lookupc(
+        table, UINT64_C(0x4000000000000031), 49, &created);
+    test_assert(index > 1 && created == 1);
+
+    custom_destroy_count = 0;
+    test_assert(nodes_remove(table, index) == SYLVAN_OK);
+    test_assert(nodes_release(table, index) == SYLVAN_OK);
+    test_assert(custom_destroy_count == 1);
+
+    created = 0;
+    const uint64_t plain = nodes_lookup(
+        table, UINT64_C(0x4000000000000032), 50, &created);
+    test_assert(plain == index && created == 1);
+
+    custom_destroy_count = 0;
+    nodes_clear(table);
+    nodes_mark_rec(table, plain);
+    nodes_cleanup_custom(table);
+    test_assert(custom_destroy_count == 0);
+    test_assert(nodes_rebuild(table) == 0);
+
+    created = 1;
+    test_assert(nodes_lookup(
+        table, UINT64_C(0x4000000000000032), 50, &created) == plain);
+    test_assert(created == 0);
+
+    nodes_free(table);
+    return 0;
+}
+
+/**
  * Child process for the reinsert-collision death test: two equal records at
  * different indices, one of them indexed. Reinserting the other one is an
  * invariant violation and must abort rather than return.
@@ -1244,6 +1346,8 @@ run_table_tests_CALL(lace_worker *lace)
     if (test_reorder_remove_reinsert()) return 1;
     if (test_reorder_chain_positions()) return 1;
     if (test_reorder_rewrite_in_place()) return 1;
+    if (test_reorder_release()) return 1;
+    if (test_reorder_release_custom()) return 1;
     if (test_reorder_race()) return 1;
 #if defined(__unix__) || defined(__APPLE__)
     if (test_reinsert_collision_aborts(test_self)) return 1;

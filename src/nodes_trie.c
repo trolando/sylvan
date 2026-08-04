@@ -797,7 +797,7 @@ uint32_t
 nodes_reorder_caps(const nodes_table* dbs)
 {
     (void)dbs;
-    return NODES_CAP_REMOVE;
+    return NODES_CAP_REMOVE | NODES_CAP_RELEASE;
 }
 
 static void
@@ -1053,11 +1053,50 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
     }
 }
 
+/**
+ * Return a removed slot to the allocator.
+ *
+ * The bitmap updates are read-modify-writes and not the plain stores the
+ * allocation path uses: a worker that allocates owns the whole region its
+ * slot lies in, but a worker that releases a retired node does not, so two
+ * releases can land in the same 64-slot word.
+ *
+ * The custom bit has to go before the slot becomes claimable. A reused slot
+ * that still carries it would be hashed and compared through the custom
+ * callbacks, and the next nodes_cleanup_custom would destroy its payload a
+ * second time.
+ */
 int
 nodes_release(nodes_table* dbs, uint64_t index)
 {
-    (void)dbs; (void)index;
-    return SYLVAN_ERR_INVALID;
+    if (index < 2 || index >= dbs->table_size) return SYLVAN_ERR_INVALID;
+
+    /* There is no per-node mark in this backend, so check the real thing:
+       walk the node's own probe sequence and require that it is not there.
+       The lock keeps that answer stable against a concurrent removal. */
+    const struct reorder_key key = reorder_key_of(dbs, index);
+    uint64_t owner = 0;
+    reorder_lock(dbs);
+    const int indexed = reorder_find_slot(dbs, index, &key, &owner) != NULL;
+    reorder_unlock(dbs);
+    if (indexed) {
+        assert(!"nodes_release: the node is still in the index");
+        return SYLVAN_ERR_INVALID;
+    }
+
+    const uint64_t mask =
+        UINT64_C(0x8000000000000000) >> (index & 63u);
+    if (is_custom_bucket(dbs, index)) {
+        if (dbs->destroy_cb != NULL) {
+            const uint64_t* data = ((const uint64_t*)dbs->data) + 2 * index;
+            dbs->destroy_cb(data[0], data[1]);
+        }
+        atomic_fetch_and_explicit(
+            dbs->bitmapc + index / 64u, ~mask, memory_order_relaxed);
+    }
+    atomic_fetch_and_explicit(
+        dbs->bitmap2 + index / 64u, ~mask, memory_order_release);
+    return SYLVAN_OK;
 }
 
 int

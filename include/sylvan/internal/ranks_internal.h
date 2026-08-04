@@ -137,6 +137,22 @@ int sylvan_ranks_reserve(uint32_t count);
 uint32_t sylvan_ranks_registered(void);
 
 /**
+ * Exchange the variables at ranks <rank> and <rank>+1.
+ *
+ * This is the metadata half of an adjacent variable swap: it is the only
+ * thing a swap has to do when the two variables do not interact, and the last
+ * thing it does when they do. Unlike sylvan_ranks_permute_unsafe() this is
+ * not a test hook -- it is how the order actually changes -- but it is just
+ * as unsynchronised, so it may only be called with the world stopped and with
+ * the nodes of both variables already brought into agreement with the new
+ * order by sylvan_varswap().
+ *
+ * Returns SYLVAN_OK, or SYLVAN_ERR_INVALID when <rank>+1 is not a registered
+ * rank.
+ */
+int sylvan_ranks_swap_adjacent(uint32_t rank);
+
+/**
  * Install a new variable order. <identity_at> lists the registered identities
  * in rank order and must be a permutation of 0 .. <count>-1, with <count>
  * equal to the number of registered identities.

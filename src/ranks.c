@@ -163,6 +163,33 @@ sylvan_ranks_registered(void)
 }
 
 int
+sylvan_ranks_swap_adjacent(uint32_t rank)
+{
+    ranks_lock_acquire();
+
+    struct ranks_block *block = ranks_current;
+    const uint32_t count =
+        atomic_load_explicit(&sylvan_ranks_count, memory_order_relaxed);
+    if (block == NULL || count < 2 || rank >= count - 1) {
+        ranks_lock_release();
+        return SYLVAN_ERR_INVALID;
+    }
+
+    uint32_t *rank_of = block->data;
+    uint32_t *identity_at = block->data + block->capacity;
+    const uint32_t upper = identity_at[rank];
+    const uint32_t lower = identity_at[rank + 1];
+    identity_at[rank] = lower;
+    identity_at[rank + 1] = upper;
+    rank_of[lower] = rank;
+    rank_of[upper] = rank + 1;
+
+    ranks_publish(block, count);
+    ranks_lock_release();
+    return SYLVAN_OK;
+}
+
+int
 sylvan_ranks_permute_unsafe(const uint32_t *identity_at, uint32_t count)
 {
     if (identity_at == NULL) return SYLVAN_ERR_INVALID;

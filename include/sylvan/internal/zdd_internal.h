@@ -259,4 +259,11 @@ zddnode_high(ZDD zdd, const zddnode* node)
     (void)zdd;
 }
 
+/**
+ * Whether zdd_init() has run. The reorder session refuses to open while the
+ * ZDD subsystem is initialised, because ZDD nodes are ordered by identity
+ * rather than by rank and share the node arena with the MTBDD nodes.
+ */
+int zdd_is_initialized(void);
+
 #endif

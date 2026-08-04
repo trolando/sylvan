@@ -279,6 +279,14 @@ TASK(void, listdd_gc_mark_serialize)
  * Initialize and quit functions
  */
 
+static int listdd_initialized = 0;
+
+int
+listdd_is_initialized(void)
+{
+    return listdd_initialized;
+}
+
 static void
 listdd_quit(void)
 {
@@ -289,11 +297,14 @@ listdd_quit(void)
         protect_free(&listdd_protected);
         listdd_protected_created = 0;
     }
+
+    listdd_initialized = 0;
 }
 
 void
 listdd_init(void)
 {
+    listdd_initialized = 1;
     sylvan_register_quit(listdd_quit);
     sylvan_gc_add_mark(listdd_gc_mark_external_refs_CALL);
     sylvan_gc_add_mark(listdd_gc_mark_protected);

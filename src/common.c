@@ -116,6 +116,22 @@ static gc_hook_entry_t pregc_list;
 static gc_hook_entry_t postgc_list;
 static gc_hook_cb main_hook;
 
+/**
+ * Number of registered marking callbacks.
+ *
+ * The reorder session reads this to find out whether anyone other than Sylvan
+ * itself owns external roots. A mark hook can only *mark* the roots it owns,
+ * not enumerate them, so a session cannot see those roots and must refuse to
+ * run rather than retire one of them.
+ */
+static size_t mark_count;
+
+size_t
+sylvan_gc_mark_hook_count(void)
+{
+    return mark_count;
+}
+
 void
 sylvan_gc_hook_pregc(gc_hook_cb callback)
 {
@@ -141,6 +157,7 @@ sylvan_gc_add_mark(gc_hook_cb callback)
     e->cb = callback;
     e->next = mark_list;
     mark_list = e;
+    mark_count++;
 }
 
 void
@@ -807,6 +824,7 @@ sylvan_quit(void)
         mark_list = e->next;
         free(e);
     }
+    mark_count = 0;
 
     cache_free();
     nodes_free(nodes);

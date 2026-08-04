@@ -336,6 +336,12 @@ zdd_refs_pop(long amount)
 
 static int zdd_initialized = 0;
 
+int
+zdd_is_initialized(void)
+{
+    return zdd_initialized;
+}
+
 static void
 zdd_quit(void)
 {

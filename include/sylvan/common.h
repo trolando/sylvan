@@ -255,6 +255,14 @@ void sylvan_gc_hook_main(gc_hook_cb callback);
 void sylvan_gc_add_mark(gc_hook_cb mark_cb);
 
 /**
+ * Number of marking callbacks registered with sylvan_gc_add_mark.
+ *
+ * Internal. Sylvan's own subsystems register a known number of these, so a
+ * larger count means that something outside Sylvan owns external roots.
+ */
+size_t sylvan_gc_mark_hook_count(void);
+
+/**
  * One of the hooks for resizing behavior.
  * Default if SYLVAN_AGGRESSIVE_RESIZE is set.
  * Always double size on gc() until maximum reached.

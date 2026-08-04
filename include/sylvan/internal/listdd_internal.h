@@ -159,4 +159,11 @@ TASK(int, listdd_project_raw, LISTDD*, result, LISTDD, dd, LISTDD, projection)
 TASK(int, listdd_project_diff_raw, LISTDD*, result, LISTDD, dd, LISTDD, projection, LISTDD, avoid)
 TASK(int, listdd_join_raw, LISTDD*, result, LISTDD, a, LISTDD, b, LISTDD, a_projection, LISTDD, b_projection)
 
+/**
+ * Whether listdd_init() has run. The reorder session refuses to open while
+ * the ListDD subsystem is initialised: ListDD has no variable identities at
+ * all and its nodes share the node arena with the MTBDD nodes.
+ */
+int listdd_is_initialized(void);
+
 #endif

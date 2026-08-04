@@ -38,7 +38,7 @@ typedef struct nodes_table
     _Atomic(uint64_t)* next;         // array with the 'next' entries of the linked list
     _Atomic(uint64_t)* bitmap1;      // ownership bitmap (per 512 buckets)
     _Atomic(uint64_t)* bitmap2;      // bitmap for "contains data"
-    uint64_t*          bitmapc;      // bitmap for "use custom functions"
+    _Atomic(uint64_t)* bitmapc;      // bitmap for "use custom functions"
     size_t             max_size;     // maximum size of the nodes table (for resizing)
     size_t             table_size;   // current size of the nodes table
     nodes_hash_cb      hash_cb;      // custom hash function
@@ -182,19 +182,27 @@ static void release_data_bucket(const nodes_table* dbs, uint64_t index)
     atomic_store_explicit(ptr, v & ~mask, memory_order_relaxed);
 }
 
+/*
+ * The insertion and cleanup paths do not need read-modify-write on bitmapc:
+ * during insertion each worker owns a whole data region via bitmap1, and
+ * cleanup/rebuild is stop-the-world relative to lookup. The words are atomic
+ * only so that the reorder primitives, which do not own a region, can clear a
+ * single bit without racing with those relaxed accesses.
+ */
 static void set_custom_bucket(const nodes_table* dbs, uint64_t index, int on)
 {
-    uint64_t *ptr = dbs->bitmapc + (index/64);
+    _Atomic(uint64_t) *ptr = dbs->bitmapc + (index/64);
     uint64_t mask = UINT64_C(0x8000000000000000) >> (index&63);
-    if (on) *ptr |= mask;
-    else *ptr &= ~mask;
+    const uint64_t value = atomic_load_explicit(ptr, memory_order_relaxed);
+    atomic_store_explicit(
+        ptr, on ? (value | mask) : (value & ~mask), memory_order_relaxed);
 }
 
 static int is_custom_bucket(const nodes_table* dbs, uint64_t index)
 {
-    uint64_t *ptr = dbs->bitmapc + (index/64);
+    const _Atomic(uint64_t) *ptr = dbs->bitmapc + (index/64);
     uint64_t mask = UINT64_C(0x8000000000000000) >> (index&63);
-    return (*ptr & mask) ? 1 : 0;
+    return (atomic_load_explicit(ptr, memory_order_relaxed) & mask) ? 1 : 0;
 }
 
 static inline uint64_t ror64(uint64_t x, unsigned int k) {
@@ -431,7 +439,7 @@ nodes_table* nodes_create(size_t initial_size, size_t max_size)
 
     dbs->bitmap1 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(region_bitmap_size(dbs->max_size));
     dbs->bitmap2 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(node_bitmap_size(dbs->max_size));
-    dbs->bitmapc = (uint64_t*)sylvan_alloc_aligned(node_bitmap_size(dbs->max_size));
+    dbs->bitmapc = (_Atomic(uint64_t)*)sylvan_alloc_aligned(node_bitmap_size(dbs->max_size));
 
     if (dbs->data == 0 || dbs->first == 0 || dbs->next == 0 || dbs->bitmap1 == 0 || dbs->bitmap2 == 0 || dbs->bitmapc == 0) {
         fprintf(stderr, "nodes_create: Unable to allocate memory: %s!\n", strerror(errno));
@@ -462,7 +470,7 @@ void nodes_free(nodes_table* dbs)
     sylvan_free_aligned((void*)dbs->next, dbs->max_size * 8);
     sylvan_free_aligned((void*)dbs->bitmap1, region_bitmap_size(dbs->max_size));
     sylvan_free_aligned((void*)dbs->bitmap2, node_bitmap_size(dbs->max_size));
-    sylvan_free_aligned(dbs->bitmapc, node_bitmap_size(dbs->max_size));
+    sylvan_free_aligned((void*)dbs->bitmapc, node_bitmap_size(dbs->max_size));
     sylvan_free_aligned(dbs, sizeof(struct nodes_table));
 }
 
@@ -593,7 +601,8 @@ void nodes_destroy_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first_wo
     } else {
         for (size_t word=first_word; word<first_word+word_count; word++) {
             const uint64_t marked = atomic_load_explicit(dbs->bitmap2 + word, memory_order_relaxed);
-            const uint64_t custom = dbs->bitmapc[word];
+            const uint64_t custom = atomic_load_explicit(
+                dbs->bitmapc + word, memory_order_relaxed);
             uint64_t dead = custom & ~marked;
 
             while (dead != 0) {
@@ -607,7 +616,8 @@ void nodes_destroy_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first_wo
                 dead &= ~mask;
             }
 
-            dbs->bitmapc[word] = custom & marked;
+            atomic_store_explicit(
+                dbs->bitmapc + word, custom & marked, memory_order_relaxed);
         }
     }
 }

@@ -149,11 +149,11 @@ typedef struct llchst_page {
 } llchst_page;
 
 typedef struct nodes_table {
-    uint64_t* next;
+    _Atomic(uint64_t)* next;
     uint8_t* data;
     _Atomic(uint64_t)* bitmap1;
     _Atomic(uint64_t)* bitmap2;
-    uint64_t* bitmapc;
+    _Atomic(uint64_t)* bitmapc;
     size_t max_size;
     size_t table_size;
     llchst_subtable* decision;
@@ -537,23 +537,31 @@ release_data_bucket(const nodes_table* dbs, uint64_t index)
     atomic_store_explicit(ptr, value & ~mask, memory_order_relaxed);
 }
 
+/*
+ * The insertion and cleanup paths do not need read-modify-write on bitmapc:
+ * during insertion each worker owns a whole data region via bitmap1, and
+ * cleanup/rebuild is stop-the-world relative to lookup. The words are atomic
+ * only so that the reorder primitives, which do not own a region, can clear a
+ * single bit without racing with those relaxed accesses.
+ */
 static void
 set_custom_bucket(const nodes_table* dbs, uint64_t index, int on)
 {
-    uint64_t* ptr = dbs->bitmapc + index / 64u;
+    _Atomic(uint64_t)* ptr = dbs->bitmapc + index / 64u;
     const uint64_t mask =
         UINT64_C(0x8000000000000000) >> (index & 63u);
-    if (on) *ptr |= mask;
-    else *ptr &= ~mask;
+    const uint64_t value = atomic_load_explicit(ptr, memory_order_relaxed);
+    atomic_store_explicit(
+        ptr, on ? (value | mask) : (value & ~mask), memory_order_relaxed);
 }
 
 static int
 is_custom_bucket(const nodes_table* dbs, uint64_t index)
 {
-    const uint64_t* ptr = dbs->bitmapc + index / 64u;
+    const _Atomic(uint64_t)* ptr = dbs->bitmapc + index / 64u;
     const uint64_t mask =
         UINT64_C(0x8000000000000000) >> (index & 63u);
-    return (*ptr & mask) ? 1 : 0;
+    return (atomic_load_explicit(ptr, memory_order_relaxed) & mask) ? 1 : 0;
 }
 
 static inline uint64_t
@@ -612,7 +620,7 @@ find_in_chain(const nodes_table* dbs, uint64_t link, uint64_t stop,
 
         walked++;
         sylvan_stats_count(LLMSSET_LOOKUP);
-        link = dbs->next[index];
+        link = atomic_load_explicit(dbs->next + index, memory_order_relaxed);
     }
     *steps = walked;
     return 0;
@@ -690,8 +698,10 @@ nodes_lookup2(const nodes_table* dbs, uint32_t route,
     const uint64_t candidate_owner = owner_tag(route, b);
 
     for (;;) {
-        dbs->next[candidate] =
-            candidate_owner | (observed & MASK_LINK);
+        atomic_store_explicit(
+            dbs->next + candidate,
+            candidate_owner | (observed & MASK_LINK),
+            memory_order_relaxed);
         uint64_t expected = observed;
         if (atomic_compare_exchange_strong_explicit(
                 head, &expected, candidate_link,
@@ -776,7 +786,7 @@ nodes_create(size_t initial_size, size_t max_size)
 
     dbs->max_size = max_size;
     dbs->table_size = initial_size;
-    dbs->next = (uint64_t*)sylvan_alloc_aligned(
+    dbs->next = (_Atomic(uint64_t)*)sylvan_alloc_aligned(
         max_size * sizeof(*dbs->next));
     dbs->data = (uint8_t*)sylvan_alloc_aligned(
         max_size * 2 * sizeof(uint64_t));
@@ -784,7 +794,7 @@ nodes_create(size_t initial_size, size_t max_size)
         region_bitmap_size(max_size));
     dbs->bitmap2 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(
         node_bitmap_size(max_size));
-    dbs->bitmapc = (uint64_t*)sylvan_alloc_aligned(
+    dbs->bitmapc = (_Atomic(uint64_t)*)sylvan_alloc_aligned(
         node_bitmap_size(max_size));
     dbs->decision = (llchst_subtable*)sylvan_alloc_aligned(
         SYLVAN_LLCHST_DENSE_LEVELS * sizeof(*dbs->decision));
@@ -862,7 +872,7 @@ nodes_free(nodes_table* dbs)
         (void*)dbs->pages,
         LLCHST_PAGE_COUNT * sizeof(*dbs->pages));
     sylvan_free_aligned(
-        dbs->next, dbs->max_size * sizeof(*dbs->next));
+        (void*)dbs->next, dbs->max_size * sizeof(*dbs->next));
     sylvan_free_aligned(
         dbs->data, dbs->max_size * 2 * sizeof(uint64_t));
     sylvan_free_aligned(
@@ -870,7 +880,7 @@ nodes_free(nodes_table* dbs)
     sylvan_free_aligned(
         (void*)dbs->bitmap2, node_bitmap_size(dbs->max_size));
     sylvan_free_aligned(
-        dbs->bitmapc, node_bitmap_size(dbs->max_size));
+        (void*)dbs->bitmapc, node_bitmap_size(dbs->max_size));
     sylvan_free_aligned(dbs, sizeof(nodes_table));
 }
 
@@ -1013,7 +1023,8 @@ llchst_measure_chains_CALL(
             const uint64_t index = link & MASK_INDEX;
             live += (size_t)nodes_is_marked(context->dbs, index);
             population++;
-            const uint64_t next = context->dbs->next[index];
+            const uint64_t next = atomic_load_explicit(
+                context->dbs->next + index, memory_order_relaxed);
             has_raw |= (next & MASK_OWNER) == OWNER_RAW_DECISION;
             link = next;
         }
@@ -1222,8 +1233,10 @@ rehash_node(nodes_table* dbs, uint32_t route,
 
     uint64_t observed = atomic_load_explicit(head, memory_order_relaxed);
     if (!parallel) {
-        dbs->next[index] =
-            owner_tag(route, data[1]) | (observed & MASK_LINK);
+        atomic_store_explicit(
+            dbs->next + index,
+            owner_tag(route, data[1]) | (observed & MASK_LINK),
+            memory_order_relaxed);
         atomic_store_explicit(head, link, memory_order_relaxed);
     } else {
         /* Rebuild is stop-the-world: no lookup can observe the temporary
@@ -1232,8 +1245,10 @@ rehash_node(nodes_table* dbs, uint32_t route,
            sufficient; a compare/exchange retry loop only adds contention. */
         observed = atomic_exchange_explicit(
             head, link, memory_order_relaxed);
-        dbs->next[index] =
-            owner_tag(route, data[1]) | (observed & MASK_LINK);
+        atomic_store_explicit(
+            dbs->next + index,
+            owner_tag(route, data[1]) | (observed & MASK_LINK),
+            memory_order_relaxed);
     }
     sylvan_stats_count(LLCHST_NODE_REHASHED);
 }
@@ -1312,7 +1327,8 @@ llchst_rehash_raw_entries_CALL(
                 entry->old_heads + i, memory_order_relaxed);
             while ((link & MASK_LINK) != 0) {
                 const uint64_t index = link & MASK_INDEX;
-                const uint64_t next = dbs->next[index];
+                const uint64_t next = atomic_load_explicit(
+                    dbs->next + index, memory_order_relaxed);
                 if ((next & MASK_OWNER) == OWNER_RAW_DECISION &&
                     nodes_is_marked(dbs, index)) {
                     rehash_node(
@@ -1347,7 +1363,8 @@ llchst_rehash_nodes_CALL(
         const size_t index = first + offset;
         if (index > 1 &&
             (atomic_load_explicit(marked, memory_order_relaxed) & mask)) {
-            const uint64_t tagged_next = dbs->next[index];
+            const uint64_t tagged_next = atomic_load_explicit(
+                dbs->next + index, memory_order_relaxed);
             if ((tagged_next & MASK_OWNER) == OWNER_RAW_DECISION) {
                 goto next_index;
             }
@@ -1682,7 +1699,9 @@ llchst_count_population_CALL(
             context->heads + i, memory_order_relaxed);
         while ((link & MASK_LINK) != 0) {
             population++;
-            link = context->dbs->next[link & MASK_INDEX];
+            link = atomic_load_explicit(
+                context->dbs->next + (link & MASK_INDEX),
+                memory_order_relaxed);
         }
     }
     atomic_fetch_add_explicit(
@@ -1717,7 +1736,8 @@ llchst_migrate_chains_CALL(
             const uint64_t index = link & MASK_INDEX;
             /* rehash_node overwrites next[index], so read the rest of the old
                chain out of the way first. */
-            const uint64_t next = dbs->next[index];
+            const uint64_t next = atomic_load_explicit(
+                dbs->next + index, memory_order_relaxed);
             rehash_node(
                 dbs, route, entry->new_heads, new_mask, index, parallel);
             link = next;
@@ -1906,7 +1926,8 @@ nodes_destroy_par_CALL(lace_worker* lace, nodes_table* dbs,
     for (size_t word = first_word; word < first_word + word_count; word++) {
         const uint64_t marked = atomic_load_explicit(
             dbs->bitmap2 + word, memory_order_relaxed);
-        const uint64_t custom = dbs->bitmapc[word];
+        const uint64_t custom = atomic_load_explicit(
+            dbs->bitmapc + word, memory_order_relaxed);
         uint64_t dead = custom & ~marked;
         while (dead != 0) {
             const unsigned int bit = clz_uint64(dead);
@@ -1920,7 +1941,8 @@ nodes_destroy_par_CALL(lace_worker* lace, nodes_table* dbs,
             }
             dead &= ~mask;
         }
-        dbs->bitmapc[word] = custom & marked;
+        atomic_store_explicit(
+            dbs->bitmapc + word, custom & marked, memory_order_relaxed);
     }
 }
 

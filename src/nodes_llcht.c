@@ -21,6 +21,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 
 /**
@@ -711,41 +712,229 @@ nodes_set_custom(nodes_table* dbs,
 /**
  * Reorder primitives.
  *
- * Not implemented for this backend yet; every primitive changes nothing and
- * reports SYLVAN_ERR_INVALID, which is what a zero capability mask promises.
+ * Removal splices the node out of its own chain with compare-and-swap, and
+ * reinsertion prepends it again under its new key. Both derive the chain from
+ * the record: the head slot is head_index(hash(a, b)), exactly as a lookup
+ * would compute it.
+ *
+ * Concurrency. Other session workers may run nodes_remove and nodes_reinsert
+ * on the same chain at the same time. The hazard is the classic one for
+ * CAS-based list deletion: if p precedes d and both are removed, the remover
+ * of p may swing p's predecessor onto d after the remover of d has already
+ * updated next[p], leaving d linked. The fix is the delete-in-progress link,
+ * as on the historical sift branch, except that our links live in next[]
+ * rather than in the record:
+ *
+ *   1. A remover first replaces next[d] with LINK_REMOVING, keeping the
+ *      successor it read. Nothing else ever writes next[d], so this claims d.
+ *   2. It then walks the chain from the head looking for d's predecessor and
+ *      swings that link to the saved successor. A walker that lands on a node
+ *      whose next is LINK_REMOVING restarts from the head instead of
+ *      following a link that is about to be spliced out; a failed
+ *      compare-and-swap also restarts.
+ *
+ * That restart cannot livelock. Splicing preserves the order of the surviving
+ * nodes, so "waits for" follows the chain order, which is a strict total
+ * order and therefore acyclic: the earliest in-progress removal on a chain
+ * never waits, and always completes.
+ *
+ * A remover's walk also survives a concurrent reinsertion, which is subtler,
+ * because reinsertion reuses the very link word a walker may be standing on.
+ * Say the walker read next[p] naming x, and x is then removed and reinserted
+ * before the walker loads next[x]. It now reads the head that x was prepended
+ * in front of, and jumps back to the front of the chain. That is harmless in
+ * both directions: the walker can never step *past* its own node d, because
+ * passing d means reading a link at d's predecessor that does not name d, and
+ * that predecessor's link either still names d (found), or holds
+ * LINK_REMOVING (restart), or was reused by a reinsertion (jump backwards);
+ * and it can never splice wrongly, because the compare-and-swap only replaces
+ * a link that literally names d, which makes its holder d's predecessor at
+ * that instant. Reaching the end of a chain therefore really does mean the
+ * node was not in it. Each backward jump costs one more traversal but needs
+ * another worker to have completed a reinsertion, so the walk terminates.
+ *
+ * None of this is safe against a concurrent nodes_lookup, which would follow
+ * LINK_REMOVING as if it were a link to node 0.
  */
-uint32_t nodes_reorder_caps(const nodes_table* dbs)
+
+/* A link with an all-ones fingerprint and a zero index. No published link can
+   look like this: a link names a node index >= 2, and a chain end is exactly
+   zero. */
+#define LINK_REMOVING MASK_HASH
+
+uint32_t
+nodes_reorder_caps(const nodes_table* dbs)
 {
     (void)dbs;
+    return NODES_CAP_REMOVE;
+}
+
+static void
+reorder_duplicate_abort(uint64_t index, uint64_t other)
+{
+    assert(!"nodes_reinsert: an equal node is already in the index");
+    fprintf(stderr,
+            "sylvan: nodes_reinsert: node %llu is equal to node %llu, which "
+            "is already in the index; the unique table invariant is broken. "
+            "Aborting.\n",
+            (unsigned long long)index, (unsigned long long)other);
+    abort();
+}
+
+static _Atomic(uint64_t)*
+reorder_head(const nodes_table* dbs, uint64_t index)
+{
+    const uint64_t* data = ((const uint64_t*)dbs->data) + 2 * index;
+    const uint64_t hash = hash_key(
+        dbs, data[0], data[1], is_custom_bucket(dbs, index));
+    return dbs->heads + head_index(dbs, hash);
+}
+
+int
+nodes_remove(nodes_table* dbs, uint64_t index)
+{
+    if (index < 2 || index >= dbs->table_size) return SYLVAN_ERR_INVALID;
+
+    /* Claim the node and take its successor with it. The compare-and-swap
+       retries because next[index] is not private: when the node behind this
+       one is removed, its remover splices by writing this very link. Only a
+       second removal of this node itself can install LINK_REMOVING. */
+    uint64_t successor;
+    for (;;) {
+        successor = atomic_load_explicit(
+            dbs->next + index, memory_order_acquire);
+        if (successor == LINK_REMOVING) return SYLVAN_ERR_INVALID;
+        if (atomic_compare_exchange_weak_explicit(
+                dbs->next + index, &successor, LINK_REMOVING,
+                memory_order_acq_rel, memory_order_acquire)) {
+            break;
+        }
+    }
+
+    _Atomic(uint64_t)* head = reorder_head(dbs, index);
+
+    for (;;) {
+        uint64_t link = atomic_load_explicit(head, memory_order_acquire);
+        if ((link & MASK_INDEX) == index) {
+            if (atomic_compare_exchange_strong_explicit(
+                    head, &link, successor,
+                    memory_order_acq_rel, memory_order_acquire)) {
+                return SYLVAN_OK;
+            }
+            continue;
+        }
+
+        for (;;) {
+            const uint64_t previous = link & MASK_INDEX;
+            if (previous == 0) {
+                /* Not in its own chain: either it was never inserted, or the
+                   caller is removing it twice. */
+                assert(!"nodes_remove: node is not in its own chain");
+                return SYLVAN_ERR_INVALID;
+            }
+
+            uint64_t value = atomic_load_explicit(
+                dbs->next + previous, memory_order_acquire);
+            if (value == LINK_REMOVING) break;
+            if ((value & MASK_INDEX) == index) {
+                if (atomic_compare_exchange_strong_explicit(
+                        dbs->next + previous, &value, successor,
+                        memory_order_acq_rel, memory_order_acquire)) {
+                    return SYLVAN_OK;
+                }
+                break;
+            }
+            link = value;
+        }
+    }
+}
+
+/**
+ * Walk a chain looking for a node equal to the given key.
+ * Returns the index of an equal node, 0 if there is none, or UINT64_MAX if
+ * the walk met a removal in progress and has to be repeated.
+ */
+static uint64_t
+reorder_find_equal(const nodes_table* dbs, uint64_t link,
+                   uint64_t masked_hash, uint64_t a, uint64_t b, int custom)
+{
+    while ((link & MASK_INDEX) != 0) {
+        const uint64_t index = link & MASK_INDEX;
+        if ((link & MASK_HASH) == masked_hash) {
+            const uint64_t* data = ((const uint64_t*)dbs->data) + 2 * index;
+            if (custom) {
+                if (dbs->equals_cb(a, b, data[0], data[1])) return index;
+            } else if (data[0] == a && data[1] == b) {
+                return index;
+            }
+        }
+        link = atomic_load_explicit(dbs->next + index, memory_order_acquire);
+        if (link == LINK_REMOVING) return UINT64_MAX;
+    }
     return 0;
 }
 
-int nodes_remove(nodes_table* dbs, uint64_t index)
+int
+nodes_reinsert(nodes_table* dbs, uint64_t index)
+{
+    if (index < 2 || index >= dbs->table_size) return SYLVAN_ERR_INVALID;
+    if (atomic_load_explicit(dbs->next + index, memory_order_relaxed) !=
+        LINK_REMOVING) {
+        assert(!"nodes_reinsert: the node was not removed first");
+        return SYLVAN_ERR_INVALID;
+    }
+
+    const uint64_t* data = ((const uint64_t*)dbs->data) + 2 * index;
+    const uint64_t a = data[0];
+    const uint64_t b = data[1];
+    const int custom = is_custom_bucket(dbs, index);
+    const uint64_t hash = hash_key(dbs, a, b, custom);
+    const uint64_t masked_hash = hash & MASK_HASH;
+    _Atomic(uint64_t)* head = dbs->heads + head_index(dbs, hash);
+    const uint64_t link = masked_hash | index;
+
+    uint64_t observed = atomic_load_explicit(head, memory_order_acquire);
+    for (;;) {
+        const uint64_t equal = reorder_find_equal(
+            dbs, observed, masked_hash, a, b, custom);
+        if (equal == UINT64_MAX) {
+            observed = atomic_load_explicit(head, memory_order_acquire);
+            continue;
+        }
+        if (equal != 0) reorder_duplicate_abort(index, equal);
+
+        /* Publish this node's own link before the node itself: the release
+           compare-and-swap on the head orders the store in front of it, so a
+           walker can never reach the node with a stale successor. */
+        atomic_store_explicit(
+            dbs->next + index, observed, memory_order_relaxed);
+        uint64_t expected = observed;
+        if (atomic_compare_exchange_strong_explicit(
+                head, &expected, link,
+                memory_order_acq_rel, memory_order_acquire)) {
+            return SYLVAN_OK;
+        }
+        observed = expected;
+    }
+}
+
+int
+nodes_release(nodes_table* dbs, uint64_t index)
 {
     (void)dbs; (void)index;
     return SYLVAN_ERR_INVALID;
 }
 
-int nodes_reinsert(nodes_table* dbs, uint64_t index)
-{
-    (void)dbs; (void)index;
-    return SYLVAN_ERR_INVALID;
-}
-
-int nodes_release(nodes_table* dbs, uint64_t index)
-{
-    (void)dbs; (void)index;
-    return SYLVAN_ERR_INVALID;
-}
-
-int nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
-                        nodes_visit_cb cb, void* context)
+int
+nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
+                    nodes_visit_cb cb, void* context)
 {
     (void)dbs; (void)variable; (void)cb; (void)context;
     return SYLVAN_ERR_INVALID;
 }
 
-int nodes_reserve(nodes_table* dbs, uint64_t count)
+int
+nodes_reserve(nodes_table* dbs, uint64_t count)
 {
     (void)dbs; (void)count;
     return SYLVAN_ERR_INVALID;

@@ -1,6 +1,13 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
+
+#if defined(__unix__) || defined(__APPLE__)
+#include <signal.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 #include <lace.h>
 
@@ -24,6 +31,9 @@
 /* Number of Lace workers this run was started with. */
 static unsigned int test_workers = TEST_DEFAULT_WORKERS;
 
+/* argv[0], so a death test can re-execute this binary. */
+static const char *test_self;
+
 /* Nodes are handed out per 512-bucket region, one region per worker at a
    time, so a table used concurrently needs at least that much room per
    worker. Some backends require a power of two, so round up. */
@@ -35,24 +45,38 @@ race_table_size(void)
     return size;
 }
 
+/**
+ * Fill <keys> with <count> leaf keys whose hashes agree modulo <mask> + 1.
+ *
+ * Agreeing on a power-of-two mask implies agreeing on every smaller one, so
+ * passing the table size makes the keys share a bucket in llcht and in the
+ * (smaller) llchst head array alike; in list and trie every leaf shares the
+ * family anchored at handle 1 regardless.
+ */
 static void
-find_colliding_keys(uint64_t *keys)
+find_colliding_keys_n(uint64_t *keys, unsigned int count, uint64_t mask)
 {
     size_t target = SIZE_MAX;
-    unsigned int count = 0;
+    unsigned int found = 0;
 
     for (uint64_t value = 2;; value++) {
         const uint64_t key = UINT64_C(0x4000000000000000) | value;
         const uint64_t hash =
             sylvan_tabhash16(key, 0, UINT64_C(14695981039346656037));
-        const size_t bucket = (size_t)(hash & (TEST_TABLE_SIZE - 1));
+        const size_t bucket = (size_t)(hash & mask);
 
         if (target == SIZE_MAX) target = bucket;
         if (bucket == target) {
-            keys[count++] = key;
-            if (count == TEST_COLLIDING_KEYS) return;
+            keys[found++] = key;
+            if (found == count) return;
         }
     }
+}
+
+static void
+find_colliding_keys(uint64_t *keys)
+{
+    find_colliding_keys_n(keys, TEST_COLLIDING_KEYS, TEST_TABLE_SIZE - 1);
 }
 
 struct lookup_race {
@@ -676,6 +700,300 @@ test_subtable_routing(void)
 #endif
 
 /**
+ * Remove, verify the key misses, reinsert the unchanged record: the node must
+ * come back at the same index, and be found rather than recreated.
+ */
+static int
+test_reorder_remove_reinsert(void)
+{
+    nodes_table *table = nodes_create(TEST_TABLE_SIZE, TEST_TABLE_SIZE);
+    if ((nodes_reorder_caps(table) & NODES_CAP_REMOVE) == 0) {
+        nodes_free(table);
+        return 0;
+    }
+
+    const uint64_t a = UINT64_C(0x4000000000000011);
+    const uint64_t b = 17;
+    int created = 0;
+    const uint64_t index = nodes_lookup(table, a, b, &created);
+    test_assert(index > 1 && created == 1);
+
+    test_assert(nodes_remove(table, index) == SYLVAN_OK);
+
+    /* The key now misses: the lookup creates a second node for it. */
+    created = 0;
+    const uint64_t duplicate = nodes_lookup(table, a, b, &created);
+    test_assert(duplicate > 1 && duplicate != index && created == 1);
+    test_assert(nodes_remove(table, duplicate) == SYLVAN_OK);
+
+    test_assert(nodes_reinsert(table, index) == SYLVAN_OK);
+    created = 1;
+    test_assert(nodes_lookup(table, a, b, &created) == index);
+    test_assert(created == 0);
+
+    nodes_free(table);
+    return 0;
+}
+
+/**
+ * Remove the first, a middle and the last node of one shared chain. The
+ * backends order a chain differently (llcht prepends, list appends, the trie
+ * shapes a tree), so taking those three positions covers head, interior and
+ * tail whichever convention applies.
+ */
+static int
+test_reorder_chain_positions(void)
+{
+    nodes_table *table = nodes_create(TEST_TABLE_SIZE, TEST_TABLE_SIZE);
+    if ((nodes_reorder_caps(table) & NODES_CAP_REMOVE) == 0) {
+        nodes_free(table);
+        return 0;
+    }
+
+    uint64_t keys[TEST_COLLIDING_KEYS];
+    uint64_t indices[TEST_COLLIDING_KEYS];
+    find_colliding_keys(keys);
+    for (unsigned int i = 0; i < TEST_COLLIDING_KEYS; i++) {
+        int created = 0;
+        indices[i] = nodes_lookup(table, keys[i], 0, &created);
+        test_assert(indices[i] > 1 && created == 1);
+    }
+
+    const unsigned int victims[3] = {
+        0, TEST_COLLIDING_KEYS / 2, TEST_COLLIDING_KEYS - 1
+    };
+    for (unsigned int k = 0; k < 3; k++) {
+        test_assert(nodes_remove(table, indices[victims[k]]) == SYLVAN_OK);
+    }
+
+    for (unsigned int i = 0; i < TEST_COLLIDING_KEYS; i++) {
+        int is_victim = 0;
+        for (unsigned int k = 0; k < 3; k++) {
+            if (victims[k] == i) is_victim = 1;
+        }
+        int created = 1;
+        const uint64_t found = nodes_lookup(table, keys[i], 0, &created);
+        if (is_victim) {
+            /* Gone from the index: recreated at a fresh slot. */
+            test_assert(created == 1 && found != indices[i]);
+            test_assert(nodes_remove(table, found) == SYLVAN_OK);
+        } else {
+            test_assert(created == 0 && found == indices[i]);
+        }
+    }
+
+    for (unsigned int k = 0; k < 3; k++) {
+        test_assert(nodes_reinsert(table, indices[victims[k]]) == SYLVAN_OK);
+    }
+    for (unsigned int i = 0; i < TEST_COLLIDING_KEYS; i++) {
+        int created = 1;
+        test_assert(nodes_lookup(table, keys[i], 0, &created) == indices[i]);
+        test_assert(created == 0);
+    }
+
+    nodes_free(table);
+    return 0;
+}
+
+/**
+ * The case-B rewrite of a swap: remove the node, replace both children and
+ * the variable identity in place, reinsert. The node must be found under its
+ * new key at the very same index, and the old key must be gone.
+ */
+static int
+test_reorder_rewrite_in_place(void)
+{
+    nodes_table *table = nodes_create(TEST_TABLE_SIZE, TEST_TABLE_SIZE);
+    if ((nodes_reorder_caps(table) & NODES_CAP_REMOVE) == 0) {
+        nodes_free(table);
+        return 0;
+    }
+
+    /* Four leaves with increasing handles, so that the two records also
+       differ in their maximum child, which is what the list and trie
+       backends anchor on. */
+    uint64_t leaf[4];
+    for (uint64_t i = 0; i < 4; i++) {
+        int created = 0;
+        leaf[i] = nodes_lookup(
+            table, UINT64_C(0x4000000000000000) | i, i, &created);
+        test_assert(leaf[i] > 1 && created == 1);
+    }
+    test_assert(leaf[0] < leaf[1] && leaf[1] < leaf[2] && leaf[2] < leaf[3]);
+
+    const uint64_t old_a = leaf[0];
+    const uint64_t old_b = (UINT64_C(7) << 40) | leaf[1];
+    const uint64_t new_a = leaf[2];
+    const uint64_t new_b = (UINT64_C(9) << 40) | leaf[3];
+
+    int created = 0;
+    const uint64_t index = nodes_lookup(table, old_a, old_b, &created);
+    test_assert(index > 1 && created == 1);
+
+    test_assert(nodes_remove(table, index) == SYLVAN_OK);
+    uint64_t *record = nodes_get_pointer(table, index);
+    record[0] = new_a;
+    record[1] = new_b;
+    test_assert(nodes_reinsert(table, index) == SYLVAN_OK);
+
+    created = 1;
+    test_assert(nodes_lookup(table, new_a, new_b, &created) == index);
+    test_assert(created == 0);
+
+    created = 0;
+    const uint64_t revived = nodes_lookup(table, old_a, old_b, &created);
+    test_assert(created == 1 && revived != index);
+
+    nodes_free(table);
+    return 0;
+}
+
+/**
+ * Concurrent remove and reinsert by all workers on one shared chain.
+ *
+ * Every worker owns a disjoint set of keys that all land in the same chain,
+ * and each round removes all of them before putting any of them back, so
+ * several nodes of one chain are unlinked at the same time and adjacent
+ * removals really do overlap. Afterwards the chain must contain exactly the
+ * same nodes at the same indices.
+ */
+#define TEST_REORDER_RACE_KEYS 8
+#define TEST_REORDER_RACE_ROUNDS 40
+
+struct reorder_race {
+    nodes_table *table;
+    _Atomic(unsigned int) arrived;
+    _Atomic(unsigned int) failures;
+    uint64_t indices[TEST_MAX_WORKERS * TEST_REORDER_RACE_KEYS];
+};
+
+TASK(void, reorder_race_worker, struct reorder_race*, race)
+
+void
+reorder_race_worker_CALL(lace_worker *lace, struct reorder_race *race)
+{
+    const unsigned int slot = (unsigned int)lace->worker;
+    const uint64_t *mine = race->indices + slot * TEST_REORDER_RACE_KEYS;
+
+    atomic_fetch_add_explicit(&race->arrived, 1, memory_order_acq_rel);
+    while (atomic_load_explicit(
+               &race->arrived, memory_order_acquire) < test_workers) {
+    }
+
+    for (unsigned int round = 0; round < TEST_REORDER_RACE_ROUNDS; round++) {
+        for (unsigned int i = 0; i < TEST_REORDER_RACE_KEYS; i++) {
+            if (nodes_remove(race->table, mine[i]) != SYLVAN_OK) {
+                atomic_fetch_add_explicit(
+                    &race->failures, 1, memory_order_relaxed);
+            }
+        }
+        for (unsigned int i = 0; i < TEST_REORDER_RACE_KEYS; i++) {
+            if (nodes_reinsert(race->table, mine[i]) != SYLVAN_OK) {
+                atomic_fetch_add_explicit(
+                    &race->failures, 1, memory_order_relaxed);
+            }
+        }
+    }
+}
+
+static int
+test_reorder_race(void)
+{
+    const size_t table_size = race_table_size();
+    nodes_table *table = nodes_create(table_size, table_size);
+    if ((nodes_reorder_caps(table) & NODES_CAP_REMOVE) == 0) {
+        nodes_free(table);
+        return 0;
+    }
+
+    const unsigned int count = test_workers * TEST_REORDER_RACE_KEYS;
+    static uint64_t keys[TEST_MAX_WORKERS * TEST_REORDER_RACE_KEYS];
+    static struct reorder_race race;
+    find_colliding_keys_n(keys, count, table_size - 1);
+
+    race.table = table;
+    atomic_store_explicit(&race.arrived, 0, memory_order_relaxed);
+    atomic_store_explicit(&race.failures, 0, memory_order_relaxed);
+    for (unsigned int i = 0; i < count; i++) {
+        int created = 0;
+        race.indices[i] = nodes_lookup(table, keys[i], 0, &created);
+        test_assert(race.indices[i] > 1 && created == 1);
+    }
+
+    reorder_race_worker_TOGETHER(&race);
+
+    test_assert(atomic_load_explicit(
+        &race.failures, memory_order_relaxed) == 0);
+    for (unsigned int i = 0; i < count; i++) {
+        int created = 1;
+        test_assert(nodes_lookup(table, keys[i], 0, &created) ==
+                    race.indices[i]);
+        test_assert(created == 0);
+    }
+    test_assert(nodes_count_nodes(table) == count + 2);
+
+    nodes_free(table);
+    return 0;
+}
+
+/**
+ * Child process for the reinsert-collision death test: two equal records at
+ * different indices, one of them indexed. Reinserting the other one is an
+ * invariant violation and must abort rather than return.
+ */
+TASK(int, run_reinsert_collision)
+
+int
+run_reinsert_collision_CALL(lace_worker *lace)
+{
+    (void)lace;
+    sylvan_init_hash();
+    nodes_table *table = nodes_create(TEST_TABLE_SIZE, TEST_TABLE_SIZE);
+    const uint64_t a = UINT64_C(0x4000000000000021);
+    const uint64_t b = 33;
+
+    int created = 0;
+    const uint64_t first = nodes_lookup(table, a, b, &created);
+    if (first <= 1 || created != 1) return 1;
+    if (nodes_remove(table, first) != SYLVAN_OK) return 1;
+
+    created = 0;
+    const uint64_t second = nodes_lookup(table, a, b, &created);
+    if (second <= 1 || second == first || created != 1) return 1;
+
+    /* <second> is indexed and equal to the record at <first>. */
+    nodes_reinsert(table, first);
+    return 1;  /* must not be reached */
+}
+
+#if defined(__unix__) || defined(__APPLE__)
+static int
+test_reinsert_collision_aborts(const char *self)
+{
+    nodes_table *probe = nodes_create(TEST_TABLE_SIZE, TEST_TABLE_SIZE);
+    const uint32_t caps = nodes_reorder_caps(probe);
+    nodes_free(probe);
+    if ((caps & NODES_CAP_REMOVE) == 0) return 0;
+
+    const pid_t child = fork();
+    test_assert(child >= 0);
+    if (child == 0) {
+        /* The diagnostic is the point of the test, but it would only be
+           noise in the log of a passing run. */
+        if (freopen("/dev/null", "w", stderr) == NULL) _exit(127);
+        execl(self, self, "--reinsert-collision", (char *)NULL);
+        _exit(127);
+    }
+
+    int status = 0;
+    test_assert(waitpid(child, &status, 0) == child);
+    test_assert(WIFSIGNALED(status));
+    test_assert(WTERMSIG(status) == SIGABRT);
+    return 0;
+}
+#endif
+
+/**
  * The capability mask is the contract: a primitive whose bit is missing must
  * change nothing and report SYLVAN_ERR_INVALID, and a backend with no
  * capabilities at all also refuses to reserve.
@@ -685,6 +1003,10 @@ test_reorder_contract(void)
 {
     nodes_table *table = nodes_create(TEST_TABLE_SIZE, TEST_TABLE_SIZE);
     const uint32_t caps = nodes_reorder_caps(table);
+    /* One line of evidence in the log about which half of this file the
+       backend under test actually exercises. */
+    fprintf(stderr, "test_table: reorder caps 0x%x, %u workers\n",
+            (unsigned int)caps, test_workers);
     test_assert((caps & ~(uint32_t)(NODES_CAP_REMOVE | NODES_CAP_RELEASE |
                                     NODES_CAP_ENUMERATE)) == 0);
 
@@ -852,6 +1174,13 @@ run_table_tests_CALL(lace_worker *lace)
     nodes_free(table);
 
     if (test_reorder_contract()) return 1;
+    if (test_reorder_remove_reinsert()) return 1;
+    if (test_reorder_chain_positions()) return 1;
+    if (test_reorder_rewrite_in_place()) return 1;
+    if (test_reorder_race()) return 1;
+#if defined(__unix__) || defined(__APPLE__)
+    if (test_reinsert_collision_aborts(test_self)) return 1;
+#endif
     if (test_deep_custom_chain()) return 1;
     if (test_custom_equality()) return 1;
     if (test_custom_metadata_cleanup()) return 1;
@@ -868,6 +1197,17 @@ run_table_tests_CALL(lace_worker *lace)
 int
 main(int argc, char **argv)
 {
+    test_self = argv[0];
+
+    /* Internal entry point: the reinsert-collision death test re-executes
+       this binary and expects the child to abort. */
+    if (argc > 1 && strcmp(argv[1], "--reinsert-collision") == 0) {
+        lace_start(1, 0, 0);
+        const int status = run_reinsert_collision();
+        lace_stop();
+        return status;
+    }
+
     /* Optional argument: number of Lace workers (default TEST_DEFAULT_WORKERS).
        The stress harness uses this to replay the tests at other worker
        counts. */

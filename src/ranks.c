@@ -27,6 +27,17 @@ _Atomic(uint32_t) sylvan_ranks_count;
 _Atomic(uint32_t*) sylvan_ranks_rank_of;
 _Atomic(uint32_t*) sylvan_ranks_identity_at;
 
+#if SYLVAN_RANK_COUNTERS
+_Atomic(uint64_t) sylvan_ranks_lookups;
+
+uint64_t
+sylvan_ranks_take_lookups(void)
+{
+    return atomic_exchange_explicit(
+        &sylvan_ranks_lookups, 0, memory_order_relaxed);
+}
+#endif
+
 /**
  * One allocation holds both arrays: rank_of in data[0 .. capacity) and
  * identity_at in data[capacity .. 2*capacity). A superseded block is moved to

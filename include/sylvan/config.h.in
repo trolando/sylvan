@@ -27,6 +27,9 @@
 /* Enable/disable counters and timers */
 #cmakedefine01 SYLVAN_STATS
 
+/* Enable/disable the diagnostic variable rank lookup counter */
+#cmakedefine01 SYLVAN_RANK_COUNTERS
+
 /* Enable/disable using mmap to allocate large amounts of memory */
 #cmakedefine01 SYLVAN_USE_MMAP
 

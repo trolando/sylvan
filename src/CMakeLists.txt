@@ -13,6 +13,10 @@ endif()
 
 option(SYLVAN_STATS "Let Sylvan collect statistics at runtime" OFF)
 
+# Diagnostic builds only: count variable rank lookups. The counter is a single
+# contended atomic, so it distorts both timing and parallel scaling.
+option(SYLVAN_RANK_COUNTERS "Let Sylvan count variable rank lookups" OFF)
+
 include(DetectCacheLineSize)
 detect_cache_line_size(SYLVAN_CACHE_LINE_SIZE DEFAULT 64)
 

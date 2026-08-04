@@ -71,10 +71,26 @@ extern _Atomic(uint32_t) sylvan_ranks_count;
 extern _Atomic(uint32_t*) sylvan_ranks_rank_of;
 extern _Atomic(uint32_t*) sylvan_ranks_identity_at;
 
+#if SYLVAN_RANK_COUNTERS
+/**
+ * Diagnostic builds only (-DSYLVAN_RANK_COUNTERS=ON): how often the hot path
+ * consulted the rank array. This is one contended atomic, so the count only
+ * means anything for a single worker, and any timing taken from the same
+ * build is worthless.
+ */
+extern _Atomic(uint64_t) sylvan_ranks_lookups;
+
+/** Return and clear the rank lookup counter. */
+uint64_t sylvan_ranks_take_lookups(void);
+#endif
+
 /** Return the rank of variable identity <var>. One array load on the hot path. */
 static inline uint32_t SYLVAN_UNUSED
 sylvan_rank_of(uint32_t var)
 {
+#if SYLVAN_RANK_COUNTERS
+    atomic_fetch_add_explicit(&sylvan_ranks_lookups, 1, memory_order_relaxed);
+#endif
     const uint32_t count =
         atomic_load_explicit(&sylvan_ranks_count, memory_order_acquire);
     if (var >= count) return var;

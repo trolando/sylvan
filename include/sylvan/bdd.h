@@ -32,12 +32,17 @@ static const BDD bdd_true = UINT64_C(0x8000000000000000);
  * Return the variable at the given level through <result>, creating its
  * canonical node when necessary. Levels are limited to 24 bits by the current
  * node encoding. On failure, <result> is unchanged.
+ *
+ * A level is a position in the variable order, not a variable identity: this
+ * returns the variable currently ranked at <level>. The two coincide unless
+ * the order has been changed. Levels not yet in use are created in order, so
+ * that the variable at a fresh level is the identity <level>.
  */
 int bdd_var_at_level(BDD *result, uint32_t level);
 
 /**
- * Create the next variable after all levels requested so far. On failure,
- * <result> is unchanged.
+ * Create the next variable after all levels requested so far, placing it last
+ * in the variable order. On failure, <result> is unchanged.
  */
 int bdd_new_var(BDD *result);
 

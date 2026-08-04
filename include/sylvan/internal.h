@@ -218,6 +218,7 @@ static const uint64_t CACHE_ZDD_MINIMAL_SETS        = (98LL<<40);
 extern "C" {
 #endif /* __cplusplus */
 
+#include <sylvan/internal/ranks_internal.h>
 #include <sylvan/internal/mtbdd_internal.h>
 #include <sylvan/internal/listdd_internal.h>
 #include <sylvan/internal/zdd_internal.h>

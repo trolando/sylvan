@@ -46,6 +46,7 @@ target_sources(sylvan
     mt.c
     mtbdd.c
     platform.c
+    ranks.c
     refs.c
     serialize.c
     sha2.c
@@ -78,6 +79,7 @@ target_sources(sylvan
       ${PROJECT_SOURCE_DIR}/include/sylvan/internal.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/internal/listdd_internal.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/internal/mtbdd_internal.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/internal/ranks_internal.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/internal/zdd_internal.h
       ${PROJECT_BINARY_DIR}/include/sylvan/config.h
 )

@@ -441,6 +441,9 @@ mtbdd_quit(void)
         mtbdd_protected_created = 0;
     }
 
+    /* No nodes survive, so every identity may be re-registered in order. */
+    sylvan_ranks_free();
+
     mtbdd_initialized = 0;
 }
 
@@ -644,7 +647,12 @@ bdd_var_at_level(BDD *destination, uint32_t level)
         memory_order_relaxed, memory_order_relaxed)) {
     }
 
-    return _mtbdd_try_make_node(destination, level, bdd_false, bdd_true);
+    /* <level> is an order position, so the variable is the one ranked there. */
+    int status = sylvan_ranks_reserve(level + 1);
+    if (status != SYLVAN_OK) return status;
+
+    return _mtbdd_try_make_node(
+        destination, sylvan_identity_at(level), bdd_false, bdd_true);
 }
 
 int
@@ -674,6 +682,10 @@ bdd_new_var(BDD *destination)
             break;
         }
     }
+
+    /* A fresh identity is created last in the order. */
+    int status = sylvan_ranks_reserve(level + 1);
+    if (status != SYLVAN_OK) return status;
 
     return _mtbdd_try_make_node(destination, level, bdd_false, bdd_true);
 }

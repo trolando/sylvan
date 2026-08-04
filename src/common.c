@@ -469,9 +469,33 @@ void sylvan_gc_go_CALL(lace_worker* lace)
     }
 
     /*
-     * This simply clears the cache.
-     * Alternatively, we could implement for example some strategy
-     * where part of the cache is cleared and part is marked
+     * The operation cache is discarded in full, and unconditionally. This is
+     * the most expensive thing a collection does -- see the resizing
+     * heuristics above, which exist to make collections rarer for exactly that
+     * reason -- so it is worth saying why it cannot be avoided.
+     *
+     * Node indices are stable across a collection. The data array is never
+     * compacted, marking only re-establishes the occupancy bitmap, and
+     * rehashing rebuilds the hash array around the indices the surviving nodes
+     * already had. A cache entry that mentions only surviving nodes is
+     * therefore still correct afterwards. That makes it tempting to keep the
+     * cache when nothing moved -- but nothing ever moves, so that is not the
+     * condition that matters.
+     *
+     * What matters is reclamation. The index of a node that did not survive
+     * returns to the free pool and will be handed out to an unrelated node
+     * later. A surviving cache entry mentioning that index would then answer a
+     * query about the new node with the old node's result, silently and
+     * wrongly. Keeping the cache is sound only for a collection that reclaimed
+     * nothing at all, which is precisely the collection that was not worth
+     * running.
+     *
+     * Clearing selectively is not available either. Cache entries are opaque
+     * 64-bit words and operations may store things in them that are not node
+     * handles: counts, variable indices, encoded doubles. Nothing in an entry
+     * says which of its words would have to be checked against the occupancy
+     * bitmap, so a selective sweep would need per-operation annotations, and a
+     * single wrong annotation would buy a silently wrong answer.
      */
     sylvan_clear_cache_CALL(lace);
 

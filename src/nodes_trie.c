@@ -19,7 +19,9 @@
 #include <sylvan/internal.h>
 #include <sylvan/platform.h>
 
+#include <assert.h>
 #include <errno.h>  // for errno
+#include <stdlib.h> // realloc, free, abort
 #include <string.h> // memset
 
 /**
@@ -46,6 +48,7 @@ typedef struct nodes_table
     nodes_equals_cb    equals_cb;    // custom equals function
     nodes_create_cb    create_cb;    // custom create function
     nodes_destroy_cb   destroy_cb;   // custom destroy function
+    _Atomic(uint32_t)  reorder_lock; // serialises the reorder primitives
 } nodes_table;
 
 static size_t
@@ -509,6 +512,7 @@ nodes_table* nodes_create(size_t initial_size, size_t max_size)
     dbs->equals_cb = NULL;
     dbs->create_cb = NULL;
     dbs->destroy_cb = NULL;
+    atomic_init(&dbs->reorder_lock, 0u);
 
     // this design assumes there is only one nodes table...
 
@@ -724,41 +728,348 @@ void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb e
 /**
  * Reorder primitives.
  *
- * Not implemented for this backend yet; every primitive changes nothing and
- * reports SYLVAN_ERR_INVALID, which is what a zero capability mask promises.
+ * SERIAL. nodes_remove and nodes_reinsert both take a per-table spin lock, so
+ * they are serialised against each other across all workers. That is the
+ * documented contract for this backend, and it is not a temporary shortcut
+ * for removal alone:
+ *
+ *  - removal below rewrites several slots that are not related by any single
+ *    compare-and-swap, and it breaks the write-once property of the slots,
+ *    which is exactly the property the parallel rebuild proof on
+ *    nodes_reinsert_bucket rests on. That proof therefore does not extend to
+ *    a table that is being removed from;
+ *  - reinsertion must be serialised with removal for the same reason. A
+ *    descent that publishes into a slot which a concurrent removal is about
+ *    to clear, or into a branch pair it is about to detach, loses the node.
+ *
+ * Retirement volume per swap is the depth-1 dead set, so the uncontended cost
+ * of the lock is irrelevant; partitioning by root family is the obvious way
+ * to get parallelism back if it ever matters.
+ *
+ * WHY NOT LEAF PROMOTION. The obvious removal -- pull a leaf out of the
+ * subtree below the removed node and give it the removed node's branch pair
+ * -- does not work for this trie, for two structural reasons that the slot
+ * layout makes unavoidable:
+ *
+ *  1. The depth-1 branch pair of the family anchored at A is next[A*2+0..1],
+ *     not the pair of whoever occupies first[A] (nodes_lookup2 only assigns
+ *     the occupant to <trie> after the root comparison). So the occupant of
+ *     first[A] owns no branch pair in its own family, and there is no pair to
+ *     hand over; clearing first[A] instead would stop every descent into the
+ *     family at its root.
+ *  2. A node X's pair next[X*2+0..1] is shared between the family anchored at
+ *     X and the family that routes through X at depth one or deeper -- they
+ *     are literally the same two words. Moving that pair onto a promoted leaf
+ *     repairs the second family and silently detaches the first, whose
+ *     descent goes first[X] -> next[X*2+b] and would now find those slots
+ *     empty and insert duplicates.
+ *
+ * WHAT IT DOES INSTEAD. Removal clears the node's slot and locally rebuilds
+ * whatever depended on it:
+ *
+ *  - Determine the region whose descents run through the vanishing slot. For
+ *    a node at depth one or deeper, that is the subtree hanging off its own
+ *    branch pair. For a node occupying first[A], it is everything below the
+ *    anchor's pair, because an empty family root truncates the whole family.
+ *  - Collect that region (breadth first over occupants' pairs), then clear
+ *    its slots and the node's own slot, then reinsert every collected node
+ *    with the ordinary descent, which puts each of them back on its own probe
+ *    sequence.
+ *
+ * That this is exactly the right region is the invariant to hold on to: a
+ * node whose slot is not in the region cannot have the region on its own
+ * probe sequence, because a sequence that entered the region and continued to
+ * that node's slot would have made the slot reachable from the region roots,
+ * hence part of the region. Nodes outside the region are therefore untouched
+ * and stay reachable, and nodes inside it are all reinserted.
+ *
+ * Cost is the size of that region, not of the table. It is O(1) for a node
+ * with an empty branch pair, and largest when the node occupies the root of a
+ * big family -- the leaf family, anchored at handle 1, being the extreme
+ * case. Retirement in a reorder session removes decision and map nodes, never
+ * leaves.
  */
-uint32_t nodes_reorder_caps(const nodes_table* dbs)
+
+#define MASK_INDEX UINT64_C(0x000000ffffffffff)
+#define MASK_HASH  UINT64_C(0xffffff0000000000)
+
+uint32_t
+nodes_reorder_caps(const nodes_table* dbs)
 {
     (void)dbs;
+    return NODES_CAP_REMOVE;
+}
+
+static void
+reorder_lock(nodes_table* dbs)
+{
+    for (;;) {
+        uint32_t expected = 0;
+        if (atomic_compare_exchange_weak_explicit(
+                &dbs->reorder_lock, &expected, 1u,
+                memory_order_acquire, memory_order_relaxed)) {
+            return;
+        }
+        while (atomic_load_explicit(
+                   &dbs->reorder_lock, memory_order_relaxed) != 0u) {
+        }
+    }
+}
+
+static void
+reorder_unlock(nodes_table* dbs)
+{
+    atomic_store_explicit(&dbs->reorder_lock, 0u, memory_order_release);
+}
+
+static void
+reorder_duplicate_abort(uint64_t index, uint64_t other)
+{
+    assert(!"nodes_reinsert: an equal node is already in the index");
+    fprintf(stderr,
+            "sylvan: nodes_reinsert: node %llu is equal to node %llu, which "
+            "is already in the index; the unique table invariant is broken. "
+            "Aborting.\n",
+            (unsigned long long)index, (unsigned long long)other);
+    abort();
+}
+
+/** The key of a node, as the index derives it from the record. */
+struct reorder_key {
+    uint64_t a;
+    uint64_t b;
+    uint64_t hash;
+    uint64_t anchor;
+    int custom;
+};
+
+static struct reorder_key
+reorder_key_of(const nodes_table* dbs, uint64_t index)
+{
+    const uint64_t* d_ptr = ((const uint64_t*)dbs->data) + 2 * index;
+    struct reorder_key key;
+    key.a = d_ptr[0];
+    key.b = d_ptr[1];
+    key.custom = is_custom_bucket(dbs, index);
+    key.hash = 14695981039346656037LLU;
+    key.hash = key.custom ? dbs->hash_cb(key.a, key.b, key.hash)
+                          : sylvan_tabhash16(key.a, key.b, key.hash);
+    if (key.a & UINT64_C(0x4000000000000000)) {
+        key.anchor = 1;
+    } else {
+        const uint64_t A = key.a & MASK_INDEX;
+        const uint64_t B = key.b & MASK_INDEX;
+        key.anchor = A > B ? A : B;
+    }
+    return key;
+}
+
+/**
+ * Find the slot that holds <index>, following its own probe sequence.
+ * Sets *owner to the node whose branch pair roots the region that depends on
+ * that slot: the anchor when the node sits at the root of its family (whose
+ * depth-1 pair belongs to the anchor), the node itself otherwise.
+ */
+static _Atomic(uint64_t)*
+reorder_find_slot(nodes_table* dbs, uint64_t index,
+                  const struct reorder_key* key, uint64_t* owner)
+{
+    uint64_t trie = key->anchor;
+    uint64_t hash = key->hash;
+
+    _Atomic(uint64_t)* slot = dbs->first + trie;
+    uint64_t value = atomic_load_explicit(slot, memory_order_relaxed);
+    if (value == 0) return NULL;
+    if ((value & MASK_INDEX) == index) {
+        *owner = key->anchor;
+        return slot;
+    }
+
+    for (;;) {
+        const uint64_t branch = trie * 2 + (hash & 1);
+        hash = ror64(hash, 1);
+        slot = dbs->next + branch;
+        value = atomic_load_explicit(slot, memory_order_relaxed);
+        if (value == 0) return NULL;
+        if ((value & MASK_INDEX) == index) {
+            *owner = index;
+            return slot;
+        }
+        trie = value & MASK_INDEX;
+    }
+}
+
+struct reorder_region {
+    uint64_t* nodes;
+    size_t count;
+    size_t capacity;
+};
+
+static int
+region_push(struct reorder_region* region, uint64_t index)
+{
+    if (region->count == region->capacity) {
+        const size_t capacity =
+            region->capacity == 0 ? 64u : region->capacity * 2u;
+        uint64_t* nodes = (uint64_t*)realloc(
+            region->nodes, capacity * sizeof(uint64_t));
+        if (nodes == NULL) return -1;
+        region->nodes = nodes;
+        region->capacity = capacity;
+    }
+    region->nodes[region->count++] = index;
     return 0;
 }
 
-int nodes_remove(nodes_table* dbs, uint64_t index)
+/**
+ * Collect every node reachable from <owner>'s branch pair, breadth first.
+ * Read-only: on failure the table is untouched, which is what lets removal
+ * report out of memory without having changed anything.
+ */
+static int
+reorder_collect_region(const nodes_table* dbs, uint64_t owner,
+                       struct reorder_region* region)
+{
+    for (unsigned int b = 0; b < 2; b++) {
+        const uint64_t value = atomic_load_explicit(
+            dbs->next + owner * 2 + b, memory_order_relaxed);
+        if (value != 0 && region_push(region, value & MASK_INDEX)) return -1;
+    }
+    for (size_t i = 0; i < region->count; i++) {
+        const uint64_t node = region->nodes[i];
+        for (unsigned int b = 0; b < 2; b++) {
+            const uint64_t value = atomic_load_explicit(
+                dbs->next + node * 2 + b, memory_order_relaxed);
+            if (value != 0 && region_push(region, value & MASK_INDEX)) {
+                return -1;
+            }
+        }
+        assert(region->count <= dbs->table_size);
+    }
+    return 0;
+}
+
+int
+nodes_remove(nodes_table* dbs, uint64_t index)
+{
+    if (index < 2 || index >= dbs->table_size) return SYLVAN_ERR_INVALID;
+
+    const struct reorder_key key = reorder_key_of(dbs, index);
+    struct reorder_region region = { NULL, 0, 0 };
+    int status = SYLVAN_OK;
+
+    reorder_lock(dbs);
+
+    uint64_t owner = 0;
+    _Atomic(uint64_t)* slot = reorder_find_slot(dbs, index, &key, &owner);
+    if (slot == NULL) {
+        assert(!"nodes_remove: node is not in its own family");
+        status = SYLVAN_ERR_INVALID;
+        goto done;
+    }
+    /* A node at the root of its family owns no branch pair there, so the
+       region is rooted at the anchor's pair; otherwise at its own. */
+    assert(owner == index || owner == key.anchor);
+
+    if (reorder_collect_region(dbs, owner, &region) != 0) {
+        status = SYLVAN_ERR_OOM;
+        goto done;
+    }
+
+    for (unsigned int b = 0; b < 2; b++) {
+        atomic_store_explicit(
+            dbs->next + owner * 2 + b, 0, memory_order_relaxed);
+    }
+    for (size_t i = 0; i < region.count; i++) {
+        for (unsigned int b = 0; b < 2; b++) {
+            atomic_store_explicit(
+                dbs->next + region.nodes[i] * 2 + b, 0,
+                memory_order_relaxed);
+        }
+    }
+    atomic_store_explicit(slot, 0, memory_order_relaxed);
+
+    for (size_t i = 0; i < region.count; i++) {
+        assert(region.nodes[i] != index);
+        nodes_reinsert_bucket(dbs, region.nodes[i]);
+    }
+
+done:
+    reorder_unlock(dbs);
+    free(region.nodes);
+    return status;
+}
+
+int
+nodes_reinsert(nodes_table* dbs, uint64_t index)
+{
+    if (index < 2 || index >= dbs->table_size) return SYLVAN_ERR_INVALID;
+
+    const struct reorder_key key = reorder_key_of(dbs, index);
+    const uint64_t link = (key.hash & MASK_HASH) | index;
+    uint64_t hash = key.hash;
+    uint64_t trie = key.anchor;
+
+    reorder_lock(dbs);
+
+    /* The descent mirrors nodes_lookup2 exactly, including that the branch
+       pair consumed after the family root belongs to the anchor and not to
+       the root's occupant: <trie> starts following occupants only from the
+       second slot on. */
+    _Atomic(uint64_t)* slot = dbs->first + trie;
+    uint64_t value = atomic_load_explicit(slot, memory_order_relaxed);
+    for (;;) {
+        if (value == 0) {
+            /* Nothing else can be descending while the lock is held, so a
+               plain release store is enough to publish the node. */
+            atomic_store_explicit(slot, link, memory_order_release);
+            reorder_unlock(dbs);
+            return SYLVAN_OK;
+        }
+
+        const uint64_t occupant = value & MASK_INDEX;
+        if (occupant == index) {
+            assert(!"nodes_reinsert: the node is already in the index");
+            reorder_unlock(dbs);
+            return SYLVAN_ERR_INVALID;
+        }
+        if ((value & MASK_HASH) == (key.hash & MASK_HASH)) {
+            const uint64_t* d_ptr =
+                ((const uint64_t*)dbs->data) + 2 * occupant;
+            const int equal = key.custom
+                ? dbs->equals_cb(key.a, key.b, d_ptr[0], d_ptr[1])
+                : (d_ptr[0] == key.a && d_ptr[1] == key.b);
+            if (equal) {
+                reorder_unlock(dbs);
+                reorder_duplicate_abort(index, occupant);
+            }
+        }
+
+        const uint64_t branch = trie * 2 + (hash & 1);
+        hash = ror64(hash, 1);
+        slot = dbs->next + branch;
+        value = atomic_load_explicit(slot, memory_order_relaxed);
+        trie = value & MASK_INDEX;
+    }
+}
+
+int
+nodes_release(nodes_table* dbs, uint64_t index)
 {
     (void)dbs; (void)index;
     return SYLVAN_ERR_INVALID;
 }
 
-int nodes_reinsert(nodes_table* dbs, uint64_t index)
-{
-    (void)dbs; (void)index;
-    return SYLVAN_ERR_INVALID;
-}
-
-int nodes_release(nodes_table* dbs, uint64_t index)
-{
-    (void)dbs; (void)index;
-    return SYLVAN_ERR_INVALID;
-}
-
-int nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
-                        nodes_visit_cb cb, void* context)
+int
+nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
+                    nodes_visit_cb cb, void* context)
 {
     (void)dbs; (void)variable; (void)cb; (void)context;
     return SYLVAN_ERR_INVALID;
 }
 
-int nodes_reserve(nodes_table* dbs, uint64_t count)
+int
+nodes_reserve(nodes_table* dbs, uint64_t count)
 {
     (void)dbs; (void)count;
     return SYLVAN_ERR_INVALID;

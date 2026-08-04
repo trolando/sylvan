@@ -193,6 +193,153 @@ void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb e
  */
 void nodes_set_size(nodes_table* dbs, size_t size);
 
+/**
+ * ---------------------------------------------------------------------------
+ * Internal and experimental: reorder primitives.
+ *
+ * This section is the backend contract that dynamic variable reordering is
+ * built on. It is not a stable interface: only Sylvan's own reorder module is
+ * meant to use it, and it may change or disappear without notice.
+ *
+ * SAFEPOINT ONLY. Every primitive in this section requires that the world is
+ * stopped: no nodes_lookup, no nodes_lookup_subtable, no garbage collection
+ * and no maintenance pass may run concurrently with any of them, on any
+ * thread. The only concurrency they tolerate is other workers of the same
+ * reorder session calling these same primitives on the same table. A backend
+ * that is more restrictive than that says so in its own source file.
+ *
+ * All of them return SYLVAN_OK (0) on success and a negative SYLVAN_ERR_*
+ * code on failure. A failure never leaves the index half-changed.
+ * ---------------------------------------------------------------------------
+ */
+
+/**
+ * Which reorder primitives this backend implements.
+ *
+ * A primitive whose capability is not reported is not a partial or
+ * best-effort operation: it changes nothing and returns SYLVAN_ERR_INVALID.
+ * A backend that reports no capability at all is excluded from reordering
+ * entirely and also refuses nodes_reserve.
+ */
+uint32_t nodes_reorder_caps(const nodes_table* dbs);
+
+#define NODES_CAP_REMOVE     (1u << 0)  /* nodes_remove and nodes_reinsert */
+#define NODES_CAP_RELEASE    (1u << 1)  /* nodes_release */
+#define NODES_CAP_ENUMERATE  (1u << 2)  /* nodes_enumerate_var */
+
+/**
+ * Unhash one node. Its 16-byte record and its index stay intact and valid;
+ * only the backend's index entry disappears, so a later lookup of the same
+ * key misses and the record may be rewritten in place.
+ *
+ * The bucket, chain, subtable or anchor is derived from the record itself and
+ * from the backend's own per-node metadata. There is no route parameter,
+ * because the record is the truth.
+ *
+ * Returns SYLVAN_ERR_INVALID if the node is not in the index. That is a
+ * caller error: removing a node twice, or one that was never inserted.
+ */
+int nodes_remove(nodes_table* dbs, uint64_t index);
+
+/**
+ * Re-index a node whose record was rewritten in place after nodes_remove.
+ * The key is read from the mutated record, so the node may land in a
+ * different bucket, chain, subtable or anchor family than it came from.
+ *
+ * The node's own link is published before the node becomes reachable, with
+ * release ordering, so a concurrent walker never observes it with a stale
+ * successor.
+ *
+ * Finding an equal node at another index is not an error but a violation of
+ * the caller's invariant: the unique table would hold the same key twice and
+ * continuing would corrupt the forest. Debug builds assert, release builds
+ * print a diagnostic and abort.
+ */
+int nodes_reinsert(nodes_table* dbs, uint64_t index);
+
+/**
+ * Return a removed node's slot to the allocator, so a later lookup may claim
+ * it again.
+ *
+ * Requires that the node has been removed from the index, that nothing refers
+ * to it any more, and that the operation cache has been cleared: a reused
+ * index denotes a different node, and a surviving cache entry would answer
+ * with it. Callers should additionally defer this call to a barrier that
+ * orders every removal of the current phase before any reuse, which is what
+ * closes the ABA window on a chain link another worker may still hold.
+ *
+ * A custom (multi-terminal) node has its destroy callback invoked here,
+ * because the slot may be reused long before the next nodes_cleanup_custom.
+ *
+ * Returns SYLVAN_ERR_INVALID if the node is still in the index.
+ */
+int nodes_release(nodes_table* dbs, uint64_t index);
+
+/** Visitor for nodes_enumerate_var; return 0 to continue. */
+typedef int (*nodes_visit_cb)(uint64_t index, void* context);
+
+/**
+ * Visit every node the backend has routed to one variable identity. The
+ * callback returns 0 to continue; any other value stops the enumeration and
+ * becomes the result. Order is unspecified; every node is visited once.
+ *
+ * MAP NODES ARE NOT COVERED. On llchst, the only backend with native
+ * enumeration, a decision node lives in the subtable of its variable
+ * identity, but an MTBDDMAP node lives in the shared MAP auxiliary subtable,
+ * which this function cannot select a single key from. Enumerating a variable
+ * therefore yields its decision nodes only. Covering map nodes is the session
+ * layer's job -- it builds those lists from an arena scan for every backend
+ * anyway -- and is deliberately not attempted here.
+ *
+ * Unlike the other primitives this one is read-only and is NOT safe against
+ * concurrent nodes_remove or nodes_reinsert. It belongs to a read-only
+ * classification phase.
+ */
+int nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
+                        nodes_visit_cb cb, void* context);
+
+/**
+ * Preflight <count> further node allocations.
+ *
+ * INVARIANT. On SYLVAN_OK, the next <count> allocating lookups on this table
+ * are guaranteed to find a free slot, provided no other allocation happens in
+ * between. On SYLVAN_ERR_OOM nothing has been changed and no promise is made.
+ * The answer may be conservative -- refusing although the allocations would in
+ * fact have succeeded -- and is never optimistic.
+ *
+ * MECHANISM. The guarantee is derived from the region allocator rather than
+ * from a global free-slot count. A worker claims a whole 512-slot region and
+ * only moves on once it has used every free slot of the region it owns, and
+ * it can only claim a region no worker owns yet. Reserve therefore counts the
+ * free slots of the regions that are currently unclaimed, which is a hard
+ * lower bound on how many further allocations any distribution of workers can
+ * make: free slots inside regions that are already owned are not counted at
+ * all, which is what makes the answer conservative and what removes the need
+ * for a separate per-worker margin.
+ *
+ * The count is recomputed on every call -- a popcount over the node bitmap of
+ * the unclaimed regions, stopping as soon as <count> is reached -- and never
+ * cached. A cache would have to assume that every allocation since it was
+ * seeded had been charged to a reservation, which the table cannot observe
+ * without a counter on the lookup path, and one uncharged allocation would
+ * make the answer optimistic.
+ *
+ * NOT ADDITIVE. Reservations do not compose. Every call answers "can <count>
+ * allocations succeed now", so a caller needing <count> slots issues one call
+ * for <count> and must not let another reservation's allocations run inside
+ * its window.
+ *
+ * INDEX CAPACITY. Node slots are the only resource reserve decides exactly.
+ * llchst additionally refuses when <count> more nodes would not fit the
+ * head-array budget its maintenance pass already documents. A subtable that
+ * has never held a node still allocates its first head array from the heap on
+ * first insertion (and a route beyond the dense range its descriptor page);
+ * no preflight can make a heap allocation unfailable, so a caller needing an
+ * absolute guarantee for one route must have touched that route before the
+ * reserved window.
+ */
+int nodes_reserve(nodes_table* dbs, uint64_t count);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

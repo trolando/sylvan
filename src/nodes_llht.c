@@ -660,3 +660,50 @@ void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb e
     dbs->create_cb = create_cb;
     dbs->destroy_cb = destroy_cb;
 }
+
+/**
+ * Reorder primitives.
+ *
+ * This backend is permanently excluded from reordering. Open addressing has
+ * no way to remove a key without tombstones: the probe sequence of every key
+ * that ever collided with the removed one runs through its slot, so clearing
+ * that slot truncates those sequences and loses nodes. Tombstones would put a
+ * branch on the lookup fast path of the table whose entire purpose is that
+ * fast path, so a reorder session refuses to run on it instead.
+ */
+uint32_t nodes_reorder_caps(const nodes_table* dbs)
+{
+    (void)dbs;
+    return 0;
+}
+
+int nodes_remove(nodes_table* dbs, uint64_t index)
+{
+    (void)dbs; (void)index;
+    return SYLVAN_ERR_INVALID;
+}
+
+int nodes_reinsert(nodes_table* dbs, uint64_t index)
+{
+    (void)dbs; (void)index;
+    return SYLVAN_ERR_INVALID;
+}
+
+int nodes_release(nodes_table* dbs, uint64_t index)
+{
+    (void)dbs; (void)index;
+    return SYLVAN_ERR_INVALID;
+}
+
+int nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
+                        nodes_visit_cb cb, void* context)
+{
+    (void)dbs; (void)variable; (void)cb; (void)context;
+    return SYLVAN_ERR_INVALID;
+}
+
+int nodes_reserve(nodes_table* dbs, uint64_t count)
+{
+    (void)dbs; (void)count;
+    return SYLVAN_ERR_INVALID;
+}

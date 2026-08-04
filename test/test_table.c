@@ -4,6 +4,7 @@
 
 #include <lace.h>
 
+#include <sylvan/common.h>
 #include <sylvan/hash.h>
 #include <sylvan/platform.h>
 #include <sylvan/nodes.h>
@@ -674,6 +675,48 @@ test_subtable_routing(void)
 }
 #endif
 
+/**
+ * The capability mask is the contract: a primitive whose bit is missing must
+ * change nothing and report SYLVAN_ERR_INVALID, and a backend with no
+ * capabilities at all also refuses to reserve.
+ */
+static int
+test_reorder_contract(void)
+{
+    nodes_table *table = nodes_create(TEST_TABLE_SIZE, TEST_TABLE_SIZE);
+    const uint32_t caps = nodes_reorder_caps(table);
+    test_assert((caps & ~(uint32_t)(NODES_CAP_REMOVE | NODES_CAP_RELEASE |
+                                    NODES_CAP_ENUMERATE)) == 0);
+
+    const uint64_t key = UINT64_C(0x4000000000000005);
+    int created = 0;
+    const uint64_t index = nodes_lookup(table, key, 5, &created);
+    test_assert(index > 1 && created == 1);
+
+    if ((caps & NODES_CAP_REMOVE) == 0) {
+        test_assert(nodes_remove(table, index) == SYLVAN_ERR_INVALID);
+        test_assert(nodes_reinsert(table, index) == SYLVAN_ERR_INVALID);
+    }
+    if ((caps & NODES_CAP_RELEASE) == 0) {
+        test_assert(nodes_release(table, index) == SYLVAN_ERR_INVALID);
+    }
+    if ((caps & NODES_CAP_ENUMERATE) == 0) {
+        test_assert(
+            nodes_enumerate_var(table, 0, NULL, NULL) == SYLVAN_ERR_INVALID);
+    }
+    if (caps == 0) {
+        test_assert(nodes_reserve(table, 1) == SYLVAN_ERR_INVALID);
+    }
+
+    /* Nothing above may have touched the index. */
+    created = 1;
+    test_assert(nodes_lookup(table, key, 5, &created) == index);
+    test_assert(created == 0);
+    test_assert(nodes_count_nodes(table) == 3);
+    nodes_free(table);
+    return 0;
+}
+
 TASK(int, run_table_tests)
 
 int
@@ -808,6 +851,7 @@ run_table_tests_CALL(lace_worker *lace)
     test_assert(custom_destroy_count == custom_node_count);
     nodes_free(table);
 
+    if (test_reorder_contract()) return 1;
     if (test_deep_custom_chain()) return 1;
     if (test_custom_equality()) return 1;
     if (test_custom_metadata_cleanup()) return 1;

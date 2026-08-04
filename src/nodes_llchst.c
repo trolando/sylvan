@@ -1963,3 +1963,46 @@ nodes_set_custom(nodes_table* dbs,
     dbs->create_cb = create_cb;
     dbs->destroy_cb = destroy_cb;
 }
+
+/**
+ * Reorder primitives.
+ *
+ * Not implemented for this backend yet; every primitive changes nothing and
+ * reports SYLVAN_ERR_INVALID, which is what a zero capability mask promises.
+ */
+uint32_t nodes_reorder_caps(const nodes_table* dbs)
+{
+    (void)dbs;
+    return 0;
+}
+
+int nodes_remove(nodes_table* dbs, uint64_t index)
+{
+    (void)dbs; (void)index;
+    return SYLVAN_ERR_INVALID;
+}
+
+int nodes_reinsert(nodes_table* dbs, uint64_t index)
+{
+    (void)dbs; (void)index;
+    return SYLVAN_ERR_INVALID;
+}
+
+int nodes_release(nodes_table* dbs, uint64_t index)
+{
+    (void)dbs; (void)index;
+    return SYLVAN_ERR_INVALID;
+}
+
+int nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
+                        nodes_visit_cb cb, void* context)
+{
+    (void)dbs; (void)variable; (void)cb; (void)context;
+    return SYLVAN_ERR_INVALID;
+}
+
+int nodes_reserve(nodes_table* dbs, uint64_t count)
+{
+    (void)dbs; (void)count;
+    return SYLVAN_ERR_INVALID;
+}

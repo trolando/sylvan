@@ -4846,6 +4846,50 @@ make_random(int i, int j)
     return result;
 }
 
+/**
+ * A collection that reclaims nodes must leave the operation cache empty.
+ *
+ * Node indices are stable across a collection: nothing is compacted, and
+ * rehashing rebuilds the hash array around the indices the survivors already
+ * had. A cache entry naming only survivors is therefore still correct
+ * afterwards, which makes keeping the cache look safe. It is not. The hazard
+ * is reclamation, not movement: the index of a node that did not survive is
+ * handed out again to an unrelated node, and an entry naming that index would
+ * then answer a query about the new node with the old node's result, silently.
+ *
+ * sylvan_gc_go therefore clears the whole cache unconditionally. The resizing
+ * heuristics in common.c lean on that clear being expensive, and someone
+ * reading them may be tempted to make it conditional on the collection having
+ * grown or rehashed something. This test is here to fail if they do.
+ */
+TASK(int, test_gc_clears_cache)
+int
+test_gc_clears_cache_CALL(lace_worker *lace)
+{
+    /* Build a random BDD and drop the reference, so the next collection has
+     * nodes to reclaim. make_random also derefs its own intermediate results,
+     * so there is garbage either way. */
+    BDD garbage = make_random(1, 16);
+    size_t occupied_before = 0;
+    sylvan_table_usage_CALL(lace, &occupied_before, NULL);
+    mtbdd_deref(garbage);
+
+    /* Populate the cache directly rather than through an operation, so the
+     * test does not depend on which operations happen to memoise. */
+    for (uint64_t i = 0; i < 1024; i++) {
+        cache_put_op(900, i, i + 1, i + 2, i + 3);
+    }
+    test_assert(cache_getused() != 0);
+
+    sylvan_gc_CALL(lace);
+
+    size_t occupied_after = 0;
+    sylvan_table_usage_CALL(lace, &occupied_after, NULL);
+    test_assert(occupied_after < occupied_before);
+    test_assert(cache_getused() == 0);
+    return 0;
+}
+
 static LISTDD
 make_random_ldd_set(int depth, int maxvalue, int elements)
 {
@@ -5533,6 +5577,9 @@ int runtests_CALL(lace_worker* lace)
     for (int j = 0; j < 10; j++) {
         if (test_protected_destinations_CALL(lace)) return 1;
     }
+
+    printf("Testing that collection clears the cache.\n");
+    if (test_gc_clears_cache_CALL(lace)) return 1;
 
     // we are not testing garbage collection
     sylvan_gc_disable();

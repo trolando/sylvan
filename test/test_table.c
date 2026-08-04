@@ -1106,6 +1106,119 @@ test_reorder_release_custom(void)
 }
 
 /**
+ * Native per-variable enumeration must agree with a ground-truth scan of the
+ * arena: every allocated non-leaf record whose identity field names the
+ * variable, and nothing else.
+ */
+#define TEST_ENUM_NODES 96
+
+struct enum_collect {
+    uint64_t seen[TEST_ENUM_NODES * 2];
+    size_t count;
+    size_t limit;
+};
+
+static int
+enum_collect_cb(uint64_t index, void *context)
+{
+    struct enum_collect *collect = (struct enum_collect *)context;
+    if (collect->count == collect->limit) return 42;
+    if (collect->count < TEST_ENUM_NODES * 2) {
+        collect->seen[collect->count] = index;
+    }
+    collect->count++;
+    return 0;
+}
+
+static int
+compare_u64(const void *left, const void *right)
+{
+    const uint64_t a = *(const uint64_t *)left;
+    const uint64_t b = *(const uint64_t *)right;
+    if (a < b) return -1;
+    return a > b ? 1 : 0;
+}
+
+static int
+test_reorder_enumerate(void)
+{
+    nodes_table *table = nodes_create(
+        TEST_RACE_TABLE_SIZE, TEST_RACE_TABLE_SIZE);
+    if ((nodes_reorder_caps(table) & NODES_CAP_ENUMERATE) == 0) {
+        nodes_free(table);
+        return 0;
+    }
+
+    /* Leaves keep their identity field at zero, so they can never be mistaken
+       for a node of variable 3 or 4 by the ground-truth scan. */
+    uint64_t leaf[4];
+    for (uint64_t i = 0; i < 4; i++) {
+        int created = 0;
+        leaf[i] = nodes_lookup(
+            table, UINT64_C(0x4000000000000000) | i, i, &created);
+        test_assert(leaf[i] > 1 && created == 1);
+    }
+
+    for (uint64_t i = 0; i < TEST_ENUM_NODES; i++) {
+        const uint32_t variable = (i % 2) ? 4u : 3u;
+        int created = 0;
+        const uint64_t index = nodes_lookup_subtable(
+            table, NODES_SUBTABLE_DECISION(variable),
+            leaf[i % 4] | (i << 40),
+            ((uint64_t)variable << 40) | leaf[(i + 1) % 4], &created);
+        test_assert(index > 1 && created == 1);
+    }
+
+    for (uint32_t variable = 3; variable <= 4; variable++) {
+        static struct enum_collect collect;
+        collect.count = 0;
+        collect.limit = SIZE_MAX;
+        test_assert(nodes_enumerate_var(
+            table, variable, enum_collect_cb, &collect) == SYLVAN_OK);
+
+        static uint64_t truth[TEST_ENUM_NODES * 2];
+        size_t truth_count = 0;
+        for (uint64_t index = 2; index < nodes_get_size(table); index++) {
+            if (!nodes_is_marked(table, index)) continue;
+            const uint64_t *record = nodes_get_pointer(table, index);
+            if (record[0] & UINT64_C(0x4000000000000000)) continue;
+            if ((uint32_t)(record[1] >> 40) != variable) continue;
+            test_assert(truth_count < TEST_ENUM_NODES * 2);
+            truth[truth_count++] = index;
+        }
+
+        test_assert(collect.count == truth_count);
+        test_assert(truth_count == TEST_ENUM_NODES / 2);
+        qsort(collect.seen, collect.count, sizeof(uint64_t), compare_u64);
+        for (size_t i = 0; i < truth_count; i++) {
+            test_assert(collect.seen[i] == truth[i]);
+        }
+    }
+
+    /* A variable that never had a subtable enumerates nothing, and a callback
+       that returns non-zero stops the walk and yields its value. */
+    static struct enum_collect empty;
+    empty.count = 0;
+    empty.limit = SIZE_MAX;
+    test_assert(nodes_enumerate_var(
+        table, 11u, enum_collect_cb, &empty) == SYLVAN_OK);
+    test_assert(empty.count == 0);
+
+    static struct enum_collect stopped;
+    stopped.count = 0;
+    stopped.limit = 5;
+    test_assert(nodes_enumerate_var(
+        table, 3u, enum_collect_cb, &stopped) == 42);
+    test_assert(stopped.count == 5);
+
+    test_assert(nodes_enumerate_var(table, 3u, NULL, NULL) ==
+                SYLVAN_ERR_INVALID);
+
+    nodes_free(table);
+    return 0;
+}
+
+/**
  * Child process for the reinsert-collision death test: two equal records at
  * different indices, one of them indexed. Reinserting the other one is an
  * invariant violation and must abort rather than return.
@@ -1346,6 +1459,7 @@ run_table_tests_CALL(lace_worker *lace)
     if (test_reorder_remove_reinsert()) return 1;
     if (test_reorder_chain_positions()) return 1;
     if (test_reorder_rewrite_in_place()) return 1;
+    if (test_reorder_enumerate()) return 1;
     if (test_reorder_release()) return 1;
     if (test_reorder_release_custom()) return 1;
     if (test_reorder_race()) return 1;

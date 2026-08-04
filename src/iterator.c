@@ -515,7 +515,11 @@ iterator_next(sylvan_iterator *iterator, uint8_t *values, size_t count,
             const uint32_t node_level = iterator->family == ITERATOR_ZDD
                 ? zdd_top_var((ZDD)iterator->current)
                 : mtbdd_node_variable(iterator->current);
-            if (node_level < level) {
+            /* ZDD is outside the rank model and stays ordered by identity. */
+            const int node_is_above = iterator->family == ITERATOR_ZDD
+                ? node_level < level
+                : sylvan_var_before(node_level, level);
+            if (node_is_above) {
                 iterator->finished = 1;
                 return SYLVAN_ERR_INVALID;
             }

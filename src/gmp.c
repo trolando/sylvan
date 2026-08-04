@@ -184,7 +184,7 @@ sat_count_gmp_rec(struct gmp_count_cache *cache, mpz_t result,
 
     size_t skipped = 0;
     const uint32_t variable = mtbdd_node_variable(dd);
-    while (!bdd_set_is_empty(variables) && bdd_set_first(variables) < variable) {
+    while (!bdd_set_is_empty(variables) && sylvan_var_before(bdd_set_first(variables), variable)) {
         skipped++;
         variables = bdd_set_next(variables);
     }
@@ -1154,12 +1154,12 @@ int gmp_and_abstract_plus_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, M
     mtbddnode* nb = lb ? 0 : MTBDD_GETNODE(b);
     uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
     uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
-    uint32_t var = va < vb ? va : vb;
+    uint32_t var = sylvan_var_min(va, vb);
 
     mtbddnode* nv = MTBDD_GETNODE(v);
     uint32_t vv = mtbddnode_getvariable(nv);
 
-    if (vv < var) {
+    if (sylvan_var_before(vv, var)) {
         /* Recursive, then abstract result */
         status = gmp_and_abstract_plus_CALL(lace, &computed, a, b, node_gethigh(v, nv));
         if (status == SYLVAN_OK) status = mtbdd_apply_CALL(lace, &computed, computed, computed, gmp_op_plus_CALL);
@@ -1253,12 +1253,12 @@ int gmp_and_abstract_max_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MT
     mtbddnode* nb = lb ? 0 : MTBDD_GETNODE(b);
     uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
     uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
-    uint32_t var = va < vb ? va : vb;
+    uint32_t var = sylvan_var_min(va, vb);
 
     mtbddnode* nv = MTBDD_GETNODE(v);
     uint32_t vv = mtbddnode_getvariable(nv);
 
-    while (vv < var) {
+    while (sylvan_var_before(vv, var)) {
         /* we can skip variables, because max(r,r) = r */
         v = node_high(v, nv);
         if (v == bdd_true) {

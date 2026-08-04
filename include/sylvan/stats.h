@@ -236,7 +236,13 @@ typedef struct sylvan_statistic {
     uint64_t cache_puts;
 } sylvan_statistic;
 
-/** Unique reachable decision nodes at one sparse variable level. */
+/**
+ * Unique reachable decision nodes at one sparse variable level.
+ *
+ * <level> is the variable identity stored in the nodes, and entries are
+ * sorted by it. It is not the variable's position in the order; the two
+ * coincide while the order has not been changed.
+ */
 typedef struct sylvan_level_statistic {
     uint32_t level;
     uint32_t reserved;

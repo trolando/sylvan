@@ -843,6 +843,13 @@ sylvan_serialization_collect_mtbdd(
     return status;
 }
 
+/**
+ * A serialized record stores the variable *identity*, and the variable order
+ * is not part of the format. A file therefore only reloads into a forest that
+ * ranks those identities the way they were ranked when it was written; the
+ * rank-order checks here and in the reader reject anything else.
+ */
+
 static int
 sylvan_serialization_is_bdd_set(BDDSET set)
 {
@@ -858,7 +865,7 @@ sylvan_serialization_is_bdd_set(BDDSET set)
             return 0;
         }
         const uint32_t level = mtbdd_node_variable(set);
-        if (has_previous && level <= previous) return 0;
+        if (has_previous && !sylvan_var_before(previous, level)) return 0;
         previous = level;
         has_previous = 1;
         set = mtbdd_node_high(set);
@@ -1834,9 +1841,9 @@ sylvan_serialization_read_bdd_nodes_CALL(
         if (status != SYLVAN_OK || MTBDD_HASMARK(low) || low == high) {
             return SYLVAN_ERR_INVALID;
         }
-        if ((!mtbdd_is_leaf(low) && mtbdd_node_variable(low) <= level) ||
+        if ((!mtbdd_is_leaf(low) && !sylvan_var_before(level, mtbdd_node_variable(low))) ||
             (!mtbdd_is_leaf(MTBDD_STRIPMARK(high)) &&
-             mtbdd_node_variable(MTBDD_STRIPMARK(high)) <= level)) {
+             !sylvan_var_before(level, mtbdd_node_variable(MTBDD_STRIPMARK(high))))) {
             return SYLVAN_ERR_INVALID;
         }
 

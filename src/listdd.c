@@ -28,6 +28,14 @@
 #include "sha2.h"
 
 /**
+ * ListDD is outside the identity/rank model of
+ * <sylvan/internal/ranks_internal.h>, and has no coupling to it: a node's
+ * field holds a domain value, not a variable identity, and its levels are
+ * implicit in the depth of the "down" chain. The comparisons below order
+ * domain values within one level and must stay as they are.
+ */
+
+/**
  * Implementation of garbage collection
  */
 

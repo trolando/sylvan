@@ -109,7 +109,7 @@ _mtbdd_eval(MTBDD *destination, MTBDD dd, BDDSET variables, const uint8_t *value
     while (!mtbdd_is_leaf(dd)) {
         uint32_t dd_level = mtbdd_node_variable(dd);
 
-        while (!bdd_set_is_empty(variables) && bdd_set_first(variables) < dd_level) {
+        while (!bdd_set_is_empty(variables) && sylvan_var_before(bdd_set_first(variables), dd_level)) {
             variables = bdd_set_next(variables);
             index++;
         }
@@ -1113,7 +1113,7 @@ int mtbdd_set_cube_CALL(lace_worker* lace, MTBDD *destination, MTBDD mtbdd, BDDS
     mtbddnode* na = is_leaf ? NULL : MTBDD_GETNODE(mtbdd);
     uint32_t va = is_leaf ? UINT32_MAX : mtbddnode_getvariable(na);
 
-    if (va < v) {
+    if (sylvan_var_before(va, v)) {
         MTBDD low = node_getlow(mtbdd, na);
         MTBDD high = node_gethigh(mtbdd, na);
         MTBDD new_low = mtbdd_invalid;
@@ -1292,7 +1292,7 @@ int mtbdd_apply_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, mt
         nb = 0;
         vb = 0xffffffff;
     }
-    uint32_t v = va < vb ? va : vb;
+    uint32_t v = sylvan_var_min(va, vb);
 
     /* Get cofactors */
     MTBDD alow, ahigh, blow, bhigh;
@@ -1398,7 +1398,7 @@ int mtbdd_apply_param_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD
         nb = 0;
         vb = 0xffffffff;
     }
-    uint32_t v = va < vb ? va : vb;
+    uint32_t v = sylvan_var_min(va, vb);
 
     /* Get cofactors */
     MTBDD alow, ahigh, blow, bhigh;
@@ -1698,7 +1698,7 @@ mtbdd_map_reduce_rec_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd,
         const mtbddnode *node = MTBDD_GETNODE(dd);
         const uint32_t level = mtbddnode_getvariable(node);
         while (!bdd_set_is_empty(remaining) &&
-               bdd_set_first(remaining) < level) {
+               sylvan_var_before(bdd_set_first(remaining), level)) {
             if (skipped == SIZE_MAX) {
                 mtbdd_refs_popptr(1);
                 return SYLVAN_ERR_OVERFLOW;
@@ -1713,7 +1713,7 @@ mtbdd_map_reduce_rec_CALL(lace_worker *lace, MTBDD *destination, MTBDD dd,
         mtbdd_refs_pushptr(&high);
 
         if (bdd_set_is_empty(remaining) ||
-            level < bdd_set_first(remaining)) {
+            sylvan_var_before(level, bdd_set_first(remaining))) {
             mtbdd_map_reduce_rec_SPAWN(
                 lace, &high, node_gethigh(dd, node), remaining, operation);
             status = mtbdd_map_reduce_rec_CALL(
@@ -1904,12 +1904,12 @@ mtbdd_combine_reduce_rec_CALL(
         ? UINT32_MAX : mtbddnode_getvariable(a_node);
     const uint32_t b_level = b_is_leaf
         ? UINT32_MAX : mtbddnode_getvariable(b_node);
-    const uint32_t level = a_level < b_level ? a_level : b_level;
+    const uint32_t level = sylvan_var_min(a_level, b_level);
 
     BDDSET remaining = variables;
     size_t skipped = 0;
     while (!bdd_set_is_empty(remaining) &&
-           bdd_set_first(remaining) < level) {
+           sylvan_var_before(bdd_set_first(remaining), level)) {
         if (skipped == SIZE_MAX) {
             mtbdd_refs_popptr(1);
             return SYLVAN_ERR_OVERFLOW;
@@ -2648,7 +2648,7 @@ int mtbdd_abstract_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD v,
     uint32_t var_a = mtbddnode_getvariable(na);
     uint32_t var_v = mtbddnode_getvariable(nv);
     int k = 0;
-    while (var_v < var_a) {
+    while (sylvan_var_before(var_v, var_a)) {
         if (k == INT_MAX) {
             mtbdd_refs_popptr(1);
             return SYLVAN_ERR_INVALID;
@@ -2681,7 +2681,7 @@ int mtbdd_abstract_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD v,
         MTBDD high = mtbdd_invalid;
         mtbdd_refs_pushptr(&low);
         mtbdd_refs_pushptr(&high);
-        if (var_a < var_v) {
+        if (sylvan_var_before(var_a, var_v)) {
             mtbdd_abstract_SPAWN(lace, &high, node_gethigh(a, na), v, op);
             status = mtbdd_abstract_CALL(lace, &low, node_getlow(a, na), v, op);
             int high_status = mtbdd_abstract_SYNC(lace);
@@ -3141,8 +3141,8 @@ int mtbdd_ite_CALL(lace_worker* lace, MTBDD *destination, BDD f, MTBDD g, MTBDD 
     uint32_t vg = lg ? 0 : mtbddnode_getvariable(ng);
     uint32_t vh = lh ? 0 : mtbddnode_getvariable(nh);
     uint32_t v = vf;
-    if (!lg && vg < v) v = vg;
-    if (!lh && vh < v) v = vh;
+    if (!lg && sylvan_var_before(vg, v)) v = vg;
+    if (!lh && sylvan_var_before(vh, v)) v = vh;
 
     /* Get cofactors */
     MTBDD flow, fhigh, glow, ghigh, hlow, hhigh;
@@ -3324,7 +3324,7 @@ int mtbdd_equal_norm_d2_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTB
     /* Get top variable */
     uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
     uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
-    uint32_t var = va < vb ? va : vb;
+    uint32_t var = sylvan_var_min(va, vb);
 
     /* Get cofactors */
     MTBDD alow, ahigh, blow, bhigh;
@@ -3436,7 +3436,7 @@ int mtbdd_equal_norm_rel_d2_CALL(lace_worker* lace, MTBDD *destination, MTBDD a,
     /* Get top variable */
     uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
     uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
-    uint32_t var = va < vb ? va : vb;
+    uint32_t var = sylvan_var_min(va, vb);
 
     /* Get cofactors */
     MTBDD alow, ahigh, blow, bhigh;
@@ -3565,7 +3565,7 @@ int mtbdd_leq_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, 
         /* Get top variable */
         uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
         uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
-        uint32_t var = va < vb ? va : vb;
+        uint32_t var = sylvan_var_min(va, vb);
 
         /* Get cofactors */
         MTBDD alow, ahigh, blow, bhigh;
@@ -3693,7 +3693,7 @@ int mtbdd_less_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b,
         /* Get top variable */
         uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
         uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
-        uint32_t var = va < vb ? va : vb;
+        uint32_t var = sylvan_var_min(va, vb);
 
         /* Get cofactors */
         MTBDD alow, ahigh, blow, bhigh;
@@ -3824,7 +3824,7 @@ int mtbdd_geq_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD b, 
         /* Get top variable */
         uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
         uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
-        uint32_t var = va < vb ? va : vb;
+        uint32_t var = sylvan_var_min(va, vb);
 
         /* Get cofactors */
         MTBDD alow, ahigh, blow, bhigh;
@@ -3952,7 +3952,7 @@ int mtbdd_greater_rec_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDD
         /* Get top variable */
         uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
         uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
-        uint32_t var = va < vb ? va : vb;
+        uint32_t var = sylvan_var_min(va, vb);
 
         /* Get cofactors */
         MTBDD alow, ahigh, blow, bhigh;
@@ -4136,7 +4136,7 @@ mtbdd_any_relation_rec_CALL(lace_worker* lace, int *destination, MTBDD a, MTBDD 
     mtbddnode* node_b = leaf_b ? NULL : MTBDD_GETNODE(b);
     uint32_t level_a = leaf_a ? UINT32_MAX : mtbddnode_getvariable(node_a);
     uint32_t level_b = leaf_b ? UINT32_MAX : mtbddnode_getvariable(node_b);
-    uint32_t level = level_a < level_b ? level_a : level_b;
+    uint32_t level = sylvan_var_min(level_a, level_b);
 
     MTBDD low_a = level_a == level ? node_getlow(a, node_a) : a;
     MTBDD high_a = level_a == level ? node_gethigh(a, node_a) : a;
@@ -4253,7 +4253,7 @@ mtbdd_compare_relation_rec_CALL(lace_worker* lace, BDD *destination, MTBDD a, MT
     mtbddnode* node_b = leaf_b ? NULL : MTBDD_GETNODE(b);
     uint32_t level_a = leaf_a ? UINT32_MAX : mtbddnode_getvariable(node_a);
     uint32_t level_b = leaf_b ? UINT32_MAX : mtbddnode_getvariable(node_b);
-    uint32_t level = level_a < level_b ? level_a : level_b;
+    uint32_t level = sylvan_var_min(level_a, level_b);
 
     MTBDD low_a = level_a == level ? node_getlow(a, node_a) : a;
     MTBDD high_a = level_a == level ? node_gethigh(a, node_a) : a;
@@ -4388,12 +4388,12 @@ int mtbdd_mul_abstract_add_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, 
     mtbddnode* nb = lb ? 0 : MTBDD_GETNODE(b);
     uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
     uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
-    uint32_t var = va < vb ? va : vb;
+    uint32_t var = sylvan_var_min(va, vb);
 
     mtbddnode* nv = MTBDD_GETNODE(v);
     uint32_t vv = mtbddnode_getvariable(nv);
 
-    if (vv < var) {
+    if (sylvan_var_before(vv, var)) {
         /* Recursive, then abstract result */
         status = mtbdd_mul_abstract_add_CALL(lace, &computed, a, b, node_gethigh(v, nv));
         if (status == SYLVAN_OK) status = mtbdd_apply_CALL(lace, &computed, computed, computed, mtbdd_op_plus_CALL);
@@ -4483,12 +4483,12 @@ int mtbdd_mul_abstract_max_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, 
     mtbddnode* nb = lb ? 0 : MTBDD_GETNODE(b);
     uint32_t va = la ? 0xffffffff : mtbddnode_getvariable(na);
     uint32_t vb = lb ? 0xffffffff : mtbddnode_getvariable(nb);
-    uint32_t var = va < vb ? va : vb;
+    uint32_t var = sylvan_var_min(va, vb);
 
     mtbddnode* nv = MTBDD_GETNODE(v);
     uint32_t vv = mtbddnode_getvariable(nv);
 
-    while (vv < var) {
+    while (sylvan_var_before(vv, var)) {
         /* we can skip variables, because max(r,r) = r */
         v = node_gethigh(v, nv);
         if (v == bdd_true) {
@@ -4633,7 +4633,7 @@ int mtbdd_compose_CALL(lace_worker* lace, MTBDD *destination, MTBDD a, MTBDDMAP 
     uint32_t v = mtbddnode_getvariable(n);
 
     /* Find in map */
-    while (mtbdd_map_key(map) < v) {
+    while (sylvan_var_before(mtbdd_map_key(map), v)) {
         map = mtbdd_map_next(map);
         if (mtbdd_map_is_empty(map)) { *destination = a; return SYLVAN_OK; }
     }
@@ -4906,7 +4906,7 @@ mtbdd_sat_count_u64_CALL(lace_worker* lace, uint64_t *destination, MTBDD dd, BDD
 
     size_t skipped = 0;
     const uint32_t variable = mtbdd_node_variable(dd);
-    while (!bdd_set_is_empty(variables) && bdd_set_first(variables) < variable) {
+    while (!bdd_set_is_empty(variables) && sylvan_var_before(bdd_set_first(variables), variable)) {
         skipped++;
         variables = bdd_set_next(variables);
     }
@@ -4966,7 +4966,7 @@ mtbdd_sat_count_double_CALL(lace_worker* lace, MTBDD dd, BDDSET variables)
 
     size_t skipped = 0;
     const uint32_t variable = mtbdd_node_variable(dd);
-    while (!bdd_set_is_empty(variables) && bdd_set_first(variables) < variable) {
+    while (!bdd_set_is_empty(variables) && sylvan_var_before(bdd_set_first(variables), variable)) {
         skipped++;
         variables = bdd_set_next(variables);
     }
@@ -5091,7 +5091,7 @@ int mtbdd_eval_compose_CALL(lace_worker* lace, MTBDD *destination, MTBDD dd, MTB
 
         /* Search/forward <vars> */
         MTBDD _vars = vars;
-        while (vv < var) {
+        while (sylvan_var_before(vv, var)) {
             _vars = node_gethigh(_vars, nvars);
             if (_vars == bdd_true) break;
             nvars = MTBDD_GETNODE(_vars);
@@ -5222,8 +5222,8 @@ int mtbdd_test_isvalid_rec_CALL(lace_worker* lace, MTBDD dd, uint32_t parent_var
 
     // check variable order
     uint32_t var = mtbddnode_getvariable(n);
-    assert(var > parent_var);
-    if (var <= parent_var) return 0;
+    assert(sylvan_var_before(parent_var, var));
+    if (!sylvan_var_before(parent_var, var)) return 0;
 
     // check cache
     uint64_t result;
@@ -5795,7 +5795,7 @@ bdd_set_add(BDDSET *destination, BDDSET set, uint32_t var)
 
     mtbddnode* set_node = MTBDD_GETNODE(set);
     uint32_t set_var = mtbddnode_getvariable(set_node);
-    if (var < set_var) return _mtbdd_try_make_node(destination, var, mtbdd_undefined, set);
+    if (sylvan_var_before(var, set_var)) return _mtbdd_try_make_node(destination, var, mtbdd_undefined, set);
     else if (set_var == var) {
         *destination = set;
         return SYLVAN_OK;
@@ -5829,7 +5829,7 @@ bdd_set_remove(BDDSET *destination, BDDSET set, uint32_t var)
 
     mtbddnode* set_node = MTBDD_GETNODE(set);
     uint32_t set_var = mtbddnode_getvariable(set_node);
-    if (var < set_var) {
+    if (sylvan_var_before(var, set_var)) {
         *destination = set;
         return SYLVAN_OK;
     }
@@ -5875,7 +5875,7 @@ int bdd_set_difference_CALL(lace_worker* lace, BDDSET *destination, BDDSET set1,
         return bdd_set_difference_CALL(lace, destination, mtbddnode_followhigh(set1, set1_node), mtbddnode_followhigh(set2, set2_node));
     }
 
-    if (set1_var > set2_var) {
+    if (sylvan_var_before(set2_var, set1_var)) {
         return bdd_set_difference_CALL(lace, destination, set1, mtbddnode_followhigh(set2, set2_node));
     }
 
@@ -5901,7 +5901,7 @@ bdd_set_contains(MTBDD set, uint32_t var)
         mtbddnode* n = MTBDD_GETNODE(set);
         uint32_t v = mtbddnode_getvariable(n);
         if (v == var) return 1;
-        if (v > var) return 0;
+        if (sylvan_var_before(var, v)) return 0;
         set = node_gethigh(set, n);
     }
     return 0;
@@ -5947,7 +5947,7 @@ mtbdd_map_contains(MTBDDMAP map, uint32_t key)
         mtbddnode* n = MTBDD_GETNODE(map);
         uint32_t k = mtbddnode_getvariable(n);
         if (k == key) return 1;
-        if (k > key) return 0;
+        if (sylvan_var_before(key, k)) return 0;
         map = node_getlow(map, n);
     }
 
@@ -5991,7 +5991,7 @@ mtbdd_map_set(MTBDDMAP *destination, MTBDDMAP map, uint32_t key, MTBDD value)
         mtbddnode* n = MTBDD_GETNODE(map);
         uint32_t k = mtbddnode_getvariable(n);
 
-        if (k < key) {
+        if (sylvan_var_before(k, key)) {
             // add recursively and rebuild tree
             MTBDDMAP next = mtbdd_invalid;
             mtbdd_refs_pushptr(&next);
@@ -6000,7 +6000,7 @@ mtbdd_map_set(MTBDDMAP *destination, MTBDDMAP map, uint32_t key, MTBDD value)
                 status = _mtbdd_try_make_map_node(&computed, k, next, node_gethigh(map, n));
             }
             mtbdd_refs_popptr(1);
-        } else if (k > key) {
+        } else if (sylvan_var_before(key, k)) {
             status = _mtbdd_try_make_map_node(&computed, key, map, value);
         } else {
             // replace old
@@ -6033,12 +6033,12 @@ mtbdd_map_update(MTBDDMAP *destination, MTBDDMAP map1, MTBDDMAP map2)
     mtbdd_refs_pushptr(&next);
     mtbdd_refs_pushptr(&computed);
     int status;
-    if (k1 < k2) {
+    if (sylvan_var_before(k1, k2)) {
         status = mtbdd_map_update(&next, node_getlow(map1, n1), map2);
         if (status == SYLVAN_OK) {
             status = _mtbdd_try_make_map_node(&computed, k1, next, node_gethigh(map1, n1));
         }
-    } else if (k1 > k2) {
+    } else if (sylvan_var_before(k2, k1)) {
         status = mtbdd_map_update(&next, map1, node_getlow(map2, n2));
         if (status == SYLVAN_OK) {
             status = _mtbdd_try_make_map_node(&computed, k2, next, node_gethigh(map2, n2));
@@ -6069,7 +6069,7 @@ mtbdd_map_remove(MTBDDMAP *destination, MTBDDMAP map, uint32_t key)
     mtbddnode* n = MTBDD_GETNODE(map);
     uint32_t k = mtbddnode_getvariable(n);
 
-    if (k < key) {
+    if (sylvan_var_before(k, key)) {
         MTBDDMAP next = mtbdd_invalid;
         MTBDDMAP computed = mtbdd_invalid;
         mtbdd_refs_pushptr(&next);
@@ -6081,7 +6081,7 @@ mtbdd_map_remove(MTBDDMAP *destination, MTBDDMAP map, uint32_t key)
         if (status == SYLVAN_OK) *destination = computed;
         mtbdd_refs_popptr(2);
         return status;
-    } else if (k > key) {
+    } else if (sylvan_var_before(key, k)) {
         *destination = map;
         return SYLVAN_OK;
     } else {
@@ -6104,7 +6104,7 @@ mtbdd_map_remove_all(MTBDDMAP *destination, MTBDDMAP map, BDDSET variables)
     uint32_t k1 = mtbddnode_getvariable(n1);
     uint32_t k2 = mtbddnode_getvariable(n2);
 
-    if (k1 < k2) {
+    if (sylvan_var_before(k1, k2)) {
         MTBDDMAP next = mtbdd_invalid;
         MTBDDMAP computed = mtbdd_invalid;
         mtbdd_refs_pushptr(&next);
@@ -6116,7 +6116,7 @@ mtbdd_map_remove_all(MTBDDMAP *destination, MTBDDMAP map, BDDSET variables)
         if (status == SYLVAN_OK) *destination = computed;
         mtbdd_refs_popptr(2);
         return status;
-    } else if (k1 > k2) {
+    } else if (sylvan_var_before(k2, k1)) {
         return mtbdd_map_remove_all(destination, map, node_gethigh(variables, n2));
     } else {
         return mtbdd_map_remove_all(destination, node_getlow(map, n1), node_gethigh(variables, n2));

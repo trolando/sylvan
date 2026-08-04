@@ -255,7 +255,8 @@ static inline int bdd_and_project(BDD *result, BDD a, BDD b, BDDSET vars);
 /**
  * Compute R(s,t) = ∃ x: A(s,x) ∧ B(x,t)
  *      or R(s)   = ∃ x: A(s,x) ∧ B(x)
- * Assumes s,t are interleaved with s even and t odd (s+1).
+ * Assumes s,t are interleaved with s even and t odd (s+1), and that each such
+ * pair occupies two adjacent positions in the variable order with s first.
  * Parameter vars is the cube of all s and/or t variables.
  * Other variables in A are "ignored" (existential quantification)
  * Other variables in B are kept.
@@ -270,7 +271,8 @@ static inline int bdd_rel_prev(BDD *result, BDD a, BDD b, BDDSET vars);
 /**
  * Compute R(s) = ∃ x: A(x) ∧ B(x,s)
  * with support(result) = s, support(A) = s, support(B) = s+t
- * Assumes s,t are interleaved with s even and t odd (s+1).
+ * Assumes s,t are interleaved with s even and t odd (s+1), and that each such
+ * pair occupies two adjacent positions in the variable order with s first.
  * Parameter vars is the cube of all s and/or t variables.
  * Other variables in A are kept.
  * Other variables in B are "ignored" (existential quantification)
@@ -289,7 +291,8 @@ static inline int bdd_rel_next(BDD *result, BDD a, BDD b, BDDSET vars);
  *
  * The input BDD must be a transition relation that only has levels of s,t
  * with s,t interleaved with s even and t odd, i.e.
- * s level 0,2,4 matches with t level 1,3,5 and so forth.
+ * s level 0,2,4 matches with t level 1,3,5 and so forth. Each pair must
+ * occupy two adjacent positions in the variable order, with s first.
  * Returns SYLVAN_OK on success. On failure, <result> is unchanged.
  */
 static inline int bdd_transitive_closure(BDD *result, BDD dd);

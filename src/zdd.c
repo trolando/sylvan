@@ -38,6 +38,17 @@ TASK(int, zdd_minimal_sets_rec, ZDD*, result, BDD, dd)
 #include "refs.h"
 #include "sl.h"
 
+/**
+ * ZDD is outside the identity/rank model of
+ * <sylvan/internal/ranks_internal.h>: its nodes are ordered by variable
+ * identity and every comparison below deliberately compares raw variable
+ * fields. The coupling to watch is the BDDSET domain: the BDD set operations
+ * order a spine by rank, while the ZDD code reads the same spine expecting
+ * identity order. The two agree exactly while ranks equal identities, which
+ * they do unless something permutes the order. Any future reordering must
+ * therefore refuse to run once the ZDD subsystem is in use.
+ */
+
 enum zdd_quantify_op {
     ZDD_QUANTIFY_FORALL,
     ZDD_QUANTIFY_UNIQUE

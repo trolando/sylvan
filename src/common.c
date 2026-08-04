@@ -73,11 +73,10 @@ static int gc_enabled = 1;
 
 /**
  * Number of consecutive collections that reclaimed almost nothing from a
- * full-size nodes table, and the flag that stops collecting once there have
- * been too many. See gc_note_progress below.
+ * nodes table that was both at its maximum size and full. See gc_note_progress
+ * below, which reports the table as full once there have been too many.
  */
 static int gc_unproductive;
-static int gc_wedged;
 
 /**
  * Enable garbage collection (both automatic and manual).
@@ -87,7 +86,6 @@ sylvan_gc_enable(void)
 {
     gc_enabled = 1;
     gc_unproductive = 0;
-    gc_wedged = 0;
 }
 
 /**
@@ -406,12 +404,17 @@ void sylvan_gc_normal_resize_CALL(lace_worker* lace)
  *
  * After SYLVAN_GC_MAX_UNPRODUCTIVE consecutive collections that ran on a
  * full-size table that really was full and reclaimed less than
- * SYLVAN_GC_UNPRODUCTIVE_PERCENT of it, we stop collecting. The next
- * allocation failure then takes the existing table-full path and reports the
- * size the run could not fit in. The defaults are deliberately generous: a
- * workload that is merely slow keeps running, only one that is genuinely stuck
- * stops. sylvan_gc_enable() clears the state for callers that want to retry
- * after dropping references themselves.
+ * SYLVAN_GC_UNPRODUCTIVE_PERCENT of it, we report the table as full and stop,
+ * the same way every other unsatisfiable allocation in Sylvan does. The
+ * defaults are deliberately generous: a workload that is merely slow keeps
+ * running, only one that has stopped making progress stops.
+ *
+ * Reporting here rather than merely declining to collect and letting the next
+ * failed insertion report is deliberate. Sylvan's operations do return
+ * SYLVAN_ERR_OOM and propagate it correctly, but callers are not obliged to
+ * check, and one that does not gets an invalid handle and a crash instead of a
+ * message. Turning a run that grinds forever into a run that dies confusingly
+ * would not be an improvement.
  */
 
 /* Fraction of a full-size table a collection must reclaim to count as
@@ -428,7 +431,7 @@ void sylvan_gc_normal_resize_CALL(lace_worker* lace)
 #endif
 
 /* Number of consecutive unproductive collections tolerated before Sylvan
- * stops collecting and lets the allocation failure be reported. */
+ * reports the nodes table as full. */
 #ifndef SYLVAN_GC_MAX_UNPRODUCTIVE
 #define SYLVAN_GC_MAX_UNPRODUCTIVE 12
 #endif
@@ -445,12 +448,14 @@ gc_note_progress(void)
 
     if (++gc_unproductive < SYLVAN_GC_MAX_UNPRODUCTIVE) return;
 
-    gc_wedged = 1;
     fprintf(stderr,
-            "sylvan_gc: %d consecutive collections of the full %zu-bucket nodes "
-            "table each reclaimed less than %d%% of it; giving up on garbage "
-            "collection so that the next allocation failure is reported\n",
-            gc_unproductive, gc_table_before, SYLVAN_GC_UNPRODUCTIVE_PERCENT);
+            "BDD Unique table full, %zu of %zu buckets filled!\n"
+            "sylvan_gc: %d consecutive collections of the full nodes table each "
+            "reclaimed less than %d%% of it, so no amount of further collection "
+            "will make room; raise the memory cap passed to sylvan_set_limits.\n",
+            gc_live_after, gc_table_before,
+            gc_unproductive, SYLVAN_GC_UNPRODUCTIVE_PERCENT);
+    exit(1);
 }
 
 /**
@@ -562,7 +567,7 @@ void sylvan_gc_go_CALL(lace_worker* lace)
  */
 void sylvan_gc_CALL(lace_worker* lace)
 {
-    if (gc_enabled && !gc_wedged) {
+    if (gc_enabled) {
         int zero = 0;
         if (atomic_compare_exchange_strong(&gc, &zero, 1)) {
 #if SYLVAN_GC_DIAGNOSTICS
@@ -696,7 +701,6 @@ sylvan_init_package(void)
     /* Initialize garbage collection */
     gc = 0;
     gc_unproductive = 0;
-    gc_wedged = 0;
     gc_churn_streak = 0;
     gc_table_before = 0;
     gc_used_before = 0;

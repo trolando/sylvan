@@ -222,6 +222,7 @@ extern "C" {
 #include <sylvan/internal/mtbdd_internal.h>
 #include <sylvan/internal/listdd_internal.h>
 #include <sylvan/internal/zdd_internal.h>
+#include <sylvan/internal/reorder_internal.h>
 
 #ifdef __cplusplus
 } /* extern "C" */

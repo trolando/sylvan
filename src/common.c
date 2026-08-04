@@ -262,15 +262,23 @@ gc_reclaimed_at_least(size_t percent)
  * maximum: ten to twelve collections just to reach the size the run was always
  * going to need, each one discarding the cache.
  *
- * So when a collection reclaimed at least SYLVAN_GC_CHURN_PERCENT of the
- * table, we take SYLVAN_GC_CHURN_DOUBLINGS doublings at once instead of one.
- * This collapses the ramp-up to two or three collections.
+ * So a collection that reclaimed at least SYLVAN_GC_CHURN_PERCENT of the table
+ * takes more than one doubling. How many more escalates with the number of
+ * consecutive churn-dominated collections, up to SYLVAN_GC_CHURN_DOUBLINGS:
+ * the first takes one step, the second two, the third three, and so on. A run
+ * that collects once and then settles is left alone, while a run that keeps
+ * collecting reaches a table that ends the treadmill within a handful of
+ * collections, and reaches it early, while the collections are still cheap.
+ * The streak resets as soon as a collection is not churn dominated, so a
+ * workload whose table fills with live nodes rather than with garbage grows
+ * one step at a time exactly as before.
  *
- * Growing early is close to free in resident memory. nodes_create reserves the
- * maximum size in virtual memory up front, and sylvan_clear_aligned hands the
- * physical pages back to the operating system on every collection, so a table
- * that is larger than the workload needs only costs the pages the workload
- * actually touches. What it does cost is locality: a sparsely filled table
+ * Growing early is not free, but it is bounded by what the caller already
+ * asked for. nodes_create and cache_create reserve the maximum size in virtual
+ * memory up front and sylvan_clear_aligned hands the physical pages back to
+ * the operating system on every collection, so oversizing costs only the pages
+ * the workload goes on to touch, and never more than the memory cap passed to
+ * sylvan_set_limits. What it also costs is locality: a sparsely filled table
  * spreads probes over more cache lines. That is why the growth is tied to
  * observed churn rather than applied unconditionally.
  */
@@ -281,7 +289,8 @@ gc_reclaimed_at_least(size_t percent)
 #define SYLVAN_GC_CHURN_PERCENT 50
 #endif
 
-/* Number of doublings to take at once when a collection was churn dominated. */
+/* Most doublings a single collection may take, reached after that many
+ * consecutive churn-dominated collections. */
 #ifndef SYLVAN_GC_CHURN_DOUBLINGS
 #define SYLVAN_GC_CHURN_DOUBLINGS 4
 #endif
@@ -309,13 +318,30 @@ gc_grown_size(size_t current, size_t max, int doublings)
 }
 
 /**
+ * Length of the current run of churn-dominated collections, capped at
+ * SYLVAN_GC_CHURN_DOUBLINGS. Updated once per collection by gc_note_churn,
+ * which sylvan_gc_go calls before the main hook, so that both heuristics see
+ * the same value however they end up using it.
+ */
+static int gc_churn_streak;
+
+static void
+gc_note_churn(void)
+{
+    if (!gc_reclaimed_at_least(SYLVAN_GC_CHURN_PERCENT)) {
+        gc_churn_streak = 0;
+    } else if (gc_churn_streak < SYLVAN_GC_CHURN_DOUBLINGS) {
+        gc_churn_streak++;
+    }
+}
+
+/**
  * How many doublings this collection has earned.
  */
 static int
 gc_growth_doublings(void)
 {
-    return gc_reclaimed_at_least(SYLVAN_GC_CHURN_PERCENT)
-        ? SYLVAN_GC_CHURN_DOUBLINGS : 1;
+    return gc_churn_streak > 1 ? gc_churn_streak : 1;
 }
 
 /**
@@ -458,6 +484,7 @@ void sylvan_gc_go_CALL(lace_worker* lace)
 
     gc_live_after = nodes_count_nodes_CALL(lace, nodes);
     gc_table_before = nodes_get_size(nodes);
+    gc_note_churn();
 
 #if SYLVAN_GC_DIAGNOSTICS
     const uint64_t diag_seq = atomic_fetch_add(&gc_diag_count, 1) + 1;
@@ -646,6 +673,7 @@ sylvan_init_package(void)
     gc = 0;
     gc_unproductive = 0;
     gc_wedged = 0;
+    gc_churn_streak = 0;
     gc_table_before = 0;
     gc_used_before = 0;
     gc_live_after = 0;

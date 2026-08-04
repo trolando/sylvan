@@ -18,7 +18,9 @@
 
 #include <sylvan/internal.h>
 
+#include <assert.h>
 #include <errno.h>  // for errno
+#include <stdlib.h> // abort
 #include <string.h> // memset
 
 /**
@@ -651,41 +653,215 @@ void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb e
 /**
  * Reorder primitives.
  *
- * Not implemented for this backend yet; every primitive changes nothing and
- * reports SYLVAN_ERR_INVALID, which is what a zero capability mask promises.
+ * The chain surgery is the same as in nodes_llcht: nodes_remove splices the
+ * node out of the family anchored at its maximum child with compare-and-swap
+ * behind a delete-in-progress link, and nodes_reinsert publishes the node's
+ * own link before making the node reachable. See the comment on nodes_remove
+ * in nodes_llcht.c for why the delete-in-progress link is needed, why the
+ * walk cannot step past its own node or splice the wrong link, and why the
+ * retries terminate.
+ *
+ * One deliberate difference from the lookup path: an ordinary insertion
+ * appends at the tail of the family, but nodes_reinsert PREPENDS. Chain order
+ * is irrelevant to a lookup, which scans the whole family, but it is what
+ * makes concurrent removal sound. A remover's walk can be standing on a node
+ * that another worker removes and reinserts underneath it; it then reads that
+ * node's new link. Prepending means the new link is the old head, so the walk
+ * jumps back to the front of the family and re-traverses it, and can never be
+ * carried past the node it is looking for. Appending would put the reinserted
+ * node at the tail with a zero link, and the walk would mistake that for the
+ * end of the family and report the node it is removing as absent.
  */
-uint32_t nodes_reorder_caps(const nodes_table* dbs)
+
+#define MASK_INDEX UINT64_C(0x000000ffffffffff)
+#define MASK_HASH  UINT64_C(0xffffff0000000000)
+
+/* A link with an all-ones fingerprint and a zero index. No published link can
+   look like this: a link names a node index >= 2, and the end of a family is
+   exactly zero. */
+#define LINK_REMOVING MASK_HASH
+
+uint32_t
+nodes_reorder_caps(const nodes_table* dbs)
 {
     (void)dbs;
+    return NODES_CAP_REMOVE;
+}
+
+static void
+reorder_duplicate_abort(uint64_t index, uint64_t other)
+{
+    assert(!"nodes_reinsert: an equal node is already in the index");
+    fprintf(stderr,
+            "sylvan: nodes_reinsert: node %llu is equal to node %llu, which "
+            "is already in the index; the unique table invariant is broken. "
+            "Aborting.\n",
+            (unsigned long long)index, (unsigned long long)other);
+    abort();
+}
+
+/** The family root of a node, plus its fingerprint, both from the record. */
+static _Atomic(uint64_t)*
+reorder_anchor(const nodes_table* dbs, uint64_t index, uint64_t* masked_hash)
+{
+    const uint64_t* d_ptr = ((const uint64_t*)dbs->data) + 2 * index;
+    const uint64_t a = d_ptr[0];
+    const uint64_t b = d_ptr[1];
+
+    uint64_t hash = 14695981039346656037LLU;
+    if (is_custom_bucket(dbs, index)) hash = dbs->hash_cb(a, b, hash);
+    else hash = sylvan_tabhash16(a, b, hash);
+    *masked_hash = hash & MASK_HASH;
+
+    if (a & UINT64_C(0x4000000000000000)) return dbs->first + 1;
+    const uint64_t A = a & MASK_INDEX;
+    const uint64_t B = b & MASK_INDEX;
+    return dbs->first + (A > B ? A : B);
+}
+
+int
+nodes_remove(nodes_table* dbs, uint64_t index)
+{
+    if (index < 2 || index >= dbs->table_size) return SYLVAN_ERR_INVALID;
+
+    /* Claim the node and take its successor with it. The compare-and-swap
+       retries because next[index] is not private: when the node behind this
+       one is removed, its remover splices by writing this very link. */
+    uint64_t successor;
+    for (;;) {
+        successor = atomic_load_explicit(
+            dbs->next + index, memory_order_acquire);
+        if (successor == LINK_REMOVING) return SYLVAN_ERR_INVALID;
+        if (atomic_compare_exchange_weak_explicit(
+                dbs->next + index, &successor, LINK_REMOVING,
+                memory_order_acq_rel, memory_order_acquire)) {
+            break;
+        }
+    }
+
+    uint64_t masked_hash;
+    _Atomic(uint64_t)* first = reorder_anchor(dbs, index, &masked_hash);
+
+    for (;;) {
+        uint64_t link = atomic_load_explicit(first, memory_order_acquire);
+        if ((link & MASK_INDEX) == index) {
+            if (atomic_compare_exchange_strong_explicit(
+                    first, &link, successor,
+                    memory_order_acq_rel, memory_order_acquire)) {
+                return SYLVAN_OK;
+            }
+            continue;
+        }
+
+        for (;;) {
+            const uint64_t previous = link & MASK_INDEX;
+            if (previous == 0) {
+                assert(!"nodes_remove: node is not in its own family");
+                return SYLVAN_ERR_INVALID;
+            }
+
+            uint64_t value = atomic_load_explicit(
+                dbs->next + previous, memory_order_acquire);
+            if (value == LINK_REMOVING) break;
+            if ((value & MASK_INDEX) == index) {
+                if (atomic_compare_exchange_strong_explicit(
+                        dbs->next + previous, &value, successor,
+                        memory_order_acq_rel, memory_order_acquire)) {
+                    return SYLVAN_OK;
+                }
+                break;
+            }
+            link = value;
+        }
+    }
+}
+
+/**
+ * Walk a family looking for a node equal to the given key.
+ * Returns the index of an equal node, 0 if there is none, or UINT64_MAX if
+ * the walk met a removal in progress and has to be repeated.
+ */
+static uint64_t
+reorder_find_equal(const nodes_table* dbs, uint64_t link,
+                   uint64_t masked_hash, uint64_t a, uint64_t b, int custom)
+{
+    while ((link & MASK_INDEX) != 0) {
+        const uint64_t index = link & MASK_INDEX;
+        if ((link & MASK_HASH) == masked_hash) {
+            const uint64_t* d_ptr = ((const uint64_t*)dbs->data) + 2 * index;
+            if (custom) {
+                if (dbs->equals_cb(a, b, d_ptr[0], d_ptr[1])) return index;
+            } else if (d_ptr[0] == a && d_ptr[1] == b) {
+                return index;
+            }
+        }
+        link = atomic_load_explicit(dbs->next + index, memory_order_acquire);
+        if (link == LINK_REMOVING) return UINT64_MAX;
+    }
     return 0;
 }
 
-int nodes_remove(nodes_table* dbs, uint64_t index)
+int
+nodes_reinsert(nodes_table* dbs, uint64_t index)
+{
+    if (index < 2 || index >= dbs->table_size) return SYLVAN_ERR_INVALID;
+    if (atomic_load_explicit(dbs->next + index, memory_order_relaxed) !=
+        LINK_REMOVING) {
+        assert(!"nodes_reinsert: the node was not removed first");
+        return SYLVAN_ERR_INVALID;
+    }
+
+    const uint64_t* d_ptr = ((const uint64_t*)dbs->data) + 2 * index;
+    const uint64_t a = d_ptr[0];
+    const uint64_t b = d_ptr[1];
+    const int custom = is_custom_bucket(dbs, index);
+
+    uint64_t masked_hash;
+    _Atomic(uint64_t)* first = reorder_anchor(dbs, index, &masked_hash);
+    const uint64_t link = masked_hash | index;
+
+    uint64_t observed = atomic_load_explicit(first, memory_order_acquire);
+    for (;;) {
+        const uint64_t equal = reorder_find_equal(
+            dbs, observed, masked_hash, a, b, custom);
+        if (equal == UINT64_MAX) {
+            observed = atomic_load_explicit(first, memory_order_acquire);
+            continue;
+        }
+        if (equal != 0) reorder_duplicate_abort(index, equal);
+
+        /* Publish this node's own link before the node itself: the release
+           compare-and-swap on the family root orders the store in front of
+           it, so a walker can never reach the node with a stale successor. */
+        atomic_store_explicit(
+            dbs->next + index, observed, memory_order_relaxed);
+        uint64_t expected = observed;
+        if (atomic_compare_exchange_strong_explicit(
+                first, &expected, link,
+                memory_order_acq_rel, memory_order_acquire)) {
+            return SYLVAN_OK;
+        }
+        observed = expected;
+    }
+}
+
+int
+nodes_release(nodes_table* dbs, uint64_t index)
 {
     (void)dbs; (void)index;
     return SYLVAN_ERR_INVALID;
 }
 
-int nodes_reinsert(nodes_table* dbs, uint64_t index)
-{
-    (void)dbs; (void)index;
-    return SYLVAN_ERR_INVALID;
-}
-
-int nodes_release(nodes_table* dbs, uint64_t index)
-{
-    (void)dbs; (void)index;
-    return SYLVAN_ERR_INVALID;
-}
-
-int nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
-                        nodes_visit_cb cb, void* context)
+int
+nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
+                    nodes_visit_cb cb, void* context)
 {
     (void)dbs; (void)variable; (void)cb; (void)context;
     return SYLVAN_ERR_INVALID;
 }
 
-int nodes_reserve(nodes_table* dbs, uint64_t count)
+int
+nodes_reserve(nodes_table* dbs, uint64_t count)
 {
     (void)dbs; (void)count;
     return SYLVAN_ERR_INVALID;

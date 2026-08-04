@@ -1967,41 +1967,250 @@ nodes_set_custom(nodes_table* dbs,
 /**
  * Reorder primitives.
  *
- * Not implemented for this backend yet; every primitive changes nothing and
- * reports SYLVAN_ERR_INVALID, which is what a zero capability mask promises.
+ * The chain surgery is the same as in nodes_llcht: nodes_remove splices the
+ * node out of its chain with compare-and-swap behind a delete-in-progress
+ * link, nodes_reinsert prepends it again and publishes its own link before
+ * the head. See the comment on nodes_remove in nodes_llcht.c for why the
+ * delete-in-progress link is needed, why the walk cannot step past its own
+ * node or splice the wrong link, and why the retries terminate.
+ *
+ * What is specific here is the routing. A node's subtable is not derived from
+ * its key but from the owner class in its own next word: owner 0 means a
+ * canonically routed decision node, whose route is the variable identity in
+ * the top 24 bits of b, and the auxiliary owners name their fixed routes. The
+ * delete-in-progress link keeps those three owner bits, so both the route and
+ * the intra-subtable hash are still recoverable while the node is unlinked,
+ * and a caller that rewrites the identity field between remove and reinsert
+ * moves the node from one decision subtable to another for free.
+ *
+ * Explicitly routed decision entries (OWNER_RAW_DECISION, a node placed in a
+ * subtable that does not match its own identity field) are the one case the
+ * record cannot answer for: their route is not stored anywhere. They are a
+ * compatibility path for direct nodes_lookup_subtable users, never produced
+ * by the reorder session, and nodes_remove refuses them with
+ * SYLVAN_ERR_INVALID rather than guess.
  */
-uint32_t nodes_reorder_caps(const nodes_table* dbs)
+
+/* A link part of all ones in the fingerprint and zero in the index, with the
+   node's three owner bits preserved. No published link can look like this: a
+   link names an index >= 2, and a chain end has a zero link part. */
+#define LINK_REMOVING_BITS MASK_HASH
+
+static inline int
+link_is_removing(uint64_t link)
+{
+    return (link & MASK_LINK) == LINK_REMOVING_BITS;
+}
+
+uint32_t
+nodes_reorder_caps(const nodes_table* dbs)
 {
     (void)dbs;
+    return NODES_CAP_REMOVE;
+}
+
+static void
+reorder_duplicate_abort(uint64_t index, uint64_t other)
+{
+    assert(!"nodes_reinsert: an equal node is already in the index");
+    fprintf(stderr,
+            "sylvan: nodes_reinsert: node %llu is equal to node %llu, which "
+            "is already in the index; the unique table invariant is broken. "
+            "Aborting.\n",
+            (unsigned long long)index, (unsigned long long)other);
+    abort();
+}
+
+/**
+ * Resolve the subtable a node currently belongs to, from its owner class and
+ * its record. Returns NULL for an explicitly routed decision entry and for a
+ * subtable that does not exist.
+ */
+static llchst_subtable*
+reorder_subtable(const nodes_table* dbs, uint64_t tagged_next,
+                 const uint64_t* data, uint32_t* route_out)
+{
+    const uint32_t route = owner_route(tagged_next, data);
+    *route_out = route;
+    if ((tagged_next & MASK_OWNER) == OWNER_RAW_DECISION) return NULL;
+    return get_subtable(dbs, route, 0);
+}
+
+int
+nodes_remove(nodes_table* dbs, uint64_t index)
+{
+    if (index < 2 || index >= dbs->table_size) return SYLVAN_ERR_INVALID;
+
+    const uint64_t* data = ((const uint64_t*)dbs->data) + 2 * index;
+    uint64_t tagged = atomic_load_explicit(
+        dbs->next + index, memory_order_acquire);
+    if (link_is_removing(tagged)) return SYLVAN_ERR_INVALID;
+
+    uint32_t route = 0;
+    llchst_subtable* subtable = reorder_subtable(dbs, tagged, data, &route);
+    if (subtable == NULL) return SYLVAN_ERR_INVALID;
+    _Atomic(uint64_t)* heads = subtable_heads(subtable);
+    if (heads == NULL) return SYLVAN_ERR_INVALID;
+
+    const uint64_t hash = hash_key(
+        dbs, route, data[0], data[1], is_custom_bucket(dbs, index));
+    _Atomic(uint64_t)* head = heads + (hash & (head_count(subtable) - 1u));
+
+    /* Claim the node and take its successor with it. The compare-and-swap
+       retries because next[index] is not private: when the node behind this
+       one is removed, its remover splices by writing this very link. */
+    uint64_t successor;
+    for (;;) {
+        successor = atomic_load_explicit(
+            dbs->next + index, memory_order_acquire);
+        if (link_is_removing(successor)) return SYLVAN_ERR_INVALID;
+        const uint64_t claimed =
+            (successor & MASK_OWNER) | LINK_REMOVING_BITS;
+        if (atomic_compare_exchange_weak_explicit(
+                dbs->next + index, &successor, claimed,
+                memory_order_acq_rel, memory_order_acquire)) {
+            break;
+        }
+    }
+    const uint64_t spliced = successor & MASK_LINK;
+
+    for (;;) {
+        uint64_t link = atomic_load_explicit(head, memory_order_acquire);
+        if ((link & MASK_INDEX) == index) {
+            if (atomic_compare_exchange_strong_explicit(
+                    head, &link, spliced,
+                    memory_order_acq_rel, memory_order_acquire)) {
+                return SYLVAN_OK;
+            }
+            continue;
+        }
+
+        for (;;) {
+            const uint64_t previous = link & MASK_INDEX;
+            if (previous == 0) {
+                assert(!"nodes_remove: node is not in its own chain");
+                return SYLVAN_ERR_INVALID;
+            }
+
+            uint64_t value = atomic_load_explicit(
+                dbs->next + previous, memory_order_acquire);
+            if (link_is_removing(value)) break;
+            if ((value & MASK_INDEX) == index) {
+                const uint64_t replacement =
+                    (value & MASK_OWNER) | spliced;
+                if (atomic_compare_exchange_strong_explicit(
+                        dbs->next + previous, &value, replacement,
+                        memory_order_acq_rel, memory_order_acquire)) {
+                    return SYLVAN_OK;
+                }
+                break;
+            }
+            link = value;
+        }
+    }
+}
+
+/**
+ * Walk a chain looking for a node equal to the given key.
+ * Returns the index of an equal node, 0 if there is none, or UINT64_MAX if
+ * the walk met a removal in progress and has to be repeated.
+ */
+static uint64_t
+reorder_find_equal(const nodes_table* dbs, uint64_t link,
+                   uint64_t masked_hash, uint64_t a, uint64_t b, int custom)
+{
+    while ((link & MASK_INDEX) != 0) {
+        const uint64_t index = link & MASK_INDEX;
+        if ((link & MASK_HASH) == masked_hash) {
+            const uint64_t* data = ((const uint64_t*)dbs->data) + 2 * index;
+            if (custom) {
+                if (dbs->equals_cb(a, b, data[0], data[1])) return index;
+            } else if (data[0] == a && data[1] == b) {
+                return index;
+            }
+        }
+        link = atomic_load_explicit(dbs->next + index, memory_order_acquire);
+        if (link_is_removing(link)) return UINT64_MAX;
+    }
     return 0;
 }
 
-int nodes_remove(nodes_table* dbs, uint64_t index)
+int
+nodes_reinsert(nodes_table* dbs, uint64_t index)
+{
+    if (index < 2 || index >= dbs->table_size) return SYLVAN_ERR_INVALID;
+
+    const uint64_t* record = ((const uint64_t*)dbs->data) + 2 * index;
+    const uint64_t tagged = atomic_load_explicit(
+        dbs->next + index, memory_order_relaxed);
+    if (!link_is_removing(tagged)) {
+        assert(!"nodes_reinsert: the node was not removed first");
+        return SYLVAN_ERR_INVALID;
+    }
+    if ((tagged & MASK_OWNER) == OWNER_RAW_DECISION) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    const uint64_t a = record[0];
+    const uint64_t b = record[1];
+    /* The route follows the rewritten record: a decision node whose identity
+       field changed belongs to another subtable now. */
+    const uint32_t route = owner_route(tagged, record);
+    llchst_subtable* subtable = get_subtable(dbs, route, 1);
+    if (subtable == NULL) return SYLVAN_ERR_OOM;
+    _Atomic(uint64_t)* heads = ensure_heads(dbs, subtable);
+    if (heads == NULL) return SYLVAN_ERR_OOM;
+
+    const int custom = is_custom_bucket(dbs, index);
+    const uint64_t hash = hash_key(dbs, route, a, b, custom);
+    const uint64_t masked_hash = hash & MASK_HASH;
+    _Atomic(uint64_t)* head = heads + (hash & (head_count(subtable) - 1u));
+    const uint64_t link = masked_hash | index;
+    const uint64_t owner = owner_tag(route, b);
+    assert(owner != OWNER_RAW_DECISION);
+
+    uint64_t observed = atomic_load_explicit(head, memory_order_acquire);
+    for (;;) {
+        const uint64_t equal = reorder_find_equal(
+            dbs, observed, masked_hash, a, b, custom);
+        if (equal == UINT64_MAX) {
+            observed = atomic_load_explicit(head, memory_order_acquire);
+            continue;
+        }
+        if (equal != 0) reorder_duplicate_abort(index, equal);
+
+        /* Publish this node's own link before the node itself: the release
+           compare-and-swap on the head orders the store in front of it. */
+        atomic_store_explicit(
+            dbs->next + index, owner | (observed & MASK_LINK),
+            memory_order_relaxed);
+        uint64_t expected = observed;
+        if (atomic_compare_exchange_strong_explicit(
+                head, &expected, link,
+                memory_order_acq_rel, memory_order_acquire)) {
+            return SYLVAN_OK;
+        }
+        observed = expected;
+    }
+}
+
+int
+nodes_release(nodes_table* dbs, uint64_t index)
 {
     (void)dbs; (void)index;
     return SYLVAN_ERR_INVALID;
 }
 
-int nodes_reinsert(nodes_table* dbs, uint64_t index)
-{
-    (void)dbs; (void)index;
-    return SYLVAN_ERR_INVALID;
-}
-
-int nodes_release(nodes_table* dbs, uint64_t index)
-{
-    (void)dbs; (void)index;
-    return SYLVAN_ERR_INVALID;
-}
-
-int nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
-                        nodes_visit_cb cb, void* context)
+int
+nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
+                    nodes_visit_cb cb, void* context)
 {
     (void)dbs; (void)variable; (void)cb; (void)context;
     return SYLVAN_ERR_INVALID;
 }
 
-int nodes_reserve(nodes_table* dbs, uint64_t count)
+int
+nodes_reserve(nodes_table* dbs, uint64_t count)
 {
     (void)dbs; (void)count;
     return SYLVAN_ERR_INVALID;

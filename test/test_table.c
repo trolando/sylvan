@@ -697,6 +697,73 @@ test_subtable_routing(void)
     nodes_free(table);
     return 0;
 }
+
+/**
+ * A case-B rewrite that changes the variable identity moves the node from one
+ * decision subtable to another, which llchst has to derive from the rewritten
+ * record alone. An entry that was explicitly routed to a subtable other than
+ * its own identity cannot be derived that way and must be refused.
+ */
+static int
+test_reorder_subtable_migration(void)
+{
+    nodes_table *table = nodes_create(
+        TEST_RACE_TABLE_SIZE, TEST_RACE_TABLE_SIZE);
+    if ((nodes_reorder_caps(table) & NODES_CAP_REMOVE) == 0) {
+        nodes_free(table);
+        return 0;
+    }
+
+    uint64_t leaf[2];
+    for (uint64_t i = 0; i < 2; i++) {
+        int created = 0;
+        leaf[i] = nodes_lookup(
+            table, UINT64_C(0x4000000000000000) | i, i, &created);
+        test_assert(leaf[i] > 1 && created == 1);
+    }
+
+    const uint64_t old_b = (UINT64_C(7) << 40) | leaf[1];
+    const uint64_t new_b = (UINT64_C(9) << 40) | leaf[1];
+
+    int created = 0;
+    const uint64_t index = nodes_lookup_subtable(
+        table, NODES_SUBTABLE_DECISION(7), leaf[0], old_b, &created);
+    test_assert(index > 1 && created == 1);
+
+    test_assert(nodes_remove(table, index) == SYLVAN_OK);
+    uint64_t *record = nodes_get_pointer(table, index);
+    record[1] = new_b;
+    test_assert(nodes_reinsert(table, index) == SYLVAN_OK);
+
+    created = 1;
+    test_assert(nodes_lookup_subtable(
+        table, NODES_SUBTABLE_DECISION(9), leaf[0], new_b,
+        &created) == index);
+    test_assert(created == 0);
+
+    created = 0;
+    test_assert(nodes_lookup_subtable(
+        table, NODES_SUBTABLE_DECISION(7), leaf[0], old_b,
+        &created) != index);
+    test_assert(created == 1);
+
+    /* Routed to subtable 3 while its identity field says 4: the record does
+       not record where it went, so removal must refuse instead of guess. */
+    created = 0;
+    const uint64_t raw = nodes_lookup_subtable(
+        table, NODES_SUBTABLE_DECISION(3), leaf[0],
+        (UINT64_C(4) << 40) | leaf[1], &created);
+    test_assert(raw > 1 && created == 1);
+    test_assert(nodes_remove(table, raw) == SYLVAN_ERR_INVALID);
+    created = 1;
+    test_assert(nodes_lookup_subtable(
+        table, NODES_SUBTABLE_DECISION(3), leaf[0],
+        (UINT64_C(4) << 40) | leaf[1], &created) == raw);
+    test_assert(created == 0);
+
+    nodes_free(table);
+    return 0;
+}
 #endif
 
 /**
@@ -1189,6 +1256,7 @@ run_table_tests_CALL(lace_worker *lace)
     if (test_rebuild_shapes()) return 1;
 #if SYLVAN_NODES_TABLE_LLCHST
     if (test_subtable_routing()) return 1;
+    if (test_reorder_subtable_migration()) return 1;
 #endif
 
     return 0;

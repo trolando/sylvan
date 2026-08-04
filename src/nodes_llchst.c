@@ -2220,6 +2220,13 @@ nodes_release(nodes_table* dbs, uint64_t index)
         return SYLVAN_ERR_INVALID;
     }
 
+    /* Leave the slot looking unused, owner class and all. An insertion here
+       writes the tagged link before it publishes the node, so this backend
+       does not depend on it, but a released slot that still says "removal in
+       progress" is a trap for anything that reads the link array without
+       that knowledge. */
+    atomic_store_explicit(dbs->next + index, 0, memory_order_relaxed);
+
     const uint64_t mask =
         UINT64_C(0x8000000000000000) >> (index & 63u);
     if (is_custom_bucket(dbs, index)) {

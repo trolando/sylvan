@@ -857,6 +857,13 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
  * that still carries it would be hashed and compared through the custom
  * callbacks, and the next nodes_cleanup_custom would destroy its payload a
  * second time.
+ *
+ * So does the link. This backend appends at the tail of a family and never
+ * writes the link of the node it is inserting, because a freshly claimed slot
+ * has always had a zero link: nodes_create zeroes the array and a collection
+ * rebuilds every family from scratch. Releasing a slot has to restore that,
+ * or the next node to claim it would inherit the delete-in-progress link and
+ * a family walk arriving at it would follow that into node zero.
  */
 int
 nodes_release(nodes_table* dbs, uint64_t index)
@@ -870,6 +877,7 @@ nodes_release(nodes_table* dbs, uint64_t index)
         assert(!"nodes_release: the node is still in the index");
         return SYLVAN_ERR_INVALID;
     }
+    atomic_store_explicit(dbs->next + index, 0, memory_order_relaxed);
 
     const uint64_t mask =
         UINT64_C(0x8000000000000000) >> (index & 63u);

@@ -271,6 +271,14 @@ int nodes_reinsert(nodes_table* dbs, uint64_t index);
  * A custom (multi-terminal) node has its destroy callback invoked here,
  * because the slot may be reused long before the next nodes_cleanup_custom.
  *
+ * A released slot is indistinguishable from one that was never used. Every
+ * per-node word the backend keeps outside the record -- the chain link, the
+ * owner class, the custom bit -- is reset, because an insertion is entitled
+ * to whatever a fresh table would have given it. That is not cosmetic: the
+ * list backend appends at the tail of a family and never writes the link of
+ * the node it inserts, precisely because a fresh slot has always had a zero
+ * one.
+ *
  * Returns SYLVAN_ERR_INVALID if the node is still in the index.
  */
 int nodes_release(nodes_table* dbs, uint64_t index);

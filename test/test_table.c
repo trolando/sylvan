@@ -25,12 +25,13 @@ static unsigned int test_workers = TEST_DEFAULT_WORKERS;
 
 /* Nodes are handed out per 512-bucket region, one region per worker at a
    time, so a table used concurrently needs at least that much room per
-   worker. */
+   worker. Some backends require a power of two, so round up. */
 static size_t
 race_table_size(void)
 {
-    const size_t needed = (size_t)test_workers * 512;
-    return needed > TEST_RACE_TABLE_SIZE ? needed : TEST_RACE_TABLE_SIZE;
+    size_t size = TEST_RACE_TABLE_SIZE;
+    while (size < (size_t)test_workers * 512) size *= 2;
+    return size;
 }
 
 static void

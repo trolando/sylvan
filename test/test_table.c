@@ -1219,6 +1219,86 @@ test_reorder_enumerate(void)
 }
 
 /**
+ * Reserve, then let every worker allocate its share: all of them must
+ * succeed. A reservation beyond the table's capacity must be refused without
+ * changing anything.
+ */
+#define TEST_RESERVE_PER_WORKER 64
+
+struct reserve_race {
+    nodes_table *table;
+    _Atomic(unsigned int) arrived;
+    _Atomic(unsigned int) failures;
+};
+
+TASK(void, reserve_race_worker, struct reserve_race*, race)
+
+void
+reserve_race_worker_CALL(lace_worker *lace, struct reserve_race *race)
+{
+    const unsigned int slot = (unsigned int)lace->worker;
+    atomic_fetch_add_explicit(&race->arrived, 1, memory_order_acq_rel);
+    while (atomic_load_explicit(
+               &race->arrived, memory_order_acquire) < test_workers) {
+    }
+
+    for (unsigned int i = 0; i < TEST_RESERVE_PER_WORKER; i++) {
+        int created = 0;
+        const uint64_t key = UINT64_C(0x4000000000000000) |
+            ((uint64_t)(slot + 1) << 24) | i;
+        if (nodes_lookup(race->table, key, 0, &created) <= 1) {
+            atomic_fetch_add_explicit(
+                &race->failures, 1, memory_order_relaxed);
+        }
+    }
+}
+
+static int
+test_reorder_reserve(void)
+{
+    const size_t table_size = race_table_size();
+    nodes_table *table = nodes_create(table_size, table_size);
+    if (nodes_reorder_caps(table) == 0) {
+        test_assert(nodes_reserve(table, 1) == SYLVAN_ERR_INVALID);
+        nodes_free(table);
+        return 0;
+    }
+
+    /* More than the table can ever hold: refused, nothing changed. */
+    const size_t before = nodes_count_nodes(table);
+    test_assert(nodes_reserve(table, table_size + 1) == SYLVAN_ERR_OOM);
+    test_assert(nodes_count_nodes(table) == before);
+    test_assert(nodes_reserve(table, 0) == SYLVAN_OK);
+
+    const uint64_t wanted =
+        (uint64_t)test_workers * TEST_RESERVE_PER_WORKER;
+    test_assert(nodes_reserve(table, wanted) == SYLVAN_OK);
+
+    static struct reserve_race race;
+    race.table = table;
+    atomic_store_explicit(&race.arrived, 0, memory_order_relaxed);
+    atomic_store_explicit(&race.failures, 0, memory_order_relaxed);
+    reserve_race_worker_TOGETHER(&race);
+    test_assert(atomic_load_explicit(
+        &race.failures, memory_order_relaxed) == 0);
+    test_assert(nodes_count_nodes(table) == before + wanted);
+
+    /* Fill the table, then no reservation can be honoured any more. */
+    for (uint64_t i = 0; i < table_size; i++) {
+        int created = 0;
+        if (nodes_lookup(
+                table, UINT64_C(0x4000000000000000) |
+                (UINT64_C(1) << 40) | i, i, &created) == 0) {
+            break;
+        }
+    }
+    test_assert(nodes_reserve(table, 1) == SYLVAN_ERR_OOM);
+
+    nodes_free(table);
+    return 0;
+}
+
+/**
  * Child process for the reinsert-collision death test: two equal records at
  * different indices, one of them indexed. Reinserting the other one is an
  * invariant violation and must abort rather than return.
@@ -1460,6 +1540,7 @@ run_table_tests_CALL(lace_worker *lace)
     if (test_reorder_chain_positions()) return 1;
     if (test_reorder_rewrite_in_place()) return 1;
     if (test_reorder_enumerate()) return 1;
+    if (test_reorder_reserve()) return 1;
     if (test_reorder_release()) return 1;
     if (test_reorder_release_custom()) return 1;
     if (test_reorder_race()) return 1;

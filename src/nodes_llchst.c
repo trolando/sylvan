@@ -2281,9 +2281,61 @@ nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
     return SYLVAN_OK;
 }
 
+/**
+ * Preflight <count> further allocations. See <sylvan/nodes.h> for the exact
+ * invariant; the short version is that this counts the free slots of the
+ * regions no worker owns yet, because a worker exhausts the region it owns
+ * before claiming another one and can only claim an unowned region. Free
+ * slots inside owned regions are therefore reachable by exactly one worker
+ * and are not counted, which is what makes the answer conservative rather
+ * than optimistic and removes the need for a per-worker margin.
+ *
+ * The scan stops as soon as <count> is reached, so a small reservation on a
+ * table with room costs a handful of popcounts.
+ */
+static uint64_t
+reserve_free_slots(const nodes_table* dbs, uint64_t needed)
+{
+    const uint64_t regions = dbs->table_size / 512u;
+    uint64_t free_slots = 0;
+
+    for (uint64_t region = 0; region < regions; region++) {
+        const uint64_t owned = atomic_load_explicit(
+            dbs->bitmap1 + region / 64u, memory_order_relaxed);
+        const uint64_t owner_mask =
+            UINT64_C(0x8000000000000000) >> (region & 63u);
+        if (owned & owner_mask) continue;
+
+        const _Atomic(uint64_t)* words = dbs->bitmap2 + region * 8u;
+        for (unsigned int i = 0; i < 8; i++) {
+            free_slots += 64u - popcnt_uint64(atomic_load_explicit(
+                words + i, memory_order_relaxed));
+        }
+        if (free_slots >= needed) return free_slots;
+    }
+    return free_slots;
+}
+
 int
 nodes_reserve(nodes_table* dbs, uint64_t count)
 {
-    (void)dbs; (void)count;
-    return SYLVAN_ERR_INVALID;
+    if (count == 0) return SYLVAN_OK;
+    if (nodes_reorder_caps(dbs) == 0) return SYLVAN_ERR_INVALID;
+
+    /* Index capacity as well as node slots. A subtable growing to absorb
+       <count> more nodes at the target load factor must stay inside the
+       bound the maintenance pass already documents for head memory between
+       two collections, which is twice the head budget. This does not make a
+       first head array or a sparse descriptor page unfailable -- those are
+       heap allocations whose target is unknown until the node is inserted --
+       and <sylvan/nodes.h> says so. */
+    const uint64_t needed_heads =
+        (count + SYLVAN_LLCHST_LOAD_FACTOR - 1u) / SYLVAN_LLCHST_LOAD_FACTOR;
+    const uint64_t used = atomic_load_explicit(
+        &dbs->allocated_heads, memory_order_relaxed);
+    const uint64_t budget = (uint64_t)head_budget(dbs->table_size);
+    if (used + needed_heads > 2u * budget) return SYLVAN_ERR_OOM;
+
+    return reserve_free_slots(dbs, count) >= count
+        ? SYLVAN_OK : SYLVAN_ERR_OOM;
 }

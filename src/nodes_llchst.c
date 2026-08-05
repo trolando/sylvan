@@ -2216,7 +2216,6 @@ nodes_release(nodes_table* dbs, uint64_t index)
        the evidence that this node is out of the index. */
     if (!link_is_removing(atomic_load_explicit(
             dbs->next + index, memory_order_acquire))) {
-        assert(!"nodes_release: the node is still in the index");
         return SYLVAN_ERR_INVALID;
     }
 

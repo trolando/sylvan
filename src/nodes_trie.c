@@ -1080,7 +1080,6 @@ nodes_release(nodes_table* dbs, uint64_t index)
     const int indexed = reorder_find_slot(dbs, index, &key, &owner) != NULL;
     reorder_unlock(dbs);
     if (indexed) {
-        assert(!"nodes_release: the node is still in the index");
         return SYLVAN_ERR_INVALID;
     }
 

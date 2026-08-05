@@ -514,23 +514,55 @@ test_sift_one_CALL(lace_worker *lace)
  * Long random swap sequences inside a single session, with both slot release
  * policies. A session that runs many swaps is where the node lists, the slot
  * reuse and the reference counts are actually exercised against each other.
+ *
+ * Deferring every release to the end of the session is allowed to run out of
+ * room -- that is the whole trade-off of the policy, and this table never
+ * grows -- so those rounds accept SYLVAN_ERR_OOM. What they do not accept is
+ * a forest that is anything other than intact afterwards, which is the point
+ * of stopping a session halfway rather than rolling anything back.
  */
 static int
 test_stress_CALL(lace_worker *lace)
 {
+    uint64_t promotions = 0;
+
     for (int round = 0; round < test_stress_rounds; round++) {
+        /* A session never collects, and it never retires a node that was
+           already garbage when it opened, so the driver of a long run has to
+           collect between sessions. Without this the intermediate nodes the
+           checks above left behind would fill the table. */
+        sylvan_gc();
+
         uint32_t ranks[TEST_STRESS_SWAPS];
         for (int i = 0; i < TEST_STRESS_SWAPS; i++) {
             ranks[i] = (uint32_t)(test_random() % (TEST_VARS - 1));
         }
 
-        sylvan_reorder_set_release_at_swap_end(round & 1);
+        const int release_at_swap_end = round & 1;
+        sylvan_reorder_set_release_at_swap_end(release_at_swap_end);
+
+        /* Half the rounds promote almost every node into the sparse overflow
+           map, which no realistic forest would ever do, so that both halves
+           of the reference count representation are exercised. */
+        sylvan_reorder_set_overflow_at((round & 2) ? 3u : UINT16_MAX);
 
         sylvan_varswap_result result;
-        test_assert(sylvan_test_varswap_sequence(
-                        ranks, TEST_STRESS_SWAPS, &result) == SYLVAN_OK);
-        test_assert(result.swaps == TEST_STRESS_SWAPS);
+        const int status = sylvan_test_varswap_sequence(
+            ranks, TEST_STRESS_SWAPS, &result);
+
+        if (release_at_swap_end) {
+            test_assert(status == SYLVAN_OK);
+            test_assert(result.swaps == TEST_STRESS_SWAPS);
+        } else {
+            test_assert(status == SYLVAN_OK || status == SYLVAN_ERR_OOM);
+            if (status == SYLVAN_ERR_OOM) {
+                printf("  round %d ran %llu of %d swaps before the deferred "
+                       "garbage filled the table\n", round,
+                       (unsigned long long)result.swaps, TEST_STRESS_SWAPS);
+            }
+        }
         test_assert(result.deep_deaths == 0);
+        promotions += sylvan_reorder_overflow_promotions();
 
         for (int r = 0; r < TEST_ROOTS; r++) {
             test_assert(mtbdd_is_valid_CALL(lace, test_root[r]));
@@ -538,7 +570,11 @@ test_stress_CALL(lace_worker *lace)
         if (test_check_roots_CALL(lace)) return 1;
     }
 
+    /* The rounds with the lowered threshold really did use the overflow map. */
+    if (test_stress_rounds > 2) test_assert(promotions > 0);
+
     sylvan_reorder_set_release_at_swap_end(1);
+    sylvan_reorder_set_overflow_at(UINT16_MAX);
     return 0;
 }
 
@@ -641,10 +677,6 @@ runtests_CALL(lace_worker *lace)
        compares them with the ones the swaps maintained. */
     sylvan_reorder_set_validate(1);
 
-    /* Drive the overflow map with a threshold no forest would ever reach on
-       its own, so that the sparse path is exercised by every test below. */
-    sylvan_reorder_set_overflow_at(3);
-
     for (uint32_t i = 0; i < TEST_VARS; i++) {
         test_var[i] = mtbdd_invalid;
         mtbdd_protect(&test_var[i]);
@@ -700,8 +732,6 @@ runtests_CALL(lace_worker *lace)
     printf("Testing %d rounds of %d random swaps.\n",
            test_stress_rounds, TEST_STRESS_SWAPS);
     if (test_stress_CALL(lace)) return 1;
-
-    test_assert(sylvan_reorder_overflow_promotions() > 0);
 
     printf("Testing a swap that cannot reserve what it needs.\n");
     if (test_out_of_memory_CALL(lace)) return 1;

@@ -466,6 +466,7 @@ test_double_swap_CALL(lace_worker *lace)
         test_assert(sylvan_test_varswap(rank, &second) == SYLVAN_OK);
 
         test_assert(mtbdd_shared_node_count(test_root, TEST_ROOTS) == before);
+        test_assert(first.deep_deaths == 0 && second.deep_deaths == 0);
         for (int r = 0; r < TEST_ROOTS; r++) {
             test_assert(test_root[r] == handle[r]);
         }

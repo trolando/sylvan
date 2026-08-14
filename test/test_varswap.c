@@ -642,10 +642,64 @@ test_out_of_memory_CALL(lace_worker *lace)
 }
 
 /**
- * Roots that only a consumer's own marking hook knows about cannot be
- * enumerated by a session, so the session refuses to open. So does one that
- * finds ZDD or ListDD nodes sharing the arena. Both of these change global
- * state that cannot be undone, so they run last.
+ * Sort the order back to the identity with adjacent swaps, whatever the
+ * random rounds left behind. Bubble sort, so TEST_VARS passes always suffice.
+ */
+static int
+test_restore_identity_order(void)
+{
+    sylvan_varswap_result result;
+
+    for (uint32_t pass = 0; pass < TEST_VARS; pass++) {
+        for (uint32_t rank = 0; rank + 1 < TEST_VARS; rank++) {
+            if (sylvan_identity_at(rank) < sylvan_identity_at(rank + 1)) continue;
+            test_assert(sylvan_test_varswap(rank, &result) == SYLVAN_OK);
+        }
+    }
+    return 0;
+}
+
+/**
+ * ZDD may only be used while the order is the identity order, because it
+ * reads a BDDSET domain spine expecting identity order while the BDD set
+ * operations build that spine in rank order. So zdd_init() refuses once a
+ * session has permuted the order -- and accepts again once a session has put
+ * it back, which is why the question may not be answered from history.
+ *
+ * This is one direction of the exclusion. The other, a session refusing to
+ * open once ZDD is initialised, is in test_foreign_state_guards below: it
+ * cannot be checked here because initialising ZDD would stop every test that
+ * still has to swap.
+ */
+static int
+test_rank_identity_guard(void)
+{
+    sylvan_varswap_result result;
+
+    /* A session never collects, so give these swaps room to work in. */
+    sylvan_gc();
+
+    if (test_restore_identity_order()) return 1;
+    test_assert(sylvan_ranks_is_identity());
+
+    /* One swap away from the identity, and ZDD refuses. */
+    test_assert(sylvan_test_varswap(0, &result) == SYLVAN_OK);
+    test_assert(!sylvan_ranks_is_identity());
+    test_assert(zdd_init() == SYLVAN_ERR_INVALID);
+    test_assert(!zdd_is_initialized());
+
+    /* Swapping the same rank back restores the identity. A session that ends
+       where it started must not lock ZDD out for the rest of the process. */
+    test_assert(sylvan_test_varswap(0, &result) == SYLVAN_OK);
+    test_assert(sylvan_ranks_is_identity());
+    return 0;
+}
+
+/**
+ * The three reasons a session refuses to open that cannot be undone: ZDD in
+ * use, ListDD in use, and roots that only a consumer's own marking hook knows
+ * about. They run last, and in an order that lets the ZDD refusal be
+ * attributed to ZDD alone.
  */
 static void
 test_dummy_mark_hook(lace_worker *lace)
@@ -658,13 +712,18 @@ test_foreign_state_guards(void)
 {
     sylvan_varswap_result result;
 
+    /* test_rank_identity_guard left the identity order behind, and the swap
+       test_out_of_memory could not carry out did not disturb it. */
+    test_assert(sylvan_ranks_is_identity());
+    test_assert(zdd_init() == SYLVAN_OK);
+    test_assert(zdd_is_initialized());
+    test_assert(sylvan_test_varswap(0, &result) == SYLVAN_ERR_INVALID);
+    test_assert(sylvan_reorder_begin() == SYLVAN_ERR_INVALID);
+
+    test_assert(listdd_init() == SYLVAN_OK);
+    test_assert(sylvan_test_varswap(0, &result) == SYLVAN_ERR_INVALID);
+
     sylvan_gc_add_mark(test_dummy_mark_hook);
-    test_assert(sylvan_test_varswap(0, &result) == SYLVAN_ERR_INVALID);
-
-    zdd_init();
-    test_assert(sylvan_test_varswap(0, &result) == SYLVAN_ERR_INVALID);
-
-    listdd_init();
     test_assert(sylvan_test_varswap(0, &result) == SYLVAN_ERR_INVALID);
     return 0;
 }
@@ -733,6 +792,9 @@ runtests_CALL(lace_worker *lace)
     printf("Testing %d rounds of %d random swaps.\n",
            test_stress_rounds, TEST_STRESS_SWAPS);
     if (test_stress_CALL(lace)) return 1;
+
+    printf("Testing that ZDD refuses a permuted order.\n");
+    if (test_rank_identity_guard()) return 1;
 
     printf("Testing a swap that cannot reserve what it needs.\n");
     if (test_out_of_memory_CALL(lace)) return 1;

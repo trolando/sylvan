@@ -52,6 +52,12 @@ extern "C" {
  * This initializes internal and external referencing datastructures
  * and registers them in the garbage collection framework.
  *
+ * ZDD orders its nodes and its BDDSET domains by variable identity, so it may
+ * only be used while the variable order is the identity order. Returns
+ * SYLVAN_ERR_INVALID when the order has been permuted, for instance by a
+ * reordering session that did not end where it started; the reordering
+ * session refuses to open for the same reason once ZDD is in use.
+ *
  * Returns SYLVAN_OK, or a negative status on failure. Calling it again after
  * it has succeeded does nothing and returns SYLVAN_OK.
  */

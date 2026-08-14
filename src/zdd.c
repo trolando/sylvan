@@ -45,8 +45,11 @@ TASK(int, zdd_minimal_sets_rec, ZDD*, result, BDD, dd)
  * fields. The coupling to watch is the BDDSET domain: the BDD set operations
  * order a spine by rank, while the ZDD code reads the same spine expecting
  * identity order. The two agree exactly while ranks equal identities, which
- * they do unless something permutes the order. Any future reordering must
- * therefore refuse to run once the ZDD subsystem is in use.
+ * they do unless something permutes the order.
+ *
+ * The exclusion between the two is therefore enforced from both sides:
+ * sylvan_reorder_begin() refuses to open a session once the ZDD subsystem is
+ * in use, and zdd_init() refuses while the order is not the identity.
  */
 
 enum zdd_quantify_op {
@@ -357,6 +360,14 @@ zdd_quit(void)
 int
 zdd_init(void)
 {
+    /* The other half of the exclusion sylvan_reorder_begin() enforces from
+       its side. ZDD reads a BDDSET domain spine expecting identity order
+       while the BDD set operations build it in rank order, so the two only
+       agree while the ranks are the identity; see the note at the top of this
+       file. Refusing here is what stops a forest that has been reordered from
+       silently producing wrong ZDD results. */
+    if (!sylvan_ranks_is_identity()) return SYLVAN_ERR_INVALID;
+
     const int status = sylvan_init_mt();
     if (status != SYLVAN_OK) return status;
 

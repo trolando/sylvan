@@ -715,6 +715,16 @@ test_out_of_memory_CALL(lace_worker *lace)
        a collection releases every claim, and after it this one worker can
        reach every free slot in the table. */
     int64_t leaf = 0;
+    size_t pinned = 0;
+    MTBDD *pins;
+    {
+        /* One protected slot per table bucket: the by-value reference API is
+           gone, so each distinct leaf is pinned through its own address. */
+        size_t f0 = 0, t0 = 0;
+        sylvan_table_usage(&f0, &t0);
+        pins = (MTBDD *)malloc(t0 * sizeof(MTBDD));
+        test_assert(pins != NULL);
+    }
     for (int sweep = 0; ; sweep++) {
         test_assert(sweep < 8);
         sylvan_gc_enable();
@@ -725,7 +735,9 @@ test_out_of_memory_CALL(lace_worker *lace)
         sylvan_table_usage(&filled, &total);
         if (filled >= total) break;
         while (filled < total) {
-            mtbdd_ref(mtbdd_int64(leaf++));
+            pins[pinned] = mtbdd_int64(leaf++);
+            mtbdd_protect(&pins[pinned]);
+            pinned++;
             filled++;
         }
     }

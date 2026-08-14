@@ -25,9 +25,9 @@ extern "C" {
 #endif /* __cplusplus */
 
 /**
- * Implementation of external references
- * Based on a hash table for 40-bit non-null values, linear probing
- * Use tombstones for deleting, higher bits for reference count
+ * Implementation of external references ("protect pointers")
+ * Based on a hash table for 64-bit non-null values, linear probing
+ * Use tombstones for deleting
  */
 typedef struct
 {
@@ -42,30 +42,22 @@ typedef struct
     _Atomic(size_t) refs_resize_done;     // how many parts are done
 } refs_table_t;
 
-// Count number of unique entries (not number of references)
-size_t refs_count(refs_table_t *tbl);
-
-// Increase or decrease reference to 40-bit value a
-// Will fail (assertion) if more down than up are called for a
-void refs_up(refs_table_t *tbl, uint64_t a);
-void refs_down(refs_table_t *tbl, uint64_t a);
-
-// Return a bucket or NULL to start iterating
-uint64_t *refs_iter(refs_table_t *tbl, size_t first, size_t end);
-
-// Continue iterating, set bucket to next bucket or NULL
-uint64_t refs_next(refs_table_t *tbl, uint64_t **bucket, size_t end);
-
-// User must supply a pointer, refs_create and refs_free handle initialization/destruction
-void refs_create(refs_table_t *tbl, size_t _refs_size);
-void refs_free(refs_table_t *tbl);
-
-// The same, but now for 64-bit values ("protect pointers")
+// Count number of entries
 size_t protect_count(refs_table_t *tbl);
+
+// Add or remove the 64-bit value a
+// Will fail (assertion) if a is not present when removing
 void protect_up(refs_table_t *tbl, uint64_t a);
 void protect_down(refs_table_t *tbl, uint64_t a);
+
+// Return a bucket or NULL to start iterating
 uint64_t *protect_iter(refs_table_t *tbl, size_t first, size_t end);
+
+// Continue iterating, set bucket to next bucket or NULL
 uint64_t protect_next(refs_table_t *tbl, uint64_t **bucket, size_t end);
+
+// User must supply a pointer, protect_create and protect_free handle
+// initialization/destruction
 void protect_create(refs_table_t *tbl, size_t _refs_size);
 void protect_free(refs_table_t *tbl);
 

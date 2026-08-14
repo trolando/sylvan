@@ -49,6 +49,7 @@ target_sources(sylvan
     listdd.c
     mt.c
     mtbdd.c
+    nodes_scratch.c
     platform.c
     ranks.c
     refs.c

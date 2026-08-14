@@ -45,10 +45,16 @@ mtbdd_fraction_denominator(MTBDD leaf)
 
 static_assert(sizeof(struct mtbddnode) == 16, "mtbddnode should be a 16 byte struct");
 
+static inline uint64_t
+MTBDD_GETINDEX(MTBDD dd)
+{
+    return dd & 0x000000ffffffffff;
+}
+
 static inline mtbddnode*
 MTBDD_GETNODE(MTBDD dd)
 {
-    return (mtbddnode*)nodes_get_pointer(nodes, dd&0x000000ffffffffff);
+    return (mtbddnode*)nodes_get_pointer(nodes, MTBDD_GETINDEX(dd));
 }
 
 /**
@@ -151,18 +157,12 @@ mtbddnode_getvariable(const mtbddnode* n)
     return (uint32_t)(n->b >> 40);
 }
 
-static inline int SYLVAN_UNUSED
-mtbddnode_getmark(mtbddnode* n)
-{
-    return n->a & 0x2000000000000000 ? 1 : 0;
-}
-
-static inline void SYLVAN_UNUSED
-mtbddnode_setmark(mtbddnode* n, int mark)
-{
-    if (mark) n->a |= 0x2000000000000000;
-    else n->a &= 0xdfffffffffffffff;
-}
+/**
+ * Bit 61 of the first word is unused. It used to carry a traversal mark, but
+ * that word is hashed and compared by the unique table, so writing into it
+ * rewrote the key of a live node. Traversals mark in the node table's scratch
+ * bitmap instead; see nodes_scratch_mark in <sylvan/nodes.h>.
+ */
 
 static inline void SYLVAN_UNUSED
 mtbddnode_makeleaf(mtbddnode* n, uint32_t type, uint64_t value)
@@ -234,8 +234,6 @@ int mtbdd_is_initialized(void);
 #define bddnode_getlow mtbddnode_getlow
 #define bddnode_gethigh mtbddnode_gethigh
 #define bddnode_getvariable mtbddnode_getvariable
-#define bddnode_getmark mtbddnode_getmark
-#define bddnode_setmark mtbddnode_setmark
 #define bddnode_makenode mtbddnode_makenode
 #define bddnode_makemapnode mtbddnode_makemapnode
 #define bddnode_ismapnode mtbddnode_ismapnode

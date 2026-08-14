@@ -868,6 +868,7 @@ sylvan_quit(void)
     mark_count = 0;
 
     cache_free();
+    nodes_scratch_forget(nodes);
     nodes_free(nodes);
 }
 

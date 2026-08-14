@@ -5110,9 +5110,10 @@ int mtbdd_eval_compose_CALL(lace_worker* lace, MTBDD *destination, MTBDD dd, MTB
 static void
 mtbdd_unmark_rec(MTBDD mtbdd)
 {
+    const uint64_t index = MTBDD_GETINDEX(mtbdd);
+    if (!nodes_scratch_ismarked(nodes, index)) return;
+    nodes_scratch_unmark(nodes, index);
     mtbddnode* n = MTBDD_GETNODE(mtbdd);
-    if (!mtbddnode_getmark(n)) return;
-    mtbddnode_setmark(n, 0);
     if (mtbddnode_isleaf(n)) return;
     mtbdd_unmark_rec(mtbddnode_getlow(n));
     mtbdd_unmark_rec(mtbddnode_gethigh(n));
@@ -5127,9 +5128,10 @@ mtbdd_leafcount_mark(MTBDD mtbdd)
 {
     if (mtbdd == bdd_true) return 0; // do not count true/false leaf
     if (mtbdd == mtbdd_undefined) return 0; // do not count true/false leaf
+    const uint64_t index = MTBDD_GETINDEX(mtbdd);
+    if (nodes_scratch_ismarked(nodes, index)) return 0;
+    nodes_scratch_mark(nodes, index);
     mtbddnode* n = MTBDD_GETNODE(mtbdd);
-    if (mtbddnode_getmark(n)) return 0;
-    mtbddnode_setmark(n, 1);
     if (mtbddnode_isleaf(n)) return 1; // count leaf as 1
     return mtbdd_leafcount_mark(mtbddnode_getlow(n)) + mtbdd_leafcount_mark(mtbddnode_gethigh(n));
 }
@@ -5138,8 +5140,10 @@ size_t
 mtbdd_shared_leaf_count(const MTBDD *mtbdds, size_t count)
 {
     size_t result = 0, i;
+    nodes_scratch_acquire(nodes);
     for (i=0; i<count; i++) result += mtbdd_leafcount_mark(mtbdds[i]);
     for (i=0; i<count; i++) mtbdd_unmark_rec(mtbdds[i]);
+    nodes_scratch_release(nodes);
     return result;
 }
 
@@ -5150,9 +5154,10 @@ mtbdd_shared_leaf_count(const MTBDD *mtbdds, size_t count)
 static size_t
 mtbdd_nodecount_mark(MTBDD mtbdd)
 {
+    const uint64_t index = MTBDD_GETINDEX(mtbdd);
+    if (nodes_scratch_ismarked(nodes, index)) return 0;
+    nodes_scratch_mark(nodes, index);
     mtbddnode* n = MTBDD_GETNODE(mtbdd);
-    if (mtbddnode_getmark(n)) return 0;
-    mtbddnode_setmark(n, 1);
     if (mtbddnode_isleaf(n)) return 1; // count leaf as 1
     return 1 + mtbdd_nodecount_mark(mtbddnode_getlow(n)) + mtbdd_nodecount_mark(mtbddnode_gethigh(n));
 }
@@ -5161,8 +5166,10 @@ size_t
 mtbdd_shared_node_count(const MTBDD *mtbdds, size_t count)
 {
     size_t result = 0, i;
+    nodes_scratch_acquire(nodes);
     for (i=0; i<count; i++) result += mtbdd_nodecount_mark(mtbdds[i]);
     for (i=0; i<count; i++) mtbdd_unmark_rec(mtbdds[i]);
+    nodes_scratch_release(nodes);
     return result;
 }
 
@@ -5294,9 +5301,10 @@ mtbdd_leaf_to_string(MTBDD leaf, char *buf, size_t buflen)
 static void
 mtbdd_fprintdot_rec(FILE *out, MTBDD mtbdd)
 {
+    const uint64_t index = MTBDD_GETINDEX(mtbdd);
+    if (nodes_scratch_ismarked(nodes, index)) return;
+    nodes_scratch_mark(nodes, index);
     mtbddnode* n = MTBDD_GETNODE(mtbdd); // also works for mtbdd_undefined
-    if (mtbddnode_getmark(n)) return;
-    mtbddnode_setmark(n, 1);
 
     if (mtbdd == bdd_true || mtbdd == mtbdd_undefined) {
         fprintf(out, "0 [shape=box, style=filled, label=\"F\"];\n");
@@ -5330,8 +5338,10 @@ mtbdd_fprint_dot(FILE *out, MTBDD mtbdd)
     fprintf(out, "root -> %" PRIu64 " [style=solid dir=both arrowtail=%s];\n",
             MTBDD_STRIPMARK(mtbdd), MTBDD_HASMARK(mtbdd) ? "dot" : "none");
 
+    nodes_scratch_acquire(nodes);
     mtbdd_fprintdot_rec(out, mtbdd);
     mtbdd_unmark_rec(mtbdd);
+    nodes_scratch_release(nodes);
 
     fprintf(out, "}\n");
 }
@@ -5343,9 +5353,10 @@ mtbdd_fprint_dot(FILE *out, MTBDD mtbdd)
 static void
 mtbdd_fprintdot_nc_rec(FILE *out, MTBDD mtbdd)
 {
+    const uint64_t index = MTBDD_GETINDEX(mtbdd);
+    if (nodes_scratch_ismarked(nodes, index)) return;
+    nodes_scratch_mark(nodes, index);
     mtbddnode* n = MTBDD_GETNODE(mtbdd); // also works for mtbdd_undefined
-    if (mtbddnode_getmark(n)) return;
-    mtbddnode_setmark(n, 1);
 
     if (mtbdd == bdd_true) {
         fprintf(out, "%" PRIu64 " [shape=box, style=filled, label=\"T\"];\n", mtbdd);
@@ -5376,8 +5387,10 @@ mtbdd_fprint_dot_no_complement(FILE *out, MTBDD mtbdd)
     fprintf(out, "root [style=invis];\n");
     fprintf(out, "root -> %" PRIu64 " [style=solid];\n", mtbdd);
 
+    nodes_scratch_acquire(nodes);
     mtbdd_fprintdot_nc_rec(out, mtbdd);
     mtbdd_unmark_rec(mtbdd);
+    nodes_scratch_release(nodes);
 
     fprintf(out, "}\n");
 }
@@ -5395,9 +5408,10 @@ mtbdd_sha2_rec(MTBDD dd, SHA256_CTX *ctx)
         return;
     }
 
-    mtbddnode* node = MTBDD_GETNODE(dd);
-    if (mtbddnode_getmark(node) == 0) {
-        mtbddnode_setmark(node, 1);
+    const uint64_t index = MTBDD_GETINDEX(dd);
+    if (nodes_scratch_ismarked(nodes, index) == 0) {
+        nodes_scratch_mark(nodes, index);
+        mtbddnode* node = MTBDD_GETNODE(dd);
         if (mtbddnode_isleaf(node)) {
             uint32_t type = mtbddnode_gettype(node);
             SHA256_Update(ctx, (void*)&type, sizeof(uint32_t));
@@ -5440,8 +5454,10 @@ mtbdd_sha256(MTBDD dd, char *target)
 {
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
+    nodes_scratch_acquire(nodes);
     mtbdd_sha2_rec(dd, &ctx);
     if (dd != bdd_true && dd != mtbdd_undefined) mtbdd_unmark_rec(dd);
+    nodes_scratch_release(nodes);
     SHA256_End(&ctx, target);
 }
 

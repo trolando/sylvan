@@ -168,6 +168,64 @@ TASK(void, nodes_cleanup_custom, nodes_table*, dbs)
 TASK(void, nodes_maintain, nodes_table*, dbs)
 
 /**
+ * ---------------------------------------------------------------------------
+ * Traversal scratch bitmap.
+ *
+ * One dense bit per node index, allocated lazily on first use and kept until
+ * the table is destroyed.
+ *
+ * Recursive diagnostics -- the node and leaf counters, the .dot writers, the
+ * structural hashes -- have to remember which nodes they already visited.
+ * They used to keep that in a spare bit of the node's own 16-byte record, but
+ * that bit sits in the word the unique table hashes and compares: a traversal
+ * rewrote the key of a live node for the duration of the walk, so a lookup
+ * running concurrently could miss the node and intern a duplicate. This
+ * bitmap replaces that bit, which no longer exists.
+ *
+ * REENTRANCY. There is one scratch bitmap per table, so two marked traversals
+ * must not overlap -- neither nested on one thread, nor on two threads at
+ * once. That is exactly the constraint the record bit imposed, since it was
+ * just as shared; the difference is that it is now checked, because
+ * nodes_scratch_acquire asserts in debug builds that nobody else holds the
+ * scratch.
+ *
+ * CONCURRENCY. The accesses are plain, non-atomic loads and stores. That is
+ * sound because of the reentrancy rule: only the thread that acquired the
+ * scratch ever touches it. Other workers may keep building nodes meanwhile;
+ * they never read or write this bitmap.
+ *
+ * CLEARING. A traversal that marks must unmark exactly what it marked, which
+ * every caller does along the same recursion it marked with. The bitmap is
+ * therefore all zeroes between traversals and is never bulk-cleared: on a
+ * table sized for 2^40 nodes it spans 128 GiB of reserved address space, of
+ * which only the pages a traversal actually touched are committed. Debug
+ * builds assert on release that no mark was left behind.
+ * ---------------------------------------------------------------------------
+ */
+
+/**
+ * Begin a marked traversal of <dbs>. Allocates the bitmap on first use;
+ * failing to allocate is fatal, as it is for the arrays of nodes_create.
+ */
+void nodes_scratch_acquire(const nodes_table* dbs);
+
+/**
+ * End a marked traversal of <dbs>. Every mark must have been undone.
+ */
+void nodes_scratch_release(const nodes_table* dbs);
+
+int  nodes_scratch_ismarked(const nodes_table* dbs, uint64_t index);
+void nodes_scratch_mark(const nodes_table* dbs, uint64_t index);
+void nodes_scratch_unmark(const nodes_table* dbs, uint64_t index);
+
+/**
+ * Drop the scratch bitmap of <dbs>. Sylvan calls this when it destroys the
+ * table; it is a separate call rather than part of nodes_free because the
+ * bitmap is backend-independent and nodes_free is not.
+ */
+void nodes_scratch_forget(const nodes_table* dbs);
+
+/**
  * Helper callbacks for dealing with custom leaves.
  * This is used by the MT support (mt.c)
  * hash(a, b, seed)

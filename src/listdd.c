@@ -2613,9 +2613,9 @@ static void
 listdd_nodecount_levels_mark(LISTDD mdd, size_t *variables)
 {
     if (mdd <= listdd_empty_list) return;
-    mddnode* n = LDD_GETNODE(mdd);
-    if (!mddnode_getmark(n)) {
-        mddnode_setmark(n, 1);
+    if (!nodes_scratch_ismarked(nodes, mdd)) {
+        nodes_scratch_mark(nodes, mdd);
+        mddnode* n = LDD_GETNODE(mdd);
         (*variables) += 1;
         listdd_nodecount_levels_mark(mddnode_getright(n), variables);
         listdd_nodecount_levels_mark(mddnode_getdown(n), variables+1);
@@ -2626,9 +2626,9 @@ static void
 listdd_nodecount_levels_unmark(LISTDD mdd)
 {
     if (mdd <= listdd_empty_list) return;
-    mddnode* n = LDD_GETNODE(mdd);
-    if (mddnode_getmark(n)) {
-        mddnode_setmark(n, 0);
+    if (nodes_scratch_ismarked(nodes, mdd)) {
+        nodes_scratch_unmark(nodes, mdd);
+        mddnode* n = LDD_GETNODE(mdd);
         listdd_nodecount_levels_unmark(mddnode_getright(n));
         listdd_nodecount_levels_unmark(mddnode_getdown(n));
     }
@@ -2637,8 +2637,10 @@ listdd_nodecount_levels_unmark(LISTDD mdd)
 void
 listdd_node_count_per_level(LISTDD mdd, size_t *variables)
 {
+    nodes_scratch_acquire(nodes);
     listdd_nodecount_levels_mark(mdd, variables);
     listdd_nodecount_levels_unmark(mdd);
+    nodes_scratch_release(nodes);
 }
 
 /**
@@ -2649,9 +2651,9 @@ static size_t
 listdd_nodecount_mark(LISTDD mdd)
 {
     if (mdd <= listdd_empty_list) return 0;
+    if (nodes_scratch_ismarked(nodes, mdd)) return 0;
+    nodes_scratch_mark(nodes, mdd);
     mddnode* n = LDD_GETNODE(mdd);
-    if (mddnode_getmark(n)) return 0;
-    mddnode_setmark(n, 1);
     return 1 + listdd_nodecount_mark(mddnode_getdown(n)) + listdd_nodecount_mark(mddnode_getright(n));
 }
 
@@ -2659,9 +2661,9 @@ static void
 listdd_nodecount_unmark(LISTDD mdd)
 {
     if (mdd <= listdd_empty_list) return;
-    mddnode* n = LDD_GETNODE(mdd);
-    if (mddnode_getmark(n)) {
-        mddnode_setmark(n, 0);
+    if (nodes_scratch_ismarked(nodes, mdd)) {
+        nodes_scratch_unmark(nodes, mdd);
+        mddnode* n = LDD_GETNODE(mdd);
         listdd_nodecount_unmark(mddnode_getright(n));
         listdd_nodecount_unmark(mddnode_getdown(n));
     }
@@ -2670,8 +2672,10 @@ listdd_nodecount_unmark(LISTDD mdd)
 size_t
 listdd_node_count(LISTDD mdd)
 {
+    nodes_scratch_acquire(nodes);
     size_t result = listdd_nodecount_mark(mdd);
     listdd_nodecount_unmark(mdd);
+    nodes_scratch_release(nodes);
     return result;
 }
 
@@ -3059,18 +3063,18 @@ void listdd_visit_parallel_CALL(lace_worker* lace, LISTDD mdd, listdd_visit_call
  */
 
 static inline int
-listdd_mark(mddnode* node)
+listdd_mark(LISTDD mdd)
 {
-    if (mddnode_getmark(node)) return 0;
-    mddnode_setmark(node, 1);
+    if (nodes_scratch_ismarked(nodes, mdd)) return 0;
+    nodes_scratch_mark(nodes, mdd);
     return 1;
 }
 
 static inline int
-listdd_unmark(mddnode* node)
+listdd_unmark(LISTDD mdd)
 {
-    if (mddnode_getmark(node)) {
-        mddnode_setmark(node, 0);
+    if (nodes_scratch_ismarked(nodes, mdd)) {
+        nodes_scratch_unmark(nodes, mdd);
         return 1;
     } else {
         return 0;
@@ -3078,13 +3082,14 @@ listdd_unmark(mddnode* node)
 }
 
 static void
-listdd_unmark_rec(mddnode* node)
+listdd_unmark_rec(LISTDD mdd)
 {
-    if (listdd_unmark(node)) {
+    if (listdd_unmark(mdd)) {
+        mddnode* node = LDD_GETNODE(mdd);
         LISTDD node_right = mddnode_getright(node);
-        if (node_right > listdd_empty_list) listdd_unmark_rec(LDD_GETNODE(node_right));
+        if (node_right > listdd_empty_list) listdd_unmark_rec(node_right);
         LISTDD node_down = mddnode_getdown(node);
-        if (node_down > listdd_empty_list) listdd_unmark_rec(LDD_GETNODE(node_down));
+        if (node_down > listdd_empty_list) listdd_unmark_rec(node_down);
     }
 }
 
@@ -3098,9 +3103,9 @@ listdd_fprintdot_rec(FILE* out, LISTDD mdd)
     // assert(mdd > listdd_empty_list);
 
     // check mark
+    if (nodes_scratch_ismarked(nodes, mdd)) return;
+    nodes_scratch_mark(nodes, mdd);
     mddnode* n = LDD_GETNODE(mdd);
-    if (mddnode_getmark(n)) return;
-    mddnode_setmark(n, 1);
 
     // print the node
     uint32_t val = mddnode_getvalue(n);
@@ -3144,9 +3149,9 @@ static void
 listdd_fprintdot_unmark(LISTDD mdd)
 {
     if (mdd <= listdd_empty_list) return;
-    mddnode* n = LDD_GETNODE(mdd);
-    if (mddnode_getmark(n)) {
-        mddnode_setmark(n, 0);
+    if (nodes_scratch_ismarked(nodes, mdd)) {
+        nodes_scratch_unmark(nodes, mdd);
+        mddnode* n = LDD_GETNODE(mdd);
         for (;;) {
             listdd_fprintdot_unmark(mddnode_getdown(n));
             mdd = mddnode_getright(n);
@@ -3178,8 +3183,10 @@ listdd_fprint_dot(FILE *out, LISTDD mdd)
         return;
     }
 
+    nodes_scratch_acquire(nodes);
     listdd_fprintdot_rec(out, mdd);
     listdd_fprintdot_unmark(mdd);
+    nodes_scratch_release(nodes);
 
     fprintf(out, "}\n");
 }
@@ -3462,8 +3469,8 @@ listdd_sha2_rec(LISTDD mdd, SHA256_CTX *ctx)
         return;
     }
 
-    mddnode* node = LDD_GETNODE(mdd);
-    if (listdd_mark(node)) {
+    if (listdd_mark(mdd)) {
+        mddnode* node = LDD_GETNODE(mdd);
         uint32_t val = mddnode_getvalue(node);
         SHA256_Update(ctx, (void*)&val, sizeof(uint32_t));
         listdd_sha2_rec(mddnode_getdown(node), ctx);
@@ -3490,8 +3497,10 @@ listdd_sha256(LISTDD mdd, char *target)
 {
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
+    nodes_scratch_acquire(nodes);
     listdd_sha2_rec(mdd, &ctx);
-    if (mdd > listdd_empty_list) listdd_unmark_rec(LDD_GETNODE(mdd));
+    if (mdd > listdd_empty_list) listdd_unmark_rec(mdd);
+    nodes_scratch_release(nodes);
     SHA256_End(&ctx, target);
 }
 

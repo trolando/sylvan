@@ -48,11 +48,12 @@ mddnode_getvalue(const mddnode* n)
     return ((n->a >> 40) & 0xffff) | ((n->b >> 24) & 0xffff0000);
 }
 
-static inline uint8_t SYLVAN_UNUSED
-mddnode_getmark(const mddnode* n)
-{
-    return n->a & 0x4000000000000000 ? 1 : 0;
-}
+/**
+ * Bit 62 of the first word is unused. It used to carry a traversal mark, but
+ * that word is hashed and compared by the unique table, so writing into it
+ * rewrote the key of a live node. Traversals mark in the node table's scratch
+ * bitmap instead; see nodes_scratch_mark in <sylvan/nodes.h>.
+ */
 
 static inline uint8_t SYLVAN_UNUSED
 mddnode_getcopy(const mddnode* n)
@@ -79,12 +80,6 @@ mddnode_old_getvalue(const mddnode* n)
 }
 
 static inline uint8_t SYLVAN_UNUSED
-mddnode_old_getmark(const mddnode* n)
-{
-    return n->a & 1;
-}
-
-static inline uint8_t SYLVAN_UNUSED
 mddnode_old_getcopy(const mddnode* n)
 {
     return n->b & 0x10000 ? 1 : 0;
@@ -100,14 +95,6 @@ static inline uint64_t SYLVAN_UNUSED
 mddnode_old_getdown(const mddnode* n)
 {
     return n->b >> 17;
-}
-
-static inline void SYLVAN_UNUSED
-mddnode_setmark(mddnode* n, uint8_t mark)
-{
-    // FIXME this should not exist at all!!
-    //       we need an alternative mechanism to mark stuff
-    n->a = (n->a & 0xbfffffffffffffff) | (mark ? 0x4000000000000000 : 0);
 }
 
 static inline void SYLVAN_UNUSED

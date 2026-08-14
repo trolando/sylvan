@@ -23,7 +23,7 @@
  * 127        1 unused
  * 126        1 custom leaf     this is a custom leaf node
  * 125        1 map             is a MAP node, for compose etc
- * 124        1 mark            used for node marking
+ * 124        1 unused          was the node marking bit
  * 123..104  20 unused          unused space
  * 103..64   40 true index      index of the true edge
  *  63..40   24 variable        variable of this node
@@ -36,7 +36,7 @@
  * 127        1 unused          set to 0
  * 126        1 custom leaf     set to 1
  * 125        1 unused          set to 0
- * 124        1 mark            used for node marking
+ * 124        1 unused          was the node marking bit
  * 123..80   46 unused          set to 0
  *  79..64   16 type            the type of the leaf
  *  63..0    64 value           the value of the leaf
@@ -182,24 +182,11 @@ zddnode_getvariable(const zddnode* n)
 }
 
 /**
- * Get whether the node is currently marked
+ * Bit 124 (bit 60 of the first word) is unused. It used to carry a traversal
+ * mark, but that word is hashed and compared by the unique table, so writing
+ * into it rewrote the key of a live node. Traversals mark in the node table's
+ * scratch bitmap instead; see nodes_scratch_mark in <sylvan/nodes.h>.
  */
-static inline int SYLVAN_UNUSED
-zddnode_getmark(const zddnode* n)
-{
-    return n->a & 0x1000000000000000 ? 1 : 0;
-}
-
-/**
- * Set or reset the mark on the node
- */
-static inline void SYLVAN_UNUSED
-zddnode_setmark(zddnode* n, int mark)
-{
-    // FIXME this should not be a thing!!
-    if (mark) n->a |= 0x1000000000000000;
-    else n->a &= 0xefffffffffffffff;
-}
 
 /**
  * Initialize a zddnode* struct as a leaf node

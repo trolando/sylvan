@@ -1312,9 +1312,10 @@ double zdd_path_count_CALL(lace_worker* lace, ZDD dd)
 static void
 zdd_unmark_rec(ZDD zdd)
 {
+    const uint64_t index = ZDD_GETINDEX(zdd);
+    if (!nodes_scratch_ismarked(nodes, index)) return;
+    nodes_scratch_unmark(nodes, index);
     zddnode* n = ZDD_GETNODE(zdd);
-    if (!zddnode_getmark(n)) return;
-    zddnode_setmark(n, 0);
     zdd_unmark_rec(zddnode_getlow(n));
     zdd_unmark_rec(zddnode_gethigh(n));
 }
@@ -1327,9 +1328,10 @@ static size_t
 zdd_nodecount_mark(ZDD zdd)
 {
     // Note: the True/False leaf can be marked/unmarked, as buckets 0--1 are unused
+    const uint64_t index = ZDD_GETINDEX(zdd);
+    if (nodes_scratch_ismarked(nodes, index)) return 0;
+    nodes_scratch_mark(nodes, index);
     zddnode* n = ZDD_GETNODE(zdd);
-    if (zddnode_getmark(n)) return 0;
-    zddnode_setmark(n, 1);
     return 1 + zdd_nodecount_mark(zddnode_getlow(n)) + zdd_nodecount_mark(zddnode_gethigh(n));
 }
 
@@ -1341,8 +1343,10 @@ size_t
 zdd_shared_node_count(const ZDD *zdds, size_t count)
 {
     size_t result = 0, i;
+    nodes_scratch_acquire(nodes);
     for (i=0; i<count; i++) result += zdd_nodecount_mark(zdds[i]);
     for (i=0; i<count; i++) zdd_unmark_rec(zdds[i]);
+    nodes_scratch_release(nodes);
     return result;
 }
 
@@ -2633,9 +2637,10 @@ ZDD zdd_next_minterm(ZDD dd, BDDSET domain, uint8_t *arr, zdd_enum_filter_cb fil
 static void
 zdd_fprintdot_rec(FILE *out, ZDD zdd)
 {
+    const uint64_t index = ZDD_GETINDEX(zdd);
+    if (nodes_scratch_ismarked(nodes, index)) return;
+    nodes_scratch_mark(nodes, index);
     zddnode* n = ZDD_GETNODE(zdd); // also works for zdd_false
-    if (zddnode_getmark(n)) return;
-    zddnode_setmark(n, 1);
 
     if (ZDD_GETINDEX(zdd) == 0) {  // zdd == zdd_base || zdd == zdd_false
         fprintf(out, "0 [shape=box, style=filled, label=\"F\"];\n");
@@ -2667,8 +2672,10 @@ zdd_fprint_dot(FILE *out, ZDD zdd)
     fprintf(out, "root -> %" PRIu64 " [style=solid dir=both arrowtail=%s];\n",
             ZDD_GETINDEX(zdd), ZDD_HASMARK(zdd) ? "dot" : "none");
 
+    nodes_scratch_acquire(nodes);
     zdd_fprintdot_rec(out, zdd);
     zdd_unmark_rec(zdd);
+    nodes_scratch_release(nodes);
 
     fprintf(out, "}\n");
 }

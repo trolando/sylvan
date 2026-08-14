@@ -4812,37 +4812,45 @@ test_cache()
     return 0;
 }
 
+/**
+ * Build a random BDD over levels <i>..<j>.
+ *
+ * The two subresults are held on the thread-local pointer stack, so a
+ * collection triggered while the second one is being built cannot reclaim the
+ * first, and neither can be reclaimed while the node above them is made. The
+ * result itself is returned unrooted, in the usual Sylvan convention: no
+ * collection can run between the pop below and the caller storing it.
+ */
 static inline BDD
 make_random(int i, int j)
 {
     if (i == j) return rng(0, 2) ? bdd_true : bdd_false;
 
-    BDD yes = make_random(i+1, j);
-    BDD no = make_random(i+1, j);
+    BDD yes = mtbdd_invalid, no = mtbdd_invalid;
+    mtbdd_refs_pushptr(&yes);
+    mtbdd_refs_pushptr(&no);
+
+    yes = make_random(i+1, j);
+    no = make_random(i+1, j);
     BDD result = mtbdd_invalid;
 
     switch(rng(0, 4)) {
     case 0:
         result = no;
-        mtbdd_deref(yes);
         break;
     case 1:
         result = yes;
-        mtbdd_deref(no);
         break;
     case 2:
-        result = mtbdd_ref(mtbdd_make_node(i, yes, no));
-        mtbdd_deref(no);
-        mtbdd_deref(yes);
+        result = mtbdd_make_node(i, yes, no);
         break;
     case 3:
     default:
-        result = mtbdd_ref(mtbdd_make_node(i, no, yes));
-        mtbdd_deref(no);
-        mtbdd_deref(yes);
+        result = mtbdd_make_node(i, no, yes);
         break;
     }
 
+    mtbdd_refs_popptr(2);
     return result;
 }
 
@@ -4866,13 +4874,13 @@ TASK(int, test_gc_clears_cache)
 int
 test_gc_clears_cache_CALL(lace_worker *lace)
 {
-    /* Build a random BDD and drop the reference, so the next collection has
-     * nodes to reclaim. make_random also derefs its own intermediate results,
-     * so there is garbage either way. */
+    /* Build a random BDD and keep no root to it, so the next collection has
+     * nodes to reclaim. make_random also leaves its own intermediate results
+     * unrooted once it returns, so there is garbage either way. */
     BDD garbage = make_random(1, 16);
     size_t occupied_before = 0;
     sylvan_table_usage_CALL(lace, &occupied_before, NULL);
-    mtbdd_deref(garbage);
+    (void)garbage;
 
     /* Populate the cache directly rather than through an operation, so the
      * test does not depend on which operations happen to memoise. */

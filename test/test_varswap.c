@@ -608,7 +608,6 @@ test_out_of_memory_CALL(lace_worker *lace)
             }
         }
         if (failed) break;
-        mtbdd_ref(filler);
     }
     filler = bdd_false;
     mtbdd_unprotect(&filler);

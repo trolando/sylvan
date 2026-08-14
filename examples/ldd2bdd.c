@@ -737,10 +737,10 @@ void run_CALL(lace_worker* lace)
 
     // Compute bits LISTDD
     LISTDD bits_dd = listdd_empty_list;
+    listdd_protect(&bits_dd);
     for (int i=0; i<vector_size; i++) {
         bits_dd = listdd_make_node(bits[vector_size-i-1], bits_dd, listdd_empty);
     }
-    listdd_ref(bits_dd);
 
     // Compute total number of bits
     int totalbits = 0;

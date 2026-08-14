@@ -571,6 +571,49 @@ test_sift_one_CALL(lace_worker *lace)
 }
 
 /**
+ * Preflighting the sparse overflow map.
+ *
+ * With the promotion ceiling lowered to three, almost every node in the forest
+ * moves into the overflow map, which no realistic forest would ever do and
+ * which is exactly the point: the map is the structure a swap used to grow
+ * while it was already rewriting records. The classification phase now
+ * reserves for it, so a session that promotes thousands of times still has to
+ * allocate nothing at all once classification is done.
+ *
+ * The sequence sifts one variable down and back up, so the order is where it
+ * started afterwards.
+ */
+static int
+test_overflow_preflight_CALL(lace_worker *lace)
+{
+    const uint64_t unpreflighted = nodes_late_allocations();
+    uint32_t ranks[TEST_VARS - 1];
+    sylvan_varswap_result down, up;
+
+    sylvan_reorder_set_overflow_at(3);
+
+    for (uint32_t i = 0; i + 1 < TEST_VARS; i++) ranks[i] = i;
+    test_assert(sylvan_test_varswap_sequence(ranks, TEST_VARS - 1, &down)
+                == SYLVAN_OK);
+    test_assert(sylvan_reorder_overflow_promotions() > 0);
+
+    for (uint32_t i = 0; i + 1 < TEST_VARS; i++) ranks[i] = TEST_VARS - 2 - i;
+    test_assert(sylvan_test_varswap_sequence(ranks, TEST_VARS - 1, &up)
+                == SYLVAN_OK);
+    test_assert(sylvan_reorder_overflow_promotions() > 0);
+
+    sylvan_reorder_set_overflow_at(UINT16_MAX);
+
+    test_assert(nodes_late_allocations() == unpreflighted);
+    test_assert(down.deep_deaths == 0 && up.deep_deaths == 0);
+    test_assert(down.delta + up.delta == 0);
+    for (int r = 0; r < TEST_ROOTS; r++) {
+        test_assert(mtbdd_is_valid_CALL(lace, test_root[r]));
+    }
+    return test_check_roots_CALL(lace);
+}
+
+/**
  * Long random swap sequences inside a single session, with both slot release
  * policies. A session that runs many swaps is where the node lists, the slot
  * reuse and the reference counts are actually exercised against each other.
@@ -606,12 +649,16 @@ test_stress_CALL(lace_worker *lace)
            sylvan_gc() itself; now it checks that the session did, exactly
            once, rather than trusting a convention. */
         const uint64_t collections = sylvan_gc_count();
+        const uint64_t unpreflighted = nodes_late_allocations();
 
         sylvan_varswap_result result;
         const int status = sylvan_test_varswap_sequence(
             ranks, TEST_STRESS_SWAPS, &result);
 
         test_assert(sylvan_gc_count() == collections + 1);
+        /* Nothing in a swap allocates once its classification phase is done,
+           whichever backend is underneath. */
+        test_assert(nodes_late_allocations() == unpreflighted);
 
         if (release_at_swap_end) {
             test_assert(status == SYLVAN_OK);
@@ -696,6 +743,7 @@ test_out_of_memory_CALL(lace_worker *lace)
     for (int r = 0; r < TEST_ROOTS; r++) handle[r] = test_root[r];
     const uint64_t collections = sylvan_gc_count();
     const uint64_t promotions = sylvan_reorder_overflow_promotions();
+    const uint64_t unpreflighted = nodes_late_allocations();
 
     /* Parity guarantees a swap that needs new nodes at every rank, whatever
        order the rounds above left behind. */
@@ -714,6 +762,7 @@ test_out_of_memory_CALL(lace_worker *lace)
     test_assert(memcmp(order_before, order_after, sizeof(order_before)) == 0);
     test_assert(sylvan_gc_count() == collections + 1);
     test_assert(sylvan_reorder_overflow_promotions() == promotions);
+    test_assert(nodes_late_allocations() == unpreflighted);
     test_assert(result.swaps == 0 && result.created == 0 && result.died == 0);
     for (int r = 0; r < TEST_ROOTS; r++) {
         test_assert(test_root[r] == handle[r]);
@@ -870,6 +919,9 @@ runtests_CALL(lace_worker *lace)
     printf("Testing a variable sifted down and back up.\n");
     if (test_sift_one_CALL(lace)) return 1;
 
+    printf("Testing a session that fills the overflow map.\n");
+    if (test_overflow_preflight_CALL(lace)) return 1;
+
     printf("Testing %d rounds of %d random swaps.\n",
            test_stress_rounds, TEST_STRESS_SWAPS);
     if (test_stress_CALL(lace)) return 1;
@@ -882,6 +934,10 @@ runtests_CALL(lace_worker *lace)
 
     printf("Testing the foreign root guards.\n");
     if (test_foreign_state_guards()) return 1;
+
+    /* Not one allocation anywhere in this file happened on a path a swap had
+       already promised would not allocate. */
+    test_assert(nodes_late_allocations() == 0);
 
     for (int r = 0; r < TEST_ROOTS; r++) mtbdd_unprotect(&test_root[r]);
     mtbdd_unprotect(&test_variables);

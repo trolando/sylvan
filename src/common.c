@@ -662,6 +662,25 @@ void sylvan_gc_CALL(lace_worker* lace)
 
 nodes_table* nodes;
 
+/**
+ * Allocations a backend made where nodes_prepare_reorder had promised there
+ * would be none. Kept here rather than in a backend because only one backend
+ * is ever compiled in, and a caller should not have to know which.
+ */
+static _Atomic(uint64_t) late_allocations;
+
+void
+nodes_note_late_allocation(void)
+{
+    atomic_fetch_add_explicit(&late_allocations, 1, memory_order_relaxed);
+}
+
+uint64_t
+nodes_late_allocations(void)
+{
+    return atomic_load_explicit(&late_allocations, memory_order_relaxed);
+}
+
 static size_t table_min = 0, table_max = 0, cache_min = 0, cache_max = 0;
 
 static size_t

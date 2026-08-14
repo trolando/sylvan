@@ -1022,3 +1022,18 @@ nodes_reserve(nodes_table* dbs, uint64_t count)
     return reserve_free_slots(dbs, count) >= count
         ? SYLVAN_OK : SYLVAN_ERR_OOM;
 }
+
+/**
+ * Nothing to preflight. The head array and the per-node link words are all
+ * allocated with the table, and removal, reinsertion and release are chain
+ * surgery on words that already exist. There are no subtables either, so the
+ * routes say nothing this backend could act on.
+ */
+int
+nodes_prepare_reorder(nodes_table* dbs, const uint32_t* routes, size_t count)
+{
+    (void)routes;
+    (void)count;
+    if (nodes_reorder_caps(dbs) == 0) return SYLVAN_ERR_INVALID;
+    return SYLVAN_OK;
+}

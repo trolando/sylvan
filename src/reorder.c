@@ -1100,9 +1100,10 @@ reorder_enumerate_cb(uint64_t index, void *context)
 
 /**
  * Classify x's nodes and reserve, before anything is mutated, every resource
- * the rest of the swap will take: node slots for the new children, and room
- * in the node lists, in the retirement queue, in the array of retired slots
- * and in the overflow map.
+ * the rest of the swap will take: node slots for the new children, whatever
+ * the backend's index allocates lazily for the routes involved, and room in
+ * the node lists, in the retirement queue, in the array of retired slots and
+ * in the overflow map.
  *
  * THIS IS THE ONLY PHASE OF A SWAP THAT MAY FAIL. Everything after it either
  * succeeds or is a bug, which is why the later phases report a refusal by
@@ -1179,6 +1180,20 @@ reorder_classify(void)
     /* Worst case: two fresh x-children per case-B node and one fresh inner
        map node per case-B map node. */
     status = nodes_reserve(nodes, 2u * k + k_map);
+    if (status != SYLVAN_OK) return status;
+
+    /* And the index itself. The routes are every one the swap inserts into or
+       re-indexes into: x for the interned children, y for the rewritten
+       decision nodes, and the map subtable for both halves of a map rewrite.
+       After this, nothing the swap does to the index can fail. */
+    uint32_t routes[3];
+    size_t route_count = 0;
+    if (k != 0) {
+        routes[route_count++] = NODES_SUBTABLE_DECISION(swap_upper);
+        routes[route_count++] = NODES_SUBTABLE_DECISION(swap_lower);
+    }
+    if (k_map != 0) routes[route_count++] = NODES_SUBTABLE_MAP;
+    status = nodes_prepare_reorder(nodes, routes, route_count);
     if (status != SYLVAN_OK) return status;
 
     status = reorder_list_reserve(reorder_decision_list(swap_upper), 2u * k);

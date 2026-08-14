@@ -339,14 +339,56 @@ int nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
  *
  * INDEX CAPACITY. Node slots are the only resource reserve decides exactly.
  * llchst additionally refuses when <count> more nodes would not fit the
- * head-array budget its maintenance pass already documents. A subtable that
- * has never held a node still allocates its first head array from the heap on
- * first insertion (and a route beyond the dense range its descriptor page);
- * no preflight can make a heap allocation unfailable, so a caller needing an
- * absolute guarantee for one route must have touched that route before the
- * reserved window.
+ * head-array budget its maintenance pass already documents. Neither the first
+ * head array of a subtable nor the descriptor page of a route beyond the dense
+ * range is covered here; those are what nodes_prepare_reorder is for.
  */
 int nodes_reserve(nodes_table* dbs, uint64_t count);
+
+/**
+ * Preflight everything the index will need, other than node slots.
+ *
+ * INVARIANT. On SYLVAN_OK, and until the table is resized, every nodes_remove,
+ * every nodes_release, and every nodes_reinsert or allocating lookup whose
+ * route is one of <routes> runs without a heap allocation of its own, and can
+ * therefore not fail for lack of memory. On SYLVAN_ERR_OOM nothing the caller
+ * can observe has changed and no promise is made. Unlike nodes_reserve this
+ * one is additive and idempotent: it is a statement about structures that,
+ * once allocated, stay allocated.
+ *
+ * WHY IT IS SEPARATE FROM nodes_reserve. Reserve answers a question about the
+ * node arena, which is a fixed array a backend never has to grow. The rest of
+ * an index is not: llchst allocates a subtable's head array on the first
+ * insertion into it and a descriptor page for the first route beyond its dense
+ * range, and the trie's removal rebuilds a region of the index and needs
+ * somewhere to hold it. Those are heap allocations whose failure would land in
+ * the middle of an operation that has already begun changing the index, which
+ * is exactly what a caller that must not be left half-applied cannot have.
+ * Naming the routes up front is what makes them unfailable afterwards.
+ *
+ * <routes> are canonical-index routes, the same values nodes_lookup_subtable
+ * takes; a backend without subtables ignores them. Every backend accepts a
+ * count of zero, which still preflights the route-independent part.
+ *
+ * Requires that the world is stopped, like everything else in this section,
+ * and returns SYLVAN_ERR_INVALID from a backend that reports no reorder
+ * capabilities at all.
+ */
+int nodes_prepare_reorder(nodes_table* dbs, const uint32_t* routes,
+                          size_t count);
+
+/**
+ * Record that a backend allocated on a path a successful
+ * nodes_prepare_reorder had promised would not allocate.
+ *
+ * Only a backend calls this, and only where it has an argument for why the
+ * path is unreachable after a preflight; the counter is how a test checks that
+ * argument instead of trusting it. Monotone and never reset.
+ */
+void nodes_note_late_allocation(void);
+
+/** How many such allocations have happened. Expected to stay at zero. */
+uint64_t nodes_late_allocations(void);
 
 #ifdef __cplusplus
 }

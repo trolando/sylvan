@@ -2340,8 +2340,9 @@ nodes_reserve(nodes_table* dbs, uint64_t count)
        bound the maintenance pass already documents for head memory between
        two collections, which is twice the head budget. This does not make a
        first head array or a sparse descriptor page unfailable -- those are
-       heap allocations whose target is unknown until the node is inserted --
-       and <sylvan/nodes.h> says so. */
+       heap allocations whose target is unknown until the node is inserted;
+       nodes_prepare_reorder below is what makes them unfailable, for the
+       routes a caller can name in advance. */
     const uint64_t needed_heads =
         (count + SYLVAN_LLCHST_LOAD_FACTOR - 1u) / SYLVAN_LLCHST_LOAD_FACTOR;
     const uint64_t used = atomic_load_explicit(
@@ -2351,4 +2352,37 @@ nodes_reserve(nodes_table* dbs, uint64_t count)
 
     return reserve_free_slots(dbs, count) >= count
         ? SYLVAN_OK : SYLVAN_ERR_OOM;
+}
+
+/**
+ * Materialise the lazily allocated index of the named routes.
+ *
+ * Removal, release and the chain surgery of reinsertion allocate nothing: the
+ * words they write are all part of the arena. What allocates is finding the
+ * subtable to write into. A route beyond the dense range takes its descriptor
+ * page from the heap the first time anything asks for it, and every route
+ * takes its head array from the heap on the first insertion into it. Both sit
+ * inside nodes_reinsert and inside an allocating nodes_lookup_subtable, which
+ * is to say inside operations whose caller may already have started changing
+ * the index elsewhere.
+ *
+ * In a variable swap neither ever fires, because every route it writes to --
+ * the two variables' subtables and the map subtable -- already holds nodes, or
+ * there would have been nothing to swap. But that is an argument about the
+ * caller, and it is the caller that aborts if it is ever wrong. Doing the work
+ * here turns it into an argument about this function: afterwards those routes
+ * have a descriptor and a head array, and nothing takes either away except a
+ * collection or a maintenance pass, neither of which may run inside a session.
+ */
+int
+nodes_prepare_reorder(nodes_table* dbs, const uint32_t* routes, size_t count)
+{
+    if (nodes_reorder_caps(dbs) == 0) return SYLVAN_ERR_INVALID;
+
+    for (size_t i = 0; i < count; i++) {
+        llchst_subtable* subtable = get_subtable(dbs, routes[i], 1);
+        if (subtable == NULL) return SYLVAN_ERR_OOM;
+        if (ensure_heads(dbs, subtable) == NULL) return SYLVAN_ERR_OOM;
+    }
+    return SYLVAN_OK;
 }

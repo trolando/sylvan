@@ -49,6 +49,8 @@ typedef struct nodes_table
     nodes_create_cb    create_cb;    // custom create function
     nodes_destroy_cb   destroy_cb;   // custom destroy function
     _Atomic(uint32_t)  reorder_lock; // serialises the reorder primitives
+    uint64_t*          region;       // scratch for the removal region rebuild
+    size_t             region_size;  // entries in <region>
 } nodes_table;
 
 static size_t
@@ -519,6 +521,8 @@ nodes_table* nodes_create(size_t initial_size, size_t max_size)
     dbs->create_cb = NULL;
     dbs->destroy_cb = NULL;
     atomic_init(&dbs->reorder_lock, 0u);
+    dbs->region = NULL;
+    dbs->region_size = 0;
 
     // this design assumes there is only one nodes table...
 
@@ -538,6 +542,9 @@ void nodes_free(nodes_table* dbs)
     sylvan_free_aligned((void*)dbs->bitmap1, region_bitmap_size(dbs->max_size));
     sylvan_free_aligned((void*)dbs->bitmap2, node_bitmap_size(dbs->max_size));
     sylvan_free_aligned((void*)dbs->bitmapc, node_bitmap_size(dbs->max_size));
+    if (dbs->region != NULL) {
+        sylvan_free_aligned(dbs->region, dbs->region_size * sizeof(uint64_t));
+    }
     sylvan_free_aligned(dbs, sizeof(struct nodes_table));
 }
 
@@ -905,23 +912,39 @@ reorder_find_slot(nodes_table* dbs, uint64_t index,
     }
 }
 
+/**
+ * The buffer a removal collects its region into.
+ *
+ * Normally the table's own scratch, which nodes_prepare_reorder sized so that
+ * it cannot run out; <owned> then stays zero and nothing is allocated or
+ * freed. A caller that removes without preparing -- the table's unit tests --
+ * gets the old behaviour of a private buffer that grows on demand and may
+ * report out of memory, which is still safe because collecting a region is
+ * read-only and nothing has changed when it fails.
+ */
 struct reorder_region {
     uint64_t* nodes;
     size_t count;
     size_t capacity;
+    int owned;
 };
 
 static int
 region_push(struct reorder_region* region, uint64_t index)
 {
     if (region->count == region->capacity) {
+        nodes_note_late_allocation();
         const size_t capacity =
             region->capacity == 0 ? 64u : region->capacity * 2u;
-        uint64_t* nodes = (uint64_t*)realloc(
-            region->nodes, capacity * sizeof(uint64_t));
+        uint64_t* nodes = (uint64_t*)malloc(capacity * sizeof(uint64_t));
         if (nodes == NULL) return -1;
+        if (region->count != 0) {
+            memcpy(nodes, region->nodes, region->count * sizeof(uint64_t));
+        }
+        if (region->owned) free(region->nodes);
         region->nodes = nodes;
         region->capacity = capacity;
+        region->owned = 1;
     }
     region->nodes[region->count++] = index;
     return 0;
@@ -961,10 +984,14 @@ nodes_remove(nodes_table* dbs, uint64_t index)
     if (index < 2 || index >= dbs->table_size) return SYLVAN_ERR_INVALID;
 
     const struct reorder_key key = reorder_key_of(dbs, index);
-    struct reorder_region region = { NULL, 0, 0 };
+    struct reorder_region region = { NULL, 0, 0, 0 };
     int status = SYLVAN_OK;
 
     reorder_lock(dbs);
+
+    /* Under the lock, so that one shared scratch serves every remover. */
+    region.nodes = dbs->region;
+    region.capacity = dbs->region_size;
 
     uint64_t owner = 0;
     _Atomic(uint64_t)* slot = reorder_find_slot(dbs, index, &key, &owner);
@@ -1002,7 +1029,7 @@ nodes_remove(nodes_table* dbs, uint64_t index)
 
 done:
     reorder_unlock(dbs);
-    free(region.nodes);
+    if (region.owned) free(region.nodes);
     return status;
 }
 
@@ -1154,4 +1181,55 @@ nodes_reserve(nodes_table* dbs, uint64_t count)
     if (nodes_reorder_caps(dbs) == 0) return SYLVAN_ERR_INVALID;
     return reserve_free_slots(dbs, count) >= count
         ? SYLVAN_OK : SYLVAN_ERR_OOM;
+}
+
+/**
+ * Make the removal scratch big enough that no removal can outgrow it.
+ *
+ * There are no subtables here, so the routes are ignored; what this preflights
+ * is the buffer nodes_remove collects a region into.
+ *
+ * THE BOUND IS STRUCTURAL, NOT MEASURED, and that is deliberate. Walking the
+ * regions of the removals a caller is about to perform and taking the largest
+ * would be read-only and cheap, and it would also be wrong: the answer does
+ * not survive the removals themselves. Removing one node clears its region and
+ * reinserts every node in it on its own probe sequence, and those sequences run
+ * through whatever occupies the slots along them, so a removal reshapes the
+ * regions of the nodes that are still to be removed. Insertions between the
+ * preflight and the removals -- and a variable swap does re-index every node it
+ * rewrote before it retires anything -- move them again. A measured bound would
+ * hold at the moment it was taken and at no later one.
+ *
+ * What does hold at every moment is that a region is a set of distinct node
+ * indices, so it can never hold more entries than the table has slots. That is
+ * the same invariant reorder_collect_region already asserts. Sizing the scratch
+ * to the table therefore needs no walk at all, and costs one comparison per
+ * call after the first.
+ *
+ * It is not free: eight bytes per slot on top of the forty this backend
+ * already keeps, held from the first preflight until the table is freed. It is
+ * untouched memory, though, so what it actually costs is the pages the largest
+ * region ever reached -- which is what a measured bound would have had to
+ * allocate anyway.
+ */
+int
+nodes_prepare_reorder(nodes_table* dbs, const uint32_t* routes, size_t count)
+{
+    (void)routes;
+    (void)count;
+    if (nodes_reorder_caps(dbs) == 0) return SYLVAN_ERR_INVALID;
+    if (dbs->region_size >= dbs->table_size) return SYLVAN_OK;
+
+    uint64_t* region = (uint64_t*)sylvan_alloc_aligned(
+        dbs->table_size * sizeof(uint64_t));
+    if (region == NULL) return SYLVAN_ERR_OOM;
+
+    /* The scratch holds nothing between removals, so there is nothing to
+       carry over from the smaller one. */
+    if (dbs->region != NULL) {
+        sylvan_free_aligned(dbs->region, dbs->region_size * sizeof(uint64_t));
+    }
+    dbs->region = region;
+    dbs->region_size = dbs->table_size;
+    return SYLVAN_OK;
 }

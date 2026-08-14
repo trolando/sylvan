@@ -1299,6 +1299,80 @@ test_reorder_reserve(void)
 }
 
 /**
+ * After nodes_prepare_reorder, removal allocates nothing.
+ *
+ * The adversarial shapes are what make this a test rather than a formality.
+ * The deep chain is one family of a thousand nodes, all sharing a maximum
+ * child, so a backend that repairs its index by rebuilding the region that
+ * depended on the vanishing slot has to collect and reinsert hundreds of nodes
+ * for a single removal -- far past any buffer a removal could sensibly start
+ * with, and therefore a heap allocation in the middle of an index change.
+ *
+ * Every removal here is also undone, so the whole set has to come back at its
+ * original indices: an allocation-free removal still has to be a correct one.
+ */
+static int
+test_prepare_removals(void)
+{
+    static struct shape_set set;
+    nodes_table *table = nodes_create(
+        TEST_SHAPE_TABLE_SIZE, TEST_SHAPE_TABLE_SIZE);
+    nodes_set_custom(
+        table, custom_hash, custom_equals, custom_create, custom_destroy);
+
+    if (shape_build(&set, table)) return 1;
+    if (shape_verify(&set, table)) return 1;
+
+    if ((nodes_reorder_caps(table) & NODES_CAP_REMOVE) == 0) {
+        test_assert(
+            nodes_prepare_reorder(table, NULL, 0) == SYLVAN_ERR_INVALID);
+        nodes_free(table);
+        return 0;
+    }
+
+    /* shape_build lays the leaves down first, so the deep chain starts here. */
+    const size_t chain = TEST_SHAPE_TOTAL_LEAVES;
+
+#if SYLVAN_NODES_TABLE_TRIE
+    /* Unprepared, this backend's removal grows a buffer of its own, which is
+       precisely the allocation the preflight exists to remove. Checking that
+       it does keeps the assertion below from passing for the wrong reason. */
+    const uint64_t unprepared = nodes_late_allocations();
+    for (size_t i = 0; i < 64; i++) {
+        test_assert(
+            nodes_remove(table, set.nodes[chain + i].index) == SYLVAN_OK);
+    }
+    for (size_t i = 64; i-- > 0; ) {
+        test_assert(
+            nodes_reinsert(table, set.nodes[chain + i].index) == SYLVAN_OK);
+    }
+    test_assert(nodes_late_allocations() > unprepared);
+    if (shape_verify(&set, table)) return 1;
+#endif
+
+    test_assert(nodes_prepare_reorder(table, NULL, 0) == SYLVAN_OK);
+
+    const uint64_t prepared = nodes_late_allocations();
+    for (size_t i = 0; i < TEST_SHAPE_CHAIN; i++) {
+        test_assert(
+            nodes_remove(table, set.nodes[chain + i].index) == SYLVAN_OK);
+    }
+    for (size_t i = TEST_SHAPE_CHAIN; i-- > 0; ) {
+        test_assert(
+            nodes_reinsert(table, set.nodes[chain + i].index) == SYLVAN_OK);
+    }
+    test_assert(nodes_late_allocations() == prepared);
+    if (shape_verify(&set, table)) return 1;
+
+    /* Idempotent: a second call has nothing left to do and says so. */
+    test_assert(nodes_prepare_reorder(table, NULL, 0) == SYLVAN_OK);
+    test_assert(nodes_late_allocations() == prepared);
+
+    nodes_free(table);
+    return 0;
+}
+
+/**
  * Child process for the reinsert-collision death test: two equal records at
  * different indices, one of them indexed. Reinserting the other one is an
  * invariant violation and must abort rather than return.
@@ -1390,6 +1464,8 @@ test_reorder_contract(void)
     }
     if (caps == 0) {
         test_assert(nodes_reserve(table, 1) == SYLVAN_ERR_INVALID);
+        test_assert(
+            nodes_prepare_reorder(table, NULL, 0) == SYLVAN_ERR_INVALID);
     }
 
     /* Nothing above may have touched the index. */
@@ -1541,6 +1617,7 @@ run_table_tests_CALL(lace_worker *lace)
     if (test_reorder_rewrite_in_place()) return 1;
     if (test_reorder_enumerate()) return 1;
     if (test_reorder_reserve()) return 1;
+    if (test_prepare_removals()) return 1;
     if (test_reorder_release()) return 1;
     if (test_reorder_release_custom()) return 1;
     if (test_reorder_race()) return 1;

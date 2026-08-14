@@ -33,6 +33,8 @@ sylvan_test_warnings(test_table)
 string(TOLOWER "${SYLVAN_NODES_TABLE}" _sylvan_test_nodes_table)
 if(_sylvan_test_nodes_table STREQUAL "llchst")
     target_compile_definitions(test_table PRIVATE SYLVAN_NODES_TABLE_LLCHST=1)
+elseif(_sylvan_test_nodes_table STREQUAL "trie")
+    target_compile_definitions(test_table PRIVATE SYLVAN_NODES_TABLE_TRIE=1)
 endif()
 
 add_executable(test_ranks)

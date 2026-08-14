@@ -713,3 +713,9 @@ int nodes_reserve(nodes_table* dbs, uint64_t count)
     (void)dbs; (void)count;
     return SYLVAN_ERR_INVALID;
 }
+
+int nodes_prepare_reorder(nodes_table* dbs, const uint32_t* routes, size_t count)
+{
+    (void)dbs; (void)routes; (void)count;
+    return SYLVAN_ERR_INVALID;
+}

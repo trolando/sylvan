@@ -3,7 +3,20 @@ All notable changes to Sylvan will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Recursive traversals -- the node and leaf counters, the `.dot` writers and
+  the structural hashes -- no longer store their visited mark in the node's own
+  record. That bit lived in the word the unique table hashes and compares, so
+  for the length of a traversal the key of every visited node was wrong and a
+  lookup on another worker could fail to find a node that was there and intern
+  a duplicate of it. The mark now lives in a dense scratch bitmap beside the
+  node table. Results are unchanged; only the mechanism is.
+
 ### Removed
+- Removed the internal node accessors `mtbddnode_getmark`/`setmark`,
+  `zddnode_getmark`/`setmark` and `mddnode_getmark`/`setmark` (and the
+  `bddnode_` aliases). The record bits they used are now unused: bit 61 for
+  MTBDD, bit 60 for ZDD and bit 62 for ListDD.
 - Removed the by-value external reference API: `mtbdd_ref`, `mtbdd_deref`,
   `mtbdd_ref_count`, `listdd_ref`, `listdd_deref` and `listdd_ref_count`, along
   with the two garbage collection mark passes that scanned their tables. Use

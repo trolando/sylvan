@@ -1065,21 +1065,6 @@ void mtbdd_unprotect(MTBDD* ptr);
 size_t mtbdd_protected_count(void);
 
 /**
- * Store the MTBDD <dd> in the values table.
- */
-MTBDD mtbdd_ref(MTBDD dd);
-
-/**
- * Delete the MTBDD <dd> from the values table.
- */
-void mtbdd_deref(MTBDD dd);
-
-/**
- * Compute the number of values in the values table.
- */
-size_t mtbdd_ref_count(void);
-
-/**
  * Infrastructure for internal references.
  * Every thread has its own pointer and value reference stacks.
  * The pointers stack stores pointers to MTBDD variables, manipulated with pushptr and popptr.

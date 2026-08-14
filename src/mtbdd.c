@@ -183,30 +183,8 @@ void mtbdd_gc_mark_CALL(lace_worker* lace, LISTDD mtbdd)
  * External references
  */
 
-refs_table_t mtbdd_refs;
 refs_table_t mtbdd_protected;
 static int mtbdd_protected_created = 0;
-
-LISTDD
-mtbdd_ref(LISTDD a)
-{
-    if (a == bdd_true || a == mtbdd_undefined) return a;
-    refs_up(&mtbdd_refs, MTBDD_STRIPMARK(a));
-    return a;
-}
-
-void
-mtbdd_deref(LISTDD a)
-{
-    if (a == bdd_true || a == mtbdd_undefined) return;
-    refs_down(&mtbdd_refs, MTBDD_STRIPMARK(a));
-}
-
-size_t
-mtbdd_ref_count(void)
-{
-    return refs_count(&mtbdd_refs);
-}
 
 void
 mtbdd_protect(MTBDD *a)
@@ -232,22 +210,6 @@ mtbdd_protected_count(void)
 }
 
 /* Called during garbage collection */
-TASK(void, mtbdd_gc_mark_external_refs)
-
-void mtbdd_gc_mark_external_refs_CALL(lace_worker* lace)
-{
-    // iterate through refs hash table, mark all found
-    size_t count=0;
-    uint64_t *it = refs_iter(&mtbdd_refs, 0, mtbdd_refs.refs_size);
-    while (it != NULL) {
-        mtbdd_gc_mark_SPAWN(lace, refs_next(&mtbdd_refs, &it, mtbdd_refs.refs_size));
-        count++;
-    }
-    while (count--) {
-        mtbdd_gc_mark_SYNC(lace);
-    }
-}
-
 TASK(void, mtbdd_gc_mark_protected)
 
 void mtbdd_gc_mark_protected_CALL(lace_worker* lace)
@@ -431,11 +393,16 @@ static mtbdd_map_op mtbdd_floor_operation;
 static mtbdd_map_op mtbdd_ceil_operation;
 static mtbdd_map_op mtbdd_log_operation;
 
+int
+mtbdd_is_initialized(void)
+{
+    return mtbdd_initialized;
+}
+
 static void
 mtbdd_quit(void)
 {
     mtbdd_refs_free_TOGETHER();
-    refs_free(&mtbdd_refs);
     if (mtbdd_protected_created) {
         protect_free(&mtbdd_protected);
         mtbdd_protected_created = 0;
@@ -457,10 +424,8 @@ mtbdd_init(void)
     mtbdd_initialized = 1;
 
     sylvan_register_quit(mtbdd_quit);
-    sylvan_gc_add_mark(mtbdd_gc_mark_external_refs_CALL);
     sylvan_gc_add_mark(mtbdd_gc_mark_protected_CALL);
 
-    refs_create(&mtbdd_refs, 1024);
     if (!mtbdd_protected_created) {
         protect_create(&mtbdd_protected, 4096);
         mtbdd_protected_created = 1;

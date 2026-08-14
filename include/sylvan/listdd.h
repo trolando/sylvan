@@ -113,21 +113,6 @@ void listdd_unprotect(LISTDD* ptr);
 size_t listdd_protected_count(void);
 
 /**
- * Store the LISTDD <dd> in the values table.
- */
-LISTDD listdd_ref(LISTDD dd);
-
-/**
- * Delete the LISTDD <dd> from the values table.
- */
-void listdd_deref(LISTDD dd);
-
-/**
- * Compute the number of values in the values table.
- */
-size_t listdd_ref_count(void);
-
-/**
  * Call mtbdd_gc_mark for every mtbdd you want to keep in your custom mark functions.
  */
 

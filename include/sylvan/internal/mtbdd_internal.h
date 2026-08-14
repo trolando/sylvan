@@ -212,6 +212,12 @@ mtbddnode_followhigh(const MTBDD mtbdd, const mtbddnode* node)
 }
 
 /**
+ * Whether mtbdd_init() has run. A reorder session needs the MTBDD subsystem,
+ * because it reads the protected pointer table and the variable identities.
+ */
+int mtbdd_is_initialized(void);
+
+/**
  * Compatibility TODO remove this then all hell breaks loose
  */
 

@@ -68,9 +68,9 @@ typedef struct sylvan_varswap_result {
  * caller owns:
  * - no decision diagram operation is in flight;
  * - no worker holds temporary references (mtbdd_refs_push/pushptr). External
- *   roots are read from the mtbdd_refs and mtbdd_protected tables only; a
- *   handle that lives solely on a worker's temporary stack is invisible to
- *   the session and its node may be retired underneath it.
+ *   roots are read from the mtbdd_protected table only; a handle that lives
+ *   solely on a worker's temporary stack is invisible to the session and its
+ *   node may be retired underneath it.
  *
  * Refused with SYLVAN_ERR_INVALID when:
  * - a session is already open;

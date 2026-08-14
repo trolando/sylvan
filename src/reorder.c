@@ -56,17 +56,16 @@
 #include <assert.h>
 #include <string.h>
 
-/** External root tables, defined in mtbdd.c. */
-extern refs_table_t mtbdd_refs;
+/** External root table, defined in mtbdd.c. */
 extern refs_table_t mtbdd_protected;
 
 /**
  * Marking callbacks Sylvan registers for itself once mtbdd_init() has run:
- * the per-worker temporary references, the external reference table, and the
- * protected pointer table. Anything beyond these belongs to a consumer whose
- * roots a session cannot enumerate; see sylvan_reorder_begin().
+ * the per-worker temporary references and the protected pointer table.
+ * Anything beyond these belongs to a consumer whose roots a session cannot
+ * enumerate; see sylvan_reorder_begin().
  */
-#define REORDER_OWN_MARK_HOOKS 3
+#define REORDER_OWN_MARK_HOOKS 2
 
 /** Granularity of the parallel table scans. */
 #define REORDER_SCAN_BLOCK 4096
@@ -603,22 +602,14 @@ reorder_pin(uint64_t handle)
 /**
  * Cache the external roots.
  *
- * Both root tables are read here, and only these two: the by-value references
- * of mtbdd_ref(), and the dereferenced addresses of mtbdd_protect(). A
- * consumer that owns roots through its own marking hook is refused in
- * sylvan_reorder_begin(), because the hook interface can mark those roots but
- * not enumerate them.
+ * One root table is read here, and only this one: the dereferenced addresses
+ * of mtbdd_protect(). A consumer that owns roots through its own marking hook
+ * is refused in sylvan_reorder_begin(), because the hook interface can mark
+ * those roots but not enumerate them.
  */
 static void
 reorder_pin_roots(void)
 {
-    if (mtbdd_refs.refs_table != NULL) {
-        uint64_t *iterator = refs_iter(&mtbdd_refs, 0, mtbdd_refs.refs_size);
-        while (iterator != NULL) {
-            reorder_pin(refs_next(&mtbdd_refs, &iterator, mtbdd_refs.refs_size));
-        }
-    }
-
     if (mtbdd_protected.refs_table != NULL) {
         uint64_t *iterator = protect_iter(
             &mtbdd_protected, 0, mtbdd_protected.refs_size);
@@ -660,7 +651,7 @@ sylvan_reorder_begin_CALL(lace_worker *lace)
     const uint32_t caps = nodes_reorder_caps(nodes);
 
     if (session.active) return SYLVAN_ERR_INVALID;
-    if (mtbdd_refs.refs_table == NULL) return SYLVAN_ERR_INVALID;
+    if (!mtbdd_is_initialized()) return SYLVAN_ERR_INVALID;
     if ((caps & NODES_CAP_REMOVE) == 0) return SYLVAN_ERR_INVALID;
     if ((caps & NODES_CAP_RELEASE) == 0) return SYLVAN_ERR_INVALID;
     if (zdd_is_initialized() || listdd_is_initialized()) {

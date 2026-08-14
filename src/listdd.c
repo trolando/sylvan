@@ -52,30 +52,8 @@ void listdd_gc_mark_CALL(lace_worker* lace, LISTDD mdd)
  * External references
  */
 
-refs_table_t listdd_refs;
 refs_table_t listdd_protected;
 static int listdd_protected_created = 0;
-
-LISTDD
-listdd_ref(LISTDD a)
-{
-    if (a == listdd_empty_list || a == listdd_empty) return a;
-    refs_up(&listdd_refs, a);
-    return a;
-}
-
-void
-listdd_deref(LISTDD a)
-{
-    if (a == listdd_empty_list || a == listdd_empty) return;
-    refs_down(&listdd_refs, a);
-}
-
-size_t
-listdd_ref_count(void)
-{
-    return refs_count(&listdd_refs);
-}
 
 void
 listdd_protect(LISTDD *a)
@@ -101,20 +79,6 @@ listdd_protected_count(void)
 }
 
 /* Called during garbage collection */
-void listdd_gc_mark_external_refs_CALL(lace_worker* lace)
-{
-    // iterate through refs hash table, mark all found
-    size_t count=0;
-    uint64_t *it = refs_iter(&listdd_refs, 0, listdd_refs.refs_size);
-    while (it != NULL) {
-        listdd_gc_mark_SPAWN(lace, refs_next(&listdd_refs, &it, listdd_refs.refs_size));
-        count++;
-    }
-    while (count--) {
-        listdd_gc_mark_SYNC(lace);
-    }
-}
-
 void listdd_gc_mark_protected(lace_worker* lace)
 {
     // iterate through refs hash table, mark all found
@@ -291,7 +255,6 @@ static void
 listdd_quit(void)
 {
     listdd_refs_free_TOGETHER();
-    refs_free(&listdd_refs);
 
     if (listdd_protected_created) {
         protect_free(&listdd_protected);
@@ -309,11 +272,9 @@ listdd_init(void)
     if (listdd_initialized) return SYLVAN_OK;
     listdd_initialized = 1;
     sylvan_register_quit(listdd_quit);
-    sylvan_gc_add_mark(listdd_gc_mark_external_refs_CALL);
     sylvan_gc_add_mark(listdd_gc_mark_protected);
     sylvan_gc_add_mark(listdd_gc_mark_serialize_CALL);
 
-    refs_create(&listdd_refs, 1024);
     if (!listdd_protected_created) {
         protect_create(&listdd_protected, 4096);
         listdd_protected_created = 1;

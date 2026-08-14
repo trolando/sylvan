@@ -253,8 +253,11 @@ void sylvan_gc_hook_main(gc_hook_cb callback);
  * appropriate recursive marking functions for the decision diagram nodes, for example
  * mtbdd_gc_mark() for MTBDDs or listdd_gc_mark() for LDDs.
  *
- * The mtbdd_ref_count() function uses the count_cb callbacks to compute the number
- * of references.
+ * This is the escape hatch for a binding whose roots have no stable address,
+ * so that mtbdd_protect() does not apply to them. Note that a consumer that
+ * owns roots this way cannot use the reordering sessions: a marking callback
+ * can mark roots but not enumerate them, so sylvan_reorder_begin() refuses
+ * once any callback beyond Sylvan's own is registered.
  */
 void sylvan_gc_add_mark(gc_hook_cb mark_cb);
 

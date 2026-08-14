@@ -147,7 +147,7 @@ void zdd_gc_mark_CALL(lace_worker* lace, ZDD zdd)
 }
 
 /**
- * External references (we only offer reference-by-pointer, not by-value)
+ * External references
  */
 
 refs_table_t zdd_protected;

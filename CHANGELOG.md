@@ -1,6 +1,18 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [Unreleased]
+
+### Removed
+- Removed the by-value external reference API: `mtbdd_ref`, `mtbdd_deref`,
+  `mtbdd_ref_count`, `listdd_ref`, `listdd_deref` and `listdd_ref_count`, along
+  with the two garbage collection mark passes that scanned their tables. Use
+  `mtbdd_protect`/`mtbdd_unprotect` and `listdd_protect`/`listdd_unprotect` for
+  roots with a stable address, the per-worker `mtbdd_refs_pushptr`/`popptr`
+  stacks for local variables, or `sylvan_gc_add_mark` for roots that have
+  neither. The per-worker temporary reference stacks are a separate mechanism
+  and are unaffected.
+
 ## [1.11.0] - 2026-07-17
 
 ### Added

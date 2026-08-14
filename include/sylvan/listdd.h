@@ -91,10 +91,9 @@ LISTDD listdd_follow_copy(LISTDD mdd);
 
 /**
  * Infrastructure for external references using a hash table.
- * Two hash tables store external references: a pointers table and a values table.
  * The pointers table stores pointers to LISTDD variables, manipulated with protect and unprotect.
- * The values table stores LISTDD, manipulated with ref and deref.
- * We strongly recommend using the pointers table whenever possible.
+ * A protected variable is read during garbage collection, so its current value
+ * is kept without the caller having to update any reference when it changes.
  */
 
 /**

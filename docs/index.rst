@@ -175,6 +175,39 @@ Result-producing tasks write to protected destinations, so spawned results are r
 It is recommended to use the thread-local pointer stack for local variables, and to use the ``protect`` and
 ``unprotect`` functions for other variables.
 
+Bindings without stable addresses
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Both mechanisms above take the *address* of the variable holding the decision diagram, so they
+need that address to stay put. A language binding whose values live in a moving or copying heap,
+or in a container that reallocates, has no such address to hand over. For those, register your own
+marking callback with ``sylvan_gc_add_mark`` and mark whatever you consider a root. The callback
+runs once per garbage collection, with all workers stopped, and must call ``mtbdd_gc_mark`` for
+every decision diagram to keep.
+
+The usual shape is a handle table owned by the binding, where the handle rather than the address
+is what the language holds on to:
+
+.. code:: c
+
+    static MTBDD *handles;      // your own storage, may move or grow
+    static size_t handle_count;
+
+    static void mark_handles(lace_worker *lace)
+    {
+        (void)lace;
+        for (size_t i = 0; i < handle_count; i++) {
+            if (handles[i] != mtbdd_invalid) mtbdd_gc_mark(handles[i]);
+        }
+    }
+
+    // once, after mtbdd_init()
+    sylvan_gc_add_mark(mark_handles);
+
+Marking is the only thing this interface can do. It cannot enumerate your roots, so Sylvan cannot
+rewrite them; ``sylvan_reorder_begin`` therefore refuses to open a session while any marking
+callback beyond Sylvan's own is registered.
+
 References to decision diagrams must be added before a worker may cooperate on garbage collection.
 Workers can cooperate on garbage collection during ``SYNC`` and when functions create nodes or use ``sylvan_gc_test`` to test whether to assist in garbage collection.
 Functions for adding or removing references never perform garbage collection.

@@ -1030,10 +1030,11 @@ int mtbdd_map_remove_all(MTBDDMAP *result, MTBDDMAP map, BDDSET variables);
 
 /**
  * Garbage collection
- * Sylvan supplies two default methods to handle references to nodes, but the user
- * is encouraged to implement custom handling. Simply add a handler using sylvan_gc_add_mark
- * and let the handler call mtbdd_gc_mark for every MTBDD that should be saved
- * during garbage collection.
+ * Sylvan supplies two default methods to handle references to nodes: the
+ * protected pointers below and the per-worker temporary stacks. A user whose
+ * roots suit neither may add a handler using sylvan_gc_add_mark and let the
+ * handler call mtbdd_gc_mark for every MTBDD that should be saved during
+ * garbage collection.
  */
 
 /**
@@ -1043,10 +1044,9 @@ static inline void mtbdd_gc_mark(MTBDD dd);
 
 /**
  * Infrastructure for external references using a hash table.
- * Two hash tables store external references: a pointers table and a values table.
  * The pointers table stores pointers to MTBDD variables, manipulated with protect and unprotect.
- * The values table stores MTBDDs, manipulated with ref and deref.
- * We strongly recommend using the pointers table whenever possible.
+ * A protected variable is read during garbage collection, so its current value
+ * is kept without the caller having to update any reference when it changes.
  */
 
 /**

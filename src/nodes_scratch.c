@@ -36,9 +36,25 @@
  * covers the case of a second table outliving the first.
  */
 
+/**
+ * The bitmap itself is only ever touched by the one thread that holds the
+ * scratch, so the bits are plain memory. The pointer to it is not: a marked
+ * traversal may run inside a Lace task (bdd_simplify counts nodes), so the
+ * thread that allocates the bitmap and the thread that uses it next need not
+ * be the same. The pointer is therefore published with release ordering and
+ * picked up with acquire ordering in nodes_scratch_acquire, which every
+ * traversal calls before touching a bit; the per-bit accesses then reload it
+ * relaxed, which is sound because the acquire already ordered them.
+ */
 static const nodes_table* scratch_owner = NULL;
-static uint64_t*          scratch_bits  = NULL;
+static _Atomic(uint64_t*) scratch_bits  = NULL;
 static size_t             scratch_bytes = 0;
+
+static inline uint64_t*
+scratch_here(void)
+{
+    return atomic_load_explicit(&scratch_bits, memory_order_relaxed);
+}
 
 #ifndef NDEBUG
 /* Held between acquire and release; catches overlapping marked traversals. */
@@ -65,15 +81,19 @@ nodes_scratch_acquire(const nodes_table* dbs)
     (void)was_held;
 #endif
 
+    /* Acquire: pairs with the release store below, so that a bitmap another
+       worker allocated is visible here in full. */
+    uint64_t* bits = atomic_load_explicit(&scratch_bits, memory_order_acquire);
+
     const size_t bytes = scratch_size_bytes(nodes_get_max_size(dbs));
-    if (scratch_bits != NULL && (scratch_owner != dbs || scratch_bytes != bytes)) {
-        sylvan_free_aligned(scratch_bits, scratch_bytes);
-        scratch_bits = NULL;
+    if (bits != NULL && (scratch_owner != dbs || scratch_bytes != bytes)) {
+        sylvan_free_aligned(bits, scratch_bytes);
+        bits = NULL;
         scratch_bytes = 0;
     }
-    if (scratch_bits == NULL) {
-        scratch_bits = (uint64_t*)sylvan_alloc_aligned(bytes);
-        if (scratch_bits == NULL) {
+    if (bits == NULL) {
+        bits = (uint64_t*)sylvan_alloc_aligned(bytes);
+        if (bits == NULL) {
             fprintf(stderr,
                     "nodes_scratch_acquire: Unable to allocate memory: %s!\n",
                     strerror(errno));
@@ -82,6 +102,7 @@ nodes_scratch_acquire(const nodes_table* dbs)
         scratch_bytes = bytes;
     }
     scratch_owner = dbs;
+    atomic_store_explicit(&scratch_bits, bits, memory_order_release);
 }
 
 void
@@ -104,7 +125,7 @@ nodes_scratch_ismarked(const nodes_table* dbs, uint64_t index)
 {
     assert(dbs == scratch_owner && index < nodes_get_max_size(dbs));
     (void)dbs;
-    return (scratch_bits[index / 64] & (UINT64_C(1) << (index & 63))) ? 1 : 0;
+    return (scratch_here()[index / 64] & (UINT64_C(1) << (index & 63))) ? 1 : 0;
 }
 
 void
@@ -112,7 +133,7 @@ nodes_scratch_mark(const nodes_table* dbs, uint64_t index)
 {
     assert(dbs == scratch_owner && index < nodes_get_max_size(dbs));
     (void)dbs;
-    uint64_t* word = &scratch_bits[index / 64];
+    uint64_t* word = &scratch_here()[index / 64];
     const uint64_t bit = UINT64_C(1) << (index & 63);
 #ifndef NDEBUG
     if ((*word & bit) == 0) scratch_marks++;
@@ -125,7 +146,7 @@ nodes_scratch_unmark(const nodes_table* dbs, uint64_t index)
 {
     assert(dbs == scratch_owner && index < nodes_get_max_size(dbs));
     (void)dbs;
-    uint64_t* word = &scratch_bits[index / 64];
+    uint64_t* word = &scratch_here()[index / 64];
     const uint64_t bit = UINT64_C(1) << (index & 63);
 #ifndef NDEBUG
     if ((*word & bit) != 0) scratch_marks--;
@@ -137,8 +158,9 @@ void
 nodes_scratch_forget(const nodes_table* dbs)
 {
     if (dbs != scratch_owner) return;
-    if (scratch_bits != NULL) sylvan_free_aligned(scratch_bits, scratch_bytes);
-    scratch_bits = NULL;
+    uint64_t* bits = atomic_load_explicit(&scratch_bits, memory_order_acquire);
+    if (bits != NULL) sylvan_free_aligned(bits, scratch_bytes);
+    atomic_store_explicit(&scratch_bits, NULL, memory_order_release);
     scratch_bytes = 0;
     scratch_owner = NULL;
 #ifndef NDEBUG

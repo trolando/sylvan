@@ -479,7 +479,8 @@ nodes_create(size_t initial_size, size_t max_size)
     dbs->destroy_cb = NULL;
 
     nodes_reset_region_TOGETHER();
-    sylvan_init_hash();
+    /* Fills a static table and cannot fail. */
+    (void)sylvan_init_hash();
 
     return dbs;
 }

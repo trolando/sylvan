@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+/* For the SYLVAN_OK status code; <sylvan/hash.h> itself stays dependency-free
+   because the nodes table backends include it on its own. */
+#include <sylvan/internal.h>
+
 #include <sylvan/hash.h>
 
 /**
@@ -118,9 +122,10 @@ CWhash(uint64_t x)
     return Mod64Prime89(r);
 }
 
-void
+int
 sylvan_init_hash(void)
 {
     // initialize sylvan_tabhash_table
     for (int i=0; i<256*16; i++) sylvan_tabhash_table[i] = CWhash((uint64_t)i);
+    return SYLVAN_OK;
 }

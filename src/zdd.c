@@ -354,12 +354,13 @@ zdd_quit(void)
     zdd_initialized = 0;
 }
 
-void
+int
 zdd_init(void)
 {
-    sylvan_init_mt();
+    const int status = sylvan_init_mt();
+    if (status != SYLVAN_OK) return status;
 
-    if (zdd_initialized) return;
+    if (zdd_initialized) return SYLVAN_OK;
     zdd_initialized = 1;
 
     sylvan_register_quit(zdd_quit);
@@ -372,6 +373,7 @@ zdd_init(void)
     }
 
     zdd_refs_init();
+    return SYLVAN_OK;
 }
 
 /**

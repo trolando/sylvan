@@ -760,8 +760,11 @@ main(int argc, char **argv)
     /* A table that never grows, so that the reservation test knows exactly
        how much it has to fill and a session's garbage has a fixed budget. */
     sylvan_set_sizes(1LL << 15, 1LL << 15, 1LL << 15, 1LL << 15);
-    sylvan_init_package();
-    mtbdd_init();
+    if (sylvan_init_package() != SYLVAN_OK ||
+        mtbdd_init() != SYLVAN_OK) {
+        fprintf(stderr, "Sylvan initialization failed.\n");
+        return 1;
+    }
 
     const int result = runtests();
 

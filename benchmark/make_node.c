@@ -438,8 +438,11 @@ main(int argc, char **argv)
     lace_start(config.workers, 0, 0);
     sylvan_set_sizes(
         table_size, table_size, (size_t)1 << 16, (size_t)1 << 16);
-    sylvan_init_package();
-    mtbdd_init();
+    if (sylvan_init_package() != SYLVAN_OK ||
+        mtbdd_init() != SYLVAN_OK) {
+        fprintf(stderr, "Sylvan initialization failed.\n");
+        return 1;
+    }
 
     size_t filled_before;
     size_t total;

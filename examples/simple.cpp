@@ -85,11 +85,15 @@ void _main_CALL(lace_worker* lace, void* arg)
     // - 1<<26 cache: 2304 MB
     // - 1<<27 cache: 4608 MB
     sylvan_set_sizes(1LL<<22, 1LL<<26, 1LL<<22, 1LL<<26);
-    sylvan_init_package();
 
-    // Initialize the BDD module with granularity 1 (cache every operation)
-    // A higher granularity (e.g. 6) often results in better performance in practice
-    mtbdd_init();
+    // Initialize the package and the BDD module with granularity 1 (cache
+    // every operation). A higher granularity (e.g. 6) often results in better
+    // performance in practice.
+    if (sylvan_init_package() != SYLVAN_OK ||
+        mtbdd_init() != SYLVAN_OK) {
+        fprintf(stderr, "Sylvan initialization failed.\n");
+        exit(1);
+    }
 
     // Now we can do some simple stuff using the C++ objects.
     simple_cxx_CALL(lace);

@@ -499,8 +499,11 @@ main(int argc, char **argv)
     sylvan_set_sizes(
         (size_t)1 << 22, (size_t)1 << 22,
         (size_t)1 << 20, (size_t)1 << 20);
-    sylvan_init_package();
-    mtbdd_init();
+    if (sylvan_init_package() != SYLVAN_OK ||
+        mtbdd_init() != SYLVAN_OK) {
+        fprintf(stderr, "Sylvan initialization failed.\n");
+        return 1;
+    }
 
     const int status = benchmark_run(&config);
 

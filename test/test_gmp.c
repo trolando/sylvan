@@ -284,10 +284,13 @@ main(void)
 {
     lace_start(4, 0, 0);
     sylvan_set_sizes(1LL << 20, 1LL << 20, 1LL << 16, 1LL << 16);
-    sylvan_init_package();
-    mtbdd_init();
-    zdd_init();
-    listdd_init();
+    if (sylvan_init_package() != SYLVAN_OK ||
+        mtbdd_init() != SYLVAN_OK ||
+        zdd_init() != SYLVAN_OK ||
+        listdd_init() != SYLVAN_OK) {
+        fprintf(stderr, "Sylvan initialization failed.\n");
+        return 1;
+    }
     if (gmp_init() != SYLVAN_OK) return 1;
     if (gmp_init() != SYLVAN_OK) return 1;
 

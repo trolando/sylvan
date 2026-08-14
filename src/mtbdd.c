@@ -447,12 +447,13 @@ mtbdd_quit(void)
     mtbdd_initialized = 0;
 }
 
-void
+int
 mtbdd_init(void)
 {
-    sylvan_init_mt();
+    const int status = sylvan_init_mt();
+    if (status != SYLVAN_OK) return status;
 
-    if (mtbdd_initialized) return;
+    if (mtbdd_initialized) return SYLVAN_OK;
     mtbdd_initialized = 1;
 
     sylvan_register_quit(mtbdd_quit);
@@ -477,6 +478,7 @@ mtbdd_init(void)
     }
 
     mtbdd_refs_init();
+    return SYLVAN_OK;
 }
 
 /**

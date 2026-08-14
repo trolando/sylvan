@@ -881,8 +881,9 @@ public:
      * @param maxTableSize The maximum size of the nodes table. Must be a power of two.
      * @param initialCacheSize The initial size of the operation cache. Must be a power of two.
      * @param maxCacheSize The maximum size of the operation cache. Must be a power of two.
+     * @return SYLVAN_OK, or a negative Sylvan status on failure.
      */
-    static void initPackage(size_t initialTableSize, size_t maxTableSize, size_t initialCacheSize, size_t maxCacheSize);
+    static int initPackage(size_t initialTableSize, size_t maxTableSize, size_t initialCacheSize, size_t maxCacheSize);
 
     /**
      * @brief Set the granularity for the BDD operations.
@@ -899,13 +900,15 @@ public:
 
     /**
      * @brief Initializes the BDD module of the Sylvan framework.
+     * @return SYLVAN_OK, or a negative Sylvan status on failure.
      */
-    static void initBdd();
+    static int initBdd();
 
     /**
      * @brief Initializes the MTBDD module of the Sylvan framework.
+     * @return SYLVAN_OK, or a negative Sylvan status on failure.
      */
-    static void initMtbdd();
+    static int initMtbdd();
 
     /**
      * @brief Frees all memory in use by Sylvan.

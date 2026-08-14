@@ -1309,7 +1309,7 @@ int
 run_reinsert_collision_CALL(lace_worker *lace)
 {
     (void)lace;
-    sylvan_init_hash();
+    if (sylvan_init_hash() != SYLVAN_OK) return 1;
     nodes_table *table = nodes_create(TEST_TABLE_SIZE, TEST_TABLE_SIZE);
     const uint64_t a = UINT64_C(0x4000000000000021);
     const uint64_t b = 33;
@@ -1407,7 +1407,7 @@ int
 run_table_tests_CALL(lace_worker *lace)
 {
     (void)lace;
-    sylvan_init_hash();
+    test_assert(sylvan_init_hash() == SYLVAN_OK);
 
     const size_t bitmap_bytes =
         2 * ((TEST_TABLE_SIZE + 63) / 64) * sizeof(uint64_t);

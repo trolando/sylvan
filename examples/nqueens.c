@@ -324,8 +324,11 @@ main(int argc, const char** argv)
     // With 2^20 nodes and 2^18 cache entries, that's 33 MB
     // With 2^24 nodes and 2^22 cache entries, that's 528 MB
     sylvan_set_sizes(1LL<<20, 1LL<<28, 1LL<<18, 1LL<<26);
-    sylvan_init_package();
-    mtbdd_init();
+    if (sylvan_init_package() != SYLVAN_OK ||
+        mtbdd_init() != SYLVAN_OK) {
+        fprintf(stderr, "Sylvan initialization failed.\n");
+        return 1;
+    }
 
     // Before and after garbage collection, call gc_start and gc_end
     sylvan_gc_hook_pregc(gc_start_CALL);

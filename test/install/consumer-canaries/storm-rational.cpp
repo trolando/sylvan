@@ -354,8 +354,11 @@ main(int argc, char **argv)
         static_cast<size_t>(1) << 14,
         static_cast<size_t>(1) << 12,
         static_cast<size_t>(1) << 12);
-    sylvan_init_package();
-    mtbdd_init();
+    if (sylvan_init_package() != SYLVAN_OK ||
+        mtbdd_init() != SYLVAN_OK) {
+        fprintf(stderr, "Sylvan initialization failed.\n");
+        return 1;
+    }
 
     int status = run_storm_rational_canary();
     sylvan_gc();

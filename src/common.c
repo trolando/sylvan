@@ -748,7 +748,7 @@ sylvan_set_limits(size_t memorycap, int table_ratio, int initial_ratio)
 /**
  * Initializes Sylvan.
  */
-void
+int
 sylvan_init_package(void)
 {
     if (table_max == 0) {
@@ -777,7 +777,9 @@ sylvan_init_package(void)
     main_hook = sylvan_gc_normal_resize_CALL;
 #endif
 
+    /* Cannot fail: it only resets per-worker counters. */
     sylvan_stats_init();
+    return SYLVAN_OK;
 }
 
 struct reg_quit_entry

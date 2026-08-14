@@ -459,8 +459,8 @@ nodes_table* nodes_create(size_t initial_size, size_t max_size)
     // this design assumes there is only one nodes table...
     nodes_reset_region_TOGETHER();
 
-    // initialize hashtab
-    sylvan_init_hash();
+    // initialize hashtab; it fills a static table and cannot fail
+    (void)sylvan_init_hash();
 
     return dbs;
 }

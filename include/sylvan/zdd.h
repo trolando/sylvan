@@ -51,8 +51,11 @@ extern "C" {
  * Initialize ZDD functionality.
  * This initializes internal and external referencing datastructures
  * and registers them in the garbage collection framework.
+ *
+ * Returns SYLVAN_OK, or a negative status on failure. Calling it again after
+ * it has succeeded does nothing and returns SYLVAN_OK.
  */
-void zdd_init(void);
+int zdd_init(void);
 
 /**
  * Create an internal ZDD node of Boolean variable <var>, with low edge <low> and high edge <high>.

@@ -308,8 +308,11 @@ main(void)
 {
     lace_start(4, 0, 0);
     sylvan_set_sizes(1LL<<20, 1LL<<20, 1LL<<16, 1LL<<16);
-    sylvan_init_package();
-    listdd_init();
+    if (sylvan_init_package() != SYLVAN_OK ||
+        listdd_init() != SYLVAN_OK) {
+        fprintf(stderr, "Sylvan initialization failed.\n");
+        return 1;
+    }
 
     int result = runtests();
 

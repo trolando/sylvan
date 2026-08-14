@@ -42,8 +42,13 @@ typedef enum {
     LISTDD_RELATION_READ_WRITE = 3
 } listdd_relation_access;
 
-/* Initialize ListDD functionality. */
-void listdd_init(void);
+/**
+ * Initialize ListDD functionality.
+ *
+ * Returns SYLVAN_OK, or a negative status on failure. Calling it again after
+ * it has succeeded does nothing and returns SYLVAN_OK.
+ */
+int listdd_init(void);
 
 /**
  * Create immutable ListDD metadata.

@@ -112,9 +112,12 @@ typedef struct sylvan_mt_type_descriptor
 } sylvan_mt_type_descriptor;
 
 /**
- * Initialize the multi-terminal subsystem
+ * Initialize the multi-terminal subsystem.
+ *
+ * Returns SYLVAN_OK, or a negative status on failure. Calling it again after
+ * it has succeeded does nothing and returns SYLVAN_OK.
  */
-void sylvan_init_mt(void);
+int sylvan_init_mt(void);
 
 /**
  * Register an immutable custom-leaf type descriptor.

@@ -284,8 +284,11 @@ main(int argc, char **argv)
         static_cast<size_t>(1) << 14,
         static_cast<size_t>(1) << 12,
         static_cast<size_t>(1) << 12);
-    sylvan_init_package();
-    listdd_init();
+    if (sylvan_init_package() != SYLVAN_OK ||
+        listdd_init() != SYLVAN_OK) {
+        fprintf(stderr, "Sylvan initialization failed.\n");
+        return 1;
+    }
 
     const int status = run_listdd_consumer_canary();
 

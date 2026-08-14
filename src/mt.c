@@ -327,10 +327,10 @@ sylvan_mt_quit(void)
     cl_registry_size = 0;
 }
 
-void
+int
 sylvan_init_mt(void)
 {
-    if (mt_initialized) return;
+    if (mt_initialized) return SYLVAN_OK;
     mt_initialized = 1;
 
     // Register quit handler to free structures
@@ -343,6 +343,7 @@ sylvan_init_mt(void)
     cl_registry_size = 8;
     cl_registry = (customleaf_t *)calloc(cl_registry_size, sizeof(customleaf_t));
     cl_registry_count = 3; // 0, 1, 2 are taken
+    return SYLVAN_OK;
 }
 
 /**

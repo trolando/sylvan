@@ -37,8 +37,11 @@ int main(void)
 {
     lace_start(1, 0, 0);
     sylvan_set_sizes(1U << 12, 1U << 12, 1U << 10, 1U << 10);
-    sylvan_init_package();
-    mtbdd_init();
+    if (sylvan_init_package() != SYLVAN_OK ||
+        mtbdd_init() != SYLVAN_OK) {
+        fprintf(stderr, "Sylvan initialization failed.\n");
+        return 1;
+    }
 
     int result = test_consumer();
 

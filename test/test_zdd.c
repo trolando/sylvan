@@ -1778,9 +1778,12 @@ int main()
 
     // Simple Sylvan initialization, also initialize BDD, MTBDD and LDD support
 	sylvan_set_sizes(1LL<<26, 1LL<<26, 1LL<<20, 1LL<<20);
-	sylvan_init_package();
-    mtbdd_init();
-    zdd_init();
+    if (sylvan_init_package() != SYLVAN_OK ||
+        mtbdd_init() != SYLVAN_OK ||
+        zdd_init() != SYLVAN_OK) {
+        fprintf(stderr, "Sylvan initialization failed.\n");
+        return 1;
+    }
 
     int res = runtests();
 

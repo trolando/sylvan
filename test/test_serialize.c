@@ -735,10 +735,13 @@ main(void)
     sylvan_set_sizes(
         (size_t)1 << 20, (size_t)1 << 20,
         (size_t)1 << 16, (size_t)1 << 16);
-    sylvan_init_package();
-    mtbdd_init();
-    zdd_init();
-    listdd_init();
+    if (sylvan_init_package() != SYLVAN_OK ||
+        mtbdd_init() != SYLVAN_OK ||
+        zdd_init() != SYLVAN_OK ||
+        listdd_init() != SYLVAN_OK) {
+        fprintf(stderr, "Sylvan initialization failed.\n");
+        return 1;
+    }
     int result = test_dd_serialization();
     sylvan_quit();
     lace_stop();

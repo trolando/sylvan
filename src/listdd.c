@@ -301,9 +301,12 @@ listdd_quit(void)
     listdd_initialized = 0;
 }
 
-void
+int
 listdd_init(void)
 {
+    /* Without this, a second call registers the quit and marking hooks a
+       second time. */
+    if (listdd_initialized) return SYLVAN_OK;
     listdd_initialized = 1;
     sylvan_register_quit(listdd_quit);
     sylvan_gc_add_mark(listdd_gc_mark_external_refs_CALL);
@@ -317,6 +320,7 @@ listdd_init(void)
     }
 
     listdd_refs_init();
+    return SYLVAN_OK;
 }
 
 struct listdd_projection {

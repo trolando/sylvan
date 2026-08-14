@@ -61,8 +61,11 @@ static const MTBDD mtbdd_invalid = UINT64_MAX;
  * Initialize MTBDD functionality.
  * This initializes internal and external referencing datastructures,
  * and registers them in the garbage collection framework.
+ *
+ * Returns SYLVAN_OK, or a negative status on failure. Calling it again after
+ * it has succeeded does nothing and returns SYLVAN_OK.
  */
-void mtbdd_init(void);
+int mtbdd_init(void);
 
 /**
  * Create a MTBDD terminal of type <type> and value <value>.

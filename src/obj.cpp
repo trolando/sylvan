@@ -1257,17 +1257,17 @@ MtbddMap::isEmpty()
  * Implementation of class Sylvan
  */
 
-void
+int
 Sylvan::initPackage(size_t initialTableSize, size_t maxTableSize, size_t initialCacheSize, size_t maxCacheSize)
 {
     sylvan_set_sizes(initialTableSize, maxTableSize, initialCacheSize, maxCacheSize);
-    sylvan_init_package();
+    return sylvan_init_package();
 }
 
-void
+int
 Sylvan::initMtbdd()
 {
-    mtbdd_init();
+    return mtbdd_init();
 }
 
 void

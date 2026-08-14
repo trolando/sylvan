@@ -80,8 +80,11 @@ sylvan_fnvhash8(uint64_t a, uint64_t seed)
 /**
  * Called by Sylvan's hash table initializer to initialize the tables for
  * tabulation hashing.
+ *
+ * Returns SYLVAN_OK. It fills a fixed static table and cannot fail; the status
+ * exists so that every Sylvan initializer has the same shape.
  */
-void sylvan_init_hash(void);
+int sylvan_init_hash(void);
 
 #ifdef __cplusplus
 }

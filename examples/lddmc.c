@@ -1027,8 +1027,11 @@ main(int argc, const char **argv)
     printf(" max.\n");
 
     sylvan_set_limits(max, 1, 16);
-    sylvan_init_package();
-    listdd_init();
+    if (sylvan_init_package() != SYLVAN_OK ||
+        listdd_init() != SYLVAN_OK) {
+        fprintf(stderr, "Sylvan initialization failed.\n");
+        return 1;
+    }
     sylvan_gc_hook_pregc(gc_start_CALL);
     sylvan_gc_hook_postgc(gc_end_CALL);
 

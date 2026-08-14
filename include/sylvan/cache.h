@@ -108,7 +108,11 @@ cache_put4(uint64_t opid, uint64_t dd, uint64_t dd2, uint64_t dd3, uint64_t dd4,
  * Functions for Sylvan for cache management
  */
 
-void cache_create(size_t _cache_size, size_t _max_size);
+/**
+ * Allocate the operation cache. Returns SYLVAN_OK, SYLVAN_ERR_INVALID for
+ * unusable sizes, or SYLVAN_ERR_OOM. Nothing stays allocated on failure.
+ */
+int cache_create(size_t _cache_size, size_t _max_size);
 
 void cache_free(void);
 

@@ -79,8 +79,9 @@ void sylvan_iterator_destroy(sylvan_iterator *iterator);
  * Every operation cache entry requires 44 bytes memory. (32 bytes data +
  * 8 bytes operation identifier + 4 bytes table overhead)
  *
- * Returns SYLVAN_OK, or a negative status on failure. Nothing is initialized
- * when it fails, and sylvan_quit() must not be called.
+ * Returns SYLVAN_OK, SYLVAN_ERR_INVALID when the table sizes were never set,
+ * or SYLVAN_ERR_OOM. Nothing is initialized when it fails, and sylvan_quit()
+ * must not be called.
  */
 int sylvan_init_package(void);
 

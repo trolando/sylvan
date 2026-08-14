@@ -254,16 +254,21 @@ cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
 #define IS_POWER_OF_TWO(x) ((x) != 0 && ((x) & ((x) - 1)) == 0)
 
 
-void
+int
 cache_create(size_t _cache_size, size_t _max_size)
 {
 #if CACHE_MASK
     // Cache size must be a power of 2
     if (!IS_POWER_OF_TWO(_cache_size) || !IS_POWER_OF_TWO(_max_size)) {
         fprintf(stderr, "cache_create: Table size must be a power of 2!\n");
-        exit(1);
+        return SYLVAN_ERR_INVALID;
     }
 #endif
+
+    if (_cache_size > _max_size) {
+        fprintf(stderr, "cache_create: Table size must be <= max size!\n");
+        return SYLVAN_ERR_INVALID;
+    }
 
     cache_size = _cache_size;
     cache_max  = _max_size;
@@ -271,18 +276,20 @@ cache_create(size_t _cache_size, size_t _max_size)
     cache_mask = cache_size - 1;
 #endif
 
-    if (cache_size > cache_max) {
-        fprintf(stderr, "cache_create: Table size must be <= max size!\n");
-        exit(1);
-    }
-
     cache_table = (cache_entry*)sylvan_alloc_aligned(cache_max * sizeof(struct cache_entry));
     cache_op = (_Atomic(uint64_t)*)sylvan_alloc_aligned(cache_max * sizeof(*cache_op));
     cache_status = (uint32_t*)sylvan_alloc_aligned(cache_max * sizeof(uint32_t));
     if (cache_table == 0 || cache_op == 0 || cache_status == 0) {
         fprintf(stderr, "cache_create: Unable to allocate memory: %s!\n", strerror(errno));
-        exit(1);
+        cache_free();
+        cache_table = NULL;
+        cache_op = NULL;
+        cache_status = NULL;
+        cache_size = 0;
+        cache_max = 0;
+        return SYLVAN_ERR_OOM;
     }
+    return SYLVAN_OK;
 }
 
 void

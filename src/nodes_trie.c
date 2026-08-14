@@ -459,6 +459,12 @@ static int nodes_reinsert_bucket(nodes_table* dbs, uint64_t d_idx)
     }
 }
 
+/**
+ * NOTE: the failures below still exit the process instead of returning NULL.
+ * Reporting them means unwinding a partially allocated table in every
+ * backend; part of the outstanding exit(1) cleanup. sylvan_init_package()
+ * already handles a NULL return, so only this function has to change.
+ */
 nodes_table* nodes_create(size_t initial_size, size_t max_size)
 {
     nodes_table* dbs = sylvan_alloc_aligned(sizeof(struct nodes_table));

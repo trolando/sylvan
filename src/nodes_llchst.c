@@ -758,6 +758,12 @@ nodes_lookupc_subtable(const nodes_table* dbs, uint32_t subtable,
     return nodes_lookup2(dbs, subtable, a, b, created, 1);
 }
 
+/**
+ * NOTE: the failures below still exit the process instead of returning NULL.
+ * Reporting them means unwinding a partially allocated table in every
+ * backend; part of the outstanding exit(1) cleanup. sylvan_init_package()
+ * already handles a NULL return, so only this function has to change.
+ */
 nodes_table*
 nodes_create(size_t initial_size, size_t max_size)
 {

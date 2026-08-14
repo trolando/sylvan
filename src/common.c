@@ -752,13 +752,22 @@ int
 sylvan_init_package(void)
 {
     if (table_max == 0) {
-        fprintf(stderr, "sylvan_init_package error: table sizes not set (sylvan_set_sizes or sylvan_set_limits)!");
-        exit(1);
+        fprintf(stderr, "sylvan_init_package error: table sizes not set (sylvan_set_sizes or sylvan_set_limits)!\n");
+        return SYLVAN_ERR_INVALID;
     }
 
-    /* Create tables */
+    /* Create tables. Note that nodes_create still exits the process on an
+       allocation failure rather than returning NULL; see the exit(1) cleanup
+       item. The check below is what a returning nodes_create would need. */
     nodes = nodes_create(table_min, table_max);
-    cache_create(cache_min, cache_max);
+    if (nodes == NULL) return SYLVAN_ERR_OOM;
+
+    const int cache_status = cache_create(cache_min, cache_max);
+    if (cache_status != SYLVAN_OK) {
+        nodes_free(nodes);
+        nodes = NULL;
+        return cache_status;
+    }
 
     /* Initialize garbage collection */
     gc = 0;

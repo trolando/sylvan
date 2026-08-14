@@ -113,10 +113,21 @@ TASK(int, sylvan_reorder_end)
  * Swap the variables at ranks <rank> and <rank>+1. Requires an open session.
  *
  * Returns SYLVAN_OK, SYLVAN_ERR_INVALID for a rank that is not followed by
- * another registered rank, or SYLVAN_ERR_OOM when the nodes table cannot
- * promise room for the new nodes the swap needs -- in which case NOTHING has
- * been mutated: the classification phase is read-only and the reservation
- * happens before it. <result> may be NULL.
+ * another registered rank, or SYLVAN_ERR_OOM when some resource the swap
+ * needs cannot be promised. <result> may be NULL.
+ *
+ * ALL-OR-NOTHING. A swap reserves everything it will need while it is still
+ * only reading -- node slots, the backend's index structures, the session's
+ * node lists, retirement queue, retired-slot array and overflow map -- and
+ * once that classification phase reports success the swap performs no
+ * allocation that can fail. So SYLVAN_ERR_OOM always means NOTHING has been
+ * mutated: not the forest, not the index, not the rank metadata. There is no
+ * partial swap and nothing to roll back.
+ *
+ * The other side of that contract is that a failure after classification is a
+ * bug rather than a condition, and is reported by aborting. A swap that gave
+ * up halfway would leave a forest in which some nodes have been rewritten and
+ * others have not, which no caller could use and no collection could repair.
  */
 TASK(int, sylvan_varswap, uint32_t, rank, sylvan_varswap_result*, result)
 

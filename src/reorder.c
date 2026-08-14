@@ -250,12 +250,13 @@ reorder_has_variable(uint64_t handle, uint32_t variable)
  * A promoted node is never demoted. The 16-bit slot keeps the sentinel for
  * the rest of the session and every later operation on that node goes through
  * the map, which keeps the count exact at the price of one comparison on the
- * hot path.
+ * hot path. It also means the map only ever grows on the *transition*: once a
+ * node has an entry, every further count on it reuses that entry.
  *
- * Honest weakness: promoting a node allocates, and there is no way to preflight
- * that allocation, so a promotion that runs out of memory aborts. The
- * alternative -- failing the swap halfway through phase R -- would leave a
- * forest nobody can use.
+ * The map therefore only grows where the classification phase said it could,
+ * which is what keeps promotion out of the swap's list of ways to fail. See
+ * reorder_overflow_reserve for the bound and the test that decides whether it
+ * is needed at all.
  */
 
 static void
@@ -277,6 +278,33 @@ overflow_unlock(void)
     atomic_store_explicit(&session.overflow_lock, 0, memory_order_release);
 }
 
+/**
+ * Room for <extra> further promotions. The only place the map ever grows, and
+ * both callers are passes that have not mutated anything yet, so failing here
+ * costs nothing.
+ */
+static int
+reorder_overflow_reserve(size_t extra)
+{
+    const size_t needed = session.overflow_count + extra;
+    if (needed <= session.overflow_capacity) return SYLVAN_OK;
+
+    size_t capacity = session.overflow_capacity == 0
+        ? 16u : session.overflow_capacity;
+    while (capacity < needed) capacity *= 2u;
+
+    uint64_t *indices = (uint64_t*)realloc(
+        session.overflow_index, capacity * sizeof(uint64_t));
+    if (indices == NULL) return SYLVAN_ERR_OOM;
+    session.overflow_index = indices;
+    uint64_t *values = (uint64_t*)realloc(
+        session.overflow_value, capacity * sizeof(uint64_t));
+    if (values == NULL) return SYLVAN_ERR_OOM;
+    session.overflow_value = values;
+    session.overflow_capacity = capacity;
+    return SYLVAN_OK;
+}
+
 /** Find, or with <create> add, the overflow slot of <index>. Locked. */
 static uint64_t*
 overflow_slot(uint64_t index, int create)
@@ -287,17 +315,11 @@ overflow_slot(uint64_t index, int create)
     if (!create) return NULL;
 
     if (session.overflow_count == session.overflow_capacity) {
-        const size_t capacity = session.overflow_capacity == 0
-            ? 16u : session.overflow_capacity * 2u;
-        uint64_t *indices = (uint64_t*)realloc(
-            session.overflow_index, capacity * sizeof(uint64_t));
-        if (indices == NULL) return NULL;
-        session.overflow_index = indices;
-        uint64_t *values = (uint64_t*)realloc(
-            session.overflow_value, capacity * sizeof(uint64_t));
-        if (values == NULL) return NULL;
-        session.overflow_value = values;
-        session.overflow_capacity = capacity;
+        /* Room was reserved for every promotion this pass can make before it
+           was allowed to start, so this cannot happen. */
+        assert(!"the overflow map outgrew its reservation");
+        reorder_fatal("the overflow map outgrew its reservation");
+        return NULL;
     }
 
     const size_t at = session.overflow_count++;
@@ -315,10 +337,13 @@ reorder_count_up(uint64_t index)
         uint16_t count = atomic_load_explicit(slot, memory_order_relaxed);
 
         if (count == REORDER_COUNT_SENTINEL) {
+            /* A node only carries the sentinel because the branch below put
+               it there, under this same lock and after creating its entry, so
+               the entry is there and no slot is claimed here. */
             overflow_lock();
-            uint64_t *value = overflow_slot(index, 1);
-            if (value == NULL) reorder_fatal("out of memory in the overflow map");
-            (*value)++;
+            uint64_t *value = overflow_slot(index, 0);
+            if (value == NULL) reorder_fatal("a promoted node has no overflow entry");
+            else (*value)++;
             overflow_unlock();
             return;
         }
@@ -330,12 +355,8 @@ reorder_count_up(uint64_t index)
                     slot, &expected, REORDER_COUNT_SENTINEL,
                     memory_order_relaxed, memory_order_relaxed)) {
                 uint64_t *value = overflow_slot(index, 1);
-                if (value == NULL) {
-                    reorder_fatal("out of memory in the overflow map");
-                } else {
-                    *value = (uint64_t)count + 1u;
-                    session.overflow_promotions++;
-                }
+                *value = (uint64_t)count + 1u;
+                session.overflow_promotions++;
                 overflow_unlock();
                 return;
             }
@@ -399,21 +420,29 @@ reorder_count_get(uint64_t index)
     return result;
 }
 
-/** Queue a node whose last reference just disappeared. */
+/**
+ * Queue a node whose last reference just disappeared.
+ *
+ * The queue is sized in the classification phase to the number of edges the
+ * rewrite drops, which under the depth-1 death theorem is every death there
+ * can be. Overflowing it therefore takes two things at once: a violation of
+ * the theorem, and enough direct deaths that the deaths the theorem does not
+ * allow do not fit in what the direct deaths left over. Deaths past the
+ * theorem are counted and reported as <deep_deaths> as long as they fit; past
+ * that this aborts, because the alternative is either to allocate at a point
+ * where the swap has already rewritten records -- which is the failure mode
+ * this reservation exists to remove -- or to drop a death and leave a node
+ * that nothing points at hashed in the index forever.
+ */
 static void
 reorder_retire(uint64_t index)
 {
     const size_t at = atomic_fetch_add_explicit(
         &session.queue_count, 1, memory_order_relaxed);
     if (at >= session.queue_capacity) {
-        /* Only the retirement phase itself, which is serial, can get here:
-           every other phase reserves the queue up front. */
-        const size_t capacity = at + 16u;
-        uint64_t *grown = (uint64_t*)realloc(
-            session.queue, capacity * sizeof(uint64_t));
-        if (grown == NULL) reorder_fatal("out of memory in the retirement queue");
-        session.queue = grown;
-        session.queue_capacity = capacity;
+        assert(!"the depth-1 death theorem does not hold and the queue is full");
+        reorder_fatal("more deaths than the retirement queue was sized for");
+        return;
     }
     session.queue[at] = index;
 }
@@ -709,6 +738,18 @@ sylvan_reorder_begin_CALL(lace_worker *lace)
         session.retired == NULL || session.seen == NULL ||
         session.maps == NULL ||
         (!session.native_enumerate && session.decision == NULL)) {
+        reorder_free_state();
+        return SYLVAN_ERR_OOM;
+    }
+
+    /* Seeding promotes too, and it is the pass most likely to: it is the one
+       that counts every edge in the table. Counts only rise while it runs, so
+       when it is done every node it promoted has at least the ceiling many
+       parents at the same time; parent edges are not shared and there are at
+       most two per node, which is the bound. See reorder_classify, which
+       reserves the same way for the swaps. */
+    if (reorder_overflow_reserve(
+            2u * session.size / reorder_overflow_at + 1u) != SYLVAN_OK) {
         reorder_free_state();
         return SYLVAN_ERR_OOM;
     }
@@ -1058,10 +1099,50 @@ reorder_enumerate_cb(uint64_t index, void *context)
 }
 
 /**
- * Classify x's nodes and make sure everything the rewrite needs is available
- * before anything is mutated: node slots for the new children, room in the
- * node lists, and room in the retirement queue. On failure the forest, the
- * index and the rank metadata are all exactly as they were.
+ * Classify x's nodes and reserve, before anything is mutated, every resource
+ * the rest of the swap will take: node slots for the new children, and room
+ * in the node lists, in the retirement queue, in the array of retired slots
+ * and in the overflow map.
+ *
+ * THIS IS THE ONLY PHASE OF A SWAP THAT MAY FAIL. Everything after it either
+ * succeeds or is a bug, which is why the later phases report a refusal by
+ * aborting: there is no half-swapped forest anyone could use. On failure here
+ * the forest, the index and the rank metadata are all exactly as they were,
+ * because classification only reads them.
+ *
+ * The bounds, with k case-B decision nodes and k_map case-B map nodes:
+ *
+ *   new node slots      2k + k_map   two interned children per decision node,
+ *                                    one interned inner node per map node
+ *   deaths              2(k + k_map) the rewrite drops two edges per entry and
+ *                                    nothing else drops one, so this bounds
+ *                                    both the queue and the retired slots
+ *   count increments    6k + 4k_map  per decision node: two inside each of the
+ *                                    two interned children plus the two edges
+ *                                    onto them; per map node: two inside the
+ *                                    interned inner node plus its edge and the
+ *                                    edge onto the other value
+ *
+ * The death bound is what the queue was always sized to, and the array of
+ * retired slots now shares it: the retirement loop appends one entry per node
+ * it takes off the queue.
+ *
+ * PROMOTIONS. The overflow map grows only when a count crosses the ceiling,
+ * and the increment bound above bounds that too, but crudely: it would have a
+ * large swap reserve tens of thousands of entries for a map that in any real
+ * forest stays empty. The second bound is what makes it cheap. Every promotion
+ * of this swap happens in the intern phase, where counts only rise, so at the
+ * end of that phase every node promoted by it simultaneously has at least
+ * <reorder_overflow_at> parents. Parent edges are not shared between nodes and
+ * there are at most two per node in the table, so no more than
+ * 2 * size / reorder_overflow_at nodes can be in that position at one time.
+ * At the default ceiling that is a handful of entries however big the swap is,
+ * and the increment bound only wins for the small swaps where it is small.
+ *
+ * Deciding instead whether a promotion is possible at all would need the
+ * largest count in the forest, which means either a scan or a maximum
+ * maintained on the hot path of every single count; neither is worth it
+ * against a bound that is already this small.
  */
 static int
 reorder_classify(void)
@@ -1112,16 +1193,35 @@ reorder_classify(void)
     }
     if (status != SYLVAN_OK) return status;
 
-    /* Every rewrite drops two edges, so no more than that many nodes can be
-       queued for retirement before the serial phase takes over. */
-    const size_t queued = 2u * (k + k_map);
-    if (queued > session.queue_capacity) {
+    /* Deaths: the queue they are announced on, and the array of slots the
+       retirement loop appends one entry to for each of them. The array is not
+       emptied at every swap -- the deferred release policy keeps it until the
+       session ends -- so it is what it already holds plus this swap's bound. */
+    const size_t deaths = 2u * (k + k_map);
+    if (deaths > session.queue_capacity) {
         uint64_t *grown = (uint64_t*)realloc(
-            session.queue, queued * sizeof(uint64_t));
+            session.queue, deaths * sizeof(uint64_t));
         if (grown == NULL) return SYLVAN_ERR_OOM;
         session.queue = grown;
-        session.queue_capacity = queued;
+        session.queue_capacity = deaths;
     }
+
+    if (session.dead_count + deaths > session.dead_capacity) {
+        const size_t capacity = session.dead_count + deaths;
+        uint64_t *grown = (uint64_t*)realloc(
+            session.dead, capacity * sizeof(uint64_t));
+        if (grown == NULL) return SYLVAN_ERR_OOM;
+        session.dead = grown;
+        session.dead_capacity = capacity;
+    }
+
+    /* Promotions into the overflow map. */
+    const size_t by_increments = 6u * k + 4u * k_map;
+    const size_t by_edges = 2u * session.size / reorder_overflow_at + 1u;
+    status = reorder_overflow_reserve(
+        by_increments < by_edges ? by_increments : by_edges);
+    if (status != SYLVAN_OK) return status;
+
     return SYLVAN_OK;
 }
 
@@ -1271,14 +1371,12 @@ reorder_run_retirement(uint64_t *died, uint64_t *deep)
             reorder_fatal("a dead node was not in the index");
         }
 
+        /* One entry per node this loop retires, and the loop cannot retire
+           more nodes than the queue holds, which the classification phase
+           sized this array for. */
         if (session.dead_count == session.dead_capacity) {
-            const size_t capacity = session.dead_capacity == 0
-                ? 32u : session.dead_capacity * 2u;
-            uint64_t *grown = (uint64_t*)realloc(
-                session.dead, capacity * sizeof(uint64_t));
-            if (grown == NULL) reorder_fatal("out of memory retiring a node");
-            session.dead = grown;
-            session.dead_capacity = capacity;
+            assert(!"the retired-slot array outgrew its reservation");
+            reorder_fatal("the retired-slot array outgrew its reservation");
         }
         session.dead[session.dead_count++] = index;
         retired++;

@@ -407,7 +407,7 @@ uint64_t nodes_lookupc_subtable(const nodes_table* dbs, uint32_t subtable,
  *    sequence. That would make the "is stored in the branch pair of" relation
  *    cyclic. It cannot be: publishing a handle is a release CAS that is
  *    ordered after the acquire load which read its predecessor, so the relation
- *    strictly decreases in the happens-before order. Sequences are finite and
+ *    strictly increases in the happens-before order. Sequences are finite and
  *    the walk stops at the first empty slot. (The acquire/release pairs above
  *    are what make this argument hold; plain relaxed accesses would not order
  *    the two slots against each other.)

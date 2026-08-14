@@ -42,12 +42,16 @@
  *
  * WHAT COUNTS AS AN EDGE. Every live non-leaf node contributes one edge to
  * each of its two children. Leaves are excluded entirely and are never
- * retired, which also means a leaf never appears in the counts. The counts
- * are therefore counts over the *table*, not over the part of it that is
- * reachable from the roots: nodes that were already garbage when the session
- * opened have count zero and stay where they are. That is deliberate. A swap
- * only ever reacts to a count *transition* to zero, so it retires exactly
- * what it killed and leaves pre-existing garbage to the collector.
+ * retired, which also means a leaf never appears in the counts.
+ *
+ * The counts are counts over the *table*, and the session makes the table and
+ * the reachable forest the same thing by collecting before it seeds them: see
+ * sylvan_reorder_begin. Every count therefore starts at the true number of
+ * parents of a reachable node, no slot holds garbage, and a swap's
+ * created-minus-died is the exact size change of the forest rather than of the
+ * table. A swap still only ever reacts to a count *transition* to zero, so it
+ * retires exactly what it killed; after the opening collection there is
+ * nothing else left for it to confuse that with.
  */
 
 #include <sylvan/internal.h>
@@ -661,16 +665,31 @@ sylvan_reorder_begin_CALL(lace_worker *lace)
         return SYLVAN_ERR_INVALID;
     }
 
+    /* A full collection is the first act of every session, and the reason is
+       the scoring. A sifting driver compares positions by the size of the
+       forest, so a swap's created-minus-died has to be the size change of the
+       *forest*; counted over a table that still holds pre-session garbage it
+       would be the size change of the table, which is the same number only by
+       accident. Collecting first makes the table content exactly the reachable
+       set, and a session never collects again, so it stays that way.
+       This is the collection body, not sylvan_gc(): the world is already
+       stopped and this is the frame the collection has to run in.
+
+       It also subsumes the separate clear of the operation cache the session
+       used to do. A collection discards the cache unconditionally (see
+       sylvan_gc_go), which is what makes reusing a retired slot sound -- a
+       surviving entry would answer a query about the new node with the old
+       node's result -- and doing it here means the cache is already gone
+       before the session allocates anything, so there is no window in which a
+       half-built session that then fails has invalidated it for nothing. */
+    sylvan_gc_go_CALL(lace);
+
     memset(&session, 0, sizeof(session));
+    /* After the collection, and not before: the resize hook may have grown
+       the table. */
     session.size = nodes_get_size(nodes);
     session.identities = sylvan_ranks_registered();
     session.native_enumerate = (caps & NODES_CAP_ENUMERATE) != 0;
-
-    /* The one clear of the operation cache. Nothing consults it for the rest
-       of the session, which is what makes reusing a retired slot sound: a
-       surviving entry would answer a query about the new node with the old
-       node's result. */
-    sylvan_clear_cache_CALL(lace);
 
     const size_t words = bitmap_words(session.size);
     const size_t lists = session.identities == 0 ? 1u : session.identities;

@@ -47,9 +47,16 @@
 /**
  * What one call to sylvan_varswap() did.
  *
- * <delta> is the exact size change of the forest, which is what a sifting
- * driver scores positions on; it needs no marking pass because both terms are
- * counted as they happen.
+ * <delta> is the exact size change of the *reachable forest*, which is what a
+ * sifting driver scores positions on, and it needs no marking pass because
+ * both terms are counted as they happen. That it measures the forest and not
+ * merely the table is a consequence of the collection sylvan_reorder_begin()
+ * performs: the session opens on a table whose content is exactly the
+ * reachable set and never collects again, so every node <created> is a node
+ * the forest gained and every node that <died> is one it lost. Without that
+ * enforced collection the same two counters would still be exact counts of
+ * what the swap did, but they would be measured against a baseline that
+ * included whatever garbage happened to be lying around.
  */
 typedef struct sylvan_varswap_result {
     uint64_t swaps;          /* number of swaps these numbers cover        */
@@ -63,6 +70,14 @@ typedef struct sylvan_varswap_result {
 
 /**
  * Open a reorder session. Must run with the world stopped.
+ *
+ * A FULL GARBAGE COLLECTION IS THE FIRST THING THIS DOES, once the refusals
+ * below have been decided. It is a precondition of the session rather than a
+ * convention its callers are trusted to follow, because everything the
+ * session measures is measured against the table it opens on: see <delta>
+ * above. The collection also discards the operation cache, which the session
+ * requires anyway before it may reuse a retired slot, and it may resize the
+ * nodes table, which is why the session reads the table size afterwards.
  *
  * Preconditions, none of which can be checked cheaply and all of which the
  * caller owns:

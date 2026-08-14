@@ -173,6 +173,15 @@ void sylvan_gc_enable(void);
 void sylvan_gc_disable(void);
 
 /**
+ * How many garbage collections have run since the process started.
+ *
+ * Monotone and never reset, not even by sylvan_quit(). It exists so that a
+ * caller can establish that a collection it expects really happened, which is
+ * otherwise unobservable outside the statistics build.
+ */
+uint64_t sylvan_gc_count(void);
+
+/**
  * Set by the nodes table when it wants a stop-the-world maintenance pass.
  *
  * Maintenance is not garbage collection: it only lets the table reorganize its
@@ -284,6 +293,18 @@ static inline void sylvan_gc_aggressive_resize(void);
  * Use sylvan_gc_hook_main() to set this heuristic.
  */
 static inline void sylvan_gc_normal_resize(void);
+
+/**
+ * The body of a garbage collection, without the frame around it.
+ *
+ * sylvan_gc() takes the collection flag and enters this in a new Lace frame.
+ * Call it directly only from code that already runs with the world stopped
+ * and wants a collection as one step of what it is doing; a reorder session
+ * opening is the one such caller. Calling it directly bypasses
+ * sylvan_gc_disable(), which is the point: the caller is not asking for a
+ * collection to be scheduled, it is performing one.
+ */
+TASK(void, sylvan_gc_go)
 
 TASK(void, sylvan_gc_aggressive_resize)
 TASK(void, sylvan_gc_normal_resize)

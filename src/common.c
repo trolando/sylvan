@@ -476,14 +476,25 @@ gc_note_progress(void)
 }
 
 /**
+ * Collections that have run, for callers that need to establish that one did.
+ * See sylvan_gc_count in <sylvan/common.h>.
+ */
+static _Atomic(uint64_t) gc_performed;
+
+uint64_t
+sylvan_gc_count(void)
+{
+    return atomic_load_explicit(&gc_performed, memory_order_relaxed);
+}
+
+/**
  * Actual implementation of garbage collection
  */
-TASK(void, sylvan_gc_go)
-
 void sylvan_gc_go_CALL(lace_worker* lace)
 {
     sylvan_stats_count(SYLVAN_GC_COUNT);
     sylvan_timer_start(SYLVAN_GC);
+    atomic_fetch_add_explicit(&gc_performed, 1, memory_order_relaxed);
 
     // call pre gc hooks
     for (gc_hook_entry_t e = pregc_list; e != NULL; e = e->next) {

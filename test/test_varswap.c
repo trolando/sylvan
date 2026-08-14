@@ -478,6 +478,65 @@ test_double_swap_CALL(lace_worker *lace)
 }
 
 /**
+ * Opening a session collects, and that is what makes <delta> a statement
+ * about the forest rather than about the table.
+ *
+ * The same swap is measured twice from the same starting order: once on a
+ * table that holds only the forest, and once on a table that also holds a
+ * pile of garbage. Pre-session garbage is invisible to a session -- the
+ * collection removed it before the reference counts were seeded -- so both
+ * runs have to report the same numbers. Each session must also collect
+ * exactly once: it is a precondition of the session, not a convention its
+ * caller is trusted to follow, and not something a session does twice.
+ */
+static int
+test_begin_collects_CALL(lace_worker *lace)
+{
+    sylvan_varswap_result clean, back, dirty, dirty_back;
+
+    uint64_t collections = sylvan_gc_count();
+    test_assert(sylvan_test_varswap(0, &clean) == SYLVAN_OK);
+    test_assert(sylvan_gc_count() == collections + 1);
+    test_assert(sylvan_test_varswap(0, &back) == SYLVAN_OK);
+    test_assert(clean.delta + back.delta == 0);
+
+    /* Garbage: a diagram built and then dropped. Nothing refers to it, so the
+       session's collection has to remove it before it counts anything. */
+    size_t before = 0, after = 0, total = 0;
+    sylvan_table_usage(&before, &total);
+    BDD junk = bdd_false;
+    mtbdd_protect(&junk);
+    for (int i = 0; i < 64; i++) {
+        uint8_t values[TEST_VARS];
+        test_values_for((unsigned)(test_random() % TEST_ASSIGNMENTS), values);
+        test_assert(bdd_or_cube_CALL(lace, &junk, junk, test_variables, values)
+                    == SYLVAN_OK);
+    }
+    junk = bdd_false;
+    mtbdd_unprotect(&junk);
+    sylvan_table_usage(&after, &total);
+    test_assert(after > before);
+
+    collections = sylvan_gc_count();
+    test_assert(sylvan_test_varswap(0, &dirty) == SYLVAN_OK);
+    test_assert(sylvan_gc_count() == collections + 1);
+    test_assert(sylvan_test_varswap(0, &dirty_back) == SYLVAN_OK);
+
+    test_assert(dirty.rewritten == clean.rewritten);
+    test_assert(dirty.created == clean.created);
+    test_assert(dirty.died == clean.died);
+    test_assert(dirty.delta == clean.delta);
+    test_assert(dirty_back.delta == back.delta);
+    test_assert(dirty.deep_deaths == 0 && dirty_back.deep_deaths == 0);
+
+    /* And the garbage is gone, rather than counted as something the swap
+       killed. */
+    sylvan_table_usage(&after, &total);
+    test_assert(after <= before);
+    return test_check_roots_CALL(lace);
+}
+
+/**
  * Sift one variable all the way down and all the way back up, checking after
  * every single swap. This is the motion a sifting driver makes.
  */
@@ -528,12 +587,6 @@ test_stress_CALL(lace_worker *lace)
     uint64_t promotions = 0;
 
     for (int round = 0; round < test_stress_rounds; round++) {
-        /* A session never collects, and it never retires a node that was
-           already garbage when it opened, so the driver of a long run has to
-           collect between sessions. Without this the intermediate nodes the
-           checks above left behind would fill the table. */
-        sylvan_gc();
-
         uint32_t ranks[TEST_STRESS_SWAPS];
         for (int i = 0; i < TEST_STRESS_SWAPS; i++) {
             ranks[i] = (uint32_t)(test_random() % (TEST_VARS - 1));
@@ -547,9 +600,18 @@ test_stress_CALL(lace_worker *lace)
            of the reference count representation are exercised. */
         sylvan_reorder_set_overflow_at((round & 2) ? 3u : UINT16_MAX);
 
+        /* Opening a session collects, which is what keeps a long run going:
+           without it the intermediate nodes the checks above left behind
+           would fill this table, which never grows. The round used to call
+           sylvan_gc() itself; now it checks that the session did, exactly
+           once, rather than trusting a convention. */
+        const uint64_t collections = sylvan_gc_count();
+
         sylvan_varswap_result result;
         const int status = sylvan_test_varswap_sequence(
             ranks, TEST_STRESS_SWAPS, &result);
+
+        test_assert(sylvan_gc_count() == collections + 1);
 
         if (release_at_swap_end) {
             test_assert(status == SYLVAN_OK);
@@ -580,49 +642,63 @@ test_stress_CALL(lace_worker *lace)
 }
 
 /**
- * A swap that cannot reserve the slots it needs changes nothing at all.
+ * A swap that cannot reserve what it needs changes nothing at all.
  *
- * The table is filled up first, with garbage collection disabled so that a
- * full table is reported rather than collected. This is the last test that
- * touches the forest.
+ * The table has to be filled with *live* nodes, not merely with nodes: a
+ * session collects before it opens, so a table full of garbage is one a swap
+ * will happily proceed on. The loop below therefore references everything it
+ * builds and alternates filling with collecting until a collection no longer
+ * buys room -- which is exactly the state in which the session's own
+ * collection buys none either, so the reservation in the classification phase
+ * is what fails. Automatic collection stays off while filling, so that a full
+ * table is reported to this loop rather than collected underneath it.
+ *
+ * This is the last test that touches the forest.
  */
 static int
 test_out_of_memory_CALL(lace_worker *lace)
 {
-    sylvan_gc_disable();
+    /* Distinct integer leaves: one node per iteration, nothing intermediate
+       to become garbage, and every one of them referenced. A collection then
+       has literally nothing to reclaim, which is what the session's own
+       collection has to find too.
+       Collecting first is not decoration. A worker fills the region it owns
+       before it claims another and can only claim a region no worker owns, so
+       free slots inside a region another worker still holds are out of reach;
+       a collection releases every claim, and after it this one worker can
+       reach every free slot in the table. */
+    int64_t leaf = 0;
+    for (int sweep = 0; ; sweep++) {
+        test_assert(sweep < 8);
+        sylvan_gc_enable();
+        sylvan_gc();
+        sylvan_gc_disable();
 
-    BDD filler = bdd_false;
-    mtbdd_protect(&filler);
-    for (int attempt = 0; attempt < 100000; attempt++) {
-        if (nodes_reserve(nodes, 16) != SYLVAN_OK) break;
-        filler = bdd_false;
-        int failed = 0;
-        for (int minterm = 0; minterm < 24 && !failed; minterm++) {
-            uint8_t values[TEST_VARS];
-            const unsigned assignment =
-                (unsigned)(test_random() % TEST_ASSIGNMENTS);
-            test_values_for(assignment, values);
-            if (bdd_or_cube_CALL(lace, &filler, filler, test_variables, values)
-                != SYLVAN_OK) {
-                failed = 1;
-            }
+        size_t filled = 0, total = 0;
+        sylvan_table_usage(&filled, &total);
+        if (filled >= total) break;
+        while (filled < total) {
+            mtbdd_ref(mtbdd_int64(leaf++));
+            filled++;
         }
-        if (failed) break;
     }
-    filler = bdd_false;
-    mtbdd_unprotect(&filler);
 
     test_assert(nodes_reserve(nodes, 1) != SYLVAN_OK);
 
-    /* Find a rank whose swap actually needs new nodes; parity guarantees one
-       at every rank, but the order is whatever the stress test left behind. */
+    /* Measured right after a collection that reclaimed nothing, so the
+       session's own collection cannot reclaim anything either and every
+       number below has to come back unchanged. */
     size_t nodes_before = 0, total = 0;
     sylvan_table_usage(&nodes_before, &total);
     uint32_t order_before[TEST_VARS];
     bdd_set_to_array(test_variables, order_before);
     MTBDD handle[TEST_ROOTS];
     for (int r = 0; r < TEST_ROOTS; r++) handle[r] = test_root[r];
+    const uint64_t collections = sylvan_gc_count();
+    const uint64_t promotions = sylvan_reorder_overflow_promotions();
 
+    /* Parity guarantees a swap that needs new nodes at every rank, whatever
+       order the rounds above left behind. */
     sylvan_varswap_result result;
     test_assert(sylvan_test_varswap(0, &result) == SYLVAN_ERR_OOM);
 
@@ -631,8 +707,14 @@ test_out_of_memory_CALL(lace_worker *lace)
     uint32_t order_after[TEST_VARS];
     bdd_set_to_array(test_variables, order_after);
 
+    /* Nothing mutated: the same nodes, the same order, the same handles, the
+       same functions. The one collection is the session's own, which runs
+       before the classification phase reports the shortfall. */
     test_assert(nodes_after == nodes_before);
     test_assert(memcmp(order_before, order_after, sizeof(order_before)) == 0);
+    test_assert(sylvan_gc_count() == collections + 1);
+    test_assert(sylvan_reorder_overflow_promotions() == promotions);
+    test_assert(result.swaps == 0 && result.created == 0 && result.died == 0);
     for (int r = 0; r < TEST_ROOTS; r++) {
         test_assert(test_root[r] == handle[r]);
     }
@@ -674,9 +756,6 @@ static int
 test_rank_identity_guard(void)
 {
     sylvan_varswap_result result;
-
-    /* A session never collects, so give these swaps room to work in. */
-    sylvan_gc();
 
     if (test_restore_identity_order()) return 1;
     test_assert(sylvan_ranks_is_identity());
@@ -784,6 +863,9 @@ runtests_CALL(lace_worker *lace)
 
     printf("Testing that swapping twice is the identity.\n");
     if (test_double_swap_CALL(lace)) return 1;
+
+    printf("Testing that opening a session collects.\n");
+    if (test_begin_collects_CALL(lace)) return 1;
 
     printf("Testing a variable sifted down and back up.\n");
     if (test_sift_one_CALL(lace)) return 1;

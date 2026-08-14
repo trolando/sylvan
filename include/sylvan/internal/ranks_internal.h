@@ -170,6 +170,25 @@ int sylvan_ranks_swap_adjacent(uint32_t rank);
  */
 int sylvan_ranks_permute_unsafe(const uint32_t *identity_at, uint32_t count);
 
+/**
+ * Return 1 if every registered identity is ranked at its own position, or 0
+ * otherwise.
+ *
+ * This is the question ZDD asks before it initialises, because a non-identity
+ * order is exactly what breaks the agreement between a BDDSET domain and the
+ * ZDD nodes that read it (see the note at the top of this file).
+ *
+ * It has to be answered from the current order rather than from history: a
+ * swap and its inverse leave the identity order behind, so a session that
+ * ends where it started must not lock ZDD out for the rest of the process. So
+ * the module only records whether anything *might* have permuted the order.
+ * While nothing has, this is one atomic load. Once something has, the answer
+ * is recomputed by scanning the order -- O(registered identities) -- and a
+ * scan that finds the identity clears the record again. Both callers are
+ * cold, so the scan is never on a path where its cost is visible.
+ */
+int sylvan_ranks_is_identity(void);
+
 /** Release all rank state and forget every registration. */
 void sylvan_ranks_free(void);
 

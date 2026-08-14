@@ -1307,6 +1307,20 @@ runtests_CALL(lace_worker *lace)
 
     /* Register the identities and permute the order before any node exists. */
     test_assert(sylvan_ranks_reserve(ALL_VARS) == SYLVAN_OK);
+
+    /* sylvan_ranks_is_identity() answers from the current order and not from
+       whether anything was ever permuted, so an order permuted back to the
+       identity is the identity again. */
+    uint32_t straight[ALL_VARS];
+    for (uint32_t rank = 0; rank < ALL_VARS; rank++) straight[rank] = rank;
+    test_assert(sylvan_ranks_is_identity());
+    test_assert(sylvan_ranks_permute_unsafe(straight, ALL_VARS) == SYLVAN_OK);
+    test_assert(sylvan_ranks_is_identity());
+    test_assert(sylvan_ranks_permute_unsafe(test_order, ALL_VARS) == SYLVAN_OK);
+    test_assert(!sylvan_ranks_is_identity());
+    test_assert(sylvan_ranks_permute_unsafe(straight, ALL_VARS) == SYLVAN_OK);
+    test_assert(sylvan_ranks_is_identity());
+
     test_assert(sylvan_ranks_permute_unsafe(test_order, ALL_VARS)
                 == SYLVAN_OK);
 

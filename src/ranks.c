@@ -54,6 +54,14 @@ static struct ranks_block *ranks_current;
 static struct ranks_block *ranks_retired;
 
 /**
+ * Whether anything has ever rewritten the order. Set by the two functions
+ * that can, and cleared again by sylvan_ranks_is_identity() when a scan finds
+ * the identity order after all. See the header for why it may not simply stay
+ * set once it has been raised.
+ */
+static _Atomic(int) ranks_permuted;
+
+/**
  * Growth and permutation run under this spinlock. The critical sections only
  * allocate and copy; in particular they never construct a node and never
  * reach sylvan_gc(), so a worker spinning here cannot deadlock a
@@ -184,6 +192,7 @@ sylvan_ranks_swap_adjacent(uint32_t rank)
     rank_of[lower] = rank;
     rank_of[upper] = rank + 1;
 
+    atomic_store_explicit(&ranks_permuted, 1, memory_order_relaxed);
     ranks_publish(block, count);
     ranks_lock_release();
     return SYLVAN_OK;
@@ -225,9 +234,38 @@ sylvan_ranks_permute_unsafe(const uint32_t *identity_at, uint32_t count)
         block->data[block->capacity + rank] = identity;
     }
 
+    atomic_store_explicit(&ranks_permuted, 1, memory_order_relaxed);
     ranks_publish(block, count);
     ranks_lock_release();
     return SYLVAN_OK;
+}
+
+int
+sylvan_ranks_is_identity(void)
+{
+    if (!atomic_load_explicit(&ranks_permuted, memory_order_acquire)) return 1;
+
+    ranks_lock_acquire();
+
+    const struct ranks_block *block = ranks_current;
+    const uint32_t count =
+        atomic_load_explicit(&sylvan_ranks_count, memory_order_relaxed);
+
+    /* Only a successful permutation raises the mark, and one cannot succeed
+       without a block, so <block> is non-NULL here whenever <count> is not 0. */
+    int identity = 1;
+    for (uint32_t rank = 0; rank < count && identity; rank++) {
+        if (block->data[block->capacity + rank] != rank) identity = 0;
+    }
+
+    /* A permutation that put everything back is indistinguishable from never
+       having happened, so let the next call take the cheap path again. */
+    if (identity) {
+        atomic_store_explicit(&ranks_permuted, 0, memory_order_release);
+    }
+
+    ranks_lock_release();
+    return identity;
 }
 
 void
@@ -235,6 +273,7 @@ sylvan_ranks_free(void)
 {
     ranks_lock_acquire();
 
+    atomic_store_explicit(&ranks_permuted, 0, memory_order_relaxed);
     atomic_store_explicit(&sylvan_ranks_count, 0, memory_order_release);
     atomic_store_explicit(&sylvan_ranks_rank_of, NULL, memory_order_release);
     atomic_store_explicit(&sylvan_ranks_identity_at, NULL, memory_order_release);

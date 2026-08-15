@@ -823,7 +823,12 @@ main(int argc, char **argv)
     if (argc > 2) test_queens_rounds = atoi(argv[2]);
     if (test_queens_rounds < 0) test_queens_rounds = 0;
 
-    lace_start((unsigned)workers, 0, 0);
+    /* 64 MB of worker stack rather than the 16 MB default. The queens relation
+       is built by deeply recursive parallel operations, and a worker's C stack
+       carries not the depth of the diagram but the depth of the tasks it has
+       stolen and not yet finished; a sanitizer build, whose frames are several
+       times larger, overflows the default. */
+    lace_start((unsigned)workers, 0, 64u * 1024u * 1024u);
 
     sylvan_set_sizes(1LL << 16, 1LL << 22, 1LL << 16, 1LL << 22);
     if (sylvan_init_package() != SYLVAN_OK ||

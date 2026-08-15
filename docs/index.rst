@@ -407,8 +407,41 @@ possible to decrease the size of the nodes table and the cache.
 Dynamic reordering
 ~~~~~~~~~~~~~~~~~~
 
-Dynamic reordening is not yet supported. For now, we suggest users
-find a good static variable ordering.
+``sylvan_sift`` reorders the variables of the BDD/MTBDD forest by sifting: every
+variable is moved through the order one adjacent swap at a time, the size of the
+forest is measured at each position, and the variable is left where the forest was
+smallest. Variables are taken most populous first. The declarations are in
+``sylvan/reorder.h``.
+
+.. code:: c
+
+    sylvan_sift_result report;
+    if (sylvan_sift_report(NULL, &report) == SYLVAN_OK) {
+        printf("%llu -> %llu nodes\n",
+               (unsigned long long)report.initial_size,
+               (unsigned long long)report.final_size);
+    }
+
+Sylvan never reorders on its own: there is no automatic trigger and no hook. A call
+stops the world for its whole duration, exactly like garbage collection, and begins
+by collecting. Call it from inside a Lace worker, with no decision diagram operation
+in flight and no handle held only on a worker's temporary reference stack -- those
+are invisible to reordering and their nodes may be reclaimed underneath them.
+Everything reachable from ``mtbdd_protect`` survives, denotes the same function, and
+keeps its handle, because nodes are rewritten in place.
+
+Pass a ``sylvan_sift_config`` to bound what the search may spend: a total swap
+budget, a number of variables, a growth factor at which one variable's excursion is
+abandoned (1.2 by default), a population below which a variable is not worth moving
+(32 by default), and a wall clock limit. ``NULL`` selects the defaults.
+
+Reordering is refused, changing nothing and returning ``SYLVAN_ERR_INVALID``, while
+the ZDD or ListDD subsystem is initialised -- both order their nodes by variable
+identity rather than by position, and they share the node arena -- while a marking
+callback other than Sylvan's own is registered, or on a nodes table that does not
+implement the reorder primitives. Running out of room *during* a sift is not a
+failure: a swap that cannot reserve what it needs changes nothing at all, and the
+driver simply stops moving that variable in that direction.
 
 Examples
 --------

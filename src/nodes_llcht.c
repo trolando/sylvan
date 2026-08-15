@@ -1033,14 +1033,23 @@ nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
 /**
  * Preflight <count> further allocations. See <sylvan/nodes.h> for the exact
  * invariant; the short version is that this counts the free slots of the
- * regions no worker owns yet, because a worker exhausts the region it owns
- * before claiming another one and can only claim an unowned region. Free
- * slots inside owned regions are therefore reachable by exactly one worker
- * and are not counted, which is what makes the answer conservative rather
- * than optimistic and removes the need for a per-worker margin.
+ * regions no worker owns yet, and asks for one region per worker more than
+ * the caller wants.
  *
- * The scan stops as soon as <count> is reached, so a small reservation on a
- * table with room costs a handful of popcounts.
+ * A worker exhausts the region it owns before giving it back and claiming
+ * another, and it can only claim a region nobody owns, so an owned region is
+ * exactly one worker's current region and there are never more than there are
+ * workers. Free slots inside those are not counted: they are reachable by one
+ * worker only, and only until that worker moves on. The margin is what covers
+ * them. Every counted region that gets claimed during the window is either
+ * used up -- every one of its free slots became an allocation -- or is some
+ * worker's current region when the window ends, and at most <workers> regions
+ * can be in that second state. Reserving <count> plus a whole region per
+ * worker therefore guarantees <count> allocations however the workers divide
+ * them, which reserving <count> alone does not.
+ *
+ * The scan stops as soon as the target is reached, so a small reservation on
+ * a table with room costs a handful of popcounts.
  */
 static uint64_t
 reserve_free_slots(const nodes_table* dbs, uint64_t needed)
@@ -1070,7 +1079,10 @@ nodes_reserve(nodes_table* dbs, uint64_t count)
 {
     if (count == 0) return SYLVAN_OK;
     if (nodes_reorder_caps(dbs) == 0) return SYLVAN_ERR_INVALID;
-    return reserve_free_slots(dbs, count) >= count
+    /* One whole region per worker on top of what the caller asked for; see
+       above for why the bound needs it. */
+    const uint64_t wanted = count + (uint64_t)lace_worker_count() * 512u;
+    return reserve_free_slots(dbs, wanted) >= wanted
         ? SYLVAN_OK : SYLVAN_ERR_OOM;
 }
 

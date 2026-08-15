@@ -374,17 +374,33 @@ int nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
  * fact have succeeded -- and is never optimistic.
  *
  * MECHANISM. The guarantee is derived from the region allocator rather than
- * from a global free-slot count. A worker claims a whole 512-slot region and
- * only moves on once it has used every free slot of the region it owns, and
- * it can only claim a region no worker owns yet. Reserve therefore counts the
- * free slots of the regions that are currently unclaimed, which is a hard
- * lower bound on how many further allocations any distribution of workers can
- * make: free slots inside regions that are already owned are not counted at
- * all, which is what makes the answer conservative and what removes the need
- * for a separate per-worker margin.
+ * from a global free-slot count. A worker claims a whole 512-slot region, uses
+ * every free slot of it, and only then gives it back and claims another one
+ * that nobody owns. An owned region is therefore exactly one worker's current
+ * region, and there are never more owned regions than there are workers.
+ *
+ * Reserve counts the free slots of the regions that are currently unclaimed,
+ * and requires <count> plus one whole region per worker of them. The margin is
+ * not slack: free slots inside an owned region are reachable by one worker and
+ * no other, so they cannot be counted, and a worker that stops allocating
+ * halfway through its region leaves the rest of it stranded for the duration.
+ * Each counted region that is claimed inside the window is either used up --
+ * every free slot it had became an allocation -- or is some worker's current
+ * region when the window ends, and at most <workers> regions can be in that
+ * second state. So at least <count> of the counted slots are reached however
+ * the workers divide the allocations between them, which is exactly the
+ * promise. Counting <count> alone would not be enough: with W workers the
+ * answer could be short by a region each.
+ *
+ * A WORKER GIVING ITS REGION BACK is what keeps the count honest over a long
+ * stop-the-world session. Garbage collection resets every region, but a reorder
+ * session may not collect and is the only thing that releases individual slots,
+ * so a session that left ownership standing would watch its own released slots
+ * disappear from this count -- and from the allocator -- one region at a time,
+ * until reserve refused on a table that was almost entirely free.
  *
  * The count is recomputed on every call -- a popcount over the node bitmap of
- * the unclaimed regions, stopping as soon as <count> is reached -- and never
+ * the unclaimed regions, stopping as soon as the target is reached -- and never
  * cached. A cache would have to assume that every allocation since it was
  * seeded had been charged to a reservation, which the table cannot observe
  * without a counter on the lookup path, and one uncharged allocation would

@@ -79,6 +79,7 @@ ZDD_SETINDEX(ZDD dd, uint64_t idx)
 static inline zddnode*
 ZDD_GETNODE(ZDD dd)
 {
+    SYLVAN_CHECK_HANDLE_INDEX(dd & 0x000000ffffffffff);
     return (zddnode*)nodes_get_pointer(nodes, dd & 0x000000ffffffffff);
 }
 

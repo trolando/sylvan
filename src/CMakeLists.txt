@@ -17,6 +17,16 @@ option(SYLVAN_STATS "Let Sylvan collect statistics at runtime" OFF)
 # contended atomic, so it distorts both timing and parallel scaling.
 option(SYLVAN_RANK_COUNTERS "Let Sylvan count variable rank lookups" OFF)
 
+# Diagnostic builds only: check on every node dereference that the decision
+# diagram handle's bucket index is inside the nodes table, and abort naming the
+# offending index when it is not. This puts a load and a branch on the
+# innermost step of every operation, so it is for debugging an invalid handle,
+# not for production. Off by default and free when off; see
+# SYLVAN_CHECK_HANDLES in include/sylvan/internal.h. Its sibling diagnostic
+# SYLVAN_GC_DIAGNOSTICS (see src/common.c), which traces every garbage
+# collection to stderr, is set as a plain compile definition rather than here.
+option(SYLVAN_CHECK_HANDLES "Let Sylvan check decision diagram handle bounds" OFF)
+
 include(DetectCacheLineSize)
 detect_cache_line_size(SYLVAN_CACHE_LINE_SIZE DEFAULT 64)
 
@@ -183,6 +193,13 @@ message(STATUS "Sylvan: using '${_sylvan_nodes_table}' nodes table implementatio
 target_sources(sylvan PRIVATE ${_sylvan_nodes_src})
 target_compile_definitions(sylvan PRIVATE ${_sylvan_nodes_def})
 
+# PUBLIC: the handle check lives in inline helpers that consumers of the
+# extension API in <sylvan/internal.h> compile themselves, so they must agree
+# with the library on whether it is enabled.
+if(SYLVAN_CHECK_HANDLES)
+    target_compile_definitions(sylvan PUBLIC SYLVAN_CHECK_HANDLES=1)
+endif()
+
 # ── Include directories ──────────────────────────────────────────────────────
 
 target_include_directories(sylvan
@@ -253,6 +270,7 @@ if(NOT sylvan_IS_TOP_LEVEL)
         SYLVAN_NATIVE_OPT
         SYLVAN_USE_MMAP
         SYLVAN_STATS
+        SYLVAN_CHECK_HANDLES
     )
 endif()
 

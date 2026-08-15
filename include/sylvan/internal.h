@@ -70,6 +70,38 @@ sylvan_index_is_valid(uint64_t index)
     return index < nodes_get_size(nodes);
 }
 
+/**
+ * Optional decision diagram handle checking.
+ *
+ * Compile with -DSYLVAN_CHECK_HANDLES=1, or configure with
+ * -DSYLVAN_CHECK_HANDLES=ON, to make every node dereference verify that the
+ * handle's bucket index is inside the nodes table, and abort with the
+ * offending index when it is not. This is the instrument for finding where an
+ * invalid handle entered a computation, rather than where it was finally
+ * dereferenced; the entry points listed in mtbdd.h under "Root validation at
+ * traversal entry points" already reject one without it.
+ *
+ * Like SYLVAN_GC_DIAGNOSTICS in common.c, this is a diagnostic aid only. It is
+ * disabled by default and costs nothing when disabled: the macro expands to
+ * ((void)0) and does not even evaluate its argument, so the generated code is
+ * unchanged. It is deliberately not spelled assert(), so that enabling it in a
+ * Release build works and it does not switch itself off with NDEBUG.
+ */
+#ifndef SYLVAN_CHECK_HANDLES
+#define SYLVAN_CHECK_HANDLES 0
+#endif
+
+#if SYLVAN_CHECK_HANDLES
+/** Report an out-of-bounds handle index and abort. Never returns. */
+void sylvan_handle_check_failed(uint64_t index, const char *file, int line);
+#define SYLVAN_CHECK_HANDLE_INDEX(index)                                       \
+    ((void)(sylvan_index_is_valid(index)                                       \
+                ? (void)0                                                      \
+                : sylvan_handle_check_failed((index), __FILE__, __LINE__)))
+#else
+#define SYLVAN_CHECK_HANDLE_INDEX(index) ((void)0)
+#endif
+
 /* Fallible node construction for protected-destination operations. */
 int _mtbdd_try_make_node(MTBDD *destination, uint32_t var, MTBDD low, MTBDD high);
 int _zdd_try_make_node(ZDD *destination, uint32_t var, ZDD low, ZDD high);

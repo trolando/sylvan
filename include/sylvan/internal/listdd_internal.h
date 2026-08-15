@@ -39,6 +39,7 @@ static_assert(sizeof(struct mddnode) == 16, "mddnode should be a 16 byte struct"
 static inline mddnode*
 LDD_GETNODE(LISTDD mdd)
 {
+    SYLVAN_CHECK_HANDLE_INDEX(mdd);
     return ((mddnode*)nodes_get_pointer(nodes, mdd));
 }
 

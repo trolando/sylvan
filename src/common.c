@@ -48,6 +48,26 @@ gc_diag_now(void)
 }
 #endif
 
+/**
+ * Optional decision diagram handle checking. The companion of the diagnostics
+ * above, declared in internal.h, where SYLVAN_CHECK_HANDLES also documents
+ * what enabling it does. Only the report lives here; the check itself is in
+ * the node dereference helpers.
+ */
+#if SYLVAN_CHECK_HANDLES
+#include <inttypes.h>
+
+void
+sylvan_handle_check_failed(uint64_t index, const char *file, int line)
+{
+    fprintf(stderr,
+            "[sylvan] %s:%d: decision diagram handle index %" PRIu64
+            " is outside the nodes table (size %zu)\n",
+            file, line, index, nodes_get_size(nodes));
+    abort();
+}
+#endif
+
 const char *
 sylvan_status_string(int status)
 {

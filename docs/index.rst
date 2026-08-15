@@ -61,6 +61,45 @@ It is recommended to use ``ccmake`` to configure the build settings of Sylvan. T
 enabling gathering of statistics and selecting whether you want a ``Debug`` or a ``Release`` build.
 The resulting artifact is a static library residing at ``build/src/libsylvan.a``.
 
+Diagnostic builds
+-----------------
+
+Sylvan has a few switches that exist only to debug Sylvan itself. All of them
+are off by default and cost nothing when off, and none of them should be
+enabled in a production build.
+
+``SYLVAN_CHECK_HANDLES`` (CMake option)
+    Check on every node dereference that the decision diagram handle's bucket
+    index is inside the nodes table, and abort naming the offending index when
+    it is not. An invalid handle otherwise reads memory far outside the table,
+    because the index is masked to 40 bits and scaled, so the failure surfaces
+    as an unrelated crash somewhere later. Enable this to find the operation
+    that produced the bad handle rather than the one that tripped over it.
+
+    .. code:: bash
+
+        cmake .. -DSYLVAN_CHECK_HANDLES=ON
+
+    The reporting and debugging entry points -- the node and leaf counters, the
+    ``.dot`` writers and the structural hashes -- already reject an invalid
+    root without this option, and return a defined result instead. Operations
+    that compute decision diagrams deliberately do not check, so that the check
+    is never paid per node on a hot path.
+
+``SYLVAN_GC_DIAGNOSTICS`` (compile definition)
+    Write one line to stderr for every garbage collection, reporting the
+    trigger site, the number of live nodes, and the table and cache sizes
+    before and after the resize hook ran.
+
+    .. code:: bash
+
+        cmake .. -DCMAKE_C_FLAGS=-DSYLVAN_GC_DIAGNOSTICS=1
+
+``SYLVAN_STATS`` and ``SYLVAN_RANK_COUNTERS`` (CMake options)
+    Collect operation statistics, and count variable rank lookups. See
+    ``sylvan_stats_report`` below for the former. The rank counter is a single
+    contended atomic, so it distorts both timing and parallel scaling.
+
 Using Sylvan
 ------------
 

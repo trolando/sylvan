@@ -54,6 +54,7 @@ MTBDD_GETINDEX(MTBDD dd)
 static inline mtbddnode*
 MTBDD_GETNODE(MTBDD dd)
 {
+    SYLVAN_CHECK_HANDLE_INDEX(MTBDD_GETINDEX(dd));
     return (mtbddnode*)nodes_get_pointer(nodes, MTBDD_GETINDEX(dd));
 }
 

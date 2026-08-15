@@ -32,6 +32,28 @@ All notable changes to Sylvan will be documented in this file.
   `Sylvan` still report failure through their return values.
 
 ### Fixed
+- A reorder session no longer runs out of node slots on a table that is almost
+  entirely free, and no longer aborts on an allocation `nodes_reserve` had
+  promised it. Both came from region ownership. A worker claims a 512-slot
+  region and used to keep it marked owned for good, so the free slots inside it
+  were reachable by that one worker and by nobody else, which is why
+  `nodes_reserve` deliberately does not count them. A garbage collection resets
+  every region, but a session may not collect and is the only thing that
+  releases individual slots, so region by region a long session made its own
+  released slots invisible to the count and unreachable by the allocator: with
+  20 workers, reserve came to refuse a request for a hundred slots on a table
+  with four million free ones. The swap then reported `SYLVAN_ERR_OOM` and
+  `sylvan_sift` left a variable at a position it had already measured and
+  rejected, so the forest could come out bigger than it went in. The same
+  ownership made the bound optimistic in the other direction, because it assumed
+  every counted slot could be reached: W workers can each claim a region and
+  leave it partly used, stranding up to a region apiece, which is how an
+  allocation reserve had promised could still be refused. A worker now gives a
+  region back as soon as it has taken the last free slot in it, so an owned
+  region is exactly one worker's current region, and `nodes_reserve` asks for
+  `count` plus one whole region per worker, which is what makes the promise hold
+  however the workers divide the allocations between them. Sifting with a single
+  worker was never affected.
 - A cleared operation cache no longer answers a query with a result from before
   the clear. `cache_clear` zeroes only the status words -- the operands and
   results stay in place, which is what lets those pages go back to the operating

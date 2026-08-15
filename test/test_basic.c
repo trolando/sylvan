@@ -4749,10 +4749,23 @@ test_cache()
         702, first_handle, second_handle ^ (UINT64_C(1) << 40),
         third_handle, fourth_handle, &value));
 
+    /**
+     * A cleared bucket must answer nothing. Zeroing the status word is all that
+     * cache_clear does, so the operands and the result of the entry below still
+     * sit in the table afterwards and the status alone keeps them out of reach.
+     * The key is picked so that the top 14 bits of its hash are zero, which is
+     * the one query in 2^14 that a bucket cleared to all zeroes would otherwise
+     * still match on hash alone.
+     */
+    const uint64_t stale_opid = 704, stale_c = 46768;
+    test_assert(cache_put_op(stale_opid, 1, 2, stale_c, 66));
+    test_assert(cache_get_op(stale_opid, 1, 2, stale_c, &value) && value == 66);
+
     const uint64_t opid_before_clear = cache_next_opid();
     cache_clear();
     test_assert(cache_next_opid() == opid_before_clear + 1);
     test_assert(cache_getused() == 0);
+    test_assert(!cache_get_op(stale_opid, 1, 2, stale_c, &value));
 
     /**
      * Test cache for large number of random entries

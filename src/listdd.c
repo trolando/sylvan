@@ -2634,9 +2634,21 @@ listdd_nodecount_levels_unmark(LISTDD mdd)
     }
 }
 
+/**
+ * Is <mdd> safe to dereference? A LISTDD handle is its bucket index.
+ * See "Root validation at traversal entry points" in mtbdd.h.
+ */
+static int
+listdd_root_is_valid(LISTDD mdd)
+{
+    return sylvan_index_is_valid(mdd);
+}
+
 void
 listdd_node_count_per_level(LISTDD mdd, size_t *variables)
 {
+    if (!listdd_root_is_valid(mdd)) return;
+
     nodes_scratch_acquire(nodes);
     listdd_nodecount_levels_mark(mdd, variables);
     listdd_nodecount_levels_unmark(mdd);
@@ -2672,6 +2684,8 @@ listdd_nodecount_unmark(LISTDD mdd)
 size_t
 listdd_node_count(LISTDD mdd)
 {
+    if (!listdd_root_is_valid(mdd)) return 0;
+
     nodes_scratch_acquire(nodes);
     size_t result = listdd_nodecount_mark(mdd);
     listdd_nodecount_unmark(mdd);
@@ -3164,6 +3178,8 @@ listdd_fprintdot_unmark(LISTDD mdd)
 void
 listdd_fprint_dot(FILE *out, LISTDD mdd)
 {
+    if (!listdd_root_is_valid(mdd)) return;
+
     fprintf(out, "digraph \"DD\" {\n");
     fprintf(out, "graph [dpi = 300];\n");
     fprintf(out, "center = true;\n");
@@ -3495,6 +3511,8 @@ listdd_fprint_sha256(FILE *out, LISTDD mdd)
 void
 listdd_sha256(LISTDD mdd, char *target)
 {
+    if (!listdd_root_is_valid(mdd)) { target[0] = '\0'; return; }
+
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
     nodes_scratch_acquire(nodes);

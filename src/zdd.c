@@ -1339,9 +1339,24 @@ zdd_nodecount_mark(ZDD zdd)
  * Count the number of nodes (internal nodes plus leaves) in ZDDs.
  * Not thread-safe.
  */
+/**
+ * Are all <count> roots in <zdds> safe to dereference?
+ * See "Root validation at traversal entry points" in mtbdd.h.
+ */
+static int
+zdd_roots_are_valid(const ZDD *zdds, size_t count)
+{
+    for (size_t i = 0; i < count; i++) {
+        if (!sylvan_index_is_valid(ZDD_GETINDEX(zdds[i]))) return 0;
+    }
+    return 1;
+}
+
 size_t
 zdd_shared_node_count(const ZDD *zdds, size_t count)
 {
+    if (!zdd_roots_are_valid(zdds, count)) return 0;
+
     size_t result = 0, i;
     nodes_scratch_acquire(nodes);
     for (i=0; i<count; i++) result += zdd_nodecount_mark(zdds[i]);
@@ -2664,6 +2679,8 @@ zdd_fprintdot_rec(FILE *out, ZDD zdd)
 void
 zdd_fprint_dot(FILE *out, ZDD zdd)
 {
+    if (!zdd_roots_are_valid(&zdd, 1)) return;
+
     fprintf(out, "digraph \"DD\" {\n");
     fprintf(out, "graph [dpi = 300];\n");
     fprintf(out, "center = true;\n");

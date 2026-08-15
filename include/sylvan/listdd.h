@@ -205,13 +205,16 @@ TASK(int, listdd_project_diff, LISTDD*, result, LISTDD, dd, const listdd_project
 
 TASK(int, listdd_join, LISTDD*, result, LISTDD, a, LISTDD, b, const listdd_projection*, a_projection, const listdd_projection*, b_projection)
 
-/* Write a DOT representation */
+/* Write a DOT representation. Writes nothing when the root's index is outside
+ * the nodes table; see "Root validation at traversal entry points" in mtbdd.h. */
 void listdd_print_dot(LISTDD mdd);
 void listdd_fprint_dot(FILE *out, LISTDD mdd);
 
 void listdd_fprint(FILE *out, LISTDD mdd);
 void listdd_print(LISTDD mdd);
 
+/* Structural hash. Produces the empty string when the root's index is outside
+ * the nodes table; see "Root validation at traversal entry points" in mtbdd.h. */
 void listdd_print_sha256(LISTDD mdd);
 void listdd_fprint_sha256(FILE *out, LISTDD mdd);
 void listdd_sha256(LISTDD mdd, char *target); // at least 65 bytes...
@@ -285,6 +288,8 @@ TASK(void, listdd_visit_parallel, LISTDD, dd, listdd_visit_callbacks*, cbs, size
 
 TASK(void, listdd_visit, LISTDD, dd, listdd_visit_callbacks*, cbs, size_t, ctx_size, void*, context)
 
+/* Node counts. Return 0 / write no counts when the root's index is outside the
+ * nodes table; see "Root validation at traversal entry points" in mtbdd.h. */
 size_t listdd_node_count(LISTDD mdd);
 void listdd_node_count_per_level(LISTDD mdd, size_t *variables);
 

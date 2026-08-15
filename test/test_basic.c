@@ -5254,6 +5254,129 @@ test_compose()
     return 0;
 }
 
+/**
+ * Root validation at the marked traversal entry points.
+ *
+ * A handle whose bucket index is outside the nodes table must produce a
+ * defined result rather than dereferencing terabytes past the table, and
+ * valid roots must be entirely unaffected by the check.
+ * See "Root validation at traversal entry points" in mtbdd.h.
+ */
+int
+test_invalid_roots()
+{
+    /* mtbdd_invalid masks down to index 0xffffffffff; an index equal to the
+     * table size is the first one just past the end. */
+    const MTBDD invalid = mtbdd_invalid;
+    const MTBDD past_end = (MTBDD)nodes_get_size(nodes);
+
+    test_assert(!sylvan_index_is_valid(MTBDD_GETINDEX(invalid)));
+    test_assert(!sylvan_index_is_valid(MTBDD_GETINDEX(past_end)));
+    test_assert(sylvan_index_is_valid(MTBDD_GETINDEX(bdd_true)));
+    test_assert(sylvan_index_is_valid(MTBDD_GETINDEX(mtbdd_undefined)));
+
+    /* A valid root to compare against. */
+    BDD x = mtbdd_invalid;
+    mtbdd_protect(&x);
+    test_assert(bdd_var_at_level(&x, 1) == SYLVAN_OK);
+    const size_t x_nodes = mtbdd_node_count(x);
+    const size_t x_leaves = mtbdd_leaf_count(x);
+    test_assert(x_nodes > 0);
+
+    /* Counters: 0 for an invalid root, and no fault. */
+    test_assert(mtbdd_shared_node_count(&invalid, 1) == 0);
+    test_assert(mtbdd_node_count(invalid) == 0);
+    test_assert(mtbdd_shared_leaf_count(&invalid, 1) == 0);
+    test_assert(mtbdd_leaf_count(invalid) == 0);
+    test_assert(mtbdd_node_count(past_end) == 0);
+    test_assert(mtbdd_leaf_count(past_end) == 0);
+
+    /* One invalid root among several is enough to reject the whole call. */
+    MTBDD roots[2];
+    roots[0] = x;
+    roots[1] = invalid;
+    test_assert(mtbdd_shared_node_count(roots, 2) == 0);
+    roots[0] = invalid;
+    roots[1] = x;
+    test_assert(mtbdd_shared_node_count(roots, 2) == 0);
+
+    /* Valid input is unchanged. */
+    roots[0] = x;
+    roots[1] = x;
+    test_assert(mtbdd_shared_node_count(roots, 2) == x_nodes);
+    test_assert(mtbdd_shared_leaf_count(roots, 2) == x_leaves);
+    test_assert(mtbdd_node_count(x) == x_nodes);
+    test_assert(mtbdd_leaf_count(x) == x_leaves);
+    test_assert(mtbdd_shared_node_count(roots, 0) == 0);
+
+    /* Printers write nothing for an invalid root, and still work for a good one. */
+    FILE *out = tmpfile();
+    test_assert(out != NULL);
+    mtbdd_fprint_dot(out, invalid);
+    test_assert(ftell(out) == 0);
+    mtbdd_fprint_dot_no_complement(out, invalid);
+    test_assert(ftell(out) == 0);
+    mtbdd_fprint_dot(out, x);
+    test_assert(ftell(out) > 0);
+    test_assert(fclose(out) == 0);
+
+    /* Hashers produce the empty string for an invalid root. */
+    char hash[65];
+    memset(hash, 'x', sizeof(hash));
+    mtbdd_sha256(invalid, hash);
+    test_assert(hash[0] == '\0');
+    mtbdd_sha256(x, hash);
+    test_assert(hash[0] != '\0');
+    const size_t hash_length = strlen(hash);
+    test_assert(hash_length == 64);
+
+    /* The hash of a valid root is unchanged by the check. */
+    char hash_again[65];
+    mtbdd_sha256(x, hash_again);
+    test_assert(strcmp(hash, hash_again) == 0);
+
+    mtbdd_unprotect(&x);
+
+    /* The same contract holds for the ZDD family. */
+    const ZDD zdd_bad = zdd_invalid;
+    test_assert(zdd_node_count(zdd_bad) == 0);
+    test_assert(zdd_shared_node_count(&zdd_bad, 1) == 0);
+    const ZDD zdd_good = zdd_false;
+    const size_t zdd_good_nodes = zdd_node_count(zdd_good);
+    test_assert(zdd_node_count(zdd_good) == zdd_good_nodes);
+
+    out = tmpfile();
+    test_assert(out != NULL);
+    zdd_fprint_dot(out, zdd_bad);
+    test_assert(ftell(out) == 0);
+    zdd_fprint_dot(out, zdd_good);
+    test_assert(ftell(out) > 0);
+    test_assert(fclose(out) == 0);
+
+    /* And for the ListDD family, whose handle is the bucket index itself. */
+    const LISTDD ldd_bad = listdd_invalid;
+    test_assert(listdd_node_count(ldd_bad) == 0);
+
+    size_t levels[4];
+    memset(levels, 0, sizeof(levels));
+    listdd_node_count_per_level(ldd_bad, levels);
+    test_assert(levels[0] == 0);
+
+    memset(hash, 'x', sizeof(hash));
+    listdd_sha256(ldd_bad, hash);
+    test_assert(hash[0] == '\0');
+    listdd_sha256(listdd_empty_list, hash);
+    test_assert(hash[0] != '\0');
+
+    out = tmpfile();
+    test_assert(out != NULL);
+    listdd_fprint_dot(out, ldd_bad);
+    test_assert(ftell(out) == 0);
+    test_assert(fclose(out) == 0);
+
+    return 0;
+}
+
 int
 test_ldd()
 {
@@ -5611,6 +5734,9 @@ int runtests_CALL(lace_worker* lace)
 
     printf("Testing ldd.\n");
     if (test_ldd()) return 1;
+
+    printf("Testing root validation.\n");
+    if (test_invalid_roots()) return 1;
 
     return 0;
     (void)lace; // suppress unused parameter error

@@ -268,7 +268,8 @@ int zdd_iterator_next(sylvan_iterator *iterator, uint8_t *values, size_t count,
 
 /**
  * Count the number of nodes (internal nodes plus leaves) in ZDDs.
- * Not thread-safe.
+ * Not thread-safe. Returns 0 when any root's index is outside the nodes table;
+ * see "Root validation at traversal entry points" in mtbdd.h.
  */
 size_t zdd_shared_node_count(const ZDD *dds, size_t count);
 

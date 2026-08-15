@@ -5136,9 +5136,24 @@ mtbdd_leafcount_mark(MTBDD mtbdd)
     return mtbdd_leafcount_mark(mtbddnode_getlow(n)) + mtbdd_leafcount_mark(mtbddnode_gethigh(n));
 }
 
+/**
+ * Are all <count> roots in <mtbdds> safe to dereference?
+ * See "Root validation at traversal entry points" in mtbdd.h.
+ */
+static int
+mtbdd_roots_are_valid(const MTBDD *mtbdds, size_t count)
+{
+    for (size_t i = 0; i < count; i++) {
+        if (!sylvan_index_is_valid(MTBDD_GETINDEX(mtbdds[i]))) return 0;
+    }
+    return 1;
+}
+
 size_t
 mtbdd_shared_leaf_count(const MTBDD *mtbdds, size_t count)
 {
+    if (!mtbdd_roots_are_valid(mtbdds, count)) return 0;
+
     size_t result = 0, i;
     nodes_scratch_acquire(nodes);
     for (i=0; i<count; i++) result += mtbdd_leafcount_mark(mtbdds[i]);
@@ -5165,6 +5180,8 @@ mtbdd_nodecount_mark(MTBDD mtbdd)
 size_t
 mtbdd_shared_node_count(const MTBDD *mtbdds, size_t count)
 {
+    if (!mtbdd_roots_are_valid(mtbdds, count)) return 0;
+
     size_t result = 0, i;
     nodes_scratch_acquire(nodes);
     for (i=0; i<count; i++) result += mtbdd_nodecount_mark(mtbdds[i]);
@@ -5330,6 +5347,8 @@ mtbdd_fprintdot_rec(FILE *out, MTBDD mtbdd)
 void
 mtbdd_fprint_dot(FILE *out, MTBDD mtbdd)
 {
+    if (!mtbdd_roots_are_valid(&mtbdd, 1)) return;
+
     fprintf(out, "digraph \"DD\" {\n");
     fprintf(out, "graph [dpi = 300];\n");
     fprintf(out, "center = true;\n");
@@ -5380,6 +5399,8 @@ mtbdd_fprintdot_nc_rec(FILE *out, MTBDD mtbdd)
 void
 mtbdd_fprint_dot_no_complement(FILE *out, MTBDD mtbdd)
 {
+    if (!mtbdd_roots_are_valid(&mtbdd, 1)) return;
+
     fprintf(out, "digraph \"DD\" {\n");
     fprintf(out, "graph [dpi = 300];\n");
     fprintf(out, "center = true;\n");
@@ -5452,6 +5473,8 @@ mtbdd_fprint_sha256(FILE *f, MTBDD dd)
 void
 mtbdd_sha256(MTBDD dd, char *target)
 {
+    if (!mtbdd_roots_are_valid(&dd, 1)) { target[0] = '\0'; return; }
+
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
     nodes_scratch_acquire(nodes);

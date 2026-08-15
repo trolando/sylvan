@@ -260,7 +260,58 @@ int mtbdd_iterator_next(sylvan_iterator *iterator, uint8_t *values, size_t count
                         MTBDD *leaf, int *has_item);
 
 /**
+ * ROOT VALIDATION AT TRAVERSAL ENTRY POINTS
+ * ---------------------------------------------------------------------------
+ * A decision diagram handle carries a nodes table bucket index. Dereferencing
+ * a handle whose index is not a bucket of the table reads wild memory: the
+ * index is masked to 40 bits and scaled, so a handle such as mtbdd_invalid
+ * lands terabytes past the table. Sylvan's contract is that operations take
+ * handles the caller obtained from Sylvan and still keeps referenced, and for
+ * the operations that matter for performance it stays that way.
+ *
+ * The marked traversals are the exception. They are the reporting and
+ * debugging surface -- counting, writing .dot, structural hashing -- so they
+ * are called with whatever the caller has, often at the point where something
+ * has already gone wrong, and they are not on any hot path. Each of them
+ * therefore checks each of its roots once, on entry, before it walks anything.
+ *
+ * VALIDATED. These check every root they are given and, if any root's index
+ * is outside the table, produce a defined result without dereferencing it.
+ * Counters return 0. Printers and hashers write nothing at all: no .dot output
+ * and, for the hashers, an empty string in the caller's buffer. The check is
+ * O(number of roots), never O(number of nodes).
+ *
+ *     mtbdd_shared_node_count, mtbdd_shared_leaf_count           (return 0)
+ *     mtbdd_node_count, mtbdd_leaf_count                         (return 0)
+ *     mtbdd_fprint_dot, mtbdd_fprint_dot_no_complement           (no output)
+ *     mtbdd_print_dot, mtbdd_print_dot_no_complement             (no output)
+ *     mtbdd_sha256, mtbdd_fprint_sha256, mtbdd_print_sha256      (empty hash)
+ *     zdd_shared_node_count, zdd_node_count                      (return 0)
+ *     zdd_fprint_dot, zdd_print_dot                              (no output)
+ *     listdd_node_count                                          (return 0)
+ *     listdd_node_count_per_level                                (no counts)
+ *     listdd_fprint_dot, listdd_print_dot                        (no output)
+ *     listdd_sha256, listdd_fprint_sha256, listdd_print_sha256   (empty hash)
+ *
+ * NOT VALIDATED, DELIBERATELY. Everything else, and in particular every
+ * operation that computes a decision diagram: bdd_and and the other apply
+ * kernels, the abstraction and composition operations, mtbdd_make_node,
+ * MTBDD_GETNODE and the other node accessors, and the recursive helpers of the
+ * validated entry points above. These keep the "garbage in, undefined out"
+ * contract. Adding a check to them would put a load of the table size and a
+ * branch on the innermost step of every operation, to defend against an input
+ * that a correct caller cannot produce -- and a check inside a recursion is
+ * paid per node rather than per root, which is the cost this design exists to
+ * avoid. The C++ bindings in obj.hpp cannot produce an invalid handle at all;
+ * they throw sylvan::sylvan_error instead of substituting one.
+ *
+ * For a build that does check every dereference, see SYLVAN_CHECK_HANDLES.
+ * ---------------------------------------------------------------------------
+ */
+
+/**
  * Count the number of MTBDD leaves (excluding mtbdd_undefined and bdd_true) in the given <count> MTBDDs
+ * Returns 0 when any root's index is outside the nodes table.
  */
 size_t mtbdd_shared_leaf_count(const MTBDD *mtbdds, size_t count);
 
@@ -268,6 +319,7 @@ static inline size_t mtbdd_leaf_count(MTBDD dd);
 
 /**
  * Count the number of MTBDD nodes and terminals (excluding mtbdd_undefined and bdd_true) in the given <count> MTBDDs
+ * Returns 0 when any root's index is outside the nodes table.
  */
 size_t mtbdd_shared_node_count(const MTBDD *mtbdds, size_t count);
 
@@ -793,12 +845,15 @@ static inline int mtbdd_is_valid(MTBDD dd);
 /**
  * Write a .dot representation of a given MTBDD
  * The callback function is required for custom terminals.
+ * Writes nothing when the root's index is outside the nodes table; see
+ * "Root validation at traversal entry points" above.
  */
 void mtbdd_fprint_dot(FILE *out, MTBDD mtbdd);
 #define mtbdd_print_dot(mtbdd, cb) mtbdd_fprint_dot(stdout, mtbdd)
 
 /**
  * Write a .dot representation of a given MTBDD, but without complement edges.
+ * Writes nothing when the root's index is outside the nodes table.
  */
 void mtbdd_fprint_dot_no_complement(FILE *out, MTBDD mtbdd);
 #define mtbdd_print_dot_no_complement(mtbdd, cb) mtbdd_fprint_dot_no_complement(stdout, mtbdd)
@@ -838,6 +893,8 @@ void mtbdd_fprint_sha256(FILE *f, MTBDD dd);
 
 /**
  * Obtain SHA2 hash; target array must be at least 65 bytes long.
+ * Produces the empty string when the root's index is outside the nodes table;
+ * see "Root validation at traversal entry points" above.
  */
 void mtbdd_sha256(MTBDD dd, char *target);
 

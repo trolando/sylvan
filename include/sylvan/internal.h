@@ -46,6 +46,30 @@ extern "C" {
  */
 extern nodes_table* nodes;
 
+/**
+ * Is <index> a bucket that the nodes table actually has?
+ *
+ * This is the one predicate behind the root validation the marked traversals
+ * perform; see "Root validation at traversal entry points" in mtbdd.h for the
+ * contract, including which entry points call it and which deliberately do
+ * not. Callers pass the bucket index, not the handle: MTBDD_GETINDEX for an
+ * MTBDD, ZDD_GETINDEX for a ZDD, and the handle itself for a LISTDD. Indices
+ * 0 and 1 are the terminal buckets and are accepted, because every family
+ * encodes at least one terminal as an index in that range and the traversals
+ * mark them like any other node.
+ *
+ * Note that this is a bound check and nothing more. It rejects a handle that
+ * cannot be dereferenced without leaving the table, which is what turns the
+ * counters and printers from a wild read into a defined answer. It does not
+ * establish that the index holds a live node of the expected family, and it
+ * is not a substitute for the caller keeping its roots referenced.
+ */
+static inline int
+sylvan_index_is_valid(uint64_t index)
+{
+    return index < nodes_get_size(nodes);
+}
+
 /* Fallible node construction for protected-destination operations. */
 int _mtbdd_try_make_node(MTBDD *destination, uint32_t var, MTBDD low, MTBDD high);
 int _zdd_try_make_node(ZDD *destination, uint32_t var, ZDD low, ZDD high);

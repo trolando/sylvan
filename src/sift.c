@@ -118,6 +118,7 @@ struct sift_run {
     uint32_t ranks;       /* registered ranks, fixed for the session */
     uint64_t size;        /* internal nodes right now */
     uint64_t swaps;       /* swaps made so far */
+    uint64_t refusals;    /* swaps the table refused so far */
 };
 
 /** Whether the search may still make another swap. */
@@ -138,7 +139,14 @@ static int
 sift_swap(lace_worker *lace, struct sift_run *run, uint32_t rank)
 {
     const int status = sylvan_varswap_CALL(lace, rank, NULL);
-    if (status != SYLVAN_OK) return status;
+    if (status != SYLVAN_OK) {
+        /* A refusal is the swap's clean answer, not a failure: it ends the
+           current leg where it struck. Count it here, at the one point every
+           search and return-leg swap passes through, so the report can say
+           whether the final order is the best one seen or a refused one. */
+        if (status == SYLVAN_ERR_OOM) run->refusals++;
+        return status;
+    }
     run->swaps++;
     run->size = sylvan_reorder_forest_size();
     return SYLVAN_OK;
@@ -238,6 +246,7 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
     run.ranks = sylvan_ranks_registered();
     run.size = sylvan_reorder_forest_size();
     run.swaps = 0;
+    run.refusals = 0;
 
     const uint64_t initial = run.size;
     uint32_t candidates = 0;
@@ -278,6 +287,7 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
 
     const uint64_t final_size = run.size;
     const uint64_t swaps = run.swaps;
+    const uint64_t refusals = run.refusals;
 
     const int closed = sylvan_reorder_end_CALL(lace);
     if (status == SYLVAN_OK) status = closed;
@@ -286,6 +296,7 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
         result->initial_size = initial;
         result->final_size = final_size;
         result->swaps = swaps;
+        result->refusals = refusals;
         result->vars_sifted = sifted;
     }
     return status;

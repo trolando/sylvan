@@ -100,6 +100,8 @@ typedef struct sylvan_sift_result {
     uint64_t initial_size;   /* internal nodes before sifting              */
     uint64_t final_size;     /* internal nodes afterwards                  */
     uint64_t swaps;          /* adjacent swaps performed, search and return */
+    uint64_t refusals;       /* swaps the table refused (SYLVAN_ERR_OOM);
+                                each ends a search or return leg early    */
     uint32_t vars_sifted;    /* variables whose excursion was run          */
 } sylvan_sift_result;
 

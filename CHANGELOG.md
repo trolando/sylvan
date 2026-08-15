@@ -23,6 +23,18 @@ All notable changes to Sylvan will be documented in this file.
   `Sylvan` still report failure through their return values.
 
 ### Fixed
+- A cleared operation cache no longer answers a query with a result from before
+  the clear. `cache_clear` zeroes only the status words -- the operands and
+  results stay in place, which is what lets those pages go back to the operating
+  system -- and `cache_get3` accepted a bucket on its hash bits alone. A zeroed
+  status word carries zero hash bits, so the one query in 16384 whose own top
+  hash bits are zero passed that test, compared the surviving key, and on a
+  match was answered with a result computed before the last garbage collection,
+  naming a handle that had since been reused for another node. The status word
+  now carries a live bit that every put sets and every accessor requires, so an
+  emptied bucket matches nothing; the tag field narrows from 16 to 15 bits to
+  make room. `cache_get4` was already immune, because it also requires the bit
+  that marks a two-bucket entry.
 - The node and leaf counters, the `.dot` writers and the structural hashes now
   check each root they are given once, on entry, and return a defined result --
   0 for counts, no output for the writers, an empty string for the hashes --

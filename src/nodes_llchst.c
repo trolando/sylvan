@@ -70,8 +70,14 @@
 #define LLCHST_AUX_COUNT         4u
 #define LLCHST_REBUILD_GRAIN  4096u
 
+/*
+ * Target live nodes per head after a collection. Measured on a quiet machine
+ * (queens12, tic-tac-toe20, qbf, P1): 1 is 8-10% faster than 2 for 9-13%
+ * more peak RSS (heads cost 8 B/slot instead of 4), and does not help
+ * picotrav. Speed was chosen as the default; 2 is the memory-leaning setting.
+ */
 #ifndef SYLVAN_LLCHST_LOAD_FACTOR
-#define SYLVAN_LLCHST_LOAD_FACTOR 2u
+#define SYLVAN_LLCHST_LOAD_FACTOR 1u
 #endif
 
 #ifndef SYLVAN_LLCHST_INITIAL_HEAD_LOG2

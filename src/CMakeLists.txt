@@ -148,7 +148,7 @@ elseif(_sylvan_nodes_table STREQUAL "llcht")
 elseif(_sylvan_nodes_table STREQUAL "llchst")
     set(_sylvan_nodes_src nodes_llchst.c)
     set(_sylvan_nodes_def SYLVAN_NODES_TABLE_LLCHST=1)
-    set(SYLVAN_LLCHST_LOAD_FACTOR "2" CACHE STRING
+    set(SYLVAN_LLCHST_LOAD_FACTOR "1" CACHE STRING
         "Target live nodes per LLCHST head after garbage collection")
     set(SYLVAN_LLCHST_INITIAL_HEAD_LOG2 "8" CACHE STRING
         "Initial log2 head count for a newly used LLCHST subtable")

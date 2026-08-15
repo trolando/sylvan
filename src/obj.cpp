@@ -591,8 +591,10 @@ Bdd::PickOneCube(const BddSet &variables) const
 Bdd
 Bdd::PickOneCube() const
 {
-    BDDSET support = apply_mtbdd_support(mtbdd_support, bdd);
-    return Bdd(apply_unary_set(bdd_pick_cube, bdd, support));
+    /* Held in a Bdd, not a raw BDDSET: bdd_pick_cube allocates and may
+       collect, and its vars argument is not protected on the C side. */
+    Bdd support = Bdd(apply_mtbdd_support(mtbdd_support, bdd));
+    return Bdd(apply_unary_set(bdd_pick_cube, bdd, support.bdd));
 }
 
 Bdd
@@ -627,9 +629,11 @@ Bdd::VectorCube(const std::vector<Bdd> variables)
 Bdd
 Bdd::VariablesCube(std::vector<uint32_t> variables)
 {
-    BDD result = bdd_true;
+    /* Held in a Bdd across the loop: each mtbdd_make_node may collect, and
+       the cube built so far would otherwise be referenced only by this local. */
+    Bdd result = bddOne();
     for (size_t i=variables.size(); i>0; i--) {
-        result = mtbdd_make_node(variables[i-1], bdd_false, result);
+        result = Bdd(mtbdd_make_node(variables[i-1], bdd_false, result.bdd));
     }
     return result;
 }

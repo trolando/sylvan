@@ -42,6 +42,7 @@
 #include <sylvan/bdd.h>
 #include <sylvan/listdd.h>
 #include <sylvan/zdd.h>
+#include <sylvan/reorder.h>
 
 #include <sylvan/bdd_impl.h>
 #include <sylvan/mtbdd_impl.h>

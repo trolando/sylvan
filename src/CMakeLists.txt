@@ -66,6 +66,7 @@ target_sources(sylvan
     reorder.c
     serialize.c
     sha2.c
+    sift.c
     sl.c
     stats.c
     zdd.c
@@ -87,6 +88,7 @@ target_sources(sylvan
       ${PROJECT_SOURCE_DIR}/include/sylvan/mtbdd_impl.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/nodes.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/platform.h
+      ${PROJECT_SOURCE_DIR}/include/sylvan/reorder.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/serialize.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/serialize_impl.h
       ${PROJECT_SOURCE_DIR}/include/sylvan/stats.h

@@ -19,6 +19,20 @@
 
 using namespace sylvan;
 
+/**
+ * The one place a Sylvan status turns into a C++ exception.
+ *
+ * Out of line on purpose: sylvan::detail::check() is inline and reduces on the
+ * success path to a compare against SYLVAN_OK and a not-taken branch, with the
+ * cold construction of the exception living here instead of at each of the
+ * call sites that route through it.
+ */
+void
+sylvan::detail::throw_status(int status)
+{
+    throw sylvan_error(status);
+}
+
 namespace {
 
 using bdd_binary_op = int (*)(BDD*, BDD, BDD);
@@ -36,6 +50,14 @@ using mtbdd_tolerance_predicate_op = int (*)(int*, MTBDD, MTBDD, double);
 using mtbdd_compare_op = int (*)(BDD*, MTBDD, MTBDD);
 using mtbdd_tolerance_compare_op = int (*)(BDD*, MTBDD, MTBDD, double);
 
+/**
+ * Every helper below has the same shape: protect the destination, run the
+ * operation, release the protection, then hand the status to detail::check,
+ * which throws sylvan_error when it is not SYLVAN_OK. The protection is
+ * released before the check so that the throw cannot leave a protect entry
+ * pointing at a dead stack slot.
+ */
+
 BDD
 apply_binary(bdd_binary_op op, BDD a, BDD b)
 {
@@ -43,7 +65,8 @@ apply_binary(bdd_binary_op op, BDD a, BDD b)
     mtbdd_protect(&result);
     int status = op(&result, a, b);
     mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    detail::check(status);
+    return result;
 }
 
 BDD
@@ -53,7 +76,8 @@ apply_unary(bdd_unary_op op, BDD dd)
     mtbdd_protect(&result);
     int status = op(&result, dd);
     mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    detail::check(status);
+    return result;
 }
 
 BDD
@@ -63,7 +87,8 @@ apply_ite(BDD a, BDD b, BDD c)
     mtbdd_protect(&result);
     int status = bdd_ite(&result, a, b, c);
     mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    detail::check(status);
+    return result;
 }
 
 BDD
@@ -73,7 +98,8 @@ apply_unary_set(bdd_unary_set_op op, BDD dd, BDDSET vars)
     mtbdd_protect(&result);
     int status = op(&result, dd, vars);
     mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    detail::check(status);
+    return result;
 }
 
 BDD
@@ -83,7 +109,8 @@ apply_binary_set(bdd_binary_set_op op, BDD a, BDD b, BDDSET vars)
     mtbdd_protect(&result);
     int status = op(&result, a, b, vars);
     mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    detail::check(status);
+    return result;
 }
 
 BDD
@@ -93,7 +120,8 @@ apply_compose(bdd_compose_op op, BDD dd, MTBDDMAP map)
     mtbdd_protect(&result);
     int status = op(&result, dd, map);
     mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    detail::check(status);
+    return result;
 }
 
 BDD
@@ -103,7 +131,8 @@ apply_cube(bdd_cube_op op, BDDSET vars, const uint8_t *cube)
     mtbdd_protect(&result);
     int status = op(&result, vars, cube);
     mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    detail::check(status);
+    return result;
 }
 
 BDD
@@ -113,7 +142,8 @@ apply_or_cube(bdd_or_cube_op op, BDD dd, BDDSET vars, const uint8_t *cube)
     mtbdd_protect(&result);
     int status = op(&result, dd, vars, cube);
     mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    detail::check(status);
+    return result;
 }
 
 BDDSET
@@ -123,7 +153,8 @@ apply_mtbdd_support(mtbdd_support_op op, MTBDD dd)
     mtbdd_protect(&result);
     int status = op(&result, dd);
     mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    detail::check(status);
+    return result;
 }
 
 MTBDD
@@ -133,7 +164,8 @@ apply_mtbdd_compose(mtbdd_compose_op op, MTBDD dd, MTBDDMAP map)
     mtbdd_protect(&result);
     int status = op(&result, dd, map);
     mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    detail::check(status);
+    return result;
 }
 
 MTBDD
@@ -143,14 +175,16 @@ apply_mtbdd_threshold(mtbdd_threshold_op op, MTBDD dd, double value)
     mtbdd_protect(&result);
     int status = op(&result, dd, value);
     mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    detail::check(status);
+    return result;
 }
 
 bool
 apply_mtbdd_predicate(mtbdd_predicate_op op, MTBDD a, MTBDD b)
 {
     int result = 0;
-    return op(&result, a, b) == SYLVAN_OK && result != 0;
+    detail::check(op(&result, a, b));
+    return result != 0;
 }
 
 bool
@@ -158,7 +192,8 @@ apply_mtbdd_tolerance_predicate(mtbdd_tolerance_predicate_op op,
                                 MTBDD a, MTBDD b, double tolerance)
 {
     int result = 0;
-    return op(&result, a, b, tolerance) == SYLVAN_OK && result != 0;
+    detail::check(op(&result, a, b, tolerance));
+    return result != 0;
 }
 
 Bdd
@@ -168,7 +203,8 @@ apply_mtbdd_compare(mtbdd_compare_op op, MTBDD a, MTBDD b)
     mtbdd_protect(&result);
     int status = op(&result, a, b);
     mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    detail::check(status);
+    return result;
 }
 
 Bdd
@@ -179,7 +215,8 @@ apply_mtbdd_tolerance_compare(mtbdd_tolerance_compare_op op,
     mtbdd_protect(&result);
     int status = op(&result, a, b, tolerance);
     mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    detail::check(status);
+    return result;
 }
 
 }
@@ -449,7 +486,8 @@ Bdd::Eval(const BddSet &variables, const std::vector<uint8_t> &values) const
     mtbdd_protect(&result);
     int status = bdd_eval(&result, bdd, variables.set.bdd, values.data(), values.size());
     mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    detail::check(status);
+    return result;
 }
 
 Bdd
@@ -682,7 +720,10 @@ Bdd::Else() const
 BddMap::BddMap(uint32_t key_variable, const Bdd value) : bdd(mtbdd_invalid)
 {
     mtbdd_protect(&bdd);
-    (void)mtbdd_map_set(&bdd, mtbdd_map_empty(), key_variable, value.bdd);
+    const int status = mtbdd_map_set(&bdd, mtbdd_map_empty(), key_variable, value.bdd);
+    /* A throw from a constructor body skips ~BddMap(), so release here. */
+    if (status != SYLVAN_OK) mtbdd_unprotect(&bdd);
+    detail::check(status);
 }
 
 
@@ -690,14 +731,14 @@ BddMap
 BddMap::operator+(const Bdd& other) const
 {
     BddMap result;
-    (void)mtbdd_map_update(&result.bdd, bdd, other.bdd);
+    detail::check(mtbdd_map_update(&result.bdd, bdd, other.bdd));
     return result;
 }
 
 BddMap&
 BddMap::operator+=(const Bdd& other)
 {
-    (void)mtbdd_map_update(&bdd, bdd, other.bdd);
+    detail::check(mtbdd_map_update(&bdd, bdd, other.bdd));
     return *this;
 }
 
@@ -705,27 +746,27 @@ BddMap
 BddMap::operator-(const Bdd& other) const
 {
     BddMap result;
-    (void)mtbdd_map_remove_all(&result.bdd, bdd, other.bdd);
+    detail::check(mtbdd_map_remove_all(&result.bdd, bdd, other.bdd));
     return result;
 }
 
 BddMap&
 BddMap::operator-=(const Bdd& other)
 {
-    (void)mtbdd_map_remove_all(&bdd, bdd, other.bdd);
+    detail::check(mtbdd_map_remove_all(&bdd, bdd, other.bdd));
     return *this;
 }
 
 void
 BddMap::put(uint32_t key, Bdd value)
 {
-    (void)mtbdd_map_set(&bdd, bdd, key, value.bdd);
+    detail::check(mtbdd_map_set(&bdd, bdd, key, value.bdd));
 }
 
 void
 BddMap::removeKey(uint32_t key)
 {
-    (void)mtbdd_map_remove(&bdd, bdd, key);
+    detail::check(mtbdd_map_remove(&bdd, bdd, key));
 }
 
 size_t
@@ -766,7 +807,16 @@ Mtbdd::fractionTerminal(int64_t nominator, uint64_t denominator)
 Mtbdd
 Mtbdd::terminal(uint32_t type, uint64_t value)
 {
-    return mtbdd_leaf(type, value);
+    /**
+     * mtbdd_leaf is value-returning rather than status-returning: it reports a
+     * custom leaf that its create callback rejected by returning mtbdd_invalid.
+     * Map that sentinel onto the status the C custom-leaf operators use for it
+     * (see gmp_apply_result in gmp.c) so that it reaches the same check as
+     * every other failure. The built-in leaf types cannot take this path.
+     */
+    const MTBDD leaf = mtbdd_leaf(type, value);
+    detail::check(leaf == mtbdd_invalid ? SYLVAN_ERR_INVALID : SYLVAN_OK);
+    return leaf;
 }
 
 Mtbdd
@@ -791,7 +841,7 @@ Mtbdd
 Mtbdd::mtbddCube(const BddSet &variables, uint8_t *values, const Mtbdd &terminal)
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_cube(&result.mtbdd, variables.set.bdd, values, terminal.mtbdd);
+    detail::check(mtbdd_cube(&result.mtbdd, variables.set.bdd, values, terminal.mtbdd));
     return result;
 }
 
@@ -800,7 +850,7 @@ Mtbdd::mtbddCube(const BddSet &variables, std::vector<uint8_t> values, const Mtb
 {
     uint8_t *data = values.data();
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_cube(&result.mtbdd, variables.set.bdd, data, terminal.mtbdd);
+    detail::check(mtbdd_cube(&result.mtbdd, variables.set.bdd, data, terminal.mtbdd));
     return result;
 }
 
@@ -850,7 +900,7 @@ Mtbdd
 Mtbdd::Negate() const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_neg(&result.mtbdd, mtbdd);
+    detail::check(mtbdd_neg(&result.mtbdd, mtbdd));
     return result;
 }
 
@@ -858,7 +908,7 @@ Mtbdd
 Mtbdd::Apply(const Mtbdd &other, mtbdd_apply_cb op) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_apply(&result.mtbdd, mtbdd, other.mtbdd, op);
+    detail::check(mtbdd_apply(&result.mtbdd, mtbdd, other.mtbdd, op));
     return result;
 }
 
@@ -866,7 +916,7 @@ Mtbdd
 Mtbdd::Map(const mtbdd_map_op &operation) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_map(&result.mtbdd, mtbdd, &operation);
+    detail::check(mtbdd_map(&result.mtbdd, mtbdd, &operation));
     return result;
 }
 
@@ -874,7 +924,7 @@ Mtbdd
 Mtbdd::Abstract(const BddSet &variables, mtbdd_abstract_cb op) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_abstract(&result.mtbdd, mtbdd, variables.set.bdd, op);
+    detail::check(mtbdd_abstract(&result.mtbdd, mtbdd, variables.set.bdd, op));
     return result;
 }
 
@@ -882,7 +932,7 @@ Mtbdd
 Mtbdd::Ite(const Mtbdd &g, const Mtbdd &h) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_ite(&result.mtbdd, mtbdd, g.mtbdd, h.mtbdd);
+    detail::check(mtbdd_ite(&result.mtbdd, mtbdd, g.mtbdd, h.mtbdd));
     return result;
 }
 
@@ -890,7 +940,7 @@ Mtbdd
 Mtbdd::Plus(const Mtbdd &other) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_add(&result.mtbdd, mtbdd, other.mtbdd);
+    detail::check(mtbdd_add(&result.mtbdd, mtbdd, other.mtbdd));
     return result;
 }
 
@@ -898,7 +948,7 @@ Mtbdd
 Mtbdd::Times(const Mtbdd &other) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_mul(&result.mtbdd, mtbdd, other.mtbdd);
+    detail::check(mtbdd_mul(&result.mtbdd, mtbdd, other.mtbdd));
     return result;
 }
 
@@ -906,7 +956,7 @@ Mtbdd
 Mtbdd::Min(const Mtbdd &other) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_min(&result.mtbdd, mtbdd, other.mtbdd);
+    detail::check(mtbdd_min(&result.mtbdd, mtbdd, other.mtbdd));
     return result;
 }
 
@@ -914,7 +964,7 @@ Mtbdd
 Mtbdd::Max(const Mtbdd &other) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_max(&result.mtbdd, mtbdd, other.mtbdd);
+    detail::check(mtbdd_max(&result.mtbdd, mtbdd, other.mtbdd));
     return result;
 }
 
@@ -922,7 +972,7 @@ Mtbdd
 Mtbdd::Divide(const Mtbdd &other) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_div(&result.mtbdd, mtbdd, other.mtbdd);
+    detail::check(mtbdd_div(&result.mtbdd, mtbdd, other.mtbdd));
     return result;
 }
 
@@ -980,7 +1030,7 @@ Mtbdd
 Mtbdd::AbstractPlus(const BddSet &variables) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_abstract_add(&result.mtbdd, mtbdd, variables.set.bdd);
+    detail::check(mtbdd_abstract_add(&result.mtbdd, mtbdd, variables.set.bdd));
     return result;
 }
 
@@ -988,7 +1038,7 @@ Mtbdd
 Mtbdd::AbstractTimes(const BddSet &variables) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_abstract_mul(&result.mtbdd, mtbdd, variables.set.bdd);
+    detail::check(mtbdd_abstract_mul(&result.mtbdd, mtbdd, variables.set.bdd));
     return result;
 }
 
@@ -996,7 +1046,7 @@ Mtbdd
 Mtbdd::AbstractMin(const BddSet &variables) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_abstract_min(&result.mtbdd, mtbdd, variables.set.bdd);
+    detail::check(mtbdd_abstract_min(&result.mtbdd, mtbdd, variables.set.bdd));
     return result;
 }
 
@@ -1004,7 +1054,7 @@ Mtbdd
 Mtbdd::AbstractMax(const BddSet &variables) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_abstract_max(&result.mtbdd, mtbdd, variables.set.bdd);
+    detail::check(mtbdd_abstract_max(&result.mtbdd, mtbdd, variables.set.bdd));
     return result;
 }
 
@@ -1012,7 +1062,7 @@ Mtbdd
 Mtbdd::AndExists(const Mtbdd &other, const BddSet &variables) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_mul_abstract_add(&result.mtbdd, mtbdd, other.mtbdd, variables.set.bdd);
+    detail::check(mtbdd_mul_abstract_add(&result.mtbdd, mtbdd, other.mtbdd, variables.set.bdd));
     return result;
 }
 
@@ -1051,14 +1101,14 @@ Mtbdd
 Mtbdd::operator*(const Mtbdd& other) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_mul(&result.mtbdd, mtbdd, other.mtbdd);
+    detail::check(mtbdd_mul(&result.mtbdd, mtbdd, other.mtbdd));
     return result;
 }
 
 Mtbdd&
 Mtbdd::operator*=(const Mtbdd& other)
 {
-    (void)mtbdd_mul(&mtbdd, mtbdd, other.mtbdd);
+    detail::check(mtbdd_mul(&mtbdd, mtbdd, other.mtbdd));
     return *this;
 }
 
@@ -1066,14 +1116,14 @@ Mtbdd
 Mtbdd::operator+(const Mtbdd& other) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_add(&result.mtbdd, mtbdd, other.mtbdd);
+    detail::check(mtbdd_add(&result.mtbdd, mtbdd, other.mtbdd));
     return result;
 }
 
 Mtbdd&
 Mtbdd::operator+=(const Mtbdd& other)
 {
-    (void)mtbdd_add(&mtbdd, mtbdd, other.mtbdd);
+    detail::check(mtbdd_add(&mtbdd, mtbdd, other.mtbdd));
     return *this;
 }
 
@@ -1081,14 +1131,14 @@ Mtbdd
 Mtbdd::operator-(const Mtbdd& other) const
 {
     Mtbdd result(mtbdd_invalid);
-    (void)mtbdd_sub(&result.mtbdd, mtbdd, other.mtbdd);
+    detail::check(mtbdd_sub(&result.mtbdd, mtbdd, other.mtbdd));
     return result;
 }
 
 Mtbdd&
 Mtbdd::operator-=(const Mtbdd& other)
 {
-    (void)mtbdd_sub(&mtbdd, mtbdd, other.mtbdd);
+    detail::check(mtbdd_sub(&mtbdd, mtbdd, other.mtbdd));
     return *this;
 }
 
@@ -1101,7 +1151,7 @@ Mtbdd::operator/(const Mtbdd& other) const
 Mtbdd&
 Mtbdd::operator/=(const Mtbdd& other)
 {
-    (void)mtbdd_div(&mtbdd, mtbdd, other.mtbdd);
+    detail::check(mtbdd_div(&mtbdd, mtbdd, other.mtbdd));
     return *this;
 }
 
@@ -1154,7 +1204,8 @@ Mtbdd::Eval(const BddSet &variables, const std::vector<uint8_t> &values) const
     mtbdd_protect(&result);
     int status = mtbdd_eval(&result, mtbdd, variables.set.bdd, values.data(), values.size());
     mtbdd_unprotect(&result);
-    return status == SYLVAN_OK ? result : mtbdd_invalid;
+    detail::check(status);
+    return result;
 }
 
 Mtbdd
@@ -1195,21 +1246,24 @@ Mtbdd::NodeCount() const
 MtbddMap::MtbddMap(uint32_t key_variable, Mtbdd value) : mtbdd(mtbdd_invalid)
 {
     mtbdd_protect(&mtbdd);
-    (void)mtbdd_map_set(&mtbdd, mtbdd_map_empty(), key_variable, value.mtbdd);
+    const int status = mtbdd_map_set(&mtbdd, mtbdd_map_empty(), key_variable, value.mtbdd);
+    /* A throw from a constructor body skips ~MtbddMap(), so release here. */
+    if (status != SYLVAN_OK) mtbdd_unprotect(&mtbdd);
+    detail::check(status);
 }
 
 MtbddMap
 MtbddMap::operator+(const Mtbdd& other) const
 {
     MtbddMap result;
-    (void)mtbdd_map_update(&result.mtbdd, mtbdd, other.mtbdd);
+    detail::check(mtbdd_map_update(&result.mtbdd, mtbdd, other.mtbdd));
     return result;
 }
 
 MtbddMap&
 MtbddMap::operator+=(const Mtbdd& other)
 {
-    (void)mtbdd_map_update(&mtbdd, mtbdd, other.mtbdd);
+    detail::check(mtbdd_map_update(&mtbdd, mtbdd, other.mtbdd));
     return *this;
 }
 
@@ -1217,27 +1271,27 @@ MtbddMap
 MtbddMap::operator-(const Mtbdd& other) const
 {
     MtbddMap result;
-    (void)mtbdd_map_remove_all(&result.mtbdd, mtbdd, other.mtbdd);
+    detail::check(mtbdd_map_remove_all(&result.mtbdd, mtbdd, other.mtbdd));
     return result;
 }
 
 MtbddMap&
 MtbddMap::operator-=(const Mtbdd& other)
 {
-    (void)mtbdd_map_remove_all(&mtbdd, mtbdd, other.mtbdd);
+    detail::check(mtbdd_map_remove_all(&mtbdd, mtbdd, other.mtbdd));
     return *this;
 }
 
 void
 MtbddMap::put(uint32_t key, Mtbdd value)
 {
-    (void)mtbdd_map_set(&mtbdd, mtbdd, key, value.mtbdd);
+    detail::check(mtbdd_map_set(&mtbdd, mtbdd, key, value.mtbdd));
 }
 
 void
 MtbddMap::removeKey(uint32_t key)
 {
-    (void)mtbdd_map_remove(&mtbdd, mtbdd, key);
+    detail::check(mtbdd_map_remove(&mtbdd, mtbdd, key));
 }
 
 size_t

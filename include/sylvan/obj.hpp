@@ -17,6 +17,7 @@
 #ifndef SYLVAN_OBJ_H
 #define SYLVAN_OBJ_H
 
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -24,6 +25,70 @@
 #include <sylvan/sylvan.h>
 
 namespace sylvan {
+
+/**
+ * @brief The one exception type these bindings throw.
+ *
+ * ERROR POLICY. Every operation in the C++ bindings that wraps a fallible
+ * Sylvan C function reports failure by throwing this type, and only this type.
+ * There is no error return value and no silently substituted result. The
+ * what() string is the description sylvan_status_string() gives for the
+ * status; status() returns the negative SYLVAN_ERR_* code itself, so a caller
+ * can distinguish SYLVAN_ERR_OOM from SYLVAN_ERR_INVALID without parsing text.
+ *
+ * OPERAND STATE. The C API leaves the destination of a failed operation
+ * untouched, so a wrapper object is unchanged when an operation on it throws.
+ * This holds for in-place operators (a *= b that throws has not modified a)
+ * as well as for the operands of operators that return a new object.
+ *
+ * THE INVALID HANDLE. mtbdd_invalid is not a decision diagram; dereferencing
+ * it is undefined. No operation in these bindings can produce a Bdd, Mtbdd,
+ * BddMap or MtbddMap holding it: the sites that used to substitute it for a
+ * failed result now throw instead. A default-constructed Bdd is bddZero() and
+ * a default-constructed Mtbdd is mtbddZero(), both ordinary terminals, so
+ * there is no invalid default state either. The only way to obtain one is to
+ * pass a raw invalid handle to the Bdd(BDD) / Mtbdd(MTBDD) conversion
+ * constructors, which wrap whatever handle they are given. Such an object is
+ * safe to compare, assign and destroy, and the inspection helpers NodeCount(),
+ * PrintDot() and GetShaHash() are defined on it (see mtbdd.h, "Root validation
+ * at traversal entry points"), but passing it to any other operation is
+ * undefined behaviour exactly as it is in the C API.
+ */
+class sylvan_error : public std::runtime_error
+{
+public:
+    explicit sylvan_error(int status)
+        : std::runtime_error(sylvan_status_string(status)), status_(status) {}
+
+    /** @brief The negative SYLVAN_ERR_* status that caused this exception. */
+    int status() const { return status_; }
+
+private:
+    int status_;
+};
+
+namespace detail {
+
+/**
+ * @brief Throw sylvan_error(status). Never returns.
+ *
+ * Deliberately not inline: it keeps the cold throw out of every call site, so
+ * that check() below compiles to a single not-taken branch on success.
+ */
+void throw_status(int status);
+
+/**
+ * @brief The single point where a Sylvan status becomes a C++ exception.
+ *
+ * Every fallible call in the bindings is routed through this function. On
+ * success it does nothing at all.
+ */
+inline void check(int status)
+{
+    if (status != SYLVAN_OK) throw_status(status);
+}
+
+}
 
 class BddSet;
 class BddMap;
@@ -40,7 +105,10 @@ public:
     Bdd(const Bdd &from) : bdd(from.bdd) { mtbdd_protect(&bdd); }
     Bdd(const uint32_t var) : bdd(mtbdd_invalid) {
         mtbdd_protect(&bdd);
-        (void)bdd_var_at_level(&bdd, var);
+        const int status = bdd_var_at_level(&bdd, var);
+        /* A throw from a constructor body skips ~Bdd(), so release here. */
+        if (status != SYLVAN_OK) mtbdd_unprotect(&bdd);
+        detail::check(status);
     }
     ~Bdd() { mtbdd_unprotect(&bdd); }
 
@@ -301,6 +369,13 @@ public:
 
     /**
      * @brief Compute the exact number of satisfying variable assignments.
+     * @return true when the count was computed, false otherwise.
+     *
+     * Together with Mtbdd::SatCountU64 and the static methods of Sylvan, this
+     * is one of the few members that reports failure through its return value
+     * instead of throwing sylvan_error: the bool is its documented result
+     * channel, and a count that does not fit in 64 bits is an ordinary outcome
+     * rather than an error. <result> is unchanged when it returns false.
      */
     bool SatCountU64(uint64_t &result, const BddSet &variables) const;
 
@@ -822,6 +897,10 @@ public:
 
     /**
      * @brief Compute the exact number of satisfying variable assignments.
+     * @return true when the count was computed, false otherwise.
+     *
+     * Reports failure through its return value rather than by throwing; see
+     * Bdd::SatCountU64. <result> is unchanged when it returns false.
      */
     bool SatCountU64(uint64_t &result, const BddSet &variables) const;
 

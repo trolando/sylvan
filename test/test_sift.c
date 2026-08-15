@@ -474,6 +474,14 @@ test_queens_sift(int report)
 {
     sylvan_sift_result result;
     test_assert(sylvan_sift_report(NULL, &result) == SYLVAN_OK);
+    /* Sifting returns every variable to the best position it saw, so the
+       forest never grows -- provided no swap on a return leg was refused.
+       A refusal (SYLVAN_ERR_OOM from the swap's reservation) is a documented
+       outcome that leaves the variable where the refusal struck, and it can
+       legitimately make final_size exceed initial_size. On this table the
+       region ownership fix keeps refusals at zero, so the relation holds and
+       is worth asserting; if it ever fires again, suspect the reservation
+       preflight or the table geometry before suspecting the driver. */
     test_assert(result.final_size <= result.initial_size);
     if (report) {
         test_queens_swaps += result.swaps;

@@ -779,6 +779,12 @@ test_out_of_memory_CALL(lace_worker *lace)
     for (int r = 0; r < TEST_ROOTS; r++) {
         test_assert(test_root[r] == handle[r]);
     }
+
+    /* The filler has done its job: release its protect entries before the
+       array they point into is freed, so no entry is left dangling. */
+    for (size_t i = 0; i < pinned; i++) mtbdd_unprotect(&pins[i]);
+    free(pins);
+
     if (test_check_roots_CALL(lace)) return 1;
     return 0;
 }

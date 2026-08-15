@@ -4753,9 +4753,10 @@ test_cache()
      * A cleared bucket must answer nothing. Zeroing the status word is all that
      * cache_clear does, so the operands and the result of the entry below still
      * sit in the table afterwards and the status alone keeps them out of reach.
-     * The key is picked so that the top 14 bits of its hash are zero, which is
-     * the one query in 2^14 that a bucket cleared to all zeroes would otherwise
-     * still match on hash alone.
+     * The key is picked so that the top 14 bits of its hash are zero -- and
+     * hence the 13 the status word keeps -- which is the one query in 2^13
+     * that a bucket cleared to all zeroes would otherwise still match on hash
+     * alone.
      */
     const uint64_t stale_opid = 704, stale_c = 46768;
     test_assert(cache_put_op(stale_opid, 1, 2, stale_c, 66));

@@ -89,9 +89,9 @@ cache_next_opid(void)
 
 #define CACHE_STATUS_LOCK      UINT32_C(0x80000000)
 #define CACHE_STATUS_PAIR      UINT32_C(0x40000000)
-#define CACHE_STATUS_HASH_MASK UINT32_C(0x3fff0000)
-#define CACHE_STATUS_LIVE      UINT32_C(0x00008000)
-#define CACHE_STATUS_TAG_MASK  UINT32_C(0x00007fff)
+#define CACHE_STATUS_HASH_MASK UINT32_C(0x3ffe0000)
+#define CACHE_STATUS_LIVE      UINT32_C(0x00010000)
+#define CACHE_STATUS_TAG_MASK  UINT32_C(0x0000ffff)
 
 // The bits an accessor must match exactly before it may read a bucket's payload.
 #define CACHE_STATUS_MATCH_MASK                                        \
@@ -362,7 +362,10 @@ cache_getused(void)
 {
     size_t result = 0;
     for (size_t i=0;i<cache_size;i++) {
-        uint32_t s = cache_status[i];
+        /* Statistics may be asked for while workers write; read the status
+           through its atomic representation like every other reader. */
+        const uint32_t s = atomic_load_explicit(
+            (_Atomic(uint32_t)*)cache_status + i, memory_order_relaxed);
         if (s & CACHE_STATUS_LOCK) fprintf(stderr, "cache_getuser: cache in use during cache_getused()\n");
         if (s & CACHE_STATUS_LIVE) result++;
     }

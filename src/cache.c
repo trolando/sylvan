@@ -73,12 +73,34 @@ cache_next_opid(void)
 // status: 0x80000000 - bitlock
 //         0x40000000 - part of a two-bucket entry
 //         0x3fff0000 - hash (part of the 64-bit hash not used to position)
-//         0x0000ffff - tag (every put increases tag field)
+//         0x00008000 - live (set by every put, clear only in an empty bucket)
+//         0x00007fff - tag (every put increases tag field)
+//
+// A bucket is emptied by zeroing its status word and by nothing else: cache_clear
+// zeroes the status array and leaves the operands and results in place, which is
+// what lets sylvan_clear_aligned hand those pages back to the operating system
+// instead of writing over three times as much memory. The payload of a cleared
+// bucket therefore outlives the clear, and the status word alone has to keep it
+// out of reach. That is what the live bit is for. Every put sets it, so an
+// all-zero status satisfies no accessor's match test, whatever hash the query
+// happens to have. An accessor must compare the whole of CACHE_STATUS_MATCH_MASK
+// and never the hash bits on their own, or an emptied bucket becomes reachable
+// again for the one query in 2^14 whose hash bits are zero.
 
 #define CACHE_STATUS_LOCK      UINT32_C(0x80000000)
 #define CACHE_STATUS_PAIR      UINT32_C(0x40000000)
 #define CACHE_STATUS_HASH_MASK UINT32_C(0x3fff0000)
-#define CACHE_STATUS_TAG_MASK  UINT32_C(0x0000ffff)
+#define CACHE_STATUS_LIVE      UINT32_C(0x00008000)
+#define CACHE_STATUS_TAG_MASK  UINT32_C(0x00007fff)
+
+// The bits an accessor must match exactly before it may read a bucket's payload.
+#define CACHE_STATUS_MATCH_MASK                                        \
+    (CACHE_STATUS_LOCK | CACHE_STATUS_PAIR | CACHE_STATUS_HASH_MASK |  \
+     CACHE_STATUS_LIVE)
+
+// The same, for the paired 64-bit status of a two-bucket entry.
+#define CACHE_STATUS_MATCH_MASK64                                      \
+    (((uint64_t)CACHE_STATUS_MATCH_MASK << 32) | CACHE_STATUS_MATCH_MASK)
 
 static inline uint64_t rotl64(uint64_t x, unsigned k) {
     return (x << k) | (x >> (64 - k));
@@ -120,10 +142,10 @@ cache_get6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t 
     cache6_entry* bucket = (cache6_entry*)cache_table + (hash % cache_size)/2;
 #endif
     const uint64_t s = atomic_load_explicit(s_bucket, memory_order_relaxed);
-    // abort if locked or second part of 2-part entry or if different hash
-    uint64_t x = ((hash>>32) & CACHE_STATUS_HASH_MASK) | CACHE_STATUS_PAIR;
+    // abort unless both halves are unlocked, live, paired and carry this hash
+    uint64_t x = ((hash>>32) & CACHE_STATUS_HASH_MASK) | CACHE_STATUS_PAIR | CACHE_STATUS_LIVE;
     x = x | (x<<32);
-    if ((s & 0xffff0000ffff0000) != x) return 0;
+    if ((s & CACHE_STATUS_MATCH_MASK64) != x) return 0;
     atomic_thread_fence(memory_order_acquire); // prevent LoadLoad reordering
     // abort if key different
     if (atomic_load_explicit(&bucket->a, memory_order_relaxed) != a ||
@@ -155,7 +177,7 @@ cache_put6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t 
     // abort if locked
     if (s & UINT64_C(0x8000000080000000)) return 0;
     // create new
-    uint64_t new_s = ((hash>>32) & CACHE_STATUS_HASH_MASK) | CACHE_STATUS_PAIR;
+    uint64_t new_s = ((hash>>32) & CACHE_STATUS_HASH_MASK) | CACHE_STATUS_PAIR | CACHE_STATUS_LIVE;
     new_s |= (new_s<<32);
     new_s |= (((s>>32)+1)&CACHE_STATUS_TAG_MASK)<<32;
     new_s |= (s+1)&CACHE_STATUS_TAG_MASK;
@@ -189,10 +211,10 @@ cache_get_op(
         (_Atomic(uint32_t)*)cache_status + index;
     cache_entry* bucket = cache_table + index;
     const uint32_t s = atomic_load_explicit(s_bucket, memory_order_relaxed);
-    // abort if locked or if part of a 2-part cache entry
-    if (s & (CACHE_STATUS_LOCK | CACHE_STATUS_PAIR)) return 0;
-    // abort if different hash
-    if ((s ^ (hash>>32)) & CACHE_STATUS_HASH_MASK) return 0;
+    // abort unless the bucket is unlocked, live, no part of a 2-part entry, and
+    // carries this hash
+    const uint32_t x = ((uint32_t)(hash>>32) & CACHE_STATUS_HASH_MASK) | CACHE_STATUS_LIVE;
+    if ((s ^ x) & CACHE_STATUS_MATCH_MASK) return 0;
     atomic_thread_fence(memory_order_acquire); // prevent LoadLoad reordering
     // abort if key different
     if (atomic_load_explicit(cache_op + index, memory_order_relaxed) != opid ||
@@ -225,7 +247,7 @@ cache_put_op(
     const uint32_t hash_mask = (hash>>32) & CACHE_STATUS_HASH_MASK;
     // if ((s & 0x7fff0000) == hash_mask) return 0;
     // use cas to claim bucket
-    const uint32_t new_s = ((s+1) & CACHE_STATUS_TAG_MASK) | hash_mask;
+    const uint32_t new_s = ((s+1) & CACHE_STATUS_TAG_MASK) | hash_mask | CACHE_STATUS_LIVE;
     if (!atomic_compare_exchange_weak_explicit(s_bucket, &s, new_s | CACHE_STATUS_LOCK, memory_order_acq_rel, memory_order_relaxed)) return 0;
     // cas succesful: write data
     atomic_store_explicit(cache_op + index, opid, memory_order_relaxed);
@@ -303,7 +325,8 @@ cache_free(void)
 void
 cache_clear(void)
 {
-    /* A zero status makes the corresponding payload unreachable. */
+    /* Zeroing the status words empties every bucket. No live status has a zero
+     * live bit, so this puts the surviving payloads out of reach. */
     sylvan_clear_aligned(cache_status, cache_size * sizeof(*cache_status));
 }
 
@@ -340,8 +363,8 @@ cache_getused(void)
     size_t result = 0;
     for (size_t i=0;i<cache_size;i++) {
         uint32_t s = cache_status[i];
-        if (s & 0x80000000) fprintf(stderr, "cache_getuser: cache in use during cache_getused()\n");
-        if (s) result++;
+        if (s & CACHE_STATUS_LOCK) fprintf(stderr, "cache_getuser: cache in use during cache_getused()\n");
+        if (s & CACHE_STATUS_LIVE) result++;
     }
     return result;
 }

@@ -120,6 +120,10 @@ struct reorder_session {
     struct reorder_list *decision;  /* per identity, NULL if native        */
     struct reorder_list *maps;      /* per identity                        */
 
+    /* Internal (non-leaf) nodes the forest holds right now. Seeded by the
+       opening pass and kept current by every swap; see the accessor. */
+    _Atomic(uint64_t) live;
+
     /* Sparse overflow map for counts that no longer fit in 16 bits. */
     _Atomic(int) overflow_lock;
     uint64_t *overflow_index;
@@ -578,11 +582,13 @@ reorder_seed_CALL(lace_worker *lace, size_t first, size_t count)
     const size_t end = first + count;
     if (first < 2) first = 2;
 
+    uint64_t live = 0;
     for (; first < end; first++) {
         if (!nodes_is_marked(nodes, first)) continue;
         mtbddnode *record = reorder_record(first);
         if (mtbddnode_isleaf(record)) continue;
 
+        live++;
         reorder_edge_up(mtbddnode_getlow(record));
         reorder_edge_up(mtbddnode_gethigh(record));
 
@@ -592,6 +598,12 @@ reorder_seed_CALL(lace_worker *lace, size_t first, size_t count)
         if (list != NULL) {
             atomic_fetch_add_explicit(&list->count, 1, memory_order_relaxed);
         }
+    }
+
+    /* One atomic per block rather than per node: this is the pass that reads
+       every slot in the table. */
+    if (live != 0) {
+        atomic_fetch_add_explicit(&session.live, live, memory_order_relaxed);
     }
 }
 
@@ -864,6 +876,68 @@ sylvan_reorder_end_CALL(lace_worker *lace)
     reorder_free_state();
     session.overflow_promotions = promotions;
     return status;
+}
+
+/**
+ * What the driver on top of a session needs to know about the forest.
+ *
+ * Both answers come out of state the session already maintains, which is the
+ * point: a sifting driver may not recompute the size of the forest or the
+ * population of a variable between swaps, because doing so is a scan of the
+ * whole table per swap and would dominate everything a swap costs.
+ */
+
+uint64_t
+sylvan_reorder_forest_size(void)
+{
+    if (!session.active) return 0;
+    return atomic_load_explicit(&session.live, memory_order_relaxed);
+}
+
+/** Context of the counting visitor below. */
+struct reorder_population {
+    uint32_t identity;
+    uint64_t count;
+};
+
+static int
+reorder_population_cb(uint64_t index, void *context)
+{
+    struct reorder_population *state = (struct reorder_population*)context;
+    if (index < 2 || index >= session.size) return SYLVAN_OK;
+    if (!nodes_is_marked(nodes, index)) return SYLVAN_OK;
+    if (bitmap_get(session.retired, index)) return SYLVAN_OK;
+    mtbddnode *record = reorder_record(index);
+    if (mtbddnode_isleaf(record)) return SYLVAN_OK;
+    if (mtbddnode_ismapnode(record)) return SYLVAN_OK;
+    if (mtbddnode_getvariable(record) != state->identity) return SYLVAN_OK;
+    state->count++;
+    return SYLVAN_OK;
+}
+
+uint64_t
+sylvan_reorder_population(uint32_t identity)
+{
+    if (!session.active) return 0;
+
+    uint64_t count = 0;
+    if (session.native_enumerate) {
+        struct reorder_population state = { identity, 0 };
+        if (nodes_enumerate_var(nodes, identity, reorder_population_cb, &state)
+            != SYLVAN_OK) {
+            return 0;
+        }
+        count = state.count;
+    } else {
+        struct reorder_list *list = reorder_decision_list(identity);
+        if (list != NULL) count = reorder_collect(list, identity, 0);
+    }
+
+    /* Map nodes are part of the population because a swap rewrites them too,
+       and on llchst they are the half native enumeration cannot see. */
+    struct reorder_list *maps = reorder_map_list(identity);
+    if (maps != NULL) count += reorder_collect(maps, identity, 1);
+    return count;
 }
 
 /**
@@ -1446,15 +1520,23 @@ sylvan_varswap_CALL(lace_worker *lace, uint32_t rank,
         reorder_fatal("the rank metadata refused an adjacent swap");
     }
 
+    const uint64_t created = atomic_load_explicit(
+        &session.created, memory_order_relaxed);
+    const int64_t delta = (int64_t)created - (int64_t)died;
+    atomic_store_explicit(
+        &session.live,
+        (uint64_t)((int64_t)atomic_load_explicit(
+                       &session.live, memory_order_relaxed) + delta),
+        memory_order_relaxed);
+
     if (result != NULL) {
         result->swaps = 1;
         result->rewritten = swap_node_count;
         result->map_rewritten = swap_map_count;
-        result->created = atomic_load_explicit(
-            &session.created, memory_order_relaxed);
+        result->created = created;
         result->died = died;
         result->deep_deaths = deep;
-        result->delta = (int64_t)result->created - (int64_t)result->died;
+        result->delta = delta;
     }
 
     reorder_plan_free();

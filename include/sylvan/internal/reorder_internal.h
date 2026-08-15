@@ -132,6 +132,29 @@ TASK(int, sylvan_reorder_end)
 TASK(int, sylvan_varswap, uint32_t, rank, sylvan_varswap_result*, result)
 
 /**
+ * How many internal (non-leaf, non-terminal) nodes the open session's forest
+ * holds. Zero when no session is open.
+ *
+ * This is the number a sifting driver scores positions on. It is seeded by the
+ * pass that seeds the reference counts and moved by every swap's <delta>, so
+ * reading it is free; recomputing it between swaps would be a scan of the whole
+ * table per swap and would cost more than the swaps themselves.
+ */
+uint64_t sylvan_reorder_forest_size(void);
+
+/**
+ * How many nodes of variable identity <identity> the open session's forest
+ * holds, decision nodes and map nodes together. Zero when no session is open.
+ *
+ * A sifting driver asks this once per variable, before it starts, to decide
+ * which variables are worth moving and in what order. The answer comes from
+ * the session's own per-identity lists, or from native enumeration where the
+ * backend has it, so it costs the population and not the table. Asking also
+ * compacts the list, which is why it is not const.
+ */
+uint64_t sylvan_reorder_population(uint32_t identity);
+
+/**
  * Physical slot reuse policy (design experiment E6). Nonzero (the default)
  * releases retired slots at the end of each swap, which bounds memory; zero
  * defers every release to the end of the session, which costs nothing per

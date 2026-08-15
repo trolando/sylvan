@@ -148,16 +148,23 @@ region_has_free_slot(const nodes_table* dbs, uint64_t region)
 /**
  * Claim a region that is unowned and has something to give.
  *
- * Skipping the full ones is what makes this terminate: a worker gives its
- * region back the moment it is exhausted (see below), so without the check a
- * table whose free slots have all been used would hand the same full regions
- * round and round forever.
+ * Skipping the full ones is what makes this terminate: a worker gives an
+ * exhausted region back on its next allocation attempt (see below), so
+ * without the check a table whose free slots have all been used would hand
+ * the same full regions round and round forever. The give-back is lazy, not
+ * immediate -- between exhausting a region and its next allocation the worker
+ * still owns that full region -- but it is still that worker's one current
+ * region, so there are never more owned regions than workers, which is all
+ * the reserve margin needs.
  *
- * The claim acquires, and giving a region back releases, so that a worker
- * that claims a region observes every write the previous owner made to it.
- * That pairing is what lets the allocation path write the slot bitmap with
- * plain loads and stores: at most one worker owns a region at a time, and it
- * sees the whole history of the region before it starts.
+ * The claim acquires and giving a region back releases, pairing on the
+ * ownership CAS: a worker that claims a region observes every write the
+ * previous owner made to it, which is what lets the allocation path write
+ * the slot bitmap with plain loads and stores. The free-slot precheck runs
+ * before that CAS and is not ordered by it; that is safe because ordinary
+ * allocation only ever turns bits from free to occupied, clearing happens
+ * only at a synchronised safepoint, and the post-claim allocation loop scans
+ * the region again anyway.
  */
 static uint64_t
 claim_next_region(const nodes_table* dbs, uint64_t start_region)
@@ -1081,7 +1088,9 @@ nodes_reserve(nodes_table* dbs, uint64_t count)
     if (nodes_reorder_caps(dbs) == 0) return SYLVAN_ERR_INVALID;
     /* One whole region per worker on top of what the caller asked for; see
        above for why the bound needs it. */
-    const uint64_t wanted = count + (uint64_t)lace_worker_count() * 512u;
+    const uint64_t margin = (uint64_t)lace_worker_count() * 512u;
+    if (count > UINT64_MAX - margin) return SYLVAN_ERR_OOM;
+    const uint64_t wanted = count + margin;
     return reserve_free_slots(dbs, wanted) >= wanted
         ? SYLVAN_OK : SYLVAN_ERR_OOM;
 }

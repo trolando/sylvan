@@ -4,6 +4,15 @@ All notable changes to Sylvan will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Added `sylvan_sift`, dynamic variable reordering for the BDD/MTBDD forest.
+  It reorders on request only -- there is no automatic triggering and no hook --
+  and it stops the world for the duration, exactly like garbage collection,
+  which it begins with. Every protected diagram survives, denotes the same
+  function, and keeps its handle. `sylvan_sift_config` bounds what the search
+  may spend and `sylvan_sift_report` says what it did; see `sylvan/reorder.h`.
+  Sifting is refused, changing nothing, while the ZDD or ListDD subsystem is
+  initialised, while a marking hook other than Sylvan's own is registered, or
+  on a nodes table without the reorder primitives.
 - Added the CMake option `SYLVAN_CHECK_HANDLES` (default off). With it, every
   decision diagram node dereference checks that the handle's bucket index is
   inside the nodes table and aborts naming the index when it is not, which

@@ -3,7 +3,34 @@ All notable changes to Sylvan will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Added the CMake option `SYLVAN_CHECK_HANDLES` (default off). With it, every
+  decision diagram node dereference checks that the handle's bucket index is
+  inside the nodes table and aborts naming the index when it is not, which
+  points at the operation that produced a bad handle rather than the one that
+  tripped over it. It is a debugging aid: builds without it are byte-for-byte
+  identical to builds from before the option existed.
+
+### Changed
+- **Breaking (C++).** The C++ bindings in `sylvan/obj.hpp` now report a failed
+  operation by throwing `sylvan::sylvan_error`, which carries the negative
+  `SYLVAN_ERR_*` status and its `sylvan_status_string` description. Previously
+  every failure was silently turned into a `Bdd`/`Mtbdd` holding
+  `mtbdd_invalid`, which callers had no way to detect and which crashed when it
+  was later dereferenced. No wrapper operation can produce an object holding
+  `mtbdd_invalid` any more. The operand of a failed operation is unchanged,
+  including for the in-place operators. `SatCountU64` and the static members of
+  `Sylvan` still report failure through their return values.
+
 ### Fixed
+- The node and leaf counters, the `.dot` writers and the structural hashes now
+  check each root they are given once, on entry, and return a defined result --
+  0 for counts, no output for the writers, an empty string for the hashes --
+  when a root's index is outside the nodes table. Previously such a root was
+  dereferenced anyway: `mtbdd_invalid` masks to index `0xffffffffff`, which is
+  terabytes past the table. Operations that compute decision diagrams keep the
+  "garbage in, undefined out" contract, so nothing is checked per node; see
+  "Root validation at traversal entry points" in `sylvan/mtbdd.h`.
 - Recursive traversals -- the node and leaf counters, the `.dot` writers and
   the structural hashes -- no longer store their visited mark in the node's own
   record. That bit lived in the word the unique table hashes and compares, so

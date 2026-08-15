@@ -443,6 +443,13 @@ implement the reorder primitives. Running out of room *during* a sift is not a
 failure: a swap that cannot reserve what it needs changes nothing at all, and the
 driver simply stops moving that variable in that direction.
 
+A swap asks the nodes table for the slots it will need plus a margin of one
+512-slot allocation region per Lace worker, which is what makes the answer hold
+whichever workers end up doing the allocating. On a table that is small relative
+to the worker count that margin is a large share of it, so a sift that reports no
+swaps on a table which looks half empty usually wants a larger nodes table or
+fewer workers.
+
 Examples
 --------
 

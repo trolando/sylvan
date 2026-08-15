@@ -462,6 +462,34 @@ nodes_reset_region_CALL(lace_worker* lace)
     my_region = UINT64_MAX;
 }
 
+/** Whether a region still holds a slot the worker that claims it could use. */
+static int
+region_has_free_slot(const nodes_table* dbs, uint64_t region)
+{
+    const _Atomic(uint64_t)* words = dbs->bitmap2 + region * 8u;
+    for (unsigned int i = 0; i < 8; i++) {
+        if (atomic_load_explicit(words + i, memory_order_relaxed)
+            != UINT64_MAX) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * Claim a region that is unowned and has something to give.
+ *
+ * Skipping the full ones is what makes this terminate: a worker gives its
+ * region back the moment it is exhausted (see below), so without the check a
+ * table whose free slots have all been used would hand the same full regions
+ * round and round forever.
+ *
+ * The claim acquires, and giving a region back releases, so that a worker
+ * that claims a region observes every write the previous owner made to it.
+ * That pairing is what lets the allocation path write the slot bitmap with
+ * plain loads and stores: at most one worker owns a region at a time, and it
+ * sees the whole history of the region before it starts.
+ */
 static uint64_t
 claim_next_region(const nodes_table* dbs, uint64_t start_region)
 {
@@ -475,18 +503,40 @@ claim_next_region(const nodes_table* dbs, uint64_t start_region)
         const uint64_t mask =
             UINT64_C(0x8000000000000000) >> (region & 63u);
         uint64_t value = atomic_load_explicit(ptr, memory_order_relaxed);
+        if (value & mask) continue;
+        if (!region_has_free_slot(dbs, region)) continue;
 
         for (;;) {
             if (value & mask) break;
             if (atomic_compare_exchange_weak_explicit(
                     ptr, &value, value | mask,
-                    memory_order_relaxed, memory_order_relaxed)) {
+                    memory_order_acquire, memory_order_relaxed)) {
                 return region;
             }
         }
     }
 
     return UINT64_MAX;
+}
+
+/**
+ * Give back a region this worker has used up.
+ *
+ * A region is owned for exactly as long as it is some worker's current one,
+ * which bounds the number of owned regions by the number of workers. That
+ * bound is not cosmetic: it is what nodes_reserve counts against, and it is
+ * what makes a slot released into an exhausted region reachable again. A
+ * session releases retired slots all over the table, and the region they land
+ * in is almost never the region the worker that once filled it is still
+ * standing in.
+ */
+static void
+release_region(const nodes_table* dbs, uint64_t region)
+{
+    const uint64_t mask =
+        UINT64_C(0x8000000000000000) >> (region & 63u);
+    atomic_fetch_and_explicit(
+        dbs->bitmap1 + region / 64u, ~mask, memory_order_release);
 }
 
 static uint64_t
@@ -508,7 +558,10 @@ claim_data_bucket(const nodes_table* dbs)
                 }
             }
 
-            const uint64_t claimed = claim_next_region(dbs, my_region + 1u);
+            const uint64_t exhausted = my_region;
+            my_region = UINT64_MAX;
+            release_region(dbs, exhausted);
+            const uint64_t claimed = claim_next_region(dbs, exhausted + 1u);
             if (claimed == UINT64_MAX) return UINT64_MAX;
             my_region = claimed;
         } else {

@@ -67,7 +67,9 @@ static const sylvan_sift_config sift_default_config = {
     0,      /* nodes_threshold: measured on C880, skipping small variables
                cost up to 2.2x in final size for no measurable time saved,
                because those are exactly the cheap swaps */
-    0.0     /* time_limit      */
+    0.0,    /* time_limit      */
+    0       /* full_legs: the interaction bound is conservative, so bounded
+               legs reach the same final size with about a third fewer swaps */
 };
 
 /**
@@ -122,6 +124,7 @@ struct sift_run {
     uint64_t swaps;       /* swaps made so far */
     uint64_t refusals;    /* swaps the table refused so far */
     uint64_t *pop;        /* live node population per identity, for the bounds */
+    int      bounded;     /* stop a leg when the interaction bound says to */
 };
 
 /** Whether the search may still make another swap. */
@@ -214,17 +217,24 @@ sift_leg(lace_worker *lace, struct sift_run *run, uint32_t rank, int down,
            population of the interacting variables under the sifted one. The
            best size reachable further down is size - reach. */
         uint64_t reach = 0;
-        for (uint32_t r = rank + 1u; r < run->ranks; r++) {
-            const uint32_t below = sylvan_identity_at(r);
-            if (sylvan_reorder_interact(identity, below)) reach += run->pop[below];
+        if (run->bounded) {
+            for (uint32_t r = rank + 1u; r < run->ranks; r++) {
+                const uint32_t below = sylvan_identity_at(r);
+                if (sylvan_reorder_interact(identity, below)) {
+                    reach += run->pop[below];
+                }
+            }
         }
 
         while (rank + 1u < run->ranks) {
             if (!sift_may_swap(run)) break;
-            if (run->size >= limit + reach) break;   /* size - reach >= limit */
-
-            const uint32_t below = sylvan_identity_at(rank + 1u);
-            if (sylvan_reorder_interact(identity, below)) reach -= run->pop[below];
+            if (run->bounded) {
+                if (run->size >= limit + reach) break; /* size-reach >= limit */
+                const uint32_t below = sylvan_identity_at(rank + 1u);
+                if (sylvan_reorder_interact(identity, below)) {
+                    reach -= run->pop[below];
+                }
+            }
             if (sift_swap(lace, run, rank) != SYLVAN_OK) break;
             rank++;
 
@@ -237,21 +247,28 @@ sift_leg(lace_worker *lace, struct sift_run *run, uint32_t rank, int down,
            sifted variable and the non-interacting part above cannot change; of
            the interacting part, all but the topmost level may vanish. It only
            rises as the variable climbs. */
-        uint64_t bound = run->size;
-        for (uint32_t r = 1; r < rank; r++) {
-            const uint32_t above = sylvan_identity_at(r);
-            if (sylvan_reorder_interact(identity, above)) bound -= run->pop[above];
+        uint64_t bound = 0;
+        if (run->bounded) {
+            bound = run->size;
+            for (uint32_t r = 1; r < rank; r++) {
+                const uint32_t above = sylvan_identity_at(r);
+                if (sylvan_reorder_interact(identity, above)) {
+                    bound -= run->pop[above];
+                }
+            }
+            bound -= run->pop[identity];
         }
-        bound -= run->pop[identity];
 
         while (rank > 0) {
             if (!sift_may_swap(run)) break;
-            if (bound > limit) break;
+            if (run->bounded && bound > limit) break;
 
             const uint32_t above = sylvan_identity_at(rank - 1u);
             if (sift_swap(lace, run, rank - 1u) != SYLVAN_OK) break;
             rank--;
-            if (sylvan_reorder_interact(identity, above)) bound += run->pop[above];
+            if (run->bounded && sylvan_reorder_interact(identity, above)) {
+                bound += run->pop[above];
+            }
 
             if (run->size < *best_size) { *best_size = run->size; *best_rank = rank; }
             if (run->size < limit) limit = run->size;
@@ -321,6 +338,7 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
     run.swaps = 0;
     run.refusals = 0;
     run.pop = NULL;
+    run.bounded = !config->full_legs;
 
     const uint64_t initial = run.size;
     uint32_t candidates = 0;
@@ -344,8 +362,9 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
             /* The interaction matrix the leg bounds consult. If it cannot be
                built the driver still runs -- every pair then reads as
                interacting, which is exactly an unbounded sift -- so its failure
-               is not this function's failure. */
-            (void)sylvan_reorder_interact_build();
+               is not this function's failure. A full-legs run never consults
+               it, so it is not built either. */
+            if (run.bounded) (void)sylvan_reorder_interact_build();
 
             for (uint32_t rank = 0; rank < run.ranks; rank++) {
                 const uint32_t identity = sylvan_identity_at(rank);

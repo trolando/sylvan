@@ -436,6 +436,14 @@ abandoned (1.2 by default), a population below which a variable is not moved at 
 (0 by default: skipping small variables was measured to cost final size without
 saving time), and a wall clock limit. ``NULL`` selects the defaults.
 
+By default a variable's excursion also stops as soon as an interaction bound proves
+that no position further in that direction can beat the best already seen -- two
+variables interact when some function depends on both, and a variable can only
+exchange nodes with the ones it interacts with. The bound is conservative: it finds
+the same positions and the same final size as the exhaustive walk, in about a third
+fewer swaps, and it is what CUDD does. Set ``full_legs`` to walk every leg to the
+end of the order anyway, for measurement or for distrust.
+
 Reordering is refused, changing nothing and returning ``SYLVAN_ERR_INVALID``, while
 the ZDD or ListDD subsystem is initialised -- both order their nodes by variable
 identity rather than by position, and they share the node arena -- while a marking

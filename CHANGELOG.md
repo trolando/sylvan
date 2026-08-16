@@ -21,6 +21,23 @@ All notable changes to Sylvan will be documented in this file.
   identical to builds from before the option existed.
 
 ### Changed
+- Sifting now stops a variable's excursion as soon as a variable interaction
+  bound proves that no position further in that direction can beat the best
+  already seen, the way CUDD's sifting does. The bound is conservative, so the
+  final size is the one the exhaustive walk finds, in about a third fewer
+  swaps. Set `full_legs` in `sylvan_sift_config` to walk every leg to the end
+  of the order anyway.
+- The nodes table backends now hand out allocation regions from one shared
+  cursor instead of starting each worker in its own stripe of the table, so
+  node index order follows creation order across workers. The stripes made a
+  heavily shared node created by a high-stripe worker the anchor of its whole
+  fan-in in the backends that index by larger child, which every family walk
+  then paid for: on C880 with eight workers the largest family was seven times
+  longer than the same forest built serially, a serial variable swap on such a
+  table ran 3x slower, and parallel sifting lost more time to the layout than
+  it gained from the workers. With the cursor, a table built in parallel has
+  the family structure of a serial build, and the parallel build itself is
+  slightly faster.
 - **Breaking (C++).** The C++ bindings in `sylvan/obj.hpp` now report a failed
   operation by throwing `sylvan::sylvan_error`, which carries the negative
   `SYLVAN_ERR_*` status and its `sylvan_status_string` description. Previously

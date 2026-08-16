@@ -384,6 +384,18 @@ test_config_CALL(lace_worker *lace)
     test_assert(result.final_size <= result.initial_size);
     if (test_check_roots_CALL(lace)) return 1;
 
+    /* Full legs: the interaction bound switched off. The bound is
+       conservative, so the exhaustive walk finds nothing the bounded runs
+       above missed -- it only spends more swaps proving that -- and the
+       forest it leaves is as small as the bounded one within the same slack
+       the idempotence test allows a repeated sift. */
+    memset(&config, 0, sizeof(config));
+    config.full_legs = 1;
+    test_assert(sylvan_sift_report(&config, &result) == SYLVAN_OK);
+    test_assert(result.final_size <= result.initial_size);
+    test_assert(20 * result.final_size <= 21 * test_first_final_size);
+    if (test_check_roots_CALL(lace)) return 1;
+
     /* And the plain call, which reports nothing. */
     test_assert(sylvan_sift(NULL) == SYLVAN_OK);
     return test_check_roots_CALL(lace);

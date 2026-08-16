@@ -89,6 +89,19 @@ typedef struct sylvan_sift_config {
      * limit is checked between swaps, so a single swap may overrun it.
      */
     double time_limit;
+
+    /**
+     * Nonzero walks every leg to the end of the order. The default, 0, stops
+     * a leg as soon as the interaction bound proves that no position further
+     * in that direction can beat the best already seen: a variable can only
+     * exchange nodes with the variables some function depends on it together
+     * with, so the population of those still ahead bounds what the rest of
+     * the leg could save. The bound is conservative -- both settings find the
+     * same positions and the same final size, measured as well as argued --
+     * and it prunes about a third of all swaps, so the full walk exists for
+     * measurement and for distrust, not for quality.
+     */
+    int full_legs;
 } sylvan_sift_config;
 
 /**

@@ -145,7 +145,9 @@ sift_swap(lace_worker *lace, struct sift_run *run, uint32_t rank)
     const uint32_t upper = sylvan_identity_at(rank);
     const uint32_t lower = sylvan_identity_at(rank + 1u);
 
-    const int status = sylvan_varswap_CALL(lace, rank, NULL);
+    sylvan_varswap_result result;
+    const int status = sylvan_varswap_CALL(
+        lace, rank, run->pop != NULL ? &result : NULL);
     if (status != SYLVAN_OK) {
         /* A refusal is the swap's clean answer, not a failure: it ends the
            current leg where it struck. Count it here, at the one point every
@@ -157,13 +159,17 @@ sift_swap(lace_worker *lace, struct sift_run *run, uint32_t rank)
     run->swaps++;
     run->size = sylvan_reorder_forest_size();
 
-    /* A swap changes the node count of exactly the two variables it moved --
-       one gains the rewritten nodes, the other loses the children they no
-       longer point at -- so refreshing just those two keeps the populations
-       the leg bounds read exact without a scan. */
+    /* Keep the two populations the leg bounds read exact, from the counts the
+       swap already reports rather than a scan. The upper variable loses every
+       case-B node it rewrote to the lower one and gains the children it
+       interned; the lower variable gains those same rewritten nodes and loses
+       only its own nodes, because the depth-1 death theorem says the only nodes
+       a swap can retire are lower-variable ones. Every other variable is
+       untouched, so nothing else moves. */
     if (run->pop != NULL) {
-        run->pop[upper] = sylvan_reorder_population(upper);
-        run->pop[lower] = sylvan_reorder_population(lower);
+        const uint64_t moved = result.rewritten + result.map_rewritten;
+        run->pop[upper] = run->pop[upper] + result.created - moved;
+        run->pop[lower] = run->pop[lower] + moved - result.died;
     }
     return SYLVAN_OK;
 }

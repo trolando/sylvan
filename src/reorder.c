@@ -138,6 +138,13 @@ struct reorder_session {
     _Atomic(size_t) queue_count;
     size_t queue_capacity;
 
+    /* The node set the batched index primitives are handed: the case-B nodes
+       of the swap that is running, and afterwards one round of the queue
+       above. Reserved together with the queue, so that no phase which has
+       already begun mutating can find itself needing to allocate. */
+    uint64_t *batch;
+    size_t batch_capacity;
+
     /* Retired slots awaiting physical release. */
     uint64_t *dead;
     size_t dead_count;
@@ -688,6 +695,7 @@ reorder_free_state(void)
     free(session.overflow_index);
     free(session.overflow_value);
     free(session.queue);
+    free(session.batch);
     free(session.dead);
     memset(&session, 0, sizeof(session));
 }
@@ -1220,6 +1228,11 @@ static size_t swap_node_capacity;
 static struct reorder_caseb_map *swap_maps;
 static size_t swap_map_count;
 static size_t swap_map_capacity;
+/* Whether the index takes its removals and re-indexings a set at a time. When
+   it does, the phases below leave those two calls out: the swap issues them
+   once for the whole set, between the phases, where the backend can run them
+   in parallel instead of one worker at a time. */
+static int swap_batched;
 
 static void
 reorder_plan_free(void)
@@ -1510,6 +1523,21 @@ reorder_classify(void)
         session.queue_capacity = deaths;
     }
 
+    /* The array the batched primitives are handed. It holds this swap's case-B
+       nodes first and one round of the retirement queue afterwards; the queue
+       bound covers both, since it is twice the number of case-B nodes. */
+    if (deaths > session.batch_capacity) {
+        uint64_t *grown = (uint64_t*)realloc(
+            session.batch, deaths * sizeof(uint64_t));
+        if (grown == NULL) return SYLVAN_ERR_OOM;
+        session.batch = grown;
+        session.batch_capacity = deaths;
+    }
+    for (size_t i = 0; i < k; i++) session.batch[i] = swap_nodes[i].index;
+    for (size_t i = 0; i < k_map; i++) {
+        session.batch[k + i] = swap_maps[i].index;
+    }
+
     if (session.dead_count + deaths > session.dead_capacity) {
         const size_t capacity = session.dead_count + deaths;
         uint64_t *grown = (uint64_t*)realloc(
@@ -1569,7 +1597,7 @@ reorder_apply_decision(int phase, struct reorder_caseb *entry)
     }
 
     case REORDER_PHASE_REWRITE: {
-        if (nodes_remove(nodes, entry->index) != SYLVAN_OK) {
+        if (!swap_batched && nodes_remove(nodes, entry->index) != SYLVAN_OK) {
             reorder_fatal("a case-B node was not in the index");
         }
         /* g0 is the low edge of the new node and must carry no complement.
@@ -1585,7 +1613,7 @@ reorder_apply_decision(int phase, struct reorder_caseb *entry)
 
     case REORDER_PHASE_REINSERT:
     default:
-        if (nodes_reinsert(nodes, entry->index) != SYLVAN_OK) {
+        if (!swap_batched && nodes_reinsert(nodes, entry->index) != SYLVAN_OK) {
             reorder_fatal("a rewritten node could not be re-indexed");
         }
         reorder_list_append(reorder_decision_list(swap_lower), entry->index);
@@ -1605,7 +1633,7 @@ reorder_apply_map(int phase, struct reorder_caseb_map *entry)
         break;
 
     case REORDER_PHASE_REWRITE:
-        if (nodes_remove(nodes, entry->index) != SYLVAN_OK) {
+        if (!swap_batched && nodes_remove(nodes, entry->index) != SYLVAN_OK) {
             reorder_fatal("a case-B map node was not in the index");
         }
         mtbddnode_makemapnode(
@@ -1617,7 +1645,7 @@ reorder_apply_map(int phase, struct reorder_caseb_map *entry)
 
     case REORDER_PHASE_REINSERT:
     default:
-        if (nodes_reinsert(nodes, entry->index) != SYLVAN_OK) {
+        if (!swap_batched && nodes_reinsert(nodes, entry->index) != SYLVAN_OK) {
             reorder_fatal("a rewritten map node could not be re-indexed");
         }
         reorder_list_append(reorder_map_list(swap_lower), entry->index);
@@ -1650,44 +1678,74 @@ reorder_phase_CALL(lace_worker *lace, int phase, size_t first, size_t count)
 /**
  * Retirement.
  *
- * Serial, because the set is small: the death theorem says only the old
- * direct children of the rewritten nodes can die, and the queue asserts it.
- * If the assert ever fires the queue keeps going -- correctness does not
- * depend on the theorem, only the claim that the node lists elsewhere cannot
- * go stale does -- and the swap reports how many deaths were deeper than the
- * theorem allows.
+ * The bookkeeping is serial, because the set is small: the death theorem says
+ * only the old direct children of the rewritten nodes can die, and the queue
+ * asserts it. If the assert ever fires the queue keeps going -- correctness
+ * does not depend on the theorem, only the claim that the node lists elsewhere
+ * cannot go stale does -- and the swap reports how many deaths were deeper than
+ * the theorem allows.
+ *
+ * The unhashing is not serial, when the index can take a set at once. The
+ * queue is drained in rounds: everything queued when a round starts is unhashed
+ * together, and the edges those nodes drop are counted down afterwards, which
+ * is what may queue the next round. Round by round is the same order of work as
+ * node by node -- a node is still unhashed exactly once, and only after the
+ * count that killed it reached zero -- but a whole round goes through the index
+ * in one call, so the workers can share it.
  */
 static void
-reorder_run_retirement(uint64_t *died, uint64_t *deep)
+reorder_run_retirement(lace_worker *lace, uint64_t *died, uint64_t *deep)
 {
     const size_t direct = atomic_load_explicit(
         &session.queue_count, memory_order_relaxed);
     size_t processed = 0;
     uint64_t retired = 0;
 
-    while (processed < atomic_load_explicit(
-               &session.queue_count, memory_order_relaxed)) {
-        const uint64_t index = session.queue[processed++];
-        if (bitmap_get(session.retired, index)) continue;
-        bitmap_set(session.retired, index);
+    for (;;) {
+        const size_t reached = atomic_load_explicit(
+            &session.queue_count, memory_order_relaxed);
+        if (processed == reached) break;
 
-        if (nodes_remove(nodes, index) != SYLVAN_OK) {
-            reorder_fatal("a dead node was not in the index");
+        /* A node may be queued more than once; the retired bitmap is what
+           makes the round a set of nodes still in the index. */
+        size_t count = 0;
+        while (processed < reached) {
+            const uint64_t index = session.queue[processed++];
+            if (bitmap_get(session.retired, index)) continue;
+            bitmap_set(session.retired, index);
+            session.batch[count++] = index;
         }
 
-        /* One entry per node this loop retires, and the loop cannot retire
-           more nodes than the queue holds, which the classification phase
-           sized this array for. */
-        if (session.dead_count == session.dead_capacity) {
-            assert(!"the retired-slot array outgrew its reservation");
-            reorder_fatal("the retired-slot array outgrew its reservation");
+        if (swap_batched) {
+            if (count != 0 && nodes_remove_batch_CALL(
+                    lace, nodes, session.batch, count) != SYLVAN_OK) {
+                reorder_fatal("a dead node was not in the index");
+            }
+        } else {
+            for (size_t i = 0; i < count; i++) {
+                if (nodes_remove(nodes, session.batch[i]) != SYLVAN_OK) {
+                    reorder_fatal("a dead node was not in the index");
+                }
+            }
         }
-        session.dead[session.dead_count++] = index;
-        retired++;
 
-        mtbddnode *record = reorder_record(index);
-        reorder_edge_down(reorder_target(mtbddnode_getlow(record)));
-        reorder_edge_down(reorder_target(mtbddnode_gethigh(record)));
+        for (size_t i = 0; i < count; i++) {
+            const uint64_t index = session.batch[i];
+
+            /* One entry per node this loop retires, and the loop cannot retire
+               more nodes than the queue holds, which the classification phase
+               sized this array for. */
+            if (session.dead_count == session.dead_capacity) {
+                assert(!"the retired-slot array outgrew its reservation");
+                reorder_fatal("the retired-slot array outgrew its reservation");
+            }
+            session.dead[session.dead_count++] = index;
+            retired++;
+
+            mtbddnode *record = reorder_record(index);
+            reorder_edge_down(reorder_target(mtbddnode_getlow(record)));
+            reorder_edge_down(reorder_target(mtbddnode_gethigh(record)));
+        }
     }
 
     const size_t total = atomic_load_explicit(
@@ -1720,15 +1778,32 @@ sylvan_varswap_CALL(lace_worker *lace, uint32_t rank,
 
     atomic_store_explicit(&session.created, 0, memory_order_relaxed);
 
+    swap_batched = (nodes_reorder_caps(nodes) & NODES_CAP_BATCH) != 0;
+
+    /* The two index calls sit between the phases rather than inside them, and
+       that is not only about the batch. The rewrite of a record and the
+       repairs a removal makes read the same records: a removal reinserts
+       whatever hung below the node it unhashed, and hashing those nodes reads
+       their 16 bytes. Issuing all the removals before any record is rewritten
+       is what keeps the two apart -- the single-node path got the same
+       separation for free, out of the lock it took. */
     const size_t total = swap_node_count + swap_map_count;
     if (total != 0) {
         reorder_phase_CALL(lace, REORDER_PHASE_INTERN, 0, total);
+        if (swap_batched && nodes_remove_batch_CALL(
+                lace, nodes, session.batch, total) != SYLVAN_OK) {
+            reorder_fatal("a case-B node was not in the index");
+        }
         reorder_phase_CALL(lace, REORDER_PHASE_REWRITE, 0, total);
+        if (swap_batched && nodes_reinsert_batch_CALL(
+                lace, nodes, session.batch, total) != SYLVAN_OK) {
+            reorder_fatal("a rewritten node could not be re-indexed");
+        }
         reorder_phase_CALL(lace, REORDER_PHASE_REINSERT, 0, total);
     }
 
     uint64_t died = 0, deep = 0;
-    reorder_run_retirement(&died, &deep);
+    reorder_run_retirement(lace, &died, &deep);
     if (reorder_release_at_swap_end) reorder_release_dead();
 
     if (sylvan_ranks_swap_adjacent(rank) != SYLVAN_OK) {

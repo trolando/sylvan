@@ -302,9 +302,10 @@ test_reduces_CALL(lace_worker *lace)
  * order it works in is not the one it worked in last time, so this is a bound
  * rather than an equality.
  *
- * The threshold is dropped to zero, or this would be a test of the threshold:
- * the sifted forest is small enough that the default of 32 leaves no variable
- * worth moving, and a run that considers nothing trivially changes nothing.
+ * The threshold is set to zero explicitly, so this stays a test of
+ * idempotence whatever the default: the sifted forest is small enough that a
+ * threshold of a few dozen would leave no variable worth moving, and a run
+ * that considers nothing trivially changes nothing.
  * That <initial_size> comes back equal to the previous <final_size> is worth a
  * line of its own -- it says the running size the session maintains agrees
  * with what a fresh session counts from the arena.

@@ -64,7 +64,9 @@ static const sylvan_sift_config sift_default_config = {
     0,      /* max_swaps       */
     0,      /* max_vars        */
     1.2f,   /* max_growth      */
-    32,     /* nodes_threshold */
+    0,      /* nodes_threshold: measured on C880, skipping small variables
+               cost up to 2.2x in final size for no measurable time saved,
+               because those are exactly the cheap swaps */
     0.0     /* time_limit      */
 };
 

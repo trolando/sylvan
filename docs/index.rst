@@ -432,8 +432,9 @@ keeps its handle, because nodes are rewritten in place.
 
 Pass a ``sylvan_sift_config`` to bound what the search may spend: a total swap
 budget, a number of variables, a growth factor at which one variable's excursion is
-abandoned (1.2 by default), a population below which a variable is not worth moving
-(32 by default), and a wall clock limit. ``NULL`` selects the defaults.
+abandoned (1.2 by default), a population below which a variable is not moved at all
+(0 by default: skipping small variables was measured to cost final size without
+saving time), and a wall clock limit. ``NULL`` selects the defaults.
 
 Reordering is refused, changing nothing and returning ``SYLVAN_ERR_INVALID``, while
 the ZDD or ListDD subsystem is initialised -- both order their nodes by variable

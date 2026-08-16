@@ -1256,7 +1256,16 @@ reserve_race_worker_CALL(lace_worker *lace, struct reserve_race *race)
 static int
 test_reorder_reserve(void)
 {
-    const size_t table_size = race_table_size();
+    /* A reservation of <count> asks the table for <count> free slots beyond
+       a margin of one region per worker (see nodes_reserve), and the race
+       table is only guaranteed to hold the margin. Size for both, or the
+       reservation below is refused for the honest reason at eight workers. */
+    const uint64_t wanted =
+        (uint64_t)test_workers * TEST_RESERVE_PER_WORKER;
+    size_t table_size = race_table_size();
+    while (table_size < (size_t)test_workers * 512 + wanted + 2) {
+        table_size *= 2;
+    }
     nodes_table *table = nodes_create(table_size, table_size);
     if (nodes_reorder_caps(table) == 0) {
         test_assert(nodes_reserve(table, 1) == SYLVAN_ERR_INVALID);
@@ -1270,8 +1279,6 @@ test_reorder_reserve(void)
     test_assert(nodes_count_nodes(table) == before);
     test_assert(nodes_reserve(table, 0) == SYLVAN_OK);
 
-    const uint64_t wanted =
-        (uint64_t)test_workers * TEST_RESERVE_PER_WORKER;
     test_assert(nodes_reserve(table, wanted) == SYLVAN_OK);
 
     static struct reserve_race race;

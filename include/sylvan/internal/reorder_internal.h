@@ -155,6 +155,28 @@ uint64_t sylvan_reorder_forest_size(void);
 uint64_t sylvan_reorder_population(uint32_t identity);
 
 /**
+ * Build the variable interaction matrix for the open session, from its external
+ * roots. Two identities interact when some function depends on both; this is a
+ * property of the functions, so the matrix is fixed for the session and keyed
+ * by identity. A sifting driver builds it once and uses it to bound its legs.
+ *
+ * Returns SYLVAN_OK, SYLVAN_ERR_INVALID if no session is open, or
+ * SYLVAN_ERR_OOM. On OOM the matrix is simply absent, which the interaction
+ * query reports as "everything interacts", so the driver still runs correctly,
+ * only without the bound. Rebuilding replaces any previous matrix.
+ */
+int sylvan_reorder_interact_build(void);
+
+/**
+ * Whether identities <a> and <b> interact. A variable can only exchange nodes
+ * with variables it interacts with, which is what lets a driver bound a leg.
+ * Without a matrix (not built, or its allocation refused) this returns 1 for
+ * every distinct pair, so a driver that consults it stays correct and merely
+ * unbounded. A variable never interacts with itself.
+ */
+int sylvan_reorder_interact(uint32_t a, uint32_t b);
+
+/**
  * Physical slot reuse policy (design experiment E6). Nonzero (the default)
  * releases retired slots at the end of each swap, which bounds memory; zero
  * defers every release to the end of the session, which costs nothing per

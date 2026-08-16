@@ -116,6 +116,7 @@ struct reorder_session {
     uint64_t *pinned;               /* bitmap: an external root            */
     uint64_t *retired;              /* bitmap: unhashed, awaiting release  */
     uint64_t *seen;                 /* bitmap: scratch for reorder_collect */
+    uint64_t *interact;             /* packed variable interaction matrix  */
 
     struct reorder_list *decision;  /* per identity, NULL if native        */
     struct reorder_list *maps;      /* per identity                        */
@@ -681,6 +682,7 @@ reorder_free_state(void)
     free(session.pinned);
     free(session.retired);
     free(session.seen);
+    free(session.interact);
     reorder_free_lists(session.decision);
     reorder_free_lists(session.maps);
     free(session.overflow_index);
@@ -938,6 +940,219 @@ sylvan_reorder_population(uint32_t identity)
     struct reorder_list *maps = reorder_map_list(identity);
     if (maps != NULL) count += reorder_collect(maps, identity, 1);
     return count;
+}
+
+/**
+ * ---------------------------------------------------------------------------
+ * The variable interaction matrix.
+ *
+ * Two variable identities interact when some function in the forest depends on
+ * both. This is a property of the functions, not of the order, so the matrix
+ * never changes as variables move and is keyed by identity rather than by rank.
+ *
+ * A sifting driver uses it to bound a leg. A variable can only exchange nodes
+ * with the variables it interacts with, so the summed population of the
+ * non-interacting variables between it and the end of its travel is a floor on
+ * the size it can reach in that direction. Without the matrix a leg has to walk
+ * all the way to the end of the order to discover the size has stopped
+ * improving; with it the leg stops as soon as even the best remaining case
+ * cannot beat the smallest size already seen. This is CUDD's construction
+ * (cuddInitInteract) and its use in ddSiftingUp/ddSiftingDown.
+ *
+ * The matrix is the upper triangle of the symmetric relation, one bit per
+ * unordered identity pair. It is built once, after the opening collection, by a
+ * depth-first support scan from every external root: the variables a root
+ * depends on are all pairwise interacting. Identities are dense (0..n-1), so a
+ * pair (x<y) maps to a packed bit by the same closed form CUDD uses.
+ */
+
+static inline size_t
+interact_position(uint32_t n, uint32_t x, uint32_t y)
+{
+    /* Upper-triangle index of pair (x,y), x < y, over n identities. */
+    return (((((size_t)n << 1) - x - 3u) * x) >> 1) + y - 1u;
+}
+
+int
+sylvan_reorder_interact(uint32_t a, uint32_t b)
+{
+    /* No matrix (never built, or its allocation was refused) means the driver
+       runs unbounded, so the safe answer is that everything interacts. */
+    if (session.interact == NULL) return 1;
+    if (a == b) return 0;
+    const uint32_t x = a < b ? a : b;
+    const uint32_t y = a < b ? b : a;
+    if (y >= session.identities) return 1;
+    const size_t position = interact_position(session.identities, x, y);
+    return (int)((session.interact[position >> 6] >> (position & 63u)) & 1u);
+}
+
+static void
+interact_mark(uint32_t n, uint64_t *matrix, uint32_t x, uint32_t y)
+{
+    const size_t position = interact_position(n, x, y);
+    matrix[position >> 6] |= UINT64_C(1) << (position & 63u);
+}
+
+/** Scratch a support scan carries between roots; grows, never shrinks. */
+struct interact_scan {
+    uint64_t *visited;      /* bitmap over the table: reached this scan     */
+    uint64_t *stack;        /* depth-first worklist of node indices         */
+    size_t    stack_capacity;
+    uint64_t *touched;      /* indices set in <visited>, to clear them again */
+    size_t    touched_capacity;
+    uint32_t *support;      /* identities this root depends on              */
+    uint8_t  *in_support;   /* membership flags for <support>, over ids     */
+};
+
+static int
+interact_stack_push(struct interact_scan *scan, size_t *count, uint64_t value)
+{
+    if (*count == scan->stack_capacity) {
+        const size_t capacity =
+            scan->stack_capacity == 0 ? 256u : scan->stack_capacity * 2u;
+        uint64_t *grown = (uint64_t*)realloc(
+            scan->stack, capacity * sizeof(uint64_t));
+        if (grown == NULL) return -1;
+        scan->stack = grown;
+        scan->stack_capacity = capacity;
+    }
+    scan->stack[(*count)++] = value;
+    return 0;
+}
+
+static int
+interact_touched_push(struct interact_scan *scan, size_t *count, uint64_t value)
+{
+    if (*count == scan->touched_capacity) {
+        const size_t capacity =
+            scan->touched_capacity == 0 ? 256u : scan->touched_capacity * 2u;
+        uint64_t *grown = (uint64_t*)realloc(
+            scan->touched, capacity * sizeof(uint64_t));
+        if (grown == NULL) return -1;
+        scan->touched = grown;
+        scan->touched_capacity = capacity;
+    }
+    scan->touched[(*count)++] = value;
+    return 0;
+}
+
+/**
+ * Depth-first support of one root: every identity reachable from it, into
+ * scan->support. Read-only over the forest; the only state written is the
+ * scan's own scratch. Returns SYLVAN_OK, or SYLVAN_ERR_OOM if the worklist
+ * could not grow (nothing has been marked in the matrix on that path).
+ */
+static int
+interact_support(struct interact_scan *scan, uint64_t root,
+                 size_t *support_count, size_t *touched_count)
+{
+    size_t stack_count = 0;
+    if (interact_stack_push(scan, &stack_count, root) != 0) return SYLVAN_ERR_OOM;
+
+    while (stack_count != 0) {
+        const uint64_t index = scan->stack[--stack_count];
+        if (index < 2 || index >= session.size) continue;
+        if (bitmap_get(scan->visited, index)) continue;
+        bitmap_set(scan->visited, index);
+        if (interact_touched_push(scan, touched_count, index) != 0) {
+            return SYLVAN_ERR_OOM;
+        }
+        if (!nodes_is_marked(nodes, index)) continue;
+        if (bitmap_get(session.retired, index)) continue;
+
+        mtbddnode *record = reorder_record(index);
+        if (mtbddnode_isleaf(record)) continue;
+
+        const uint32_t identity = mtbddnode_getvariable(record);
+        if (identity < session.identities && !scan->in_support[identity]) {
+            scan->in_support[identity] = 1;
+            scan->support[(*support_count)++] = identity;
+        }
+
+        if (interact_stack_push(scan, &stack_count,
+                reorder_target(mtbddnode_getlow(record))) != 0) {
+            return SYLVAN_ERR_OOM;
+        }
+        if (interact_stack_push(scan, &stack_count,
+                reorder_target(mtbddnode_gethigh(record))) != 0) {
+            return SYLVAN_ERR_OOM;
+        }
+    }
+    return SYLVAN_OK;
+}
+
+int
+sylvan_reorder_interact_build(void)
+{
+    if (!session.active) return SYLVAN_ERR_INVALID;
+
+    free(session.interact);
+    session.interact = NULL;
+
+    const uint32_t n = session.identities;
+    if (n < 2) return SYLVAN_OK;
+
+    const size_t pairs = ((size_t)n * (n - 1u)) / 2u;
+    const size_t words = (pairs + 63u) / 64u;
+    session.interact = (uint64_t*)calloc(words, sizeof(uint64_t));
+    if (session.interact == NULL) return SYLVAN_ERR_OOM;
+
+    struct interact_scan scan;
+    memset(&scan, 0, sizeof(scan));
+    scan.visited = (uint64_t*)calloc(bitmap_words(session.size), sizeof(uint64_t));
+    scan.support = (uint32_t*)malloc((size_t)n * sizeof(uint32_t));
+    scan.in_support = (uint8_t*)calloc(n, sizeof(uint8_t));
+    if (scan.visited == NULL || scan.support == NULL || scan.in_support == NULL) {
+        free(scan.visited);
+        free(scan.support);
+        free(scan.in_support);
+        free(session.interact);
+        session.interact = NULL;
+        return SYLVAN_ERR_OOM;
+    }
+
+    int status = SYLVAN_OK;
+    for (uint64_t index = 2; index < session.size && status == SYLVAN_OK;
+         index++) {
+        if (!bitmap_get(session.pinned, index)) continue;
+
+        size_t support_count = 0;
+        size_t touched_count = 0;
+        status = interact_support(&scan, index, &support_count, &touched_count);
+
+        if (status == SYLVAN_OK) {
+            for (size_t i = 0; i < support_count; i++) {
+                for (size_t j = i + 1; j < support_count; j++) {
+                    const uint32_t a = scan.support[i];
+                    const uint32_t b = scan.support[j];
+                    interact_mark(n, session.interact,
+                                  a < b ? a : b, a < b ? b : a);
+                }
+            }
+        }
+
+        /* Reset the scratch for the next root, touching only what this root
+           reached rather than the whole table. */
+        for (size_t i = 0; i < touched_count; i++) {
+            bitmap_clear(scan.visited, scan.touched[i]);
+        }
+        for (size_t i = 0; i < support_count; i++) {
+            scan.in_support[scan.support[i]] = 0;
+        }
+    }
+
+    free(scan.visited);
+    free(scan.stack);
+    free(scan.touched);
+    free(scan.support);
+    free(scan.in_support);
+
+    if (status != SYLVAN_OK) {
+        free(session.interact);
+        session.interact = NULL;
+    }
+    return status;
 }
 
 /**

@@ -160,6 +160,7 @@ typedef struct nodes_table {
     _Atomic(uint64_t)* bitmap1;
     _Atomic(uint64_t)* bitmap2;
     _Atomic(uint64_t)* bitmapc;
+    _Atomic(uint64_t)* region_cursor; /* after the last claimed region; own line */
     size_t max_size;
     size_t table_size;
     llchst_subtable* decision;
@@ -533,6 +534,45 @@ claim_next_region(const nodes_table* dbs, uint64_t start_region)
 }
 
 /**
+ * Claim the next region in table order.
+ *
+ * Every worker draws its regions from one shared cursor, so that region
+ * order -- and with it the order of node indices -- follows the order in
+ * which regions were needed, across all workers. A serial run has that
+ * property for free, and the anchored backends depend on it more than it
+ * looks: a node's family is anchored at its larger child index, so a child
+ * that predates its parents' other children anchors only the few parents
+ * whose other child is older still. Starting each worker in its own stripe
+ * of the table breaks that: everything a high-stripe worker creates
+ * out-indexes everything the low-stripe workers made, and a heavily shared
+ * node in a high stripe then anchors its whole fan-in. Measured on C880 with
+ * eight workers, the stripes made the largest family seven times longer and
+ * the summed squared family length twelve times larger than the same forest
+ * built serially, and every family walk -- lookups, insertions, removals --
+ * paid for it.
+ *
+ * The cursor is a hint, not a lock: it is advanced to just past whatever was
+ * claimed, and two workers that read the same position simply race for the
+ * region and the loser walks on to the next free one. Being behind by a few
+ * regions costs a few ownership-bit tests. It lives on a line of its own
+ * because the table struct itself is read on every lookup by every worker.
+ */
+static uint64_t
+claim_region(const nodes_table* dbs)
+{
+    const uint64_t regions = dbs->table_size / 512u;
+    if (regions == 0) return UINT64_MAX;
+    const uint64_t start = atomic_load_explicit(
+        dbs->region_cursor, memory_order_relaxed) % regions;
+    const uint64_t region = claim_next_region(dbs, start);
+    if (region != UINT64_MAX) {
+        atomic_store_explicit(
+            dbs->region_cursor, region + 1u, memory_order_relaxed);
+    }
+    return region;
+}
+
+/**
  * Give back a region this worker has used up.
  *
  * A region is owned for exactly as long as it is some worker's current one,
@@ -574,19 +614,11 @@ claim_data_bucket(const nodes_table* dbs)
             const uint64_t exhausted = my_region;
             my_region = UINT64_MAX;
             release_region(dbs, exhausted);
-            const uint64_t claimed = claim_next_region(dbs, exhausted + 1u);
+            const uint64_t claimed = claim_region(dbs);
             if (claimed == UINT64_MAX) return UINT64_MAX;
             my_region = claimed;
         } else {
-            const uint64_t regions = dbs->table_size / 512u;
-            uint64_t start = 0;
-            lace_worker* worker = lace_get_worker();
-            if (regions != 0 && worker != NULL) {
-                start = ((uint64_t)worker->worker * regions) /
-                        (uint64_t)lace_worker_count();
-            }
-
-            const uint64_t claimed = claim_next_region(dbs, start);
+            const uint64_t claimed = claim_region(dbs);
             if (claimed == UINT64_MAX) return UINT64_MAX;
             my_region = claimed;
         }
@@ -868,6 +900,8 @@ nodes_create(size_t initial_size, size_t max_size)
         node_bitmap_size(max_size));
     dbs->bitmapc = (_Atomic(uint64_t)*)sylvan_alloc_aligned(
         node_bitmap_size(max_size));
+    dbs->region_cursor = (_Atomic(uint64_t)*)sylvan_alloc_aligned(
+        SYLVAN_CACHE_LINE_SIZE);
     dbs->decision = (llchst_subtable*)sylvan_alloc_aligned(
         SYLVAN_LLCHST_DENSE_LEVELS * sizeof(*dbs->decision));
     dbs->pages = (_Atomic(uintptr_t)*)sylvan_alloc_aligned(
@@ -875,7 +909,8 @@ nodes_create(size_t initial_size, size_t max_size)
 
     if (dbs->next == NULL || dbs->data == NULL || dbs->bitmap1 == NULL ||
         dbs->bitmap2 == NULL || dbs->bitmapc == NULL ||
-        dbs->decision == NULL || dbs->pages == NULL) {
+        dbs->region_cursor == NULL || dbs->decision == NULL ||
+        dbs->pages == NULL) {
         fprintf(stderr, "nodes_create: Unable to allocate memory: %s!\n",
                 strerror(errno));
         exit(1);
@@ -954,6 +989,7 @@ nodes_free(nodes_table* dbs)
         (void*)dbs->bitmap2, node_bitmap_size(dbs->max_size));
     sylvan_free_aligned(
         (void*)dbs->bitmapc, node_bitmap_size(dbs->max_size));
+    sylvan_free_aligned((void*)dbs->region_cursor, SYLVAN_CACHE_LINE_SIZE);
     sylvan_free_aligned(dbs, sizeof(nodes_table));
 }
 
@@ -970,6 +1006,7 @@ nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
        Rebuild replaces each head array after counting and reinserting its
        marked population. Normal lookup is stopped throughout this interval. */
     dbs->bitmap2[0] = UINT64_C(0xc000000000000000);
+    atomic_store_explicit(dbs->region_cursor, 0, memory_order_relaxed);
     nodes_reset_region_TOGETHER();
 }
 

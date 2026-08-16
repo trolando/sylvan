@@ -284,6 +284,7 @@ uint32_t nodes_reorder_caps(const nodes_table* dbs);
 #define NODES_CAP_REMOVE     (1u << 0)  /* nodes_remove and nodes_reinsert */
 #define NODES_CAP_RELEASE    (1u << 1)  /* nodes_release */
 #define NODES_CAP_ENUMERATE  (1u << 2)  /* nodes_enumerate_var */
+#define NODES_CAP_BATCH      (1u << 3)  /* nodes_remove/reinsert_batch */
 
 /**
  * Unhash one node. Its 16-byte record and its index stay intact and valid;
@@ -314,6 +315,44 @@ int nodes_remove(nodes_table* dbs, uint64_t index);
  * print a diagnostic and abort.
  */
 int nodes_reinsert(nodes_table* dbs, uint64_t index);
+
+/**
+ * The same two operations over a whole set of nodes at once.
+ *
+ * WHY A BATCH IS A DIFFERENT OPERATION, not just a loop the caller was too
+ * lazy to write. An index whose removal touches slots that no single
+ * compare-and-swap relates has to exclude every other worker while it does so,
+ * and per node that means one worker's throughput however many are available.
+ * Given the whole set, the same backend can order the work as phases that are
+ * each internally parallel -- read the victims' positions, unlink them all,
+ * repair what depended on them, reinsert -- with a barrier where the exclusion
+ * used to be. The trie backend is where this matters and where the argument is
+ * written down; see the block above nodes_remove_batch in src/nodes_trie.c.
+ *
+ * A backend that does not report NODES_CAP_BATCH does not implement these and
+ * returns SYLVAN_ERR_INVALID; the caller falls back to the single-node calls.
+ *
+ * COLLECTIVE. Unlike the single-node primitives these are not called by every
+ * worker. One worker calls them from inside a Lace frame, on behalf of all of
+ * them, and no other reorder primitive may run while one is in progress -- the
+ * batch spawns onto the same workers. <indices> must hold distinct node
+ * indices and stays owned by the caller.
+ *
+ * REMOVAL FAILS ONLY BEFORE IT STARTS. If any index is not in the index at
+ * all, nodes_remove_batch changes nothing and returns SYLVAN_ERR_INVALID: the
+ * phase that could discover it is read-only. Reinsertion reports the same code
+ * if any node was already indexed, and aborts on an equal node exactly as
+ * nodes_reinsert does.
+ */
+static inline int nodes_remove_batch(nodes_table* dbs, const uint64_t* indices,
+                                     size_t count);
+static inline int nodes_reinsert_batch(nodes_table* dbs,
+                                       const uint64_t* indices, size_t count);
+
+TASK(int, nodes_remove_batch, nodes_table*, dbs, const uint64_t*, indices,
+     size_t, count)
+TASK(int, nodes_reinsert_batch, nodes_table*, dbs, const uint64_t*, indices,
+     size_t, count)
 
 /**
  * Return a removed node's slot to the allocator, so a later lookup may claim

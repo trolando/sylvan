@@ -52,6 +52,8 @@ typedef struct nodes_table
     _Atomic(uint32_t)  reorder_lock; // serialises the reorder primitives
     uint64_t*          region;       // scratch for the removal region rebuild
     size_t             region_size;  // entries in <region>
+    uint64_t*          codes;        // a batch's victim slots, tail of <region>
+    _Atomic(uint64_t)* batch;        // batch cursor and error flag; own line
 } nodes_table;
 
 static size_t
@@ -594,8 +596,9 @@ nodes_table* nodes_create(size_t initial_size, size_t max_size)
     dbs->bitmap2 = (_Atomic(uint64_t)*)sylvan_alloc_aligned(node_bitmap_size(dbs->max_size));
     dbs->bitmapc = (_Atomic(uint64_t)*)sylvan_alloc_aligned(node_bitmap_size(dbs->max_size));
     dbs->region_cursor = (_Atomic(uint64_t)*)sylvan_alloc_aligned(SYLVAN_CACHE_LINE_SIZE);
+    dbs->batch = (_Atomic(uint64_t)*)sylvan_alloc_aligned(SYLVAN_CACHE_LINE_SIZE);
 
-    if (dbs->data == 0 || dbs->first == 0 || dbs->next == 0 || dbs->bitmap1 == 0 || dbs->bitmap2 == 0 || dbs->bitmapc == 0 || dbs->region_cursor == 0) {
+    if (dbs->data == 0 || dbs->first == 0 || dbs->next == 0 || dbs->bitmap1 == 0 || dbs->bitmap2 == 0 || dbs->bitmapc == 0 || dbs->region_cursor == 0 || dbs->batch == 0) {
         fprintf(stderr, "nodes_create: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
     }
@@ -610,6 +613,7 @@ nodes_table* nodes_create(size_t initial_size, size_t max_size)
     atomic_init(&dbs->reorder_lock, 0u);
     dbs->region = NULL;
     dbs->region_size = 0;
+    dbs->codes = NULL;
 
     // this design assumes there is only one nodes table...
 
@@ -633,6 +637,7 @@ void nodes_free(nodes_table* dbs)
         sylvan_free_aligned(dbs->region, dbs->region_size * sizeof(uint64_t));
     }
     sylvan_free_aligned((void*)dbs->region_cursor, SYLVAN_CACHE_LINE_SIZE);
+    sylvan_free_aligned((void*)dbs->batch, SYLVAN_CACHE_LINE_SIZE);
     sylvan_free_aligned(dbs, sizeof(struct nodes_table));
 }
 
@@ -830,10 +835,10 @@ void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb e
 /**
  * Reorder primitives.
  *
- * SERIAL. nodes_remove and nodes_reinsert both take a per-table spin lock, so
- * they are serialised against each other across all workers. That is the
- * documented contract for this backend, and it is not a temporary shortcut
- * for removal alone:
+ * SERIAL, ONE NODE AT A TIME. nodes_remove and nodes_reinsert both take a
+ * per-table spin lock, so they are serialised against each other across all
+ * workers. That is the documented contract for the single-node primitives, and
+ * it is not a shortcut for removal alone:
  *
  *  - removal below rewrites several slots that are not related by any single
  *    compare-and-swap, and it breaks the write-once property of the slots,
@@ -844,9 +849,15 @@ void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb e
  *    descent that publishes into a slot which a concurrent removal is about
  *    to clear, or into a branch pair it is about to detach, loses the node.
  *
- * Retirement volume per swap is the depth-1 dead set, so the uncontended cost
- * of the lock is irrelevant; partitioning by root family is the obvious way
- * to get parallelism back if it ever matters.
+ * PARALLEL, A PHASE AT A TIME. What the lock cannot give back is scaling: a
+ * swap removes and re-indexes thousands of nodes, and a caller that issues
+ * them one at a time from every worker gets one worker's throughput. The way
+ * out is not a finer lock but a wider call. nodes_remove_batch and
+ * nodes_reinsert_batch take the whole set at once and run the phases of the
+ * work in parallel with barriers between them; see the block above
+ * nodes_remove_batch for the design and its correctness argument. The
+ * single-node entry points stay exactly as they were, so a caller that cannot
+ * batch, and every existing test, is unaffected.
  *
  * WHY NOT LEAF PROMOTION. The obvious removal -- pull a leaf out of the
  * subtree below the removed node and give it the removed node's branch pair
@@ -899,7 +910,7 @@ uint32_t
 nodes_reorder_caps(const nodes_table* dbs)
 {
     (void)dbs;
-    return NODES_CAP_REMOVE | NODES_CAP_RELEASE;
+    return NODES_CAP_REMOVE | NODES_CAP_RELEASE | NODES_CAP_BATCH;
 }
 
 static void
@@ -1122,8 +1133,51 @@ done:
     return status;
 }
 
-int
-nodes_reinsert(nodes_table* dbs, uint64_t index)
+/**
+ * Whether the node already in <value> stops the reinsertion of <index>: it is
+ * <index> itself, which is a caller error, or a different node with the same
+ * key, which is a broken unique table and does not return.
+ */
+static int
+trie_reinsert_conflict(const nodes_table* dbs, const struct reorder_key* key,
+                       uint64_t index, uint64_t value)
+{
+    const uint64_t occupant = value & MASK_INDEX;
+    if (occupant == index) {
+        assert(!"nodes_reinsert: the node is already in the index");
+        return 1;
+    }
+    if ((value & MASK_HASH) != (key->hash & MASK_HASH)) return 0;
+
+    const uint64_t* d_ptr = ((const uint64_t*)dbs->data) + 2 * occupant;
+    const int equal = key->custom
+        ? dbs->equals_cb(key->a, key->b, d_ptr[0], d_ptr[1])
+        : (d_ptr[0] == key->a && d_ptr[1] == key->b);
+    if (equal) reorder_duplicate_abort(index, occupant);
+    return 0;
+}
+
+/**
+ * Publish <index> on its own probe sequence, aborting if an equal node is
+ * already there.
+ *
+ * This is nodes_reinsert_bucket with the equality test of nodes_lookup2 added,
+ * and it is written the same way -- every store a compare-and-swap against
+ * zero, every load an acquire, and the family root handled before the loop --
+ * so that the write-once argument on nodes_reinsert_bucket covers it verbatim.
+ * Under the single-node lock that costs one uncontended compare-and-swap over
+ * the plain store it replaces; in a batch it is what lets every worker descend
+ * at once.
+ *
+ * Keeping the root outside the loop is not cosmetic. The branch pair consumed
+ * after the family root belongs to the anchor and not to the root's occupant,
+ * exactly as in nodes_lookup2, and <trie> may only start following occupants
+ * from the second slot on. Inside the loop the value that addresses the next
+ * branch is always the one just read, which after a lost compare-and-swap is
+ * the winner's link and not the zero that was there before it.
+ */
+static int
+trie_reinsert(nodes_table* dbs, uint64_t index)
 {
     if (index < 2 || index >= dbs->table_size) return SYLVAN_ERR_INVALID;
 
@@ -1132,47 +1186,385 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
     uint64_t hash = key.hash;
     uint64_t trie = key.anchor;
 
-    reorder_lock(dbs);
-
-    /* The descent mirrors nodes_lookup2 exactly, including that the branch
-       pair consumed after the family root belongs to the anchor and not to
-       the root's occupant: <trie> starts following occupants only from the
-       second slot on. */
     _Atomic(uint64_t)* slot = dbs->first + trie;
-    uint64_t value = atomic_load_explicit(slot, memory_order_relaxed);
-    for (;;) {
-        if (value == 0) {
-            /* Nothing else can be descending while the lock is held, so a
-               plain release store is enough to publish the node. */
-            atomic_store_explicit(slot, link, memory_order_release);
-            reorder_unlock(dbs);
+    uint64_t value = atomic_load_explicit(slot, memory_order_acquire);
+    if (value == 0) {
+        if (atomic_compare_exchange_strong_explicit(
+                slot, &value, link,
+                memory_order_acq_rel, memory_order_acquire)) {
             return SYLVAN_OK;
         }
+    }
+    if (trie_reinsert_conflict(dbs, &key, index, value)) {
+        return SYLVAN_ERR_INVALID;
+    }
 
-        const uint64_t occupant = value & MASK_INDEX;
-        if (occupant == index) {
-            assert(!"nodes_reinsert: the node is already in the index");
-            reorder_unlock(dbs);
-            return SYLVAN_ERR_INVALID;
-        }
-        if ((value & MASK_HASH) == (key.hash & MASK_HASH)) {
-            const uint64_t* d_ptr =
-                ((const uint64_t*)dbs->data) + 2 * occupant;
-            const int equal = key.custom
-                ? dbs->equals_cb(key.a, key.b, d_ptr[0], d_ptr[1])
-                : (d_ptr[0] == key.a && d_ptr[1] == key.b);
-            if (equal) {
-                reorder_unlock(dbs);
-                reorder_duplicate_abort(index, occupant);
-            }
-        }
-
+    for (;;) {
         const uint64_t branch = trie * 2 + (hash & 1);
         hash = ror64(hash, 1);
         slot = dbs->next + branch;
-        value = atomic_load_explicit(slot, memory_order_relaxed);
+        value = atomic_load_explicit(slot, memory_order_acquire);
+        if (value == 0) {
+            if (atomic_compare_exchange_strong_explicit(
+                    slot, &value, link,
+                    memory_order_acq_rel, memory_order_acquire)) {
+                return SYLVAN_OK;
+            }
+        }
+        if (trie_reinsert_conflict(dbs, &key, index, value)) {
+            return SYLVAN_ERR_INVALID;
+        }
         trie = value & MASK_INDEX;
     }
+}
+
+int
+nodes_reinsert(nodes_table* dbs, uint64_t index)
+{
+    reorder_lock(dbs);
+    const int status = trie_reinsert(dbs, index);
+    reorder_unlock(dbs);
+    return status;
+}
+
+/**
+ * ---------------------------------------------------------------------------
+ * BATCHED REMOVAL AND REINSERTION
+ *
+ * A removal cannot be made to scale one node at a time, and the reason is in
+ * the write set, not in the lock. Removing a node clears its slot and rebuilds
+ * the region that hung below it, and the rebuild is an ordinary descent from
+ * first[anchor] that publishes into the first empty slot it finds -- which may
+ * be anywhere in the table. So a removal's write set is not confined to any
+ * region, family or shard, and there is no lock domain to shard it into: see
+ * the survey in the report for why sharded and optimistic locking both fail on
+ * exactly this point.
+ *
+ * What does work is to widen the call instead of narrowing the lock. Every
+ * caller of this backend already knows its whole removal set up front -- a
+ * swap's case-B array, a retirement queue -- and once the set is known the work
+ * splits into phases that are each internally parallel, with a barrier where
+ * the lock used to be:
+ *
+ *   1. FIND      read-only. Walk each victim's own probe sequence to the slot
+ *                that holds it, and record that slot. Also records which node's
+ *                branch pair roots the region that depends on the slot: the
+ *                anchor if the victim occupies the family root, the victim
+ *                itself otherwise -- the same distinction nodes_remove makes.
+ *   2. UNLINK    store zero into every victim's slot.
+ *   3. COLLECT   breadth first from the roots' branch pairs: read a branch,
+ *                atomically exchange it for zero, and append the node it named
+ *                to the region array. One round per level, all rounds
+ *                internally parallel.
+ *   4. REBUILD   reinsert every collected node with the ordinary write-once
+ *                descent, all of them at once.
+ *
+ * Phase 3 both clears and collects, which is what makes the dedup free. A
+ * node's link lives in exactly one slot, so exactly one exchange can take it
+ * out non-zero, and only that worker appends it: overlapping regions -- one
+ * victim inside another victim's region -- cost nothing and need no set. It is
+ * also why victims are unlinked in phase 2 first: with their links already
+ * gone, the collection cannot pick a victim up as a member and try to put it
+ * back.
+ *
+ * WHY THE SHARED BRANCH PAIR IS NOT A HAZARD HERE. next[X*2+0..1] serves two
+ * families at once -- the one anchored at X and the one that routes through X
+ * at depth one or deeper -- so a removal's region crosses family boundaries.
+ * That is exactly why the collection follows branch pairs rather than families:
+ * the set it clears is CLOSED DOWNWARD ALONG PROBE PATHS. If a slot on some
+ * node's probe path is cleared, so is every slot below it on that path, because
+ * the node the cleared slot named was appended, and appending it is what makes
+ * the collection walk its pair next. A node the batch did not collect therefore
+ * has no hole above it and stays reachable where it is, whichever family the
+ * hole would have belonged to; a node it did collect is reinserted. Taking the
+ * union of several victims' regions preserves this, since a union of
+ * downward-closed sets is downward closed.
+ *
+ * WHY THE PARALLEL REBUILD IS STILL SOUND. Phase 4 runs with no clearing left
+ * to do, so every store is again a compare-and-swap against zero and the
+ * write-once argument on nodes_reinsert_bucket applies unchanged -- points 1
+ * and 2 of it verbatim. Its point 3, that the walk terminates, needs one
+ * addition, because unlike the rebuild after a collection this one starts from
+ * a table that is not empty: the links the batch did not clear are already
+ * there. Call a node MOVING if the batch cleared its link and is putting it
+ * back, and STATIC otherwise. Then:
+ *
+ *  a. A cycle of the "is stored in the branch pair of" relation cannot contain
+ *     a static node. A moving node's pair was cleared (that is how it was
+ *     collected), so every link now in its pair was published by this batch and
+ *     names a moving node; walking a cycle forward from any moving node
+ *     therefore only ever meets moving nodes, and a cycle of static nodes alone
+ *     would be a cycle that already existed.
+ *  b. A cycle of moving nodes cannot form either. Following the argument on
+ *     nodes_reinsert_bucket, the last edge of such a cycle would have to be
+ *     published by a descent that reached a node whose link was still absent,
+ *     or else start from the anchor -- and the anchor case closes it: a moving
+ *     node M is published below its own pair only if it descended into it, and
+ *     the only way into next[M*2+..] while M's own link is absent is to have
+ *     started at first[M], that is, to be a node of family M. So M's anchor
+ *     would be a node whose anchor is M: each the other's larger child, which
+ *     the forest cannot contain.
+ *
+ * FAILURE. Only phase 1 can fail, and it is read-only, so a batch that names a
+ * node which is not in the index changes nothing at all and reports it. After
+ * phase 1 there is nothing left that can go wrong: the region array is sized to
+ * the table by nodes_prepare_reorder, and the nodes it holds are distinct node
+ * indices, so it cannot overflow.
+ *
+ * The reinsertion batch is the same idea with only phase 4: nothing is cleared,
+ * so every worker may descend at once, and the batch exists to spare the caller
+ * a lock round trip per node rather than to make anything possible that was
+ * not.
+ * ---------------------------------------------------------------------------
+ */
+
+/** Granularity of the parallel phases of a batch; see REORDER_SWAP_BLOCK. */
+#define TRIE_BATCH_BLOCK 64
+
+/** Where a victim sits: the root of family <A>, or an index into next[]. */
+#define TRIE_SLOT_ROOT    UINT64_C(0x8000000000000000)
+#define TRIE_SLOT_MISSING UINT64_MAX
+
+/** The two words of the batch line. */
+#define TRIE_BATCH_CURSOR 0
+#define TRIE_BATCH_ERROR  1
+
+enum trie_batch_phase {
+    TRIE_BATCH_FIND = 0,
+    TRIE_BATCH_UNLINK = 1,
+    TRIE_BATCH_COLLECT = 2,
+    TRIE_BATCH_REBUILD = 3,
+    TRIE_BATCH_REINSERT = 4
+};
+
+/**
+ * Take both branches of <node>'s pair out of the index and append what they
+ * named. The exchange is what makes the append happen exactly once however
+ * many workers arrive at the same pair; the load in front of it keeps the
+ * common case -- an empty pair -- from turning into a read-modify-write.
+ */
+static void
+trie_batch_collect(nodes_table* dbs, uint64_t node)
+{
+    for (unsigned int b = 0; b < 2; b++) {
+        _Atomic(uint64_t)* slot = dbs->next + node * 2 + b;
+        if (atomic_load_explicit(slot, memory_order_relaxed) == 0) continue;
+        const uint64_t value =
+            atomic_exchange_explicit(slot, 0, memory_order_relaxed);
+        if (value == 0) continue;
+        const uint64_t at = atomic_fetch_add_explicit(
+            dbs->batch + TRIE_BATCH_CURSOR, 1, memory_order_relaxed);
+        /* Distinct node indices, and the victims are not among them, so the
+           region cannot reach the codes at the far end of the scratch. */
+        assert(at < (uint64_t)(dbs->codes - dbs->region));
+        dbs->region[at] = value & MASK_INDEX;
+    }
+}
+
+/** The node whose pair roots the region a victim's slot code stands for. */
+static inline uint64_t
+trie_batch_owner(const nodes_table* dbs, const uint64_t* indices, size_t at)
+{
+    const uint64_t code = dbs->codes[at];
+    return (code & TRIE_SLOT_ROOT) ? (code & MASK_INDEX) : indices[at];
+}
+
+TASK(void, trie_batch_victims, nodes_table*, dbs, int, phase,
+     const uint64_t*, indices, size_t, first, size_t, count)
+
+void
+trie_batch_victims_CALL(lace_worker* lace, nodes_table* dbs, int phase,
+                        const uint64_t* indices, size_t first, size_t count)
+{
+    if (count > TRIE_BATCH_BLOCK) {
+        const size_t split = count / 2;
+        trie_batch_victims_SPAWN(lace, dbs, phase, indices, first, split);
+        trie_batch_victims_CALL(
+            lace, dbs, phase, indices, first + split, count - split);
+        trie_batch_victims_SYNC(lace);
+        return;
+    }
+
+    const size_t end = first + count;
+    for (size_t at = first; at < end; at++) {
+        const uint64_t index = indices[at];
+
+        switch (phase) {
+        case TRIE_BATCH_FIND: {
+            dbs->codes[at] = TRIE_SLOT_MISSING;
+            if (index < 2 || index >= dbs->table_size) {
+                atomic_store_explicit(
+                    dbs->batch + TRIE_BATCH_ERROR, 1, memory_order_relaxed);
+                break;
+            }
+            const struct reorder_key key = reorder_key_of(dbs, index);
+            uint64_t owner = 0;
+            _Atomic(uint64_t)* slot =
+                reorder_find_slot(dbs, index, &key, &owner);
+            if (slot == NULL) {
+                assert(!"nodes_remove_batch: node is not in its own family");
+                atomic_store_explicit(
+                    dbs->batch + TRIE_BATCH_ERROR, 1, memory_order_relaxed);
+                break;
+            }
+            /* A node is never its own anchor -- the anchor is its larger
+               child -- so the two cases the code has to tell apart really are
+               told apart by whether the owner is the node. */
+            assert(key.anchor != index);
+            dbs->codes[at] = owner == index
+                ? (uint64_t)(slot - dbs->next)
+                : (TRIE_SLOT_ROOT | owner);
+            break;
+        }
+
+        case TRIE_BATCH_UNLINK: {
+            const uint64_t code = dbs->codes[at];
+            _Atomic(uint64_t)* slot = (code & TRIE_SLOT_ROOT)
+                ? dbs->first + (code & MASK_INDEX)
+                : dbs->next + code;
+            atomic_store_explicit(slot, 0, memory_order_relaxed);
+            break;
+        }
+
+        case TRIE_BATCH_COLLECT:
+        default:
+            trie_batch_collect(dbs, trie_batch_owner(dbs, indices, at));
+            break;
+        }
+    }
+}
+
+TASK(void, trie_batch_members, nodes_table*, dbs, int, phase,
+     size_t, first, size_t, count)
+
+void
+trie_batch_members_CALL(lace_worker* lace, nodes_table* dbs, int phase,
+                        size_t first, size_t count)
+{
+    if (count > TRIE_BATCH_BLOCK) {
+        const size_t split = count / 2;
+        trie_batch_members_SPAWN(lace, dbs, phase, first, split);
+        trie_batch_members_CALL(lace, dbs, phase, first + split, count - split);
+        trie_batch_members_SYNC(lace);
+        return;
+    }
+
+    const size_t end = first + count;
+    for (size_t at = first; at < end; at++) {
+        if (phase == TRIE_BATCH_COLLECT) {
+            trie_batch_collect(dbs, dbs->region[at]);
+        } else {
+            nodes_reinsert_bucket(dbs, dbs->region[at]);
+        }
+    }
+}
+
+TASK(void, trie_batch_reinsert, nodes_table*, dbs, const uint64_t*, indices,
+     size_t, first, size_t, count)
+
+void
+trie_batch_reinsert_CALL(lace_worker* lace, nodes_table* dbs,
+                         const uint64_t* indices, size_t first, size_t count)
+{
+    if (count > TRIE_BATCH_BLOCK) {
+        const size_t split = count / 2;
+        trie_batch_reinsert_SPAWN(lace, dbs, indices, first, split);
+        trie_batch_reinsert_CALL(lace, dbs, indices, first + split,
+                                 count - split);
+        trie_batch_reinsert_SYNC(lace);
+        return;
+    }
+
+    const size_t end = first + count;
+    for (size_t at = first; at < end; at++) {
+        if (trie_reinsert(dbs, indices[at]) != SYLVAN_OK) {
+            atomic_store_explicit(
+                dbs->batch + TRIE_BATCH_ERROR, 1, memory_order_relaxed);
+        }
+    }
+}
+
+/**
+ * Lay the batch out over the scratch: the victims' slot codes at the tail, the
+ * collected region growing from the front. They cannot meet, because a victim
+ * is never collected and both are node indices of the same table.
+ */
+static int
+trie_batch_begin(nodes_table* dbs, size_t count)
+{
+    if (nodes_reorder_caps(dbs) == 0) return SYLVAN_ERR_INVALID;
+    if (count > dbs->table_size) return SYLVAN_ERR_INVALID;
+    if (dbs->region_size < dbs->table_size) {
+        const int status = nodes_prepare_reorder(dbs, NULL, 0);
+        if (status != SYLVAN_OK) return status;
+    }
+    dbs->codes = dbs->region + dbs->region_size - count;
+    atomic_store_explicit(
+        dbs->batch + TRIE_BATCH_CURSOR, 0, memory_order_relaxed);
+    atomic_store_explicit(
+        dbs->batch + TRIE_BATCH_ERROR, 0, memory_order_relaxed);
+    return SYLVAN_OK;
+}
+
+int
+nodes_remove_batch_CALL(lace_worker* lace, nodes_table* dbs,
+                        const uint64_t* indices, size_t count)
+{
+    if (count == 0) return SYLVAN_OK;
+
+    reorder_lock(dbs);
+
+    const int begun = trie_batch_begin(dbs, count);
+    if (begun != SYLVAN_OK) {
+        reorder_unlock(dbs);
+        return begun;
+    }
+
+    trie_batch_victims_CALL(lace, dbs, TRIE_BATCH_FIND, indices, 0, count);
+    if (atomic_load_explicit(
+            dbs->batch + TRIE_BATCH_ERROR, memory_order_relaxed) != 0) {
+        /* Phase one only read, so the index is exactly as it was. */
+        reorder_unlock(dbs);
+        return SYLVAN_ERR_INVALID;
+    }
+
+    trie_batch_victims_CALL(lace, dbs, TRIE_BATCH_UNLINK, indices, 0, count);
+    trie_batch_victims_CALL(lace, dbs, TRIE_BATCH_COLLECT, indices, 0, count);
+
+    /* One round per level of the collected regions; the rounds stop when a
+       level adds nothing, and every round is itself parallel. */
+    size_t done = 0;
+    for (;;) {
+        const size_t reached = (size_t)atomic_load_explicit(
+            dbs->batch + TRIE_BATCH_CURSOR, memory_order_relaxed);
+        if (done == reached) break;
+        trie_batch_members_CALL(
+            lace, dbs, TRIE_BATCH_COLLECT, done, reached - done);
+        done = reached;
+    }
+
+    trie_batch_members_CALL(lace, dbs, TRIE_BATCH_REBUILD, 0, done);
+
+    reorder_unlock(dbs);
+    return SYLVAN_OK;
+}
+
+int
+nodes_reinsert_batch_CALL(lace_worker* lace, nodes_table* dbs,
+                          const uint64_t* indices, size_t count)
+{
+    if (count == 0) return SYLVAN_OK;
+    if (nodes_reorder_caps(dbs) == 0) return SYLVAN_ERR_INVALID;
+
+    reorder_lock(dbs);
+    atomic_store_explicit(
+        dbs->batch + TRIE_BATCH_ERROR, 0, memory_order_relaxed);
+    trie_batch_reinsert_CALL(lace, dbs, indices, 0, count);
+    const int failed = atomic_load_explicit(
+        dbs->batch + TRIE_BATCH_ERROR, memory_order_relaxed) != 0;
+    reorder_unlock(dbs);
+
+    return failed ? SYLVAN_ERR_INVALID : SYLVAN_OK;
 }
 
 /**

@@ -719,3 +719,23 @@ int nodes_prepare_reorder(nodes_table* dbs, const uint32_t* routes, size_t count
     (void)dbs; (void)routes; (void)count;
     return SYLVAN_ERR_INVALID;
 }
+
+/**
+ * This backend does not report NODES_CAP_BATCH: it splices lock-free one node
+ * at a time, so a batch would buy it nothing the loop does not already have.
+ */
+int
+nodes_remove_batch_CALL(lace_worker* lace, nodes_table* dbs,
+                        const uint64_t* indices, size_t count)
+{
+    (void)lace; (void)dbs; (void)indices; (void)count;
+    return SYLVAN_ERR_INVALID;
+}
+
+int
+nodes_reinsert_batch_CALL(lace_worker* lace, nodes_table* dbs,
+                          const uint64_t* indices, size_t count)
+{
+    (void)lace; (void)dbs; (void)indices; (void)count;
+    return SYLVAN_ERR_INVALID;
+}

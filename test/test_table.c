@@ -1004,6 +1004,111 @@ test_reorder_race(void)
 }
 
 /**
+ * The batched primitives against what the single-node ones would have done.
+ *
+ * All the keys are leaves, so on the anchored backends they are one family and
+ * the removals really do repair overlapping and nested regions rather than
+ * independent ones. The batch is collective, so it runs in its own Lace frame,
+ * which is also how the reorder session calls it.
+ */
+#define TEST_BATCH_KEYS 512
+#define TEST_BATCH_STRIDE 8
+
+struct batch_case {
+    nodes_table *table;
+    uint64_t *indices;
+    size_t count;
+};
+
+TASK(int, batch_remove_task, struct batch_case*, work)
+
+int
+batch_remove_task_CALL(lace_worker *lace, struct batch_case *work)
+{
+    return nodes_remove_batch_CALL(
+        lace, work->table, work->indices, work->count);
+}
+
+TASK(int, batch_reinsert_task, struct batch_case*, work)
+
+int
+batch_reinsert_task_CALL(lace_worker *lace, struct batch_case *work)
+{
+    return nodes_reinsert_batch_CALL(
+        lace, work->table, work->indices, work->count);
+}
+
+static int
+test_reorder_batch(void)
+{
+    const size_t table_size = race_table_size() * 2;
+    nodes_table *table = nodes_create(table_size, table_size);
+    if ((nodes_reorder_caps(table) & NODES_CAP_BATCH) == 0) {
+        nodes_free(table);
+        return 0;
+    }
+
+    static uint64_t keys[TEST_BATCH_KEYS];
+    static uint64_t indices[TEST_BATCH_KEYS];
+    static uint64_t victims[TEST_BATCH_KEYS / TEST_BATCH_STRIDE];
+
+    for (unsigned int i = 0; i < TEST_BATCH_KEYS; i++) {
+        keys[i] = UINT64_C(0x4000000000000000) | (i + 2u);
+        int created = 0;
+        indices[i] = nodes_lookup(table, keys[i], 0, &created);
+        test_assert(indices[i] > 1 && created == 1);
+    }
+
+    const size_t victim_count = TEST_BATCH_KEYS / TEST_BATCH_STRIDE;
+    for (size_t k = 0; k < victim_count; k++) {
+        victims[k] = indices[k * TEST_BATCH_STRIDE];
+    }
+
+    struct batch_case work = { table, victims, victim_count };
+    test_assert(batch_remove_task_NEWFRAME(&work) == SYLVAN_OK);
+
+    for (unsigned int i = 0; i < TEST_BATCH_KEYS; i++) {
+        int created = 1;
+        const uint64_t found = nodes_lookup(table, keys[i], 0, &created);
+        if (i % TEST_BATCH_STRIDE == 0) {
+            /* Gone from the index: recreated at a fresh slot. */
+            test_assert(created == 1 && found != indices[i]);
+            test_assert(nodes_remove(table, found) == SYLVAN_OK);
+        } else {
+            test_assert(created == 0 && found == indices[i]);
+        }
+    }
+
+    test_assert(batch_reinsert_task_NEWFRAME(&work) == SYLVAN_OK);
+
+    for (unsigned int i = 0; i < TEST_BATCH_KEYS; i++) {
+        int created = 1;
+        test_assert(nodes_lookup(table, keys[i], 0, &created) == indices[i]);
+        test_assert(created == 0);
+    }
+
+    /* A batch that names a node it cannot remove refuses the whole batch and
+       leaves the index alone, because the phase that discovers it only reads.
+       The bad index is out of range rather than merely absent: an index that
+       is in range but not in its own family is a caller bug the debug builds
+       assert on, exactly as the single-node nodes_remove does. */
+    static uint64_t spoiled[TEST_BATCH_KEYS / TEST_BATCH_STRIDE];
+    memcpy(spoiled, victims, victim_count * sizeof(uint64_t));
+    spoiled[victim_count / 2] = table_size + 1u;
+    struct batch_case bad = { table, spoiled, victim_count };
+    test_assert(batch_remove_task_NEWFRAME(&bad) == SYLVAN_ERR_INVALID);
+
+    for (unsigned int i = 0; i < TEST_BATCH_KEYS; i++) {
+        int created = 1;
+        test_assert(nodes_lookup(table, keys[i], 0, &created) == indices[i]);
+        test_assert(created == 0);
+    }
+
+    nodes_free(table);
+    return 0;
+}
+
+/**
  * Remove, release, and (after a simulated barrier) claim the slot again: the
  * recycled index must come back for a different key, and the old key must be
  * gone. Releasing a node that is still in the index must be refused.
@@ -1451,7 +1556,8 @@ test_reorder_contract(void)
     fprintf(stderr, "test_table: reorder caps 0x%x, %u workers\n",
             (unsigned int)caps, test_workers);
     test_assert((caps & ~(uint32_t)(NODES_CAP_REMOVE | NODES_CAP_RELEASE |
-                                    NODES_CAP_ENUMERATE)) == 0);
+                                    NODES_CAP_ENUMERATE |
+                                    NODES_CAP_BATCH)) == 0);
 
     const uint64_t key = UINT64_C(0x4000000000000005);
     int created = 0;
@@ -1468,6 +1574,11 @@ test_reorder_contract(void)
     if ((caps & NODES_CAP_ENUMERATE) == 0) {
         test_assert(
             nodes_enumerate_var(table, 0, NULL, NULL) == SYLVAN_ERR_INVALID);
+    }
+    if ((caps & NODES_CAP_BATCH) == 0) {
+        test_assert(nodes_remove_batch(table, &index, 1) == SYLVAN_ERR_INVALID);
+        test_assert(
+            nodes_reinsert_batch(table, &index, 1) == SYLVAN_ERR_INVALID);
     }
     if (caps == 0) {
         test_assert(nodes_reserve(table, 1) == SYLVAN_ERR_INVALID);
@@ -1628,6 +1739,7 @@ run_table_tests_CALL(lace_worker *lace)
     if (test_reorder_release()) return 1;
     if (test_reorder_release_custom()) return 1;
     if (test_reorder_race()) return 1;
+    if (test_reorder_batch()) return 1;
 #if defined(__unix__) || defined(__APPLE__)
     if (test_reinsert_collision_aborts(test_self)) return 1;
 #endif

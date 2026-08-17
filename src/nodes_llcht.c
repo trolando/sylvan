@@ -444,6 +444,25 @@ nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_t b,
     }
 }
 
+void
+nodes_prefetch_subtable(const nodes_table* dbs, uint32_t subtable,
+                        uint64_t a, uint64_t b, int depth)
+{
+    (void)subtable;
+    const uint64_t hash = hash_key(dbs, a, b, 0);
+    const _Atomic(uint64_t)* head = dbs->heads + head_index(dbs, hash);
+    __builtin_prefetch((const void*)head, 0, 3);
+    if (depth <= 0) return;
+
+    /* The head slot is expected to be resident by now. Reading it can race
+       with an insertion, which only means the fetched record may not be the
+       one the lookup ends up comparing; the index is masked out of a link
+       word, so the address is always inside the data array either way. */
+    const uint64_t link = atomic_load_explicit(head, memory_order_relaxed);
+    const uint64_t index = link & MASK_INDEX;
+    if (index != 0) __builtin_prefetch(dbs->data + index * 16, 0, 3);
+}
+
 uint64_t
 nodes_lookup(const nodes_table* dbs, const uint64_t a, const uint64_t b,
              int* created)

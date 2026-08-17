@@ -99,6 +99,33 @@ uint64_t nodes_lookupc_subtable(const nodes_table* dbs, uint32_t subtable,
                                 uint64_t a, uint64_t b, int *created);
 
 /**
+ * Whether this backend keys a lookup by a hash of the record, so that the slot
+ * the lookup will touch is computable before the lookup runs. Only such a
+ * backend can be warmed ahead of a loop that interns nodes; a backend that
+ * anchors at one of the children has nothing to compute in advance and nothing
+ * to gain, because the anchor is the node the caller just touched.
+ */
+#if defined(SYLVAN_NODES_TABLE_LLCHT)
+#define SYLVAN_NODES_PREFETCH 1
+#else
+#define SYLVAN_NODES_PREFETCH 0
+#endif
+
+#if SYLVAN_NODES_PREFETCH
+/**
+ * Start the memory traffic that nodes_lookup_subtable(dbs, subtable, a, b)
+ * will need, without performing the lookup. <depth> 0 fetches the head slot
+ * the record hashes to; 1 additionally follows the head, which is only worth
+ * doing once an earlier call at depth 0 has had time to land.
+ *
+ * This is a hint with no effect on the table. It is safe to call concurrently
+ * with lookups, and safe to call for a record that is never looked up.
+ */
+void nodes_prefetch_subtable(const nodes_table* dbs, uint32_t subtable,
+                             uint64_t a, uint64_t b, int depth);
+#endif
+
+/**
  * To perform garbage collection, the user is responsible that no lookups are performed during the process.
  *
  * 1) call nodes_clear

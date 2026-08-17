@@ -1660,27 +1660,39 @@ enum reorder_phase {
     REORDER_PHASE_REINSERT = 2
 };
 
+/**
+ * The four cofactors of f by x and y. A child that is not a y-node supplies
+ * both of its cofactors itself.
+ */
+static inline void
+reorder_cofactors(const struct reorder_caseb *entry,
+                  uint64_t *low_zero, uint64_t *low_one,
+                  uint64_t *high_zero, uint64_t *high_one)
+{
+    *low_zero = *low_one = entry->low;
+    *high_zero = *high_one = entry->high;
+
+    if (reorder_has_variable(entry->low, swap_lower)) {
+        mtbddnode *child = reorder_record(entry->low & REORDER_INDEX_MASK);
+        *low_zero = mtbddnode_followlow(entry->low, child);
+        *low_one = mtbddnode_followhigh(entry->low, child);
+    }
+    if (reorder_has_variable(entry->high, swap_lower)) {
+        mtbddnode *child = reorder_record(entry->high & REORDER_INDEX_MASK);
+        *high_zero = mtbddnode_followlow(entry->high, child);
+        *high_one = mtbddnode_followhigh(entry->high, child);
+    }
+}
+
 static void
 reorder_apply_decision(int phase, struct reorder_caseb *entry,
                        struct reorder_intern_buffer *buffer)
 {
     switch (phase) {
     case REORDER_PHASE_INTERN: {
-        /* The four cofactors of f by x and y. A child that is not a y-node
-           supplies both of its cofactors itself. */
-        uint64_t low_zero = entry->low, low_one = entry->low;
-        uint64_t high_zero = entry->high, high_one = entry->high;
-
-        if (reorder_has_variable(entry->low, swap_lower)) {
-            mtbddnode *child = reorder_record(entry->low & REORDER_INDEX_MASK);
-            low_zero = mtbddnode_followlow(entry->low, child);
-            low_one = mtbddnode_followhigh(entry->low, child);
-        }
-        if (reorder_has_variable(entry->high, swap_lower)) {
-            mtbddnode *child = reorder_record(entry->high & REORDER_INDEX_MASK);
-            high_zero = mtbddnode_followlow(entry->high, child);
-            high_one = mtbddnode_followhigh(entry->high, child);
-        }
+        uint64_t low_zero, low_one, high_zero, high_one;
+        reorder_cofactors(
+            entry, &low_zero, &low_one, &high_zero, &high_one);
 
         entry->g0 = reorder_make_node(buffer, swap_upper, low_zero, high_zero);
         entry->g1 = reorder_make_node(buffer, swap_upper, low_one, high_one);
@@ -1757,6 +1769,80 @@ reorder_apply_map(int phase, struct reorder_caseb_map *entry,
     }
 }
 
+#if SYLVAN_NODES_PREFETCH
+/**
+ * A software pipeline for the intern phase.
+ *
+ * Interning one node is a chain of dependent misses: hash the record, miss on
+ * a uniformly random head slot of a table-sized array, then miss again on the
+ * 16-byte record the equality check reads. Nothing inside one entry can be
+ * overlapped with them. Consecutive entries, however, are independent -- the
+ * children they read were fixed by the classification phase and the phase only
+ * creates nodes -- so the addresses for later entries can be computed early and
+ * their misses started while the current entry is still working.
+ *
+ * The stages, at descending distance ahead of the entry being applied:
+ *
+ *   +3  touch the two child records the cofactors are read out of
+ *   +2  recompute the cofactors, hash them, prefetch the head slots
+ *   +1  follow the now-resident head and prefetch the first link's record
+ *
+ * The later stages recompute what the earlier ones did instead of carrying the
+ * results forward in a ring buffer: by then every input is in L1, and the
+ * arithmetic is cheaper than the bookkeeping would be.
+ *
+ * All of this is confined to one leaf block of at most REORDER_SWAP_BLOCK
+ * entries -- the same block the intern buffer covers -- so a stage never
+ * reaches into a range another worker owns. The stages only compute addresses
+ * and issue hints; they take no part in the buffering the block does.
+ */
+static inline void
+reorder_prefetch_children(size_t i)
+{
+    if (i >= swap_node_count) return;
+    const struct reorder_caseb *entry = swap_nodes + i;
+    __builtin_prefetch(reorder_record(entry->low & REORDER_INDEX_MASK), 0, 3);
+    __builtin_prefetch(reorder_record(entry->high & REORDER_INDEX_MASK), 0, 3);
+}
+
+static inline void
+reorder_prefetch_node(uint64_t low, uint64_t high, int depth)
+{
+    /* The reduction rule short-circuits before any lookup happens. */
+    if (low == high) return;
+
+    const uint64_t complement = low & bdd_complement;
+    low ^= complement;
+    high ^= complement;
+
+    struct mtbddnode record;
+    mtbddnode_makenode(&record, swap_upper, low, high);
+    nodes_prefetch_subtable(nodes, NODES_SUBTABLE_DECISION(swap_upper),
+                            record.a, record.b, depth);
+}
+
+static void
+reorder_prefetch_intern(size_t i, int depth)
+{
+    if (i >= swap_node_count) {
+        const struct reorder_caseb_map *entry =
+            swap_maps + (i - swap_node_count);
+        struct mtbddnode record;
+        mtbddnode_makemapnode(
+            &record, swap_upper, entry->rest, entry->value);
+        nodes_prefetch_subtable(
+            nodes, NODES_SUBTABLE_MAP, record.a, record.b, depth);
+        return;
+    }
+
+    uint64_t low_zero, low_one, high_zero, high_one;
+    reorder_cofactors(
+        swap_nodes + i, &low_zero, &low_one, &high_zero, &high_one);
+    reorder_prefetch_node(low_zero, high_zero, depth);
+    reorder_prefetch_node(low_one, high_one, depth);
+}
+#endif
+
 TASK(void, reorder_phase, int, phase, size_t, first, size_t, count)
 
 void
@@ -1775,6 +1861,25 @@ reorder_phase_CALL(lace_worker *lace, int phase, size_t first, size_t count)
     buffer.deaths = 0;
 
     const size_t end = first + count;
+
+#if SYLVAN_NODES_PREFETCH
+    if (phase == REORDER_PHASE_INTERN) {
+        for (size_t i = first; i < end; i++) {
+            if (i + 3 < end) reorder_prefetch_children(i + 3);
+            if (i + 2 < end) reorder_prefetch_intern(i + 2, 0);
+            if (i + 1 < end) reorder_prefetch_intern(i + 1, 1);
+            if (i < swap_node_count) {
+                reorder_apply_decision(phase, swap_nodes + i, &buffer);
+            } else {
+                reorder_apply_map(
+                    phase, swap_maps + (i - swap_node_count), &buffer);
+            }
+        }
+        reorder_intern_flush(&buffer);
+        return;
+    }
+#endif
+
     for (; first < end; first++) {
         if (first < swap_node_count) {
             reorder_apply_decision(phase, swap_nodes + first, &buffer);

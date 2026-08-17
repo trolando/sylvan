@@ -1228,6 +1228,98 @@ static size_t swap_node_capacity;
 static struct reorder_caseb_map *swap_maps;
 static size_t swap_map_count;
 static size_t swap_map_capacity;
+
+/**
+ * PRE-SLOTTED APPENDS (a).
+ *
+ * The four lists the parallel phases append to, and where this swap's entries
+ * start in the two the REINSERT phase writes. All of it is captured after
+ * classification, where the counts are stable and the reservations are already
+ * in place, and the counts of the REINSERT lists are published once, at the
+ * phase barrier, rather than moved once per entry.
+ */
+static struct reorder_list *swap_upper_decision;
+static struct reorder_list *swap_upper_maps;
+static struct reorder_list *swap_lower_decision;
+static struct reorder_list *swap_lower_maps;
+static size_t swap_lower_decision_base;
+static size_t swap_lower_maps_base;
+
+/**
+ * What one leaf task of the INTERN phase created.
+ *
+ * A leaf task covers at most REORDER_SWAP_BLOCK entries; a decision entry
+ * interns at most two decision nodes and a map entry at most one map node, so
+ * these bounds hold whatever mixture of the two a leaf happens to span.
+ */
+struct reorder_intern_buffer {
+    size_t decisions;
+    size_t maps;
+    size_t deaths;
+    uint64_t decision[2u * REORDER_SWAP_BLOCK];
+    uint64_t map[REORDER_SWAP_BLOCK];
+    /* The REWRITE phase drops two edges per entry and nothing else drops one,
+       so a leaf can announce at most two deaths per entry. */
+    uint64_t death[2u * REORDER_SWAP_BLOCK];
+};
+
+/**
+ * Announce this leaf's deaths, claiming the queue once. Only the order of the
+ * queue changes: a count still crosses zero exactly where it did, because
+ * reorder_count_down is not deferred -- only the announcement is.
+ */
+static void
+reorder_retire_flush(struct reorder_intern_buffer *buffer)
+{
+    if (buffer->deaths == 0) return;
+    const size_t at = atomic_fetch_add_explicit(
+        &session.queue_count, buffer->deaths, memory_order_relaxed);
+    if (at + buffer->deaths > session.queue_capacity) {
+        assert(!"the depth-1 death theorem does not hold and the queue is full");
+        reorder_fatal("more deaths than the retirement queue was sized for");
+    } else {
+        memcpy(session.queue + at, buffer->death,
+               buffer->deaths * sizeof(uint64_t));
+    }
+    buffer->deaths = 0;
+}
+
+/** reorder_edge_down, with the announcement buffered. REWRITE only. */
+static void
+reorder_edge_down_buffered(struct reorder_intern_buffer *buffer, uint64_t index)
+{
+    if (index == 0) return;
+    if (!reorder_count_down(index)) return;
+    if (bitmap_get(session.pinned, index)) return;
+    buffer->death[buffer->deaths++] = index;
+}
+
+/** Claim exactly the room this leaf used, with one atomic per list. */
+static void
+reorder_intern_flush(struct reorder_intern_buffer *buffer)
+{
+    struct reorder_list *both[2] = { swap_upper_decision, swap_upper_maps };
+    const size_t used[2] = { buffer->decisions, buffer->maps };
+    const uint64_t *from[2] = { buffer->decision, buffer->map };
+
+    const size_t created = buffer->decisions + buffer->maps;
+    if (created != 0) {
+        atomic_fetch_add_explicit(&session.created, created, memory_order_relaxed);
+    }
+
+    for (int i = 0; i < 2; i++) {
+        if (used[i] == 0 || both[i] == NULL) continue;
+        const size_t at = atomic_fetch_add_explicit(
+            &both[i]->count, used[i], memory_order_relaxed);
+        if (at + used[i] > both[i]->capacity) {
+            reorder_fatal("node list overflow");
+            continue;
+        }
+        memcpy(both[i]->items + at, from[i], used[i] * sizeof(uint64_t));
+    }
+    buffer->decisions = 0;
+    buffer->maps = 0;
+}
 /* Whether the index takes its removals and re-indexings a set at a time. When
    it does, the phases below leave those two calls out: the swap issues them
    once for the whole set, between the phases, where the backend can run them
@@ -1251,7 +1343,8 @@ reorder_plan_free(void)
  * table cannot refuse.
  */
 static uint64_t
-reorder_make_node(uint32_t variable, MTBDD low, MTBDD high)
+reorder_make_node(struct reorder_intern_buffer *buffer,
+                  uint32_t variable, MTBDD low, MTBDD high)
 {
     if (low == high) return low;
 
@@ -1273,10 +1366,9 @@ reorder_make_node(uint32_t variable, MTBDD low, MTBDD high)
 
     if (created) {
         sylvan_stats_count(BDD_NODES_CREATED);
-        atomic_fetch_add_explicit(&session.created, 1, memory_order_relaxed);
         reorder_edge_up(low);
         reorder_edge_up(high);
-        reorder_list_append(reorder_decision_list(variable), index);
+        buffer->decision[buffer->decisions++] = index;
     } else {
         sylvan_stats_count(BDD_NODES_REUSED);
     }
@@ -1286,7 +1378,8 @@ reorder_make_node(uint32_t variable, MTBDD low, MTBDD high)
 
 /** The same for a map node. Map nodes have no reduction rule. */
 static uint64_t
-reorder_make_map_node(uint32_t key, MTBDD next, MTBDD value)
+reorder_make_map_node(struct reorder_intern_buffer *buffer,
+                      uint32_t key, MTBDD next, MTBDD value)
 {
     struct mtbddnode record;
     mtbddnode_makemapnode(&record, key, next, value);
@@ -1301,10 +1394,9 @@ reorder_make_map_node(uint32_t key, MTBDD next, MTBDD value)
 
     if (created) {
         sylvan_stats_count(BDD_NODES_CREATED);
-        atomic_fetch_add_explicit(&session.created, 1, memory_order_relaxed);
         reorder_edge_up(next);
         reorder_edge_up(value);
-        reorder_list_append(reorder_map_list(key), index);
+        buffer->map[buffer->maps++] = index;
     } else {
         sylvan_stats_count(BDD_NODES_REUSED);
     }
@@ -1569,7 +1661,8 @@ enum reorder_phase {
 };
 
 static void
-reorder_apply_decision(int phase, struct reorder_caseb *entry)
+reorder_apply_decision(int phase, struct reorder_caseb *entry,
+                       struct reorder_intern_buffer *buffer)
 {
     switch (phase) {
     case REORDER_PHASE_INTERN: {
@@ -1589,8 +1682,8 @@ reorder_apply_decision(int phase, struct reorder_caseb *entry)
             high_one = mtbddnode_followhigh(entry->high, child);
         }
 
-        entry->g0 = reorder_make_node(swap_upper, low_zero, high_zero);
-        entry->g1 = reorder_make_node(swap_upper, low_one, high_one);
+        entry->g0 = reorder_make_node(buffer, swap_upper, low_zero, high_zero);
+        entry->g1 = reorder_make_node(buffer, swap_upper, low_one, high_one);
         reorder_edge_up(entry->g0);
         reorder_edge_up(entry->g1);
         break;
@@ -1606,8 +1699,8 @@ reorder_apply_decision(int phase, struct reorder_caseb *entry)
         assert(!MTBDD_HASMARK(entry->g0));
         mtbddnode_makenode(
             reorder_record(entry->index), swap_lower, entry->g0, entry->g1);
-        reorder_edge_down(entry->low_target);
-        reorder_edge_down(entry->high_target);
+        reorder_edge_down_buffered(buffer, entry->low_target);
+        reorder_edge_down_buffered(buffer, entry->high_target);
         break;
     }
 
@@ -1616,18 +1709,25 @@ reorder_apply_decision(int phase, struct reorder_caseb *entry)
         if (!swap_batched && nodes_reinsert(nodes, entry->index) != SYLVAN_OK) {
             reorder_fatal("a rewritten node could not be re-indexed");
         }
-        reorder_list_append(reorder_decision_list(swap_lower), entry->index);
+        /* One entry, one slot of its own: no atomic, and the count moves
+           once at the barrier. See swap_lower_decision_base. */
+        if (swap_lower_decision != NULL) {
+            swap_lower_decision->items[
+                swap_lower_decision_base + (size_t)(entry - swap_nodes)] =
+                entry->index;
+        }
         break;
     }
 }
 
 static void
-reorder_apply_map(int phase, struct reorder_caseb_map *entry)
+reorder_apply_map(int phase, struct reorder_caseb_map *entry,
+                  struct reorder_intern_buffer *buffer)
 {
     switch (phase) {
     case REORDER_PHASE_INTERN:
         entry->inner = reorder_make_map_node(
-            swap_upper, entry->rest, entry->value);
+            buffer, swap_upper, entry->rest, entry->value);
         reorder_edge_up(entry->inner);
         reorder_edge_up(entry->other);
         break;
@@ -1639,8 +1739,8 @@ reorder_apply_map(int phase, struct reorder_caseb_map *entry)
         mtbddnode_makemapnode(
             reorder_record(entry->index), swap_lower,
             entry->inner, entry->other);
-        reorder_edge_down(entry->next_target);
-        reorder_edge_down(entry->value_target);
+        reorder_edge_down_buffered(buffer, entry->next_target);
+        reorder_edge_down_buffered(buffer, entry->value_target);
         break;
 
     case REORDER_PHASE_REINSERT:
@@ -1648,7 +1748,11 @@ reorder_apply_map(int phase, struct reorder_caseb_map *entry)
         if (!swap_batched && nodes_reinsert(nodes, entry->index) != SYLVAN_OK) {
             reorder_fatal("a rewritten map node could not be re-indexed");
         }
-        reorder_list_append(reorder_map_list(swap_lower), entry->index);
+        if (swap_lower_maps != NULL) {
+            swap_lower_maps->items[
+                swap_lower_maps_base + (size_t)(entry - swap_maps)] =
+                entry->index;
+        }
         break;
     }
 }
@@ -1665,14 +1769,22 @@ reorder_phase_CALL(lace_worker *lace, int phase, size_t first, size_t count)
         return;
     }
 
+    struct reorder_intern_buffer buffer;
+    buffer.decisions = 0;
+    buffer.maps = 0;
+    buffer.deaths = 0;
+
     const size_t end = first + count;
     for (; first < end; first++) {
         if (first < swap_node_count) {
-            reorder_apply_decision(phase, swap_nodes + first);
+            reorder_apply_decision(phase, swap_nodes + first, &buffer);
         } else {
-            reorder_apply_map(phase, swap_maps + (first - swap_node_count));
+            reorder_apply_map(
+                phase, swap_maps + (first - swap_node_count), &buffer);
         }
     }
+    if (phase == REORDER_PHASE_INTERN) reorder_intern_flush(&buffer);
+    else if (phase == REORDER_PHASE_REWRITE) reorder_retire_flush(&buffer);
 }
 
 /**
@@ -1692,7 +1804,45 @@ reorder_phase_CALL(lace_worker *lace, int phase, size_t first, size_t count)
  * node by node -- a node is still unhashed exactly once, and only after the
  * count that killed it reached zero -- but a whole round goes through the index
  * in one call, so the workers can share it.
+ *
+ * Neither is the counting down. Building the round is what makes it a set of
+ * distinct nodes, and unhashing it is what takes them out of the index, so by
+ * the time the edges are dropped there is nothing left for two workers to race
+ * over: no node is in the round twice, the loop makes no index call, the counts
+ * are atomic, and each node's entry in the retired-slot array is its position
+ * in the round. That is why the drop loop needs no lock, no claim and no
+ * capability -- unlike the unhashing above it, which needs one.
  */
+/**
+ * One block of a retirement round: the retired-slot record and the two edges
+ * each dead node drops. See the block above reorder_run_retirement for why
+ * this needs neither a claim nor a capability.
+ */
+static size_t retire_dead_base;
+
+TASK(void, reorder_retire_block, size_t, first, size_t, count)
+
+void
+reorder_retire_block_CALL(lace_worker *lace, size_t first, size_t count)
+{
+    if (count > REORDER_SWAP_BLOCK) {
+        reorder_retire_block_SPAWN(lace, first, count / 2);
+        reorder_retire_block_CALL(lace, first + count / 2, count - count / 2);
+        reorder_retire_block_SYNC(lace);
+        return;
+    }
+
+    const size_t end = first + count;
+    for (; first < end; first++) {
+        const uint64_t index = session.batch[first];
+        session.dead[retire_dead_base + first] = index;
+
+        mtbddnode *record = reorder_record(index);
+        reorder_edge_down(reorder_target(mtbddnode_getlow(record)));
+        reorder_edge_down(reorder_target(mtbddnode_gethigh(record)));
+    }
+}
+
 static void
 reorder_run_retirement(lace_worker *lace, uint64_t *died, uint64_t *deep)
 {
@@ -1729,23 +1879,18 @@ reorder_run_retirement(lace_worker *lace, uint64_t *died, uint64_t *deep)
             }
         }
 
-        for (size_t i = 0; i < count; i++) {
-            const uint64_t index = session.batch[i];
-
-            /* One entry per node this loop retires, and the loop cannot retire
-               more nodes than the queue holds, which the classification phase
-               sized this array for. */
-            if (session.dead_count == session.dead_capacity) {
-                assert(!"the retired-slot array outgrew its reservation");
-                reorder_fatal("the retired-slot array outgrew its reservation");
-            }
-            session.dead[session.dead_count++] = index;
-            retired++;
-
-            mtbddnode *record = reorder_record(index);
-            reorder_edge_down(reorder_target(mtbddnode_getlow(record)));
-            reorder_edge_down(reorder_target(mtbddnode_gethigh(record)));
+        /* One entry per node this round retires, and a round cannot hold more
+           nodes than the queue does, which the classification phase sized this
+           array for. Hoisted out of the loop because the loop is parallel and
+           every node's slot is its position in the round. */
+        if (session.dead_count + count > session.dead_capacity) {
+            assert(!"the retired-slot array outgrew its reservation");
+            reorder_fatal("the retired-slot array outgrew its reservation");
         }
+        retire_dead_base = session.dead_count;
+        reorder_retire_block_CALL(lace, 0, count);
+        session.dead_count += count;
+        retired += count;
     }
 
     const size_t total = atomic_load_explicit(
@@ -1778,6 +1923,18 @@ sylvan_varswap_CALL(lace_worker *lace, uint32_t rank,
 
     atomic_store_explicit(&session.created, 0, memory_order_relaxed);
 
+    /* Where the phases append, and where this swap's REINSERT entries start.
+       Classification reserved 2k and k_map above the first pair and k and
+       k_map above the second, and nothing has moved either count since. */
+    swap_upper_decision = reorder_decision_list(swap_upper);
+    swap_upper_maps = reorder_map_list(swap_upper);
+    swap_lower_decision = reorder_decision_list(swap_lower);
+    swap_lower_maps = reorder_map_list(swap_lower);
+    swap_lower_decision_base = swap_lower_decision == NULL ? 0u
+        : atomic_load_explicit(&swap_lower_decision->count, memory_order_relaxed);
+    swap_lower_maps_base = swap_lower_maps == NULL ? 0u
+        : atomic_load_explicit(&swap_lower_maps->count, memory_order_relaxed);
+
     swap_batched = (nodes_reorder_caps(nodes) & NODES_CAP_BATCH) != 0;
 
     /* The two index calls sit between the phases rather than inside them, and
@@ -1800,6 +1957,26 @@ sylvan_varswap_CALL(lace_worker *lace, uint32_t rank,
             reorder_fatal("a rewritten node could not be re-indexed");
         }
         reorder_phase_CALL(lace, REORDER_PHASE_REINSERT, 0, total);
+
+        /* The REINSERT phase filled one slot per entry; publish both counts
+           once. If a phase had aborted instead, the process is gone and no
+           reader can see the half-filled region. */
+        if (swap_lower_decision != NULL) {
+            const size_t at = swap_lower_decision_base + swap_node_count;
+            if (at > swap_lower_decision->capacity) {
+                reorder_fatal("node list overflow");
+            }
+            atomic_store_explicit(
+                &swap_lower_decision->count, at, memory_order_relaxed);
+        }
+        if (swap_lower_maps != NULL) {
+            const size_t at = swap_lower_maps_base + swap_map_count;
+            if (at > swap_lower_maps->capacity) {
+                reorder_fatal("node list overflow");
+            }
+            atomic_store_explicit(
+                &swap_lower_maps->count, at, memory_order_relaxed);
+        }
     }
 
     uint64_t died = 0, deep = 0;

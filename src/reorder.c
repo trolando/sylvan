@@ -1935,7 +1935,12 @@ sylvan_varswap_CALL(lace_worker *lace, uint32_t rank,
     swap_lower_maps_base = swap_lower_maps == NULL ? 0u
         : atomic_load_explicit(&swap_lower_maps->count, memory_order_relaxed);
 
-    swap_batched = (nodes_reorder_caps(nodes) & NODES_CAP_BATCH) != 0;
+    /* A batch exists to spread the index work over the workers; with one
+       worker there is nothing to spread and the collective calls are pure
+       overhead, measured at several percent of a single-worker sift on the
+       backends whose per-node primitives are cheap. */
+    swap_batched = (nodes_reorder_caps(nodes) & NODES_CAP_BATCH) != 0
+        && lace_worker_count() > 1;
 
     /* The two index calls sit between the phases rather than inside them, and
        that is not only about the batch. The rewrite of a record and the

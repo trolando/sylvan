@@ -21,6 +21,17 @@ All notable changes to Sylvan will be documented in this file.
   identical to builds from before the option existed.
 
 ### Changed
+- Parallel sifting now scales instead of losing to its own workers. Three
+  changes compose: the trie and list tables take a swap's removals and
+  re-indexings as whole batches, run as internally parallel phases with
+  barriers where the trie's per-node lock used to serialise everything; the
+  swap's parallel phases claim shared state per block instead of paying an
+  atomic fetch-add per node; and retirement drops its dead edges from a
+  parallel task over the deduplicated round. Measured on C880 with the list
+  table, an eight-worker sift went from slower than one worker to about
+  1.9 times faster, and the trie's eight-worker sift halved. A single-worker
+  sift skips the batched calls, which are pure overhead with nothing to
+  spread.
 - Sifting now stops a variable's excursion as soon as a variable interaction
   bound proves that no position further in that direction can beat the best
   already seen, the way CUDD's sifting does. The bound is conservative, so the

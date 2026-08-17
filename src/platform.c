@@ -26,7 +26,7 @@
 #include <sylvan/platform.h>
 
 #if SYLVAN_USE_MMAP && !defined(_WIN32)
-    #include <sys/mman.h> // for mmap
+    #include <sys/mman.h> // for mmap, madvise
 #elif defined(_WIN32)
     #include <malloc.h>
 #endif
@@ -61,7 +61,17 @@ sylvan_alloc_aligned(size_t size)
     return VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 #else 
     void* p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    return (p == MAP_FAILED) ? NULL : p;
+    if (p == MAP_FAILED) return NULL;
+#if defined(MADV_HUGEPAGE)
+    /* The hash-keyed tables are addressed at random over their whole extent,
+       so once an array outgrows the TLB reach every lookup pays a page-walk
+       on top of its cache miss. Ask for 2 MiB pages on any mapping big
+       enough to hold one. The kernel is free to decline (and does, silently,
+       when transparent_hugepage is "never"), and the mapping is already
+       2 MiB aligned because Linux aligns large anonymous mappings. */
+    if (size >= ((size_t)2 << 20)) (void)madvise(p, size, MADV_HUGEPAGE);
+#endif
+    return p;
 #endif
 
 #elif defined(__MINGW32__)

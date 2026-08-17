@@ -1329,6 +1329,14 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
 #define TRIE_BATCH_CURSOR 0
 #define TRIE_BATCH_ERROR  1
 
+/**
+ * FIND is not there for the contract. This backend has to know where every
+ * victim sits before it can unlink anything, so it locates them all first and
+ * discovers an absent one on the way. That makes its refusal stronger than the
+ * contract asks for -- an in-range index that is not in the index is a caller
+ * error the contract lets a backend abort on, and this one refuses cleanly
+ * instead. Nothing may depend on that; see nodes_remove_batch in nodes.h.
+ */
 enum trie_batch_phase {
     TRIE_BATCH_FIND = 0,
     TRIE_BATCH_UNLINK = 1,

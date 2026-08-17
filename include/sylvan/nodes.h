@@ -338,11 +338,23 @@ int nodes_reinsert(nodes_table* dbs, uint64_t index);
  * batch spawns onto the same workers. <indices> must hold distinct node
  * indices and stays owned by the caller.
  *
- * REMOVAL FAILS ONLY BEFORE IT STARTS. If any index is not in the index at
- * all, nodes_remove_batch changes nothing and returns SYLVAN_ERR_INVALID: the
- * phase that could discover it is read-only. Reinsertion reports the same code
- * if any node was already indexed, and aborts on an equal node exactly as
- * nodes_reinsert does.
+ * REMOVAL FAILS ONLY BEFORE IT STARTS, for the failure a batch can see
+ * cheaply. If any index is out of range, nodes_remove_batch changes nothing
+ * and returns SYLVAN_ERR_INVALID: the check is a comparison per index and the
+ * pass that makes it is read-only.
+ *
+ * AN INDEX THAT IS IN RANGE BUT NOT IN THE INDEX IS A CALLER ERROR, not a
+ * condition: debug builds assert and release builds abort, exactly as the
+ * single-node primitives do for the errors only they can see. Distinguishing
+ * it before mutating would cost a read-only walk of every victim's family, and
+ * no caller can use the distinction -- removing a node the index does not hold
+ * means the caller's own bookkeeping is already wrong, and the session that
+ * drives these calls treats a refusal as fatal anyway. A backend that
+ * discovers absence for free while doing its own work may still refuse
+ * cleanly, and the trie does; callers may not rely on it.
+ *
+ * Reinsertion reports SYLVAN_ERR_INVALID if any node was already indexed, and
+ * aborts on an equal node exactly as nodes_reinsert does.
  */
 static inline int nodes_remove_batch(nodes_table* dbs, const uint64_t* indices,
                                      size_t count);

@@ -186,7 +186,7 @@ void listdd_refs_init_CALL(lace_worker* lace)
 {
     (void)lace;
     listdd_refs_init_task_TOGETHER();
-    sylvan_gc_add_mark(listdd_refs_mark_CALL);
+    sylvan_gc_add_mark_internal(listdd_refs_mark_CALL);
 }
 
 void
@@ -272,8 +272,8 @@ listdd_init(void)
     if (listdd_initialized) return SYLVAN_OK;
     listdd_initialized = 1;
     sylvan_register_quit(listdd_quit);
-    sylvan_gc_add_mark(listdd_gc_mark_protected);
-    sylvan_gc_add_mark(listdd_gc_mark_serialize_CALL);
+    sylvan_gc_add_mark_internal(listdd_gc_mark_protected);
+    sylvan_gc_add_mark_internal(listdd_gc_mark_serialize_CALL);
 
     if (!listdd_protected_created) {
         protect_create(&listdd_protected, 4096);
@@ -573,7 +573,7 @@ _listdd_try_make_node(LISTDD *destination, uint32_t value, LISTDD ifeq, LISTDD i
     if (index == 0) {
         listdd_refs_push(ifeq);
         listdd_refs_push(ifneq);
-        sylvan_gc(); // FIXME can be just sylvan_gc_CALL?
+        sylvan_gc_collect(); // FIXME can be just sylvan_gc_CALL?
         listdd_refs_pop(2);
 
         index = nodes_lookup_subtable(
@@ -612,7 +612,7 @@ _listdd_try_make_copy_node(LISTDD *destination, LISTDD ifeq, LISTDD ifneq)
     if (index == 0) {
         listdd_refs_push(ifeq);
         listdd_refs_push(ifneq);
-        sylvan_gc();
+        sylvan_gc_collect();
         listdd_refs_pop(2);
 
         index = nodes_lookup_subtable(

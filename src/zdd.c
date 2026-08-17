@@ -375,8 +375,8 @@ zdd_init(void)
     zdd_initialized = 1;
 
     sylvan_register_quit(zdd_quit);
-    sylvan_gc_add_mark(zdd_gc_mark_protected_CALL);
-    sylvan_gc_add_mark(zdd_refs_mark_CALL);
+    sylvan_gc_add_mark_internal(zdd_gc_mark_protected_CALL);
+    sylvan_gc_add_mark_internal(zdd_refs_mark_CALL);
 
     if (!zdd_protected_created) {
         protect_create(&zdd_protected, 4096);
@@ -406,7 +406,7 @@ zdd_makeleaf(uint16_t type, uint64_t value)
             nodes, NODES_SUBTABLE_LEAF, n.a, n.b, &created);
     if (index == 0) {
         if (custom && created < 0) return zdd_invalid;
-        sylvan_gc(); // FIXME
+        sylvan_gc_collect(); // FIXME
 
         index = custom
             ? nodes_lookupc_subtable(
@@ -466,7 +466,7 @@ _zdd_try_make_node(ZDD *destination, uint32_t var, ZDD low, ZDD high)
     if (index == 0) {
         zdd_refs_push(low);
         zdd_refs_push(high);
-        sylvan_gc(); //FIXME move to a mini function?
+        sylvan_gc_collect(); //FIXME move to a mini function?
         zdd_refs_pop(2);
 
         index = nodes_lookup_subtable(
@@ -493,7 +493,7 @@ zdd_makemapnode(uint32_t var, ZDD low, ZDD high)
     if (index == 0) {
         zdd_refs_push(low);
         zdd_refs_push(high);
-        sylvan_gc();
+        sylvan_gc_collect();
         zdd_refs_pop(2);
 
         index = nodes_lookup_subtable(

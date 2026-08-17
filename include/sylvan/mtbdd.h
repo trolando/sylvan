@@ -1089,13 +1089,16 @@ int mtbdd_map_remove_all(MTBDDMAP *result, MTBDDMAP map, BDDSET variables);
  * Garbage collection
  * Sylvan supplies two default methods to handle references to nodes: the
  * protected pointers below and the per-worker temporary stacks. A user whose
- * roots suit neither may add a handler using sylvan_gc_add_mark and let the
- * handler call mtbdd_gc_mark for every MTBDD that should be saved during
- * garbage collection.
+ * roots suit neither registers a root visitor with sylvan_gc_add_roots and
+ * yields their values; see <sylvan/common.h>. Roots owned that way are marked
+ * by a collection and pinned by a reordering session, so they are second class
+ * in neither direction.
  */
 
 /**
- * Call mtbdd_gc_mark for every mtbdd you want to keep in your custom mark functions.
+ * Mark <dd> and everything below it, so that the collection in progress keeps
+ * it. Sylvan calls this for every root a visitor yields; a consumer only needs
+ * it inside a ZDD or ListDD marking callback that owns MTBDDs as well.
  */
 static inline void mtbdd_gc_mark(MTBDD dd);
 

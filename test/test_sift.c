@@ -677,15 +677,184 @@ test_queens_CALL(lace_worker *lace)
 }
 
 /**
+ * A CONSUMER'S OWN ROOTS.
+ *
+ * This is what the root visitor exists for and what a marking hook could never
+ * do. The two diagrams below are protected by nothing and referenced by
+ * nothing: the only thing in the process that knows they are roots is a hook
+ * that hands their values back when Sylvan asks. Before 2.0 that made the
+ * whole forest unreorderable, because a session could not enumerate what it
+ * was not allowed to retire. Now the session pins exactly what the hook
+ * yields, so the sift runs, and both diagrams come out of it at the same
+ * handles denoting the same functions.
+ *
+ * The hook yields both roots in one array, which is the shape a consumer with
+ * a handle table has and the reason the interface passes arrays at all.
+ */
+#define TEST_VISITOR_ROOTS 2
+
+static MTBDD test_visitor_root[TEST_VISITOR_ROOTS];
+static MTBDD test_visitor_value[TEST_VISITOR_ROOTS][TEST_ASSIGNMENTS];
+static int test_visitor_calls;
+static int test_visitor_context_wrong;
+
+static void
+test_visitor(void *context, sylvan_roots_yield yield, void *arg)
+{
+    if (context != (void*)&test_visitor_calls) test_visitor_context_wrong = 1;
+    test_visitor_calls++;
+    yield(arg, test_visitor_root, TEST_VISITOR_ROOTS);
+}
+
+static int
+test_roots_visitor_CALL(lace_worker *lace)
+{
+    uint32_t order[TEST_VARS];
+    bdd_set_to_array(test_variables, order);
+
+    /* Built while protected, so that a collection during construction has
+       something to hold on to, and handed over to the visitor afterwards. */
+    MTBDD built[TEST_VISITOR_ROOTS];
+    for (int r = 0; r < TEST_VISITOR_ROOTS; r++) {
+        built[r] = mtbdd_invalid;
+        mtbdd_protect(&built[r]);
+    }
+    test_assert(bdd_xor_CALL(lace, &built[0], test_root[0], test_root[1])
+                == SYLVAN_OK);
+    test_assert(bdd_and_CALL(lace, &built[1], bdd_not(test_root[0]),
+                             test_var[TEST_PAIRS - 1]) == SYLVAN_OK);
+
+    for (int r = 0; r < TEST_VISITOR_ROOTS; r++) {
+        for (unsigned a = 0; a < TEST_ASSIGNMENTS; a++) {
+            uint8_t values[TEST_VARS];
+            test_values_for(order, a, values);
+            test_assert(mtbdd_eval(&test_visitor_value[r][a], built[r],
+                                   test_variables, values, TEST_VARS)
+                        == SYLVAN_OK);
+        }
+        test_visitor_root[r] = built[r];
+    }
+
+    test_visitor_calls = 0;
+    test_visitor_context_wrong = 0;
+    test_assert(sylvan_gc_add_roots(test_visitor, &test_visitor_calls)
+                == SYLVAN_OK);
+    test_assert(sylvan_gc_add_roots(NULL, NULL) == SYLVAN_ERR_INVALID);
+
+    /* From here the hook is the only reference either diagram has. */
+    for (int r = 0; r < TEST_VISITOR_ROOTS; r++) mtbdd_unprotect(&built[r]);
+
+    const MTBDD handle[TEST_VISITOR_ROOTS] = {
+        test_visitor_root[0], test_visitor_root[1]
+    };
+
+    sylvan_sift_result result;
+    test_assert(sylvan_sift_report(NULL, &result) == SYLVAN_OK);
+
+    /* Marking asked once and pinning asked once, both inside the one call. */
+    test_assert(!test_visitor_context_wrong);
+    test_assert(test_visitor_calls >= 2);
+
+    for (int r = 0; r < TEST_VISITOR_ROOTS; r++) {
+        test_assert(test_visitor_root[r] == handle[r]);
+        test_assert(mtbdd_is_valid_CALL(lace, test_visitor_root[r]));
+    }
+
+    bdd_set_to_array(test_variables, order);
+    for (int r = 0; r < TEST_VISITOR_ROOTS; r++) {
+        for (unsigned a = 0; a < TEST_ASSIGNMENTS; a++) {
+            uint8_t values[TEST_VARS];
+            MTBDD evaluated = mtbdd_invalid;
+            test_values_for(order, a, values);
+            test_assert(mtbdd_eval(&evaluated, test_visitor_root[r],
+                                   test_variables, values, TEST_VARS)
+                        == SYLVAN_OK);
+            test_assert(evaluated == test_visitor_value[r][a]);
+        }
+    }
+
+    /* Removal takes one registration and reports an unknown pair honestly. */
+    test_assert(sylvan_gc_remove_roots(test_visitor, &test_visitor_calls)
+                == SYLVAN_OK);
+    test_assert(sylvan_gc_remove_roots(test_visitor, &test_visitor_calls)
+                == SYLVAN_ERR_INVALID);
+
+    /* Nothing refers to them any more; do not name them again. */
+    test_visitor_root[0] = bdd_false;
+    test_visitor_root[1] = bdd_false;
+
+    /* And a session still opens once the visitor is gone. */
+    test_assert(sylvan_sift(NULL) == SYLVAN_OK);
+    return test_check_roots_CALL(lace);
+}
+
+/**
+ * HANDLES ON A WORKER'S TEMPORARY REFERENCE STACK.
+ *
+ * These used to be exactly what a sift was documented to destroy: the session
+ * read the protected table and nothing else, so a diagram that lived only on
+ * mtbdd_refs_push/pushptr was invisible to it and its nodes could be retired
+ * underneath the caller. The stacks are root visitors now, like everything
+ * else, so they are pinned like everything else.
+ *
+ * The forbidden thing is still forbidden, and this test does not do it: no
+ * operation is in flight here. A suspended operation would resume and combine
+ * sub-results it computed under the previous rank order, which no amount of
+ * pinning can fix.
+ */
+static int
+test_temporary_refs_CALL(lace_worker *lace)
+{
+    uint32_t order[TEST_VARS];
+    bdd_set_to_array(test_variables, order);
+
+    MTBDD built = mtbdd_invalid;
+    mtbdd_refs_pushptr(&built);
+    test_assert(bdd_and_CALL(lace, &built, bdd_not(test_root[1]),
+                             test_var[0]) == SYLVAN_OK);
+
+    MTBDD *expected = (MTBDD*)malloc(TEST_ASSIGNMENTS * sizeof(MTBDD));
+    test_assert(expected != NULL);
+    for (unsigned a = 0; a < TEST_ASSIGNMENTS; a++) {
+        uint8_t values[TEST_VARS];
+        test_values_for(order, a, values);
+        if (mtbdd_eval(&expected[a], built, test_variables, values, TEST_VARS)
+            != SYLVAN_OK) {
+            free(expected);
+            test_assert(0);
+        }
+    }
+
+    /* The value stack as well as the pointer stack: they are separate arrays
+       and the visitor yields both. */
+    const MTBDD handle = mtbdd_refs_push(built);
+
+    const int status = sylvan_sift(NULL);
+    int failed = status != SYLVAN_OK;
+    failed = failed || built != handle;
+    failed = failed || !mtbdd_is_valid_CALL(lace, built);
+
+    bdd_set_to_array(test_variables, order);
+    for (unsigned a = 0; a < TEST_ASSIGNMENTS && !failed; a++) {
+        uint8_t values[TEST_VARS];
+        MTBDD evaluated = mtbdd_invalid;
+        test_values_for(order, a, values);
+        failed = mtbdd_eval(&evaluated, built, test_variables, values,
+                            TEST_VARS) != SYLVAN_OK ||
+                 evaluated != expected[a];
+    }
+
+    free(expected);
+    mtbdd_refs_pop(1);
+    mtbdd_refs_popptr(1);
+    test_assert(!failed);
+    return test_check_roots_CALL(lace);
+}
+
+/**
  * The refusals. Both are decided before anything is touched, so the forest and
  * the order come through a refused call bit for bit.
  */
-static void
-test_dummy_mark_hook(lace_worker *lace)
-{
-    (void)lace;
-}
-
 /**
  * Put the order back to the identity with adjacent swaps, whatever the sifts
  * left behind, so that the ZDD refusal below can be attributed to ZDD.
@@ -742,10 +911,6 @@ test_guards_CALL(lace_worker *lace)
     test_assert(sylvan_sift(NULL) == SYLVAN_ERR_INVALID);
 
     test_assert(listdd_init() == SYLVAN_OK);
-    test_assert(sylvan_sift(NULL) == SYLVAN_ERR_INVALID);
-
-    /* And roots that only a consumer's own marking hook knows about. */
-    sylvan_gc_add_mark(test_dummy_mark_hook);
     test_assert(sylvan_sift(NULL) == SYLVAN_ERR_INVALID);
 
     return test_check_roots_CALL(lace);
@@ -817,6 +982,12 @@ runtests_CALL(lace_worker *lace)
 
     printf("Testing maps, integer leaves and custom leaves together.\n");
     if (test_mixed_CALL(lace)) return 1;
+
+    printf("Testing roots a consumer's own visitor owns.\n");
+    if (test_roots_visitor_CALL(lace)) return 1;
+
+    printf("Testing roots held only on a temporary reference stack.\n");
+    if (test_temporary_refs_CALL(lace)) return 1;
 
     printf("Testing %d rounds of queens(%d) sifted at every stage.\n",
            test_queens_rounds, TEST_QUEENS);

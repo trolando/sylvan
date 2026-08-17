@@ -313,6 +313,128 @@ sift_variable(lace_worker *lace, struct sift_run *run, uint32_t identity)
 }
 
 /**
+ * WHEN A SIFT IS WORTH RUNNING
+ *
+ * The whole of Sylvan's answer, and it is deliberately a small one. Sifting is
+ * expensive and its benefit is not monotone: run on a forest that has barely
+ * changed it finds nothing and costs a stop-the-world pass. What pays is a
+ * forest that has GROWN, because growth is where a bad order compounds -- the
+ * same order that cost 20% on a small forest costs a factor on a large one.
+ * So: recommend a sift once the live forest is <factor> times the size it was
+ * when it was last sifted, or when the process started if it never was.
+ *
+ * THE MEASUREMENT IS FREE, which is the other half of the design. Every
+ * collection already counts the buckets that survive marking, because the
+ * table sizing heuristics are built on that number (see gc_note_churn in
+ * common.c). The recommendation is one comparison against it, made where it is
+ * already in hand. Nothing is sampled between collections, nothing is counted
+ * per operation, and sylvan_sift_recommended() is a load.
+ *
+ * THE FLOOR exists because a ratio is meaningless at the bottom. A forest of
+ * two hundred nodes that grows to five hundred has tripled and has nothing
+ * worth reordering; the cost of finding that out exceeds anything it could
+ * save. Below the floor no growth recommends anything.
+ */
+
+/* Live buckets below which growth is not evidence of anything. */
+#ifndef SYLVAN_SIFT_RECOMMEND_FLOOR
+#define SYLVAN_SIFT_RECOMMEND_FLOOR UINT64_C(4096)
+#endif
+
+/* Growth factor; 0 disables the recommendation entirely. */
+static double sift_recommend_factor = 2.0;
+
+/* Live buckets the growth is measured against: the size the forest was left at
+   by the last sift, floored. Only written with the world stopped. */
+static uint64_t sift_baseline = SYLVAN_SIFT_RECOMMEND_FLOOR;
+
+/* The recommendation itself, updated once per collection. Read from any
+   thread, written only with the world stopped. */
+static _Atomic(int) sift_recommend;
+
+/* Sifts that opened a session, ever. See sylvan_sift_count. */
+static _Atomic(uint64_t) sift_performed;
+
+/* The automatic sift: NULL configuration means off, which is the default. */
+static int sift_auto_enabled;
+static sylvan_sift_config sift_auto_config;
+
+uint64_t
+sylvan_sift_count(void)
+{
+    return atomic_load_explicit(&sift_performed, memory_order_relaxed);
+}
+
+int
+sylvan_sift_recommended(void)
+{
+    return atomic_load_explicit(&sift_recommend, memory_order_relaxed);
+}
+
+void
+sylvan_sift_set_recommend_factor(double factor)
+{
+    if (!(factor > 0.0)) {
+        /* Off. Clear the flag as well, so that switching the recommendation
+           off does not leave a stale one behind for an automatic sift to act
+           on before the next collection. */
+        sift_recommend_factor = 0.0;
+        atomic_store_explicit(&sift_recommend, 0, memory_order_relaxed);
+        return;
+    }
+    sift_recommend_factor = factor < 1.0 ? 1.0 : factor;
+}
+
+void
+sylvan_sift_reset_recommendation(void)
+{
+    sift_baseline = SYLVAN_SIFT_RECOMMEND_FLOOR;
+    atomic_store_explicit(&sift_recommend, 0, memory_order_relaxed);
+}
+
+void
+sylvan_sift_note_collection(uint64_t live_nodes)
+{
+    const int recommend =
+        sift_recommend_factor > 0.0 &&
+        (double)live_nodes >= sift_recommend_factor * (double)sift_baseline;
+    atomic_store_explicit(&sift_recommend, recommend, memory_order_relaxed);
+}
+
+/** Rebaseline on the forest a sift has just left behind. */
+static void
+sift_note_sift(uint64_t live_nodes)
+{
+    sift_baseline = live_nodes > SYLVAN_SIFT_RECOMMEND_FLOOR
+        ? live_nodes : SYLVAN_SIFT_RECOMMEND_FLOOR;
+    atomic_store_explicit(&sift_recommend, 0, memory_order_relaxed);
+}
+
+void
+sylvan_gc_set_auto_sift(const sylvan_sift_config *config)
+{
+    if (config == NULL) {
+        sift_auto_enabled = 0;
+        return;
+    }
+    sift_auto_config = *config;
+    sift_auto_enabled = 1;
+}
+
+void
+sylvan_sift_auto(void)
+{
+    if (!sift_auto_enabled) return;
+    if (!atomic_load_explicit(&sift_recommend, memory_order_relaxed)) return;
+
+    /* A refusal here is not an error the caller asked about: the consumer
+       asked for a collection, and reordering was Sylvan's idea. Whatever the
+       reason -- ZDD in use, a table without the reorder primitives -- the
+       collection stands and the forest is untouched. */
+    (void)sylvan_sift(&sift_auto_config);
+}
+
+/**
  * The session, from the inside of the stop-the-world frame.
  *
  * Note the order: the session is opened before anything is measured, because
@@ -327,6 +449,11 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
 {
     int status = sylvan_reorder_begin_CALL(lace);
     if (status != SYLVAN_OK) return status;
+
+    /* The session opened, so this call counts as a sift however little it goes
+       on to do. A refused call does not, which is what makes the counter
+       usable for establishing that an automatic sift did or did not run. */
+    atomic_fetch_add_explicit(&sift_performed, 1, memory_order_relaxed);
 
     struct sift_run run;
     run.max_swaps = config->max_swaps;
@@ -399,6 +526,12 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
 
     const int closed = sylvan_reorder_end_CALL(lace);
     if (status == SYLVAN_OK) status = closed;
+
+    /* The session is closed and every retired slot is back in the pool, so
+       this is the number the next collection will measure. Rebaselining the
+       recommendation on it is what "a sift clears the recommendation" means:
+       growth is measured from here on. */
+    sift_note_sift(nodes_count_nodes_CALL(lace, nodes));
 
     if (result != NULL && status == SYLVAN_OK) {
         result->initial_size = initial;

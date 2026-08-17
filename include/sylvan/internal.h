@@ -102,6 +102,36 @@ void sylvan_handle_check_failed(uint64_t index, const char *file, int line);
 #define SYLVAN_CHECK_HANDLE_INDEX(index) ((void)0)
 #endif
 
+/**
+ * ROOTS AND MARKING, from the inside.
+ *
+ * The public interface is sylvan_gc_add_roots() in <sylvan/common.h>: a
+ * consumer yields its roots as values and Sylvan decides what to do with them.
+ * Two things are done with them, and both go through the one walk below --
+ * garbage collection marks what they reach, and a reorder session pins them so
+ * that no swap retires them. There is deliberately no second path: a root that
+ * a collection would keep is a root a session pins, because they read the same
+ * registrations in the same order.
+ *
+ * Sylvan's own MTBDD root sources -- the mtbdd_protect() table and the
+ * per-worker temporary reference stacks -- are registered here like any other
+ * visitor, and for the same reason: the session has to enumerate them too.
+ */
+void sylvan_gc_visit_roots(sylvan_roots_yield yield, void *arg);
+
+/**
+ * Add a marking callback, for a Sylvan subsystem only.
+ *
+ * This is what remains of the pre-2.0 sylvan_gc_add_mark(): a callback that
+ * marks and cannot be enumerated. It is not public any more, because a
+ * consumer that owned roots this way could never be reordered around. The ZDD
+ * and ListDD subsystems still use it -- neither can be reordered at all, so
+ * there is nothing for a session to enumerate -- and so does the MTBDD
+ * subsystem, whose one callback is the one that marks through the root
+ * visitors above.
+ */
+void sylvan_gc_add_mark_internal(gc_hook_cb mark_cb);
+
 /* Fallible node construction for protected-destination operations. */
 int _mtbdd_try_make_node(MTBDD *destination, uint32_t var, MTBDD low, MTBDD high);
 int _zdd_try_make_node(ZDD *destination, uint32_t var, ZDD low, ZDD high);

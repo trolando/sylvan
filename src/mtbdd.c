@@ -209,22 +209,50 @@ mtbdd_protected_count(void)
     return protect_count(&mtbdd_protected);
 }
 
-/* Called during garbage collection */
-TASK(void, mtbdd_gc_mark_protected)
+/**
+ * ROOTS
+ *
+ * Sylvan's own two MTBDD root sources -- the protected pointer table and the
+ * per-worker temporary reference stacks -- are root visitors like anyone
+ * else's (see sylvan_gc_add_roots in <sylvan/common.h>). They could have been
+ * kept as special cases, and the reason they are not is that a reorder session
+ * has to *enumerate* roots rather than merely keep them alive, and there is no
+ * good argument for two mechanisms that answer the same question. One walk
+ * serves both callers, and Sylvan's own roots go through exactly the path a
+ * consumer's do, which is the cheapest way to keep that path honest.
+ *
+ * Marking is then one callback rather than three: mtbdd_gc_mark_roots visits
+ * every registration and marks what comes back.
+ *
+ * ROOTS ARE YIELDED IN BATCHES, and the batch is where the parallelism went.
+ * Enumeration is serial -- one worker reads the tables while the world is
+ * stopped -- because reading a root out of a table is a load, while marking
+ * one walks an arbitrary part of the forest. So each batch is handed to a
+ * divide-and-conquer Lace task and the expensive half is spread exactly as it
+ * was before.
+ */
+#define MTBDD_ROOTS_BATCH 256
 
-void mtbdd_gc_mark_protected_CALL(lace_worker* lace)
+/** Root visitor: the protected pointer table. */
+static void
+mtbdd_protected_roots(void *context, sylvan_roots_yield yield, void *arg)
 {
-    // iterate through refs hash table, mark all found
-    size_t count=0;
+    (void)context;
+    if (mtbdd_protected.refs_table == NULL) return;
+
+    MTBDD batch[MTBDD_ROOTS_BATCH];
+    size_t count = 0;
     uint64_t *it = protect_iter(&mtbdd_protected, 0, mtbdd_protected.refs_size);
     while (it != NULL) {
-        BDD *to_mark = (BDD*)protect_next(&mtbdd_protected, &it, mtbdd_protected.refs_size);
-        mtbdd_gc_mark_SPAWN(lace, *to_mark);
-        count++;
+        const MTBDD *root = (const MTBDD*)(uintptr_t)protect_next(
+            &mtbdd_protected, &it, mtbdd_protected.refs_size);
+        batch[count++] = *root;
+        if (count == MTBDD_ROOTS_BATCH) {
+            yield(arg, batch, count);
+            count = 0;
+        }
     }
-    while (count--) {
-        mtbdd_gc_mark_SYNC(lace);
-    }
+    if (count != 0) yield(arg, batch, count);
 }
 
 /* Infrastructure for internal markings */
@@ -236,53 +264,94 @@ typedef struct mtbdd_refs_internal
 
 SYLVAN_TLS mtbdd_refs_internal_t mtbdd_refs_key;
 
-TASK(void, mtbdd_refs_mark_p_par, const MTBDD**, begin, size_t, count)
+/**
+ * Every worker's temporary reference stack, so that one thread can read all of
+ * them.
+ *
+ * The stacks are thread local, which is exactly right for pushing and popping
+ * and useless for enumerating: a reorder session pins roots from a single
+ * thread with the world stopped, and it has no way to reach another worker's
+ * thread-local pointer to ask. Marking used to sidestep this by running on
+ * every worker at once (a Lace TOGETHER), which keeps a root alive without
+ * ever naming it -- precisely the trick a session cannot use. So the workers
+ * publish their stacks here at initialisation instead.
+ *
+ * The registry holds each worker's struct, whose address is stable; only the
+ * arrays inside it are ever reallocated.
+ */
+static mtbdd_refs_internal_t *mtbdd_refs_all;
+static unsigned int mtbdd_refs_all_count;
 
-void mtbdd_refs_mark_p_par_CALL(lace_worker* lace, const MTBDD** begin, size_t count)
+/**
+ * Root visitor: every worker's temporary references.
+ *
+ * The value stack is already an array of values and is yielded where it lies.
+ * The pointer stack is an array of addresses, so it is dereferenced into a
+ * batch buffer: the one place the "values, not addresses" interface costs a
+ * copy, and it costs it once per collection over a stack a few hundred entries
+ * deep.
+ *
+ * Reading another worker's stack is sound only with the world stopped, which
+ * is the only circumstance in which a visitor is ever called.
+ */
+static void
+mtbdd_refs_roots(void *context, sylvan_roots_yield yield, void *arg)
 {
-    if (count < 32) {
-        while (count) {
-            mtbdd_gc_mark(**(begin++));
-            count--;
+    (void)context;
+    MTBDD batch[MTBDD_ROOTS_BATCH];
+
+    for (unsigned int w = 0; w < mtbdd_refs_all_count; w++) {
+        const mtbdd_refs_internal_t refs = mtbdd_refs_all[w];
+        if (refs == NULL) continue;
+
+        if (refs->rcur > refs->rbegin) {
+            yield(arg, refs->rbegin, (size_t)(refs->rcur - refs->rbegin));
         }
-    } else {
-        mtbdd_refs_mark_p_par_SPAWN(lace, begin, count / 2);
-        mtbdd_refs_mark_p_par_CALL(lace, begin + (count / 2), count - count / 2);
-        mtbdd_refs_mark_p_par_SYNC(lace);
+
+        size_t count = 0;
+        for (const MTBDD **p = refs->pbegin; p != refs->pcur; p++) {
+            batch[count++] = **p;
+            if (count == MTBDD_ROOTS_BATCH) {
+                yield(arg, batch, count);
+                count = 0;
+            }
+        }
+        if (count != 0) yield(arg, batch, count);
     }
 }
 
-TASK(void, mtbdd_refs_mark_r_par, MTBDD*, begin, size_t, count)
+/** Mark one batch of roots, split over the workers. */
+TASK(void, mtbdd_gc_mark_many, const MTBDD*, roots, size_t, count)
 
-void mtbdd_refs_mark_r_par_CALL(lace_worker* lace, MTBDD* begin, size_t count)
+void mtbdd_gc_mark_many_CALL(lace_worker* lace, const MTBDD* roots, size_t count)
 {
     if (count < 32) {
         while (count) {
-            mtbdd_gc_mark(*begin++);
+            mtbdd_gc_mark_CALL(lace, *roots++);
             count--;
         }
     } else {
-        mtbdd_refs_mark_r_par_SPAWN(lace, begin, count / 2);
-        mtbdd_refs_mark_r_par_CALL(lace, begin + (count / 2), count - count / 2);
-        mtbdd_refs_mark_r_par_SYNC(lace);
+        mtbdd_gc_mark_many_SPAWN(lace, roots, count / 2);
+        mtbdd_gc_mark_many_CALL(lace, roots + (count / 2), count - count / 2);
+        mtbdd_gc_mark_many_SYNC(lace);
     }
 }
 
-TASK(void, mtbdd_refs_mark_task)
-
-void mtbdd_refs_mark_task_CALL(lace_worker* lace)
+static void
+mtbdd_gc_mark_yield(void *arg, const MTBDD *roots, size_t count)
 {
-    mtbdd_refs_mark_p_par_SPAWN(lace, mtbdd_refs_key->pbegin, (size_t)(mtbdd_refs_key->pcur-mtbdd_refs_key->pbegin));
-    mtbdd_refs_mark_r_par_CALL(lace, mtbdd_refs_key->rbegin, (size_t)(mtbdd_refs_key->rcur-mtbdd_refs_key->rbegin));
-    mtbdd_refs_mark_p_par_SYNC(lace);
+    mtbdd_gc_mark_many_CALL((lace_worker*)arg, roots, count);
 }
 
-TASK(void, mtbdd_refs_mark)
+/**
+ * The MTBDD family's entire contribution to marking: visit every registered
+ * root, Sylvan's own and the consumer's alike, and mark what it reaches.
+ */
+TASK(void, mtbdd_gc_mark_roots)
 
-void mtbdd_refs_mark_CALL(lace_worker* lace)
+void mtbdd_gc_mark_roots_CALL(lace_worker* lace)
 {
-    (void)lace;
-    mtbdd_refs_mark_task_TOGETHER();
+    sylvan_gc_visit_roots(mtbdd_gc_mark_yield, lace);
 }
 
 void
@@ -302,9 +371,14 @@ TASK(void, mtbdd_refs_free)
 void mtbdd_refs_free_CALL(lace_worker* lace)
 {
     (void)lace;
+    const int id = lace_worker_id();
+    if (id >= 0 && (unsigned int)id < mtbdd_refs_all_count) {
+        mtbdd_refs_all[id] = NULL;
+    }
     free(mtbdd_refs_key->pbegin);
     free(mtbdd_refs_key->rbegin);
     free(mtbdd_refs_key);
+    mtbdd_refs_key = NULL;
 }
 
 TASK(void, mtbdd_refs_init_task)
@@ -313,6 +387,10 @@ void mtbdd_refs_init_task_CALL(lace_worker* lace)
 {
     (void)lace;
     mtbdd_refs_init_key();
+    const int id = lace_worker_id();
+    if (id >= 0 && (unsigned int)id < mtbdd_refs_all_count) {
+        mtbdd_refs_all[id] = mtbdd_refs_key;
+    }
 }
 
 TASK(void, mtbdd_refs_init)
@@ -321,7 +399,6 @@ void mtbdd_refs_init_CALL(lace_worker* lace)
 {
     (void)lace;
     mtbdd_refs_init_task_TOGETHER();
-    sylvan_gc_add_mark(mtbdd_refs_mark_CALL);
 }
 
 void
@@ -403,6 +480,10 @@ static void
 mtbdd_quit(void)
 {
     mtbdd_refs_free_TOGETHER();
+    free(mtbdd_refs_all);
+    mtbdd_refs_all = NULL;
+    mtbdd_refs_all_count = 0;
+
     if (mtbdd_protected_created) {
         protect_free(&mtbdd_protected);
         mtbdd_protected_created = 0;
@@ -424,11 +505,27 @@ mtbdd_init(void)
     mtbdd_initialized = 1;
 
     sylvan_register_quit(mtbdd_quit);
-    sylvan_gc_add_mark(mtbdd_gc_mark_protected_CALL);
+    sylvan_gc_add_mark_internal(mtbdd_gc_mark_roots_CALL);
 
     if (!mtbdd_protected_created) {
         protect_create(&mtbdd_protected, 4096);
         mtbdd_protected_created = 1;
+    }
+
+    /* One slot per Lace worker, filled by mtbdd_refs_init below, so that the
+       temporary reference stacks can be read from a single thread. */
+    mtbdd_refs_all_count = lace_worker_count();
+    mtbdd_refs_all = (mtbdd_refs_internal_t*)calloc(
+        mtbdd_refs_all_count, sizeof(mtbdd_refs_internal_t));
+    if (mtbdd_refs_all == NULL) {
+        mtbdd_refs_all_count = 0;
+        return SYLVAN_ERR_OOM;
+    }
+
+    /* Sylvan's own roots, registered the way a consumer registers its own. */
+    if (sylvan_gc_add_roots(mtbdd_protected_roots, NULL) != SYLVAN_OK ||
+        sylvan_gc_add_roots(mtbdd_refs_roots, NULL) != SYLVAN_OK) {
+        return SYLVAN_ERR_OOM;
     }
 
     if (mtbdd_abs_operation.cache_id == 0) {
@@ -465,7 +562,7 @@ mtbdd_leaf(uint32_t type, uint64_t value)
             nodes, NODES_SUBTABLE_LEAF, n.a, n.b, &created);
     if (index == 0) {
         if (custom && created < 0) return mtbdd_invalid;
-        sylvan_gc(); // FIXME ?
+        sylvan_gc_collect(); // FIXME ?
 
         index = custom
             ? nodes_lookupc_subtable(
@@ -495,7 +592,7 @@ mtbdd_nan(uint32_t type)
     uint64_t index = nodes_lookup_subtable(
         nodes, NODES_SUBTABLE_LEAF, n.a, n.b, &created);
     if (index == 0) {
-        sylvan_gc();
+        sylvan_gc_collect();
         index = nodes_lookup_subtable(
             nodes, NODES_SUBTABLE_LEAF, n.a, n.b, &created);
         if (index == 0) {
@@ -515,7 +612,7 @@ _mtbdd_makenode_gc(MTBDD low, MTBDD high)
 {
     mtbdd_refs_push(low);
     mtbdd_refs_push(high);
-    sylvan_gc();
+    sylvan_gc_collect();
     mtbdd_refs_pop(2);
 }
 

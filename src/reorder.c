@@ -31,7 +31,10 @@
  *
  * 2. The external roots, as a pin bit per node. Everything else is counted
  *    from the arena, so a node that no other node points to is dead unless it
- *    is pinned.
+ *    is pinned. The roots are exactly the ones a garbage collection would mark
+ *    -- both read the same visitor registrations, see reorder_pin_roots --
+ *    which is what makes "a sift keeps whatever a collection would keep" true
+ *    rather than merely intended.
  *
  * 3. Per-identity node lists, so a swap can find "the nodes of variable x"
  *    without scanning the table. Backends that enumerate a variable natively
@@ -55,21 +58,9 @@
  */
 
 #include <sylvan/internal.h>
-#include <refs.h>
 
 #include <assert.h>
 #include <string.h>
-
-/** External root table, defined in mtbdd.c. */
-extern refs_table_t mtbdd_protected;
-
-/**
- * Marking callbacks Sylvan registers for itself once mtbdd_init() has run:
- * the per-worker temporary references and the protected pointer table.
- * Anything beyond these belongs to a consumer whose roots a session cannot
- * enumerate; see sylvan_reorder_begin().
- */
-#define REORDER_OWN_MARK_HOOKS 2
 
 /** Granularity of the parallel table scans. */
 #define REORDER_SCAN_BLOCK 4096
@@ -652,26 +643,34 @@ reorder_pin(uint64_t handle)
     bitmap_set(session.pinned, index);
 }
 
+static void
+reorder_pin_yield(void *arg, const MTBDD *roots, size_t count)
+{
+    (void)arg;
+    for (size_t i = 0; i < count; i++) reorder_pin(roots[i]);
+}
+
 /**
- * Cache the external roots.
+ * Pin every external root.
  *
- * One root table is read here, and only this one: the dereferenced addresses
- * of mtbdd_protect(). A consumer that owns roots through its own marking hook
- * is refused in sylvan_reorder_begin(), because the hook interface can mark
- * those roots but not enumerate them.
+ * This is the same walk a collection marks through, over the same
+ * registrations, in the same order: the mtbdd_protect() table, every worker's
+ * temporary reference stack, and every hook a consumer registered with
+ * sylvan_gc_add_roots(). Nothing is special-cased and nothing is left out, so
+ * the set of handles a session promises to keep is by construction the set a
+ * collection promises to keep -- which is why a session no longer has to
+ * refuse to open when a consumer owns roots of its own, and why handles on a
+ * worker's temporary stack survive a sift.
+ *
+ * The pins are what make that promise good: a pinned node is never retired
+ * however its reference count moves, and a swap rewrites nodes in place, so a
+ * pinned root comes out of a session at the same handle denoting the same
+ * function.
  */
 static void
 reorder_pin_roots(void)
 {
-    if (mtbdd_protected.refs_table != NULL) {
-        uint64_t *iterator = protect_iter(
-            &mtbdd_protected, 0, mtbdd_protected.refs_size);
-        while (iterator != NULL) {
-            const MTBDD *root = (const MTBDD*)(uintptr_t)protect_next(
-                &mtbdd_protected, &iterator, mtbdd_protected.refs_size);
-            reorder_pin(*root);
-        }
-    }
+    sylvan_gc_visit_roots(reorder_pin_yield, NULL);
 }
 
 static void
@@ -710,9 +709,6 @@ sylvan_reorder_begin_CALL(lace_worker *lace)
     if ((caps & NODES_CAP_REMOVE) == 0) return SYLVAN_ERR_INVALID;
     if ((caps & NODES_CAP_RELEASE) == 0) return SYLVAN_ERR_INVALID;
     if (zdd_is_initialized() || listdd_is_initialized()) {
-        return SYLVAN_ERR_INVALID;
-    }
-    if (sylvan_gc_mark_hook_count() != REORDER_OWN_MARK_HOOKS) {
         return SYLVAN_ERR_INVALID;
     }
 

@@ -79,13 +79,23 @@ typedef struct sylvan_varswap_result {
  * requires anyway before it may reuse a retired slot, and it may resize the
  * nodes table, which is why the session reads the table size afterwards.
  *
- * Preconditions, none of which can be checked cheaply and all of which the
- * caller owns:
- * - no decision diagram operation is in flight;
- * - no worker holds temporary references (mtbdd_refs_push/pushptr). External
- *   roots are read from the mtbdd_protected table only; a handle that lives
- *   solely on a worker's temporary stack is invisible to the session and its
- *   node may be retired underneath it.
+ * THE ONE PRECONDITION, which cannot be checked cheaply and which the caller
+ * owns: no decision diagram operation is in flight.
+ *
+ * It is about suspended computations, not about roots. An operation that has
+ * read a node's fields and not yet combined its sub-results would resume after
+ * the session and build its answer out of parts computed under a rank order
+ * that no longer holds. Its handles would be fine -- nodes are rewritten in
+ * place and pinned roots are never retired -- and its reasoning would not.
+ * Nothing the session does can repair that, so the caller must not be in the
+ * middle of an operation when it opens one.
+ *
+ * TEMPORARY REFERENCES ARE NO LONGER A PRECONDITION. reorder_pin_roots pins
+ * every root a collection would mark, and every worker's
+ * mtbdd_refs_push/pushptr stack is among them, so a handle that lives only on
+ * such a stack survives the session at the same handle denoting the same
+ * function. What a caller may not do is hold one across a *suspended
+ * operation*, which the precondition above already forbids.
  *
  * Refused with SYLVAN_ERR_INVALID when:
  * - a session is already open;
@@ -93,12 +103,7 @@ typedef struct sylvan_varswap_result {
  * - the nodes table implements no reorder primitives (llht);
  * - the ZDD or ListDD subsystem is initialised. Both order their nodes by
  *   identity rather than by rank and share the node arena, so any order other
- *   than the identity order is meaningless for them;
- * - a garbage collection mark hook other than Sylvan's own three is
- *   registered. Such a hook owns external roots the session cannot enumerate,
- *   because the hook interface marks roots instead of visiting them. Teaching
- *   it to visit is follow-up work; until then the session refuses rather than
- *   silently retire a root that only that hook knows about.
+ *   than the identity order is meaningless for them.
  */
 TASK(int, sylvan_reorder_begin)
 
@@ -201,6 +206,34 @@ void sylvan_reorder_set_overflow_at(uint32_t count);
 
 /** How many nodes the current or last session promoted to the overflow map. */
 uint64_t sylvan_reorder_overflow_promotions(void);
+
+/**
+ * THE SIFT RECOMMENDATION, from the inside.
+ *
+ * The policy and all of its state live in sift.c, next to the sifting it is a
+ * policy about; these are the two lines of it that garbage collection has to
+ * reach. See sylvan_sift_recommended and sylvan_gc_set_auto_sift in
+ * <sylvan/reorder.h> for what they implement.
+ */
+
+/**
+ * Fold the result of a collection into the recommendation. <live_nodes> is the
+ * number of buckets that survived marking, which the collection counted for
+ * its own sizing heuristics. Called once per collection, from either entry.
+ */
+void sylvan_sift_note_collection(uint64_t live_nodes);
+
+/** Forget the growth baseline. Called by sylvan_init_package(). */
+void sylvan_sift_reset_recommendation(void);
+
+/**
+ * Run the automatic sift if one is configured and recommended, otherwise do
+ * nothing at all. Called by sylvan_gc() and by nothing else -- see
+ * sylvan_gc_set_auto_sift for why that restriction is the whole of what makes
+ * this sound. Must be called from a Lace worker, outside any frame it would
+ * nest in: it opens a frame of its own.
+ */
+void sylvan_sift_auto(void);
 
 /**
  * Test entry points. They open a session, run the swaps, and close it again,

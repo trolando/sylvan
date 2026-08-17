@@ -137,19 +137,62 @@ static gc_hook_entry_t postgc_list;
 static gc_hook_cb main_hook;
 
 /**
- * Number of registered marking callbacks.
+ * Registered root visitors, in registration order reversed.
  *
- * The reorder session reads this to find out whether anyone other than Sylvan
- * itself owns external roots. A mark hook can only *mark* the roots it owns,
- * not enumerate them, so a session cannot see those roots and must refuse to
- * run rather than retire one of them.
+ * A visitor answers "what do you consider a root", and two things ask: a
+ * collection, which marks what the answers reach, and a reorder session, which
+ * pins them. That both go through this one list is the point of the mechanism
+ * -- see sylvan_gc_visit_roots -- and it is why Sylvan's own MTBDD root
+ * sources are registered here rather than kept to one side.
+ *
+ * The list is only mutated by registration and removal, which happen outside
+ * any collection, and only read with the world stopped, so it needs no
+ * synchronisation.
  */
-static size_t mark_count;
-
-size_t
-sylvan_gc_mark_hook_count(void)
+typedef struct gc_roots_entry
 {
-    return mark_count;
+    struct gc_roots_entry *next;
+    sylvan_roots_hook hook;
+    void *context;
+} * gc_roots_entry_t;
+
+static gc_roots_entry_t roots_list;
+
+int
+sylvan_gc_add_roots(sylvan_roots_hook hook, void *context)
+{
+    if (hook == NULL) return SYLVAN_ERR_INVALID;
+    gc_roots_entry_t e = (gc_roots_entry_t)malloc(sizeof(struct gc_roots_entry));
+    if (e == NULL) return SYLVAN_ERR_OOM;
+    e->hook = hook;
+    e->context = context;
+    e->next = roots_list;
+    roots_list = e;
+    return SYLVAN_OK;
+}
+
+int
+sylvan_gc_remove_roots(sylvan_roots_hook hook, void *context)
+{
+    gc_roots_entry_t *link = &roots_list;
+    while (*link != NULL) {
+        gc_roots_entry_t e = *link;
+        if (e->hook == hook && e->context == context) {
+            *link = e->next;
+            free(e);
+            return SYLVAN_OK;
+        }
+        link = &e->next;
+    }
+    return SYLVAN_ERR_INVALID;
+}
+
+void
+sylvan_gc_visit_roots(sylvan_roots_yield yield, void *arg)
+{
+    for (gc_roots_entry_t e = roots_list; e != NULL; e = e->next) {
+        e->hook(e->context, yield, arg);
+    }
 }
 
 void
@@ -171,13 +214,12 @@ sylvan_gc_hook_postgc(gc_hook_cb callback)
 }
 
 void
-sylvan_gc_add_mark(gc_hook_cb callback)
+sylvan_gc_add_mark_internal(gc_hook_cb callback)
 {
     gc_hook_entry_t e = (gc_hook_entry_t)malloc(sizeof(struct gc_hook_entry));
     e->cb = callback;
     e->next = mark_list;
     mark_list = e;
-    mark_count++;
 }
 
 void
@@ -206,6 +248,10 @@ void sylvan_clear_and_mark_CALL(lace_worker* lace)
 {
     nodes_clear(nodes);
 
+    /* One callback per decision diagram family. The MTBDD one is the one that
+       walks the root visitors; ZDD and ListDD mark their own tables, because
+       neither family can be reordered and so neither has anything a session
+       would want to enumerate. */
     for (gc_hook_entry_t e = mark_list; e != NULL; e = e->next) {
         e->cb(lace);
     }
@@ -563,6 +609,11 @@ void sylvan_gc_go_CALL(lace_worker* lace)
     gc_table_before = nodes_get_size(nodes);
     gc_note_churn();
 
+    /* The one measurement the reordering recommendation needs, taken from a
+       number this collection had to compute anyway. See sylvan_sift_recommended
+       in <sylvan/reorder.h>. */
+    sylvan_sift_note_collection(gc_live_after);
+
 #if SYLVAN_GC_DIAGNOSTICS
     const uint64_t diag_seq = atomic_fetch_add(&gc_diag_count, 1) + 1;
     const double diag_now = gc_diag_now();
@@ -656,24 +707,62 @@ void sylvan_maintenance(lace_worker* lace)
 }
 
 /**
- * Perform garbage collection
+ * Perform garbage collection.
+ *
+ * The body both entry points share. Returns nonzero when THIS worker ran the
+ * collection frame, rather than joining one another worker had already
+ * started. Only that worker may go on to do anything else with the result, so
+ * that a collection several workers asked for at once is still followed by at
+ * most one reordering.
+ */
+static int
+gc_collect(lace_worker* lace, void *caller)
+{
+    (void)caller;
+    if (!gc_enabled) return 0;
+
+    int zero = 0;
+    if (atomic_compare_exchange_strong(&gc, &zero, 1)) {
+#if SYLVAN_GC_DIAGNOSTICS
+        gc_diag_caller = caller;
+#endif
+        sylvan_gc_go_NEWFRAME();
+        gc = 0;
+        return 1;
+    }
+
+    /* wait for new frame to appear */
+    while (atomic_load_explicit(&lace_newframe.t, memory_order_relaxed) == 0) {}
+    lace_yield(lace);
+    return 0;
+}
+
+#if SYLVAN_GC_DIAGNOSTICS
+#define GC_CALLER() __builtin_return_address(0)
+#else
+#define GC_CALLER() NULL
+#endif
+
+/**
+ * The internal entry: collect, and never anything else. See sylvan_gc_collect
+ * in <sylvan/common.h> for why an operation that ran out of buckets in the
+ * middle of its own recursion may collect but may not reorder.
+ */
+void sylvan_gc_collect_CALL(lace_worker* lace)
+{
+    (void)gc_collect(lace, GC_CALLER());
+}
+
+/**
+ * The explicit entry: collect, and then reorder if the caller asked for that
+ * and this collection said it was worth doing. The caller of this one owns the
+ * precondition that no operation is in flight, which is what makes the sift
+ * below sound; sylvan_gc_collect above has no such caller and so never gets
+ * here.
  */
 void sylvan_gc_CALL(lace_worker* lace)
 {
-    if (gc_enabled) {
-        int zero = 0;
-        if (atomic_compare_exchange_strong(&gc, &zero, 1)) {
-#if SYLVAN_GC_DIAGNOSTICS
-            gc_diag_caller = __builtin_return_address(0);
-#endif
-            sylvan_gc_go_NEWFRAME();
-            gc = 0;
-        } else {
-            /* wait for new frame to appear */
-            while (atomic_load_explicit(&lace_newframe.t, memory_order_relaxed) == 0) {}
-            lace_yield(lace);
-        }
-    }
+    if (gc_collect(lace, GC_CALLER())) sylvan_sift_auto();
 }
 
 /**
@@ -828,6 +917,7 @@ sylvan_init_package(void)
     gc_table_before = 0;
     gc_used_before = 0;
     gc_live_after = 0;
+    sylvan_sift_reset_recommendation();
 
     // FIXME better configuration!!
 #if SYLVAN_AGGRESSIVE_RESIZE
@@ -885,7 +975,12 @@ sylvan_quit(void)
         mark_list = e->next;
         free(e);
     }
-    mark_count = 0;
+
+    while (roots_list != NULL) {
+        gc_roots_entry_t e = roots_list;
+        roots_list = e->next;
+        free(e);
+    }
 
     cache_free();
     nodes_scratch_forget(nodes);

@@ -4,6 +4,30 @@ All notable changes to Sylvan will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Breaking (C).** Added root visitors, `sylvan_gc_add_roots` and
+  `sylvan_gc_remove_roots`, replacing the marking hooks they remove (see
+  Removed). A consumer whose roots have no stable address registers a hook that
+  is called with a yield callback and hands its roots back as arrays of MTBDD
+  *values*; Sylvan calls it once per garbage collection and once more when a
+  reordering session opens. The point of yielding rather than marking is that
+  roots can now be enumerated: a session pins what a visitor yields instead of
+  refusing to open, so a consumer that owns roots this way can reorder. Sylvan's
+  own two MTBDD root sources, the `mtbdd_protect` table and the per-worker
+  temporary reference stacks, are registered through the same interface.
+- Added `sylvan_sift_recommended` and `sylvan_gc_set_auto_sift`, an opt-in
+  automatic reordering. The recommendation is one comparison per garbage
+  collection against a number the collection already computes: the live forest
+  has grown by `sylvan_sift_set_recommend_factor` (2.0 by default, 0 disables)
+  since the last sift, or since startup. With a configuration installed, an
+  explicit `sylvan_gc()` that ends recommended is followed by a sift in a frame
+  of its own. It is off by default. `sylvan_sift_count` reports how many sifts
+  have run, the way `sylvan_gc_count` reports collections.
+- Added `sylvan_gc_collect`, the collection-only entry, and made it the one the
+  internal table-full path uses. An automatic sift may follow `sylvan_gc()` and
+  may never follow `sylvan_gc_collect()`, because the latter is called from the
+  middle of an operation's recursion: that operation would resume and combine
+  sub-results it computed under the previous rank order. The split makes the
+  distinction a property of the code rather than of a comment.
 - Added `sylvan_sift`, dynamic variable reordering for the BDD/MTBDD forest.
   It reorders on request only -- there is no automatic triggering and no hook --
   and it stops the world for the duration, exactly like garbage collection,
@@ -11,8 +35,7 @@ All notable changes to Sylvan will be documented in this file.
   function, and keeps its handle. `sylvan_sift_config` bounds what the search
   may spend and `sylvan_sift_report` says what it did; see `sylvan/reorder.h`.
   Sifting is refused, changing nothing, while the ZDD or ListDD subsystem is
-  initialised, while a marking hook other than Sylvan's own is registered, or
-  on a nodes table without the reorder primitives.
+  initialised, or on a nodes table without the reorder primitives.
 - Added the CMake option `SYLVAN_CHECK_HANDLES` (default off). With it, every
   decision diagram node dereference checks that the handle's bucket index is
   inside the nodes table and aborts naming the index when it is not, which
@@ -21,6 +44,14 @@ All notable changes to Sylvan will be documented in this file.
   identical to builds from before the option existed.
 
 ### Changed
+- Sifting no longer destroys handles held only on a worker's temporary
+  reference stack, and no longer refuses to run because a consumer owns roots
+  of its own. A session pins every root a garbage collection would mark -- the
+  same visitor registrations, walked in the same order -- so what a collection
+  keeps, a sift keeps, at the same handle denoting the same function. The one
+  remaining precondition is unchanged and unchangeable: no decision diagram
+  operation may be in flight, because a suspended operation would resume and
+  combine sub-results computed under a rank order that no longer holds.
 - Parallel sifting now scales instead of losing to its own workers. Three
   changes compose: the trie and list tables take a swap's removals and
   re-indexings as whole batches, run as internally parallel phases with
@@ -111,6 +142,17 @@ All notable changes to Sylvan will be documented in this file.
   node table. Results are unchanged; only the mechanism is.
 
 ### Removed
+- **Breaking (C).** Removed the garbage collection marking hooks,
+  `sylvan_gc_add_mark` and `sylvan_gc_mark_hook_count`. There is no deprecation
+  shim. A callback that marks can keep roots alive but cannot say what they
+  are, which is why a consumer that used one could never be reordered around;
+  register a `sylvan_gc_add_roots` visitor instead and yield the values the
+  callback used to mark. A visitor that yields exactly what the old callback
+  marked is behaviourally identical for garbage collection, and additionally
+  works with `sylvan_sift`. Consumers whose roots are ZDD or ListDD handles
+  have no visitor equivalent -- the values are MTBDD handles -- and must use
+  `zdd_protect` or `listdd_protect`; neither family can be reordered, so the
+  enumeration the visitor exists for would buy them nothing.
 - Removed the internal node accessors `mtbddnode_getmark`/`setmark`,
   `zddnode_getmark`/`setmark` and `mddnode_getmark`/`setmark` (and the
   `bddnode_` aliases). The record bits they used are now unused: bit 61 for

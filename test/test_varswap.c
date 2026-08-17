@@ -841,17 +841,15 @@ test_rank_identity_guard(void)
 }
 
 /**
- * The three reasons a session refuses to open that cannot be undone: ZDD in
- * use, ListDD in use, and roots that only a consumer's own marking hook knows
- * about. They run last, and in an order that lets the ZDD refusal be
- * attributed to ZDD alone.
+ * The two reasons a session refuses to open that cannot be undone: ZDD in use
+ * and ListDD in use. They run last, and in an order that lets the ZDD refusal
+ * be attributed to ZDD alone.
+ *
+ * A consumer's own roots used to be a third. They are not any more: a root
+ * visitor can be enumerated, so the session pins what it yields instead of
+ * refusing to open. test_roots_visitor in test_sift.c is where that is
+ * checked.
  */
-static void
-test_dummy_mark_hook(lace_worker *lace)
-{
-    (void)lace;
-}
-
 static int
 test_foreign_state_guards(void)
 {
@@ -866,9 +864,6 @@ test_foreign_state_guards(void)
     test_assert(sylvan_reorder_begin() == SYLVAN_ERR_INVALID);
 
     test_assert(listdd_init() == SYLVAN_OK);
-    test_assert(sylvan_test_varswap(0, &result) == SYLVAN_ERR_INVALID);
-
-    sylvan_gc_add_mark(test_dummy_mark_hook);
     test_assert(sylvan_test_varswap(0, &result) == SYLVAN_ERR_INVALID);
     return 0;
 }

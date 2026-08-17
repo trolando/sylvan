@@ -219,33 +219,40 @@ Bindings without stable addresses
 
 Both mechanisms above take the *address* of the variable holding the decision diagram, so they
 need that address to stay put. A language binding whose values live in a moving or copying heap,
-or in a container that reallocates, has no such address to hand over. For those, register your own
-marking callback with ``sylvan_gc_add_mark`` and mark whatever you consider a root. The callback
-runs once per garbage collection, with all workers stopped, and must call ``mtbdd_gc_mark`` for
-every decision diagram to keep.
+or in a container that reallocates, has no such address to hand over. For those, register a
+**root visitor** with ``sylvan_gc_add_roots`` and yield whatever you consider a root. Sylvan calls
+the hook whenever it needs to know what your roots are -- once per garbage collection and once
+more when a reordering session opens -- with all workers stopped.
 
-The usual shape is a handle table owned by the binding, where the handle rather than the address
-is what the language holds on to:
+The hook yields *values*, in arrays, so a binding that already holds its roots contiguously hands
+over the whole block in one call:
 
 .. code:: c
 
     static MTBDD *handles;      // your own storage, may move or grow
     static size_t handle_count;
 
-    static void mark_handles(lace_worker *lace)
+    static void visit_handles(void *context, sylvan_roots_yield yield, void *arg)
     {
-        (void)lace;
-        for (size_t i = 0; i < handle_count; i++) {
-            if (handles[i] != mtbdd_invalid) mtbdd_gc_mark(handles[i]);
-        }
+        (void)context;
+        yield(arg, handles, handle_count);
     }
 
     // once, after mtbdd_init()
-    sylvan_gc_add_mark(mark_handles);
+    sylvan_gc_add_roots(visit_handles, NULL);
 
-Marking is the only thing this interface can do. It cannot enumerate your roots, so Sylvan cannot
-rewrite them; ``sylvan_reorder_begin`` therefore refuses to open a session while any marking
-callback beyond Sylvan's own is registered.
+A binding whose roots are not contiguous fills a small buffer of its own and flushes it, calling
+``yield`` as often as it likes; ``count`` may be zero. The array is borrowed for the duration of
+the call. The hook may do nothing but yield: no creating, protecting or unprotecting diagrams, and
+no registering or removing visitors. ``sylvan_gc_remove_roots`` takes a registration back.
+
+Because a visitor can be *enumerated* and not merely marked through, roots owned this way are
+first-class: garbage collection keeps them and ``sylvan_sift`` pins them, so a consumer with a
+handle table can reorder. Sylvan's own two root sources -- the ``mtbdd_protect`` table and the
+per-worker temporary stacks -- are registered through exactly this interface.
+
+The values are MTBDD (and therefore BDD) handles. ZDD and ListDD roots are not covered; use
+``zdd_protect`` and ``listdd_protect``, which those families need anyway.
 
 References to decision diagrams must be added before a worker may cooperate on garbage collection.
 Workers can cooperate on garbage collection during ``SYNC`` and when functions create nodes or use ``sylvan_gc_test`` to test whether to assist in garbage collection.
@@ -422,13 +429,19 @@ smallest. Variables are taken most populous first. The declarations are in
                (unsigned long long)report.final_size);
     }
 
-Sylvan never reorders on its own: there is no automatic trigger and no hook. A call
-stops the world for its whole duration, exactly like garbage collection, and begins
-by collecting. Call it from inside a Lace worker, with no decision diagram operation
-in flight and no handle held only on a worker's temporary reference stack -- those
-are invisible to reordering and their nodes may be reclaimed underneath them.
-Everything reachable from ``mtbdd_protect`` survives, denotes the same function, and
-keeps its handle, because nodes are rewritten in place.
+A call stops the world for its whole duration, exactly like garbage collection, and
+begins by collecting. Call it from inside a Lace worker, with **no decision diagram
+operation in flight**. That is the one precondition and the caller owns it: a
+suspended operation has already read node fields and would resume to combine
+sub-results it computed under a rank order that no longer holds. Its handles would be
+fine; its reasoning would not, and nothing can repair that afterwards.
+
+Everything a garbage collection would keep, a sift keeps. The session pins every root
+it is shown -- the ``mtbdd_protect`` table, every worker's ``mtbdd_refs_push`` and
+``mtbdd_refs_pushptr`` stack, and every root a ``sylvan_gc_add_roots`` visitor yields
+-- and a pinned node is never retired. All of them denote the same function
+afterwards and all of them keep their handles, because nodes are rewritten in place
+and never moved.
 
 Pass a ``sylvan_sift_config`` to bound what the search may spend: a total swap
 budget, a number of variables, a growth factor at which one variable's excursion is
@@ -446,11 +459,38 @@ end of the order anyway, for measurement or for distrust.
 
 Reordering is refused, changing nothing and returning ``SYLVAN_ERR_INVALID``, while
 the ZDD or ListDD subsystem is initialised -- both order their nodes by variable
-identity rather than by position, and they share the node arena -- while a marking
-callback other than Sylvan's own is registered, or on a nodes table that does not
-implement the reorder primitives. Running out of room *during* a sift is not a
-failure: a swap that cannot reserve what it needs changes nothing at all, and the
-driver simply stops moving that variable in that direction.
+identity rather than by position, and they share the node arena -- or on a nodes table
+that does not implement the reorder primitives. Running out of room *during* a sift is
+not a failure: a swap that cannot reserve what it needs changes nothing at all, and
+the driver simply stops moving that variable in that direction.
+
+When to reorder, and where Sylvan may do it for you
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``sylvan_sift_recommended`` answers the question "is it worth reordering now" with the
+only signal that is free to compute: the live forest has grown by a factor (2.0 by
+default, set with ``sylvan_sift_set_recommend_factor``, 0 to disable) since it was last
+sifted, or since startup. Every garbage collection already counts the nodes that
+survive marking, so the recommendation is one comparison per collection and the
+predicate is a load. A forest of a few thousand nodes never recommends, whatever the
+factor.
+
+``sylvan_gc_set_auto_sift`` hands the decision to Sylvan: pass a ``sylvan_sift_config``
+and every **explicit** ``sylvan_gc()`` that ends with a recommendation is followed by a
+sift, in a frame of its own. Pass ``NULL``, the default, to switch it off.
+``sylvan_sift_count`` reports how many sifts have run, the way ``sylvan_gc_count``
+reports collections.
+
+**Only** ``sylvan_gc()`` triggers it, never the collection an operation performs when
+the nodes table has no free bucket. That restriction is what makes the facility sound
+rather than convenient. The internal collection happens in the middle of an operation's
+recursion, with sub-results already computed under the current rank order and not yet
+combined; reordering there would leave that operation to combine them under a different
+order, which is a wrong answer and not a detectable one. ``sylvan_gc()`` has no such
+caller: it is called *between* operations, which is exactly the precondition sifting
+needs. The two paths are separate functions -- the internal one is
+``sylvan_gc_collect()`` -- so the distinction is a property of the code and not of this
+paragraph.
 
 A swap asks the nodes table for the slots it will need plus a margin of one
 512-slot allocation region per Lace worker, which is what makes the answer hold

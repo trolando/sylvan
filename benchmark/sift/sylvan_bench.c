@@ -15,6 +15,14 @@
  * Everything measured is printed as one "RESULT {...}" JSON line on stdout, so
  * a run is a row and a batch is a .jsonl file.
  *
+ * --auto measures the recommendation path instead of the explicit call: the
+ * same configuration is installed with sylvan_gc_set_auto_sift and sylvan_gc()
+ * is called where the sift would run, so a sift happens only if the growth
+ * recommendation asks for one. "sifts" says whether it did. sylvan_gc() has
+ * no result to report, so sift_initial, sift_final, swaps, refusals and
+ * vars_sifted are 0 in that mode, and sift_s includes the collection that
+ * precedes the decision; nodes_before/nodes_after are measured as always.
+ *
  * SOUNDNESS. For --mode blif, every output is evaluated against the same set
  * of random input vectors before and after the sift, and its satisfying-
  * assignment count is taken before and after. Both are invariant under
@@ -34,6 +42,11 @@
 
 #include "blif.h"
 
+/* The nodes table the library was built with; CMake defines it. */
+#ifndef SIFT_BENCH_BACKEND
+#define SIFT_BENCH_BACKEND "unknown"
+#endif
+
 /* ------------------------------------------------------------- parameters */
 
 static const char *opt_mode   = "bryant";
@@ -46,10 +59,13 @@ static int      opt_sift      = 1;
 static int      opt_verify    = 0;     /* random vectors, 0 = skip           */
 static int      opt_ops       = 0;     /* run the downstream op phase        */
 static int      opt_order_out = 0;
-static uint32_t opt_threshold = 32;    /* sylvan default                     */
+static uint32_t opt_threshold = 0;     /* library default                    */
 static uint32_t opt_maxswaps  = 0;     /* 0 = unlimited                      */
 static uint32_t opt_maxvars   = 0;     /* 0 = unlimited                      */
 static double   opt_growth    = 1.2;
+static double   opt_timelimit = 0.0;   /* seconds, 0 = unlimited             */
+static int      opt_fulllegs  = 0;     /* walk every leg to the end          */
+static int      opt_auto      = 0;     /* sift through sylvan_gc's auto sift */
 static uint64_t opt_memory    = 8ull << 30;
 static unsigned opt_seed      = 12345;
 static const char *opt_varorder = "file";
@@ -404,6 +420,7 @@ run_CALL(lace_worker *lace)
     memset(&result, 0, sizeof(result));
     double sift_s = -1.0;
     int sift_status = SYLVAN_OK;
+    const uint64_t sifts_before = sylvan_sift_count();
     if (opt_sift) {
         sylvan_sift_config config;
         memset(&config, 0, sizeof(config));
@@ -411,12 +428,22 @@ run_CALL(lace_worker *lace)
         config.max_vars = opt_maxvars;
         config.max_growth = (float)opt_growth;
         config.nodes_threshold = opt_threshold;
-        config.time_limit = 0.0;
+        config.time_limit = opt_timelimit;
+        config.full_legs = opt_fulllegs;
 
-        const double t0 = now();
-        sift_status = sylvan_sift_report(&config, &result);
-        sift_s = now() - t0;
+        if (opt_auto) {
+            sylvan_gc_set_auto_sift(&config);
+            const double t0 = now();
+            sylvan_gc_CALL(lace);
+            sift_s = now() - t0;
+            sylvan_gc_set_auto_sift(NULL);
+        } else {
+            const double t0 = now();
+            sift_status = sylvan_sift_report(&config, &result);
+            sift_s = now() - t0;
+        }
     }
+    const uint64_t sifts = sylvan_sift_count() - sifts_before;
 
     const size_t nodes_after = mtbdd_shared_node_count(root, (size_t)n_root);
     if (varset_make() != 0) { fprintf(stderr, "varset rebuild failed\n"); return 1; }
@@ -452,7 +479,9 @@ run_CALL(lace_worker *lace)
            ",\"swaps\":%llu,\"refusals\":%llu,\"vars_sifted\":%u"
            ",\"sound\":%d,\"valid\":%d,\"eval_hash\":\"%llx\""
            ",\"ops_before_s\":%.6f,\"ops_after_s\":%.6f"
-           ",\"ops_before_sum\":%llu,\"ops_after_sum\":%llu",
+           ",\"ops_before_sum\":%llu,\"ops_after_sum\":%llu"
+           ",\"backend\":\"%s\",\"full_legs\":%d,\"time_limit\":%.3f"
+           ",\"auto\":%d,\"sifts\":%llu",
            opt_mode, opt_case ? opt_case : "",
            opt_workers, opt_sift,
            opt_threshold, opt_maxswaps, opt_maxvars, opt_growth,
@@ -468,7 +497,9 @@ run_CALL(lace_worker *lace)
            sound, valid, (unsigned long long)eval_hash,
            ops_before_s, ops_after_s,
            (unsigned long long)ops_before_sum,
-           (unsigned long long)ops_after_sum);
+           (unsigned long long)ops_after_sum,
+           SIFT_BENCH_BACKEND, opt_fulllegs, opt_timelimit,
+           opt_auto, (unsigned long long)sifts);
     if (opt_verify > 0) {
         printf(", \"satsum\":[");
         for (int r = 0; r < n_root && r < 8; r++) {
@@ -489,13 +520,29 @@ run_CALL(lace_worker *lace)
     return 0;
 }
 
+static void
+usage(FILE *f)
+{
+    fprintf(f,
+        "usage: sylvan_bench [options]\n"
+        "  case:   --mode bryant|blif|queens  --pairs N  --file F.blif  --n N\n"
+        "          --case NAME  --var-order file|reverse|random  --order-seed S\n"
+        "  sift:   --threshold N (0)  --growth G (1.2)  --max-swaps N (0)\n"
+        "          --max-vars N (0)  --time-limit S (0)  --full-legs  --auto\n"
+        "          --no-sift\n"
+        "  checks: --verify VECTORS  --seed S  --ops  --order\n"
+        "  run:    --workers N (1)  --memory BYTES (8 GiB)\n"
+        "0 means unlimited for --max-swaps, --max-vars and --time-limit.\n");
+}
+
 int
 main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         const char *v = (i + 1 < argc) ? argv[i + 1] : NULL;
-        if      (!strcmp(a, "--mode") && v)      { opt_mode = v; i++; }
+        if      (!strcmp(a, "--help"))           { usage(stdout); return 0; }
+        else if (!strcmp(a, "--mode") && v)      { opt_mode = v; i++; }
         else if (!strcmp(a, "--file") && v)      { opt_file = v; i++; }
         else if (!strcmp(a, "--case") && v)      { opt_case = v; i++; }
         else if (!strcmp(a, "--pairs") && v)     { opt_pairs = atoi(v); i++; }
@@ -509,11 +556,19 @@ main(int argc, char **argv)
         else if (!strcmp(a, "--max-swaps") && v) { opt_maxswaps = (uint32_t)strtoul(v, NULL, 10); i++; }
         else if (!strcmp(a, "--max-vars") && v)  { opt_maxvars = (uint32_t)strtoul(v, NULL, 10); i++; }
         else if (!strcmp(a, "--growth") && v)    { opt_growth = atof(v); i++; }
+        else if (!strcmp(a, "--time-limit") && v){ opt_timelimit = atof(v); i++; }
+        else if (!strcmp(a, "--full-legs"))      { opt_fulllegs = 1; }
+        else if (!strcmp(a, "--auto"))           { opt_auto = 1; }
         else if (!strcmp(a, "--memory") && v)    { opt_memory = strtoull(v, NULL, 10); i++; }
         else if (!strcmp(a, "--seed") && v)      { opt_seed = (unsigned)strtoul(v, NULL, 10); i++; }
         else if (!strcmp(a, "--var-order") && v) { opt_varorder = v; i++; }
         else if (!strcmp(a, "--order-seed") && v){ opt_orderseed = (unsigned)strtoul(v, NULL, 10); i++; }
-        else { fprintf(stderr, "unknown option %s\n", a); return 2; }
+        else { fprintf(stderr, "unknown option %s\n", a); usage(stderr); return 2; }
+    }
+    if (strcmp(opt_mode, "blif") != 0 && strcmp(opt_mode, "bryant") != 0 &&
+        strcmp(opt_mode, "queens") != 0) {
+        fprintf(stderr, "unknown --mode %s\n", opt_mode);
+        return 2;
     }
 
     if (strcmp(opt_mode, "blif") == 0) {

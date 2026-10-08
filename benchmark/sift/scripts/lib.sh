@@ -1,6 +1,6 @@
 # Shared plumbing for the sift benchmark scripts. Source it; do not run it.
 #
-# Every script takes the same options, parsed by sb_parse_common:
+# Every script takes these options:
 #
 #   --sylvan-build NAME=DIR  a Sylvan build tree configured with
 #                            -DSYLVAN_BUILD_SIFT_BENCH=ON; repeatable. A bare
@@ -15,7 +15,7 @@
 #   --sylvan-args STR        extra arguments for every sylvan_bench run
 #   --cudd-args STR          extra arguments for every cudd_bench run
 #
-# Options the script does not know are left in SB_REST for it to parse.
+# A script's own options, if it has any, are listed above these.
 #
 # THE ROWS. Each run appends one JSON object per line to --out: the harness's
 # own RESULT object, prefixed with what the harness cannot know about itself --
@@ -49,7 +49,8 @@ SB_EXP=${SB_EXP:-unnamed}
 
 sb_die() { echo "$(basename "$0"): $*" >&2; exit 2; }
 
-# sb_parse_common "$@" -- see the top of this file.
+# sb_parse_common "$@" -- see the top of this file. What it does not know is
+# left in SB_REST for the script to parse.
 sb_parse_common() {
   while [ $# -gt 0 ]; do
     case "$1" in

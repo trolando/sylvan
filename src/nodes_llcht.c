@@ -63,6 +63,10 @@ typedef struct nodes_table
     nodes_equals_cb    equals_cb;    // custom equals function
     nodes_create_cb    create_cb;    // custom create function
     nodes_destroy_cb   destroy_cb;   // custom destroy function
+    /* Set by a worker of the current batch when its index is out of range.
+       The batch primitives are collective and one runs at a time, so one word
+       for the whole set is enough. */
+    _Atomic(int)       batch_error;
 } nodes_table;
 
 /* 40 bits for the index, 24 bits for the hash fingerprint. */
@@ -884,7 +888,7 @@ uint32_t
 nodes_reorder_caps(const nodes_table* dbs)
 {
     (void)dbs;
-    return NODES_CAP_REMOVE | NODES_CAP_RELEASE;
+    return NODES_CAP_REMOVE | NODES_CAP_RELEASE | NODES_CAP_BATCH;
 }
 
 static void
@@ -1164,21 +1168,145 @@ nodes_prepare_reorder(nodes_table* dbs, const uint32_t* routes, size_t count)
 }
 
 /**
- * This backend does not report NODES_CAP_BATCH: it splices lock-free one node
- * at a time, so a batch would buy it nothing the loop does not already have.
+ * Batched removal and reinsertion.
+ *
+ * There is no phase structure to win here: a removal is a compare-and-swap
+ * splice out of one chain and touches nothing else, and the single-node calls
+ * are already safe from every worker at once -- that is what the chain surgery
+ * above was built for. What the batch buys is the WORKERS at the call sites
+ * that hand over a whole set, above all the retirement round, which otherwise
+ * unhashes its nodes one at a time on one worker. So the loop is the design,
+ * and it is the same one the list backend arrived at for the same reason.
+ *
+ * The only thing the batch adds is the contract's refusal, and only the half
+ * of it that is cheap: every index is range-checked before anything is
+ * claimed, so a batch naming an impossible index changes nothing. An index
+ * that is in range but not in the index is a caller error and aborts -- see
+ * nodes_remove_batch in nodes.h for why the distinction is drawn there rather
+ * than paid for with a read-only walk of every victim's chain.
  */
+
+#define LLCHT_BATCH_BLOCK 64
+
+static void
+reorder_batch_abort(uint64_t index)
+{
+    assert(!"nodes_remove_batch: a node in the batch was not in the index");
+    fprintf(stderr,
+            "sylvan: nodes_remove_batch: node %llu is in range but the index "
+            "does not hold it; the caller's bookkeeping is wrong. Aborting.\n",
+            (unsigned long long)index);
+    abort();
+}
+
+/* The three passes share one shape: split until a block is small enough, then
+   run the block. LLCHT_BATCH_BLOCK is the same granularity the trie uses. */
+
+TASK(void, llcht_batch_range, nodes_table*, dbs, const uint64_t*, indices,
+     size_t, first, size_t, count)
+
+void
+llcht_batch_range_CALL(lace_worker* lace, nodes_table* dbs,
+                       const uint64_t* indices, size_t first, size_t count)
+{
+    if (count > LLCHT_BATCH_BLOCK) {
+        const size_t split = count / 2;
+        llcht_batch_range_SPAWN(lace, dbs, indices, first, split);
+        llcht_batch_range_CALL(lace, dbs, indices, first + split, count - split);
+        llcht_batch_range_SYNC(lace);
+        return;
+    }
+
+    const size_t end = first + count;
+    for (size_t at = first; at < end; at++) {
+        if (indices[at] < 2 || indices[at] >= dbs->table_size) {
+            atomic_store_explicit(&dbs->batch_error, 1, memory_order_relaxed);
+        }
+    }
+}
+
+TASK(void, llcht_batch_remove, nodes_table*, dbs, const uint64_t*, indices,
+     size_t, first, size_t, count)
+
+void
+llcht_batch_remove_CALL(lace_worker* lace, nodes_table* dbs,
+                        const uint64_t* indices, size_t first, size_t count)
+{
+    if (count > LLCHT_BATCH_BLOCK) {
+        const size_t split = count / 2;
+        llcht_batch_remove_SPAWN(lace, dbs, indices, first, split);
+        llcht_batch_remove_CALL(lace, dbs, indices, first + split,
+                                count - split);
+        llcht_batch_remove_SYNC(lace);
+        return;
+    }
+
+    const size_t end = first + count;
+    for (size_t at = first; at < end; at++) {
+        /* The range pass already passed, so the only way this fails is the
+           caller error the contract lets us abort on. Returning here instead
+           would report a failure after some of the set had been claimed. */
+        if (nodes_remove(dbs, indices[at]) != SYLVAN_OK) {
+            reorder_batch_abort(indices[at]);
+        }
+    }
+}
+
+TASK(void, llcht_batch_reinsert, nodes_table*, dbs, const uint64_t*, indices,
+     size_t, first, size_t, count)
+
+void
+llcht_batch_reinsert_CALL(lace_worker* lace, nodes_table* dbs,
+                          const uint64_t* indices, size_t first, size_t count)
+{
+    if (count > LLCHT_BATCH_BLOCK) {
+        const size_t split = count / 2;
+        llcht_batch_reinsert_SPAWN(lace, dbs, indices, first, split);
+        llcht_batch_reinsert_CALL(lace, dbs, indices, first + split,
+                                  count - split);
+        llcht_batch_reinsert_SYNC(lace);
+        return;
+    }
+
+    const size_t end = first + count;
+    for (size_t at = first; at < end; at++) {
+        /* Reinsertion keeps the contract it always had: a node that was not
+           removed first is reported, not aborted on, exactly as the trie's
+           batch does. It is the one failure the caller can act on, because it
+           says the node is still in the index rather than missing from it. */
+        if (nodes_reinsert(dbs, indices[at]) != SYLVAN_OK) {
+            atomic_store_explicit(&dbs->batch_error, 1, memory_order_relaxed);
+        }
+    }
+}
+
 int
 nodes_remove_batch_CALL(lace_worker* lace, nodes_table* dbs,
                         const uint64_t* indices, size_t count)
 {
-    (void)lace; (void)dbs; (void)indices; (void)count;
-    return SYLVAN_ERR_INVALID;
+    if (count == 0) return SYLVAN_OK;
+    if (nodes_reorder_caps(dbs) == 0) return SYLVAN_ERR_INVALID;
+
+    /* Read-only, so a refusal here has mutated nothing. */
+    atomic_store_explicit(&dbs->batch_error, 0, memory_order_relaxed);
+    llcht_batch_range_CALL(lace, dbs, indices, 0, count);
+    if (atomic_load_explicit(&dbs->batch_error, memory_order_relaxed) != 0) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    llcht_batch_remove_CALL(lace, dbs, indices, 0, count);
+    return SYLVAN_OK;
 }
 
 int
 nodes_reinsert_batch_CALL(lace_worker* lace, nodes_table* dbs,
                           const uint64_t* indices, size_t count)
 {
-    (void)lace; (void)dbs; (void)indices; (void)count;
-    return SYLVAN_ERR_INVALID;
+    if (count == 0) return SYLVAN_OK;
+    if (nodes_reorder_caps(dbs) == 0) return SYLVAN_ERR_INVALID;
+
+    atomic_store_explicit(&dbs->batch_error, 0, memory_order_relaxed);
+    llcht_batch_reinsert_CALL(lace, dbs, indices, 0, count);
+    return atomic_load_explicit(&dbs->batch_error, memory_order_relaxed) != 0
+        ? SYLVAN_ERR_INVALID : SYLVAN_OK;
 }

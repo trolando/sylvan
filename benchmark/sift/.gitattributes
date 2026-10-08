@@ -1,0 +1,4 @@
+# The scripts run under bash and python on Linux and WSL, also from a
+# Windows checkout, so they must keep LF line endings there too.
+*.sh text eol=lf
+*.py text eol=lf

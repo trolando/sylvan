@@ -64,9 +64,10 @@ The resulting artifact is a static library residing at ``build/src/libsylvan.a``
 Diagnostic builds
 -----------------
 
-Sylvan has a few switches that exist only to debug Sylvan itself. All of them
-are off by default and cost nothing when off, and none of them should be
-enabled in a production build.
+Sylvan has a few switches that exist only to debug or to measure Sylvan
+itself. Each of them defaults to what a production build wants and costs
+nothing in that setting, and none of them should be changed in a production
+build.
 
 ``SYLVAN_CHECK_HANDLES`` (CMake option)
     Check on every node dereference that the decision diagram handle's bucket
@@ -99,6 +100,19 @@ enabled in a production build.
     Collect operation statistics, and count variable rank lookups. See
     ``sylvan_stats_report`` below for the former. The rank counter is a single
     contended atomic, so it distorts both timing and parallel scaling.
+
+``SYLVAN_HUGEPAGES`` (CMake option, on by default)
+    Ask the kernel to back every allocation of 2 MiB or more -- the nodes table
+    and the operation cache above all -- with transparent huge pages, through
+    ``madvise(MADV_HUGEPAGE)``. Linux only, and the kernel is free to decline
+    (it does when ``transparent_hugepage`` is ``never``). The hash-keyed tables
+    are addressed at random over their whole extent, so once a table outgrows
+    the TLB every lookup would otherwise pay a page walk on top of its cache
+    miss. Turn it off to measure what the pages are worth:
+
+    .. code:: bash
+
+        cmake .. -DSYLVAN_HUGEPAGES=OFF
 
 Using Sylvan
 ------------

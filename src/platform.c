@@ -47,6 +47,12 @@
     #include <unistd.h>
 #endif
 
+/* Whether large mappings ask for transparent huge pages. On unless the build
+   turns it off (-DSYLVAN_HUGEPAGES=OFF), which exists to measure them. */
+#ifndef SYLVAN_HUGEPAGES
+#define SYLVAN_HUGEPAGES 1
+#endif
+
 static_assert((SYLVAN_CACHE_LINE_SIZE& (SYLVAN_CACHE_LINE_SIZE - 1)) == 0,
     "SYLVAN_CACHE_LINE_SIZE must be power of two");
 
@@ -62,7 +68,7 @@ sylvan_alloc_aligned(size_t size)
 #else 
     void* p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (p == MAP_FAILED) return NULL;
-#if defined(MADV_HUGEPAGE)
+#if defined(MADV_HUGEPAGE) && SYLVAN_HUGEPAGES
     /* The hash-keyed tables are addressed at random over their whole extent,
        so once an array outgrows the TLB reach every lookup pays a page-walk
        on top of its cache miss. Ask for 2 MiB pages on any mapping big

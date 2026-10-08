@@ -44,6 +44,11 @@ All notable changes to Sylvan will be documented in this file.
   points at the operation that produced a bad handle rather than the one that
   tripped over it. It is a debugging aid: builds without it are byte-for-byte
   identical to builds from before the option existed.
+- Added ablation and instrumentation knobs for the reordering experiments, so
+  that the measurements behind parallel sifting can be reproduced from this
+  tree. Every default is the existing behaviour. The CMake option
+  `SYLVAN_HUGEPAGES` (default on) can turn off the transparent huge page
+  advice for large tables, to measure what the pages are worth.
 
 ### Changed
 - Sifting no longer destroys handles held only on a worker's temporary

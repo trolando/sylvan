@@ -11,6 +11,12 @@ if(SYLVAN_USE_MMAP AND NOT WIN32)
     endif()
 endif()
 
+# Ask the kernel to back every large allocation with transparent huge pages
+# (madvise(MADV_HUGEPAGE) in src/platform.c, so Linux and mmap only; the kernel
+# is free to decline). On by default. Turning it off exists to measure what the
+# pages are worth.
+option(SYLVAN_HUGEPAGES "Let Sylvan ask for transparent huge pages for its large tables" ON)
+
 option(SYLVAN_STATS "Let Sylvan collect statistics at runtime" OFF)
 
 # Diagnostic builds only: count variable rank lookups. The counter is a single
@@ -202,6 +208,12 @@ if(SYLVAN_CHECK_HANDLES)
     target_compile_definitions(sylvan PUBLIC SYLVAN_CHECK_HANDLES=1)
 endif()
 
+# PRIVATE: only src/platform.c reads it, and only the non-default setting is
+# passed, so a default build compiles exactly as it did without the option.
+if(NOT SYLVAN_HUGEPAGES)
+    target_compile_definitions(sylvan PRIVATE SYLVAN_HUGEPAGES=0)
+endif()
+
 # ── Include directories ──────────────────────────────────────────────────────
 
 target_include_directories(sylvan
@@ -273,6 +285,7 @@ if(NOT sylvan_IS_TOP_LEVEL)
         SYLVAN_USE_MMAP
         SYLVAN_STATS
         SYLVAN_CHECK_HANDLES
+        SYLVAN_HUGEPAGES
     )
 endif()
 

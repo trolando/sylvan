@@ -251,6 +251,7 @@ values_for(const uint32_t *order, const uint8_t *vec, uint8_t *values)
 static int
 evaluate_CALL(lace_worker *lace, uint8_t *out)
 {
+    (void)lace; /* bdd_eval runs on the calling thread and takes no worker */
     uint32_t *order = (uint32_t*)malloc((size_t)n_var * sizeof(uint32_t));
     uint8_t  *values = (uint8_t*)malloc((size_t)n_var);
     if (order == NULL || values == NULL) { free(order); free(values); return -1; }

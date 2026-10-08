@@ -30,6 +30,7 @@ option(SYLVAN_BUILD_CPP           "Build Sylvan C++ bindings"                   
 option(BUILD_TESTING              "Build Sylvan tests"          ${PROJECT_IS_TOP_LEVEL})
 option(SYLVAN_BUILD_EXAMPLES      "Build Sylvan examples"       ${PROJECT_IS_TOP_LEVEL})
 option(SYLVAN_BUILD_BENCHMARKS    "Build Sylvan microbenchmarks"                     OFF)
+option(SYLVAN_BUILD_SIFT_BENCH    "Build the sifting evaluation harness"             OFF)
 option(SYLVAN_BUILD_DOCS          "Build Sylvan documentation"                      OFF)
 option(SYLVAN_INSTALL             "Generate Sylvan installation rules" ${PROJECT_IS_TOP_LEVEL})
 
@@ -182,6 +183,7 @@ if(NOT sylvan_IS_TOP_LEVEL)
         SYLVAN_BUILD_CPP
         SYLVAN_BUILD_EXAMPLES
         SYLVAN_BUILD_BENCHMARKS
+        SYLVAN_BUILD_SIFT_BENCH
         SYLVAN_BUILD_DOCS
         SYLVAN_INSTALL
     )
@@ -205,6 +207,10 @@ endif()
 
 if(SYLVAN_BUILD_BENCHMARKS)
     add_subdirectory(benchmark)
+endif()
+
+if(SYLVAN_BUILD_SIFT_BENCH)
+    add_subdirectory(benchmark/sift)
 endif()
 
 if(SYLVAN_BUILD_DOCS)

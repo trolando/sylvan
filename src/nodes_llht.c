@@ -229,6 +229,45 @@ static const uint64_t CL_MASK_R = CL_WORDS - 1;
 #define MASK_INDEX ((uint64_t)0x000000ffffffffff)
 #define MASK_HASH  ((uint64_t)0xffffff0000000000)
 
+/**
+ * The arena has no slot to give. Say so, once.
+ *
+ * nodes_lookup2 answers 0 here and every caller turns that into "no room",
+ * but not every caller says which room ran out. The report that normally
+ * announces a full table is gc_note_progress in common.c ("BDD Unique table
+ * full"), and it cannot speak for this path: it fires from inside a
+ * collection, and only after several consecutive collections of a table that
+ * is already at its maximum size and still nearly full. A lookup that fails
+ * where no collection may run -- inside a reorder session -- or that fails
+ * while the table as a whole is below that threshold, because the free slots
+ * sit inside regions other workers own, never reaches that guard at all. In
+ * the wild that surfaced as a bare "build failed" with nothing in it about
+ * the table.
+ *
+ * Once per exhaustion episode, not once per failing lookup: the flag is
+ * cleared in nodes_clear, which is where a collection gives the table its
+ * room back. The hot path is untouched -- only the branch that has already
+ * failed to claim a slot arrives here. The flag is one word beside the
+ * allocator rather than a field of the table because the allocator it speaks
+ * for is itself global (see the warning about multiple tables above).
+ */
+static _Atomic(int) arena_exhausted_reported;
+
+static void SYLVAN_NOINLINE
+report_arena_exhausted(const nodes_table* dbs)
+{
+    if (atomic_exchange_explicit(&arena_exhausted_reported, 1,
+                                 memory_order_relaxed) != 0) {
+        return;
+    }
+    fprintf(stderr,
+            "sylvan: llht nodes table out of node slots, %zu buckets, none "
+            "free to claim; nodes_lookup returns 0 and the operation that "
+            "asked for a node fails. Raise the memory cap passed to "
+            "sylvan_set_limits.\n",
+            dbs->table_size);
+}
+
 static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_t b, int* created, const int custom)
 {
     // Compute the hash
@@ -256,7 +295,10 @@ static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_
             if (cidx == 0) {
                 // Claim data bucket and write data
                 cidx = claim_data_bucket(dbs);
-                if (cidx == (uint64_t)-1) return 0;
+                if (cidx == (uint64_t)-1) {
+                    report_arena_exhausted(dbs);
+                    return 0;
+                }
                 if (custom) {
                     const int status = dbs->create_cb(&a, &b);
                     if (status != 0) {
@@ -504,6 +546,11 @@ void nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
     dbs->bitmap2[0] = UINT64_C(0xc000000000000000);
 
     nodes_reset_region_TOGETHER();
+
+    /* A collection has given the table its room back, so the next
+       exhaustion is a new episode and reports itself again. */
+    atomic_store_explicit(
+        &arena_exhausted_reported, 0, memory_order_relaxed);
 }
 
 int nodes_is_marked(const nodes_table* dbs, uint64_t index)

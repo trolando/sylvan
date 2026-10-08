@@ -30,12 +30,12 @@ target_sources(test_table PRIVATE test_table.c)
 target_link_libraries(test_table PRIVATE sylvan::sylvan)
 target_compile_features(test_table PRIVATE c_std_11)
 sylvan_test_warnings(test_table)
-string(TOLOWER "${SYLVAN_NODES_TABLE}" _sylvan_test_nodes_table)
-if(_sylvan_test_nodes_table STREQUAL "llchst")
-    target_compile_definitions(test_table PRIVATE SYLVAN_NODES_TABLE_LLCHST=1)
-elseif(_sylvan_test_nodes_table STREQUAL "trie")
-    target_compile_definitions(test_table PRIVATE SYLVAN_NODES_TABLE_TRIE=1)
-endif()
+# test_table names the backend it is running against: a few cases are
+# specific to one, and the arena exhaustion diagnostic names it in its
+# message. The value was validated where the library selected it.
+string(TOUPPER "${SYLVAN_NODES_TABLE}" _sylvan_test_nodes_table)
+target_compile_definitions(test_table
+    PRIVATE SYLVAN_NODES_TABLE_${_sylvan_test_nodes_table}=1)
 
 add_executable(test_ranks)
 target_sources(test_ranks PRIVATE test_ranks.c)

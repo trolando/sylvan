@@ -28,6 +28,21 @@
 #define TEST_DEEP_CHAIN_KEYS 200
 #define TEST_CUSTOM_RACE_KEYS 32
 
+/* The backend under test, as its diagnostics name it. */
+#if SYLVAN_NODES_TABLE_LIST
+#define TEST_BACKEND_NAME "list"
+#elif SYLVAN_NODES_TABLE_TRIE
+#define TEST_BACKEND_NAME "trie"
+#elif SYLVAN_NODES_TABLE_LLCHT
+#define TEST_BACKEND_NAME "llcht"
+#elif SYLVAN_NODES_TABLE_LLCHST
+#define TEST_BACKEND_NAME "llchst"
+#elif SYLVAN_NODES_TABLE_LLHT
+#define TEST_BACKEND_NAME "llht"
+#else
+#error "no nodes table backend selected"
+#endif
+
 /* Number of Lace workers this run was started with. */
 static unsigned int test_workers = TEST_DEFAULT_WORKERS;
 
@@ -420,6 +435,132 @@ test_exhaustion_and_resize(void)
     nodes_free(table);
     return 0;
 }
+
+/**
+ * A table with nothing left to give must say so.
+ *
+ * The lookup path answers 0 when the arena cannot hand out a slot, and that 0
+ * used to be the only evidence there was: a caller that turns it into an error
+ * of its own printed nothing about the table, so an exhausted run could end in
+ * a bare "build failed". The backend now prints one line per exhaustion
+ * episode, and this test exists because the line is the point.
+ *
+ * Every worker fills at once, which is the shape the defect was reported in:
+ * each worker holds a private region, so the one that needs a fresh region can
+ * fail while free slots still sit in the regions the others hold. The work
+ * runs in a child process because stderr is what is being asserted on, the
+ * same reason the reinsert-collision death test re-executes this binary; the
+ * child exits 0 only if some lookup really did answer 0.
+ */
+#define TEST_EXHAUST_ATTEMPTS (1u << 16)
+
+static nodes_table *exhaust_table;
+static _Atomic(unsigned int) exhaust_zero_returns;
+
+TASK(void, exhaust_worker, int, unused)
+
+void
+exhaust_worker_CALL(lace_worker *lace, int unused)
+{
+    (void)unused;
+    const uint64_t slot = (uint64_t)lace->worker;
+    for (unsigned int i = 0; i < TEST_EXHAUST_ATTEMPTS; i++) {
+        /* Leaf keys, distinct per worker: every backend accepts them and no
+           two workers ever ask for the same node. */
+        const uint64_t key =
+            UINT64_C(0x4000000000000000) | (slot << 32) | (uint64_t)(i + 2u);
+        int created = 0;
+        if (nodes_lookup(exhaust_table, key, 0, &created) == 0) {
+            atomic_fetch_add_explicit(
+                &exhaust_zero_returns, 1, memory_order_relaxed);
+            return;
+        }
+    }
+}
+
+static int
+run_arena_exhaustion(void)
+{
+    const size_t size = race_table_size();
+    exhaust_table = nodes_create(size, size);
+    exhaust_worker_TOGETHER(0);
+    const unsigned int zeros = atomic_load_explicit(
+        &exhaust_zero_returns, memory_order_relaxed);
+    nodes_free(exhaust_table);
+    return zeros == 0 ? 1 : 0;
+}
+
+#if defined(__unix__) || defined(__APPLE__)
+static int
+test_arena_exhaustion_reports(const char *self)
+{
+    int fds[2];
+    test_assert(pipe(fds) == 0);
+
+    char workers[16];
+    snprintf(workers, sizeof(workers), "%u", test_workers);
+
+    const pid_t child = fork();
+    test_assert(child >= 0);
+    if (child == 0) {
+        close(fds[0]);
+        if (dup2(fds[1], STDERR_FILENO) < 0) _exit(127);
+        close(fds[1]);
+        execl(self, self, "--exhaust", workers, (char *)NULL);
+        _exit(127);
+    }
+    close(fds[1]);
+
+    /* Drain to EOF before waiting, so the child can never block on a full
+       pipe; anything past the buffer is counted and dropped. */
+    char captured[4096];
+    size_t filled = 0;
+    for (;;) {
+        char chunk[512];
+        const ssize_t got = read(fds[0], chunk, sizeof(chunk));
+        if (got <= 0) break;
+        size_t room = sizeof(captured) - 1 - filled;
+        if (room > (size_t)got) room = (size_t)got;
+        memcpy(captured + filled, chunk, room);
+        filled += room;
+    }
+    captured[filled] = '\0';
+    close(fds[0]);
+
+    int status = 0;
+    test_assert(waitpid(child, &status, 0) == child);
+    /* Half the assertion: the lookups really did start returning 0. */
+    test_assert(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+#if SYLVAN_NODES_TABLE_LLHT
+    /* llht is open-addressed, and a table with no empty slot left in a key's
+       probe sequence refuses on the probe count -- returning 0 without ever
+       asking the arena for a record. Which of the two refusals a filling table
+       reaches first is not a race but a consequence of how the slots ran out.
+       One worker walks the table down to its last few and always meets the
+       probe limit first; several workers hold a private region each, and the
+       one that needs a fresh region finds the arena empty first, which is the
+       exact mechanism the P8-only failure in the wild was traced to. Measured
+       on this backend: 0 of 20 runs at one worker, 20 of 20 at eight. So the
+       diagnostic is demanded here only where it is reachable. */
+    const int expect_diagnostic = test_workers > 1;
+#else
+    const int expect_diagnostic = 1;
+#endif
+    if (expect_diagnostic) {
+        /* Exactly one line, from however many workers ran out: the episode
+           reports itself, not each lookup that failed inside it. */
+        unsigned int lines = 0;
+        for (const char *at = captured;
+             (at = strstr(at, "out of node slots")) != NULL; at++) {
+            lines++;
+        }
+        test_assert(lines == 1);
+        test_assert(strstr(captured, TEST_BACKEND_NAME) != NULL);
+    }
+    return 0;
+}
+#endif
 
 /**
  * Rebuild stress test with adversarial node shapes.
@@ -1748,6 +1889,9 @@ run_table_tests_CALL(lace_worker *lace)
     if (test_custom_metadata_cleanup()) return 1;
     if (test_custom_race()) return 1;
     if (test_exhaustion_and_resize()) return 1;
+#if defined(__unix__) || defined(__APPLE__)
+    if (test_arena_exhaustion_reports(test_self)) return 1;
+#endif
     if (test_rebuild_shapes()) return 1;
 #if SYLVAN_NODES_TABLE_LLCHST
     if (test_subtable_routing()) return 1;
@@ -1761,6 +1905,18 @@ int
 main(int argc, char **argv)
 {
     test_self = argv[0];
+
+    /* Internal entry point: the exhaustion test re-executes this binary
+       with stderr on a pipe, so that it can read the diagnostic. */
+    if (argc > 2 && strcmp(argv[1], "--exhaust") == 0) {
+        const long requested = strtol(argv[2], NULL, 10);
+        if (requested < 1 || requested > TEST_MAX_WORKERS) return 1;
+        test_workers = (unsigned int)requested;
+        lace_start(test_workers, 0, 0);
+        const int status = run_arena_exhaustion();
+        lace_stop();
+        return status;
+    }
 
     /* Internal entry point: the reinsert-collision death test re-executes
        this binary and expects the child to abort. */

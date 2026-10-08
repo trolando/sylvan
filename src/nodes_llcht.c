@@ -381,6 +381,45 @@ find_in_chain(const nodes_table* dbs, uint64_t link, uint64_t stop,
     return 0;
 }
 
+/**
+ * The arena has no slot to give. Say so, once.
+ *
+ * nodes_lookup2 answers 0 here and every caller turns that into "no room",
+ * but not every caller says which room ran out. The report that normally
+ * announces a full table is gc_note_progress in common.c ("BDD Unique table
+ * full"), and it cannot speak for this path: it fires from inside a
+ * collection, and only after several consecutive collections of a table that
+ * is already at its maximum size and still nearly full. A lookup that fails
+ * where no collection may run -- inside a reorder session -- or that fails
+ * while the table as a whole is below that threshold, because the free slots
+ * sit inside regions other workers own, never reaches that guard at all. In
+ * the wild that surfaced as a bare "build failed" with nothing in it about
+ * the table.
+ *
+ * Once per exhaustion episode, not once per failing lookup: the flag is
+ * cleared in nodes_clear, which is where a collection gives the table its
+ * room back. The hot path is untouched -- only the branch that has already
+ * failed to claim a slot arrives here. The flag is one word beside the
+ * allocator rather than a field of the table because the allocator it speaks
+ * for is itself global (see the warning about multiple tables above).
+ */
+static _Atomic(int) arena_exhausted_reported;
+
+static void SYLVAN_NOINLINE
+report_arena_exhausted(const nodes_table* dbs)
+{
+    if (atomic_exchange_explicit(&arena_exhausted_reported, 1,
+                                 memory_order_relaxed) != 0) {
+        return;
+    }
+    fprintf(stderr,
+            "sylvan: llcht nodes table out of node slots, %zu buckets, none "
+            "free to claim; nodes_lookup returns 0 and the operation that "
+            "asked for a node fails. Raise the memory cap passed to "
+            "sylvan_set_limits.\n",
+            dbs->table_size);
+}
+
 /* This function must not contain a Lace yield point. A worker can own an
    unpublished candidate and, for custom nodes, publication intentionally
    precedes setting its word-disjoint bitmapc bit. */
@@ -401,7 +440,10 @@ nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_t b,
     }
 
     const uint64_t candidate = claim_data_bucket(dbs);
-    if (candidate == UINT64_MAX) return 0;
+    if (candidate == UINT64_MAX) {
+        report_arena_exhausted(dbs);
+        return 0;
+    }
 
     if (custom) {
         const int status = dbs->create_cb(&a, &b);
@@ -640,6 +682,11 @@ nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
     dbs->bitmap2[0] = UINT64_C(0xc000000000000000);
     atomic_store_explicit(dbs->region_cursor, 0, memory_order_relaxed);
     nodes_reset_region_TOGETHER();
+
+    /* A collection has given the table its room back, so the next
+       exhaustion is a new episode and reports itself again. */
+    atomic_store_explicit(
+        &arena_exhausted_reported, 0, memory_order_relaxed);
 }
 
 int

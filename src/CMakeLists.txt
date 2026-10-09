@@ -19,10 +19,6 @@ option(SYLVAN_HUGEPAGES "Let Sylvan ask for transparent huge pages for its large
 
 option(SYLVAN_STATS "Let Sylvan collect statistics at runtime" OFF)
 
-# Diagnostic builds only: count variable rank lookups. The counter is a single
-# contended atomic, so it distorts both timing and parallel scaling.
-option(SYLVAN_RANK_COUNTERS "Let Sylvan count variable rank lookups" OFF)
-
 # Diagnostic builds only: time every phase of every variable swap, and of the
 # reorder session around them, with the monotonic clock, and have every sift
 # print the sums to stderr as one SIFT-PHASES line. Two clock reads per phase

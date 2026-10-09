@@ -27,9 +27,6 @@
 /* Enable/disable counters and timers */
 #cmakedefine01 SYLVAN_STATS
 
-/* Enable/disable the diagnostic variable rank lookup counter */
-#cmakedefine01 SYLVAN_RANK_COUNTERS
-
 /* Enable/disable the diagnostic per-phase timing of variable swaps */
 #cmakedefine01 SYLVAN_SIFT_PHASE_TIMING
 

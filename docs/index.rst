@@ -96,10 +96,8 @@ build.
 
         cmake .. -DCMAKE_C_FLAGS=-DSYLVAN_GC_DIAGNOSTICS=1
 
-``SYLVAN_STATS`` and ``SYLVAN_RANK_COUNTERS`` (CMake options)
-    Collect operation statistics, and count variable rank lookups. See
-    ``sylvan_stats_report`` below for the former. The rank counter is a single
-    contended atomic, so it distorts both timing and parallel scaling.
+``SYLVAN_STATS`` (CMake option)
+    Collect operation statistics. See ``sylvan_stats_report`` below.
 
     Among the statistics are the index counters of the nodes table, which say
     how much of its index each operation walks. ``sylvan_stats_report`` prints

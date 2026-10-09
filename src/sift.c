@@ -533,7 +533,13 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
        growth is measured from here on. */
     sift_note_sift(nodes_count_nodes_CALL(lace, nodes));
 
-    if (result != NULL && status == SYLVAN_OK) {
+    /* Whenever the session opened, which is the line sylvan_sift_count draws
+       too: a driver that could not allocate its scratch reports the forest
+       unchanged and no swaps, and a self-check that failed on closing reports
+       the sift it checked. Only a call refused before opening reports
+       nothing, because sylvan_sift_report zeroed <result> and nothing here
+       ran. */
+    if (result != NULL) {
         result->initial_size = initial;
         result->final_size = final_size;
         result->swaps = swaps;

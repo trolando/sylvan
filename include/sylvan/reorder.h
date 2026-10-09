@@ -148,20 +148,32 @@ typedef struct sylvan_sift_result {
  *   primitives, or the ZDD or ListDD subsystem is initialised (both order
  *   their nodes by variable identity rather than by rank). Nothing is changed
  *   in any of these cases.
- * - SYLVAN_ERR_OOM only when the session itself cannot be built. Running out
- *   of room during the search is not a failure: a swap that cannot reserve
- *   what it needs mutates nothing and is treated as "this variable cannot move
- *   any further in this direction", so sifting continues and returns
- *   SYLVAN_OK with whatever improvement it managed.
+ * - SYLVAN_ERR_OOM when the session cannot be built, or when it has opened
+ *   but the driver cannot allocate its per-variable scratch; then the opening
+ *   collection has run, the order is unchanged, and the call counts in
+ *   sylvan_sift_count(). Running out of room during the search is not a
+ *   failure: a swap that cannot reserve what it needs mutates nothing and is
+ *   treated as "this variable cannot move any further in this direction", so
+ *   sifting continues and returns SYLVAN_OK with whatever improvement it
+ *   managed.
+ * - SYLVAN_ERR_INVALID, or SYLVAN_ERR_OOM, from the self-check a session can
+ *   run as it closes, which only Sylvan's own tests switch on: the sift ran
+ *   to completion, but its reference counts disagreed with a recount, or the
+ *   recount could not be allocated. A disagreement is a bug in Sylvan.
  *
- * The forest is valid and consistent on every one of these paths.
+ * The forest is valid and consistent on every one of these paths, except
+ * possibly after a self-check that found a disagreement.
  */
 int sylvan_sift(const sylvan_sift_config *config);
 
 /**
  * sylvan_sift, reporting what it did. <result> may be NULL, in which case this
- * is exactly sylvan_sift. On a failure <result> is zeroed rather than partly
- * filled: a session that never opened has nothing to report.
+ * is exactly sylvan_sift. A call refused before its session opened leaves
+ * <result> zeroed: a session that never opened has nothing to report. Once
+ * the session has opened -- the point at which sylvan_sift_count() moves --
+ * <result> describes what it did even if the call then fails; after the
+ * driver failed to allocate its scratch, that is the unchanged forest and no
+ * swaps.
  */
 int sylvan_sift_report(const sylvan_sift_config *config,
                        sylvan_sift_result *result);

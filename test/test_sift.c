@@ -268,7 +268,9 @@ test_reduces_CALL(lace_worker *lace)
     test_print_order("order before");
 
     sylvan_sift_result result;
+    const uint64_t sifts = sylvan_sift_count();
     test_assert(sylvan_sift_report(NULL, &result) == SYLVAN_OK);
+    test_assert(sylvan_sift_count() == sifts + 1);
 
     const size_t after = mtbdd_shared_node_count(test_root, TEST_ROOTS);
     printf("  forest %llu -> %llu nodes in %llu swaps over %u variables\n",
@@ -359,14 +361,17 @@ test_config_CALL(lace_worker *lace)
     test_assert(result.vars_sifted == 1);
     if (test_check_roots_CALL(lace)) return 1;
 
-    /* A budget of one swap buys at most one swap of search. The return leg is
-       not search and is allowed past the budget, so this bounds the total at
-       two rather than at one. */
-    memset(&config, 0, sizeof(config));
-    config.max_swaps = 1;
-    test_assert(sylvan_sift_report(&config, &result) == SYLVAN_OK);
-    test_assert(result.swaps <= 2);
-    if (test_check_roots_CALL(lace)) return 1;
+    /* A budget of n swaps buys at most n swaps of search. The return to the
+       best position counts against the budget but is never cut short by it,
+       and it is no longer than the search before it, so the total is bounded
+       at 2n rather than at n. */
+    for (uint32_t budget = 1; budget <= 4; budget++) {
+        memset(&config, 0, sizeof(config));
+        config.max_swaps = budget;
+        test_assert(sylvan_sift_report(&config, &result) == SYLVAN_OK);
+        test_assert(result.swaps <= 2u * budget);
+        if (test_check_roots_CALL(lace)) return 1;
+    }
 
     /* The tightest growth bound there is: no leg may leave the forest larger
        than the best it has seen. This still terminates, and still improves or
@@ -906,8 +911,11 @@ test_guards_CALL(lace_worker *lace)
     /* ZDD orders its nodes by identity rather than by rank and shares the
        arena, so a permuted order would be meaningless for it. */
     test_assert(zdd_init() == SYLVAN_OK);
+    const uint64_t sifts = sylvan_sift_count();
     test_assert(sylvan_sift_report(NULL, &result) == SYLVAN_ERR_INVALID);
+    /* Refused before its session opened: nothing to report, and no sift. */
     test_assert(result.initial_size == 0 && result.swaps == 0);
+    test_assert(sylvan_sift_count() == sifts);
     test_assert(sylvan_sift(NULL) == SYLVAN_ERR_INVALID);
 
     test_assert(listdd_init() == SYLVAN_OK);

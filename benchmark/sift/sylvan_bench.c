@@ -31,8 +31,16 @@
  * reordering: the vectors index variables by identity, and a model count does
  * not depend on the order at all. mtbdd_is_valid additionally checks that
  * every node still has strictly increasing rank down every edge.
+ *
+ * The count is a double (bdd_sat_count_double), and exact as well
+ * (bdd_sat_count_u64) where it fits in 64 bits; for a circuit, it does not
+ * fit whenever the circuit has more than 64 inputs. See counts_agree for how
+ * the two counts of a root are compared. Only the evaluation is compared
+ * across tools, as eval_hash; the counts are a check of each tool against
+ * itself.
  */
 
+#include <math.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -140,7 +148,15 @@ static BDDSET   varset;
 /* Soundness bookkeeping. */
 static uint8_t *vectors;    /* opt_verify * n_var, indexed by identity       */
 static uint8_t *eval_before;
-static uint64_t *sat_before;
+
+/* One root's model count over all n_var variables. */
+typedef struct {
+    double   approx;        /* bdd_sat_count_double; +inf past DBL_MAX       */
+    int      exact_ok;      /* <exact> was taken: the count fits in 64 bits */
+    uint64_t exact;         /* bdd_sat_count_u64                             */
+} model_count;
+
+static model_count *sat_before;
 
 static int
 alloc_case(int vars, int roots)
@@ -345,27 +361,97 @@ fnv(const uint8_t *p, size_t n)
     return h;
 }
 
+/*
+ * Every root's model count: the double, and the exact count where the double
+ * says it fits. The exact count is not merely attempted: on a count past
+ * 2^64 bdd_sat_count_u64 fails with SYLVAN_ERR_OVERFLOW, and a failed
+ * subresult is not cached, so the attempt walks every path through the nodes
+ * whose counts overflow -- exponentially many on a circuit of a few hundred
+ * inputs. Under 2^63 the double is close enough to the count that the count
+ * is under 2^64, and then no subresult overflows either: each is at most the
+ * whole.
+ */
 static int
-satcounts_CALL(lace_worker *lace, uint64_t *out)
+satcounts_CALL(lace_worker *lace, model_count *out)
 {
     for (int r = 0; r < n_root; r++) {
-        if (bdd_sat_count_u64_CALL(lace, &out[r], root[r], varset) != SYLVAN_OK) {
+        out[r].approx = bdd_sat_count_double_CALL(lace, root[r], varset);
+        if (isnan(out[r].approx)) {
+            fprintf(stderr, "verify: bdd_sat_count_double of output %d is "
+                    "NaN\n", r);
             return -1;
         }
+        out[r].exact_ok = 0;
+        out[r].exact = 0;
+        if (!(out[r].approx < 9223372036854775808.0)) continue;   /* 2^63 */
+        const int status =
+            bdd_sat_count_u64_CALL(lace, &out[r].exact, root[r], varset);
+        if (status != SYLVAN_OK) {
+            fprintf(stderr, "verify: bdd_sat_count_u64 of output %d failed "
+                    "(status %d)\n", r, status);
+            return -1;
+        }
+        out[r].exact_ok = 1;
     }
     return 0;
 }
 
+/*
+ * Whether two counts of the same function agree. Exactly, where both have the
+ * exact count. Otherwise the doubles must agree to a relative 1e-9: before
+ * and after the sift they are summed in different orders and may round
+ * differently, by at most about n_var ulps (1e-13 for the largest circuits),
+ * while an infinite count (past 2^1024) only matches another. That includes
+ * a count so close to 2^63 that rounding put one side under it and the other
+ * not. cudd_bench compares Cudd_CountMinterm by the same rule.
+ */
+static int
+doubles_agree(double a, double b)
+{
+    if (a == b) return 1;
+    if (!isfinite(a) || !isfinite(b)) return 0;
+    const double diff = a > b ? a - b : b - a;
+    const double scale = a > 0 ? a : -a;
+    return diff <= 1e-9 * scale;
+}
+
+static int
+counts_agree(const model_count *a, const model_count *b)
+{
+    if (a->exact_ok && b->exact_ok) return a->exact == b->exact;
+    return doubles_agree(a->approx, b->approx);
+}
+
+/* A count as a JSON number: exact where it fits, else the double printed as
+   an integer, and null for the infinite one, which JSON cannot spell. */
+static void
+print_count(const model_count *c)
+{
+    if (c->exact_ok) printf("%llu", (unsigned long long)c->exact);
+    else if (isfinite(c->approx)) printf("%.0f", c->approx);
+    else printf("null");
+}
+
+/* The same for a checksum of the op phase, into <buf>. */
+static const char *
+json_double(char *buf, size_t size, double x)
+{
+    if (isfinite(x)) snprintf(buf, size, "%.6g", x);
+    else snprintf(buf, size, "null");
+    return buf;
+}
+
 /* An ordinary operation-heavy phase over the same forest: every pair of
    outputs, conjoined and exclusive-ored. Pure BDD work whose cost tracks the
-   size of the diagrams it walks, which is the point. */
+   size of the diagrams it walks, which is the point. The checksum is CUDD's
+   driver's: the double model counts, count(and) + 2 count(xor), summed. */
 static int
-op_phase_CALL(lace_worker *lace, double *seconds, uint64_t *checksum)
+op_phase_CALL(lace_worker *lace, double *seconds, double *checksum)
 {
     BDD a = bdd_false, b = bdd_false;
     mtbdd_protect(&a);
     mtbdd_protect(&b);
-    uint64_t sum = 0;
+    double sum = 0.0;
     const double t0 = now();
     int rc = -1;
 
@@ -373,16 +459,15 @@ op_phase_CALL(lace_worker *lace, double *seconds, uint64_t *checksum)
         for (int j = i + 1; j < n_root; j++) {
             if (bdd_and_CALL(lace, &a, root[i], root[j]) != SYLVAN_OK) goto done;
             if (bdd_xor_CALL(lace, &b, root[i], root[j]) != SYLVAN_OK) goto done;
-            uint64_t ca = 0, cb = 0;
-            if (bdd_sat_count_u64_CALL(lace, &ca, a, varset) != SYLVAN_OK) goto done;
-            if (bdd_sat_count_u64_CALL(lace, &cb, b, varset) != SYLVAN_OK) goto done;
-            sum += ca ^ (cb << 1);
+            sum += bdd_sat_count_double_CALL(lace, a, varset);
+            sum += 2.0 * bdd_sat_count_double_CALL(lace, b, varset);
         }
     }
     *seconds = now() - t0;
     *checksum = sum;
     rc = 0;
 done:
+    if (rc != 0) fprintf(stderr, "ops: an operation failed\n");
     mtbdd_unprotect(&b);
     mtbdd_unprotect(&a);
     return rc;
@@ -482,27 +567,33 @@ run_CALL(lace_worker *lace)
 
     /* Soundness inputs, taken before anything moves. */
     uint8_t *eval_after = NULL;
-    uint64_t *sat_after = NULL;
+    model_count *sat_after = NULL;
     if (opt_verify > 0) {
         vectors = (uint8_t*)malloc((size_t)opt_verify * n_var);
         eval_before = (uint8_t*)malloc((size_t)opt_verify * n_root);
         eval_after  = (uint8_t*)malloc((size_t)opt_verify * n_root);
-        sat_before  = (uint64_t*)malloc((size_t)n_root * sizeof(uint64_t));
-        sat_after   = (uint64_t*)malloc((size_t)n_root * sizeof(uint64_t));
+        sat_before  = (model_count*)malloc((size_t)n_root * sizeof(model_count));
+        sat_after   = (model_count*)malloc((size_t)n_root * sizeof(model_count));
         if (vectors == NULL || eval_before == NULL || eval_after == NULL ||
-            sat_before == NULL || sat_after == NULL) return 1;
+            sat_before == NULL || sat_after == NULL) {
+            fprintf(stderr, "verify: allocation failed\n");
+            return 1;
+        }
         srand(opt_seed);
         for (int v = 0; v < opt_verify; v++) {
             for (int i = 0; i < n_var; i++) {
                 vectors[(size_t)v * n_var + i] = (uint8_t)(rand() & 1);
             }
         }
-        if (evaluate_CALL(lace, eval_before) != 0) return 1;
+        if (evaluate_CALL(lace, eval_before) != 0) {
+            fprintf(stderr, "verify: evaluation before the sift failed\n");
+            return 1;
+        }
         if (satcounts_CALL(lace, sat_before) != 0) return 1;
     }
 
     double ops_before_s = -1.0, ops_after_s = -1.0;
-    uint64_t ops_before_sum = 0, ops_after_sum = 0;
+    double ops_before_sum = 0.0, ops_after_sum = 0.0;
     if (opt_ops) {
         if (op_phase_CALL(lace, &ops_before_s, &ops_before_sum) != 0) return 1;
     }
@@ -563,22 +654,40 @@ run_CALL(lace_worker *lace)
     int valid = 1;
     uint64_t eval_hash = 0;
     if (opt_verify > 0) {
-        if (evaluate_CALL(lace, eval_after) != 0) return 1;
+        if (evaluate_CALL(lace, eval_after) != 0) {
+            fprintf(stderr, "verify: evaluation after the sift failed\n");
+            return 1;
+        }
         eval_hash = fnv(eval_after, (size_t)opt_verify * n_root);
         if (satcounts_CALL(lace, sat_after) != 0) return 1;
         sound = 1;
-        if (memcmp(eval_before, eval_after, (size_t)opt_verify * n_root) != 0) sound = 0;
-        for (int r = 0; r < n_root; r++) {
-            if (sat_before[r] != sat_after[r]) sound = 0;
+        for (size_t i = 0; i < (size_t)opt_verify * n_root; i++) {
+            if (eval_before[i] == eval_after[i]) continue;
+            fprintf(stderr, "verify: output %d differs on vector %d after "
+                    "the sift\n", (int)(i % (size_t)n_root),
+                    (int)(i / (size_t)n_root));
+            sound = 0;
+            break;
         }
         for (int r = 0; r < n_root; r++) {
-            if (!mtbdd_is_valid_CALL(lace, root[r])) valid = 0;
+            if (counts_agree(&sat_before[r], &sat_after[r])) continue;
+            fprintf(stderr, "verify: output %d has %.17g models before the "
+                    "sift and %.17g after\n", r,
+                    sat_before[r].approx, sat_after[r].approx);
+            sound = 0;
+        }
+        for (int r = 0; r < n_root; r++) {
+            if (mtbdd_is_valid_CALL(lace, root[r])) continue;
+            fprintf(stderr, "verify: output %d is not a valid diagram after "
+                    "the sift\n", r);
+            valid = 0;
         }
     }
     if (opt_ops) {
         if (op_phase_CALL(lace, &ops_after_s, &ops_after_sum) != 0) return 1;
     }
 
+    char ops_before_buf[32], ops_after_buf[32];
     printf("RESULT {\"tool\":\"sylvan\",\"mode\":\"%s\",\"case\":\"%s\""
            ",\"workers\":%d,\"sift\":%d"
            ",\"threshold\":%u,\"max_swaps\":%u,\"max_vars\":%u,\"growth\":%.3f"
@@ -590,7 +699,7 @@ run_CALL(lace_worker *lace)
            ",\"swaps\":%llu,\"refusals\":%llu,\"vars_sifted\":%u"
            ",\"sound\":%d,\"valid\":%d,\"eval_hash\":\"%llx\""
            ",\"ops_before_s\":%.6f,\"ops_after_s\":%.6f"
-           ",\"ops_before_sum\":%llu,\"ops_after_sum\":%llu"
+           ",\"ops_before_sum\":%s,\"ops_after_sum\":%s"
            ",\"backend\":\"%s\",\"full_legs\":%d,\"time_limit\":%.3f"
            ",\"auto\":%d,\"sifts\":%llu,\"batched\":%d"
            ",\"group_pairs\":%d,\"split_pairs\":%u",
@@ -608,15 +717,16 @@ run_CALL(lace_worker *lace)
            (unsigned)result.vars_sifted,
            sound, valid, (unsigned long long)eval_hash,
            ops_before_s, ops_after_s,
-           (unsigned long long)ops_before_sum,
-           (unsigned long long)ops_after_sum,
+           json_double(ops_before_buf, sizeof(ops_before_buf), ops_before_sum),
+           json_double(ops_after_buf, sizeof(ops_after_buf), ops_after_sum),
            SIFT_BENCH_BACKEND, opt_fulllegs, opt_timelimit,
            opt_auto, (unsigned long long)sifts, opt_batched,
            opt_grouppairs, (unsigned)split_pairs);
     if (opt_verify > 0) {
         printf(", \"satsum\":[");
         for (int r = 0; r < n_root && r < 8; r++) {
-            printf("%s%llu", r ? "," : "", (unsigned long long)sat_after[r]);
+            printf("%s", r ? "," : "");
+            print_count(&sat_after[r]);
         }
         printf("]");
     }

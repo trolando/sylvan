@@ -19,6 +19,7 @@
  * experiments that sweep the caps on both tools.
  */
 
+#include <math.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -273,6 +274,33 @@ fnv(const uint8_t *p, size_t n)
     return h;
 }
 
+/*
+ * Whether two model counts of the same function agree: sylvan_bench's rule
+ * for its double counts. Cudd_CountMinterm is a double, summed in a different
+ * order once the variables have moved, so past 2^53 the two may round
+ * differently; they must agree to a relative 1e-9. Its two out-of-range
+ * answers only match themselves: +inf past the double range, and
+ * CUDD_OUT_OF_MEM (-1) beyond 2044 variables or when its table fails.
+ */
+static int
+counts_agree(double a, double b)
+{
+    if (a == b) return 1;
+    if (!isfinite(a) || !isfinite(b) || a < 0 || b < 0) return 0;
+    const double diff = a > b ? a - b : b - a;
+    return diff <= 1e-9 * a;
+}
+
+/* A double as a JSON number, into <buf>; null where JSON has none (an
+   infinite count) or where CUDD gave no count (a negative one). */
+static const char *
+json_double(char *buf, size_t size, const char *fmt, double x)
+{
+    if (isfinite(x) && x >= 0) snprintf(buf, size, fmt, x);
+    else snprintf(buf, size, "null");
+    return buf;
+}
+
 static void
 op_phase(double *seconds, double *checksum)
 {
@@ -484,15 +512,28 @@ main(int argc, char **argv)
             mint_after[r] = Cudd_CountMinterm(dd, root[r], n_var);
         }
         sound = 1;
-        if (memcmp(eval_before, eval_after, (size_t)opt_verify * n_root) != 0) sound = 0;
+        for (size_t i = 0; i < (size_t)opt_verify * n_root; i++) {
+            if (eval_before[i] == eval_after[i]) continue;
+            fprintf(stderr, "verify: output %d differs on vector %d after "
+                    "the sift\n", (int)(i % (size_t)n_root),
+                    (int)(i / (size_t)n_root));
+            sound = 0;
+            break;
+        }
         for (int r = 0; r < n_root; r++) {
-            if (mint_before[r] != mint_after[r]) sound = 0;
+            if (counts_agree(mint_before[r], mint_after[r])) continue;
+            fprintf(stderr, "verify: output %d has %.17g models before the "
+                    "sift and %.17g after\n", r, mint_before[r],
+                    mint_after[r]);
+            sound = 0;
         }
         valid = Cudd_DebugCheck(dd) == 0;
+        if (!valid) fprintf(stderr, "verify: Cudd_DebugCheck failed\n");
         eval_hash = fnv(eval_after, (size_t)opt_verify * n_root);
     }
     if (opt_ops) op_phase(&ops_after_s, &ops_after_sum);
 
+    char ops_before_buf[32], ops_after_buf[32];
     printf("RESULT {\"tool\":\"cudd\",\"mode\":\"%s\",\"case\":\"%s\""
            ",\"workers\":1,\"sift\":%d,\"unlimited\":%d,\"growth\":%.3f"
            ",\"var_order\":\"%s\",\"order_seed\":%u"
@@ -502,7 +543,7 @@ main(int argc, char **argv)
            ",\"sift_s\":%.6f,\"sift_ok\":%d,\"swaps\":%.0f"
            ",\"sound\":%d,\"valid\":%d,\"eval_hash\":\"%llx\""
            ",\"ops_before_s\":%.6f,\"ops_after_s\":%.6f"
-           ",\"ops_before_sum\":%.6g,\"ops_after_sum\":%.6g",
+           ",\"ops_before_sum\":%s,\"ops_after_sum\":%s",
            opt_mode, opt_case ? opt_case : "",
            opt_sift, opt_unlimited, opt_growth,
            opt_varorder, opt_orderseed,
@@ -511,11 +552,17 @@ main(int argc, char **argv)
            live_before, live_after,
            sift_s, sift_ok, swaps,
            sound, valid, (unsigned long long)eval_hash,
-           ops_before_s, ops_after_s, ops_before_sum, ops_after_sum);
+           ops_before_s, ops_after_s,
+           json_double(ops_before_buf, sizeof(ops_before_buf), "%.6g",
+                       ops_before_sum),
+           json_double(ops_after_buf, sizeof(ops_after_buf), "%.6g",
+                       ops_after_sum));
     if (opt_verify > 0) {
         printf(", \"mintsum\":[");
         for (int r = 0; r < n_root && r < 8; r++) {
-            printf("%s%.0f", r ? "," : "", mint_after[r]);
+            char buf[400];
+            printf("%s%s", r ? "," : "",
+                   json_double(buf, sizeof(buf), "%.0f", mint_after[r]));
         }
         printf("]");
     }

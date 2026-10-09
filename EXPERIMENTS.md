@@ -53,7 +53,7 @@ row, but not the hardware.
 | Sylvan | the commit you run: `git rev-parse HEAD` (the paper's batch: *fill in*) | CMake Release, Ninja, one tree per configuration (`build-matrix.sh`) |
 | Lace | 2.4.0 (tag `v2.4.0`, `92b9f99100c87c7ae8895fd16f3552a4649e3b15`) | brought in by Sylvan's build through FetchContent; `--lace-dir` builds from a local copy instead |
 | CUDD | 3.0.0, commit `f54f533303640afd5dbe47a05ebeabb3066f2a25` of [cuddorg/cudd](https://github.com/cuddorg/cudd) ("Import cudd-3.0.0.tar.gz") | `./configure CFLAGS="-O3 -DNDEBUG" CXXFLAGS="-O3 -DNDEBUG" && make`, in place |
-| bdd-benchmark (H4 only) | study branch *PLACEHOLDER: branch name and commit* | see [H4](#h4-when-sifting-pays) |
+| bdd-benchmark (H4 only) | branch `sift-hook`, tip `9cd5853` (8 commits on `codex/sylvan-2-study` at `2c8097f`; local until pushed to a fork, never to upstream) | see [H4](#h4-when-sifting-pays) |
 
 `build-matrix.sh` writes the Sylvan commit, compiler, CMake and Lace versions
 and CUDD's version and `CFLAGS` into `builds/manifest.json`, and every row
@@ -327,19 +327,43 @@ real workloads (relational products, McNet reachability, QBF), not in this
 repository. Pin both sides:
 
 ```sh
-git clone https://github.com/SSoelvsten/bdd-benchmark.git
-git -C bdd-benchmark checkout <PLACEHOLDER: commit of the sift-study branch>
-# build it against this Sylvan tree, at the commit above, as that branch's
-# README says (<PLACEHOLDER: its CMake option naming the Sylvan source>)
+# The sift hook lives on branch sift-hook of the owner's bdd-benchmark fork
+# (tip 9cd5853, 8 commits on codex/sylvan-2-study at 2c8097f). Upstream
+# SSoelvsten/bdd-benchmark does not carry it.
+git clone <owner's fork of bdd-benchmark> bdd-benchmark
+git -C bdd-benchmark checkout 9cd585367fbf5feb88c7249f37313e5754d56bdc
+cmake -S bdd-benchmark -B build-list -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DBDD_BENCHMARK_SYLVAN2_API=ON -DBDD_BENCHMARK_SYLVAN2_PROTECTED_API=ON \
+  -DBDD_BENCHMARK_SYLVAN2_SIFT_API=ON -DBDD_BENCHMARK_LACE2_API=ON \
+  -DBDD_BENCHMARK_SYLVAN_SOURCE_DIR=<this Sylvan tree at the commit above> \
+  -DSYLVAN_NODES_TABLE=list -DADIAR=OFF -DBUDDY=OFF -DCAL=OFF -DCUDD=OFF -DLIBBDD=OFF -DOXIDD=OFF
+cmake --build build-list --target sylvan_relprod_bcdd sylvan_mcnet_bcdd sylvan_qbf_bcdd sylvan_picotrav_bcdd
+# a second build with -DSYLVAN_NODES_TABLE=trie for the table comparison
 ```
+
+The hook sifts when the workload is started with `-R`. Two environment variables select the
+variant and are recorded in every `SIFT {json}` line the adapter prints to stderr:
+`SYLVAN_SIFT_MODE=off|upfront|auto|both` (default `upfront`: one `sylvan_sift_report` before
+the main computation, as the August probe did; `auto`: `sylvan_gc_set_auto_sift` plus explicit
+`sylvan_gc()` reorder points after each image, so a sift happens only when a collection
+recommends it) and `SYLVAN_SIFT_PAIRS=0|1` (default 0; 1 sets `group_pairs`, so the pairs
+(2k, 2k+1) move as blocks and `split_pairs` stays 0). Optional caps: `SYLVAN_SIFT_MAX_SWAPS`,
+`SYLVAN_SIFT_MAX_VARS`, `SYLVAN_SIFT_TIME_LIMIT`, `SYLVAN_SIFT_FACTOR`. The study driver
+`tools/sylvan-study.py --sift-mode off upfront auto --sift-pairs 0 1 --workers 1 8` runs the
+matrix and `tools/sylvan-summarize.py` groups by mode and pair setting (`median_sifts`,
+`median_sift_s`, `median_split_pairs`).
 
 The inputs are the McNet, relprod and QBF families of
 `benchmark/sift/fetch-inputs.sh --families`, with the checksums given there.
-The study compares every instance unsifted against sifted (the library-default
-sift through the hook, `<PLACEHOLDER: the branch's sift flag>`), on `list`,
-at P1 and P8, `-M 4096`, n=3 interleaved, and reports the sift time, the
-result sizes and the end-to-end time. Fill in the commands of the pinned
-branch here once it exists.
+The study compares every instance unsifted (`SYLVAN_SIFT_MODE=off`, no `-R`) against the
+four sifted variants (upfront/auto x independent/paired), on `list` and `trie`, at P1 and P8,
+`-M 4096`, n=3 interleaved, and reports the sift time, swaps, `split_pairs`, the result sizes
+(relation after the sift, product, reachable set) and the end-to-end time. Correctness
+protocol: every sifted run's answer (`relprod/satcount` and `states/satcount`, McNet
+`reachability/satcount` and `deadlock/satcount`, QBF `satisfiable`, Picotrav `equal/result`)
+must equal the unsifted run's; the summarizer flags any difference. Sylvan before `d4c99b9`
+fails this protocol (its fused relational product assumed adjacent variable pairs), which is
+why no earlier relprod/McNet sift numbers are used.
 
 ### H5 Memory-system lessons
 

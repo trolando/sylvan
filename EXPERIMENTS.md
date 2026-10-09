@@ -354,3 +354,27 @@ and the sift time, with the THP mode in every row. Run it under THP `madvise`
 (see the checklist), and with `SB_WRAP="perf stat ..."` for the dTLB counters.
 The table gives build and sift medians with and without the advice and the
 deltas, and says when the rows were measured under another THP mode.
+
+## Dependency surface of the reordering stack
+
+For reviewers asking how much of Sylvan the reordering work rests on, measured on this tree
+against the base it was built on (`608011f`):
+
+- Required code: 5,897 library lines. 3,309 are in six new files (`reorder.c` 2,025, `sift.c`
+  431, `ranks.c` and the reorder headers 853); 2,588 are added inside 22 base files, three
+  quarters of them in the node-table layer (`nodes.h` 285, `nodes_trie.c` 1,057, `nodes_list.c`
+  618), the rest being 69 rank comparisons in the kernels (162 lines), the root visitors (285)
+  and the session guards (103).
+- The sift core imports 28 base symbols: 13 record-layout accessors and types, 6 node-table
+  queries, 3 status codes, 3 allocation helpers and 3 statistics counters, plus two base tasks
+  (`sylvan_gc_go`, `nodes_count_nodes`) and the Lace 2.4 work-stealing primitives.
+- Four base decisions carry the design: a handle is a stable 40-bit index of a 16-byte record
+  that is also the unique-table key; one global unique table with max-child-anchored backends
+  and a 512-slot region allocator that gives each worker one owned region; stop-the-world
+  collection in a Lace frame from roots enumerable as values, with no permanent reference
+  counts; and a variable order that appears only through explicit comparisons in the kernels.
+  Changing any of them means redesigning the swap, not rebasing it.
+- Separable: the chained tables `llcht` and `llchst` (about 5,200 lines, kept for the backend
+  comparison of H1), and about 3,000 lines of Sylvan 2.0 changes made in the same period that
+  sifting does not need (traversal-mark bitmap, handle checks, collection sizing, C++
+  exceptions, initialisation status returns, removal of by-value references).

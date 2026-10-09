@@ -151,16 +151,9 @@ struct reorder_session {
 static struct reorder_session session;
 
 /** Configuration; see the header. */
-static int reorder_release_at_swap_end = 1;
 static int reorder_validate = 0;
 static uint32_t reorder_overflow_at = REORDER_COUNT_SENTINEL;
 static int reorder_batched = 1;
-
-void
-sylvan_reorder_set_release_at_swap_end(int enable)
-{
-    reorder_release_at_swap_end = enable ? 1 : 0;
-}
 
 void
 sylvan_reorder_set_batched(int enable)
@@ -1704,9 +1697,9 @@ reorder_classify(void)
     if (status != SYLVAN_OK) return status;
 
     /* Deaths: the queue they are announced on, and the array of slots the
-       retirement loop appends one entry to for each of them. The array is not
-       emptied at every swap -- the deferred release policy keeps it until the
-       session ends -- so it is what it already holds plus this swap's bound. */
+       retirement loop appends one entry to for each of them. Every swap that
+       retires also releases, so the array normally starts empty; reserving
+       what it already holds plus this swap's bound does not depend on that. */
     const size_t deaths = 2u * (k + k_map);
     if (deaths > session.queue_capacity) {
         uint64_t *grown = (uint64_t*)realloc(
@@ -2213,7 +2206,7 @@ sylvan_varswap_CALL(lace_worker *lace, uint32_t rank,
     reorder_run_retirement(lace, &died, &deep);
     REORDER_TIMING_STOP(retire, timing_retire);
     REORDER_TIMING_START(timing_release);
-    if (reorder_release_at_swap_end) reorder_release_dead();
+    reorder_release_dead();
     REORDER_TIMING_STOP(release, timing_release);
 
     if (sylvan_ranks_swap_adjacent(rank) != SYLVAN_OK) {

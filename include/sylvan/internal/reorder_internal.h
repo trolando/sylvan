@@ -184,15 +184,6 @@ int sylvan_reorder_interact_build(void);
 int sylvan_reorder_interact(uint32_t a, uint32_t b);
 
 /**
- * Physical slot reuse policy. Nonzero (the default)
- * releases retired slots at the end of each swap, which bounds memory; zero
- * defers every release to the end of the session, which costs nothing per
- * swap but lets garbage accumulate. Retirement itself is unconditional either
- * way, so scoring is exact in both.
- */
-void sylvan_reorder_set_release_at_swap_end(int enable);
-
-/**
  * Batched index surgery (design experiment H2). Nonzero (the default) hands a
  * swap's removals and re-indexings to the backend as whole sets wherever it
  * implements NODES_CAP_BATCH and more than one worker runs; zero makes every

@@ -614,15 +614,10 @@ test_overflow_preflight_CALL(lace_worker *lace)
 }
 
 /**
- * Long random swap sequences inside a single session, with both slot release
- * policies. A session that runs many swaps is where the node lists, the slot
- * reuse and the reference counts are actually exercised against each other.
- *
- * Deferring every release to the end of the session is allowed to run out of
- * room -- that is the whole trade-off of the policy, and this table never
- * grows -- so those rounds accept SYLVAN_ERR_OOM. What they do not accept is
- * a forest that is anything other than intact afterwards, which is the point
- * of stopping a session halfway rather than rolling anything back.
+ * Long random swap sequences inside a single session. A session that runs
+ * many swaps is where the node lists, the slot reuse and the reference counts
+ * are actually exercised against each other. Every swap releases the slots it
+ * retired, so a round never runs out of room on this table, which never grows.
  */
 static int
 test_stress_CALL(lace_worker *lace)
@@ -635,9 +630,6 @@ test_stress_CALL(lace_worker *lace)
             ranks[i] = (uint32_t)(test_random() % (TEST_VARS - 1));
         }
 
-        const int release_at_swap_end = round & 1;
-        sylvan_reorder_set_release_at_swap_end(release_at_swap_end);
-
         /* Half the rounds promote almost every node into the sparse overflow
            map, which no realistic forest would ever do, so that both halves
            of the reference count representation are exercised. */
@@ -645,9 +637,9 @@ test_stress_CALL(lace_worker *lace)
 
         /* Opening a session collects, which is what keeps a long run going:
            without it the intermediate nodes the checks above left behind
-           would fill this table, which never grows. The round used to call
-           sylvan_gc() itself; now it checks that the session did, exactly
-           once, rather than trusting a convention. */
+           would fill this table, which never grows. The round checks that
+           the session collected, exactly once, rather than calling
+           sylvan_gc() itself. */
         const uint64_t collections = sylvan_gc_count();
         const uint64_t unpreflighted = nodes_late_allocations();
 
@@ -660,17 +652,8 @@ test_stress_CALL(lace_worker *lace)
            whichever backend is underneath. */
         test_assert(nodes_late_allocations() == unpreflighted);
 
-        if (release_at_swap_end) {
-            test_assert(status == SYLVAN_OK);
-            test_assert(result.swaps == TEST_STRESS_SWAPS);
-        } else {
-            test_assert(status == SYLVAN_OK || status == SYLVAN_ERR_OOM);
-            if (status == SYLVAN_ERR_OOM) {
-                printf("  round %d ran %llu of %d swaps before the deferred "
-                       "garbage filled the table\n", round,
-                       (unsigned long long)result.swaps, TEST_STRESS_SWAPS);
-            }
-        }
+        test_assert(status == SYLVAN_OK);
+        test_assert(result.swaps == TEST_STRESS_SWAPS);
         test_assert(result.deep_deaths == 0);
         promotions += sylvan_reorder_overflow_promotions();
 
@@ -683,7 +666,6 @@ test_stress_CALL(lace_worker *lace)
     /* The rounds with the lowered threshold really did use the overflow map. */
     if (test_stress_rounds > 2) test_assert(promotions > 0);
 
-    sylvan_reorder_set_release_at_swap_end(1);
     sylvan_reorder_set_overflow_at(UINT16_MAX);
     return 0;
 }

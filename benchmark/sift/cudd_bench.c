@@ -279,7 +279,8 @@ fnv(const uint8_t *p, size_t n)
  * for its double counts. Cudd_CountMinterm is a double, summed in a different
  * order once the variables have moved, so past 2^53 the two may round
  * differently; they must agree to a relative 1e-9. Its two out-of-range
- * answers only match themselves: +inf past the double range, and
+ * answers only match themselves: DD_PLUS_INF_VAL past the double range --
+ * HUGE_VAL, or 10e301 where configure did not find IEEE 754 -- and
  * CUDD_OUT_OF_MEM (-1) beyond 2044 variables or when its table fails.
  */
 static int
@@ -291,12 +292,13 @@ counts_agree(double a, double b)
     return diff <= 1e-9 * a;
 }
 
-/* A double as a JSON number, into <buf>; null where JSON has none (an
-   infinite count) or where CUDD gave no count (a negative one). */
+/* A double as a JSON number, into <buf>; null where JSON has none or CUDD
+   has no count: an infinite one, including DD_PLUS_INF_VAL, or a negative
+   one. */
 static const char *
 json_double(char *buf, size_t size, const char *fmt, double x)
 {
-    if (isfinite(x) && x >= 0) snprintf(buf, size, fmt, x);
+    if (isfinite(x) && x >= 0 && x < DD_PLUS_INF_VAL) snprintf(buf, size, fmt, x);
     else snprintf(buf, size, "null");
     return buf;
 }

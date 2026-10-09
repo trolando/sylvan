@@ -110,6 +110,8 @@ Under `--auto` the row's `sifts` field says whether a sift happened, and the
 sift, and prints `sylvan_stats_report` after each on stderr, between
 `SIFT-STATS-BEGIN build|sift` and `SIFT-STATS-END ...` lines; the counters
 exist only in a `-DSYLVAN_STATS=ON` build, so time such a build separately.
+`--no-batch` calls `sylvan_reorder_set_batched(0)`, so every swap removes and
+re-indexes its nodes one at a time, and the row's `batched` field records it.
 
 `cudd_bench` disables automatic reordering, sets `maxGrowth` to `--growth`
 and raises `siftMaxVar` and `siftMaxSwap` to `INT_MAX`, so that it is as

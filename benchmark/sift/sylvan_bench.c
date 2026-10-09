@@ -67,6 +67,7 @@ static double   opt_timelimit = 0.0;   /* seconds, 0 = unlimited             */
 static int      opt_fulllegs  = 0;     /* walk every leg to the end          */
 static int      opt_auto      = 0;     /* sift through sylvan_gc's auto sift */
 static int      opt_stats     = 0;     /* counters of the build and the sift */
+static int      opt_batched   = 1;     /* batched index surgery in swaps     */
 static uint64_t opt_memory    = 8ull << 30;
 static unsigned opt_seed      = 12345;
 static const char *opt_varorder = "file";
@@ -506,7 +507,7 @@ run_CALL(lace_worker *lace)
            ",\"ops_before_s\":%.6f,\"ops_after_s\":%.6f"
            ",\"ops_before_sum\":%llu,\"ops_after_sum\":%llu"
            ",\"backend\":\"%s\",\"full_legs\":%d,\"time_limit\":%.3f"
-           ",\"auto\":%d,\"sifts\":%llu",
+           ",\"auto\":%d,\"sifts\":%llu,\"batched\":%d",
            opt_mode, opt_case ? opt_case : "",
            opt_workers, opt_sift,
            opt_threshold, opt_maxswaps, opt_maxvars, opt_growth,
@@ -524,7 +525,7 @@ run_CALL(lace_worker *lace)
            (unsigned long long)ops_before_sum,
            (unsigned long long)ops_after_sum,
            SIFT_BENCH_BACKEND, opt_fulllegs, opt_timelimit,
-           opt_auto, (unsigned long long)sifts);
+           opt_auto, (unsigned long long)sifts, opt_batched);
     if (opt_verify > 0) {
         printf(", \"satsum\":[");
         for (int r = 0; r < n_root && r < 8; r++) {
@@ -554,7 +555,7 @@ usage(FILE *f)
         "          --case NAME  --var-order file|reverse|random  --order-seed S\n"
         "  sift:   --threshold N (0)  --growth G (1.2)  --max-swaps N (0)\n"
         "          --max-vars N (0)  --time-limit S (0)  --full-legs  --auto\n"
-        "          --no-sift\n"
+        "          --no-sift  --no-batch (per-node index surgery in swaps)\n"
         "  checks: --verify VECTORS  --seed S  --ops  --order\n"
         "          --stats  (counters of the build and of the sift, on stderr;\n"
         "                    needs a -DSYLVAN_STATS=ON build)\n"
@@ -587,6 +588,7 @@ main(int argc, char **argv)
         else if (!strcmp(a, "--full-legs"))      { opt_fulllegs = 1; }
         else if (!strcmp(a, "--auto"))           { opt_auto = 1; }
         else if (!strcmp(a, "--stats"))          { opt_stats = 1; }
+        else if (!strcmp(a, "--no-batch"))       { opt_batched = 0; }
         else if (!strcmp(a, "--memory") && v)    { opt_memory = strtoull(v, NULL, 10); i++; }
         else if (!strcmp(a, "--seed") && v)      { opt_seed = (unsigned)strtoul(v, NULL, 10); i++; }
         else if (!strcmp(a, "--var-order") && v) { opt_varorder = v; i++; }
@@ -624,6 +626,7 @@ main(int argc, char **argv)
         fprintf(stderr, "sylvan init failed\n");
         return 1;
     }
+    sylvan_reorder_set_batched(opt_batched);
 
     const int rc = run();
 

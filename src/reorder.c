@@ -112,6 +112,8 @@ struct reorder_session {
        Nodes the swaps create may land anywhere in the table. */
     _Atomic(size_t) marked_words;
 
+    /* The per-slot arrays span the whole table, but only the slots of the
+       forest are ever touched; see reorder_alloc_slots. */
     _Atomic(uint16_t) *counts;      /* per-slot reference count            */
     uint64_t *pinned;               /* bitmap: an external root            */
     uint64_t *retired;              /* bitmap: unhashed, awaiting release  */
@@ -815,13 +817,37 @@ reorder_free_lists(struct reorder_list *lists)
     free(lists);
 }
 
+/**
+ * A zeroed array of <bytes> with an entry per table slot. It is as large as
+ * the table, which is sized for the largest forest the run may hold, while a
+ * session touches only the entries of the forest it sifts. So it is mapped,
+ * not taken from the heap: a fresh mapping costs the pages that are touched
+ * and no others, where calloc may hand out recycled heap memory and zero all
+ * of it -- glibc raises its mapping threshold after freeing a large block,
+ * so a later session's arrays may well come from the heap. Small pages, as
+ * sylvan_alloc_sparse gives, keep a scattered touch from committing 2 MiB.
+ */
+static void*
+reorder_alloc_slots(size_t bytes)
+{
+    return sylvan_alloc_sparse(bytes);
+}
+
+static void
+reorder_free_slots(void *array, size_t bytes)
+{
+    sylvan_free_aligned(array, bytes);
+}
+
 static void
 reorder_free_state(void)
 {
-    free((void*)session.counts);
-    free(session.pinned);
-    free(session.retired);
-    free(session.seen);
+    const size_t words = bitmap_words(session.size);
+    reorder_free_slots((void*)session.counts,
+                       session.size * sizeof(_Atomic(uint16_t)));
+    reorder_free_slots(session.pinned, words * sizeof(uint64_t));
+    reorder_free_slots(session.retired, words * sizeof(uint64_t));
+    reorder_free_slots(session.seen, words * sizeof(uint64_t));
     free(session.interact);
     reorder_free_lists(session.decision);
     reorder_free_lists(session.maps);
@@ -881,11 +907,11 @@ sylvan_reorder_begin_CALL(lace_worker *lace)
 
     const size_t words = bitmap_words(session.size);
     const size_t lists = session.identities == 0 ? 1u : session.identities;
-    session.counts = (_Atomic(uint16_t)*)calloc(
-        session.size, sizeof(_Atomic(uint16_t)));
-    session.pinned = (uint64_t*)calloc(words, sizeof(uint64_t));
-    session.retired = (uint64_t*)calloc(words, sizeof(uint64_t));
-    session.seen = (uint64_t*)calloc(words, sizeof(uint64_t));
+    session.counts = (_Atomic(uint16_t)*)reorder_alloc_slots(
+        session.size * sizeof(_Atomic(uint16_t)));
+    session.pinned = (uint64_t*)reorder_alloc_slots(words * sizeof(uint64_t));
+    session.retired = (uint64_t*)reorder_alloc_slots(words * sizeof(uint64_t));
+    session.seen = (uint64_t*)reorder_alloc_slots(words * sizeof(uint64_t));
     session.maps = (struct reorder_list*)calloc(
         lists, sizeof(struct reorder_list));
     if (!session.native_enumerate) {
@@ -1258,11 +1284,12 @@ sylvan_reorder_interact_build(void)
 
     struct interact_scan scan;
     memset(&scan, 0, sizeof(scan));
-    scan.visited = (uint64_t*)calloc(bitmap_words(session.size), sizeof(uint64_t));
+    const size_t visited_bytes = bitmap_words(session.size) * sizeof(uint64_t);
+    scan.visited = (uint64_t*)reorder_alloc_slots(visited_bytes);
     scan.support = (uint32_t*)malloc((size_t)n * sizeof(uint32_t));
     scan.in_support = (uint8_t*)calloc(n, sizeof(uint8_t));
     if (scan.visited == NULL || scan.support == NULL || scan.in_support == NULL) {
-        free(scan.visited);
+        reorder_free_slots(scan.visited, visited_bytes);
         free(scan.support);
         free(scan.in_support);
         free(session.interact);
@@ -1309,7 +1336,7 @@ sylvan_reorder_interact_build(void)
         }
     }
 
-    free(scan.visited);
+    reorder_free_slots(scan.visited, visited_bytes);
     free(scan.stack);
     free(scan.touched);
     free(scan.support);

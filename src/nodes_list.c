@@ -1046,6 +1046,10 @@ nodes_release(nodes_table* dbs, uint64_t index)
         LINK_REMOVING) {
         return SYLVAN_ERR_INVALID;
     }
+    /* first[index] roots the family of the nodes whose larger child is this
+       one, and release does not reset it either: a node nothing refers to
+       anchors nobody, so its family is already empty. Debug builds check. */
+    assert(atomic_load_explicit(dbs->first + index, memory_order_relaxed) == 0);
     atomic_store_explicit(dbs->next + index, 0, memory_order_relaxed);
 
     const uint64_t mask =

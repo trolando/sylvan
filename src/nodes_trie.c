@@ -1673,6 +1673,18 @@ nodes_release(nodes_table* dbs, uint64_t index)
         return SYLVAN_ERR_INVALID;
     }
 
+    /* The words this backend keeps for a slot outside the record are the
+       family root first[index] and the branch pair next[index*2+0..1], and
+       release does not reset them: it relies on them being empty already. They
+       are, for a node nothing refers to -- every node anchored at it is one of
+       its parents, so the family is empty, and its pair was cleared when the
+       node itself was last collected or removed below the root -- and a slot
+       handed out with either still set would start life with somebody else's
+       family hanging off it. Debug builds check the reliance. */
+    assert(atomic_load_explicit(dbs->first + index, memory_order_relaxed) == 0);
+    assert(atomic_load_explicit(dbs->next + 2 * index, memory_order_relaxed) == 0);
+    assert(atomic_load_explicit(dbs->next + 2 * index + 1, memory_order_relaxed) == 0);
+
     const uint64_t mask =
         UINT64_C(0x8000000000000000) >> (index & 63u);
     if (is_custom_bucket(dbs, index)) {

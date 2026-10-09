@@ -23,6 +23,14 @@ option(SYLVAN_STATS "Let Sylvan collect statistics at runtime" OFF)
 # contended atomic, so it distorts both timing and parallel scaling.
 option(SYLVAN_RANK_COUNTERS "Let Sylvan count variable rank lookups" OFF)
 
+# Diagnostic builds only: time every phase of every variable swap, and of the
+# reorder session around them, with the monotonic clock, and have every sift
+# print the sums to stderr as one SIFT-PHASES line. Two clock reads per phase
+# per swap, so take the breakdown from this build and the totals from one
+# without it. Off by default and free when off; see sylvan_reorder_phase_timing
+# in include/sylvan/internal/reorder_internal.h.
+option(SYLVAN_SIFT_PHASE_TIMING "Let Sylvan time the phases of every variable swap" OFF)
+
 # Diagnostic builds only: check on every node dereference that the decision
 # diagram handle's bucket index is inside the nodes table, and abort naming the
 # offending index when it is not. This puts a load and a branch on the
@@ -286,6 +294,7 @@ if(NOT sylvan_IS_TOP_LEVEL)
         SYLVAN_STATS
         SYLVAN_CHECK_HANDLES
         SYLVAN_HUGEPAGES
+        SYLVAN_SIFT_PHASE_TIMING
     )
 endif()
 

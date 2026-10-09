@@ -30,6 +30,9 @@
 /* Enable/disable the diagnostic variable rank lookup counter */
 #cmakedefine01 SYLVAN_RANK_COUNTERS
 
+/* Enable/disable the diagnostic per-phase timing of variable swaps */
+#cmakedefine01 SYLVAN_SIFT_PHASE_TIMING
+
 /* Enable/disable using mmap to allocate large amounts of memory */
 #cmakedefine01 SYLVAN_USE_MMAP
 

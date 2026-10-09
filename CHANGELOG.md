@@ -51,7 +51,10 @@ All notable changes to Sylvan will be documented in this file.
   advice for large tables, to measure what the pages are worth. The internal
   `sylvan_reorder_set_batched(0)` makes every swap remove and re-index its
   nodes one at a time even where the table has the batched primitives, to
-  measure what batching is worth.
+  measure what batching is worth. The CMake option `SYLVAN_SIFT_PHASE_TIMING`
+  (default off) times every phase of every swap and of the session around
+  them, and has every sift print the sums to stderr as one `SIFT-PHASES` line
+  of JSON.
 
 ### Changed
 - Sifting no longer destroys handles held only on a worker's temporary

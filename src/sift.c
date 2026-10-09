@@ -99,6 +99,55 @@ sift_now(void)
     return 0.0;
 }
 
+/**
+ * The driver's share of the per-phase timing, in the diagnostic build that has
+ * it; the session's share is kept by reorder.c (see sylvan_reorder_timing).
+ * Every sift that opened a session prints both as one SIFT-PHASES line on
+ * stderr, with the keys and in the order of the archived per-phase
+ * measurements, so that the scripts that read those read this. Without the
+ * option every macro is empty.
+ */
+#if SYLVAN_SIFT_PHASE_TIMING
+static double sift_timing_popinit, sift_timing_interact, sift_timing_total;
+static int sift_timing_opened;
+
+static void
+sift_timing_report(void)
+{
+    if (!sift_timing_opened) return;
+    sylvan_reorder_timing t;
+    sylvan_reorder_phase_timing(&t);
+    fprintf(stderr,
+            "SIFT-PHASES {\"swaps\":%llu,\"gc\":%.6f,\"seed\":%.6f"
+            ",\"scatter\":%.6f,\"pin\":%.6f,\"begin_total\":%.6f"
+            ",\"classify\":%.6f,\"intern\":%.6f,\"rewrite\":%.6f"
+            ",\"reinsert\":%.6f,\"retire\":%.6f,\"release\":%.6f"
+            ",\"swap_total\":%.6f,\"end\":%.6f,\"interact\":%.6f"
+            ",\"popinit\":%.6f,\"sift_total\":%.6f"
+            ",\"remove_batch\":%.6f,\"reinsert_batch\":%.6f}\n",
+            (unsigned long long)t.swaps, t.gc, t.seed, t.scatter, t.pin,
+            t.begin_total, t.classify, t.intern, t.rewrite, t.reinsert,
+            t.retire, t.release, t.swap_total, t.end, sift_timing_interact,
+            sift_timing_popinit, sift_timing_total, t.remove_batch,
+            t.reinsert_batch);
+    fflush(stderr);
+}
+
+#define SIFT_TIMING_CLEAR() \
+    (sift_timing_opened = 0, sift_timing_popinit = 0.0, \
+     sift_timing_interact = 0.0, sift_timing_total = 0.0)
+#define SIFT_TIMING_OPENED() (sift_timing_opened = 1)
+#define SIFT_TIMING_START(mark) const double mark = sift_now()
+#define SIFT_TIMING_STOP(sum, mark) ((sum) += sift_now() - (mark))
+#define SIFT_TIMING_REPORT() sift_timing_report()
+#else
+#define SIFT_TIMING_CLEAR() ((void)0)
+#define SIFT_TIMING_OPENED() ((void)0)
+#define SIFT_TIMING_START(mark) ((void)0)
+#define SIFT_TIMING_STOP(sum, mark) ((void)0)
+#define SIFT_TIMING_REPORT() ((void)0)
+#endif
+
 /** One variable, with the population that decides when its turn comes. */
 struct sift_candidate {
     uint32_t identity;
@@ -453,8 +502,10 @@ int
 sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
              sylvan_sift_result *result)
 {
+    SIFT_TIMING_START(timing_sift);
     int status = sylvan_reorder_begin_CALL(lace);
     if (status != SYLVAN_OK) return status;
+    SIFT_TIMING_OPENED();
 
     /* The session opened, so this call counts as a sift however little it goes
        on to do. A refused call does not, which is what makes the counter
@@ -488,16 +539,20 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
             /* Every variable's live population, which the candidate order and
                the leg bounds both read. Identities are dense, so this indexes
                straight by identity. */
+            SIFT_TIMING_START(timing_popinit);
             for (uint32_t id = 0; id < run.ranks; id++) {
                 run.pop[id] = sylvan_reorder_population(id);
             }
+            SIFT_TIMING_STOP(sift_timing_popinit, timing_popinit);
 
             /* The interaction matrix the leg bounds consult. If it cannot be
                built the driver still runs -- every pair then reads as
                interacting, which is exactly an unbounded sift -- so its failure
                is not this function's failure. A full-legs run never consults
                it, so it is not built either. */
+            SIFT_TIMING_START(timing_interact);
             if (run.bounded) (void)sylvan_reorder_interact_build();
+            SIFT_TIMING_STOP(sift_timing_interact, timing_interact);
 
             for (uint32_t rank = 0; rank < run.ranks; rank++) {
                 const uint32_t identity = sylvan_identity_at(rank);
@@ -552,6 +607,7 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
         result->refusals = refusals;
         result->vars_sifted = sifted;
     }
+    SIFT_TIMING_STOP(sift_timing_total, timing_sift);
     return status;
 }
 
@@ -569,7 +625,10 @@ sylvan_sift_report(const sylvan_sift_config *config, sylvan_sift_result *result)
     }
     if (effective.max_growth < 1.0f) effective.max_growth = 1.0f;
 
-    return sift_go_NEWFRAME(&effective, result);
+    SIFT_TIMING_CLEAR();
+    const int status = sift_go_NEWFRAME(&effective, result);
+    SIFT_TIMING_REPORT();
+    return status;
 }
 
 int

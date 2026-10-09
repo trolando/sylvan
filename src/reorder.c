@@ -61,6 +61,9 @@
 
 #include <assert.h>
 #include <string.h>
+#if SYLVAN_SIFT_PHASE_TIMING
+#include <time.h>
+#endif
 
 /** Granularity of the parallel table scans. */
 #define REORDER_SCAN_BLOCK 4096
@@ -185,6 +188,52 @@ sylvan_reorder_overflow_promotions(void)
 {
     return session.overflow_promotions;
 }
+
+/**
+ * Per-phase timing, in the diagnostic build that has it. Each phase of the
+ * session and of every swap is bracketed by two reads of the monotonic clock
+ * and charged to its own field; see sylvan_reorder_timing for what the fields
+ * mean. The brackets sit where the archived per-phase measurements put them,
+ * so that new numbers compare with old ones. Without the option every macro is
+ * empty and the swap is the same code it always was.
+ */
+#if SYLVAN_SIFT_PHASE_TIMING
+static sylvan_reorder_timing reorder_timing;
+
+/* The clock sift.c reads for its time limit, read the same way. */
+static double
+reorder_timing_now(void)
+{
+    struct timespec now;
+#if defined(CLOCK_MONOTONIC)
+    if (clock_gettime(CLOCK_MONOTONIC, &now) == 0) {
+        return (double)now.tv_sec + 1e-9 * (double)now.tv_nsec;
+    }
+#endif
+    if (timespec_get(&now, TIME_UTC) == TIME_UTC) {
+        return (double)now.tv_sec + 1e-9 * (double)now.tv_nsec;
+    }
+    return 0.0;
+}
+
+void
+sylvan_reorder_phase_timing(sylvan_reorder_timing *timing)
+{
+    if (timing != NULL) *timing = reorder_timing;
+}
+
+#define REORDER_TIMING_RESET() \
+    memset(&reorder_timing, 0, sizeof(reorder_timing))
+#define REORDER_TIMING_START(mark) const double mark = reorder_timing_now()
+#define REORDER_TIMING_STOP(field, mark) \
+    (reorder_timing.field += reorder_timing_now() - (mark))
+#define REORDER_TIMING_SWAP() (reorder_timing.swaps++)
+#else
+#define REORDER_TIMING_RESET() ((void)0)
+#define REORDER_TIMING_START(mark) ((void)0)
+#define REORDER_TIMING_STOP(field, mark) ((void)0)
+#define REORDER_TIMING_SWAP() ((void)0)
+#endif
 
 /**
  * Side bitmaps. All of them are written from one thread at a time -- the pins
@@ -709,6 +758,7 @@ reorder_free_state(void)
 int
 sylvan_reorder_begin_CALL(lace_worker *lace)
 {
+    REORDER_TIMING_START(timing_begin);
     const uint32_t caps = nodes_reorder_caps(nodes);
 
     if (session.active) return SYLVAN_ERR_INVALID;
@@ -736,7 +786,10 @@ sylvan_reorder_begin_CALL(lace_worker *lace)
        node's result -- and doing it here means the cache is already gone
        before the session allocates anything, so there is no window in which a
        half-built session that then fails has invalidated it for nothing. */
+    REORDER_TIMING_RESET();
+    REORDER_TIMING_START(timing_gc);
     sylvan_gc_go_CALL(lace);
+    REORDER_TIMING_STOP(gc, timing_gc);
 
     memset(&session, 0, sizeof(session));
     /* After the collection, and not before: the resize hook may have grown
@@ -780,7 +833,9 @@ sylvan_reorder_begin_CALL(lace_worker *lace)
     }
 
     /* Pass one: reference counts, and how big each identity's list must be. */
+    REORDER_TIMING_START(timing_seed);
     reorder_seed_CALL(lace, 0, session.size);
+    REORDER_TIMING_STOP(seed, timing_seed);
 
     for (uint32_t identity = 0; identity < session.identities; identity++) {
         struct reorder_list *both[2] = {
@@ -800,11 +855,16 @@ sylvan_reorder_begin_CALL(lace_worker *lace)
     }
 
     /* Pass two: fill the lists. */
+    REORDER_TIMING_START(timing_scatter);
     reorder_scatter_CALL(lace, 0, session.size);
+    REORDER_TIMING_STOP(scatter, timing_scatter);
 
+    REORDER_TIMING_START(timing_pin);
     reorder_pin_roots();
+    REORDER_TIMING_STOP(pin, timing_pin);
 
     session.active = 1;
+    REORDER_TIMING_STOP(begin_total, timing_begin);
     return SYLVAN_OK;
 }
 
@@ -879,6 +939,7 @@ sylvan_reorder_end_CALL(lace_worker *lace)
 {
     (void)lace;
     if (!session.active) return SYLVAN_ERR_INVALID;
+    REORDER_TIMING_START(timing_end);
 
     int status = SYLVAN_OK;
     if (reorder_validate) status = reorder_validate_counts();
@@ -888,6 +949,7 @@ sylvan_reorder_end_CALL(lace_worker *lace)
     const uint64_t promotions = session.overflow_promotions;
     reorder_free_state();
     session.overflow_promotions = promotions;
+    REORDER_TIMING_STOP(end, timing_end);
     return status;
 }
 
@@ -2028,11 +2090,14 @@ sylvan_varswap_CALL(lace_worker *lace, uint32_t rank,
     swap_upper = sylvan_identity_at(rank);
     swap_lower = sylvan_identity_at(rank + 1);
 
+    REORDER_TIMING_START(timing_swap);
     int status = reorder_classify();
+    REORDER_TIMING_STOP(classify, timing_swap);
     if (status != SYLVAN_OK) {
         reorder_plan_free();
         return status;
     }
+    REORDER_TIMING_SWAP();
 
     atomic_store_explicit(&session.created, 0, memory_order_relaxed);
 
@@ -2065,17 +2130,27 @@ sylvan_varswap_CALL(lace_worker *lace, uint32_t rank,
        separation for free, out of the lock it took. */
     const size_t total = swap_node_count + swap_map_count;
     if (total != 0) {
+        REORDER_TIMING_START(timing_intern);
         reorder_phase_CALL(lace, REORDER_PHASE_INTERN, 0, total);
+        REORDER_TIMING_STOP(intern, timing_intern);
+        REORDER_TIMING_START(timing_remove);
         if (swap_batched && nodes_remove_batch_CALL(
                 lace, nodes, session.batch, total) != SYLVAN_OK) {
             reorder_fatal("a case-B node was not in the index");
         }
+        REORDER_TIMING_STOP(remove_batch, timing_remove);
+        REORDER_TIMING_START(timing_rewrite);
         reorder_phase_CALL(lace, REORDER_PHASE_REWRITE, 0, total);
+        REORDER_TIMING_STOP(rewrite, timing_rewrite);
+        REORDER_TIMING_START(timing_reindex);
         if (swap_batched && nodes_reinsert_batch_CALL(
                 lace, nodes, session.batch, total) != SYLVAN_OK) {
             reorder_fatal("a rewritten node could not be re-indexed");
         }
+        REORDER_TIMING_STOP(reinsert_batch, timing_reindex);
+        REORDER_TIMING_START(timing_reinsert);
         reorder_phase_CALL(lace, REORDER_PHASE_REINSERT, 0, total);
+        REORDER_TIMING_STOP(reinsert, timing_reinsert);
 
         /* The REINSERT phase filled one slot per entry; publish both counts
            once. If a phase had aborted instead, the process is gone and no
@@ -2099,8 +2174,12 @@ sylvan_varswap_CALL(lace_worker *lace, uint32_t rank,
     }
 
     uint64_t died = 0, deep = 0;
+    REORDER_TIMING_START(timing_retire);
     reorder_run_retirement(lace, &died, &deep);
+    REORDER_TIMING_STOP(retire, timing_retire);
+    REORDER_TIMING_START(timing_release);
     if (reorder_release_at_swap_end) reorder_release_dead();
+    REORDER_TIMING_STOP(release, timing_release);
 
     if (sylvan_ranks_swap_adjacent(rank) != SYLVAN_OK) {
         reorder_fatal("the rank metadata refused an adjacent swap");
@@ -2126,6 +2205,7 @@ sylvan_varswap_CALL(lace_worker *lace, uint32_t rank,
     }
 
     reorder_plan_free();
+    REORDER_TIMING_STOP(swap_total, timing_swap);
     return SYLVAN_OK;
 }
 

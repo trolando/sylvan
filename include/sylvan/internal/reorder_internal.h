@@ -219,6 +219,42 @@ void sylvan_reorder_set_overflow_at(uint32_t count);
 /** How many nodes the current or last session promoted to the overflow map. */
 uint64_t sylvan_reorder_overflow_promotions(void);
 
+#if SYLVAN_SIFT_PHASE_TIMING
+/**
+ * Diagnostic builds only (-DSYLVAN_SIFT_PHASE_TIMING=ON): where the time of a
+ * session went. Wall-clock seconds from the monotonic clock, each field summed
+ * over the current or last session and cleared when sylvan_reorder_begin opens
+ * the next one. The swap fields are the phases of sylvan_varswap, in the order
+ * they run (see PHASES in src/reorder.c); <classify> includes the swaps that
+ * were refused there, and <swap_total> covers every swap that got past it, end
+ * to end, so what it holds beyond the sum of its phases is the bookkeeping
+ * between them. The sifting driver prints all of this, with its own share, as
+ * one SIFT-PHASES line on stderr at the end of every sift.
+ */
+typedef struct sylvan_reorder_timing {
+    uint64_t swaps;          /* swaps that got past classification        */
+    double gc;               /* begin: the opening collection             */
+    double seed;             /* begin: reference counts, populations      */
+    double scatter;          /* begin: the per-identity node lists        */
+    double pin;              /* begin: pinning the external roots         */
+    double begin_total;      /* sylvan_reorder_begin, end to end          */
+    double classify;         /* swap: classification and reservation      */
+    double intern;           /* swap: the INTERN phase                    */
+    double remove_batch;     /* swap: batched removal (near 0 unbatched)  */
+    double rewrite;          /* swap: the REWRITE phase                   */
+    double reinsert_batch;   /* swap: batched re-indexing (ditto)         */
+    double reinsert;         /* swap: the REINSERT phase                  */
+    double retire;           /* swap: retirement rounds -- bookkeeping,
+                                unhashing and the dropped edges            */
+    double release;          /* swap: giving retired slots back           */
+    double swap_total;       /* swap, end to end                          */
+    double end;              /* sylvan_reorder_end, end to end            */
+} sylvan_reorder_timing;
+
+/** Copy out the sums above. */
+void sylvan_reorder_phase_timing(sylvan_reorder_timing *timing);
+#endif
+
 /**
  * THE SIFT RECOMMENDATION, from the inside.
  *

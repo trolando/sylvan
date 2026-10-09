@@ -114,6 +114,38 @@ build.
 
         cmake .. -DSYLVAN_HUGEPAGES=OFF
 
+``SYLVAN_SIFT_PHASE_TIMING`` (CMake option)
+    Time every phase of every variable swap, and of the reorder session around
+    them, with the monotonic clock, and have every sift that opens a session
+    print the sums to stderr as one line of JSON:
+
+    .. code:: text
+
+        SIFT-PHASES {"swaps":...,"gc":...,"seed":...,"scatter":...,"pin":...,
+                     "begin_total":...,"classify":...,"intern":...,"rewrite":...,
+                     "reinsert":...,"retire":...,"release":...,"swap_total":...,
+                     "end":...,"interact":...,"popinit":...,"sift_total":...,
+                     "remove_batch":...,"reinsert_batch":...}
+
+    (on one line). Every value but ``swaps`` is wall-clock seconds summed over
+    the sift. ``gc``, ``seed``, ``scatter`` and ``pin`` open the session and
+    ``begin_total`` is all of the opening; ``classify``, ``intern``,
+    ``remove_batch``, ``rewrite``, ``reinsert_batch``, ``reinsert``, ``retire``
+    and ``release`` are the phases of a swap in the order they run, the two
+    batch fields staying near zero when the swaps are not batched, and
+    ``swap_total`` is the swaps end to end; ``end`` closes the session;
+    ``popinit`` and ``interact`` are the driver counting populations and
+    building the interaction matrix, and ``sift_total`` is the whole sift. The
+    keys are those of the per-phase measurements the parallel sifting work was
+    attributed with, so the same scripts read both. Inside the library the
+    session's share is ``sylvan_reorder_phase_timing`` in
+    ``sylvan/internal.h``. The clock is read twice per phase per swap, so take
+    the breakdown from this build and the totals from one without it.
+
+    .. code:: bash
+
+        cmake .. -DSYLVAN_SIFT_PHASE_TIMING=ON
+
 Using Sylvan
 ------------
 
@@ -522,8 +554,9 @@ Measuring reordering
 
 A few switches exist to reproduce the measurements behind parallel sifting. None
 of them changes what a sift computes, only how it gets there or what it reports.
-The build-time ones are listed under `Diagnostic builds`_; the one runtime switch
-is internal API, declared in ``sylvan/internal.h``:
+The build-time ones are listed under `Diagnostic builds`_ (``SYLVAN_SIFT_PHASE_TIMING``
+for where a sift's time goes); the one runtime switch is internal API, declared
+in ``sylvan/internal.h``:
 
 ``sylvan_reorder_set_batched(int enable)``
     With ``0``, every swap removes and re-indexes its nodes one at a time, even

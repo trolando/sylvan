@@ -57,6 +57,9 @@ All notable changes to Sylvan will be documented in this file.
   of JSON. With `SYLVAN_STATS`, every nodes table now counts the index steps
   and calls of its lookups, and of the removals and re-indexings a swap makes,
   so that `sylvan_stats_report` shows how much index each operation walks.
+  The CMake option `SYLVAN_REGION_STRIPED_START` (default off) brings back the
+  allocator the shared region cursor replaced, each worker filling a stripe of
+  the table of its own, to measure what the cursor is worth.
 
 ### Changed
 - Sifting no longer destroys handles held only on a worker's temporary

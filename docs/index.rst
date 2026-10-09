@@ -162,6 +162,23 @@ build.
 
         cmake .. -DSYLVAN_SIFT_PHASE_TIMING=ON
 
+``SYLVAN_REGION_STRIPED_START`` (CMake option)
+    Allocate node slots with the allocator the shared region cursor replaced in
+    the list, trie, llcht and llchst tables. A worker's first search for an
+    allocation region, after the table is created and after every garbage
+    collection, starts in that worker's own stripe of the table, and every
+    later search goes on past the region the worker has just used up, so each
+    worker fills a stripe of its own and the cursor is not consulted at all.
+    Node indices then no longer follow creation order across workers. It
+    changes where nodes are placed in the table and nothing else, and exists to
+    reproduce the layout the cursor removed, for measuring what the cursor is
+    worth. The shape tests of ``test_table`` need indices in creation order,
+    and skip themselves with a notice when they find a table without it.
+
+    .. code:: bash
+
+        cmake .. -DSYLVAN_REGION_STRIPED_START=ON
+
 Using Sylvan
 ------------
 
@@ -572,8 +589,9 @@ A few switches exist to reproduce the measurements behind parallel sifting. None
 of them changes what a sift computes, only how it gets there or what it reports.
 The build-time ones are listed under `Diagnostic builds`_ (``SYLVAN_SIFT_PHASE_TIMING``
 for where a sift's time goes, the index counters of ``SYLVAN_STATS`` for how much
-index each swap walks); the one runtime switch is internal API, declared in
-``sylvan/internal.h``:
+index each swap walks, ``SYLVAN_REGION_STRIPED_START`` for the table layout the
+shared region cursor replaced); the one runtime switch is internal API, declared
+in ``sylvan/internal.h``:
 
 ``sylvan_reorder_set_batched(int enable)``
     With ``0``, every swap removes and re-indexes its nodes one at a time, even

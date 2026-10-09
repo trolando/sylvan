@@ -562,6 +562,7 @@ claim_next_region(const nodes_table* dbs, uint64_t start_region)
  * regions costs a few ownership-bit tests. It lives on a line of its own
  * because the table struct itself is read on every lookup by every worker.
  */
+#if !SYLVAN_REGION_STRIPED_START
 static uint64_t
 claim_region(const nodes_table* dbs)
 {
@@ -576,6 +577,29 @@ claim_region(const nodes_table* dbs)
     }
     return region;
 }
+#else
+/**
+ * The allocator the shared cursor replaced, compiled in only for the
+ * experiment that measures what the cursor is worth (configure with
+ * -DSYLVAN_REGION_STRIPED_START=ON). A worker's first search after the table
+ * is created or collected starts in its own stripe of the table, and every
+ * later one goes on past the region the worker has just used up, so that each
+ * worker fills a stripe of its own; the cursor is not consulted at all. Only
+ * where nodes are placed changes, and no production build should have it.
+ */
+static uint64_t
+claim_striped_region(const nodes_table* dbs)
+{
+    const uint64_t regions = dbs->table_size / 512u;
+    uint64_t start_region = 0;
+    lace_worker* worker = lace_get_worker();
+    if (regions != 0 && worker != NULL) {
+        start_region = ((uint64_t)worker->worker * regions) /
+                       (uint64_t)lace_worker_count();
+    }
+    return claim_next_region(dbs, start_region);
+}
+#endif
 
 /**
  * Give back a region this worker has used up.
@@ -619,11 +643,19 @@ claim_data_bucket(const nodes_table* dbs)
             const uint64_t exhausted = my_region;
             my_region = UINT64_MAX;
             release_region(dbs, exhausted);
+#if SYLVAN_REGION_STRIPED_START
+            const uint64_t claimed = claim_next_region(dbs, exhausted + 1u);
+#else
             const uint64_t claimed = claim_region(dbs);
+#endif
             if (claimed == UINT64_MAX) return UINT64_MAX;
             my_region = claimed;
         } else {
+#if SYLVAN_REGION_STRIPED_START
+            const uint64_t claimed = claim_striped_region(dbs);
+#else
             const uint64_t claimed = claim_region(dbs);
+#endif
             if (claimed == UINT64_MAX) return UINT64_MAX;
             my_region = claimed;
         }

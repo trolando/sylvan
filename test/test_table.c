@@ -590,6 +590,9 @@ test_arena_exhaustion_reports(const char *self)
     (2 * TEST_SHAPE_TOTAL_LEAVES + TEST_SHAPE_CHAIN + \
      TEST_SHAPE_SUBANCHORS * TEST_SHAPE_SUBFAN)
 
+/* shape_build's answer when the table cannot hold these shapes. */
+#define TEST_SHAPE_UNORDERED 2
+
 struct shape_node {
     uint64_t a;
     uint64_t b;
@@ -669,6 +672,21 @@ shape_build(struct shape_set *set, nodes_table *table)
         }
     }
 
+    /* The families below need every chain node they anchor on to out-index
+       the leaves they pair it with, which holds whenever the table hands out
+       indices in creation order. One that does not -- the striped allocator
+       of a SYLVAN_REGION_STRIPED_START build, with several workers -- cannot
+       build these shapes at all, so say so before adding any of them, and let
+       the caller skip rather than fail. */
+    for (uint64_t i = 0; i < TEST_SHAPE_SUBANCHORS; i++) {
+        const uint64_t anchor = set->nodes[chain_first + i].index;
+        for (uint64_t k = 0; k < TEST_SHAPE_SUBFAN; k++) {
+            const uint64_t lo =
+                set->nodes[(size_t)k % TEST_SHAPE_TOTAL_LEAVES].index;
+            if (lo >= anchor) return TEST_SHAPE_UNORDERED;
+        }
+    }
+
     /* Families anchored on members of the deep chain: these share branch
        slots with the interior of the chain above. */
     for (uint64_t i = 0; i < TEST_SHAPE_SUBANCHORS; i++) {
@@ -714,6 +732,16 @@ shape_verify(const struct shape_set *set, nodes_table *table)
     return 0;
 }
 
+/** Skip a shape test on a table that cannot hold the shapes; see shape_build. */
+static int
+shape_skip(nodes_table *table, const char *test)
+{
+    fprintf(stderr, "test_table: skipping %s: this table does not hand out "
+            "node indices in creation order\n", test);
+    nodes_free(table);
+    return 0;
+}
+
 static int
 test_rebuild_shapes(void)
 {
@@ -723,7 +751,11 @@ test_rebuild_shapes(void)
     nodes_set_custom(
         table, custom_hash, custom_equals, custom_create, custom_destroy);
 
-    if (shape_build(&set, table)) return 1;
+    const int built = shape_build(&set, table);
+    if (built == TEST_SHAPE_UNORDERED) {
+        return shape_skip(table, "the rebuild shapes");
+    }
+    if (built) return 1;
     if (shape_verify(&set, table)) return 1;
 
     /* Repeat the collect cycle: each rebuild may lay out the structure
@@ -1658,7 +1690,11 @@ test_prepare_removals(void)
     nodes_set_custom(
         table, custom_hash, custom_equals, custom_create, custom_destroy);
 
-    if (shape_build(&set, table)) return 1;
+    const int built = shape_build(&set, table);
+    if (built == TEST_SHAPE_UNORDERED) {
+        return shape_skip(table, "the prepared removals");
+    }
+    if (built) return 1;
     if (shape_verify(&set, table)) return 1;
 
     if ((nodes_reorder_caps(table) & NODES_CAP_REMOVE) == 0) {

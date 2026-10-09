@@ -41,6 +41,13 @@ option(SYLVAN_SIFT_PHASE_TIMING "Let Sylvan time the phases of every variable sw
 # collection to stderr, is set as a plain compile definition rather than here.
 option(SYLVAN_CHECK_HANDLES "Let Sylvan check decision diagram handle bounds" OFF)
 
+# Diagnostic builds only: allocate regions the way the nodes tables did before
+# they shared one region cursor (see claim_region in src/nodes_list.c), each
+# worker filling a stripe of the table of its own. It reproduces the layout the
+# cursor was introduced to avoid, for the experiment that measures what the
+# cursor is worth, and changes where nodes are placed and nothing else.
+option(SYLVAN_REGION_STRIPED_START "Let Sylvan allocate regions in per-worker stripes" OFF)
+
 include(DetectCacheLineSize)
 detect_cache_line_size(SYLVAN_CACHE_LINE_SIZE DEFAULT 64)
 
@@ -222,6 +229,11 @@ if(NOT SYLVAN_HUGEPAGES)
     target_compile_definitions(sylvan PRIVATE SYLVAN_HUGEPAGES=0)
 endif()
 
+# PRIVATE: only the nodes tables read it.
+if(SYLVAN_REGION_STRIPED_START)
+    target_compile_definitions(sylvan PRIVATE SYLVAN_REGION_STRIPED_START=1)
+endif()
+
 # ── Include directories ──────────────────────────────────────────────────────
 
 target_include_directories(sylvan
@@ -295,6 +307,7 @@ if(NOT sylvan_IS_TOP_LEVEL)
         SYLVAN_CHECK_HANDLES
         SYLVAN_HUGEPAGES
         SYLVAN_SIFT_PHASE_TIMING
+        SYLVAN_REGION_STRIPED_START
     )
 endif()
 

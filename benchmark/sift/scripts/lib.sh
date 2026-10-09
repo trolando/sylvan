@@ -33,7 +33,9 @@
 # next to it (build-matrix.sh writes one) adds that object's members to its
 # rows -- configuration name and knob settings -- and SB_ROW_EXTRA, if set,
 # holds JSON members added to every row (run-headlines.sh puts the headline
-# there).
+# there). SB_WRAP, if set, is a command every driver runs under, recorded as
+# "wrap": for example "perf stat -x, -e cycles,dTLB-load-misses", whose
+# counters then land in the row as "perf":{EVENT:VALUE}.
 #
 # INTERLEAVING. sb_interleave runs every variant once per repetition, in the
 # same order, before any variant runs again: A,B,A,B rather than A,A,B,B. If
@@ -299,8 +301,18 @@ sb_is_json() {
 #   "stats_report":{"build":"...","sift":"..."}
 #                               the text between "SIFT-STATS-BEGIN PHASE" and
 #                               "SIFT-STATS-END PHASE" (sylvan_bench --stats)
+#   "perf":{"EVENT":VALUE,...}  under SB_WRAP="perf stat -x, ...", every counter
+#                               line perf printed (null when not supported)
 sb_stderr_fields() {
   local f=$1 line payload phases="" raw="" stats="" in=0 phase="" text=""
+  if [[ "${SB_WRAP:-}" == *perf* ]]; then
+    local pv pe perf=""
+    while IFS=, read -r pv _ pe _; do
+      [[ "$pv" =~ ^[0-9]+(\.[0-9]+)?$ ]] || pv=null
+      perf+="${perf:+,}$(sb_jstr "$pe"):$pv"
+    done < <(grep -E '^([0-9]+(\.[0-9]+)?|<not (supported|counted)>),[^,]*,[^,]+,' "$f")
+    [ -z "$perf" ] || printf ',"perf":{%s}' "$perf"
+  fi
   if grep -q '^SIFT-PHASES ' "$f"; then
     while IFS= read -r line; do
       payload=${line#SIFT-PHASES }; payload=${payload%$'\r'}
@@ -378,13 +390,15 @@ sb_run_variant() {
   local t0 t1 ts0 ts1
   ts0=$(date -u +%Y-%m-%dT%H:%M:%SZ); t0=$(sb_now_us)
 
-  echo "\$ $(printf '%q ' "${cmd[@]}")" >> "$SB_LOG"
+  local -a wrap=()
+  [ -z "${SB_WRAP:-}" ] || read -r -a wrap <<< "$SB_WRAP"
+  echo "\$ $(printf '%q ' "${wrap[@]}" "${cmd[@]}")" >> "$SB_LOG"
   local out rc errf
   errf=$(mktemp "${TMPDIR:-/tmp}/sift-bench-stderr.XXXXXX") || sb_die "mktemp failed"
   if [ "$SB_TIMEOUT" -gt 0 ] && command -v timeout > /dev/null 2>&1; then
-    out=$(timeout "$SB_TIMEOUT" "${cmd[@]}" 2> "$errf"); rc=$?
+    out=$(timeout "$SB_TIMEOUT" "${wrap[@]}" "${cmd[@]}" 2> "$errf"); rc=$?
   else
-    out=$("${cmd[@]}" 2> "$errf"); rc=$?
+    out=$("${wrap[@]}" "${cmd[@]}" 2> "$errf"); rc=$?
   fi
 
   t1=$(sb_now_us); ts1=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -403,6 +417,7 @@ sb_run_variant() {
   prefix+=",\"thp\":$thp,\"thp_defrag\":$thpd"
   prefix+=",\"t_start\":\"$ts0\",\"t_end\":\"$ts1\",\"wall_ms\":$wall_ms"
   prefix+=",\"argv\":$(sb_jstr "$args")"
+  [ -z "${SB_WRAP:-}" ] || prefix+=",\"wrap\":$(sb_jstr "$SB_WRAP")"
   [ -z "${SB_ROW_EXTRA:-}" ] || prefix+=",$SB_ROW_EXTRA"
   [ -z "$bextra" ] || prefix+=",$bextra"
   [ -z "${SB_V_EXTRA[$v]}" ] || prefix+=",${SB_V_EXTRA[$v]}"

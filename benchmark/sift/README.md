@@ -101,9 +101,11 @@ Both drivers take the same case options and print one `RESULT {...}` line.
 `sylvan_bench` adds `--workers N`, `--threshold N` (default 0, the library
 default), `--max-swaps N`, `--max-vars N`, `--time-limit S` (0 is unlimited
 for all three), `--full-legs`, which walks every leg to the end of the order
-instead of stopping at the interaction bound, and `--auto`, which installs the
-configuration with `sylvan_gc_set_auto_sift` and calls `sylvan_gc()` where the
-sift would run, so that the growth-recommendation path is what is measured.
+instead of stopping at the interaction bound, `--group-pairs`, which sifts
+every pair of identities (2k, 2k+1) as one block, and `--auto`, which
+installs the configuration with `sylvan_gc_set_auto_sift` and calls
+`sylvan_gc()` where the sift would run, so that the growth-recommendation
+path is what is measured.
 Under `--auto` the row's `sifts` field says whether a sift happened, and the
 `sylvan_sift_result` fields are 0 because `sylvan_gc()` does not return them.
 `--stats` resets the library's counters before the build and before the
@@ -112,6 +114,9 @@ sift, and prints `sylvan_stats_report` after each on stderr, between
 exist only in a `-DSYLVAN_STATS=ON` build, so time such a build separately.
 `--no-batch` calls `sylvan_reorder_set_batched(0)`, so every swap removes and
 re-indexes its nodes one at a time, and the row's `batched` field records it.
+Every row's `split_pairs` is `sylvan_sift_split_pairs()` after the sift: the
+pairs (2k, 2k+1) that are not together, even identity first, in the final
+order.
 
 `cudd_bench` disables automatic reordering, sets `maxGrowth` to `--growth`
 and raises `siftMaxVar` and `siftMaxSwap` to `INT_MAX`, so that it is as

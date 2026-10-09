@@ -217,12 +217,15 @@ test_var_at_level_CALL(lace_worker *lace)
         mtbdd_refs_popptr(1);
     }
 
-    /* A level beyond the registered range creates that identity in order. */
+    /* A level beyond the registered range creates that identity in order,
+       which changes no rank and so leaves the order generation alone. */
+    const uint64_t generation = sylvan_ranks_generation();
     BDD fresh = mtbdd_invalid;
     mtbdd_refs_pushptr(&fresh);
     test_assert(bdd_var_at_level(&fresh, ALL_VARS + 3) == SYLVAN_OK);
     test_assert(mtbdd_node_variable(fresh) == ALL_VARS + 3);
     test_assert(sylvan_rank_of(ALL_VARS + 3) == ALL_VARS + 3);
+    test_assert(sylvan_ranks_generation() == generation);
     mtbdd_refs_popptr(1);
     return 0;
 }
@@ -1314,7 +1317,12 @@ runtests_CALL(lace_worker *lace)
     uint32_t straight[ALL_VARS];
     for (uint32_t rank = 0; rank < ALL_VARS; rank++) straight[rank] = rank;
     test_assert(sylvan_ranks_is_identity());
+
+    /* Every permutation moves the order generation, even one that changes
+       nothing. (Registration does not; see test_var_at_level.) */
+    const uint64_t generation = sylvan_ranks_generation();
     test_assert(sylvan_ranks_permute_unsafe(straight, ALL_VARS) == SYLVAN_OK);
+    test_assert(sylvan_ranks_generation() != generation);
     test_assert(sylvan_ranks_is_identity());
     test_assert(sylvan_ranks_permute_unsafe(test_order, ALL_VARS) == SYLVAN_OK);
     test_assert(!sylvan_ranks_is_identity());

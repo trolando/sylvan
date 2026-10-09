@@ -50,6 +50,9 @@ static struct ranks_block *ranks_retired;
  */
 static _Atomic(int) ranks_permuted;
 
+/** Moved by everything that can rewrite the order; see the header. */
+static _Atomic(uint64_t) ranks_generation;
+
 /**
  * Growth and permutation run under this spinlock. The critical sections only
  * allocate and copy; in particular they never construct a node and never
@@ -182,6 +185,7 @@ sylvan_ranks_swap_adjacent(uint32_t rank)
     rank_of[upper] = rank + 1;
 
     atomic_store_explicit(&ranks_permuted, 1, memory_order_relaxed);
+    atomic_fetch_add_explicit(&ranks_generation, 1, memory_order_relaxed);
     ranks_publish(block, count);
     ranks_lock_release();
     return SYLVAN_OK;
@@ -224,6 +228,7 @@ sylvan_ranks_permute_unsafe(const uint32_t *identity_at, uint32_t count)
     }
 
     atomic_store_explicit(&ranks_permuted, 1, memory_order_relaxed);
+    atomic_fetch_add_explicit(&ranks_generation, 1, memory_order_relaxed);
     ranks_publish(block, count);
     ranks_lock_release();
     return SYLVAN_OK;
@@ -257,12 +262,19 @@ sylvan_ranks_is_identity(void)
     return identity;
 }
 
+uint64_t
+sylvan_ranks_generation(void)
+{
+    return atomic_load_explicit(&ranks_generation, memory_order_relaxed);
+}
+
 void
 sylvan_ranks_free(void)
 {
     ranks_lock_acquire();
 
     atomic_store_explicit(&ranks_permuted, 0, memory_order_relaxed);
+    atomic_fetch_add_explicit(&ranks_generation, 1, memory_order_relaxed);
     atomic_store_explicit(&sylvan_ranks_count, 0, memory_order_release);
     atomic_store_explicit(&sylvan_ranks_rank_of, NULL, memory_order_release);
     atomic_store_explicit(&sylvan_ranks_identity_at, NULL, memory_order_release);

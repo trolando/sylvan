@@ -173,6 +173,22 @@ int sylvan_ranks_permute_unsafe(const uint32_t *identity_at, uint32_t count);
  */
 int sylvan_ranks_is_identity(void);
 
+/**
+ * Return the order generation: a counter that moves whenever the order may
+ * have changed, that is on every sylvan_ranks_swap_adjacent(), every
+ * sylvan_ranks_permute_unsafe() and sylvan_ranks_free(). A fact computed from
+ * the order can be cached against it, and stays true for as long as the
+ * generation it was computed under is the current one.
+ *
+ * Registration does not move it. A newly registered identity keeps the rank
+ * it had while unregistered, its own number, so no identity changes rank.
+ *
+ * The counter is relaxed. It only moves with the world stopped, or for the
+ * test hooks with no operation running, and a reader that starts after that
+ * is ordered after it by whatever restarted the world.
+ */
+uint64_t sylvan_ranks_generation(void);
+
 /** Release all rank state and forget every registration. */
 void sylvan_ranks_free(void);
 

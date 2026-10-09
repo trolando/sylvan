@@ -68,6 +68,7 @@
 
 #include <sylvan/internal.h>
 
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -687,6 +688,11 @@ static uint64_t sift_baseline = SIFT_RECOMMEND_FLOOR;
    thread, written only with the world stopped. */
 static _Atomic(int) sift_recommend;
 
+/* Live buckets the last collection counted. Every session opens with a
+   collection, so once it has opened this describes the table it works on;
+   see sift_go. Only written with the world stopped. */
+static uint64_t sift_collected;
+
 /* Sifts that opened a session, ever. See sylvan_sift_count. */
 static _Atomic(uint64_t) sift_performed;
 
@@ -730,6 +736,7 @@ sylvan_sift_reset_recommendation(void)
 void
 sylvan_sift_note_collection(uint64_t live_nodes)
 {
+    sift_collected = live_nodes;
     const int recommend =
         sift_recommend_factor > 0.0 &&
         (double)live_nodes >= sift_recommend_factor * (double)sift_baseline;
@@ -786,6 +793,7 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
     int status = sylvan_reorder_begin_CALL(lace);
     if (status != SYLVAN_OK) return status;
     SIFT_TIMING_OPENED();
+    const uint64_t collected = sift_collected;
 
     /* The session opened, so this call counts as a sift however little it goes
        on to do. A refused call does not, which is what makes the counter
@@ -897,10 +905,17 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
     if (status == SYLVAN_OK) status = closed;
 
     /* The session is closed and every retired slot is back in the pool, so
-       this is the number the next collection will measure. Rebaselining the
-       recommendation on it is what "a sift clears the recommendation" means:
-       growth is measured from here on. */
-    sift_note_sift(nodes_count_nodes_CALL(lace, nodes));
+       the table holds what the opening collection left, with the internal
+       nodes the swaps created added and the ones they retired taken away --
+       a swap never creates or retires a leaf -- and that is the number the
+       next collection will measure. It is derived rather than counted
+       because a count is a pass over the whole table, which may be sized for
+       far more than this forest. Rebaselining the recommendation on it is
+       what "a sift clears the recommendation" means: growth is measured from
+       here on. */
+    const uint64_t left = collected + final_size - initial;
+    assert(left == nodes_count_nodes_CALL(lace, nodes));
+    sift_note_sift(left);
 
     /* Whenever the session opened, which is the line sylvan_sift_count draws
        too: a driver that could not allocate its scratch reports the forest

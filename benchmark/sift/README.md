@@ -114,6 +114,9 @@ installs the configuration with `sylvan_gc_set_auto_sift` and calls
 path is what is measured.
 Under `--auto` the row's `sifts` field says whether a sift happened, and the
 `sylvan_sift_result` fields are 0 because `sylvan_gc()` does not return them.
+`--recommend-factor F` sets the growth factor that recommendation asks for
+(`sylvan_sift_set_recommend_factor`; the library default is 2.0, 0 disables
+it).
 `--stats` resets the library's counters before the build and before the
 sift, and prints `sylvan_stats_report` after each on stderr, between
 `SIFT-STATS-BEGIN build|sift` and `SIFT-STATS-END ...` lines; the counters

@@ -22,6 +22,8 @@
  * no result to report, so sift_initial, sift_final, swaps, refusals and
  * vars_sifted are 0 in that mode, and sift_s includes the collection that
  * precedes the decision; nodes_before/nodes_after are measured as always.
+ * --recommend-factor F sets the growth factor that recommendation compares
+ * against (sylvan_sift_set_recommend_factor; the library's 2.0 otherwise).
  *
  * SOUNDNESS. For --mode blif, every output is evaluated against the same set
  * of random input vectors before and after the sift, and its satisfying-
@@ -69,6 +71,7 @@ static int      opt_grouppairs = 0;    /* sift (2k, 2k+1) as one block       */
 static int      opt_auto      = 0;     /* sift through sylvan_gc's auto sift */
 static int      opt_stats     = 0;     /* counters of the build and the sift */
 static int      opt_batched   = 1;     /* batched index surgery in swaps     */
+static double   opt_recfactor = -1.0;  /* recommendation factor, <0 = default */
 static uint64_t opt_memory    = 8ull << 30;
 static unsigned opt_seed      = 12345;
 static const char *opt_varorder = "file";
@@ -597,6 +600,8 @@ usage(FILE *f)
         "          --max-vars N (0)  --time-limit S (0)  --full-legs  --auto\n"
         "          --group-pairs (sift each pair (2k, 2k+1) as one block)\n"
         "          --no-sift  --no-batch (per-node index surgery in swaps)\n"
+        "          --recommend-factor F (growth the --auto recommendation\n"
+        "                    asks for; library default 2.0, 0 disables)\n"
         "  checks: --verify VECTORS  --seed S  --ops  --order\n"
         "          --trace FILE  (one line per swap of the sift)\n"
         "          --stats  (counters of the build and of the sift, on stderr;\n"
@@ -632,6 +637,7 @@ main(int argc, char **argv)
         else if (!strcmp(a, "--auto"))           { opt_auto = 1; }
         else if (!strcmp(a, "--stats"))          { opt_stats = 1; }
         else if (!strcmp(a, "--no-batch"))       { opt_batched = 0; }
+        else if (!strcmp(a, "--recommend-factor") && v) { opt_recfactor = atof(v); i++; }
         else if (!strcmp(a, "--memory") && v)    { opt_memory = strtoull(v, NULL, 10); i++; }
         else if (!strcmp(a, "--seed") && v)      { opt_seed = (unsigned)strtoul(v, NULL, 10); i++; }
         else if (!strcmp(a, "--var-order") && v) { opt_varorder = v; i++; }
@@ -671,6 +677,7 @@ main(int argc, char **argv)
         return 1;
     }
     sylvan_reorder_set_batched(opt_batched);
+    if (opt_recfactor >= 0.0) sylvan_sift_set_recommend_factor(opt_recfactor);
 
     const int rc = run();
 

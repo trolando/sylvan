@@ -14,6 +14,8 @@ the input circuit, which the instructions below fetch at pinned revisions.
 | `fetch-inputs.sh` | installs `C880.blif` (checksummed); `--families` documents the other input families |
 | `scripts/run-*.sh` | one script per experiment; each appends JSONL rows |
 | `scripts/summarize.py` | Markdown and CSV tables from those rows |
+| `scripts/build-matrix.sh`, `scripts/manifest.py` | every build configuration the paper's headlines need, and `manifest.json` |
+| `scripts/run-headlines.sh`, `scripts/headlines.py` | the headline experiments on those builds, their tables and the reference check (see `EXPERIMENTS.md` at the repository root) |
 
 ## Building
 
@@ -144,8 +146,15 @@ Case names describe the forest completely: `C880-file`, `C880-rev`,
 `bryantN` and `queensN`. Each row carries the harness's own fields plus
 `exp`, `cfg` (the variant), `rep`, `build`, `build_backend`, `git` (the commit
 of the Sylvan source tree the build came from), `git_dirty`, `host`,
-`load1`/`load5`/`load15`, `t_start`/`t_end` (UTC) and `wall_ms`. A run that
-fails or times out leaves a row with `"failed":1` and its exit code.
+`load1`/`load5`/`load15`, `t_start`/`t_end` (UTC) and `wall_ms`, the driver's
+arguments (`argv`) and the transparent huge page modes (`thp`, `thp_defrag`).
+What a run prints on stderr for its row is kept too: `SIFT-PHASES {json}`
+lines as `sift_phases`, `--stats` reports as `stats_report`, and `perf stat
+-x,` counters as `perf` when `SB_WRAP` runs the drivers under perf. A build
+from `build-matrix.sh` adds its configuration name and knob settings
+(`config_name`, `knobs`, ...), and `SB_ROW_EXTRA` adds any JSON members to
+every row. A run that fails or times out leaves a row with `"failed":1` and
+its exit code.
 
 With `S=benchmark/sift/scripts` and the builds above:
 
@@ -174,6 +183,7 @@ $S/summarize.py --csv results/csv timing results/timing.jsonl
 | `run-queens.sh` | a good natural order | queens10 and queens12, P1, 3 reps |
 | `run-seeds.sh` | the distribution over random orders | C880-rnd1..30, 2000 vectors, P1, 1 rep |
 | `run-backends.sh` | nodes tables: equality, then timing | C880-rnd2 and C880-file, `--workers 1,8`, 5 reps |
+| `run-ablation.sh` | one runtime setting against another (`--variant NAME=ARGS`), interleaved | four C880 orders, P1, 5 reps |
 
 `--help` on any script prints its own description and the common options.
 The long ones are queens12, which builds for several minutes per run on

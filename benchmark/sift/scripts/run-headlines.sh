@@ -144,8 +144,8 @@ while IFS=$'\t' read -r name status variant backend knob sb cb detail; do
   C_DETAIL[$name]=$detail; C_KNOB[$name]=$knob
   C_DIR[$name]=${sb%/benchmark/sift/sylvan_bench}
   C_BY[$variant/$backend]=$name
-done < <(python3 "$S/manifest.py" configs "$manifest") ||
-  die "cannot read $manifest"
+done < <(python3 "$S/manifest.py" configs "$manifest")
+[ ${#C_STATUS[@]} -gt 0 ] || die "no configurations in $manifest"
 flag_of() { python3 "$S/manifest.py" runtime-flag "$manifest" "$1"; }
 
 if [ -z "$cudd" ]; then
@@ -310,16 +310,18 @@ done
 # ---------------------------------------------------------------- H3
 
 h3_builds=()
-for b in trie list; do
-  c=$(config h3 h3 base "$b") && h3_builds+=(--sylvan-build "$c")
-done
-if [ ${#h3_builds[@]} -gt 0 ]; then
-  if want h3-quality h3; then
+if want h3-quality h3 || want h3-soundness h3 || want h3-fulllegs h3; then
+  for b in trie list; do
+    c=$(config h3 h3 base "$b") && h3_builds+=(--sylvan-build "$c")
+  done
+fi
+if [ ${#h3_builds[@]} -gt 0 ] || want h3-seeds h3; then
+  if want h3-quality h3 && [ ${#h3_builds[@]} -gt 0 ]; then
     stanza h3 h3-quality h3-quality.jsonl run-quality.sh "${h3_builds[@]}" "${cudd_args[@]}" \
       --cudd-defaults --cases "$QUALITY" --reps 1 --workers "${wq// /,}" \
       --sylvan-args "--verify 64" --cudd-args "--verify 64"
   fi
-  if want h3-soundness h3; then
+  if want h3-soundness h3 && [ ${#h3_builds[@]} -gt 0 ]; then
     stanza h3 h3-soundness h3-soundness.jsonl run-soundness.sh "${h3_builds[@]}" "${cudd_args[@]}" \
       --cases "$SOUND_CASES" --vectors "$SOUND_VECTORS" --reps "$r_sound" --workers "$wmin"
   fi
@@ -329,7 +331,7 @@ if [ ${#h3_builds[@]} -gt 0 ]; then
       stanza h3 h3-seeds h3-seeds.jsonl run-seeds.sh --sylvan-build "$sl" "${cudd_args[@]}" \
         --seeds "$SEEDS" --vectors "$SEED_VECTORS" --workers "$wmin"
   fi
-  if want h3-fulllegs h3; then
+  if want h3-fulllegs h3 && [ ${#h3_builds[@]} -gt 0 ]; then
     stanza h3 h3-fulllegs h3-fulllegs.jsonl run-ablation.sh "${h3_builds[@]}" "${cudd_args[@]}" \
       --variant bounded= --variant fulllegs=--full-legs \
       --cases "$LEGS_CASES" --reps "$r_legs" --workers "$wmin" \

@@ -71,7 +71,10 @@ All notable changes to Sylvan will be documented in this file.
   so that `sylvan_stats_report` shows how much index each operation walks.
   The CMake option `SYLVAN_REGION_STRIPED_START` (default off) brings back the
   allocator the shared region cursor replaced, each worker filling a stripe of
-  the table of its own, to measure what the cursor is worth.
+  the table of its own, to measure what the cursor is worth. The CMake cache
+  variable `SYLVAN_SIFT_RECOMMEND_FLOOR` (default 4096) sets the live-node
+  floor of the sift recommendation, which was a compile-time constant, to
+  measure the recommendation at other floors.
 
 ### Changed
 - Sifting no longer destroys handles held only on a worker's temporary

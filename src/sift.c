@@ -669,17 +669,19 @@ sylvan_sift_split_pairs(void)
  * save. Below the floor no growth recommends anything.
  */
 
-/* Live buckets below which growth is not evidence of anything. */
+/* Live buckets below which growth is not evidence of anything: the CMake cache
+   variable SYLVAN_SIFT_RECOMMEND_FLOOR, 4096 by default. */
 #ifndef SYLVAN_SIFT_RECOMMEND_FLOOR
-#define SYLVAN_SIFT_RECOMMEND_FLOOR UINT64_C(4096)
+#error "SYLVAN_SIFT_RECOMMEND_FLOOR is defined by src/CMakeLists.txt"
 #endif
+#define SIFT_RECOMMEND_FLOOR ((uint64_t)(SYLVAN_SIFT_RECOMMEND_FLOOR))
 
 /* Growth factor; 0 disables the recommendation entirely. */
 static double sift_recommend_factor = 2.0;
 
 /* Live buckets the growth is measured against: the size the forest was left at
    by the last sift, floored. Only written with the world stopped. */
-static uint64_t sift_baseline = SYLVAN_SIFT_RECOMMEND_FLOOR;
+static uint64_t sift_baseline = SIFT_RECOMMEND_FLOOR;
 
 /* The recommendation itself, updated once per collection. Read from any
    thread, written only with the world stopped. */
@@ -721,7 +723,7 @@ sylvan_sift_set_recommend_factor(double factor)
 void
 sylvan_sift_reset_recommendation(void)
 {
-    sift_baseline = SYLVAN_SIFT_RECOMMEND_FLOOR;
+    sift_baseline = SIFT_RECOMMEND_FLOOR;
     atomic_store_explicit(&sift_recommend, 0, memory_order_relaxed);
 }
 
@@ -738,8 +740,8 @@ sylvan_sift_note_collection(uint64_t live_nodes)
 static void
 sift_note_sift(uint64_t live_nodes)
 {
-    sift_baseline = live_nodes > SYLVAN_SIFT_RECOMMEND_FLOOR
-        ? live_nodes : SYLVAN_SIFT_RECOMMEND_FLOOR;
+    sift_baseline = live_nodes > SIFT_RECOMMEND_FLOOR
+        ? live_nodes : SIFT_RECOMMEND_FLOOR;
     atomic_store_explicit(&sift_recommend, 0, memory_order_relaxed);
 }
 

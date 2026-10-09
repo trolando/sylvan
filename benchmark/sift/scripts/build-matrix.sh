@@ -37,8 +37,9 @@
 #   --cudd-dir DIR   a CUDD tree configured and built in place (see README.md)
 #   --cc CC          C compiler, gcc (default) or clang; one per --builds DIR
 #   --only LIST      configurations to build: names (rel-trie), globs
-#                    ('rel-*-stats'), variants (stats) or headlines (h1, h2,
-#                    h3, h5), comma- or space-separated; default all
+#                    ('rel-*-stats'), variants (stats), headlines (h1, h2,
+#                    h3, h5) or sweeps (s3), comma- or space-separated;
+#                    default all
 #   --lace-dir DIR   a Lace 2.4.0 source tree, to build without fetching it
 #   --src-rev REV    the commit an exported --src was made from (`git
 #                    get-tar-commit-id < export.tar` prints it)
@@ -62,12 +63,14 @@ source "$SCRIPTS/lib.sh"
 # else: run-headlines.sh refers to variants by VARIANT, and every row records
 # the knob's name and value from the manifest.
 MATRIX_TABLE='
-base    |                                  |                             | list trie              | h1 h2 h3 h5 | the configuration the paper measures
-base    |                                  |                             | llcht llchst           | h1          | the configuration the paper measures
-stats   | -DSYLVAN_STATS=ON                | SYLVAN_STATS                | list trie llcht llchst | h1          | per-step index counters (sylvan_bench --stats)
-striped | -DSYLVAN_REGION_STRIPED_START=ON | SYLVAN_REGION_STRIPED_START | list trie              | h2          | striped per-worker region starts instead of the shared cursor
-phases  | -DSYLVAN_SIFT_PHASE_TIMING=ON    | SYLVAN_SIFT_PHASE_TIMING    | list trie              | h2          | a SIFT-PHASES {json} line on stderr after each sift
-nohuge  | -DSYLVAN_HUGEPAGES=OFF           | SYLVAN_HUGEPAGES            | list trie              | h5          | no MADV_HUGEPAGE advice on the tables
+base       |                                     |                             | list trie              | h1 h2 h3 h5 | the configuration the paper measures
+base       |                                     |                             | llcht llchst           | h1          | the configuration the paper measures
+stats      | -DSYLVAN_STATS=ON                   | SYLVAN_STATS                | list trie llcht llchst | h1          | per-step index counters (sylvan_bench --stats)
+striped    | -DSYLVAN_REGION_STRIPED_START=ON    | SYLVAN_REGION_STRIPED_START | list trie              | h2          | striped per-worker region starts instead of the shared cursor
+phases     | -DSYLVAN_SIFT_PHASE_TIMING=ON       | SYLVAN_SIFT_PHASE_TIMING    | list trie              | h2          | a SIFT-PHASES {json} line on stderr after each sift
+nohuge     | -DSYLVAN_HUGEPAGES=OFF              | SYLVAN_HUGEPAGES            | list trie              | h5          | no MADV_HUGEPAGE advice on the tables
+floor1024  | -DSYLVAN_SIFT_RECOMMEND_FLOOR=1024  | SYLVAN_SIFT_RECOMMEND_FLOOR | list trie              | s3          | sift recommendation floor 1024 live nodes instead of 4096
+floor16384 | -DSYLVAN_SIFT_RECOMMEND_FLOOR=16384 | SYLVAN_SIFT_RECOMMEND_FLOOR | list trie              | s3          | sift recommendation floor 16384 live nodes instead of 4096
 '
 # Runtime knobs: sylvan_bench flags the headlines switch. A stanza checks the
 # build's `sylvan_bench --help` for the flag and skips its cell when it is not
@@ -132,7 +135,7 @@ selected() {   # selected INDEX -- whether --only picks configuration INDEX
     # shellcheck disable=SC2053  # a glob is intended
     [[ "${CFG_NAME[$i]}" == $t ]] && return 0
     [ "${CFG_VARIANT[$i]}" = "$t" ] && return 0
-    if [[ "$t" =~ ^h[0-9]$ ]] && [[ " ${CFG_HEAD[$i]} " == *" $t "* ]]; then return 0; fi
+    if [[ "$t" =~ ^[hs][0-9]$ ]] && [[ " ${CFG_HEAD[$i]} " == *" $t "* ]]; then return 0; fi
   done
   return 1
 }
@@ -141,9 +144,9 @@ SEL=()
 for i in "${!CFG_NAME[@]}"; do selected "$i" && SEL+=("$i"); done
 
 if [ "$list" = 1 ]; then
-  printf '%-22s %-8s %-8s %-34s %s\n' NAME BACKEND VARIANT DEFINITIONS HEADLINES
+  printf '%-22s %-8s %-10s %-37s %s\n' NAME BACKEND VARIANT DEFINITIONS HEADLINES
   for i in "${SEL[@]}"; do
-    printf '%-22s %-8s %-8s %-34s %s\n' "${CFG_NAME[$i]}" "${CFG_BACKEND[$i]}" \
+    printf '%-22s %-8s %-10s %-37s %s\n' "${CFG_NAME[$i]}" "${CFG_BACKEND[$i]}" \
       "${CFG_VARIANT[$i]}" "${CFG_DEFS[$i]:--}" "${CFG_HEAD[$i]}"
   done
   exit 0

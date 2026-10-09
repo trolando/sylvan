@@ -594,7 +594,7 @@ default, set with ``sylvan_sift_set_recommend_factor``, 0 to disable) since it w
 sifted, or since startup. Every garbage collection already counts the nodes that
 survive marking, so the recommendation is one comparison per collection and the
 predicate is a load. A forest of a few thousand nodes never recommends, whatever the
-factor.
+factor (the floor is ``SYLVAN_SIFT_RECOMMEND_FLOOR``, see `Measuring reordering`_).
 
 ``sylvan_gc_set_auto_sift`` hands the decision to Sylvan: pass a ``sylvan_sift_config``
 and every **explicit** ``sylvan_gc()`` that ends with a recommendation is followed by a
@@ -637,6 +637,22 @@ in ``sylvan/internal.h``:
     llchst) with more than one worker to share it. ``1``, the default, restores
     batching. Read at the start of every swap; the forest, the scores and the
     order a sift arrives at are the same either way.
+
+The recommendation that drives the automatic sift has one more setting, a build
+setting because it is a constant of the library rather than a choice of the
+caller:
+
+``SYLVAN_SIFT_RECOMMEND_FLOOR`` (CMake cache variable, 4096 by default)
+    The smallest forest a growth is measured from: the recommendation compares
+    the live nodes against the factor times the larger of this floor and the
+    forest the last sift left behind, so ``sylvan_sift_recommended`` never
+    fires below factor times floor. It changes when an automatic sift happens
+    on a small forest and nothing about a sift itself. It exists to measure the
+    recommendation at other floors; every build records it in its CMake cache.
+
+    .. code:: bash
+
+        cmake .. -DSYLVAN_SIFT_RECOMMEND_FLOOR=16384
 
 Examples
 --------

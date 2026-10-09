@@ -44,6 +44,17 @@ option(SYLVAN_CHECK_HANDLES "Let Sylvan check decision diagram handle bounds" OF
 # cursor is worth, and changes where nodes are placed and nothing else.
 option(SYLVAN_REGION_STRIPED_START "Let Sylvan allocate regions in per-worker stripes" OFF)
 
+# The live-node floor of the sift recommendation (sylvan_sift_recommended, see
+# src/sift.c): the smallest forest a growth is measured from, so that a small
+# forest never recommends a sift. 4096 by default; it is a build setting so
+# that the experiments measuring the recommendation can vary it, and so that
+# every build records the value it was made with.
+set(SYLVAN_SIFT_RECOMMEND_FLOOR 4096 CACHE STRING
+    "Live nodes the sift recommendation measures growth from, at the least")
+if(NOT SYLVAN_SIFT_RECOMMEND_FLOOR MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR "SYLVAN_SIFT_RECOMMEND_FLOOR must be a positive whole number, not '${SYLVAN_SIFT_RECOMMEND_FLOOR}'")
+endif()
+
 include(DetectCacheLineSize)
 detect_cache_line_size(SYLVAN_CACHE_LINE_SIZE DEFAULT 64)
 
@@ -230,6 +241,10 @@ if(SYLVAN_REGION_STRIPED_START)
     target_compile_definitions(sylvan PRIVATE SYLVAN_REGION_STRIPED_START=1)
 endif()
 
+# PRIVATE: only src/sift.c reads it, and it always comes from here.
+target_compile_definitions(sylvan PRIVATE
+    SYLVAN_SIFT_RECOMMEND_FLOOR=${SYLVAN_SIFT_RECOMMEND_FLOOR})
+
 # ── Include directories ──────────────────────────────────────────────────────
 
 target_include_directories(sylvan
@@ -304,6 +319,7 @@ if(NOT sylvan_IS_TOP_LEVEL)
         SYLVAN_HUGEPAGES
         SYLVAN_SIFT_PHASE_TIMING
         SYLVAN_REGION_STRIPED_START
+        SYLVAN_SIFT_RECOMMEND_FLOOR
     )
 endif()
 

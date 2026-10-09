@@ -94,6 +94,25 @@ sylvan_alloc_aligned(size_t size)
 }
 
 
+void*
+sylvan_alloc_sparse(size_t size)
+{
+#if SYLVAN_USE_MMAP && !defined(_WIN32)
+    if (size == 0) return NULL;
+    void* p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED) return NULL;
+#if defined(MADV_NOHUGEPAGE)
+    /* Opt out explicitly rather than merely not opting in, so that a kernel
+       whose transparent_hugepage is "always" keeps this at 4 KiB too. */
+    (void)madvise(p, size, MADV_NOHUGEPAGE);
+#endif
+    return p;
+#else
+    return sylvan_alloc_aligned(size);
+#endif
+}
+
+
 void
 sylvan_free_aligned(void* ptr, size_t size)
 {
@@ -132,6 +151,13 @@ sylvan_clear_aligned(void* ptr, size_t size)
         if (VirtualAlloc(ptr, size, MEM_COMMIT, PAGE_READWRITE) == ptr) return;
         abort();
     }
+#elif SYLVAN_USE_MMAP && defined(__linux__) && defined(MADV_DONTNEED)
+    /* Drop the pages but keep the mapping, as the decommit above keeps the
+       reservation. Linux refills a private anonymous page dropped this way
+       with zeroes on its next touch, and keeping the mapping keeps its huge
+       page advice; the remap below replaces the mapping and loses it. Other
+       systems may treat MADV_DONTNEED as a hint and keep the contents. */
+    if (madvise(ptr, size, MADV_DONTNEED) == 0) return;
 #elif SYLVAN_USE_MMAP
     void* res = mmap(ptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
     if (res != MAP_FAILED) return;

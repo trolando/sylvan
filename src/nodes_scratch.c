@@ -92,7 +92,9 @@ nodes_scratch_acquire(const nodes_table* dbs)
         scratch_bytes = 0;
     }
     if (bits == NULL) {
-        bits = (uint64_t*)sylvan_alloc_aligned(bytes);
+        /* Sparse, not aligned: a huge page would commit 2 MiB for any bit
+           touched in its 16M-index window, not 4 KiB per 32K indices. */
+        bits = (uint64_t*)sylvan_alloc_sparse(bytes);
         if (bits == NULL) {
             fprintf(stderr,
                     "nodes_scratch_acquire: Unable to allocate memory: %s!\n",

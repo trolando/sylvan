@@ -184,6 +184,11 @@ namespace sylvan {
 
 void* sylvan_alloc_aligned(size_t size);
 
+// As sylvan_alloc_aligned, for memory touched so sparsely that it must commit
+// only the pages actually touched: it is never backed by huge pages. Free it
+// with sylvan_free_aligned.
+void* sylvan_alloc_sparse(size_t size);
+
 void sylvan_free_aligned(void* ptr, size_t size);
 
 void sylvan_clear_aligned(void* ptr, size_t size);

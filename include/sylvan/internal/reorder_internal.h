@@ -103,7 +103,10 @@ typedef struct sylvan_varswap_result {
  * - the nodes table implements no reorder primitives (llht);
  * - the ZDD or ListDD subsystem is initialised. Both order their nodes by
  *   identity rather than by rank and share the node arena, so any order other
- *   than the identity order is meaningless for them.
+ *   than the identity order is meaningless for them;
+ * - garbage collection is disabled (sylvan_gc_disable). The session has to
+ *   open with a collection, and a caller that disabled collection may be
+ *   holding handles no collection would keep.
  */
 TASK(int, sylvan_reorder_begin)
 
@@ -190,12 +193,14 @@ int sylvan_reorder_interact(uint32_t a, uint32_t b);
  * swap take the per-node path it takes on a backend without the capability,
  * which is the ablation that measures what batching is worth. The swaps, the
  * forest and the scores are the same either way; only the schedule differs.
+ * May only be changed while no session is open.
  */
 void sylvan_reorder_set_batched(int enable);
 
 /**
  * Recompute every reference count from scratch when the session closes and
  * compare it with the maintained counts. Off by default; the tests turn it on.
+ * May only be changed while no session is open.
  */
 void sylvan_reorder_set_validate(int enable);
 

@@ -158,12 +158,14 @@ static int reorder_batched = 1;
 void
 sylvan_reorder_set_batched(int enable)
 {
+    if (session.active) return;
     reorder_batched = enable ? 1 : 0;
 }
 
 void
 sylvan_reorder_set_validate(int enable)
 {
+    if (session.active) return;
     reorder_validate = enable ? 1 : 0;
 }
 
@@ -791,6 +793,9 @@ sylvan_reorder_begin_CALL(lace_worker *lace)
     if (zdd_is_initialized() || listdd_is_initialized()) {
         return SYLVAN_ERR_INVALID;
     }
+    /* The collection below bypasses sylvan_gc_disable(), and a caller that
+       disabled collection may hold handles it never registered as roots. */
+    if (!sylvan_gc_is_enabled()) return SYLVAN_ERR_INVALID;
 
     /* A full collection is the first act of every session, and the reason is
        the scoring. A sifting driver compares positions by the size of the

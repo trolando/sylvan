@@ -243,7 +243,8 @@ Like all decision diagram implementations, Sylvan performs garbage collection.
 Garbage collection is triggered when trying to insert a new node and no
 empty space can be found in the table within a reasonable upper bound.
 
-Garbage collection can be disabled with ``sylvan_gc_disable`` and enabled again with ``sylvan_gc_enable``.
+Garbage collection can be disabled with ``sylvan_gc_disable`` and enabled again with ``sylvan_gc_enable``;
+``sylvan_gc_is_enabled`` reports which. Sifting is refused while collection is disabled.
 Call ``sylvan_gc`` to manually trigger garbage collection.
 
 To ensure that no decision diagram nodes are overwritten, you must ensure that
@@ -537,7 +538,8 @@ end of the order anyway, for measurement or for distrust.
 
 Reordering is refused, changing nothing and returning ``SYLVAN_ERR_INVALID``, while
 the ZDD or ListDD subsystem is initialised -- both order their nodes by variable
-identity rather than by position, and they share the node arena -- or on a nodes table
+identity rather than by position, and they share the node arena -- while garbage
+collection is disabled, since a sift begins by collecting, or on a nodes table
 that does not implement the reorder primitives. Of the nodes tables the CMake option
 ``SYLVAN_NODES_TABLE`` selects from, ``trie`` (the default), ``list``, ``llcht`` and
 ``llchst`` can reorder; ``llht``, which is open-addressed, cannot. Running out of

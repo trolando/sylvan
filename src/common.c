@@ -117,6 +117,12 @@ sylvan_gc_disable(void)
     gc_enabled = 0;
 }
 
+int
+sylvan_gc_is_enabled(void)
+{
+    return gc_enabled;
+}
+
 /**
  * This variable is used for a cas flag so only one gc runs at one time
  */

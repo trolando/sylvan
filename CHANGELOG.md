@@ -36,8 +36,11 @@ All notable changes to Sylvan will be documented in this file.
   `sylvan_sift_config` bounds what the search may spend and
   `sylvan_sift_report` says what it did; see `sylvan/reorder.h`. Sifting is
   refused, changing nothing, while the ZDD or ListDD subsystem is initialised,
-  or on a nodes table without the reorder primitives: `llht` has none, while
-  `trie`, `list`, `llcht` and `llchst` can reorder.
+  while garbage collection is disabled (a sift begins by collecting, which
+  would drop handles a caller disabled collection to keep; the new
+  `sylvan_gc_is_enabled` reports the setting), or on a nodes table without
+  the reorder primitives: `llht` has none, while `trie`, `list`, `llcht` and
+  `llchst` can reorder.
 - Added the CMake option `SYLVAN_CHECK_HANDLES` (default off). With it, every
   decision diagram node dereference checks that the handle's bucket index is
   inside the nodes table and aborts naming the index when it is not, which

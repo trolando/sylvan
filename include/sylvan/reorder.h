@@ -157,6 +157,10 @@ typedef struct sylvan_sift_result {
  *   primitives, or the ZDD or ListDD subsystem is initialised (both order
  *   their nodes by variable identity rather than by rank). Nothing is changed
  *   in any of these cases.
+ * - SYLVAN_ERR_INVALID while garbage collection is disabled with
+ *   sylvan_gc_disable(). A sift has to begin by collecting, and a caller that
+ *   disabled collection may hold handles that no collection would keep, so
+ *   nothing is collected and nothing is changed.
  * - SYLVAN_ERR_OOM when the session cannot be built, or when it has opened
  *   but the driver cannot allocate its per-variable scratch; then the opening
  *   collection has run, the order is unchanged, and the call counts in

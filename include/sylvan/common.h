@@ -200,9 +200,13 @@ static inline void sylvan_gc_collect(void);
  * This affects both automatic and manual garbage collection, i.e.,
  * calling sylvan_gc() while garbage collection is disabled does not have any effect.
  * If no new nodes can be added, Sylvan will write an error and abort.
+ * Sifting is refused while garbage collection is disabled.
  */
 void sylvan_gc_enable(void);
 void sylvan_gc_disable(void);
+
+/** Whether garbage collection is enabled; see sylvan_gc_disable(). */
+int sylvan_gc_is_enabled(void);
 
 /**
  * How many garbage collections have run since the process started.

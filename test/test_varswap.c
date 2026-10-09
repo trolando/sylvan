@@ -537,6 +537,57 @@ test_begin_collects_CALL(lace_worker *lace)
 }
 
 /**
+ * A session refuses to open while collection is disabled, because it would
+ * have to collect: a caller that disabled collection may be holding handles no
+ * collection would keep. The refusal comes before the collection, so the
+ * garbage built here is still in the table afterwards, and so is the order.
+ */
+static int
+test_gc_disabled_CALL(lace_worker *lace)
+{
+    BDD junk = bdd_false;
+    mtbdd_protect(&junk);
+    for (int i = 0; i < 16; i++) {
+        uint8_t values[TEST_VARS];
+        test_values_for((unsigned)(test_random() % TEST_ASSIGNMENTS), values);
+        test_assert(bdd_or_cube_CALL(lace, &junk, junk, test_variables, values)
+                    == SYLVAN_OK);
+    }
+    junk = bdd_false;
+    mtbdd_unprotect(&junk);
+
+    size_t before = 0, after = 0, total = 0;
+    sylvan_table_usage(&before, &total);
+    uint32_t order_before[TEST_VARS], order_after[TEST_VARS];
+    bdd_set_to_array(test_variables, order_before);
+    const uint64_t collections = sylvan_gc_count();
+    const uint64_t sifts = sylvan_sift_count();
+
+    sylvan_gc_disable();
+    test_assert(!sylvan_gc_is_enabled());
+    sylvan_varswap_result result;
+    test_assert(sylvan_test_varswap(0, &result) == SYLVAN_ERR_INVALID);
+    test_assert(result.swaps == 0);
+    sylvan_sift_result sift;
+    test_assert(sylvan_sift_report(NULL, &sift) == SYLVAN_ERR_INVALID);
+    test_assert(sift.initial_size == 0 && sift.swaps == 0);
+    sylvan_gc_enable();
+
+    sylvan_table_usage(&after, &total);
+    bdd_set_to_array(test_variables, order_after);
+    test_assert(after == before);
+    test_assert(memcmp(order_before, order_after, sizeof(order_before)) == 0);
+    test_assert(sylvan_gc_count() == collections);
+    test_assert(sylvan_sift_count() == sifts);
+
+    /* Enabled again, the same session opens and collects. */
+    test_assert(sylvan_test_varswap(0, &result) == SYLVAN_OK);
+    test_assert(sylvan_gc_count() == collections + 1);
+    test_assert(sylvan_test_varswap(0, &result) == SYLVAN_OK);
+    return test_check_roots_CALL(lace);
+}
+
+/**
  * Sift one variable all the way down and all the way back up, checking after
  * every single swap. This is the motion a sifting driver makes.
  */
@@ -726,6 +777,11 @@ test_out_of_memory_CALL(lace_worker *lace)
 
     test_assert(nodes_reserve(nodes, 1) != SYLVAN_OK);
 
+    /* A session refuses to open while collection is disabled. Nothing below
+       allocates a node before the swap, so no collection can run underneath
+       the measurement. */
+    sylvan_gc_enable();
+
     /* Measured right after a collection that reclaimed nothing, so the
        session's own collection cannot reclaim anything either and every
        number below has to come back unchanged. */
@@ -910,6 +966,9 @@ runtests_CALL(lace_worker *lace)
 
     printf("Testing that opening a session collects.\n");
     if (test_begin_collects_CALL(lace)) return 1;
+
+    printf("Testing that a session refuses while collection is disabled.\n");
+    if (test_gc_disabled_CALL(lace)) return 1;
 
     printf("Testing a variable sifted down and back up.\n");
     if (test_sift_one_CALL(lace)) return 1;

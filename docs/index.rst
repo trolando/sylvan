@@ -535,8 +535,9 @@ and never moved.
 Reordering moves positions, never identities. ``bdd_var(&v, i)`` returns the same
 variable before and after a sift, whereas ``bdd_var_at_level(&v, i)`` returns whichever
 variable a sift left at position i; in the C++ bindings ``Bdd::bddVar`` and
-``Bdd::bddVarAtLevel`` are the same pair. Sifting moves variables one at a time, so it
-can separate the unprimed and primed variables of a pair or put the primed one first.
+``Bdd::bddVarAtLevel`` are the same pair. Unless ``group_pairs`` (below) is set,
+sifting moves variables one at a time, so it can separate the unprimed and primed
+variables of a pair or put the primed one first.
 ``bdd_rel_next``, ``bdd_rel_prev`` and ``bdd_transitive_closure`` remain correct under
 such an order: each call checks once whether the pairs it uses are still adjacent,
 unprimed first, and uses its fused recursive kernel when they are, and otherwise an
@@ -557,6 +558,21 @@ exchange nodes with the ones it interacts with. The bound is conservative: it fi
 the same positions and the same final size as the exhaustive walk, in about a third
 fewer swaps, and it is what CUDD does. Set ``full_legs`` to walk every leg to the
 end of the order anyway, for measurement or for distrust.
+
+The fused kernels of ``bdd_rel_next`` and ``bdd_rel_prev`` are the fast route, and
+they need every pair (``2k``, ``2k+1``) together with the even identity directly above
+the odd one. Variables created in order start out that way, but an unconstrained sift
+has no reason to keep them there.
+Set ``group_pairs`` to sift each pair as one block: a pair found apart is brought back
+together first, blocks are taken in order of their summed population and moved past
+one neighbouring block at a time, and only whole moves are scored or kept, so a
+grouped sift leaves every pair together unless a refusal makes that impossible, as
+``sylvan/reorder.h`` describes. ``sylvan_sift_split_pairs`` counts the pairs that
+are apart in the current order, and ``split_pairs`` in the ``sylvan_sift_result``
+of every sift, grouped or not, reports it afterwards. CUDD answers the same problem
+with group sifting over a tree of variable groups (``Cudd_MakeTreeNode``), and its
+relational product, ``Cudd_bddAndAbstract`` followed by a renaming, does not need
+the pairs together in the first place.
 
 Reordering is refused, changing nothing and returning ``SYLVAN_ERR_INVALID``, while
 the ZDD or ListDD subsystem is initialised -- both order their nodes by variable

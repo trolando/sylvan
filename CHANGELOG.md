@@ -41,6 +41,15 @@ All notable changes to Sylvan will be documented in this file.
   `sylvan_gc_is_enabled` reports the setting), or on a nodes table without
   the reorder primitives: `llht` has none, while `trie`, `list`, `llcht` and
   `llchst` can reorder.
+- Added `group_pairs` to `sylvan_sift_config`, which sifts every pair of
+  identities (2k, 2k+1) as one block, so that each stays together with the even
+  identity first: the layout `bdd_rel_next` and `bdd_rel_prev` are fastest
+  under. A pair found apart is brought back together before anything else
+  moves, only whole moves of a block are scored, and each swap of a move is
+  made only while the table can promise the room to undo the move, so a
+  refused swap does not leave a pair apart. `sylvan_sift_split_pairs` and the
+  `split_pairs` field of `sylvan_sift_result` count the pairs that are apart.
+  It is off by default, and an ungrouped sift is unchanged.
 - Added the CMake option `SYLVAN_CHECK_HANDLES` (default off). With it, every
   decision diagram node dereference checks that the handle's bucket index is
   inside the nodes table and aborts naming the index when it is not, which

@@ -352,7 +352,17 @@ To create new BDDs, you can use:
 
 - ``mtbdd_true``: representation of constant ``true``.
 - ``mtbdd_false``: representation of constant ``false``.
-- ``sylvan_ithvar(var)``: representation of literal <var> (negated: ``sylvan_nithvar(var)``)
+- ``bdd_var(&result, var)``: the variable with identity <var> (negate it with ``bdd_not``).
+- ``bdd_var_at_level(&result, level)``: the variable currently at position <level> in the variable order.
+- ``bdd_new_var(&result)``: a variable with a new identity, placed last in the order.
+
+A variable has an *identity*, the number it was created with, which every node over it
+stores and which never changes, and a *position* in the variable order, which dynamic
+reordering changes. Everything that takes a variable -- ``bdd_var``, variable sets, maps,
+the relational products -- takes identities, so what a program means does not depend on
+the order; only ``bdd_var_at_level`` takes a position. Arrays of values that go with a
+variable set, such as cubes and assignments, are packed in the set's current order, which
+``bdd_set_to_array`` writes out. Without reordering, identity and position coincide.
 
 To follow the BDD edges and obtain the variable at the root of a BDD,
 you can use (only for internal nodes, not for leaves ``mtbdd_true`` and ``mtbdd_false``):
@@ -444,7 +454,8 @@ Sylvan implements various advanced operations:
 - ``sylvan_pick_single_cube(bdd, vars)`` or ``sylvan_sat_single(bdd, vars)`` extracts a single minterm from the BDD (returns the BDD of this assignment)
 - ``sylvan_sat_one(bdd, vars, array)``: extract a single minterm from the BDD given the set of variables and write the values of the variables in order to the given array, with 0 when it is negative, 1 when it is positive, and 2 when it is dontcare.
 
-Sylvan implements several operations for transition systems. These operations assume an interleaved variable ordering, such that *source* or *unprimed* variables have even parity (0, 2, 4...) and matching *target* or *primed* variables have odd parity (1, 3, 5...).
+Sylvan implements several operations for transition systems. These operations pair the variables by identity: the *source* or *unprimed* variable 2k with the *target* or *primed* variable 2k+1, so unprimed variables have even parity (0, 2, 4...) and their primed partners odd parity (1, 3, 5...).
+They are fastest when each pair in play is adjacent in the variable order with its unprimed variable first, which holds without reordering and after a reordering that keeps pairs together; under any other order they compute the same result by a slower route.
 The transition relations may be partial transition relations that only manipulate a subset of variables; hence, the operations also require the set of variables.
 
 - ``sylvan_relnext(set, relation, vars)``: apply the (partial) relation on the given variables to the set.
@@ -520,6 +531,17 @@ it is shown -- the ``mtbdd_protect`` table, every worker's ``mtbdd_refs_push`` a
 -- and a pinned node is never retired. All of them denote the same function
 afterwards and all of them keep their handles, because nodes are rewritten in place
 and never moved.
+
+Reordering moves positions, never identities. ``bdd_var(&v, i)`` returns the same
+variable before and after a sift, whereas ``bdd_var_at_level(&v, i)`` returns whichever
+variable a sift left at position i; in the C++ bindings ``Bdd::bddVar`` and
+``Bdd::bddVarAtLevel`` are the same pair. Sifting moves variables one at a time, so it
+can separate the unprimed and primed variables of a pair or put the primed one first.
+``bdd_rel_next``, ``bdd_rel_prev`` and ``bdd_transitive_closure`` remain correct under
+such an order: each call checks once whether the pairs it uses are still adjacent,
+unprimed first, and uses its fused recursive kernel when they are, and otherwise an
+and-exists followed by a renaming (for the closure, repeated squaring), which does not
+depend on where a variable sits relative to its partner but costs a second pass.
 
 Pass a ``sylvan_sift_config`` to bound what the search may spend: a total swap
 budget, a number of variables, a growth factor at which one leg of a variable's

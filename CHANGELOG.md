@@ -117,6 +117,37 @@ All notable changes to Sylvan will be documented in this file.
   `Sylvan` still report failure through their return values.
 
 ### Fixed
+- `bdd_rel_next`, `bdd_rel_prev` and `bdd_transitive_closure` now compute the
+  right result after a sift has separated a pair (2k, 2k+1) or ranked its primed
+  variable first. Their recursive kernels fuse the product, the quantification
+  and the renaming, which is only valid while every pair in play sits on
+  adjacent ranks with 2k on top, and they returned wrong results (or diagrams
+  out of order) without complaint when it did not. Each call now checks that
+  once, against an answer cached per order generation so that the check costs a
+  load while the order is unchanged, and uses the kernel when it may; otherwise
+  it takes a slower route that does not care where a variable is ranked:
+  `bdd_and_exists` followed by a renaming through `bdd_compose` for the image
+  and the preimage, a recursion that fixes partners by composition for the
+  composition of two relations, and repeated squaring for the closure.
+- Variables are now named by identity where callers mean "variable i". Added
+  `bdd_var`, which returns the variable with a given identity, the same one
+  before and after any reordering. The C++ `Bdd(uint32_t)` and `Bdd::bddVar`,
+  documented as taking the variable index, called `bdd_var_at_level` and so
+  returned a different variable after a sift, and `BddSet::add`,
+  `BddSet::fromArray` and `Bdd::Permute` with them; they now use `bdd_var`, and
+  `Bdd::bddVarAtLevel` is the explicit position API, as `bdd_var_at_level`
+  remains in C. `Bdd::VariablesCube` is now valid for identities in any order
+  and under any variable order.
+- The transitive closure was wrong for most relations, independently of the
+  variable order: the closure of a relation that flips one bit came out empty.
+  The recursion combined its four blocks with the formulas for the reflexive
+  closure while computing the transitive one. It now uses the block formulas
+  for the transitive closure.
+- `bdd_rel_prev` recursed into `bdd_rel_next` for a variable outside the pairs
+  that both operands depend on, composing that part the wrong way round.
+- `bdd_compose` built a diagram out of order when a replacement function
+  depended on a variable ranked above an unreplaced node of the input, for
+  example when renaming z to x in y & z. It now places such a node with ITE.
 - A reorder session no longer runs out of node slots on a table that is almost
   entirely free, and no longer aborts on an allocation `nodes_reserve` had
   promised it. Both came from region ownership. A worker claims a 512-slot

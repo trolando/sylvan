@@ -184,6 +184,8 @@ void mtbdd_cofactors(MTBDD dd, MTBDD *if_false, MTBDD *if_true);
  * form depending on whether the cube[idx] equals 0 (negative), 1 (positive) or 2 (any).
  * Use cube[idx]==3 for "s=s'" in interleaved variables (matches with next variable)
  * <variables> is the cube of variables (var1 \and var2 \and ... \and varn).
+ * <cube> is packed in the order of <variables>, which is the current variable
+ * order (see bdd_set_to_array); "the next variable" is the next in that order.
  * Returns SYLVAN_OK on success. On failure, <result> is unchanged.
  */
 int mtbdd_cube(MTBDD *result, BDDSET variables, const uint8_t *cube, MTBDD terminal);

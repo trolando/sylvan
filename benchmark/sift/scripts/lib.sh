@@ -25,6 +25,16 @@
 # row, with "failed":1 and the exit code, so that a gap in the data is visible.
 # Every command and everything it printed on stderr goes to FILE.log.
 #
+# Every row also carries "argv" (the driver's arguments), "thp" and
+# "thp_defrag" (the transparent huge page modes in force), and what the run
+# printed on stderr that belongs to it: each "SIFT-PHASES {json}" line as
+# "sift_phases":[...], and each sylvan_bench --stats report as
+# "stats_report":{"build":TEXT,"sift":TEXT}. A binary with a BINARY.row.json
+# next to it (build-matrix.sh writes one) adds that object's members to its
+# rows -- configuration name and knob settings -- and SB_ROW_EXTRA, if set,
+# holds JSON members added to every row (run-headlines.sh puts the headline
+# there).
+#
 # INTERLEAVING. sb_interleave runs every variant once per repetition, in the
 # same order, before any variant runs again: A,B,A,B rather than A,A,B,B. If
 # the machine drifts during a batch, it drifts across all variants together
@@ -96,6 +106,7 @@ sb_defaults() {
   [ ${#SB_BUILDS[@]} -gt 0 ] || sb_die "give at least one --sylvan-build NAME=DIR"
   if [ -n "$SB_CUDD" ]; then
     [ -x "$SB_CUDD" ] || sb_die "--cudd-bench $SB_CUDD is not an executable"
+    SB_CUDD_EXTRA=$(sb_row_extra "$SB_CUDD")
   fi
   if [ -n "$SB_INPUTS" ]; then
     [ -d "$SB_INPUTS" ] || sb_die "--inputs $SB_INPUTS is not a directory"
@@ -112,15 +123,20 @@ sb_defaults() {
 # ---------------------------------------------------------------- the builds
 
 SB_B_NAME=(); SB_B_DIR=(); SB_B_BIN=(); SB_B_BACKEND=(); SB_B_GIT=(); SB_B_DIRTY=()
+SB_B_EXTRA=(); SB_CUDD_EXTRA=""
 
 # sb_git_rev SRC -- prints "<commit> <dirty>" for a source tree, where dirty is
 # 1, 0, or null when it cannot be told. A worktree checked out on Windows and
 # built under WSL names its git directory by a Windows path, which git under
 # WSL cannot follow; that case is translated, and its dirtiness left unknown
-# because the two sides disagree about line endings.
+# because the two sides disagree about line endings. A tree that is not the
+# top of a git checkout (a `git archive` export inside some other repository)
+# is "unknown", not the enclosing repository's commit.
 sb_git_rev() {
-  local src=$1 rev dirty gd
-  if rev=$(git -C "$src" rev-parse HEAD 2>/dev/null); then
+  local src=$1 rev dirty gd top
+  if top=$(git -C "$src" rev-parse --show-toplevel 2>/dev/null) &&
+     [ "$(cd "$top" 2>/dev/null && pwd -P)" = "$(cd "$src" && pwd -P)" ] &&
+     rev=$(git -C "$src" rev-parse HEAD 2>/dev/null); then
     if [ -n "$(git -C "$src" status --porcelain --untracked-files=no 2>/dev/null | head -1)" ]; then
       dirty=1
     else
@@ -136,15 +152,26 @@ sb_git_rev() {
       gd=$(wslpath -u "$gd" 2>/dev/null)
     fi
   fi
-  if rev=$(git --git-dir="$gd" rev-parse HEAD 2>/dev/null); then
+  if [ -e "$gd" ] && rev=$(git --git-dir="$gd" rev-parse HEAD 2>/dev/null); then
     echo "$rev null"
   else
     echo "unknown null"
   fi
 }
 
+# sb_row_extra BINARY -- the members of the one-line JSON object in
+# BINARY.row.json, without its braces, or nothing when there is no such file.
+# build-matrix.sh writes one next to every binary it builds, from its manifest.
+sb_row_extra() {
+  local f="$1.row.json" s
+  [ -f "$f" ] || return 0
+  s=$(tr -d '\r\n' < "$f")
+  s=${s#\{}; s=${s%\}}
+  printf '%s' "$s"
+}
+
 sb_resolve_builds() {
-  local spec name dir cache src backend gitinfo i
+  local spec name dir cache src backend gitinfo i extra given
   for spec in "${SB_BUILDS[@]}"; do
     if [[ "$spec" == *=* ]]; then name=${spec%%=*}; dir=${spec#*=}; else name=""; dir=$spec; fi
     [ -d "$dir" ] || sb_die "build directory $dir does not exist"
@@ -161,21 +188,31 @@ sb_resolve_builds() {
     [ -x "$dir/benchmark/sift/sylvan_bench" ] ||
       sb_die "$dir has no benchmark/sift/sylvan_bench; configure it with -DSYLVAN_BUILD_SIFT_BENCH=ON and build"
     gitinfo=$(sb_git_rev "$src")
+    extra=$(sb_row_extra "$dir/benchmark/sift/sylvan_bench")
+    # An exported tree has no git; build-matrix.sh records the commit it was
+    # told (--src-rev) as src_git.
+    if [ "${gitinfo% *}" = unknown ]; then
+      given=$(grep -o '"src_git":"[0-9a-f]*"' <<< "$extra" | cut -d'"' -f4)
+      [ -z "$given" ] || gitinfo="$given null"
+    fi
     SB_B_NAME+=("$name"); SB_B_DIR+=("$dir"); SB_B_BIN+=("$dir/benchmark/sift/sylvan_bench")
     SB_B_BACKEND+=("$backend"); SB_B_GIT+=("${gitinfo% *}"); SB_B_DIRTY+=("${gitinfo#* }")
+    SB_B_EXTRA+=("$extra")
   done
 }
 
 # ----------------------------------------------------------------- variants
 
-SB_V_LABEL=(); SB_V_BUILD=(); SB_V_TOOL=(); SB_V_WORKERS=(); SB_V_CMD=()
+SB_V_LABEL=(); SB_V_BUILD=(); SB_V_TOOL=(); SB_V_WORKERS=(); SB_V_CMD=(); SB_V_EXTRA=()
 
 # sb_add_variant LABEL BUILD-INDEX|cudd WORKERS COMMAND...
 # BUILD-INDEX is an index into the resolved builds; the case arguments and the
-# script's common arguments are appended to COMMAND at run time.
+# script's common arguments are appended to COMMAND at run time. Whatever JSON
+# members SB_VARIANT_EXTRA holds when a variant is added go into its rows.
 sb_add_variant() {
   local label=$1 build=$2 workers=$3; shift 3
   SB_V_LABEL+=("$label"); SB_V_BUILD+=("$build"); SB_V_WORKERS+=("$workers")
+  SB_V_EXTRA+=("${SB_VARIANT_EXTRA:-}")
   if [ "$build" = cudd ]; then SB_V_TOOL+=(cudd); else SB_V_TOOL+=(sylvan); fi
   SB_V_CMD+=("$(printf '%q ' "$@")")
 }
@@ -234,6 +271,64 @@ sb_loadavg() {
   fi
 }
 
+# sb_thp FILE -- the selected mode of a transparent_hugepage setting, the word
+# in brackets in e.g. "always [madvise] never", as a JSON string; null when the
+# kernel has no such file.
+sb_thp() {
+  local s=""
+  [ -r "$1" ] && s=$(sed -n 's/.*\[\([^]]*\)\].*/\1/p' "$1" 2>/dev/null)
+  if [ -n "$s" ]; then sb_jstr "$s"; else echo null; fi
+}
+
+# sb_is_json TEXT -- whether TEXT parses as one JSON value; without python3,
+# whether it at least looks like an object.
+sb_is_json() {
+  if command -v python3 > /dev/null 2>&1; then
+    python3 -c 'import json, sys; json.loads(sys.argv[1])' "$1" 2> /dev/null
+  else
+    [[ "$1" == \{*\} ]]
+  fi
+}
+
+# sb_stderr_fields FILE -- the JSON members, each with a leading comma, for
+# what a run printed on stderr that belongs in its row:
+#   "sift_phases":[{...},...]   every "SIFT-PHASES {json}" line (a
+#                               -DSYLVAN_SIFT_PHASE_TIMING build prints one per
+#                               sift); a payload that is not JSON goes to
+#                               "sift_phases_raw" as a string instead
+#   "stats_report":{"build":"...","sift":"..."}
+#                               the text between "SIFT-STATS-BEGIN PHASE" and
+#                               "SIFT-STATS-END PHASE" (sylvan_bench --stats)
+sb_stderr_fields() {
+  local f=$1 line payload phases="" raw="" stats="" in=0 phase="" text=""
+  if grep -q '^SIFT-PHASES ' "$f"; then
+    while IFS= read -r line; do
+      payload=${line#SIFT-PHASES }; payload=${payload%$'\r'}
+      if sb_is_json "$payload"; then
+        phases+="${phases:+,}$payload"
+      else
+        raw+="${raw:+,}$(sb_jstr "$payload")"
+      fi
+    done < <(grep '^SIFT-PHASES ' "$f" | tr -d '\000-\010\013\014\016-\037')
+    [ -z "$phases" ] || printf ',"sift_phases":[%s]' "$phases"
+    [ -z "$raw" ] || printf ',"sift_phases_raw":[%s]' "$raw"
+  fi
+  if grep -q '^SIFT-STATS-BEGIN ' "$f"; then
+    while IFS= read -r line; do
+      line=${line%$'\r'}
+      case "$line" in
+        "SIFT-STATS-BEGIN "*) in=1; phase=${line#SIFT-STATS-BEGIN }; text="" ;;
+        "SIFT-STATS-END "*)
+          [ "$in" = 1 ] && stats+="${stats:+,}$(sb_jstr "$phase"):$(sb_jstr "$text")"
+          in=0 ;;
+        *) [ "$in" = 1 ] && text+="$line"$'\n' ;;
+      esac
+    done < <(sed -n '/^SIFT-STATS-BEGIN /,/^SIFT-STATS-END /p' "$f" |
+             tr -d '\000-\010\013\014\016-\037')
+    [ -z "$stats" ] || printf ',"stats_report":{%s}' "$stats"
+  fi
+}
+
 # sb_quiet LABEL -- note in the log, and on the terminal, how busy the box is.
 sb_quiet() {
   {
@@ -268,35 +363,50 @@ sb_run_variant() {
   sb_case_args "$case" || return 0
   cmd+=("${SB_CASE_ARGV[@]}" "$@")
 
-  local b=${SB_V_BUILD[$v]} build git dirty bbackend
+  local b=${SB_V_BUILD[$v]} build git dirty bbackend bextra
   if [ "$b" = cudd ]; then
-    build=cudd; git=""; dirty=null; bbackend=cudd
+    build=cudd; git=""; dirty=null; bbackend=cudd; bextra=$SB_CUDD_EXTRA
   else
     build=${SB_B_NAME[$b]}; git=${SB_B_GIT[$b]}; dirty=${SB_B_DIRTY[$b]}; bbackend=${SB_B_BACKEND[$b]}
+    bextra=${SB_B_EXTRA[$b]}
   fi
 
-  local load l1 l5 l15
+  local load l1 l5 l15 thp thpd
   load=$(sb_loadavg); read -r l1 l5 l15 <<< "$load"
+  thp=$(sb_thp /sys/kernel/mm/transparent_hugepage/enabled)
+  thpd=$(sb_thp /sys/kernel/mm/transparent_hugepage/defrag)
   local t0 t1 ts0 ts1
   ts0=$(date -u +%Y-%m-%dT%H:%M:%SZ); t0=$(sb_now_us)
 
   echo "\$ $(printf '%q ' "${cmd[@]}")" >> "$SB_LOG"
-  local out rc
+  local out rc errf
+  errf=$(mktemp "${TMPDIR:-/tmp}/sift-bench-stderr.XXXXXX") || sb_die "mktemp failed"
   if [ "$SB_TIMEOUT" -gt 0 ] && command -v timeout > /dev/null 2>&1; then
-    out=$(timeout "$SB_TIMEOUT" "${cmd[@]}" 2>> "$SB_LOG"); rc=$?
+    out=$(timeout "$SB_TIMEOUT" "${cmd[@]}" 2> "$errf"); rc=$?
   else
-    out=$("${cmd[@]}" 2>> "$SB_LOG"); rc=$?
+    out=$("${cmd[@]}" 2> "$errf"); rc=$?
   fi
 
   t1=$(sb_now_us); ts1=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   local wall_ms=$(( (t1 - t0) / 1000 ))
+  cat "$errf" >> "$SB_LOG"
+  local captured
+  captured=$(sb_stderr_fields "$errf")
+  rm -f "$errf"
 
-  local prefix
+  local prefix args
+  args=$(printf '%q ' "${cmd[@]:1}"); args=${args% }
   prefix="\"exp\":$(sb_jstr "$SB_EXP"),\"cfg\":$(sb_jstr "${SB_V_LABEL[$v]}"),\"rep\":$rep"
   prefix+=",\"build\":$(sb_jstr "$build"),\"build_backend\":$(sb_jstr "$bbackend")"
   prefix+=",\"git\":$(sb_jstr "$git"),\"git_dirty\":$dirty"
   prefix+=",\"host\":$(sb_jstr "$(uname -n)"),\"load1\":${l1:-null},\"load5\":${l5:-null},\"load15\":${l15:-null}"
+  prefix+=",\"thp\":$thp,\"thp_defrag\":$thpd"
   prefix+=",\"t_start\":\"$ts0\",\"t_end\":\"$ts1\",\"wall_ms\":$wall_ms"
+  prefix+=",\"argv\":$(sb_jstr "$args")"
+  [ -z "${SB_ROW_EXTRA:-}" ] || prefix+=",$SB_ROW_EXTRA"
+  [ -z "$bextra" ] || prefix+=",$bextra"
+  [ -z "${SB_V_EXTRA[$v]}" ] || prefix+=",${SB_V_EXTRA[$v]}"
+  prefix+=$captured
 
   local line
   line=$(printf '%s\n' "$out" | grep -m1 '^RESULT {' || true)

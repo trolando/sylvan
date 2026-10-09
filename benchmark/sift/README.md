@@ -104,6 +104,10 @@ configuration with `sylvan_gc_set_auto_sift` and calls `sylvan_gc()` where the
 sift would run, so that the growth-recommendation path is what is measured.
 Under `--auto` the row's `sifts` field says whether a sift happened, and the
 `sylvan_sift_result` fields are 0 because `sylvan_gc()` does not return them.
+`--stats` resets the library's counters before the build and before the
+sift, and prints `sylvan_stats_report` after each on stderr, between
+`SIFT-STATS-BEGIN build|sift` and `SIFT-STATS-END ...` lines; the counters
+exist only in a `-DSYLVAN_STATS=ON` build, so time such a build separately.
 
 `cudd_bench` disables automatic reordering, sets `maxGrowth` to `--growth`
 and raises `siftMaxVar` and `siftMaxSwap` to `INT_MAX`, so that it is as

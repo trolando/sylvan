@@ -66,6 +66,7 @@ static double   opt_growth    = 1.2;
 static double   opt_timelimit = 0.0;   /* seconds, 0 = unlimited             */
 static int      opt_fulllegs  = 0;     /* walk every leg to the end          */
 static int      opt_auto      = 0;     /* sift through sylvan_gc's auto sift */
+static int      opt_stats     = 0;     /* counters of the build and the sift */
 static uint64_t opt_memory    = 8ull << 30;
 static unsigned opt_seed      = 12345;
 static const char *opt_varorder = "file";
@@ -342,6 +343,26 @@ done:
 
 /* ------------------------------------------------------------------- main */
 
+/*
+ * --stats: the library's own counters for one phase, as sylvan_stats_report
+ * prints them, on stderr between two marker lines the scripts look for. The
+ * counters are reset where the phase starts, so "build" covers the build
+ * alone and "sift" the sift alone, including the collection it opens with.
+ * A build without -DSYLVAN_STATS=ON has no counters, and says so.
+ */
+static void
+stats_phase(const char *phase)
+{
+    fprintf(stderr, "SIFT-STATS-BEGIN %s\n", phase);
+#if SYLVAN_STATS
+    sylvan_stats_report(stderr);
+#else
+    fprintf(stderr, "(SYLVAN_STATS is off in this build: no counters)\n");
+#endif
+    fprintf(stderr, "SIFT-STATS-END %s\n", phase);
+    fflush(stderr);
+}
+
 static void
 print_order(void)
 {
@@ -375,6 +396,7 @@ run_CALL(lace_worker *lace)
         return 1;
     }
 
+    if (opt_stats) sylvan_stats_reset_CALL(lace);
     const double t_build = now();
     int rc;
     if (is_blif)                            rc = build_blif_CALL(lace);
@@ -382,6 +404,7 @@ run_CALL(lace_worker *lace)
     else                                    rc = build_queens_CALL(lace);
     const double build_s = now() - t_build;
     if (rc != 0) { fprintf(stderr, "build failed\n"); return 1; }
+    if (opt_stats) stats_phase("build");
 
     const size_t nodes_before = mtbdd_shared_node_count(root, (size_t)n_root);
     if (varset_make() != 0) { fprintf(stderr, "varset failed\n"); return 1; }
@@ -420,6 +443,7 @@ run_CALL(lace_worker *lace)
     memset(&result, 0, sizeof(result));
     double sift_s = -1.0;
     int sift_status = SYLVAN_OK;
+    if (opt_stats) sylvan_stats_reset_CALL(lace);
     const uint64_t sifts_before = sylvan_sift_count();
     if (opt_sift) {
         sylvan_sift_config config;
@@ -444,6 +468,7 @@ run_CALL(lace_worker *lace)
         }
     }
     const uint64_t sifts = sylvan_sift_count() - sifts_before;
+    if (opt_stats) stats_phase(opt_sift ? "sift" : "no-sift");
 
     const size_t nodes_after = mtbdd_shared_node_count(root, (size_t)n_root);
     if (varset_make() != 0) { fprintf(stderr, "varset rebuild failed\n"); return 1; }
@@ -531,6 +556,8 @@ usage(FILE *f)
         "          --max-vars N (0)  --time-limit S (0)  --full-legs  --auto\n"
         "          --no-sift\n"
         "  checks: --verify VECTORS  --seed S  --ops  --order\n"
+        "          --stats  (counters of the build and of the sift, on stderr;\n"
+        "                    needs a -DSYLVAN_STATS=ON build)\n"
         "  run:    --workers N (1)  --memory BYTES (8 GiB)\n"
         "0 means unlimited for --max-swaps, --max-vars and --time-limit.\n");
 }
@@ -559,6 +586,7 @@ main(int argc, char **argv)
         else if (!strcmp(a, "--time-limit") && v){ opt_timelimit = atof(v); i++; }
         else if (!strcmp(a, "--full-legs"))      { opt_fulllegs = 1; }
         else if (!strcmp(a, "--auto"))           { opt_auto = 1; }
+        else if (!strcmp(a, "--stats"))          { opt_stats = 1; }
         else if (!strcmp(a, "--memory") && v)    { opt_memory = strtoull(v, NULL, 10); i++; }
         else if (!strcmp(a, "--seed") && v)      { opt_seed = (unsigned)strtoul(v, NULL, 10); i++; }
         else if (!strcmp(a, "--var-order") && v) { opt_varorder = v; i++; }

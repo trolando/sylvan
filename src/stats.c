@@ -38,6 +38,7 @@ static const struct
     {1, BDD_NODES_REUSED, "MTBDD nodes reused"},
     {1, LDD_NODES_CREATED, "LDD nodes created"},
     {1, LDD_NODES_REUSED, "LDD nodes reused"},
+    {1, REORDER_NODES_CREATED, "Swap nodes created"},
     {1, LLMSSET_LOOKUP, "Unique lookup steps"},
     {1, LLMSSET_LOOKUP_CALLS, "Unique lookup calls"},
     {1, LLCHST_HEAD_CAS_FAILURE, "LLCHST head CAS failures"},

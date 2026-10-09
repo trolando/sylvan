@@ -1363,12 +1363,14 @@ reorder_make_node(struct reorder_intern_buffer *buffer,
     }
 
     if (created) {
-        sylvan_stats_count(BDD_NODES_CREATED);
+        /* A counter of its own, not BDD_NODES_CREATED: that one counts what
+           operations build, and a single sift can intern more nodes than the
+           whole forest it reorders. A lookup that finds the node is not
+           counted at all. */
+        sylvan_stats_count(REORDER_NODES_CREATED);
         reorder_edge_up(low);
         reorder_edge_up(high);
         buffer->decision[buffer->decisions++] = index;
-    } else {
-        sylvan_stats_count(BDD_NODES_REUSED);
     }
 
     return complement | index;
@@ -1391,12 +1393,10 @@ reorder_make_map_node(struct reorder_intern_buffer *buffer,
     }
 
     if (created) {
-        sylvan_stats_count(BDD_NODES_CREATED);
+        sylvan_stats_count(REORDER_NODES_CREATED);
         reorder_edge_up(next);
         reorder_edge_up(value);
         buffer->map[buffer->maps++] = index;
-    } else {
-        sylvan_stats_count(BDD_NODES_REUSED);
     }
 
     return index;

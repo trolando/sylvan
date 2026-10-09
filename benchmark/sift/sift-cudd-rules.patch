@@ -1,0 +1,229 @@
+--- a/src/sift.c
++++ b/src/sift.c
+@@ -196,8 +196,55 @@
+     int      grouped;     /* identities 2k and 2k+1 move as one block */
+     int      stuck;       /* a block move could be neither undone nor finished */
+     sylvan_sift_leg leg;  /* what the swaps being made are for, for the trace */
++
++    /* benchmark/sift/sift-cudd-rules.patch: CUDD's rules where they differ
++       from the driver's, each switched on by an environment variable. */
++    int      cudd_return;     /* SIFT_CUDD_RETURN=1: ddSiftingBackward      */
++    int      cudd_direction;  /* SIFT_CUDD_DIRECTION=1: up first on a tie   */
++    int      cudd_growth;     /* SIFT_CUDD_GROWTH=K: CUDD's growth test     */
++    uint64_t cudd_constants;  /*   with K constants counted in every size   */
++    double   cudd_factor;     /*   and the growth factor as a double        */
++    int      recording;       /* recording the second leg's moves:         */
++    uint32_t second_count;    /*   how many,                                */
++    uint32_t *second_top;     /*   the level after each                     */
++    uint64_t *second_size;    /*   and the size after each                  */
+ };
+ 
++/** Whether the environment variable <name> is set to something but 0. */
++static int
++sift_cudd_flag(const char *name)
++{
++    const char *value = getenv(name);
++    return value != NULL && value[0] != '\0' && strcmp(value, "0") != 0;
++}
++
++/**
++ * Whether the last move grew the forest past the growth bound. CUDD's test,
++ * in ddSiftingUp and ddSiftingDown, is (double)size > limitSize * maxGrowth
++ * with maxGrowth a double and sizes that count its constants; the driver's
++ * compares sizes without them against a float factor. <limit> already
++ * includes the size the move reached, which changes neither test.
++ */
++static int
++sift_grown(const struct sift_run *run, uint64_t limit)
++{
++    if (run->cudd_growth) {
++        return (double)(run->size + run->cudd_constants) >
++               (double)(limit + run->cudd_constants) * run->cudd_factor;
++    }
++    return (double)run->size > run->growth * (double)limit;
++}
++
++/** The second leg's moves, which CUDD's return considers alone. */
++static void
++sift_record(struct sift_run *run, uint32_t top)
++{
++    if (!run->recording) return;
++    run->second_top[run->second_count] = top;
++    run->second_size[run->second_count] = run->size;
++    run->second_count++;
++}
++
+ /**
+  * Whether the search may still make a move of <swaps> adjacent swaps. A move
+  * is made whole or not at all, so the whole of it has to fit in the budget.
+@@ -496,9 +543,10 @@
+             top += next;
+ 
+             if (run->size < *best_size) { *best_size = run->size; *best_top = top; }
++            sift_record(run, top);
+             if (run->size < limit) limit = run->size;
+             if (refused) break;
+-            if ((double)run->size > run->growth * (double)limit) break;
++            if (sift_grown(run, limit)) break;
+         }
+     } else {
+         /* bound: a lower bound on the size reachable above. The part below the
+@@ -535,9 +583,10 @@
+             }
+ 
+             if (run->size < *best_size) { *best_size = run->size; *best_top = top; }
++            sift_record(run, top);
+             if (run->size < limit) limit = run->size;
+             if (refused) break;
+-            if ((double)run->size > run->growth * (double)limit) break;
++            if (sift_grown(run, limit)) break;
+         }
+     }
+ 
+@@ -569,14 +618,40 @@
+     uint32_t best_top = top;
+     uint64_t best_size = run->size;
+ 
+-    /* Distance to the top is <top>, to the bottom <ranks-size-top>. */
+-    const int down_first = top >= run->ranks - size - top;
++    /* Distance to the top is <top>, to the bottom <ranks-size-top>. CUDD
++       (ddSiftingAux) goes up first when the two are equal. */
++    const int down_first = run->cudd_direction
++        ? top > run->ranks - size - top
++        : top >= run->ranks - size - top;
++    const uint64_t initial_size = run->size;
+ 
+     top = sift_leg(lace, run, top, down_first, block, size,
+                    &best_top, &best_size);
+     if (run->stuck) return;
++    const uint32_t second_start = top;
++    run->second_count = 0;
++    run->recording = run->cudd_return;
+     top = sift_leg(lace, run, top, !down_first, block, size,
+                    &best_top, &best_size);
++    run->recording = 0;
++
++    if (run->cudd_return) {
++        /* ddSiftingBackward, called on the second leg's moves alone: the
++           smallest of the excursion's initial size and the sizes those moves
++           reached; walking back from the last move, the first move that
++           reached it; when none did, all of them undone. */
++        uint64_t smallest = initial_size;
++        for (uint32_t i = 0; i < run->second_count; i++) {
++            if (run->second_size[i] < smallest) smallest = run->second_size[i];
++        }
++        best_top = second_start;
++        for (uint32_t i = run->second_count; i-- > 0;) {
++            if (run->second_size[i] == smallest) {
++                best_top = run->second_top[i];
++                break;
++            }
++        }
++    }
+ 
+     run->leg = SYLVAN_SIFT_LEG_RETURN;
+     while (top != best_top && !run->stuck) {
+@@ -806,6 +881,29 @@
+     run.stuck = 0;
+     run.leg = SYLVAN_SIFT_LEG_UP;
+ 
++    run.cudd_return = sift_cudd_flag("SIFT_CUDD_RETURN");
++    run.cudd_direction = sift_cudd_flag("SIFT_CUDD_DIRECTION");
++    run.cudd_growth = getenv("SIFT_CUDD_GROWTH") != NULL;
++    run.cudd_constants = run.cudd_growth
++        ? strtoull(getenv("SIFT_CUDD_GROWTH"), NULL, 10) : 0;
++    {
++        /* The factor as the user wrote it (1.2), not as the float holds it. */
++        char text[32];
++        snprintf(text, sizeof(text), "%.6g", (double)config->max_growth);
++        run.cudd_factor = strtod(text, NULL);
++    }
++    run.recording = 0;
++    run.second_count = 0;
++    run.second_top = (uint32_t*)malloc(((size_t)run.ranks + 1u) * sizeof(uint32_t));
++    run.second_size = (uint64_t*)malloc(((size_t)run.ranks + 1u) * sizeof(uint64_t));
++    if (run.second_top == NULL || run.second_size == NULL) run.cudd_return = 0;
++    const char *cudd_order = getenv("SIFT_CUDD_ORDER");
++    fprintf(stderr, "SIFT-CUDD-RULES {\"return\":%d,\"direction\":%d"
++            ",\"growth\":%d,\"constants\":%llu,\"order\":\"%s\"}\n",
++            run.cudd_return, run.cudd_direction, run.cudd_growth,
++            (unsigned long long)run.cudd_constants,
++            cudd_order != NULL ? cudd_order : "");
++
+     const uint64_t initial = run.size;
+     uint32_t candidates = 0;
+     uint32_t sifted = 0;
+@@ -869,6 +967,44 @@
+             }
+             qsort(order, candidates, sizeof(struct sift_candidate),
+                   sift_compare);
++
++            if (sift_cudd_flag("SIFT_PRINT_CANDIDATES")) {
++                for (uint32_t i = 0; i < candidates; i++) {
++                    fprintf(stderr, "SIFT-CANDIDATE %u %u %llu\n", (unsigned)i,
++                            (unsigned)order[i].identity,
++                            (unsigned long long)order[i].population);
++                }
++            }
++
++            /* SIFT_CUDD_ORDER names a file of identities, one per line
++               (compare-traces.py --order-out): the candidates it lists are
++               sifted in its order, then any it leaves out in the driver's. */
++            FILE *file = cudd_order != NULL ? fopen(cudd_order, "r") : NULL;
++            if (file != NULL) {
++                struct sift_candidate *given = (struct sift_candidate*)malloc(
++                    (size_t)run.ranks * sizeof(struct sift_candidate));
++                uint8_t *taken = (uint8_t*)calloc(run.ranks, 1);
++                if (given != NULL && taken != NULL) {
++                    uint32_t count = 0;
++                    unsigned identity;
++                    while (fscanf(file, "%u", &identity) == 1) {
++                        for (uint32_t i = 0; i < candidates; i++) {
++                            if (order[i].identity == identity && !taken[i]) {
++                                taken[i] = 1;
++                                given[count++] = order[i];
++                                break;
++                            }
++                        }
++                    }
++                    for (uint32_t i = 0; i < candidates; i++) {
++                        if (!taken[i]) given[count++] = order[i];
++                    }
++                    memcpy(order, given, (size_t)candidates * sizeof(*order));
++                }
++                free(given);
++                free(taken);
++                fclose(file);
++            }
+         }
+     }
+ 
+@@ -885,6 +1021,8 @@
+     }
+     free(order);
+     free(run.pop);
++    free(run.second_top);
++    free(run.second_size);
+ 
+     const uint64_t final_size = run.size;
+     const uint64_t swaps = run.swaps;
+--- a/benchmark/sift/sylvan_bench.c
++++ b/benchmark/sift/sylvan_bench.c
+@@ -463,6 +463,17 @@
+ 
+     /* Out of the way, so the sift sees the output cone and nothing else. */
+     varset = bdd_set_empty();
++    /* sift-cudd-rules.patch: SIFT_DROP_VAR_ROOTS=1 releases the projection
++       functions too, so that the forest is the output cone alone and the
++       driver scores what CUDD scores (keys - isolated, less its constants):
++       a projection function no output uses is then not in the forest. */
++    {
++        const char *drop = getenv("SIFT_DROP_VAR_ROOTS");
++        if (drop != NULL && strcmp(drop, "1") == 0) {
++            for (int i = 0; i < n_var; i++) var[i] = bdd_false;
++            fprintf(stderr, "SIFT-CUDD-RULES projection functions released\n");
++        }
++    }
+ 
+     sylvan_sift_result result;
+     memset(&result, 0, sizeof(result));

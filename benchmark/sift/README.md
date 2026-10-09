@@ -16,6 +16,9 @@ the input circuit, which the instructions below fetch at pinned revisions.
 | `scripts/summarize.py` | Markdown and CSV tables from those rows |
 | `scripts/build-matrix.sh`, `scripts/manifest.py` | every build configuration the paper's headlines need, and `manifest.json` |
 | `scripts/run-headlines.sh`, `scripts/headlines.py` | the headline experiments on those builds, their tables and the reference check (see `EXPERIMENTS.md` at the repository root) |
+| `cudd-swap-trace.patch` | a per-swap trace for CUDD 3.0.0, which has no swap hook (see [Swap traces](#swap-traces)) |
+| `scripts/compare-traces.py` | aligns a Sylvan and a CUDD swap trace and explains where they differ |
+| `sift-cudd-rules.patch` | a diagnostic Sylvan patch that switches to CUDD's rules one at a time, for the attribution in [Swap traces](#swap-traces) |
 
 ## Building
 
@@ -93,6 +96,9 @@ Both drivers take the same case options and print one `RESULT {...}` line.
 --ops                       time a pairwise and/xor/model-count phase before
                             and after the sift
 --order                     print the final variable order
+--trace FILE                write one line per swap of the sift to FILE
+                            (see Swap traces; cudd_bench needs a CUDD built
+                            with cudd-swap-trace.patch)
 --no-sift                   build and measure only
 --growth G (1.2)            maximum growth while moving one variable
 --memory BYTES (8 GiB)
@@ -221,7 +227,180 @@ With `--verify 64` (and the default `--seed`), C880-file's `eval_hash` is
 Swap counts are not reference values. Sylvan's legs stop at the interaction
 bound unless `--full-legs` is given; the bound only skips positions that
 cannot win, so the final sizes above hold either way, while C880-file takes
-3770 swaps with the bound and 5624 with `--full-legs` (CUDD: 3456).
+3770 swaps with the bound and 5624 with `--full-legs` (CUDD: 3456). Where
+the remaining 314 come from, and why the final sizes differ where they do,
+is in [Swap traces](#swap-traces).
+
+## Swap traces
+
+Both drivers can write every adjacent swap their sift makes to a file, so that
+the two schedules can be compared swap for swap rather than by their totals.
+
+### The format
+
+`--trace FILE` writes one line per swap, in the order the swaps are made, and
+nothing else, so the file has as many lines as the row's `swaps`:
+
+```
+POS UPPER LOWER SCORE NODES LEG
+```
+
+| field | `sylvan_bench` (`sylvan_sift_set_trace`) | `cudd_bench` (`cudd-swap-trace.patch`) |
+|---|---|---|
+| POS | rank of the upper of the two variables, 0 at the top | the `x` of `cuddSwapInPlace(dd, x, x+1)` |
+| UPPER LOWER | the identities at POS and POS+1 before the swap | `dd->invperm[x]`, `dd->invperm[x+1]` before the swap |
+| SCORE | the size the driver compares, after the swap: `sylvan_reorder_forest_size()` | the size `cuddSifting` compares: `dd->keys - dd->isolated`, what `cuddSwapInPlace` returns |
+| NODES | the same forest size | `dd->keys - dd->constants.keys`: every live internal node |
+| LEG | `u`/`d` a search leg up/down, `b` the return to the best position, `r` reuniting a pair (`--group-pairs`) | `u` from `ddSiftingUp`, `d` from `ddSiftingDown`, `b` from `ddSiftingBackward` |
+
+**NODES counts the same set on both sides.** Sylvan's forest is everything
+reachable from its roots, which in this harness are the outputs and the
+projection functions `var[i]` the driver holds; CUDD's unique table holds,
+after the collection `Cudd_ReduceHeap` starts with, the outputs' nodes, the
+projection functions the manager always references, and its four constants
+(one, zero, plus and minus infinity), which `constants.keys` takes out. So on
+the same order the two NODES are equal, and the traces confirm it: on every
+common prefix below they never differ. **SCORE is where the tools differ.**
+CUDD leaves out the projection functions nothing else references (`isolated`:
+32 to 50 of C880's 60 over the sifts below, 99 of queens10's 100) and keeps
+its four constants, so CUDD's SCORE is NODES + 4 - isolated, an offset that
+changes with the order. Sylvan scores NODES, projection functions included,
+because its harness holds them as roots.
+
+### Building CUDD with the trace
+
+CUDD has no swap hook. `cudd-swap-trace.patch` adds one to `cuddReorder.c` of
+CUDD 3.0.0 (f54f533): `cuddSwapInPlace` writes a line to the file the
+environment variable `CUDD_SWAP_TRACE` names (looked up once, at the first
+swap; one branch per swap after that), and the three sifting routines set
+the leg letter. It changes no decision. Apply it before `configure` in the
+CUDD build above, in a tree used for traces only:
+
+```sh
+patch -p1 < /path/to/sylvan/benchmark/sift/cudd-swap-trace.patch
+./configure CFLAGS="-O3 -DNDEBUG" CXXFLAGS="-O3 -DNDEBUG" && make -j
+```
+
+`cudd_bench --trace FILE` sets `CUDD_SWAP_TRACE`, and warns when the CUDD it
+was built against wrote nothing.
+
+### Comparing
+
+```sh
+sylvan_bench --mode blif --file inputs/C880.blif --case C880-file \
+  --workers 1 --threshold 0 --verify 64 --trace C880-file.sylvan.trace
+cudd_bench --mode blif --file inputs/C880.blif --case C880-file \
+  --verify 64 --trace C880-file.cudd.trace
+scripts/compare-traces.py C880-file.sylvan.trace C880-file.cudd.trace > C880-file.md
+```
+
+`compare-traces.py` cuts each trace into excursions (a variable's two search
+legs and its return) and reports, as Markdown: the totals per leg; the
+starting order each trace implies, which must agree; the longest common
+prefix and the first divergence, with its cause; both candidate orders; where
+every leg stopped and why (end of the order, growth bound, interaction
+bound); each tool's return rule replayed on both traces, with a check that
+every excursion follows its own tool's rule; the difference in swaps split by
+leg and stop test; and a per-variable table. `--first-rules cudd` reads a
+Sylvan trace made with the rules below.
+
+### What the traces show
+
+trie, P1, `--threshold 0`, growth 1.2, CUDD caps raised, `--verify 64`
+(2026-10-09, WSL). Swap counts, sizes and hashes are deterministic.
+
+| case | Sylvan | `--full-legs` | CUDD | common prefix | first divergence | final size Sylvan / CUDD | `eval_hash`, all three runs |
+|---|---:|---:|---:|---:|---|---|---|
+| C880-file | 3770 | 5624 | 3456 | 88 | return-leg tie | 5234 / 7064 | `b63d2a3eade6548e` |
+| C880-rev | 3752 | 5554 | 3362 | 244 | return-leg tie | 36533 / 36533 | `699d25151bb6f5a2` |
+| C880-rnd1 | 3870 | 5386 | 3685 | 170 | return-leg tie | 31088 / 23789 | `2cd3a4b5fbcbb236` |
+| C880-rnd2 | 3841 | 5405 | 3565 | 795 | return-leg tie | 26972 / 26973 | `ecfd7a40ce4158b9` |
+| queens10 | 14157 | 20021 | 13980 | 30 | leg stop (bound) | 25330 / 25331 | `eebe4e4e51c6c683` |
+
+(The queens function is false on all 64 random vectors, so its hash says
+only that; `sound` and the model counts check the rest.) Both sides start
+from the same order (each trace implies the whole starting order, and they
+agree), sift the same variables, and follow their own return rule on every
+excursion. What is the same, read off the two sources: the candidate key
+(each variable's node count when the sift starts, projection function
+included, on the same forest); the interaction matrix (pairs within the
+support of some root; Sylvan's projection roots and CUDD's isolated
+projection functions have one-variable supports and add no pair, so the
+matrices are equal); the leg order (nearer end first); the two interaction
+bounds of `ddSiftingUp` and `ddSiftingDown`, term for term; the growth bound
+per leg; and no caps. What differs is five rules:
+
+| | rule | Sylvan | CUDD |
+|---|---|---|---|
+| R | return target | the first level, over both legs, with the smallest size; the start wins a tie | `ddSiftingBackward` on the second leg's moves: the last of them with the smallest of the start size and theirs, else the second leg's start |
+| P | projection functions | scored: the harness holds them as roots | `isolated` ones left out of the score and of each level's count in both bounds |
+| G | growth test | `size > 1.2f * limit`, sizes without constants | `size > 1.2 * limit` in double, sizes with its 4 constants |
+| D | direction on a tie (exact middle) | down first | up first |
+| O | candidate order among equal keys | by identity | as `util_qsort` leaves them (`ddUniqueCompare`'s tie-break is compiled out) |
+
+R dominates. A sifted variable crossing a variable it does not interact with
+changes no node, so the size curve of an excursion has runs of equal size,
+and the minimum is often such a run: the first divergence on the four C880
+cases is one (C880-file: variable 38's smallest forest, 50451 nodes, holds on
+the 9 levels 18 to 26; Sylvan returns to 26, the first its legs reached, CUDD
+to 18, the last its second leg reached: 8 more swaps for Sylvan, and a
+different order for every excursion after it). P's first effect is on
+queens10, where 99 of the 100 projection functions are isolated: CUDD's bound
+stops variable 51's first leg one move before Sylvan's does; that excursion
+still ends at the same level, so the orders stay equal for a while.
+
+### Attribution: CUDD's rules one at a time
+
+`sift-cudd-rules.patch` is a diagnostic patch for `src/sift.c` and
+`sylvan_bench.c` at this commit, never for a build that measures anything
+else. Each rule above becomes an environment variable:
+
+| rule | variable |
+|---|---|
+| R | `SIFT_CUDD_RETURN=1` |
+| P | `SIFT_DROP_VAR_ROOTS=1` (the harness releases its projection functions before the sift, so the forest is what CUDD scores, less its 4 constants) |
+| G | `SIFT_CUDD_GROWTH=4` (with P; `0` without) |
+| D | `SIFT_CUDD_DIRECTION=1` |
+| O | `SIFT_CUDD_ORDER=FILE`, CUDD's candidate order from `compare-traces.py --order-out FILE` |
+
+Adding them in that order to Sylvan's bounded run, on the same cases
+(swaps; final size in parentheses where it changes):
+
+| case | Sylvan | +R | +P | +G | +D | +O = CUDD |
+|---|---:|---:|---:|---:|---:|---:|
+| C880-file | 3770 (5234) | 3442 (7060) | 3451 (7068) | 3451 | 3451 | 3456 (7064) |
+| C880-rev | 3752 | 3329 (36535) | 3334 (36533) | 3334 | 3334 | 3362 |
+| C880-rnd1 | 3870 (31088) | 3747 (23790) | 3677 (23789) | 3677 | 3677 | 3685 |
+| C880-rnd2 | 3841 (26972) | 3556 (26975) | 3563 (26973) | 3563 | 3563 | 3565 |
+| queens10 | 14157 (25330) | 14057 (25331) | 13983 | 13983 | 13983 | 13980 |
+| queens9 | 9201 (9246) | 9068 (9256) | 8982 | 8982 | 8978 | 8966 (9246) |
+
+With all five, Sylvan's trace is CUDD's, swap for swap, on all six cases
+(`compare-traces.py --first-rules cudd` reports the traces identical; SCORE
+then differs by exactly CUDD's 4 constants), and so are the final sizes. So
+the residual is explained in full. Per cause, in that order: on C880-file
+R -328, P +9, G 0, D 0, O +5 (total -314); C880-rev -423, +5, 0, 0, +28;
+C880-rnd1 -123, -70, 0, 0, +8; C880-rnd2 -285, +7, 0, 0, +2; queens10 -100,
+-74, 0, 0, -3; queens9 (81 variables, so it has a middle) -133, -86, 0, -4,
+-12. Each alone, against Sylvan: R -328/-423/-123/-285/-100/-133, P
++15/-180/-22/-32/-74/-92, O 0/-3/0/+4/-2/-2, G 0 everywhere, D 0 except
+queens9 (-4). The rules interact (a different choice early changes every
+excursion after it), which is why the alone and in-order numbers differ.
+The quality differences are tie-breaks too: R alone turns C880-file's 5234
+into 7060 and C880-rnd1's 31088 into 23790.
+
+```sh
+# in a scratch copy of this tree, never in a build that measures anything else
+patch -p1 < benchmark/sift/sift-cudd-rules.patch     # then build sylvan_bench
+scripts/compare-traces.py --order-out C880-file.order \
+  C880-file.sylvan.trace C880-file.cudd.trace > /dev/null
+SIFT_CUDD_RETURN=1 SIFT_DROP_VAR_ROOTS=1 SIFT_CUDD_GROWTH=4 \
+SIFT_CUDD_DIRECTION=1 SIFT_CUDD_ORDER=C880-file.order \
+  sylvan_bench --mode blif --file inputs/C880.blif --case C880-file \
+  --workers 1 --threshold 0 --trace C880-file.rules.trace
+scripts/compare-traces.py --first-rules cudd \
+  C880-file.rules.trace C880-file.cudd.trace     # "identical"
+```
 
 ## Measurement protocol
 
@@ -232,6 +411,11 @@ cannot win, so the final sizes above hold either way, while C880-file takes
   change nothing. Both tools sift the output cone only: every intermediate
   is released before the sift, and Sylvan's variable-set helper is dropped
   around it.
+- **Same schedule, checked swap for swap.** The same candidate key, leg
+  order, interaction matrix, interaction bounds and growth bound on both;
+  `--trace` and `compare-traces.py` show where the two schedules part, and
+  with `sift-cudd-rules.patch` Sylvan's trace is CUDD's (see
+  [Swap traces](#swap-traces)). Time with untraced runs.
 - **Same flags.** Both libraries and both drivers at `-O3 -DNDEBUG`
   (CMake Release, and CUDD's `configure` line above).
 - **One process per run**, so no run inherits another's tables. `sift_s` is

@@ -193,6 +193,16 @@ int sylvan_reorder_interact(uint32_t a, uint32_t b);
 void sylvan_reorder_set_release_at_swap_end(int enable);
 
 /**
+ * Batched index surgery (design experiment H2). Nonzero (the default) hands a
+ * swap's removals and re-indexings to the backend as whole sets wherever it
+ * implements NODES_CAP_BATCH and more than one worker runs; zero makes every
+ * swap take the per-node path it takes on a backend without the capability,
+ * which is the ablation that measures what batching is worth. The swaps, the
+ * forest and the scores are the same either way; only the schedule differs.
+ */
+void sylvan_reorder_set_batched(int enable);
+
+/**
  * Recompute every reference count from scratch when the session closes and
  * compare it with the maintained counts. Off by default; the tests turn it on.
  */

@@ -151,11 +151,18 @@ static struct reorder_session session;
 static int reorder_release_at_swap_end = 1;
 static int reorder_validate = 0;
 static uint32_t reorder_overflow_at = REORDER_COUNT_SENTINEL;
+static int reorder_batched = 1;
 
 void
 sylvan_reorder_set_release_at_swap_end(int enable)
 {
     reorder_release_at_swap_end = enable ? 1 : 0;
+}
+
+void
+sylvan_reorder_set_batched(int enable)
+{
+    reorder_batched = enable ? 1 : 0;
 }
 
 void
@@ -2044,9 +2051,10 @@ sylvan_varswap_CALL(lace_worker *lace, uint32_t rank,
     /* A batch exists to spread the index work over the workers; with one
        worker there is nothing to spread and the collective calls are pure
        overhead, measured at several percent of a single-worker sift on the
-       backends whose per-node primitives are cheap. */
+       backends whose per-node primitives are cheap. The knob turns batching
+       off everywhere, for measuring what it is worth. */
     swap_batched = (nodes_reorder_caps(nodes) & NODES_CAP_BATCH) != 0
-        && lace_worker_count() > 1;
+        && lace_worker_count() > 1 && reorder_batched;
 
     /* The two index calls sit between the phases rather than inside them, and
        that is not only about the batch. The rewrite of a record and the

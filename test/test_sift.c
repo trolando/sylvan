@@ -401,6 +401,21 @@ test_config_CALL(lace_worker *lace)
     test_assert(20 * result.final_size <= 21 * test_first_final_size);
     if (test_check_roots_CALL(lace)) return 1;
 
+    /* Batching off. On a backend with the batched index primitives and more
+       than one worker, every swap now unhashes and re-indexes its nodes one at
+       a time instead: the same surgery in a different schedule, so everything
+       that holds for a batched sift holds here, down to the reference counts
+       the session recomputes when it closes (see runtests). Elsewhere this was
+       the path already, and the run is one more sift. */
+    sylvan_reorder_set_batched(0);
+    memset(&config, 0, sizeof(config));
+    const int unbatched = sylvan_sift_report(&config, &result);
+    sylvan_reorder_set_batched(1);
+    test_assert(unbatched == SYLVAN_OK);
+    test_assert(result.final_size <= result.initial_size);
+    test_assert(20 * result.final_size <= 21 * test_first_final_size);
+    if (test_check_roots_CALL(lace)) return 1;
+
     /* And the plain call, which reports nothing. */
     test_assert(sylvan_sift(NULL) == SYLVAN_OK);
     return test_check_roots_CALL(lace);

@@ -945,7 +945,7 @@ runtests_CALL(lace_worker *lace)
     printf("Testing a swap that cannot reserve what it needs.\n");
     if (test_out_of_memory_CALL(lace)) return 1;
 
-    printf("Testing the foreign root guards.\n");
+    printf("Testing the ZDD and ListDD guards.\n");
     if (test_foreign_state_guards()) return 1;
 
     /* Not one allocation anywhere in this file happened on a path a swap had

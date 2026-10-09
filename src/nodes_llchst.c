@@ -29,9 +29,10 @@
  *
  * Decision nodes are routed to independently sized subtables. Leaves, maps,
  * ListDD nodes, and legacy direct users have auxiliary subtables. Each node
- * has one immutable link with a 3-bit owner class, 21-bit hash fingerprint,
- * and 40-bit next index. Chains only grow by prepending between stop-the-world
- * collections.
+ * has one link with a 3-bit owner class, 21-bit hash fingerprint, and 40-bit
+ * next index. While lookups run, chains only grow, by prepending; garbage
+ * collection and maintenance rebuild them, and the reorder primitives below
+ * splice nodes out and prepend them again, all while lookups are stopped.
  *
  * GC estimates ordinary populations from contiguous head arrays, retains an
  * exact chain walk for initial/saturated tables, and rebuilds normal marked
@@ -2681,8 +2682,10 @@ llchst_batch_reinsert_CALL(lace_worker* lace, nodes_table* dbs,
     for (size_t at = first; at < end; at++) {
         /* Reinsertion keeps the contract it always had: a node that was not
            removed first is reported, not aborted on, exactly as the trie's
-           batch does. It is the one failure the caller can act on, because it
-           says the node is still in the index rather than missing from it. */
+           batch does -- in a release build; nodes_reinsert asserts on it in a
+           debug build, as the trie's does. It is the one failure the caller
+           can act on, because it says the node is still in the index rather
+           than missing from it. */
         if (nodes_reinsert(dbs, indices[at]) != SYLVAN_OK) {
             atomic_store_explicit(&dbs->batch_error, 1, memory_order_relaxed);
         }

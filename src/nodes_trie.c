@@ -30,8 +30,10 @@
  *
  * Node indices are 40-bit numbers.
  *
- * The set has support for stop-the-world garbage collection.
- * Methods nodes_clear and nodes_reinsert implement garbage collection.
+ * The set has support for stop-the-world garbage collection, implemented by
+ * nodes_clear, nodes_mark_rec and nodes_rebuild (which reinserts every marked
+ * node with nodes_reinsert_bucket). nodes_reinsert is a reorder primitive;
+ * see below.
  */
 
 typedef struct nodes_table
@@ -323,7 +325,8 @@ static inline uint64_t ror64(uint64_t x, unsigned int k) {
  * room back. The hot path is untouched -- only the branch that has already
  * failed to claim a slot arrives here. The flag is one word beside the
  * allocator rather than a field of the table because the allocator it speaks
- * for is itself global (see the warning about multiple tables above).
+ * for is itself global (see the note on a single nodes table in
+ * nodes_create below).
  */
 static _Atomic(int) arena_exhausted_reported;
 
@@ -862,8 +865,9 @@ void nodes_cleanup_custom_CALL(lace_worker* lace, nodes_table* dbs)
 }
 
 /**
- * This backend never requests maintenance: its index is rebuilt in place on
- * every insertion, so there is nothing to reorganize between collections.
+ * This backend never requests maintenance: every insertion updates the index
+ * in place and only a collection rebuilds it, so there is nothing to
+ * reorganize between collections.
  */
 void nodes_maintain_CALL(lace_worker* lace, nodes_table* dbs)
 {
@@ -887,8 +891,9 @@ void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb e
  *
  * SERIAL, ONE NODE AT A TIME. nodes_remove and nodes_reinsert both take a
  * per-table spin lock, so they are serialised against each other across all
- * workers. That is the documented contract for the single-node primitives, and
- * it is not a shortcut for removal alone:
+ * workers. The contract in <sylvan/nodes.h> only asks that the session's
+ * workers may call them at the same time; serialising them is how this backend
+ * meets it, and it is not a shortcut for removal alone:
  *
  *  - removal below rewrites several slots that are not related by any single
  *    compare-and-swap, and it breaks the write-once property of the slots,
@@ -906,8 +911,8 @@ void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb e
  * nodes_reinsert_batch take the whole set at once and run the phases of the
  * work in parallel with barriers between them; see the block above
  * nodes_remove_batch for the design and its correctness argument. The
- * single-node entry points stay exactly as they were, so a caller that cannot
- * batch, and every existing test, is unaffected.
+ * single-node entry points keep the lock, so a caller that cannot batch -- a
+ * single-worker sift, the table's unit tests -- gets them exactly as above.
  *
  * WHY NOT LEAF PROMOTION. The obvious removal -- pull a leaf out of the
  * subtree below the removed node and give it the removed node's branch pair
@@ -1068,9 +1073,9 @@ reorder_find_slot(nodes_table* dbs, uint64_t index,
  * Normally the table's own scratch, which nodes_prepare_reorder sized so that
  * it cannot run out; <owned> then stays zero and nothing is allocated or
  * freed. A caller that removes without preparing -- the table's unit tests --
- * gets the old behaviour of a private buffer that grows on demand and may
- * report out of memory, which is still safe because collecting a region is
- * read-only and nothing has changed when it fails.
+ * gets a private buffer instead, which grows on demand, counts as a late
+ * allocation, and may report out of memory; that is still safe, because
+ * collecting a region is read-only and nothing has changed when it fails.
  */
 struct reorder_region {
     uint64_t* nodes;
@@ -1286,9 +1291,9 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
  * the region that hung below it, and the rebuild is an ordinary descent from
  * first[anchor] that publishes into the first empty slot it finds -- which may
  * be anywhere in the table. So a removal's write set is not confined to any
- * region, family or shard, and there is no lock domain to shard it into: see
- * the survey in the report for why sharded and optimistic locking both fail on
- * exactly this point.
+ * region, family or shard, and there is no lock domain to shard it into --
+ * which is exactly the point on which sharded and optimistic locking both
+ * fail.
  *
  * What does work is to widen the call instead of narrowing the lock. Every
  * caller of this backend already knows its whole removal set up front -- a
@@ -1356,10 +1361,11 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
  *     the forest cannot contain.
  *
  * FAILURE. Only phase 1 can fail, and it is read-only, so a batch that names a
- * node which is not in the index changes nothing at all and reports it. After
- * phase 1 there is nothing left that can go wrong: the region array is sized to
- * the table by nodes_prepare_reorder, and the nodes it holds are distinct node
- * indices, so it cannot overflow.
+ * node which is not in the index changes nothing at all and reports it -- in a
+ * release build; a debug build asserts there first, as nodes_remove does.
+ * After phase 1 there is nothing left that can go wrong: the region array is
+ * sized to the table by nodes_prepare_reorder, and the nodes it holds are
+ * distinct node indices, so it cannot overflow.
  *
  * The reinsertion batch is the same idea with only phase 4: nothing is cleared,
  * so every worker may descend at once, and the batch exists to spare the caller
@@ -1385,7 +1391,8 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
  * discovers an absent one on the way. That makes its refusal stronger than the
  * contract asks for -- an in-range index that is not in the index is a caller
  * error the contract lets a backend abort on, and this one refuses cleanly
- * instead. Nothing may depend on that; see nodes_remove_batch in nodes.h.
+ * instead in a release build. Nothing may depend on that; see
+ * nodes_remove_batch in nodes.h.
  */
 enum trie_batch_phase {
     TRIE_BATCH_FIND = 0,

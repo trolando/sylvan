@@ -573,7 +573,7 @@ _listdd_try_make_node(LISTDD *destination, uint32_t value, LISTDD ifeq, LISTDD i
     if (index == 0) {
         listdd_refs_push(ifeq);
         listdd_refs_push(ifneq);
-        sylvan_gc_collect(); // FIXME can be just sylvan_gc_CALL?
+        sylvan_gc_collect(); // mid-operation: never sylvan_gc(), which may sift
         listdd_refs_pop(2);
 
         index = nodes_lookup_subtable(

@@ -129,8 +129,9 @@ void nodes_prefetch_subtable(const nodes_table* dbs, uint32_t subtable,
  * To perform garbage collection, the user is responsible that no lookups are performed during the process.
  *
  * 1) call nodes_clear
- * 2) call nodes_mark for every bucket to rehash
- * 3) call nodes_rehash
+ * 2) call nodes_mark_rec for every root, which marks it and everything below it
+ * 3) call nodes_cleanup_custom, for the custom nodes that were not marked
+ * 4) call nodes_rebuild
  */
 
 /**
@@ -224,9 +225,13 @@ TASK(void, nodes_maintain, nodes_table*, dbs)
  * CLEARING. A traversal that marks must unmark exactly what it marked, which
  * every caller does along the same recursion it marked with. The bitmap is
  * therefore all zeroes between traversals and is never bulk-cleared: on a
- * table sized for 2^40 nodes it spans 128 GiB of reserved address space, of
- * which only the pages a traversal actually touched are committed. Debug
- * builds assert on release that no mark was left behind.
+ * table sized for 2^40 nodes it spans 128 GiB of address space. With
+ * SYLVAN_USE_MMAP only the pages a traversal touched become resident -- and
+ * where the kernel grants the transparent huge pages sylvan_alloc_aligned
+ * asks for on an allocation this large, a page is 2 MiB, the bits of 16M
+ * node indices -- while without it the allocation is zeroed, and so made
+ * resident, up front. Debug builds assert on release that no mark was left
+ * behind.
  * ---------------------------------------------------------------------------
  */
 
@@ -294,7 +299,18 @@ void nodes_set_size(nodes_table* dbs, size_t size);
  * that is more restrictive than that says so in its own source file.
  *
  * All of them return SYLVAN_OK (0) on success and a negative SYLVAN_ERR_*
- * code on failure. A failure never leaves the index half-changed.
+ * code on failure. A failure never leaves the index half-changed, with one
+ * exception: nodes_reinsert_batch, see there.
+ *
+ * CALLER ERRORS. Some refusals below are documented as caller errors rather
+ * than conditions: removing a node that is not in the index, reinserting one
+ * that was not removed first. A debug build may assert on those before it
+ * refuses, and every backend that implements them does on at least one, so
+ * only a release build (NDEBUG) is guaranteed to see the SYLVAN_ERR_INVALID;
+ * a test of such a refusal has to run without assertions. The other
+ * refusals -- an index out of range, a capability the backend does not
+ * report, nodes_release of a node that is still indexed -- are plain return
+ * values in every build.
  * ---------------------------------------------------------------------------
  */
 
@@ -322,8 +338,11 @@ uint32_t nodes_reorder_caps(const nodes_table* dbs);
  * from the backend's own per-node metadata. There is no route parameter,
  * because the record is the truth.
  *
- * Returns SYLVAN_ERR_INVALID if the node is not in the index. That is a
- * caller error: removing a node twice, or one that was never inserted.
+ * Returns SYLVAN_ERR_INVALID if the node is not in the index, and changes
+ * nothing. That is a caller error -- removing a node twice, or one that was
+ * never inserted -- so see CALLER ERRORS above for what a debug build does.
+ * Without a preceding nodes_prepare_reorder a backend may also refuse with
+ * SYLVAN_ERR_OOM, likewise having changed nothing.
  */
 int nodes_remove(nodes_table* dbs, uint64_t index);
 
@@ -340,6 +359,11 @@ int nodes_remove(nodes_table* dbs, uint64_t index);
  * the caller's invariant: the unique table would hold the same key twice and
  * continuing would corrupt the forest. Debug builds assert, release builds
  * print a diagnostic and abort.
+ *
+ * Returns SYLVAN_ERR_INVALID for a node that was not removed first, which is
+ * a caller error (see CALLER ERRORS above). A backend that allocates parts of
+ * its index lazily may also refuse with SYLVAN_ERR_OOM for a route
+ * nodes_prepare_reorder was not told about.
  */
 int nodes_reinsert(nodes_table* dbs, uint64_t index);
 
@@ -378,10 +402,14 @@ int nodes_reinsert(nodes_table* dbs, uint64_t index);
  * means the caller's own bookkeeping is already wrong, and the session that
  * drives these calls treats a refusal as fatal anyway. A backend that
  * discovers absence for free while doing its own work may still refuse
- * cleanly, and the trie does; callers may not rely on it.
+ * cleanly, and the trie does in a release build (a debug build asserts there
+ * as well); callers may not rely on it.
  *
- * Reinsertion reports SYLVAN_ERR_INVALID if any node was already indexed, and
- * aborts on an equal node exactly as nodes_reinsert does.
+ * Reinsertion reports SYLVAN_ERR_INVALID if any node was already indexed --
+ * in a release build; a debug build asserts, as nodes_reinsert does -- and
+ * aborts on an equal node exactly as nodes_reinsert does. It is the one
+ * refusal in this section that is not clean: every other node of the set has
+ * been re-indexed by the time it is reported. The session treats it as fatal.
  */
 static inline int nodes_remove_batch(nodes_table* dbs, const uint64_t* indices,
                                      size_t count);

@@ -27,18 +27,22 @@
  * nodes each variable carries; take the variables in order of that count, most
  * populous first, because a variable with few nodes cannot save many wherever
  * it goes. Move each one through the order one adjacent swap at a time, first
- * to whichever end of the order it is nearer -- so that when the growth bound
- * cuts the excursion short, it is the cheaper half that was spent -- then all
- * the way to the other end, and finally back to the position where the forest
- * was smallest. The second leg covers the whole range, so the best position is
- * found even though the first leg is never revisited.
+ * toward whichever end of the order it is nearer -- so that when a bound cuts
+ * the excursion short, it is the cheaper half that was spent -- then toward
+ * the other end, and finally back to the position where the forest was
+ * smallest. Either leg may stop before its end of the order: at the growth
+ * bound, at the interaction bound, at the swap or time budget, or at a swap
+ * the table refuses. The variable is left at the best position visited, and
+ * only an excursion in which neither leg stopped early has visited them all.
  *
  * WHAT MAKES IT CHEAP. Sifting scores a position by the size of the forest,
  * and the obvious implementation recomputes that size after every swap, which
  * is a scan of the entire node table per swap. Here every swap reports its own
  * exact size change and the session keeps the running total, so the driver
  * never scans anything: sylvan_reorder_forest_size() is a load. The same holds
- * for the populations, which come out of the session's per-identity lists.
+ * for the populations: the driver asks the session for each variable's once,
+ * before it starts, and from then on keeps them current itself from the
+ * counts every swap reports (see sift_swap).
  *
  * WHAT CANNOT GO WRONG. A swap either succeeds or reports SYLVAN_ERR_OOM
  * having mutated nothing at all. So there is no error handling here in the
@@ -184,8 +188,8 @@ sift_swap(lace_worker *lace, struct sift_run *run, uint32_t rank)
  *
  * A leg ends at the end of the order, when the swap budget or the time limit
  * runs out, when a swap refuses for lack of room, when the forest has grown
- * past <growth> times the smallest size seen *on this leg*, or -- the bound
- * this file exists to add -- when even the best size still reachable in this
+ * past <growth> times the smallest size seen *on this leg*, or -- the
+ * interaction bound -- when even the best size still reachable in this
  * direction cannot beat the smallest already seen.
  *
  * THAT LAST BOUND is CUDD's, from ddSiftingUp/ddSiftingDown, and it is what
@@ -286,7 +290,9 @@ sift_leg(lace_worker *lace, struct sift_run *run, uint32_t rank, int down,
  * The return leg ignores the swap and time budgets. It is not search -- it is
  * undoing search -- and stopping halfway through it would leave the variable
  * at an arbitrary position that the driver had already measured and rejected.
- * It is bounded by how far the legs travelled, which the budgets do bound.
+ * It is bounded by how far the legs travelled, which the budgets do bound. Its
+ * swaps still count toward the total the swap budget is checked against, so
+ * they come out of the next variable's search.
  * A swap that refuses during the return leg leaves the variable where it is:
  * still a valid order, still a valid forest, just not the best one found.
  */

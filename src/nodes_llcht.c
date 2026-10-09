@@ -28,14 +28,16 @@
  * Lockless chained hash table (set) to store 16-byte keys.
  * Each unique key is associated with a 40-bit number.
  *
- * The head array is indexed by the full key hash. Each node has one immutable
- * link containing the 24-bit hash fingerprint and 40-bit index of the next
- * node. A lookup can therefore reject most chain entries without loading the
+ * The head array is indexed by the full key hash. Each node has one link
+ * containing the 24-bit hash fingerprint and 40-bit index of the next node. A
+ * lookup can therefore reject most chain entries without loading the
  * corresponding 16-byte key.
  *
  * Nodes are prepended with one successful compare-and-swap on the chain head.
- * Links are never changed while lookups are running; garbage collection clears
- * and rebuilds all chains while lookups are stopped.
+ * Links are never changed while lookups are running: garbage collection
+ * clears and rebuilds all chains, and the reorder primitives below splice
+ * nodes out of their chains and prepend them again, both while lookups are
+ * stopped.
  *
  * This global control allocates one head and one node slot per table bucket,
  * so its load factor cannot exceed one. Per-identity subtables must separate
@@ -858,8 +860,9 @@ nodes_cleanup_custom_CALL(lace_worker* lace, nodes_table* dbs)
 }
 
 /**
- * This backend never requests maintenance: its index is rebuilt in place on
- * every insertion, so there is nothing to reorganize between collections.
+ * This backend never requests maintenance: every insertion updates the index
+ * in place and only a collection rebuilds it, so there is nothing to
+ * reorganize between collections.
  */
 void nodes_maintain_CALL(lace_worker* lace, nodes_table* dbs)
 {
@@ -1335,8 +1338,10 @@ llcht_batch_reinsert_CALL(lace_worker* lace, nodes_table* dbs,
     for (size_t at = first; at < end; at++) {
         /* Reinsertion keeps the contract it always had: a node that was not
            removed first is reported, not aborted on, exactly as the trie's
-           batch does. It is the one failure the caller can act on, because it
-           says the node is still in the index rather than missing from it. */
+           batch does -- in a release build; nodes_reinsert asserts on it in a
+           debug build, as the trie's does. It is the one failure the caller
+           can act on, because it says the node is still in the index rather
+           than missing from it. */
         if (nodes_reinsert(dbs, indices[at]) != SYLVAN_OK) {
             atomic_store_explicit(&dbs->batch_error, 1, memory_order_relaxed);
         }

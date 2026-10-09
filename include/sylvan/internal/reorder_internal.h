@@ -19,10 +19,10 @@
 /**
  * Dynamic variable reordering: the session and the adjacent variable swap.
  *
- * NONE OF THIS IS PUBLIC API. It is the internal machinery a future
- * sylvan_sift() is built from, and it may change or disappear without notice.
- * The only reason it is declared in a header at all is that the tests drive it
- * directly; there is no sifting driver yet.
+ * NONE OF THIS IS PUBLIC API. It is the internal machinery sylvan_sift() --
+ * the sifting driver in sift.c -- is built from, and it may change or
+ * disappear without notice. It is declared in a header so that the driver,
+ * and the tests that drive single swaps directly, can reach it.
  *
  * THE ORDER MODEL. A node stores an immutable variable *identity*; the
  * position of a variable in the order is its *rank*, which lives in the rank
@@ -108,9 +108,11 @@ typedef struct sylvan_varswap_result {
 TASK(int, sylvan_reorder_begin)
 
 /**
- * Close a reorder session and free its state. Returns SYLVAN_OK, or
- * SYLVAN_ERR_INVALID when reference count validation is enabled and the
- * maintained counts disagree with a recomputation.
+ * Close a reorder session and free its state. Returns SYLVAN_OK;
+ * SYLVAN_ERR_INVALID when no session is open, or when reference count
+ * validation is enabled and the maintained counts disagree with a
+ * recomputation; or SYLVAN_ERR_OOM when validation could not allocate its
+ * recount. In every case but the first the session is closed afterwards.
  */
 TASK(int, sylvan_reorder_end)
 
@@ -182,7 +184,7 @@ int sylvan_reorder_interact_build(void);
 int sylvan_reorder_interact(uint32_t a, uint32_t b);
 
 /**
- * Physical slot reuse policy (design experiment E6). Nonzero (the default)
+ * Physical slot reuse policy. Nonzero (the default)
  * releases retired slots at the end of each swap, which bounds memory; zero
  * defers every release to the end of the session, which costs nothing per
  * swap but lets garbage accumulate. Retirement itself is unconditional either
@@ -238,8 +240,8 @@ void sylvan_sift_auto(void);
 /**
  * Test entry points. They open a session, run the swaps, and close it again,
  * all inside a fresh Lace frame, the way sylvan_gc() enters sylvan_gc_go.
- * Call from inside a Lace worker. There is no sifting driver yet; these exist
- * so that the swap can be tested at all.
+ * Call from inside a Lace worker. They exist so that a swap can be tested on
+ * its own, without the sifting driver choosing which swaps to make.
  */
 int sylvan_test_varswap(uint32_t rank, sylvan_varswap_result *result);
 int sylvan_test_varswap_sequence(const uint32_t *ranks, size_t count,

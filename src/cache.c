@@ -72,9 +72,9 @@ cache_next_opid(void)
 
 // status: 0x80000000 - bitlock
 //         0x40000000 - part of a two-bucket entry
-//         0x3fff0000 - hash (part of the 64-bit hash not used to position)
-//         0x00008000 - live (set by every put, clear only in an empty bucket)
-//         0x00007fff - tag (every put increases tag field)
+//         0x3ffe0000 - hash (13 bits of the 64-bit hash not used to position)
+//         0x00010000 - live (set by every put, clear only in an empty bucket)
+//         0x0000ffff - tag (16 bits; every put increases tag field)
 //
 // A bucket is emptied by zeroing its status word and by nothing else: cache_clear
 // zeroes the status array and leaves the operands and results in place, which is
@@ -85,7 +85,7 @@ cache_next_opid(void)
 // all-zero status satisfies no accessor's match test, whatever hash the query
 // happens to have. An accessor must compare the whole of CACHE_STATUS_MATCH_MASK
 // and never the hash bits on their own, or an emptied bucket becomes reachable
-// again for the one query in 2^14 whose hash bits are zero.
+// again for the one query in 2^13 whose hash bits are zero.
 
 #define CACHE_STATUS_LOCK      UINT32_C(0x80000000)
 #define CACHE_STATUS_PAIR      UINT32_C(0x40000000)
@@ -243,9 +243,9 @@ cache_put_op(
     uint32_t s = atomic_load_explicit(s_bucket, memory_order_relaxed);
     // abort if locked
     if (s & CACHE_STATUS_LOCK) return 0;
-    // abort if hash identical -> no: in iscasmc this occasionally causes timeouts?!
+    // No "abort if the hash is identical" check here: in iscasmc it
+    // occasionally caused timeouts.
     const uint32_t hash_mask = (hash>>32) & CACHE_STATUS_HASH_MASK;
-    // if ((s & 0x7fff0000) == hash_mask) return 0;
     // use cas to claim bucket
     const uint32_t new_s = ((s+1) & CACHE_STATUS_TAG_MASK) | hash_mask | CACHE_STATUS_LIVE;
     if (!atomic_compare_exchange_weak_explicit(s_bucket, &s, new_s | CACHE_STATUS_LOCK, memory_order_acq_rel, memory_order_relaxed)) return 0;

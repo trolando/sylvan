@@ -19,12 +19,16 @@
 /**
  * Dynamic variable reordering.
  *
- * Sylvan reorders on request and never on its own. This header is the whole
- * public interface: one call that reorders the variables of the BDD/MTBDD
- * forest by sifting, and a configuration and a result to go with it. The
- * machinery underneath -- the reorder session and the adjacent variable swap --
- * is internal, because a swap only makes sense inside a session and a session
- * runs with the world stopped.
+ * Sylvan reorders when it is asked to: by a call to sylvan_sift(), or, once a
+ * caller has opted in with sylvan_gc_set_auto_sift(), after an explicit
+ * sylvan_gc() whose collection recommends it -- never in the middle of an
+ * operation. This header is the whole public interface: sylvan_sift() and
+ * sylvan_sift_report(), which reorder the variables of the BDD/MTBDD forest
+ * by sifting, with a configuration and a result to go with them;
+ * sylvan_sift_count(); and the recommendation and the opt-in automatic sift
+ * built on it. The machinery underneath -- the reorder session and the
+ * adjacent variable swap -- is internal, because a swap only makes sense
+ * inside a session and a session runs with the world stopped.
  *
  * WHAT SIFTING DOES. Every variable is moved through the order one adjacent
  * swap at a time, the size of the forest is measured at each position, and the
@@ -54,10 +58,13 @@ extern "C" {
  */
 typedef struct sylvan_sift_config {
     /**
-     * Total number of adjacent swaps the search may make. 0 is unlimited.
-     * Swaps that move a variable back to its best position are not search and
-     * are not counted against this, so that the budget can never strand a
-     * variable somewhere worse than where it started.
+     * Budget of adjacent swaps for the whole call; 0 is unlimited. Every swap
+     * counts against it -- the same swaps <swaps> in the result reports --
+     * but it is only checked before a swap of the search: moving a variable
+     * back to its best position is never cut short, so that the budget can
+     * never strand a variable somewhere worse than where it started. The total
+     * can therefore exceed the budget by that one return, and is never more
+     * than twice the budget.
      */
     uint32_t max_swaps;
 
@@ -86,7 +93,9 @@ typedef struct sylvan_sift_config {
 
     /**
      * Seconds of wall clock time the search may take, 0 for no limit. The
-     * limit is checked between swaps, so a single swap may overrun it.
+     * limit is checked before each swap of the search, so a single swap may
+     * overrun it, and so may moving the variable that was travelling when it
+     * expired back to its best position, which no limit cuts short.
      */
     double time_limit;
 

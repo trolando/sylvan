@@ -804,11 +804,11 @@ sylvan_reorder_begin_CALL(lace_worker *lace)
 /**
  * Recompute every reference count from the arena and compare.
  *
- * This is the cheap form of the design's SYLVAN_SIFT_VALIDATE build: instead
- * of running a second set of counters alongside the real ones all session
- * long, it rebuilds them once when the session closes. It catches a count
- * that drifted, which is the failure that matters, but not the exact swap
- * that caused it.
+ * This is the cheap form of count validation (sylvan_reorder_set_validate):
+ * instead of running a second set of counters alongside the real ones all
+ * session long, it rebuilds them once when the session closes. It catches a
+ * count that drifted, which is the failure that matters, but not the exact
+ * swap that caused it.
  */
 static int
 reorder_validate_counts(void)
@@ -1188,11 +1188,13 @@ sylvan_reorder_interact_build(void)
  *
  * PHASES. Classify and reserve (read-only, serial); intern the new children
  * (parallel); unhash and rewrite the records (parallel); re-index them
- * (parallel); retire what died (serial); release the slots. Splitting the
- * rewrite from the re-indexing is one barrier more than the design asks for,
- * and it buys the absence of a data race: nodes_reinsert compares records
- * along a chain, and in a fused phase it could read a record another worker
- * is halfway through rewriting.
+ * (parallel); retire what died, in rounds whose node set is gathered serially
+ * and then unhashed -- in parallel where the index takes batches -- and
+ * counted down in parallel; release the slots (serial). Splitting the rewrite
+ * from the re-indexing costs one barrier more than fusing them would, and it
+ * buys the absence of a data race: nodes_reinsert compares records along a
+ * chain, and in a fused phase it could read a record another worker is
+ * halfway through rewriting.
  * ---------------------------------------------------------------------------
  */
 
@@ -1893,10 +1895,10 @@ reorder_phase_CALL(lace_worker *lace, int phase, size_t first, size_t count)
  *
  * The bookkeeping is serial, because the set is small: the death theorem says
  * only the old direct children of the rewritten nodes can die, and the queue
- * asserts it. If the assert ever fires the queue keeps going -- correctness
- * does not depend on the theorem, only the claim that the node lists elsewhere
- * cannot go stale does -- and the swap reports how many deaths were deeper than
- * the theorem allows.
+ * asserts it. A debug build stops there; a release build keeps going --
+ * correctness does not depend on the theorem, only the claim that the node
+ * lists elsewhere cannot go stale does -- and the swap reports how many deaths
+ * were deeper than the theorem allows.
  *
  * The unhashing is not serial, when the index can take a set at once. The
  * queue is drained in rounds: everything queued when a round starts is unhashed
@@ -1914,13 +1916,16 @@ reorder_phase_CALL(lace_worker *lace, int phase, size_t first, size_t count)
  * in the round. That is why the drop loop needs no lock, no claim and no
  * capability -- unlike the unhashing above it, which needs one.
  */
-/**
- * One block of a retirement round: the retired-slot record and the two edges
- * each dead node drops. See the block above reorder_run_retirement for why
- * this needs neither a claim nor a capability.
- */
+
+/* Where the round being dropped starts in the retired-slot array; set by
+   reorder_run_retirement before each round. */
 static size_t retire_dead_base;
 
+/**
+ * One block of a retirement round: the retired-slot record and the two edges
+ * each dead node drops. See the block on retirement above for why this needs
+ * neither a claim nor a capability.
+ */
 TASK(void, reorder_retire_block, size_t, first, size_t, count)
 
 void

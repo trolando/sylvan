@@ -444,10 +444,11 @@ afterwards and all of them keep their handles, because nodes are rewritten in pl
 and never moved.
 
 Pass a ``sylvan_sift_config`` to bound what the search may spend: a total swap
-budget, a number of variables, a growth factor at which one variable's excursion is
-abandoned (1.2 by default), a population below which a variable is not moved at all
-(0 by default: skipping small variables was measured to cost final size without
-saving time), and a wall clock limit. ``NULL`` selects the defaults.
+budget, a number of variables, a growth factor at which one leg of a variable's
+excursion is abandoned (1.2 by default), a population below which a variable is
+not moved at all (0 by default: skipping small variables was measured to cost
+final size without saving time), and a wall clock limit. ``NULL`` selects the
+defaults.
 
 By default a variable's excursion also stops as soon as an interaction bound proves
 that no position further in that direction can beat the best already seen -- two
@@ -460,9 +461,12 @@ end of the order anyway, for measurement or for distrust.
 Reordering is refused, changing nothing and returning ``SYLVAN_ERR_INVALID``, while
 the ZDD or ListDD subsystem is initialised -- both order their nodes by variable
 identity rather than by position, and they share the node arena -- or on a nodes table
-that does not implement the reorder primitives. Running out of room *during* a sift is
-not a failure: a swap that cannot reserve what it needs changes nothing at all, and
-the driver simply stops moving that variable in that direction.
+that does not implement the reorder primitives. Of the nodes tables the CMake option
+``SYLVAN_NODES_TABLE`` selects from, ``trie`` (the default), ``list``, ``llcht`` and
+``llchst`` can reorder; ``llht``, which is open-addressed, cannot. Running out of
+room *during* a sift is not a failure: a swap that cannot reserve what it needs
+changes nothing at all, and the driver simply stops moving that variable in that
+direction.
 
 When to reorder, and where Sylvan may do it for you
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

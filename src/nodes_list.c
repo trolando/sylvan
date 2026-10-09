@@ -29,8 +29,10 @@
  *
  * Node indices are 40-bit numbers.
  *
- * The set has support for stop-the-world garbage collection.
- * Methods nodes_clear and nodes_reinsert implement garbage collection.
+ * The set has support for stop-the-world garbage collection, implemented by
+ * nodes_clear, nodes_mark_rec and nodes_rebuild (which reinserts every marked
+ * node with nodes_reinsert_bucket). nodes_reinsert is a reorder primitive;
+ * see below.
  */
 
 typedef struct nodes_table
@@ -321,7 +323,8 @@ static inline uint64_t ror64(uint64_t x, unsigned int k) {
  * room back. The hot path is untouched -- only the branch that has already
  * failed to claim a slot arrives here. The flag is one word beside the
  * allocator rather than a field of the table because the allocator it speaks
- * for is itself global (see the warning about multiple tables above).
+ * for is itself global (see the note on a single nodes table in
+ * nodes_create below).
  */
 static _Atomic(int) arena_exhausted_reported;
 
@@ -779,8 +782,9 @@ void nodes_cleanup_custom_CALL(lace_worker* lace, nodes_table* dbs)
 }
 
 /**
- * This backend never requests maintenance: its index is rebuilt in place on
- * every insertion, so there is nothing to reorganize between collections.
+ * This backend never requests maintenance: every insertion updates the index
+ * in place and only a collection rebuilds it, so there is nothing to
+ * reorganize between collections.
  */
 void nodes_maintain_CALL(lace_worker* lace, nodes_table* dbs)
 {
@@ -1236,8 +1240,10 @@ list_batch_reinsert_CALL(lace_worker* lace, nodes_table* dbs,
     for (size_t at = first; at < end; at++) {
         /* Reinsertion keeps the contract it always had: a node that was not
            removed first is reported, not aborted on, exactly as the trie's
-           batch does. It is the one failure the caller can act on, because it
-           says the node is still in the index rather than missing from it. */
+           batch does -- in a release build; nodes_reinsert asserts on it in a
+           debug build, as the trie's does. It is the one failure the caller
+           can act on, because it says the node is still in the index rather
+           than missing from it. */
         if (nodes_reinsert(dbs, indices[at]) != SYLVAN_OK) {
             atomic_store_explicit(&dbs->batch_error, 1, memory_order_relaxed);
         }

@@ -42,6 +42,11 @@ which enables fine-grained scalable parallelism. With little extra effort from t
 Lace framework ensures that Sylvan operations are actually performed by multiple threads. Furthermore,
 Sylvan is thread-safe, i.e., multiple operations can be offered to the framework simultaneously.
 
+Sylvan can reorder the variables of the BDD/MTBDD forest dynamically, by sifting (`sylvan_sift`,
+see `sylvan/reorder.h`). That needs a nodes table with the reorder primitives: of the tables the
+CMake option `SYLVAN_NODES_TABLE` selects from, `trie` (the default), `list`, `llcht` and `llchst`
+have them, and `llht` does not.
+
 ## Dependencies
 
 The most important dependency of Sylvan is currently part of the library, which is **Lace**.

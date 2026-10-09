@@ -29,13 +29,15 @@ All notable changes to Sylvan will be documented in this file.
   sub-results it computed under the previous rank order. The split makes the
   distinction a property of the code rather than of a comment.
 - Added `sylvan_sift`, dynamic variable reordering for the BDD/MTBDD forest.
-  It reorders on request only -- there is no automatic triggering and no hook --
-  and it stops the world for the duration, exactly like garbage collection,
-  which it begins with. Every protected diagram survives, denotes the same
-  function, and keeps its handle. `sylvan_sift_config` bounds what the search
-  may spend and `sylvan_sift_report` says what it did; see `sylvan/reorder.h`.
-  Sifting is refused, changing nothing, while the ZDD or ListDD subsystem is
-  initialised, or on a nodes table without the reorder primitives.
+  It reorders when called, or after an explicit `sylvan_gc()` once the
+  automatic sift above is switched on, and it stops the world for the
+  duration, exactly like garbage collection, which it begins with. Every
+  protected diagram survives, denotes the same function, and keeps its handle.
+  `sylvan_sift_config` bounds what the search may spend and
+  `sylvan_sift_report` says what it did; see `sylvan/reorder.h`. Sifting is
+  refused, changing nothing, while the ZDD or ListDD subsystem is initialised,
+  or on a nodes table without the reorder primitives: `llht` has none, while
+  `trie`, `list`, `llcht` and `llchst` can reorder.
 - Added the CMake option `SYLVAN_CHECK_HANDLES` (default off). With it, every
   decision diagram node dereference checks that the handle's bucket index is
   inside the nodes table and aborts naming the index when it is not, which
@@ -53,16 +55,21 @@ All notable changes to Sylvan will be documented in this file.
   operation may be in flight, because a suspended operation would resume and
   combine sub-results computed under a rank order that no longer holds.
 - Parallel sifting now scales instead of losing to its own workers. Three
-  changes compose: the trie and list tables take a swap's removals and
-  re-indexings as whole batches, run as internally parallel phases with
-  barriers where the trie's per-node lock used to serialise everything; the
+  changes compose: the reorder-capable tables (`trie`, `list`, `llcht` and
+  `llchst`) take a swap's removals and re-indexings as whole batches, run as
+  internally parallel phases with barriers where the trie's per-node lock
+  used to serialise everything; the
   swap's parallel phases claim shared state per block instead of paying an
   atomic fetch-add per node; and retirement drops its dead edges from a
   parallel task over the deduplicated round. Measured on C880 with the list
   table, an eight-worker sift went from slower than one worker to about
   1.9 times faster, and the trie's eight-worker sift halved. A single-worker
   sift skips the batched calls, which are pure overhead with nothing to
-  spread.
+  spread. The chained tables' batches came last and took a further 28%
+  (`llcht`) and 18% (`llchst`) off their eight-worker sift.
+- A nodes table that has run out of arena now says so on stderr, once per
+  exhaustion episode and from every backend, instead of leaving only a
+  failed allocation to show for it.
 - Sifting now stops a variable's excursion as soon as a variable interaction
   bound proves that no position further in that direction can beat the best
   already seen, the way CUDD's sifting does. The bound is conservative, so the
@@ -79,7 +86,7 @@ All notable changes to Sylvan will be documented in this file.
   table ran 3x slower, and parallel sifting lost more time to the layout than
   it gained from the workers. With the cursor, a table built in parallel has
   the family structure of a serial build, and the parallel build itself is
-  slightly faster.
+  slightly faster. `llht`, which cannot reorder, keeps its stripes.
 - **Breaking (C++).** The C++ bindings in `sylvan/obj.hpp` now report a failed
   operation by throwing `sylvan::sylvan_error`, which carries the negative
   `SYLVAN_ERR_*` status and its `sylvan_status_string` description. Previously
@@ -108,11 +115,12 @@ All notable changes to Sylvan will be documented in this file.
   every counted slot could be reached: W workers can each claim a region and
   leave it partly used, stranding up to a region apiece, which is how an
   allocation reserve had promised could still be refused. A worker now gives a
-  region back as soon as it has taken the last free slot in it, so an owned
-  region is exactly one worker's current region, and `nodes_reserve` asks for
-  `count` plus one whole region per worker, which is what makes the promise hold
-  however the workers divide the allocations between them. Sifting with a single
-  worker was never affected.
+  region back once it has used the last free slot in it -- at its next
+  allocation, which then claims another -- so an owned region is exactly one
+  worker's current region, and `nodes_reserve` asks for `count` plus one whole
+  region per worker, which is what makes the promise hold however the workers
+  divide the allocations between them. Sifting with a single worker was never
+  affected. `llht`, which has no `nodes_reserve`, is unchanged.
 - A cleared operation cache no longer answers a query with a result from before
   the clear. `cache_clear` zeroes only the status words -- the operands and
   results stay in place, which is what lets those pages go back to the operating
@@ -122,7 +130,7 @@ All notable changes to Sylvan will be documented in this file.
   match was answered with a result computed before the last garbage collection,
   naming a handle that had since been reused for another node. The status word
   now carries a live bit that every put sets and every accessor requires, so an
-  emptied bucket matches nothing; the tag field narrows from 16 to 15 bits to
+  emptied bucket matches nothing; the hash field narrows from 14 to 13 bits to
   make room. `cache_get4` was already immune, because it also requires the bit
   that marks a two-bucket entry.
 - The node and leaf counters, the `.dot` writers and the structural hashes now
@@ -162,9 +170,9 @@ All notable changes to Sylvan will be documented in this file.
   with the two garbage collection mark passes that scanned their tables. Use
   `mtbdd_protect`/`mtbdd_unprotect` and `listdd_protect`/`listdd_unprotect` for
   roots with a stable address, the per-worker `mtbdd_refs_pushptr`/`popptr`
-  stacks for local variables, or `sylvan_gc_add_mark` for roots that have
-  neither. The per-worker temporary reference stacks are a separate mechanism
-  and are unaffected.
+  stacks for local variables, or a `sylvan_gc_add_roots` visitor for roots
+  that have neither. The per-worker temporary reference stacks are a separate
+  mechanism and are unaffected.
 
 ## [1.11.0] - 2026-07-17
 

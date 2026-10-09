@@ -27,7 +27,8 @@
  * Each unique key is associated with a 40-bit number.
  *
  * The set has support for stop-the-world garbage collection.
- * Methods nodes_clear, nodes_mark and nodes_rehash implement garbage collection.
+ * Methods nodes_clear, nodes_mark_rec and nodes_rebuild implement garbage
+ * collection.
  * During their execution, nodes_lookup is not allowed.
  *
  * WARNING: Originally, this table is designed to allow multiple tables.
@@ -694,8 +695,9 @@ void nodes_cleanup_custom_CALL(lace_worker* lace, nodes_table* dbs)
 }
 
 /**
- * This backend never requests maintenance: its index is rebuilt in place on
- * every insertion, so there is nothing to reorganize between collections.
+ * This backend never requests maintenance: every insertion updates the index
+ * in place and only a collection rebuilds it, so there is nothing to
+ * reorganize between collections.
  */
 void nodes_maintain_CALL(lace_worker* lace, nodes_table* dbs)
 {
@@ -768,8 +770,8 @@ int nodes_prepare_reorder(nodes_table* dbs, const uint32_t* routes, size_t count
 }
 
 /**
- * This backend does not report NODES_CAP_BATCH: it splices lock-free one node
- * at a time, so a batch would buy it nothing the loop does not already have.
+ * This backend reports no reorder capability at all (see above), so it
+ * implements neither batch and refuses both, like every primitive here.
  */
 int
 nodes_remove_batch_CALL(lace_worker* lace, nodes_table* dbs,

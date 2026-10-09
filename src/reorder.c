@@ -65,8 +65,8 @@
 #include <time.h>
 #endif
 
-/** Granularity of the parallel table scans. */
-#define REORDER_SCAN_BLOCK 4096
+/** Granularity of the parallel table scans, in words of 64 slots. */
+#define REORDER_SCAN_WORDS 64
 
 /** Granularity of the parallel phases of a swap. */
 #define REORDER_SWAP_BLOCK 64
@@ -105,6 +105,12 @@ struct reorder_session {
     size_t size;                    /* node table size, fixed for a session */
     uint32_t identities;            /* registered identities, ditto        */
     int native_enumerate;           /* backend enumerates a variable itself */
+
+    /* The occupancy words, of 64 slots each, up to and including the last
+       one that held a node when the session opened: every node the opening
+       passes found, and so every pinned root, is below 64 * marked_words.
+       Nodes the swaps create may land anywhere in the table. */
+    _Atomic(size_t) marked_words;
 
     _Atomic(uint16_t) *counts;      /* per-slot reference count            */
     uint64_t *pinned;               /* bitmap: an external root            */
@@ -629,42 +635,79 @@ reorder_collect(struct reorder_list *list, uint32_t identity, int want_map)
  * scatters the identities' nodes into their lists. Both passes read the node
  * bitmap and the records and write nothing but the session's own arrays.
  *
+ * Both read the node bitmap a word of 64 slots at a time, and only as far as
+ * the table was ever used (nodes_used_bound), so that what they cost is a load
+ * per 64 slots of the used part plus the work per node: the table is sized
+ * for the largest forest the run may build, and the forest being sifted is
+ * often a small fraction of it. The first pass also finds the last word that
+ * holds a node, and the second stops there.
+ *
  * Nodes whose identity was never registered are left out of the lists. They
  * cannot be either half of a swap -- a swap names its variables by rank, and
  * only registered identities have one -- and they take part in the reference
  * counts like every other node.
  */
 
+/**
+ * The occupied slots among the indices of the words <first> to <first> +
+ * <count> - 1, as nodes_marked_words gives them, without slots 0 and 1, which
+ * are always marked and never hold a node, and without anything past the end
+ * of the table. <count> is at most REORDER_SCAN_WORDS.
+ */
+static inline void
+reorder_marked_words(size_t first, size_t count, uint64_t *marks)
+{
+    if (count == 0) return;
+    nodes_marked_words(nodes, first, count, marks);
+    if (first == 0) marks[0] &= UINT64_C(0x3fffffffffffffff);
+    const size_t past = session.size - 64u * (first + count - 1u);
+    if (past < 64u) marks[count - 1u] &= ~(UINT64_MAX >> past);
+}
+
+/** Take the first occupied slot out of <marks> and return its index. */
+static inline uint64_t
+reorder_next_marked(size_t word, uint64_t *marks)
+{
+    const unsigned int bit = clz_uint64(*marks);
+    *marks &= ~(UINT64_C(0x8000000000000000) >> bit);
+    return 64u * (uint64_t)word + bit;
+}
+
 TASK(void, reorder_seed, size_t, first, size_t, count)
 
 void
 reorder_seed_CALL(lace_worker *lace, size_t first, size_t count)
 {
-    if (count > REORDER_SCAN_BLOCK) {
+    if (count > REORDER_SCAN_WORDS) {
         reorder_seed_SPAWN(lace, first, count / 2);
         reorder_seed_CALL(lace, first + count / 2, count - count / 2);
         reorder_seed_SYNC(lace);
         return;
     }
 
-    const size_t end = first + count;
-    if (first < 2) first = 2;
+    uint64_t block[REORDER_SCAN_WORDS];
+    reorder_marked_words(first, count, block);
 
     uint64_t live = 0;
-    for (; first < end; first++) {
-        if (!nodes_is_marked(nodes, first)) continue;
-        mtbddnode *record = reorder_record(first);
-        if (mtbddnode_isleaf(record)) continue;
+    size_t marked_words = 0;
+    for (size_t word = first; word < first + count; word++) {
+        uint64_t marks = block[word - first];
+        if (marks != 0) marked_words = word + 1u;
+        while (marks != 0) {
+            const uint64_t index = reorder_next_marked(word, &marks);
+            mtbddnode *record = reorder_record(index);
+            if (mtbddnode_isleaf(record)) continue;
 
-        live++;
-        reorder_edge_up(mtbddnode_getlow(record));
-        reorder_edge_up(mtbddnode_gethigh(record));
+            live++;
+            reorder_edge_up(mtbddnode_getlow(record));
+            reorder_edge_up(mtbddnode_gethigh(record));
 
-        const uint32_t identity = mtbddnode_getvariable(record);
-        struct reorder_list *list = mtbddnode_ismapnode(record)
-            ? reorder_map_list(identity) : reorder_decision_list(identity);
-        if (list != NULL) {
-            atomic_fetch_add_explicit(&list->count, 1, memory_order_relaxed);
+            const uint32_t identity = mtbddnode_getvariable(record);
+            struct reorder_list *list = mtbddnode_ismapnode(record)
+                ? reorder_map_list(identity) : reorder_decision_list(identity);
+            if (list != NULL) {
+                atomic_fetch_add_explicit(&list->count, 1, memory_order_relaxed);
+            }
         }
     }
 
@@ -673,6 +716,13 @@ reorder_seed_CALL(lace_worker *lace, size_t first, size_t count)
     if (live != 0) {
         atomic_fetch_add_explicit(&session.live, live, memory_order_relaxed);
     }
+    size_t known = atomic_load_explicit(&session.marked_words,
+                                        memory_order_relaxed);
+    while (known < marked_words &&
+           !atomic_compare_exchange_weak_explicit(
+               &session.marked_words, &known, marked_words,
+               memory_order_relaxed, memory_order_relaxed)) {
+    }
 }
 
 TASK(void, reorder_scatter, size_t, first, size_t, count)
@@ -680,25 +730,28 @@ TASK(void, reorder_scatter, size_t, first, size_t, count)
 void
 reorder_scatter_CALL(lace_worker *lace, size_t first, size_t count)
 {
-    if (count > REORDER_SCAN_BLOCK) {
+    if (count > REORDER_SCAN_WORDS) {
         reorder_scatter_SPAWN(lace, first, count / 2);
         reorder_scatter_CALL(lace, first + count / 2, count - count / 2);
         reorder_scatter_SYNC(lace);
         return;
     }
 
-    const size_t end = first + count;
-    if (first < 2) first = 2;
+    uint64_t block[REORDER_SCAN_WORDS];
+    reorder_marked_words(first, count, block);
 
-    for (; first < end; first++) {
-        if (!nodes_is_marked(nodes, first)) continue;
-        mtbddnode *record = reorder_record(first);
-        if (mtbddnode_isleaf(record)) continue;
+    for (size_t word = first; word < first + count; word++) {
+        uint64_t marks = block[word - first];
+        while (marks != 0) {
+            const uint64_t index = reorder_next_marked(word, &marks);
+            mtbddnode *record = reorder_record(index);
+            if (mtbddnode_isleaf(record)) continue;
 
-        const uint32_t identity = mtbddnode_getvariable(record);
-        reorder_list_append(mtbddnode_ismapnode(record)
-            ? reorder_map_list(identity) : reorder_decision_list(identity),
-            first);
+            const uint32_t identity = mtbddnode_getvariable(record);
+            reorder_list_append(mtbddnode_ismapnode(record)
+                ? reorder_map_list(identity) : reorder_decision_list(identity),
+                index);
+        }
     }
 }
 
@@ -860,9 +913,12 @@ sylvan_reorder_begin_CALL(lace_worker *lace)
         return SYLVAN_ERR_OOM;
     }
 
-    /* Pass one: reference counts, and how big each identity's list must be. */
+    /* Pass one: reference counts, how big each identity's list must be, and
+       where the last node is. */
     REORDER_TIMING_START(timing_seed);
-    reorder_seed_CALL(lace, 0, session.size);
+    const size_t used = nodes_used_bound(nodes);
+    reorder_seed_CALL(lace, 0, bitmap_words(used < session.size
+                                            ? used : session.size));
     REORDER_TIMING_STOP(seed, timing_seed);
 
     for (uint32_t identity = 0; identity < session.identities; identity++) {
@@ -884,7 +940,8 @@ sylvan_reorder_begin_CALL(lace_worker *lace)
 
     /* Pass two: fill the lists. */
     REORDER_TIMING_START(timing_scatter);
-    reorder_scatter_CALL(lace, 0, session.size);
+    reorder_scatter_CALL(lace, 0, atomic_load_explicit(
+        &session.marked_words, memory_order_relaxed));
     REORDER_TIMING_STOP(scatter, timing_scatter);
 
     REORDER_TIMING_START(timing_pin);
@@ -1213,33 +1270,42 @@ sylvan_reorder_interact_build(void)
         return SYLVAN_ERR_OOM;
     }
 
+    /* Every root, in index order. Roots are pinned only when the session
+       opens, and only nodes it found then, so they all lie below
+       marked_words; the bitmap is read a word at a time. */
     int status = SYLVAN_OK;
-    for (uint64_t index = 2; index < session.size && status == SYLVAN_OK;
-         index++) {
-        if (!bitmap_get(session.pinned, index)) continue;
+    const size_t pinned_words =
+        atomic_load_explicit(&session.marked_words, memory_order_relaxed);
+    for (size_t word = 0; word < pinned_words && status == SYLVAN_OK; word++) {
+        uint64_t pins = session.pinned[word];
+        while (pins != 0 && status == SYLVAN_OK) {
+            const uint64_t index = 64u * (uint64_t)word + ctz_uint64(pins);
+            pins &= pins - 1u;
 
-        size_t support_count = 0;
-        size_t touched_count = 0;
-        status = interact_support(&scan, index, &support_count, &touched_count);
+            size_t support_count = 0;
+            size_t touched_count = 0;
+            status = interact_support(&scan, index, &support_count,
+                                      &touched_count);
 
-        if (status == SYLVAN_OK) {
-            for (size_t i = 0; i < support_count; i++) {
-                for (size_t j = i + 1; j < support_count; j++) {
-                    const uint32_t a = scan.support[i];
-                    const uint32_t b = scan.support[j];
-                    interact_mark(n, session.interact,
-                                  a < b ? a : b, a < b ? b : a);
+            if (status == SYLVAN_OK) {
+                for (size_t i = 0; i < support_count; i++) {
+                    for (size_t j = i + 1; j < support_count; j++) {
+                        const uint32_t a = scan.support[i];
+                        const uint32_t b = scan.support[j];
+                        interact_mark(n, session.interact,
+                                      a < b ? a : b, a < b ? b : a);
+                    }
                 }
             }
-        }
 
-        /* Reset the scratch for the next root, touching only what this root
-           reached rather than the whole table. */
-        for (size_t i = 0; i < touched_count; i++) {
-            bitmap_clear(scan.visited, scan.touched[i]);
-        }
-        for (size_t i = 0; i < support_count; i++) {
-            scan.in_support[scan.support[i]] = 0;
+            /* Reset the scratch for the next root, touching only what this
+               root reached rather than the whole table. */
+            for (size_t i = 0; i < touched_count; i++) {
+                bitmap_clear(scan.visited, scan.touched[i]);
+            }
+            for (size_t i = 0; i < support_count; i++) {
+                scan.in_support[scan.support[i]] = 0;
+            }
         }
     }
 

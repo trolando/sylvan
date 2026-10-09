@@ -1120,6 +1120,86 @@ test_restore_identity_order(void)
 }
 
 /**
+ * The swap trace (sylvan_sift_set_trace), which the benchmark harness compares
+ * with CUDD's swap for swap. The hook has to see every swap and only swaps, so
+ * its calls number exactly result.swaps; each call names the two variables
+ * that stood at its rank and the next, so replaying the calls on the order
+ * before the sift has to give the order after it; and the size each call
+ * reports is the running forest size, so the last one is the final size.
+ */
+struct test_trace {
+    uint32_t order[TEST_VARS];  /* the order before the sift, replayed */
+    uint64_t swaps;             /* calls */
+    uint64_t last_size;         /* the size the last call reported */
+    uint64_t legs[4];           /* calls per sylvan_sift_leg */
+    uint64_t wrong;             /* calls that do not fit the replayed order */
+};
+
+static void
+test_trace_swap(void *context, uint32_t rank, uint32_t upper, uint32_t lower,
+                uint64_t size, sylvan_sift_leg leg)
+{
+    struct test_trace *trace = (struct test_trace*)context;
+    trace->swaps++;
+    trace->last_size = size;
+    if ((unsigned)leg < 4u) trace->legs[leg]++;
+    else trace->wrong++;
+    if (rank + 1u >= TEST_VARS || trace->order[rank] != upper ||
+        trace->order[rank + 1u] != lower) {
+        trace->wrong++;
+        return;
+    }
+    trace->order[rank] = lower;
+    trace->order[rank + 1u] = upper;
+}
+
+static int
+test_trace_CALL(lace_worker *lace)
+{
+    /* From the split order, so that there is a lot to trace. */
+    if (test_restore_identity_order()) return 1;
+
+    struct test_trace trace;
+    memset(&trace, 0, sizeof(trace));
+    for (uint32_t rank = 0; rank < TEST_VARS; rank++) {
+        trace.order[rank] = sylvan_identity_at(rank);
+    }
+
+    sylvan_sift_result result;
+    sylvan_sift_set_trace(test_trace_swap, &trace);
+    const int status = sylvan_sift_report(NULL, &result);
+    sylvan_sift_set_trace(NULL, NULL);
+    test_assert(status == SYLVAN_OK);
+    printf("  %llu swaps traced (%llu up, %llu down, %llu back), "
+           "%llu reported; last size %llu, final size %llu\n",
+           (unsigned long long)trace.swaps,
+           (unsigned long long)trace.legs[SYLVAN_SIFT_LEG_UP],
+           (unsigned long long)trace.legs[SYLVAN_SIFT_LEG_DOWN],
+           (unsigned long long)trace.legs[SYLVAN_SIFT_LEG_RETURN],
+           (unsigned long long)result.swaps,
+           (unsigned long long)trace.last_size,
+           (unsigned long long)result.final_size);
+
+    test_assert(result.swaps > 0);
+    test_assert(trace.wrong == 0);
+    test_assert(trace.swaps == result.swaps);
+    test_assert(trace.last_size == result.final_size);
+    for (uint32_t rank = 0; rank < TEST_VARS; rank++) {
+        test_assert(trace.order[rank] == sylvan_identity_at(rank));
+    }
+    /* Ungrouped: every swap is search or return, and there was search. */
+    test_assert(trace.legs[SYLVAN_SIFT_LEG_UP] +
+                trace.legs[SYLVAN_SIFT_LEG_DOWN] > 0);
+    test_assert(trace.legs[SYLVAN_SIFT_LEG_REUNITE] == 0);
+
+    /* Switched off, the hook is not called again. */
+    const uint64_t traced = trace.swaps;
+    test_assert(sylvan_sift_report(NULL, &result) == SYLVAN_OK);
+    test_assert(trace.swaps == traced);
+    return test_check_roots_CALL(lace);
+}
+
+/**
  * PAIRS.
  *
  * bdd_rel_next and bdd_rel_prev read identity 2k as a current-state variable
@@ -1719,6 +1799,9 @@ runtests_CALL(lace_worker *lace)
 
     printf("Testing the configuration limits.\n");
     if (test_config_CALL(lace)) return 1;
+
+    printf("Testing the swap trace.\n");
+    if (test_trace_CALL(lace)) return 1;
 
     printf("Testing maps, integer leaves and custom leaves together.\n");
     if (test_mixed_CALL(lace)) return 1;

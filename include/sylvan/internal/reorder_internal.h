@@ -300,4 +300,39 @@ int sylvan_test_varswap_sequence(const uint32_t *ranks, size_t count,
  */
 void sylvan_sift_set_refusal_window(uint64_t first, uint64_t count);
 
+/**
+ * Which part of a sift made a swap, as sylvan_sift_set_trace reports it.
+ */
+typedef enum sylvan_sift_leg {
+    SYLVAN_SIFT_LEG_UP = 0,       /* a search leg toward the top of the order  */
+    SYLVAN_SIFT_LEG_DOWN = 1,     /* a search leg toward the bottom            */
+    SYLVAN_SIFT_LEG_RETURN = 2,   /* the return to the best position seen      */
+    SYLVAN_SIFT_LEG_REUNITE = 3   /* group_pairs: bringing a pair back together */
+} sylvan_sift_leg;
+
+/**
+ * One swap a sift made: the rank of the upper of the two variables it
+ * exchanged, both their identities as they stood before the swap (so <upper>
+ * is at <rank> + 1 afterwards and <lower> at <rank>), the forest size the
+ * driver scores right after it (sylvan_reorder_forest_size()), and the leg it
+ * belongs to. A block move that a refusal makes the driver undo or finish
+ * reports those swaps under the leg of the move.
+ */
+typedef void (*sylvan_sift_trace_fn)(void *context, uint32_t rank,
+                                     uint32_t upper, uint32_t lower,
+                                     uint64_t size, sylvan_sift_leg leg);
+
+/**
+ * Diagnostics: have every sift call <fn>(<context>, ...) once after every swap
+ * it makes -- search legs, return legs and reuniting pairs alike -- so that
+ * the calls a sift makes number exactly its sylvan_sift_result.swaps, and the
+ * last one reports its final_size. It exists to compare the driver's schedule
+ * swap for swap with another implementation's (benchmark/sift has the
+ * harness). NULL, the default, switches it off; without a hook the driver pays
+ * one branch per swap. The hook runs inside the session, with the world
+ * stopped, so it must not call into Sylvan. May only be called with no sift
+ * running.
+ */
+void sylvan_sift_set_trace(sylvan_sift_trace_fn fn, void *context);
+
 #endif

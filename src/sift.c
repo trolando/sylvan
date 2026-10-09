@@ -195,6 +195,7 @@ struct sift_run {
     int      bounded;     /* stop a leg when the interaction bound says to */
     int      grouped;     /* identities 2k and 2k+1 move as one block */
     int      stuck;       /* a block move could be neither undone nor finished */
+    sylvan_sift_leg leg;  /* what the swaps being made are for, for the trace */
 };
 
 /**
@@ -219,6 +220,18 @@ sylvan_sift_set_refusal_window(uint64_t first, uint64_t count)
 {
     sift_refuse_first = first;
     sift_refuse_count = count;
+}
+
+/* The diagnostic swap trace; see sylvan_sift_set_trace. Only written with no
+   sift running. */
+static sylvan_sift_trace_fn sift_trace_fn;
+static void *sift_trace_context;
+
+void
+sylvan_sift_set_trace(sylvan_sift_trace_fn fn, void *context)
+{
+    sift_trace_fn = fn;
+    sift_trace_context = context;
 }
 
 /**
@@ -268,6 +281,11 @@ sift_swap(lace_worker *lace, struct sift_run *run, uint32_t rank,
         const uint64_t moved = result.rewritten + result.map_rewritten;
         run->pop[upper] = run->pop[upper] + result.created - moved;
         run->pop[lower] = run->pop[lower] + moved - result.died;
+    }
+
+    if (sift_trace_fn != NULL) {
+        sift_trace_fn(sift_trace_context, rank, upper, lower, run->size,
+                      run->leg);
     }
     return SYLVAN_OK;
 }
@@ -445,6 +463,7 @@ sift_leg(lace_worker *lace, struct sift_run *run, uint32_t top, int down,
          uint32_t *best_top, uint64_t *best_size)
 {
     uint64_t limit = run->size;
+    run->leg = down ? SYLVAN_SIFT_LEG_DOWN : SYLVAN_SIFT_LEG_UP;
 
     if (down) {
         /* reach: the nodes still to be gained below, at most -- the summed
@@ -559,6 +578,7 @@ sift_block(lace_worker *lace, struct sift_run *run, const uint32_t *block,
     top = sift_leg(lace, run, top, !down_first, block, size,
                    &best_top, &best_size);
 
+    run->leg = SYLVAN_SIFT_LEG_RETURN;
     while (top != best_top && !run->stuck) {
         int refused = 0;
         if (top < best_top) {
@@ -597,6 +617,7 @@ sift_reunite(lace_worker *lace, struct sift_run *run, uint32_t even)
     const uint32_t mover = run->pop[even] < run->pop[odd] ? even : odd;
     const uint32_t partner = mover ^ 1u;
 
+    run->leg = SYLVAN_SIFT_LEG_REUNITE;
     while (!run->stuck) {
         const uint32_t at = sylvan_rank_of(mover);
         const uint32_t goal = sylvan_rank_of(partner);
@@ -783,6 +804,7 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
     run.bounded = !config->full_legs;
     run.grouped = config->group_pairs != 0;
     run.stuck = 0;
+    run.leg = SYLVAN_SIFT_LEG_UP;
 
     const uint64_t initial = run.size;
     uint32_t candidates = 0;

@@ -1079,12 +1079,9 @@ test_collisions_CALL(lace_worker *lace)
 }
 
 /**
- * The refusals. Both are decided before anything is touched, so the forest and
- * the order come through a refused call bit for bit.
- */
-/**
  * Put the order back to the identity with adjacent swaps, whatever the sifts
- * left behind, so that the ZDD refusal below can be attributed to ZDD.
+ * left behind: the pair tests below start from it, in which every pair is
+ * together, and with it the ZDD refusal can be attributed to ZDD.
  *
  * Bubble sort, simulated first and then run as one swap sequence inside a
  * single session: a session collects when it opens, and one session per swap
@@ -1122,6 +1119,458 @@ test_restore_identity_order(void)
     return 0;
 }
 
+/**
+ * PAIRS.
+ *
+ * bdd_rel_next and bdd_rel_prev read identity 2k as a current-state variable
+ * and 2k+1 as its next-state copy, and want each pair directly together in
+ * the order, the even one first. The relation below is built that way over
+ * the same twelve variables as the other roots: six pairs (s_k, t_k) =
+ * (2k, 2k+1), each t_k a random function of s_k and of the s of another pair,
+ * as separate partitions and partly conjoined, plus a random set of states.
+ * Every pair interacts, and the cross-pair dependencies mean the order of the
+ * pairs matters, so a grouped sift has something to find.
+ */
+#define TEST_RELATIONS 9
+
+static MTBDD test_relation[TEST_RELATIONS];
+static MTBDD test_relation_value[TEST_RELATIONS][TEST_ASSIGNMENTS];
+
+/* A fixed xorshift, so that the random relation is the same on every run. */
+static uint64_t test_random_state = UINT64_C(0x2545f4914f6cdd1d);
+
+static uint32_t
+test_random(uint32_t bound)
+{
+    test_random_state ^= test_random_state << 13;
+    test_random_state ^= test_random_state >> 7;
+    test_random_state ^= test_random_state << 17;
+    return (uint32_t)(test_random_state % bound);
+}
+
+static int
+test_pairs_build_CALL(lace_worker *lace)
+{
+    BDD part = bdd_false;
+    BDD cube = bdd_true;
+    mtbdd_protect(&part);
+    mtbdd_protect(&cube);
+
+    /* t_k <-> op(s_k, s_j) for a random other pair j. */
+    for (int k = 0; k < TEST_PAIRS; k++) {
+        const BDD s = test_var[2 * k];
+        const BDD t = test_var[2 * k + 1];
+        const int other = (k + 1 + (int)test_random(TEST_PAIRS - 1)) % TEST_PAIRS;
+        const BDD u = test_var[2 * other];
+        switch (test_random(3)) {
+        case 0:  test_assert(bdd_xor_CALL(lace, &part, s, u) == SYLVAN_OK); break;
+        case 1:  test_assert(bdd_and_CALL(lace, &part, s, u) == SYLVAN_OK); break;
+        default: test_assert(bdd_or_CALL(lace, &part, s, u) == SYLVAN_OK); break;
+        }
+        test_assert(bdd_xor_CALL(lace, &test_relation[k], t, part) == SYLVAN_OK);
+        test_relation[k] = bdd_not(test_relation[k]);
+    }
+
+    /* Four partitions conjoined, which makes most variables interact. */
+    test_relation[TEST_PAIRS] = bdd_true;
+    for (int k = 0; k < 4; k++) {
+        test_assert(bdd_and_CALL(lace, &test_relation[TEST_PAIRS],
+                                 test_relation[TEST_PAIRS], test_relation[k])
+                    == SYLVAN_OK);
+    }
+
+    /* A set of states: four random cubes of three current-state literals. */
+    test_relation[TEST_PAIRS + 1] = bdd_false;
+    for (int c = 0; c < 4; c++) {
+        cube = bdd_true;
+        for (int l = 0; l < 3; l++) {
+            const BDD s = test_var[2 * (int)test_random(TEST_PAIRS)];
+            const BDD literal = test_random(2) ? s : bdd_not(s);
+            test_assert(bdd_and_CALL(lace, &cube, cube, literal) == SYLVAN_OK);
+        }
+        test_assert(bdd_or_CALL(lace, &test_relation[TEST_PAIRS + 1],
+                                test_relation[TEST_PAIRS + 1], cube)
+                    == SYLVAN_OK);
+    }
+
+    /* The relation restricted to those states, as an image computation
+       would build it. */
+    test_assert(bdd_and_CALL(lace, &test_relation[TEST_PAIRS + 2],
+                             test_relation[TEST_PAIRS],
+                             test_relation[TEST_PAIRS + 1]) == SYLVAN_OK);
+
+    mtbdd_unprotect(&cube);
+    mtbdd_unprotect(&part);
+
+    uint32_t order[TEST_VARS];
+    bdd_set_to_array(test_variables, order);
+    for (int r = 0; r < TEST_RELATIONS; r++) {
+        test_assert(mtbdd_is_valid_CALL(lace, test_relation[r]));
+        for (unsigned a = 0; a < TEST_ASSIGNMENTS; a++) {
+            uint8_t values[TEST_VARS];
+            test_values_for(order, a, values);
+            test_assert(mtbdd_eval(&test_relation_value[r][a], test_relation[r],
+                                   test_variables, values, TEST_VARS)
+                        == SYLVAN_OK);
+        }
+    }
+    return 0;
+}
+
+/** The relation still denotes the same functions, and so does everything else. */
+static int
+test_pairs_check_CALL(lace_worker *lace)
+{
+    uint32_t order[TEST_VARS];
+    bdd_set_to_array(test_variables, order);
+
+    for (int r = 0; r < TEST_RELATIONS; r++) {
+        test_assert(mtbdd_is_valid_CALL(lace, test_relation[r]));
+        for (unsigned a = 0; a < TEST_ASSIGNMENTS; a++) {
+            uint8_t values[TEST_VARS];
+            MTBDD evaluated = mtbdd_invalid;
+            test_values_for(order, a, values);
+            test_assert(mtbdd_eval(&evaluated, test_relation[r], test_variables,
+                                   values, TEST_VARS) == SYLVAN_OK);
+            test_assert(evaluated == test_relation_value[r][a]);
+        }
+    }
+    return test_check_roots_CALL(lace);
+}
+
+/**
+ * Every registered pair together, the even identity directly above the odd
+ * one -- asked of the order directly, and of the query, which must agree.
+ */
+static int
+test_pairs_together(void)
+{
+    const uint32_t count = sylvan_ranks_registered();
+    for (uint32_t even = 0; even + 1u < count; even += 2u) {
+        test_assert(sylvan_identity_at(sylvan_rank_of(even) + 1u) == even + 1u);
+    }
+    test_assert(sylvan_sift_split_pairs() == 0);
+    return 0;
+}
+
+static void
+test_pairs_print(const char *label, const sylvan_sift_result *result)
+{
+    printf("  %s: %llu -> %llu nodes in %llu swaps over %u variables, "
+           "%u pairs apart\n", label,
+           (unsigned long long)result->initial_size,
+           (unsigned long long)result->final_size,
+           (unsigned long long)result->swaps,
+           (unsigned)result->vars_sifted, (unsigned)result->split_pairs);
+}
+
+/**
+ * A grouped sift from an order in which every pair is together leaves every
+ * pair together, the forest no larger, and every function as it was.
+ */
+static uint64_t test_pairs_initial;
+
+static int
+test_pairs_grouped_CALL(lace_worker *lace)
+{
+    if (test_restore_identity_order()) return 1;
+    if (test_pairs_together()) return 1;
+
+    sylvan_sift_config config;
+    memset(&config, 0, sizeof(config));
+    config.group_pairs = 1;
+
+    sylvan_sift_result result;
+    test_assert(sylvan_sift_report(&config, &result) == SYLVAN_OK);
+    test_pairs_print("grouped, from the identity order  ", &result);
+    test_print_order("order after");
+
+    test_pairs_initial = result.initial_size;
+    test_assert(result.refusals == 0);
+    test_assert(result.split_pairs == 0);
+    test_assert(result.final_size <= result.initial_size);
+    test_assert(result.vars_sifted > 0 && result.vars_sifted % 2 == 0);
+    if (test_pairs_together()) return 1;
+    if (test_pairs_check_CALL(lace)) return 1;
+
+    /* And again, from where it left off: still together, still no larger. */
+    test_assert(sylvan_sift_report(&config, &result) == SYLVAN_OK);
+    test_assert(result.split_pairs == 0);
+    test_assert(result.final_size <= result.initial_size);
+    if (test_pairs_together()) return 1;
+    return test_pairs_check_CALL(lace);
+}
+
+/**
+ * An ungrouped sift from the same order is free to pull the pairs apart, and
+ * on this forest it does; a grouped sift afterwards puts them back together
+ * before it moves anything else.
+ */
+static int
+test_pairs_reunite_CALL(lace_worker *lace)
+{
+    if (test_restore_identity_order()) return 1;
+
+    sylvan_sift_result result;
+    test_assert(sylvan_sift_report(NULL, &result) == SYLVAN_OK);
+    test_pairs_print("ungrouped, from the identity order", &result);
+    test_print_order("order after");
+    test_assert(result.initial_size == test_pairs_initial);
+    test_assert(result.split_pairs > 0);
+    test_assert(result.split_pairs == sylvan_sift_split_pairs());
+    if (test_pairs_check_CALL(lace)) return 1;
+
+    sylvan_sift_config config;
+    memset(&config, 0, sizeof(config));
+    config.group_pairs = 1;
+    test_assert(sylvan_sift_report(&config, &result) == SYLVAN_OK);
+    test_pairs_print("grouped, after the ungrouped sift ", &result);
+    test_print_order("order after");
+    test_assert(result.refusals == 0);
+    test_assert(result.split_pairs == 0);
+    if (test_pairs_together()) return 1;
+    return test_pairs_check_CALL(lace);
+}
+
+/**
+ * The budgets count in moves. Every block here is a pair -- the registered
+ * identities are an even number -- so every move is four swaps: a swap budget
+ * below four admits none, and one of n admits at most n swaps of search and
+ * as many back. <max_vars> counts variables and never admits half a pair.
+ */
+static int
+test_pairs_budgets_CALL(lace_worker *lace)
+{
+    test_assert(sylvan_ranks_registered() % 2 == 0);
+    if (test_pairs_together()) return 1;
+
+    sylvan_sift_config config;
+    sylvan_sift_result result;
+
+    for (uint32_t budget = 1; budget <= 9; budget++) {
+        memset(&config, 0, sizeof(config));
+        config.group_pairs = 1;
+        config.max_swaps = budget;
+        test_assert(sylvan_sift_report(&config, &result) == SYLVAN_OK);
+        if (budget < 4) test_assert(result.swaps == 0);
+        test_assert(result.swaps <= 2u * budget);
+        test_assert(result.swaps % 4 == 0);
+        test_assert(result.split_pairs == 0);
+        if (test_pairs_together()) return 1;
+        if (test_pairs_check_CALL(lace)) return 1;
+    }
+
+    for (uint32_t vars = 1; vars <= 5; vars++) {
+        memset(&config, 0, sizeof(config));
+        config.group_pairs = 1;
+        config.max_vars = vars;
+        test_assert(sylvan_sift_report(&config, &result) == SYLVAN_OK);
+        test_assert(result.vars_sifted == (vars & ~1u));
+        test_assert(result.split_pairs == 0);
+        if (test_pairs_together()) return 1;
+        if (test_pairs_check_CALL(lace)) return 1;
+    }
+    return 0;
+}
+
+/**
+ * Refusals in the middle of a move. The first swap attempt of a sift from
+ * this order is the first of a four-swap move, so the window picks out which
+ * of that move's swaps the table refuses: the first (nothing has happened),
+ * the second (the first is undone), the second and its undo (the move is
+ * finished instead). Each leaves every pair together and is counted exactly.
+ * Only refusing the finish as well leaves pairs apart -- the two the move was
+ * crossing -- and ends the sift there, and the next grouped sift mends it.
+ */
+static int
+test_pairs_refusals_CALL(lace_worker *lace)
+{
+    static const struct { uint64_t first, count; } windows[] = {
+        { 1, 1 }, { 2, 1 }, { 2, 2 }
+    };
+
+    sylvan_sift_config config;
+    memset(&config, 0, sizeof(config));
+    config.group_pairs = 1;
+    sylvan_sift_result result;
+
+    for (size_t w = 0; w < sizeof(windows) / sizeof(windows[0]); w++) {
+        if (test_pairs_together()) return 1;
+        sylvan_sift_set_refusal_window(windows[w].first, windows[w].count);
+        const int status = sylvan_sift_report(&config, &result);
+        sylvan_sift_set_refusal_window(0, 0);
+        test_assert(status == SYLVAN_OK);
+        test_assert(result.refusals == windows[w].count);
+        test_assert(result.split_pairs == 0);
+        if (test_pairs_together()) return 1;
+        if (test_pairs_check_CALL(lace)) return 1;
+    }
+
+    sylvan_sift_set_refusal_window(2, 3);
+    const int status = sylvan_sift_report(&config, &result);
+    sylvan_sift_set_refusal_window(0, 0);
+    test_assert(status == SYLVAN_OK);
+    test_pairs_print("refused, undo refused, finish refused", &result);
+    test_assert(result.refusals == 3);
+    test_assert(result.split_pairs == 2);
+    test_assert(sylvan_sift_split_pairs() == 2);
+    test_assert(result.vars_sifted == 2);
+    if (test_pairs_check_CALL(lace)) return 1;
+
+    test_assert(sylvan_sift_report(&config, &result) == SYLVAN_OK);
+    test_assert(result.refusals == 0);
+    test_assert(result.split_pairs == 0);
+    if (test_pairs_together()) return 1;
+    return test_pairs_check_CALL(lace);
+}
+
+/**
+ * A variable without a partner -- here one more identity, the odd one out --
+ * is a block of its own: a pair crosses it in two swaps, and it crosses a
+ * pair in two, and no pair is split around it. It counts one variable.
+ */
+static int
+test_pairs_lone_CALL(lace_worker *lace)
+{
+    const uint32_t identity = sylvan_ranks_registered();
+    test_assert(identity % 2 == 0);
+
+    BDD lone = bdd_false, both = bdd_false, again = bdd_false;
+    mtbdd_protect(&lone);
+    mtbdd_protect(&both);
+    mtbdd_protect(&again);
+    test_assert(bdd_var_at_level(&lone, identity) == SYLVAN_OK);
+    test_assert(mtbdd_node_variable(lone) == identity);
+    test_assert(sylvan_ranks_registered() == identity + 1u);
+    const BDD image = test_relation[TEST_PAIRS + 2];
+    test_assert(bdd_and_CALL(lace, &both, lone, image) == SYLVAN_OK);
+
+    sylvan_sift_config config;
+    memset(&config, 0, sizeof(config));
+    config.group_pairs = 1;
+    sylvan_sift_result result;
+    test_assert(sylvan_sift_report(&config, &result) == SYLVAN_OK);
+    test_pairs_print("grouped, with a variable alone    ", &result);
+    test_assert(result.refusals == 0);
+    test_assert(result.split_pairs == 0);
+    test_assert(result.final_size <= result.initial_size);
+    test_assert(result.vars_sifted % 2 == 1);
+    if (test_pairs_together()) return 1;
+
+    /* One function, one node: the conjunction recomputed under the new order
+       is the node the sift rewrote in place. */
+    test_assert(mtbdd_is_valid_CALL(lace, both));
+    test_assert(bdd_and_CALL(lace, &again, lone, image) == SYLVAN_OK);
+    test_assert(again == both);
+
+    mtbdd_unprotect(&again);
+    mtbdd_unprotect(&both);
+    mtbdd_unprotect(&lone);
+    return test_pairs_check_CALL(lace);
+}
+
+/**
+ * A table with no free slot, filled the way test_varswap fills it: with
+ * distinct live leaves, alternating with collections until a collection no
+ * longer buys room, so that the sift's own opening collection buys none
+ * either. Every block with nodes here is a pair, so every move takes at least
+ * two swaps, and none can be promised room: the grouped sift refuses each
+ * before its first swap. Nothing moves, every refusal is counted, and no pair
+ * is apart. The leaves are yielded by a root visitor rather than protected
+ * one by one.
+ */
+static MTBDD *test_fill;
+static size_t test_fill_count;
+
+static void
+test_fill_visitor(void *context, sylvan_roots_yield yield, void *arg)
+{
+    (void)context;
+    if (test_fill_count != 0) yield(arg, test_fill, test_fill_count);
+}
+
+static int
+test_pairs_full_table_CALL(lace_worker *lace)
+{
+    size_t capacity = 0;
+    test_fill = NULL;
+    test_fill_count = 0;
+    test_assert(sylvan_gc_add_roots(test_fill_visitor, NULL) == SYLVAN_OK);
+
+    int64_t leaf = 0;
+    for (int sweep = 0; ; sweep++) {
+        test_assert(sweep < 12);
+        sylvan_gc_enable();
+        sylvan_gc();
+        sylvan_gc_disable();
+
+        size_t filled = 0, total = 0;
+        sylvan_table_usage(&filled, &total);
+        if (filled >= total) break;
+        if (test_fill_count + (total - filled) > capacity) {
+            capacity = test_fill_count + (total - filled);
+            MTBDD *grown = (MTBDD*)realloc(test_fill, capacity * sizeof(MTBDD));
+            test_assert(grown != NULL);
+            test_fill = grown;
+        }
+        while (filled < total) {
+            test_fill[test_fill_count++] = mtbdd_int64(leaf++);
+            filled++;
+        }
+    }
+    test_assert(nodes_reserve(nodes, 1) != SYLVAN_OK);
+
+    /* A session refuses to open while collection is disabled. Nothing below
+       allocates a node before the sift, so no collection can run underneath
+       it, and its own opening collection buys nothing. */
+    sylvan_gc_enable();
+
+    sylvan_sift_config config;
+    memset(&config, 0, sizeof(config));
+    config.group_pairs = 1;
+    sylvan_sift_result result;
+    test_assert(sylvan_sift_report(&config, &result) == SYLVAN_OK);
+    test_pairs_print("grouped, on a full table           ", &result);
+    test_assert(result.swaps == 0);
+    test_assert(result.refusals > 0);
+    test_assert(result.final_size == result.initial_size);
+    test_assert(result.split_pairs == 0);
+
+    test_assert(sylvan_gc_remove_roots(test_fill_visitor, NULL) == SYLVAN_OK);
+    free(test_fill);
+    test_fill = NULL;
+    test_fill_count = 0;
+    sylvan_gc_enable();
+    sylvan_gc();
+
+    if (test_pairs_together()) return 1;
+    return test_pairs_check_CALL(lace);
+}
+
+static int
+test_pairs_CALL(lace_worker *lace)
+{
+    for (int r = 0; r < TEST_RELATIONS; r++) {
+        test_relation[r] = mtbdd_invalid;
+        mtbdd_protect(&test_relation[r]);
+    }
+    if (test_pairs_build_CALL(lace)) return 1;
+
+    if (test_pairs_grouped_CALL(lace)) return 1;
+    if (test_pairs_reunite_CALL(lace)) return 1;
+    if (test_pairs_budgets_CALL(lace)) return 1;
+    if (test_pairs_refusals_CALL(lace)) return 1;
+    if (test_pairs_lone_CALL(lace)) return 1;
+    if (test_pairs_full_table_CALL(lace)) return 1;
+
+    for (int r = 0; r < TEST_RELATIONS; r++) mtbdd_unprotect(&test_relation[r]);
+    return 0;
+}
+
+/**
+ * The refusals. Both are decided before anything is touched, so the forest and
+ * the order come through a refused call bit for bit.
+ */
 static int
 test_guards_CALL(lace_worker *lace)
 {
@@ -1231,6 +1680,9 @@ runtests_CALL(lace_worker *lace)
     printf("Testing %d rounds of queens(%d) sifted at every stage.\n",
            test_queens_rounds, TEST_QUEENS);
     if (test_queens_CALL(lace)) return 1;
+
+    printf("Testing pairs kept together by grouped sifting.\n");
+    if (test_pairs_CALL(lace)) return 1;
 
     printf("Testing the refusals.\n");
     if (test_guards_CALL(lace)) return 1;

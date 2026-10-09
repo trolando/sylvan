@@ -2386,6 +2386,14 @@ int bdd_transitive_closure_CALL(lace_worker* lace, BDD *destination, BDD a)
 }
 
 
+/** Return 1 if every variable of <dd> comes after <var> in the order. */
+static inline int
+bdd_is_below(BDD dd, uint32_t var)
+{
+    return bdd_is_leaf(dd) ||
+           sylvan_var_before(var, bddnode_getvariable(MTBDD_GETNODE(dd)));
+}
+
 /** Simultaneous function composition. */
 int bdd_compose_CALL(lace_worker* lace, BDD *destination, BDD a, MTBDDMAP map)
 {
@@ -2448,8 +2456,18 @@ int bdd_compose_CALL(lace_worker* lace, BDD *destination, BDD a, MTBDDMAP map)
     if (map_var == level) {
         BDD root = node_high(map, map_node);
         status = bdd_ite_CALL(lace, &computed, root, high, low);
-    } else {
+    } else if (bdd_is_below(low, level) && bdd_is_below(high, level)) {
         status = _mtbdd_try_make_node(&computed, level, low, high);
+    } else {
+        /* A replacement below this node depends on a variable that comes
+           before <level>, so <level> cannot simply go on top. */
+        BDD variable = mtbdd_invalid;
+        mtbdd_refs_pushptr(&variable);
+        status = _mtbdd_try_make_node(&variable, level, bdd_false, bdd_true);
+        if (status == SYLVAN_OK) {
+            status = bdd_ite_CALL(lace, &computed, variable, high, low);
+        }
+        mtbdd_refs_popptr(1);
     }
     if (status != SYLVAN_OK) {
         mtbdd_refs_popptr(3);

@@ -4102,6 +4102,14 @@ test_compose_destinations_CALL(lace_worker *lace)
         lace, &result, x, merged_map) == SYLVAN_OK);
     test_assert(result == z);
 
+    /* Replacing z by x beneath y must not leave y on top of x. */
+    test_assert(bdd_and_CALL(lace, &identity, y, z) == SYLVAN_OK);
+    test_assert(bdd_compose_CALL(
+        lace, &result, identity, later_map) == SYLVAN_OK);
+    test_assert(bdd_and_CALL(lace, &expected, x, y) == SYLVAN_OK);
+    test_assert(result == expected);
+    test_assert(mtbdd_is_valid_CALL(lace, result));
+
     test_assert(bdd_compose_CALL(lace, &unchanged, mtbdd_invalid, map) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == bdd_true);
     test_assert(bdd_compose_CALL(lace, &unchanged, f, mtbdd_invalid) == SYLVAN_ERR_INVALID);

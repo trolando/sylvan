@@ -104,3 +104,91 @@ jobs:
       run: |
         export CMAKE_PREFIX_PATH=$HOME/sylvan-install
         ./test.sh
+
+  # The jobs above build only the default nodes table (trie). Build every
+  # backend that supports variable reordering (llht does not) with both
+  # compilers, and replay the reordering tests at 8 workers.
+  backend-build:
+    name: 'Linux ${{matrix.compiler.cc}} ${{matrix.nodes_table}} Release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        nodes_table: [llcht, llchst, trie, list]
+        compiler:
+          - { cc: gcc,   cxx: g++ }
+          - { cc: clang, cxx: clang++ }
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build libgmp-dev clang
+
+    - name: Configure
+      env:
+        CC: ${{matrix.compiler.cc}}
+        CXX: ${{matrix.compiler.cxx}}
+      run: |
+        cmake -G Ninja -S . -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DSYLVAN_NODES_TABLE=${{matrix.nodes_table}} \
+          -DLACE_NATIVE_OPT=OFF \
+          -DSYLVAN_GMP=ON
+
+    - name: Build
+      run: cmake --build build
+
+    - name: Test
+      shell: bash
+      working-directory: build
+      run: |
+        ctest --output-on-failure --timeout 300
+        test/test_table 8
+        test/test_varswap 8
+        test/test_sift 8
+
+  # One sanitizer build, on llcht: it is the only backend whose lookups can be
+  # prefetched, so the only build that compiles the prefetching intern pipeline
+  # of the swap phases, and its removals and reinsertions during a swap are
+  # lock-free chain surgery. The trie already runs with assertions in the Debug
+  # jobs above. GCC, because its sanitizer runtimes come with the compiler;
+  # Clang's are a separate package.
+  sanitizer-build:
+    name: 'Linux gcc llcht ASan+UBSan'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build libgmp-dev
+
+    - name: Configure
+      env:
+        CC: gcc
+        CXX: g++
+      run: |
+        cmake -G Ninja -S . -B build \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DSYLVAN_NODES_TABLE=llcht \
+          -DLACE_NATIVE_OPT=OFF \
+          -DSYLVAN_GMP=ON \
+          -DSYLVAN_SANITIZE_ADDRESS=ON \
+          -DSYLVAN_SANITIZE_UB=ON
+
+    - name: Build
+      run: cmake --build build
+
+    - name: Test
+      shell: bash
+      working-directory: build
+      env:
+        UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      run: |
+        ctest --output-on-failure --timeout 1200
+        test/test_table 8
+        test/test_varswap 8
+        test/test_sift 8

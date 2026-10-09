@@ -97,7 +97,7 @@ mm9b-rnd1	blif	lgsynth91/mm9b.blif	random	1	lgsynth91	small	0	60	combinational p
 mult16a-file	blif	lgsynth91/mult16a.blif	file	0	lgsynth91	small	0	60	combinational part (latches cut)
 mult16a-rev	blif	lgsynth91/mult16a.blif	reverse	0	lgsynth91	medium	0	60	combinational part (latches cut)
 mult16a-rnd1	blif	lgsynth91/mult16a.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut)
-mux-file	blif	lgsynth91/mux.blif	file	0	lgsynth91	small	1	60	-
+mux-file	blif	lgsynth91/mux.blif	file	0	lgsynth91	small	0	60	-
 mux-rev	blif	lgsynth91/mux.blif	reverse	0	lgsynth91	small	0	60	-
 mux-rnd1	blif	lgsynth91/mux.blif	random	1	lgsynth91	small	0	60	-
 my_adder-file	blif	lgsynth91/my_adder.blif	file	0	lgsynth91	small	0	60	-
@@ -131,7 +131,7 @@ arbiter-file	blif	epfl/arbiter.blif	file	0	epfl	medium	0	80	256 vars: sylvan_ben
 arbiter-rnd1	blif	epfl/arbiter.blif	random	1	epfl	medium	0	130	256 vars: sylvan_bench --verify fails (u64 model count)
 priority-file	blif	epfl/priority.blif	file	0	epfl	small	0	60	128 vars: sylvan_bench --verify fails (u64 model count)
 priority-rev	blif	epfl/priority.blif	reverse	0	epfl	small	0	60	128 vars: sylvan_bench --verify fails (u64 model count)
-priority-rnd1	blif	epfl/priority.blif	random	1	epfl	small	0	60	128 vars: sylvan_bench --verify fails (u64 model count)
+priority-rnd1	blif	epfl/priority.blif	random	1	epfl	small	1	60	128 vars: sylvan_bench --verify fails (u64 model count)
 queens8	queens	-	file	0	queens	small	0	60	-
 queens9	queens	-	file	0	queens	small	1	60	-
 queens10	queens	-	file	0	queens	small	0	60	-

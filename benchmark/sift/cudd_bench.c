@@ -314,6 +314,7 @@ usage(FILE *f)
         "  sift:   --growth G (1.2)  --max-swaps N  --max-vars N  --cudd-defaults\n"
         "          --no-sift\n"
         "  checks: --verify VECTORS  --seed S  --ops  --order\n"
+        "          --trace FILE  (one line per swap; needs cudd-swap-trace.patch)\n"
         "          --memstat  (VmRSS, VmHWM and AnonHugePages after the build\n"
         "                      and after the sift, from /proc; Linux)\n"
         "  run:    --memory BYTES (8 GiB)\n"

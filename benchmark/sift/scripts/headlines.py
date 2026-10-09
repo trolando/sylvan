@@ -384,7 +384,7 @@ def h1(rows, skips, check, out_dir):
     # The pivot: one row per case and configuration, a column per worker count.
     t = sz.Table("h1-pivot", "Sift wall time (s) per backend and worker count",
                  ["case", "config", "final", "swaps", "refusals"] + [f"P{w}" for w in ws]
-                 + [f"P{ws[-1]}/P{ws[0]}" if ws else "speedup", "vs CUDD at best P", "n"],
+                 + [f"speedup P{ws[0]}→P{ws[-1]}", "vs CUDD at best P", "n"],
                  ["Median (min–max) of sift_s over the repetitions; n is the "
                   "repetitions per cell. Speed-up columns are ratios of medians "
                   "(above 1 is faster). CUDD runs single-threaded and is shown "

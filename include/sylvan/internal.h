@@ -156,6 +156,15 @@ int _mtbdd_eval(MTBDD *destination, MTBDD dd, BDDSET variables, const uint8_t *v
 /** Assert that <set> is a referenced conjunction of positive variables. */
 void bdd_set_assert_valid(BDDSET set);
 
+/**
+ * Return 1 if bdd_rel_next and bdd_rel_prev called with <vars> (and, for
+ * bdd_false, bdd_transitive_closure) take their fused kernels under the
+ * current order: every pair (2k, 2k+1) in play occupies adjacent ranks with
+ * 2k first. The pairs in play are those of the variables in <vars>, or every
+ * registered pair when <vars> is bdd_false. Exposed for the tests.
+ */
+int bdd_rel_pairs_adjacent(BDDSET vars);
+
 /** The ZDD terminal representing the family containing only the empty set. */
 static const ZDD zdd_base = UINT64_C(1);
 
@@ -228,6 +237,7 @@ static const uint64_t CACHE_BDD_APPLY_ABSTRACT      = (32LL<<40);
 static const uint64_t CACHE_BDD_PICK_REPRESENTATIVES = (33LL<<40);
 static const uint64_t CACHE_BDD_PROBABILITY         = (34LL<<40);
 static const uint64_t CACHE_BDD_CARDINALITY         = (35LL<<40);
+static const uint64_t CACHE_BDD_REL_COMPOSE_ANY     = (36LL<<40);
 
 // LISTDD operations
 static const uint64_t CACHE_MDD_RELPROD             = (20LL<<40);

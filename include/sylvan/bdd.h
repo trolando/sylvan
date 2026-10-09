@@ -255,12 +255,16 @@ static inline int bdd_and_project(BDD *result, BDD a, BDD b, BDDSET vars);
 /**
  * Compute R(s,t) = ∃ x: A(s,x) ∧ B(x,t)
  *      or R(s)   = ∃ x: A(s,x) ∧ B(x)
- * Assumes s,t are interleaved with s even and t odd (s+1), and that each such
- * pair occupies two adjacent positions in the variable order with s first.
- * Parameter vars is the cube of all s and/or t variables.
+ * Variables come in pairs of identities (2k, 2k+1): s = 2k is the unprimed
+ * and t = 2k+1 the primed variable of pair k.
+ * Parameter vars is the cube of all s and/or t variables of the pairs in play.
  * Other variables in A are "ignored" (existential quantification)
  * Other variables in B are kept.
  * Alternatively, vars=false means all variables are in vars.
+ *
+ * Fast when every pair in play occupies two adjacent positions in the variable
+ * order with 2k first, which holds without reordering and after a reordering
+ * that moves pairs together; correct regardless, by a slower route otherwise.
  *
  * Use this function to concatenate two relations   --> -->
  * or to take the 'previous' of a set               -->  S
@@ -271,12 +275,17 @@ static inline int bdd_rel_prev(BDD *result, BDD a, BDD b, BDDSET vars);
 /**
  * Compute R(s) = ∃ x: A(x) ∧ B(x,s)
  * with support(result) = s, support(A) = s, support(B) = s+t
- * Assumes s,t are interleaved with s even and t odd (s+1), and that each such
- * pair occupies two adjacent positions in the variable order with s first.
- * Parameter vars is the cube of all s and/or t variables.
+ * Variables come in pairs of identities (2k, 2k+1): s = 2k is the unprimed
+ * and t = 2k+1 the primed variable of pair k.
+ * Parameter vars is the cube of all s and/or t variables of the pairs in play.
  * Other variables in A are kept.
  * Other variables in B are "ignored" (existential quantification)
  * Alternatively, vars=false means all variables are in vars.
+ *
+ * Fast when every pair in play occupies two adjacent positions in the variable
+ * order with 2k first, which holds without reordering and after a reordering
+ * that moves pairs together; correct regardless, by a slower route otherwise
+ * (bdd_and_exists followed by a renaming through bdd_compose).
  *
  * Use this function to take the 'next' of a set     S  -->
  * Returns SYLVAN_OK on success. On failure, <result> is unchanged.
@@ -291,10 +300,11 @@ static inline int bdd_rel_next(BDD *result, BDD a, BDD b, BDDSET vars);
  *     On Computing the Transitive Closure of a State Transition Relation
  *     30th ACM Design Automation Conference, 1993.
  *
- * The input BDD must be a transition relation that only has levels of s,t
- * with s,t interleaved with s even and t odd, i.e.
- * s level 0,2,4 matches with t level 1,3,5 and so forth. Each pair must
- * occupy two adjacent positions in the variable order, with s first.
+ * The input BDD must be a transition relation that only has variables of
+ * pairs (2k, 2k+1), unprimed 2k and primed 2k+1, i.e. s variables 0,2,4
+ * match t variables 1,3,5 and so forth. Fast when every registered pair
+ * occupies two adjacent positions in the variable order with 2k first;
+ * correct regardless, by repeated squaring otherwise.
  * Returns SYLVAN_OK on success. On failure, <result> is unchanged.
  */
 static inline int bdd_transitive_closure(BDD *result, BDD dd);

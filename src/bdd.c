@@ -1742,17 +1742,102 @@ bdd_apply_abstract_CALL(lace_worker *lace, BDD *destination, BDD a, BDD b,
     return status;
 }
 
+/**
+ * THE RELATIONAL PRODUCTS AND THE VARIABLE ORDER.
+ *
+ * bdd_rel_next, bdd_rel_prev and bdd_transitive_closure pair the unprimed
+ * variable 2k with the primed variable 2k+1, and their recursive kernels below
+ * fuse the conjunction, the quantification of one copy of the state and the
+ * renaming of the other into a single pass. The fusion is sound only while
+ * every pair in play occupies two adjacent ranks with 2k on top, because two
+ * of its steps are structural: the kernel finds the primed cofactors of an
+ * unprimed cofactor one edge down and nowhere else, so a primed variable that
+ * is not directly below its partner is taken for one the relation does not
+ * depend on; and it renames by placement, building the node for a primed
+ * variable at the rank of its unprimed partner, which is valid only when no
+ * other variable ranks between them. Under any other order the kernels return
+ * wrong functions, or diagrams out of order, and nothing reports it. CUDD's
+ * relational product needs no such invariant because it does not fuse the
+ * renaming: Cudd_bddAndAbstract quantifies under whatever order is current,
+ * and Cudd_bddPermute renames afterwards with an ITE-based composition that
+ * puts every variable at its own rank, so neither step assumes anything about
+ * where a variable sits relative to its partner. It pays for that with a
+ * second pass over the product, which is exactly what the fusion saves.
+ *
+ * So the fused kernels run whenever the order allows them, which it does
+ * without reordering and after any reordering that moves pairs as groups, and
+ * otherwise the same operations take CUDD's route: bdd_and_exists and
+ * bdd_compose for the image and the preimage. The composition of two
+ * relations has no such two-step form without a third copy of the state
+ * variables to hold the intermediate state, so its fallback is a recursion
+ * like the kernel's that fixes a partner by composition instead of one edge
+ * down and builds every node at the rank of its own variable.
+ *
+ * The decision is made once per top-level call, never inside the recursion,
+ * and costs one relaxed load while the order has never changed. Otherwise the
+ * answer for all registered pairs is cached against the order generation (see
+ * sylvan_ranks_generation), which only a reorder session or a test hook moves,
+ * so it is computed once per reordering; when not all pairs are adjacent, a
+ * call with an explicit set of variables checks the pairs of that set, one
+ * rank lookup per variable.
+ */
+TASK(int, bdd_rel_next_rec, BDD*, result, BDD, a, BDD, b, BDDSET, vars)
+TASK(int, bdd_rel_prev_rec, BDD*, result, BDD, a, BDD, b, BDDSET, vars)
+TASK(int, bdd_transitive_closure_rec, BDD*, result, BDD, a)
 
-int bdd_rel_next_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET vars)
+/* (generation + 1) << 1 | adjacent for all registered pairs, or 0. */
+static _Atomic(uint64_t) bdd_rel_all_pairs;
+
+/** Return 1 if the pair of <var> occupies adjacent ranks, unprimed first. */
+static inline int
+bdd_rel_pair_adjacent(uint32_t var)
+{
+    const uint32_t unprimed = var & ~UINT32_C(1);
+    return sylvan_rank_of(unprimed | 1) == sylvan_rank_of(unprimed) + 1;
+}
+
+int
+bdd_rel_pairs_adjacent(BDDSET vars)
+{
+    const uint64_t generation = sylvan_ranks_generation();
+    if (generation == 0) return 1;
+
+    const uint64_t cached =
+        atomic_load_explicit(&bdd_rel_all_pairs, memory_order_relaxed);
+    int all_adjacent;
+    if ((cached >> 1) == generation + 1) {
+        all_adjacent = (int)(cached & 1);
+    } else {
+        /* An unregistered identity ranks at its own number, so this also
+           covers a last pair whose primed half is not registered. */
+        const uint32_t registered = sylvan_ranks_registered();
+        all_adjacent = 1;
+        for (uint32_t var = 0; var < registered && all_adjacent; var += 2) {
+            all_adjacent = bdd_rel_pair_adjacent(var);
+        }
+        atomic_store_explicit(
+            &bdd_rel_all_pairs,
+            ((generation + 1) << 1) | (uint64_t)all_adjacent,
+            memory_order_relaxed);
+    }
+    if (all_adjacent) return 1;
+    if (vars == bdd_false) return 0;
+
+    while (!bdd_set_is_empty(vars)) {
+        bddnode *node = MTBDD_GETNODE(vars);
+        if (!bdd_rel_pair_adjacent(bddnode_getvariable(node))) return 0;
+        vars = node_high(vars, node);
+    }
+    return 1;
+}
+
+int bdd_rel_next_rec_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET vars)
 {
     /* Compute R(s) = \exists x: A(x) \and B(x,s) with support(result) = s, support(A) = s, support(B) = s+t
      * if vars == bdd_false, then every level is in s or t
      * any other levels (outside s,t) in B are ignored / existentially quantified
+     * The pairs in play must be adjacent, unprimed first; see above.
      */
-
-    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || vars == mtbdd_invalid) {
-        return SYLVAN_ERR_INVALID;
-    }
 
     /* Terminals */
     if (a == bdd_true && b == bdd_true) { *destination = bdd_true; return SYLVAN_OK; }
@@ -1859,14 +1944,14 @@ int bdd_rel_next_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET 
         mtbdd_refs_pushptr(&low);
         mtbdd_refs_pushptr(&high);
 
-        bdd_rel_next_SPAWN(lace, &c, a0, b00, _vars);
-        bdd_rel_next_SPAWN(lace, &d, a1, b10, _vars);
-        bdd_rel_next_SPAWN(lace, &e, a0, b01, _vars);
-        bdd_rel_next_SPAWN(lace, &f, a1, b11, _vars);
+        bdd_rel_next_rec_SPAWN(lace, &c, a0, b00, _vars);
+        bdd_rel_next_rec_SPAWN(lace, &d, a1, b10, _vars);
+        bdd_rel_next_rec_SPAWN(lace, &e, a0, b01, _vars);
+        bdd_rel_next_rec_SPAWN(lace, &f, a1, b11, _vars);
 
         int status = SYLVAN_OK;
         for (int i = 0; i < 4; i++) {
-            int child_status = bdd_rel_next_SYNC(lace);
+            int child_status = bdd_rel_next_rec_SYNC(lace);
             if (status == SYLVAN_OK && child_status != SYLVAN_OK) status = child_status;
         }
         if (status == SYLVAN_OK) {
@@ -1903,9 +1988,9 @@ int bdd_rel_next_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET 
                 BDD r0 = mtbdd_invalid, r1 = mtbdd_invalid;
                 mtbdd_refs_pushptr(&r0);
                 mtbdd_refs_pushptr(&r1);
-                bdd_rel_next_SPAWN(lace, &r1, a1, b1, vars);
-                int status = bdd_rel_next_CALL(lace, &r0, a0, b0, vars);
-                int r1_status = bdd_rel_next_SYNC(lace);
+                bdd_rel_next_rec_SPAWN(lace, &r1, a1, b1, vars);
+                int status = bdd_rel_next_rec_CALL(lace, &r0, a0, b0, vars);
+                int r1_status = bdd_rel_next_rec_SYNC(lace);
                 if (status == SYLVAN_OK) status = r1_status;
                 if (status == SYLVAN_OK) {
                     status = bdd_and_CALL(lace, &computed, bdd_not(r0), bdd_not(r1));
@@ -1928,13 +2013,13 @@ int bdd_rel_next_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET 
                 mtbdd_refs_pushptr(&r0);
                 mtbdd_refs_pushptr(&r1);
 
-                bdd_rel_next_SPAWN(lace, &r00, a0, b0, vars);
-                bdd_rel_next_SPAWN(lace, &r01, a0, b1, vars);
-                bdd_rel_next_SPAWN(lace, &r10, a1, b0, vars);
-                bdd_rel_next_SPAWN(lace, &r11, a1, b1, vars);
+                bdd_rel_next_rec_SPAWN(lace, &r00, a0, b0, vars);
+                bdd_rel_next_rec_SPAWN(lace, &r01, a0, b1, vars);
+                bdd_rel_next_rec_SPAWN(lace, &r10, a1, b0, vars);
+                bdd_rel_next_rec_SPAWN(lace, &r11, a1, b1, vars);
                 int status = SYLVAN_OK;
                 for (int i = 0; i < 4; i++) {
-                    int child_status = bdd_rel_next_SYNC(lace);
+                    int child_status = bdd_rel_next_rec_SYNC(lace);
                     if (status == SYLVAN_OK && child_status != SYLVAN_OK) status = child_status;
                 }
                 if (status == SYLVAN_OK) {
@@ -1955,9 +2040,9 @@ int bdd_rel_next_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET 
             BDD r0 = mtbdd_invalid, r1 = mtbdd_invalid;
             mtbdd_refs_pushptr(&r0);
             mtbdd_refs_pushptr(&r1);
-            bdd_rel_next_SPAWN(lace, &r1, a1, b1, vars);
-            int status = bdd_rel_next_CALL(lace, &r0, a0, b0, vars);
-            int r1_status = bdd_rel_next_SYNC(lace);
+            bdd_rel_next_rec_SPAWN(lace, &r1, a1, b1, vars);
+            int status = bdd_rel_next_rec_CALL(lace, &r0, a0, b0, vars);
+            int r1_status = bdd_rel_next_rec_SYNC(lace);
             if (status == SYLVAN_OK) status = r1_status;
             if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, level, r0, r1);
             mtbdd_refs_popptr(2);
@@ -1975,16 +2060,13 @@ int bdd_rel_next_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET 
     return SYLVAN_OK;
 }
 
-int bdd_rel_prev_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET vars)
+int bdd_rel_prev_rec_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET vars)
 {
     /* Compute \exists x: A(s,x) \and B(x,t)
      * if vars == bdd_false, then every level is in s or t
      * any other levels (outside s,t) in A are ignored / existentially quantified
+     * The pairs in play must be adjacent, unprimed first; see above.
      */
-
-    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || vars == mtbdd_invalid) {
-        return SYLVAN_ERR_INVALID;
-    }
 
     /* Terminals */
     if (a == bdd_true && b == bdd_true) { *destination = bdd_true; return SYLVAN_OK; }
@@ -2136,28 +2218,28 @@ int bdd_rel_prev_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET 
 
         int spawned = 0;
         if (b00 == b01) {
-            bdd_rel_prev_SPAWN(lace, &r00, a00, b0, _vars); spawned++;
-            bdd_rel_prev_SPAWN(lace, &r10, a10, b0, _vars); spawned++;
+            bdd_rel_prev_rec_SPAWN(lace, &r00, a00, b0, _vars); spawned++;
+            bdd_rel_prev_rec_SPAWN(lace, &r10, a10, b0, _vars); spawned++;
         } else {
-            bdd_rel_prev_SPAWN(lace, &r000, a00, b00, _vars); spawned++;
-            bdd_rel_prev_SPAWN(lace, &r001, a00, b01, _vars); spawned++;
-            bdd_rel_prev_SPAWN(lace, &r100, a10, b00, _vars); spawned++;
-            bdd_rel_prev_SPAWN(lace, &r101, a10, b01, _vars); spawned++;
+            bdd_rel_prev_rec_SPAWN(lace, &r000, a00, b00, _vars); spawned++;
+            bdd_rel_prev_rec_SPAWN(lace, &r001, a00, b01, _vars); spawned++;
+            bdd_rel_prev_rec_SPAWN(lace, &r100, a10, b00, _vars); spawned++;
+            bdd_rel_prev_rec_SPAWN(lace, &r101, a10, b01, _vars); spawned++;
         }
 
         if (b10 == b11) {
-            bdd_rel_prev_SPAWN(lace, &r01, a01, b1, _vars); spawned++;
-            bdd_rel_prev_SPAWN(lace, &r11, a11, b1, _vars); spawned++;
+            bdd_rel_prev_rec_SPAWN(lace, &r01, a01, b1, _vars); spawned++;
+            bdd_rel_prev_rec_SPAWN(lace, &r11, a11, b1, _vars); spawned++;
         } else {
-            bdd_rel_prev_SPAWN(lace, &r010, a01, b10, _vars); spawned++;
-            bdd_rel_prev_SPAWN(lace, &r011, a01, b11, _vars); spawned++;
-            bdd_rel_prev_SPAWN(lace, &r110, a11, b10, _vars); spawned++;
-            bdd_rel_prev_SPAWN(lace, &r111, a11, b11, _vars); spawned++;
+            bdd_rel_prev_rec_SPAWN(lace, &r010, a01, b10, _vars); spawned++;
+            bdd_rel_prev_rec_SPAWN(lace, &r011, a01, b11, _vars); spawned++;
+            bdd_rel_prev_rec_SPAWN(lace, &r110, a11, b10, _vars); spawned++;
+            bdd_rel_prev_rec_SPAWN(lace, &r111, a11, b11, _vars); spawned++;
         }
 
         int status = SYLVAN_OK;
         while (spawned-- > 0) {
-            int child_status = bdd_rel_prev_SYNC(lace);
+            int child_status = bdd_rel_prev_rec_SYNC(lace);
             if (status == SYLVAN_OK && child_status != SYLVAN_OK) status = child_status;
         }
 
@@ -2204,9 +2286,9 @@ int bdd_rel_prev_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET 
                 BDD r0 = mtbdd_invalid, r1 = mtbdd_invalid;
                 mtbdd_refs_pushptr(&r0);
                 mtbdd_refs_pushptr(&r1);
-                bdd_rel_prev_SPAWN(lace, &r1, a1, b1, vars);
-                int status = bdd_rel_prev_CALL(lace, &r0, a0, b0, vars);
-                int r1_status = bdd_rel_prev_SYNC(lace);
+                bdd_rel_prev_rec_SPAWN(lace, &r1, a1, b1, vars);
+                int status = bdd_rel_prev_rec_CALL(lace, &r0, a0, b0, vars);
+                int r1_status = bdd_rel_prev_rec_SYNC(lace);
                 if (status == SYLVAN_OK) status = r1_status;
                 if (status == SYLVAN_OK) status = bdd_ite_CALL(lace, &computed, r0, bdd_true, r1);
                 mtbdd_refs_popptr(2);
@@ -2226,13 +2308,13 @@ int bdd_rel_prev_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET 
                 mtbdd_refs_pushptr(&r0);
                 mtbdd_refs_pushptr(&r1);
 
-                bdd_rel_prev_SPAWN(lace, &r00, a0, b0, vars);
-                bdd_rel_prev_SPAWN(lace, &r10, a1, b0, vars);
-                bdd_rel_prev_SPAWN(lace, &r01, a0, b1, vars);
-                bdd_rel_prev_SPAWN(lace, &r11, a1, b1, vars);
+                bdd_rel_prev_rec_SPAWN(lace, &r00, a0, b0, vars);
+                bdd_rel_prev_rec_SPAWN(lace, &r10, a1, b0, vars);
+                bdd_rel_prev_rec_SPAWN(lace, &r01, a0, b1, vars);
+                bdd_rel_prev_rec_SPAWN(lace, &r11, a1, b1, vars);
                 int status = SYLVAN_OK;
                 for (int i = 0; i < 4; i++) {
-                    int child_status = bdd_rel_prev_SYNC(lace);
+                    int child_status = bdd_rel_prev_rec_SYNC(lace);
                     if (status == SYLVAN_OK && child_status != SYLVAN_OK) status = child_status;
                 }
                 if (status == SYLVAN_OK) {
@@ -2252,9 +2334,9 @@ int bdd_rel_prev_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET 
             BDD r0 = mtbdd_invalid, r1 = mtbdd_invalid;
             mtbdd_refs_pushptr(&r0);
             mtbdd_refs_pushptr(&r1);
-            bdd_rel_prev_SPAWN(lace, &r1, a1, b1, vars);
-            int status = bdd_rel_prev_CALL(lace, &r0, a0, b0, vars);
-            int r1_status = bdd_rel_prev_SYNC(lace);
+            bdd_rel_prev_rec_SPAWN(lace, &r1, a1, b1, vars);
+            int status = bdd_rel_prev_rec_CALL(lace, &r0, a0, b0, vars);
+            int r1_status = bdd_rel_prev_rec_SYNC(lace);
             if (status == SYLVAN_OK) status = r1_status;
             if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, level, r0, r1);
             mtbdd_refs_popptr(2);
@@ -2277,11 +2359,10 @@ int bdd_rel_prev_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET 
  * See Y. Matsunaga, P. C. McGeer, R. K. Brayton
  *     On Computing the Transitive Closure of a State Transition Relation
  *     30th ACM Design Automation Conference, 1993.
+ * Every pair must be adjacent, unprimed first; see above.
  */
-int bdd_transitive_closure_CALL(lace_worker* lace, BDD *destination, BDD a)
+int bdd_transitive_closure_rec_CALL(lace_worker* lace, BDD *destination, BDD a)
 {
-    if (destination == NULL || a == mtbdd_invalid) return SYLVAN_ERR_INVALID;
-
     /* Terminals */
     if (a == bdd_true || a == bdd_false) {
         *destination = a;
@@ -2365,19 +2446,19 @@ int bdd_transitive_closure_CALL(lace_worker* lace, BDD *destination, BDD a)
      *   h = u1 | u2 f         the 1-to-1 block.
      * Composing with I changes nothing, so I is never built.
      */
-    int status = bdd_transitive_closure_CALL(lace, &u1, a11);
-    if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &u3, a01, u1, bdd_false);
+    int status = bdd_transitive_closure_rec_CALL(lace, &u1, a11);
+    if (status == SYLVAN_OK) status = bdd_rel_prev_rec_CALL(lace, &u3, a01, u1, bdd_false);
     if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &u3, a01, u3);
-    if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &u2, u1, a10, bdd_false);
+    if (status == SYLVAN_OK) status = bdd_rel_prev_rec_CALL(lace, &u2, u1, a10, bdd_false);
     if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &u2, a10, u2);
-    if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &e, a01, u2, bdd_false);
+    if (status == SYLVAN_OK) status = bdd_rel_prev_rec_CALL(lace, &e, a01, u2, bdd_false);
     if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &e, a00, e);
-    if (status == SYLVAN_OK) status = bdd_transitive_closure_CALL(lace, &e, e);
-    if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &f, e, u3, bdd_false);
+    if (status == SYLVAN_OK) status = bdd_transitive_closure_rec_CALL(lace, &e, e);
+    if (status == SYLVAN_OK) status = bdd_rel_prev_rec_CALL(lace, &f, e, u3, bdd_false);
     if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &f, u3, f);
-    if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &g, u2, e, bdd_false);
+    if (status == SYLVAN_OK) status = bdd_rel_prev_rec_CALL(lace, &g, u2, e, bdd_false);
     if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &g, u2, g);
-    if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &h, u2, f, bdd_false);
+    if (status == SYLVAN_OK) status = bdd_rel_prev_rec_CALL(lace, &h, u2, f, bdd_false);
     if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &h, u1, h);
     if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&r0, t, e, f);
     if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&r1, t, g, h);
@@ -2394,6 +2475,415 @@ int bdd_transitive_closure_CALL(lace_worker* lace, BDD *destination, BDD a)
     *destination = computed;
     mtbdd_refs_popptr(1);
     return SYLVAN_OK;
+}
+
+/**
+ * The relational products for any order. Everything from here to the public
+ * entry points is the fallback described at the top of the kernels: it is
+ * only used when a pair in play is not adjacent with its unprimed variable
+ * first, and it is written for clarity over speed.
+ */
+
+/** The pairs in play: those named in <vars>, or all of them for bdd_false. */
+typedef struct bdd_rel_play {
+    uint32_t *pairs;    /* pair numbers (identity / 2), sorted */
+    size_t count;
+    int all;
+} bdd_rel_play;
+
+static int
+bdd_rel_compare_u32(const void *left, const void *right)
+{
+    const uint32_t a = *(const uint32_t*)left;
+    const uint32_t b = *(const uint32_t*)right;
+    return a < b ? -1 : a > b ? 1 : 0;
+}
+
+static int
+bdd_rel_play_init(bdd_rel_play *play, BDDSET vars)
+{
+    play->pairs = NULL;
+    play->count = 0;
+    play->all = vars == bdd_false;
+    if (play->all || bdd_set_is_empty(vars)) return SYLVAN_OK;
+
+    const size_t count = bdd_set_count(vars);
+    play->pairs = malloc(count * sizeof(uint32_t));
+    if (play->pairs == NULL) return SYLVAN_ERR_OOM;
+    for (size_t i = 0; i < count; i++) {
+        play->pairs[i] = bdd_set_first(vars) >> 1;
+        vars = bdd_set_next(vars);
+    }
+    qsort(play->pairs, count, sizeof(uint32_t), bdd_rel_compare_u32);
+    play->count = count;
+    return SYLVAN_OK;
+}
+
+static int
+bdd_rel_in_play(const bdd_rel_play *play, uint32_t var)
+{
+    if (play->all) return 1;
+    const uint32_t pair = var >> 1;
+    return play->count != 0 &&
+           bsearch(&pair, play->pairs, play->count, sizeof(uint32_t),
+                   bdd_rel_compare_u32) != NULL;
+}
+
+/* Which variables bdd_rel_select keeps. */
+#define BDD_REL_UNPRIMED 1   /* in play, even */
+#define BDD_REL_PRIMED   2   /* in play, odd */
+#define BDD_REL_OUTSIDE  4   /* not in play */
+
+/**
+ * Write the variables of <set> of the kinds in <which> as a set. They are
+ * taken in rank order, so every addition goes on the front.
+ */
+static int
+bdd_rel_select(BDDSET *destination, BDDSET set, const bdd_rel_play *play,
+               int which)
+{
+    const size_t count = bdd_set_count(set);
+    uint32_t *selected = malloc((count == 0 ? 1 : count) * sizeof(uint32_t));
+    if (selected == NULL) return SYLVAN_ERR_OOM;
+
+    size_t selected_count = 0;
+    while (!bdd_set_is_empty(set)) {
+        const uint32_t var = bdd_set_first(set);
+        const int kind = !bdd_rel_in_play(play, var) ? BDD_REL_OUTSIDE
+                       : (var & 1) ? BDD_REL_PRIMED : BDD_REL_UNPRIMED;
+        if (kind & which) selected[selected_count++] = var;
+        set = bdd_set_next(set);
+    }
+    const int status = bdd_set_from_array(destination, selected, selected_count);
+    free(selected);
+    return status;
+}
+
+/**
+ * Map every variable of <keys> to the other variable of its pair. Taken from
+ * the last key, every key goes on the front of the map.
+ */
+static int
+bdd_rel_partner_map(MTBDDMAP *destination, BDDSET keys)
+{
+    const size_t count = bdd_set_count(keys);
+    uint32_t *array = malloc((count == 0 ? 1 : count) * sizeof(uint32_t));
+    if (array == NULL) return SYLVAN_ERR_OOM;
+    bdd_set_to_array(keys, array);
+
+    MTBDDMAP map = mtbdd_map_empty();
+    BDD partner = mtbdd_invalid;
+    mtbdd_refs_pushptr(&map);
+    mtbdd_refs_pushptr(&partner);
+    int status = SYLVAN_OK;
+    for (size_t i = count; i > 0 && status == SYLVAN_OK; i--) {
+        status = _mtbdd_try_make_node(&partner, array[i-1] ^ 1, bdd_false, bdd_true);
+        if (status == SYLVAN_OK) status = mtbdd_map_set(&map, map, array[i-1], partner);
+    }
+    if (status == SYLVAN_OK) *destination = map;
+    mtbdd_refs_popptr(2);
+    free(array);
+    return status;
+}
+
+/** Fix <var> to <value> in <dd>, wherever <var> is ranked. */
+static int
+bdd_rel_restrict(lace_worker *lace, BDD *destination, BDD dd, uint32_t var, int value)
+{
+    MTBDDMAP map = mtbdd_map_empty();
+    mtbdd_refs_pushptr(&map);
+    int status = mtbdd_map_set(&map, map, var, value ? bdd_true : bdd_false);
+    if (status == SYLVAN_OK) status = bdd_compose_CALL(lace, destination, dd, map);
+    mtbdd_refs_popptr(1);
+    return status;
+}
+
+/**
+ * The composition ∃x: A(s,x) ∧ B(x,t) for any order, with the semantics of
+ * bdd_rel_prev: a variable outside the pairs is quantified in <a> and kept in
+ * <b>. <pairs> holds both variables of every pair in play that occurs in <a>
+ * or <b>, or is bdd_false when every variable is in a pair.
+ *
+ * Like the kernel it recurses on the first variable of either operand, but it
+ * never assumes where that variable's partner is. The unprimed variable of
+ * <a> and the primed variable of <b> are outputs, built at their own ranks;
+ * the primed variable of <a> and the unprimed variable of <b> are the same
+ * intermediate state, so when one of them is on top the other is fixed by
+ * composition, wherever it is ranked, and the two branches are joined by OR.
+ */
+TASK(int, bdd_rel_compose_any, BDD*, result, BDD, a, BDD, b, BDDSET, pairs)
+
+/** Compose (a0, b0) and (a1, b1), in parallel. */
+static int
+bdd_rel_compose_two(lace_worker *lace, BDD *r0, BDD *r1,
+                    BDD a0, BDD b0, BDD a1, BDD b1, BDDSET pairs)
+{
+    bdd_rel_compose_any_SPAWN(lace, r1, a1, b1, pairs);
+    const int status = bdd_rel_compose_any_CALL(lace, r0, a0, b0, pairs);
+    const int r1_status = bdd_rel_compose_any_SYNC(lace);
+    return status != SYLVAN_OK ? status : r1_status;
+}
+
+int
+bdd_rel_compose_any_CALL(lace_worker *lace, BDD *destination, BDD a, BDD b, BDDSET pairs)
+{
+    if (a == bdd_false || b == bdd_false) { *destination = bdd_false; return SYLVAN_OK; }
+    if (a == bdd_true && b == bdd_true) { *destination = bdd_true; return SYLVAN_OK; }
+
+    bddnode *na = bdd_is_leaf(a) ? NULL : MTBDD_GETNODE(a);
+    bddnode *nb = bdd_is_leaf(b) ? NULL : MTBDD_GETNODE(b);
+    const uint32_t va = na ? bddnode_getvariable(na) : 0xffffffff;
+    const uint32_t vb = nb ? bddnode_getvariable(nb) : 0xffffffff;
+    const uint32_t level = sylvan_var_min(va, vb);
+
+    int in_play = 1;
+    if (pairs != bdd_false) {
+        bddnode *np = bdd_set_is_empty(pairs) ? NULL : MTBDD_GETNODE(pairs);
+        while (np != NULL && sylvan_var_before(bddnode_getvariable(np), level)) {
+            pairs = node_high(pairs, np);
+            np = bdd_set_is_empty(pairs) ? NULL : MTBDD_GETNODE(pairs);
+        }
+        /* Nothing left in play: <a> is quantified away, and is not false. */
+        if (np == NULL) { *destination = b; return SYLVAN_OK; }
+        in_play = bddnode_getvariable(np) == level;
+    }
+
+    sylvan_gc_test(lace);
+
+    BDD computed = mtbdd_invalid;
+    mtbdd_refs_pushptr(&computed);
+    if (cache_get3(CACHE_BDD_REL_COMPOSE_ANY, a, b, pairs, &computed)) {
+        *destination = computed;
+        mtbdd_refs_popptr(1);
+        return SYLVAN_OK;
+    }
+
+    const BDD a0 = va == level ? node_low(a, na) : a;
+    const BDD a1 = va == level ? node_high(a, na) : a;
+    const BDD b0 = vb == level ? node_low(b, nb) : b;
+    const BDD b1 = vb == level ? node_high(b, nb) : b;
+
+    BDD low = mtbdd_invalid, high = mtbdd_invalid;
+    BDD low1 = mtbdd_invalid, high1 = mtbdd_invalid;
+    BDD partner0 = mtbdd_invalid, partner1 = mtbdd_invalid;
+    mtbdd_refs_pushptr(&low);
+    mtbdd_refs_pushptr(&high);
+    mtbdd_refs_pushptr(&low1);
+    mtbdd_refs_pushptr(&high1);
+    mtbdd_refs_pushptr(&partner0);
+    mtbdd_refs_pushptr(&partner1);
+    int status;
+
+    if (!in_play) {
+        /* Quantified in <a>, kept in <b>, independently. */
+        if (va == level && vb == level) {
+            status = bdd_rel_compose_two(lace, &low, &low1, a0, b0, a1, b0, pairs);
+            if (status == SYLVAN_OK) {
+                status = bdd_rel_compose_two(lace, &high, &high1, a0, b1, a1, b1, pairs);
+            }
+            if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &low, low, low1);
+            if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &high, high, high1);
+            if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, level, low, high);
+        } else if (va == level) {
+            status = bdd_rel_compose_two(lace, &low, &high, a0, b, a1, b, pairs);
+            if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &computed, low, high);
+        } else {
+            status = bdd_rel_compose_two(lace, &low, &high, a, b0, a, b1, pairs);
+            if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, level, low, high);
+        }
+    } else if ((level & 1) == 0 && va == level) {
+        /* The unprimed variable of <a> is an output. */
+        status = bdd_rel_compose_two(lace, &low, &high, a0, b, a1, b, pairs);
+        if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, level, low, high);
+    } else if ((level & 1) == 1 && vb == level) {
+        /* The primed variable of <b> is an output. */
+        status = bdd_rel_compose_two(lace, &low, &high, a, b0, a, b1, pairs);
+        if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, level, low, high);
+    } else if ((level & 1) == 0) {
+        /* The unprimed variable of <b>; its partner in <a> is primed. */
+        status = bdd_rel_restrict(lace, &partner0, a, level | 1, 0);
+        if (status == SYLVAN_OK) status = bdd_rel_restrict(lace, &partner1, a, level | 1, 1);
+        if (status == SYLVAN_OK) {
+            status = bdd_rel_compose_two(lace, &low, &high, partner0, b0, partner1, b1, pairs);
+        }
+        if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &computed, low, high);
+    } else {
+        /* The primed variable of <a>; its partner in <b> is unprimed. */
+        status = bdd_rel_restrict(lace, &partner0, b, level & ~UINT32_C(1), 0);
+        if (status == SYLVAN_OK) {
+            status = bdd_rel_restrict(lace, &partner1, b, level & ~UINT32_C(1), 1);
+        }
+        if (status == SYLVAN_OK) {
+            status = bdd_rel_compose_two(lace, &low, &high, a0, partner0, a1, partner1, pairs);
+        }
+        if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &computed, low, high);
+    }
+
+    mtbdd_refs_popptr(6);
+    if (status != SYLVAN_OK) {
+        mtbdd_refs_popptr(1);
+        return status;
+    }
+    cache_put3(CACHE_BDD_REL_COMPOSE_ANY, a, b, pairs, computed);
+    *destination = computed;
+    mtbdd_refs_popptr(1);
+    return SYLVAN_OK;
+}
+
+/**
+ * bdd_rel_next for any order: the primed variables in play renamed to their
+ * partners in ∃S: A ∧ (∃Y: B), with S the unprimed variables in play and Y
+ * the variables of B outside the pairs.
+ */
+static int
+bdd_rel_next_any(lace_worker *lace, BDD *destination, BDD a, BDD b, BDDSET vars)
+{
+    if (a == bdd_false || b == bdd_false) { *destination = bdd_false; return SYLVAN_OK; }
+    if (vars != bdd_false && bdd_set_is_empty(vars)) { *destination = a; return SYLVAN_OK; }
+
+    bdd_rel_play play;
+    int status = bdd_rel_play_init(&play, vars);
+    if (status != SYLVAN_OK) return status;
+
+    BDDSET support_a = mtbdd_invalid, support_b = mtbdd_invalid;
+    BDDSET selected = mtbdd_invalid;
+    BDD quantified = mtbdd_invalid, product = mtbdd_invalid;
+    MTBDDMAP rename = mtbdd_invalid;
+    mtbdd_refs_pushptr(&support_a);
+    mtbdd_refs_pushptr(&support_b);
+    mtbdd_refs_pushptr(&selected);
+    mtbdd_refs_pushptr(&quantified);
+    mtbdd_refs_pushptr(&product);
+    mtbdd_refs_pushptr(&rename);
+
+    status = mtbdd_support_CALL(lace, &support_b, b);
+    if (status == SYLVAN_OK) status = bdd_rel_select(&selected, support_b, &play, BDD_REL_OUTSIDE);
+    if (status == SYLVAN_OK) status = bdd_exists_CALL(lace, &quantified, b, selected);
+    if (status == SYLVAN_OK) status = mtbdd_support_CALL(lace, &support_a, a);
+    if (status == SYLVAN_OK) status = bdd_and_CALL(lace, &support_a, support_a, support_b);
+    if (status == SYLVAN_OK) status = bdd_rel_select(&selected, support_a, &play, BDD_REL_UNPRIMED);
+    if (status == SYLVAN_OK) status = bdd_and_exists_CALL(lace, &product, a, quantified, selected);
+    if (status == SYLVAN_OK) status = mtbdd_support_CALL(lace, &support_a, product);
+    if (status == SYLVAN_OK) status = bdd_rel_select(&selected, support_a, &play, BDD_REL_PRIMED);
+    if (status == SYLVAN_OK) status = bdd_rel_partner_map(&rename, selected);
+    if (status == SYLVAN_OK) status = bdd_compose_CALL(lace, destination, product, rename);
+
+    mtbdd_refs_popptr(6);
+    free(play.pairs);
+    return status;
+}
+
+/**
+ * bdd_rel_prev for any order. The variables of A outside the pairs are
+ * quantified first. When B has no primed variable in play it is a set, and
+ * the preimage is ∃T: A ∧ B' with B' the unprimed variables of B renamed to
+ * their primed partners; otherwise the two relations are composed by
+ * bdd_rel_compose_any.
+ */
+static int
+bdd_rel_prev_any(lace_worker *lace, BDD *destination, BDD a, BDD b, BDDSET vars)
+{
+    if (a == bdd_false || b == bdd_false) { *destination = bdd_false; return SYLVAN_OK; }
+    if (vars != bdd_false && bdd_set_is_empty(vars)) { *destination = b; return SYLVAN_OK; }
+
+    bdd_rel_play play;
+    int status = bdd_rel_play_init(&play, vars);
+    if (status != SYLVAN_OK) return status;
+
+    BDDSET support_a = mtbdd_invalid, support_b = mtbdd_invalid;
+    BDDSET selected = mtbdd_invalid;
+    BDD quantified = mtbdd_invalid, renamed = mtbdd_invalid;
+    MTBDDMAP rename = mtbdd_invalid;
+    mtbdd_refs_pushptr(&support_a);
+    mtbdd_refs_pushptr(&support_b);
+    mtbdd_refs_pushptr(&selected);
+    mtbdd_refs_pushptr(&quantified);
+    mtbdd_refs_pushptr(&renamed);
+    mtbdd_refs_pushptr(&rename);
+
+    status = mtbdd_support_CALL(lace, &support_a, a);
+    if (status == SYLVAN_OK) status = bdd_rel_select(&selected, support_a, &play, BDD_REL_OUTSIDE);
+    if (status == SYLVAN_OK) status = bdd_exists_CALL(lace, &quantified, a, selected);
+    if (status == SYLVAN_OK) status = mtbdd_support_CALL(lace, &support_b, b);
+    if (status == SYLVAN_OK) status = bdd_rel_select(&selected, support_b, &play, BDD_REL_PRIMED);
+    if (status == SYLVAN_OK && bdd_set_is_empty(selected)) {
+        status = bdd_rel_select(&selected, support_b, &play, BDD_REL_UNPRIMED);
+        if (status == SYLVAN_OK) status = bdd_rel_partner_map(&rename, selected);
+        if (status == SYLVAN_OK) status = bdd_compose_CALL(lace, &renamed, b, rename);
+        if (status == SYLVAN_OK) status = mtbdd_support_CALL(lace, &support_a, quantified);
+        if (status == SYLVAN_OK) status = mtbdd_support_CALL(lace, &support_b, renamed);
+        if (status == SYLVAN_OK) status = bdd_and_CALL(lace, &support_a, support_a, support_b);
+        if (status == SYLVAN_OK) status = bdd_rel_select(&selected, support_a, &play, BDD_REL_PRIMED);
+        if (status == SYLVAN_OK) {
+            status = bdd_and_exists_CALL(lace, destination, quantified, renamed, selected);
+        }
+    } else if (status == SYLVAN_OK) {
+        if (play.all) {
+            selected = bdd_false;
+        } else {
+            status = mtbdd_support_CALL(lace, &support_a, quantified);
+            if (status == SYLVAN_OK) status = bdd_and_CALL(lace, &support_a, support_a, support_b);
+            if (status == SYLVAN_OK) {
+                status = bdd_rel_select(&selected, support_a, &play,
+                                        BDD_REL_UNPRIMED | BDD_REL_PRIMED);
+            }
+        }
+        if (status == SYLVAN_OK) {
+            status = bdd_rel_compose_any_CALL(lace, destination, quantified, b, selected);
+        }
+    }
+
+    mtbdd_refs_popptr(6);
+    free(play.pairs);
+    return status;
+}
+
+/**
+ * bdd_transitive_closure for any order, by squaring: C := C ∨ C∘C until
+ * nothing changes, which takes a number of rounds logarithmic in the length
+ * of the longest path the closure adds.
+ */
+static int
+bdd_transitive_closure_any(lace_worker *lace, BDD *destination, BDD a)
+{
+    BDD closure = a, next = mtbdd_invalid;
+    mtbdd_refs_pushptr(&closure);
+    mtbdd_refs_pushptr(&next);
+    int status = SYLVAN_OK;
+    for (;;) {
+        status = bdd_rel_compose_any_CALL(lace, &next, closure, closure, bdd_false);
+        if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &next, closure, next);
+        if (status != SYLVAN_OK || next == closure) break;
+        closure = next;
+    }
+    if (status == SYLVAN_OK) *destination = closure;
+    mtbdd_refs_popptr(2);
+    return status;
+}
+
+int bdd_rel_next_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET vars)
+{
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || vars == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (bdd_rel_pairs_adjacent(vars)) return bdd_rel_next_rec_CALL(lace, destination, a, b, vars);
+    return bdd_rel_next_any(lace, destination, a, b, vars);
+}
+
+int bdd_rel_prev_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET vars)
+{
+    if (destination == NULL || a == mtbdd_invalid || b == mtbdd_invalid || vars == mtbdd_invalid) {
+        return SYLVAN_ERR_INVALID;
+    }
+    if (bdd_rel_pairs_adjacent(vars)) return bdd_rel_prev_rec_CALL(lace, destination, a, b, vars);
+    return bdd_rel_prev_any(lace, destination, a, b, vars);
+}
+
+int bdd_transitive_closure_CALL(lace_worker* lace, BDD *destination, BDD a)
+{
+    if (destination == NULL || a == mtbdd_invalid) return SYLVAN_ERR_INVALID;
+    if (bdd_rel_pairs_adjacent(bdd_false)) return bdd_transitive_closure_rec_CALL(lace, destination, a);
+    return bdd_transitive_closure_any(lace, destination, a);
 }
 
 

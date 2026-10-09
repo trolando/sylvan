@@ -107,6 +107,15 @@ All notable changes to Sylvan will be documented in this file.
   final size is the one the exhaustive walk finds, in about a third fewer
   swaps. Set `full_legs` in `sylvan_sift_config` to walk every leg to the end
   of the order anyway.
+- Opening a sift no longer costs a pass per slot of the nodes table. The
+  session's opening passes and the interaction matrix tested every slot, so a
+  sift of a 127-node forest took 39 ms with 8 GiB tables, nearly all of it
+  before the first swap. They now read the node bitmap 64 slots at a time and
+  stop where the table was ever used (the new `nodes_marked_words` and
+  `nodes_used_bound`), the session's per-slot arrays are mapped so that only
+  the pages of the forest are touched, and the live count a sift leaves is
+  derived instead of counted. The same sift now takes 2.5 ms, most of it the
+  garbage collection a sift begins with, which still passes over the table.
 - The nodes table backends now hand out allocation regions from one shared
   cursor instead of starting each worker in its own stripe of the table, so
   node index order follows creation order across workers. The stripes made a

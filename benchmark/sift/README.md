@@ -355,10 +355,16 @@ runs and 1.3 h of CUDD runs. Three cases are 4.4 h of it: s9234.1-file
 | `--size small,medium` without queens11 | 138 | 5.5 |
 | `--quick` | 9 | 0.3 |
 
-Small cases are cheap but say little on their own: with the default 8 GiB
-tables Sylvan's sift has a floor of about 50 ms (2 ms at `--memory` 256 MiB,
-7 ms at 1 GiB, on bryant6), where CUDD's is under 2 ms, so a forest of a few
-thousand nodes measures that floor.
+Small cases are cheap but say little on their own: a sift has a floor that
+grows with the nodes table rather than with the forest, because it begins with
+a garbage collection, which passes over the whole table. On bryant6 (127
+nodes) at P1 with the trie, the whole sift takes about 2.5 ms with the default
+8 GiB tables (2^24 slots), 1.5 ms at `--memory` 1 GiB (2^21) and 1.0 ms at
+256 MiB (2^19), of which the collection is 2.0, 1.0 and 0.5 ms and the 179
+swaps 0.3 ms; CUDD sifts it in about 0.7 ms. So a forest of a few thousand
+nodes measures mostly that floor. (When the session's own opening passes
+visited every slot as well, the floor was 39 ms at 8 GiB, 7 ms at 1 GiB and
+2 ms at 256 MiB.)
 
 **Left out, and why.** Every order of a non-trivial circuit that is not in
 the table, as screened (Sylvan: list, P1; "table full" is Sylvan's nodes

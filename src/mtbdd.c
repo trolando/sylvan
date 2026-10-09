@@ -700,21 +700,42 @@ _mtbdd_try_make_map_node(MTBDDMAP *destination, uint32_t key, MTBDDMAP next, MTB
     return SYLVAN_OK;
 }
 
+/**
+ * Register identities 0 .. <count>-1, so that every one not registered yet
+ * is ranked at its own number, and keep bdd_new_var() from handing out any
+ * of them.
+ */
+static int
+bdd_claim_identities(uint32_t count)
+{
+    uint32_t next = atomic_load_explicit(&bdd_next_level, memory_order_relaxed);
+    while (next < count && !atomic_compare_exchange_weak_explicit(
+        &bdd_next_level, &next, count,
+        memory_order_relaxed, memory_order_relaxed)) {
+    }
+    return sylvan_ranks_reserve(count);
+}
+
+int
+bdd_var(BDD *destination, uint32_t var)
+{
+    if (destination == NULL || var > UINT32_C(0x00ffffff)) return SYLVAN_ERR_INVALID;
+
+    int status = bdd_claim_identities(var + 1);
+    if (status != SYLVAN_OK) return status;
+
+    return _mtbdd_try_make_node(destination, var, bdd_false, bdd_true);
+}
+
 int
 bdd_var_at_level(BDD *destination, uint32_t level)
 {
     if (destination == NULL || level > UINT32_C(0x00ffffff)) return SYLVAN_ERR_INVALID;
 
-    uint32_t next = atomic_load_explicit(&bdd_next_level, memory_order_relaxed);
-    while (next <= level && !atomic_compare_exchange_weak_explicit(
-        &bdd_next_level, &next, level + 1,
-        memory_order_relaxed, memory_order_relaxed)) {
-    }
-
-    /* <level> is an order position, so the variable is the one ranked there. */
-    int status = sylvan_ranks_reserve(level + 1);
+    int status = bdd_claim_identities(level + 1);
     if (status != SYLVAN_OK) return status;
 
+    /* <level> is an order position, so the variable is the one ranked there. */
     return _mtbdd_try_make_node(
         destination, sylvan_identity_at(level), bdd_false, bdd_true);
 }

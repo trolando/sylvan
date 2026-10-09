@@ -299,6 +299,32 @@ test_reduces_CALL(lace_worker *lace)
 }
 
 /**
+ * A variable is named by its identity, not by its position. After a sift has
+ * moved the variables, bdd_var() still returns every variable it returned
+ * before, while bdd_var_at_level() returns whichever variable is ranked at
+ * that position now.
+ */
+static int
+test_identity_kept(void)
+{
+    int moved = 0;
+    BDD variable = mtbdd_invalid;
+    mtbdd_refs_pushptr(&variable);
+    for (uint32_t i = 0; i < TEST_VARS; i++) {
+        test_assert(bdd_var(&variable, i) == SYLVAN_OK);
+        test_assert(variable == test_var[i]);
+        test_assert(bdd_var_at_level(&variable, i) == SYLVAN_OK);
+        test_assert(variable == test_var[sylvan_identity_at(i)]);
+        if (variable != test_var[i]) moved = 1;
+    }
+    mtbdd_refs_popptr(1);
+
+    /* The sift left the split order the variables were created in. */
+    test_assert(moved);
+    return 0;
+}
+
+/**
  * Sifting a forest that has just been sifted has almost nothing left to do.
  * It may still find a different position of equal value, and the population
  * order it works in is not the one it worked in last time, so this is a bound
@@ -1177,6 +1203,9 @@ runtests_CALL(lace_worker *lace)
 
     printf("Testing that sifting a bad order makes the forest smaller.\n");
     if (test_reduces_CALL(lace)) return 1;
+
+    printf("Testing that variables keep their identity across a sift.\n");
+    if (test_identity_kept()) return 1;
 
     printf("Testing that sifting a sifted forest changes little.\n");
     if (test_idempotent_CALL(lace)) return 1;

@@ -38,7 +38,7 @@
  * arithmetic on identities (interleaved s/t pairs, map keys, subtable routes)
  * as they are.
  *
- * Identities that were never registered (through bdd_new_var() or
+ * Identities that were never registered (through bdd_var(), bdd_new_var() or
  * bdd_var_at_level()) have rank == identity by definition. That keeps the
  * 0xffffffff "no variable" sentinels used throughout the operation code
  * working unchanged: their rank is 0xffffffff, which orders last.

@@ -29,20 +29,39 @@ static const BDD bdd_false = 0;
 static const BDD bdd_true = UINT64_C(0x8000000000000000);
 
 /**
+ * Return the variable with identity <var> through <result>, creating its
+ * canonical node when necessary. Identities are limited to 24 bits by the
+ * current node encoding. On failure, <result> is unchanged.
+ *
+ * An identity names one variable for as long as the forest exists: this
+ * returns the same variable before and after any reordering, wherever that
+ * variable is ranked. An identity not created before is created together with
+ * every uncreated identity below it, each ranked at its own number, which
+ * appends them to the order in identity order.
+ *
+ * This is the function to use for "variable i". Every other function that
+ * takes a variable, such as the variable set and map functions and the
+ * relational products, takes identities too.
+ */
+int bdd_var(BDD *result, uint32_t var);
+
+/**
  * Return the variable at the given level through <result>, creating its
  * canonical node when necessary. Levels are limited to 24 bits by the current
  * node encoding. On failure, <result> is unchanged.
  *
  * A level is a position in the variable order, not a variable identity: this
- * returns the variable currently ranked at <level>. The two coincide unless
- * the order has been changed. Levels not yet in use are created in order, so
- * that the variable at a fresh level is the identity <level>.
+ * returns the variable currently ranked at <level>, which a reordering can
+ * change. The two coincide unless the order has been changed. Levels not yet
+ * in use are created in order, so that the variable at a fresh level is the
+ * identity <level>. Use bdd_var() for a variable by identity.
  */
 int bdd_var_at_level(BDD *result, uint32_t level);
 
 /**
- * Create the next variable after all levels requested so far, placing it last
- * in the variable order. On failure, <result> is unchanged.
+ * Create the variable with the next identity after all identities and levels
+ * requested so far, placing it last in the variable order. On failure,
+ * <result> is unchanged.
  */
 int bdd_new_var(BDD *result);
 
@@ -57,11 +76,19 @@ static inline int bdd_set_is_empty(BDDSET set);
 static inline uint32_t bdd_set_first(BDDSET set);
 static inline BDDSET bdd_set_next(BDDSET set);
 
-/** Create a variable set from an array of levels. */
-int bdd_set_from_array(BDDSET *result, const uint32_t *levels, size_t count);
+/**
+ * Create a variable set from an array of variable identities, in any order.
+ * The variables of a set, here and in every function below, are identities;
+ * the set itself is ordered by the current variable order.
+ */
+int bdd_set_from_array(BDDSET *result, const uint32_t *vars, size_t count);
 
-/** Write the levels in a variable set to a sufficiently large array. */
-void bdd_set_to_array(BDDSET set, uint32_t *levels);
+/**
+ * Write the identities in a variable set to a sufficiently large array, in
+ * the current variable order. Arrays of values that functions taking a set
+ * expect, such as cubes, are packed in this same order.
+ */
+void bdd_set_to_array(BDDSET set, uint32_t *vars);
 
 /** Return the number of variables in a variable set. */
 size_t bdd_set_count(BDDSET set);
@@ -72,14 +99,14 @@ static inline int bdd_set_union(BDDSET *result, BDDSET set1, BDDSET set2);
 /** Remove the variables in set2 from set1, writing the result through result. */
 static inline int bdd_set_difference(BDDSET *result, BDDSET set1, BDDSET set2);
 
-/** Return whether set contains the variable at level. */
-int bdd_set_contains(BDDSET set, uint32_t level);
+/** Return whether set contains the variable with identity <var>. */
+int bdd_set_contains(BDDSET set, uint32_t var);
 
-/** Add the variable at level to set. */
-int bdd_set_add(BDDSET *result, BDDSET set, uint32_t level);
+/** Add the variable with identity <var> to set. */
+int bdd_set_add(BDDSET *result, BDDSET set, uint32_t var);
 
-/** Remove the variable at level from set. */
-int bdd_set_remove(BDDSET *result, BDDSET set, uint32_t level);
+/** Remove the variable with identity <var> from set. */
+int bdd_set_remove(BDDSET *result, BDDSET set, uint32_t var);
 
 /**
  * Check if the BDD represents constants true or false.
@@ -476,6 +503,7 @@ int bdd_iterator_next(sylvan_iterator *iterator, uint8_t *values, size_t count,
 /**
  * Create a BDD cube representing the conjunction of variables in their positive or negative
  * form depending on whether the cube[idx] equals 0 (negative), 1 (positive) or 2 (any).
+ * <cube> is packed in the order of <variables> (see bdd_set_to_array).
  * Returns SYLVAN_ERR_INVALID and leaves <result> unchanged for any other value.
  */
 static inline int bdd_cube(BDD *result, BDDSET variables, const uint8_t *cube);

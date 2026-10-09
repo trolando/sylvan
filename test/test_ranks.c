@@ -226,6 +226,29 @@ test_var_at_level_CALL(lace_worker *lace)
     test_assert(mtbdd_node_variable(fresh) == ALL_VARS + 3);
     test_assert(sylvan_rank_of(ALL_VARS + 3) == ALL_VARS + 3);
     test_assert(sylvan_ranks_generation() == generation);
+
+    /* bdd_var() is indexed by identity, whatever the order. */
+    for (uint32_t identity = 0; identity < ALL_VARS; identity++) {
+        test_assert(bdd_var(&fresh, identity) == SYLVAN_OK);
+        test_assert(fresh == test_variable[identity]);
+        test_assert(sylvan_rank_of(identity) == test_rank[identity]);
+    }
+
+    /* A fresh identity registers itself and every identity below it that is
+       not registered yet, each ranked at its own number. */
+    test_assert(sylvan_ranks_registered() == ALL_VARS + 4);
+    test_assert(bdd_var(&fresh, ALL_VARS + 7) == SYLVAN_OK);
+    test_assert(mtbdd_node_variable(fresh) == ALL_VARS + 7);
+    test_assert(sylvan_ranks_registered() == ALL_VARS + 8);
+    for (uint32_t identity = ALL_VARS; identity < ALL_VARS + 8; identity++) {
+        test_assert(sylvan_rank_of(identity) == identity);
+        test_assert(sylvan_identity_at(identity) == identity);
+    }
+    test_assert(sylvan_ranks_generation() == generation);
+
+    /* And bdd_new_var() continues after it. */
+    test_assert(bdd_new_var(&fresh) == SYLVAN_OK);
+    test_assert(mtbdd_node_variable(fresh) == ALL_VARS + 8);
     mtbdd_refs_popptr(1);
     return 0;
 }

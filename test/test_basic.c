@@ -266,6 +266,9 @@ test_variable_set_destinations_CALL(lace_worker *lace)
     test_assert(bdd_var_at_level(&unchanged, UINT32_C(0x01000000)) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == bdd_false);
     test_assert(bdd_var_at_level(NULL, 0) == SYLVAN_ERR_INVALID);
+    test_assert(bdd_var(&unchanged, UINT32_C(0x01000000)) == SYLVAN_ERR_INVALID);
+    test_assert(unchanged == bdd_false);
+    test_assert(bdd_var(NULL, 0) == SYLVAN_ERR_INVALID);
     test_assert(bdd_new_var(NULL) == SYLVAN_ERR_INVALID);
     test_assert(bdd_set_from_array(&unchanged, NULL, 1) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == bdd_false);

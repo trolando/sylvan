@@ -1,0 +1,142 @@
+name	mode	file	var_order	seed	family	size_class	quick	timeout_s	notes
+C432-file	blif	iscas85/C432.blif	file	0	iscas85	small	0	60	-
+C432-rev	blif	iscas85/C432.blif	reverse	0	iscas85	small	0	60	-
+C432-rnd1	blif	iscas85/C432.blif	random	1	iscas85	medium	0	60	-
+C499-file	blif	iscas85/C499.blif	file	0	iscas85	small	0	60	same forest as C1355
+C499-rev	blif	iscas85/C499.blif	reverse	0	iscas85	small	0	60	same forest as C1355
+C499-rnd1	blif	iscas85/C499.blif	random	1	iscas85	medium	0	640	same forest as C1355; CUDD 151.8 s vs Sylvan 4.1 s at P1
+C880-file	blif	C880.blif	file	0	iscas85	small	1	60	CUDD's nanotrav copy
+C880-rev	blif	C880.blif	reverse	0	iscas85	medium	0	60	CUDD's nanotrav copy
+C880-rnd1	blif	C880.blif	random	1	iscas85	medium	0	60	CUDD's nanotrav copy
+C880-rnd2	blif	C880.blif	random	2	iscas85	medium	0	60	CUDD's nanotrav copy
+C1908-file	blif	iscas85/C1908.blif	file	0	iscas85	small	0	60	-
+C1908-rev	blif	iscas85/C1908.blif	reverse	0	iscas85	small	0	60	-
+C1908-rnd1	blif	iscas85/C1908.blif	random	1	iscas85	small	1	60	-
+C3540-file	blif	iscas85/C3540.blif	file	0	iscas85	medium	0	60	-
+C3540-rnd1	blif	iscas85/C3540.blif	random	1	iscas85	medium	0	160	-
+s420.1-file	blif	iscas89/s420.1.blif	file	0	iscas89	small	0	60	combinational part (latches cut)
+s420.1-rev	blif	iscas89/s420.1.blif	reverse	0	iscas89	small	0	60	combinational part (latches cut)
+s420.1-rnd1	blif	iscas89/s420.1.blif	random	1	iscas89	small	0	60	combinational part (latches cut)
+s510-file	blif	iscas89/s510.blif	file	0	iscas89	small	0	60	combinational part (latches cut)
+s510-rev	blif	iscas89/s510.blif	reverse	0	iscas89	small	0	60	combinational part (latches cut)
+s510-rnd1	blif	iscas89/s510.blif	random	1	iscas89	small	0	60	combinational part (latches cut)
+s838.1-rev	blif	iscas89/s838.1.blif	reverse	0	iscas89	small	0	60	combinational part (latches cut); 66 vars: sylvan_bench --verify fails (u64 model count)
+s838.1-rnd1	blif	iscas89/s838.1.blif	random	1	iscas89	small	0	60	combinational part (latches cut); 66 vars: sylvan_bench --verify fails (u64 model count)
+s1423-file	blif	iscas89/s1423.blif	file	0	iscas89	small	1	60	combinational part (latches cut); 91 vars: sylvan_bench --verify fails (u64 model count)
+s1423-rev	blif	iscas89/s1423.blif	reverse	0	iscas89	small	0	60	combinational part (latches cut); 91 vars: sylvan_bench --verify fails (u64 model count)
+s1423-rnd1	blif	iscas89/s1423.blif	random	1	iscas89	small	0	60	combinational part (latches cut); 91 vars: sylvan_bench --verify fails (u64 model count)
+s5378-rev	blif	iscas89/s5378.blif	reverse	0	iscas89	small	0	60	combinational part (latches cut); 199 vars: sylvan_bench --verify fails (u64 model count)
+s5378-rnd1	blif	iscas89/s5378.blif	random	1	iscas89	small	0	60	combinational part (latches cut); 199 vars: sylvan_bench --verify fails (u64 model count)
+s9234.1-file	blif	iscas89/s9234.1.blif	file	0	iscas89	large	0	1070	combinational part (latches cut); CUDD 257.8 s vs Sylvan 55.5 s at P1; 247 vars: sylvan_bench --verify fails (u64 model count)
+s13207.1-rnd1	blif	iscas89/s13207.1.blif	random	1	iscas89	small	0	60	combinational part (latches cut); 700 vars: sylvan_bench --verify fails (u64 model count)
+s15850.1-file	blif	iscas89/s15850.1.blif	file	0	iscas89	medium	0	60	combinational part (latches cut); 611 vars: sylvan_bench --verify fails (u64 model count)
+s15850.1-rnd1	blif	iscas89/s15850.1.blif	random	1	iscas89	medium	0	110	combinational part (latches cut); 611 vars: sylvan_bench --verify fails (u64 model count)
+s38584.1-rev	blif	iscas89/s38584.1.blif	reverse	0	iscas89	medium	0	60	combinational part (latches cut); 1464 vars: sylvan_bench --verify fails (u64 model count)
+s38584.1-rnd1	blif	iscas89/s38584.1.blif	random	1	iscas89	medium	1	60	combinational part (latches cut); 1464 vars: sylvan_bench --verify fails (u64 model count)
+apex2-file	blif	lgsynth91/apex2.blif	file	0	lgsynth91	small	0	60	-
+apex2-rev	blif	lgsynth91/apex2.blif	reverse	0	lgsynth91	small	0	60	-
+apex2-rnd1	blif	lgsynth91/apex2.blif	random	1	lgsynth91	small	0	60	-
+bc0-file	blif	lgsynth91/bc0.blif	file	0	lgsynth91	small	0	60	-
+bc0-rev	blif	lgsynth91/bc0.blif	reverse	0	lgsynth91	small	0	60	-
+bc0-rnd1	blif	lgsynth91/bc0.blif	random	1	lgsynth91	small	0	60	-
+bigkey-file	blif	lgsynth91/bigkey.blif	file	0	lgsynth91	small	0	60	combinational part (latches cut); 486 vars: sylvan_bench --verify fails (u64 model count)
+bigkey-rev	blif	lgsynth91/bigkey.blif	reverse	0	lgsynth91	small	0	60	combinational part (latches cut); 486 vars: sylvan_bench --verify fails (u64 model count)
+bigkey-rnd1	blif	lgsynth91/bigkey.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut); 486 vars: sylvan_bench --verify fails (u64 model count)
+clma-file	blif	lgsynth91/clma.blif	file	0	lgsynth91	small	0	60	combinational part (latches cut); 415 vars: sylvan_bench --verify fails (u64 model count)
+clma-rev	blif	lgsynth91/clma.blif	reverse	0	lgsynth91	small	0	60	combinational part (latches cut); 415 vars: sylvan_bench --verify fails (u64 model count)
+clma-rnd1	blif	lgsynth91/clma.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut); 415 vars: sylvan_bench --verify fails (u64 model count)
+clmb-file	blif	lgsynth91/clmb.blif	file	0	lgsynth91	small	0	60	combinational part (latches cut); 415 vars: sylvan_bench --verify fails (u64 model count)
+clmb-rev	blif	lgsynth91/clmb.blif	reverse	0	lgsynth91	small	0	60	combinational part (latches cut); 415 vars: sylvan_bench --verify fails (u64 model count)
+clmb-rnd1	blif	lgsynth91/clmb.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut); 415 vars: sylvan_bench --verify fails (u64 model count)
+cm150a-file	blif	lgsynth91/cm150a.blif	file	0	lgsynth91	small	0	60	-
+cm150a-rev	blif	lgsynth91/cm150a.blif	reverse	0	lgsynth91	small	0	60	-
+cm150a-rnd1	blif	lgsynth91/cm150a.blif	random	1	lgsynth91	small	0	60	-
+comp-file	blif	lgsynth91/comp.blif	file	0	lgsynth91	small	0	60	CUDD 7.1 s vs Sylvan 0.4 s at P1
+comp-rev	blif	lgsynth91/comp.blif	reverse	0	lgsynth91	small	0	60	-
+comp-rnd1	blif	lgsynth91/comp.blif	random	1	lgsynth91	small	0	60	-
+dalu-file	blif	lgsynth91/dalu.blif	file	0	lgsynth91	large	0	950	CUDD 227.7 s vs Sylvan 38.5 s at P1; 75 vars: sylvan_bench --verify fails (u64 model count)
+dalu-rev	blif	lgsynth91/dalu.blif	reverse	0	lgsynth91	small	0	60	75 vars: sylvan_bench --verify fails (u64 model count)
+dalu-rnd1	blif	lgsynth91/dalu.blif	random	1	lgsynth91	small	0	60	75 vars: sylvan_bench --verify fails (u64 model count)
+des-file	blif	lgsynth91/des.blif	file	0	lgsynth91	small	1	60	256 vars: sylvan_bench --verify fails (u64 model count)
+des-rev	blif	lgsynth91/des.blif	reverse	0	lgsynth91	small	0	60	256 vars: sylvan_bench --verify fails (u64 model count)
+des-rnd1	blif	lgsynth91/des.blif	random	1	lgsynth91	small	0	60	256 vars: sylvan_bench --verify fails (u64 model count)
+dsip-file	blif	lgsynth91/dsip.blif	file	0	lgsynth91	small	0	60	combinational part (latches cut); 452 vars: sylvan_bench --verify fails (u64 model count)
+dsip-rev	blif	lgsynth91/dsip.blif	reverse	0	lgsynth91	small	0	60	combinational part (latches cut); 452 vars: sylvan_bench --verify fails (u64 model count)
+dsip-rnd1	blif	lgsynth91/dsip.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut); 452 vars: sylvan_bench --verify fails (u64 model count)
+frg1-file	blif	lgsynth91/frg1.blif	file	0	lgsynth91	small	0	60	-
+frg1-rev	blif	lgsynth91/frg1.blif	reverse	0	lgsynth91	small	0	60	-
+frg1-rnd1	blif	lgsynth91/frg1.blif	random	1	lgsynth91	small	0	60	-
+frg2-file	blif	lgsynth91/frg2.blif	file	0	lgsynth91	small	0	60	143 vars: sylvan_bench --verify fails (u64 model count)
+frg2-rev	blif	lgsynth91/frg2.blif	reverse	0	lgsynth91	small	0	60	143 vars: sylvan_bench --verify fails (u64 model count)
+frg2-rnd1	blif	lgsynth91/frg2.blif	random	1	lgsynth91	small	0	60	143 vars: sylvan_bench --verify fails (u64 model count)
+i2-file	blif	lgsynth91/i2.blif	file	0	lgsynth91	small	0	60	201 vars: sylvan_bench --verify fails (u64 model count)
+i2-rev	blif	lgsynth91/i2.blif	reverse	0	lgsynth91	small	0	60	201 vars: sylvan_bench --verify fails (u64 model count)
+i2-rnd1	blif	lgsynth91/i2.blif	random	1	lgsynth91	small	0	60	201 vars: sylvan_bench --verify fails (u64 model count)
+i3-file	blif	lgsynth91/i3.blif	file	0	lgsynth91	small	0	60	132 vars: sylvan_bench --verify fails (u64 model count)
+i3-rev	blif	lgsynth91/i3.blif	reverse	0	lgsynth91	small	0	60	132 vars: sylvan_bench --verify fails (u64 model count)
+i3-rnd1	blif	lgsynth91/i3.blif	random	1	lgsynth91	small	0	60	132 vars: sylvan_bench --verify fails (u64 model count)
+i4-file	blif	lgsynth91/i4.blif	file	0	lgsynth91	small	0	60	192 vars: sylvan_bench --verify fails (u64 model count)
+i4-rev	blif	lgsynth91/i4.blif	reverse	0	lgsynth91	small	0	60	192 vars: sylvan_bench --verify fails (u64 model count)
+i4-rnd1	blif	lgsynth91/i4.blif	random	1	lgsynth91	small	0	60	192 vars: sylvan_bench --verify fails (u64 model count)
+i8-file	blif	lgsynth91/i8.blif	file	0	lgsynth91	small	0	60	133 vars: sylvan_bench --verify fails (u64 model count)
+i8-rev	blif	lgsynth91/i8.blif	reverse	0	lgsynth91	small	0	60	133 vars: sylvan_bench --verify fails (u64 model count)
+i8-rnd1	blif	lgsynth91/i8.blif	random	1	lgsynth91	small	0	60	133 vars: sylvan_bench --verify fails (u64 model count)
+i9-file	blif	lgsynth91/i9.blif	file	0	lgsynth91	small	0	60	88 vars: sylvan_bench --verify fails (u64 model count)
+i9-rev	blif	lgsynth91/i9.blif	reverse	0	lgsynth91	small	0	60	88 vars: sylvan_bench --verify fails (u64 model count)
+i9-rnd1	blif	lgsynth91/i9.blif	random	1	lgsynth91	small	0	60	88 vars: sylvan_bench --verify fails (u64 model count)
+k2-file	blif	lgsynth91/k2.blif	file	0	lgsynth91	small	0	60	same forest as apex1
+k2-rev	blif	lgsynth91/k2.blif	reverse	0	lgsynth91	small	0	60	same forest as apex1
+k2-rnd1	blif	lgsynth91/k2.blif	random	1	lgsynth91	small	0	60	same forest as apex1
+mainpla-file	blif	lgsynth91/mainpla.blif	file	0	lgsynth91	small	0	60	-
+mainpla-rev	blif	lgsynth91/mainpla.blif	reverse	0	lgsynth91	small	0	60	-
+mainpla-rnd1	blif	lgsynth91/mainpla.blif	random	1	lgsynth91	small	0	60	-
+mm9a-file	blif	lgsynth91/mm9a.blif	file	0	lgsynth91	medium	0	60	combinational part (latches cut)
+mm9a-rnd1	blif	lgsynth91/mm9a.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut)
+mm9b-file	blif	lgsynth91/mm9b.blif	file	0	lgsynth91	small	0	170	combinational part (latches cut); CUDD 33.0 s vs Sylvan 1.9 s at P1
+mm9b-rnd1	blif	lgsynth91/mm9b.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut)
+mult16a-file	blif	lgsynth91/mult16a.blif	file	0	lgsynth91	small	0	60	combinational part (latches cut)
+mult16a-rev	blif	lgsynth91/mult16a.blif	reverse	0	lgsynth91	medium	0	60	combinational part (latches cut)
+mult16a-rnd1	blif	lgsynth91/mult16a.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut)
+mux-file	blif	lgsynth91/mux.blif	file	0	lgsynth91	small	1	60	-
+mux-rev	blif	lgsynth91/mux.blif	reverse	0	lgsynth91	small	0	60	-
+mux-rnd1	blif	lgsynth91/mux.blif	random	1	lgsynth91	small	0	60	-
+my_adder-file	blif	lgsynth91/my_adder.blif	file	0	lgsynth91	small	0	60	-
+my_adder-rev	blif	lgsynth91/my_adder.blif	reverse	0	lgsynth91	small	0	60	-
+my_adder-rnd1	blif	lgsynth91/my_adder.blif	random	1	lgsynth91	small	0	60	-
+pair-file	blif	lgsynth91/pair.blif	file	0	lgsynth91	small	0	60	173 vars: sylvan_bench --verify fails (u64 model count)
+pair-rev	blif	lgsynth91/pair.blif	reverse	0	lgsynth91	small	0	60	173 vars: sylvan_bench --verify fails (u64 model count)
+pair-rnd1	blif	lgsynth91/pair.blif	random	1	lgsynth91	small	0	60	173 vars: sylvan_bench --verify fails (u64 model count)
+rot-file	blif	lgsynth91/rot.blif	file	0	lgsynth91	small	1	60	135 vars: sylvan_bench --verify fails (u64 model count)
+rot-rev	blif	lgsynth91/rot.blif	reverse	0	lgsynth91	small	0	60	135 vars: sylvan_bench --verify fails (u64 model count)
+rot-rnd1	blif	lgsynth91/rot.blif	random	1	lgsynth91	medium	0	60	135 vars: sylvan_bench --verify fails (u64 model count)
+seq-file	blif	lgsynth91/seq.blif	file	0	lgsynth91	small	0	60	-
+seq-rev	blif	lgsynth91/seq.blif	reverse	0	lgsynth91	small	0	60	-
+seq-rnd1	blif	lgsynth91/seq.blif	random	1	lgsynth91	small	0	60	-
+signet-file	blif	lgsynth91/signet.blif	file	0	lgsynth91	small	0	60	-
+signet-rev	blif	lgsynth91/signet.blif	reverse	0	lgsynth91	small	0	60	-
+signet-rnd1	blif	lgsynth91/signet.blif	random	1	lgsynth91	small	0	60	-
+ti-file	blif	lgsynth91/ti.blif	file	0	lgsynth91	small	0	60	-
+ti-rev	blif	lgsynth91/ti.blif	reverse	0	lgsynth91	small	0	60	-
+ti-rnd1	blif	lgsynth91/ti.blif	random	1	lgsynth91	small	0	60	-
+too_large-file	blif	lgsynth91/too_large.blif	file	0	lgsynth91	small	0	60	-
+too_large-rev	blif	lgsynth91/too_large.blif	reverse	0	lgsynth91	small	0	60	-
+too_large-rnd1	blif	lgsynth91/too_large.blif	random	1	lgsynth91	small	0	60	-
+x6dn-file	blif	lgsynth91/x6dn.blif	file	0	lgsynth91	small	0	60	-
+x6dn-rev	blif	lgsynth91/x6dn.blif	reverse	0	lgsynth91	small	0	60	-
+x6dn-rnd1	blif	lgsynth91/x6dn.blif	random	1	lgsynth91	small	0	60	-
+xparc-file	blif	lgsynth91/xparc.blif	file	0	lgsynth91	small	0	60	-
+xparc-rev	blif	lgsynth91/xparc.blif	reverse	0	lgsynth91	small	0	60	-
+xparc-rnd1	blif	lgsynth91/xparc.blif	random	1	lgsynth91	small	0	60	-
+arbiter-file	blif	epfl/arbiter.blif	file	0	epfl	medium	0	80	256 vars: sylvan_bench --verify fails (u64 model count)
+arbiter-rnd1	blif	epfl/arbiter.blif	random	1	epfl	medium	0	130	256 vars: sylvan_bench --verify fails (u64 model count)
+priority-file	blif	epfl/priority.blif	file	0	epfl	small	0	60	128 vars: sylvan_bench --verify fails (u64 model count)
+priority-rev	blif	epfl/priority.blif	reverse	0	epfl	small	0	60	128 vars: sylvan_bench --verify fails (u64 model count)
+priority-rnd1	blif	epfl/priority.blif	random	1	epfl	small	0	60	128 vars: sylvan_bench --verify fails (u64 model count)
+queens8	queens	-	file	0	queens	small	0	60	-
+queens9	queens	-	file	0	queens	small	1	60	-
+queens10	queens	-	file	0	queens	small	0	60	-
+queens11	queens	-	file	0	queens	medium	0	340	-
+bryant6	bryant	-	file	0	bryant	small	0	60	-
+bryant8	bryant	-	file	0	bryant	small	0	60	-
+bryant10	bryant	-	file	0	bryant	small	1	60	-
+bryant12	bryant	-	file	0	bryant	small	0	60	-

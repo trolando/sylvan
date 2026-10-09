@@ -4290,6 +4290,22 @@ test_relational_destinations_CALL(lace_worker *lace)
     test_assert(bdd_rel_next_CALL(lace, &in_place, in_place, transition, all_set) == SYLVAN_OK);
     test_assert(in_place == zeroes);
 
+    /* Flipping one bit relates every state to every state in two steps. */
+    {
+        BDD s0 = test_bdd_var(0);
+        BDD t0 = mtbdd_invalid, flip = mtbdd_invalid;
+        BDD flip_closure = mtbdd_invalid;
+        mtbdd_refs_pushptr(&s0);
+        mtbdd_refs_pushptr(&t0);
+        mtbdd_refs_pushptr(&flip);
+        mtbdd_refs_pushptr(&flip_closure);
+        t0 = test_bdd_var(1);
+        test_assert(bdd_xor_CALL(lace, &flip, s0, t0) == SYLVAN_OK);
+        test_assert(bdd_transitive_closure_CALL(lace, &flip_closure, flip) == SYLVAN_OK);
+        test_assert(flip_closure == bdd_true);
+        mtbdd_refs_popptr(4);
+    }
+
     /* Variable 0 lies outside the one pair (2, 3) in play, and both operands
        depend on it: rel_prev quantifies it in the first and keeps it in the
        second, so x0 & s2 composed with x0 & t3 is x0 & s2 & t3. */

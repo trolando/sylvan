@@ -2275,7 +2275,7 @@ int bdd_rel_prev_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET 
 /**
  * Computes the transitive closure by traversing the BDD recursively.
  * See Y. Matsunaga, P. C. McGeer, R. K. Brayton
- *     On Computing the Transitive Closre of a State Transition Relation
+ *     On Computing the Transitive Closure of a State Transition Relation
  *     30th ACM Design Automation Conference, 1993.
  */
 int bdd_transitive_closure_CALL(lace_worker* lace, BDD *destination, BDD a)
@@ -2356,18 +2356,29 @@ int bdd_transitive_closure_CALL(lace_worker* lace, BDD *destination, BDD a)
     mtbdd_refs_pushptr(&r0);
     mtbdd_refs_pushptr(&r1);
 
+    /* With A = a00, B = a01, C = a10 and D = a11 the blocks of the relation
+     * on the remaining pairs, X* = I | X+ and XY the composition X then Y:
+     *   u1 = D+,  u3 = B D* = B | B u1,  u2 = D* C = C | u1 C,
+     *   e = (A | B D* C)+     the 0-to-0 block,
+     *   f = u3 | e u3         the 0-to-1 block,
+     *   g = u2 | u2 e         the 1-to-0 block,
+     *   h = u1 | u2 f         the 1-to-1 block.
+     * Composing with I changes nothing, so I is never built.
+     */
     int status = bdd_transitive_closure_CALL(lace, &u1, a11);
-    if (status == SYLVAN_OK) {
-        status = bdd_rel_prev_CALL(lace, &u3, a01, u1, bdd_false);
-    }
+    if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &u3, a01, u1, bdd_false);
+    if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &u3, a01, u3);
     if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &u2, u1, a10, bdd_false);
+    if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &u2, a10, u2);
     if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &e, a01, u2, bdd_false);
-    if (status == SYLVAN_OK) status = bdd_ite_CALL(lace, &e, a00, bdd_true, e);
+    if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &e, a00, e);
     if (status == SYLVAN_OK) status = bdd_transitive_closure_CALL(lace, &e, e);
-    if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &g, u2, e, bdd_false);
     if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &f, e, u3, bdd_false);
+    if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &f, u3, f);
+    if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &g, u2, e, bdd_false);
+    if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &g, u2, g);
     if (status == SYLVAN_OK) status = bdd_rel_prev_CALL(lace, &h, u2, f, bdd_false);
-    if (status == SYLVAN_OK) status = bdd_ite_CALL(lace, &h, u1, bdd_true, h);
+    if (status == SYLVAN_OK) status = bdd_or_CALL(lace, &h, u1, h);
     if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&r0, t, e, f);
     if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&r1, t, g, h);
     if (status == SYLVAN_OK) status = _mtbdd_try_make_node(&computed, s, r0, r1);

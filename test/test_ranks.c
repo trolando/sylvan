@@ -1197,8 +1197,10 @@ test_relational_CALL(lace_worker *lace)
     for (int round = 0; round < 6; round++) {
         uint16_t source = (uint16_t)test_random();
         uint16_t relation[REL_STATES];
+        /* Sparse, so that the closure is not simply every pair of states. */
         for (unsigned value = 0; value < REL_STATES; value++) {
-            relation[value] = (uint16_t)test_random();
+            relation[value] = (uint16_t)(test_random() & test_random() &
+                                         test_random());
         }
 
         BDD set = mtbdd_invalid;
@@ -1363,6 +1365,8 @@ runtests_CALL(lace_worker *lace)
     if (test_operations_CALL(lace, variables)) return 1;
     printf("Testing iteration.\n");
     if (test_iteration_CALL(lace, variables)) return 1;
+    printf("Testing relational products.\n");
+    if (test_relational_CALL(lace)) return 1;
 
     mtbdd_unprotect(&variables);
     for (uint32_t identity = 0; identity < ALL_VARS; identity++) {

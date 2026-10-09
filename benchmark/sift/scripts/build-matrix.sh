@@ -72,6 +72,7 @@ nohuge     | -DSYLVAN_HUGEPAGES=OFF              | SYLVAN_HUGEPAGES            |
 profile | -DSYLVAN_STATS=ON -DSYLVAN_SIFT_PHASE_TIMING=ON | SYLVAN_STATS | list trie llcht llchst | h1 | counters and SIFT-PHASES in one run, for ns per index step (never timed)
 floor1024  | -DSYLVAN_SIFT_RECOMMEND_FLOOR=1024  | SYLVAN_SIFT_RECOMMEND_FLOOR | list trie              | s3          | sift recommendation floor 1024 live nodes instead of 4096
 floor16384 | -DSYLVAN_SIFT_RECOMMEND_FLOOR=16384 | SYLVAN_SIFT_RECOMMEND_FLOOR | list trie              | s3          | sift recommendation floor 16384 live nodes instead of 4096
+hwloc      | -DLACE_USE_HWLOC=ON                 | LACE_USE_HWLOC              | list trie              | h2          | Lace pins worker i to hwloc core i; overrides an outer taskset, so never combine with SIFT_PIN; needs libhwloc-dev
 '
 # Runtime knobs: sylvan_bench flags the headlines switch. A stanza checks the
 # build's `sylvan_bench --help` for the flag and skips its cell when it is not

@@ -39,9 +39,8 @@
  * nodes out of their chains and prepend them again, both while lookups are
  * stopped.
  *
- * This global control allocates one head and one node slot per table bucket,
- * so its load factor cannot exceed one. Per-identity subtables must separate
- * head capacity from the global node capacity to exercise denser chaining.
+ * One head per node slot, so the load factor never exceeds one. nodes_llchst.c
+ * is the variant whose per-variable subtables size their heads independently.
  *
  * WARNING: Like the other nodes tables, this implementation currently uses a
  * global thread-local allocation region. Do not use multiple tables.
@@ -926,9 +925,8 @@ nodes_set_custom(nodes_table* dbs,
  * on the same chain at the same time. The hazard is the classic one for
  * CAS-based list deletion: if p precedes d and both are removed, the remover
  * of p may swing p's predecessor onto d after the remover of d has already
- * updated next[p], leaving d linked. The fix is the delete-in-progress link,
- * as on the historical sift branch, except that our links live in next[]
- * rather than in the record:
+ * updated next[p], leaving d linked. The fix is a delete-in-progress link, kept
+ * in next[]:
  *
  *   1. A remover first replaces next[d] with LINK_REMOVING, keeping the
  *      successor it read. Nothing else ever writes next[d], so this claims d.

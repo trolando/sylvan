@@ -765,7 +765,7 @@ reorder_free_lists(struct reorder_list *lists)
 static void
 reorder_free_state(void)
 {
-    free(session.counts);
+    free((void*)session.counts);
     free(session.pinned);
     free(session.retired);
     free(session.seen);

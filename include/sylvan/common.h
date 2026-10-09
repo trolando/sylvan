@@ -139,8 +139,8 @@ static inline void sylvan_table_usage(size_t* filled, size_t* total);
  * Garbage collection can also be triggered manually with sylvan_gc()
  *
  * Garbage collection procedure:
- * 1) All installed pre_gc hooks are called.
- *    See sylvan_gc_hook_pre to add hooks.
+ * 1) All installed pregc hooks are called.
+ *    See sylvan_gc_hook_pregc to add hooks.
  * 2) The operation cache is cleared.
  * 3) The nodes table (data part) is cleared.
  * 4) Every root is visited and the nodes it reaches are marked (to be rehashed).
@@ -149,15 +149,19 @@ static inline void sylvan_table_usage(size_t* filled, size_t* total);
  * 5) The main gc hook is called. The function of this hook is to perform resizing.
  *    The default implementation doubles the nodes table and operation cache sizes.
  *    See sylvan_gc_hook_main to set the hook.
- * 5) The nodes table (hash part) is cleared.
- * 6) All marked nodes are rehashed.
- * 7) All installed post_gc hooks are called.
- *    See sylvan_gc_hook_post to add hooks.
+ * 6) The nodes table (hash part) is cleared.
+ * 7) All marked nodes are rehashed.
+ * 8) All installed postgc hooks are called.
+ *    See sylvan_gc_hook_postgc to add hooks.
+ * 9) After sylvan_gc() only, once the collection frame has ended: if automatic
+ *    sifting is configured and the collection left a sift recommended, the
+ *    forest is sifted in a frame of its own.
+ *    See sylvan_gc_set_auto_sift in <sylvan/reorder.h>.
  *
  * For parts of the garbage collection process, specific methods exist.
  * - sylvan_clear_cache() clears the operation cache (step 2)
  * - sylvan_clear_and_mark() performs steps 3 and 4.
- * - sylvan_rehash_all() performs steps 5 and 6.
+ * - sylvan_rehash_all() performs steps 6 and 7.
  */
 
 /**

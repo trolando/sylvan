@@ -168,8 +168,8 @@ int sylvan_ranks_permute_unsafe(const uint32_t *identity_at, uint32_t count);
  * the module only records whether anything *might* have permuted the order.
  * While nothing has, this is one atomic load. Once something has, the answer
  * is recomputed by scanning the order -- O(registered identities) -- and a
- * scan that finds the identity clears the record again. Both callers are
- * cold, so the scan is never on a path where its cost is visible.
+ * scan that finds the identity clears the record again. The caller, zdd_init,
+ * is cold, so the scan is never on a path where its cost is visible.
  */
 int sylvan_ranks_is_identity(void);
 

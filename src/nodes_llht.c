@@ -48,7 +48,6 @@ typedef struct nodes_table
 #if LLMSSET_MASK
     size_t             mask;         // size-1
 #endif
-    size_t             f_size;
     nodes_hash_cb      hash_cb;      // custom hash function
     nodes_equals_cb    equals_cb;    // custom equals function
     nodes_create_cb    create_cb;    // custom create function
@@ -310,7 +309,6 @@ static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_
                         return 0;
                     }
                 }
-                // FIXME ensure a acquire_release fence
                 uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*cidx;
                 d_ptr[0] = a;
                 d_ptr[1] = b;

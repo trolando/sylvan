@@ -331,10 +331,6 @@ static int is_custom_bucket(const nodes_table* dbs, uint64_t index)
     return (atomic_load_explicit(ptr, memory_order_relaxed) & mask) ? 1 : 0;
 }
 
-static inline uint64_t ror64(uint64_t x, unsigned int k) {
-    return (x >> k) | (x << (64 - k));
-}
-
 /**
  * The arena has no slot to give. Say so, once.
  *
@@ -659,6 +655,7 @@ void nodes_free(nodes_table* dbs)
 
 void nodes_clear_CALL(lace_worker* lace, nodes_table* dbs)
 {
+    (void)lace;
     sylvan_clear_aligned((void*)dbs->bitmap1, region_bitmap_size(dbs->max_size));
     sylvan_clear_aligned((void*)dbs->bitmap2, node_bitmap_size(dbs->max_size));
     sylvan_clear_aligned((void*)dbs->first, dbs->max_size * 8);

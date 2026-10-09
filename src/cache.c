@@ -223,7 +223,7 @@ cache_get_op(
         atomic_load_explicit(&bucket->c, memory_order_relaxed) != c) return 0;
     *res = atomic_load_explicit(&bucket->res, memory_order_relaxed);
     atomic_thread_fence(memory_order_acquire); // prevent LoadLoad reordering
-    // abort if status field changed after compiler_barrier()
+    // abort if the status field changed while the entry was being read
     return atomic_load_explicit(s_bucket, memory_order_relaxed) == s ? 1 : 0;
 }
 
@@ -366,7 +366,6 @@ cache_getused(void)
            through its atomic representation like every other reader. */
         const uint32_t s = atomic_load_explicit(
             (_Atomic(uint32_t)*)cache_status + i, memory_order_relaxed);
-        if (s & CACHE_STATUS_LOCK) fprintf(stderr, "cache_getuser: cache in use during cache_getused()\n");
         if (s & CACHE_STATUS_LIVE) result++;
     }
     return result;

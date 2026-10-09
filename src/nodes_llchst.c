@@ -1801,9 +1801,8 @@ nodes_rebuild_CALL(lace_worker* lace, nodes_table* dbs)
  * Table maintenance: grow the head arrays of subtables that outgrew them,
  * without collecting anything.
  *
- * A subtable that keeps accumulating nodes between collections used to stay at
- * whatever size it was given, because head_log2 was only ever written by
- * nodes_rebuild. Lookups now notice, for free, when a chain has grown far past
+ * Between collections a subtable can accumulate nodes far past the head array
+ * it was given. Lookups notice, for free, when a chain has grown far past
  * the target load factor and flag the subtable; this pass, which Sylvan runs
  * from the same stop-the-world Lace frame that garbage collection uses, gives
  * those subtables a head array that matches their measured population.

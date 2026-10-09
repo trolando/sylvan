@@ -562,7 +562,7 @@ mtbdd_leaf(uint32_t type, uint64_t value)
             nodes, NODES_SUBTABLE_LEAF, n.a, n.b, &created);
     if (index == 0) {
         if (custom && created < 0) return mtbdd_invalid;
-        sylvan_gc_collect(); // FIXME ?
+        sylvan_gc_collect();
 
         index = custom
             ? nodes_lookupc_subtable(

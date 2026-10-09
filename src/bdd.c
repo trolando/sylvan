@@ -3509,7 +3509,6 @@ void bdd_enum_do_CALL(lace_worker* lace, BDD bdd, BDDSET vars, bdd_enumerate_cb 
         struct bdd_path pp1 = (struct bdd_path){path, var, 1};
         bdd_enum_do_CALL(lace, mtbdd_node_high(bdd), vars, cb, context, &pp1);
     } else {
-        printf("var %u not expected (expecting %u)!\n", bdd_var, var);
         assert(!sylvan_var_before(bdd_var, var));
     }
 }

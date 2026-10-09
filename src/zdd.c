@@ -406,7 +406,7 @@ zdd_makeleaf(uint16_t type, uint64_t value)
             nodes, NODES_SUBTABLE_LEAF, n.a, n.b, &created);
     if (index == 0) {
         if (custom && created < 0) return zdd_invalid;
-        sylvan_gc_collect(); // FIXME
+        sylvan_gc_collect();
 
         index = custom
             ? nodes_lookupc_subtable(
@@ -466,7 +466,7 @@ _zdd_try_make_node(ZDD *destination, uint32_t var, ZDD low, ZDD high)
     if (index == 0) {
         zdd_refs_push(low);
         zdd_refs_push(high);
-        sylvan_gc_collect(); //FIXME move to a mini function?
+        sylvan_gc_collect();
         zdd_refs_pop(2);
 
         index = nodes_lookup_subtable(

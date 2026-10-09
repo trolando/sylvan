@@ -539,9 +539,9 @@ test_arena_exhaustion_reports(const char *self)
        reaches first is not a race but a consequence of how the slots ran out.
        One worker walks the table down to its last few and always meets the
        probe limit first; several workers hold a private region each, and the
-       one that needs a fresh region finds the arena empty first, which is the
-       exact mechanism the P8-only failure in the wild was traced to. Measured
-       on this backend: 0 of 20 runs at one worker, 20 of 20 at eight. So the
+       one that needs a fresh region finds the arena empty first, so only a
+       multi-worker run is guaranteed to print the diagnostic. Measured on
+       this backend: 0 of 20 runs at one worker, 20 of 20 at eight. So the
        diagnostic is demanded here only where it is reachable. */
     const int expect_diagnostic = test_workers > 1;
 #else

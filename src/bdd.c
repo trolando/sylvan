@@ -2226,13 +2226,13 @@ int bdd_rel_prev_CALL(lace_worker* lace, BDD *destination, BDD a, BDD b, BDDSET 
                 mtbdd_refs_pushptr(&r0);
                 mtbdd_refs_pushptr(&r1);
 
-                bdd_rel_next_SPAWN(lace, &r00, a0, b0, vars);
-                bdd_rel_next_SPAWN(lace, &r10, a1, b0, vars);
-                bdd_rel_next_SPAWN(lace, &r01, a0, b1, vars);
-                bdd_rel_next_SPAWN(lace, &r11, a1, b1, vars);
+                bdd_rel_prev_SPAWN(lace, &r00, a0, b0, vars);
+                bdd_rel_prev_SPAWN(lace, &r10, a1, b0, vars);
+                bdd_rel_prev_SPAWN(lace, &r01, a0, b1, vars);
+                bdd_rel_prev_SPAWN(lace, &r11, a1, b1, vars);
                 int status = SYLVAN_OK;
                 for (int i = 0; i < 4; i++) {
-                    int child_status = bdd_rel_next_SYNC(lace);
+                    int child_status = bdd_rel_prev_SYNC(lace);
                     if (status == SYLVAN_OK && child_status != SYLVAN_OK) status = child_status;
                 }
                 if (status == SYLVAN_OK) {

@@ -4290,6 +4290,33 @@ test_relational_destinations_CALL(lace_worker *lace)
     test_assert(bdd_rel_next_CALL(lace, &in_place, in_place, transition, all_set) == SYLVAN_OK);
     test_assert(in_place == zeroes);
 
+    /* Variable 0 lies outside the one pair (2, 3) in play, and both operands
+       depend on it: rel_prev quantifies it in the first and keeps it in the
+       second, so x0 & s2 composed with x0 & t3 is x0 & s2 & t3. */
+    {
+        BDD x0 = test_bdd_var(0);
+        BDD s2 = mtbdd_invalid, t3 = mtbdd_invalid;
+        BDD left = mtbdd_invalid, right = mtbdd_invalid;
+        BDD composed = mtbdd_invalid, expected = mtbdd_invalid;
+        BDDSET pair = test_bdd_set_from_levels((uint32_t[]){2}, 1);
+        mtbdd_refs_pushptr(&x0);
+        mtbdd_refs_pushptr(&s2);
+        mtbdd_refs_pushptr(&t3);
+        mtbdd_refs_pushptr(&left);
+        mtbdd_refs_pushptr(&right);
+        mtbdd_refs_pushptr(&composed);
+        mtbdd_refs_pushptr(&expected);
+        mtbdd_refs_pushptr(&pair);
+        s2 = test_bdd_var(2);
+        t3 = test_bdd_var(3);
+        test_assert(bdd_and_CALL(lace, &left, x0, s2) == SYLVAN_OK);
+        test_assert(bdd_and_CALL(lace, &right, x0, t3) == SYLVAN_OK);
+        test_assert(bdd_rel_prev_CALL(lace, &composed, left, right, pair) == SYLVAN_OK);
+        test_assert(bdd_and_CALL(lace, &expected, left, t3) == SYLVAN_OK);
+        test_assert(composed == expected);
+        mtbdd_refs_popptr(8);
+    }
+
     test_assert(bdd_rel_next_CALL(lace, &unchanged, mtbdd_invalid, transition, all_set) == SYLVAN_ERR_INVALID);
     test_assert(unchanged == bdd_true);
     test_assert(bdd_rel_prev_CALL(lace, &unchanged, transition, next, mtbdd_invalid) == SYLVAN_ERR_INVALID);

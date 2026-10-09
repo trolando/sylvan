@@ -289,4 +289,15 @@ int sylvan_test_varswap(uint32_t rank, sylvan_varswap_result *result);
 int sylvan_test_varswap_sequence(const uint32_t *ranks, size_t count,
                                  sylvan_varswap_result *result);
 
+/**
+ * Make every sift refuse swap attempts <first> .. <first>+<count>-1 by
+ * itself, counting from 1 at the start of each sift, exactly as if the table
+ * had refused them: nothing is touched and each counts as a refusal. Every
+ * attempt counts, including those that undo or finish a block move. A count
+ * of 0, the default, switches it off. It exists so that a test can refuse the
+ * swaps a full table cannot be made to refuse on cue -- the ones after a block
+ * move's room was promised -- and may only be called with no sift running.
+ */
+void sylvan_sift_set_refusal_window(uint64_t first, uint64_t count);
+
 #endif

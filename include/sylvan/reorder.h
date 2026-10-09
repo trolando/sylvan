@@ -60,11 +60,13 @@ typedef struct sylvan_sift_config {
     /**
      * Budget of adjacent swaps for the whole call; 0 is unlimited. Every swap
      * counts against it -- the same swaps <swaps> in the result reports --
-     * but it is only checked before a swap of the search: moving a variable
-     * back to its best position is never cut short, so that the budget can
-     * never strand a variable somewhere worse than where it started. The total
-     * can therefore exceed the budget by that one return, and is never more
-     * than twice the budget.
+     * but it is only checked before a move of the search, which is one swap
+     * unless <group_pairs> is set: moving a variable back to its best position
+     * is never cut short, so that the budget can never strand a variable
+     * somewhere worse than where it started. The total can therefore exceed
+     * the budget by that one return, and is never more than twice the budget;
+     * with <group_pairs>, plus the swaps that bring pairs back together and
+     * those that undo a refused move.
      */
     uint32_t max_swaps;
 
@@ -111,6 +113,31 @@ typedef struct sylvan_sift_config {
      * measurement and for distrust, not for quality.
      */
     int full_legs;
+
+    /**
+     * Nonzero keeps every pair of identities (2k, 2k+1) together, the even
+     * one directly above the odd one: the convention bdd_rel_next and
+     * bdd_rel_prev follow, and are fastest under. The default, 0, moves every
+     * variable on its own, and an unconstrained sift has no reason to keep a
+     * pair together.
+     *
+     * Grouped, the pairs are blocks, and so is a variable without a partner
+     * (the last identity, when there are an odd number of them). A pair that
+     * is apart when the sift starts -- an earlier ungrouped sift may have put
+     * it there -- is brought back together first, by moving whichever of the
+     * two has fewer nodes to its partner. Then blocks are sifted like
+     * variables: in order of their summed population, against
+     * <nodes_threshold> by that sum, and through the order one neighbouring
+     * block at a time. Moving a pair past a variable takes two swaps, past
+     * another pair four, and only the order after the whole move is scored or
+     * kept. <max_swaps> admits a move only if all of its swaps fit, so the
+     * search alone never exceeds it; the swaps that bring pairs back together
+     * are not cut short by it but count against it. <max_vars> counts
+     * variables, so a pair counts two, and a pair that does not fit ends the
+     * sift. A refused swap never leaves a pair apart; what can is described
+     * with sylvan_sift_split_pairs(), which counts the pairs that are.
+     */
+    uint8_t group_pairs;
 } sylvan_sift_config;
 
 /**
@@ -125,9 +152,13 @@ typedef struct sylvan_sift_result {
     uint64_t initial_size;   /* internal nodes before sifting              */
     uint64_t final_size;     /* internal nodes afterwards                  */
     uint64_t swaps;          /* adjacent swaps performed, search and return */
-    uint64_t refusals;       /* swaps the table refused (SYLVAN_ERR_OOM);
-                                each ends a search or return leg early    */
-    uint32_t vars_sifted;    /* variables whose excursion was run          */
+    uint64_t refusals;       /* swaps the table refused (SYLVAN_ERR_OOM),
+                                and with group_pairs block moves it could
+                                not promise room for; each ends a search
+                                or return leg early                       */
+    uint32_t vars_sifted;    /* variables whose excursion was run; a pair
+                                counts two                                */
+    uint32_t split_pairs;    /* sylvan_sift_split_pairs() afterwards       */
 } sylvan_sift_result;
 
 /**
@@ -200,6 +231,29 @@ int sylvan_sift_report(const sylvan_sift_config *config,
  * automatic sift happened, which is otherwise unobservable.
  */
 uint64_t sylvan_sift_count(void);
+
+/**
+ * How many pairs of registered identities (2k, 2k+1) are not where
+ * bdd_rel_next and bdd_rel_prev want them: the even one directly above the
+ * odd one in the current order. A pair whose odd identity was never
+ * registered is not counted.
+ *
+ * A sift with <group_pairs> first brings back together every pair it finds
+ * apart, and never splits one, so it leaves this at 0 unless the table
+ * refused something, which its <refusals> then shows. Two refusals can leave
+ * a pair apart. One is a refused move while bringing a pair back, which
+ * leaves that pair as it was. The other needs a swap in the middle of a move
+ * to be refused, then the swap that would undo it, then the one that would
+ * finish the move instead; only a failing heap allocation can do that,
+ * because the room for the undo is promised before each swap of a move. The
+ * sift then stops where it stands. Either way the next grouped sift starts by
+ * bringing the pairs back together. An ungrouped sift may leave any number of
+ * pairs apart, and this is how to find out how many it did.
+ *
+ * Reads the order, so call it with no reordering in progress. Costs one pass
+ * over the registered identities.
+ */
+uint32_t sylvan_sift_split_pairs(void);
 
 /**
  * WHEN IS SIFTING WORTH IT

@@ -143,7 +143,9 @@ Both drivers take the same case options and print one `RESULT {...}` line.
                             its models, before and after; report sound/valid
                             and eval_hash
 --ops                       time a pairwise and/xor/model-count phase before
-                            and after the sift
+                            and after the sift; its checksum, the double
+                            sum of count(f.g) + 2 count(f^g), is the same
+                            number on both drivers
 --order                     print the final variable order
 --trace FILE                write one line per swap of the sift to FILE
                             (see Swap traces; cudd_bench needs a CUDD built
@@ -198,6 +200,23 @@ slightly larger. `eval_hash` is an FNV hash of the evaluation of every output
 on the `--verify` vectors (drawn from `srand(--seed)`, 12345 by default) and
 is computed identically by both drivers, so equal hashes show that both built
 the same functions.
+
+The model counts are each driver's check of itself, not a comparison between
+the tools. Sylvan counts every output in a double (`bdd_sat_count_double`), and
+exactly as well (`bdd_sat_count_u64`) where the double is under 2^63, so that
+the exact count fits in 64 bits, which on a circuit of more than 64 inputs it
+rarely does; CUDD counts in a double (`Cudd_CountMinterm`). An output's count
+after the sift must equal its count before where both are exact, and agree to
+a relative 1e-9 otherwise: doubles are summed in another order once the
+variables have moved and may round differently, by at most about one ulp per
+variable. A count past the range of a double (2^1024) is infinite in Sylvan
+and `DD_PLUS_INF_VAL` in CUDD (infinity, or 10e301 where CUDD's configure did
+not find IEEE 754), CUDD gives -1 for any count over more than 2044
+variables, and each of these matches only itself. `sound` is 1 when the
+evaluation and every count agree, `valid` when the forest passes the
+structural check, and whatever fails is named on stderr. `satsum` (Sylvan)
+and `mintsum` (CUDD) list the first eight outputs' counts after the sift,
+`null` for any of these.
 
 ## Running
 
@@ -281,7 +300,7 @@ bryant6 to bryant12. One row per case, tab-separated, with a header line:
 | `size_class` | Sylvan's sift time at P1: `small` under 1 s (122 cases), `medium` 1 to 30 s (17), `large` over 30 s (2: dalu-file, s9234.1-file) |
 | `quick` | 1 for nine cases of under 5 s per run on either tool, at least one per family |
 | `timeout_s` | a per-run cap: four times the slower tool's P1 run plus 30 s, at least 60 s |
-| `notes` | how the file was converted, a duplicate forest, a much slower CUDD, and whether `--verify` works (below) |
+| `notes` | how the file was converted, a duplicate forest, a much slower CUDD, and the number of inputs where it is over 64, so that the model counts of `--verify` are doubles |
 
 `scripts/cases.sh` reads it; the run scripts take its output as `--cases`:
 
@@ -388,15 +407,14 @@ every order starts below 5000 nodes, among them most of the classic MCNC set
 (alu4, apex3 to apex7, cordic, misex3, t481, vda, x3, x4, i1, i5 to i7).
 mult32b and adj49 cannot be read (see [Inputs](#inputs)).
 
-**`--verify`.** `sylvan_bench --verify` counts each output's models in a
-64-bit integer (`bdd_sat_count_u64`), which fails, and the run exits 1
-without a message, once a count reaches 2^64, which for these circuits is
-whenever they have more than 64 variables. The notes column marks those
-cases; `cudd_bench --verify` works on all of them. Of 51 cases sampled with
-`--verify 64`, `sylvan_bench` ran the 40 it can (38 of at most 64 variables,
-and queens9 and queens10, whose counts are small), and on every one both tools
-gave the same `eval_hash`, the reference hashes of the four C880 orders among
-them.
+**`--verify`.** Both drivers verify every case; past 64 inputs Sylvan's
+model counts are doubles, as CUDD's always are (see
+[The drivers](#the-drivers)). With `--verify 64` (trie, P1), every one of the
+60 cases with more than 64 inputs (66 to 1464; the notes column gives the
+number) was sound and valid on both tools and gave the same `eval_hash` on
+both. Of 51 cases sampled before that, the 40 of at most 64 inputs or with
+small counts also gave the same `eval_hash` on both tools, the reference
+hashes of the four C880 orders among them.
 
 ## Reference values
 

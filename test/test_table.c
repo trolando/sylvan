@@ -1249,6 +1249,91 @@ test_reorder_batch(void)
     return 0;
 }
 
+#ifdef NDEBUG
+/**
+ * A refused removal changes nothing.
+ *
+ * Release builds only: a debug build asserts on a node that is not where its
+ * record says before it refuses (see CALLER ERRORS in nodes.h). The chained
+ * backends claim a node's link before they look for the node, so a refusal
+ * has to give the link back. Two ways it used to stay behind:
+ *
+ *  - A node whose record was rewritten while it was still indexed. It stays
+ *    in its chain, and a link left saying "removal in progress" cut the chain
+ *    short at it -- every key behind it missed and was interned again -- and
+ *    made the node itself impossible to remove.
+ *  - A slot nothing was ever inserted into. The list backend never writes
+ *    the link of a node it appends, so the next node to claim the slot
+ *    inherited the claimed link and could not be removed either.
+ */
+static int
+test_reorder_refusal_changes_nothing(void)
+{
+    nodes_table *table = nodes_create(TEST_TABLE_SIZE, TEST_TABLE_SIZE);
+    if ((nodes_reorder_caps(table) & NODES_CAP_REMOVE) == 0) {
+        nodes_free(table);
+        return 0;
+    }
+
+    uint64_t keys[TEST_COLLIDING_KEYS];
+    uint64_t indices[TEST_COLLIDING_KEYS];
+    find_colliding_keys(keys);
+    for (unsigned int i = 0; i < TEST_COLLIDING_KEYS; i++) {
+        int created = 0;
+        indices[i] = nodes_lookup(table, keys[i], 0, &created);
+        test_assert(indices[i] > 1 && created == 1);
+    }
+
+    /* A record none of those chains or families can hold: not a leaf,
+       anchored (list, trie) where no node of this table has a family, and
+       hashing to the other parity, so to another head of any power-of-two
+       head array (llcht, llchst). */
+    const uint64_t seed = UINT64_C(14695981039346656037);
+    const uint64_t parity = sylvan_tabhash16(keys[0], 0, seed) & 1u;
+    uint64_t foreign = 0;
+    while (foreign == 1 ||
+           (sylvan_tabhash16(0, foreign, seed) & 1u) == parity) {
+        foreign++;
+    }
+
+    const unsigned int middle = TEST_COLLIDING_KEYS / 2;
+    uint64_t *record = nodes_get_pointer(table, indices[middle]);
+    const uint64_t saved_a = record[0];
+    const uint64_t saved_b = record[1];
+    record[0] = 0;
+    record[1] = foreign;
+    test_assert(nodes_remove(table, indices[middle]) == SYLVAN_ERR_INVALID);
+    record[0] = saved_a;
+    record[1] = saved_b;
+
+    /* Every key is still found where it was, behind the refused node as much
+       as in front of it, and the refused node can still be removed. */
+    for (unsigned int i = 0; i < TEST_COLLIDING_KEYS; i++) {
+        int created = 1;
+        test_assert(nodes_lookup(table, keys[i], 0, &created) == indices[i]);
+        test_assert(created == 0);
+    }
+    test_assert(nodes_remove(table, indices[middle]) == SYLVAN_OK);
+    test_assert(nodes_reinsert(table, indices[middle]) == SYLVAN_OK);
+
+    /* The slot the allocator hands out next has never held a node; see
+       test_reorder_release for the allocation order this relies on. */
+    const uint64_t unused = indices[TEST_COLLIDING_KEYS - 1] + 1;
+    test_assert(!nodes_is_marked(table, unused));
+    test_assert(nodes_remove(table, unused) == SYLVAN_ERR_INVALID);
+
+    int created = 0;
+    const uint64_t fresh = nodes_lookup(
+        table, UINT64_C(0x4000000000054321), 0, &created);
+    test_assert(created == 1 && fresh == unused);
+    test_assert(nodes_remove(table, fresh) == SYLVAN_OK);
+    test_assert(nodes_reinsert(table, fresh) == SYLVAN_OK);
+
+    nodes_free(table);
+    return 0;
+}
+#endif
+
 /**
  * Remove, release, and (after a simulated barrier) claim the slot again: the
  * recycled index must come back for a different key, and the old key must be
@@ -1878,6 +1963,9 @@ run_table_tests_CALL(lace_worker *lace)
     if (test_reorder_reserve()) return 1;
     if (test_prepare_removals()) return 1;
     if (test_reorder_release()) return 1;
+#ifdef NDEBUG
+    if (test_reorder_refusal_changes_nothing()) return 1;
+#endif
     if (test_reorder_release_custom()) return 1;
     if (test_reorder_race()) return 1;
     if (test_reorder_batch()) return 1;

@@ -901,6 +901,16 @@ nodes_set_custom(nodes_table* dbs,
  *      whose next is LINK_REMOVING restarts from the head instead of
  *      following a link that is about to be spliced out; a failed
  *      compare-and-swap also restarts.
+ *   3. A walk that reaches the end of the chain without finding d puts the
+ *      saved successor back into next[d] before it refuses, so that the
+ *      refusal changes nothing. Left behind, the claim would outlive it:
+ *      nodes_reinsert and nodes_release would take d for a removed node, a d
+ *      that does sit in some other chain -- its record rewritten while it was
+ *      indexed -- would cut that chain short for every lookup and stall every
+ *      reorder walk reaching it, and in the list backend the next node to
+ *      claim a never-used slot would inherit the claim. Nobody else writes
+ *      next[d] meanwhile: the remover of d's successor restarts when it reads
+ *      LINK_REMOVING there.
  *
  * That restart cannot livelock. Splicing preserves the order of the surviving
  * nodes, so "waits for" follows the chain order, which is a strict total
@@ -996,8 +1006,14 @@ nodes_remove(nodes_table* dbs, uint64_t index)
         for (;;) {
             const uint64_t previous = link & MASK_INDEX;
             if (previous == 0) {
-                /* Not in its own chain: either it was never inserted, or the
-                   caller is removing it twice. */
+                /* Not in its own chain: it was never inserted, or was
+                   released, or its record was rewritten while it was still
+                   indexed. Give the claimed link back before refusing; see
+                   step 3 above. */
+                uint64_t claimed = LINK_REMOVING;
+                (void)atomic_compare_exchange_strong_explicit(
+                    dbs->next + index, &claimed, successor,
+                    memory_order_acq_rel, memory_order_acquire);
                 assert(!"nodes_remove: node is not in its own chain");
                 return SYLVAN_ERR_INVALID;
             }

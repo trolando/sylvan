@@ -807,8 +807,8 @@ void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb e
  * behind a delete-in-progress link, and nodes_reinsert publishes the node's
  * own link before making the node reachable. See the comment on nodes_remove
  * in nodes_llcht.c for why the delete-in-progress link is needed, why the
- * walk cannot step past its own node or splice the wrong link, and why the
- * retries terminate.
+ * walk cannot step past its own node or splice the wrong link, why the
+ * retries terminate, and why a refusal gives the claimed link back.
  *
  * One deliberate difference from the lookup path: an ordinary insertion
  * appends at the tail of the family, but nodes_reinsert PREPENDS. Chain order
@@ -905,6 +905,15 @@ nodes_remove(nodes_table* dbs, uint64_t index)
         for (;;) {
             const uint64_t previous = link & MASK_INDEX;
             if (previous == 0) {
+                /* Not in its own family. Give the claimed link back before
+                   refusing, as nodes_llcht.c does. Here it matters even for a
+                   slot that never held a node: an insertion never writes the
+                   link of the node it appends, so whatever claims the slot
+                   next would inherit LINK_REMOVING (see nodes_release). */
+                uint64_t claimed = LINK_REMOVING;
+                (void)atomic_compare_exchange_strong_explicit(
+                    dbs->next + index, &claimed, successor,
+                    memory_order_acq_rel, memory_order_acquire);
                 assert(!"nodes_remove: node is not in its own family");
                 return SYLVAN_ERR_INVALID;
             }
@@ -1012,7 +1021,8 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
  * has always had a zero link: nodes_create zeroes the array and a collection
  * rebuilds every family from scratch. Releasing a slot has to restore that,
  * or the next node to claim it would inherit the delete-in-progress link and
- * a family walk arriving at it would follow that into node zero.
+ * a family walk arriving at it would follow that into node zero. A refused
+ * nodes_remove gives back the link it claimed for the same reason.
  */
 int
 nodes_release(nodes_table* dbs, uint64_t index)

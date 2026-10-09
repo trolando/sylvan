@@ -2133,7 +2133,8 @@ nodes_set_custom(nodes_table* dbs,
  * link, nodes_reinsert prepends it again and publishes its own link before
  * the head. See the comment on nodes_remove in nodes_llcht.c for why the
  * delete-in-progress link is needed, why the walk cannot step past its own
- * node or splice the wrong link, and why the retries terminate.
+ * node or splice the wrong link, why the retries terminate, and why a refusal
+ * gives the claimed link back.
  *
  * What is specific here is the routing. A node's subtable is not derived from
  * its key but from the owner class in its own next word: owner 0 means a
@@ -2250,6 +2251,13 @@ nodes_remove(nodes_table* dbs, uint64_t index)
         for (;;) {
             const uint64_t previous = link & MASK_INDEX;
             if (previous == 0) {
+                /* Not in its own chain. Give the claimed link back, owner
+                   class and all, before refusing; see nodes_llcht.c. */
+                uint64_t claimed =
+                    (successor & MASK_OWNER) | LINK_REMOVING_BITS;
+                (void)atomic_compare_exchange_strong_explicit(
+                    dbs->next + index, &claimed, successor,
+                    memory_order_acq_rel, memory_order_acquire);
                 assert(!"nodes_remove: node is not in its own chain");
                 return SYLVAN_ERR_INVALID;
             }

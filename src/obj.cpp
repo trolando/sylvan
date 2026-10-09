@@ -629,12 +629,10 @@ Bdd::VectorCube(const std::vector<Bdd> variables)
 Bdd
 Bdd::VariablesCube(std::vector<uint32_t> variables)
 {
-    /* Held in a Bdd across the loop: each mtbdd_make_node may collect, and
-       the cube built so far would otherwise be referenced only by this local. */
-    Bdd result = bddOne();
-    for (size_t i=variables.size(); i>0; i--) {
-        result = Bdd(mtbdd_make_node(variables[i-1], bdd_false, result.bdd));
-    }
+    /* bdd_set_from_array puts every variable at its current rank, so this is
+       a valid diagram under any order and for identities in any order. */
+    Bdd result;
+    detail::check(bdd_set_from_array(&result.bdd, variables.data(), variables.size()));
     return result;
 }
 
@@ -660,6 +658,14 @@ Bdd
 Bdd::bddVar(uint32_t index)
 {
     return Bdd(index);
+}
+
+Bdd
+Bdd::bddVarAtLevel(uint32_t level)
+{
+    Bdd result;
+    detail::check(bdd_var_at_level(&result.bdd, level));
+    return result;
 }
 
 Bdd

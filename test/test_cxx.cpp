@@ -211,6 +211,50 @@ int runtest_errors_CALL(lace_worker* lace)
     return 0;
 }
 
+/**
+ * Bdd::bddVar and Bdd(uint32_t) name a variable by its identity, so a sift
+ * that moves the variables leaves them returning the same Bdd, while
+ * Bdd::bddVarAtLevel follows the order.
+ */
+TASK(int, runtest_identity)
+int runtest_identity_CALL(lace_worker* lace)
+{
+    (void)lace;
+
+    /* x0 y0 + ... + x5 y5 with every x before every y, an order sifting
+       improves by interleaving them. */
+    const uint32_t pairs = 6;
+    std::vector<Bdd> before;
+    for (uint32_t i = 0; i < 2 * pairs; i++) before.push_back(Bdd::bddVar(i));
+    Bdd f = Bdd::bddZero();
+    for (uint32_t i = 0; i < pairs; i++) f += before[i] * before[i + pairs];
+    for (uint32_t i = 0; i < 2 * pairs; i++) {
+        test_assert(Bdd::bddVarAtLevel(i) == before[i]);
+    }
+
+    const int status = sylvan_sift(NULL);
+    /* A nodes table without the reorder primitives refuses. */
+    if (status == SYLVAN_ERR_INVALID) return 0;
+    test_assert(status == SYLVAN_OK);
+
+    int moved = 0;
+    for (uint32_t i = 0; i < 2 * pairs; i++) {
+        test_assert(Bdd::bddVar(i) == before[i]);
+        test_assert(Bdd(i) == before[i]);
+        if (Bdd::bddVarAtLevel(i) != before[i]) moved = 1;
+    }
+    test_assert(moved);
+
+    Bdd g = Bdd::bddZero();
+    for (uint32_t i = 0; i < pairs; i++) {
+        g += Bdd::bddVar(i) * Bdd::bddVar(i + pairs);
+    }
+    test_assert(f == g);
+    test_assert(Bdd::VariablesCube({pairs, 0, 2 * pairs - 1}) ==
+                before[0] * before[pairs] * before[2 * pairs - 1]);
+    return 0;
+}
+
 void test6()
 {
     BddMap m1;
@@ -234,6 +278,7 @@ int main()
 
     int res = runtest();
     if (res == 0) res = runtest_errors();
+    if (res == 0) res = runtest_identity();
 
     sylvan_quit();
     lace_stop();

@@ -103,9 +103,13 @@ public:
     Bdd() { bdd = bdd_false; mtbdd_protect(&bdd); }
     Bdd(const BDD from) : bdd(from) { mtbdd_protect(&bdd); }
     Bdd(const Bdd &from) : bdd(from.bdd) { mtbdd_protect(&bdd); }
+    /**
+     * @brief The variable with identity <var>, as bdd_var(); the same
+     * variable before and after any reordering.
+     */
     Bdd(const uint32_t var) : bdd(mtbdd_invalid) {
         mtbdd_protect(&bdd);
-        const int status = bdd_var_at_level(&bdd, var);
+        const int status = bdd_var(&bdd, var);
         /* A throw from a constructor body skips ~Bdd(), so release here. */
         if (status != SYLVAN_OK) mtbdd_unprotect(&bdd);
         detail::check(status);
@@ -115,8 +119,16 @@ public:
     /**
      * @brief Creates a Bdd representing just the variable index in its positive form
      * The variable index must be a 0<=index<=2^23 (we use 24 bits internally)
+     * The index is the variable's identity, which no reordering changes.
      */
     static Bdd bddVar(uint32_t index);
+
+    /**
+     * @brief Creates a Bdd representing the variable currently at position
+     * <level> in the variable order, as bdd_var_at_level(). A reordering can
+     * change which variable that is; use bddVar() for a fixed variable.
+     */
+    static Bdd bddVarAtLevel(uint32_t level);
 
     /**
      * @brief Returns the Bdd representing "True"
@@ -414,7 +426,7 @@ public:
 
     /**
      * @brief Generate a cube representing a set of variables
-     * @param variables An sorted set of variable indices
+     * @param variables Variable identities, in any order
      */
     static Bdd VariablesCube(const std::vector<uint32_t> variables);
 

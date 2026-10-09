@@ -22,7 +22,8 @@
 #   epfl       epfl/*.blif: the EPFL random/control circuits (Amaru,
 #              Gaillardon, De Micheli 2015), lsils/benchmarks
 #
-# --all installs every set: everything ../cases.tsv names. The LGSynth'91,
+# --all installs every set: every circuit ../cases.tsv names, and those its
+# screening left out (see README.md, "The case table"). The LGSynth'91,
 # ISCAS and MCNC files are Petr Fiser's collection (Czech Technical University,
 # https://ddd.fit.cvut.cz/www/prj/Benchmarks/, MCNC.7z and LGSynth91.7z),
 # fetched from the LF-only copy in ispras/hdl-benchmarks at a pinned commit;

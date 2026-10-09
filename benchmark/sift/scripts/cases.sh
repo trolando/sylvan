@@ -59,7 +59,9 @@
 # file order with an 8 GB table, see README.md). The table widens that to the
 # ISCAS'85, ISCAS'89 (combinational part), LGSynth'91 and EPFL random/control
 # circuits that build within 600 s and 8 GiB from at least two of the three
-# starting orders on both tools. bryant has a known optimum. queens is a case
+# starting orders on both tools, under the orders whose Sylvan run takes at
+# most 60 s at P1 (README.md, "The case table", says how they were screened).
+# bryant has a known optimum. queens is a case
 # whose natural order is already good, so it measures what sifting costs when
 # there is little to find.
 

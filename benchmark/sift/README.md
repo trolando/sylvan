@@ -4,14 +4,15 @@ The harness and scripts behind the sifting experiments: Sylvan's
 `sylvan_sift` against CUDD's `Cudd_ReduceHeap(dd, CUDD_REORDER_SIFT, 0)`, on
 the same forests, built gate for gate from the same starting variable order.
 Everything needed to rerun them is in this directory, except CUDD itself and
-the input circuit, which the instructions below fetch at pinned revisions.
+the input circuits, which the instructions below fetch at pinned revisions.
 
 | file | what it is |
 |---|---|
 | `sylvan_bench.c` | the Sylvan driver: build a forest, sift it once, print one `RESULT {...}` JSON line |
 | `cudd_bench.c` | the CUDD driver: the same forest, `Cudd_ReduceHeap` with `CUDD_REORDER_SIFT` |
 | `blif.c`, `blif.h` | the BLIF reader both drivers share, and the shared starting-order permutation |
-| `fetch-inputs.sh` | installs `C880.blif` (checksummed); `--families` documents the other input families |
+| `fetch-inputs.sh` | installs `C880.blif`, or with `--all` every circuit of `cases.tsv` (all checksummed); `--families` documents the other input families |
+| `cases.tsv` | the case table: every case of the main grid, with its family, size class, quick flag and timeout (see [The case table](#the-case-table)) |
 | `scripts/run-*.sh` | one script per experiment; each appends JSONL rows |
 | `scripts/summarize.py` | Markdown and CSV tables from those rows |
 | `scripts/build-matrix.sh`, `scripts/manifest.py` | every build configuration the paper's headlines need, and `manifest.json` |
@@ -68,17 +69,65 @@ fetched by CMake (v2.4.0); to build offline, add
 ### Inputs
 
 ```sh
-benchmark/sift/fetch-inputs.sh inputs                 # from GitHub
+benchmark/sift/fetch-inputs.sh inputs                 # C880.blif, from GitHub
 benchmark/sift/fetch-inputs.sh --cudd-src /path/to/cudd inputs   # or offline
+benchmark/sift/fetch-inputs.sh --all inputs           # every circuit of cases.tsv
+benchmark/sift/fetch-inputs.sh --check --all inputs   # verify an installed tree
+benchmark/sift/fetch-inputs.sh --list                 # each file's source URL and MD5s
 ```
 
-Either way the file must come out as `C880.blif` with MD5
-`82323a515652b47cdbff16cb2e0bc27e` (18428 bytes, LF line endings), and an
-existing file is never overwritten. `fetch-inputs.sh --families` gives the
-sources, checksums and commands for the McNet, relprod and QBF families, and
-records the EPFL arithmetic circuits as infeasible: neither tool can build
-`adder` or `bar` under their file order with an 8 GB budget, so there is
-nothing to sift.
+`C880.blif` must come out with MD5 `82323a515652b47cdbff16cb2e0bc27e`
+(18428 bytes, LF line endings), as before; every other file has its own
+recorded MD5 (`--list`), and an existing file is never overwritten.
+`fetch-inputs.sh --families` gives the sources, checksums and commands for
+the McNet, relprod and QBF families, and records the EPFL arithmetic circuits
+as infeasible: neither tool can build `adder` or `bar` under their file order
+with an 8 GB budget, so there is nothing to sift.
+
+`--all` installs 60 files, every circuit the [case table](#the-case-table)
+uses plus the ones it screened out, so that each can still be run by name:
+
+| set | installed as | source, pinned | licence | reference |
+|---|---|---|---|---|
+| `c880` | `C880.blif` | CUDD 3.0.0, `nanotrav/C880.blif`, cuddorg/cudd `f54f533` | CUDD's BSD-style licence (University of Colorado) | ISCAS'85 |
+| `iscas85` | `iscas85/C*.blif`: C432 C499 C1355 C1908 C2670 C3540 C5315 C6288 C7552 | `mcnc/Combinational/blif/` of [ispras/hdl-benchmarks](https://github.com/ispras/hdl-benchmarks) `10c3fb5` | none stated on the circuits, public benchmarks since 1985 (the repository is Apache-2.0) | F. Brglez, H. Fujiwara, ISCAS 1985 |
+| `lgsynth91` | `lgsynth91/*.blif`, 36 circuits | the same `mcnc/Combinational/blif/`, and `lgsynth91/blif/` for the sequential ones | none stated; MCNC gave them out by anonymous FTP and tape for benchmarking (`lgsynth91/LGSynth91.readme` there) | S. Yang, *Logic Synthesis and Optimization Benchmarks User Guide, Version 3.0*, MCNC, 1991 |
+| `iscas89` | `iscas89/s*.blif`, 10 circuits | `lgsynth91/blif/` of the same | as `lgsynth91` | F. Brglez, D. Bryan, K. Kozminski, ISCAS 1989 |
+| `epfl` | `epfl/*.blif`: arbiter mem_ctrl priority voter | `random_control/` of [lsils/benchmarks](https://github.com/lsils/benchmarks) `0060e15` | MIT | L. Amaru, P.-E. Gaillardon, G. De Micheli, IWLS 2015 |
+
+The ispras files are Petr Fiser's collection
+(<https://ddd.fit.cvut.cz/www/prj/Benchmarks/>) with LF line endings: all 219
+files of `MCNC/Combinational/blif` in `MCNC.7z` (MD5
+`cbb76c767f9b6050bddf0359a1ce67ae`) and all 116 of `LGSynth91/blif` in
+`LGSynth91.7z` (`91529cd8fcb1dbe0d94f917fdc1f7fb3`), both as downloaded on
+2026-10-09, equal their ispras copies once CRs are stripped, so `--src
+fiser=DIR` (the two archives extracted into DIR) installs the same bytes.
+`--src ispras=DIR` and `--src lsils=DIR` take local checkouts instead.
+
+**What `blif.c` reads.** `.model .inputs .outputs .latch .names .end`,
+comments and continuations; a latch output becomes a free variable and only
+`.outputs` are built. So a sequential circuit's next-state functions would not
+be built, and some files use what it does not read. Files marked `comb` in
+`--list` are therefore converted, by an awk program in `fetch-inputs.sh`,
+into their combinational part: `.latch IN OUT` becomes `.inputs OUT` and
+`.outputs IN` at the same place (the variable order stays the one `blif.c`
+gives the original: inputs, then latch outputs), and `.wire_load_slope`, an
+`.exdc` don't-care network with everything after it, and `.outputs` names
+nothing drives are dropped. What the screening found it could not read
+as published:
+
+| what | where | handled |
+|---|---|---|
+| `.wire_load_slope` (unsupported directive) | every ISCAS'89 file of LGSynth'91 | dropped by the conversion |
+| `.exdc` (unsupported; it also redefines every output) | 28 two-level MCNC circuits: alu3 apla b3 b4 b7 b10 b11 bca bcb bcc bcd bw dekoder dk17 dk27 dk48 ex1010 exep exp exps inc mark1 misex3c pdc spla t2 t4 wim | dropped by the conversion: the care network is kept |
+| outputs nothing drives | s13207.1 (g1193 g1195 g1197 g1201 g1205), s15850.1 (g1957) | dropped by the conversion |
+| a gate input nothing drives (`96`) | mult32b | not readable; left out |
+| a cube of 10 literals in a 9-input `.names` (line 283) | CUDD's `nanotrav/adj49.blif` | not readable; left out |
+
+`.subckt`, `.gate`, `.mlatch` and the KISS/PLA formats are not read either;
+none of the files above uses them. A `.names` over more than 255 signals would
+be cut short silently (`tok[256]` in `blif_read`); the widest here has 188
+inputs (k2).
 
 ## The drivers
 
@@ -166,8 +215,11 @@ the same name with `.log` appended.
 ```
 
 Case names describe the forest completely: `C880-file`, `C880-rev`,
-`C880-rndK` (random order, seed K) for any `STEM.blif` in `--inputs`,
-`bryantN` and `queensN`. Each row carries the harness's own fields plus
+`C880-rndK` (random order, seed K) for any circuit `STEM` of the case table
+or `STEM.blif` in `--inputs`, `bryantN` and `queensN`; `scripts/cases.sh`
+lists them from the table by family, size and quick flag, as in `--cases
+"$($S/cases.sh --quick)"` (see [The case table](#the-case-table)).
+Each row carries the harness's own fields plus
 `exp`, `cfg` (the variant), `rep`, `build`, `build_backend`, `git` (the commit
 of the Sylvan source tree the build came from), `git_dirty`, `host`,
 `load1`/`load5`/`load15`, `t_start`/`t_end` (UTC) and `wall_ms`, the driver's
@@ -212,6 +264,139 @@ $S/summarize.py --csv results/csv timing results/timing.jsonl
 `--help` on any script prints its own description and the common options.
 The long ones are queens12, which builds for several minutes per run on
 either tool, and the seed sweep, where some orders take CUDD minutes to sift.
+
+## The case table
+
+`cases.tsv` is the main grid: 141 cases, 48 circuits from the four
+circuit sets under one to four starting orders each, queens8 to queens11 and
+bryant6 to bryant12. One row per case, tab-separated, with a header line:
+
+| column | |
+|---|---|
+| `name` | the case name, as everywhere else (`C3540-rnd1`) |
+| `mode` | `blif`, `queens` or `bryant` |
+| `file` | the circuit, relative to `--inputs` (`fetch-inputs.sh --all`); `-` for queens and bryant, whose size is the number in the name |
+| `var_order`, `seed` | `file`, `reverse` or `random` with its `--order-seed` (queens and bryant: `file`, their one order, seed 0) |
+| `family` | `iscas85`, `iscas89`, `lgsynth91`, `epfl`, `queens`, `bryant` |
+| `size_class` | Sylvan's sift time at P1: `small` under 1 s (122 cases), `medium` 1 to 30 s (17), `large` over 30 s (2: dalu-file, s9234.1-file) |
+| `quick` | 1 for nine cases of under 5 s per run on either tool, at least one per family |
+| `timeout_s` | a per-run cap: four times the slower tool's P1 run plus 30 s, at least 60 s |
+| `notes` | how the file was converted, a duplicate forest, a much slower CUDD, and whether `--verify` works (below) |
+
+`scripts/cases.sh` reads it; the run scripts take its output as `--cases`:
+
+```sh
+$S/cases.sh --check --inputs inputs                 # well-formed, every circuit installed
+$S/cases.sh --quick                                 # the nine quick cases
+$S/cases.sh --family iscas85,iscas89 --size medium,large
+$S/cases.sh --order random --table                  # the matching rows
+$S/cases.sh --args C3540-rnd1 --inputs inputs       # the driver arguments, one per line
+$S/run-timing.sh $B $C --cases "$($S/cases.sh --size small,medium)"
+```
+
+A sourced `cases.sh` also gives `sb_cases_select`, `sb_case_row`,
+`sb_case_field NAME COLUMN` and `sb_case_timeout NAME` to a runner.
+
+**How the cases were chosen.** Every circuit of the four sets (271 files:
+217 of the MCNC directory's 219, all but C17 and its copy of C880; the 40
+sequential ones only in the LGSynth'91 directory; the ten EPFL random/control
+circuits; CUDD's C880 and three small CUDD examples, ham01, closest and
+rcn25) was built and sifted from its file order, its reversed order and the
+random order of seed 1, on 2026-10-09 under WSL on the 20-core development
+machine, by `sylvan_bench` (list table, P1, threshold 0, growth 1.2,
+`--memory` 8 GiB) and by `cudd_bench`, one run at a time while other jobs
+held two to four cores. A Sylvan run got 60 s; one that needed more got a
+600 s build and a 300 s sift. A CUDD run got 300 s (900 s where Sylvan had
+needed more than 60 s) and a 9 GiB address-space limit, since its
+`--memory` is only a hint. A case is *feasible* when both tools
+build it within 600 s and 8 GiB and Sylvan's sift ends within 300 s. A
+circuit is in the table when at least two of its three orders are feasible,
+when some order starts with at least 5000 nodes, and when its forests are not
+those of a circuit already in (same variables and the same nodes before and
+after on every order: C1355 is C499's forest, apex1 is k2's, apex6 is x3's,
+s400 is s382's, and so on, 15 pairs). An order of such a circuit is in when
+its Sylvan run took at most 60 s at P1, which is what keeps the grid within a
+night, and s13207.1-file is left out because it builds for 52 s to sift for
+0.9 s.
+
+**What it costs.** The grid this table is for runs every case on the list,
+trie, llcht and llchst tables at 1, 2, 4, 8 and 16 workers, 5 repetitions
+each, and CUDD at P1, 5 repetitions: 105 runs per case, 14805 in all.
+Costing every run at its P1 wall time (conservative: more workers build and
+sift faster) plus 0.25 s for the harness gives **9.9 h**: 8.6 h of Sylvan
+runs and 1.3 h of CUDD runs. Three cases are 4.4 h of it: s9234.1-file
+(1.9 h; CUDD sifts it for 254 s), dalu-file (1.4 h; CUDD 216 s) and queens11
+(1.1 h, nearly all build). Trimmed:
+
+| selection | cases | hours |
+|---|---:|---:|
+| everything | 141 | 9.9 |
+| without s9234.1-file, queens11 and C3540-rnd1 (keeps dalu-file as the large case) | 138 | 6.1 |
+| `--size small,medium` (no large case) | 139 | 6.6 |
+| `--size small,medium` without queens11 | 138 | 5.5 |
+| `--quick` | 9 | 0.3 |
+
+Small cases are cheap but say little on their own: with the default 8 GiB
+tables Sylvan's sift has a floor of about 50 ms (2 ms at `--memory` 256 MiB,
+7 ms at 1 GiB, on bryant6), where CUDD's is under 2 ms, so a forest of a few
+thousand nodes measures that floor.
+
+**Left out, and why.** Every order of a non-trivial circuit that is not in
+the table, as screened (Sylvan: list, P1; "table full" is Sylvan's nodes
+table at its 8 GiB maximum, 2^27 buckets, with a dozen collections in a row
+reclaiming under 5%; "not pursued" means the circuit already had two
+infeasible orders):
+
+| case | Sylvan | CUDD |
+|---|---|---|
+| C2670-file | build over 600 s | |
+| C2670-rev | build 12.8 s, 18975065 nodes, sift 138 s | build 19.8 s, sift 108 s |
+| C2670-rnd1 | table full after 523 s | |
+| C3540-rev | table full after 297 s | |
+| C5315-file | table full after 175 s | |
+| C5315-rev | build 0.1 s, 57585 nodes, sift 0.2 s: in budget, but the circuit's only feasible order | build 0.0 s, sift 0.1 s |
+| C5315-rnd1 | build 131 s, 22806108 nodes, sift over 300 s | build 13.6 s, sift 55 s |
+| C6288-file | table full within 60 s (the 16x16 multiplier) | |
+| C6288-rev, -rnd1 | not done in 60 s, not pursued | |
+| C7552-file, -rnd1 | table full after 50 s and within 60 s | |
+| C7552-rev | not done in 60 s, not pursued | |
+| s838.1-file | table full after 49 s | |
+| s5378-file | build over 600 s | |
+| s9234.1-rev | build 2.5 s, 10481747 nodes, sift over 300 s | not done in 900 s |
+| s9234.1-rnd1 | build 2.7 s, 4731878 nodes, sift 134 s: over the 60 s budget | build 2.9 s, sift 49 s |
+| s13207.1-file | build 52 s, 676676 nodes, sift 0.9 s: build-dominated | build 12.4 s, sift 1.5 s |
+| s13207.1-rev | build over 600 s | |
+| s15850.1-rev | build over 600 s | |
+| s38417-file | build 10.8 s, 17811132 nodes, sift over 300 s | not done in 900 s |
+| s38417-rev | build over 600 s | |
+| s38417-rnd1 | not done in 60 s, not pursued | |
+| s38584.1-file | build over 600 s | |
+| i10-file | build 4.5 s, 8924136 nodes, sift 86 s; the circuit's only feasible order | build 9.3 s, sift 366 s |
+| i10-rev | build over 600 s | |
+| i10-rnd1 | table full within 60 s | |
+| mm9a-rev | build 22.7 s, 7595159 nodes, sift 203 s: over the 60 s budget | build 21.8 s, sift 7.9 s |
+| mm9b-rev | build 17.3 s, 6638670 nodes, sift 359 s (over 300 s) | build 24.3 s, sift 10 s |
+| mm30a, o64, mem_ctrl (all three orders) | table full within 60 s | |
+| mult32a, voter | file and rnd1: table full within 60 s; rev not pursued | |
+| arbiter-rev | build 0.2 s, 715649 nodes, sift 65 s: over the 60 s budget | build 0.6 s, sift 7.0 s |
+| queens12 | build 263 s, 435170 nodes, sift 13 s: over the 60 s budget (7.7 h of grid) | build 725 s, sift 34 s |
+| queens13 | not built in 1500 s (6.9 GB resident) | |
+| queens14 | not built in 600 s (6.9 GB resident) | |
+
+CUDD was run only where Sylvan built. Too small to time: 196 circuits whose
+every order starts below 5000 nodes, among them most of the classic MCNC set
+(alu4, apex3 to apex7, cordic, misex3, t481, vda, x3, x4, i1, i5 to i7).
+mult32b and adj49 cannot be read (see [Inputs](#inputs)).
+
+**`--verify`.** `sylvan_bench --verify` counts each output's models in a
+64-bit integer (`bdd_sat_count_u64`), which fails, and the run exits 1
+without a message, once a count reaches 2^64, which for these circuits is
+whenever they have more than 64 variables. The notes column marks those
+cases; `cudd_bench --verify` works on all of them. Of 51 cases sampled with
+`--verify 64`, `sylvan_bench` ran the 40 it can (38 of at most 64 variables,
+and queens9 and queens10, whose counts are small), and on every one both tools
+gave the same `eval_hash`, the reference hashes of the four C880 orders among
+them.
 
 ## Reference values
 

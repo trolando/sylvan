@@ -1471,14 +1471,27 @@ test_pairs_lone_CALL(lace_worker *lace)
 
 /**
  * A table with no free slot, filled the way test_varswap fills it: with
- * distinct live leaves, alternating with collections until a collection no
+ * distinct live nodes, alternating with collections until a collection no
  * longer buys room, so that the sift's own opening collection buys none
  * either. Every block with nodes here is a pair, so every move takes at least
  * two swaps, and none can be promised room: the grouped sift refuses each
  * before its first swap. Nothing moves, every refusal is counted, and no pair
- * is apart. The leaves are yielded by a root visitor rather than protected
- * one by one.
+ * is apart.
+ *
+ * The filler is not leaves alone, as in test_varswap, because this table has
+ * grown to millions of slots and the list backend chains every leaf on one
+ * list, which would make filling it quadratic. Instead it is a few hundred
+ * leaves, the nodes of a fresh variable over pairs of them, and the nodes of
+ * the fresh variable above it over pairs of those: wide enough at every level
+ * that no index chain grows long, as long as the loop also lets llchst, which
+ * sizes the index of a level only at a safepoint, grow it as the level fills.
+ * The two fresh variables are a pair of their own, together at the bottom of
+ * the order. Every node is yielded by a root visitor rather than protected one
+ * by one.
  */
+#define TEST_FILL_LEAVES 256u
+#define TEST_FILL_MIDDLE (TEST_FILL_LEAVES * (TEST_FILL_LEAVES - 1u))
+
 static MTBDD *test_fill;
 static size_t test_fill_count;
 
@@ -1489,15 +1502,54 @@ test_fill_visitor(void *context, sylvan_roots_yield yield, void *arg)
     if (test_fill_count != 0) yield(arg, test_fill, test_fill_count);
 }
 
+/** The <k>th ordered pair of distinct indices below <n>. */
+static void
+test_fill_pair(size_t k, size_t n, size_t *a, size_t *b)
+{
+    *a = k / (n - 1u);
+    *b = k % (n - 1u);
+    if (*b >= *a) (*b)++;
+}
+
+/** The next node of the filler, a new one every time. */
+static MTBDD
+test_fill_next(uint32_t upper, uint32_t lower)
+{
+    const size_t n = test_fill_count;
+    size_t a, b;
+    if (n < TEST_FILL_LEAVES) {
+        return mtbdd_int64(INT64_C(1000000007) + (int64_t)n);
+    }
+    if (n < TEST_FILL_LEAVES + TEST_FILL_MIDDLE) {
+        test_fill_pair(n - TEST_FILL_LEAVES, TEST_FILL_LEAVES, &a, &b);
+        return mtbdd_make_node(lower, test_fill[a], test_fill[b]);
+    }
+    test_fill_pair(n - TEST_FILL_LEAVES - TEST_FILL_MIDDLE, TEST_FILL_MIDDLE,
+                   &a, &b);
+    return mtbdd_make_node(upper, test_fill[TEST_FILL_LEAVES + a],
+                           test_fill[TEST_FILL_LEAVES + b]);
+}
+
 static int
 test_pairs_full_table_CALL(lace_worker *lace)
 {
+    /* Two fresh identities, registered at the end of the order and so
+       together, even one first. */
+    const uint32_t upper = sylvan_ranks_registered();
+    const uint32_t lower = upper + 1u;
+    test_assert(upper % 2 == 0);
+    BDD fresh = bdd_false;
+    mtbdd_protect(&fresh);
+    test_assert(bdd_var_at_level(&fresh, lower) == SYLVAN_OK);
+    test_assert(mtbdd_node_variable(fresh) == lower);
+    test_assert(sylvan_rank_of(upper) == upper);
+    mtbdd_unprotect(&fresh);
+
     size_t capacity = 0;
     test_fill = NULL;
     test_fill_count = 0;
     test_assert(sylvan_gc_add_roots(test_fill_visitor, NULL) == SYLVAN_OK);
 
-    int64_t leaf = 0;
     for (int sweep = 0; ; sweep++) {
         test_assert(sweep < 12);
         sylvan_gc_enable();
@@ -1514,7 +1566,13 @@ test_pairs_full_table_CALL(lace_worker *lace)
             test_fill = grown;
         }
         while (filled < total) {
-            test_fill[test_fill_count++] = mtbdd_int64(leaf++);
+            /* The safepoint every operation passes through, which calling
+               mtbdd_make_node directly bypasses: it is where llchst grows the
+               index of a level that has outgrown it between collections. */
+            sylvan_gc_test(lace);
+            const MTBDD node = test_fill_next(upper, lower);
+            test_assert(node != mtbdd_invalid);
+            test_fill[test_fill_count++] = node;
             filled++;
         }
     }
@@ -1560,8 +1618,8 @@ test_pairs_CALL(lace_worker *lace)
     if (test_pairs_reunite_CALL(lace)) return 1;
     if (test_pairs_budgets_CALL(lace)) return 1;
     if (test_pairs_refusals_CALL(lace)) return 1;
-    if (test_pairs_lone_CALL(lace)) return 1;
     if (test_pairs_full_table_CALL(lace)) return 1;
+    if (test_pairs_lone_CALL(lace)) return 1;
 
     for (int r = 0; r < TEST_RELATIONS; r++) mtbdd_unprotect(&test_relation[r]);
     return 0;

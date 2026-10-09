@@ -33,8 +33,8 @@ its caps raised must end at
     C880-rev 36533 (36533)        C880-rnd2 26972 (26973)         queens12 427043 (427043)
     bryantN 2N+1 (2N+1)
 
-from initial sizes 346660, 470046, 844442, 1066147, 25945 and 435170 (both
-tools). Within one stanza every row of a case that hashes its evaluation on
+from initial sizes 346660, 470046, 844442, 1066147, 25945, 435170 and
+2^(N+1)-1 (both tools). Within one stanza every row of a case that hashes its evaluation on
 the same vectors must have the same eval_hash, whatever tool or backend
 produced it, and C880-file on 64 vectors of the default seed must hash to
 b63d2a3eade6548e. A row that verified must be sound and valid. Any violation
@@ -79,7 +79,7 @@ def reference(case):
     m = re.fullmatch(r"bryant(\d+)", case or "")
     if m:
         n = int(m.group(1))
-        return (None, 2 * n + 1, 2 * n + 1)
+        return (2 ** (n + 1) - 1, 2 * n + 1, 2 * n + 1)
     return None
 
 
@@ -457,6 +457,9 @@ def h1(rows, skips, check, out_dir):
     return sec
 
 
+UNITS = {"B", "KB", "MB", "GB", "TB", "sec", "s", "ms", "us", "ns"}
+
+
 def parse_report(text):
     """{counter: value} from sylvan_stats_report text, whatever the names.
 
@@ -479,6 +482,9 @@ def parse_report(text):
             k = isnum.index(True)
             name = " ".join(words[:k])
             vals = [words[k]]
+            unit = words[k + 1].rstrip(".") if k + 1 < len(words) else ""
+            if unit in UNITS:
+                name += f" [{unit}]"
         else:
             name = " ".join(words[:k])
             vals = words[k:]

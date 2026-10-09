@@ -72,6 +72,7 @@ static int      opt_auto      = 0;     /* sift through sylvan_gc's auto sift */
 static int      opt_stats     = 0;     /* counters of the build and the sift */
 static int      opt_batched   = 1;     /* batched index surgery in swaps     */
 static double   opt_recfactor = -1.0;  /* recommendation factor, <0 = default */
+static int      opt_memstat   = 0;     /* resident memory from /proc        */
 static uint64_t opt_memory    = 8ull << 30;
 static unsigned opt_seed      = 12345;
 static const char *opt_varorder = "file";
@@ -84,6 +85,46 @@ now(void)
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
     return (double)t.tv_sec + 1e-9 * (double)t.tv_nsec;
+}
+
+/* --memstat: resident memory as the kernel reports it, read from /proc after
+   the build and after the sift. Linux only; 0 wherever a file or key is
+   missing. */
+typedef struct { long rss_kb, thp_kb; } memstat_t;
+
+static long
+proc_kb(const char *path, const char *key)
+{
+    FILE *f = fopen(path, "r");
+    if (f == NULL) return 0;
+    char line[256];
+    long kb = 0;
+    const size_t n = strlen(key);
+    while (fgets(line, sizeof(line), f) != NULL) {
+        if (strncmp(line, key, n) == 0 && line[n] == ':') {
+            kb = strtol(line + n + 1, NULL, 10);
+            break;
+        }
+    }
+    fclose(f);
+    return kb;
+}
+
+static void
+memstat_take(memstat_t *m)
+{
+    m->rss_kb = proc_kb("/proc/self/status", "VmRSS");
+    if (m->rss_kb == 0) m->rss_kb = proc_kb("/proc/self/smaps_rollup", "Rss");
+    m->thp_kb = proc_kb("/proc/self/smaps_rollup", "AnonHugePages");
+}
+
+static void
+memstat_print(const memstat_t *build, const memstat_t *sift)
+{
+    printf(",\"rss_build_kb\":%ld,\"rss_sift_kb\":%ld,\"hwm_kb\":%ld"
+           ",\"thp_build_kb\":%ld,\"thp_sift_kb\":%ld",
+           build->rss_kb, sift->rss_kb, proc_kb("/proc/self/status", "VmHWM"),
+           build->thp_kb, sift->thp_kb);
 }
 
 /* --------------------------------------------------------------- the case */
@@ -433,6 +474,8 @@ run_CALL(lace_worker *lace)
     const double build_s = now() - t_build;
     if (rc != 0) { fprintf(stderr, "build failed\n"); return 1; }
     if (opt_stats) stats_phase("build");
+    memstat_t mem_build = {0, 0}, mem_sift = {0, 0};
+    if (opt_memstat) memstat_take(&mem_build);
 
     const size_t nodes_before = mtbdd_shared_node_count(root, (size_t)n_root);
     if (varset_make() != 0) { fprintf(stderr, "varset failed\n"); return 1; }
@@ -508,6 +551,7 @@ run_CALL(lace_worker *lace)
         if (fclose(trace) != 0) { perror(opt_trace); return 1; }
     }
     if (opt_stats) stats_phase(opt_sift ? "sift" : "no-sift");
+    if (opt_memstat) memstat_take(&mem_sift);
     /* From the order itself rather than the result, so that --auto and
        --no-sift rows carry it too. */
     const uint32_t split_pairs = sylvan_sift_split_pairs();
@@ -577,6 +621,7 @@ run_CALL(lace_worker *lace)
         printf("]");
     }
     if (opt_order_out) print_order();
+    if (opt_memstat) memstat_print(&mem_build, &mem_sift);
     printf("}\n");
     fflush(stdout);
 
@@ -604,6 +649,8 @@ usage(FILE *f)
         "                    asks for; library default 2.0, 0 disables)\n"
         "  checks: --verify VECTORS  --seed S  --ops  --order\n"
         "          --trace FILE  (one line per swap of the sift)\n"
+        "          --memstat  (VmRSS, VmHWM and AnonHugePages after the build\n"
+        "                      and after the sift, from /proc; Linux)\n"
         "          --stats  (counters of the build and of the sift, on stderr;\n"
         "                    needs a -DSYLVAN_STATS=ON build)\n"
         "  run:    --workers N (1)  --memory BYTES (8 GiB)\n"
@@ -637,6 +684,7 @@ main(int argc, char **argv)
         else if (!strcmp(a, "--auto"))           { opt_auto = 1; }
         else if (!strcmp(a, "--stats"))          { opt_stats = 1; }
         else if (!strcmp(a, "--no-batch"))       { opt_batched = 0; }
+        else if (!strcmp(a, "--memstat"))        { opt_memstat = 1; }
         else if (!strcmp(a, "--recommend-factor") && v) { opt_recfactor = atof(v); i++; }
         else if (!strcmp(a, "--memory") && v)    { opt_memory = strtoull(v, NULL, 10); i++; }
         else if (!strcmp(a, "--seed") && v)      { opt_seed = (unsigned)strtoul(v, NULL, 10); i++; }

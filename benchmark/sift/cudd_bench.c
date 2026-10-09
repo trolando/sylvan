@@ -51,6 +51,7 @@ static unsigned opt_seed      = 12345;
 static int      opt_unlimited = 1;   /* --cudd-defaults turns this off */
 static long     opt_maxswaps  = -1;  /* --max-swaps; -1 leaves the cap as is */
 static long     opt_maxvars   = -1;  /* --max-vars; 0 is unlimited, like Sylvan */
+static int      opt_memstat   = 0;   /* resident memory from /proc */
 static const char *opt_varorder = "file";
 static unsigned opt_orderseed = 1;
 static const char *opt_trace  = NULL;  /* --trace: one line per swap */
@@ -62,6 +63,46 @@ now(void)
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
     return (double)t.tv_sec + 1e-9 * (double)t.tv_nsec;
+}
+
+/* --memstat: resident memory as the kernel reports it, read from /proc after
+   the build and after the sift. Linux only; 0 wherever a file or key is
+   missing. */
+typedef struct { long rss_kb, thp_kb; } memstat_t;
+
+static long
+proc_kb(const char *path, const char *key)
+{
+    FILE *f = fopen(path, "r");
+    if (f == NULL) return 0;
+    char line[256];
+    long kb = 0;
+    const size_t n = strlen(key);
+    while (fgets(line, sizeof(line), f) != NULL) {
+        if (strncmp(line, key, n) == 0 && line[n] == ':') {
+            kb = strtol(line + n + 1, NULL, 10);
+            break;
+        }
+    }
+    fclose(f);
+    return kb;
+}
+
+static void
+memstat_take(memstat_t *m)
+{
+    m->rss_kb = proc_kb("/proc/self/status", "VmRSS");
+    if (m->rss_kb == 0) m->rss_kb = proc_kb("/proc/self/smaps_rollup", "Rss");
+    m->thp_kb = proc_kb("/proc/self/smaps_rollup", "AnonHugePages");
+}
+
+static void
+memstat_print(const memstat_t *build, const memstat_t *sift)
+{
+    printf(",\"rss_build_kb\":%ld,\"rss_sift_kb\":%ld,\"hwm_kb\":%ld"
+           ",\"thp_build_kb\":%ld,\"thp_sift_kb\":%ld",
+           build->rss_kb, sift->rss_kb, proc_kb("/proc/self/status", "VmHWM"),
+           build->thp_kb, sift->thp_kb);
 }
 
 static blif_t   circuit;
@@ -273,6 +314,8 @@ usage(FILE *f)
         "  sift:   --growth G (1.2)  --max-swaps N  --max-vars N  --cudd-defaults\n"
         "          --no-sift\n"
         "  checks: --verify VECTORS  --seed S  --ops  --order\n"
+        "          --memstat  (VmRSS, VmHWM and AnonHugePages after the build\n"
+        "                      and after the sift, from /proc; Linux)\n"
         "  run:    --memory BYTES (8 GiB)\n"
         "siftMaxSwap and siftMaxVar are raised to INT_MAX (unlimited, like Sylvan's\n"
         "defaults) unless --cudd-defaults keeps CUDD's own caps; --max-swaps and\n"
@@ -301,6 +344,7 @@ main(int argc, char **argv)
         else if (!strcmp(a, "--cudd-defaults")) { opt_unlimited = 0; }
         else if (!strcmp(a, "--max-swaps") && v) { opt_maxswaps = strtol(v, NULL, 10); i++; }
         else if (!strcmp(a, "--max-vars") && v)  { opt_maxvars = strtol(v, NULL, 10); i++; }
+        else if (!strcmp(a, "--memstat"))       { opt_memstat = 1; }
         else if (!strcmp(a, "--var-order") && v) { opt_varorder = v; i++; }
         else if (!strcmp(a, "--order-seed") && v){ opt_orderseed = (unsigned)strtoul(v, NULL, 10); i++; }
         else if (!strcmp(a, "--trace") && v)  { opt_trace = v; i++; }
@@ -371,6 +415,8 @@ main(int argc, char **argv)
                                                         : build_queens());
     const double build_s = now() - t_build;
     if (rc != 0) { fprintf(stderr, "build failed\n"); return 1; }
+    memstat_t mem_build = {0, 0}, mem_sift = {0, 0};
+    if (opt_memstat) memstat_take(&mem_build);
 
     const int nodes_before = Cudd_SharingSize(root, n_root);
     const long live_before = Cudd_ReadNodeCount(dd);
@@ -423,6 +469,7 @@ main(int argc, char **argv)
             perror(opt_trace);
         }
     }
+    if (opt_memstat) memstat_take(&mem_sift);
 
     const int nodes_after = Cudd_SharingSize(root, n_root);
     const long live_after = Cudd_ReadNodeCount(dd);
@@ -478,6 +525,7 @@ main(int argc, char **argv)
         }
         printf("]");
     }
+    if (opt_memstat) memstat_print(&mem_build, &mem_sift);
     printf("}\n");
     fflush(stdout);
 

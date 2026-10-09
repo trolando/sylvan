@@ -127,6 +127,12 @@ Every row's `split_pairs` is `sylvan_sift_split_pairs()` after the sift: the
 pairs (2k, 2k+1) that are not together, even identity first, in the final
 order.
 
+`--memstat`, on both drivers, reads the resident set (`VmRSS` of
+`/proc/self/status`) and its transparent huge pages (`AnonHugePages` of
+`/proc/self/smaps_rollup`) after the build and after the sift, and the peak
+(`VmHWM`) at the end, and appends `rss_build_kb`, `rss_sift_kb`, `hwm_kb`,
+`thp_build_kb` and `thp_sift_kb` to the row. Linux only: elsewhere they are 0.
+
 `cudd_bench` disables automatic reordering, sets `maxGrowth` to `--growth`
 and raises `siftMaxVar` and `siftMaxSwap` to `INT_MAX`, so that it is as
 unlimited as Sylvan's defaults; `--cudd-defaults` keeps CUDD's own caps, and

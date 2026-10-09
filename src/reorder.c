@@ -387,10 +387,26 @@ overflow_slot(uint64_t index, int create)
     return session.overflow_value + at;
 }
 
+/**
+ * Every per-slot array the session keeps -- the counts and all four bitmaps --
+ * is sized to the table as it was when the session opened, and every index
+ * that reaches them comes out of a node record rather than out of a loop the
+ * session controls. reorder_pin, reorder_collect and reorder_classify_map
+ * range-check before they read a record; the counting path is the one that
+ * did not, and it is the one that writes. Debug builds only.
+ */
+static inline void
+reorder_assert_in_range(uint64_t index)
+{
+    assert(index >= 2 && index < session.size);
+    (void)index;
+}
+
 /** Add one reference to a counted node. */
 static void
 reorder_count_up(uint64_t index)
 {
+    reorder_assert_in_range(index);
     _Atomic(uint16_t) *slot = session.counts + index;
     for (;;) {
         uint16_t count = atomic_load_explicit(slot, memory_order_relaxed);
@@ -435,6 +451,7 @@ reorder_count_up(uint64_t index)
 static int
 reorder_count_down(uint64_t index)
 {
+    reorder_assert_in_range(index);
     _Atomic(uint16_t) *slot = session.counts + index;
     for (;;) {
         uint16_t count = atomic_load_explicit(slot, memory_order_relaxed);
@@ -469,6 +486,7 @@ reorder_count_down(uint64_t index)
 static uint64_t
 reorder_count_get(uint64_t index)
 {
+    reorder_assert_in_range(index);
     const uint16_t count = atomic_load_explicit(
         session.counts + index, memory_order_relaxed);
     if (count != REORDER_COUNT_SENTINEL) return count;
@@ -689,13 +707,25 @@ reorder_scatter_CALL(lace_worker *lace, size_t first, size_t count)
     }
 }
 
-/** Pin one external root so that the session never retires it. */
+/**
+ * Pin one external root so that the session never retires it.
+ *
+ * A root is a value a consumer or Sylvan itself is holding, not a node the
+ * session has vetted, so it is checked BEFORE any record is read. Marking
+ * (mtbdd_gc_mark) skips mtbdd_invalid, the documented "no diagram yet" value
+ * that protected variables and pushed pointers routinely hold, and this must
+ * skip it too: its index is all ones, far past the end of the node arena, and
+ * reorder_target would read a record there. Whatever a collection tolerates
+ * as a root, a session has to tolerate as well.
+ */
 static void
 reorder_pin(uint64_t handle)
 {
-    const uint64_t index = reorder_target(handle);
-    if (index == 0 || index >= session.size) return;
+    if (handle == mtbdd_invalid) return;
+    const uint64_t index = handle & REORDER_INDEX_MASK;
+    if (index < 2 || index >= session.size) return;
     if (!nodes_is_marked(nodes, index)) return;
+    if (reorder_target(handle) == 0) return;
     bitmap_set(session.pinned, index);
 }
 
@@ -1596,10 +1626,14 @@ reorder_enumerate_cb(uint64_t index, void *context)
  * of this swap happens in the intern phase, where counts only rise, so at the
  * end of that phase every node promoted by it simultaneously has at least
  * <reorder_overflow_at> parents. Parent edges are not shared between nodes and
- * there are at most two per node in the table, so no more than
- * 2 * size / reorder_overflow_at nodes can be in that position at one time.
- * At the default ceiling that is a handful of entries however big the swap is,
- * and the increment bound only wins for the small swaps where it is small.
+ * there are at most two per node in the table -- but at the end of the intern
+ * phase every rewritten node is counted twice over: its old two edges are
+ * dropped only by the rewrite, and its new two (onto g0 and g1, or onto m1'
+ * and v2) were already counted by the intern phase. So the counts then sum to
+ * at most 2 * size + 2 * (k + k_map), and no more than that divided by
+ * reorder_overflow_at nodes can be in that position at one time. At the
+ * default ceiling that is a handful of entries however big the swap is, and
+ * the increment bound only wins for the small swaps where it is small.
  *
  * Deciding instead whether a promotion is possible at all would need the
  * largest count in the forest, which means either a scan or a maximum
@@ -1708,7 +1742,8 @@ reorder_classify(void)
 
     /* Promotions into the overflow map. */
     const size_t by_increments = 6u * k + 4u * k_map;
-    const size_t by_edges = 2u * session.size / reorder_overflow_at + 1u;
+    const size_t by_edges =
+        (2u * session.size + 2u * (k + k_map)) / reorder_overflow_at + 1u;
     status = reorder_overflow_reserve(
         by_increments < by_edges ? by_increments : by_edges);
     if (status != SYLVAN_OK) return status;

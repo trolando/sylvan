@@ -872,6 +872,187 @@ test_temporary_refs_CALL(lace_worker *lace)
 }
 
 /**
+ * ROOTS THAT HOLD NO DIAGRAM.
+ *
+ * mtbdd_invalid is what a protected variable or a pushed pointer holds before
+ * an operation has filled it in -- every root in this file starts out that
+ * way -- and marking skips it. A session has to skip it too: it pins through
+ * the same visitors a collection marks through, and pinning used to read the
+ * record at the handle's index before range-checking it, which for the
+ * invalid handle is all ones and far past the end of the arena. All four root
+ * sources yield it here: the protected table, the value stack, the pointer
+ * stack, and a consumer's visitor.
+ */
+static MTBDD test_invalid_visitor_roots[2];
+
+static void
+test_invalid_visitor(void *context, sylvan_roots_yield yield, void *arg)
+{
+    (void)context;
+    yield(arg, test_invalid_visitor_roots, 2);
+}
+
+static int
+test_invalid_roots_CALL(lace_worker *lace)
+{
+    MTBDD protected_slot = mtbdd_invalid;
+    MTBDD pointed_slot = mtbdd_invalid;
+    mtbdd_protect(&protected_slot);
+    mtbdd_refs_pushptr(&pointed_slot);
+    mtbdd_refs_push(mtbdd_invalid);
+    test_invalid_visitor_roots[0] = mtbdd_invalid;
+    test_invalid_visitor_roots[1] = test_root[0];
+    test_assert(sylvan_gc_add_roots(test_invalid_visitor, NULL) == SYLVAN_OK);
+
+    /* A collection has always tolerated them ... */
+    sylvan_gc();
+    /* ... and a session has to as well. */
+    const int status = sylvan_sift(NULL);
+
+    mtbdd_refs_pop(1);
+    mtbdd_refs_popptr(1);
+    test_assert(sylvan_gc_remove_roots(test_invalid_visitor, NULL)
+                == SYLVAN_OK);
+    mtbdd_unprotect(&protected_slot);
+
+    test_assert(status == SYLVAN_OK);
+    test_assert(protected_slot == mtbdd_invalid);
+    test_assert(pointed_slot == mtbdd_invalid);
+    return test_check_roots_CALL(lace);
+}
+
+/**
+ * KEYS THAT COLLIDE COMPLETELY.
+ *
+ * The trie descends one hash bit per level and bounds the depth nowhere. That
+ * is sound because the next slot is the branch pair of the node just passed,
+ * not a function of (anchor, depth, hash): two keys with the same anchor and
+ * the same 64-bit hash part the moment one passes the other, and a descent
+ * ends within as many steps as the family has nodes. This drives the worst
+ * case: a custom leaf type whose hash is a constant, so that every one of its
+ * leaves shares the leaf anchor, the whole 64-bit hash and the fingerprint,
+ * and the leaf family degenerates into one chain on every backend. Decision
+ * nodes anchored at those leaves share their branch pairs with that chain, so
+ * the trie's batched removal collects and rebuilds stretches of it. Lookups,
+ * the rebuild after a collection, and a sift must all terminate and keep
+ * every leaf at its handle.
+ */
+#define TEST_COLLIDING_LEAVES 192
+
+static uint32_t test_collide_type = UINT32_MAX;
+
+static uint64_t
+test_collide_hash(void *context, uint64_t value, uint64_t seed)
+{
+    (void)context;
+    (void)value;
+    (void)seed;
+    return UINT64_C(0x9e3779b97f4a7c15);
+}
+
+static int
+test_collide_leaves_found(const MTBDD *handle)
+{
+    for (unsigned i = 0; i < TEST_COLLIDING_LEAVES; i++) {
+        if (mtbdd_leaf(test_collide_type, (uint64_t)i) != handle[i]) return 0;
+    }
+    return 1;
+}
+
+static int
+test_collide_values_kept(MTBDD f, const uint64_t *expected)
+{
+    uint32_t order[TEST_VARS];
+    bdd_set_to_array(test_variables, order);
+    for (unsigned a = 0; a < TEST_ASSIGNMENTS; a++) {
+        uint8_t values[TEST_VARS];
+        MTBDD evaluated = mtbdd_invalid;
+        test_values_for(order, a, values);
+        if (mtbdd_eval(&evaluated, f, test_variables, values, TEST_VARS)
+            != SYLVAN_OK) {
+            return 0;
+        }
+        if (mtbdd_leaf_value(evaluated) != expected[a]) return 0;
+    }
+    return 1;
+}
+
+static int
+test_collisions_CALL(lace_worker *lace)
+{
+    if (test_collide_type == UINT32_MAX) {
+        const sylvan_mt_type_descriptor descriptor = {
+            "test.sift.collide",
+            UINT64_C(0x2d4b6e1f0a3c5978),
+            NULL,
+            test_collide_hash,
+            test_leaf_equal,
+            test_leaf_clone,
+            test_leaf_destroy,
+            test_leaf_to_string,
+            test_leaf_string_free
+        };
+        test_assert(sylvan_mt_register_type(&test_collide_type, &descriptor)
+                    == SYLVAN_OK);
+    }
+
+    uint32_t order[TEST_VARS];
+    bdd_set_to_array(test_variables, order);
+
+    /* Assignment a goes to leaf a for the first TEST_COLLIDING_LEAVES
+       assignments, by identity, and to the default leaf after that. */
+    const uint64_t fallback = TEST_COLLIDING_LEAVES;
+    MTBDD f = mtbdd_leaf(test_collide_type, fallback);
+    test_assert(f != mtbdd_invalid);
+    mtbdd_protect(&f);
+    for (unsigned i = 0; i < TEST_COLLIDING_LEAVES; i++) {
+        uint8_t cube[TEST_VARS];
+        test_values_for(order, i, cube);
+        const MTBDD leaf = mtbdd_leaf(test_collide_type, (uint64_t)i);
+        test_assert(leaf != mtbdd_invalid);
+        mtbdd_refs_push(leaf);
+        const int status = mtbdd_set_cube(&f, f, test_variables, cube, leaf);
+        mtbdd_refs_pop(1);
+        test_assert(status == SYLVAN_OK);
+    }
+
+    MTBDD handle[TEST_COLLIDING_LEAVES];
+    for (unsigned i = 0; i < TEST_COLLIDING_LEAVES; i++) {
+        handle[i] = mtbdd_leaf(test_collide_type, (uint64_t)i);
+    }
+    uint64_t *expected = (uint64_t*)malloc(TEST_ASSIGNMENTS * sizeof(uint64_t));
+    test_assert(expected != NULL);
+    for (unsigned a = 0; a < TEST_ASSIGNMENTS; a++) {
+        expected[a] = a < TEST_COLLIDING_LEAVES ? (uint64_t)a : fallback;
+    }
+
+    int failed = !test_collide_leaves_found(handle) ||
+                 !test_collide_values_kept(f, expected);
+
+    /* The rebuild after a collection walks the chain once per leaf. */
+    sylvan_gc();
+    failed = failed || !test_collide_leaves_found(handle) ||
+             !test_collide_values_kept(f, expected);
+
+    /* And a sift, every variable, through the batched index calls. */
+    const MTBDD before = f;
+    sylvan_sift_config config;
+    memset(&config, 0, sizeof(config));
+    sylvan_sift_result result;
+    failed = failed || sylvan_sift_report(&config, &result) != SYLVAN_OK;
+    failed = failed || f != before || !mtbdd_is_valid_CALL(lace, f);
+    failed = failed || !test_collide_leaves_found(handle) ||
+             !test_collide_values_kept(f, expected);
+    printf("  %u colliding leaves: %llu swaps\n", (unsigned)TEST_COLLIDING_LEAVES,
+           (unsigned long long)result.swaps);
+
+    free(expected);
+    mtbdd_unprotect(&f);
+    test_assert(!failed);
+    return test_check_roots_CALL(lace);
+}
+
+/**
  * The refusals. Both are decided before anything is touched, so the forest and
  * the order come through a refused call bit for bit.
  */
@@ -1011,6 +1192,12 @@ runtests_CALL(lace_worker *lace)
 
     printf("Testing roots held only on a temporary reference stack.\n");
     if (test_temporary_refs_CALL(lace)) return 1;
+
+    printf("Testing roots that hold the invalid handle.\n");
+    if (test_invalid_roots_CALL(lace)) return 1;
+
+    printf("Testing keys whose whole hash collides.\n");
+    if (test_collisions_CALL(lace)) return 1;
 
     printf("Testing %d rounds of queens(%d) sifted at every stage.\n",
            test_queens_rounds, TEST_QUEENS);

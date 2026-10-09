@@ -38,7 +38,7 @@ option(SYLVAN_SIFT_PHASE_TIMING "Let Sylvan time the phases of every variable sw
 option(SYLVAN_CHECK_HANDLES "Let Sylvan check decision diagram handle bounds" OFF)
 
 # Diagnostic builds only: allocate regions the way the nodes tables did before
-# they shared one region cursor (see claim_region in src/nodes_list.c), each
+# they shared one region cursor (see claim_region in src/nodes_region.h), each
 # worker filling a stripe of the table of its own. It reproduces the layout the
 # cursor was introduced to avoid, for the experiment that measures what the
 # cursor is worth, and changes where nodes are placed and nothing else.

@@ -56,18 +56,10 @@ typedef struct nodes_table
     _Atomic(int)       batch_error;
 } nodes_table;
 
-static size_t
-region_bitmap_size(size_t table_size)
-{
-    const size_t regions = table_size / 512u;
-    return ((regions + 63u) / 64u) * sizeof(uint64_t);
-}
-
-static size_t
-node_bitmap_size(size_t table_size)
-{
-    return ((table_size + 63u) / 64u) * sizeof(uint64_t);
-}
+/* The node arena and its region allocator, shared with the other
+   backends that implement the reorder primitives. */
+#define NODES_REGION_BACKEND "list"
+#include "nodes_region.h"
 
 void* nodes_get_pointer(const nodes_table* dbs, size_t index)
 {
@@ -97,278 +89,6 @@ void nodes_set_size(nodes_table* dbs, size_t size)
     if (size > 128 && size >= dbs->table_size && size <= dbs->max_size) {
         dbs->table_size = size;
     }
-}
-
-static SYLVAN_TLS uint64_t my_region = UINT64_MAX;
-
-TASK(void, nodes_reset_region)
-
-void nodes_reset_region_CALL(lace_worker* lace)
-{
-    (void)lace;
-    // we don't actually need Lace, but it's a Lace task to run for initialisation
-    my_region = UINT64_MAX; // no region
-}
-
-/** Whether a region still holds a slot the worker that claims it could use. */
-static int region_has_free_slot(const nodes_table* dbs, uint64_t region)
-{
-    const _Atomic(uint64_t)* words = dbs->bitmap2 + (region * 8u);
-    for (unsigned int i = 0; i < 8; i++) {
-        if (atomic_load_explicit(words + i, memory_order_relaxed)
-            != UINT64_MAX) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-/**
- * Try to claim a free region that still has a slot to give.
- * The search starts at start_region and proceeds round-robin.
- * Returns the claimed region index, or UINT64_MAX if none available.
- *
- * Skipping the full ones is what makes this terminate: a worker gives an
- * exhausted region back on its next allocation attempt (see below), so
- * without the check a table whose free slots have all been used would hand
- * the same full regions round and round forever. The give-back is lazy, not
- * immediate -- between exhausting a region and its next allocation the worker
- * still owns that full region -- but it is still that worker's one current
- * region, so there are never more owned regions than workers, which is all
- * the reserve margin needs.
- *
- * The claim acquires and giving a region back releases, pairing on the
- * ownership CAS: a worker that claims a region observes every write the
- * previous owner made to it, which is what lets the allocation path write
- * the slot bitmap with plain loads and stores. The free-slot precheck runs
- * before that CAS and is not ordered by it; that is safe because ordinary
- * allocation only ever turns bits from free to occupied, clearing happens
- * only at a synchronised safepoint, and the post-claim allocation loop scans
- * the region again anyway.
- */
-static uint64_t claim_next_region(const nodes_table* dbs, uint64_t start_region)
-{
-    const uint64_t regions = dbs->table_size / (64u * 8u);
-    if (regions == 0) return UINT64_MAX;
-
-    start_region %= regions;
-
-    for (uint64_t offset = 0; offset < regions; offset++) {
-        const uint64_t region = (start_region + offset) % regions;
-        _Atomic(uint64_t)*ptr = dbs->bitmap1 + (region / 64u);
-        const uint64_t mask =
-            UINT64_C(0x8000000000000000) >> (region & 63u);
-
-        uint64_t v = atomic_load_explicit(ptr, memory_order_relaxed);
-        if (v & mask) continue;
-        if (!region_has_free_slot(dbs, region)) continue;
-
-        for (;;) {
-            if (v & mask) break;
-
-            if (atomic_compare_exchange_weak_explicit(
-                    ptr, &v, v | mask,
-                    memory_order_acquire, memory_order_relaxed)) {
-                return region;
-            }
-        }
-    }
-
-    return UINT64_MAX;
-}
-
-/**
- * Claim the next region in table order.
- *
- * Every worker draws its regions from one shared cursor, so that region
- * order -- and with it the order of node indices -- follows the order in
- * which regions were needed, across all workers. A serial run has that
- * property for free, and the anchored backends depend on it more than it
- * looks: a node's family is anchored at its larger child index, so a child
- * that predates its parents' other children anchors only the few parents
- * whose other child is older still. Starting each worker in its own stripe
- * of the table breaks that: everything a high-stripe worker creates
- * out-indexes everything the low-stripe workers made, and a heavily shared
- * node in a high stripe then anchors its whole fan-in. Measured on C880 with
- * eight workers, the stripes made the largest family seven times longer and
- * the summed squared family length twelve times larger than the same forest
- * built serially, and every family walk -- lookups, insertions, removals --
- * paid for it.
- *
- * The cursor is a hint, not a lock: it is advanced to just past whatever was
- * claimed, and two workers that read the same position simply race for the
- * region and the loser walks on to the next free one. Being behind by a few
- * regions costs a few ownership-bit tests. It lives on a line of its own
- * because the table struct itself is read on every lookup by every worker.
- */
-#if !SYLVAN_REGION_STRIPED_START
-static uint64_t
-claim_region(const nodes_table* dbs)
-{
-    const uint64_t regions = dbs->table_size / 512u;
-    if (regions == 0) return UINT64_MAX;
-    const uint64_t start = atomic_load_explicit(
-        dbs->region_cursor, memory_order_relaxed) % regions;
-    const uint64_t region = claim_next_region(dbs, start);
-    if (region != UINT64_MAX) {
-        atomic_store_explicit(
-            dbs->region_cursor, region + 1u, memory_order_relaxed);
-    }
-    return region;
-}
-#else
-/**
- * The allocator the shared cursor replaced, compiled in only for the
- * experiment that measures what the cursor is worth (configure with
- * -DSYLVAN_REGION_STRIPED_START=ON). A worker's first search after the table
- * is created or collected starts in its own stripe of the table, and every
- * later one goes on past the region the worker has just used up, so that each
- * worker fills a stripe of its own; the cursor is not consulted at all. Only
- * where nodes are placed changes, and no production build should have it.
- */
-static uint64_t
-claim_striped_region(const nodes_table* dbs)
-{
-    const uint64_t regions = dbs->table_size / 512u;
-    uint64_t start_region = 0;
-    lace_worker* worker = lace_get_worker();
-    if (regions != 0 && worker != NULL) {
-        start_region = ((uint64_t)worker->worker * regions) /
-                       (uint64_t)lace_worker_count();
-    }
-    return claim_next_region(dbs, start_region);
-}
-#endif
-
-/**
- * Give back a region this worker has used up.
- *
- * A region is owned for exactly as long as it is some worker's current one,
- * which bounds the number of owned regions by the number of workers. That
- * bound is not cosmetic: it is what nodes_reserve counts against, and it is
- * what makes a slot released into an exhausted region reachable again. A
- * session releases retired slots all over the table, and the region they land
- * in is almost never the region the worker that once filled it is still
- * standing in.
- */
-static void release_region(const nodes_table* dbs, uint64_t region)
-{
-    const uint64_t mask =
-        UINT64_C(0x8000000000000000) >> (region & 63u);
-    atomic_fetch_and_explicit(
-        dbs->bitmap1 + region / 64u, ~mask, memory_order_release);
-}
-
-static uint64_t claim_data_bucket(const nodes_table* dbs)
-{
-    for (;;) {
-        if (my_region != UINT64_MAX) {
-            _Atomic(uint64_t)*ptr = dbs->bitmap2 + (my_region * 8u);
-
-            for (int i = 0; i < 8; i++) {
-                uint64_t v = atomic_load_explicit(ptr, memory_order_relaxed);
-                if (v != UINT64_MAX) {
-                    unsigned int j = clz_uint64(~v);
-                    const uint64_t mask =
-                        UINT64_C(0x8000000000000000) >> j;
-                    atomic_store_explicit(ptr, v | mask, memory_order_relaxed);
-                    return (8u * my_region + (uint64_t)i) * 64u +
-                           (uint64_t)j;
-                }
-                ptr++;
-            }
-
-            const uint64_t exhausted = my_region;
-            my_region = UINT64_MAX;
-            release_region(dbs, exhausted);
-#if SYLVAN_REGION_STRIPED_START
-            uint64_t claimed = claim_next_region(dbs, exhausted + 1u);
-#else
-            uint64_t claimed = claim_region(dbs);
-#endif
-            if (claimed == UINT64_MAX) return UINT64_MAX;
-            my_region = claimed;
-        } else {
-#if SYLVAN_REGION_STRIPED_START
-            uint64_t claimed = claim_striped_region(dbs);
-#else
-            uint64_t claimed = claim_region(dbs);
-#endif
-            if (claimed == UINT64_MAX) return UINT64_MAX;
-            my_region = claimed;
-        }
-    }
-}
-
-static void release_data_bucket(const nodes_table* dbs, uint64_t index)
-{
-    _Atomic(uint64_t)* ptr = dbs->bitmap2 + (index/64);
-    uint64_t mask = UINT64_C(0x8000000000000000) >> (index&63);
-    uint64_t v = atomic_load_explicit(ptr, memory_order_relaxed);
-    atomic_store_explicit(ptr, v & ~mask, memory_order_relaxed);
-}
-
-/*
- * The insertion and cleanup paths do not need read-modify-write on bitmapc:
- * during insertion each worker owns a whole data region via bitmap1, and
- * cleanup/rebuild is stop-the-world relative to lookup. The words are atomic
- * only so that the reorder primitives, which do not own a region, can clear a
- * single bit without racing with those relaxed accesses.
- */
-static void set_custom_bucket(const nodes_table* dbs, uint64_t index, int on)
-{
-    _Atomic(uint64_t) *ptr = dbs->bitmapc + (index/64);
-    uint64_t mask = UINT64_C(0x8000000000000000) >> (index&63);
-    const uint64_t value = atomic_load_explicit(ptr, memory_order_relaxed);
-    atomic_store_explicit(
-        ptr, on ? (value | mask) : (value & ~mask), memory_order_relaxed);
-}
-
-static int is_custom_bucket(const nodes_table* dbs, uint64_t index)
-{
-    const _Atomic(uint64_t) *ptr = dbs->bitmapc + (index/64);
-    uint64_t mask = UINT64_C(0x8000000000000000) >> (index&63);
-    return (atomic_load_explicit(ptr, memory_order_relaxed) & mask) ? 1 : 0;
-}
-
-/**
- * The arena has no slot to give. Say so, once.
- *
- * nodes_lookup2 answers 0 here and every caller turns that into "no room",
- * but not every caller says which room ran out. The report that normally
- * announces a full table is gc_note_progress in common.c ("BDD Unique table
- * full"), and it cannot speak for this path: it fires from inside a
- * collection, and only after several consecutive collections of a table that
- * is already at its maximum size and still nearly full. A lookup that fails
- * where no collection may run -- inside a reorder session -- or that fails
- * while the table as a whole is below that threshold, because the free slots
- * sit inside regions other workers own, never reaches that guard at all. In
- * the wild that surfaced as a bare "build failed" with nothing in it about
- * the table.
- *
- * Once per exhaustion episode, not once per failing lookup: the flag is
- * cleared in nodes_clear, which is where a collection gives the table its
- * room back. The hot path is untouched -- only the branch that has already
- * failed to claim a slot arrives here. The flag is one word beside the
- * allocator rather than a field of the table because the allocator it speaks
- * for is itself global (see the note on a single nodes table in
- * nodes_create below).
- */
-static _Atomic(int) arena_exhausted_reported;
-
-static void SYLVAN_NOINLINE
-report_arena_exhausted(const nodes_table* dbs)
-{
-    if (atomic_exchange_explicit(&arena_exhausted_reported, 1,
-                                 memory_order_relaxed) != 0) {
-        return;
-    }
-    fprintf(stderr,
-            "sylvan: list nodes table out of node slots, %zu buckets, none "
-            "free to claim; nodes_lookup returns 0 and the operation that "
-            "asked for a node fails. Raise the memory cap passed to "
-            "sylvan_set_limits.\n",
-            dbs->table_size);
 }
 
 static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_t b, int* created, const int custom)
@@ -873,18 +593,6 @@ nodes_reorder_caps(const nodes_table* dbs)
     return NODES_CAP_REMOVE | NODES_CAP_RELEASE | NODES_CAP_BATCH;
 }
 
-static void
-reorder_duplicate_abort(uint64_t index, uint64_t other)
-{
-    assert(!"nodes_reinsert: an equal node is already in the index");
-    fprintf(stderr,
-            "sylvan: nodes_reinsert: node %llu is equal to node %llu, which "
-            "is already in the index; the unique table invariant is broken. "
-            "Aborting.\n",
-            (unsigned long long)index, (unsigned long long)other);
-    abort();
-}
-
 /** The family root of a node, plus its fingerprint, both from the record. */
 static _Atomic(uint64_t)*
 reorder_anchor(const nodes_table* dbs, uint64_t index, uint64_t* masked_hash)
@@ -1105,61 +813,15 @@ nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
 }
 
 /**
- * Preflight <count> further allocations. See <sylvan/nodes.h> for the exact
- * invariant; the short version is that this counts the free slots of the
- * regions no worker owns yet, and asks for one region per worker more than
- * the caller wants.
- *
- * A worker exhausts the region it owns before giving it back and claiming
- * another, and it can only claim a region nobody owns, so an owned region is
- * exactly one worker's current region and there are never more than there are
- * workers. Free slots inside those are not counted: they are reachable by one
- * worker only, and only until that worker moves on. The margin is what covers
- * them. Every counted region that gets claimed during the window is either
- * used up -- every one of its free slots became an allocation -- or is some
- * worker's current region when the window ends, and at most <workers> regions
- * can be in that second state. Reserving <count> plus a whole region per
- * worker therefore guarantees <count> allocations however the workers divide
- * them, which reserving <count> alone does not.
- *
- * The scan stops as soon as the target is reached, so a small reservation on
- * a table with room costs a handful of popcounts.
+ * Preflight <count> further allocations: the checks of this backend, then
+ * region_reserve (nodes_region.h) for the slots.
  */
-static uint64_t
-reserve_free_slots(const nodes_table* dbs, uint64_t needed)
-{
-    const uint64_t regions = dbs->table_size / 512u;
-    uint64_t free_slots = 0;
-
-    for (uint64_t region = 0; region < regions; region++) {
-        const uint64_t owned = atomic_load_explicit(
-            dbs->bitmap1 + region / 64u, memory_order_relaxed);
-        const uint64_t owner_mask =
-            UINT64_C(0x8000000000000000) >> (region & 63u);
-        if (owned & owner_mask) continue;
-
-        const _Atomic(uint64_t)* words = dbs->bitmap2 + region * 8u;
-        for (unsigned int i = 0; i < 8; i++) {
-            free_slots += 64u - popcnt_uint64(atomic_load_explicit(
-                words + i, memory_order_relaxed));
-        }
-        if (free_slots >= needed) return free_slots;
-    }
-    return free_slots;
-}
-
 int
 nodes_reserve(nodes_table* dbs, uint64_t count)
 {
     if (count == 0) return SYLVAN_OK;
     if (nodes_reorder_caps(dbs) == 0) return SYLVAN_ERR_INVALID;
-    /* One whole region per worker on top of what the caller asked for; see
-       above for why the bound needs it. */
-    const uint64_t margin = (uint64_t)lace_worker_count() * 512u;
-    if (count > UINT64_MAX - margin) return SYLVAN_ERR_OOM;
-    const uint64_t wanted = count + margin;
-    return reserve_free_slots(dbs, wanted) >= wanted
-        ? SYLVAN_OK : SYLVAN_ERR_OOM;
+    return region_reserve(dbs, count);
 }
 
 /**

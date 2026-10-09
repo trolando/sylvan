@@ -49,6 +49,7 @@ static unsigned opt_seed      = 12345;
 static int      opt_unlimited = 1;   /* --cudd-defaults turns this off */
 static const char *opt_varorder = "file";
 static unsigned opt_orderseed = 1;
+static const char *opt_trace  = NULL;  /* --trace: one line per swap */
 static int     *vperm;               /* circuit input i -> DD variable */
 
 static double
@@ -271,7 +272,22 @@ main(int argc, char **argv)
         else if (!strcmp(a, "--cudd-defaults")) { opt_unlimited = 0; }
         else if (!strcmp(a, "--var-order") && v) { opt_varorder = v; i++; }
         else if (!strcmp(a, "--order-seed") && v){ opt_orderseed = (unsigned)strtoul(v, NULL, 10); i++; }
+        else if (!strcmp(a, "--trace") && v)  { opt_trace = v; i++; }
         else { fprintf(stderr, "unknown option %s\n", a); return 2; }
+    }
+
+    /* --trace: CUDD has no swap hook, so cudd-swap-trace.patch adds one to
+       cuddSwapInPlace that writes to the file this variable names (see
+       README.md for the line format). Nothing else reorders before the sift,
+       so every line it writes belongs to the sift. A file left over from an
+       earlier run is removed first, so that an unpatched CUDD, which writes
+       nothing, cannot pass someone else's trace off as this one. */
+    if (opt_trace != NULL && opt_sift) {
+        (void)remove(opt_trace);
+        if (setenv("CUDD_SWAP_TRACE", opt_trace, 1) != 0) {
+            perror("setenv");
+            return 1;
+        }
     }
 
     const int is_blif = strcmp(opt_mode, "blif") == 0;
@@ -354,6 +370,21 @@ main(int argc, char **argv)
         sift_ok = Cudd_ReduceHeap(dd, CUDD_REORDER_SIFT, 0);
         sift_s = now() - t0;
         swaps = (double)dd->ddTotalNumberSwapping;
+    }
+    if (opt_trace != NULL && opt_sift) {
+        /* The patch opens its stream at the first swap and keeps it open for
+           the life of the process. A sift without swaps leaves no file, so
+           write the empty trace it stands for. */
+        fflush(NULL);
+        FILE *check = fopen(opt_trace, swaps > 0 ? "r" : "a");
+        if (check != NULL) {
+            fclose(check);
+        } else if (swaps > 0) {
+            fprintf(stderr, "cudd_bench: --trace: no %s was written; build CUDD "
+                    "with benchmark/sift/cudd-swap-trace.patch\n", opt_trace);
+        } else {
+            perror(opt_trace);
+        }
     }
 
     const int nodes_after = Cudd_SharingSize(root, n_root);

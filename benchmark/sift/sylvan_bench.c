@@ -73,6 +73,7 @@ static uint64_t opt_memory    = 8ull << 30;
 static unsigned opt_seed      = 12345;
 static const char *opt_varorder = "file";
 static unsigned opt_orderseed = 1;
+static const char *opt_trace  = NULL;  /* one line per swap of the sift     */
 
 static double
 now(void)
@@ -365,6 +366,28 @@ stats_phase(const char *phase)
     fflush(stderr);
 }
 
+/*
+ * --trace: one line per swap the sift makes, in the order it makes them,
+ *
+ *     POS UPPER LOWER SCORE NODES LEG
+ *
+ * POS is the rank of the upper of the two variables swapped, UPPER and LOWER
+ * their identities before the swap, SCORE the size the driver compares after
+ * it and NODES the internal nodes of the forest after it -- both the session's
+ * forest size, so equal here; cudd_bench --trace writes the same columns, and
+ * there they differ -- and LEG u or d for a search leg up or down, b for the
+ * return to the best position, r for reuniting a pair. See README.md.
+ */
+static void
+trace_swap(void *context, uint32_t rank, uint32_t upper, uint32_t lower,
+           uint64_t size, sylvan_sift_leg leg)
+{
+    static const char legs[] = "udbr";
+    fprintf((FILE*)context, "%u %u %u %llu %llu %c\n", (unsigned)rank,
+            (unsigned)upper, (unsigned)lower, (unsigned long long)size,
+            (unsigned long long)size, legs[(unsigned)leg & 3u]);
+}
+
 static void
 print_order(void)
 {
@@ -446,6 +469,12 @@ run_CALL(lace_worker *lace)
     double sift_s = -1.0;
     int sift_status = SYLVAN_OK;
     if (opt_stats) sylvan_stats_reset_CALL(lace);
+    FILE *trace = NULL;
+    if (opt_trace != NULL && opt_sift) {
+        trace = fopen(opt_trace, "w");
+        if (trace == NULL) { perror(opt_trace); return 1; }
+        sylvan_sift_set_trace(trace_swap, trace);
+    }
     const uint64_t sifts_before = sylvan_sift_count();
     if (opt_sift) {
         sylvan_sift_config config;
@@ -471,6 +500,10 @@ run_CALL(lace_worker *lace)
         }
     }
     const uint64_t sifts = sylvan_sift_count() - sifts_before;
+    if (trace != NULL) {
+        sylvan_sift_set_trace(NULL, NULL);
+        if (fclose(trace) != 0) { perror(opt_trace); return 1; }
+    }
     if (opt_stats) stats_phase(opt_sift ? "sift" : "no-sift");
     /* From the order itself rather than the result, so that --auto and
        --no-sift rows carry it too. */
@@ -565,6 +598,7 @@ usage(FILE *f)
         "          --group-pairs (sift each pair (2k, 2k+1) as one block)\n"
         "          --no-sift  --no-batch (per-node index surgery in swaps)\n"
         "  checks: --verify VECTORS  --seed S  --ops  --order\n"
+        "          --trace FILE  (one line per swap of the sift)\n"
         "          --stats  (counters of the build and of the sift, on stderr;\n"
         "                    needs a -DSYLVAN_STATS=ON build)\n"
         "  run:    --workers N (1)  --memory BYTES (8 GiB)\n"
@@ -602,6 +636,7 @@ main(int argc, char **argv)
         else if (!strcmp(a, "--seed") && v)      { opt_seed = (unsigned)strtoul(v, NULL, 10); i++; }
         else if (!strcmp(a, "--var-order") && v) { opt_varorder = v; i++; }
         else if (!strcmp(a, "--order-seed") && v){ opt_orderseed = (unsigned)strtoul(v, NULL, 10); i++; }
+        else if (!strcmp(a, "--trace") && v)     { opt_trace = v; i++; }
         else { fprintf(stderr, "unknown option %s\n", a); usage(stderr); return 2; }
     }
     if (strcmp(opt_mode, "blif") != 0 && strcmp(opt_mode, "bryant") != 0 &&

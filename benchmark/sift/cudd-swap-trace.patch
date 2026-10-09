@@ -1,0 +1,98 @@
+--- a/cudd/cuddReorder.c
++++ b/cudd/cuddReorder.c
+@@ -63,6 +63,16 @@
+ /* Variable declarations                                                     */
+ /*---------------------------------------------------------------------------*/
+ 
++/* Swap trace (Sylvan's benchmark/sift/cudd-swap-trace.patch): when the
++** environment variable CUDD_SWAP_TRACE names a file, cuddSwapInPlace writes
++** one line per swap to it. The state is 0 before the first swap has looked
++** at the variable, 1 when it is not set, 2 when tracing. The leg letter is
++** set by ddSiftingUp (u), ddSiftingDown (d) and ddSiftingBackward (b); swaps
++** made by other reordering methods carry whichever letter was set last. */
++static FILE *ddSwapTraceFile = NULL;
++static int ddSwapTraceState = 0;
++static char ddSwapTraceLeg = '?';
++
+ /*---------------------------------------------------------------------------*/
+ /* Macro declarations                                                        */
+ /*---------------------------------------------------------------------------*/
+@@ -86,6 +96,7 @@
+ static void bddFixTree (DdManager *table, MtrNode *treenode);
+ static int ddUpdateMtrTree (DdManager *table, MtrNode *treenode, int *perm, int *invperm);
+ static int ddCheckPermuation (DdManager *table, MtrNode *treenode, int *perm, int *invperm);
++static void ddSwapTrace (DdManager *table, int x, int xindex, int yindex);
+ 
+ /** \endcond */
+ 
+@@ -1159,6 +1170,8 @@
+ 
+     table->keys += newxkeys + newykeys - oldxkeys - oldykeys;
+ 
++    if (ddSwapTraceState != 1) ddSwapTrace(table, x, xindex, yindex);
++
+     return((int)(table->keys - table->isolated));
+ 
+ cuddSwapOutOfMem:
+@@ -1561,6 +1574,7 @@
+ 
+     moves = NULL;
+     yindex = table->invperm[y];
++    ddSwapTraceLeg = 'u';
+ 
+     /* Initialize the lower bound.
+     ** The part of the DD below y will not change.
+@@ -1659,6 +1673,7 @@
+ #endif
+ 
+     moves = NULL;
++    ddSwapTraceLeg = 'd';
+     /* Initialize R */
+     xindex = table->invperm[x];
+     limitSize = size = (int) (table->keys - table->isolated);
+@@ -1738,6 +1753,7 @@
+     Move *move;
+     int	res;
+ 
++    ddSwapTraceLeg = 'b';
+     for (move = moves; move != NULL; move = move->next) {
+ 	if (move->size < size) {
+ 	    size = move->size;
+@@ -2064,3 +2080,37 @@
+     }
+     return(1);
+ }
++
++
++/**
++  @brief Writes one line of the swap trace for the swap just made.
++
++  @details The line is "x xindex yindex score nodes leg": the level x of
++  the upper of the two swapped variables, the indices of the variables
++  that were at levels x and x+1 before the swap, the size sifting
++  compares after it (keys - isolated, what cuddSwapInPlace returns), the
++  internal nodes after it (keys - constants.keys), and the leg letter.
++
++  @sideeffect Opens the trace file at the first swap.
++
++*/
++static void
++ddSwapTrace(
++  DdManager * table,
++  int x,
++  int xindex,
++  int yindex)
++{
++    if (ddSwapTraceState == 0) {
++	const char *name = getenv("CUDD_SWAP_TRACE");
++	ddSwapTraceState = 1;
++	if (name != NULL && name[0] != '\0') {
++	    ddSwapTraceFile = fopen(name, "w");
++	    if (ddSwapTraceFile != NULL) ddSwapTraceState = 2;
++	}
++	if (ddSwapTraceState != 2) return;
++    }
++    (void) fprintf(ddSwapTraceFile, "%d %d %d %u %u %c\n", x, xindex, yindex,
++		   table->keys - table->isolated,
++		   table->keys - table->constants.keys, ddSwapTraceLeg);
++}

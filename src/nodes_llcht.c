@@ -429,6 +429,7 @@ static inline uint64_t
 nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_t b,
               int* created, const int custom)
 {
+    sylvan_stats_count(LLMSSET_LOOKUP_CALLS);
     const uint64_t hash = hash_key(dbs, a, b, custom);
     const uint64_t masked_hash = hash & MASK_HASH;
     _Atomic(uint64_t)* head = dbs->heads + head_index(dbs, hash);
@@ -994,6 +995,7 @@ nodes_remove(nodes_table* dbs, uint64_t index)
     }
 
     _Atomic(uint64_t)* head = reorder_head(dbs, index);
+    sylvan_stats_count(LLMSSET_REMOVE_CALLS);
 
     for (;;) {
         uint64_t link = atomic_load_explicit(head, memory_order_acquire);
@@ -1021,6 +1023,7 @@ nodes_remove(nodes_table* dbs, uint64_t index)
                 return SYLVAN_ERR_INVALID;
             }
 
+            sylvan_stats_count(LLMSSET_REMOVE);
             uint64_t value = atomic_load_explicit(
                 dbs->next + previous, memory_order_acquire);
             if (value == LINK_REMOVING) break;
@@ -1056,6 +1059,7 @@ reorder_find_equal(const nodes_table* dbs, uint64_t link,
                 return index;
             }
         }
+        sylvan_stats_count(LLMSSET_REINSERT);
         link = atomic_load_explicit(dbs->next + index, memory_order_acquire);
         if (link == LINK_REMOVING) return UINT64_MAX;
     }
@@ -1081,6 +1085,7 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
     _Atomic(uint64_t)* head = dbs->heads + head_index(dbs, hash);
     const uint64_t link = masked_hash | index;
 
+    sylvan_stats_count(LLMSSET_REINSERT_CALLS);
     uint64_t observed = atomic_load_explicit(head, memory_order_acquire);
     for (;;) {
         const uint64_t equal = reorder_find_equal(

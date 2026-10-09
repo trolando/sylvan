@@ -345,6 +345,8 @@ report_arena_exhausted(const nodes_table* dbs)
 
 static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_t b, int* created, const int custom)
 {
+    sylvan_stats_count(LLMSSET_LOOKUP_CALLS);
+
     // Determine first bucket of the linked list
     uint64_t ll_idx;
     if (a & 0x4000000000000000) {
@@ -420,6 +422,7 @@ static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_
     // Th first bucket was not equal, so we continue down the list...
     for (;;) {
         ll_idx = value & 0x000000ffffffffff;
+        sylvan_stats_count(LLMSSET_LOOKUP);
         value = atomic_load_explicit(&dbs->next[ll_idx], memory_order_acquire);
         if (value == 0) {
             // no parent yet, so doesn't exist.
@@ -894,6 +897,7 @@ nodes_remove(nodes_table* dbs, uint64_t index)
 
     uint64_t masked_hash;
     _Atomic(uint64_t)* first = reorder_anchor(dbs, index, &masked_hash);
+    sylvan_stats_count(LLMSSET_REMOVE_CALLS);
 
     for (;;) {
         uint64_t link = atomic_load_explicit(first, memory_order_acquire);
@@ -922,6 +926,7 @@ nodes_remove(nodes_table* dbs, uint64_t index)
                 return SYLVAN_ERR_INVALID;
             }
 
+            sylvan_stats_count(LLMSSET_REMOVE);
             uint64_t value = atomic_load_explicit(
                 dbs->next + previous, memory_order_acquire);
             if (value == LINK_REMOVING) break;
@@ -957,6 +962,7 @@ reorder_find_equal(const nodes_table* dbs, uint64_t link,
                 return index;
             }
         }
+        sylvan_stats_count(LLMSSET_REINSERT);
         link = atomic_load_explicit(dbs->next + index, memory_order_acquire);
         if (link == LINK_REMOVING) return UINT64_MAX;
     }
@@ -982,6 +988,7 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
     _Atomic(uint64_t)* first = reorder_anchor(dbs, index, &masked_hash);
     const uint64_t link = masked_hash | index;
 
+    sylvan_stats_count(LLMSSET_REINSERT_CALLS);
     uint64_t observed = atomic_load_explicit(first, memory_order_acquire);
     for (;;) {
         const uint64_t equal = reorder_find_equal(

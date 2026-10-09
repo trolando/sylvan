@@ -271,6 +271,8 @@ report_arena_exhausted(const nodes_table* dbs)
 
 static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_t b, int* created, const int custom)
 {
+    sylvan_stats_count(LLMSSET_LOOKUP_CALLS);
+
     // Compute the hash
     uint64_t hash_rehash = 14695981039346656037LLU;
     if (custom) hash_rehash = dbs->hash_cb(a, b, hash_rehash);

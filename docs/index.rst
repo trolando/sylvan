@@ -101,6 +101,22 @@ build.
     ``sylvan_stats_report`` below for the former. The rank counter is a single
     contended atomic, so it distorts both timing and parallel scaling.
 
+    Among the statistics are the index counters of the nodes table, which say
+    how much of its index each operation walks. ``sylvan_stats_report`` prints
+    them as ``Unique lookup``, ``Unique remove`` and ``Unique reinsert`` steps
+    and calls. A call is one lookup, or one removal or re-indexing of a node,
+    which is what a variable swap does to the index. A step is one index word a
+    walk loads after its first: a chain link followed (list, llcht, llchst), a
+    trie level descended (trie), a further probe (llht). Every walk starts by
+    loading one first word -- its chain head, family root or home bucket -- so
+    the index loads per operation are ``1 + steps / calls``. On the trie,
+    releasing a retired node repeats the descent that removed it, to check that
+    it is out of the index, and is counted with the removals; the region a trie
+    removal rebuilds below the node is not counted. llht neither removes nor
+    re-indexes. The counters are per worker and summed when the report is
+    made, so they cost an increment per step, and nothing in a build without
+    statistics.
+
 ``SYLVAN_HUGEPAGES`` (CMake option, on by default)
     Ask the kernel to back every allocation of 2 MiB or more -- the nodes table
     and the operation cache above all -- with transparent huge pages, through
@@ -555,8 +571,9 @@ Measuring reordering
 A few switches exist to reproduce the measurements behind parallel sifting. None
 of them changes what a sift computes, only how it gets there or what it reports.
 The build-time ones are listed under `Diagnostic builds`_ (``SYLVAN_SIFT_PHASE_TIMING``
-for where a sift's time goes); the one runtime switch is internal API, declared
-in ``sylvan/internal.h``:
+for where a sift's time goes, the index counters of ``SYLVAN_STATS`` for how much
+index each swap walks); the one runtime switch is internal API, declared in
+``sylvan/internal.h``:
 
 ``sylvan_reorder_set_batched(int enable)``
     With ``0``, every swap removes and re-indexes its nodes one at a time, even

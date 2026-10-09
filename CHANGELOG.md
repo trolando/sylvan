@@ -54,7 +54,9 @@ All notable changes to Sylvan will be documented in this file.
   measure what batching is worth. The CMake option `SYLVAN_SIFT_PHASE_TIMING`
   (default off) times every phase of every swap and of the session around
   them, and has every sift print the sums to stderr as one `SIFT-PHASES` line
-  of JSON.
+  of JSON. With `SYLVAN_STATS`, every nodes table now counts the index steps
+  and calls of its lookups, and of the removals and re-indexings a swap makes,
+  so that `sylvan_stats_report` shows how much index each operation walks.
 
 ### Changed
 - Sifting no longer destroys handles held only on a worker's temporary

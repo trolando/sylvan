@@ -2237,6 +2237,7 @@ nodes_remove(nodes_table* dbs, uint64_t index)
         }
     }
     const uint64_t spliced = successor & MASK_LINK;
+    sylvan_stats_count(LLMSSET_REMOVE_CALLS);
 
     for (;;) {
         uint64_t link = atomic_load_explicit(head, memory_order_acquire);
@@ -2263,6 +2264,7 @@ nodes_remove(nodes_table* dbs, uint64_t index)
                 return SYLVAN_ERR_INVALID;
             }
 
+            sylvan_stats_count(LLMSSET_REMOVE);
             uint64_t value = atomic_load_explicit(
                 dbs->next + previous, memory_order_acquire);
             if (link_is_removing(value)) break;
@@ -2300,6 +2302,7 @@ reorder_find_equal(const nodes_table* dbs, uint64_t link,
                 return index;
             }
         }
+        sylvan_stats_count(LLMSSET_REINSERT);
         link = atomic_load_explicit(dbs->next + index, memory_order_acquire);
         if (link_is_removing(link)) return UINT64_MAX;
     }
@@ -2346,6 +2349,7 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
     const uint64_t owner = owner_tag(route, b);
     assert(owner != OWNER_RAW_DECISION);
 
+    sylvan_stats_count(LLMSSET_REINSERT_CALLS);
     uint64_t observed = atomic_load_explicit(head, memory_order_acquire);
     for (;;) {
         const uint64_t equal = reorder_find_equal(

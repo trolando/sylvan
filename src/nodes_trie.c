@@ -347,6 +347,8 @@ report_arena_exhausted(const nodes_table* dbs)
 
 static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_t b, int* created, const int custom)
 {
+    sylvan_stats_count(LLMSSET_LOOKUP_CALLS);
+
     // Determine index in the trie array (first)
     uint64_t trie;
     if (a & 0x4000000000000000) {
@@ -423,6 +425,7 @@ static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_
     for (;;) {
         uint64_t n_idx = trie*2 + (hash&1);
         hash = ror64(hash, 1);
+        sylvan_stats_count(LLMSSET_LOOKUP);
         value = atomic_load_explicit(&dbs->next[n_idx], memory_order_acquire);
         if (value == 0) {
             if (created_idx == 0) {
@@ -1044,6 +1047,7 @@ reorder_find_slot(nodes_table* dbs, uint64_t index,
 {
     uint64_t trie = key->anchor;
     uint64_t hash = key->hash;
+    sylvan_stats_count(LLMSSET_REMOVE_CALLS);
 
     _Atomic(uint64_t)* slot = dbs->first + trie;
     uint64_t value = atomic_load_explicit(slot, memory_order_relaxed);
@@ -1057,6 +1061,7 @@ reorder_find_slot(nodes_table* dbs, uint64_t index,
         const uint64_t branch = trie * 2 + (hash & 1);
         hash = ror64(hash, 1);
         slot = dbs->next + branch;
+        sylvan_stats_count(LLMSSET_REMOVE);
         value = atomic_load_explicit(slot, memory_order_relaxed);
         if (value == 0) return NULL;
         if ((value & MASK_INDEX) == index) {
@@ -1240,6 +1245,7 @@ trie_reinsert(nodes_table* dbs, uint64_t index)
     const uint64_t link = (key.hash & MASK_HASH) | index;
     uint64_t hash = key.hash;
     uint64_t trie = key.anchor;
+    sylvan_stats_count(LLMSSET_REINSERT_CALLS);
 
     _Atomic(uint64_t)* slot = dbs->first + trie;
     uint64_t value = atomic_load_explicit(slot, memory_order_acquire);
@@ -1258,6 +1264,7 @@ trie_reinsert(nodes_table* dbs, uint64_t index)
         const uint64_t branch = trie * 2 + (hash & 1);
         hash = ror64(hash, 1);
         slot = dbs->next + branch;
+        sylvan_stats_count(LLMSSET_REINSERT);
         value = atomic_load_explicit(slot, memory_order_acquire);
         if (value == 0) {
             if (atomic_compare_exchange_strong_explicit(

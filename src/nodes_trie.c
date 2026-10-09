@@ -1560,6 +1560,10 @@ trie_batch_begin(nodes_table* dbs, size_t count)
     if (nodes_reorder_caps(dbs) == 0) return SYLVAN_ERR_INVALID;
     if (count > dbs->table_size) return SYLVAN_ERR_INVALID;
     if (dbs->region_size < dbs->table_size) {
+        /* Only a caller that never prepared gets here: a session prepares
+           before any swap that can remove a node, and nothing inside a session
+           resizes the table. The note is how a test checks that. */
+        nodes_note_late_allocation();
         const int status = nodes_prepare_reorder(dbs, NULL, 0);
         if (status != SYLVAN_OK) return status;
     }

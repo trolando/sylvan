@@ -2327,8 +2327,14 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
     /* The route follows the rewritten record: a decision node whose identity
        field changed belongs to another subtable now. */
     const uint32_t route = owner_route(tagged, record);
-    llchst_subtable* subtable = get_subtable(dbs, route, 1);
-    if (subtable == NULL) return SYLVAN_ERR_OOM;
+    llchst_subtable* subtable = get_subtable(dbs, route, 0);
+    if (subtable == NULL || subtable_heads(subtable) == NULL) {
+        /* Finding this route allocates -- a descriptor page, a head array or
+           both -- so nodes_prepare_reorder was not told about it. */
+        nodes_note_late_allocation();
+        subtable = get_subtable(dbs, route, 1);
+        if (subtable == NULL) return SYLVAN_ERR_OOM;
+    }
     _Atomic(uint64_t)* heads = ensure_heads(dbs, subtable);
     if (heads == NULL) return SYLVAN_ERR_OOM;
 

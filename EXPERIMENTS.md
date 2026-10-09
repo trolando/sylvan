@@ -53,7 +53,7 @@ row, but not the hardware.
 | Sylvan | the commit you run: `git rev-parse HEAD` (the paper's batch: *fill in*) | CMake Release, Ninja, one tree per configuration (`build-matrix.sh`) |
 | Lace | 2.4.0 (tag `v2.4.0`, `92b9f99100c87c7ae8895fd16f3552a4649e3b15`) | brought in by Sylvan's build through FetchContent; `--lace-dir` builds from a local copy instead |
 | CUDD | 3.0.0, commit `f54f533303640afd5dbe47a05ebeabb3066f2a25` of [cuddorg/cudd](https://github.com/cuddorg/cudd) ("Import cudd-3.0.0.tar.gz") | `./configure CFLAGS="-O3 -DNDEBUG" CXXFLAGS="-O3 -DNDEBUG" && make`, in place |
-| bdd-benchmark (H4 only) | branch `sift-hook`, tip `9cd5853` (8 commits on `codex/sylvan-2-study` at `2c8097f`; local until pushed to a fork, never to upstream) | see [H4](#h4-when-sifting-pays) |
+| bdd-benchmark (H4 only) | branch `sift-hook`, tip `63e0404` (10 commits on `codex/sylvan-2-study` at `2c8097f`; local until pushed to a fork, never to upstream) | see [H4](#h4-when-sifting-pays) |
 
 `build-matrix.sh` writes the Sylvan commit, compiler, CMake and Lace versions
 and CUDD's version and `CFLAGS` into `builds/manifest.json`, and every row
@@ -328,10 +328,10 @@ repository. Pin both sides:
 
 ```sh
 # The sift hook lives on branch sift-hook of the owner's bdd-benchmark fork
-# (tip 9cd5853, 8 commits on codex/sylvan-2-study at 2c8097f). Upstream
+# (tip 63e0404, 10 commits on codex/sylvan-2-study at 2c8097f). Upstream
 # SSoelvsten/bdd-benchmark does not carry it.
 git clone <owner's fork of bdd-benchmark> bdd-benchmark
-git -C bdd-benchmark checkout 9cd585367fbf5feb88c7249f37313e5754d56bdc
+git -C bdd-benchmark checkout 63e0404
 cmake -S bdd-benchmark -B build-list -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DBDD_BENCHMARK_SYLVAN2_API=ON -DBDD_BENCHMARK_SYLVAN2_PROTECTED_API=ON \
   -DBDD_BENCHMARK_SYLVAN2_SIFT_API=ON -DBDD_BENCHMARK_LACE2_API=ON \
@@ -348,7 +348,7 @@ the main computation, as the August probe did; `auto`: `sylvan_gc_set_auto_sift`
 `sylvan_gc()` reorder points after each image, so a sift happens only when a collection
 recommends it) and `SYLVAN_SIFT_PAIRS=0|1` (default 0; 1 sets `group_pairs`, so the pairs
 (2k, 2k+1) move as blocks and `split_pairs` stays 0). Optional caps: `SYLVAN_SIFT_MAX_SWAPS`,
-`SYLVAN_SIFT_MAX_VARS`, `SYLVAN_SIFT_TIME_LIMIT`, `SYLVAN_SIFT_FACTOR`. The study driver
+`SYLVAN_SIFT_MAX_VARS`, `SYLVAN_SIFT_TIME_LIMIT`, `SYLVAN_SIFT_FACTOR`. CUDD runs with `-R` now reorder too: `Cudd_AutodynEnable` with sifting, or group sifting over the pairs (2k, 2k+1) with `CUDD_REORDER_METHOD=group`; the adapter prints `CUDD {json}` lines with the method, the number of reorderings and their time, and builds nodes through ITE while reordering is on (its original node builder assumed the initial order and gave wrong answers). The study driver
 `tools/sylvan-study.py --sift-mode off upfront auto --sift-pairs 0 1 --workers 1 8` runs the
 matrix and `tools/sylvan-summarize.py` groups by mode and pair setting (`median_sifts`,
 `median_sift_s`, `median_split_pairs`).

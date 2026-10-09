@@ -14,7 +14,9 @@
  * default to, and siftMaxVar/siftMaxSwap are raised to INT_MAX so that CUDD is
  * unlimited exactly as Sylvan's max_vars = max_swaps = 0 is. Dynamic
  * reordering is disabled explicitly, because Sylvan never reorders on its own
- * and the initial order has to be the file's.
+ * and the initial order has to be the file's. --max-swaps and --max-vars cap
+ * the search the way sylvan_bench's flags of the same name do, for the
+ * experiments that sweep the caps on both tools.
  */
 
 #include <stdio.h>
@@ -47,6 +49,8 @@ static double   opt_growth    = 1.2;
 static size_t   opt_memory    = 8ull << 30;
 static unsigned opt_seed      = 12345;
 static int      opt_unlimited = 1;   /* --cudd-defaults turns this off */
+static long     opt_maxswaps  = -1;  /* --max-swaps; -1 leaves the cap as is */
+static long     opt_maxvars   = -1;  /* --max-vars; 0 is unlimited, like Sylvan */
 static const char *opt_varorder = "file";
 static unsigned opt_orderseed = 1;
 static const char *opt_trace  = NULL;  /* --trace: one line per swap */
@@ -251,13 +255,38 @@ op_phase(double *seconds, double *checksum)
 
 /* ------------------------------------------------------------------- main */
 
+/* A cap given on the command line: 0 means unlimited, as Sylvan's max_swaps
+   and max_vars do, which CUDD spells INT_MAX. */
+static int
+cudd_cap(long n)
+{
+    return (n <= 0 || n > INT_MAX) ? INT_MAX : (int)n;
+}
+
+static void
+usage(FILE *f)
+{
+    fprintf(f,
+        "usage: cudd_bench [options]\n"
+        "  case:   --mode bryant|blif|queens  --pairs N  --file F.blif  --n N\n"
+        "          --case NAME  --var-order file|reverse|random  --order-seed S\n"
+        "  sift:   --growth G (1.2)  --max-swaps N  --max-vars N  --cudd-defaults\n"
+        "          --no-sift\n"
+        "  checks: --verify VECTORS  --seed S  --ops  --order\n"
+        "  run:    --memory BYTES (8 GiB)\n"
+        "siftMaxSwap and siftMaxVar are raised to INT_MAX (unlimited, like Sylvan's\n"
+        "defaults) unless --cudd-defaults keeps CUDD's own caps; --max-swaps and\n"
+        "--max-vars set either cap on top of that, 0 meaning unlimited.\n");
+}
+
 int
 main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         const char *v = (i + 1 < argc) ? argv[i + 1] : NULL;
-        if      (!strcmp(a, "--mode") && v)   { opt_mode = v; i++; }
+        if      (!strcmp(a, "--help"))        { usage(stdout); return 0; }
+        else if (!strcmp(a, "--mode") && v)   { opt_mode = v; i++; }
         else if (!strcmp(a, "--file") && v)   { opt_file = v; i++; }
         else if (!strcmp(a, "--case") && v)   { opt_case = v; i++; }
         else if (!strcmp(a, "--pairs") && v)  { opt_pairs = atoi(v); i++; }
@@ -270,10 +299,12 @@ main(int argc, char **argv)
         else if (!strcmp(a, "--memory") && v) { opt_memory = strtoull(v, NULL, 10); i++; }
         else if (!strcmp(a, "--seed") && v)   { opt_seed = (unsigned)strtoul(v, NULL, 10); i++; }
         else if (!strcmp(a, "--cudd-defaults")) { opt_unlimited = 0; }
+        else if (!strcmp(a, "--max-swaps") && v) { opt_maxswaps = strtol(v, NULL, 10); i++; }
+        else if (!strcmp(a, "--max-vars") && v)  { opt_maxvars = strtol(v, NULL, 10); i++; }
         else if (!strcmp(a, "--var-order") && v) { opt_varorder = v; i++; }
         else if (!strcmp(a, "--order-seed") && v){ opt_orderseed = (unsigned)strtoul(v, NULL, 10); i++; }
         else if (!strcmp(a, "--trace") && v)  { opt_trace = v; i++; }
-        else { fprintf(stderr, "unknown option %s\n", a); return 2; }
+        else { fprintf(stderr, "unknown option %s\n", a); usage(stderr); return 2; }
     }
 
     /* --trace: CUDD has no swap hook, so cudd-swap-trace.patch adds one to
@@ -323,6 +354,12 @@ main(int argc, char **argv)
         Cudd_SetSiftMaxVar(dd, INT_MAX);
         Cudd_SetSiftMaxSwap(dd, INT_MAX);
     }
+    if (opt_maxswaps >= 0) Cudd_SetSiftMaxSwap(dd, cudd_cap(opt_maxswaps));
+    if (opt_maxvars >= 0) Cudd_SetSiftMaxVar(dd, cudd_cap(opt_maxvars));
+    /* The row's "unlimited" says whether both caps are in fact raised, so that
+       a capped run is never taken for a like-for-like one. */
+    opt_unlimited = Cudd_ReadSiftMaxSwap(dd) == INT_MAX &&
+                    Cudd_ReadSiftMaxVar(dd) == INT_MAX;
     /* Touch every projection function so the starting order is 0..n-1. */
     for (int i = 0; i < n_var; i++) (void)Cudd_bddIthVar(dd, i);
 

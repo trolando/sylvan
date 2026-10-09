@@ -126,9 +126,11 @@ order.
 
 `cudd_bench` disables automatic reordering, sets `maxGrowth` to `--growth`
 and raises `siftMaxVar` and `siftMaxSwap` to `INT_MAX`, so that it is as
-unlimited as Sylvan's defaults; `--cudd-defaults` keeps CUDD's own caps. Its
-`swaps` is `dd->ddTotalNumberSwapping`, which counts adjacent swaps on search
-and return legs alike, as Sylvan's does.
+unlimited as Sylvan's defaults; `--cudd-defaults` keeps CUDD's own caps, and
+`--max-swaps N` and `--max-vars N` set either cap on top of that (0 is
+unlimited, as on Sylvan's side). The row's `unlimited` is 1 only when both
+caps end up raised. Its `swaps` is `dd->ddTotalNumberSwapping`, which counts
+adjacent swaps on search and return legs alike, as Sylvan's does.
 
 `nodes_before` and `nodes_after` are the shared node count of the output
 roots on both sides (`mtbdd_shared_node_count`, `Cudd_SharingSize`); they agree

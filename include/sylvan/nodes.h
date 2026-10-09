@@ -147,6 +147,37 @@ static inline void nodes_clear(nodes_table* dbs);
 int nodes_is_marked(const nodes_table* dbs, uint64_t index);
 
 /**
+ * The marks of the indices 64*<first> to 64*(<first>+<count>)-1, 64 to a word,
+ * into <words>[0] to <words>[<count>-1]. Index i lands in <words>[i/64 -
+ * <first>], at bit (63 - i%64), so the first index of each word is its most
+ * significant bit; a bit is set exactly when nodes_is_marked(dbs, i) would
+ * say so. <first> + <count> must not exceed (nodes_get_size(dbs) + 63) / 64.
+ *
+ * For a pass over the whole table that only wants the occupied slots, such as
+ * the opening passes of a reorder session: an empty stretch of table then
+ * costs a load per 64 slots and a call per <count> words, rather than a call
+ * per slot, which is what keeps a pass over a large, sparsely used table
+ * cheap.
+ */
+void nodes_marked_words(const nodes_table* dbs, size_t first, size_t count,
+                        uint64_t* words);
+
+/**
+ * A bound on the occupied part of the table: every index i for which
+ * nodes_is_marked(dbs, i) holds is below it. At most nodes_get_size(dbs).
+ *
+ * The bound is the end of the highest stretch of slots the allocator has
+ * ever handed out from, so it rises as the table fills and never falls: a
+ * collection leaves the nodes that survive at their indices, wherever they
+ * are, and does not lower it. A pass over the occupied slots -- see
+ * nodes_marked_words -- can stop here instead of at the end of the table, so
+ * that on a table sized for far more than it ever held, the part that was
+ * never used costs nothing. A backend without a better answer returns
+ * nodes_get_size(dbs).
+ */
+size_t nodes_used_bound(const nodes_table* dbs);
+
+/**
  * Recursively mark a node and its descendants.
  */
 static inline void nodes_mark_rec(const nodes_table* dbs, uint64_t index);

@@ -437,6 +437,126 @@ test_exhaustion_and_resize(void)
 }
 
 /**
+ * Every word nodes_marked_words gives agrees bit for bit with
+ * nodes_is_marked, and every marked index is below nodes_used_bound, which in
+ * turn is within the table. Words are fetched seven at a time, so that the
+ * blocks straddle every alignment.
+ */
+static int
+check_marked_words(nodes_table *table)
+{
+    const size_t size = nodes_get_size(table);
+    const size_t words = (size + 63) / 64;
+    const size_t bound = nodes_used_bound(table);
+    test_assert(bound >= 2 && bound <= size);
+
+    uint64_t block[7];
+    for (size_t first = 0; first < words; first += 7) {
+        const size_t count = words - first < 7 ? words - first : 7;
+        nodes_marked_words(table, first, count, block);
+        for (size_t w = 0; w < count; w++) {
+            for (unsigned int bit = 0; bit < 64; bit++) {
+                const uint64_t index = 64 * (uint64_t)(first + w) + bit;
+                const int marked = (int)((block[w] >> (63 - bit)) & 1u);
+                if (index >= size) {
+                    test_assert(!marked);
+                    continue;
+                }
+                test_assert(marked == nodes_is_marked(table, index));
+                if (marked) test_assert(index < bound);
+            }
+        }
+    }
+    return 0;
+}
+
+struct marked_fill {
+    nodes_table *table;
+    uint64_t salt;
+    _Atomic(int) failed;
+};
+
+#define TEST_MARKED_FILL_PER_WORKER 700
+
+TASK(void, marked_fill_worker, struct marked_fill*, fill)
+
+void
+marked_fill_worker_CALL(lace_worker *lace, struct marked_fill *fill)
+{
+    const uint64_t worker = (uint64_t)lace->worker;
+    for (uint64_t i = 0; i < TEST_MARKED_FILL_PER_WORKER; i++) {
+        int created = 0;
+        const uint64_t key = UINT64_C(0x4000000000000000) |
+                             (fill->salt << 32) | (worker << 16) | i;
+        if (nodes_lookup(fill->table, key, i, &created) == 0) {
+            atomic_store_explicit(&fill->failed, 1, memory_order_relaxed);
+        }
+    }
+}
+
+/**
+ * The two primitives a reorder session's opening passes stand on: the marks
+ * a word at a time (nodes_marked_words), and how far into the table they can
+ * reach (nodes_used_bound). A pass that trusts the bound skips everything
+ * above it, so a node above it would be a node the session never sees.
+ *
+ * Checked on an empty table; after every worker has filled at once, each from
+ * a region of its own; after a collection that keeps only the most recently
+ * placed nodes, which must not lower the bound; and after the table has grown
+ * and been filled further.
+ */
+static int
+test_marked_words_and_bound(void)
+{
+    const size_t size = race_table_size() * 4;
+    nodes_table *table = nodes_create(size, size * 4);
+    if (check_marked_words(table)) return 1;
+#if !SYLVAN_NODES_TABLE_LLHT
+    /* Nothing claimed yet: only region 0, for the reserved slots. llht has an
+       allocator of its own and answers with the whole table. */
+    test_assert(nodes_used_bound(table) == 512);
+#endif
+
+    struct marked_fill fill = { table, 1, 0 };
+    marked_fill_worker_TOGETHER(&fill);
+    test_assert(atomic_load(&fill.failed) == 0);
+    if (check_marked_words(table)) return 1;
+
+    /* Collect, keeping the highest-indexed tenth of the nodes. */
+    const size_t bound = nodes_used_bound(table);
+    const size_t words = (nodes_get_size(table) + 63) / 64;
+    uint64_t *kept = (uint64_t*)malloc(words * sizeof(uint64_t));
+    test_assert(kept != NULL);
+    nodes_marked_words(table, 0, words, kept);
+    kept[0] &= UINT64_C(0x3fffffffffffffff);
+    const size_t live = nodes_count_nodes(table) - 2;
+    size_t seen = 0;
+    nodes_clear(table);
+    for (size_t w = 0; w < words; w++) {
+        for (unsigned int bit = 0; bit < 64; bit++) {
+            if (((kept[w] >> (63 - bit)) & 1u) == 0) continue;
+            if (seen++ >= live - live / 10) {
+                nodes_mark_rec(table, 64 * (uint64_t)w + bit);
+            }
+        }
+    }
+    free(kept);
+    test_assert(nodes_rebuild(table) == 0);
+    test_assert(nodes_used_bound(table) == bound);
+    if (check_marked_words(table)) return 1;
+
+    nodes_set_size(table, size * 4);
+    fill.salt = 2;
+    marked_fill_worker_TOGETHER(&fill);
+    test_assert(atomic_load(&fill.failed) == 0);
+    test_assert(nodes_used_bound(table) >= bound);
+    if (check_marked_words(table)) return 1;
+
+    nodes_free(table);
+    return 0;
+}
+
+/**
  * A table with nothing left to give must say so.
  *
  * The lookup path answers 0 when the arena cannot hand out a slot, and that 0
@@ -2013,6 +2133,7 @@ run_table_tests_CALL(lace_worker *lace)
     if (test_custom_metadata_cleanup()) return 1;
     if (test_custom_race()) return 1;
     if (test_exhaustion_and_resize()) return 1;
+    if (test_marked_words_and_bound()) return 1;
 #if defined(__unix__) || defined(__APPLE__)
     if (test_arena_exhaustion_reports(test_self)) return 1;
 #endif

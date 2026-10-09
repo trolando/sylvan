@@ -561,6 +561,20 @@ int nodes_is_marked(const nodes_table* dbs, uint64_t index)
     return (atomic_load_explicit(ptr, memory_order_relaxed) & mask) ? 1 : 0;
 }
 
+void nodes_marked_words(const nodes_table* dbs, size_t first, size_t count, uint64_t* words)
+{
+    for (size_t i = 0; i < count; i++) {
+        words[i] = atomic_load_explicit(dbs->bitmap2 + first + i, memory_order_relaxed);
+    }
+}
+
+/* This backend keeps its own allocator, which records no high-water mark,
+   and it does not reorder, which is what the bound is for. */
+size_t nodes_used_bound(const nodes_table* dbs)
+{
+    return dbs->table_size;
+}
+
 void nodes_mark_rec_CALL(lace_worker* lace, const nodes_table* dbs, uint64_t index)
 {
     if (index == 0 || index == 1) return; // reserved for true/false

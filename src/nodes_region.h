@@ -43,22 +43,27 @@
  *         _Atomic(uint64_t)* bitmap1;        region_bitmap_size(max) bytes
  *         _Atomic(uint64_t)* bitmap2;        node_bitmap_size(max) bytes
  *         _Atomic(uint64_t)* bitmapc;        node_bitmap_size(max) bytes
- *         _Atomic(uint64_t)* region_cursor;  one word on a cache line of its
- *                                            own (see claim_region)
+ *         _Atomic(uint64_t)* region_cursor;  two words on a cache line of
+ *                                            their own: the cursor (see
+ *                                            claim_region) and the high-water
+ *                                            mark (see region_used_bound)
  *
  *     where max is the largest table_size the table can grow to.
  *
  *   - The includer defines NODES_REGION_BACKEND, its name as a string literal
  *     ("list", ...), before the include; the exhaustion report quotes it.
  *
- *   - The backend allocates and frees the bitmaps and the cursor itself,
- *     keeps slots 0 and 1 marked in bitmap2 so that they are never handed
- *     out, and runs nodes_reset_region_TOGETHER() in nodes_create. Its
- *     nodes_clear clears bitmap1 and bitmap2, zeroes *region_cursor, runs
- *     nodes_reset_region_TOGETHER() again and clears arena_exhausted_reported.
+ *   - The backend allocates and frees the bitmaps and the cursor line
+ *     itself, zeroed, keeps slots 0 and 1 marked in bitmap2 so that they are
+ *     never handed out, and runs nodes_reset_region_TOGETHER() in
+ *     nodes_create. Its nodes_clear clears bitmap1 and bitmap2, zeroes
+ *     region_cursor[0] -- the cursor, and not the high-water mark beside it --
+ *     runs nodes_reset_region_TOGETHER() again and clears
+ *     arena_exhausted_reported.
  *
  *   - nodes_reserve stays in the backend, which does its own checks and then
- *     returns region_reserve() for the slot half.
+ *     returns region_reserve() for the slot half; nodes_used_bound returns
+ *     region_used_bound().
  *
  * The functions are plain static, as they were in each backend, and not
  * static inline: the inline keyword raises GCC's inlining limits for them and
@@ -124,6 +129,43 @@ region_has_free_slot(const nodes_table* dbs, uint64_t region)
 }
 
 /**
+ * The high-water mark of the arena, in the second word of the cursor's line:
+ * one more than the highest region any worker has ever claimed, 0 before the
+ * first. Raised on every claim that goes past it -- with the shared cursor
+ * that is most claims while the table fills, and none once it has stopped
+ * growing -- and never lowered, not even by nodes_clear, because a
+ * collection keeps the nodes that survive at their indices. Every node was
+ * placed in a region that was claimed at the time, so no marked slot lies
+ * past it but the reserved slots 0 and 1, which region_used_bound covers.
+ */
+static void
+region_note_claim(const nodes_table* dbs, uint64_t region)
+{
+    _Atomic(uint64_t)* high = dbs->region_cursor + 1;
+    uint64_t seen = atomic_load_explicit(high, memory_order_relaxed);
+    while (seen <= region &&
+           !atomic_compare_exchange_weak_explicit(
+               high, &seen, region + 1u,
+               memory_order_relaxed, memory_order_relaxed)) {
+    }
+}
+
+/**
+ * The slot half of nodes_used_bound: the end of the highest region ever
+ * claimed, and at least the end of region 0, which holds the two reserved
+ * slots. Read with the world stopped, where every claim that raised it is
+ * ordered before the read.
+ */
+static size_t
+region_used_bound(const nodes_table* dbs)
+{
+    const uint64_t regions = atomic_load_explicit(
+        dbs->region_cursor + 1, memory_order_relaxed);
+    const uint64_t slots = (regions == 0 ? 1u : regions) * 512u;
+    return slots < dbs->table_size ? (size_t)slots : dbs->table_size;
+}
+
+/**
  * Claim a region that is unowned and has something to give. The search
  * starts at start_region and proceeds round-robin; the result is the claimed
  * region, or UINT64_MAX if there is none.
@@ -170,6 +212,7 @@ claim_next_region(const nodes_table* dbs, uint64_t start_region)
             if (atomic_compare_exchange_weak_explicit(
                     ptr, &v, v | mask,
                     memory_order_acquire, memory_order_relaxed)) {
+                region_note_claim(dbs, region);
                 return region;
             }
         }

@@ -444,6 +444,22 @@ nodes_is_marked(const nodes_table* dbs, uint64_t index)
 }
 
 void
+nodes_marked_words(const nodes_table* dbs, size_t first, size_t count,
+                   uint64_t* words)
+{
+    for (size_t i = 0; i < count; i++) {
+        words[i] = atomic_load_explicit(
+            dbs->bitmap2 + first + i, memory_order_relaxed);
+    }
+}
+
+size_t
+nodes_used_bound(const nodes_table* dbs)
+{
+    return region_used_bound(dbs);
+}
+
+void
 nodes_mark_rec_CALL(lace_worker* lace, const nodes_table* dbs, uint64_t index)
 {
     if (index == 0 || index == 1) return;

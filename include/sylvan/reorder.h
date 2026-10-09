@@ -25,10 +25,11 @@
  * operation. This header is the whole public interface: sylvan_sift() and
  * sylvan_sift_report(), which reorder the variables of the BDD/MTBDD forest
  * by sifting, with a configuration and a result to go with them;
- * sylvan_sift_count(); and the recommendation and the opt-in automatic sift
- * built on it. The machinery underneath -- the reorder session and the
- * adjacent variable swap -- is internal, because a swap only makes sense
- * inside a session and a session runs with the world stopped.
+ * sylvan_sift_count() and sylvan_sift_split_pairs(); and the recommendation
+ * and the opt-in automatic sift built on it. The machinery underneath -- the
+ * reorder session and the adjacent variable swap -- is internal, because a
+ * swap only makes sense inside a session and a session runs with the world
+ * stopped.
  *
  * WHAT SIFTING DOES. Every variable is moved through the order one adjacent
  * swap at a time, the size of the forest is measured at each position, and the

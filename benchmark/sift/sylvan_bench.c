@@ -38,6 +38,13 @@
  * the two counts of a root are compared. Only the evaluation is compared
  * across tools, as eval_hash; the counts are a check of each tool against
  * itself.
+ *
+ * PROBABILITY. --probs FILE (with --mode blif) reads a probability for every
+ * input (probs.h; tools/mef2blif.py writes the file for a fault tree) and
+ * computes the probability of the first output, the top event, before and
+ * after the sift: "prob_before" and "prob_after", which must agree to the
+ * rounding of adding the same terms in another order. cudd_bench --probs
+ * computes the same, so that the tools can be compared as well.
  */
 
 #include <math.h>
@@ -51,6 +58,7 @@
 #include <sylvan/internal.h>
 
 #include "blif.h"
+#include "probs.h"
 
 /* The nodes table the library was built with; CMake defines it. */
 #ifndef SIFT_BENCH_BACKEND
@@ -86,6 +94,7 @@ static unsigned opt_seed      = 12345;
 static const char *opt_varorder = "file";
 static unsigned opt_orderseed = 1;
 static const char *opt_trace  = NULL;  /* one line per swap of the sift     */
+static const char *opt_probs  = NULL;  /* input probabilities, --probs      */
 
 static double
 now(void)
@@ -473,6 +482,39 @@ done:
     return rc;
 }
 
+/* ------------------------------------------------------------ probability */
+
+static double    *probs_in;     /* --probs, per circuit variable            */
+static double    *prob_of_id;   /* the same, by variable identity           */
+static probs_memo pmemo;
+
+/* See probs.h. mtbdd_node_low and _high pass a complement on to the child, so
+   a complemented edge is a function of its own and nothing is subtracted. */
+static double
+prob_rec(BDD f)
+{
+    if (f == bdd_true) return 1.0;
+    if (f == bdd_false) return 0.0;
+    double r;
+    if (probs_memo_get(&pmemo, (uint64_t)f, &r)) return r;
+    const double p = prob_of_id[mtbdd_node_variable(f)];
+    r = (1.0 - p) * prob_rec(mtbdd_node_low(f)) + p * prob_rec(mtbdd_node_high(f));
+    probs_memo_put(&pmemo, (uint64_t)f, r);
+    return r;
+}
+
+/* The probability of the first output, or -1 when the memo ran out of
+   memory. */
+static double
+prob_top(void)
+{
+    if (n_root < 1 || probs_memo_init(&pmemo) != 0) return -1.0;
+    double r = prob_rec(root[0]);
+    if (pmemo.failed) r = -1.0;
+    probs_memo_free(&pmemo);
+    return r;
+}
+
 /* ------------------------------------------------------------------- main */
 
 /*
@@ -563,6 +605,13 @@ run_CALL(lace_worker *lace)
     if (opt_memstat) memstat_take(&mem_build);
 
     const size_t nodes_before = mtbdd_shared_node_count(root, (size_t)n_root);
+    double prob_before = -1.0, prob_after = -1.0;
+    if (opt_probs != NULL) {
+        prob_of_id = (double*)malloc((size_t)n_var * sizeof(double));
+        if (prob_of_id == NULL) { fprintf(stderr, "--probs: allocation failed\n"); return 1; }
+        for (int i = 0; i < n_var; i++) prob_of_id[vperm[i]] = probs_in[i];
+        prob_before = prob_top();
+    }
     if (varset_make() != 0) { fprintf(stderr, "varset failed\n"); return 1; }
 
     /* Soundness inputs, taken before anything moves. */
@@ -648,6 +697,7 @@ run_CALL(lace_worker *lace)
     const uint32_t split_pairs = sylvan_sift_split_pairs();
 
     const size_t nodes_after = mtbdd_shared_node_count(root, (size_t)n_root);
+    if (opt_probs != NULL) prob_after = prob_top();
     if (varset_make() != 0) { fprintf(stderr, "varset rebuild failed\n"); return 1; }
 
     int sound = -1;
@@ -732,11 +782,12 @@ run_CALL(lace_worker *lace)
     }
     if (opt_order_out) print_order();
     if (opt_memstat) memstat_print(&mem_build, &mem_sift);
+    if (opt_probs != NULL) probs_print(prob_before, prob_after);
     printf("}\n");
     fflush(stdout);
 
     free(vectors); free(eval_before); free(eval_after);
-    free(sat_before); free(sat_after);
+    free(sat_before); free(sat_after); free(prob_of_id);
     for (int i = 0; i < n_root; i++) mtbdd_unprotect(&root[i]);
     for (int i = 0; i < n_var; i++) mtbdd_unprotect(&var[i]);
     mtbdd_unprotect(&varset);
@@ -759,6 +810,8 @@ usage(FILE *f)
         "                    asks for; library default 2.0, 0 disables)\n"
         "  checks: --verify VECTORS  --seed S  --ops  --order\n"
         "          --trace FILE  (one line per swap of the sift)\n"
+        "          --probs FILE  (blif: the first output's probability before\n"
+        "                    and after, from one per input; see probs.h)\n"
         "          --memstat  (VmRSS, VmHWM and AnonHugePages after the build\n"
         "                      and after the sift, from /proc; Linux)\n"
         "          --stats  (counters of the build and of the sift, on stderr;\n"
@@ -801,6 +854,7 @@ main(int argc, char **argv)
         else if (!strcmp(a, "--var-order") && v) { opt_varorder = v; i++; }
         else if (!strcmp(a, "--order-seed") && v){ opt_orderseed = (unsigned)strtoul(v, NULL, 10); i++; }
         else if (!strcmp(a, "--trace") && v)     { opt_trace = v; i++; }
+        else if (!strcmp(a, "--probs") && v)     { opt_probs = v; i++; }
         else { fprintf(stderr, "unknown option %s\n", a); usage(stderr); return 2; }
     }
     if (strcmp(opt_mode, "blif") != 0 && strcmp(opt_mode, "bryant") != 0 &&
@@ -826,6 +880,17 @@ main(int argc, char **argv)
             fprintf(stderr, "bad --var-order %s\n", opt_varorder);
             return 2;
         }
+        if (opt_probs != NULL) {
+            probs_in = (double*)malloc((size_t)(circuit.n_var > 0 ? circuit.n_var : 1) * sizeof(double));
+            if (probs_in == NULL) { fprintf(stderr, "--probs: out of memory\n"); return 1; }
+            if (probs_read(&circuit, opt_probs, probs_in, err, sizeof(err)) != 0) {
+                fprintf(stderr, "--probs: %s\n", err);
+                return 1;
+            }
+        }
+    } else if (opt_probs != NULL) {
+        fprintf(stderr, "--probs needs --mode blif\n");
+        return 2;
     }
 
     lace_start((unsigned)opt_workers, 0, 128u * 1024u * 1024u);
@@ -842,5 +907,6 @@ main(int argc, char **argv)
     sylvan_quit();
     lace_stop();
     if (strcmp(opt_mode, "blif") == 0) blif_free(&circuit);
+    free(probs_in);
     return rc;
 }

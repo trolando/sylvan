@@ -17,6 +17,10 @@
  * and the initial order has to be the file's. --max-swaps and --max-vars cap
  * the search the way sylvan_bench's flags of the same name do, for the
  * experiments that sweep the caps on both tools.
+ *
+ * --probs FILE computes the probability of the first output before and after
+ * the sift, from one probability per input, as sylvan_bench --probs does
+ * (probs.h): the same file, read by the same code, and the same arithmetic.
  */
 
 #include <math.h>
@@ -36,6 +40,7 @@
    alike, which is what sylvan_sift_result.swaps counts too. */
 #include "cuddInt.h"
 #include "blif.h"
+#include "probs.h"
 
 static const char *opt_mode   = "bryant";
 static const char *opt_file   = NULL;
@@ -56,6 +61,7 @@ static int      opt_memstat   = 0;   /* resident memory from /proc */
 static const char *opt_varorder = "file";
 static unsigned opt_orderseed = 1;
 static const char *opt_trace  = NULL;  /* --trace: one line per swap */
+static const char *opt_probs  = NULL;  /* --probs: input probabilities */
 static int     *vperm;               /* circuit input i -> DD variable */
 
 static double
@@ -324,6 +330,43 @@ op_phase(double *seconds, double *checksum)
     *checksum = sum;
 }
 
+/* ------------------------------------------------------------ probability */
+
+static double    *probs_in;      /* --probs, per circuit variable          */
+static double    *prob_of_index; /* the same, by CUDD variable index        */
+static probs_memo pmemo;
+
+/* See probs.h: the complement of the edge is passed on to both children, so
+   a complemented edge is a function of its own and nothing is subtracted. */
+static double
+prob_rec(DdNode *f)
+{
+    DdNode *one = Cudd_ReadOne(dd);
+    if (f == one) return 1.0;
+    if (f == Cudd_Not(one)) return 0.0;
+    double r;
+    if (probs_memo_get(&pmemo, (uint64_t)(uintptr_t)f, &r)) return r;
+    DdNode *n = Cudd_Regular(f);
+    DdNode *t = cuddT(n), *e = cuddE(n);
+    if (Cudd_IsComplement(f)) { t = Cudd_Not(t); e = Cudd_Not(e); }
+    const double p = prob_of_index[n->index];
+    r = (1.0 - p) * prob_rec(e) + p * prob_rec(t);
+    probs_memo_put(&pmemo, (uint64_t)(uintptr_t)f, r);
+    return r;
+}
+
+/* The probability of the first output, or -1 when the memo ran out of
+   memory. */
+static double
+prob_top(void)
+{
+    if (n_root < 1 || probs_memo_init(&pmemo) != 0) return -1.0;
+    double r = prob_rec(root[0]);
+    if (pmemo.failed) r = -1.0;
+    probs_memo_free(&pmemo);
+    return r;
+}
+
 /* ------------------------------------------------------------------- main */
 
 /* A cap given on the command line: 0 means unlimited, as Sylvan's max_swaps
@@ -345,6 +388,8 @@ usage(FILE *f)
         "          --no-sift\n"
         "  checks: --verify VECTORS  --seed S  --ops  --order\n"
         "          --trace FILE  (one line per swap; needs cudd-swap-trace.patch)\n"
+        "          --probs FILE  (blif: the first output's probability before\n"
+        "                    and after, from one per input; see probs.h)\n"
         "          --memstat  (VmRSS, VmHWM and AnonHugePages after the build\n"
         "                      and after the sift, from /proc; Linux)\n"
         "  run:    --memory BYTES (8 GiB)\n"
@@ -379,6 +424,7 @@ main(int argc, char **argv)
         else if (!strcmp(a, "--var-order") && v) { opt_varorder = v; i++; }
         else if (!strcmp(a, "--order-seed") && v){ opt_orderseed = (unsigned)strtoul(v, NULL, 10); i++; }
         else if (!strcmp(a, "--trace") && v)  { opt_trace = v; i++; }
+        else if (!strcmp(a, "--probs") && v)  { opt_probs = v; i++; }
         else { fprintf(stderr, "unknown option %s\n", a); usage(stderr); return 2; }
     }
 
@@ -412,6 +458,22 @@ main(int argc, char **argv)
             fprintf(stderr, "bad --var-order %s\n", opt_varorder);
             return 2;
         }
+        if (opt_probs != NULL) {
+            probs_in = (double*)malloc((size_t)(n_var > 0 ? n_var : 1) * sizeof(double));
+            prob_of_index = (double*)malloc((size_t)(n_var > 0 ? n_var : 1) * sizeof(double));
+            if (probs_in == NULL || prob_of_index == NULL) {
+                fprintf(stderr, "--probs: out of memory\n");
+                return 1;
+            }
+            if (probs_read(&circuit, opt_probs, probs_in, err, sizeof(err)) != 0) {
+                fprintf(stderr, "--probs: %s\n", err);
+                return 1;
+            }
+            for (int i = 0; i < n_var; i++) prob_of_index[vperm[i]] = probs_in[i];
+        }
+    } else if (opt_probs != NULL) {
+        fprintf(stderr, "--probs needs --mode blif\n");
+        return 2;
     } else if (strcmp(opt_mode, "bryant") == 0) {
         n_var = 2 * opt_pairs;
         n_root = 1;
@@ -451,6 +513,8 @@ main(int argc, char **argv)
 
     const int nodes_before = Cudd_SharingSize(root, n_root);
     const long live_before = Cudd_ReadNodeCount(dd);
+    double prob_before = -1.0, prob_after = -1.0;
+    if (opt_probs != NULL) prob_before = prob_top();
 
     uint8_t *eval_before = NULL, *eval_after = NULL;
     double *mint_before = NULL, *mint_after = NULL;
@@ -504,6 +568,7 @@ main(int argc, char **argv)
 
     const int nodes_after = Cudd_SharingSize(root, n_root);
     const long live_after = Cudd_ReadNodeCount(dd);
+    if (opt_probs != NULL) prob_after = prob_top();
 
     int sound = -1;
     int valid = 1;
@@ -576,6 +641,7 @@ main(int argc, char **argv)
         printf("]");
     }
     if (opt_memstat) memstat_print(&mem_build, &mem_sift);
+    if (opt_probs != NULL) probs_print(prob_before, prob_after);
     printf("}\n");
     fflush(stdout);
 
@@ -584,5 +650,6 @@ main(int argc, char **argv)
     free(root); free(vectors);
     free(eval_before); free(eval_after); free(mint_before); free(mint_after);
     if (is_blif) blif_free(&circuit);
+    free(probs_in); free(prob_of_index);
     return 0;
 }

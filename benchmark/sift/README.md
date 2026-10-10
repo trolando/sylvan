@@ -184,6 +184,22 @@ order.
 (`VmHWM`) at the end, and appends `rss_build_kb`, `rss_sift_kb`, `hwm_kb`,
 `thp_build_kb` and `thp_sift_kb` to the row. Linux only: elsewhere they are 0.
 
+`--probs FILE`, on both drivers and with `--mode blif` only, reads a
+probability for every input from FILE and computes the probability of the
+first output, the inputs being independent events: a fault tree's top-event
+probability. FILE has `#` comment lines, then one `NAME PROBABILITY` line per
+variable of the circuit, in `blif.c`'s order, each name checked against the
+circuit's (`tools/mef2blif.py` writes one next to every fault tree it
+converts; see [Fault trees](#fault-trees)). The computation is one pass over
+the diagram, memoised on the edge, `P(f) = (1-p) P(f|v=0) + p P(f|v=1)` with
+`p` the probability of the variable `v` labelling `f`, in which nothing is
+ever subtracted, so a probability of 1e-13 keeps all its digits (`probs.h`;
+both drivers share the reader and the arithmetic). The row gets `prob_before`
+and `prob_after`, taken before and after the sift. The value does not depend
+on the order, but the order decides in which order the terms are added, so
+the two agree to a relative 1e-12 (a few ulps per level), not to the bit;
+before the sift both tools add the same terms in the same order.
+
 `cudd_bench` disables automatic reordering, sets `maxGrowth` to `--growth`
 and raises `siftMaxVar` and `siftMaxSwap` to `INT_MAX`, so that it is as
 unlimited as Sylvan's defaults; `--cudd-defaults` keeps CUDD's own caps, and

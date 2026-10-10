@@ -11,8 +11,9 @@ set(_sift_bench_warnings
 )
 
 # The BLIF reader both drivers share, so that both see the same circuit, the
-# same starting order and the same gate construction sequence.
-add_library(sift_bench_blif OBJECT blif.c)
+# same starting order and the same gate construction sequence; and the reader
+# of --probs files with the memo of the probability pass (probs.h).
+add_library(sift_bench_blif OBJECT blif.c probs.c)
 target_compile_features(sift_bench_blif PRIVATE c_std_11)
 target_compile_options(sift_bench_blif PRIVATE ${_sift_bench_warnings})
 

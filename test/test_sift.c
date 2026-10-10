@@ -1114,6 +1114,107 @@ test_restore_identity_order(void)
 }
 
 /**
+ * The nodes table grows where it fills, and only there.
+ *
+ * A sift opens with a collection, and so does sylvan_gc(). On a table the
+ * forest leaves mostly empty neither may grow it, or every sift of a small
+ * forest doubles the table that every later collection passes over. A table
+ * that live nodes fill past half still grows at its next collection.
+ *
+ * The filler is a few hundred fresh leaves and the nodes of the registered
+ * variables over pairs of them, held by a root visitor, as in the full-table
+ * test of the pairs below.
+ */
+#define TEST_GROW_LEAVES 256u
+#define TEST_GROW_PAIRS (TEST_GROW_LEAVES * (TEST_GROW_LEAVES - 1u))
+
+static MTBDD *test_grow;
+static size_t test_grow_count;
+
+static void
+test_grow_visitor(void *context, sylvan_roots_yield yield, void *arg)
+{
+    (void)context;
+    if (test_grow_count != 0) yield(arg, test_grow, test_grow_count);
+}
+
+static int
+test_table_size_CALL(lace_worker *lace)
+{
+    size_t filled = 0, total = 0;
+    sylvan_table_usage(&filled, &total);
+    const size_t small = total;
+    /* Growth must have somewhere to go, or this tests nothing. */
+    test_assert(small < nodes_get_max_size(nodes));
+
+    for (int i = 0; i < 5; i++) {
+        test_assert(sylvan_sift(NULL) == SYLVAN_OK);
+        sylvan_table_usage(&filled, &total);
+        test_assert(total == small);
+    }
+    for (int i = 0; i < 5; i++) {
+        sylvan_gc();
+        sylvan_table_usage(&filled, &total);
+        test_assert(total == small);
+    }
+    if (test_check_roots_CALL(lace)) return 1;
+
+    /* Five eighths of the table live, and no collection on the way there. */
+    const size_t want = small / 2u + small / 8u;
+    test_assert(filled < want);
+    const size_t need = want - filled;
+    test_assert(need <= TEST_GROW_LEAVES + TEST_VARS * TEST_GROW_PAIRS);
+    test_grow = (MTBDD*)malloc(need * sizeof(MTBDD));
+    test_assert(test_grow != NULL);
+    test_grow_count = 0;
+    test_assert(sylvan_gc_add_roots(test_grow_visitor, NULL) == SYLVAN_OK);
+
+    const uint64_t collections = sylvan_gc_count();
+    while (test_grow_count < need) {
+        /* The safepoint every operation passes through, where llchst grows
+           the index of a level between collections. */
+        sylvan_gc_test(lace);
+        const size_t n = test_grow_count;
+        MTBDD node;
+        if (n < TEST_GROW_LEAVES) {
+            node = mtbdd_int64(INT64_C(2000000011) + (int64_t)n);
+        } else {
+            const size_t k = n - TEST_GROW_LEAVES;
+            const size_t pair = k % TEST_GROW_PAIRS;
+            const size_t a = pair / (TEST_GROW_LEAVES - 1u);
+            size_t b = pair % (TEST_GROW_LEAVES - 1u);
+            if (b >= a) b++;
+            node = mtbdd_make_node((uint32_t)(k / TEST_GROW_PAIRS),
+                                   test_grow[a], test_grow[b]);
+        }
+        test_assert(node != mtbdd_invalid);
+        test_grow[test_grow_count++] = node;
+    }
+    test_assert(sylvan_gc_count() == collections);
+
+    sylvan_gc();
+    sylvan_table_usage(&filled, &total);
+    const size_t grown = total;
+    printf("  five sifts and five collections: %zu slots throughout; "
+           "%zu live nodes grow it to %zu\n", small, filled, grown);
+    test_assert(grown > small);
+
+    /* Dropped again, they leave a table that is mostly empty once more, and
+       the collection that reclaims them does not grow it either. */
+    test_assert(sylvan_gc_remove_roots(test_grow_visitor, NULL) == SYLVAN_OK);
+    free(test_grow);
+    test_grow = NULL;
+    test_grow_count = 0;
+    sylvan_gc();
+    sylvan_table_usage(&filled, &total);
+    test_assert(total == grown);
+
+    /* The tests that follow start from the split order. */
+    if (test_restore_identity_order()) return 1;
+    return test_check_roots_CALL(lace);
+}
+
+/**
  * The swap trace (sylvan_sift_set_trace), which the benchmark harness compares
  * with CUDD's swap for swap. The hook has to see every swap and only swaps, so
  * its calls number exactly result.swaps; each call names the two variables
@@ -1781,6 +1882,9 @@ runtests_CALL(lace_worker *lace)
     }
     if (test_build_CALL(lace)) return 1;
     if (test_record()) return 1;
+
+    printf("Testing that the table grows where it fills, and only there.\n");
+    if (test_table_size_CALL(lace)) return 1;
 
     printf("Testing that sifting a bad order makes the forest smaller.\n");
     if (test_reduces_CALL(lace)) return 1;

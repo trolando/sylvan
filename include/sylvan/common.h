@@ -78,9 +78,19 @@ void sylvan_iterator_destroy(sylvan_iterator *iterator);
  * and listdd_init.
  *
  * Memory usage:
- * Every node requires 24 bytes memory. (16 bytes data + 8 bytes table overhead)
+ * A nodes table of n buckets requires nodes_get_capacity_bytes(n) bytes of
+ * memory, 24 to 40 per bucket depending on the table: 16 bytes data, the
+ * rest index.
  * Every operation cache entry requires 44 bytes memory. (32 bytes data +
  * 8 bytes operation identifier + 4 bytes table overhead)
+ * A reorder session (see sylvan_sift) requires memory of its own on top: 2.375
+ * bytes per bucket of the nodes table as it is when the session opens (a
+ * 16-bit reference count and three bitmaps), which a large forest touches in
+ * full; lists of the nodes of every variable, 8 bytes an entry and a few
+ * entries per live node (about five at the peak of a sift of 7.6 million
+ * nodes); and about 100 bytes per node the largest swap rewrites. The trie
+ * table adds a removal scratch of 8 bytes per bucket, of which only the pages
+ * its largest removal reaches are used.
  *
  * Returns SYLVAN_OK, SYLVAN_ERR_INVALID when the table sizes were never set,
  * or SYLVAN_ERR_OOM. Nothing is initialized when it fails, and sylvan_quit()
@@ -100,7 +110,11 @@ void sylvan_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cac
  * Implicitly compute and set the sizes of the nodes table and the operation cache.
  *
  * This function computes max_tablesize and max_cachesize to fit the memory cap.
- * The memory cap is in bytes.
+ * The memory cap is in bytes. It covers the nodes table and the operation
+ * cache at their maximum sizes, as sylvan_init_package counts them, and
+ * nothing else: a process that reorders needs the session's memory on top,
+ * about 2.4 bytes per bucket of the largest table and some 40 bytes per live
+ * node (see sylvan_init_package).
  *
  * The parameter table_ratio controls the ratio between the nodes table and the cache.
  * For the value 0, both tables are of the same size.

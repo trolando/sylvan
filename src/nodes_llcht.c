@@ -785,8 +785,11 @@ nodes_remove(nodes_table* dbs, uint64_t index)
     }
 }
 
+#ifndef NDEBUG
 /**
- * Walk a chain looking for a node equal to the given key.
+ * Walk a chain looking for a node equal to the given key: the debug build's
+ * check that nodes_reinsert is not handed a duplicate. A release build does
+ * not walk; see nodes_reinsert in nodes.h for why.
  * Returns the index of an equal node, 0 if there is none, or UINT64_MAX if
  * the walk met a removal in progress and has to be repeated.
  */
@@ -810,7 +813,14 @@ reorder_find_equal(const nodes_table* dbs, uint64_t link,
     }
     return 0;
 }
+#endif
 
+/**
+ * Prepend the node to the chain of its rewritten record. Whether the node was
+ * removed first is read from its own link word. That no equal node is in the
+ * chain already is the caller's guarantee, and only a debug build walks the
+ * chain to check it.
+ */
 int
 nodes_reinsert(nodes_table* dbs, uint64_t index)
 {
@@ -833,6 +843,7 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
     sylvan_stats_count(LLMSSET_REINSERT_CALLS);
     uint64_t observed = atomic_load_explicit(head, memory_order_acquire);
     for (;;) {
+#ifndef NDEBUG
         const uint64_t equal = reorder_find_equal(
             dbs, observed, masked_hash, a, b, custom);
         if (equal == UINT64_MAX) {
@@ -840,6 +851,7 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
             continue;
         }
         if (equal != 0) reorder_duplicate_abort(index, equal);
+#endif
 
         /* Publish this node's own link before the node itself: the release
            compare-and-swap on the head orders the store in front of it, so a

@@ -338,7 +338,9 @@ void nodes_set_size(nodes_table* dbs, size_t size);
  * a test of such a refusal has to run without assertions. The other
  * refusals -- an index out of range, a capability the backend does not
  * report, nodes_release of a node that is still indexed -- are plain return
- * values in every build.
+ * values in every build. One caller error is not a refusal at all:
+ * reinserting a node equal to one already in the index. A debug build
+ * aborts on it and a release build does not check; see nodes_reinsert.
  * ---------------------------------------------------------------------------
  */
 
@@ -383,10 +385,17 @@ int nodes_remove(nodes_table* dbs, uint64_t index);
  * release ordering, so a concurrent walker never observes it with a stale
  * successor.
  *
- * Finding an equal node at another index is not an error but a violation of
- * the caller's invariant: the unique table would hold the same key twice and
- * continuing would corrupt the forest. Debug builds assert, release builds
- * print a diagnostic and abort.
+ * UNIQUE REPRESENTATION IS THE CALLER'S. No node equal to the rewritten
+ * record may be in the index already: the unique table would hold the same
+ * key twice and the forest would be corrupt. Reinserting one is a caller
+ * error that a debug build aborts on and a release build does not check.
+ * Checking means walking the whole chain or family the node joins, on every
+ * reinsertion, for a condition a correct session cannot produce: it rewrites
+ * a node only to the function the node already denotes, no two nodes of a
+ * reduced forest denote the same function, and the new children are interned
+ * before any record is rewritten. A backend that meets an equal node anyway,
+ * as the trie's descent does on its way to a free slot, aborts in every
+ * build; callers may not rely on that.
  *
  * Returns SYLVAN_ERR_INVALID for a node that was not removed first, which is
  * a caller error (see CALLER ERRORS above). A backend that allocates parts of
@@ -436,7 +445,8 @@ int nodes_reinsert(nodes_table* dbs, uint64_t index);
  *
  * Reinsertion reports SYLVAN_ERR_INVALID if any node was already indexed --
  * in a release build; a debug build asserts, as nodes_reinsert does -- and
- * aborts on an equal node exactly as nodes_reinsert does. It is the one
+ * treats a node equal to an indexed one exactly as nodes_reinsert does: a
+ * debug build aborts, a release build does not check. It is the one
  * refusal in this section that is not clean: every other node of the set has
  * been re-indexed by the time it is reported. The session treats it as fatal.
  */

@@ -1868,9 +1868,18 @@ test_prepare_removals(void)
 
 /**
  * Child process for the reinsert-collision death test: two equal records at
- * different indices, one of them indexed. Reinserting the other one is an
- * invariant violation and must abort rather than return.
+ * different indices, one of them indexed. Reinserting the other one is a
+ * caller error that must abort rather than return wherever it is checked:
+ * in every debug build, and in the trie in every build, because its descent
+ * meets the equal node anyway. A release build of a chained backend does not
+ * look (see nodes_reinsert in nodes.h), so the test does not run there.
  */
+#if !defined(NDEBUG) || SYLVAN_NODES_TABLE_TRIE
+#define TEST_REINSERT_COLLISION_CHECKED 1
+#else
+#define TEST_REINSERT_COLLISION_CHECKED 0
+#endif
+
 TASK(int, run_reinsert_collision)
 
 int
@@ -1896,7 +1905,7 @@ run_reinsert_collision_CALL(lace_worker *lace)
     return 1;  /* must not be reached */
 }
 
-#if defined(__unix__) || defined(__APPLE__)
+#if (defined(__unix__) || defined(__APPLE__)) && TEST_REINSERT_COLLISION_CHECKED
 static int
 test_reinsert_collision_aborts(const char *self)
 {
@@ -2125,7 +2134,7 @@ run_table_tests_CALL(lace_worker *lace)
     if (test_reorder_release_custom()) return 1;
     if (test_reorder_race()) return 1;
     if (test_reorder_batch()) return 1;
-#if defined(__unix__) || defined(__APPLE__)
+#if (defined(__unix__) || defined(__APPLE__)) && TEST_REINSERT_COLLISION_CHECKED
     if (test_reinsert_collision_aborts(test_self)) return 1;
 #endif
     if (test_deep_custom_chain()) return 1;

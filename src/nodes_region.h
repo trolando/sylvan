@@ -436,10 +436,13 @@ report_arena_exhausted(const nodes_table* dbs)
 
 /**
  * nodes_reinsert found a different node with the same key already in the
- * index. Shared by the four backends' nodes_reinsert; the unique table
- * invariant is broken and there is nothing to recover.
+ * index: the caller broke the unique table invariant and there is nothing to
+ * recover. The trie's descent meets such a node on its way to a free slot
+ * and calls this in every build; the chained backends only look in a debug
+ * build (see nodes_reinsert in nodes.h), so a release build of those never
+ * calls it.
  */
-static void
+static void SYLVAN_UNUSED
 reorder_duplicate_abort(uint64_t index, uint64_t other)
 {
     assert(!"nodes_reinsert: an equal node is already in the index");

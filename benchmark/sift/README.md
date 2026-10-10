@@ -101,7 +101,7 @@ each can still be run by name:
 | `lgsynth91` | `lgsynth91/*.blif`, 36 circuits | the same `mcnc/Combinational/blif/`, and `lgsynth91/blif/` for the sequential ones | none stated; MCNC gave them out by anonymous FTP and tape for benchmarking (`lgsynth91/LGSynth91.readme` there) | S. Yang, *Logic Synthesis and Optimization Benchmarks User Guide, Version 3.0*, MCNC, 1991 |
 | `iscas89` | `iscas89/s*.blif`, 10 circuits | `lgsynth91/blif/` of the same | as `lgsynth91` | F. Brglez, D. Bryan, K. Kozminski, ISCAS 1989 |
 | `epfl` | `epfl/*.blif`: arbiter mem_ctrl priority voter | `random_control/` of [lsils/benchmarks](https://github.com/lsils/benchmarks) `0060e15` | MIT | L. Amaru, P.-E. Gaillardon, G. De Micheli, IWLS 2015 |
-| `aralia` | `aralia/TREE.xml`, 43 fault trees in Open-PSA MEF, and from each, by `tools/mef2blif.py`, `aralia/TREE.dfs.blif`, `aralia/TREE.tdlr.blif` and their `.probs` (215 files) | `data/openpsa/` of [openpra-org/aralia-fault-tree-dataset](https://github.com/openpra-org/aralia-fault-tree-dataset) `9a50e0c` | CC BY-SA 4.0, the converted files as adaptations too | the Aralia benchmark suite (A. Rauzy et al.); doi:10.5281/zenodo.20160658; see [Fault trees](#fault-trees) |
+| `aralia` | `aralia/TREE.xml`, 43 fault trees in Open-PSA MEF, and from each, by `tools/mef2blif.py`, `aralia/TREE.dfs.blif`, `aralia/TREE.tdlr.blif` and their `.probs` (215 files) | `data/openpsa/` of [openpra-org/aralia-fault-tree-dataset](https://github.com/openpra-org/aralia-fault-tree-dataset) `9a50e0c` | CC BY-SA 4.0, the converted files as adaptations too | the Aralia benchmark suite (A. Rauzy et al.); doi:10.5281/zenodo.20160659; see [Fault trees](#fault-trees) |
 
 The ispras files are Petr Fiser's collection
 (<https://ddd.fit.cvut.cz/www/prj/Benchmarks/>) with LF line endings: all 219
@@ -177,8 +177,12 @@ included. Each such call prints an `AUTO-BUILD` line on stderr. The row's
 `auto_build` says whether the flag was given and `build_sifts` counts those
 sifts, which `build_s` includes; `nodes_before` is the size after them, and
 the sift after the build runs as always. The recommendation changes only at a
-collection, so a build that never fills the nodes table never sifts: at the
-default 8 GiB the table starts with 2^23 buckets, a sixteenth of its maximum.
+collection, so a build that never fills the nodes table never sifts.
+`--memory B` is the cap of `sylvan_set_limits(B, 1, 4)`: the nodes table may
+grow to the largest power of two that fits in B together with an operation
+cache of half its size, and starts at a sixteenth of that. At the default
+8 GiB that is 2^27 buckets at most and 2^23 to start, at 1 GiB 2^24 and
+2^20, at 256 MiB 2^22 and 2^18, on every nodes table.
 `--stats` resets the library's counters before the build and before the
 sift, and prints `sylvan_stats_report` after each on stderr, between
 `SIFT-STATS-BEGIN build|sift` and `SIFT-STATS-END ...` lines; the counters
@@ -307,6 +311,12 @@ either tool, and the seed sweep, where some orders take CUDD minutes to sift.
 
 ## The case table
 
+The screens, timings and costs in this section and in
+[Fault trees](#fault-trees) were measured on an i5-13600KF (6 P-cores and
+8 E-cores, 20 threads) under WSL2, at Sylvan `e8c973a` (the circuits),
+`e6ee4ff` (the sift floor) and `bc92736` (the fault trees). They show what
+each case costs, not a quiet-machine result.
+
 `cases.tsv` is the main grid: 141 cases, 48 circuits from the four
 circuit sets under one to four starting orders each, queens8 to queens11 and
 bryant6 to bryant12; and 81 fault-tree cases, the Aralia trees under
@@ -346,7 +356,7 @@ A sourced `cases.sh` also gives `sb_cases_select`, `sb_case_row`,
 sequential ones only in the LGSynth'91 directory; the ten EPFL random/control
 circuits; CUDD's C880 and three small CUDD examples, ham01, closest and
 rcn25) was built and sifted from its file order, its reversed order and the
-random order of seed 1, under WSL on a 20-core machine, by `sylvan_bench`
+random order of seed 1, by `sylvan_bench`
 (list table, P1, threshold 0, growth 1.2, `--memory` 8 GiB) and by
 `cudd_bench`, one run at a time while other jobs held two to four cores. A
 Sylvan run got 60 s; one that needed more got a 600 s build and a 300 s
@@ -387,8 +397,8 @@ Small cases are cheap but say little on their own: a sift has a floor that
 grows with the nodes table rather than with the forest, because it begins with
 a garbage collection, which passes over the whole table. On bryant6 (127
 nodes) at P1 with the trie, the whole sift takes about 2.5 ms with the default
-8 GiB tables (2^24 slots), 1.5 ms at `--memory` 1 GiB (2^21) and 1.0 ms at
-256 MiB (2^19), of which the collection is 2.0, 1.0 and 0.5 ms and the 179
+8 GiB tables (2^23 buckets), 1.5 ms at `--memory` 1 GiB (2^20) and 1.0 ms
+at 256 MiB (2^18), of which the collection is 2.0, 1.0 and 0.5 ms and the 179
 swaps 0.3 ms; CUDD sifts it in about 0.7 ms. So a forest of a few thousand
 nodes measures mostly that floor.
 
@@ -571,7 +581,7 @@ for the harness, that is about 7.5 hours: 4.8 of Sylvan, 2.6 of CUDD, 1.7 of
 which das9701.dfs-file's timeouts. Without that case it is 4.1 hours.
 
 **Licences.** The Aralia trees are distributed by OpenPRA
-(openpra-org/aralia-fault-tree-dataset, doi:10.5281/zenodo.20160658)
+(openpra-org/aralia-fault-tree-dataset, doi:10.5281/zenodo.20160659)
 under CC BY-SA 4.0; the BLIF and `.probs` files `fetch-inputs.sh` makes of
 them are adaptations, under the same licence. This repository holds neither:
 it fetches the XML at a pinned commit and converts it as it installs it.

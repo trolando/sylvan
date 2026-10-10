@@ -11,8 +11,11 @@ the input circuits, which the instructions below fetch at pinned revisions.
 | `sylvan_bench.c` | the Sylvan driver: build a forest, sift it once, print one `RESULT {...}` JSON line |
 | `cudd_bench.c` | the CUDD driver: the same forest, `Cudd_ReduceHeap` with `CUDD_REORDER_SIFT` |
 | `blif.c`, `blif.h` | the BLIF reader both drivers share, and the shared starting-order permutation |
-| `fetch-inputs.sh` | installs `C880.blif`, or with `--all` every circuit of `cases.tsv` (all checksummed); `--families` documents the other input families |
+| `probs.c`, `probs.h` | the `--probs` reader and memo both drivers share: a fault tree's top-event probability (see [Fault trees](#fault-trees)) |
+| `fetch-inputs.sh` | installs `C880.blif`, or with `--all` every circuit and fault tree of `cases.tsv` (all checksummed); `--families` documents the other input families |
+| `tools/mef2blif.py` | converts a static fault tree (Open-PSA MEF or Galileo) to BLIF under Storm-dft's DFS or TDLR order, with its `.probs` |
 | `cases.tsv` | the case table: every case of the main grid, with its family, size class, quick flag and timeout (see [The case table](#the-case-table)) |
+| `fta-reference.tsv` | the published values of the fault trees: top-event probabilities and Storm-dft's BDD sizes |
 | `scripts/run-*.sh` | one script per experiment; each appends JSONL rows |
 | `scripts/summarize.py` | Markdown and CSV tables from those rows |
 | `scripts/build-matrix.sh`, `scripts/manifest.py` | every build configuration the paper's headlines need, and `manifest.json` |

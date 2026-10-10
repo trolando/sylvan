@@ -494,13 +494,18 @@ typedef int (*nodes_visit_cb)(uint64_t index, void* context);
  * callback returns 0 to continue; any other value stops the enumeration and
  * becomes the result. Order is unspecified; every node is visited once.
  *
- * MAP NODES ARE NOT COVERED. On llchst, the only backend with native
- * enumeration, a decision node lives in the subtable of its variable
- * identity, but an MTBDDMAP node lives in the shared MAP auxiliary subtable,
- * which this function cannot select a single key from. Enumerating a variable
- * therefore yields its decision nodes only. Covering map nodes is the session
- * layer's job -- it builds those lists from an arena scan for every backend
- * anyway -- and is deliberately not attempted here.
+ * No backend offers this at present. llchst, which keeps every variable's
+ * decision nodes in a subtable of their own, sizes those subtables from the
+ * table rather than from their nodes, so walking one would cost a share of
+ * the table where the session's own lists cost the variable's nodes.
+ *
+ * MAP NODES ARE NOT COVERED. A backend with per-variable subtables keeps a
+ * decision node in the subtable of its variable identity, but an MTBDDMAP
+ * node in a shared MAP subtable, which this function cannot select a single
+ * key from. Enumerating a variable therefore yields its decision nodes only.
+ * Covering map nodes is the session layer's job -- it builds those lists from
+ * an arena scan for every backend anyway -- and is deliberately not attempted
+ * here.
  *
  * Unlike the other primitives this one is read-only and is NOT safe against
  * concurrent nodes_remove or nodes_reinsert. It belongs to a read-only

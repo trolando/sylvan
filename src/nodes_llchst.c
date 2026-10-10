@@ -1936,8 +1936,7 @@ uint32_t
 nodes_reorder_caps(const nodes_table* dbs)
 {
     (void)dbs;
-    return NODES_CAP_REMOVE | NODES_CAP_RELEASE | NODES_CAP_ENUMERATE |
-           NODES_CAP_BATCH;
+    return NODES_CAP_REMOVE | NODES_CAP_RELEASE | NODES_CAP_BATCH;
 }
 
 /**
@@ -2182,47 +2181,18 @@ nodes_release(nodes_table* dbs, uint64_t index)
 }
 
 /**
- * Visit every node in one variable's decision subtable, by walking its head
- * array and the chain hanging off each head.
- *
- * This covers exactly the nodes that lookups route to that variable, which
- * includes the explicitly routed entries whose own identity field says
- * something else: they are in these chains, so a caller enumerating "the
- * nodes of variable v" sees them.
- *
- * MAP NODES ARE NOT COVERED. An MTBDDMAP node carries its key in the variable
- * field like a decision node does, but it is routed to the shared MAP
- * auxiliary subtable, not to a per-identity one, so there is no head array to
- * walk for "the map nodes of variable v"; see the contract in
- * <sylvan/nodes.h>.
+ * Not offered, although every variable has chains of its own here. A
+ * collection sizes each variable's head array from the table rather than
+ * from the variable's nodes, so walking one costs a share of the table, and
+ * a swap would walk one. The session's own per-identity lists cost the
+ * variable's nodes instead.
  */
 int
 nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
                     nodes_visit_cb cb, void* context)
 {
-    if (cb == NULL || variable >= NODES_SUBTABLE_LEAF) {
-        return SYLVAN_ERR_INVALID;
-    }
-
-    llchst_subtable* subtable = get_subtable(dbs, variable, 0);
-    if (subtable == NULL) return SYLVAN_OK;
-    _Atomic(uint64_t)* heads = subtable_heads(subtable);
-    if (heads == NULL) return SYLVAN_OK;
-
-    const size_t count = head_count(subtable);
-    for (size_t i = 0; i < count; i++) {
-        uint64_t link = atomic_load_explicit(
-            heads + i, memory_order_acquire);
-        while ((link & MASK_LINK) != 0) {
-            const uint64_t index = link & MASK_INDEX;
-            assert(!link_is_removing(link));
-            const int status = cb(index, context);
-            if (status != 0) return status;
-            link = atomic_load_explicit(
-                dbs->next + index, memory_order_acquire);
-        }
-    }
-    return SYLVAN_OK;
+    (void)dbs; (void)variable; (void)cb; (void)context;
+    return SYLVAN_ERR_INVALID;
 }
 
 /**

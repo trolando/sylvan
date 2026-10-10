@@ -36,11 +36,11 @@
  *    a sift keeps whatever a collection would keep.
  *
  * 3. Per-identity node lists, so a swap can find "the nodes of variable x"
- *    without scanning the table. Backends that enumerate a variable natively
- *    (llchst) do not need the decision lists, but every backend needs the map
- *    lists: an MTBDDMAP node carries its key in the variable field yet lives
- *    in the shared MAP subtable, where no native enumeration can select one
- *    key.
+ *    without scanning the table. A backend that enumerated a variable
+ *    natively would not need the decision lists (none in the tree does), but
+ *    every backend needs the map lists: an MTBDDMAP node carries its key in
+ *    the variable field yet lives in a shared MAP subtable, where no native
+ *    enumeration can select one key.
  *
  * WHAT COUNTS AS AN EDGE. Every live non-leaf node contributes one edge to
  * each of its two children. Leaves are excluded entirely and are never
@@ -1155,7 +1155,7 @@ sylvan_reorder_population(uint32_t identity)
     }
 
     /* Map nodes are part of the population because a swap rewrites them too,
-       and on llchst they are the half native enumeration cannot see. */
+       and they are the half native enumeration cannot see. */
     struct reorder_list *maps = reorder_map_list(identity);
     if (maps != NULL) count += reorder_collect(maps, identity, 1);
     return count;

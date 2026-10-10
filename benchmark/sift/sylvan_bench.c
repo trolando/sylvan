@@ -25,6 +25,15 @@
  * --recommend-factor F sets the growth factor that recommendation compares
  * against (sylvan_sift_set_recommend_factor; the library's 2.0 otherwise).
  *
+ * --auto-build (--mode blif) lets the recommendation sift during the build as
+ * well: the same configuration is installed with sylvan_gc_set_auto_sift
+ * before the first gate, and between two gates, where no operation is in
+ * flight, sylvan_gc() is called whenever sylvan_sift_recommended() says so --
+ * which only a collection the build ran into can make it say. The forest
+ * sifted then is everything the build holds, its intermediates included.
+ * "build_sifts" counts those sifts and build_s includes them; nodes_before is
+ * then the size after them, and the sift after the build runs as usual.
+ *
  * SOUNDNESS. For --mode blif, every output is evaluated against the same set
  * of random input vectors before and after the sift, and its satisfying-
  * assignment count is taken before and after. Both are invariant under
@@ -85,6 +94,7 @@ static double   opt_timelimit = 0.0;   /* seconds, 0 = unlimited             */
 static int      opt_fulllegs  = 0;     /* walk every leg to the end          */
 static int      opt_grouppairs = 0;    /* sift (2k, 2k+1) as one block       */
 static int      opt_auto      = 0;     /* sift through sylvan_gc's auto sift */
+static int      opt_autobuild = 0;     /* auto sift between gates of the build */
 static int      opt_stats     = 0;     /* counters of the build and the sift */
 static int      opt_batched   = 1;     /* batched index surgery in swaps     */
 static double   opt_recfactor = -1.0;  /* recommendation factor, <0 = default */
@@ -205,6 +215,21 @@ varset_make(void)
     return rc == SYLVAN_OK ? 0 : -1;
 }
 
+/* The configuration of every sift: the one after the build, and with --auto
+   and --auto-build the automatic ones. */
+static void
+sift_config_make(sylvan_sift_config *config)
+{
+    memset(config, 0, sizeof(*config));
+    config->max_swaps = opt_maxswaps;
+    config->max_vars = opt_maxvars;
+    config->max_growth = (float)opt_growth;
+    config->nodes_threshold = opt_threshold;
+    config->time_limit = opt_timelimit;
+    config->full_legs = opt_fulllegs;
+    config->group_pairs = (uint8_t)opt_grouppairs;
+}
+
 /* ------------------------------------------------------------------ build */
 
 static int
@@ -266,9 +291,22 @@ build_blif_CALL(lace_worker *lace)
         mtbdd_protect(&cache[i]);
     }
     int rc = -1;
+    const double t0 = now();
     for (int t = 0; t < circuit.n_topo; t++) {
         const int g = circuit.topo[t];
         if (build_gate_CALL(lace, &circuit.gate[g], cache, &cache[g]) != 0) goto done;
+        /* --auto-build: between two gates no operation is in flight, so a
+           recommended sift may run; sylvan_gc() runs it after collecting. */
+        if (opt_autobuild && sylvan_sift_recommended()) {
+            const uint64_t s0 = sylvan_sift_count();
+            const double t1 = now();
+            sylvan_gc_CALL(lace);
+            size_t filled = 0, total = 0;
+            sylvan_table_usage_CALL(lace, &filled, &total);
+            fprintf(stderr, "AUTO-BUILD after gate %d of %d at %.3f s: %llu sift(s) in "
+                    "%.3f s, %zu of %zu buckets in use\n", t + 1, circuit.n_topo, t1 - t0,
+                    (unsigned long long)(sylvan_sift_count() - s0), now() - t1, filled, total);
+        }
     }
     for (int o = 0; o < circuit.n_out; o++) {
         const blif_signal *s = &circuit.sig[circuit.out_sig[o]];
@@ -593,12 +631,20 @@ run_CALL(lace_worker *lace)
     }
 
     if (opt_stats) sylvan_stats_reset_CALL(lace);
+    if (opt_autobuild) {
+        sylvan_sift_config config;
+        sift_config_make(&config);
+        sylvan_gc_set_auto_sift(&config);
+    }
+    const uint64_t build_sifts_before = sylvan_sift_count();
     const double t_build = now();
     int rc;
     if (is_blif)                            rc = build_blif_CALL(lace);
     else if (strcmp(opt_mode, "bryant") == 0) rc = build_bryant_CALL(lace);
     else                                    rc = build_queens_CALL(lace);
     const double build_s = now() - t_build;
+    const uint64_t build_sifts = sylvan_sift_count() - build_sifts_before;
+    if (opt_autobuild) sylvan_gc_set_auto_sift(NULL);
     if (rc != 0) { fprintf(stderr, "build failed\n"); return 1; }
     if (opt_stats) stats_phase("build");
     memstat_t mem_build = {0, 0}, mem_sift = {0, 0};
@@ -664,14 +710,7 @@ run_CALL(lace_worker *lace)
     const uint64_t sifts_before = sylvan_sift_count();
     if (opt_sift) {
         sylvan_sift_config config;
-        memset(&config, 0, sizeof(config));
-        config.max_swaps = opt_maxswaps;
-        config.max_vars = opt_maxvars;
-        config.max_growth = (float)opt_growth;
-        config.nodes_threshold = opt_threshold;
-        config.time_limit = opt_timelimit;
-        config.full_legs = opt_fulllegs;
-        config.group_pairs = (uint8_t)opt_grouppairs;
+        sift_config_make(&config);
 
         if (opt_auto) {
             sylvan_gc_set_auto_sift(&config);
@@ -783,6 +822,8 @@ run_CALL(lace_worker *lace)
     if (opt_order_out) print_order();
     if (opt_memstat) memstat_print(&mem_build, &mem_sift);
     if (opt_probs != NULL) probs_print(prob_before, prob_after);
+    printf(",\"auto_build\":%d,\"build_sifts\":%llu", opt_autobuild,
+           (unsigned long long)build_sifts);
     printf("}\n");
     fflush(stdout);
 
@@ -808,6 +849,8 @@ usage(FILE *f)
         "          --no-sift  --no-batch (per-node index surgery in swaps)\n"
         "          --recommend-factor F (growth the --auto recommendation\n"
         "                    asks for; library default 2.0, 0 disables)\n"
+        "          --auto-build (blif: also sift when recommended between\n"
+        "                    gates of the build, through sylvan_gc)\n"
         "  checks: --verify VECTORS  --seed S  --ops  --order\n"
         "          --trace FILE  (one line per swap of the sift)\n"
         "          --probs FILE  (blif: the first output's probability before\n"
@@ -845,6 +888,7 @@ main(int argc, char **argv)
         else if (!strcmp(a, "--full-legs"))      { opt_fulllegs = 1; }
         else if (!strcmp(a, "--group-pairs"))    { opt_grouppairs = 1; }
         else if (!strcmp(a, "--auto"))           { opt_auto = 1; }
+        else if (!strcmp(a, "--auto-build"))     { opt_autobuild = 1; }
         else if (!strcmp(a, "--stats"))          { opt_stats = 1; }
         else if (!strcmp(a, "--no-batch"))       { opt_batched = 0; }
         else if (!strcmp(a, "--memstat"))        { opt_memstat = 1; }
@@ -888,8 +932,8 @@ main(int argc, char **argv)
                 return 1;
             }
         }
-    } else if (opt_probs != NULL) {
-        fprintf(stderr, "--probs needs --mode blif\n");
+    } else if (opt_probs != NULL || opt_autobuild) {
+        fprintf(stderr, "%s needs --mode blif\n", opt_probs != NULL ? "--probs" : "--auto-build");
         return 2;
     }
 

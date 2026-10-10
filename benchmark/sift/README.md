@@ -168,6 +168,17 @@ Under `--auto` the row's `sifts` field says whether a sift happened, and the
 `--recommend-factor F` sets the growth factor that recommendation asks for
 (`sylvan_sift_set_recommend_factor`; the library default is 2.0, 0 disables
 it).
+`--auto-build` (`--mode blif`) lets the recommendation sift during the build
+as well: the configuration is installed with `sylvan_gc_set_auto_sift` before
+the first gate, and wherever `sylvan_sift_recommended()` holds between two
+gates, where no operation is in flight, the driver calls `sylvan_gc()`, which
+collects and then sifts everything the build holds, its intermediates
+included. Each such call prints an `AUTO-BUILD` line on stderr. The row's
+`auto_build` says whether the flag was given and `build_sifts` counts those
+sifts, which `build_s` includes; `nodes_before` is the size after them, and
+the sift after the build runs as always. The recommendation changes only at a
+collection, so a build that never fills the nodes table never sifts: at the
+default 8 GiB the table starts with 2^23 buckets, a sixteenth of its maximum.
 `--stats` resets the library's counters before the build and before the
 sift, and prints `sylvan_stats_report` after each on stderr, between
 `SIFT-STATS-BEGIN build|sift` and `SIFT-STATS-END ...` lines; the counters

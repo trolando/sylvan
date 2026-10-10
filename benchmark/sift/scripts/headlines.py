@@ -37,15 +37,28 @@ from initial sizes 346660, 470046, 844442, 1066147, 25945, 435170 and
 2^(N+1)-1 (both tools). Within one stanza every row of a case that hashes its evaluation on
 the same vectors must have the same eval_hash, whatever tool or backend
 produced it, and C880-file on 64 vectors of the default seed must hash to
-b63d2a3eade6548e. A row that verified must be sound and valid. Any violation
-fails the check: it is listed at the top of headlines.md, the cell is marked
-in its table, and the exit status is 1. --no-check reports without failing.
+b63d2a3eade6548e. A row that verified must be sound and valid.
+
+The fault trees (family fta of cases.tsv, rows with prob_before and
+prob_after from --probs) have three checks more, against ../fta-reference.tsv:
+prob_before and prob_after of every row agree to a relative 1e-12 (the same
+terms added in another order); every row of a tree, whatever its tool, order
+or settings, has the same probability to that tolerance; and where the
+dataset publishes one, it is that probability to 6 significant digits
+(within half a unit of the sixth). TREE.dfs-file and TREE.tdlr-file start at
+the size Storm-dft reports under that order, unless the row ran with
+--auto-build, whose build has sifted already.
+
+Any violation fails the check: it is listed at the top of headlines.md, the
+cell is marked in its table, and the exit status is 1. --no-check reports
+without failing.
 """
 
 import argparse
 import contextlib
 import io
 import json
+import math
 import os
 import re
 import shlex
@@ -70,6 +83,61 @@ REFERENCE = OrderedDict([
 # (case, vectors, seed): eval_hash
 HASH_REFERENCE = {("C880-file", 64, 12345): "b63d2a3eade6548e"}
 DEFAULT_SEED = 12345
+
+
+# The fault trees: published top-event probabilities and Storm-dft's sizes.
+FTA_REFERENCE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fta-reference.tsv")
+FTA_CASE = re.compile(r"(?P<tree>.+)\.(?P<order>dfs|tdlr)-(?P<how>file|rev|rnd\d+)")
+PROB_RTOL = 1e-12
+
+
+def load_fta_reference(path=FTA_REFERENCE):
+    """tree: (published probability as written, or None; {order: Storm size})."""
+    ref = {}
+    if not os.path.isfile(path):
+        return ref
+    header = None
+    with open(path) as f:
+        for line in f:
+            line = line.rstrip("\r\n")
+            if not line or line.startswith("#"):
+                continue
+            cells = line.split("\t")
+            if header is None:
+                header = cells
+                continue
+            row = dict(zip(header, cells))
+
+            def val(k):
+                v = row.get(k, "-")
+                return None if v in ("-", "") else v
+            sizes = {o: int(val("storm_" + o)) for o in ("dfs", "tdlr") if val("storm_" + o)}
+            ref[row["tree"]] = (val("probability"), sizes)
+    return ref
+
+
+FTA = load_fta_reference()
+
+
+def probs_agree(a, b):
+    """Two probabilities of one function, added up in different orders."""
+    return abs(a - b) <= PROB_RTOL * max(abs(a), abs(b))
+
+
+def six_digits(p, published):
+    """Whether P is PUBLISHED (written to 6 significant digits) to within half
+    a unit of its sixth digit."""
+    q = float(published)
+    if q == 0:
+        return p == 0
+    half = 0.5 * 10 ** (math.floor(math.log10(abs(q))) - 5)
+    return abs(p - q) <= half * (1 + 1e-9)
+
+
+def fta_case(case):
+    """(tree, order, how) of a fault-tree case name TREE.ORDER-file|rev|rndK, or None."""
+    m = FTA_CASE.fullmatch(case or "")
+    return (m.group("tree"), m.group("order"), m.group("how")) if m else None
 
 
 def reference(case):
@@ -208,6 +276,45 @@ class Check:
             if want is not None:
                 self.add(hs == [want], "eval_hash reference", case,
                          f"{st}, {vec} vectors, seed {seed}", want, " ".join(hs))
+
+        # Fault trees: the probability does not move with the sift, every row
+        # of a tree has the same one, and it is the published one; and the
+        # unsifted size under Storm-dft's order is the size Storm-dft reports.
+        trees = OrderedDict()
+        for r in good:
+            if "prob_before" not in r and "prob_after" not in r:
+                continue
+            pb, pa = r.get("prob_before"), r.get("prob_after")
+            if not isinstance(pb, (int, float)) or not isinstance(pa, (int, float)):
+                self.add(False, "probability computed", r.get("case"), where(r), "two numbers",
+                         f"{pb} / {pa}", r)
+                continue
+            self.add(probs_agree(pb, pa), "probability invariant", r.get("case"), where(r),
+                     f"{pb:.17g}", f"{pa:.17g}", r)
+            fc = fta_case(r.get("case"))
+            tree = fc[0] if fc else r.get("case")
+            trees.setdefault(tree, []).append(r)
+            published = FTA.get(tree, (None, {}))[0]
+            if published is not None:
+                self.add(six_digits(pa, published), "published probability", r.get("case"), where(r),
+                         published, f"{pa:.6E}", r)
+        for tree, rs in trees.items():
+            ps = [r["prob_after"] for r in rs]
+            lo, hi = min(ps), max(ps)
+            tools = sz.ordered(sz.tool(r) for r in rs)
+            ok = probs_agree(lo, hi)
+            self.add(ok, "probability agreement", tree, f"{len(rs)} rows of {'/'.join(tools)}",
+                     "one probability", f"{lo:.17g}" if ok else f"{lo:.17g} to {hi:.17g}")
+            if not ok:
+                self.bad_any.update(id(r) for r in rs)
+        for r in good:
+            fc = fta_case(r.get("case"))
+            if not fc or fc[2] != "file" or r.get("auto_build") or r.get("nodes_before") is None:
+                continue
+            storm = FTA.get(fc[0], (None, {}))[1].get(fc[1])
+            if storm is not None:
+                self.add(r["nodes_before"] == storm, "Storm-dft size", r["case"], where(r),
+                         storm, r["nodes_before"], r, size=True)
 
         # Soundness of every row that verified.
         for r in good:

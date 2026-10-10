@@ -6,7 +6,9 @@
 # "case" field is enough to rebuild it:
 #
 #   STEM-file      every .outputs signal of STEM's circuit, under the file's
-#                  own variable order (inputs, then latch outputs)
+#                  own variable order (inputs, then latch outputs); for a
+#                  fault tree, STEM is TREE.dfs or TREE.tdlr, the file
+#                  aralia/STEM.blif, whose order is Storm-dft's
 #   STEM-rev       the same under the reversed order
 #   STEM-rndK      the same under a random order, shuffled with seed K
 #   bryantN        x0.y0 + ... + x(N-1).y(N-1) under the split order, whose
@@ -29,14 +31,20 @@
 #   var_order   file | reverse | random ("file" for queens and bryant: their
 #               one built-in order)
 #   seed        the --order-seed (0 unless random)
-#   family      iscas85 | iscas89 | lgsynth91 | epfl | queens | bryant
+#   family      iscas85 | iscas89 | lgsynth91 | epfl | queens | bryant | fta
+#               (fault trees)
 #   size_class  small (sift < 1 s at P1) | medium (1-30 s) | large (> 30 s)
 #   quick       1 for the quick subset (each case under 5 s per run), else 0
 #   timeout_s   a per-run wall-clock cap for this case, in seconds
 #   notes       free text
+#   probs       the --probs file of the circuit, relative to --inputs
+#               (fetch-inputs.sh installs one next to every fault tree), or
+#               "-": every driver run of the case gets --probs with it
+#
+# A table without the probs column, as before it existed, still reads.
 #
 # Where STEM is in the table, STEM-rndK for any K builds from that row's file
-# too, so the seed sweeps work on every circuit. A name that is not in the
+# (and its probs) too, so the seed sweeps work on every circuit. A name that is not in the
 # table falls back to INPUTS/STEM.blif, as before the table existed, or else
 # to the one INPUTS/*/STEM.blif there is (so every circuit fetch-inputs.sh
 # installs can be run by name, including those screened out of the table).
@@ -146,6 +154,17 @@ sb_stem_file() {
   ' "$SB_CASES_TSV"
 }
 
+# sb_file_probs FILE -- the probs column of a row of the table whose file is
+# FILE (relative to --inputs), or nothing; a --probs file belongs to the
+# circuit, whatever order the case starts from.
+sb_file_probs() {
+  [ -f "$SB_CASES_TSV" ] || return 0
+  awk -F'\t' -v file="$1" '
+    NR == 1 { for (i = 1; i <= NF; i++) if ($i == "probs") c = i; next }
+    c && $3 == file && $c != "" && $c != "-" { print $c; exit }
+  ' "$SB_CASES_TSV"
+}
+
 # sb_case_args NAME -- set SB_CASE_ARGV to the harness arguments that build
 # case NAME, or complain and return 1. BLIF cases need SB_INPUTS.
 sb_case_args() {
@@ -187,10 +206,17 @@ sb_case_args() {
     for f in "$SB_INPUTS"/*/"$stem.blif"; do [ -f "$f" ] && found+=("${f#"$SB_INPUTS"/}"); done
     [ ${#found[@]} -eq 1 ] && file=${found[0]}
   fi
+  local probs
+  probs=$(sb_file_probs "$file")
   file="$SB_INPUTS/$file"
   [ -f "$file" ] || { echo "case $name: no $file (see fetch-inputs.sh --all)" >&2; return 1; }
   SB_CASE_ARGV=(--mode blif --file "$file" --case "$name"
                 --var-order "$order" --order-seed "$seed")
+  if [ -n "$probs" ]; then
+    [ -f "$SB_INPUTS/$probs" ] ||
+      { echo "case $name: no $SB_INPUTS/$probs (see fetch-inputs.sh --all)" >&2; return 1; }
+    SB_CASE_ARGV+=(--probs "$SB_INPUTS/$probs")
+  fi
 }
 
 # sb_cases_check -- check the case table: the header, unique names, every
@@ -202,16 +228,20 @@ sb_cases_check() {
   bad=$(awk -F'\t' '
     function err(m) { print "line " NR ": " m; n++ }
     NR == 1 {
-      if ($0 != "name\tmode\tfile\tvar_order\tseed\tfamily\tsize_class\tquick\ttimeout_s\tnotes")
-        err("bad header")
+      base = "name\tmode\tfile\tvar_order\tseed\tfamily\tsize_class\tquick\ttimeout_s\tnotes"
+      if ($0 == base) cols = 10
+      else if ($0 == base "\tprobs") cols = 11
+      else err("bad header")
       next
     }
-    NF != 10 && NF != 9 { err(NF " fields, want 10"); next }
+    NF != cols && !(cols == 10 && NF == 9) { err(NF " fields, want " cols); next }
     seen[$1]++ { err("duplicate name " $1) }
     $2 !~ /^(blif|queens|bryant)$/ { err("bad mode " $2) }
     $4 !~ /^(file|reverse|random)$/ { err("bad var_order " $4) }
     $5 !~ /^[0-9]+$/ { err("bad seed " $5) }
-    $6 !~ /^(iscas85|iscas89|lgsynth91|epfl|queens|bryant)$/ { err("bad family " $6) }
+    $6 !~ /^(iscas85|iscas89|lgsynth91|epfl|queens|bryant|fta)$/ { err("bad family " $6) }
+    cols == 11 && $11 != "-" && ($2 != "blif" || $11 ~ /^\// || $11 !~ /\.probs$/) { err("bad probs " $11) }
+    $6 == "fta" && (cols != 11 || $11 == "-") { err($1 ": a fault tree without probs") }
     $7 !~ /^(small|medium|large)$/ { err("bad size_class " $7) }
     $8 !~ /^[01]$/ { err("bad quick " $8) }
     $9 !~ /^[1-9][0-9]*$/ { err("bad timeout_s " $9) }
@@ -232,7 +262,8 @@ sb_cases_check() {
     local f missing=0
     while read -r f; do
       [ -f "$SB_INPUTS/$f" ] || { echo "not installed: $SB_INPUTS/$f"; missing=1; }
-    done < <(awk -F'\t' 'NR > 1 && $2 == "blif" { print $3 }' "$SB_CASES_TSV" | sort -u)
+    done < <(awk -F'\t' 'NR > 1 && $2 == "blif" { print $3; if (NF >= 11 && $11 != "-") print $11 }' \
+               "$SB_CASES_TSV" | sort -u)
     return $missing
   fi
 }

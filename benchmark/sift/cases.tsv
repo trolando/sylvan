@@ -1,142 +1,223 @@
-name	mode	file	var_order	seed	family	size_class	quick	timeout_s	notes
-C432-file	blif	iscas85/C432.blif	file	0	iscas85	small	0	60	-
-C432-rev	blif	iscas85/C432.blif	reverse	0	iscas85	small	0	60	-
-C432-rnd1	blif	iscas85/C432.blif	random	1	iscas85	medium	0	60	-
-C499-file	blif	iscas85/C499.blif	file	0	iscas85	small	0	60	same forest as C1355
-C499-rev	blif	iscas85/C499.blif	reverse	0	iscas85	small	0	60	same forest as C1355
-C499-rnd1	blif	iscas85/C499.blif	random	1	iscas85	medium	0	640	same forest as C1355; CUDD 151.8 s vs Sylvan 4.1 s at P1
-C880-file	blif	C880.blif	file	0	iscas85	small	1	60	CUDD's nanotrav copy
-C880-rev	blif	C880.blif	reverse	0	iscas85	medium	0	60	CUDD's nanotrav copy
-C880-rnd1	blif	C880.blif	random	1	iscas85	medium	0	60	CUDD's nanotrav copy
-C880-rnd2	blif	C880.blif	random	2	iscas85	medium	0	60	CUDD's nanotrav copy
-C1908-file	blif	iscas85/C1908.blif	file	0	iscas85	small	0	60	-
-C1908-rev	blif	iscas85/C1908.blif	reverse	0	iscas85	small	0	60	-
-C1908-rnd1	blif	iscas85/C1908.blif	random	1	iscas85	small	1	60	-
-C3540-file	blif	iscas85/C3540.blif	file	0	iscas85	medium	0	60	-
-C3540-rnd1	blif	iscas85/C3540.blif	random	1	iscas85	medium	0	160	-
-s420.1-file	blif	iscas89/s420.1.blif	file	0	iscas89	small	0	60	combinational part (latches cut)
-s420.1-rev	blif	iscas89/s420.1.blif	reverse	0	iscas89	small	0	60	combinational part (latches cut)
-s420.1-rnd1	blif	iscas89/s420.1.blif	random	1	iscas89	small	0	60	combinational part (latches cut)
-s510-file	blif	iscas89/s510.blif	file	0	iscas89	small	0	60	combinational part (latches cut)
-s510-rev	blif	iscas89/s510.blif	reverse	0	iscas89	small	0	60	combinational part (latches cut)
-s510-rnd1	blif	iscas89/s510.blif	random	1	iscas89	small	0	60	combinational part (latches cut)
-s838.1-rev	blif	iscas89/s838.1.blif	reverse	0	iscas89	small	0	60	combinational part (latches cut); 66 vars
-s838.1-rnd1	blif	iscas89/s838.1.blif	random	1	iscas89	small	0	60	combinational part (latches cut); 66 vars
-s1423-file	blif	iscas89/s1423.blif	file	0	iscas89	small	1	60	combinational part (latches cut); 91 vars
-s1423-rev	blif	iscas89/s1423.blif	reverse	0	iscas89	small	0	60	combinational part (latches cut); 91 vars
-s1423-rnd1	blif	iscas89/s1423.blif	random	1	iscas89	small	0	60	combinational part (latches cut); 91 vars
-s5378-rev	blif	iscas89/s5378.blif	reverse	0	iscas89	small	0	60	combinational part (latches cut); 199 vars
-s5378-rnd1	blif	iscas89/s5378.blif	random	1	iscas89	small	0	60	combinational part (latches cut); 199 vars
-s9234.1-file	blif	iscas89/s9234.1.blif	file	0	iscas89	large	0	1070	combinational part (latches cut); CUDD 257.8 s vs Sylvan 55.5 s at P1; 247 vars
-s13207.1-rnd1	blif	iscas89/s13207.1.blif	random	1	iscas89	small	0	60	combinational part (latches cut); 700 vars
-s15850.1-file	blif	iscas89/s15850.1.blif	file	0	iscas89	medium	0	60	combinational part (latches cut); 611 vars
-s15850.1-rnd1	blif	iscas89/s15850.1.blif	random	1	iscas89	medium	0	110	combinational part (latches cut); 611 vars
-s38584.1-rev	blif	iscas89/s38584.1.blif	reverse	0	iscas89	medium	0	60	combinational part (latches cut); 1464 vars
-s38584.1-rnd1	blif	iscas89/s38584.1.blif	random	1	iscas89	medium	1	60	combinational part (latches cut); 1464 vars
-apex2-file	blif	lgsynth91/apex2.blif	file	0	lgsynth91	small	0	60	-
-apex2-rev	blif	lgsynth91/apex2.blif	reverse	0	lgsynth91	small	0	60	-
-apex2-rnd1	blif	lgsynth91/apex2.blif	random	1	lgsynth91	small	0	60	-
-bc0-file	blif	lgsynth91/bc0.blif	file	0	lgsynth91	small	0	60	-
-bc0-rev	blif	lgsynth91/bc0.blif	reverse	0	lgsynth91	small	0	60	-
-bc0-rnd1	blif	lgsynth91/bc0.blif	random	1	lgsynth91	small	0	60	-
-bigkey-file	blif	lgsynth91/bigkey.blif	file	0	lgsynth91	small	0	60	combinational part (latches cut); 486 vars
-bigkey-rev	blif	lgsynth91/bigkey.blif	reverse	0	lgsynth91	small	0	60	combinational part (latches cut); 486 vars
-bigkey-rnd1	blif	lgsynth91/bigkey.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut); 486 vars
-clma-file	blif	lgsynth91/clma.blif	file	0	lgsynth91	small	0	60	combinational part (latches cut); 415 vars
-clma-rev	blif	lgsynth91/clma.blif	reverse	0	lgsynth91	small	0	60	combinational part (latches cut); 415 vars
-clma-rnd1	blif	lgsynth91/clma.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut); 415 vars
-clmb-file	blif	lgsynth91/clmb.blif	file	0	lgsynth91	small	0	60	combinational part (latches cut); 415 vars
-clmb-rev	blif	lgsynth91/clmb.blif	reverse	0	lgsynth91	small	0	60	combinational part (latches cut); 415 vars
-clmb-rnd1	blif	lgsynth91/clmb.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut); 415 vars
-cm150a-file	blif	lgsynth91/cm150a.blif	file	0	lgsynth91	small	0	60	-
-cm150a-rev	blif	lgsynth91/cm150a.blif	reverse	0	lgsynth91	small	0	60	-
-cm150a-rnd1	blif	lgsynth91/cm150a.blif	random	1	lgsynth91	small	0	60	-
-comp-file	blif	lgsynth91/comp.blif	file	0	lgsynth91	small	0	60	CUDD 7.1 s vs Sylvan 0.4 s at P1
-comp-rev	blif	lgsynth91/comp.blif	reverse	0	lgsynth91	small	0	60	-
-comp-rnd1	blif	lgsynth91/comp.blif	random	1	lgsynth91	small	0	60	-
-dalu-file	blif	lgsynth91/dalu.blif	file	0	lgsynth91	large	0	950	CUDD 227.7 s vs Sylvan 38.5 s at P1; 75 vars
-dalu-rev	blif	lgsynth91/dalu.blif	reverse	0	lgsynth91	small	0	60	75 vars
-dalu-rnd1	blif	lgsynth91/dalu.blif	random	1	lgsynth91	small	0	60	75 vars
-des-file	blif	lgsynth91/des.blif	file	0	lgsynth91	small	1	60	256 vars
-des-rev	blif	lgsynth91/des.blif	reverse	0	lgsynth91	small	0	60	256 vars
-des-rnd1	blif	lgsynth91/des.blif	random	1	lgsynth91	small	0	60	256 vars
-dsip-file	blif	lgsynth91/dsip.blif	file	0	lgsynth91	small	0	60	combinational part (latches cut); 452 vars
-dsip-rev	blif	lgsynth91/dsip.blif	reverse	0	lgsynth91	small	0	60	combinational part (latches cut); 452 vars
-dsip-rnd1	blif	lgsynth91/dsip.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut); 452 vars
-frg1-file	blif	lgsynth91/frg1.blif	file	0	lgsynth91	small	0	60	-
-frg1-rev	blif	lgsynth91/frg1.blif	reverse	0	lgsynth91	small	0	60	-
-frg1-rnd1	blif	lgsynth91/frg1.blif	random	1	lgsynth91	small	0	60	-
-frg2-file	blif	lgsynth91/frg2.blif	file	0	lgsynth91	small	0	60	143 vars
-frg2-rev	blif	lgsynth91/frg2.blif	reverse	0	lgsynth91	small	0	60	143 vars
-frg2-rnd1	blif	lgsynth91/frg2.blif	random	1	lgsynth91	small	0	60	143 vars
-i2-file	blif	lgsynth91/i2.blif	file	0	lgsynth91	small	0	60	201 vars
-i2-rev	blif	lgsynth91/i2.blif	reverse	0	lgsynth91	small	0	60	201 vars
-i2-rnd1	blif	lgsynth91/i2.blif	random	1	lgsynth91	small	0	60	201 vars
-i3-file	blif	lgsynth91/i3.blif	file	0	lgsynth91	small	0	60	132 vars
-i3-rev	blif	lgsynth91/i3.blif	reverse	0	lgsynth91	small	0	60	132 vars
-i3-rnd1	blif	lgsynth91/i3.blif	random	1	lgsynth91	small	0	60	132 vars
-i4-file	blif	lgsynth91/i4.blif	file	0	lgsynth91	small	0	60	192 vars
-i4-rev	blif	lgsynth91/i4.blif	reverse	0	lgsynth91	small	0	60	192 vars
-i4-rnd1	blif	lgsynth91/i4.blif	random	1	lgsynth91	small	0	60	192 vars
-i8-file	blif	lgsynth91/i8.blif	file	0	lgsynth91	small	0	60	133 vars
-i8-rev	blif	lgsynth91/i8.blif	reverse	0	lgsynth91	small	0	60	133 vars
-i8-rnd1	blif	lgsynth91/i8.blif	random	1	lgsynth91	small	0	60	133 vars
-i9-file	blif	lgsynth91/i9.blif	file	0	lgsynth91	small	0	60	88 vars
-i9-rev	blif	lgsynth91/i9.blif	reverse	0	lgsynth91	small	0	60	88 vars
-i9-rnd1	blif	lgsynth91/i9.blif	random	1	lgsynth91	small	0	60	88 vars
-k2-file	blif	lgsynth91/k2.blif	file	0	lgsynth91	small	0	60	same forest as apex1
-k2-rev	blif	lgsynth91/k2.blif	reverse	0	lgsynth91	small	0	60	same forest as apex1
-k2-rnd1	blif	lgsynth91/k2.blif	random	1	lgsynth91	small	0	60	same forest as apex1
-mainpla-file	blif	lgsynth91/mainpla.blif	file	0	lgsynth91	small	0	60	-
-mainpla-rev	blif	lgsynth91/mainpla.blif	reverse	0	lgsynth91	small	0	60	-
-mainpla-rnd1	blif	lgsynth91/mainpla.blif	random	1	lgsynth91	small	0	60	-
-mm9a-file	blif	lgsynth91/mm9a.blif	file	0	lgsynth91	medium	0	60	combinational part (latches cut)
-mm9a-rnd1	blif	lgsynth91/mm9a.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut)
-mm9b-file	blif	lgsynth91/mm9b.blif	file	0	lgsynth91	small	0	170	combinational part (latches cut); CUDD 33.0 s vs Sylvan 1.9 s at P1
-mm9b-rnd1	blif	lgsynth91/mm9b.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut)
-mult16a-file	blif	lgsynth91/mult16a.blif	file	0	lgsynth91	small	0	60	combinational part (latches cut)
-mult16a-rev	blif	lgsynth91/mult16a.blif	reverse	0	lgsynth91	medium	0	60	combinational part (latches cut)
-mult16a-rnd1	blif	lgsynth91/mult16a.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut)
-mux-file	blif	lgsynth91/mux.blif	file	0	lgsynth91	small	0	60	-
-mux-rev	blif	lgsynth91/mux.blif	reverse	0	lgsynth91	small	0	60	-
-mux-rnd1	blif	lgsynth91/mux.blif	random	1	lgsynth91	small	0	60	-
-my_adder-file	blif	lgsynth91/my_adder.blif	file	0	lgsynth91	small	0	60	-
-my_adder-rev	blif	lgsynth91/my_adder.blif	reverse	0	lgsynth91	small	0	60	-
-my_adder-rnd1	blif	lgsynth91/my_adder.blif	random	1	lgsynth91	small	0	60	-
-pair-file	blif	lgsynth91/pair.blif	file	0	lgsynth91	small	0	60	173 vars
-pair-rev	blif	lgsynth91/pair.blif	reverse	0	lgsynth91	small	0	60	173 vars
-pair-rnd1	blif	lgsynth91/pair.blif	random	1	lgsynth91	small	0	60	173 vars
-rot-file	blif	lgsynth91/rot.blif	file	0	lgsynth91	small	1	60	135 vars
-rot-rev	blif	lgsynth91/rot.blif	reverse	0	lgsynth91	small	0	60	135 vars
-rot-rnd1	blif	lgsynth91/rot.blif	random	1	lgsynth91	medium	0	60	135 vars
-seq-file	blif	lgsynth91/seq.blif	file	0	lgsynth91	small	0	60	-
-seq-rev	blif	lgsynth91/seq.blif	reverse	0	lgsynth91	small	0	60	-
-seq-rnd1	blif	lgsynth91/seq.blif	random	1	lgsynth91	small	0	60	-
-signet-file	blif	lgsynth91/signet.blif	file	0	lgsynth91	small	0	60	-
-signet-rev	blif	lgsynth91/signet.blif	reverse	0	lgsynth91	small	0	60	-
-signet-rnd1	blif	lgsynth91/signet.blif	random	1	lgsynth91	small	0	60	-
-ti-file	blif	lgsynth91/ti.blif	file	0	lgsynth91	small	0	60	-
-ti-rev	blif	lgsynth91/ti.blif	reverse	0	lgsynth91	small	0	60	-
-ti-rnd1	blif	lgsynth91/ti.blif	random	1	lgsynth91	small	0	60	-
-too_large-file	blif	lgsynth91/too_large.blif	file	0	lgsynth91	small	0	60	-
-too_large-rev	blif	lgsynth91/too_large.blif	reverse	0	lgsynth91	small	0	60	-
-too_large-rnd1	blif	lgsynth91/too_large.blif	random	1	lgsynth91	small	0	60	-
-x6dn-file	blif	lgsynth91/x6dn.blif	file	0	lgsynth91	small	0	60	-
-x6dn-rev	blif	lgsynth91/x6dn.blif	reverse	0	lgsynth91	small	0	60	-
-x6dn-rnd1	blif	lgsynth91/x6dn.blif	random	1	lgsynth91	small	0	60	-
-xparc-file	blif	lgsynth91/xparc.blif	file	0	lgsynth91	small	0	60	-
-xparc-rev	blif	lgsynth91/xparc.blif	reverse	0	lgsynth91	small	0	60	-
-xparc-rnd1	blif	lgsynth91/xparc.blif	random	1	lgsynth91	small	0	60	-
-arbiter-file	blif	epfl/arbiter.blif	file	0	epfl	medium	0	80	256 vars
-arbiter-rnd1	blif	epfl/arbiter.blif	random	1	epfl	medium	0	130	256 vars
-priority-file	blif	epfl/priority.blif	file	0	epfl	small	0	60	128 vars
-priority-rev	blif	epfl/priority.blif	reverse	0	epfl	small	0	60	128 vars
-priority-rnd1	blif	epfl/priority.blif	random	1	epfl	small	1	60	128 vars
-queens8	queens	-	file	0	queens	small	0	60	-
-queens9	queens	-	file	0	queens	small	1	60	-
-queens10	queens	-	file	0	queens	small	0	60	-
-queens11	queens	-	file	0	queens	medium	0	340	-
-bryant6	bryant	-	file	0	bryant	small	0	60	-
-bryant8	bryant	-	file	0	bryant	small	0	60	-
-bryant10	bryant	-	file	0	bryant	small	1	60	-
-bryant12	bryant	-	file	0	bryant	small	0	60	-
+name	mode	file	var_order	seed	family	size_class	quick	timeout_s	notes	probs
+C432-file	blif	iscas85/C432.blif	file	0	iscas85	small	0	60	-	-
+C432-rev	blif	iscas85/C432.blif	reverse	0	iscas85	small	0	60	-	-
+C432-rnd1	blif	iscas85/C432.blif	random	1	iscas85	medium	0	60	-	-
+C499-file	blif	iscas85/C499.blif	file	0	iscas85	small	0	60	same forest as C1355	-
+C499-rev	blif	iscas85/C499.blif	reverse	0	iscas85	small	0	60	same forest as C1355	-
+C499-rnd1	blif	iscas85/C499.blif	random	1	iscas85	medium	0	640	same forest as C1355; CUDD 151.8 s vs Sylvan 4.1 s at P1	-
+C880-file	blif	C880.blif	file	0	iscas85	small	1	60	CUDD's nanotrav copy	-
+C880-rev	blif	C880.blif	reverse	0	iscas85	medium	0	60	CUDD's nanotrav copy	-
+C880-rnd1	blif	C880.blif	random	1	iscas85	medium	0	60	CUDD's nanotrav copy	-
+C880-rnd2	blif	C880.blif	random	2	iscas85	medium	0	60	CUDD's nanotrav copy	-
+C1908-file	blif	iscas85/C1908.blif	file	0	iscas85	small	0	60	-	-
+C1908-rev	blif	iscas85/C1908.blif	reverse	0	iscas85	small	0	60	-	-
+C1908-rnd1	blif	iscas85/C1908.blif	random	1	iscas85	small	1	60	-	-
+C3540-file	blif	iscas85/C3540.blif	file	0	iscas85	medium	0	60	-	-
+C3540-rnd1	blif	iscas85/C3540.blif	random	1	iscas85	medium	0	160	-	-
+s420.1-file	blif	iscas89/s420.1.blif	file	0	iscas89	small	0	60	combinational part (latches cut)	-
+s420.1-rev	blif	iscas89/s420.1.blif	reverse	0	iscas89	small	0	60	combinational part (latches cut)	-
+s420.1-rnd1	blif	iscas89/s420.1.blif	random	1	iscas89	small	0	60	combinational part (latches cut)	-
+s510-file	blif	iscas89/s510.blif	file	0	iscas89	small	0	60	combinational part (latches cut)	-
+s510-rev	blif	iscas89/s510.blif	reverse	0	iscas89	small	0	60	combinational part (latches cut)	-
+s510-rnd1	blif	iscas89/s510.blif	random	1	iscas89	small	0	60	combinational part (latches cut)	-
+s838.1-rev	blif	iscas89/s838.1.blif	reverse	0	iscas89	small	0	60	combinational part (latches cut); 66 vars	-
+s838.1-rnd1	blif	iscas89/s838.1.blif	random	1	iscas89	small	0	60	combinational part (latches cut); 66 vars	-
+s1423-file	blif	iscas89/s1423.blif	file	0	iscas89	small	1	60	combinational part (latches cut); 91 vars	-
+s1423-rev	blif	iscas89/s1423.blif	reverse	0	iscas89	small	0	60	combinational part (latches cut); 91 vars	-
+s1423-rnd1	blif	iscas89/s1423.blif	random	1	iscas89	small	0	60	combinational part (latches cut); 91 vars	-
+s5378-rev	blif	iscas89/s5378.blif	reverse	0	iscas89	small	0	60	combinational part (latches cut); 199 vars	-
+s5378-rnd1	blif	iscas89/s5378.blif	random	1	iscas89	small	0	60	combinational part (latches cut); 199 vars	-
+s9234.1-file	blif	iscas89/s9234.1.blif	file	0	iscas89	large	0	1070	combinational part (latches cut); CUDD 257.8 s vs Sylvan 55.5 s at P1; 247 vars	-
+s13207.1-rnd1	blif	iscas89/s13207.1.blif	random	1	iscas89	small	0	60	combinational part (latches cut); 700 vars	-
+s15850.1-file	blif	iscas89/s15850.1.blif	file	0	iscas89	medium	0	60	combinational part (latches cut); 611 vars	-
+s15850.1-rnd1	blif	iscas89/s15850.1.blif	random	1	iscas89	medium	0	110	combinational part (latches cut); 611 vars	-
+s38584.1-rev	blif	iscas89/s38584.1.blif	reverse	0	iscas89	medium	0	60	combinational part (latches cut); 1464 vars	-
+s38584.1-rnd1	blif	iscas89/s38584.1.blif	random	1	iscas89	medium	1	60	combinational part (latches cut); 1464 vars	-
+apex2-file	blif	lgsynth91/apex2.blif	file	0	lgsynth91	small	0	60	-	-
+apex2-rev	blif	lgsynth91/apex2.blif	reverse	0	lgsynth91	small	0	60	-	-
+apex2-rnd1	blif	lgsynth91/apex2.blif	random	1	lgsynth91	small	0	60	-	-
+bc0-file	blif	lgsynth91/bc0.blif	file	0	lgsynth91	small	0	60	-	-
+bc0-rev	blif	lgsynth91/bc0.blif	reverse	0	lgsynth91	small	0	60	-	-
+bc0-rnd1	blif	lgsynth91/bc0.blif	random	1	lgsynth91	small	0	60	-	-
+bigkey-file	blif	lgsynth91/bigkey.blif	file	0	lgsynth91	small	0	60	combinational part (latches cut); 486 vars	-
+bigkey-rev	blif	lgsynth91/bigkey.blif	reverse	0	lgsynth91	small	0	60	combinational part (latches cut); 486 vars	-
+bigkey-rnd1	blif	lgsynth91/bigkey.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut); 486 vars	-
+clma-file	blif	lgsynth91/clma.blif	file	0	lgsynth91	small	0	60	combinational part (latches cut); 415 vars	-
+clma-rev	blif	lgsynth91/clma.blif	reverse	0	lgsynth91	small	0	60	combinational part (latches cut); 415 vars	-
+clma-rnd1	blif	lgsynth91/clma.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut); 415 vars	-
+clmb-file	blif	lgsynth91/clmb.blif	file	0	lgsynth91	small	0	60	combinational part (latches cut); 415 vars	-
+clmb-rev	blif	lgsynth91/clmb.blif	reverse	0	lgsynth91	small	0	60	combinational part (latches cut); 415 vars	-
+clmb-rnd1	blif	lgsynth91/clmb.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut); 415 vars	-
+cm150a-file	blif	lgsynth91/cm150a.blif	file	0	lgsynth91	small	0	60	-	-
+cm150a-rev	blif	lgsynth91/cm150a.blif	reverse	0	lgsynth91	small	0	60	-	-
+cm150a-rnd1	blif	lgsynth91/cm150a.blif	random	1	lgsynth91	small	0	60	-	-
+comp-file	blif	lgsynth91/comp.blif	file	0	lgsynth91	small	0	60	CUDD 7.1 s vs Sylvan 0.4 s at P1	-
+comp-rev	blif	lgsynth91/comp.blif	reverse	0	lgsynth91	small	0	60	-	-
+comp-rnd1	blif	lgsynth91/comp.blif	random	1	lgsynth91	small	0	60	-	-
+dalu-file	blif	lgsynth91/dalu.blif	file	0	lgsynth91	large	0	950	CUDD 227.7 s vs Sylvan 38.5 s at P1; 75 vars	-
+dalu-rev	blif	lgsynth91/dalu.blif	reverse	0	lgsynth91	small	0	60	75 vars	-
+dalu-rnd1	blif	lgsynth91/dalu.blif	random	1	lgsynth91	small	0	60	75 vars	-
+des-file	blif	lgsynth91/des.blif	file	0	lgsynth91	small	1	60	256 vars	-
+des-rev	blif	lgsynth91/des.blif	reverse	0	lgsynth91	small	0	60	256 vars	-
+des-rnd1	blif	lgsynth91/des.blif	random	1	lgsynth91	small	0	60	256 vars	-
+dsip-file	blif	lgsynth91/dsip.blif	file	0	lgsynth91	small	0	60	combinational part (latches cut); 452 vars	-
+dsip-rev	blif	lgsynth91/dsip.blif	reverse	0	lgsynth91	small	0	60	combinational part (latches cut); 452 vars	-
+dsip-rnd1	blif	lgsynth91/dsip.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut); 452 vars	-
+frg1-file	blif	lgsynth91/frg1.blif	file	0	lgsynth91	small	0	60	-	-
+frg1-rev	blif	lgsynth91/frg1.blif	reverse	0	lgsynth91	small	0	60	-	-
+frg1-rnd1	blif	lgsynth91/frg1.blif	random	1	lgsynth91	small	0	60	-	-
+frg2-file	blif	lgsynth91/frg2.blif	file	0	lgsynth91	small	0	60	143 vars	-
+frg2-rev	blif	lgsynth91/frg2.blif	reverse	0	lgsynth91	small	0	60	143 vars	-
+frg2-rnd1	blif	lgsynth91/frg2.blif	random	1	lgsynth91	small	0	60	143 vars	-
+i2-file	blif	lgsynth91/i2.blif	file	0	lgsynth91	small	0	60	201 vars	-
+i2-rev	blif	lgsynth91/i2.blif	reverse	0	lgsynth91	small	0	60	201 vars	-
+i2-rnd1	blif	lgsynth91/i2.blif	random	1	lgsynth91	small	0	60	201 vars	-
+i3-file	blif	lgsynth91/i3.blif	file	0	lgsynth91	small	0	60	132 vars	-
+i3-rev	blif	lgsynth91/i3.blif	reverse	0	lgsynth91	small	0	60	132 vars	-
+i3-rnd1	blif	lgsynth91/i3.blif	random	1	lgsynth91	small	0	60	132 vars	-
+i4-file	blif	lgsynth91/i4.blif	file	0	lgsynth91	small	0	60	192 vars	-
+i4-rev	blif	lgsynth91/i4.blif	reverse	0	lgsynth91	small	0	60	192 vars	-
+i4-rnd1	blif	lgsynth91/i4.blif	random	1	lgsynth91	small	0	60	192 vars	-
+i8-file	blif	lgsynth91/i8.blif	file	0	lgsynth91	small	0	60	133 vars	-
+i8-rev	blif	lgsynth91/i8.blif	reverse	0	lgsynth91	small	0	60	133 vars	-
+i8-rnd1	blif	lgsynth91/i8.blif	random	1	lgsynth91	small	0	60	133 vars	-
+i9-file	blif	lgsynth91/i9.blif	file	0	lgsynth91	small	0	60	88 vars	-
+i9-rev	blif	lgsynth91/i9.blif	reverse	0	lgsynth91	small	0	60	88 vars	-
+i9-rnd1	blif	lgsynth91/i9.blif	random	1	lgsynth91	small	0	60	88 vars	-
+k2-file	blif	lgsynth91/k2.blif	file	0	lgsynth91	small	0	60	same forest as apex1	-
+k2-rev	blif	lgsynth91/k2.blif	reverse	0	lgsynth91	small	0	60	same forest as apex1	-
+k2-rnd1	blif	lgsynth91/k2.blif	random	1	lgsynth91	small	0	60	same forest as apex1	-
+mainpla-file	blif	lgsynth91/mainpla.blif	file	0	lgsynth91	small	0	60	-	-
+mainpla-rev	blif	lgsynth91/mainpla.blif	reverse	0	lgsynth91	small	0	60	-	-
+mainpla-rnd1	blif	lgsynth91/mainpla.blif	random	1	lgsynth91	small	0	60	-	-
+mm9a-file	blif	lgsynth91/mm9a.blif	file	0	lgsynth91	medium	0	60	combinational part (latches cut)	-
+mm9a-rnd1	blif	lgsynth91/mm9a.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut)	-
+mm9b-file	blif	lgsynth91/mm9b.blif	file	0	lgsynth91	small	0	170	combinational part (latches cut); CUDD 33.0 s vs Sylvan 1.9 s at P1	-
+mm9b-rnd1	blif	lgsynth91/mm9b.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut)	-
+mult16a-file	blif	lgsynth91/mult16a.blif	file	0	lgsynth91	small	0	60	combinational part (latches cut)	-
+mult16a-rev	blif	lgsynth91/mult16a.blif	reverse	0	lgsynth91	medium	0	60	combinational part (latches cut)	-
+mult16a-rnd1	blif	lgsynth91/mult16a.blif	random	1	lgsynth91	small	0	60	combinational part (latches cut)	-
+mux-file	blif	lgsynth91/mux.blif	file	0	lgsynth91	small	0	60	-	-
+mux-rev	blif	lgsynth91/mux.blif	reverse	0	lgsynth91	small	0	60	-	-
+mux-rnd1	blif	lgsynth91/mux.blif	random	1	lgsynth91	small	0	60	-	-
+my_adder-file	blif	lgsynth91/my_adder.blif	file	0	lgsynth91	small	0	60	-	-
+my_adder-rev	blif	lgsynth91/my_adder.blif	reverse	0	lgsynth91	small	0	60	-	-
+my_adder-rnd1	blif	lgsynth91/my_adder.blif	random	1	lgsynth91	small	0	60	-	-
+pair-file	blif	lgsynth91/pair.blif	file	0	lgsynth91	small	0	60	173 vars	-
+pair-rev	blif	lgsynth91/pair.blif	reverse	0	lgsynth91	small	0	60	173 vars	-
+pair-rnd1	blif	lgsynth91/pair.blif	random	1	lgsynth91	small	0	60	173 vars	-
+rot-file	blif	lgsynth91/rot.blif	file	0	lgsynth91	small	1	60	135 vars	-
+rot-rev	blif	lgsynth91/rot.blif	reverse	0	lgsynth91	small	0	60	135 vars	-
+rot-rnd1	blif	lgsynth91/rot.blif	random	1	lgsynth91	medium	0	60	135 vars	-
+seq-file	blif	lgsynth91/seq.blif	file	0	lgsynth91	small	0	60	-	-
+seq-rev	blif	lgsynth91/seq.blif	reverse	0	lgsynth91	small	0	60	-	-
+seq-rnd1	blif	lgsynth91/seq.blif	random	1	lgsynth91	small	0	60	-	-
+signet-file	blif	lgsynth91/signet.blif	file	0	lgsynth91	small	0	60	-	-
+signet-rev	blif	lgsynth91/signet.blif	reverse	0	lgsynth91	small	0	60	-	-
+signet-rnd1	blif	lgsynth91/signet.blif	random	1	lgsynth91	small	0	60	-	-
+ti-file	blif	lgsynth91/ti.blif	file	0	lgsynth91	small	0	60	-	-
+ti-rev	blif	lgsynth91/ti.blif	reverse	0	lgsynth91	small	0	60	-	-
+ti-rnd1	blif	lgsynth91/ti.blif	random	1	lgsynth91	small	0	60	-	-
+too_large-file	blif	lgsynth91/too_large.blif	file	0	lgsynth91	small	0	60	-	-
+too_large-rev	blif	lgsynth91/too_large.blif	reverse	0	lgsynth91	small	0	60	-	-
+too_large-rnd1	blif	lgsynth91/too_large.blif	random	1	lgsynth91	small	0	60	-	-
+x6dn-file	blif	lgsynth91/x6dn.blif	file	0	lgsynth91	small	0	60	-	-
+x6dn-rev	blif	lgsynth91/x6dn.blif	reverse	0	lgsynth91	small	0	60	-	-
+x6dn-rnd1	blif	lgsynth91/x6dn.blif	random	1	lgsynth91	small	0	60	-	-
+xparc-file	blif	lgsynth91/xparc.blif	file	0	lgsynth91	small	0	60	-	-
+xparc-rev	blif	lgsynth91/xparc.blif	reverse	0	lgsynth91	small	0	60	-	-
+xparc-rnd1	blif	lgsynth91/xparc.blif	random	1	lgsynth91	small	0	60	-	-
+arbiter-file	blif	epfl/arbiter.blif	file	0	epfl	medium	0	80	256 vars	-
+arbiter-rnd1	blif	epfl/arbiter.blif	random	1	epfl	medium	0	130	256 vars	-
+priority-file	blif	epfl/priority.blif	file	0	epfl	small	0	60	128 vars	-
+priority-rev	blif	epfl/priority.blif	reverse	0	epfl	small	0	60	128 vars	-
+priority-rnd1	blif	epfl/priority.blif	random	1	epfl	small	1	60	128 vars	-
+queens8	queens	-	file	0	queens	small	0	60	-	-
+queens9	queens	-	file	0	queens	small	1	60	-	-
+queens10	queens	-	file	0	queens	small	0	60	-	-
+queens11	queens	-	file	0	queens	medium	0	340	-	-
+bryant6	bryant	-	file	0	bryant	small	0	60	-	-
+bryant8	bryant	-	file	0	bryant	small	0	60	-	-
+bryant10	bryant	-	file	0	bryant	small	1	60	-	-
+bryant12	bryant	-	file	0	bryant	small	0	60	-	-
+baobab1.dfs-file	blif	aralia/baobab1.dfs.blif	file	0	fta	small	0	60	61 events	aralia/baobab1.dfs.probs
+baobab1.tdlr-file	blif	aralia/baobab1.tdlr.blif	file	0	fta	small	0	60	61 events	aralia/baobab1.tdlr.probs
+baobab2.dfs-file	blif	aralia/baobab2.dfs.blif	file	0	fta	small	0	60	32 events	aralia/baobab2.dfs.probs
+baobab2.tdlr-file	blif	aralia/baobab2.tdlr.blif	file	0	fta	small	0	60	32 events	aralia/baobab2.tdlr.probs
+baobab3.dfs-file	blif	aralia/baobab3.dfs.blif	file	0	fta	small	1	60	80 events	aralia/baobab3.dfs.probs
+baobab3.tdlr-file	blif	aralia/baobab3.tdlr.blif	file	0	fta	large	0	1000	80 events; CUDD 218.5 s vs Sylvan 75.4 s at P1	aralia/baobab3.tdlr.probs
+cea9601.dfs-file	blif	aralia/cea9601.dfs.blif	file	0	fta	large	0	520	186 events; Sylvan 119.7 s vs CUDD 38.4 s at P1	aralia/cea9601.dfs.probs
+chinese.dfs-file	blif	aralia/chinese.dfs.blif	file	0	fta	small	0	60	25 events	aralia/chinese.dfs.probs
+chinese.tdlr-file	blif	aralia/chinese.tdlr.blif	file	0	fta	small	0	60	25 events	aralia/chinese.tdlr.probs
+das9201.dfs-file	blif	aralia/das9201.dfs.blif	file	0	fta	small	0	60	122 events	aralia/das9201.dfs.probs
+das9201.tdlr-file	blif	aralia/das9201.tdlr.blif	file	0	fta	small	0	60	122 events	aralia/das9201.tdlr.probs
+das9202.dfs-file	blif	aralia/das9202.dfs.blif	file	0	fta	small	0	60	49 events	aralia/das9202.dfs.probs
+das9202.tdlr-file	blif	aralia/das9202.tdlr.blif	file	0	fta	small	0	60	49 events	aralia/das9202.tdlr.probs
+das9203.dfs-file	blif	aralia/das9203.dfs.blif	file	0	fta	small	0	60	51 events	aralia/das9203.dfs.probs
+das9203.tdlr-file	blif	aralia/das9203.tdlr.blif	file	0	fta	small	0	60	51 events	aralia/das9203.tdlr.probs
+das9204.dfs-file	blif	aralia/das9204.dfs.blif	file	0	fta	small	0	60	53 events	aralia/das9204.dfs.probs
+das9204.tdlr-file	blif	aralia/das9204.tdlr.blif	file	0	fta	small	0	60	53 events	aralia/das9204.tdlr.probs
+das9205.dfs-file	blif	aralia/das9205.dfs.blif	file	0	fta	small	0	60	51 events	aralia/das9205.dfs.probs
+das9205.tdlr-file	blif	aralia/das9205.tdlr.blif	file	0	fta	small	0	60	51 events	aralia/das9205.tdlr.probs
+das9206.dfs-file	blif	aralia/das9206.dfs.blif	file	0	fta	small	0	60	121 events	aralia/das9206.dfs.probs
+das9206.tdlr-file	blif	aralia/das9206.tdlr.blif	file	0	fta	small	0	60	121 events	aralia/das9206.tdlr.probs
+das9207.dfs-file	blif	aralia/das9207.dfs.blif	file	0	fta	small	0	60	276 events	aralia/das9207.dfs.probs
+das9207.tdlr-file	blif	aralia/das9207.tdlr.blif	file	0	fta	medium	0	120	276 events; CUDD 20.3 s vs Sylvan 4.6 s at P1	aralia/das9207.tdlr.probs
+das9208.dfs-file	blif	aralia/das9208.dfs.blif	file	0	fta	small	0	60	103 events	aralia/das9208.dfs.probs
+das9208.tdlr-file	blif	aralia/das9208.tdlr.blif	file	0	fta	small	0	60	103 events	aralia/das9208.tdlr.probs
+das9209.dfs-file	blif	aralia/das9209.dfs.blif	file	0	fta	small	0	60	109 events	aralia/das9209.dfs.probs
+das9209.tdlr-file	blif	aralia/das9209.tdlr.blif	file	0	fta	small	0	60	109 events	aralia/das9209.tdlr.probs
+das9601.dfs-file	blif	aralia/das9601.dfs.blif	file	0	fta	small	1	60	122 events	aralia/das9601.dfs.probs
+das9601.tdlr-file	blif	aralia/das9601.tdlr.blif	file	0	fta	medium	0	60	122 events	aralia/das9601.tdlr.probs
+das9701.dfs-file	blif	aralia/das9701.dfs.blif	file	0	fta	large	0	1250	267 events; CUDD did not finish in 600 s at P1; the timeout is Sylvan's	aralia/das9701.dfs.probs
+edf9201.dfs-file	blif	aralia/edf9201.dfs.blif	file	0	fta	small	0	60	183 events	aralia/edf9201.dfs.probs
+edf9201.tdlr-file	blif	aralia/edf9201.tdlr.blif	file	0	fta	small	0	60	183 events	aralia/edf9201.tdlr.probs
+edf9202.dfs-file	blif	aralia/edf9202.dfs.blif	file	0	fta	medium	0	60	458 events	aralia/edf9202.dfs.probs
+edf9202.tdlr-file	blif	aralia/edf9202.tdlr.blif	file	0	fta	small	0	60	458 events	aralia/edf9202.tdlr.probs
+edf9203.dfs-file	blif	aralia/edf9203.dfs.blif	file	0	fta	medium	0	60	362 events	aralia/edf9203.dfs.probs
+edf9203.tdlr-file	blif	aralia/edf9203.tdlr.blif	file	0	fta	medium	0	180	362 events	aralia/edf9203.tdlr.probs
+edf9204.dfs-file	blif	aralia/edf9204.dfs.blif	file	0	fta	medium	0	130	323 events	aralia/edf9204.dfs.probs
+edf9204.tdlr-file	blif	aralia/edf9204.tdlr.blif	file	0	fta	medium	0	70	323 events	aralia/edf9204.tdlr.probs
+edf9205.dfs-file	blif	aralia/edf9205.dfs.blif	file	0	fta	small	0	60	165 events	aralia/edf9205.dfs.probs
+edf9205.tdlr-file	blif	aralia/edf9205.tdlr.blif	file	0	fta	small	0	60	165 events	aralia/edf9205.tdlr.probs
+edf9206.dfs-file	blif	aralia/edf9206.dfs.blif	file	0	fta	small	0	60	240 events	aralia/edf9206.dfs.probs
+edf9206.tdlr-file	blif	aralia/edf9206.tdlr.blif	file	0	fta	medium	0	60	240 events	aralia/edf9206.tdlr.probs
+edfpa14b.dfs-file	blif	aralia/edfpa14b.dfs.blif	file	0	fta	medium	0	60	311 events	aralia/edfpa14b.dfs.probs
+edfpa14b.tdlr-file	blif	aralia/edfpa14b.tdlr.blif	file	0	fta	medium	0	80	311 events	aralia/edfpa14b.tdlr.probs
+edfpa14o.dfs-file	blif	aralia/edfpa14o.dfs.blif	file	0	fta	medium	0	230	311 events	aralia/edfpa14o.dfs.probs
+edfpa14o.tdlr-file	blif	aralia/edfpa14o.tdlr.blif	file	0	fta	large	0	410	311 events	aralia/edfpa14o.tdlr.probs
+edfpa14p.dfs-file	blif	aralia/edfpa14p.dfs.blif	file	0	fta	small	0	60	124 events	aralia/edfpa14p.dfs.probs
+edfpa14p.tdlr-file	blif	aralia/edfpa14p.tdlr.blif	file	0	fta	medium	0	90	124 events	aralia/edfpa14p.tdlr.probs
+edfpa14q.dfs-file	blif	aralia/edfpa14q.dfs.blif	file	0	fta	large	0	250	311 events	aralia/edfpa14q.dfs.probs
+edfpa14q.tdlr-file	blif	aralia/edfpa14q.tdlr.blif	file	0	fta	large	0	370	311 events	aralia/edfpa14q.tdlr.probs
+edfpa14r.dfs-file	blif	aralia/edfpa14r.dfs.blif	file	0	fta	medium	0	60	106 events	aralia/edfpa14r.dfs.probs
+edfpa14r.tdlr-file	blif	aralia/edfpa14r.tdlr.blif	file	0	fta	medium	0	60	106 events	aralia/edfpa14r.tdlr.probs
+edfpa15b.dfs-file	blif	aralia/edfpa15b.dfs.blif	file	0	fta	medium	0	60	283 events	aralia/edfpa15b.dfs.probs
+edfpa15b.tdlr-file	blif	aralia/edfpa15b.tdlr.blif	file	0	fta	small	0	60	283 events	aralia/edfpa15b.tdlr.probs
+edfpa15o.dfs-file	blif	aralia/edfpa15o.dfs.blif	file	0	fta	medium	0	80	283 events; Sylvan 10.1 s vs CUDD 2.7 s at P1	aralia/edfpa15o.dfs.probs
+edfpa15o.tdlr-file	blif	aralia/edfpa15o.tdlr.blif	file	0	fta	medium	0	60	283 events	aralia/edfpa15o.tdlr.probs
+edfpa15p.dfs-file	blif	aralia/edfpa15p.dfs.blif	file	0	fta	small	0	60	100 events	aralia/edfpa15p.dfs.probs
+edfpa15p.tdlr-file	blif	aralia/edfpa15p.tdlr.blif	file	0	fta	small	0	60	100 events	aralia/edfpa15p.tdlr.probs
+edfpa15q.dfs-file	blif	aralia/edfpa15q.dfs.blif	file	0	fta	medium	0	60	283 events	aralia/edfpa15q.dfs.probs
+edfpa15q.tdlr-file	blif	aralia/edfpa15q.tdlr.blif	file	0	fta	medium	0	80	283 events	aralia/edfpa15q.tdlr.probs
+edfpa15r.dfs-file	blif	aralia/edfpa15r.dfs.blif	file	0	fta	small	0	60	88 events	aralia/edfpa15r.dfs.probs
+edfpa15r.tdlr-file	blif	aralia/edfpa15r.tdlr.blif	file	0	fta	small	0	60	88 events	aralia/edfpa15r.tdlr.probs
+elf9601.dfs-file	blif	aralia/elf9601.dfs.blif	file	0	fta	small	0	60	145 events	aralia/elf9601.dfs.probs
+elf9601.tdlr-file	blif	aralia/elf9601.tdlr.blif	file	0	fta	small	0	60	145 events	aralia/elf9601.tdlr.probs
+ftr10.dfs-file	blif	aralia/ftr10.dfs.blif	file	0	fta	small	0	60	175 events	aralia/ftr10.dfs.probs
+ftr10.tdlr-file	blif	aralia/ftr10.tdlr.blif	file	0	fta	small	0	60	175 events	aralia/ftr10.tdlr.probs
+isp9601.dfs-file	blif	aralia/isp9601.dfs.blif	file	0	fta	small	0	60	143 events	aralia/isp9601.dfs.probs
+isp9601.tdlr-file	blif	aralia/isp9601.tdlr.blif	file	0	fta	small	0	60	143 events	aralia/isp9601.tdlr.probs
+isp9602.dfs-file	blif	aralia/isp9602.dfs.blif	file	0	fta	small	0	60	116 events	aralia/isp9602.dfs.probs
+isp9602.tdlr-file	blif	aralia/isp9602.tdlr.blif	file	0	fta	small	0	60	116 events	aralia/isp9602.tdlr.probs
+isp9603.dfs-file	blif	aralia/isp9603.dfs.blif	file	0	fta	small	0	60	91 events	aralia/isp9603.dfs.probs
+isp9603.tdlr-file	blif	aralia/isp9603.tdlr.blif	file	0	fta	small	0	60	91 events	aralia/isp9603.tdlr.probs
+isp9604.dfs-file	blif	aralia/isp9604.dfs.blif	file	0	fta	small	0	60	215 events	aralia/isp9604.dfs.probs
+isp9604.tdlr-file	blif	aralia/isp9604.tdlr.blif	file	0	fta	small	0	60	215 events	aralia/isp9604.tdlr.probs
+isp9605.dfs-file	blif	aralia/isp9605.dfs.blif	file	0	fta	small	0	60	32 events	aralia/isp9605.dfs.probs
+isp9605.tdlr-file	blif	aralia/isp9605.tdlr.blif	file	0	fta	small	0	60	32 events	aralia/isp9605.tdlr.probs
+isp9606.dfs-file	blif	aralia/isp9606.dfs.blif	file	0	fta	small	0	60	89 events	aralia/isp9606.dfs.probs
+isp9606.tdlr-file	blif	aralia/isp9606.tdlr.blif	file	0	fta	small	0	60	89 events	aralia/isp9606.tdlr.probs
+isp9607.dfs-file	blif	aralia/isp9607.dfs.blif	file	0	fta	small	0	60	74 events	aralia/isp9607.dfs.probs
+isp9607.tdlr-file	blif	aralia/isp9607.tdlr.blif	file	0	fta	small	0	60	74 events	aralia/isp9607.tdlr.probs
+jbd9601.dfs-file	blif	aralia/jbd9601.dfs.blif	file	0	fta	medium	0	60	533 events	aralia/jbd9601.dfs.probs

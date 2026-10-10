@@ -21,6 +21,11 @@
 #              as distributed with LGSynth'91 (Brglez, Bryan, Kozminski 1989)
 #   epfl       epfl/*.blif: the EPFL random/control circuits (Amaru,
 #              Gaillardon, De Micheli 2015), lsils/benchmarks
+#   aralia     aralia/TREE.xml, the 43 Aralia fault trees in Open-PSA MEF
+#              (openpra-org/aralia-fault-tree-dataset, CC BY-SA 4.0), and
+#              each converted by tools/mef2blif.py under Storm-dft's two
+#              orders: aralia/TREE.dfs.blif, aralia/TREE.tdlr.blif and their
+#              .probs files (see FAULT TREES below). Needs python3.
 #
 # --all installs every set: every circuit ../cases.tsv names, and those its
 # screening left out (see README.md, "The case table"). The LGSynth'91,
@@ -39,10 +44,11 @@
 #
 # --src NAME=DIR reads the files from a local copy instead of downloading
 # them: cudd=DIR a CUDD checkout (--cudd-src DIR is the same), ispras=DIR a
-# checkout of ispras/hdl-benchmarks, lsils=DIR a checkout of lsils/benchmarks
-# (each at the commit below), or fiser=DIR the directory MCNC.7z and
-# LGSynth91.7z were extracted into (so DIR/MCNC/Combinational/blif and
-# DIR/LGSynth91/blif exist). Any of them give the same bytes.
+# checkout of ispras/hdl-benchmarks, lsils=DIR a checkout of lsils/benchmarks,
+# aralia=DIR a checkout of openpra-org/aralia-fault-tree-dataset (each at the
+# commit below), or fiser=DIR the directory MCNC.7z and LGSynth91.7z were
+# extracted into (so DIR/MCNC/Combinational/blif and DIR/LGSynth91/blif
+# exist). Any of them give the same bytes.
 #
 # --check verifies what is installed in DEST against the recorded checksums
 # and lists every file of the chosen sets as ok, MISSING or BAD; it exits
@@ -61,25 +67,44 @@
 # rejects them; s13207.1 has five, s15850.1 one). Continuation lines are
 # joined and comments and blank lines removed.
 #
+# FAULT TREES. The aralia set is the dataset at commit 9a50e0c (2025-05-13),
+# the last before 0101a52 (2026-05-13, the dataset's version 2) inlined the
+# passthrough gates of 16 trees -- gates whose body is one basic event or
+# gate. That changes no function and no DFS order, but it moves those events
+# up a level of the TDLR order, which then differs on 11 trees from the one
+# Storm-dft used in BDDs Strike Back (NFM 2022), whose Galileo files keep the
+# passthrough gates. At 9a50e0c both orders are Storm-dft's on all 40 trees of
+# that evaluation, and nodes_before is the size it published (README.md,
+# "Fault trees"). Every XML file must have its recorded MD5; it is installed
+# as aralia/TREE.xml and converted by tools/mef2blif.py (as TREE.xml, whose
+# name is in the header line it writes) with --order dfs and --order tdlr, and
+# every BLIF and .probs file must have its recorded MD5 too. The trees are CC
+# BY-SA 4.0, and so is what is converted from them; this script and the
+# converter are what is distributed, not the trees.
+#
 # --families prints the sources of the other families (McNet, relprod, QBF,
-# and the EPFL arithmetic circuits) with the commands that fetch them. They
-# are large, they are inputs to other harnesses than sylvan_bench, and this
-# script does not download them.
+# the EPFL arithmetic circuits, and the fault trees of BDDs Strike Back) with
+# the commands that fetch them. They are large, they are inputs to other
+# harnesses than sylvan_bench, or their licence (GPL-3.0) is not one to
+# redistribute inputs under, and this script does not download them.
 set -euo pipefail
 
 CUDD_COMMIT=f54f533303640afd5dbe47a05ebeabb3066f2a25
 ISPRAS_COMMIT=10c3fb51d0810ce862659211862660dcc270a6af
 LSILS_COMMIT=0060e156826e733d69bf5b3322d1bdd0d03a1f9a
+ARALIA_COMMIT=9a50e0c2a087ac16fc18342d3f927aa0f9938105
+TOOLS=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tools
 
 url_of() {  # SOURCE PATH
   case "$1" in
     cudd)   echo "https://raw.githubusercontent.com/cuddorg/cudd/$CUDD_COMMIT/$2" ;;
     ispras) echo "https://raw.githubusercontent.com/ispras/hdl-benchmarks/$ISPRAS_COMMIT/$2" ;;
     lsils)  echo "https://raw.githubusercontent.com/lsils/benchmarks/$LSILS_COMMIT/$2" ;;
+    aralia) echo "https://raw.githubusercontent.com/openpra-org/aralia-fault-tree-dataset/$ARALIA_COMMIT/$2" ;;
   esac
 }
 
-ALL_SETS="c880 iscas85 lgsynth91 iscas89 epfl"
+ALL_SETS="c880 iscas85 lgsynth91 iscas89 epfl aralia"
 
 # One line per file: set, installed path, source, path in the source, MD5 of
 # the download after stripping CRs, conversion ("-" or "comb"), MD5 of the
@@ -147,6 +172,69 @@ epfl       epfl/priority.blif        lsils   random_control/priority.blif       
 epfl       epfl/voter.blif           lsils   random_control/voter.blif               d744c8a56318bceeb7ecfb4669673008  -     d744c8a56318bceeb7ecfb4669673008
 EOF
 )
+
+# The aralia set, one line per tree: the MD5 of data/openpsa/TREE.xml, then of
+# the four files tools/mef2blif.py makes of it: TREE.dfs.blif, TREE.dfs.probs,
+# TREE.tdlr.blif, TREE.tdlr.probs. It adds five lines to the manifest per tree,
+# the conversion field of a converted file saying mef2blif-ORDER.
+ARALIA=$(cat <<'EOF'
+baobab1   62b322fc445610cb8797e69abf8ec1d1 78dce8403db84d40418c9ca385637ab6 8c9479a83a142a347c7768e847889c09 9dffe500a127a3d1cbe491e500ebfa7d 10b7ed3269a427da3ef451ca96a654ab
+baobab2   35b332c4f559544b4fefe07d3605bcef b1125e4e4f7cc6030c4b25784430b002 46ac77b0ed9f70ef958cfb00fbb31942 f78e95e1147dd8043f902749e79225e0 a9518108d420c7e520720e7094b4d77a
+baobab3   4861add461087f66fad90f9722d15fa2 c906ba0e2dff4c920837bc3fbc0787f0 0aa9d01cfb2e01bfeb191f6e422dff8d a4e62760ca3baf42bb84511925e18c1e 6a6c8548191da3681d2f910310aa1a62
+cea9601   db456d2d2fcbe2758adf99c851aa20e1 eb79b2c160a0444a4b4f25e515c48008 e9d28d024f9c3b1b3555d1055cbef99f 07945f54ee0f69cab145cd7331c70314 0b11725d4e80b500c7bd025d0eed9d73
+chinese   3ad6d61a9898c7a089d7fe62684f7a91 2ee38ab427033197eb55a1d0434bdc85 fdacb2c302a2a39f1f2fff95af609c92 4738362d44c42ef4ecd3ae8c02ded69d fadf1414376d6d5578675018fb56aa26
+das9201   e97c66ef4d4556657530d4b6d8863267 9e4b1137ff2e3b9af9b778422d579d80 aa7da594021df5c480af4211cac0f1ef d58bc5b1fe7392645f0eab99d38daa3b 506524c1bec5f34c166501e1b5b96efa
+das9202   f582883c0659b02f50e0394b00c24951 8814a25d710921c88a3901f686222dd9 125158478e21780a7ce90fc6566d8acc f6893f277f1e9e5adc06244189a691fe 6dc5d5ce0352833701f78e5c41c69250
+das9203   7e0dcff1c4345e3d79e7b2cc19736c02 c62fa304ff93ec1df3483bc5054dc9d8 1f07f6d2bd0e7c8c36b992f280196ef7 8558ddf841da75d9fa939f93289d2b14 5d501d6f1c553dfe0f458bdfef7cd297
+das9204   9f0f49f47fa811f240e24b5d1e9f57b1 f275f2835fa0a053312091894a09bf1f 58a73da086f3a1386f9b9a6e85d6a159 f3031d2d146cc8d33b72c3c18cfb1162 2bf9e3ad37dd05045236e7df6f60b7e2
+das9205   d714f0816b1a9015a5e3a89dbf43f21a b79224992c8d2d6e416d1c2fa6619109 4965483a61ea39d2adc63581a5e80e53 39438cb3a35c94454c5efd47fb2c63af c4bc1ec572d7f94e5ae3b8ca02ad1d0a
+das9206   812c5d6719fd0173b124fe5c1fdf03b9 8fa31949f32140cf7a3310161c1f7c54 3df943ddfbec2785b7d8837d751205cf 1653387dc09e3bbd01852680b87bbe35 777f9e736f9b4bae333455d37884ff0f
+das9207   fde7f5c237c3ef6524a68bff42da4496 da0b69341e85d8f1e4d1aeed4a1b9d8d 3f61a59bc32497a18a9f61af04231d81 30475181266b64d3bccf05b5a144cc99 de2ff06237ebf4fd38ad2f4c2e0da76b
+das9208   2d1b6364c49529e6bca5bb40f7a272d6 8432a40562a12843a3845cc3197b7936 a7c36472550609acddbfab6bf91e7dbe df7f8c0c878ec96d313cfe119438a110 c1dc6fd0a7edaa80d735b34a8a9a02ed
+das9209   ceadfcab39290e5a33981658243f0fec 9880a95d930b13d3fd8d0c967e66db93 40946952ecb7a92f46f9de66b84b1687 3bdde17dd4f7ffb5aa0db393ffbb7abb 0edeaa03698f8d05354efce27bedb697
+das9601   07a2dc733484d33ec76765e5caf9c1d6 2e2eed7da560947c2e6066a94fd348e7 0db40e952ea982951396aae862ad4211 f1d06f467e74d94326163f25138c96e6 b0fb8b299dedddc47f990ea02f737352
+das9701   0d7465868bab8db34ba5098e99a1382d d8fd2e53b482a8e44a5bb5c706d03373 c63e26cfa4c6c97d5ab5be91e2c1780b ef0cd6be72931e402dfa5f4bf7a50a42 baa0af22c0051863c53101418e3e923e
+edf9201   06a1351dfc44e9d7c47ea1cb36d206a4 1fd9c960041ffddf40052dfac6320fac a853b3ee0422738422378be22ca4080b 495f031ffc5b5e9be3bf528e1e2518d3 6ea64c9288f541c5c56110e7878a059d
+edf9202   1e1149d9fce04e61dec1d85c1b99ff09 5268f2d7f4fb3d09164e7e6e13d56fca 7681bf3ca87237daf11e55bd87a9566c bccad18f42a0070a56d788151ba6db2a 4a329edb8aaba500e812ef81754d149d
+edf9203   aff0336049f93752f5ec9ed86308b42f 16698ab88567a056ca81790ec3551110 9daab874825fb1ce01115c9753a2b36c c27eb193a6b2b03ca683d0cfdca45957 4f1c49f4f2f9ecb529427f7888453c94
+edf9204   74db16d21b4f1c43eed40f0c8fe49085 275a7e79c49656113a817ecd01657f24 c1e5fd51d59a7fa53ecd34ee7ce8b444 b8b02deafdaab834afe480da7de2621a dcaab89fb6a0b14b6b1c5c3bde18e848
+edf9205   630055f613012751f64aaf98f115c0e5 bdfd043d7fd06b7168f4580ce02793ff 503225c6493ce90055498a724d93e775 85aedcd591f0adf2592c7197b56867ef 4ee18ae6589c865a9365066585ff1bb6
+edf9206   1baeae2ed88ff6e80c02bcb2d1ebec4b 2638ab3a563aea1f520e5377103d1896 79c26f12cc2015cc4f37e1eba6194de5 4bb542edf56f3a7d9cd3064efcf85b71 628e9ad457e75353d72e72f8eb5bf801
+edfpa14b  45536943b67c0123f6259174b3aea347 c47d4776d36ea62a5a3a57222fa78bc0 62c49eed0fa83af462f01539528e52c0 4301b751ed34fe9a143c0bab278a2e2c bee292db5c6206aa1cb89b25d6955c13
+edfpa14o  9032887df67465b76e8db2ed88733b1f 06dcbb33d805478d07ba516e1e68ef53 dfaaea4dec4aa3679097d65cd58f3de8 452f4c4a9143887df0b7ca54279d2d85 a44caaa208349bf8fdae627e1f8d5277
+edfpa14p  60b926c6a5c0f294a8bf636ba735649e d0f1b38b177cb9c8c3f2c2d3f802ab7f dd0af9a61775764d2ff30c89d0aa001c 44de0be7c2138e36ad8f6fe06d6b069a 4dd895f96745beb168ab9a1589503041
+edfpa14q  78eb58f4b41cd73ff3d20b192f2857ab 3c146b58ef39c4b6556938b96ade6f36 4b1ba095034cd7cfcf8fb4d1aa5d948a 0d6ac489f2cb20629e54d586336c9784 e51381bf53c8404343bf6069b33d0164
+edfpa14r  d76e7e3aa2bc946a243769a06d514fb7 7e5629db5bfa70ddf5b3f313cdf34ab7 bf932a19c4b37726a98d2584a0822bcd b832faf11e4dd0c8babeddfb8110e5e6 907d79dacbb45581407e23fb18b30bf1
+edfpa15b  6972b79c4139f4acc284eef4c850e502 f4f837636281a1dbf1640fc68d534523 c4d9807903e694a02ad3a9cb9e2da33f 104c2ab52c5e2794eb446f00c8118eb6 ef3838e695d849163f9ef78d84feb5d9
+edfpa15o  4b769335e3916d62facf78cd3c2f0097 52f6add2bf5569b2264d3c7919ec900a fd72ee1a4b93b18a7b8df43ec4366a44 c3bd805a8d2dd0ff4ad35f4fa239731e dda03188686df73512e9cbdb4bb17247
+edfpa15p  7bee093e90e0c01f3baa8e7e5afde644 2bc0a9e5a2bfdc675e6c5b09fb32fe49 d70f269c50c8a6fbe4be47217470c6fd 41d7b394c86a68dba1fd846d8228252a 69879480aec062bc472766d2039a0971
+edfpa15q  c290c1fe8a9c82783432ab51c34093b4 c7059b9de422542120cf1465a0ded6a9 f84935229c37ad48df9ada4551fe82a3 ae072fc3e1b3c2f62fd48d0af10a3c4b 4b993c57e65c51d430104d14f743b2ef
+edfpa15r  2dabc22f2aa26d765eda47f10b0fb7ba 4611329d18721281d9b5d53a2a6502c9 e2a99ab49241961a168ebf8052b31431 1ecbe0a2853a8d4c78fe11746a34ca48 f9021c8e6aa8cdd65d7de68d9da99d3c
+elf9601   378953752421f3e03478cb6053d1a8ac 5d799a4409bd0dcff88bb8d2b450ff37 724605f42305cf1e730f3e04f11aab6b c83642047ee3c9471eabc5b6417145ec bc261993d2ce0a802d84f36262635722
+ftr10     c176d178e69789b81570b5d7d6582524 908a1f7351b87bdb1b5140b23ebed5c5 ec393191d4a82e3192d012c5f5d8febd 572634c25905ef4b2ff6a346fae71efb 711f05474b636daaf3ff17ca1fc9c07c
+isp9601   746e300eda8ae63e5481436a1e6a2a4f 51f0ca5eb179f68934f4b22e20a07808 8e5c73ab448a169536b09d0f46291902 068b840685bdd525e6069018d1c1e9ff 52f9c93a374e1af72301e6c55f2be0f2
+isp9602   21894f5043c56aea0ff34521a411dbba 88272324b9a8a51e8c7d36c0a1a6a0c2 8370d83274d7247aa7a0ec0554ad3a14 10409113e7e205dfc4351da9f6f7da99 b65d3cdbf637eed9e75e353b5f79c05f
+isp9603   e270dc940281d5592486dc5ddc88bd1b 0ad2a184a9ab441aeffdda22dc58805f f797e175a0e979ba2b36244b3ed98220 875f099cba6c28a86c61f6a6e7743e49 94dfe4691549d2c22a3c98ff0373a0c9
+isp9604   2c99c894407f5a3655d40b1709654ca1 399868bd4ebda5e912d813059699d806 6d53cb15cb2a6d752393994e0c6c9415 416703f9b5cf0569e604d46fbebc9872 aff7e400b91b4b0494492e789cedeb92
+isp9605   fb1dbe4388a64267b3e1b9970070a15e 598348b303a515144d65ce5c17e76c92 859d390364c590f3bd58cf65f7fcd073 c50f4afc7bd00d2c1500914797599c45 5bc2514162cb258277bd3a7a06e04202
+isp9606   c68a68351f7f17d5aa6c70a401582538 876bd3b53d4edcbabc1e0edbaf7536eb 109fad447ed18ee6fafcdf959d46feaf 2da89ea66f7c76d741ff835774064587 dae0a4cac096f781d1cefffb7e34f360
+isp9607   917dfe3530362596be741e1862fb4b73 6de3359c52ceb6912e1f3f5df1b0937e 0fd9cf416d58fa2e14253e06a5b883b5 33a53fc3355311eb23e135f4f90e7880 73bfa934b4b2e0e29b7bf35135eb9032
+jbd9601   2fe87a8feaf2e0ee5ee54236f87f0967 218c30119d539cd2506f97940c99285a f48cb0fc5f2b07599a80293002cdc2c2 cb1179c3b6b78b99db755e485170883c d03c1e39bfc92236e9c147631e037a35
+nus9601   83beba15a38aa025551afb6ffbe11c3e c07b1af5e90faf34428adb3a3b42f958 8770bf0de9d9c175a70993cf3ac93e05 5e1ae8002437ab18f1adc83ba6f23272 d70b0fed90e315bdccaa09b794213ab7
+EOF
+)
+aralia_manifest() {
+  local tree xmd5 dblif dprobs tblif tprobs
+  while read -r tree xmd5 dblif dprobs tblif tprobs; do
+    [ -n "$tree" ] || continue
+    echo "aralia aralia/$tree.xml aralia data/openpsa/$tree.xml $xmd5 - $xmd5"
+    echo "aralia aralia/$tree.dfs.blif aralia data/openpsa/$tree.xml $xmd5 mef2blif-dfs $dblif"
+    echo "aralia aralia/$tree.dfs.probs aralia data/openpsa/$tree.xml $xmd5 mef2blif-dfs $dprobs"
+    echo "aralia aralia/$tree.tdlr.blif aralia data/openpsa/$tree.xml $xmd5 mef2blif-tdlr $tblif"
+    echo "aralia aralia/$tree.tdlr.probs aralia data/openpsa/$tree.xml $xmd5 mef2blif-tdlr $tprobs"
+  done <<< "$ARALIA"
+}
+MANIFEST+=$'\n'$(aralia_manifest)
 
 # The combinational part (see COMBINATIONAL PART above). The installed MD5s
 # depend on every byte this prints; do not change it without them.
@@ -251,6 +339,35 @@ EPFL arithmetic (lsils): DOCUMENTED INFEASIBLE, not part of the evaluation.
   under an unfavourable input order is exponential, and a sift cannot help a
   forest that never fits. The other arithmetic circuits (div, hyp, log2, max,
   multiplier, sin, sqrt, square) were not attempted.
+
+Fault trees of BDDs Strike Back: DOCUMENTED, NOT FETCHED (GPL-3.0).
+  The artifact of Basgoze, Volk, Katoen, Khan, Stoelinga, "BDDs Strike Back:
+  Efficient Analysis of Static and Dynamic Fault Trees" (NFM 2022),
+  doi:10.5281/zenodo.6390998 (version 1.0.1), is GPL-3.0, its fault trees
+  included, so they are not inputs this harness redistributes.
+
+    curl -fL -o nfm22-artifact.zip \
+      "https://zenodo.org/records/6390998/files/artifact.zip?download=1"
+    echo "2b8779cf28db573967fc633dce02b2e1  nfm22-artifact.zip" | md5sum -c   # 1557554 bytes
+    python3 -m zipfile -e nfm22-artifact.zip nfm22/
+    # -> nfm22/artifact/sft-benchmarks/{aralia,random_scram,random_scram_prob,
+    #    industry,railway,sprinkler}/*.dft, nfm22/artifact/tools/translate.py,
+    #    nfm22/artifact/results/sft-benchmarks/sft_sizes.csv (Storm-dft's sizes)
+    for f in nfm22/artifact/sft-benchmarks/random_scram/*.dft; do
+      t=$(basename "$f" .dft)
+      for o in dfs tdlr; do
+        benchmark/sift/tools/mef2blif.py "$f" "random/$t.$o.blif" --order "$o"
+      done
+    done
+
+  sft-benchmarks/aralia/*.dft are 40 of the trees of the aralia set
+  (fetch-inputs.sh --sets aralia), as Galileo files: converted the same way,
+  they give the same BLIF inputs in the same orders (a basic event's
+  probability is then 1 - exp(-lambda), equal to the MEF value to about
+  1e-16). random_scram (128 trees of 150 events) and random_scram_prob (33 of
+  500) are the random trees of the paper; mef2blif.py reads them, and
+  sft_sizes.csv has Storm-dft's DFS and TDLR sizes for them. The sizes of the
+  Aralia trees from it are in ../fta-reference.tsv.
 EOF
 }
 
@@ -266,7 +383,7 @@ md5_of() {
   fi
 }
 
-src_cudd=""; src_ispras=""; src_lsils=""; src_fiser=""
+src_cudd=""; src_ispras=""; src_lsils=""; src_fiser=""; src_aralia=""
 sets=""
 mode=install
 dest=""
@@ -283,8 +400,9 @@ while [ $# -gt 0 ]; do
                   cudd=?*)   src_cudd=${2#*=} ;;
                   ispras=?*) src_ispras=${2#*=} ;;
                   lsils=?*)  src_lsils=${2#*=} ;;
+                  aralia=?*) src_aralia=${2#*=} ;;
                   fiser=?*)  src_fiser=${2#*=} ;;
-                  *) die "--src wants cudd=DIR, ispras=DIR, lsils=DIR or fiser=DIR" ;;
+                  *) die "--src wants cudd=DIR, ispras=DIR, lsils=DIR, aralia=DIR or fiser=DIR" ;;
                 esac
                 shift 2 ;;
     -h|--help)  sed -n '2,/^[^#]/{/^#/s/^# \{0,1\}//p}' "$0"; exit 0 ;;
@@ -310,10 +428,10 @@ selected() {
 }
 
 if [ "$mode" = list ]; then
-  printf '%-10s %-26s %-32s %-5s %-32s %s\n' set file "md5 (installed)" conv "md5 (download, CR stripped)" url
+  printf '%-10s %-26s %-32s %-13s %-32s %s\n' set file "md5 (installed)" conv "md5 (download, CR stripped)" url
   while read -r set path src spath umd5 conv imd5; do
     [ -n "$set" ] || continue
-    printf '%-10s %-26s %-32s %-5s %-32s %s\n' "$set" "$path" "$imd5" "$conv" "$umd5" "$(url_of "$src" "$spath")"
+    printf '%-10s %-26s %-32s %-13s %-32s %s\n' "$set" "$path" "$imd5" "$conv" "$umd5" "$(url_of "$src" "$spath")"
   done <<< "$MANIFEST"
   exit 0
 fi
@@ -341,6 +459,7 @@ fetch_raw() {
   local src=$1 spath=$2 out=$3 dir="" lpath=$2
   case "$src" in
     cudd) dir=$src_cudd ;; ispras) dir=$src_ispras ;; lsils) dir=$src_lsils ;;
+    aralia) dir=$src_aralia ;;
   esac
   if [ -z "$dir" ] && [ "$src" = ispras ] && [ -n "$src_fiser" ]; then
     dir=$src_fiser
@@ -368,7 +487,35 @@ fetch_raw() {
 }
 
 tmpfiles=()
-trap 'rm -f ${tmpfiles[@]+"${tmpfiles[@]}"}' EXIT
+work=$(mktemp -d "${TMPDIR:-/tmp}/fetch-inputs.XXXXXX") || die "mktemp failed"
+trap 'rm -f ${tmpfiles[@]+"${tmpfiles[@]}"}; rm -rf "$work"' EXIT
+case " $sets " in
+  *" aralia "*) command -v python3 > /dev/null 2>&1 || die "the aralia set needs python3 (tools/mef2blif.py)" ;;
+esac
+
+# fetch_once SOURCE PATH OUT -- fetch_raw, but each file only once per run:
+# the five files of a fault tree come from one download.
+fetch_once() {
+  local cached="$work/raw/$1/$2"
+  if [ ! -f "$cached" ]; then
+    mkdir -p "$(dirname "$cached")"
+    fetch_raw "$1" "$2" "$cached.part" && mv "$cached.part" "$cached" || return 1
+  fi
+  cp "$cached" "$3"
+}
+
+# convert_tree CLEAN TREE ORDER -- the directory holding mef2blif.py's
+# TREE.ORDER.blif and TREE.ORDER.probs of the checked download CLEAN, made
+# once per run.
+convert_tree() {
+  local dir="$work/conv/$2.$3"
+  if [ ! -f "$dir/$2.$3.probs" ]; then
+    mkdir -p "$dir"
+    cp "$1" "$dir/$2.xml"
+    python3 -I "$TOOLS/mef2blif.py" "$dir/$2.xml" "$dir/$2.$3.blif" --order "$3" > /dev/null || return 1
+  fi
+  echo "$dir"
+}
 
 # install_one SET PATH SOURCE SPATH UMD5 CONV IMD5 -- 0 installed or already
 # there and matching, 1 failed.
@@ -388,7 +535,7 @@ install_one() {
   raw=$(mktemp "$(dirname "$target")/.fetch.raw.XXXXXX")
   clean=$(mktemp "$(dirname "$target")/.fetch.blif.XXXXXX")
   tmpfiles+=("$raw" "$clean")
-  if ! fetch_raw "$src" "$spath" "$raw"; then
+  if ! fetch_once "$src" "$spath" "$raw"; then
     echo "FAILED    $target: could not get $spath from $src" >&2
     return 1
   fi
@@ -404,6 +551,19 @@ install_one() {
     got=$(md5_of "$clean")
     if [ "$got" != "$imd5" ]; then
       echo "FAILED    $target: the combinational part has md5 $got, expected $imd5" >&2
+      return 1
+    fi
+  elif [[ "$conv" == mef2blif-* ]]; then
+    local tree=${spath##*/} cdir
+    tree=${tree%.xml}
+    if ! cdir=$(convert_tree "$clean" "$tree" "${conv#mef2blif-}"); then
+      echo "FAILED    $target: tools/mef2blif.py could not convert $spath" >&2
+      return 1
+    fi
+    cp "$cdir/${path##*/}" "$clean"
+    got=$(md5_of "$clean")
+    if [ "$got" != "$imd5" ]; then
+      echo "FAILED    $target: tools/mef2blif.py made md5 $got, expected $imd5" >&2
       return 1
     fi
   fi
@@ -425,7 +585,7 @@ done < <(selected)
 [ "$failed" -eq 0 ] || die "$failed of $n files of sets [$sets] not installed"
 echo "$n files of sets [$sets] in $dest"
 case " $sets " in
-  *" iscas85 "*|*" lgsynth91 "*|*" iscas89 "*|*" epfl "*) ;;
+  *" iscas85 "*|*" lgsynth91 "*|*" iscas89 "*|*" epfl "*|*" aralia "*) ;;
   *) echo "for the cases of cases.tsv: $0 --all $dest" ;;
 esac
 echo "for the other input families, see: $0 --families"

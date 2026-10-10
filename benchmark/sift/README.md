@@ -71,7 +71,8 @@ fetched by CMake (v2.4.0); to build offline, add
 ```sh
 benchmark/sift/fetch-inputs.sh inputs                 # C880.blif, from GitHub
 benchmark/sift/fetch-inputs.sh --cudd-src /path/to/cudd inputs   # or offline
-benchmark/sift/fetch-inputs.sh --all inputs           # every circuit of cases.tsv
+benchmark/sift/fetch-inputs.sh --all inputs           # every circuit and fault tree of cases.tsv
+benchmark/sift/fetch-inputs.sh --sets aralia inputs   # the fault trees only (needs python3)
 benchmark/sift/fetch-inputs.sh --check --all inputs   # verify an installed tree
 benchmark/sift/fetch-inputs.sh --list                 # each file's source URL and MD5s
 ```
@@ -80,12 +81,15 @@ benchmark/sift/fetch-inputs.sh --list                 # each file's source URL a
 (18428 bytes, LF line endings), as before; every other file has its own
 recorded MD5 (`--list`), and an existing file is never overwritten.
 `fetch-inputs.sh --families` gives the sources, checksums and commands for
-the McNet, relprod and QBF families, and records the EPFL arithmetic circuits
+the McNet, relprod and QBF families, records the EPFL arithmetic circuits
 as infeasible: neither tool can build `adder` or `bar` under their file order
-with an 8 GB budget, so there is nothing to sift.
+with an 8 GB budget, so there is nothing to sift; and documents the GPL-3.0
+fault trees of BDDs Strike Back, which it does not fetch (see
+[Fault trees](#fault-trees)).
 
-`--all` installs 60 files, every circuit the [case table](#the-case-table)
-uses plus the ones it screened out, so that each can still be run by name:
+`--all` installs 275 files, every circuit and fault tree the
+[case table](#the-case-table) uses plus the ones it screened out, so that
+each can still be run by name:
 
 | set | installed as | source, pinned | licence | reference |
 |---|---|---|---|---|
@@ -94,6 +98,7 @@ uses plus the ones it screened out, so that each can still be run by name:
 | `lgsynth91` | `lgsynth91/*.blif`, 36 circuits | the same `mcnc/Combinational/blif/`, and `lgsynth91/blif/` for the sequential ones | none stated; MCNC gave them out by anonymous FTP and tape for benchmarking (`lgsynth91/LGSynth91.readme` there) | S. Yang, *Logic Synthesis and Optimization Benchmarks User Guide, Version 3.0*, MCNC, 1991 |
 | `iscas89` | `iscas89/s*.blif`, 10 circuits | `lgsynth91/blif/` of the same | as `lgsynth91` | F. Brglez, D. Bryan, K. Kozminski, ISCAS 1989 |
 | `epfl` | `epfl/*.blif`: arbiter mem_ctrl priority voter | `random_control/` of [lsils/benchmarks](https://github.com/lsils/benchmarks) `0060e15` | MIT | L. Amaru, P.-E. Gaillardon, G. De Micheli, IWLS 2015 |
+| `aralia` | `aralia/TREE.xml`, 43 fault trees in Open-PSA MEF, and from each, by `tools/mef2blif.py`, `aralia/TREE.dfs.blif`, `aralia/TREE.tdlr.blif` and their `.probs` (215 files) | `data/openpsa/` of [openpra-org/aralia-fault-tree-dataset](https://github.com/openpra-org/aralia-fault-tree-dataset) `9a50e0c` | CC BY-SA 4.0, the converted files as adaptations too | the Aralia benchmark suite (A. Rauzy et al.); doi:10.5281/zenodo.20160658; see [Fault trees](#fault-trees) |
 
 The ispras files are Petr Fiser's collection
 (<https://ddd.fit.cvut.cz/www/prj/Benchmarks/>) with LF line endings: all 219

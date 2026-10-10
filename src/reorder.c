@@ -1354,8 +1354,8 @@ sylvan_reorder_interact_build(void)
  *
  * Both rewrites are injective and both produce a record no node can already
  * hold: before the swap y is below x, so nothing rooted at y can have an
- * x-child. That is what lets nodes_reinsert treat an equal node as a fatal
- * invariant violation rather than a case to handle.
+ * x-child. That is the guarantee nodes_reinsert relies on: an equal node is
+ * a caller error, which only a debug build pays to look for.
  *
  * The children g0 and g1 are legal x-nodes both before and after the swap:
  * their children are the four cofactors of f by x and y, all of which have
@@ -1369,9 +1369,10 @@ sylvan_reorder_interact_build(void)
  * and then unhashed -- in parallel where the index takes batches -- and
  * counted down in parallel; release the slots (serial). Splitting the rewrite
  * from the re-indexing costs one barrier more than fusing them would, and it
- * buys the absence of a data race: nodes_reinsert compares records along a
- * chain, and in a fused phase it could read a record another worker is
- * halfway through rewriting.
+ * buys the absence of a data race: nodes_reinsert may compare records along
+ * a chain -- the trie's descent does, and so does a debug build's check for
+ * an equal node -- and in a fused phase it could read a record another
+ * worker is halfway through rewriting.
  * ---------------------------------------------------------------------------
  */
 

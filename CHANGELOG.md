@@ -81,6 +81,8 @@ All notable changes to Sylvan will be documented in this file.
   lookups, removals and re-indexings, which `sylvan_stats_report` prints. The
   CMake option `SYLVAN_REGION_STRIPED_START` (default off) allocates in
   per-worker stripes of the table instead of from the shared region cursor.
+  The CMake cache variable `SYLVAN_NODES_ANCHOR` (default `max`) chooses which
+  child of a node anchors the family the list and trie tables index it in.
   The CMake cache variable `SYLVAN_SIFT_RECOMMEND_FLOOR` (default 4096) sets
   the live-node floor of the sift recommendation.
 

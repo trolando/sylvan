@@ -44,6 +44,16 @@ option(SYLVAN_CHECK_HANDLES "Let Sylvan check decision diagram handle bounds" OF
 # worth.
 option(SYLVAN_REGION_STRIPED_START "Let Sylvan allocate regions in per-worker stripes" OFF)
 
+# Diagnostic builds only: which child of a node anchors the family the node is
+# indexed in, in the list and trie nodes tables (see src/nodes_anchor.h). max,
+# the default, is the child with the larger index; min the one with the
+# smaller; parity either, by one hash bit of the pair. It changes which family
+# a node is indexed in and nothing else, and exists to measure what the default
+# rule is worth. The other tables have no families and ignore it.
+set(SYLVAN_NODES_ANCHOR "max" CACHE STRING
+    "Child that anchors a node's family in the list and trie tables (max|min|parity)")
+set_property(CACHE SYLVAN_NODES_ANCHOR PROPERTY STRINGS max min parity)
+
 # The live-node floor of the sift recommendation (sylvan_sift_recommended, see
 # src/sift.c): the smallest forest a growth is measured from, so that a small
 # forest never recommends a sift. 4096 by default; it is a build setting so
@@ -241,6 +251,21 @@ if(SYLVAN_REGION_STRIPED_START)
     target_compile_definitions(sylvan PRIVATE SYLVAN_REGION_STRIPED_START=1)
 endif()
 
+# PRIVATE: only the list and trie tables read it, and only a non-default
+# setting is passed, so a default build compiles as if the option did not
+# exist.
+string(TOLOWER "${SYLVAN_NODES_ANCHOR}" _sylvan_nodes_anchor)
+if(_sylvan_nodes_anchor STREQUAL "min")
+    target_compile_definitions(sylvan PRIVATE SYLVAN_NODES_ANCHOR=NODES_ANCHOR_MIN)
+elseif(_sylvan_nodes_anchor STREQUAL "parity")
+    target_compile_definitions(sylvan PRIVATE SYLVAN_NODES_ANCHOR=NODES_ANCHOR_PARITY)
+elseif(NOT _sylvan_nodes_anchor STREQUAL "max")
+    message(FATAL_ERROR "Invalid SYLVAN_NODES_ANCHOR='${SYLVAN_NODES_ANCHOR}'. Valid: max, min, parity")
+endif()
+if(NOT _sylvan_nodes_anchor STREQUAL "max")
+    message(STATUS "Sylvan: list and trie nodes anchored at the '${_sylvan_nodes_anchor}' child")
+endif()
+
 # PRIVATE: only src/sift.c reads it, and it always comes from here.
 target_compile_definitions(sylvan PRIVATE
     SYLVAN_SIFT_RECOMMEND_FLOOR=${SYLVAN_SIFT_RECOMMEND_FLOOR})
@@ -319,6 +344,7 @@ if(NOT sylvan_IS_TOP_LEVEL)
         SYLVAN_HUGEPAGES
         SYLVAN_SIFT_PHASE_TIMING
         SYLVAN_REGION_STRIPED_START
+        SYLVAN_NODES_ANCHOR
         SYLVAN_SIFT_RECOMMEND_FLOOR
     )
 endif()

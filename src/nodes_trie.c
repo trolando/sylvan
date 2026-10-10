@@ -24,9 +24,11 @@
 #include <stdlib.h> // realloc, free, abort
 #include <string.h> // memset
 
+#include "nodes_anchor.h"
+
 /**
- * Manage nodes in an array, using a trie from the maximum child to ensure that
- * nodes are unique.
+ * Manage nodes in an array, using a trie from one of the children, the anchor
+ * (see nodes_anchor.h), to ensure that nodes are unique.
  *
  * Node indices are 40-bit numbers.
  *
@@ -102,14 +104,7 @@ static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_
     sylvan_stats_count(LLMSSET_LOOKUP_CALLS);
 
     // Determine index in the trie array (first)
-    uint64_t trie;
-    if (a & 0x4000000000000000) {
-        trie = 1; // it's a leaf
-    } else {
-        uint64_t A = a & 0x000000ffffffffff;
-        uint64_t B = b & 0x000000ffffffffff;
-        trie = A > B ? A : B;
-    }
+    uint64_t trie = nodes_anchor(a, b);
 
     // Calculate the hash
     uint64_t hash = 14695981039346656037LLU;
@@ -323,14 +318,7 @@ static int nodes_reinsert_bucket(nodes_table* dbs, uint64_t d_idx)
     else hash = sylvan_tabhash16(a, b, hash);
     uint64_t masked_hash = hash & 0xffffff0000000000;
 
-    uint64_t trie;
-    if (a & 0x4000000000000000) {
-        trie = 1; // it's a leaf
-    } else {
-        uint64_t A = a & 0x000000ffffffffff;
-        uint64_t B = b & 0x000000ffffffffff;
-        trie = A > B ? A : B;
-    }
+    uint64_t trie = nodes_anchor(a, b);
 
     uint64_t value = atomic_load_explicit(&dbs->first[trie], memory_order_acquire);
     if (value == 0) {
@@ -775,13 +763,7 @@ reorder_key_of(const nodes_table* dbs, uint64_t index)
     key.hash = 14695981039346656037LLU;
     key.hash = key.custom ? dbs->hash_cb(key.a, key.b, key.hash)
                           : sylvan_tabhash16(key.a, key.b, key.hash);
-    if (key.a & UINT64_C(0x4000000000000000)) {
-        key.anchor = 1;
-    } else {
-        const uint64_t A = key.a & MASK_INDEX;
-        const uint64_t B = key.b & MASK_INDEX;
-        key.anchor = A > B ? A : B;
-    }
+    key.anchor = nodes_anchor(key.a, key.b);
     return key;
 }
 
@@ -1113,7 +1095,7 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
  *     node M is published below its own pair only if it descended into it, and
  *     the only way into next[M*2+..] while M's own link is absent is to have
  *     started at first[M], that is, to be a node of family M. So M's anchor
- *     would be a node whose anchor is M: each the other's larger child, which
+ *     would be a node whose anchor is M: each a child of the other, which
  *     the forest cannot contain.
  *
  * FAILURE. Only phase 1 can fail, and it is read-only, so a batch that names a
@@ -1228,9 +1210,9 @@ trie_batch_victims_CALL(lace_worker* lace, nodes_table* dbs, int phase,
                     dbs->batch + TRIE_BATCH_ERROR, 1, memory_order_relaxed);
                 break;
             }
-            /* A node is never its own anchor -- the anchor is its larger
-               child -- so the two cases the code has to tell apart really are
-               told apart by whether the owner is the node. */
+            /* A node is never its own anchor -- the anchor is one of its
+               children -- so the two cases the code has to tell apart really
+               are told apart by whether the owner is the node. */
             assert(key.anchor != index);
             dbs->codes[at] = owner == index
                 ? (uint64_t)(slot - dbs->next)

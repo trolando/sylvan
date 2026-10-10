@@ -226,12 +226,13 @@ claim_next_region(const nodes_table* dbs, uint64_t start_region)
  * order -- and with it the order of node indices -- follows the order in
  * which regions were needed, across all workers. A serial run has that
  * property for free. The anchored backends, list and trie, need it for their
- * layout: a node's family is anchored at its larger child index, so a child
- * that predates its parents' other children anchors only the few parents
- * whose other child is older still. Starting each worker in its own stripe of
- * the table breaks that: everything a high-stripe worker creates out-indexes
- * everything the low-stripe workers made, and a heavily shared node in a high
- * stripe then anchors its whole fan-in. With several workers the largest
+ * layout: by default a node's family is anchored at its larger child index
+ * (see nodes_anchor.h), so a child that predates its parents' other children
+ * anchors only the few parents whose other child is older still. Starting
+ * each worker in its own stripe of the table breaks that: everything a
+ * high-stripe worker creates out-indexes everything the low-stripe workers
+ * made, and a heavily shared node in a high stripe then anchors its whole
+ * fan-in. With several workers the largest
  * families of such a table are many times longer than those of the same
  * forest built serially, and every family walk -- lookups, insertions,
  * removals -- pays for it. The chained backends, llcht and llchst, put a node

@@ -175,6 +175,20 @@ build.
 
         cmake .. -DSYLVAN_REGION_STRIPED_START=ON
 
+``SYLVAN_NODES_ANCHOR`` (CMake cache variable, ``max`` by default)
+    Choose which child of a node anchors the family that the list and trie
+    tables index the node in, and so the family every lookup, removal and
+    reinsertion of the node walks. ``max`` is the child with the larger index,
+    ``min`` the child with the smaller index, and ``parity`` either child, by
+    one bit of a hash of the pair; none of them chooses the terminal while the
+    other child is a node. It changes which family a node is indexed in and
+    nothing else, and exists to measure what the default rule is worth. The
+    other tables have no families and ignore it.
+
+    .. code:: bash
+
+        cmake .. -DSYLVAN_NODES_ANCHOR=parity
+
 Using Sylvan
 ------------
 
@@ -609,8 +623,9 @@ design are worth. None of them changes what a sift computes, only how it gets th
 or what it reports. The build-time ones are listed under `Diagnostic builds`_
 (``SYLVAN_SIFT_PHASE_TIMING`` for where a sift's time goes, the index counters of
 ``SYLVAN_STATS`` for how much index each swap walks, ``SYLVAN_REGION_STRIPED_START``
-for per-worker allocation stripes); the one runtime switch is internal API, declared
-in ``sylvan/internal.h``:
+for per-worker allocation stripes, ``SYLVAN_NODES_ANCHOR`` for which child anchors a
+node's family); the one runtime switch is internal API, declared in
+``sylvan/internal.h``:
 
 ``sylvan_reorder_set_batched(int enable)``
     With ``0``, every swap removes and re-indexes its nodes one at a time, even

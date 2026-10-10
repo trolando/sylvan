@@ -23,9 +23,11 @@
 #include <stdlib.h> // abort
 #include <string.h> // memset
 
+#include "nodes_anchor.h"
+
 /**
- * Manage nodes in an array, using a list from the maximum child to ensure that
- * nodes are unique.
+ * Manage nodes in an array, using a list from one of the children, the anchor
+ * (see nodes_anchor.h), to ensure that nodes are unique.
  *
  * Node indices are 40-bit numbers.
  *
@@ -96,14 +98,7 @@ static inline uint64_t nodes_lookup2(const nodes_table* dbs, uint64_t a, uint64_
     sylvan_stats_count(LLMSSET_LOOKUP_CALLS);
 
     // Determine first bucket of the linked list
-    uint64_t ll_idx;
-    if (a & 0x4000000000000000) {
-        ll_idx = 1; // it's a leaf
-    } else {
-        uint64_t A = a & 0x000000ffffffffff;
-        uint64_t B = b & 0x000000ffffffffff;
-        ll_idx = A > B ? A : B;
-    }
+    uint64_t ll_idx = nodes_anchor(a, b);
 
     // Calculate the hash
     uint64_t hash = 14695981039346656037LLU;
@@ -264,14 +259,7 @@ int nodes_reinsert_bucket(nodes_table* dbs, uint64_t d_idx)
     else hash = sylvan_tabhash16(a, b, hash);
     uint64_t masked_hash = hash & 0xffffff0000000000;
 
-    uint64_t ll_idx;
-    if (a & 0x4000000000000000) {
-        ll_idx = 1; // it's a leaf
-    } else {
-        uint64_t A = a & 0x000000ffffffffff;
-        uint64_t B = b & 0x000000ffffffffff;
-        ll_idx = A > B ? A : B;
-    }
+    uint64_t ll_idx = nodes_anchor(a, b);
 
     uint64_t value = atomic_load_explicit(&dbs->first[ll_idx], memory_order_relaxed); // can be relaxed
     if (value == 0) {
@@ -571,12 +559,12 @@ void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb e
  * Reorder primitives.
  *
  * The chain surgery is the same as in nodes_llcht: nodes_remove splices the
- * node out of the family anchored at its maximum child with compare-and-swap
- * behind a delete-in-progress link, and nodes_reinsert publishes the node's
- * own link before making the node reachable. See the comment on nodes_remove
- * in nodes_llcht.c for why the delete-in-progress link is needed, why the
- * walk cannot step past its own node or splice the wrong link, why the
- * retries terminate, and why a refusal gives the claimed link back.
+ * node out of the family of its anchor with compare-and-swap behind a
+ * delete-in-progress link, and nodes_reinsert publishes the node's own link
+ * before making the node reachable. See the comment on nodes_remove in
+ * nodes_llcht.c for why the delete-in-progress link is needed, why the walk
+ * cannot step past its own node or splice the wrong link, why the retries
+ * terminate, and why a refusal gives the claimed link back.
  *
  * One deliberate difference from the lookup path: an ordinary insertion
  * appends at the tail of the family, but nodes_reinsert PREPENDS. Chain order
@@ -618,10 +606,7 @@ reorder_anchor(const nodes_table* dbs, uint64_t index, uint64_t* masked_hash)
     else hash = sylvan_tabhash16(a, b, hash);
     *masked_hash = hash & MASK_HASH;
 
-    if (a & UINT64_C(0x4000000000000000)) return dbs->first + 1;
-    const uint64_t A = a & MASK_INDEX;
-    const uint64_t B = b & MASK_INDEX;
-    return dbs->first + (A > B ? A : B);
+    return dbs->first + nodes_anchor(a, b);
 }
 
 int
@@ -805,9 +790,9 @@ nodes_release(nodes_table* dbs, uint64_t index)
         LINK_REMOVING) {
         return SYLVAN_ERR_INVALID;
     }
-    /* first[index] roots the family of the nodes whose larger child is this
-       one, and release does not reset it either: a node nothing refers to
-       anchors nobody, so its family is already empty. Debug builds check. */
+    /* first[index] roots the family of the nodes anchored at this one, and
+       release does not reset it either: a node nothing refers to anchors
+       nobody, so its family is already empty. Debug builds check. */
     assert(atomic_load_explicit(dbs->first + index, memory_order_relaxed) == 0);
     atomic_store_explicit(dbs->next + index, 0, memory_order_relaxed);
 

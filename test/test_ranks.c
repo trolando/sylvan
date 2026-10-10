@@ -1388,6 +1388,10 @@ runtests_CALL(lace_worker *lace)
     if (test_operations_CALL(lace, variables)) return 1;
     printf("Testing iteration.\n");
     if (test_iteration_CALL(lace, variables)) return 1;
+    printf("Testing more operations.\n");
+    if (test_more_operations_CALL(lace, variables)) return 1;
+    printf("Testing multi-terminal operations.\n");
+    if (test_mtbdd_operations_CALL(lace, variables)) return 1;
     printf("Testing relational products.\n");
     if (test_relational_CALL(lace)) return 1;
 

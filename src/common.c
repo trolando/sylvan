@@ -313,6 +313,11 @@ static size_t gc_table_before;  /* nodes table size the collection ran on */
 static size_t gc_used_before;   /* occupied buckets before marking */
 static size_t gc_live_after;    /* occupied buckets after marking */
 
+/* Whether the collection that is running was forced by an insertion the table
+   refused (sylvan_gc_collect) rather than asked for. Written by gc_collect
+   under the collection flag, and zero for a direct call of sylvan_gc_go. */
+static int gc_forced;
+
 /**
  * How much the collection currently running reclaimed, as a fraction of the
  * nodes table it ran on. Returns nonzero if that is at least `percent`.
@@ -432,14 +437,50 @@ gc_growth_doublings(void)
 }
 
 /**
- * Resizing heuristic that always grows the tables when running gc (until max).
- * The nodes table and operation cache are both resized until their maximum size.
- * A collection that reclaimed most of the table grows it by several doublings
- * at once; see the commentary above.
+ * A COLLECTION THAT WAS ASKED FOR GROWS ONLY A TABLE IT LEAVES WELL FILLED
+ *
+ * Both heuristics below read the pressure on the table off what the running
+ * collection reclaimed, and that measures the pressure only for a collection
+ * an insertion forced: the table was full, and it will be full again once the
+ * reclaimed buckets are used up. A collection that was asked for -- by
+ * sylvan_gc(), or by a reorder session, which opens with one however little
+ * the table holds, and an automatic sift runs both -- may run on a table that
+ * is nearly empty, where it reclaims little because there was little to
+ * reclaim. Growing the table there buys nothing, and every later collection,
+ * the opening one of every sift included, passes over the larger table.
+ *
+ * So a collection that was asked for, and leaves less than
+ * SYLVAN_GC_SPARSE_PERCENT of the table live, grows nothing, whatever it
+ * reclaimed. The threshold is the conservative growth trigger (more than half
+ * live) less the starved fraction (a quarter): a table less than a quarter
+ * live has more than a quarter of itself to fill before it is as full as the
+ * trigger requires, which is more room than a starved collection leaves. A
+ * collection an insertion forced keeps both heuristics as they are, the
+ * churn growth of a nursery and the starved growth of a table whose index
+ * refuses insertions with room to spare included.
+ */
+#ifndef SYLVAN_GC_SPARSE_PERCENT
+#define SYLVAN_GC_SPARSE_PERCENT 25
+#endif
+
+static int
+gc_may_grow(void)
+{
+    if (gc_forced) return 1;
+    return gc_live_after >= (gc_table_before / 100) * SYLVAN_GC_SPARSE_PERCENT;
+}
+
+/**
+ * Resizing heuristic that always grows the tables when running gc (until
+ * max), except at a collection that was asked for and leaves the table
+ * mostly empty; see gc_may_grow. The nodes table and operation cache are both
+ * resized until their maximum size. A collection that reclaimed most of the
+ * table grows it by several doublings at once; see the commentary above.
  */
 void sylvan_gc_aggressive_resize_CALL(lace_worker* lace)
 {
     (void)lace;
+    if (!gc_may_grow()) return;
     const int doublings = gc_growth_doublings();
 
     size_t nodes_size = nodes_get_size(nodes);
@@ -456,7 +497,9 @@ void sylvan_gc_aggressive_resize_CALL(lace_worker* lace)
 
 /**
  * Resizing heuristic that only resizes when more than 50% is marked, or when
- * the collection failed to reclaim a worthwhile fraction of the table.
+ * the collection failed to reclaim a worthwhile fraction of the table -- and
+ * not at a collection that was asked for and leaves the table mostly empty;
+ * see gc_may_grow.
  * The operation cache is only resized if the nodes table is resized.
  */
 void sylvan_gc_normal_resize_CALL(lace_worker* lace)
@@ -464,7 +507,7 @@ void sylvan_gc_normal_resize_CALL(lace_worker* lace)
     (void)lace;
     size_t nodes_size = nodes_get_size(nodes);
     size_t nodes_max = nodes_get_max_size(nodes);
-    if (nodes_size < nodes_max) {
+    if (nodes_size < nodes_max && gc_may_grow()) {
         const size_t marked = gc_live_after;
         if (marked*2 > nodes_size ||
             !gc_reclaimed_at_least(SYLVAN_GC_STARVED_PERCENT)) {
@@ -716,10 +759,11 @@ void sylvan_maintenance(lace_worker* lace)
  * collection frame, rather than joining one another worker had already
  * started. Only that worker may go on to do anything else with the result, so
  * that a collection several workers asked for at once is still followed by at
- * most one reordering.
+ * most one reordering. <forced> says the caller is an insertion the table
+ * refused, which the resizing heuristics weigh differently; see gc_may_grow.
  */
 static int
-gc_collect(lace_worker* lace, void *caller)
+gc_collect(lace_worker* lace, void *caller, int forced)
 {
     (void)caller;
     if (!gc_enabled) return 0;
@@ -729,7 +773,9 @@ gc_collect(lace_worker* lace, void *caller)
 #if SYLVAN_GC_DIAGNOSTICS
         gc_diag_caller = caller;
 #endif
+        gc_forced = forced;
         sylvan_gc_go_NEWFRAME();
+        gc_forced = 0;
         gc = 0;
         return 1;
     }
@@ -753,7 +799,7 @@ gc_collect(lace_worker* lace, void *caller)
  */
 void sylvan_gc_collect_CALL(lace_worker* lace)
 {
-    (void)gc_collect(lace, GC_CALLER());
+    (void)gc_collect(lace, GC_CALLER(), 1);
 }
 
 /**
@@ -765,7 +811,7 @@ void sylvan_gc_collect_CALL(lace_worker* lace)
  */
 void sylvan_gc_CALL(lace_worker* lace)
 {
-    if (gc_collect(lace, GC_CALLER())) sylvan_sift_auto();
+    if (gc_collect(lace, GC_CALLER(), 0)) sylvan_sift_auto();
 }
 
 /**
@@ -917,6 +963,7 @@ sylvan_init_package(void)
     sylvan_maintenance_requested = 0;
     gc_unproductive = 0;
     gc_churn_streak = 0;
+    gc_forced = 0;
     gc_table_before = 0;
     gc_used_before = 0;
     gc_live_after = 0;

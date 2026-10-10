@@ -147,7 +147,8 @@ static inline void sylvan_table_usage(size_t* filled, size_t* total);
  *    See sylvan_gc_add_roots to add a root visitor.
  *    Afterwards, the ondead hook is called for all now-dead nodes with the custom flag set.
  * 5) The main gc hook is called. The function of this hook is to perform resizing.
- *    The default implementation doubles the nodes table and operation cache sizes.
+ *    The default implementation doubles the nodes table and operation cache sizes
+ *    unless the collection was asked for and left the table mostly empty.
  *    See sylvan_gc_hook_main to set the hook.
  * 6) The nodes table (hash part) is cleared.
  * 7) All marked nodes are rehashed.
@@ -190,8 +191,10 @@ static inline void sylvan_gc(void);
  * already computed and not yet combined. A collection there is sound, because
  * nothing moves and no handle changes. A reordering there would not be: the
  * suspended operation would resume and combine results it computed under the
- * previous rank order, under the new one. So this entry never reorders; that
- * is the only difference between it and sylvan_gc().
+ * previous rank order, under the new one. So this entry never reorders. The
+ * other difference from sylvan_gc() is that its collection counts as forced
+ * by a full table, which the resizing heuristics grow on even when it leaves
+ * the table mostly empty (see sylvan_gc_aggressive_resize).
  *
  * Consumers want sylvan_gc().
  */
@@ -353,7 +356,9 @@ int sylvan_gc_remove_roots(sylvan_roots_hook hook, void *context);
 /**
  * One of the hooks for resizing behavior.
  * Default if SYLVAN_AGGRESSIVE_RESIZE is set.
- * Always double size on gc() until maximum reached.
+ * Double size on every collection until maximum reached, except a collection
+ * that was asked for (sylvan_gc(), or the one a reorder session opens with)
+ * and leaves the table less than a quarter live.
  * Use sylvan_gc_hook_main() to set this heuristic.
  */
 static inline void sylvan_gc_aggressive_resize(void);
@@ -361,7 +366,8 @@ static inline void sylvan_gc_aggressive_resize(void);
 /**
  * One of the hooks for resizing behavior.
  * Default if SYLVAN_AGGRESSIVE_RESIZE is not set.
- * Double size on gc() whenever >50% is used.
+ * Double size on gc() whenever >50% is used, or when the collection reclaimed
+ * less than a quarter of the table; with the same exception as above.
  * Use sylvan_gc_hook_main() to set this heuristic.
  */
 static inline void sylvan_gc_normal_resize(void);

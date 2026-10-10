@@ -23,6 +23,9 @@ to OUT/h3-detail/. OUT/headlines.md has the reference check and every table.
   H3  schedule fidelity and quality against CUDD: final size and swap ratios,
       same order at more workers, evaluation-hash agreement, CUDD's own caps,
       the full-legs ablation, soundness and the 30-seed distribution
+  H4  runs in bdd-benchmark; here only the fault trees (h4b-fta): the sift
+      from Storm-dft's DFS and TDLR orders against Storm-dft's flat BDD under
+      SCRAM's order, and on how many trees it ends at or below that size
   H5  memory system: build and sift time with and without huge-page advice,
       with the THP mode the rows were measured under
 
@@ -93,7 +96,8 @@ PROB_RTOL = 1e-12
 
 
 def load_fta_reference(path=FTA_REFERENCE):
-    """tree: (published probability as written, or None; {order: Storm size})."""
+    """tree: (published probability as written, or None; {order: Storm size}),
+    the orders dfs, tdlr and scram (SCRAM's, a comparator only)."""
     ref = {}
     if not os.path.isfile(path):
         return ref
@@ -112,7 +116,8 @@ def load_fta_reference(path=FTA_REFERENCE):
             def val(k):
                 v = row.get(k, "-")
                 return None if v in ("-", "") else v
-            sizes = {o: int(val("storm_" + o)) for o in ("dfs", "tdlr") if val("storm_" + o)}
+            sizes = {o: int(val("storm_" + o)) for o in ("dfs", "tdlr", "scram")
+                     if val("storm_" + o)}
             ref[row["tree"]] = (val("probability"), sizes)
     return ref
 
@@ -799,6 +804,65 @@ def h3(rows, skips, check, out_dir):
     return sec
 
 
+# ------------------------------------------------------------- H4
+
+def h4(rows, skips, check, out_dir):
+    """The H4 section: a pointer to bdd-benchmark, and the fault trees (H4b),
+    one sift from Storm-dft's orders against its flat BDD under SCRAM's order.
+    Returns the section and the summary lines, one per start order."""
+    sec = Section("h4", "H4 When sifting pays", out_dir)
+    sec.text("H4 runs in the bdd-benchmark harness, not in this repository; see "
+             "EXPERIMENTS.md, section H4. The fault trees (H4b) run here.\n")
+    cells = OrderedDict()
+    for r in sz.ok(rows):
+        fc = fta_case(r.get("case"))
+        if not fc or fc[2] != "file" or r.get("auto_build") or r.get("nodes_after") is None:
+            continue
+        if not (sylvan_settings_ok(r) if sz.is_sylvan(r) else
+                sz.tool(r) == "cudd" and cudd_settings_ok(r)):
+            continue
+        cells.setdefault(fc[:2], []).append(r)
+    t = sz.Table("h4b-fta", "Fault trees: one sift from Storm-dft's order against "
+                 "Storm-dft's flat BDD under SCRAM's order",
+                 ["tree", "start", "before", "Sylvan", "CUDD", "flat SCRAM order",
+                  "Sylvan <= it", "ratio"],
+                 ["One sift after a plain build (no --auto-build), threshold 0, growth "
+                  "1.2, no limits. before: nodes_before, which is Storm-dft's size "
+                  "under the start order. flat SCRAM order: Storm-dft's BDD under the "
+                  "order extracted from SCRAM (storm_scram of fta-reference.tsv); "
+                  "ratio: Sylvan's final size over it. SCRAM's own count is "
+                  "modular and not comparable (README.md, Fault trees)."])
+    pairs = {"dfs": [], "tdlr": []}
+    for (tree, order) in sorted(cells):
+        rs = cells[(tree, order)]
+        syl = [r for r in rs if sz.is_sylvan(r)]
+        cu = [r for r in rs if sz.tool(r) == "cudd"]
+        sizes = FTA.get(tree, (None, {}))[1]
+        scram = sizes.get("scram")
+        # a deterministic size; were they to differ, the largest counts
+        after = max((r["nodes_after"] for r in syl), default=None)
+        below = ratio = None
+        if after is not None and scram:
+            below, ratio = after <= scram, after / scram
+            pairs[order].append((after, scram))
+        t.add(tree, order.upper(), mark(det(rs, "nodes_before"), rs, check),
+              mark(det(syl, "nodes_after"), syl, check) if syl else None,
+              mark(det(cu, "nodes_after"), cu, check) if cu else None,
+              scram, "-" if below is None else ("yes" if below else "no"),
+              sz.F(ratio, 2))
+    lines = []
+    for order, ps in pairs.items():
+        if ps:
+            lines.append(f"{order.upper()} start, sifted <= flat SCRAM order: "
+                         f"{sum(a <= s for a, s in ps)} of {len(ps)} trees, median ratio "
+                         f"{statistics.median(a / s for a, s in ps):.2f}")
+    if t.rows:
+        sec.table(t, "h4b-fta")
+        sec.text("".join(f"- {line}\n" for line in lines))
+    sec.flag(check, rows)
+    return sec, lines
+
+
 # ------------------------------------------------------------- H5
 
 def h5(rows, skips, check, out_dir):
@@ -864,10 +928,8 @@ def main():
     check.run(rows)
     secs = [h1(rows, skips, check, a.out), h2(rows, skips, check, a.out),
             h3(rows, skips, check, a.out)]
-    h4 = Section("h4", "H4 When sifting pays", a.out)
-    h4.text("H4 runs in the bdd-benchmark harness, not in this repository; see "
-            "EXPERIMENTS.md, section H4.\n")
-    secs += [h4, h5(rows, skips, check, a.out)]
+    h4sec, fta_lines = h4(rows, skips, check, a.out)
+    secs += [h4sec, h5(rows, skips, check, a.out)]
 
     batches = sz.ordered(str(r.get("batch")) for r in rows if r.get("batch"))
     head = ["# Headline tables\n",
@@ -879,6 +941,8 @@ def main():
         f.write("\n".join(head) + "\n" + "\n".join(body))
 
     print(check.markdown(not a.no_check))
+    for line in fta_lines:
+        print(line)
     for s in secs:
         for path in s.files:
             print(f"wrote {path}")

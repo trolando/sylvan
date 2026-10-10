@@ -15,7 +15,7 @@ the input circuits, which the instructions below fetch at pinned revisions.
 | `fetch-inputs.sh` | installs `C880.blif`, or with `--all` every circuit and fault tree of `cases.tsv` (all checksummed); `--families` documents the other input families |
 | `tools/mef2blif.py` | converts a static fault tree (Open-PSA MEF or Galileo) to BLIF under Storm-dft's DFS or TDLR order, with its `.probs` |
 | `cases.tsv` | the case table: every case of the main grid, with its family, size class, quick flag and timeout (see [The case table](#the-case-table)) |
-| `fta-reference.tsv` | the published values of the fault trees: top-event probabilities and Storm-dft's BDD sizes |
+| `fta-reference.tsv` | the published values of the fault trees: top-event probabilities and Storm-dft's BDD sizes under the DFS and TDLR orders and SCRAM's |
 | `scripts/run-*.sh` | one script per experiment; each appends JSONL rows |
 | `scripts/summarize.py` | Markdown and CSV tables from those rows |
 | `scripts/build-matrix.sh`, `scripts/manifest.py` | every build configuration the headline experiments need, and `manifest.json` |
@@ -545,6 +545,29 @@ event with probability 1/2, under which almost every top event is true, so
 most trees hash to the same 64 ones. The probability is the cross-tool check
 there.
 
+**Against a good static order.** NFM'22 also built every tree with Storm-dft
+under the variable order extracted from SCRAM (their Fig. 4b), and
+`fta-reference.tsv` carries that size as `storm_scram`
+(`BDD-SIZE-STORM-SCRAM` of `results/sft-benchmarks/sft_sizes.csv`, 39 trees):
+like the DFS and TDLR sizes, it is the flat BDD of the top event over the
+basic events, with complement edges and one terminal, and so the
+like-for-like comparator for a sift from Storm-dft's orders. `headlines.py`
+sets the final size of every `TREE.dfs-file` and `TREE.tdlr-file` against it
+(table `h4b-fta` in `h4.md`) and counts, per start order, the trees that end
+at or below it. In the run that set up the case table, Sylvan's sift from DFS
+ends at or below it on 33 of 39 trees (median ratio 0.70; the worst, edf9206,
+at 2.31 times it) and from TDLR on 21 of 38 (median 0.75). SCRAM's own number in
+that file, `BDD-SIZE-SCRAM`, is not comparable and is not in
+`fta-reference.tsv`: SCRAM preprocesses the tree into modules, builds one BDD
+per module with a proxy node for each module inside another, and counts the
+nodes of all of them (`CountIteNodes` in its `src/bdd.cc`), which is not the
+size of one BDD of the top event; the paper itself (p. 11) allows that the
+two tools may count their nodes differently. On das9207 the flat BDD under
+SCRAM's order, 70555 nodes, is even below SCRAM's count, 119401, so that
+order and that count came from different runs. And the order is one sample:
+the NFM'22 tooling wrote SCRAM's inputs from Python sets, and SCRAM's
+ordering heuristic depends on the order of each gate's arguments.
+
 **The cases.** `TREE.dfs-file` and `TREE.tdlr-file`: the stem is the file's
 (`aralia/TREE.dfs.blif`), the order the file's own. There are 81: both
 orders of the 39 trees that build under both, and the DFS order of cea9601,
@@ -592,7 +615,7 @@ without `--auto-build` at P1 and P8, 5 repetitions:
 $S/run-ablation.sh $B $C --cases "$($S/cases.sh --family fta)" --workers 1,8 --reps 5 \
   --variant sift= --variant autobuild=--auto-build \
   --sylvan-args "--verify 64" --cudd-args "--verify 64" --out results/fta.jsonl
-$S/headlines.py --in results --out report      # the reference check covers them
+$S/headlines.py --in results --out report      # the reference check covers them; h4.md sets them against SCRAM's order
 ```
 
 Costing every run at its P1 wall time (860 s for all 81 cases on Sylvan, 630

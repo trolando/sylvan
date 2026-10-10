@@ -12,6 +12,14 @@
 #                sft_sizes.csv, BDD-SIZE-STORM-DFS and -TDLR); nodes_before
 #                of TREE.dfs-file and TREE.tdlr-file must equal it, unless the
 #                row ran with --auto-build (its build sifted already)
+#   storm_scram  Storm-dft's size under the variable order the NFM'22 authors
+#                extracted from SCRAM (same file, BDD-SIZE-STORM-SCRAM): like
+#                the two above, the flat BDD of the top event over the basic
+#                events, and so the like-for-like size of a good static order.
+#                headlines.py compares the sifted sizes with it; it is no
+#                check. SCRAM's own count (BDD-SIZE-SCRAM) is left out: it
+#                sums one BDD per module of SCRAM's preprocessed graph, which
+#                is not this BDD (README.md, Fault trees)
 #   notes        why a value is missing
 #
 # cea9601, das9601 and das9701 are non-coherent (NOT gates; das9601 has XOR
@@ -22,47 +30,47 @@
 # 2.16942E-11, as does an independent pure-Python BDD of the MEF file; it is
 # left out of the check (the drivers' agreement with each other is still
 # checked).
-tree	probability	storm_dfs	storm_tdlr	notes
-baobab1	1.01708E-04	6410	183200	-
-baobab2	7.13018E-04	699	283	-
-baobab3	2.24117E-03	14223	9907387	-
-cea9601	1.48409E-03	-	-	non-coherent, not in the NFM'22 evaluation
-chinese	1.17058E-03	68	53	-
-das9201	1.34237E-02	787	929	-
-das9202	1.01154E-02	80	229	-
-das9203	1.34880E-03	86	284	-
-das9204	-	71	323	README lists 6.07651E-08, the tree gives 2.16942E-11: excluded
-das9205	1.38408E-08	52	149	-
-das9206	2.29687E-01	2294	3920	-
-das9207	3.46696E-01	8715	1587976	-
-das9208	1.30179E-02	6577	12820	-
-das9209	1.05800E-13	161	39401	-
-das9601	4.23440E-03	-	-	non-coherent, not in the NFM'22 evaluation
-das9701	7.44694E-02	-	-	non-coherent, not in the NFM'22 evaluation
-edf9201	3.24591E-01	2836	13179	-
-edf9202	7.81302E-01	413296	5193	-
-edf9203	5.99589E-01	160400	1414740	-
-edf9204	5.25374E-01	761601	403885	-
-edf9205	2.09351E-01	2875	1649	-
-edf9206	8.61500E-12	15753	647162	-
-edfpa14b	2.95620E-01	203172	486939	-
-edfpa14o	2.97057E-01	1040227	2670846	-
-edfpa14p	8.07059E-02	84276	960199	-
-edfpa14q	2.95905E-01	655120	1724313	-
-edfpa14r	2.09977E-02	245359	267252	-
-edfpa15b	3.62737E-01	90325	47148	-
-edfpa15o	3.62956E-01	236337	456132	-
-edfpa15p	7.36302E-02	58964	93870	-
-edfpa15q	3.62737E-01	195589	385698	-
-edfpa15r	1.89750E-02	48656	123439	-
-elf9601	9.66291E-02	118554	1655	-
-ftr10	4.48677E-01	343	590	-
-isp9601	5.71245E-02	722	12809	-
-isp9602	1.72447E-02	1336	3020	-
-isp9603	3.23326E-03	1716	13573	-
-isp9604	1.42751E-01	836	10683	-
-isp9605	1.37171E-05	772	341	-
-isp9606	5.43174E-02	246	485	-
-isp9607	9.49510E-07	531	511	-
-jbd9601	7.55091E-01	92939	-	Storm-dft out of resources under TDLR
-nus9601	-	-	-	probability unknown in the README; Storm-dft out of resources under DFS and TDLR
+tree	probability	storm_dfs	storm_tdlr	storm_scram	notes
+baobab1	1.01708E-04	6410	183200	9078	-
+baobab2	7.13018E-04	699	283	177	-
+baobab3	2.24117E-03	14223	9907387	3974	-
+cea9601	1.48409E-03	-	-	-	non-coherent, not in the NFM'22 evaluation
+chinese	1.17058E-03	68	53	66	-
+das9201	1.34237E-02	787	929	677	-
+das9202	1.01154E-02	80	229	52	-
+das9203	1.34880E-03	86	284	52	-
+das9204	-	71	323	67	README lists 6.07651E-08, the tree gives 2.16942E-11: excluded
+das9205	1.38408E-08	52	149	52	-
+das9206	2.29687E-01	2294	3920	605	-
+das9207	3.46696E-01	8715	1587976	70555	-
+das9208	1.30179E-02	6577	12820	4260	-
+das9209	1.05800E-13	161	39401	110	-
+das9601	4.23440E-03	-	-	-	non-coherent, not in the NFM'22 evaluation
+das9701	7.44694E-02	-	-	-	non-coherent, not in the NFM'22 evaluation
+edf9201	3.24591E-01	2836	13179	2215	-
+edf9202	7.81302E-01	413296	5193	2896	-
+edf9203	5.99589E-01	160400	1414740	229152	-
+edf9204	5.25374E-01	761601	403885	223819	-
+edf9205	2.09351E-01	2875	1649	2939	-
+edf9206	8.61500E-12	15753	647162	523	-
+edfpa14b	2.95620E-01	203172	486939	250402	-
+edfpa14o	2.97057E-01	1040227	2670846	176137	-
+edfpa14p	8.07059E-02	84276	960199	85789	-
+edfpa14q	2.95905E-01	655120	1724313	821097	-
+edfpa14r	2.09977E-02	245359	267252	109635	-
+edfpa15b	3.62737E-01	90325	47148	67544	-
+edfpa15o	3.62956E-01	236337	456132	102677	-
+edfpa15p	7.36302E-02	58964	93870	12105	-
+edfpa15q	3.62737E-01	195589	385698	51092	-
+edfpa15r	1.89750E-02	48656	123439	69090	-
+elf9601	9.66291E-02	118554	1655	3589	-
+ftr10	4.48677E-01	343	590	278	-
+isp9601	5.71245E-02	722	12809	495	-
+isp9602	1.72447E-02	1336	3020	1072	-
+isp9603	3.23326E-03	1716	13573	1261	-
+isp9604	1.42751E-01	836	10683	882	-
+isp9605	1.37171E-05	772	341	185	-
+isp9606	5.43174E-02	246	485	177	-
+isp9607	9.49510E-07	531	511	399	-
+jbd9601	7.55091E-01	92939	-	196379	Storm-dft out of resources under TDLR
+nus9601	-	-	-	-	probability unknown in the README; Storm-dft out of resources under DFS, TDLR and SCRAM's order

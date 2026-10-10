@@ -90,7 +90,8 @@ reorder_fatal(const char *what)
  * been rewritten to another identity, retired, or had their slot reused. That
  * is what makes maintenance trivial -- a swap only ever appends -- and the
  * cost is that a reader filters the list before using it (reorder_collect),
- * which also compacts it back down to the true population.
+ * which also compacts it back down to the true population. The memory a list
+ * holds stays proportional to that population; see reorder_list_make_room.
  */
 struct reorder_list {
     uint64_t *items;
@@ -623,6 +624,53 @@ reorder_collect(struct reorder_list *list, uint32_t identity, int want_map)
     for (size_t i = 0; i < out; i++) bitmap_clear(session.seen, list->items[i]);
     atomic_store_explicit(&list->count, out, memory_order_relaxed);
     return out;
+}
+
+/**
+ * Room for <extra> more entries in <list>, the list of <identity>'s nodes of
+ * one kind, and no more room than that needs.
+ *
+ * Between two compactions a list only grows. A swap appends to the lower
+ * variable's list the nodes it rewrote, and the entries those nodes replaced
+ * stay behind until the list is next compacted, which is when its variable is
+ * next the upper one of a swap -- never while it is on its way up through the
+ * order. And a list's population moves with its variable: sifted to its worst
+ * position a variable may hold many times the nodes it holds at its best. A
+ * list that grew without compacting and never shrank would hold, summed over
+ * the variables, the largest population each of them ever had and every entry
+ * that ever went stale in it, all at the same time.
+ *
+ * So a list without room is compacted first, and grows only if what is live
+ * in it and the new entries take more than half of it; growing to twice that
+ * puts the next compaction at least as many appends away as the list holds,
+ * which pays for reading it. A list more than four times larger than its
+ * entries and the new ones need shrinks to twice.
+ */
+static int
+reorder_list_make_room(struct reorder_list *list, uint32_t identity,
+                       int want_map, size_t extra)
+{
+    if (list == NULL) return SYLVAN_OK;
+
+    size_t count = atomic_load_explicit(&list->count, memory_order_relaxed);
+    const int full = count + extra > list->capacity;
+    if (full) count = reorder_collect(list, identity, want_map);
+
+    const size_t needed = count + extra < 8u ? 8u : count + extra;
+    size_t capacity = list->capacity;
+    if (full && 2u * needed > list->capacity) capacity = 2u * needed;
+    else if (list->capacity > 4u * needed) capacity = 2u * needed;
+    if (capacity == list->capacity) return SYLVAN_OK;
+
+    uint64_t *items = (uint64_t*)realloc(
+        list->items, capacity * sizeof(uint64_t));
+    if (items == NULL) {
+        /* A shrink that did not happen, or a growth past what was needed. */
+        return count + extra <= list->capacity ? SYLVAN_OK : SYLVAN_ERR_OOM;
+    }
+    list->items = items;
+    list->capacity = capacity;
+    return SYLVAN_OK;
 }
 
 /**
@@ -1770,15 +1818,19 @@ reorder_classify(void)
     status = nodes_prepare_reorder(nodes, routes, route_count);
     if (status != SYLVAN_OK) return status;
 
-    status = reorder_list_reserve(reorder_decision_list(swap_upper), 2u * k);
+    status = reorder_list_make_room(
+        reorder_decision_list(swap_upper), swap_upper, 0, 2u * k);
     if (status == SYLVAN_OK) {
-        status = reorder_list_reserve(reorder_decision_list(swap_lower), k);
+        status = reorder_list_make_room(
+            reorder_decision_list(swap_lower), swap_lower, 0, k);
     }
     if (status == SYLVAN_OK) {
-        status = reorder_list_reserve(reorder_map_list(swap_upper), k_map);
+        status = reorder_list_make_room(
+            reorder_map_list(swap_upper), swap_upper, 1, k_map);
     }
     if (status == SYLVAN_OK) {
-        status = reorder_list_reserve(reorder_map_list(swap_lower), k_map);
+        status = reorder_list_make_room(
+            reorder_map_list(swap_lower), swap_lower, 1, k_map);
     }
     if (status != SYLVAN_OK) return status;
 

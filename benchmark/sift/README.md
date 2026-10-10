@@ -320,7 +320,9 @@ either tool, and the seed sweep, where some orders take CUDD minutes to sift.
 
 `cases.tsv` is the main grid: 141 cases, 48 circuits from the four
 circuit sets under one to four starting orders each, queens8 to queens11 and
-bryant6 to bryant12. One row per case, tab-separated, with a header line:
+bryant6 to bryant12; and 81 fault-tree cases, the Aralia trees under
+Storm-dft's two orders (family `fta`, see [Fault trees](#fault-trees)). One
+row per case, tab-separated, with a header line:
 
 | column | |
 |---|---|
@@ -328,17 +330,19 @@ bryant6 to bryant12. One row per case, tab-separated, with a header line:
 | `mode` | `blif`, `queens` or `bryant` |
 | `file` | the circuit, relative to `--inputs` (`fetch-inputs.sh --all`); `-` for queens and bryant, whose size is the number in the name |
 | `var_order`, `seed` | `file`, `reverse` or `random` with its `--order-seed` (queens and bryant: `file`, their one order, seed 0) |
-| `family` | `iscas85`, `iscas89`, `lgsynth91`, `epfl`, `queens`, `bryant` |
-| `size_class` | Sylvan's sift time at P1: `small` under 1 s (122 cases), `medium` 1 to 30 s (17), `large` over 30 s (2: dalu-file, s9234.1-file) |
-| `quick` | 1 for nine cases of under 5 s per run on either tool, at least one per family |
+| `family` | `iscas85`, `iscas89`, `lgsynth91`, `epfl`, `queens`, `bryant`, `fta` |
+| `size_class` | Sylvan's sift time at P1: `small` under 1 s (122 of the 141 cases, 55 of the 81 fault trees), `medium` 1 to 30 s (17, 20), `large` over 30 s (2: dalu-file, s9234.1-file; 6) |
+| `quick` | 1 for eleven cases of under 5 s per run on either tool, at least one per family |
 | `timeout_s` | a per-run cap: four times the slower tool's P1 run plus 30 s, at least 60 s |
-| `notes` | how the file was converted, a duplicate forest, a much slower CUDD, and the number of inputs where it is over 64, so that the model counts of `--verify` are doubles |
+| `notes` | how the file was converted, a duplicate forest, a much slower CUDD, and the number of inputs where it is over 64, so that the model counts of `--verify` are doubles; for a fault tree its number of basic events |
+| `probs` | the `--probs` file of the circuit, relative to `--inputs`, or `-`; `cases.sh` passes it to both drivers in every run of the case (a fault tree's) |
 
 `scripts/cases.sh` reads it; the run scripts take its output as `--cases`:
 
 ```sh
 $S/cases.sh --check --inputs inputs                 # well-formed, every circuit installed
-$S/cases.sh --quick                                 # the nine quick cases
+$S/cases.sh --quick                                 # the eleven quick cases
+$S/cases.sh --family fta                            # the 81 fault-tree cases
 $S/cases.sh --family iscas85,iscas89 --size medium,large
 $S/cases.sh --order random --table                  # the matching rows
 $S/cases.sh --args C3540-rnd1 --inputs inputs       # the driver arguments, one per line
@@ -370,9 +374,13 @@ its Sylvan run took at most 60 s at P1, which is what keeps the grid within a
 night, and s13207.1-file is left out because it builds for 52 s to sift for
 0.9 s.
 
-**What it costs.** The grid this table is for runs every case on the list,
-trie, llcht and llchst tables at 1, 2, 4, 8 and 16 workers, 5 repetitions
-each, and CUDD at P1, 5 repetitions: 105 runs per case, 14805 in all.
+**What it costs.** The grid this table is for runs every case of the
+circuit, queens and bryant families (the fault trees are costed in
+[Fault trees](#fault-trees); add `--family
+iscas85,iscas89,lgsynth91,epfl,queens,bryant` to a selection to leave them
+out) on the list, trie, llcht and llchst tables at 1, 2, 4, 8 and 16 workers,
+5 repetitions each, and CUDD at P1, 5 repetitions: 105 runs per case, 14805
+in all.
 Costing every run at its P1 wall time (conservative: more workers build and
 sift faster) plus 0.25 s for the harness gives **9.9 h**: 8.6 h of Sylvan
 runs and 1.3 h of CUDD runs. Three cases are 4.4 h of it: s9234.1-file
@@ -385,7 +393,7 @@ runs and 1.3 h of CUDD runs. Three cases are 4.4 h of it: s9234.1-file
 | without s9234.1-file, queens11 and C3540-rnd1 (keeps dalu-file as the large case) | 138 | 6.1 |
 | `--size small,medium` (no large case) | 139 | 6.6 |
 | `--size small,medium` without queens11 | 138 | 5.5 |
-| `--quick` | 9 | 0.3 |
+| `--quick` | 11 | 0.3 |
 
 Small cases are cheap but say little on their own: a sift has a floor that
 grows with the nodes table rather than with the forest, because it begins with
@@ -453,6 +461,139 @@ number) was sound and valid on both tools and gave the same `eval_hash` on
 both. Of 51 cases sampled before that, the 40 of at most 64 inputs or with
 small counts also gave the same `eval_hash` on both tools, the reference
 hashes of the four C880 orders among them.
+
+## Fault trees
+
+Basgöze, Volk, Katoen, Khan and Stoelinga, *BDDs Strike Back: Efficient
+Analysis of Static and Dynamic Fault Trees* (NFM 2022), analyse static fault
+trees with Storm-dft, whose BDDs are Sylvan's, under two variable orders
+derived from the tree, DFS and TDLR, and no reordering. Their trees are a
+family of the case table here, `fta`: the same BDDs under the same orders,
+then sifted by both tools, with the top-event probability as the check that
+the sift kept the function.
+
+**The trees.** `fetch-inputs.sh --sets aralia` (part of `--all`) installs the
+43 Aralia fault trees in Open-PSA MEF from
+[openpra-org/aralia-fault-tree-dataset](https://github.com/openpra-org/aralia-fault-tree-dataset)
+at `9a50e0c`, not at its tip: `0101a52` (2026-05-13, the dataset's version 2)
+inlined the passthrough gates of 16 trees, gates whose body is one event or
+gate. That changes no function and no DFS order, but it lifts those events a
+level in TDLR, so that 11 trees would start from another TDLR order than
+Storm-dft's (the artifact's Galileo files keep the passthrough gates). Each
+tree is converted by `tools/mef2blif.py` under both orders into
+`aralia/TREE.dfs.blif` and `aralia/TREE.tdlr.blif`, each with its `.probs`,
+and every file has a recorded MD5. The converter's header documents it:
+
+- the orders are those of the artifact's `tools/translate.py`: `DFS()`, each
+  basic event at its first encounter in a depth-first, left-to-right walk
+  from the top event, and `TDLR()`, each at its first dequeue in a FIFO walk
+  that enqueues every gate's arguments left to right. Converted from the
+  artifact's Galileo files instead, the 40 trees it has give the same inputs
+  in the same orders;
+- every gate the top event reaches is one `.names` block, in file order: `and`
+  and `or` covers, `atleast` as an explicit cover up to 10 arguments and a
+  threshold network beyond, `xor` as parity, `not` as a negated literal (or,
+  as a gate's body, an off-set cube), a nested formula as an auxiliary gate;
+  the top event is the one gate no other gate references.
+
+On every tree and order that both tools build and Storm-dft has a size for
+(77 of the 81 cases below; the other four are of non-coherent trees, which
+the NFM'22 evaluation left out), `nodes_before` is that size, and
+`headlines.py` checks it.
+
+**The probability.** Every fault-tree case runs with `--probs` (the `probs`
+column of the table, which `scripts/cases.sh` passes to both drivers), so its
+row has `prob_before` and `prob_after` (see [The drivers](#the-drivers)).
+`headlines.py` checks them against `fta-reference.tsv`: before and after
+agree to a relative 1e-12; all rows of a tree agree to the same tolerance,
+whatever the tool, order or setting; the value is the top-event probability
+the dataset's README publishes, to 6 significant digits (to half a unit of
+the sixth); and `nodes_before` of `TREE.dfs-file` and `TREE.tdlr-file` is
+Storm-dft's size, unless the run had `--auto-build`, whose build sifted
+already. `fta-reference.tsv` has the published probability of 41 trees and
+Storm-dft's sizes (the artifact's `results/sft-benchmarks/sft_sizes.csv`).
+das9204 is left out of the published check: its README value, 6.07651E-08,
+is not that of the tree the dataset publishes, for which both tools, under
+either order and before and after the sift, give 2.16942E-11, as does an
+independent pure-Python BDD of the MEF file. nus9601 has no published value.
+In the run of every case on both tools that set up the table (P1,
+`--verify 64 --probs`; 161 rows, CUDD left out on das9701.dfs-file), every
+row with a published probability had it (157 rows), prob_before and
+prob_after agreed to a relative 3e-15, the rows of a tree to 1.5e-15, the two
+tools' prob_before to the bit and their `eval_hash` on all 80 cases both
+ran, and every `nodes_before`, and every final size on both tools, was the
+one of the screen that chose the cases.
+
+On a fault tree, `eval_hash` says little: the `--verify` vectors set every
+event with probability 1/2, under which almost every top event is true, so
+most trees hash to the same 64 ones. The probability is the cross-tool check
+there.
+
+**The cases.** `TREE.dfs-file` and `TREE.tdlr-file`: the stem is the file's
+(`aralia/TREE.dfs.blif`), the order the file's own. There are 81: both
+orders of the 39 trees that build under both, and the DFS order of cea9601,
+das9701 and jbd9601; 55 small, 20 medium and 6 large (baobab3.tdlr-file,
+cea9601.dfs-file, das9701.dfs-file, edfpa14o.tdlr-file, edfpa14q.dfs-file,
+edfpa14q.tdlr-file), with timeouts of 60 to 1250 s. The size class and the
+timeout follow the rule of the other cases, from one run of each
+tool at P1 (`--verify 64 --probs`, default memory, list table), the larger
+of it and the screen's run where there was one; the notes give the number
+of basic events and a much slower tool. The quick cases are
+baobab3.dfs-file, which is coherent, and das9601.dfs-file, which has `xor`,
+`not` and `atleast` gates; each runs in under a second on either tool.
+
+Left out, because no tool builds them (as the screen ran them: Sylvan on
+list at P1 with 6 GiB, whose nodes table has the same maximum as at the
+default 8 GiB, 2^27 buckets, and "table full" is a dozen collections in a row
+reclaiming under 5% of it; CUDD with an 8 GiB address-space limit):
+
+| case | Sylvan | CUDD | Storm-dft (NFM'22) |
+|---|---|---|---|
+| nus9601.dfs-file | table full after 46 s | out of memory after 191 s | out of resources |
+| nus9601.tdlr-file | table full after 39 s | | out of resources |
+| jbd9601.tdlr-file | table full after 48 s | | out of resources |
+| cea9601.tdlr-file | table full after 50 s | | not evaluated (NOT gates) |
+| das9701.tdlr-file | table full after 65 s | | not evaluated (NOT gates) |
+
+das9701.dfs-file builds in about 14 s, to 6.8 million nodes, and Sylvan
+sifts it to 2.7 million in about 280 s at P1 (about 9 GB resident at its peak),
+but CUDD's sift did not finish in 600 s in the screen; its timeout, 1250 s,
+is from Sylvan's run, and CUDD runs into it. sift-experiments runs the case
+in its full tier only.
+
+**`--auto-build`** sifts during the build only when a collection has found
+the forest grown (see [The drivers](#the-drivers)), and at the default 8 GiB
+the nodes table starts with 2^23 buckets, more than most of these builds
+ever hold, so that on most trees it changes nothing: on edfpa14p.tdlr-file it
+does not sift at all. Under `--memory 1073741824` (2^20 buckets to start)
+that build collects, the recommendation sifts once after its last gate, for
+7.6 s, with every intermediate alive, to 57690 nodes, and the sift after the
+build ends at 5877 nodes instead of 58995, with the same probability.
+
+**Running them.** sift-experiments runs them as its H4b. With the scripts
+here:
+
+```sh
+$S/run-ablation.sh $B $C --cases "$($S/cases.sh --family fta)" --workers 1,8 --reps 5 \
+  --variant sift= --variant autobuild=--auto-build \
+  --sylvan-args "--verify 64" --cudd-args "--verify 64" --out results/fta.jsonl
+$S/headlines.py --in results --out report      # the reference check covers them
+```
+
+Costing every run at its P1 wall time (860 s for all 81 cases on Sylvan, 630
+s on CUDD, and 1250 s for CUDD's timeout on das9701.dfs-file) plus 0.25 s
+for the harness, that is about 7.5 hours: 4.8 of Sylvan, 2.6 of CUDD, 1.7 of
+which das9701.dfs-file's timeouts. Without that case it is 4.1 hours.
+
+**Licences.** The Aralia trees are distributed by OpenPRA
+(openpra-org/aralia-fault-tree-dataset, doi:10.5281/zenodo.20160658)
+under CC BY-SA 4.0; the BLIF and `.probs` files `fetch-inputs.sh` makes of
+them are adaptations, under the same licence. This repository holds neither:
+it fetches the XML at a pinned commit and converts it as it installs it.
+The trees and results of BDDs Strike Back (doi:10.5281/zenodo.6390998) are
+GPL-3.0: `fetch-inputs.sh --families` says where they are and how
+`tools/mef2blif.py` converts them, but nothing fetches or distributes them;
+`fta-reference.tsv` cites Storm-dft's sizes from its results.
 
 ## Reference values
 

@@ -572,7 +572,7 @@ reclaiming under 5% of it; CUDD with an 8 GiB address-space limit):
 | das9701.tdlr-file | table full after 65 s | | not evaluated (NOT gates) |
 
 das9701.dfs-file builds in about 14 s, to 6.8 million nodes, and Sylvan
-sifts it to 2.7 million in about 280 s at P1 (about 9 GB resident at its peak),
+sifts it to 2.7 million in about 280 s at P1 (about 4 GB resident at its peak),
 but CUDD's sift did not finish in 600 s in the screen; its timeout, 1250 s,
 is from Sylvan's run, and CUDD runs into it.
 

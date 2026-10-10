@@ -183,6 +183,26 @@ grow to the largest power of two that fits in B together with an operation
 cache of half its size, and starts at a sixteenth of that. At the default
 8 GiB that is 2^27 buckets at most and 2^23 to start, at 1 GiB 2^24 and
 2^20, at 256 MiB 2^22 and 2^18, on every nodes table.
+`--initial-table LOG2` starts the table at 2^LOG2 buckets instead (and the
+cache at half that), anywhere from 2^13 to the largest `--memory` allows; the
+maximum stays what `--memory` makes it. The table grows only at a collection
+and a collection runs only when the table is full, so the initial size
+decides both how early a build first collects (and with `--auto-build`, how
+early the recommendation can sift) and the floor of a sift, whose opening
+collection passes over the whole table. `cudd_bench --initial-table LOG2` is
+the counterpart: CUDD's unique table is one subtable per variable plus one for
+the constants, each starting at `Cudd_Init`'s `numSlots` (`CUDD_UNIQUE_SLOTS`,
+256, by default) rounded up to a power of two, so the driver passes
+2^LOG2 / (variables + 1) and the table starts between 2^LOG2 and twice that.
+CUDD grows a subtable when it holds four times as many nodes as it has slots,
+not at a collection, and collects when the dead nodes pass a fraction of all
+slots; its cache is left as it is. Both drivers append `initial_table_log2`
+and `table_log2`, the floor of the log2 of the table when the run starts and
+after the sift (the default shows up as 23 at 8 GiB on Sylvan, and as the log2
+of 256 times the variables on CUDD, whose exact `initial_slots` its rows also
+carry), and `gc_build`, `gc_sift` and `gc_count`, the collections of the
+build, of the sift (its opening one included) and of the whole run
+(`sylvan_gc_count`, `Cudd_ReadGarbageCollections`).
 `--stats` resets the library's counters before the build and before the
 sift, and prints `sylvan_stats_report` after each on stderr, between
 `SIFT-STATS-BEGIN build|sift` and `SIFT-STATS-END ...` lines; the counters

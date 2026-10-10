@@ -21,6 +21,20 @@
  * --probs FILE computes the probability of the first output before and after
  * the sift, from one probability per input, as sylvan_bench --probs does
  * (probs.h): the same file, read by the same code, and the same arithmetic.
+ *
+ * --initial-table LOG2 is sylvan_bench's: the unique table starts at about
+ * 2^LOG2 slots in all. CUDD has one subtable per variable (and one for the
+ * constants), each of Cudd_Init's numSlots rounded up to a power of two, 8
+ * at least; so numSlots is 2^LOG2 / (variables + 1), and the table starts
+ * between 2^LOG2 and twice that (by default numSlots is CUDD_UNIQUE_SLOTS,
+ * 256). CUDD grows a subtable when it is four times as full as it has slots,
+ * not at a collection, and collects when the dead nodes pass a fraction of
+ * all slots, so the initial size sets how soon it first collects. The cache
+ * is not changed. "initial_table_log2" and "table_log2" are the floor of the
+ * log2 of Cudd_ReadSlots when the run starts and after the sift,
+ * "initial_slots" the slots exactly, and "gc_build", "gc_sift" and
+ * "gc_count" the collections (Cudd_ReadGarbageCollections) of the build, of
+ * the sift and of the whole run, as sylvan_bench reports them.
  */
 
 #include <math.h>
@@ -58,6 +72,7 @@ static int      opt_unlimited = 1;   /* --cudd-defaults turns this off */
 static long     opt_maxswaps  = -1;  /* --max-swaps; -1 leaves the cap as is */
 static long     opt_maxvars   = -1;  /* --max-vars; 0 is unlimited, like Sylvan */
 static int      opt_memstat   = 0;   /* resident memory from /proc */
+static int      opt_inittable = -1;  /* --initial-table; <0: CUDD_UNIQUE_SLOTS */
 static const char *opt_varorder = "file";
 static unsigned opt_orderseed = 1;
 static const char *opt_trace  = NULL;  /* --trace: one line per swap */
@@ -70,6 +85,14 @@ now(void)
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
     return (double)t.tv_sec + 1e-9 * (double)t.tv_nsec;
+}
+
+static int
+log2_floor(unsigned long x)
+{
+    int k = -1;
+    while (x != 0) { x >>= 1; k++; }
+    return k;
 }
 
 /* --memstat: resident memory as the kernel reports it, read from /proc after
@@ -393,6 +416,9 @@ usage(FILE *f)
         "          --memstat  (VmRSS, VmHWM and AnonHugePages after the build\n"
         "                      and after the sift, from /proc; Linux)\n"
         "  run:    --memory BYTES (8 GiB)\n"
+        "          --initial-table LOG2 (the unique table starts at about\n"
+        "                    2^LOG2 slots over all subtables, 3 to 31;\n"
+        "                    default CUDD_UNIQUE_SLOTS per subtable)\n"
         "siftMaxSwap and siftMaxVar are raised to INT_MAX (unlimited, like Sylvan's\n"
         "defaults) unless --cudd-defaults keeps CUDD's own caps; --max-swaps and\n"
         "--max-vars set either cap on top of that, 0 meaning unlimited.\n");
@@ -416,6 +442,7 @@ main(int argc, char **argv)
         else if (!strcmp(a, "--order"))       { opt_order_out = 1; }
         else if (!strcmp(a, "--growth") && v) { opt_growth = atof(v); i++; }
         else if (!strcmp(a, "--memory") && v) { opt_memory = strtoull(v, NULL, 10); i++; }
+        else if (!strcmp(a, "--initial-table") && v) { opt_inittable = atoi(v); i++; }
         else if (!strcmp(a, "--seed") && v)   { opt_seed = (unsigned)strtoul(v, NULL, 10); i++; }
         else if (!strcmp(a, "--cudd-defaults")) { opt_unlimited = 0; }
         else if (!strcmp(a, "--max-swaps") && v) { opt_maxswaps = strtol(v, NULL, 10); i++; }
@@ -482,9 +509,22 @@ main(int argc, char **argv)
         n_root = 1;
     }
 
-    dd = Cudd_Init((unsigned)n_var, 0, CUDD_UNIQUE_SLOTS, CUDD_CACHE_SLOTS,
+    unsigned int num_slots = CUDD_UNIQUE_SLOTS;
+    if (opt_inittable >= 0) {
+        if (opt_inittable < 3 || opt_inittable > 31) {
+            fprintf(stderr, "--initial-table %d: must be 3 to 31\n", opt_inittable);
+            return 2;
+        }
+        /* the subtables of the variables and the constants' share it */
+        const unsigned long total = 1ul << opt_inittable;
+        const unsigned long per = (total + (unsigned long)n_var) / ((unsigned long)n_var + 1);
+        num_slots = (unsigned int)(per > 0 ? per : 1);
+    }
+    dd = Cudd_Init((unsigned)n_var, 0, num_slots, CUDD_CACHE_SLOTS,
                    opt_memory);
     if (dd == NULL) { fprintf(stderr, "Cudd_Init failed\n"); return 1; }
+    const unsigned long slots_initial = (unsigned long)Cudd_ReadSlots(dd);
+    const unsigned long gc_start = (unsigned long)Cudd_ReadGarbageCollections(dd);
     Cudd_AutodynDisable(dd);
     Cudd_SetMaxGrowth(dd, opt_growth);
     if (opt_unlimited) {
@@ -508,6 +548,7 @@ main(int argc, char **argv)
                                                         : build_queens());
     const double build_s = now() - t_build;
     if (rc != 0) { fprintf(stderr, "build failed\n"); return 1; }
+    const unsigned long gc_build = (unsigned long)Cudd_ReadGarbageCollections(dd) - gc_start;
     memstat_t mem_build = {0, 0}, mem_sift = {0, 0};
     if (opt_memstat) memstat_take(&mem_build);
 
@@ -543,12 +584,15 @@ main(int argc, char **argv)
     double sift_s = -1.0;
     int sift_ok = 1;
     double swaps = 0.0;
+    const unsigned long gc_sift_before = (unsigned long)Cudd_ReadGarbageCollections(dd);
     if (opt_sift) {
         const double t0 = now();
         sift_ok = Cudd_ReduceHeap(dd, CUDD_REORDER_SIFT, 0);
         sift_s = now() - t0;
         swaps = (double)dd->ddTotalNumberSwapping;
     }
+    const unsigned long gc_sift = (unsigned long)Cudd_ReadGarbageCollections(dd) - gc_sift_before;
+    const unsigned long slots_final = (unsigned long)Cudd_ReadSlots(dd);
     if (opt_trace != NULL && opt_sift) {
         /* The patch opens its stream at the first swap and keeps it open for
            the life of the process. A sift without swaps leaves no file, so
@@ -642,6 +686,11 @@ main(int argc, char **argv)
     }
     if (opt_memstat) memstat_print(&mem_build, &mem_sift);
     if (opt_probs != NULL) probs_print(prob_before, prob_after);
+    printf(",\"initial_table_log2\":%d,\"table_log2\":%d,\"initial_slots\":%lu"
+           ",\"gc_build\":%lu,\"gc_sift\":%lu,\"gc_count\":%lu",
+           log2_floor(slots_initial), log2_floor(slots_final), slots_initial,
+           gc_build, gc_sift,
+           (unsigned long)Cudd_ReadGarbageCollections(dd) - gc_start);
     printf("}\n");
     fflush(stdout);
 

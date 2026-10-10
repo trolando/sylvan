@@ -34,6 +34,17 @@
  * "build_sifts" counts those sifts and build_s includes them; nodes_before is
  * then the size after them, and the sift after the build runs as usual.
  *
+ * TABLE SIZE. --memory caps the nodes table and the operation cache, and
+ * sylvan_set_limits(memory, 1, *) takes the largest table that fits with the
+ * cache at half of it (8 GiB: 2^27 buckets). The table starts 16 times
+ * smaller (initial_ratio 4: 2^23 at 8 GiB) and grows only at a collection,
+ * and a collection runs only when the table is full; --initial-table LOG2
+ * starts it at 2^LOG2 buckets instead (the cache at half that), from 2^13 to
+ * the maximum. "initial_table_log2" is the table the run started with,
+ * "table_log2" the one it ended with, and "gc_build", "gc_sift" and
+ * "gc_count" the collections of the build, of the sift (its opening one
+ * included) and of the whole run (sylvan_gc_count).
+ *
  * SOUNDNESS. For --mode blif, every output is evaluated against the same set
  * of random input vectors before and after the sift, and its satisfying-
  * assignment count is taken before and after. Both are invariant under
@@ -100,6 +111,7 @@ static int      opt_batched   = 1;     /* batched index surgery in swaps     */
 static double   opt_recfactor = -1.0;  /* recommendation factor, <0 = default */
 static int      opt_memstat   = 0;     /* resident memory from /proc        */
 static uint64_t opt_memory    = 8ull << 30;
+static int      opt_inittable = -1;    /* log2 of the initial table, <0 = /16 */
 static unsigned opt_seed      = 12345;
 static const char *opt_varorder = "file";
 static unsigned opt_orderseed = 1;
@@ -112,6 +124,34 @@ now(void)
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
     return (double)t.tv_sec + 1e-9 * (double)t.tv_nsec;
+}
+
+static int
+log2_floor(size_t x)
+{
+    int k = -1;
+    while (x != 0) { x >>= 1; k++; }
+    return k;
+}
+
+/*
+ * The log2 of the largest nodes table sylvan_set_limits(memory, 1, *) takes:
+ * the same search, over the bytes <sylvan/common.h> documents -- the nodes
+ * table's own (nodes_get_capacity_bytes) and 44 per cache entry, with the
+ * cache at half the table. Only used to turn --initial-table into the
+ * initial_ratio sylvan_set_limits takes; the RESULT line reports the table
+ * the library actually made.
+ */
+static int
+table_max_log2(uint64_t memory)
+{
+    size_t t = 2, c = 1;
+    while (t < UINT64_C(0x0000010000000000)) {
+        if (nodes_get_capacity_bytes(2 * t) + 2 * c * 44 > memory) break;
+        t *= 2;
+        c *= 2;
+    }
+    return log2_floor(t);
 }
 
 /* --memstat: resident memory as the kernel reports it, read from /proc after
@@ -631,6 +671,10 @@ run_CALL(lace_worker *lace)
         return 1;
     }
 
+    size_t table_initial = 0, table_final = 0;
+    sylvan_table_usage_CALL(lace, NULL, &table_initial);
+    const uint64_t gc_start = sylvan_gc_count();
+
     if (opt_stats) sylvan_stats_reset_CALL(lace);
     if (opt_autobuild) {
         sylvan_sift_config config;
@@ -645,6 +689,7 @@ run_CALL(lace_worker *lace)
     else                                    rc = build_queens_CALL(lace);
     const double build_s = now() - t_build;
     const uint64_t build_sifts = sylvan_sift_count() - build_sifts_before;
+    const uint64_t gc_build = sylvan_gc_count() - gc_start;
     if (opt_autobuild) sylvan_gc_set_auto_sift(NULL);
     if (rc != 0) { fprintf(stderr, "build failed\n"); return 1; }
     if (opt_stats) stats_phase("build");
@@ -709,6 +754,7 @@ run_CALL(lace_worker *lace)
         sylvan_sift_set_trace(trace_swap, trace);
     }
     const uint64_t sifts_before = sylvan_sift_count();
+    const uint64_t gc_sift_before = sylvan_gc_count();
     if (opt_sift) {
         sylvan_sift_config config;
         sift_config_make(&config);
@@ -726,6 +772,8 @@ run_CALL(lace_worker *lace)
         }
     }
     const uint64_t sifts = sylvan_sift_count() - sifts_before;
+    const uint64_t gc_sift = sylvan_gc_count() - gc_sift_before;
+    sylvan_table_usage_CALL(lace, NULL, &table_final);
     if (trace != NULL) {
         sylvan_sift_set_trace(NULL, NULL);
         if (fclose(trace) != 0) { perror(opt_trace); return 1; }
@@ -825,6 +873,11 @@ run_CALL(lace_worker *lace)
     if (opt_probs != NULL) probs_print(prob_before, prob_after);
     printf(",\"auto_build\":%d,\"build_sifts\":%llu", opt_autobuild,
            (unsigned long long)build_sifts);
+    printf(",\"initial_table_log2\":%d,\"table_log2\":%d"
+           ",\"gc_build\":%llu,\"gc_sift\":%llu,\"gc_count\":%llu",
+           log2_floor(table_initial), log2_floor(table_final),
+           (unsigned long long)gc_build, (unsigned long long)gc_sift,
+           (unsigned long long)(sylvan_gc_count() - gc_start));
     printf("}\n");
     fflush(stdout);
 
@@ -861,6 +914,9 @@ usage(FILE *f)
         "          --stats  (counters of the build and of the sift, on stderr;\n"
         "                    needs a -DSYLVAN_STATS=ON build)\n"
         "  run:    --workers N (1)  --memory BYTES (8 GiB)\n"
+        "          --initial-table LOG2 (the nodes table starts at 2^LOG2\n"
+        "                    buckets, 13 to the largest --memory allows;\n"
+        "                    default that largest / 16)\n"
         "0 means unlimited for --max-swaps, --max-vars and --time-limit.\n");
 }
 
@@ -895,6 +951,7 @@ main(int argc, char **argv)
         else if (!strcmp(a, "--memstat"))        { opt_memstat = 1; }
         else if (!strcmp(a, "--recommend-factor") && v) { opt_recfactor = atof(v); i++; }
         else if (!strcmp(a, "--memory") && v)    { opt_memory = strtoull(v, NULL, 10); i++; }
+        else if (!strcmp(a, "--initial-table") && v) { opt_inittable = atoi(v); i++; }
         else if (!strcmp(a, "--seed") && v)      { opt_seed = (unsigned)strtoul(v, NULL, 10); i++; }
         else if (!strcmp(a, "--var-order") && v) { opt_varorder = v; i++; }
         else if (!strcmp(a, "--order-seed") && v){ opt_orderseed = (unsigned)strtoul(v, NULL, 10); i++; }
@@ -938,8 +995,24 @@ main(int argc, char **argv)
         return 2;
     }
 
+    /* The initial table: 16 times smaller than the largest by default, or
+       2^opt_inittable, which sylvan_set_limits takes as the number of
+       halvings from the largest. It halves down to 2^13 at most (it stops
+       once the cache, half the table, is 2^12). */
+    int initial_ratio = 4;
+    if (opt_inittable >= 0) {
+        const int max_log2 = table_max_log2(opt_memory);
+        if (opt_inittable < 13 || opt_inittable > max_log2) {
+            fprintf(stderr, "--initial-table %d: must be 13 to %d, the largest "
+                    "table --memory %llu allows\n", opt_inittable, max_log2,
+                    (unsigned long long)opt_memory);
+            return 2;
+        }
+        initial_ratio = max_log2 - opt_inittable;
+    }
+
     lace_start((unsigned)opt_workers, 0, 128u * 1024u * 1024u);
-    sylvan_set_limits(opt_memory, 1, 4);
+    sylvan_set_limits(opt_memory, 1, initial_ratio);
     if (sylvan_init_package() != SYLVAN_OK || mtbdd_init() != SYLVAN_OK) {
         fprintf(stderr, "sylvan init failed\n");
         return 1;

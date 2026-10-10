@@ -470,6 +470,26 @@ check_marked_words(nodes_table *table)
     return 0;
 }
 
+/**
+ * Every marked node past the reserved slots is found again by its own key, at
+ * its own index: a rebuild put it back.
+ */
+static int
+check_marked_findable(nodes_table *table)
+{
+    const size_t size = nodes_get_size(table);
+    for (uint64_t index = 2; index < size; index++) {
+        if (!nodes_is_marked(table, index)) continue;
+        const uint64_t *record =
+            (const uint64_t*)nodes_get_pointer(table, index);
+        int created = 1;
+        test_assert(nodes_lookup(table, record[0], record[1], &created) ==
+                    index);
+        test_assert(created == 0);
+    }
+    return 0;
+}
+
 struct marked_fill {
     nodes_table *table;
     uint64_t salt;
@@ -502,8 +522,9 @@ marked_fill_worker_CALL(lace_worker *lace, struct marked_fill *fill)
  *
  * Checked on an empty table; after every worker has filled at once, each from
  * a region of its own; after a collection that keeps only the most recently
- * placed nodes, which must not lower the bound; and after the table has grown
- * and been filled further.
+ * placed nodes, which must not lower the bound, and whose rebuild must put
+ * back every one of those nodes, the ones closest to the bound; and after the
+ * table has grown and been filled further.
  */
 static int
 test_marked_words_and_bound(void)
@@ -544,6 +565,7 @@ test_marked_words_and_bound(void)
     test_assert(nodes_rebuild(table) == 0);
     test_assert(nodes_used_bound(table) == bound);
     if (check_marked_words(table)) return 1;
+    if (check_marked_findable(table)) return 1;
 
     nodes_set_size(table, size * 4);
     fill.salt = 2;

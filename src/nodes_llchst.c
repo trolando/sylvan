@@ -1480,10 +1480,14 @@ nodes_rebuild_CALL(lace_worker* lace, nodes_table* dbs)
         lace, dbs, entries, 0, count, parallel);
     /* Owner tags make the direct marked-node pass independent of the old
        chains. Release those pages before touching the replacement heads so
-       GC does not keep both generations resident at once. */
+       GC does not keep both generations resident at once.
+
+       No marked node lies past the used bound (see region_used_bound), so
+       the pass stops there: on a table sized for far more than it has ever
+       held, the part that was never handed out costs nothing. */
     llchst_free_old_entries_CALL(lace, entries, 0, count);
     llchst_rehash_nodes_CALL(
-        lace, dbs, 0, dbs->table_size, parallel);
+        lace, dbs, 0, region_used_bound(dbs), parallel);
 
     for (size_t i = 0; i < count; i++) {
         struct llchst_rebuild_entry* entry = entries + i;

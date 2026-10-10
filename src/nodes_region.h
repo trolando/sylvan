@@ -63,10 +63,12 @@
  *     returns region_reserve() for the slot half; nodes_used_bound returns
  *     region_used_bound().
  *
- * The functions are plain static, not static inline: the inline keyword
- * would raise GCC's inlining limits for them and so change which calls get
- * inlined where. With SYLVAN_REGION_STRIPED_START (a diagnostic CMake option)
- * the shared cursor below gives way to per-worker stripes.
+ * The functions are plain static, not static inline. The inline keyword
+ * raises GCC's inlining limits for them: claim_data_bucket then gets inlined
+ * into the lookup, which changes what the compiler inlines next. Plain static
+ * compiles every backend to the same code as when each defined these
+ * functions in its own file. With SYLVAN_REGION_STRIPED_START (a diagnostic
+ * CMake option) the shared cursor below gives way to per-worker stripes.
  */
 
 #ifndef SYLVAN_NODES_REGION_H

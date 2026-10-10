@@ -35,12 +35,9 @@
  *    -- both read the same visitor registrations, see reorder_pin_roots -- so
  *    a sift keeps whatever a collection would keep.
  *
- * 3. Per-identity node lists, so a swap can find "the nodes of variable x"
- *    without scanning the table. A backend that enumerated a variable
- *    natively would not need the decision lists (none in the tree does), but
- *    every backend needs the map lists: an MTBDDMAP node carries its key in
- *    the variable field yet lives in a shared MAP subtable, where no native
- *    enumeration can select one key.
+ * 3. Per-identity node lists, one for the decision nodes and one for the map
+ *    nodes of each variable, so a swap can find "the nodes of variable x"
+ *    without scanning the table.
  *
  * WHAT COUNTS AS AN EDGE. Every live non-leaf node contributes one edge to
  * each of its two children. Leaves are excluded entirely and are never
@@ -103,7 +100,6 @@ struct reorder_session {
     int active;
     size_t size;                    /* node table size, fixed for a session */
     uint32_t identities;            /* registered identities, ditto        */
-    int native_enumerate;           /* backend enumerates a variable itself */
 
     /* The occupancy words, of 64 slots each, up to and including the last
        one that held a node when the session opened: every node the opening
@@ -119,7 +115,7 @@ struct reorder_session {
     uint64_t *seen;                 /* bitmap: scratch for reorder_collect */
     uint64_t *interact;             /* packed variable interaction matrix  */
 
-    struct reorder_list *decision;  /* per identity, NULL if native        */
+    struct reorder_list *decision;  /* per identity                        */
     struct reorder_list *maps;      /* per identity                        */
 
     /* Internal (non-leaf) nodes the forest holds right now. Seeded by the
@@ -579,7 +575,7 @@ reorder_list_append(struct reorder_list *list, uint64_t index)
     else list->items[at] = index;
 }
 
-/** The list an identity's decision nodes live in, or NULL for native. */
+/** The list an identity's decision nodes live in. */
 static inline struct reorder_list*
 reorder_decision_list(uint32_t identity)
 {
@@ -941,7 +937,6 @@ sylvan_reorder_begin_CALL(lace_worker *lace)
        the table. */
     session.size = nodes_get_size(nodes);
     session.identities = sylvan_ranks_registered();
-    session.native_enumerate = (caps & NODES_CAP_ENUMERATE) != 0;
 
     const size_t words = bitmap_words(session.size);
     const size_t lists = session.identities == 0 ? 1u : session.identities;
@@ -950,17 +945,14 @@ sylvan_reorder_begin_CALL(lace_worker *lace)
     session.pinned = (uint64_t*)reorder_alloc_slots(words * sizeof(uint64_t));
     session.retired = (uint64_t*)reorder_alloc_slots(words * sizeof(uint64_t));
     session.seen = (uint64_t*)reorder_alloc_slots(words * sizeof(uint64_t));
+    session.decision = (struct reorder_list*)calloc(
+        lists, sizeof(struct reorder_list));
     session.maps = (struct reorder_list*)calloc(
         lists, sizeof(struct reorder_list));
-    if (!session.native_enumerate) {
-        session.decision = (struct reorder_list*)calloc(
-            lists, sizeof(struct reorder_list));
-    }
 
     if (session.counts == NULL || session.pinned == NULL ||
         session.retired == NULL || session.seen == NULL ||
-        session.maps == NULL ||
-        (!session.native_enumerate && session.decision == NULL)) {
+        session.decision == NULL || session.maps == NULL) {
         reorder_free_state();
         return SYLVAN_ERR_OOM;
     }
@@ -1115,47 +1107,17 @@ sylvan_reorder_forest_size(void)
     return atomic_load_explicit(&session.live, memory_order_relaxed);
 }
 
-/** Context of the counting visitor below. */
-struct reorder_population {
-    uint32_t identity;
-    uint64_t count;
-};
-
-static int
-reorder_population_cb(uint64_t index, void *context)
-{
-    struct reorder_population *state = (struct reorder_population*)context;
-    if (index < 2 || index >= session.size) return SYLVAN_OK;
-    if (!nodes_is_marked(nodes, index)) return SYLVAN_OK;
-    if (bitmap_get(session.retired, index)) return SYLVAN_OK;
-    mtbddnode *record = reorder_record(index);
-    if (mtbddnode_isleaf(record)) return SYLVAN_OK;
-    if (mtbddnode_ismapnode(record)) return SYLVAN_OK;
-    if (mtbddnode_getvariable(record) != state->identity) return SYLVAN_OK;
-    state->count++;
-    return SYLVAN_OK;
-}
-
 uint64_t
 sylvan_reorder_population(uint32_t identity)
 {
     if (!session.active) return 0;
 
     uint64_t count = 0;
-    if (session.native_enumerate) {
-        struct reorder_population state = { identity, 0 };
-        if (nodes_enumerate_var(nodes, identity, reorder_population_cb, &state)
-            != SYLVAN_OK) {
-            return 0;
-        }
-        count = state.count;
-    } else {
-        struct reorder_list *list = reorder_decision_list(identity);
-        if (list != NULL) count = reorder_collect(list, identity, 0);
-    }
+    struct reorder_list *list = reorder_decision_list(identity);
+    if (list != NULL) count = reorder_collect(list, identity, 0);
 
-    /* Map nodes are part of the population because a swap rewrites them too,
-       and they are the half native enumeration cannot see. */
+    /* Map nodes are part of the population because a swap rewrites them
+       too. */
     struct reorder_list *maps = reorder_map_list(identity);
     if (maps != NULL) count += reorder_collect(maps, identity, 1);
     return count;
@@ -1702,21 +1664,6 @@ reorder_classify_map(uint64_t index)
     return SYLVAN_OK;
 }
 
-/** Visitor for the backends that enumerate a variable natively. */
-static int
-reorder_enumerate_cb(uint64_t index, void *context)
-{
-    (void)context;
-    if (index < 2 || index >= session.size) return SYLVAN_OK;
-    if (!nodes_is_marked(nodes, index)) return SYLVAN_OK;
-    if (bitmap_get(session.retired, index)) return SYLVAN_OK;
-    mtbddnode *record = reorder_record(index);
-    if (mtbddnode_isleaf(record)) return SYLVAN_OK;
-    if (mtbddnode_ismapnode(record)) return SYLVAN_OK;
-    if (mtbddnode_getvariable(record) != swap_upper) return SYLVAN_OK;
-    return reorder_classify_decision(index);
-}
-
 /**
  * Classify x's nodes and reserve, before anything is mutated, every resource
  * the rest of the swap will take: node slots for the new children, whatever
@@ -1772,16 +1719,11 @@ reorder_classify(void)
 {
     int status = SYLVAN_OK;
 
-    if (session.native_enumerate) {
-        status = nodes_enumerate_var(
-            nodes, swap_upper, reorder_enumerate_cb, NULL);
-    } else {
-        struct reorder_list *list = reorder_decision_list(swap_upper);
-        if (list != NULL) {
-            const size_t count = reorder_collect(list, swap_upper, 0);
-            for (size_t i = 0; i < count && status == SYLVAN_OK; i++) {
-                status = reorder_classify_decision(list->items[i]);
-            }
+    struct reorder_list *list = reorder_decision_list(swap_upper);
+    if (list != NULL) {
+        const size_t count = reorder_collect(list, swap_upper, 0);
+        for (size_t i = 0; i < count && status == SYLVAN_OK; i++) {
+            status = reorder_classify_decision(list->items[i]);
         }
     }
     if (status != SYLVAN_OK) return status;

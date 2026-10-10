@@ -356,7 +356,6 @@ uint32_t nodes_reorder_caps(const nodes_table* dbs);
 
 #define NODES_CAP_REMOVE     (1u << 0)  /* nodes_remove and nodes_reinsert */
 #define NODES_CAP_RELEASE    (1u << 1)  /* nodes_release */
-#define NODES_CAP_ENUMERATE  (1u << 2)  /* nodes_enumerate_var */
 #define NODES_CAP_BATCH      (1u << 3)  /* nodes_remove/reinsert_batch */
 
 /**
@@ -485,34 +484,6 @@ TASK(int, nodes_reinsert_batch, nodes_table*, dbs, const uint64_t*, indices,
  * Returns SYLVAN_ERR_INVALID if the node is still in the index.
  */
 int nodes_release(nodes_table* dbs, uint64_t index);
-
-/** Visitor for nodes_enumerate_var; return 0 to continue. */
-typedef int (*nodes_visit_cb)(uint64_t index, void* context);
-
-/**
- * Visit every node the backend has routed to one variable identity. The
- * callback returns 0 to continue; any other value stops the enumeration and
- * becomes the result. Order is unspecified; every node is visited once.
- *
- * No backend offers this at present. llchst, which keeps every variable's
- * decision nodes in a subtable of their own, sizes those subtables from the
- * table rather than from their nodes, so walking one would cost a share of
- * the table where the session's own lists cost the variable's nodes.
- *
- * MAP NODES ARE NOT COVERED. A backend with per-variable subtables keeps a
- * decision node in the subtable of its variable identity, but an MTBDDMAP
- * node in a shared MAP subtable, which this function cannot select a single
- * key from. Enumerating a variable therefore yields its decision nodes only.
- * Covering map nodes is the session layer's job -- it builds those lists from
- * an arena scan for every backend anyway -- and is deliberately not attempted
- * here.
- *
- * Unlike the other primitives this one is read-only and is NOT safe against
- * concurrent nodes_remove or nodes_reinsert. It belongs to a read-only
- * classification phase.
- */
-int nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
-                        nodes_visit_cb cb, void* context);
 
 /**
  * Preflight <count> further node allocations.

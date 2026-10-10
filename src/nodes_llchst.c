@@ -2181,21 +2181,6 @@ nodes_release(nodes_table* dbs, uint64_t index)
 }
 
 /**
- * Not offered, although every variable has chains of its own here. A
- * collection sizes each variable's head array from the table rather than
- * from the variable's nodes, so walking one costs a share of the table, and
- * a swap would walk one. The session's own per-identity lists cost the
- * variable's nodes instead.
- */
-int
-nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
-                    nodes_visit_cb cb, void* context)
-{
-    (void)dbs; (void)variable; (void)cb; (void)context;
-    return SYLVAN_ERR_INVALID;
-}
-
-/**
  * Preflight <count> further allocations: the checks of this backend, then
  * region_reserve (nodes_region.h) for the slots.
  */

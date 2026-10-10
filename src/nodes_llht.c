@@ -750,13 +750,6 @@ int nodes_release(nodes_table* dbs, uint64_t index)
     return SYLVAN_ERR_INVALID;
 }
 
-int nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
-                        nodes_visit_cb cb, void* context)
-{
-    (void)dbs; (void)variable; (void)cb; (void)context;
-    return SYLVAN_ERR_INVALID;
-}
-
 int nodes_reserve(nodes_table* dbs, uint64_t count)
 {
     (void)dbs; (void)count;

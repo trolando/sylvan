@@ -37,8 +37,7 @@
  * world stopped (a Lace NEWFRAME, exactly like garbage collection). The
  * session owns the state a swap needs but a swap cannot afford to recompute:
  * exact reference counts for every node, the set of external roots, and the
- * per-identity node lists for backends that cannot enumerate a variable
- * natively. See sylvan_reorder_begin() for the preconditions.
+ * per-identity node lists. See sylvan_reorder_begin() for the preconditions.
  */
 
 #ifndef SYLVAN_REORDER_INT_H
@@ -151,9 +150,8 @@ uint64_t sylvan_reorder_forest_size(void);
  *
  * A sifting driver asks this once per variable, before it starts, to decide
  * which variables are worth moving and in what order. The answer comes from
- * the session's own per-identity lists, or from native enumeration where the
- * backend has it, so it costs the population and not the table. Asking also
- * compacts the list, which is why it is not const.
+ * the session's own per-identity lists, so it costs the population and not
+ * the table. Asking also compacts the lists, which is why it is not const.
  */
 uint64_t sylvan_reorder_population(uint32_t identity);
 

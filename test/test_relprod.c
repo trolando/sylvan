@@ -19,9 +19,9 @@
  *
  * bdd_rel_next, bdd_rel_prev and bdd_transitive_closure pair the unprimed
  * variable 2k with the primed variable 2k+1. Their fused kernels are only
- * valid while every pair in play occupies adjacent ranks with 2k on top;
- * under any other order the operations must take their generic route and
- * still compute the same functions.
+ * valid while every pair in play occupies adjacent ranks with 2k on top (see
+ * src/bdd.c for why); under any other order the operations must take their
+ * generic route and still compute the same functions.
  *
  * Every operation is first computed under the identity order, where the
  * kernels apply, and checked against an explicit-state computation. The

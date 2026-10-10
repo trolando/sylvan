@@ -41,13 +41,13 @@
 #               (fetch-inputs.sh installs one next to every fault tree), or
 #               "-": every driver run of the case gets --probs with it
 #
-# A table without the probs column, as before it existed, still reads.
+# A table without the probs column still reads.
 #
 # Where STEM is in the table, STEM-rndK for any K builds from that row's file
-# (and its probs) too, so the seed sweeps work on every circuit. A name that is not in the
-# table falls back to INPUTS/STEM.blif, as before the table existed, or else
-# to the one INPUTS/*/STEM.blif there is (so every circuit fetch-inputs.sh
-# installs can be run by name, including those screened out of the table).
+# (and its probs) too, so the seed sweeps work on every circuit. A name that
+# is not in the table falls back to INPUTS/STEM.blif, or else to the one
+# INPUTS/*/STEM.blif there is (so every circuit fetch-inputs.sh installs can
+# be run by name, including those screened out of the table).
 #
 # As a command:
 #
@@ -61,17 +61,16 @@
 # LIST is comma-separated, e.g. --family iscas85,epfl --size small,medium. So
 #   run-timing.sh ... --cases "$(scripts/cases.sh --quick)"
 #
-# Why these. The four C880 orders were the only circuit of the first
-# evaluation: of the picotrav circuits only C880 is both feasible and
-# non-degenerate (the EPFL arithmetic circuits could not be built under their
-# file order with an 8 GB table, see README.md). The table widens that to the
+# Why these. Of the picotrav circuits only C880 is both feasible and
+# non-degenerate (adder and bar, the EPFL arithmetic circuits tried, do not
+# build under their file order with an 8 GB table; see README.md), so its
+# four orders are the scripts' default cases. The table widens that to the
 # ISCAS'85, ISCAS'89 (combinational part), LGSynth'91 and EPFL random/control
 # circuits that build within 600 s and 8 GiB from at least two of the three
 # starting orders on both tools, under the orders whose Sylvan run takes at
 # most 60 s at P1 (README.md, "The case table", says how they were screened).
-# bryant has a known optimum. queens is a case
-# whose natural order is already good, so it measures what sifting costs when
-# there is little to find.
+# bryant has a known optimum. queens is a case whose natural order is already
+# good, so it measures what sifting costs when there is little to find.
 
 SB_CASES_TSV=${SB_CASES_TSV:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/cases.tsv}
 

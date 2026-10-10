@@ -18,10 +18,8 @@
 
 /**
  * The node arena of the list, trie, llcht and llchst nodes tables: the slot
- * bitmaps and the region allocator that hands their slots out. Each of those
- * backends used to carry a copy of all of this, the same code but for
- * spelling; llht keeps its own, older allocator and does not include this
- * file.
+ * bitmaps and the region allocator that hands their slots out. llht has an
+ * allocator of its own and does not include this file.
  *
  * The arena is an array of table_size node slots cut into regions of 512
  * slots. A worker allocates from the one region it owns until the region is
@@ -65,12 +63,10 @@
  *     returns region_reserve() for the slot half; nodes_used_bound returns
  *     region_used_bound().
  *
- * The functions are plain static, as they were in each backend, and not
- * static inline: the inline keyword raises GCC's inlining limits for them and
- * so changes which calls get inlined where, while plain static compiles every
- * backend to the same code it had before the move. With
- * SYLVAN_REGION_STRIPED_START (a diagnostic CMake option) the shared cursor
- * below gives way to per-worker stripes.
+ * The functions are plain static, not static inline: the inline keyword
+ * would raise GCC's inlining limits for them and so change which calls get
+ * inlined where. With SYLVAN_REGION_STRIPED_START (a diagnostic CMake option)
+ * the shared cursor below gives way to per-worker stripes.
  */
 
 #ifndef SYLVAN_NODES_REGION_H
@@ -110,7 +106,7 @@ void
 nodes_reset_region_CALL(lace_worker* lace)
 {
     (void)lace;
-    /* We don't need Lace, but use a Lace task to initialize all workers. */
+    /* Lace is only the means to run this on every worker. */
     my_region = UINT64_MAX;
 }
 
@@ -228,16 +224,15 @@ claim_next_region(const nodes_table* dbs, uint64_t start_region)
  * order -- and with it the order of node indices -- follows the order in
  * which regions were needed, across all workers. A serial run has that
  * property for free. The anchored backends, list and trie, need it for their
- * layout, more than it looks: a node's family is anchored at its larger child
- * index, so a child that predates its parents' other children anchors only
- * the few parents whose other child is older still. Starting each worker in
- * its own stripe of the table breaks that: everything a high-stripe worker
- * creates out-indexes everything the low-stripe workers made, and a heavily
- * shared node in a high stripe then anchors its whole fan-in. Measured on
- * C880 with eight workers, the stripes made the largest family seven times
- * longer and the summed squared family length twelve times larger than the
- * same forest built serially, and every family walk -- lookups, insertions,
- * removals -- paid for it. The chained backends, llcht and llchst, put a node
+ * layout: a node's family is anchored at its larger child index, so a child
+ * that predates its parents' other children anchors only the few parents
+ * whose other child is older still. Starting each worker in its own stripe of
+ * the table breaks that: everything a high-stripe worker creates out-indexes
+ * everything the low-stripe workers made, and a heavily shared node in a high
+ * stripe then anchors its whole fan-in. With several workers the largest
+ * families of such a table are many times longer than those of the same
+ * forest built serially, and every family walk -- lookups, insertions,
+ * removals -- pays for it. The chained backends, llcht and llchst, put a node
  * in the chain its hash selects, whatever its index; they have no families
  * for the cursor to keep short and draw from it only because they share this
  * allocator.
@@ -265,8 +260,8 @@ claim_region(const nodes_table* dbs)
 }
 #else
 /**
- * The allocator the shared cursor replaced, compiled in only for the
- * experiment that measures what the cursor is worth (configure with
+ * Per-worker stripes, the diagnostic alternative to the shared cursor,
+ * compiled in only to measure what the cursor is worth (configure with
  * -DSYLVAN_REGION_STRIPED_START=ON). A worker's first search after the table
  * is created or collected starts in its own stripe of the table, and every
  * later one goes on past the region the worker has just used up, so that each
@@ -292,11 +287,9 @@ claim_striped_region(const nodes_table* dbs)
  *
  * A region is owned for exactly as long as it is some worker's current one,
  * which bounds the number of owned regions by the number of workers. That
- * bound is not cosmetic: it is what nodes_reserve counts against, and it is
- * what makes a slot released into an exhausted region reachable again. A
- * session releases retired slots all over the table, and the region they land
- * in is almost never the region the worker that once filled it is still
- * standing in.
+ * bound is what nodes_reserve counts against, and giving regions back is what
+ * keeps the slots a reorder session releases reachable; see nodes_reserve in
+ * <sylvan/nodes.h>.
  */
 static void
 release_region(const nodes_table* dbs, uint64_t region)
@@ -411,9 +404,9 @@ is_custom_bucket(const nodes_table* dbs, uint64_t index)
  * is already at its maximum size and still nearly full. A lookup that fails
  * where no collection may run -- inside a reorder session -- or that fails
  * while the table as a whole is below that threshold, because the free slots
- * sit inside regions other workers own, never reaches that guard at all. In
- * the wild that surfaced as a bare "build failed" with nothing in it about
- * the table.
+ * sit inside regions other workers own, never reaches that guard at all.
+ * Without this report the operation that asked for the node would fail with
+ * nothing in its output about the table.
  *
  * Once per exhaustion episode, not once per failing lookup: the flag is
  * cleared in nodes_clear, which is where a collection gives the table its
@@ -457,25 +450,12 @@ reorder_duplicate_abort(uint64_t index, uint64_t other)
 }
 
 /**
- * Preflight <count> further allocations. See <sylvan/nodes.h> for the exact
- * invariant; the short version is that this counts the free slots of the
- * regions no worker owns yet, and asks for one region per worker more than
- * the caller wants.
- *
- * A worker exhausts the region it owns before giving it back and claiming
- * another, and it can only claim a region nobody owns, so an owned region is
- * exactly one worker's current region and there are never more than there are
- * workers. Free slots inside those are not counted: they are reachable by one
- * worker only, and only until that worker moves on. The margin is what covers
- * them. Every counted region that gets claimed during the window is either
- * used up -- every one of its free slots became an allocation -- or is some
- * worker's current region when the window ends, and at most <workers> regions
- * can be in that second state. Reserving <count> plus a whole region per
- * worker therefore guarantees <count> allocations however the workers divide
- * them, which reserving <count> alone does not.
- *
- * The scan stops as soon as the target is reached, so a small reservation on
- * a table with room costs a handful of popcounts.
+ * The free slots of the regions no worker owns, counted until they reach
+ * <needed>: the scan stops there, so a small reservation on a table with room
+ * costs a handful of popcounts. Free slots inside an owned region are not
+ * counted, because only its owner can reach them; region_reserve adds the
+ * margin that covers them. See nodes_reserve in <sylvan/nodes.h> for why that
+ * margin makes the count a guarantee.
  */
 static uint64_t
 reserve_free_slots(const nodes_table* dbs, uint64_t needed)
@@ -509,7 +489,7 @@ static int
 region_reserve(const nodes_table* dbs, uint64_t count)
 {
     /* One whole region per worker on top of what the caller asked for; see
-       reserve_free_slots for why the bound needs it. */
+       nodes_reserve in <sylvan/nodes.h> for why the bound needs it. */
     const uint64_t margin = (uint64_t)lace_worker_count() * 512u;
     if (count > UINT64_MAX - margin) return SYLVAN_ERR_OOM;
     const uint64_t wanted = count + margin;

@@ -28,7 +28,7 @@
  * Lockless chained hash subtables over one dense global node arena.
  *
  * Decision nodes are routed to independently sized subtables. Leaves, maps,
- * ListDD nodes, and legacy direct users have auxiliary subtables. Each node
+ * ListDD nodes, and unrouted lookups have auxiliary subtables. Each node
  * has one link with a 3-bit owner class, 21-bit hash fingerprint, and 40-bit
  * next index. While lookups run, chains only grow, by prepending; garbage
  * collection and maintenance rebuild them, and the reorder primitives below
@@ -72,10 +72,9 @@
 #define LLCHST_REBUILD_GRAIN  4096u
 
 /*
- * Target live nodes per head after a collection. Measured on a quiet machine
- * (queens12, tic-tac-toe20, qbf, P1): 1 is 8-10% faster than 2 for 9-13%
- * more peak RSS (heads cost 8 B/slot instead of 4), and does not help
- * picotrav. Speed was chosen as the default; 2 is the memory-leaning setting.
+ * Target live nodes per head after a collection. 1 is faster than 2 for more
+ * peak memory (heads cost 8 B/slot instead of 4), though it does not help
+ * every workload. The default favours speed; 2 is the memory-leaning setting.
  */
 #ifndef SYLVAN_LLCHST_LOAD_FACTOR
 #define SYLVAN_LLCHST_LOAD_FACTOR 1u
@@ -331,12 +330,12 @@ get_subtable(const nodes_table* dbs, uint32_t route, int create)
  * Memory: the share never exceeds what is left of head_budget(table_size),
  * which nodes_get_capacity_bytes already reports, so seeding cannot push the
  * table past its advertised footprint. Once the budget is exhausted new
- * subtables fall back to SYLVAN_LLCHST_INITIAL_HEAD_LOG2, which is the
- * unbudgeted worst case and is unchanged from before adaptive seeding: at
- * most 2 KiB for every subtable that ever allocates heads, bounded by
- * SYLVAN_LLCHST_DENSE_LEVELS plus the sparse pages actually touched.
- * A single seed is additionally capped at SYLVAN_LLCHST_SEED_HEAD_LOG2_MAX so
- * an early guess made when few subtables exist cannot claim the whole budget.
+ * subtables fall back to SYLVAN_LLCHST_INITIAL_HEAD_LOG2, the unbudgeted
+ * worst case: at most 2 KiB for every subtable that ever allocates heads,
+ * bounded by SYLVAN_LLCHST_DENSE_LEVELS plus the sparse pages actually
+ * touched. A single seed is additionally capped at
+ * SYLVAN_LLCHST_SEED_HEAD_LOG2_MAX so an early guess made when few subtables
+ * exist cannot claim the whole budget.
  */
 static uint32_t
 seed_head_log2(const nodes_table* dbs)
@@ -653,10 +652,10 @@ nodes_lookupc_subtable(const nodes_table* dbs, uint32_t subtable,
 }
 
 /**
- * NOTE: the failures below still exit the process instead of returning NULL.
+ * NOTE: the failures below exit the process instead of returning NULL.
  * Reporting them means unwinding a partially allocated table in every
- * backend; part of the outstanding exit(1) cleanup. sylvan_init_package()
- * already handles a NULL return, so only this function has to change.
+ * backend. sylvan_init_package() handles a NULL return, so only this function
+ * would have to change.
  */
 nodes_table*
 nodes_create(size_t initial_size, size_t max_size)
@@ -938,8 +937,8 @@ llchst_measure_chains_CALL(
     /* The chain terminates on a zero *link*, not a zero word: every auxiliary
        route and OWNER_RAW_DECISION keeps a nonzero owner tag in the top three
        bits, so the last node's next word is "tag | 0". Testing the raw word
-       walks one step past the end onto index 0, which nodes_clear keeps marked
-       and which therefore inflates both the live count and the population. */
+       would walk one step past the end onto index 0, which nodes_clear keeps
+       marked, and so inflate both the live count and the population. */
     size_t live = 0;
     size_t population = 0;
     int has_raw = 0;
@@ -1090,7 +1089,7 @@ allocate_head_budget(struct llchst_rebuild_entry* entries,
 {
     /* Only active subtables receive a share, so only they may contribute to
        the divisor. Counting the population of subtables that are about to be
-       released diluted every surviving share by the dead levels' size.
+       released would dilute every surviving share by the dead levels' size.
 
        The share uses <population>, the pre-collection chain length, and not
        the live count that measure_entry computed alongside it. Two reasons:
@@ -2128,17 +2127,9 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
 }
 
 /**
- * Return a removed slot to the allocator.
- *
- * The bitmap updates are read-modify-writes and not the plain stores the
- * allocation path uses: a worker that allocates owns the whole region its
- * slot lies in, but a worker that releases a retired node does not, so two
- * releases can land in the same 64-slot word.
- *
- * The custom bit has to go before the slot becomes claimable. A reused slot
- * that still carries it would be hashed and compared through the custom
- * callbacks, and the next nodes_cleanup_custom would destroy its payload a
- * second time.
+ * Return a removed slot to the allocator. See nodes_release in nodes_llcht.c
+ * for why the bitmap updates are read-modify-writes and why the custom bit
+ * goes first.
  */
 int
 nodes_release(nodes_table* dbs, uint64_t index)
@@ -2183,12 +2174,10 @@ nodes_release(nodes_table* dbs, uint64_t index)
  * something else: they are in these chains, so a caller enumerating "the
  * nodes of variable v" sees them.
  *
- * MAP NODES ARE NOT COVERED, by design. An MTBDDMAP node carries its key in
- * the variable field like a decision node does, but it is routed to the
- * shared MAP auxiliary subtable, not to a per-identity one, so there is no
- * head array to walk for "the map nodes of variable v". The session layer
- * builds its per-identity lists including map nodes from an arena scan for
- * every backend, and that is where map nodes belong; see the contract in
+ * MAP NODES ARE NOT COVERED. An MTBDDMAP node carries its key in the variable
+ * field like a decision node does, but it is routed to the shared MAP
+ * auxiliary subtable, not to a per-identity one, so there is no head array to
+ * walk for "the map nodes of variable v"; see the contract in
  * <sylvan/nodes.h>.
  */
 int
@@ -2284,26 +2273,14 @@ nodes_prepare_reorder(nodes_table* dbs, const uint32_t* routes, size_t count)
 /**
  * Batched removal and reinsertion.
  *
- * There is no phase structure to win here: a removal is a compare-and-swap
- * splice out of one chain of one subtable and touches nothing else, and the
- * single-node calls are already safe from every worker at once -- that is what
- * the chain surgery above was built for. What the batch buys is the WORKERS at
- * the call sites that hand over a whole set, above all the retirement round,
- * which otherwise unhashes its nodes one at a time on one worker. So the loop
- * is the design, and it is the same one the list backend arrived at for the
- * same reason.
- *
- * The only thing the batch adds is the contract's refusal, and only the half
- * of it that is cheap: every index is range-checked before anything is
- * claimed, so a batch naming an impossible index changes nothing. An index
- * that is in range but not in the index is a caller error and aborts -- see
- * nodes_remove_batch in nodes.h for why the distinction is drawn there rather
- * than paid for with a read-only walk of every victim's chain. This backend
- * has one more way for a removal of an in-range node to fail -- an explicitly
- * routed non-canonical decision entry has no subtable to be spliced out of --
- * and it lands in the same place: the session that drives these calls already
- * treated that refusal as fatal, so aborting changes which line is printed and
- * nothing else.
+ * As in nodes_llcht.c (see the comment on its batch for why): every index is
+ * range-checked before anything is claimed, then the single-node calls run as
+ * a parallel loop, and an in-range index that is not in the index aborts. This
+ * backend has one more way for a removal of an in-range node to fail -- an
+ * explicitly routed non-canonical decision entry has no subtable to be spliced
+ * out of -- and it aborts the same way: the session that drives these calls
+ * treats that refusal as fatal anyway, so aborting changes only which line is
+ * printed.
  *
  * Reinsertion can additionally run out of heap here, for a subtable or a head
  * array nodes_prepare_reorder was not told about. That collapses into the one
@@ -2370,8 +2347,9 @@ llchst_batch_remove_CALL(lace_worker* lace, nodes_table* dbs,
     const size_t end = first + count;
     for (size_t at = first; at < end; at++) {
         /* The range pass already passed, so the only way this fails is the
-           caller error the contract lets us abort on. Returning here instead
-           would report a failure after some of the set had been claimed. */
+           caller error the contract lets a backend abort on. Returning here
+           instead would report a failure after some of the set had been
+           claimed. */
         if (nodes_remove(dbs, indices[at]) != SYLVAN_OK) {
             reorder_batch_abort(indices[at]);
         }
@@ -2396,12 +2374,8 @@ llchst_batch_reinsert_CALL(lace_worker* lace, nodes_table* dbs,
 
     const size_t end = first + count;
     for (size_t at = first; at < end; at++) {
-        /* Reinsertion keeps the contract it always had: a node that was not
-           removed first is reported, not aborted on, exactly as the trie's
-           batch does -- in a release build; nodes_reinsert asserts on it in a
-           debug build, as the trie's does. It is the one failure the caller
-           can act on, because it says the node is still in the index rather
-           than missing from it. */
+        /* A node that was not removed first is reported, not aborted on; see
+           llcht_batch_reinsert_CALL in nodes_llcht.c. */
         if (nodes_reinsert(dbs, indices[at]) != SYLVAN_OK) {
             atomic_store_explicit(&dbs->batch_error, 1, memory_order_relaxed);
         }

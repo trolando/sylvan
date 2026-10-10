@@ -230,26 +230,12 @@ static const uint64_t CL_MASK_R = CL_WORDS - 1;
 #define MASK_HASH  ((uint64_t)0xffffff0000000000)
 
 /**
- * The arena has no slot to give. Say so, once.
- *
- * nodes_lookup2 answers 0 here and every caller turns that into "no room",
- * but not every caller says which room ran out. The report that normally
- * announces a full table is gc_note_progress in common.c ("BDD Unique table
- * full"), and it cannot speak for this path: it fires from inside a
- * collection, and only after several consecutive collections of a table that
- * is already at its maximum size and still nearly full. A lookup that fails
- * where no collection may run -- inside a reorder session -- or that fails
- * while the table as a whole is below that threshold, because the free slots
- * sit inside regions other workers own, never reaches that guard at all. In
- * the wild that surfaced as a bare "build failed" with nothing in it about
- * the table.
- *
- * Once per exhaustion episode, not once per failing lookup: the flag is
- * cleared in nodes_clear, which is where a collection gives the table its
- * room back. The hot path is untouched -- only the branch that has already
- * failed to claim a slot arrives here. The flag is one word beside the
- * allocator rather than a field of the table because the allocator it speaks
- * for is itself global (see the warning about multiple tables above).
+ * The arena has no slot to give. Say so, once per exhaustion episode: the
+ * flag is cleared in nodes_clear, where a collection gives the table its room
+ * back. This is llht's copy of report_arena_exhausted in nodes_region.h,
+ * which this backend does not include; see there for why this path needs a
+ * report of its own. The flag is global because the allocator it speaks for
+ * is (see the warning about multiple tables above).
  */
 static _Atomic(int) arena_exhausted_reported;
 
@@ -440,10 +426,10 @@ int nodes_rehash_bucket(nodes_table* dbs, uint64_t d_idx)
 }
 
 /**
- * NOTE: the failures below still exit the process instead of returning NULL.
+ * NOTE: the failures below exit the process instead of returning NULL.
  * Reporting them means unwinding a partially allocated table in every
- * backend; part of the outstanding exit(1) cleanup. sylvan_init_package()
- * already handles a NULL return, so only this function has to change.
+ * backend. sylvan_init_package() handles a NULL return, so only this function
+ * would have to change.
  */
 nodes_table* nodes_create(size_t initial_size, size_t max_size)
 {

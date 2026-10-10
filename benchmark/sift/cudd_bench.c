@@ -10,13 +10,13 @@
  * so the algorithm class matches sylvan_sift: Rudell sifting, no grouping, no
  * convergence, no symmetry check.
  *
- * Knob alignment (see the report): maxGrowth is set to the same 1.2 both tools
- * default to, and siftMaxVar/siftMaxSwap are raised to INT_MAX so that CUDD is
- * unlimited exactly as Sylvan's max_vars = max_swaps = 0 is. Dynamic
- * reordering is disabled explicitly, because Sylvan never reorders on its own
- * and the initial order has to be the file's. --max-swaps and --max-vars cap
- * the search the way sylvan_bench's flags of the same name do, for the
- * experiments that sweep the caps on both tools.
+ * Matching settings: maxGrowth is set to the same 1.2 both tools default to,
+ * and siftMaxVar/siftMaxSwap are raised to INT_MAX so that CUDD is unlimited
+ * exactly as Sylvan's max_vars = max_swaps = 0 is. Dynamic reordering is
+ * disabled explicitly, so that CUDD sifts only when the driver asks and the
+ * initial order is the file's. --max-swaps and --max-vars cap the
+ * search the way sylvan_bench's flags of the same name do, so that both
+ * tools can run under the same caps.
  *
  * --probs FILE computes the probability of the first output before and after
  * the sift, from one probability per input, as sylvan_bench --probs does

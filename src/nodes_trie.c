@@ -271,7 +271,7 @@ uint64_t nodes_lookupc_subtable(const nodes_table* dbs, uint32_t subtable,
  * rooted at first[X] uses next[X*2+0] and next[X*2+1] as its depth-1 branch
  * pair, and those are the very same words that the family of X's own anchor
  * uses when its probe sequence passes through handle X. So workers cannot be
- * partitioned by anchor; they genuinely share slots. It is nevertheless safe:
+ * partitioned by anchor; they share slots. It is nevertheless safe:
  *
  * 1. Slots are write-once. Every store is a CAS against the value 0, and the
  *    value stored is (masked_hash | handle) with handle >= 2, so it is never
@@ -353,10 +353,10 @@ static int nodes_reinsert_bucket(nodes_table* dbs, uint64_t d_idx)
 }
 
 /**
- * NOTE: the failures below still exit the process instead of returning NULL.
+ * NOTE: the failures below exit the process instead of returning NULL.
  * Reporting them means unwinding a partially allocated table in every
- * backend; part of the outstanding exit(1) cleanup. sylvan_init_package()
- * already handles a NULL return, so only this function has to change.
+ * backend. sylvan_init_package() handles a NULL return, so only this function
+ * would have to change.
  */
 nodes_table* nodes_create(size_t initial_size, size_t max_size)
 {
@@ -663,18 +663,16 @@ void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb e
  * meets it, and it is not a shortcut for removal alone:
  *
  *  - removal below rewrites several slots that are not related by any single
- *    compare-and-swap, and it breaks the write-once property of the slots,
- *    which is exactly the property the parallel rebuild proof on
- *    nodes_reinsert_bucket rests on. That proof therefore does not extend to
- *    a table that is being removed from;
+ *    compare-and-swap, and it breaks the write-once property of the slots
+ *    that the parallel rebuild proof on nodes_reinsert_bucket rests on. That
+ *    proof therefore does not extend to a table that is being removed from;
  *  - reinsertion must be serialised with removal for the same reason. A
  *    descent that publishes into a slot which a concurrent removal is about
  *    to clear, or into a branch pair it is about to detach, loses the node.
  *
- * PARALLEL, A PHASE AT A TIME. What the lock cannot give back is scaling: a
- * swap removes and re-indexes thousands of nodes, and a caller that issues
- * them one at a time from every worker gets one worker's throughput. The way
- * out is not a finer lock but a wider call. nodes_remove_batch and
+ * PARALLEL, A PHASE AT A TIME. The lock does not scale: a swap removes and
+ * re-indexes thousands of nodes, and a caller that issues them one at a time
+ * from every worker gets one worker's throughput. nodes_remove_batch and
  * nodes_reinsert_batch take the whole set at once and run the phases of the
  * work in parallel with barriers between them; see the block above
  * nodes_remove_batch for the design and its correctness argument. The
@@ -694,10 +692,10 @@ void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb e
  *     family at its root.
  *  2. A node X's pair next[X*2+0..1] is shared between the family anchored at
  *     X and the family that routes through X at depth one or deeper -- they
- *     are literally the same two words. Moving that pair onto a promoted leaf
- *     repairs the second family and silently detaches the first, whose
- *     descent goes first[X] -> next[X*2+b] and would now find those slots
- *     empty and insert duplicates.
+ *     are the same two words. Moving that pair onto a promoted leaf repairs
+ *     the second family and silently detaches the first, whose descent goes
+ *     first[X] -> next[X*2+b] and would now find those slots empty and insert
+ *     duplicates.
  *
  * WHAT IT DOES INSTEAD. Removal clears the node's slot and locally rebuilds
  * whatever depended on it:
@@ -711,12 +709,12 @@ void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb e
  *    with the ordinary descent, which puts each of them back on its own probe
  *    sequence.
  *
- * That this is exactly the right region is the invariant to hold on to: a
- * node whose slot is not in the region cannot have the region on its own
- * probe sequence, because a sequence that entered the region and continued to
- * that node's slot would have made the slot reachable from the region roots,
- * hence part of the region. Nodes outside the region are therefore untouched
- * and stay reachable, and nodes inside it are all reinserted.
+ * INVARIANT. This is exactly the right region: a node whose slot is not in the
+ * region cannot have the region on its own probe sequence, because a sequence
+ * that entered the region and continued to that node's slot would have made
+ * the slot reachable from the region roots, hence part of the region. Nodes
+ * outside the region are therefore untouched and stay reachable, and nodes
+ * inside it are all reinserted.
  *
  * Cost is the size of that region, not of the table. It is O(1) for a node
  * with an empty branch pair, and largest when the node occupies the root of a
@@ -977,9 +975,9 @@ trie_reinsert_conflict(const nodes_table* dbs, const struct reorder_key* key,
  * and it is written the same way -- every store a compare-and-swap against
  * zero, every load an acquire, and the family root handled before the loop --
  * so that the write-once argument on nodes_reinsert_bucket covers it verbatim.
- * Under the single-node lock that costs one uncontended compare-and-swap over
- * the plain store it replaces; in a batch it is what lets every worker descend
- * at once.
+ * Under the single-node lock that costs one uncontended compare-and-swap where
+ * a plain store would do; in a batch it is what lets every worker descend at
+ * once.
  *
  * Keeping the root outside the loop is not cosmetic. The branch pair consumed
  * after the family root belongs to the anchor and not to the root's occupant,
@@ -1050,15 +1048,14 @@ nodes_reinsert(nodes_table* dbs, uint64_t index)
  * the region that hung below it, and the rebuild is an ordinary descent from
  * first[anchor] that publishes into the first empty slot it finds -- which may
  * be anywhere in the table. So a removal's write set is not confined to any
- * region, family or shard, and there is no lock domain to shard it into --
- * which is exactly the point on which sharded and optimistic locking both
- * fail.
+ * region, family or shard, and there is no lock domain to shard it into;
+ * sharded and optimistic locking both fail on that.
  *
- * What does work is to widen the call instead of narrowing the lock. Every
- * caller of this backend already knows its whole removal set up front -- a
- * swap's case-B array, a retirement queue -- and once the set is known the work
- * splits into phases that are each internally parallel, with a barrier where
- * the lock used to be:
+ * The batch widens the call instead of narrowing the lock. Every caller of
+ * this backend already knows its whole removal set up front -- a swap's
+ * case-B array, a retirement queue -- and once the set is known the work
+ * splits into phases that are each internally parallel, separated by
+ * barriers:
  *
  *   1. FIND      read-only. Walk each victim's own probe sequence to the slot
  *                that holds it, and record that slot. Also records which node's
@@ -1478,16 +1475,16 @@ nodes_reserve(nodes_table* dbs, uint64_t count)
  * There are no subtables here, so the routes are ignored; what this preflights
  * is the buffer nodes_remove collects a region into.
  *
- * THE BOUND IS STRUCTURAL, NOT MEASURED, and that is deliberate. Walking the
- * regions of the removals a caller is about to perform and taking the largest
- * would be read-only and cheap, and it would also be wrong: the answer does
- * not survive the removals themselves. Removing one node clears its region and
- * reinserts every node in it on its own probe sequence, and those sequences run
- * through whatever occupies the slots along them, so a removal reshapes the
- * regions of the nodes that are still to be removed. Insertions between the
- * preflight and the removals -- and a variable swap does re-index every node it
- * rewrote before it retires anything -- move them again. A measured bound would
- * hold at the moment it was taken and at no later one.
+ * THE BOUND IS STRUCTURAL, NOT MEASURED. Walking the regions of the removals a
+ * caller is about to perform and taking the largest would be read-only and
+ * cheap, and it would also be wrong: the answer does not survive the removals
+ * themselves. Removing one node clears its region and reinserts every node in
+ * it on its own probe sequence, and those sequences run through whatever
+ * occupies the slots along them, so a removal reshapes the regions of the
+ * nodes that are still to be removed. Insertions between the preflight and the
+ * removals -- and a variable swap does re-index every node it rewrote before
+ * it retires anything -- move them again. A measured bound would hold at the
+ * moment it was taken and at no later one.
  *
  * What does hold at every moment is that a region is a set of distinct node
  * indices, so it can never hold more entries than the table has slots. That is

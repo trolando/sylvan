@@ -4,12 +4,12 @@ summarize.py -- Markdown and CSV tables from the rows the run-*.sh scripts appen
 
     summarize.py [--csv DIR] SUBCOMMAND FILE.jsonl [FILE.jsonl ...]
 
-    quality    Q1: final sizes against CUDD's, and whether more workers reach
+    quality    final sizes against CUDD's, and whether more workers reach
                exactly the same order; threshold sweep and CUDD's own caps
                when those rows are present
-    timing     Q2: sift time per variant as median (min-max), scaling against
+    timing     sift time per variant as median (min-max), scaling against
                the same build at its lowest worker count, load average range
-    soundness  Q3: sound/valid per variant, the downstream operation phase,
+    soundness  sound/valid per variant, the downstream operation phase,
                and cross-tool agreement of the evaluation hashes
     queens     queens boards: gain, sift time, swaps
     seeds      many random orders: a per-seed table and the distribution of
@@ -27,9 +27,8 @@ which agree exactly on every unsifted build, so they are compared directly.
 Sylvan's own sift_initial/sift_final count the whole reachable forest and run
 a little higher; they are not used for any ratio.
 
-Rows written before the scripts recorded "exp" and "build" (the
-sift-eval-20260816 batches) are accepted: a row without "exp" is used by any
-subcommand, and a row without "build" belongs to a build named after its tool.
+A row without "exp" is used by any subcommand, and a row without "build"
+belongs to a build named after its tool.
 """
 
 import argparse

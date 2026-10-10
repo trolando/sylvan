@@ -127,7 +127,7 @@ int runtest_errors_CALL(lace_worker* lace)
     Bdd t = Bdd::bddVar(1) + Bdd::bddVar(2);
 
     /* Evaluating a two-variable cube under one value is SYLVAN_ERR_INVALID.
-     * This used to silently produce a Bdd holding mtbdd_invalid. */
+     * It must throw, not return a Bdd holding mtbdd_invalid. */
     const Bdd t_before = t;
     int caught = 0;
     try {

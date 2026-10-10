@@ -52,13 +52,14 @@
  * anyone has to repair.
  *
  * PAIRS, ON REQUEST. bdd_rel_next and bdd_rel_prev are fastest when identity
- * 2k sits directly above identity 2k+1, and an unconstrained sift has no
- * reason to keep them there. With group_pairs the unit of the search is a
- * block -- such a pair, or a variable without a partner -- and everything
- * above applies to blocks: candidates in order of their summed population, a
- * leg crosses one neighbouring block per move, the size is scored only after
- * a whole move, and the bounds and budgets judge moves. Ungrouped, every block
- * is one variable and the search is exactly the one described above.
+ * 2k sits directly above identity 2k+1 (see bdd.c for why), and an
+ * unconstrained sift has no reason to keep them there. With group_pairs the
+ * unit of the search is a block -- such a pair, or a variable without a
+ * partner -- and everything above applies to blocks: candidates in order of
+ * their summed population, a leg crosses one neighbouring block per move, the
+ * size is scored only after a whole move, and the bounds and budgets judge
+ * moves. Ungrouped, every block is one variable and the search is exactly the
+ * one described above.
  *
  * SERIAL, ON PURPOSE. The swaps underneath are parallel; the loop over them is
  * not. Sifting variables concurrently would mean concurrent swaps, which share
@@ -78,12 +79,9 @@ static const sylvan_sift_config sift_default_config = {
     0,      /* max_swaps       */
     0,      /* max_vars        */
     1.2f,   /* max_growth      */
-    0,      /* nodes_threshold: measured on C880, skipping small variables
-               cost up to 2.2x in final size for no measurable time saved,
-               because those are exactly the cheap swaps */
+    0,      /* nodes_threshold */
     0.0,    /* time_limit      */
-    0,      /* full_legs: the interaction bound is conservative, so bounded
-               legs reach the same final size with about a third fewer swaps */
+    0,      /* full_legs       */
     0       /* group_pairs: a consumer that never calls bdd_rel_next or
                bdd_rel_prev gains nothing from the constraint */
 };
@@ -115,9 +113,8 @@ sift_now(void)
  * The driver's share of the per-phase timing, in the diagnostic build that has
  * it; the session's share is kept by reorder.c (see sylvan_reorder_timing).
  * Every sift that opened a session prints both as one SIFT-PHASES line on
- * stderr, with the keys and in the order of the archived per-phase
- * measurements, so that the scripts that read those read this. Without the
- * option every macro is empty.
+ * stderr, with the keys docs/index.rst lists and the scripts in
+ * benchmark/sift read. Without the option every macro is empty.
  */
 #if SYLVAN_SIFT_PHASE_TIMING
 static double sift_timing_popinit, sift_timing_interact, sift_timing_total;
@@ -262,8 +259,9 @@ sift_swap(lace_worker *lace, struct sift_run *run, uint32_t rank,
     if (status != SYLVAN_OK) {
         /* A refusal is the swap's clean answer, not a failure: it ends the
            current leg where it struck. Count it here, at the one point every
-           search and return-leg swap passes through, so the report can say
-           whether the final order is the best one seen or a refused one. */
+           search and return-leg swap passes through, so sylvan_sift_report
+           can say whether the final order is the best one seen or a refused
+           one. */
         if (status == SYLVAN_ERR_OOM) run->refusals++;
         return status;
     }
@@ -647,27 +645,13 @@ sylvan_sift_split_pairs(void)
 }
 
 /**
- * WHEN A SIFT IS WORTH RUNNING
- *
- * The whole of Sylvan's answer, and it is deliberately a small one. Sifting is
- * expensive and its benefit is not monotone: run on a forest that has barely
- * changed it finds nothing and costs a stop-the-world pass. What pays is a
- * forest that has GROWN, because growth is where a bad order compounds -- the
- * same order that cost 20% on a small forest costs a factor on a large one.
- * So: recommend a sift once the live forest is <factor> times the size it was
- * when it was last sifted, or when the process started if it never was.
- *
- * THE MEASUREMENT IS FREE, which is the other half of the design. Every
- * collection already counts the buckets that survive marking, because the
- * table sizing heuristics are built on that number (see gc_note_churn in
- * common.c). The recommendation is one comparison against it, made where it is
- * already in hand. Nothing is sampled between collections, nothing is counted
- * per operation, and sylvan_sift_recommended() is a load.
- *
- * THE FLOOR exists because a ratio is meaningless at the bottom. A forest of
- * two hundred nodes that grows to five hundred has tripled and has nothing
- * worth reordering; the cost of finding that out exceeds anything it could
- * save. Below the floor no growth recommends anything.
+ * WHEN A SIFT IS WORTH RUNNING: once the live forest has grown by the
+ * recommendation factor over the size the last sift left it at, or over the
+ * floor when that is larger or no sift has run. See sylvan_sift_recommended()
+ * in <sylvan/reorder.h> for why that is the policy and why measuring it is
+ * free. Its state lives here; its one input is the count of live buckets
+ * every collection takes anyway for its table sizing (see gc_note_churn in
+ * common.c) and passes to sylvan_sift_note_collection().
  */
 
 /* Live buckets below which growth is not evidence of anything: the CMake cache
@@ -911,8 +895,8 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
        next collection will measure. It is derived rather than counted
        because a count is a pass over the whole table, which may be sized for
        far more than this forest. Rebaselining the recommendation on it is
-       what "a sift clears the recommendation" means: growth is measured from
-       here on. */
+       how a sift clears the recommendation: growth is measured from here
+       on. */
     const uint64_t left = collected + final_size - initial;
     assert(left == nodes_count_nodes_CALL(lace, nodes));
     sift_note_sift(left);

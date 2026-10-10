@@ -559,18 +559,18 @@ test_marked_words_and_bound(void)
 /**
  * A table with nothing left to give must say so.
  *
- * The lookup path answers 0 when the arena cannot hand out a slot, and that 0
- * used to be the only evidence there was: a caller that turns it into an error
- * of its own printed nothing about the table, so an exhausted run could end in
- * a bare "build failed". The backend now prints one line per exhaustion
- * episode, and this test exists because the line is the point.
+ * The lookup path answers 0 when the arena cannot hand out a slot. A caller
+ * that turns that 0 into an error of its own says nothing about the table, so
+ * without a diagnostic an exhausted run could end in a bare "build failed".
+ * The backend prints one line per exhaustion episode, and this test checks
+ * that line.
  *
- * Every worker fills at once, which is the shape the defect was reported in:
- * each worker holds a private region, so the one that needs a fresh region can
- * fail while free slots still sit in the regions the others hold. The work
- * runs in a child process because stderr is what is being asserted on, the
- * same reason the reinsert-collision death test re-executes this binary; the
- * child exits 0 only if some lookup really did answer 0.
+ * Every worker fills at once: each worker holds a private region, so the one
+ * that needs a fresh region can fail while free slots still sit in the
+ * regions the others hold. The work runs in a child process because stderr is
+ * what is being asserted on, the same reason the reinsert-collision death test
+ * re-executes this binary; the child exits 0 only if some lookup really did
+ * answer 0.
  */
 #define TEST_EXHAUST_ATTEMPTS (1u << 16)
 
@@ -660,9 +660,8 @@ test_arena_exhaustion_reports(const char *self)
        One worker walks the table down to its last few and always meets the
        probe limit first; several workers hold a private region each, and the
        one that needs a fresh region finds the arena empty first, so only a
-       multi-worker run is guaranteed to print the diagnostic. Measured on
-       this backend: 0 of 20 runs at one worker, 20 of 20 at eight. So the
-       diagnostic is demanded here only where it is reachable. */
+       multi-worker run is guaranteed to print the diagnostic, and it is
+       demanded here only where it is reachable. */
     const int expect_diagnostic = test_workers > 1;
 #else
     const int expect_diagnostic = 1;
@@ -1408,15 +1407,15 @@ test_reorder_batch(void)
  * Release builds only: a debug build asserts on a node that is not where its
  * record says before it refuses (see CALLER ERRORS in nodes.h). The chained
  * backends claim a node's link before they look for the node, so a refusal
- * has to give the link back. Two ways it used to stay behind:
+ * has to give the link back. Two cases where a claim left behind breaks:
  *
  *  - A node whose record was rewritten while it was still indexed. It stays
- *    in its chain, and a link left saying "removal in progress" cut the chain
- *    short at it -- every key behind it missed and was interned again -- and
- *    made the node itself impossible to remove.
+ *    in its chain, and a link left saying "removal in progress" would cut the
+ *    chain short at it -- every key behind it would miss and be interned
+ *    again -- and make the node itself impossible to remove.
  *  - A slot nothing was ever inserted into. The list backend never writes
- *    the link of a node it appends, so the next node to claim the slot
- *    inherited the claimed link and could not be removed either.
+ *    the link of a node it appends, so the next node to claim the slot would
+ *    inherit the claimed link and could not be removed either.
  */
 static int
 test_reorder_refusal_changes_nothing(void)
@@ -1741,8 +1740,9 @@ test_reorder_reserve(void)
 {
     /* A reservation of <count> asks the table for <count> free slots beyond
        a margin of one region per worker (see nodes_reserve), and the race
-       table is only guaranteed to hold the margin. Size for both, or the
-       reservation below is refused for the honest reason at eight workers. */
+       table is only guaranteed to hold the margin. Size for both, or at eight
+       workers the reservation below is refused because the table really is
+       too small. */
     const uint64_t wanted =
         (uint64_t)test_workers * TEST_RESERVE_PER_WORKER;
     size_t table_size = race_table_size();
@@ -1791,12 +1791,12 @@ test_reorder_reserve(void)
 /**
  * After nodes_prepare_reorder, removal allocates nothing.
  *
- * The adversarial shapes are what make this a test rather than a formality.
- * The deep chain is one family of a thousand nodes, all sharing a maximum
- * child, so a backend that repairs its index by rebuilding the region that
- * depended on the vanishing slot has to collect and reinsert hundreds of nodes
- * for a single removal -- far past any buffer a removal could sensibly start
- * with, and therefore a heap allocation in the middle of an index change.
+ * The adversarial shapes give a removal the most to repair. The deep chain is
+ * one family of a thousand nodes, all sharing a maximum child, so a backend
+ * that repairs its index by rebuilding the region that depended on the
+ * vanishing slot has to collect and reinsert hundreds of nodes for a single
+ * removal -- far past any buffer a removal could sensibly start with, and
+ * therefore a heap allocation in the middle of an index change.
  *
  * Every removal here is also undone, so the whole set has to come back at its
  * original indices: an allocation-free removal still has to be a correct one.

@@ -54,9 +54,8 @@
  * performs: the session opens on a table whose content is exactly the
  * reachable set and never collects again, so every node <created> is a node
  * the forest gained and every node that <died> is one it lost. Without that
- * enforced collection the same two counters would still be exact counts of
- * what the swap did, but they would be measured against a baseline that
- * included whatever garbage happened to be lying around.
+ * collection the two counters would still count what the swap did, but
+ * against a table that also held garbage.
  */
 typedef struct sylvan_varswap_result {
     uint64_t swaps;          /* number of swaps these numbers cover        */
@@ -80,22 +79,16 @@ typedef struct sylvan_varswap_result {
  * nodes table, which is why the session reads the table size afterwards.
  *
  * THE ONE PRECONDITION, which cannot be checked cheaply and which the caller
- * owns: no decision diagram operation is in flight.
+ * owns: no decision diagram operation is in flight. It is the precondition of
+ * sylvan_sift(), and <sylvan/reorder.h> says why it is about suspended
+ * computations and not about roots.
  *
- * It is about suspended computations, not about roots. An operation that has
- * read a node's fields and not yet combined its sub-results would resume after
- * the session and build its answer out of parts computed under a rank order
- * that no longer holds. Its handles would be fine -- nodes are rewritten in
- * place and pinned roots are never retired -- and its reasoning would not.
- * Nothing the session does can repair that, so the caller must not be in the
- * middle of an operation when it opens one.
- *
- * TEMPORARY REFERENCES ARE NO LONGER A PRECONDITION. reorder_pin_roots pins
- * every root a collection would mark, and every worker's
- * mtbdd_refs_push/pushptr stack is among them, so a handle that lives only on
- * such a stack survives the session at the same handle denoting the same
- * function. What a caller may not do is hold one across a *suspended
- * operation*, which the precondition above already forbids.
+ * TEMPORARY REFERENCES SURVIVE. reorder_pin_roots pins every root a collection
+ * would mark, and every worker's mtbdd_refs_push/pushptr stack is among them,
+ * so a handle that lives only on such a stack survives the session at the
+ * same handle denoting the same function. What a caller may not do is hold
+ * one across a *suspended operation*, which the precondition above already
+ * forbids.
  *
  * Refused with SYLVAN_ERR_INVALID when:
  * - a session is already open;
@@ -187,13 +180,13 @@ int sylvan_reorder_interact_build(void);
 int sylvan_reorder_interact(uint32_t a, uint32_t b);
 
 /**
- * Batched index surgery (design experiment H2). Nonzero (the default) hands a
- * swap's removals and re-indexings to the backend as whole sets wherever it
- * implements NODES_CAP_BATCH and more than one worker runs; zero makes every
- * swap take the per-node path it takes on a backend without the capability,
- * which is the ablation that measures what batching is worth. The swaps, the
- * forest and the scores are the same either way; only the schedule differs.
- * May only be changed while no session is open.
+ * Batched index surgery. Nonzero (the default) hands a swap's removals and
+ * re-indexings to the backend as whole sets wherever it implements
+ * NODES_CAP_BATCH and more than one worker runs; zero makes every swap take
+ * the per-node path it takes on a backend without the capability, which
+ * measures what batching is worth. The swaps, the forest and the scores are
+ * the same either way; only the schedule differs. May only be changed while
+ * no session is open.
  */
 void sylvan_reorder_set_batched(int enable);
 

@@ -268,8 +268,8 @@ int mtbdd_iterator_next(sylvan_iterator *iterator, uint8_t *values, size_t count
  * a handle whose index is not a bucket of the table reads wild memory: the
  * index is masked to 40 bits and scaled, so a handle such as mtbdd_invalid
  * lands terabytes past the table. Sylvan's contract is that operations take
- * handles the caller obtained from Sylvan and still keeps referenced, and for
- * the operations that matter for performance it stays that way.
+ * handles the caller obtained from Sylvan and still keeps referenced, and the
+ * operations that matter for performance rely on it.
  *
  * The marked traversals are the exception. They are the reporting and
  * debugging surface -- counting, writing .dot, structural hashing -- so they
@@ -305,7 +305,7 @@ int mtbdd_iterator_next(sylvan_iterator *iterator, uint8_t *values, size_t count
  * that a correct caller cannot produce -- and a check inside a recursion is
  * paid per node rather than per root, which is the cost this design exists to
  * avoid. The C++ bindings in obj.hpp cannot produce an invalid handle at all;
- * they throw sylvan::sylvan_error instead of substituting one.
+ * a failed operation throws sylvan::sylvan_error.
  *
  * For a build that does check every dereference, see SYLVAN_CHECK_HANDLES.
  * ---------------------------------------------------------------------------
@@ -1093,8 +1093,7 @@ int mtbdd_map_remove_all(MTBDDMAP *result, MTBDDMAP map, BDDSET variables);
  * protected pointers below and the per-worker temporary stacks. A user whose
  * roots suit neither registers a root visitor with sylvan_gc_add_roots and
  * yields their values; see <sylvan/common.h>. Roots owned that way are marked
- * by a collection and pinned by a reordering session, so they are second class
- * in neither direction.
+ * by a collection and pinned by a reordering session, as the two defaults are.
  */
 
 /**

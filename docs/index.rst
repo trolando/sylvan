@@ -149,29 +149,27 @@ build.
     batch fields staying near zero when the swaps are not batched, and
     ``swap_total`` is the swaps end to end; ``end`` closes the session;
     ``popinit`` and ``interact`` are the driver counting populations and
-    building the interaction matrix, and ``sift_total`` is the whole sift. The
-    keys are those of the per-phase measurements the parallel sifting work was
-    attributed with, so the same scripts read both. Inside the library the
-    session's share is ``sylvan_reorder_phase_timing`` in
-    ``sylvan/internal.h``. The clock is read twice per phase per swap, so take
-    the breakdown from this build and the totals from one without it.
+    building the interaction matrix, and ``sift_total`` is the whole sift.
+    Inside the library the session's share is ``sylvan_reorder_phase_timing``
+    in ``sylvan/internal.h``. The clock is read twice per phase per swap, so
+    take the breakdown from this build and the totals from one without it.
 
     .. code:: bash
 
         cmake .. -DSYLVAN_SIFT_PHASE_TIMING=ON
 
 ``SYLVAN_REGION_STRIPED_START`` (CMake option)
-    Allocate node slots with the allocator the shared region cursor replaced in
-    the list, trie, llcht and llchst tables. A worker's first search for an
-    allocation region, after the table is created and after every garbage
-    collection, starts in that worker's own stripe of the table, and every
-    later search goes on past the region the worker has just used up, so each
-    worker fills a stripe of its own and the cursor is not consulted at all.
-    Node indices then no longer follow creation order across workers. It
-    changes where nodes are placed in the table and nothing else, and exists to
-    reproduce the layout the cursor removed, for measuring what the cursor is
-    worth. The shape tests of ``test_table`` need indices in creation order,
-    and skip themselves with a notice when they find a table without it.
+    Allocate node slots in per-worker stripes instead of from the shared
+    region cursor, in the list, trie, llcht and llchst tables. A worker's
+    first search for an allocation region, after the table is created and
+    after every garbage collection, starts in that worker's own stripe of the
+    table, and every later search goes on past the region the worker has just
+    used up, so each worker fills a stripe of its own and the cursor is not
+    consulted at all. Node indices then do not follow creation order across
+    workers. It changes where nodes are placed in the table and nothing else,
+    and exists to measure what the shared cursor is worth. The shape tests of
+    ``test_table`` need indices in creation order, and skip themselves with a
+    notice when they find a table without it.
 
     .. code:: bash
 
@@ -324,10 +322,9 @@ A binding whose roots are not contiguous fills a small buffer of its own and flu
 the call. The hook may do nothing but yield: no creating, protecting or unprotecting diagrams, and
 no registering or removing visitors. ``sylvan_gc_remove_roots`` takes a registration back.
 
-Because a visitor can be *enumerated* and not merely marked through, roots owned this way are
-first-class: garbage collection keeps them and ``sylvan_sift`` pins them, so a consumer with a
-handle table can reorder. Sylvan's own two root sources -- the ``mtbdd_protect`` table and the
-per-worker temporary stacks -- are registered through exactly this interface.
+Garbage collection keeps the roots a visitor yields and ``sylvan_sift`` pins them, so a consumer
+with a handle table can reorder. Sylvan's own two root sources -- the ``mtbdd_protect`` table and
+the per-worker temporary stacks -- are registered through the same interface.
 
 The values are MTBDD (and therefore BDD) handles. ZDD and ListDD roots are not covered; use
 ``zdd_protect`` and ``listdd_protect``, which those families need anyway.
@@ -522,8 +519,8 @@ A call stops the world for its whole duration, exactly like garbage collection, 
 begins by collecting. Call it from inside a Lace worker, with **no decision diagram
 operation in flight**. That is the one precondition and the caller owns it: a
 suspended operation has already read node fields and would resume to combine
-sub-results it computed under a rank order that no longer holds. Its handles would be
-fine; its reasoning would not, and nothing can repair that afterwards.
+sub-results it computed under the previous order. Its handles stay valid, but its
+result is wrong, and nothing detects that afterwards.
 
 Everything a garbage collection would keep, a sift keeps. The session pins every root
 it is shown -- the ``mtbdd_protect`` table, every worker's ``mtbdd_refs_push`` and
@@ -535,44 +532,33 @@ and never moved.
 Reordering moves positions, never identities. ``bdd_var(&v, i)`` returns the same
 variable before and after a sift, whereas ``bdd_var_at_level(&v, i)`` returns whichever
 variable a sift left at position i; in the C++ bindings ``Bdd::bddVar`` and
-``Bdd::bddVarAtLevel`` are the same pair. Unless ``group_pairs`` (below) is set,
-sifting moves variables one at a time, so it can separate the unprimed and primed
-variables of a pair or put the primed one first.
-``bdd_rel_next``, ``bdd_rel_prev`` and ``bdd_transitive_closure`` remain correct under
-such an order: each call checks once whether the pairs it uses are still adjacent,
-unprimed first, and uses its fused recursive kernel when they are, and otherwise an
-and-exists followed by a renaming (for the closure, repeated squaring), which does not
-depend on where a variable sits relative to its partner but costs a second pass.
+``Bdd::bddVarAtLevel`` are the same pair.
 
 Pass a ``sylvan_sift_config`` to bound what the search may spend: a total swap
 budget, a number of variables, a growth factor at which one leg of a variable's
 excursion is abandoned (1.2 by default), a population below which a variable is
-not moved at all (0 by default: skipping small variables was measured to cost
-final size without saving time), and a wall clock limit. ``NULL`` selects the
-defaults.
+not moved at all (0 by default: skipping small variables costs final size and
+saves no time), and a wall clock limit. ``NULL`` selects the defaults.
 
 By default a variable's excursion also stops as soon as an interaction bound proves
 that no position further in that direction can beat the best already seen -- two
 variables interact when some function depends on both, and a variable can only
 exchange nodes with the ones it interacts with. The bound is conservative: it finds
 the same positions and the same final size as the exhaustive walk, in about a third
-fewer swaps, and it is what CUDD does. Set ``full_legs`` to walk every leg to the
-end of the order anyway, for measurement or for distrust.
+fewer swaps, as in CUDD. Set ``full_legs`` to walk every leg to the end of the order
+anyway, for measurement.
 
-The fused kernels of ``bdd_rel_next`` and ``bdd_rel_prev`` are the fast route, and
-they need every pair (``2k``, ``2k+1``) together with the even identity directly above
-the odd one. Variables created in order start out that way, but an unconstrained sift
-has no reason to keep them there.
-Set ``group_pairs`` to sift each pair as one block: a pair found apart is brought back
-together first, blocks are taken in order of their summed population and moved past
-one neighbouring block at a time, and only whole moves are scored or kept, so a
-grouped sift leaves every pair together unless a refusal makes that impossible, as
-``sylvan/reorder.h`` describes. ``sylvan_sift_split_pairs`` counts the pairs that
-are apart in the current order, and ``split_pairs`` in the ``sylvan_sift_result``
-of every sift, grouped or not, reports it afterwards. CUDD answers the same problem
-with group sifting over a tree of variable groups (``Cudd_MakeTreeNode``), and its
-relational product, ``Cudd_bddAndAbstract`` followed by a renaming, does not need
-the pairs together in the first place.
+An ungrouped sift moves variables one at a time, so it can separate the pairs
+(``2k``, ``2k+1``) of the operations for transition systems, or put the primed
+variable first; those operations stay correct but take their slower route (see
+above). Set ``group_pairs`` to sift each pair as one block: a pair found apart is
+brought back together first, blocks are taken in order of their summed population
+and moved past one neighbouring block at a time, and only whole moves are scored or
+kept, so a grouped sift leaves every pair together unless a refusal makes that
+impossible, as ``sylvan/reorder.h`` describes. ``sylvan_sift_split_pairs`` counts the
+pairs that are apart in the current order, and ``split_pairs`` in the
+``sylvan_sift_result`` of every sift, grouped or not, reports it afterwards. CUDD's
+counterpart is group sifting over a tree of variable groups (``Cudd_MakeTreeNode``).
 
 Reordering is refused, changing nothing and returning ``SYLVAN_ERR_INVALID``, while
 the ZDD or ListDD subsystem is initialised -- both order their nodes by variable
@@ -588,8 +574,8 @@ direction.
 When to reorder, and where Sylvan may do it for you
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-``sylvan_sift_recommended`` answers the question "is it worth reordering now" with the
-only signal that is free to compute: the live forest has grown by a factor (2.0 by
+``sylvan_sift_recommended`` answers the question "is it worth reordering now" with a
+signal that is free to compute: the live forest has grown by a factor (2.0 by
 default, set with ``sylvan_sift_set_recommend_factor``, 0 to disable) since it was last
 sifted, or since startup. Every garbage collection already counts the nodes that
 survive marking, so the recommendation is one comparison per collection and the
@@ -603,15 +589,10 @@ sift, in a frame of its own. Pass ``NULL``, the default, to switch it off.
 reports collections.
 
 **Only** ``sylvan_gc()`` triggers it, never the collection an operation performs when
-the nodes table has no free bucket. That restriction is what makes the facility sound
-rather than convenient. The internal collection happens in the middle of an operation's
-recursion, with sub-results already computed under the current rank order and not yet
-combined; reordering there would leave that operation to combine them under a different
-order, which is a wrong answer and not a detectable one. ``sylvan_gc()`` has no such
-caller: it is called *between* operations, which is exactly the precondition sifting
-needs. The two paths are separate functions -- the internal one is
-``sylvan_gc_collect()`` -- so the distinction is a property of the code and not of this
-paragraph.
+the nodes table has no free bucket. That internal collection runs in the middle of an
+operation, which is the operation in flight that sifting forbids (see above), while
+``sylvan_gc()`` is called *between* operations. The internal path is a separate
+function, ``sylvan_gc_collect()``, which never sifts.
 
 A swap asks the nodes table for the slots it will need plus a margin of one
 512-slot allocation region per Lace worker, which is what makes the answer hold
@@ -623,12 +604,12 @@ fewer workers.
 Measuring reordering
 ^^^^^^^^^^^^^^^^^^^^
 
-A few switches exist to reproduce the measurements behind parallel sifting. None
-of them changes what a sift computes, only how it gets there or what it reports.
-The build-time ones are listed under `Diagnostic builds`_ (``SYLVAN_SIFT_PHASE_TIMING``
-for where a sift's time goes, the index counters of ``SYLVAN_STATS`` for how much
-index each swap walks, ``SYLVAN_REGION_STRIPED_START`` for the table layout the
-shared region cursor replaced); the one runtime switch is internal API, declared
+A few switches exist to measure where a sift spends its time and what parts of its
+design are worth. None of them changes what a sift computes, only how it gets there
+or what it reports. The build-time ones are listed under `Diagnostic builds`_
+(``SYLVAN_SIFT_PHASE_TIMING`` for where a sift's time goes, the index counters of
+``SYLVAN_STATS`` for how much index each swap walks, ``SYLVAN_REGION_STRIPED_START``
+for per-worker allocation stripes); the one runtime switch is internal API, declared
 in ``sylvan/internal.h``:
 
 ``sylvan_reorder_set_batched(int enable)``

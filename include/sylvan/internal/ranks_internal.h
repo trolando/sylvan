@@ -34,14 +34,14 @@
  *
  * Consequently every operation that decides which of two variables comes
  * first in the order must compare *ranks*, never identities. Use
- * sylvan_var_before() and sylvan_var_min() for that; keep plain equality and
- * arithmetic on identities (interleaved s/t pairs, map keys, subtable routes)
- * as they are.
+ * sylvan_var_before() and sylvan_var_min() for that; plain equality and
+ * arithmetic (interleaved s/t pairs, map keys, subtable routes) stay on
+ * identities.
  *
  * Identities that were never registered (through bdd_var(), bdd_new_var() or
  * bdd_var_at_level()) have rank == identity by definition. That keeps the
  * 0xffffffff "no variable" sentinels used throughout the operation code
- * working unchanged: their rank is 0xffffffff, which orders last.
+ * working: their rank is 0xffffffff, which orders last.
  *
  * ZDD and ListDD are NOT part of this model. ZDD nodes are ordered by
  * identity and ListDD has no variable identities at all; both must keep

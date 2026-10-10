@@ -20,12 +20,8 @@
 using namespace sylvan;
 
 /**
- * The one place a Sylvan status turns into a C++ exception.
- *
- * Out of line on purpose: sylvan::detail::check() is inline and reduces on the
- * success path to a compare against SYLVAN_OK and a not-taken branch, with the
- * cold construction of the exception living here instead of at each of the
- * call sites that route through it.
+ * The one place a Sylvan status turns into a C++ exception. Out of line on
+ * purpose; see detail::throw_status in <sylvan/obj.hpp>.
  */
 void
 sylvan::detail::throw_status(int status)

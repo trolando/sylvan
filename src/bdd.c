@@ -1762,7 +1762,7 @@ bdd_apply_abstract_CALL(lace_worker *lace, BDD *destination, BDD a, BDD b,
  * and Cudd_bddPermute renames afterwards with an ITE-based composition that
  * puts every variable at its own rank, so neither step assumes anything about
  * where a variable sits relative to its partner. It pays for that with a
- * second pass over the product, which is exactly what the fusion saves.
+ * second pass over the product, which the fusion saves.
  *
  * So the fused kernels run whenever the order allows them, which it does
  * without reordering and after any reordering that moves pairs as groups, and

@@ -214,22 +214,19 @@ mtbdd_protected_count(void)
  *
  * Sylvan's own two MTBDD root sources -- the protected pointer table and the
  * per-worker temporary reference stacks -- are root visitors like anyone
- * else's (see sylvan_gc_add_roots in <sylvan/common.h>). They could have been
- * kept as special cases, and the reason they are not is that a reorder session
- * has to *enumerate* roots rather than merely keep them alive, and there is no
- * good argument for two mechanisms that answer the same question. One walk
- * serves both callers, and Sylvan's own roots go through exactly the path a
- * consumer's do, which is the cheapest way to keep that path honest.
+ * else's, because a reorder session has to enumerate them too; see ROOT
+ * VISITORS in <sylvan/common.h>. One walk serves both callers, and Sylvan's
+ * own roots go through the same path as a consumer's.
  *
- * Marking is then one callback rather than three: mtbdd_gc_mark_roots visits
- * every registration and marks what comes back.
+ * Marking is then one callback: mtbdd_gc_mark_roots visits every registration
+ * and marks what comes back.
  *
- * ROOTS ARE YIELDED IN BATCHES, and the batch is where the parallelism went.
- * Enumeration is serial -- one worker reads the tables while the world is
- * stopped -- because reading a root out of a table is a load, while marking
- * one walks an arbitrary part of the forest. So each batch is handed to a
- * divide-and-conquer Lace task and the expensive half is spread exactly as it
- * was before.
+ * ROOTS ARE YIELDED IN BATCHES, so that marking stays parallel. Enumeration
+ * is serial -- one worker reads the tables while the world is stopped --
+ * because reading a root out of a table is a load, while marking one walks an
+ * arbitrary part of the forest. So each batch is handed to a
+ * divide-and-conquer Lace task, which spreads the expensive half over the
+ * workers.
  */
 #define MTBDD_ROOTS_BATCH 256
 
@@ -268,13 +265,11 @@ SYLVAN_TLS mtbdd_refs_internal_t mtbdd_refs_key;
  * Every worker's temporary reference stack, so that one thread can read all of
  * them.
  *
- * The stacks are thread local, which is exactly right for pushing and popping
- * and useless for enumerating: a reorder session pins roots from a single
- * thread with the world stopped, and it has no way to reach another worker's
- * thread-local pointer to ask. Marking used to sidestep this by running on
- * every worker at once (a Lace TOGETHER), which keeps a root alive without
- * ever naming it -- precisely the trick a session cannot use. So the workers
- * publish their stacks here at initialisation instead.
+ * The stacks are thread local, which is right for pushing and popping and
+ * useless for enumerating: a reorder session pins roots from a single thread
+ * with the world stopped, and it has no way to reach another worker's
+ * thread-local pointer. So the workers publish their stacks here at
+ * initialisation.
  *
  * The registry holds each worker's struct, whose address is stable; only the
  * arrays inside it are ever reallocated.

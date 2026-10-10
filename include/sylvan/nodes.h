@@ -235,18 +235,16 @@ TASK(void, nodes_maintain, nodes_table*, dbs)
  *
  * Recursive diagnostics -- the node and leaf counters, the .dot writers, the
  * structural hashes -- have to remember which nodes they already visited.
- * They used to keep that in a spare bit of the node's own 16-byte record, but
- * that bit sits in the word the unique table hashes and compares: a traversal
- * rewrote the key of a live node for the duration of the walk, so a lookup
- * running concurrently could miss the node and intern a duplicate. This
- * bitmap replaces that bit, which no longer exists.
+ * They mark here and not in a spare bit of the node's own 16-byte record,
+ * because that bit would sit in the word the unique table hashes and
+ * compares: a traversal would rewrite the key of a live node for the duration
+ * of the walk, so a lookup running concurrently could miss the node and
+ * intern a duplicate.
  *
  * REENTRANCY. There is one scratch bitmap per table, so two marked traversals
  * must not overlap -- neither nested on one thread, nor on two threads at
- * once. That is exactly the constraint the record bit imposed, since it was
- * just as shared; the difference is that it is now checked, because
- * nodes_scratch_acquire asserts in debug builds that nobody else holds the
- * scratch.
+ * once. nodes_scratch_acquire asserts in debug builds that nobody else holds
+ * the scratch.
  *
  * CONCURRENCY. The accesses are plain, non-atomic loads and stores. That is
  * sound because of the reentrancy rule: only the thread that acquired the
@@ -257,12 +255,11 @@ TASK(void, nodes_maintain, nodes_table*, dbs)
  * every caller does along the same recursion it marked with. The bitmap is
  * therefore all zeroes between traversals and is never bulk-cleared: on a
  * table sized for 2^40 nodes it spans 128 GiB of address space. With
- * SYLVAN_USE_MMAP only the pages a traversal touched become resident -- and
- * where the kernel grants the transparent huge pages sylvan_alloc_aligned
- * asks for on an allocation this large, a page is 2 MiB, the bits of 16M
- * node indices -- while without it the allocation is zeroed, and so made
- * resident, up front. Debug builds assert on release that no mark was left
- * behind.
+ * SYLVAN_USE_MMAP only the pages a traversal touched become resident -- base
+ * pages, since the bitmap comes from sylvan_alloc_sparse, which keeps it off
+ * transparent huge pages -- while without it the allocation is zeroed, and so
+ * made resident, up front. Debug builds assert on release that no mark was
+ * left behind.
  * ---------------------------------------------------------------------------
  */
 
@@ -401,15 +398,16 @@ int nodes_reinsert(nodes_table* dbs, uint64_t index);
 /**
  * The same two operations over a whole set of nodes at once.
  *
- * WHY A BATCH IS A DIFFERENT OPERATION, not just a loop the caller was too
- * lazy to write. An index whose removal touches slots that no single
- * compare-and-swap relates has to exclude every other worker while it does so,
- * and per node that means one worker's throughput however many are available.
- * Given the whole set, the same backend can order the work as phases that are
- * each internally parallel -- read the victims' positions, unlink them all,
- * repair what depended on them, reinsert -- with a barrier where the exclusion
- * used to be. The trie backend is where this matters and where the argument is
- * written down; see the block above nodes_remove_batch in src/nodes_trie.c.
+ * WHY A BATCH IS A DIFFERENT OPERATION and not a convenience. An index whose
+ * removal touches slots that no single compare-and-swap relates has to
+ * exclude every other worker while it does so, and per node that means one
+ * worker's throughput however many are available. Given the whole set, the
+ * same backend can order the work as phases that are each internally
+ * parallel -- read the victims' positions, unlink them all, repair what
+ * depended on them, reinsert -- with a barrier between phases instead of an
+ * exclusion per node. The trie backend is where this matters and where the
+ * argument is written down; see the block above nodes_remove_batch in
+ * src/nodes_trie.c.
  *
  * A backend that does not report NODES_CAP_BATCH does not implement these and
  * returns SYLVAN_ERR_INVALID; the caller falls back to the single-node calls.
@@ -529,11 +527,11 @@ int nodes_enumerate_var(nodes_table* dbs, uint32_t variable,
  * promise. Counting <count> alone would not be enough: with W workers the
  * answer could be short by a region each.
  *
- * A WORKER GIVING ITS REGION BACK is what keeps the count honest over a long
- * stop-the-world session. Garbage collection resets every region, but a reorder
- * session may not collect and is the only thing that releases individual slots,
- * so a session that left ownership standing would watch its own released slots
- * disappear from this count -- and from the allocator -- one region at a time,
+ * GIVING REGIONS BACK keeps the count accurate over a long stop-the-world
+ * session. Garbage collection resets every region, but a reorder session may
+ * not collect and is the only thing that releases individual slots. If
+ * used-up regions stayed owned, the slots a session released into them would
+ * drop out of this count -- and out of the allocator -- one region at a time,
  * until reserve refused on a table that was almost entirely free.
  *
  * The count is recomputed on every call -- a popcount over the node bitmap of

@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # build-matrix.sh -- configure and build every Sylvan configuration the
-# headline experiments need, one Ninja Release tree each, and write a manifest.
+# headline experiments (sections H1..H5 of EXPERIMENTS.md) need, one Ninja
+# Release tree each, and write a manifest.
 #
 #   build-matrix.sh --src DIR --builds DIR [--cudd-dir DIR] [--cc gcc|clang]
 #                   [--only LIST] [--lace-dir DIR] [--src-rev REV]
 #                   [--cudd-rev REV] [--jobs N] [--clean] [--dry-run] [--list]
 #
 # A configuration is a nodes table and a variant, named
-#   rel-<backend>              the configuration the paper measures
+#   rel-<backend>              the default configuration
 #   rel-<backend>-<variant>    the same with one ablation knob switched
 # and is built in BUILDS/<name>, with -DCMAKE_BUILD_TYPE=Release,
 # -DSYLVAN_NODES_TABLE=<backend>, -DSYLVAN_BUILD_SIFT_BENCH=ON and, given
@@ -38,12 +39,13 @@
 #   --cc CC          C compiler, gcc (default) or clang; one per --builds DIR
 #   --only LIST      configurations to build: names (rel-trie), globs
 #                    ('rel-*-stats'), variants (stats), headlines (h1, h2,
-#                    h3, h5) or sweeps (s3), comma- or space-separated;
-#                    default all
+#                    h3, h5) or the recommendation-floor sweep (s3), comma-
+#                    or space-separated; default all
 #   --lace-dir DIR   a Lace 2.4.0 source tree, to build without fetching it
 #   --src-rev REV    the commit an exported --src was made from (`git
 #                    get-tar-commit-id < export.tar` prints it)
-#   --cudd-rev REV   the same for --cudd-dir (f54f533 for the evaluation)
+#   --cudd-rev REV   the same for --cudd-dir (the pinned CUDD 3.0.0 import is
+#                    f54f533)
 #   --jobs N         parallel compile jobs (default: Ninja's choice)
 #   --clean          remove each build tree before configuring it
 #   --dry-run        print the commands, run nothing

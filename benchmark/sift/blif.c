@@ -193,7 +193,7 @@ blif_read(blif_t *b, const char *path, char *err, size_t err_len)
 
     int cap_sig = 0, cap_gate = 0;
     int cap_var = 0, cap_out = 0;
-    int current = -1;                 /* gate whose cubes we are reading */
+    int current = -1;                 /* gate whose cubes are being read */
     int rc = -1;
 
     char *save = NULL;
@@ -206,7 +206,7 @@ blif_read(blif_t *b, const char *path, char *err, size_t err_len)
         if (*line == '\0') continue;
 
         if (*line != '.') {
-            /* A cube of the .names block we are inside. */
+            /* A cube of the current .names block. */
             if (current < 0) {
                 snprintf(err, err_len, "cube outside a .names block: %s", line);
                 goto done;

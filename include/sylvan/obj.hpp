@@ -43,16 +43,16 @@ namespace sylvan {
  *
  * THE INVALID HANDLE. mtbdd_invalid is not a decision diagram; dereferencing
  * it is undefined. No operation in these bindings can produce a Bdd, Mtbdd,
- * BddMap or MtbddMap holding it: the sites that used to substitute it for a
- * failed result now throw instead. A default-constructed Bdd is bddZero() and
- * a default-constructed Mtbdd is mtbddZero(), both ordinary terminals, so
- * there is no invalid default state either. The only way to obtain one is to
- * pass a raw invalid handle to the Bdd(BDD) / Mtbdd(MTBDD) conversion
- * constructors, which wrap whatever handle they are given. Such an object is
- * safe to compare, assign and destroy, and the inspection helpers NodeCount(),
- * PrintDot() and GetShaHash() are defined on it (see mtbdd.h, "Root validation
- * at traversal entry points"), but passing it to any other operation is
- * undefined behaviour exactly as it is in the C API.
+ * BddMap or MtbddMap holding it: a failed operation throws instead. A
+ * default-constructed Bdd is bddZero() and a default-constructed Mtbdd is
+ * mtbddZero(), both ordinary terminals, so there is no invalid default state
+ * either. The only way to obtain one is to pass a raw invalid handle to the
+ * Bdd(BDD) / Mtbdd(MTBDD) conversion constructors, which wrap whatever handle
+ * they are given. Such an object is safe to compare, assign and destroy, and
+ * the inspection helpers NodeCount(), PrintDot() and GetShaHash() are defined
+ * on it (see mtbdd.h, "Root validation at traversal entry points"), but
+ * passing it to any other operation is undefined behaviour exactly as it is in
+ * the C API.
  */
 class sylvan_error : public std::runtime_error
 {

@@ -20,9 +20,9 @@
  * Every test here installs a variable order that is NOT the identity order,
  * before a single node exists, and then checks that the BDD/MTBDD operations
  * follow the rank order rather than the identity order. Any operation that
- * still compares raw variable fields to decide "which variable is on top"
- * either builds a node whose children have a lower rank than itself (caught
- * by mtbdd_is_valid, which checks rank order) or computes the wrong function
+ * compares raw variable fields to decide "which variable is on top" either
+ * builds a node whose children have a lower rank than itself (caught by
+ * mtbdd_is_valid, which checks rank order) or computes the wrong function
  * (caught by the exhaustive truth-table checks).
  *
  * ZDD and ListDD are deliberately not initialised: they order by identity and
@@ -1144,9 +1144,9 @@ test_mtbdd_operations_CALL(lace_worker *lace, BDDSET variables)
  * Relational operations over four interleaved s/t pairs.
  *
  * The pairs keep their identity arithmetic (t == s|1) and are rank-adjacent
- * with s first, which is exactly the precondition these operations document.
- * The pairs themselves are in a scrambled order, and they sit below the
- * Boolean domain, so identity order and rank order still disagree.
+ * with s first, the order the fused kernels of these operations need (see
+ * src/bdd.c). The pairs themselves are in a scrambled order, and they sit
+ * below the Boolean domain, so identity order and rank order still disagree.
  */
 #define REL_STATES (1u << REL_PAIRS)
 
@@ -1209,8 +1209,8 @@ test_relational_CALL(lace_worker *lace)
     test_assert(bdd_set_from_array(&variables, identities, 2 * REL_PAIRS)
                 == SYLVAN_OK);
 
-    /* The pairs must be rank-adjacent with the current-state variable on
-       top, otherwise these operations have no defined behaviour. */
+    /* The order this file installs keeps every pair rank-adjacent, the
+       current-state variable on top. */
     for (int bit = 0; bit < REL_PAIRS; bit++) {
         const uint32_t current = rel_state_identity(bit, 0);
         const uint32_t next = rel_state_identity(bit, 1);

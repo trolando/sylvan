@@ -37,18 +37,18 @@ option(SYLVAN_SIFT_PHASE_TIMING "Let Sylvan time the phases of every variable sw
 # collection to stderr, is set as a plain compile definition rather than here.
 option(SYLVAN_CHECK_HANDLES "Let Sylvan check decision diagram handle bounds" OFF)
 
-# Diagnostic builds only: allocate regions the way the nodes tables did before
-# they shared one region cursor (see claim_region in src/nodes_region.h), each
-# worker filling a stripe of the table of its own. It reproduces the layout the
-# cursor was introduced to avoid, for the experiment that measures what the
-# cursor is worth, and changes where nodes are placed and nothing else.
+# Diagnostic builds only: allocate regions in per-worker stripes instead of
+# from the shared region cursor (see claim_region in src/nodes_region.h), each
+# worker filling a stripe of the table of its own. It changes where nodes are
+# placed and nothing else, and exists to measure what the shared cursor is
+# worth.
 option(SYLVAN_REGION_STRIPED_START "Let Sylvan allocate regions in per-worker stripes" OFF)
 
 # The live-node floor of the sift recommendation (sylvan_sift_recommended, see
 # src/sift.c): the smallest forest a growth is measured from, so that a small
 # forest never recommends a sift. 4096 by default; it is a build setting so
-# that the experiments measuring the recommendation can vary it, and so that
-# every build records the value it was made with.
+# that the recommendation can be measured at other floors, and so that every
+# build records the value it was made with.
 set(SYLVAN_SIFT_RECOMMEND_FLOOR 4096 CACHE STRING
     "Live nodes the sift recommendation measures growth from, at the least")
 if(NOT SYLVAN_SIFT_RECOMMEND_FLOOR MATCHES "^[1-9][0-9]*$")
@@ -231,7 +231,7 @@ if(SYLVAN_CHECK_HANDLES)
 endif()
 
 # PRIVATE: only src/platform.c reads it, and only the non-default setting is
-# passed, so a default build compiles exactly as it did without the option.
+# passed, so a default build compiles as if the option did not exist.
 if(NOT SYLVAN_HUGEPAGES)
     target_compile_definitions(sylvan PRIVATE SYLVAN_HUGEPAGES=0)
 endif()

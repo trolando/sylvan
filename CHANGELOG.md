@@ -9,11 +9,49 @@ All notable changes to Sylvan will be documented in this file.
   Removed). A consumer whose roots have no stable address registers a hook that
   is called with a yield callback and hands its roots back as arrays of MTBDD
   *values*; Sylvan calls it once per garbage collection and once more when a
-  reordering session opens. The point of yielding rather than marking is that
-  roots can now be enumerated: a session pins what a visitor yields instead of
-  refusing to open, so a consumer that owns roots this way can reorder. Sylvan's
-  own two MTBDD root sources, the `mtbdd_protect` table and the per-worker
-  temporary reference stacks, are registered through the same interface.
+  reordering session opens. Because the roots a visitor yields can be
+  enumerated, a sift pins them, so a consumer that owns roots this way can
+  reorder. Sylvan's own two MTBDD root sources, the `mtbdd_protect` table and
+  the per-worker temporary reference stacks, are registered through the same
+  interface.
+- Added two chained nodes tables, selected with the CMake option
+  `SYLVAN_NODES_TABLE`: `llcht`, with one chain head per node slot, and
+  `llchst`, with per-variable subtables that size their heads independently.
+- Added `sylvan_sift`, dynamic variable reordering for the BDD/MTBDD forest.
+  It reorders when called, or after an explicit `sylvan_gc()` once the
+  automatic sift below is switched on, and it stops the world for the
+  duration, exactly like garbage collection, which it begins with. No decision
+  diagram operation may be in flight, because a suspended operation would
+  resume and combine sub-results computed under the previous order. Every root
+  a garbage collection would keep -- protected, on a temporary reference
+  stack, or yielded by a root visitor -- survives at the same handle and
+  denotes the same function. The swaps run in parallel on the Lace workers.
+  `sylvan_sift_config` bounds what the search may spend and
+  `sylvan_sift_report` says what it did; see `sylvan/reorder.h`. A variable's
+  excursion stops as soon as a variable interaction bound proves that no
+  position further in that direction can beat the best already seen, as in
+  CUDD; set `full_legs` to walk every leg to the end of the order. Sifting is
+  refused, changing nothing, while the ZDD or ListDD subsystem is initialised,
+  while garbage collection is disabled (a sift begins by collecting, which
+  would drop handles a caller disabled collection to keep; the new
+  `sylvan_gc_is_enabled` reports the setting), or on a nodes table without
+  the reorder primitives: `llht` has none, while `trie`, `list`, `llcht` and
+  `llchst` can reorder.
+- Added `bdd_var`, which returns the variable with a given identity, the same
+  one before and after any reordering; `bdd_var_at_level` remains the position
+  API. `bdd_rel_next`, `bdd_rel_prev` and `bdd_transitive_closure` are correct
+  under any variable order: they use their fused kernels while every pair
+  (2k, 2k+1) in play sits on adjacent ranks with 2k on top, and otherwise a
+  slower route that does not depend on where a variable is ranked.
+- Added `group_pairs` to `sylvan_sift_config`, which sifts every pair of
+  identities (2k, 2k+1) as one block, so that each stays together with the even
+  identity first: the layout `bdd_rel_next` and `bdd_rel_prev` are fastest
+  under. A pair found apart is brought back together before anything else
+  moves, only whole moves of a block are scored, and each swap of a move is
+  made only while the table can promise the room to undo the move, so a
+  refused swap does not leave a pair apart. `sylvan_sift_split_pairs` and the
+  `split_pairs` field of `sylvan_sift_result` count the pairs that are apart.
+  It is off by default.
 - Added `sylvan_sift_recommended` and `sylvan_gc_set_auto_sift`, an opt-in
   automatic reordering. The recommendation is one comparison per garbage
   collection against a number the collection already computes: the live forest
@@ -24,109 +62,29 @@ All notable changes to Sylvan will be documented in this file.
   have run, the way `sylvan_gc_count` reports collections.
 - Added `sylvan_gc_collect`, the collection-only entry, and made it the one the
   internal table-full path uses. An automatic sift may follow `sylvan_gc()` and
-  may never follow `sylvan_gc_collect()`, because the latter is called from the
-  middle of an operation's recursion: that operation would resume and combine
-  sub-results it computed under the previous rank order. The split makes the
-  distinction a property of the code rather than of a comment.
-- Added `sylvan_sift`, dynamic variable reordering for the BDD/MTBDD forest.
-  It reorders when called, or after an explicit `sylvan_gc()` once the
-  automatic sift above is switched on, and it stops the world for the
-  duration, exactly like garbage collection, which it begins with. Every
-  protected diagram survives, denotes the same function, and keeps its handle.
-  `sylvan_sift_config` bounds what the search may spend and
-  `sylvan_sift_report` says what it did; see `sylvan/reorder.h`. Sifting is
-  refused, changing nothing, while the ZDD or ListDD subsystem is initialised,
-  while garbage collection is disabled (a sift begins by collecting, which
-  would drop handles a caller disabled collection to keep; the new
-  `sylvan_gc_is_enabled` reports the setting), or on a nodes table without
-  the reorder primitives: `llht` has none, while `trie`, `list`, `llcht` and
-  `llchst` can reorder.
-- Added `group_pairs` to `sylvan_sift_config`, which sifts every pair of
-  identities (2k, 2k+1) as one block, so that each stays together with the even
-  identity first: the layout `bdd_rel_next` and `bdd_rel_prev` are fastest
-  under. A pair found apart is brought back together before anything else
-  moves, only whole moves of a block are scored, and each swap of a move is
-  made only while the table can promise the room to undo the move, so a
-  refused swap does not leave a pair apart. `sylvan_sift_split_pairs` and the
-  `split_pairs` field of `sylvan_sift_result` count the pairs that are apart.
-  It is off by default, and an ungrouped sift is unchanged.
+  never follows `sylvan_gc_collect()`, which runs in the middle of an
+  operation.
 - Added the CMake option `SYLVAN_CHECK_HANDLES` (default off). With it, every
   decision diagram node dereference checks that the handle's bucket index is
   inside the nodes table and aborts naming the index when it is not, which
   points at the operation that produced a bad handle rather than the one that
-  tripped over it. It is a debugging aid: builds without it are byte-for-byte
-  identical to builds from before the option existed.
-- Added ablation and instrumentation knobs for the reordering experiments, so
-  that the measurements behind parallel sifting can be reproduced from this
-  tree. Every default is the existing behaviour. The CMake option
-  `SYLVAN_HUGEPAGES` (default on) can turn off the transparent huge page
-  advice for large tables, to measure what the pages are worth. The internal
-  `sylvan_reorder_set_batched(0)` makes every swap remove and re-index its
-  nodes one at a time even where the table has the batched primitives, to
-  measure what batching is worth. The CMake option `SYLVAN_SIFT_PHASE_TIMING`
-  (default off) times every phase of every swap and of the session around
-  them, and has every sift print the sums to stderr as one `SIFT-PHASES` line
-  of JSON. With `SYLVAN_STATS`, every nodes table now counts the index steps
-  and calls of its lookups, and of the removals and re-indexings a swap makes,
-  so that `sylvan_stats_report` shows how much index each operation walks.
-  The CMake option `SYLVAN_REGION_STRIPED_START` (default off) brings back the
-  allocator the shared region cursor replaced, each worker filling a stripe of
-  the table of its own, to measure what the cursor is worth. The CMake cache
-  variable `SYLVAN_SIFT_RECOMMEND_FLOOR` (default 4096) sets the live-node
-  floor of the sift recommendation, which was a compile-time constant, to
-  measure the recommendation at other floors.
+  tripped over it. It is a debugging aid and changes nothing when off.
+- Added switches for measuring reordering; each default is the normal
+  behaviour, and `docs/index.rst` ("Diagnostic builds", "Measuring
+  reordering") describes them. The CMake option `SYLVAN_HUGEPAGES` (default
+  on) controls the transparent huge page advice for large tables. The
+  internal `sylvan_reorder_set_batched(0)` makes every swap remove and
+  re-index its nodes one at a time. The CMake option
+  `SYLVAN_SIFT_PHASE_TIMING` (default off) has every sift print the time of
+  each phase to stderr as one `SIFT-PHASES` line of JSON. With
+  `SYLVAN_STATS`, every nodes table counts the index steps and calls of its
+  lookups, removals and re-indexings, which `sylvan_stats_report` prints. The
+  CMake option `SYLVAN_REGION_STRIPED_START` (default off) allocates in
+  per-worker stripes of the table instead of from the shared region cursor.
+  The CMake cache variable `SYLVAN_SIFT_RECOMMEND_FLOOR` (default 4096) sets
+  the live-node floor of the sift recommendation.
 
 ### Changed
-- Sifting no longer destroys handles held only on a worker's temporary
-  reference stack, and no longer refuses to run because a consumer owns roots
-  of its own. A session pins every root a garbage collection would mark -- the
-  same visitor registrations, walked in the same order -- so what a collection
-  keeps, a sift keeps, at the same handle denoting the same function. The one
-  remaining precondition is unchanged and unchangeable: no decision diagram
-  operation may be in flight, because a suspended operation would resume and
-  combine sub-results computed under a rank order that no longer holds.
-- Parallel sifting now scales instead of losing to its own workers. Three
-  changes compose: the reorder-capable tables (`trie`, `list`, `llcht` and
-  `llchst`) take a swap's removals and re-indexings as whole batches, run as
-  internally parallel phases with barriers where the trie's per-node lock
-  used to serialise everything; the
-  swap's parallel phases claim shared state per block instead of paying an
-  atomic fetch-add per node; and retirement drops its dead edges from a
-  parallel task over the deduplicated round. Measured on C880 with the list
-  table, an eight-worker sift went from slower than one worker to about
-  1.9 times faster, and the trie's eight-worker sift halved. A single-worker
-  sift skips the batched calls, which are pure overhead with nothing to
-  spread. The chained tables' batches came last and took a further 28%
-  (`llcht`) and 18% (`llchst`) off their eight-worker sift.
-- A nodes table that has run out of arena now says so on stderr, once per
-  exhaustion episode and from every backend, instead of leaving only a
-  failed allocation to show for it.
-- Sifting now stops a variable's excursion as soon as a variable interaction
-  bound proves that no position further in that direction can beat the best
-  already seen, the way CUDD's sifting does. The bound is conservative, so the
-  final size is the one the exhaustive walk finds, in about a third fewer
-  swaps. Set `full_legs` in `sylvan_sift_config` to walk every leg to the end
-  of the order anyway.
-- Opening a sift no longer costs a pass per slot of the nodes table. The
-  session's opening passes and the interaction matrix tested every slot, so a
-  sift of a 127-node forest took 39 ms with 8 GiB tables, nearly all of it
-  before the first swap. They now read the node bitmap 64 slots at a time and
-  stop where the table was ever used (the new `nodes_marked_words` and
-  `nodes_used_bound`), the session's per-slot arrays are mapped so that only
-  the pages of the forest are touched, and the live count a sift leaves is
-  derived instead of counted. The same sift now takes 2.5 ms, most of it the
-  garbage collection a sift begins with, which still passes over the table.
-- The nodes table backends now hand out allocation regions from one shared
-  cursor instead of starting each worker in its own stripe of the table, so
-  node index order follows creation order across workers. The stripes made a
-  heavily shared node created by a high-stripe worker the anchor of its whole
-  fan-in in the backends that index by larger child, which every family walk
-  then paid for: on C880 with eight workers the largest family was seven times
-  longer than the same forest built serially, a serial variable swap on such a
-  table ran 3x slower, and parallel sifting lost more time to the layout than
-  it gained from the workers. With the cursor, a table built in parallel has
-  the family structure of a serial build, and the parallel build itself is
-  slightly faster. `llht`, which cannot reorder, keeps its stripes.
 - **Breaking (C++).** The C++ bindings in `sylvan/obj.hpp` now report a failed
   operation by throwing `sylvan::sylvan_error`, which carries the negative
   `SYLVAN_ERR_*` status and its `sylvan_status_string` description. Previously
@@ -136,74 +94,32 @@ All notable changes to Sylvan will be documented in this file.
   `mtbdd_invalid` any more. The operand of a failed operation is unchanged,
   including for the in-place operators. `SatCountU64` and the static members of
   `Sylvan` still report failure through their return values.
+- The C++ `Bdd(uint32_t)` and `Bdd::bddVar`, documented as taking the variable
+  index, take a variable identity (`bdd_var`) rather than a position, and so
+  do `BddSet::add`, `BddSet::fromArray` and `Bdd::Permute`, which are built on
+  them. `Bdd::bddVarAtLevel` is the explicit position API, as
+  `bdd_var_at_level` is in C. Without reordering the two coincide.
+- The `list` and `trie` nodes tables, like the new chained ones, hand out
+  allocation regions from one shared cursor instead of starting each worker in
+  its own stripe of the table, so node index order follows creation order
+  across workers and a table built in parallel has the index structure of a
+  serial build. `llht` keeps its stripes.
+- A nodes table that has run out of arena now says so on stderr, once per
+  exhaustion episode and from every backend, instead of leaving only a
+  failed allocation to show for it.
 
 ### Fixed
-- `bdd_rel_next`, `bdd_rel_prev` and `bdd_transitive_closure` now compute the
-  right result after a sift has separated a pair (2k, 2k+1) or ranked its primed
-  variable first. Their recursive kernels fuse the product, the quantification
-  and the renaming, which is only valid while every pair in play sits on
-  adjacent ranks with 2k on top, and they returned wrong results (or diagrams
-  out of order) without complaint when it did not. Each call now checks that
-  once, against an answer cached per order generation so that the check costs a
-  load while the order is unchanged, and uses the kernel when it may; otherwise
-  it takes a slower route that does not care where a variable is ranked:
-  `bdd_and_exists` followed by a renaming through `bdd_compose` for the image
-  and the preimage, a recursion that fixes partners by composition for the
-  composition of two relations, and repeated squaring for the closure.
-- Variables are now named by identity where callers mean "variable i". Added
-  `bdd_var`, which returns the variable with a given identity, the same one
-  before and after any reordering. The C++ `Bdd(uint32_t)` and `Bdd::bddVar`,
-  documented as taking the variable index, called `bdd_var_at_level` and so
-  returned a different variable after a sift, and `BddSet::add`,
-  `BddSet::fromArray` and `Bdd::Permute` with them; they now use `bdd_var`, and
-  `Bdd::bddVarAtLevel` is the explicit position API, as `bdd_var_at_level`
-  remains in C. `Bdd::VariablesCube` is now valid for identities in any order
-  and under any variable order.
-- The transitive closure was wrong for most relations, independently of the
-  variable order: the closure of a relation that flips one bit came out empty.
-  The recursion combined its four blocks with the formulas for the reflexive
-  closure while computing the transitive one. It now uses the block formulas
-  for the transitive closure.
+- The transitive closure was wrong for most relations: the closure of a
+  relation that flips one bit came out empty. The recursion combined its four
+  blocks with the formulas for the reflexive closure while computing the
+  transitive one. It now uses the block formulas for the transitive closure.
 - `bdd_rel_prev` recursed into `bdd_rel_next` for a variable outside the pairs
   that both operands depend on, composing that part the wrong way round.
 - `bdd_compose` built a diagram out of order when a replacement function
   depended on a variable ranked above an unreplaced node of the input, for
   example when renaming z to x in y & z. It now places such a node with ITE.
-- A reorder session no longer runs out of node slots on a table that is almost
-  entirely free, and no longer aborts on an allocation `nodes_reserve` had
-  promised it. Both came from region ownership. A worker claims a 512-slot
-  region and used to keep it marked owned for good, so the free slots inside it
-  were reachable by that one worker and by nobody else, which is why
-  `nodes_reserve` deliberately does not count them. A garbage collection resets
-  every region, but a session may not collect and is the only thing that
-  releases individual slots, so region by region a long session made its own
-  released slots invisible to the count and unreachable by the allocator: with
-  20 workers, reserve came to refuse a request for a hundred slots on a table
-  with four million free ones. The swap then reported `SYLVAN_ERR_OOM` and
-  `sylvan_sift` left a variable at a position it had already measured and
-  rejected, so the forest could come out bigger than it went in. The same
-  ownership made the bound optimistic in the other direction, because it assumed
-  every counted slot could be reached: W workers can each claim a region and
-  leave it partly used, stranding up to a region apiece, which is how an
-  allocation reserve had promised could still be refused. A worker now gives a
-  region back once it has used the last free slot in it -- at its next
-  allocation, which then claims another -- so an owned region is exactly one
-  worker's current region, and `nodes_reserve` asks for `count` plus one whole
-  region per worker, which is what makes the promise hold however the workers
-  divide the allocations between them. Sifting with a single worker was never
-  affected. `llht`, which has no `nodes_reserve`, is unchanged.
-- A cleared operation cache no longer answers a query with a result from before
-  the clear. `cache_clear` zeroes only the status words -- the operands and
-  results stay in place, which is what lets those pages go back to the operating
-  system -- and `cache_get3` accepted a bucket on its hash bits alone. A zeroed
-  status word carries zero hash bits, so the one query in 16384 whose own top
-  hash bits are zero passed that test, compared the surviving key, and on a
-  match was answered with a result computed before the last garbage collection,
-  naming a handle that had since been reused for another node. The status word
-  now carries a live bit that every put sets and every accessor requires, so an
-  emptied bucket matches nothing; the hash field narrows from 14 to 13 bits to
-  make room. `cache_get4` was already immune, because it also requires the bit
-  that marks a two-bucket entry.
+- The C++ `Bdd::VariablesCube` built an invalid cube when the identities were
+  not sorted in the current variable order.
 - The node and leaf counters, the `.dot` writers and the structural hashes now
   check each root they are given once, on entry, and return a defined result --
   0 for counts, no output for the writers, an empty string for the hashes --
@@ -218,7 +134,7 @@ All notable changes to Sylvan will be documented in this file.
   for the length of a traversal the key of every visited node was wrong and a
   lookup on another worker could fail to find a node that was there and intern
   a duplicate of it. The mark now lives in a dense scratch bitmap beside the
-  node table. Results are unchanged; only the mechanism is.
+  node table.
 
 ### Removed
 - **Breaking (C).** Removed the garbage collection marking hooks,
@@ -226,7 +142,7 @@ All notable changes to Sylvan will be documented in this file.
   shim. A callback that marks can keep roots alive but cannot say what they
   are, which is why a consumer that used one could never be reordered around;
   register a `sylvan_gc_add_roots` visitor instead and yield the values the
-  callback used to mark. A visitor that yields exactly what the old callback
+  callback marked. A visitor that yields exactly what the old callback
   marked is behaviourally identical for garbage collection, and additionally
   works with `sylvan_sift`. Consumers whose roots are ZDD or ListDD handles
   have no visitor equivalent -- the values are MTBDD handles -- and must use
@@ -236,9 +152,10 @@ All notable changes to Sylvan will be documented in this file.
   `zddnode_getmark`/`setmark` and `mddnode_getmark`/`setmark` (and the
   `bddnode_` aliases). The record bits they used are now unused: bit 61 for
   MTBDD, bit 60 for ZDD and bit 62 for ListDD.
-- Removed the by-value external reference API: `mtbdd_ref`, `mtbdd_deref`,
-  `mtbdd_ref_count`, `listdd_ref`, `listdd_deref` and `listdd_ref_count`, along
-  with the two garbage collection mark passes that scanned their tables. Use
+- **Breaking (C).** Removed the by-value external reference API:
+  `mtbdd_ref`, `mtbdd_deref`, `mtbdd_ref_count`, `listdd_ref`, `listdd_deref`
+  and `listdd_ref_count`, along with the two garbage collection mark passes
+  that scanned their tables. Use
   `mtbdd_protect`/`mtbdd_unprotect` and `listdd_protect`/`listdd_unprotect` for
   roots with a stable address, the per-worker `mtbdd_refs_pushptr`/`popptr`
   stacks for local variables, or a `sylvan_gc_add_roots` visitor for roots

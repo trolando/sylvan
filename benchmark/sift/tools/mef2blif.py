@@ -23,7 +23,7 @@ Katoen, Khan and Stoelinga, "BDDs Strike Back: Efficient Analysis of Static
 and Dynamic Fault Trees" (NFM 2022), compare: their artifact's
 tools/translate.py writes the fault tree for Storm-dft with its basic events
 in one of these orders, and Storm-dft takes that order as its BDD variable
-order (Sect. 3.4 of the paper).
+order (Sect. 3.4 of that paper).
 
   dfs   translate.py's DFS(): a depth-first walk from the top event that takes
         the arguments of every gate left to right, in file order; a basic

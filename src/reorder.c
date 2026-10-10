@@ -32,9 +32,8 @@
  * 2. The external roots, as a pin bit per node. Everything else is counted
  *    from the arena, so a node that no other node points to is dead unless it
  *    is pinned. The roots are exactly the ones a garbage collection would mark
- *    -- both read the same visitor registrations, see reorder_pin_roots --
- *    which is what makes "a sift keeps whatever a collection would keep" true
- *    rather than merely intended.
+ *    -- both read the same visitor registrations, see reorder_pin_roots -- so
+ *    a sift keeps whatever a collection would keep.
  *
  * 3. Per-identity node lists, so a swap can find "the nodes of variable x"
  *    without scanning the table. Backends that enumerate a variable natively
@@ -52,9 +51,8 @@
  * sylvan_reorder_begin. Every count therefore starts at the true number of
  * parents of a reachable node, no slot holds garbage, and a swap's
  * created-minus-died is the exact size change of the forest rather than of the
- * table. A swap still only ever reacts to a count *transition* to zero, so it
- * retires exactly what it killed; after the opening collection there is
- * nothing else left for it to confuse that with.
+ * table. A swap only ever reacts to a count *transition* to zero, so it
+ * retires exactly what it killed.
  */
 
 #include <sylvan/internal.h>
@@ -196,9 +194,7 @@ sylvan_reorder_overflow_promotions(void)
  * Per-phase timing, in the diagnostic build that has it. Each phase of the
  * session and of every swap is bracketed by two reads of the monotonic clock
  * and charged to its own field; see sylvan_reorder_timing for what the fields
- * mean. The brackets sit where the archived per-phase measurements put them,
- * so that new numbers compare with old ones. Without the option every macro is
- * empty and the swap is the same code it always was.
+ * mean. Without the option every macro is empty and costs nothing.
  */
 #if SYLVAN_SIFT_PHASE_TIMING
 static sylvan_reorder_timing reorder_timing;
@@ -395,8 +391,8 @@ overflow_slot(uint64_t index, int create)
  * is sized to the table as it was when the session opened, and every index
  * that reaches them comes out of a node record rather than out of a loop the
  * session controls. reorder_pin, reorder_collect and reorder_classify_map
- * range-check before they read a record; the counting path is the one that
- * did not, and it is the one that writes. Debug builds only.
+ * range-check before they read a record; the counting path does not, and it
+ * is the one that writes. Debug builds only.
  */
 static inline void
 reorder_assert_in_range(uint64_t index)
@@ -794,9 +790,9 @@ reorder_pin_yield(void *arg, const MTBDD *roots, size_t count)
  * temporary reference stack, and every hook a consumer registered with
  * sylvan_gc_add_roots(). Nothing is special-cased and nothing is left out, so
  * the set of handles a session promises to keep is by construction the set a
- * collection promises to keep -- which is why a session no longer has to
- * refuse to open when a consumer owns roots of its own, and why handles on a
- * worker's temporary stack survive a sift.
+ * collection promises to keep -- so a consumer that owns roots of its own
+ * does not stop a session from opening, and handles on a worker's temporary
+ * stack survive a sift.
  *
  * The pins are what make that promise good: a pinned node is never retired
  * however its reference count moves, and a swap rewrites nodes in place, so a
@@ -876,23 +872,17 @@ sylvan_reorder_begin_CALL(lace_worker *lace)
        disabled collection may hold handles it never registered as roots. */
     if (!sylvan_gc_is_enabled()) return SYLVAN_ERR_INVALID;
 
-    /* A full collection is the first act of every session, and the reason is
-       the scoring. A sifting driver compares positions by the size of the
-       forest, so a swap's created-minus-died has to be the size change of the
-       *forest*; counted over a table that still holds pre-session garbage it
-       would be the size change of the table, which is the same number only by
-       accident. Collecting first makes the table content exactly the reachable
-       set, and a session never collects again, so it stays that way.
-       This is the collection body, not sylvan_gc(): the world is already
-       stopped and this is the frame the collection has to run in.
+    /* A full collection is the first act of every session: it makes the table
+       content exactly the reachable set, and a session never collects again,
+       so a swap's created-minus-died is the size change of the forest (see
+       sylvan_varswap_result). This is the collection body, not sylvan_gc():
+       the world is already stopped and this is the frame the collection has
+       to run in.
 
-       It also subsumes the separate clear of the operation cache the session
-       used to do. A collection discards the cache unconditionally (see
+       The collection also discards the operation cache unconditionally (see
        sylvan_gc_go), which is what makes reusing a retired slot sound -- a
        surviving entry would answer a query about the new node with the old
-       node's result -- and doing it here means the cache is already gone
-       before the session allocates anything, so there is no window in which a
-       half-built session that then fails has invalidated it for nothing. */
+       node's result -- so the session needs no clear of its own. */
     REORDER_TIMING_RESET();
     REORDER_TIMING_START(timing_gc);
     sylvan_gc_go_CALL(lace);
@@ -1065,12 +1055,9 @@ sylvan_reorder_end_CALL(lace_worker *lace)
 }
 
 /**
- * What the driver on top of a session needs to know about the forest.
- *
- * Both answers come out of state the session already maintains, which is the
- * point: a sifting driver may not recompute the size of the forest or the
- * population of a variable between swaps, because doing so is a scan of the
- * whole table per swap and would dominate everything a swap costs.
+ * What the driver on top of a session needs to know about the forest. Both
+ * answers come out of state the session already maintains; see their
+ * declarations in reorder_internal.h for why.
  */
 
 uint64_t
@@ -1418,7 +1405,7 @@ static size_t swap_map_count;
 static size_t swap_map_capacity;
 
 /**
- * PRE-SLOTTED APPENDS (a).
+ * PRE-SLOTTED APPENDS.
  *
  * The four lists the parallel phases append to, and where this swap's entries
  * start in the two the REINSERT phase writes. All of it is captured after
@@ -1452,9 +1439,10 @@ struct reorder_intern_buffer {
 };
 
 /**
- * Announce this leaf's deaths, claiming the queue once. Only the order of the
- * queue changes: a count still crosses zero exactly where it did, because
- * reorder_count_down is not deferred -- only the announcement is.
+ * Announce this leaf's deaths, claiming the queue once. Compared with
+ * reorder_edge_down only the order of the queue differs: reorder_count_down is
+ * not deferred, only the announcement is, so a count crosses zero at the same
+ * point either way.
  */
 static void
 reorder_retire_flush(struct reorder_intern_buffer *buffer)
@@ -1706,9 +1694,8 @@ reorder_enumerate_cb(uint64_t index, void *context)
  *                                    interned inner node plus its edge and the
  *                                    edge onto the other value
  *
- * The death bound is what the queue was always sized to, and the array of
- * retired slots now shares it: the retirement loop appends one entry per node
- * it takes off the queue.
+ * The array of retired slots shares the queue's death bound because the
+ * retirement loop appends one entry per node it takes off the queue.
  *
  * PROMOTIONS. The overflow map grows only when a count crosses the ceiling,
  * and the increment bound above bounds that too, but crudely: it would have a
@@ -2241,9 +2228,8 @@ sylvan_varswap_CALL(lace_worker *lace, uint32_t rank,
 
     /* A batch exists to spread the index work over the workers; with one
        worker there is nothing to spread and the collective calls are pure
-       overhead, measured at several percent of a single-worker sift on the
-       backends whose per-node primitives are cheap. The knob turns batching
-       off everywhere, for measuring what it is worth. */
+       overhead. sylvan_reorder_set_batched(0) turns batching off everywhere,
+       for measuring what it is worth. */
     swap_batched = (nodes_reorder_caps(nodes) & NODES_CAP_BATCH) != 0
         && lace_worker_count() > 1 && reorder_batched;
 
@@ -2252,8 +2238,8 @@ sylvan_varswap_CALL(lace_worker *lace, uint32_t rank,
        repairs a removal makes read the same records: a removal reinserts
        whatever hung below the node it unhashed, and hashing those nodes reads
        their 16 bytes. Issuing all the removals before any record is rewritten
-       is what keeps the two apart -- the single-node path got the same
-       separation for free, out of the lock it took. */
+       is what keeps the two apart -- the single-node path gets the same
+       separation from the lock it takes. */
     const size_t total = swap_node_count + swap_map_count;
     if (total != 0) {
         REORDER_TIMING_START(timing_intern);

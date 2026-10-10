@@ -625,11 +625,11 @@ test_sift_one_CALL(lace_worker *lace)
  * Preflighting the sparse overflow map.
  *
  * With the promotion ceiling lowered to three, almost every node in the forest
- * moves into the overflow map, which no realistic forest would ever do and
- * which is exactly the point: the map is the structure a swap used to grow
- * while it was already rewriting records. The classification phase now
- * reserves for it, so a session that promotes thousands of times still has to
- * allocate nothing at all once classification is done.
+ * moves into the overflow map, which no realistic forest would ever do. The
+ * map grows with every promotion, and a swap must not grow it while it is
+ * already rewriting records. The classification phase reserves for it, so a
+ * session that promotes thousands of times still has to allocate nothing at
+ * all once classification is done.
  *
  * The sequence sifts one variable down and back up, so the order is where it
  * started afterwards.
@@ -740,9 +740,9 @@ test_out_of_memory_CALL(lace_worker *lace)
 {
     /* Distinct integer leaves: one node per iteration, nothing intermediate
        to become garbage, and every one of them referenced. A collection then
-       has literally nothing to reclaim, which is what the session's own
-       collection has to find too.
-       Collecting first is not decoration. A worker fills the region it owns
+       has nothing to reclaim, which is what the session's own collection has
+       to find too.
+       Each sweep collects before it fills. A worker fills the region it owns
        before it claims another and can only claim a region no worker owns, so
        free slots inside a region another worker still holds are out of reach;
        a collection releases every claim, and after it this one worker can
@@ -751,8 +751,8 @@ test_out_of_memory_CALL(lace_worker *lace)
     size_t pinned = 0;
     MTBDD *pins;
     {
-        /* One protected slot per table bucket: the by-value reference API is
-           gone, so each distinct leaf is pinned through its own address. */
+        /* One protected slot per table bucket: mtbdd_protect takes an
+           address, so each distinct leaf is pinned through its own slot. */
         size_t f0 = 0, t0 = 0;
         sylvan_table_usage(&f0, &t0);
         pins = (MTBDD *)malloc(t0 * sizeof(MTBDD));
@@ -883,10 +883,9 @@ test_rank_identity_guard(void)
  * and ListDD in use. They run last, and in an order that lets the ZDD refusal
  * be attributed to ZDD alone.
  *
- * A consumer's own roots used to be a third. They are not any more: a root
- * visitor can be enumerated, so the session pins what it yields instead of
- * refusing to open. test_roots_visitor in test_sift.c is where that is
- * checked.
+ * A consumer's root visitor is not a reason to refuse: the session pins what
+ * it yields (see ROOT VISITORS in <sylvan/common.h>). test_roots_visitor in
+ * test_sift.c checks that.
  */
 static int
 test_foreign_state_guards(void)

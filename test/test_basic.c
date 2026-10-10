@@ -4925,18 +4925,12 @@ make_random(int i, int j)
 /**
  * A collection that reclaims nodes must leave the operation cache empty.
  *
- * Node indices are stable across a collection: nothing is compacted, and
- * rehashing rebuilds the hash array around the indices the survivors already
- * had. A cache entry naming only survivors is therefore still correct
- * afterwards, which makes keeping the cache look safe. It is not. The hazard
- * is reclamation, not movement: the index of a node that did not survive is
- * handed out again to an unrelated node, and an entry naming that index would
- * then answer a query about the new node with the old node's result, silently.
- *
- * sylvan_gc_go therefore clears the whole cache unconditionally. The resizing
- * heuristics in common.c lean on that clear being expensive, and someone
- * reading them may be tempted to make it conditional on the collection having
- * grown or rehashed something. This test is here to fail if they do.
+ * The index of a node that did not survive is handed out again to an
+ * unrelated node, and a cache entry naming that index would then answer a
+ * query about the new node with the old node's result, silently. So
+ * sylvan_gc_go clears the whole cache unconditionally; see the comment there
+ * for why it cannot do less. This test fails if the clear is made conditional,
+ * for instance on the collection having grown or rehashed something.
  */
 TASK(int, test_gc_clears_cache)
 int

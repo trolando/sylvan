@@ -32,7 +32,7 @@
  * gives every backend the same implementation instead of five copies.
  *
  * Sylvan uses a single nodes table, so a single association is enough. A
- * traversal on a table that is not the current owner reallocates, which also
+ * traversal on a table other than scratch_owner reallocates, which also
  * covers the case of a second table outliving the first.
  */
 

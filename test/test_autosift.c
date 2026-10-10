@@ -17,7 +17,7 @@
 /**
  * The sift recommendation, and the automatic sift built on it.
  *
- * TWO THINGS ARE TESTED HERE and the second is the one that matters.
+ * TWO THINGS ARE TESTED HERE.
  *
  * The first is the recommendation itself: false on a forest that has not grown
  * enough to be worth reordering, true once it has, false again after a sift,
@@ -29,11 +29,11 @@
  * precondition sifting needs. The internal entry is the one an operation uses
  * when the nodes table has no free bucket -- it is called from the middle of a
  * recursion, with sub-results already computed under the current rank order
- * and not yet combined. Reordering there would leave that operation to combine
- * them under a different order, which is a wrong answer that nothing would
- * detect. So an automatic sift must follow the first and never the second, and
- * this file drives a table that is too small for the work it is given in order
- * to prove that it does not follow the second.
+ * and not yet combined, and a sift there would make that operation's answer
+ * silently wrong (see sylvan_gc_set_auto_sift in include/sylvan/reorder.h). So
+ * an automatic sift must follow the first and never the second, and this file
+ * drives a table that is too small for the work it is given in order to prove
+ * that it does not follow the second.
  *
  * The forest is Bryant's function, f = x0*y0 + ... + xn*yn, built in the split
  * order x0 x1 ... y0 y1 ..., which needs about 2^(n+1) nodes where the paired
@@ -245,8 +245,7 @@ test_auto_off(void)
  * The explicit entry, in the same state that the internal one refused to sift
  * in, does sift -- and the sift clears the recommendation, because the forest
  * it leaves behind is the new baseline. A second explicit collection right
- * afterwards therefore does nothing, which is the other half of what "cleared"
- * means.
+ * afterwards therefore does not sift.
  */
 static int
 test_sift_from_explicit_CALL(lace_worker *lace)

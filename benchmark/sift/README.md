@@ -18,7 +18,7 @@ the input circuits, which the instructions below fetch at pinned revisions.
 | `fta-reference.tsv` | the published values of the fault trees: top-event probabilities and Storm-dft's BDD sizes |
 | `scripts/run-*.sh` | one script per experiment; each appends JSONL rows |
 | `scripts/summarize.py` | Markdown and CSV tables from those rows |
-| `scripts/build-matrix.sh`, `scripts/manifest.py` | every build configuration the paper's headlines need, and `manifest.json` |
+| `scripts/build-matrix.sh`, `scripts/manifest.py` | every build configuration the headline experiments need, and `manifest.json` |
 | `scripts/run-headlines.sh`, `scripts/headlines.py` | the headline experiments on those builds, their tables and the reference check (see `EXPERIMENTS.md` at the repository root) |
 | `cudd-swap-trace.patch` | a per-swap trace for CUDD 3.0.0, which has no swap hook (see [Swap traces](#swap-traces)) |
 | `scripts/compare-traces.py` | aligns a Sylvan and a CUDD swap trace and explains where they differ |
@@ -81,8 +81,8 @@ benchmark/sift/fetch-inputs.sh --list                 # each file's source URL a
 ```
 
 `C880.blif` must come out with MD5 `82323a515652b47cdbff16cb2e0bc27e`
-(18428 bytes, LF line endings), as before; every other file has its own
-recorded MD5 (`--list`), and an existing file is never overwritten.
+(18428 bytes, LF line endings); every other file has its own recorded MD5
+(`--list`), and an existing file is never overwritten.
 `fetch-inputs.sh --families` gives the sources, checksums and commands for
 the McNet, relprod and QBF families, records the EPFL arithmetic circuits
 as infeasible: neither tool can build `adder` or `bar` under their file order
@@ -139,29 +139,21 @@ inputs (k2).
 
 ## The drivers
 
-Both drivers take the same case options and print one `RESULT {...}` line.
-
-```
---mode bryant --pairs N     x0.y0 + ... + x(N-1).y(N-1) under the split order
---mode blif --file F.blif   every .outputs signal of the circuit
-       --var-order file|reverse|random  --order-seed S
---mode queens --n N         the N-queens board, row-major
---case NAME                 a label copied into the row
---verify N                  evaluate every output on N random vectors and count
-                            its models, before and after; report sound/valid
-                            and eval_hash
---ops                       time a pairwise and/xor/model-count phase before
-                            and after the sift; its checksum, the double
-                            sum of count(f.g) + 2 count(f^g), is the same
-                            number on both drivers
---order                     print the final variable order
---trace FILE                write one line per swap of the sift to FILE
-                            (see Swap traces; cudd_bench needs a CUDD built
-                            with cudd-swap-trace.patch)
---no-sift                   build and measure only
---growth G (1.2)            maximum growth while moving one variable
---memory BYTES (8 GiB)
-```
+Both drivers take the same case options and print one `RESULT {...}` line;
+`--help` on either lists its options and their defaults. The case is
+`--mode bryant --pairs N`, x0.y0 + ... + x(N-1).y(N-1) under the split order;
+`--mode blif --file F.blif`, every `.outputs` signal of the circuit, under
+`--var-order file|reverse|random` and `--order-seed S`; or
+`--mode queens --n N`, the N-queens board, row-major. `--case NAME` is a
+label copied into the row. `--verify N` evaluates every output on N random
+vectors and counts its models, before and after the sift, and reports
+`sound`, `valid` and `eval_hash` (below). `--ops` times a pairwise
+and/xor/model-count phase before and after the sift; its checksum, the
+double sum of count(f.g) + 2 count(f^g), is the same number on both drivers.
+`--order` prints the final variable order, `--trace FILE` writes one line
+per swap of the sift (see [Swap traces](#swap-traces)), `--no-sift` builds
+and measures only, and `--growth G` is the maximum growth while one variable
+moves.
 
 `sylvan_bench` adds `--workers N`, `--threshold N` (default 0, the library
 default), `--max-swaps N`, `--max-vars N`, `--time-limit S` (0 is unlimited
@@ -255,18 +247,12 @@ and `mintsum` (CUDD) list the first eight outputs' counts after the sift,
 
 ## Running
 
-Every script takes the same options and appends to a JSONL file; everything
-each command printed on stderr, and the load average before each case, go to
-the same name with `.log` appended.
-
-```
---sylvan-build NAME=DIR   a build tree from above; repeat for several backends
---cudd-bench PATH         cudd_bench (omit it to run Sylvan only)
---inputs DIR              the directory fetch-inputs.sh filled
---out FILE                where rows are appended (default ./EXPERIMENT.jsonl)
---reps N  --workers 1,4,8  --timeout SECONDS  --cases "C880-file queens10"
---sylvan-args "..."  --cudd-args "..."   passed to every run of that driver
-```
+Every script takes the common options documented at the top of
+`scripts/lib.sh` and appends one row per run to a JSONL file, `--out`
+(default `./EXP.jsonl`, EXP being the script's experiment: `quality`,
+`timing`, ...); everything each command printed on stderr, and the load
+average before each case, go to the same name with `.log` appended. Pn means
+n Lace workers (`--workers n`).
 
 Case names describe the forest completely: `C880-file`, `C880-rev`,
 `C880-rndK` (random order, seed K) for any circuit `STEM` of the case table
@@ -292,9 +278,9 @@ With `S=benchmark/sift/scripts` and the builds above:
 B="--sylvan-build list=build-list --sylvan-build trie=build-trie"
 C="--cudd-bench build-trie/benchmark/sift/cudd_bench --inputs inputs"
 
-$S/run-quality.sh   $B $C --out results/quality.jsonl     # Q1, add --thresholds 0,32 --cudd-defaults
-$S/run-timing.sh    $B $C --out results/timing.jsonl      # Q2, P1/2/4/8/16, 7 reps
-$S/run-soundness.sh $B $C --out results/soundness.jsonl   # Q3, 5000 vectors, ops phase
+$S/run-quality.sh   $B $C --out results/quality.jsonl     # final sizes, add --thresholds 0,32 --cudd-defaults
+$S/run-timing.sh    $B $C --out results/timing.jsonl      # sift time, P1/2/4/8/16, 7 reps
+$S/run-soundness.sh $B $C --out results/soundness.jsonl   # soundness, 5000 vectors, ops phase
 $S/run-queens.sh    $B $C --out results/queens.jsonl      # queens10 and queens12
 $S/run-seeds.sh     $B $C --out results/seeds.jsonl       # 30 random orders of C880
 $S/run-backends.sh --sylvan-build list=build-list --sylvan-build trie=build-trie \
@@ -360,22 +346,21 @@ A sourced `cases.sh` also gives `sb_cases_select`, `sb_case_row`,
 sequential ones only in the LGSynth'91 directory; the ten EPFL random/control
 circuits; CUDD's C880 and three small CUDD examples, ham01, closest and
 rcn25) was built and sifted from its file order, its reversed order and the
-random order of seed 1, on 2026-10-09 under WSL on the 20-core development
-machine, by `sylvan_bench` (list table, P1, threshold 0, growth 1.2,
-`--memory` 8 GiB) and by `cudd_bench`, one run at a time while other jobs
-held two to four cores. A Sylvan run got 60 s; one that needed more got a
-600 s build and a 300 s sift. A CUDD run got 300 s (900 s where Sylvan had
-needed more than 60 s) and a 9 GiB address-space limit, since its
-`--memory` is only a hint. A case is *feasible* when both tools
-build it within 600 s and 8 GiB and Sylvan's sift ends within 300 s. A
-circuit is in the table when at least two of its three orders are feasible,
-when some order starts with at least 5000 nodes, and when its forests are not
-those of a circuit already in (same variables and the same nodes before and
-after on every order: C1355 is C499's forest, apex1 is k2's, apex6 is x3's,
-s400 is s382's, and so on, 15 pairs). An order of such a circuit is in when
-its Sylvan run took at most 60 s at P1, which is what keeps the grid within a
-night, and s13207.1-file is left out because it builds for 52 s to sift for
-0.9 s.
+random order of seed 1, under WSL on a 20-core machine, by `sylvan_bench`
+(list table, P1, threshold 0, growth 1.2, `--memory` 8 GiB) and by
+`cudd_bench`, one run at a time while other jobs held two to four cores. A
+Sylvan run got 60 s; one that needed more got a 600 s build and a 300 s
+sift. A CUDD run got 300 s (900 s where Sylvan had needed more than 60 s)
+and a 9 GiB address-space limit, since its `--memory` is only a hint. A case
+is *feasible* when both tools build it within 600 s and 8 GiB and Sylvan's
+sift ends within 300 s. A circuit is in the table when at least two of its
+three orders are feasible, when some order starts with at least 5000 nodes,
+and when its forests are not those of a circuit already in (same variables
+and the same nodes before and after on every order: C1355 is C499's forest,
+apex1 is k2's, apex6 is x3's, s400 is s382's, and so on, 15 pairs). An order
+of such a circuit is in when its Sylvan run took at most 60 s at P1, which
+bounds the cost of the grid (below), and s13207.1-file is left out because it
+builds for 52 s to sift for 0.9 s.
 
 **What it costs.** The grid this table is for runs every case of the
 circuit, queens and bryant families (the fault trees are costed in
@@ -405,9 +390,7 @@ nodes) at P1 with the trie, the whole sift takes about 2.5 ms with the default
 8 GiB tables (2^24 slots), 1.5 ms at `--memory` 1 GiB (2^21) and 1.0 ms at
 256 MiB (2^19), of which the collection is 2.0, 1.0 and 0.5 ms and the 179
 swaps 0.3 ms; CUDD sifts it in about 0.7 ms. So a forest of a few thousand
-nodes measures mostly that floor. (When the session's own opening passes
-visited every slot as well, the floor was 39 ms at 8 GiB, 7 ms at 1 GiB and
-2 ms at 256 MiB.)
+nodes measures mostly that floor.
 
 **Left out, and why.** Every order of a non-trivial circuit that is not in
 the table, as screened (Sylvan: list, P1; "table full" is Sylvan's nodes
@@ -461,9 +444,9 @@ model counts are doubles, as CUDD's always are (see
 [The drivers](#the-drivers)). With `--verify 64` (trie, P1), every one of the
 60 cases with more than 64 inputs (66 to 1464; the notes column gives the
 number) was sound and valid on both tools and gave the same `eval_hash` on
-both. Of 51 cases sampled before that, the 40 of at most 64 inputs or with
-small counts also gave the same `eval_hash` on both tools, the reference
-hashes of the four C880 orders among them.
+both. Of a sample of 51 cases, the 40 of at most 64 inputs or with small
+counts gave the same `eval_hash` on both tools as well, the reference hashes
+of the four C880 orders among them.
 
 ## Fault trees
 
@@ -561,8 +544,7 @@ reclaiming under 5% of it; CUDD with an 8 GiB address-space limit):
 das9701.dfs-file builds in about 14 s, to 6.8 million nodes, and Sylvan
 sifts it to 2.7 million in about 280 s at P1 (about 9 GB resident at its peak),
 but CUDD's sift did not finish in 600 s in the screen; its timeout, 1250 s,
-is from Sylvan's run, and CUDD runs into it. sift-experiments runs the case
-in its full tier only.
+is from Sylvan's run, and CUDD runs into it.
 
 **`--auto-build`** sifts during the build only when a collection has found
 the forest grown (see [The drivers](#the-drivers)), and at the default 8 GiB
@@ -573,8 +555,8 @@ that build collects, the recommendation sifts once after its last gate, for
 7.6 s, with every intermediate alive, to 57690 nodes, and the sift after the
 build ends at 5877 nodes instead of 58995, with the same probability.
 
-**Running them.** sift-experiments runs them as its H4b. With the scripts
-here:
+**Running them.** Every fault-tree case on both tools, Sylvan with and
+without `--auto-build` at P1 and P8, 5 repetitions:
 
 ```sh
 $S/run-ablation.sh $B $C --cases "$($S/cases.sh --family fta)" --workers 1,8 --reps 5 \
@@ -601,11 +583,10 @@ GPL-3.0: `fetch-inputs.sh --families` says where they are and how
 ## Reference values
 
 Final shared node counts at `nodes_threshold` 0, growth 1.2, P1, with CUDD
-unlimited, from the evaluation that produced these scripts (sift-eval-20260816,
-Sylvan 8358b10, trie). Sizes are deterministic: the evaluation found the same
-final size and order at P1 and P4 on every case, and `run-backends.sh` checks
-that every nodes table agrees. The four C880 rows and queens10 were re-checked
-on the tree that added this directory, on the trie and list backends.
+unlimited, on Sylvan 8358b10 with the trie, and for the four C880 rows and
+queens10 also with this harness on the trie and list backends. Sizes are
+deterministic: the final size and order were the same at P1 and P4 on every
+case, and `run-backends.sh` checks that every nodes table agrees.
 
 | case | initial | Sylvan | CUDD | ratio |
 |---|---:|---:|---:|---:|
@@ -702,8 +683,8 @@ Sylvan trace made with the rules below.
 
 ### What the traces show
 
-trie, P1, `--threshold 0`, growth 1.2, CUDD caps raised, `--verify 64`
-(2026-10-09, WSL). Swap counts, sizes and hashes are deterministic.
+trie, P1, `--threshold 0`, growth 1.2, CUDD caps raised, `--verify 64`.
+Swap counts, sizes and hashes are deterministic.
 
 | case | Sylvan | `--full-legs` | CUDD | common prefix | first divergence | final size Sylvan / CUDD | `eval_hash`, all three runs |
 |---|---:|---:|---:|---:|---|---|---|

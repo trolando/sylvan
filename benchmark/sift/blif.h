@@ -8,7 +8,7 @@
  * Supported: .model .inputs .outputs .latch .names .end, '#' comments and
  * backslash line continuations. That is everything the picotrav inputs use.
  *
- * Conventions, both deliberate and both applied identically to both tools:
+ * Conventions, all deliberate and all applied identically to both tools:
  *
  *  - VARIABLE ORDER is the file's own order: the names on .inputs first, in
  *    the order they appear, then the output signal of each .latch in the order

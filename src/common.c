@@ -358,7 +358,7 @@ gc_reclaimed_at_least(size_t percent)
  * collections, and reaches it early, while the collections are still cheap.
  * The streak resets as soon as a collection is not churn dominated, so a
  * workload whose table fills with live nodes rather than with garbage grows
- * one step at a time exactly as before.
+ * one step at a time.
  *
  * Growing early is not free, but it is bounded by what the caller already
  * asked for. nodes_create and cache_create reserve the maximum size in virtual
@@ -482,7 +482,7 @@ void sylvan_gc_normal_resize_CALL(lace_worker* lace)
 }
 
 /**
- * GIVING UP HONESTLY
+ * UNPRODUCTIVE COLLECTIONS
  *
  * When the tables are at their maximum and every collection reclaims almost
  * nothing, Sylvan cannot make progress: each collection frees just enough for
@@ -493,17 +493,15 @@ void sylvan_gc_normal_resize_CALL(lace_worker* lace)
  *
  * After SYLVAN_GC_MAX_UNPRODUCTIVE consecutive collections that ran on a
  * full-size table that really was full and reclaimed less than
- * SYLVAN_GC_UNPRODUCTIVE_PERCENT of it, we report the table as full and stop,
- * the same way every other unsatisfiable allocation in Sylvan does. The
+ * SYLVAN_GC_UNPRODUCTIVE_PERCENT of it, Sylvan reports the table as full and
+ * exits, the same way every other unsatisfiable allocation in Sylvan does. The
  * defaults are deliberately generous: a workload that is merely slow keeps
  * running, only one that has stopped making progress stops.
  *
- * Reporting here rather than merely declining to collect and letting the next
- * failed insertion report is deliberate. Sylvan's operations do return
- * SYLVAN_ERR_OOM and propagate it correctly, but callers are not obliged to
- * check, and one that does not gets an invalid handle and a crash instead of a
- * message. Turning a run that grinds forever into a run that dies confusingly
- * would not be an improvement.
+ * The report is made here rather than by declining to collect and letting the
+ * next failed insertion report. Sylvan's operations do return SYLVAN_ERR_OOM
+ * and propagate it correctly, but callers are not obliged to check, and one
+ * that does not gets an invalid handle and a crash instead of a message.
  */
 
 /* Fraction of a full-size table a collection must reclaim to count as
@@ -576,8 +574,8 @@ void sylvan_gc_go_CALL(lace_worker* lace)
     /*
      * The operation cache is discarded in full, and unconditionally. This is
      * the most expensive thing a collection does -- see the resizing
-     * heuristics above, which exist to make collections rarer for exactly that
-     * reason -- so it is worth saying why it cannot be avoided.
+     * heuristics above, which exist to make collections rarer -- and it
+     * cannot be avoided.
      *
      * Node indices are stable across a collection. The data array is never
      * compacted, marking only re-establishes the occupancy bitmap, and
@@ -592,8 +590,7 @@ void sylvan_gc_go_CALL(lace_worker* lace)
      * later. A surviving cache entry mentioning that index would then answer a
      * query about the new node with the old node's result, silently and
      * wrongly. Keeping the cache is sound only for a collection that reclaimed
-     * nothing at all, which is precisely the collection that was not worth
-     * running.
+     * nothing at all.
      *
      * Clearing selectively is not available either. Cache entries are opaque
      * 64-bit words and operations may store things in them that are not node
@@ -901,9 +898,9 @@ sylvan_init_package(void)
         return SYLVAN_ERR_INVALID;
     }
 
-    /* Create tables. Note that nodes_create still exits the process on an
-       allocation failure rather than returning NULL; see the exit(1) cleanup
-       item. The check below is what a returning nodes_create would need. */
+    /* Create tables. Note that nodes_create exits the process on an
+       allocation failure rather than returning NULL. The check below is what
+       a returning nodes_create would need. */
     nodes = nodes_create(table_min, table_max);
     if (nodes == NULL) return SYLVAN_ERR_OOM;
 

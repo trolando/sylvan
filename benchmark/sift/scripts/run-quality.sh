@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-quality.sh -- Q1: does sylvan_sift find orders as good as CUDD's?
+# run-quality.sh -- does sylvan_sift find orders as good as CUDD's?
 #
 # Every case is sifted once by every Sylvan build at every worker count, at
 # nodes_threshold 0, and once by CUDD (Cudd_ReduceHeap with CUDD_REORDER_SIFT,

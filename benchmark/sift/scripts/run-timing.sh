@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-timing.sh -- Q2: what does a sift cost, and how does it scale?
+# run-timing.sh -- what does a sift cost, and how does it scale?
 #
 # The sift wall time of every Sylvan build at every worker count, and of CUDD
 # (single-threaded), all at nodes_threshold 0 so that every Sylvan variant

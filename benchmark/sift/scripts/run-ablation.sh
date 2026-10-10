@@ -9,11 +9,11 @@
 # which running another script once per setting would not do. CUDD, when
 # given, runs once per repetition as the reference.
 #
-# The evaluation uses it for its runtime ablations: --full-legs against the
-# interaction bound, and --no-batch (single-node table primitives) against the
-# batched default. A setting whose flags a build's `sylvan_bench --help` does
-# not list is refused before anything runs, so that a missing knob can never
-# pass for a measured one.
+# Sections H2 and H3 of EXPERIMENTS.md use it for their runtime ablations:
+# --full-legs against the interaction bound, and --no-batch (single-node table
+# primitives) against the batched default. A setting whose flags a build's
+# `sylvan_bench --help` does not list is refused before anything runs, so that
+# a missing knob can never pass for a measured one.
 #
 # Defaults: --reps 5 --workers 1 --timeout 1800
 #           --cases "C880-file C880-rev C880-rnd1 C880-rnd2"

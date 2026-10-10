@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # fetch-inputs.sh -- install the circuits the sift scripts run on, every one
-# checksummed, and say where the other input families of the evaluation come
-# from.
+# checksummed, and say where the other input families come from.
 #
 #   fetch-inputs.sh [--all | --sets LIST] [--src NAME=DIR]... [DEST]
 #   fetch-inputs.sh --check [--all | --sets LIST] [DEST]
@@ -11,8 +10,8 @@
 # Installs into DEST (default ./inputs), which is what the run-*.sh scripts
 # take as --inputs. The sets, by name (LIST is comma-separated):
 #
-#   c880       C880.blif: CUDD's own copy, from nanotrav/ at the CUDD commit
-#              the evaluation pins (f54f533). The default, as it always was.
+#   c880       C880.blif: CUDD's own copy, from nanotrav/ at the pinned
+#              CUDD 3.0.0 import (f54f533). The default.
 #   iscas85    iscas85/C*.blif: the ISCAS'85 circuits as distributed with
 #              LGSynth'91 (Brglez and Fujiwara 1985)
 #   lgsynth91  lgsynth91/*.blif: MCNC / LGSynth'91 combinational circuits

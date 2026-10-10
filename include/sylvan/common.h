@@ -167,13 +167,13 @@ static inline void sylvan_table_usage(size_t* filled, size_t* total);
 /**
  * Trigger garbage collection manually.
  *
- * THIS IS THE EXPLICIT ENTRY, and its caller owns the same precondition
- * sylvan_sift() states: no decision diagram operation is in flight. A caller
- * here is *asking* for a collection between operations, not being interrupted
- * by one in the middle of one. That is what makes this, and only this, a place
- * where an automatic reordering may run; see sylvan_gc_set_auto_sift() in
- * <sylvan/reorder.h>. Collection itself needs no such precondition -- see
- * sylvan_gc_collect below, which is the entry that does not have it.
+ * THE EXPLICIT ENTRY. Its caller owns the same precondition sylvan_sift()
+ * states: no decision diagram operation is in flight. A caller here asks for a
+ * collection between operations, rather than having one interrupt an
+ * operation in the middle. That makes this the only place where an automatic
+ * reordering may run; see sylvan_gc_set_auto_sift() in <sylvan/reorder.h>.
+ * Collection itself needs no such precondition -- see sylvan_gc_collect
+ * below, which is the entry that does not have it.
  *
  * When several workers call this at once, one runs the collection and the
  * others join its frame; only the one that ran it considers an automatic
@@ -185,16 +185,15 @@ static inline void sylvan_gc(void);
 /**
  * Collect, and do nothing else.
  *
- * THIS IS THE INTERNAL ENTRY, the one an operation uses when it cannot find a
- * free bucket: it calls from the middle of its own recursion, with sub-results
+ * THE INTERNAL ENTRY, the one an operation uses when it cannot find a free
+ * bucket: it calls from the middle of its own recursion, with sub-results
  * already computed and not yet combined. A collection there is sound, because
- * nothing moves and no handle changes. A *reordering* there would not be: the
+ * nothing moves and no handle changes. A reordering there would not be: the
  * suspended operation would resume and combine results it computed under the
- * previous rank order, under the new one. So this entry never reorders, and
- * that is the whole difference between it and sylvan_gc().
+ * previous rank order, under the new one. So this entry never reorders; that
+ * is the only difference between it and sylvan_gc().
  *
- * Consumers want sylvan_gc(). This exists so that the distinction above is a
- * property of the code rather than a comment.
+ * Consumers want sylvan_gc().
  */
 static inline void sylvan_gc_collect(void);
 
@@ -305,22 +304,20 @@ void sylvan_gc_hook_main(gc_hook_cb callback);
  * considers a root, and the hook answers by yielding those roots.
  *
  * IT YIELDS VALUES, NOT ADDRESSES, and it yields them in arrays. Values,
- * because that is all Sylvan ever needs and an address the consumer does not
- * have is exactly the problem being solved. Arrays, so that a consumer holding
- * its roots contiguously hands over a whole block in one call, and one that
- * does not fills a small buffer of its own and flushes it. <count> may be
- * zero, and a hook that owns nothing right now may yield nothing at all. The
- * array is borrowed for the duration of the yield call and Sylvan does not
- * retain the pointer.
+ * because that is all Sylvan needs, and a stable address is what the consumer
+ * does not have. Arrays, so that a consumer holding its roots contiguously
+ * hands over a whole block in one call, and one that does not fills a small
+ * buffer of its own and flushes it. <count> may be zero, and a hook that owns
+ * nothing right now may yield nothing at all. The array is borrowed for the
+ * duration of the yield call and Sylvan does not retain the pointer.
  *
- * WHY NOT A MARKING CALLBACK, which is what Sylvan offered before 2.0: a
- * callback that marks can keep roots alive but cannot say what they are, and
- * variable reordering needs to know. A reorder session pins every root it is
- * shown so that no swap retires it, and it cannot pin what it cannot
- * enumerate, so a marking hook had to lock reordering out of the process
- * entirely. A visitor does not: roots yielded here are marked by garbage
- * collection and pinned by sifting, both, without the consumer doing anything
- * differently.
+ * WHY NOT A MARKING CALLBACK: a callback that marks can keep roots alive but
+ * cannot say what they are, and variable reordering needs to know. A reorder
+ * session pins every root it is shown so that no swap retires it, and it
+ * cannot pin what it cannot enumerate, so a marking hook would lock reordering
+ * out of the process entirely. A visitor does not: roots yielded here are
+ * marked by garbage collection and pinned by sifting alike, through the one
+ * hook.
  *
  * The hook runs with all workers stopped, once per collection and once more
  * when a reorder session opens. It must not create, protect, unprotect or
@@ -376,8 +373,8 @@ static inline void sylvan_gc_normal_resize(void);
  * Call it directly only from code that already runs with the world stopped
  * and wants a collection as one step of what it is doing; a reorder session
  * opening is the one such caller. Calling it directly bypasses
- * sylvan_gc_disable(), which is the point: the caller is not asking for a
- * collection to be scheduled, it is performing one.
+ * sylvan_gc_disable() on purpose: the caller is not asking for a collection
+ * to be scheduled, it is performing one.
  */
 TASK(void, sylvan_gc_go)
 

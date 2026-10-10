@@ -161,7 +161,7 @@ static int     *vperm;      /* circuit input i becomes DD variable vperm[i]   */
 static int      n_var;
 static int      n_root;
 static BDD     *var;        /* var[i]: the variable with identity i          */
-static BDD     *root;       /* the diagrams we keep                          */
+static BDD     *root;       /* the roots of the forest                       */
 static BDDSET   varset;
 
 /* Soundness bookkeeping. */
@@ -410,7 +410,7 @@ fnv(const uint8_t *p, size_t n)
 
 /*
  * Every root's model count: the double, and the exact count where the double
- * says it fits. The exact count is not merely attempted: on a count past
+ * says it fits. Only then is the exact count attempted: on a count past
  * 2^64 bdd_sat_count_u64 fails with SYLVAN_ERR_OVERFLOW, and a failed
  * subresult is not cached, so the attempt walks every path through the nodes
  * whose counts overflow -- exponentially many on a circuit of a few hundred
@@ -490,8 +490,9 @@ json_double(char *buf, size_t size, double x)
 
 /* An ordinary operation-heavy phase over the same forest: every pair of
    outputs, conjoined and exclusive-ored. Pure BDD work whose cost tracks the
-   size of the diagrams it walks, which is the point. The checksum is CUDD's
-   driver's: the double model counts, count(and) + 2 count(xor), summed. */
+   size of the diagrams it walks, so its time before and after the sift shows
+   what the new order is worth. The checksum is CUDD's driver's: the double
+   model counts, count(and) + 2 count(xor), summed. */
 static int
 op_phase_CALL(lace_worker *lace, double *seconds, double *checksum)
 {

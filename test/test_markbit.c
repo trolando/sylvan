@@ -2,11 +2,12 @@
  * Regression tests for the traversal scratch bitmap.
  *
  * Marked traversals -- the node and leaf counters, the .dot writers, the
- * structural hashes -- used to record "already visited" in a spare bit of the
- * node's own 16-byte record. That bit sits in the word the unique table
- * hashes and compares, so for the length of a walk the key of every visited
- * node was wrong and a lookup could fail to find a node that was there. The
- * tests below pin down the two observable consequences of that bug:
+ * structural hashes -- record "already visited" in the node table's scratch
+ * bitmap (see <sylvan/nodes.h>), not in a spare bit of the node's own 16-byte
+ * record. Such a bit would sit in the word the unique table hashes and
+ * compares, so for the length of a walk the key of every visited node would
+ * be wrong and a lookup could fail to find a node that was there. The tests
+ * below check the two observable consequences of a mark in the record:
  *
  *   - a traversal must give the same answer twice in a row, and
  *   - after a traversal every node must still be found, by its own key, at
@@ -14,8 +15,8 @@
  *
  * The second one is the sharp one: it is what a corrupted key word breaks.
  *
- * Finally the arena is swept for the bits that used to carry the mark, to
- * confirm they are never set any more. The sweep is only decisive because
+ * Finally the arena is swept for the record bit each node type leaves unused,
+ * to confirm no traversal leaves it set. The sweep is only decisive because
  * this test controls what the arena holds: the ListDD phase runs first, on an
  * arena that holds nothing else, so bit 62 can be attributed; and no MTBDDMAP
  * or ZDDMAP node is ever built here, so bits 60 and 61 can be too. A ListDD
@@ -34,7 +35,7 @@
 #include "test_assert.h"
 
 /**
- * The record bits that used to hold the traversal mark.
+ * The bit of the first record word that each node type leaves unused.
  */
 #define MARK_BIT_MTBDD  UINT64_C(0x2000000000000000)  /* bit 61 */
 #define MARK_BIT_ZDD    UINT64_C(0x1000000000000000)  /* bit 60 */

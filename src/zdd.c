@@ -361,11 +361,7 @@ int
 zdd_init(void)
 {
     /* The other half of the exclusion sylvan_reorder_begin() enforces from
-       its side. ZDD reads a BDDSET domain spine expecting identity order
-       while the BDD set operations build it in rank order, so the two only
-       agree while the ranks are the identity; see the note at the top of this
-       file. Refusing here is what stops a forest that has been reordered from
-       silently producing wrong ZDD results. */
+       its side; see the note at the top of this file. */
     if (!sylvan_ranks_is_identity()) return SYLVAN_ERR_INVALID;
 
     const int status = sylvan_init_mt();

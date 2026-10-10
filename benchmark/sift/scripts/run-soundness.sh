@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-soundness.sh -- Q3: is a sifted forest still correct, and does it pay?
+# run-soundness.sh -- is a sifted forest still correct, and does it pay?
 #
 # Soundness: every output is evaluated on --vectors random input vectors, and
 # its satisfying assignments are counted, before and after the sift. Vectors

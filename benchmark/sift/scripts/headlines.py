@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-headlines.py -- the tables of the paper's headlines, from the rows that
-run-headlines.sh wrote, and the reference check.
+headlines.py -- the tables of the headlines, sections H1..H5 of
+EXPERIMENTS.md, from the rows that run-headlines.sh wrote, and the reference
+check.
 
     headlines.py --in DIR --out DIR [--no-check]
 
@@ -14,8 +15,8 @@ to OUT/h3-detail/. OUT/headlines.md has the reference check and every table.
 
   H1  which unique table: sift time per backend and worker count, CUDD at P1;
       final size, swaps, refusals; whether every backend and worker count did
-      the identical sift; the --stats counters, by whatever names the report
-      gives them
+      the identical sift; the --stats counters, by whatever names
+      sylvan_stats_report gives them
   H2  what made parallel sifting scale: shared cursor against striped starts,
       batched primitives against --no-batch (median deltas), and the
       SIFT-PHASES breakdown
@@ -34,10 +35,10 @@ its caps raised must end at
     bryantN 2N+1 (2N+1)
 
 from initial sizes 346660, 470046, 844442, 1066147, 25945, 435170 and
-2^(N+1)-1 (both tools). Within one stanza every row of a case that hashes its evaluation on
-the same vectors must have the same eval_hash, whatever tool or backend
-produced it, and C880-file on 64 vectors of the default seed must hash to
-b63d2a3eade6548e. A row that verified must be sound and valid.
+2^(N+1)-1 (both tools). Within one stanza every row of a case that hashes its
+evaluation on the same vectors must have the same eval_hash, whatever tool or
+backend produced it, and C880-file on 64 vectors of the default seed must hash
+to b63d2a3eade6548e. A row that verified must be sound and valid.
 
 The fault trees (family fta of cases.tsv, rows with prob_before and
 prob_after from --probs) have three checks more, against ../fta-reference.tsv:
@@ -520,7 +521,7 @@ def h1(rows, skips, check, out_dir):
                   mmm(cu, "sift_s"), *["" for _ in ws[1:]], None, None, len(cu))
     sec.table(t, "h1-pivot")
 
-    # The long form, which is the CSV the paper's plots read.
+    # The long form, OUT/h1.csv: one row per cell, for plotting.
     t = sz.Table("h1", "Every cell",
                  ["case", "config", "backend", "workers", "n", "sift s", "build s",
                   "speedup vs own P1", "CUDD/this", "final", "swaps", "refusals",
@@ -789,7 +790,7 @@ def h3(rows, skips, check, out_dir):
                       mmm(b, "sift_s"), mmm(f, "sift_s"), det(cu, "swaps"))
         sec.table(t, "h3-fulllegs")
 
-    # The existing sections, unchanged, for the rest.
+    # The rest: summarize.py's own sections, under OUT/h3-detail/.
     sec.reuse(sz.soundness, stanza_rows(rows, "h3-soundness"), "h3-detail")
     sec.reuse(sz.seeds, stanza_rows(rows, "h3-seeds"), "h3-detail")
     sec.reuse(sz.quality, q, "h3-detail")

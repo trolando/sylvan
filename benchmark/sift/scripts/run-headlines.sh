@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# run-headlines.sh -- the paper's headline experiments, on the builds that
-# build-matrix.sh made, one JSONL file per stanza.
+# run-headlines.sh -- the headline experiments, sections H1..H5 of
+# EXPERIMENTS.md, on the builds that build-matrix.sh made, one JSONL file per
+# stanza.
 #
 #   run-headlines.sh --builds DIR --inputs DIR --out DIR [--reps N]
 #                    [--workers 1,2,4,8] [--only h1,h2,h3,h5] [--quick]
@@ -326,7 +327,7 @@ if [ ${#h3_builds[@]} -gt 0 ] || want h3-seeds h3; then
       --cases "$SOUND_CASES" --vectors "$SOUND_VECTORS" --reps "$r_sound" --workers "$wmin"
   fi
   if want h3-seeds h3; then
-    # The 30-seed sweep runs on list, the backend of the original sweep.
+    # The 30-seed sweep runs on list only.
     sl=$(config h3 h3-seeds base list) &&
       stanza h3 h3-seeds h3-seeds.jsonl run-seeds.sh --sylvan-build "$sl" "${cudd_args[@]}" \
         --seeds "$SEEDS" --vectors "$SEED_VECTORS" --workers "$wmin"

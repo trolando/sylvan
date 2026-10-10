@@ -306,10 +306,10 @@ nodes_rehash_bucket(nodes_table* dbs, uint64_t index)
 }
 
 /**
- * NOTE: the failures below still exit the process instead of returning NULL.
+ * NOTE: the failures below exit the process instead of returning NULL.
  * Reporting them means unwinding a partially allocated table in every
- * backend; part of the outstanding exit(1) cleanup. sylvan_init_package()
- * already handles a NULL return, so only this function has to change.
+ * backend. sylvan_init_package() handles a NULL return, so only this function
+ * would have to change.
  */
 nodes_table*
 nodes_create(size_t initial_size, size_t max_size)
@@ -652,8 +652,8 @@ nodes_set_custom(nodes_table* dbs,
  * on the same chain at the same time. The hazard is the classic one for
  * CAS-based list deletion: if p precedes d and both are removed, the remover
  * of p may swing p's predecessor onto d after the remover of d has already
- * updated next[p], leaving d linked. The fix is a delete-in-progress link, kept
- * in next[]:
+ * updated next[p], leaving d linked. A delete-in-progress link, kept in
+ * next[], prevents that:
  *
  *   1. A remover first replaces next[d] with LINK_REMOVING, keeping the
  *      successor it read. Nothing else ever writes next[d], so this claims d.
@@ -943,10 +943,10 @@ nodes_prepare_reorder(nodes_table* dbs, const uint32_t* routes, size_t count)
  * There is no phase structure to win here: a removal is a compare-and-swap
  * splice out of one chain and touches nothing else, and the single-node calls
  * are already safe from every worker at once -- that is what the chain surgery
- * above was built for. What the batch buys is the WORKERS at the call sites
- * that hand over a whole set, above all the retirement round, which otherwise
- * unhashes its nodes one at a time on one worker. So the loop is the design,
- * and it is the same one the list backend arrived at for the same reason.
+ * above is for. What the batch buys is parallelism at the call sites that
+ * hand over a whole set, above all the retirement round, which otherwise
+ * unhashes its nodes one at a time on one worker. Each batch is therefore a
+ * parallel loop over the single-node calls, as in the list backend.
  *
  * The only thing the batch adds is the contract's refusal, and only the half
  * of it that is cheap: every index is range-checked before anything is
@@ -1014,8 +1014,9 @@ llcht_batch_remove_CALL(lace_worker* lace, nodes_table* dbs,
     const size_t end = first + count;
     for (size_t at = first; at < end; at++) {
         /* The range pass already passed, so the only way this fails is the
-           caller error the contract lets us abort on. Returning here instead
-           would report a failure after some of the set had been claimed. */
+           caller error the contract lets a backend abort on. Returning here
+           instead would report a failure after some of the set had been
+           claimed. */
         if (nodes_remove(dbs, indices[at]) != SYLVAN_OK) {
             reorder_batch_abort(indices[at]);
         }
@@ -1040,7 +1041,7 @@ llcht_batch_reinsert_CALL(lace_worker* lace, nodes_table* dbs,
 
     const size_t end = first + count;
     for (size_t at = first; at < end; at++) {
-        /* Reinsertion keeps the contract it always had: a node that was not
+        /* Reinsertion keeps the single-node contract: a node that was not
            removed first is reported, not aborted on, exactly as the trie's
            batch does -- in a release build; nodes_reinsert asserts on it in a
            debug build, as the trie's does. It is the one failure the caller

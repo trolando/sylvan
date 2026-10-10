@@ -89,8 +89,9 @@ typedef struct sylvan_sift_config {
      * Variables with fewer nodes than this are not moved at all. The default
      * is 0: every variable with at least one node is sifted. Skipping small
      * variables does not save time worth having -- their swaps are the cheap
-     * ones -- and was measured to cost up to 2.2x in final size, so raise
-     * this only to bound the number of variables visited, not to save time.
+     * ones -- and a threshold of 32 costs up to 2.2x in final size on the
+     * C880 cases of benchmark/sift, so raise this only to bound the number of
+     * variables visited, not to save time.
      */
     uint32_t nodes_threshold;
 
@@ -109,9 +110,9 @@ typedef struct sylvan_sift_config {
      * exchange nodes with the variables some function depends on it together
      * with, so the population of those still ahead bounds what the rest of
      * the leg could save. The bound is conservative -- both settings find the
-     * same positions and the same final size, measured as well as argued --
-     * and it prunes about a third of all swaps, so the full walk exists for
-     * measurement and for distrust, not for quality.
+     * same positions and the same final size -- and on C880-file it prunes
+     * about a third of the swaps, so the full walk is there to measure the
+     * bound and to check it, not for quality.
      */
     int full_legs;
 
@@ -168,14 +169,14 @@ typedef struct sylvan_sift_result {
  * Call from inside a Lace worker. Sifting stops the world for its whole
  * duration, exactly like garbage collection, and it begins by collecting.
  *
- * EVERYTHING A COLLECTION WOULD KEEP, A SIFT KEEPS. The session pins every
+ * WHAT SURVIVES is everything a collection would keep. The session pins every
  * root it is shown -- the mtbdd_protect() table, every worker's temporary
  * mtbdd_refs_push/pushptr stack, and every root yielded by a hook registered
  * with sylvan_gc_add_roots() -- and a pinned node is never retired. All of
  * them denote the same function afterwards, and all of them keep their
  * handles, because nodes are rewritten in place and never moved.
  *
- * What is still forbidden is an operation in flight. That is not about roots:
+ * What is forbidden is an operation in flight. That is not about roots:
  * a suspended operation has already read node fields and would resume and
  * combine its sub-results under a rank order that no longer holds. Its
  * *handles* would survive the sift; its *reasoning* would not. This also means
@@ -263,8 +264,9 @@ uint32_t sylvan_sift_split_pairs(void);
  * that has barely changed since the last time costs a stop-the-world pass and
  * finds nothing. What does pay is sifting a forest that has *grown*, because
  * growth is where a bad order compounds. So the recommendation Sylvan offers
- * is exactly that and nothing cleverer: the live forest has grown by at least
- * <factor> since the last sift, or since startup if there has not been one.
+ * is exactly that: the live forest has grown by at least the factor set with
+ * sylvan_sift_set_recommend_factor() since the last sift, or since startup if
+ * there has not been one.
  *
  * The measurement is free. Every garbage collection already counts the buckets
  * that survive marking, in order to size the tables; the recommendation is one
@@ -301,14 +303,13 @@ void sylvan_sift_set_recommend_factor(double factor);
  *
  * ONLY sylvan_gc() TRIGGERS IT, never the internal collection an operation
  * runs when the nodes table fills. That restriction is the whole reason this
- * facility is safe. The internal collection happens in the middle of an
- * operation's recursion, with sub-results already computed under the current
- * rank order and not yet combined; reordering there would leave the operation
- * to combine them under a different order, which is a wrong answer and not a
- * detectable one. sylvan_gc() has no such caller: its caller owns the
- * precondition that no operation is in flight, which is exactly the
- * precondition sifting needs. See sylvan_gc_collect() in <sylvan/common.h> for
- * the other side of the same distinction.
+ * facility is safe: the internal collection runs in the middle of an
+ * operation, which is the operation in flight sylvan_sift() forbids, and
+ * reordering there would give a wrong answer and not a detectable one.
+ * sylvan_gc() has no such caller: its caller owns the precondition that no
+ * operation is in flight, which is exactly the precondition sifting needs.
+ * See sylvan_gc_collect() in <sylvan/common.h> for the other side of the same
+ * distinction.
  *
  * The sift runs after the collection has finished, in a Lace frame of its own,
  * and opens a session which collects again. That second collection is the

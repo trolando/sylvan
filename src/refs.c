@@ -286,10 +286,9 @@ protect_next(refs_table_t *tbl, uint64_t **_bucket, size_t end)
 }
 
 /**
- * NOTE: still exits the process on failure. Reporting a status would have to
- * reach mtbdd_protect(), zdd_protect() and listdd_protect(), which create
- * their table lazily and have nowhere to report to; part of the outstanding
- * exit(1) cleanup.
+ * NOTE: exits the process on failure. Reporting a status would have to reach
+ * mtbdd_protect(), zdd_protect() and listdd_protect(), which create their
+ * table lazily and have nowhere to report to.
  */
 void
 protect_create(refs_table_t *tbl, size_t _refs_size)

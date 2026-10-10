@@ -50,10 +50,8 @@ mddnode_getvalue(const mddnode* n)
 }
 
 /**
- * Bit 62 of the first word is unused. It used to carry a traversal mark, but
- * that word is hashed and compared by the unique table, so writing into it
- * rewrote the key of a live node. Traversals mark in the node table's scratch
- * bitmap instead; see nodes_scratch_mark in <sylvan/nodes.h>.
+ * Bit 62 of the first word is unused. Traversals mark nodes in the scratch
+ * bitmap of <sylvan/nodes.h>.
  */
 
 static inline uint8_t SYLVAN_UNUSED

@@ -253,8 +253,8 @@ test_print_order(const char *label)
 }
 
 /**
- * The measurement this whole exercise exists for: a forest built under a known
- * bad order gets substantially smaller, and means exactly the same thing.
+ * The central test: a forest built under a known bad order gets substantially
+ * smaller, and means exactly the same thing.
  */
 static uint64_t test_first_final_size;
 
@@ -361,7 +361,7 @@ test_idempotent_CALL(lace_worker *lace)
 }
 
 /**
- * The configuration knobs. Each one is checked by what it forbids, and every
+ * The configuration fields. Each one is checked by what it forbids, and every
  * one of them has to leave a forest that is still correct: a limit is a limit
  * on the search, never on the invariants.
  */
@@ -431,8 +431,8 @@ test_config_CALL(lace_worker *lace)
        than one worker, every swap now unhashes and re-indexes its nodes one at
        a time instead: the same surgery in a different schedule, so everything
        that holds for a batched sift holds here, down to the reference counts
-       the session recomputes when it closes (see runtests). Elsewhere this was
-       the path already, and the run is one more sift. */
+       the session recomputes when it closes (see runtests). Elsewhere every
+       sift takes this path, and the run is one more sift. */
     sylvan_reorder_set_batched(0);
     memset(&config, 0, sizeof(config));
     const int unbatched = sylvan_sift_report(&config, &result);
@@ -538,8 +538,8 @@ test_queens_sift(int report)
        refusal is a documented outcome that leaves the variable where it
        struck, and can legitimately make final_size exceed initial_size, so
        the size relation is only an invariant when refusals is zero. On this
-       table the region ownership fix keeps it there; assert both, so a
-       failure names its cause. */
+       table, which has room to spare, no swap is refused (see nodes_reserve);
+       assert both, so a failure names its cause. */
     test_assert(result.refusals == 0);
     test_assert(result.final_size <= result.initial_size);
     if (report) {
@@ -725,17 +725,14 @@ test_queens_CALL(lace_worker *lace)
 /**
  * A CONSUMER'S OWN ROOTS.
  *
- * This is what the root visitor exists for and what a marking hook could never
- * do. The two diagrams below are protected by nothing and referenced by
- * nothing: the only thing in the process that knows they are roots is a hook
- * that hands their values back when Sylvan asks. Before 2.0 that made the
- * whole forest unreorderable, because a session could not enumerate what it
- * was not allowed to retire. Now the session pins exactly what the hook
+ * The two diagrams below are protected by nothing and referenced by nothing:
+ * the only thing in the process that knows they are roots is a hook that hands
+ * their values back when Sylvan asks. The session pins exactly what the hook
  * yields, so the sift runs, and both diagrams come out of it at the same
  * handles denoting the same functions.
  *
  * The hook yields both roots in one array, which is the shape a consumer with
- * a handle table has and the reason the interface passes arrays at all.
+ * a handle table has (see ROOT VISITORS in include/sylvan/common.h).
  */
 #define TEST_VISITOR_ROOTS 2
 
@@ -819,7 +816,7 @@ test_roots_visitor_CALL(lace_worker *lace)
         }
     }
 
-    /* Removal takes one registration and reports an unknown pair honestly. */
+    /* Removal takes one registration and rejects an unknown pair. */
     test_assert(sylvan_gc_remove_roots(test_visitor, &test_visitor_calls)
                 == SYLVAN_OK);
     test_assert(sylvan_gc_remove_roots(test_visitor, &test_visitor_calls)
@@ -837,16 +834,13 @@ test_roots_visitor_CALL(lace_worker *lace)
 /**
  * HANDLES ON A WORKER'S TEMPORARY REFERENCE STACK.
  *
- * These used to be exactly what a sift was documented to destroy: the session
- * read the protected table and nothing else, so a diagram that lived only on
- * mtbdd_refs_push/pushptr was invisible to it and its nodes could be retired
- * underneath the caller. The stacks are root visitors now, like everything
- * else, so they are pinned like everything else.
+ * A diagram that lives only on mtbdd_refs_push/pushptr is in no protected
+ * table, and a session that read only that table would retire its nodes
+ * underneath the caller. The stacks are root visitors like every other root
+ * source, so a sift pins what they hold.
  *
- * The forbidden thing is still forbidden, and this test does not do it: no
- * operation is in flight here. A suspended operation would resume and combine
- * sub-results it computed under the previous rank order, which no amount of
- * pinning can fix.
+ * This test keeps to the precondition pinning cannot lift: no operation is in
+ * flight (see sylvan_sift in include/sylvan/reorder.h).
  */
 static int
 test_temporary_refs_CALL(lace_worker *lace)
@@ -903,11 +897,11 @@ test_temporary_refs_CALL(lace_worker *lace)
  * mtbdd_invalid is what a protected variable or a pushed pointer holds before
  * an operation has filled it in -- every root in this file starts out that
  * way -- and marking skips it. A session has to skip it too: it pins through
- * the same visitors a collection marks through, and pinning used to read the
- * record at the handle's index before range-checking it, which for the
- * invalid handle is all ones and far past the end of the arena. All four root
- * sources yield it here: the protected table, the value stack, the pointer
- * stack, and a consumer's visitor.
+ * the same visitors a collection marks through, and the invalid handle's
+ * index is all ones, far past the end of the arena, so pinning has to check a
+ * handle before it reads the record at its index. All four root sources yield
+ * it here: the protected table, the value stack, the pointer stack, and a
+ * consumer's visitor.
  */
 static MTBDD test_invalid_visitor_roots[2];
 
@@ -930,7 +924,7 @@ test_invalid_roots_CALL(lace_worker *lace)
     test_invalid_visitor_roots[1] = test_root[0];
     test_assert(sylvan_gc_add_roots(test_invalid_visitor, NULL) == SYLVAN_OK);
 
-    /* A collection has always tolerated them ... */
+    /* A collection tolerates them ... */
     sylvan_gc();
     /* ... and a session has to as well. */
     const int status = sylvan_sift(NULL);
@@ -1204,12 +1198,12 @@ test_trace_CALL(lace_worker *lace)
  *
  * bdd_rel_next and bdd_rel_prev read identity 2k as a current-state variable
  * and 2k+1 as its next-state copy, and want each pair directly together in
- * the order, the even one first. The relation below is built that way over
- * the same twelve variables as the other roots: six pairs (s_k, t_k) =
- * (2k, 2k+1), each t_k a random function of s_k and of the s of another pair,
- * as separate partitions and partly conjoined, plus a random set of states.
- * Every pair interacts, and the cross-pair dependencies mean the order of the
- * pairs matters, so a grouped sift has something to find.
+ * the order, the even one first (src/bdd.c says why). The relation below is
+ * built that way over the same twelve variables as the other roots: six pairs
+ * (s_k, t_k) = (2k, 2k+1), each t_k a random function of s_k and of the s of
+ * another pair, as separate partitions and partly conjoined, plus a random
+ * set of states. Every pair interacts, and the cross-pair dependencies mean
+ * the order of the pairs matters, so a grouped sift has something to find.
  */
 #define TEST_RELATIONS 9
 

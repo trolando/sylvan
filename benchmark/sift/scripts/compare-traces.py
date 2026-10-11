@@ -346,6 +346,15 @@ def plateau(e):
     return least, sorted({p for p, score in seen if score == least})
 
 
+def changes_no_node(side, e):
+    """Whether no swap of an excursion changes NODES: the variable it moves
+    has no node in the forest, or none that crossing anything can change."""
+    nodes = {s.nodes for s in e.swaps}
+    if e.first > 0:
+        nodes.add(side.swaps[e.first - 1].nodes)
+    return len(nodes) == 1
+
+
 def levels(ps):
     return ", ".join(map(str, ps[:12])) + (", ..." if len(ps) > 12 else "")
 
@@ -377,6 +386,21 @@ def explain_divergence(a, b, n, out):
         na = a.excursions[ea.index + 1] if n and ea.index + 1 < len(a.excursions) else ea
         nb = b.excursions[eb.index + 1] if n and eb.index + 1 < len(b.excursions) else eb
         if na.var != nb.var:
+            empty = [(x, y, e) for x, y, e in ((a, b, na), (b, a, nb))
+                     if e.var not in y.by_var and changes_no_node(x, e)]
+            if empty:
+                x, y, e = empty[0]
+                out.append(f"The excursion before ends identically; then {a.name} sifts "
+                           f"variable {na.var} and {b.name} variable {nb.var}. {x.name} "
+                           f"sifts variable {e.var}, which {y.name} never sifts, and no "
+                           f"swap of that excursion changes NODES: the variable has no "
+                           f"node in the forest (an input no root depends on). CUDD's "
+                           f"cuddSifting sifts every variable, and such a one climbs to "
+                           f"the top, as ddSiftingUp's bound (L <= limitSize) lets it "
+                           f"and ddSiftingDown's (size - R < limitSize) does not, and "
+                           f"stays there; Sylvan's driver takes no variable with "
+                           f"population 0 as a candidate. Cause: variable with no nodes.")
+                return
             out.append(f"The excursion before ends identically; then {a.name} sifts "
                        f"variable {na.var} and {b.name} variable {nb.var}. The candidate "
                        f"orders differ here (see below): two variables with the same "

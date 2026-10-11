@@ -1086,6 +1086,7 @@ test_reorder_subtable_migration(void)
  * quarter of the table in heads and then given three times that many nodes.
  * Every node has to keep its index and stay findable and removable, and the
  * collection after the session has to replace the grown array like any other.
+ * A session that opens on a much smaller population shrinks the array again.
  */
 static int
 test_reorder_session_growth(void)
@@ -1129,6 +1130,30 @@ test_reorder_session_growth(void)
             }
             test_assert(nodes_rebuild(table) == 0);
         }
+    }
+
+    /* The next session opens on a collection that keeps one node in 256.
+       That collection hands the subtable the whole budget again, and the
+       session gives back what the survivors do not need. */
+    nodes_clear(table);
+    for (uint64_t i = 0; i < count; i += 256) {
+        nodes_mark_rec(table, indices[i]);
+    }
+    test_assert(nodes_rebuild(table) == 0);
+    test_assert(nodes_prepare_reorder(table, &route, 1) == SYLVAN_OK);
+    for (uint64_t i = 0; i < count; i += 256) {
+        int created = 1;
+        test_assert(nodes_lookup_subtable(
+            table, route, UINT64_C(0x4000000000000000) | i,
+            (UINT64_C(7) << 40) | i, &created) == indices[i]);
+        test_assert(created == 0);
+        test_assert(nodes_remove(table, indices[i]) == SYLVAN_OK);
+        test_assert(nodes_reinsert(table, indices[i]) == SYLVAN_OK);
+        created = 1;
+        test_assert(nodes_lookup_subtable(
+            table, route, UINT64_C(0x4000000000000000) | i,
+            (UINT64_C(7) << 40) | i, &created) == indices[i]);
+        test_assert(created == 0);
     }
 
     nodes_free(table);

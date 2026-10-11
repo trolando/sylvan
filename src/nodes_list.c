@@ -449,9 +449,11 @@ int nodes_rebuild_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first, si
     }
 }
 
+/* The passes of a collection stop where no node can be; see
+   region_scan_bound. */
 int nodes_rebuild_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    return nodes_rebuild_par_CALL(lace, dbs, 0, dbs->table_size);
+    return nodes_rebuild_par_CALL(lace, dbs, 0, region_scan_bound(dbs));
 }
 
 TASK(size_t, nodes_count_nodes_par, nodes_table*, dbs, size_t, first, size_t, count)
@@ -492,7 +494,7 @@ size_t nodes_count_nodes_par_CALL(lace_worker* lace, nodes_table* dbs, size_t fi
 
 size_t nodes_count_nodes_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    return nodes_count_nodes_par_CALL(lace, dbs, 0, dbs->table_size);
+    return nodes_count_nodes_par_CALL(lace, dbs, 0, region_scan_bound(dbs));
 }
 
 TASK(void, nodes_destroy_par, nodes_table*, dbs, size_t, first_word, size_t, word_count)
@@ -530,7 +532,7 @@ void nodes_destroy_par_CALL(lace_worker* lace, nodes_table* dbs, size_t first_wo
 
 void nodes_cleanup_custom_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    nodes_destroy_par_CALL(lace, dbs, 0, (dbs->table_size + 63) / 64);
+    nodes_destroy_par_CALL(lace, dbs, 0, (region_scan_bound(dbs) + 63) / 64);
 }
 
 /**

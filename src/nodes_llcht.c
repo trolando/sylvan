@@ -516,10 +516,12 @@ nodes_rehash_par_CALL(lace_worker* lace, nodes_table* dbs,
     return bad;
 }
 
+/* The passes of a collection stop where no node can be; see
+   region_scan_bound. */
 int
 nodes_rebuild_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    return nodes_rehash_par_CALL(lace, dbs, 0, dbs->table_size);
+    return nodes_rehash_par_CALL(lace, dbs, 0, region_scan_bound(dbs));
 }
 
 TASK(size_t, nodes_count_nodes_par,
@@ -568,7 +570,7 @@ nodes_count_nodes_par_CALL(lace_worker* lace, nodes_table* dbs,
 size_t
 nodes_count_nodes_CALL(lace_worker* lace, nodes_table* dbs)
 {
-    return nodes_count_nodes_par_CALL(lace, dbs, 0, dbs->table_size);
+    return nodes_count_nodes_par_CALL(lace, dbs, 0, region_scan_bound(dbs));
 }
 
 TASK(void, nodes_destroy_par,
@@ -615,7 +617,7 @@ void
 nodes_cleanup_custom_CALL(lace_worker* lace, nodes_table* dbs)
 {
     nodes_destroy_par_CALL(
-        lace, dbs, 0, (dbs->table_size + 63) / 64);
+        lace, dbs, 0, (region_scan_bound(dbs) + 63) / 64);
 }
 
 /**

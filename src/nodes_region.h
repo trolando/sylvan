@@ -164,6 +164,23 @@ region_used_bound(const nodes_table* dbs)
 }
 
 /**
+ * Where the passes of a collection over the slot bitmaps may stop: the used
+ * bound, rounded up to a power of two regions so that the halving recursions
+ * of those passes still end in whole, aligned 512-slot blocks, which their
+ * popcount paths need. No slot past it has ever held a node, so on a table
+ * sized for far more than the forest the unused part costs nothing -- and
+ * every reorder session opens with a collection.
+ */
+static size_t SYLVAN_UNUSED
+region_scan_bound(const nodes_table* dbs)
+{
+    const size_t used = region_used_bound(dbs);
+    size_t bound = 512u;
+    while (bound < used) bound *= 2u;
+    return bound < dbs->table_size ? bound : dbs->table_size;
+}
+
+/**
  * Claim a region that is unowned and has something to give. The search
  * starts at start_region and proceeds round-robin; the result is the claimed
  * region, or UINT64_MAX if there is none.

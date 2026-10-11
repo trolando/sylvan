@@ -563,10 +563,13 @@ per module with a proxy node for each module inside another, and counts the
 nodes of all of them (`CountIteNodes` in its `src/bdd.cc`), which is not the
 size of one BDD of the top event; the paper itself (p. 11) allows that the
 two tools may count their nodes differently. On das9207 the flat BDD under
-SCRAM's order, 70555 nodes, is even below SCRAM's count, 119401, so that
-order and that count came from different runs. And the order is one sample:
-the NFM'22 tooling wrote SCRAM's inputs from Python sets, and SCRAM's
-ordering heuristic depends on the order of each gate's arguments.
+SCRAM's order, 70555 nodes, is even below SCRAM's count, 119401, by far more
+than the number of modules can explain, so that order and that count came
+from different SCRAM runs. Such runs can differ: SCRAM's ordering pass breaks
+ties by the position of a gate's arguments with an unstable sort, and its
+preprocessing visits duplicated gate definitions in pointer order (das9207
+has seven groups of them); the NFM'22 converter also wrote each gate's
+arguments from a Python set. So the order is one sample of the heuristic.
 
 **The cases.** `TREE.dfs-file` and `TREE.tdlr-file`: the stem is the file's
 (`aralia/TREE.dfs.blif`), the order the file's own. There are 81: both

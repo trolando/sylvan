@@ -112,8 +112,13 @@ struct reorder_session {
     _Atomic(uint16_t) *counts;      /* per-slot reference count            */
     uint64_t *pinned;               /* bitmap: an external root            */
     uint64_t *retired;              /* bitmap: unhashed, awaiting release  */
-    uint64_t *seen;                 /* bitmap: scratch for reorder_collect */
+    _Atomic(uint64_t) *seen;        /* bitmap: scratch for reorder_collect */
     uint64_t *interact;             /* packed variable interaction matrix  */
+
+    /* Where the parallel compaction of a list puts the survivors before they
+       are copied back; see reorder_collect_parallel. */
+    uint64_t *spare;
+    size_t spare_capacity;
 
     struct reorder_list *decision;  /* per identity                        */
     struct reorder_list *maps;      /* per identity                        */
@@ -232,11 +237,12 @@ sylvan_reorder_phase_timing(sylvan_reorder_timing *timing)
 #endif
 
 /**
- * Side bitmaps. All of them are written from one thread at a time -- the pins
- * during session setup, the retired and seen bits from the serial phases --
- * so they need no atomics. No phase writes a mark or flag bit into a node
- * record: those 16 bytes are part of the hashed key, and the only writes to
- * them are the swap's own rewrites.
+ * Side bitmaps. The pins and the retired bits are written from one thread at
+ * a time -- the pins during session setup, the retired bits from the serial
+ * bookkeeping of a swap -- so they need no atomics. The seen bits are the
+ * exception and have helpers of their own below. No phase writes a mark or
+ * flag bit into a node record: those 16 bytes are part of the hashed key, and
+ * the only writes to them are the swap's own rewrites.
  */
 
 static inline size_t
@@ -261,6 +267,48 @@ static inline int
 bitmap_get(const uint64_t *bitmap, uint64_t bit)
 {
     return (bitmap[bit >> 6] >> (bit & 63u)) & 1u;
+}
+
+/**
+ * The seen bits, which drop the duplicates out of a list while it is being
+ * compacted. A long list is compacted by every worker at once (see
+ * reorder_collect_parallel), and there two copies of one node may meet in the
+ * same word from two workers, so the words are atomic: the parallel
+ * compaction claims and clears a bit with a read-modify-write, and the serial
+ * one, which is alone, reads and writes them with plain loads and stores.
+ */
+static inline int
+seen_get(uint64_t index)
+{
+    return (atomic_load_explicit(session.seen + (index >> 6),
+                                 memory_order_relaxed) >> (index & 63u)) & 1u;
+}
+
+static inline void
+seen_put(uint64_t index, int on)
+{
+    _Atomic(uint64_t) *word = session.seen + (index >> 6);
+    const uint64_t mask = UINT64_C(1) << (index & 63u);
+    const uint64_t value = atomic_load_explicit(word, memory_order_relaxed);
+    atomic_store_explicit(word, on ? (value | mask) : (value & ~mask),
+                          memory_order_relaxed);
+}
+
+/** Set the seen bit of <index>; whether this call is the one that set it. */
+static inline int
+seen_claim(uint64_t index)
+{
+    const uint64_t mask = UINT64_C(1) << (index & 63u);
+    return (atomic_fetch_or_explicit(session.seen + (index >> 6), mask,
+                                     memory_order_relaxed) & mask) == 0;
+}
+
+static inline void
+seen_unclaim(uint64_t index)
+{
+    atomic_fetch_and_explicit(session.seen + (index >> 6),
+                              ~(UINT64_C(1) << (index & 63u)),
+                              memory_order_relaxed);
 }
 
 /** The 16-byte record of a node index. */
@@ -590,6 +638,19 @@ reorder_map_list(uint32_t identity)
     return session.maps + identity;
 }
 
+/** Whether a list entry is a live node of <identity> of the requested kind. */
+static inline int
+reorder_listed(uint64_t index, uint32_t identity, int want_map)
+{
+    if (index < 2 || index >= session.size) return 0;
+    if (!nodes_is_marked(nodes, index)) return 0;
+    if (bitmap_get(session.retired, index)) return 0;
+    mtbddnode *record = reorder_record(index);
+    if (mtbddnode_isleaf(record)) return 0;
+    if ((mtbddnode_ismapnode(record) != 0) != (want_map != 0)) return 0;
+    return mtbddnode_getvariable(record) == identity;
+}
+
 /**
  * Reduce a list to exactly the live nodes of <identity> of the requested kind,
  * in place, and return how many there are. Entries that were rewritten to
@@ -605,22 +666,20 @@ reorder_collect(struct reorder_list *list, uint32_t identity, int want_map)
 
     for (size_t i = 0; i < count; i++) {
         const uint64_t index = list->items[i];
-        if (index < 2 || index >= session.size) continue;
-        if (!nodes_is_marked(nodes, index)) continue;
-        if (bitmap_get(session.retired, index)) continue;
-        mtbddnode *record = reorder_record(index);
-        if (mtbddnode_isleaf(record)) continue;
-        if ((mtbddnode_ismapnode(record) != 0) != (want_map != 0)) continue;
-        if (mtbddnode_getvariable(record) != identity) continue;
-        if (bitmap_get(session.seen, index)) continue;
-        bitmap_set(session.seen, index);
+        if (!reorder_listed(index, identity, want_map)) continue;
+        if (seen_get(index)) continue;
+        seen_put(index, 1);
         list->items[out++] = index;
     }
 
-    for (size_t i = 0; i < out; i++) bitmap_clear(session.seen, list->items[i]);
+    for (size_t i = 0; i < out; i++) seen_put(list->items[i], 0);
     atomic_store_explicit(&list->count, out, memory_order_relaxed);
     return out;
 }
+
+/* Defined with the swap, below: the same compaction, on every worker. */
+static size_t reorder_collect_any(lace_worker *lace, struct reorder_list *list,
+                                  uint32_t identity, int want_map);
 
 /**
  * Room for <extra> more entries in <list>, the list of <identity>'s nodes of
@@ -643,14 +702,14 @@ reorder_collect(struct reorder_list *list, uint32_t identity, int want_map)
  * entries and the new ones need shrinks to twice.
  */
 static int
-reorder_list_make_room(struct reorder_list *list, uint32_t identity,
-                       int want_map, size_t extra)
+reorder_list_make_room(lace_worker *lace, struct reorder_list *list,
+                       uint32_t identity, int want_map, size_t extra)
 {
     if (list == NULL) return SYLVAN_OK;
 
     size_t count = atomic_load_explicit(&list->count, memory_order_relaxed);
     const int full = count + extra > list->capacity;
-    if (full) count = reorder_collect(list, identity, want_map);
+    if (full) count = reorder_collect_any(lace, list, identity, want_map);
 
     const size_t needed = count + extra < 8u ? 8u : count + extra;
     size_t capacity = list->capacity;
@@ -887,7 +946,7 @@ reorder_free_state(void)
                        session.size * sizeof(_Atomic(uint16_t)));
     reorder_free_slots(session.pinned, words * sizeof(uint64_t));
     reorder_free_slots(session.retired, words * sizeof(uint64_t));
-    reorder_free_slots(session.seen, words * sizeof(uint64_t));
+    reorder_free_slots((void*)session.seen, words * sizeof(uint64_t));
     free(session.interact);
     reorder_free_lists(session.decision);
     reorder_free_lists(session.maps);
@@ -896,6 +955,7 @@ reorder_free_state(void)
     free(session.queue);
     free(session.batch);
     free(session.dead);
+    free(session.spare);
     memset(&session, 0, sizeof(session));
 }
 
@@ -944,7 +1004,8 @@ sylvan_reorder_begin_CALL(lace_worker *lace)
         session.size * sizeof(_Atomic(uint16_t)));
     session.pinned = (uint64_t*)reorder_alloc_slots(words * sizeof(uint64_t));
     session.retired = (uint64_t*)reorder_alloc_slots(words * sizeof(uint64_t));
-    session.seen = (uint64_t*)reorder_alloc_slots(words * sizeof(uint64_t));
+    session.seen = (_Atomic(uint64_t)*)reorder_alloc_slots(
+        words * sizeof(uint64_t));
     session.decision = (struct reorder_list*)calloc(
         lists, sizeof(struct reorder_list));
     session.maps = (struct reorder_list*)calloc(
@@ -1373,16 +1434,16 @@ sylvan_reorder_interact_build(void)
  * x-node that skipped y. In particular a g-node is never itself case B, so
  * interning one can neither discover nor create work.
  *
- * PHASES. Classify and reserve (read-only, serial); intern the new children
- * (parallel); unhash and rewrite the records (parallel); re-index them
- * (parallel); retire what died, in rounds whose node set is gathered serially
- * and then unhashed -- in parallel where the index takes batches -- and
- * counted down in parallel; release the slots (serial). Splitting the rewrite
- * from the re-indexing costs one barrier more than fusing them would, and it
- * buys the absence of a data race: nodes_reinsert may compare records along
- * a chain -- the trie's descent does, and so does a debug build's check for
- * an equal node -- and in a fused phase it could read a record another
- * worker is halfway through rewriting.
+ * PHASES. Classify and reserve (read-only, parallel over a long list); intern
+ * the new children (parallel); unhash and rewrite the records (parallel);
+ * re-index them (parallel); retire what died, in rounds whose node set is
+ * gathered serially and then unhashed -- in parallel where the index takes
+ * batches -- and counted down in parallel; release the slots (serial).
+ * Splitting the rewrite from the re-indexing costs one barrier more than
+ * fusing them would, and it buys the absence of a data race: nodes_reinsert
+ * may compare records along a chain -- the trie's descent does, and so does a
+ * debug build's check for an equal node -- and in a fused phase it could read
+ * a record another worker is halfway through rewriting.
  * ---------------------------------------------------------------------------
  */
 
@@ -1598,8 +1659,9 @@ reorder_make_map_node(struct reorder_intern_buffer *buffer,
  * phases never have to read a record another worker may be rewriting.
  */
 
-static int
-reorder_classify_decision(uint64_t index)
+/** Fill <entry> for the x-node <index> if it is case B; whether it is. */
+static inline int
+reorder_caseb_make(struct reorder_caseb *entry, uint64_t index)
 {
     mtbddnode *record = reorder_record(index);
     const uint64_t low = mtbddnode_getlow(record);
@@ -1607,8 +1669,24 @@ reorder_classify_decision(uint64_t index)
 
     if (!reorder_has_variable(low, swap_lower) &&
         !reorder_has_variable(high, swap_lower)) {
-        return SYLVAN_OK;
+        return 0;
     }
+
+    entry->index = index;
+    entry->low = low;
+    entry->high = high;
+    entry->low_target = reorder_target(low);
+    entry->high_target = reorder_target(high);
+    entry->g0 = 0;
+    entry->g1 = 0;
+    return 1;
+}
+
+static int
+reorder_classify_decision(uint64_t index)
+{
+    struct reorder_caseb entry;
+    if (!reorder_caseb_make(&entry, index)) return SYLVAN_OK;
 
     if (swap_node_count == swap_node_capacity) {
         const size_t capacity = swap_node_capacity == 0
@@ -1620,14 +1698,7 @@ reorder_classify_decision(uint64_t index)
         swap_node_capacity = capacity;
     }
 
-    struct reorder_caseb *entry = swap_nodes + swap_node_count++;
-    entry->index = index;
-    entry->low = low;
-    entry->high = high;
-    entry->low_target = reorder_target(low);
-    entry->high_target = reorder_target(high);
-    entry->g0 = 0;
-    entry->g1 = 0;
+    swap_nodes[swap_node_count++] = entry;
     return SYLVAN_OK;
 }
 
@@ -1662,6 +1733,178 @@ reorder_classify_map(uint64_t index)
     entry->value_target = reorder_target(entry->value);
     entry->inner = 0;
     return SYLVAN_OK;
+}
+
+/**
+ * PARALLEL COMPACTION.
+ *
+ * Every swap begins by compacting the upper variable's list and classifying
+ * what survives, and a swap that fills a list compacts that one too. Both are
+ * a pass over every entry that reads the entry's record and, to classify it,
+ * the records of its two children: on a long list the largest part of the
+ * swap that one worker would otherwise do alone, and long enough for the
+ * other workers to idle through. So a long list is compacted by all of them,
+ * a block of entries at a time, with the classification folded in.
+ *
+ * What changes is how the survivors are gathered. Two copies of one node may
+ * sit in different blocks, so a node is kept by whichever worker sets its seen
+ * bit, with a read-modify-write. Each block claims a range of a scratch array
+ * for what it keeps, and of the case-B array for what it classifies, with one
+ * atomic each, and the survivors are copied back into the list's own array
+ * afterwards, clearing their seen bits on the way -- so a list keeps its
+ * array, and its size stays whatever reorder_list_make_room decides.
+ *
+ * The order of the survivors, and of the case-B nodes, is then the order in
+ * which the blocks finished. That only decides which worker interns which new
+ * node and so where it is placed: the forest, its size and therefore every
+ * decision of the sift are the same in any order. One worker, or a short list,
+ * takes the serial path and keeps the order the list had.
+ *
+ * Nothing here can fail. The scratch and the case-B array are grown first,
+ * and when either cannot be, the caller takes the serial path instead.
+ */
+
+/** Entries below which one worker compacts a list, and the block size. */
+#define REORDER_COLLECT_PARALLEL 4096
+#define REORDER_COLLECT_BLOCK 128
+
+/* The compaction that is running. One runs at a time, with the world
+   stopped, so these are plain statics, like the swap plan. */
+static struct reorder_list *collect_list;
+static uint32_t collect_identity;
+static int collect_want_map;
+static int collect_classify;
+static _Atomic(size_t) collect_kept;
+static _Atomic(size_t) collect_found;
+
+TASK(void, reorder_collect_block, size_t, first, size_t, count)
+
+void
+reorder_collect_block_CALL(lace_worker *lace, size_t first, size_t count)
+{
+    if (count > REORDER_COLLECT_BLOCK) {
+        reorder_collect_block_SPAWN(lace, first, count / 2);
+        reorder_collect_block_CALL(lace, first + count / 2, count - count / 2);
+        reorder_collect_block_SYNC(lace);
+        return;
+    }
+
+    uint64_t kept[REORDER_COLLECT_BLOCK];
+    struct reorder_caseb found[REORDER_COLLECT_BLOCK];
+    size_t kept_count = 0, found_count = 0;
+
+    const size_t end = first + count;
+    for (size_t i = first; i < end; i++) {
+        const uint64_t index = collect_list->items[i];
+        if (!reorder_listed(index, collect_identity, collect_want_map)) continue;
+        if (!seen_claim(index)) continue;
+        kept[kept_count++] = index;
+        if (collect_classify &&
+            reorder_caseb_make(found + found_count, index)) {
+            found_count++;
+        }
+    }
+
+    if (kept_count != 0) {
+        const size_t at = atomic_fetch_add_explicit(
+            &collect_kept, kept_count, memory_order_relaxed);
+        memcpy(session.spare + at, kept, kept_count * sizeof(uint64_t));
+    }
+    if (found_count != 0) {
+        const size_t at = atomic_fetch_add_explicit(
+            &collect_found, found_count, memory_order_relaxed);
+        memcpy(swap_nodes + at, found,
+               found_count * sizeof(struct reorder_caseb));
+    }
+}
+
+TASK(void, reorder_collect_back, size_t, first, size_t, count)
+
+void
+reorder_collect_back_CALL(lace_worker *lace, size_t first, size_t count)
+{
+    if (count > REORDER_COLLECT_BLOCK) {
+        reorder_collect_back_SPAWN(lace, first, count / 2);
+        reorder_collect_back_CALL(lace, first + count / 2, count - count / 2);
+        reorder_collect_back_SYNC(lace);
+        return;
+    }
+
+    const size_t end = first + count;
+    for (size_t i = first; i < end; i++) {
+        const uint64_t index = session.spare[i];
+        seen_unclaim(index);
+        collect_list->items[i] = index;
+    }
+}
+
+/**
+ * Compact <list> on every worker, classifying the survivors into the swap
+ * plan when <classify> is set, and return 1; or return 0 having changed
+ * nothing, when the list is short, there is one worker, or the room the
+ * parallel pass needs cannot be had -- the caller then compacts serially.
+ */
+static int
+reorder_collect_parallel(lace_worker *lace, struct reorder_list *list,
+                         uint32_t identity, int want_map, int classify,
+                         size_t *kept)
+{
+    const size_t count = atomic_load_explicit(&list->count,
+                                              memory_order_relaxed);
+    if (lace == NULL || lace_worker_count() < 2 ||
+        count < REORDER_COLLECT_PARALLEL) {
+        return 0;
+    }
+
+    if (session.spare_capacity < count) {
+        uint64_t *grown = (uint64_t*)realloc(
+            session.spare, count * sizeof(uint64_t));
+        if (grown == NULL) return 0;
+        session.spare = grown;
+        session.spare_capacity = count;
+    }
+    if (classify) {
+        /* The case-B nodes are among the survivors, so the list bounds them;
+           only the part the swap fills is ever touched. */
+        assert(swap_node_count == 0);
+        if (swap_node_capacity < count) {
+            struct reorder_caseb *grown = (struct reorder_caseb*)realloc(
+                swap_nodes, count * sizeof(struct reorder_caseb));
+            if (grown == NULL) return 0;
+            swap_nodes = grown;
+            swap_node_capacity = count;
+        }
+    }
+
+    collect_list = list;
+    collect_identity = identity;
+    collect_want_map = want_map;
+    collect_classify = classify;
+    atomic_store_explicit(&collect_kept, 0, memory_order_relaxed);
+    atomic_store_explicit(&collect_found, 0, memory_order_relaxed);
+    reorder_collect_block_CALL(lace, 0, count);
+
+    const size_t out = atomic_load_explicit(&collect_kept,
+                                            memory_order_relaxed);
+    reorder_collect_back_CALL(lace, 0, out);
+    atomic_store_explicit(&list->count, out, memory_order_relaxed);
+    if (classify) {
+        swap_node_count = atomic_load_explicit(&collect_found,
+                                               memory_order_relaxed);
+    }
+    *kept = out;
+    return 1;
+}
+
+static size_t
+reorder_collect_any(lace_worker *lace, struct reorder_list *list,
+                    uint32_t identity, int want_map)
+{
+    size_t kept;
+    if (reorder_collect_parallel(lace, list, identity, want_map, 0, &kept)) {
+        return kept;
+    }
+    return reorder_collect(list, identity, want_map);
 }
 
 /**
@@ -1715,13 +1958,15 @@ reorder_classify_map(uint64_t index)
  * against a bound that is already this small.
  */
 static int
-reorder_classify(void)
+reorder_classify(lace_worker *lace)
 {
     int status = SYLVAN_OK;
 
     struct reorder_list *list = reorder_decision_list(swap_upper);
-    if (list != NULL) {
-        const size_t count = reorder_collect(list, swap_upper, 0);
+    size_t count;
+    if (list != NULL &&
+        !reorder_collect_parallel(lace, list, swap_upper, 0, 1, &count)) {
+        count = reorder_collect(list, swap_upper, 0);
         for (size_t i = 0; i < count && status == SYLVAN_OK; i++) {
             status = reorder_classify_decision(list->items[i]);
         }
@@ -1730,7 +1975,7 @@ reorder_classify(void)
 
     struct reorder_list *maps = reorder_map_list(swap_upper);
     if (maps != NULL) {
-        const size_t count = reorder_collect(maps, swap_upper, 1);
+        const size_t count = reorder_collect_any(lace, maps, swap_upper, 1);
         for (size_t i = 0; i < count && status == SYLVAN_OK; i++) {
             status = reorder_classify_map(maps->items[i]);
         }
@@ -1761,18 +2006,18 @@ reorder_classify(void)
     if (status != SYLVAN_OK) return status;
 
     status = reorder_list_make_room(
-        reorder_decision_list(swap_upper), swap_upper, 0, 2u * k);
+        lace, reorder_decision_list(swap_upper), swap_upper, 0, 2u * k);
     if (status == SYLVAN_OK) {
         status = reorder_list_make_room(
-            reorder_decision_list(swap_lower), swap_lower, 0, k);
+            lace, reorder_decision_list(swap_lower), swap_lower, 0, k);
     }
     if (status == SYLVAN_OK) {
         status = reorder_list_make_room(
-            reorder_map_list(swap_upper), swap_upper, 1, k_map);
+            lace, reorder_map_list(swap_upper), swap_upper, 1, k_map);
     }
     if (status == SYLVAN_OK) {
         status = reorder_list_make_room(
-            reorder_map_list(swap_lower), swap_lower, 1, k_map);
+            lace, reorder_map_list(swap_lower), swap_lower, 1, k_map);
     }
     if (status != SYLVAN_OK) return status;
 
@@ -2199,7 +2444,7 @@ sylvan_varswap_CALL(lace_worker *lace, uint32_t rank,
     swap_lower = sylvan_identity_at(rank + 1);
 
     REORDER_TIMING_START(timing_swap);
-    int status = reorder_classify();
+    int status = reorder_classify(lace);
     REORDER_TIMING_STOP(classify, timing_swap);
     if (status != SYLVAN_OK) {
         reorder_plan_free();

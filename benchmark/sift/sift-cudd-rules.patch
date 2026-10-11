@@ -1,6 +1,6 @@
 --- a/src/sift.c
 +++ b/src/sift.c
-@@ -196,8 +196,55 @@
+@@ -194,8 +194,56 @@
      int      grouped;     /* identities 2k and 2k+1 move as one block */
      int      stuck;       /* a block move could be neither undone nor finished */
      sylvan_sift_leg leg;  /* what the swaps being made are for, for the trace */
@@ -9,6 +9,7 @@
 +       from the driver's, each switched on by an environment variable. */
 +    int      cudd_return;     /* SIFT_CUDD_RETURN=1: ddSiftingBackward      */
 +    int      cudd_direction;  /* SIFT_CUDD_DIRECTION=1: up first on a tie   */
++    int      cudd_empty;      /* SIFT_CUDD_EMPTY=1: no-node variables too   */
 +    int      cudd_growth;     /* SIFT_CUDD_GROWTH=K: CUDD's growth test     */
 +    uint64_t cudd_constants;  /*   with K constants counted in every size   */
 +    double   cudd_factor;     /*   and the growth factor as a double        */
@@ -56,7 +57,7 @@
  /**
   * Whether the search may still make a move of <swaps> adjacent swaps. A move
   * is made whole or not at all, so the whole of it has to fit in the budget.
-@@ -496,9 +543,10 @@
+@@ -495,9 +543,10 @@
              top += next;
  
              if (run->size < *best_size) { *best_size = run->size; *best_top = top; }
@@ -68,7 +69,7 @@
          }
      } else {
          /* bound: a lower bound on the size reachable above. The part below the
-@@ -535,9 +583,10 @@
+@@ -534,9 +583,10 @@
              }
  
              if (run->size < *best_size) { *best_size = run->size; *best_top = top; }
@@ -80,7 +81,7 @@
          }
      }
  
-@@ -569,14 +618,40 @@
+@@ -568,14 +618,40 @@
      uint32_t best_top = top;
      uint64_t best_size = run->size;
  
@@ -123,12 +124,13 @@
  
      run->leg = SYLVAN_SIFT_LEG_RETURN;
      while (top != best_top && !run->stuck) {
-@@ -806,6 +881,29 @@
+@@ -800,6 +876,31 @@
      run.stuck = 0;
      run.leg = SYLVAN_SIFT_LEG_UP;
  
 +    run.cudd_return = sift_cudd_flag("SIFT_CUDD_RETURN");
 +    run.cudd_direction = sift_cudd_flag("SIFT_CUDD_DIRECTION");
++    run.cudd_empty = sift_cudd_flag("SIFT_CUDD_EMPTY");
 +    run.cudd_growth = getenv("SIFT_CUDD_GROWTH") != NULL;
 +    run.cudd_constants = run.cudd_growth
 +        ? strtoull(getenv("SIFT_CUDD_GROWTH"), NULL, 10) : 0;
@@ -145,15 +147,30 @@
 +    if (run.second_top == NULL || run.second_size == NULL) run.cudd_return = 0;
 +    const char *cudd_order = getenv("SIFT_CUDD_ORDER");
 +    fprintf(stderr, "SIFT-CUDD-RULES {\"return\":%d,\"direction\":%d"
-+            ",\"growth\":%d,\"constants\":%llu,\"order\":\"%s\"}\n",
-+            run.cudd_return, run.cudd_direction, run.cudd_growth,
++            ",\"empty\":%d,\"growth\":%d,\"constants\":%llu,\"order\":\"%s\"}\n",
++            run.cudd_return, run.cudd_direction, run.cudd_empty,
++            run.cudd_growth,
 +            (unsigned long long)run.cudd_constants,
 +            cudd_order != NULL ? cudd_order : "");
 +
      const uint64_t initial = run.size;
      uint32_t candidates = 0;
      uint32_t sifted = 0;
-@@ -869,6 +967,44 @@
+@@ -854,8 +955,11 @@
+                     population += run.pop[first + i];
+                 }
+                 /* A block with no nodes cannot change the size of anything
+-                   by moving, whatever the threshold says. */
+-                if (population == 0) continue;
++                   by moving, whatever the threshold says. CUDD sifts it all
++                   the same (SIFT_CUDD_EMPTY=1): cuddSifting takes every
++                   variable, and one with no nodes climbs to the top, which
++                   ddSiftingUp's bound allows and ddSiftingDown's does not. */
++                if (population == 0 && !run.cudd_empty) continue;
+                 if (population < config->nodes_threshold) continue;
+                 order[candidates].identity = first;
+                 order[candidates].population = population;
+@@ -863,6 +967,44 @@
              }
              qsort(order, candidates, sizeof(struct sift_candidate),
                    sift_compare);
@@ -198,7 +215,7 @@
          }
      }
  
-@@ -885,6 +1021,8 @@
+@@ -879,6 +1021,8 @@
      }
      free(order);
      free(run.pop);
@@ -209,7 +226,7 @@
      const uint64_t swaps = run.swaps;
 --- a/benchmark/sift/sylvan_bench.c
 +++ b/benchmark/sift/sylvan_bench.c
-@@ -463,6 +463,17 @@
+@@ -741,6 +741,17 @@
  
      /* Out of the way, so the sift sees the output cone and nothing else. */
      varset = bdd_set_empty();

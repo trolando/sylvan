@@ -1078,6 +1078,62 @@ test_reorder_subtable_migration(void)
     nodes_free(table);
     return 0;
 }
+
+/**
+ * A reorder session may not collect, so a subtable it fills far past its head
+ * array gets a larger one from nodes_prepare_reorder, which answers the resize
+ * request the long chains raised. The fresh subtable here is seeded with a
+ * quarter of the table in heads and then given three times that many nodes.
+ * Every node has to keep its index and stay findable and removable, and the
+ * collection after the session has to replace the grown array like any other.
+ */
+static int
+test_reorder_session_growth(void)
+{
+    enum { table_size = 32768, count = 26000 };
+    static uint64_t indices[count];
+    nodes_table *table = nodes_create(table_size, table_size);
+    const uint32_t route = NODES_SUBTABLE_DECISION(7);
+
+    /* Leaf-tagged, so that marking stops at each of them. */
+    for (uint64_t i = 0; i < count; i++) {
+        int created = 0;
+        indices[i] = nodes_lookup_subtable(
+            table, route, UINT64_C(0x4000000000000000) | i,
+            (UINT64_C(7) << 40) | i, &created);
+        test_assert(indices[i] > 1 && created == 1);
+    }
+
+    test_assert(nodes_prepare_reorder(table, &route, 1) == SYLVAN_OK);
+
+    for (int round = 0; round < 3; round++) {
+        for (uint64_t i = 0; i < count; i++) {
+            int created = 1;
+            test_assert(nodes_lookup_subtable(
+                table, route, UINT64_C(0x4000000000000000) | i,
+                (UINT64_C(7) << 40) | i, &created) == indices[i]);
+            test_assert(created == 0);
+        }
+
+        if (round == 0) {
+            for (uint64_t i = 0; i < count; i++) {
+                test_assert(nodes_remove(table, indices[i]) == SYLVAN_OK);
+            }
+            for (uint64_t i = 0; i < count; i++) {
+                test_assert(nodes_reinsert(table, indices[i]) == SYLVAN_OK);
+            }
+        } else if (round == 1) {
+            nodes_clear(table);
+            for (uint64_t i = 0; i < count; i++) {
+                nodes_mark_rec(table, indices[i]);
+            }
+            test_assert(nodes_rebuild(table) == 0);
+        }
+    }
+
+    nodes_free(table);
+    return 0;
+}
 #endif
 
 /**
@@ -2053,6 +2109,7 @@ run_table_tests_CALL(lace_worker *lace)
 #if SYLVAN_NODES_TABLE_LLCHST
     if (test_subtable_routing()) return 1;
     if (test_reorder_subtable_migration()) return 1;
+    if (test_reorder_session_growth()) return 1;
 #endif
 
     return 0;

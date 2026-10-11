@@ -31,8 +31,9 @@
  * ListDD nodes, and unrouted lookups have auxiliary subtables. Each node
  * has one link with a 3-bit owner class, 21-bit hash fingerprint, and 40-bit
  * next index. While lookups run, chains only grow, by prepending; garbage
- * collection and maintenance rebuild them, and the reorder primitives below
- * splice nodes out and prepend them again, all while lookups are stopped.
+ * collection, maintenance and the preflight of a reorder swap rebuild them,
+ * and the reorder primitives below splice nodes out and prepend them again,
+ * all while lookups are stopped.
  *
  * GC estimates ordinary populations from contiguous head arrays, retains an
  * exact chain walk for initial/saturated tables, and rebuilds normal marked
@@ -1552,7 +1553,8 @@ nodes_rebuild_CALL(lace_worker* lace, nodes_table* dbs)
  * to at most table_size entries. Together with the arrays of the subtables
  * that were not resized, head memory between two collections is bounded by
  * twice head_budget(table_size); the next collection brings it back under the
- * budget.
+ * budget. A reorder session grows subtables as well, and holds itself to the
+ * same bound explicitly; see grow_in_session.
  */
 struct llchst_resize_entry {
     llchst_subtable* subtable;
@@ -1606,18 +1608,19 @@ struct llchst_population_context {
 
 TASK(void, llchst_count_population,
      struct llchst_population_context*, context,
-     size_t, first, size_t, count)
+     size_t, first, size_t, count, int, parallel)
 
 void
 llchst_count_population_CALL(
     lace_worker* lace, struct llchst_population_context* context,
-    size_t first, size_t count)
+    size_t first, size_t count, int parallel)
 {
-    if (count > LLCHST_REBUILD_GRAIN && lace_worker_count() > 1) {
+    if (count > LLCHST_REBUILD_GRAIN && parallel) {
         const size_t split = count / 2u;
-        llchst_count_population_SPAWN(lace, context, first, split);
+        llchst_count_population_SPAWN(
+            lace, context, first, split, parallel);
         llchst_count_population_CALL(
-            lace, context, first + split, count - split);
+            lace, context, first + split, count - split, parallel);
         llchst_count_population_SYNC(lace);
         return;
     }
@@ -1693,6 +1696,58 @@ resize_target_log2(size_t population)
     return result;
 }
 
+/* The exact number of nodes in the subtable's chains. */
+static size_t
+count_population(lace_worker* lace, const nodes_table* dbs,
+                 const struct llchst_resize_entry* entry, int parallel)
+{
+    struct llchst_population_context context = {
+        .dbs = dbs, .heads = entry->old_heads
+    };
+    atomic_init(&context.population, 0);
+    llchst_count_population_CALL(
+        lace, &context, 0, entry->old_count, parallel);
+    return atomic_load_explicit(&context.population, memory_order_relaxed);
+}
+
+/**
+ * Move every chain of the subtable into <new_heads>, which the caller sized to
+ * <new_log2>, publish the new array and free the old one. Nodes keep their
+ * indices; only heads and links change. The caller clears the request.
+ */
+static void
+replace_heads(lace_worker* lace, nodes_table* dbs,
+              struct llchst_resize_entry* entry, uint32_t route, int parallel)
+{
+    llchst_subtable* subtable = entry->subtable;
+    llchst_migrate_chains_CALL(
+        lace, dbs, entry, route, 0, entry->old_count, parallel);
+
+    /* Publish the size before the pointer: readers acquire <heads> and
+       then take a relaxed load of head_log2, so the array they find must
+       already match the mask they will build. Nothing observes either
+       until this frame ends, but keep the order that lookups require. */
+    const uint32_t old_state = atomic_load_explicit(
+        &subtable->head_log2, memory_order_relaxed);
+    atomic_store_explicit(
+        &subtable->head_log2,
+        entry->new_log2 | LLCHST_HEAD_SIZED | LLCHST_HEAD_MEASURED |
+            (old_state & LLCHST_HAS_RAW),
+        memory_order_relaxed);
+    atomic_store_explicit(
+        &subtable->heads, (uintptr_t)entry->new_heads,
+        memory_order_release);
+
+    sylvan_free_aligned(
+        (void*)entry->old_heads,
+        entry->old_count * sizeof(*entry->old_heads));
+    atomic_fetch_add_explicit(
+        &dbs->allocated_heads,
+        ((uint64_t)1 << entry->new_log2) - (uint64_t)entry->old_count,
+        memory_order_relaxed);
+    sylvan_stats_count(LLCHST_SUBTABLE_RESIZED);
+}
+
 void
 nodes_maintain_CALL(lace_worker* lace, nodes_table* dbs)
 {
@@ -1719,14 +1774,7 @@ nodes_maintain_CALL(lace_worker* lace, nodes_table* dbs)
         llchst_subtable* subtable = entry->subtable;
         const uint32_t route = subtable_route(subtable);
 
-        struct llchst_population_context context = {
-            .dbs = dbs, .heads = entry->old_heads
-        };
-        atomic_init(&context.population, 0);
-        llchst_count_population_CALL(
-            lace, &context, 0, entry->old_count);
-        entry->population = atomic_load_explicit(
-            &context.population, memory_order_relaxed);
+        entry->population = count_population(lace, dbs, entry, parallel);
         entry->new_log2 = resize_target_log2(entry->population);
 
         if (((size_t)1 << entry->new_log2) <= entry->old_count) {
@@ -1758,34 +1806,9 @@ nodes_maintain_CALL(lace_worker* lace, nodes_table* dbs)
             continue;
         }
 
-        llchst_migrate_chains_CALL(
-            lace, dbs, entry, route, 0, entry->old_count, parallel);
-
-        /* Publish the size before the pointer: readers acquire <heads> and
-           then take a relaxed load of head_log2, so the array they find must
-           already match the mask they will build. Nothing observes either
-           until this frame ends, but keep the order that lookups require. */
-        const uint32_t old_state = atomic_load_explicit(
-            &subtable->head_log2, memory_order_relaxed);
-        atomic_store_explicit(
-            &subtable->head_log2,
-            entry->new_log2 | LLCHST_HEAD_SIZED | LLCHST_HEAD_MEASURED |
-                (old_state & LLCHST_HAS_RAW),
-            memory_order_relaxed);
-        atomic_store_explicit(
-            &subtable->heads, (uintptr_t)entry->new_heads,
-            memory_order_release);
+        replace_heads(lace, dbs, entry, route, parallel);
         atomic_store_explicit(
             &subtable->route, route, memory_order_relaxed);
-
-        sylvan_free_aligned(
-            (void*)entry->old_heads,
-            entry->old_count * sizeof(*entry->old_heads));
-        atomic_fetch_add_explicit(
-            &dbs->allocated_heads,
-            (uint64_t)new_count - (uint64_t)entry->old_count,
-            memory_order_relaxed);
-        sylvan_stats_count(LLCHST_SUBTABLE_RESIZED);
     }
 
     sylvan_free_aligned(entries, count * sizeof(*entries));
@@ -1993,6 +2016,10 @@ nodes_remove(nodes_table* dbs, uint64_t index)
     const uint64_t spliced = successor & MASK_LINK;
     sylvan_stats_count(LLMSSET_REMOVE_CALLS);
 
+    /* The walk to the predecessor measures the chain as a lookup's walk does,
+       and asks for a resize the same way. A swap looks nothing up in the
+       subtable it re-indexes nodes into; only its removals walk there. */
+    size_t steps = 0;
     for (;;) {
         uint64_t link = atomic_load_explicit(head, memory_order_acquire);
         if ((link & MASK_INDEX) == index) {
@@ -2019,6 +2046,7 @@ nodes_remove(nodes_table* dbs, uint64_t index)
             }
 
             sylvan_stats_count(LLMSSET_REMOVE);
+            steps++;
             uint64_t value = atomic_load_explicit(
                 dbs->next + previous, memory_order_acquire);
             if (link_is_removing(value)) break;
@@ -2028,6 +2056,9 @@ nodes_remove(nodes_table* dbs, uint64_t index)
                 if (atomic_compare_exchange_strong_explicit(
                         dbs->next + previous, &value, replacement,
                         memory_order_acq_rel, memory_order_acquire)) {
+                    if (steps >= SYLVAN_LLCHST_RESIZE_CHAIN_STEPS) {
+                        request_resize(subtable);
+                    }
                     return SYLVAN_OK;
                 }
                 break;
@@ -2193,7 +2224,8 @@ nodes_reserve(nodes_table* dbs, uint64_t count)
     /* Index capacity as well as node slots. A subtable growing to absorb
        <count> more nodes at the target load factor must stay inside the
        bound the maintenance pass already documents for head memory between
-       two collections, which is twice the head budget. This does not make a
+       two collections, which is twice the head budget; grow_in_session,
+       where a session's subtables do grow, keeps to it. This does not make a
        first head array or a sparse descriptor page unfailable -- those are
        heap allocations whose target is unknown until the node is inserted;
        nodes_prepare_reorder below is what makes them unfailable, for the
@@ -2206,6 +2238,82 @@ nodes_reserve(nodes_table* dbs, uint64_t count)
     if (used + needed_heads > 2u * budget) return SYLVAN_ERR_OOM;
 
     return region_reserve(dbs, count);
+}
+
+/**
+ * Growth of a subtable inside a reorder session.
+ *
+ * A session may not collect, so no maintenance pass runs inside it either, and
+ * yet it moves nodes between subtables wholesale: a swap rewrites nodes of the
+ * upper variable into the lower one and interns their new children under the
+ * upper one, and a sift does that at every level a variable passes. A subtable
+ * that was small at the opening collection can end up holding many times the
+ * head array it was given. Its lookups and removals notice and ask
+ * (request_resize), but the request used to wait for the end of the session,
+ * and every lookup and removal in the meantime walked the long chains.
+ *
+ * The session calls nodes_prepare_reorder before every swap, with the world
+ * stopped, before anything is removed, and naming exactly the subtables the
+ * swap will use. Answering the request there is the maintenance pass for one
+ * subtable: the same population count, the same target (resize_target_log2)
+ * and the same migration, which keeps every node at its index. Nothing holds
+ * a head array across the call; every primitive loads the descriptor afresh.
+ *
+ * Two things differ from the pass. A request that turns out not to need a
+ * larger array is dropped without LLCHST_RESIZE_DENIED, because populations
+ * move both ways during a session, and a subtable refused early in a sift may
+ * need the room later in the same sift. And the growth is held to a bound.
+ * Outside a session populations only grow between collections, which is what
+ * bounds the pass; here the same nodes pass through many subtables, and each
+ * keeps the array it grew to. So the growth is charged to allocated_heads, as
+ * the pass charges it, and is made only as far as the total stays within twice
+ * head_budget(table_size), the bound nodes_reserve checks. If not even a
+ * doubling fits, the request stands, for the pass after the session.
+ *
+ * Memory: the old array is freed at once and the new one at the next
+ * collection, whose rebuild replaces every head array.
+ */
+static void
+grow_in_session(lace_worker* lace, nodes_table* dbs,
+                llchst_subtable* subtable, int parallel)
+{
+    const uint32_t state = atomic_load_explicit(
+        &subtable->route, memory_order_relaxed);
+    if ((state & LLCHST_WANTS_RESIZE) == 0) return;
+    _Atomic(uint64_t)* heads = subtable_heads(subtable);
+    if (heads == NULL) return;
+
+    const uint32_t route = state & LLCHST_ROUTE_MASK;
+    const uint32_t old_log2 = atomic_load_explicit(
+        &subtable->head_log2, memory_order_relaxed) & LLCHST_HEAD_LOG2_MASK;
+    struct llchst_resize_entry entry = {
+        .subtable = subtable,
+        .old_heads = heads,
+        .old_count = (size_t)1 << old_log2
+    };
+
+    const uint64_t limit = 2u * (uint64_t)head_budget(dbs->table_size);
+    const uint64_t used = atomic_load_explicit(
+        &dbs->allocated_heads, memory_order_relaxed);
+    if (used + entry.old_count > limit) return;
+
+    entry.population = count_population(lace, dbs, &entry, parallel);
+    entry.new_log2 = resize_target_log2(entry.population);
+    if (entry.new_log2 <= old_log2) {
+        atomic_store_explicit(&subtable->route, route, memory_order_relaxed);
+        return;
+    }
+    /* A doubling fits, so this stops above old_log2. */
+    while (used + ((uint64_t)1 << entry.new_log2) > limit + entry.old_count) {
+        entry.new_log2--;
+    }
+
+    entry.new_heads = (_Atomic(uint64_t)*)sylvan_alloc_aligned(
+        ((size_t)1 << entry.new_log2) * sizeof(*entry.new_heads));
+    if (entry.new_heads == NULL) return;
+
+    replace_heads(lace, dbs, &entry, route, parallel);
+    atomic_store_explicit(&subtable->route, route, memory_order_relaxed);
 }
 
 /**
@@ -2227,16 +2335,25 @@ nodes_reserve(nodes_table* dbs, uint64_t count)
  * here turns it into an argument about this function: afterwards those routes
  * have a descriptor and a head array, and nothing takes either away except a
  * collection or a maintenance pass, neither of which may run inside a session.
+ *
+ * It is also where a named subtable that asked for a larger head array gets
+ * one; see grow_in_session above.
  */
 int
 nodes_prepare_reorder(nodes_table* dbs, const uint32_t* routes, size_t count)
 {
     if (nodes_reorder_caps(dbs) == 0) return SYLVAN_ERR_INVALID;
 
+    /* The session calls this on a worker, inside its frame; anyone else gets
+       the growth done sequentially. */
+    lace_worker* lace = lace_get_worker();
+    const int parallel = lace != NULL && lace_worker_count() > 1;
+
     for (size_t i = 0; i < count; i++) {
         llchst_subtable* subtable = get_subtable(dbs, routes[i], 1);
         if (subtable == NULL) return SYLVAN_ERR_OOM;
         if (ensure_heads(dbs, subtable) == NULL) return SYLVAN_ERR_OOM;
+        grow_in_session(lace, dbs, subtable, parallel);
     }
     return SYLVAN_OK;
 }

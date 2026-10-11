@@ -919,6 +919,42 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
     return status;
 }
 
+/**
+ * The frame a sift runs in: every worker enters it, one runs the session and
+ * the others help it until it is over.
+ *
+ * WHY NOT A NEWFRAME. In a NEWFRAME the workers that do not run the task wait
+ * in Lace's steal loop, which, when Lace is built with its idle backoff (the
+ * default), puts a worker to sleep after a few hundred failed steals and
+ * wakes it on a timeout of up to a millisecond, or when a thief that did find
+ * work wakes one sleeper. A swap alternates between serial bookkeeping and
+ * parallel phases, and the serial part of a large swap is long enough for
+ * every helper to fall asleep. The next phase then starts on one worker and
+ * gathers the others one timeout or one wake-up at a time; at eight workers
+ * that doubled the time of the phase that follows the classification. In a
+ * TOGETHER frame a worker that has finished its own copy of the task keeps
+ * stealing without ever sleeping, so the helpers are awake for every phase of
+ * every swap. The sift is a stop-the-world pause either way; only how the
+ * helpers wait changes, and outside a sift idle workers sleep as Lace
+ * decides. The price is that a helper spinning on the other hyperthread of a
+ * core slows the serial parts of a swap a little.
+ *
+ * Whichever worker claims the frame first runs the session; which one it is
+ * does not matter.
+ */
+TASK(void, sift_together, const sylvan_sift_config*, config,
+     sylvan_sift_result*, result, _Atomic(int)*, claim, int*, status)
+
+void
+sift_together_CALL(lace_worker *lace, const sylvan_sift_config *config,
+                   sylvan_sift_result *result, _Atomic(int) *claim,
+                   int *status)
+{
+    int unclaimed = 0;
+    if (!atomic_compare_exchange_strong(claim, &unclaimed, 1)) return;
+    *status = sift_go_CALL(lace, config, result);
+}
+
 int
 sylvan_sift_report(const sylvan_sift_config *config, sylvan_sift_result *result)
 {
@@ -934,7 +970,9 @@ sylvan_sift_report(const sylvan_sift_config *config, sylvan_sift_result *result)
     if (effective.max_growth < 1.0f) effective.max_growth = 1.0f;
 
     SIFT_TIMING_CLEAR();
-    const int status = sift_go_NEWFRAME(&effective, result);
+    _Atomic(int) claim = 0;
+    int status = SYLVAN_OK;
+    sift_together_TOGETHER(&effective, result, &claim, &status);
     SIFT_TIMING_REPORT();
     return status;
 }

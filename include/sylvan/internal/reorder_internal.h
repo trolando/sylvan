@@ -180,7 +180,7 @@ int sylvan_reorder_interact(uint32_t a, uint32_t b);
 /**
  * Batched index surgery. Nonzero (the default) hands a swap's removals and
  * re-indexings to the backend as whole sets wherever it implements
- * NODES_CAP_BATCH and more than one worker runs; zero makes every swap take
+ * NODES_CAP_BATCH, with any number of workers; zero makes every swap take
  * the per-node path it takes on a backend without the capability, which
  * measures what batching is worth. The swaps, the forest and the scores are
  * the same either way; only the schedule differs. May only be changed while

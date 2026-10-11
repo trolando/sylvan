@@ -905,10 +905,17 @@ void
 list_batch_remove_CALL(lace_worker* lace, nodes_table* dbs,
                        const uint64_t* indices, size_t first, size_t count)
 {
+    /* The lower half first, so that one worker removes the set in its own
+       order. A removal walks its family from the front, and the set comes
+       in an order that follows the families' own often enough -- nodes that
+       were appended one after another die or move one after another -- that
+       taking it back to front made every removal walk past the ones still to
+       come, which on circuits with heavily shared nodes made the removals of
+       a sift several times slower. */
     if (count > LIST_BATCH_BLOCK) {
         const size_t split = count / 2;
-        list_batch_remove_SPAWN(lace, dbs, indices, first, split);
-        list_batch_remove_CALL(lace, dbs, indices, first + split, count - split);
+        list_batch_remove_SPAWN(lace, dbs, indices, first + split, count - split);
+        list_batch_remove_CALL(lace, dbs, indices, first, split);
         list_batch_remove_SYNC(lace);
         return;
     }

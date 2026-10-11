@@ -669,7 +669,8 @@ void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb e
  * work in parallel with barriers between them; see the block above
  * nodes_remove_batch for the design and its correctness argument. The
  * single-node entry points keep the lock, so a caller that cannot batch -- a
- * single-worker sift, the table's unit tests -- gets them exactly as above.
+ * sift with batching switched off, the table's unit tests -- gets them exactly
+ * as above.
  *
  * WHY NOT LEAF PROMOTION. The obvious removal -- pull a leaf out of the
  * subtree below the removed node and give it the removed node's branch pair

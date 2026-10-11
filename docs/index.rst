@@ -630,8 +630,8 @@ node's family); the one runtime switch is internal API, declared in
 ``sylvan_reorder_set_batched(int enable)``
     With ``0``, every swap removes and re-indexes its nodes one at a time, even
     on a nodes table that can take the whole set at once (list, trie, llcht,
-    llchst) with more than one worker to share it. ``1``, the default, restores
-    batching. Read at the start of every swap; the forest, the scores and the
+    llchst). ``1``, the default, restores batching, with any number of
+    workers. Read at the start of every swap; the forest, the scores and the
     order a sift arrives at are the same either way.
 
 The recommendation that drives the automatic sift has one more setting, a build

@@ -67,10 +67,11 @@ source "$SCRIPTS/lib.sh"
 MATRIX_TABLE='
 base       |                                     |                             | list trie              | h1 h2 h3 h5 | the configuration the paper measures
 base       |                                     |                             | llcht llchst           | h1          | the configuration the paper measures
+base       |                                     |                             | llht                   | h6          | the table that cannot reorder, for the build-only comparison (sylvan_bench --no-sift)
 stats      | -DSYLVAN_STATS=ON                   | SYLVAN_STATS                | list trie llcht llchst | h1          | per-step index counters (sylvan_bench --stats)
-striped    | -DSYLVAN_REGION_STRIPED_START=ON    | SYLVAN_REGION_STRIPED_START | list trie              | h2          | striped per-worker region starts instead of the shared cursor
-phases     | -DSYLVAN_SIFT_PHASE_TIMING=ON       | SYLVAN_SIFT_PHASE_TIMING    | list trie              | h2          | a SIFT-PHASES {json} line on stderr after each sift
-nohuge     | -DSYLVAN_HUGEPAGES=OFF              | SYLVAN_HUGEPAGES            | list trie              | h5          | no MADV_HUGEPAGE advice on the tables
+striped    | -DSYLVAN_REGION_STRIPED_START=ON    | SYLVAN_REGION_STRIPED_START | list trie llcht llchst | h2          | striped per-worker region starts instead of the shared cursor
+phases     | -DSYLVAN_SIFT_PHASE_TIMING=ON       | SYLVAN_SIFT_PHASE_TIMING    | list trie llcht llchst | h2          | a SIFT-PHASES {json} line on stderr after each sift
+nohuge     | -DSYLVAN_HUGEPAGES=OFF              | SYLVAN_HUGEPAGES            | list trie llcht llchst | h5          | no MADV_HUGEPAGE advice on the tables
 profile | -DSYLVAN_STATS=ON -DSYLVAN_SIFT_PHASE_TIMING=ON | SYLVAN_STATS | list trie llcht llchst | h1 | counters and SIFT-PHASES in one run, for ns per index step (never timed)
 floor1024  | -DSYLVAN_SIFT_RECOMMEND_FLOOR=1024  | SYLVAN_SIFT_RECOMMEND_FLOOR | list trie              | s3          | sift recommendation floor 1024 live nodes instead of 4096
 floor16384 | -DSYLVAN_SIFT_RECOMMEND_FLOOR=16384 | SYLVAN_SIFT_RECOMMEND_FLOOR | list trie              | s3          | sift recommendation floor 16384 live nodes instead of 4096

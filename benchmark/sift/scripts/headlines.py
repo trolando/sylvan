@@ -33,8 +33,8 @@ REFERENCE CHECK. Final shared node counts are deterministic: under threshold 0,
 growth 1.2, no limits, every Sylvan backend at every worker count and CUDD with
 its caps raised must end at
 
-    C880-file 5234 (CUDD 7064)    C880-rnd1 31088 (CUDD 23789)    queens10 25330 (25331)
-    C880-rev 36533 (36533)        C880-rnd2 26972 (26973)         queens12 427043 (427043)
+    C880-file 7064 (7064)         C880-rnd1 23789 (23789)         queens10 25331 (25331)
+    C880-rev 36533 (36533)        C880-rnd2 26973 (26973)         queens12 427043 (427043)
     bryantN 2N+1 (2N+1)
 
 from initial sizes 346660, 470046, 844442, 1066147, 25945, 435170 and
@@ -77,11 +77,11 @@ import summarize as sz  # noqa: E402  (Table, MMM, F and the row helpers)
 
 # case: (initial, Sylvan final, CUDD final)
 REFERENCE = OrderedDict([
-    ("C880-file", (346660, 5234, 7064)),
+    ("C880-file", (346660, 7064, 7064)),
     ("C880-rev", (470046, 36533, 36533)),
-    ("C880-rnd1", (844442, 31088, 23789)),
-    ("C880-rnd2", (1066147, 26972, 26973)),
-    ("queens10", (25945, 25330, 25331)),
+    ("C880-rnd1", (844442, 23789, 23789)),
+    ("C880-rnd2", (1066147, 26973, 26973)),
+    ("queens10", (25945, 25331, 25331)),
     ("queens12", (435170, 427043, 427043)),
 ])
 # (case, vectors, seed): eval_hash
@@ -211,7 +211,8 @@ def sylvan_settings_ok(r):
             and num(r, "threshold", 0) == 0
             and abs(num(r, "growth", 1.2) - 1.2) < 1e-6
             and num(r, "max_swaps", 0) == 0 and num(r, "max_vars", 0) == 0
-            and num(r, "time_limit", 0) == 0 and num(r, "sift_status", 0) == 0)
+            and num(r, "time_limit", 0) == 0 and num(r, "sift_status", 0) == 0
+            and not r.get("full_legs"))
 
 
 def cudd_settings_ok(r):
@@ -778,9 +779,11 @@ def h3(rows, skips, check, out_dir):
         t = sz.Table("h3-fulllegs", "Interaction bound against --full-legs",
                      ["case", "config", "bounded swaps", "full swaps", "pruned",
                       "same final", "bounded s", "full s", "CUDD swaps"],
-                     ["The bound only skips positions that cannot win, so the final "
-                      "size must be the same; 'pruned' is the share of the full "
-                      "walk's swaps it saves."])
+                     ["The bound only skips positions that cannot be smaller, but "
+                      "the full walk can find an equally small one further on, "
+                      "which the return then prefers, so the final size may differ "
+                      "a little (C880-file: 7064 bounded, 7063 full); 'pruned' is "
+                      "the share of the full walk's swaps the bound saves."])
         for case in sz.ordered(r["case"] for r in fl):
             rs = [r for r in fl if r["case"] == case]
             cu = [r for r in rs if sz.tool(r) == "cudd"]
@@ -791,7 +794,7 @@ def h3(rows, skips, check, out_dir):
                 pr = (1 - bs / fs) * 100 if isinstance(bs, (int, float)) and \
                     isinstance(fs, (int, float)) and fs else None
                 t.add(case, name, bs, fs, sz.F(pr, 1, "%"),
-                      "yes" if det(b, "nodes_after") == det(f, "nodes_after") else "**NO**",
+                      "yes" if det(b, "nodes_after") == det(f, "nodes_after") else "no",
                       mmm(b, "sift_s"), mmm(f, "sift_s"), det(cu, "swaps"))
         sec.table(t, "h3-fulllegs")
 

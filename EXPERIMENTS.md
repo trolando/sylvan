@@ -210,17 +210,17 @@ every worker count and on every backend:
 
 | case | initial | Sylvan final | CUDD final |
 |---|---:|---:|---:|
-| C880-file | 346660 | 5234 | 7064 |
+| C880-file | 346660 | 7064 | 7064 |
 | C880-rev | 470046 | 36533 | 36533 |
-| C880-rnd1 | 844442 | 31088 | 23789 |
-| C880-rnd2 | 1066147 | 26972 | 26973 |
-| queens10 | 25945 | 25330 | 25331 |
+| C880-rnd1 | 844442 | 23789 | 23789 |
+| C880-rnd2 | 1066147 | 26973 | 26973 |
+| queens10 | 25945 | 25331 | 25331 |
 | queens12 | 435170 | 427043 | 427043 |
 | bryantN | | 2N+1 | 2N+1 |
 
 Swap counts are deterministic too, but not reference values: they change with
-the schedule (C880-file takes 3770 swaps with the interaction bound and 5624
-with `--full-legs`; CUDD 3456). H1 checks instead that every backend and
+the schedule (C880-file takes 3469 swaps with the interaction bound and 5279
+with `--full-legs`, which ends at 7063 nodes; CUDD 3456). H1 checks instead that every backend and
 worker count does the identical sift (same final size and swap count).
 
 ## Linux checklist

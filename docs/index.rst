@@ -517,8 +517,11 @@ Dynamic reordering
 ``sylvan_sift`` reorders the variables of the BDD/MTBDD forest by sifting: every
 variable is moved through the order one adjacent swap at a time, the size of the
 forest is measured at each position, and the variable is left where the forest was
-smallest. Variables are taken most populous first. The declarations are in
-``sylvan/reorder.h``.
+smallest. Variables are taken most populous first. Where this leaves a choice open --
+the order of equally populous variables, which way to go first from the exact middle,
+which of several equally small positions to return to -- it is made as CUDD's sifting
+makes it, so the two arrive at the same order; the one exception is that a variable
+with no nodes is not moved. The declarations are in ``sylvan/reorder.h``.
 
 .. code:: c
 
@@ -557,10 +560,11 @@ saves no time), and a wall clock limit. ``NULL`` selects the defaults.
 By default a variable's excursion also stops as soon as an interaction bound proves
 that no position further in that direction can beat the best already seen -- two
 variables interact when some function depends on both, and a variable can only
-exchange nodes with the ones it interacts with. The bound is conservative: it finds
-the same positions and the same final size as the exhaustive walk, in about a third
-fewer swaps, as in CUDD. Set ``full_legs`` to walk every leg to the end of the order
-anyway, for measurement.
+exchange nodes with the ones it interacts with. The bound is CUDD's, and saves about a
+third of the swaps; it skips only positions that cannot be smaller, so the exhaustive
+walk differs only where it finds an equally small position further on, which can
+change the final order a little. Set ``full_legs`` to walk every leg to the end of the
+order anyway, for measurement.
 
 An ungrouped sift moves variables one at a time, so it can separate the pairs
 (``2k``, ``2k+1``) of the operations for transition systems, or put the primed

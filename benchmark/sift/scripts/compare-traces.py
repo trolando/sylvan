@@ -38,10 +38,12 @@ moves in a u swap is the lower one, in a d swap the upper one), and reports:
     return swaps the other rule would have made;
   * the residual (difference in swaps) split into its causes.
 
-The leg rules are per side: --first-rules and --second-rules (sylvan or
-cudd) say which tool's direction tie-break and return rule each trace
-follows, so that a trace of Sylvan built with CUDD's rules can be compared
-too. Output is Markdown on stdout.
+The leg rules are per side: --first-rules and --second-rules say which
+direction tie-break and return rule each trace follows: cudd, which
+sylvan_sift follows too, or sylvan, the rules sylvan_sift followed before it
+took CUDD's (down first from the exact middle; return to the first level its
+legs reached with the smallest SCORE), for traces made then. Output is
+Markdown on stdout.
 """
 
 import argparse
@@ -420,8 +422,8 @@ def explain_divergence(a, b, n, out):
         if la.direction != lb.direction:
             out.append(f"The {which} legs go different ways ({la.direction} and "
                        f"{lb.direction}): the variable is at the middle of the order and "
-                       f"the two tools break that tie differently (Sylvan goes down "
-                       f"first, CUDD up). Cause: direction tie-break.")
+                       f"the two sides break that tie differently (the sylvan rules go "
+                       f"down first, the cudd rules up). Cause: direction tie-break.")
             return
         if len(la.moves) != len(lb.moves):
             short, long_ = (a, la), (b, lb)
@@ -434,9 +436,11 @@ def explain_divergence(a, b, n, out):
                        f"({REASON_TEXT.get(long_[1].reason, long_[1].reason)}). From "
                        f"the same order, so the two sides apply different stop tests: "
                        f"a run with --full-legs has no interaction bound; otherwise the "
-                       f"bound's per-level counts differ by the isolated projection "
-                       f"functions (CUDD leaves them out, Sylvan's harness holds them as "
-                       f"roots), or the growth tests differ. Cause: leg stop.")
+                       f"growth tests differ (CUDD's sizes count its 4 constants, which "
+                       f"sylvan_bench --growth-offset 4 adds), or the bound's per-level "
+                       f"counts differ by the isolated projection functions (CUDD leaves "
+                       f"them out; a Sylvan harness that holds them as roots counts "
+                       f"them). Cause: leg stop.")
             return
     ma, pa = plateau(ea)
     mb, pb = plateau(eb)
@@ -453,7 +457,7 @@ def explain_divergence(a, b, n, out):
     else:
         out.append(f"The two scores single out different levels: they differ by the "
                    f"isolated projection functions, which CUDD leaves out of its score "
-                   f"and Sylvan's harness holds as roots. Cause: score.")
+                   f"and a Sylvan harness that holds them as roots scores. Cause: score.")
 
 
 def main():
@@ -463,7 +467,7 @@ def main():
     ap.add_argument("sylvan", help="the first trace (sylvan_bench --trace)")
     ap.add_argument("cudd", help="the second trace (cudd_bench --trace)")
     ap.add_argument("--names", default="Sylvan,CUDD", help="names of the two sides")
-    ap.add_argument("--first-rules", choices=("sylvan", "cudd"), default="sylvan")
+    ap.add_argument("--first-rules", choices=("sylvan", "cudd"), default="cudd")
     ap.add_argument("--second-rules", choices=("sylvan", "cudd"), default="cudd")
     ap.add_argument("--growth", type=float, default=1.2, help="the growth bound both ran with")
     ap.add_argument("--cudd-constants", type=int, default=4,
@@ -476,7 +480,7 @@ def main():
                     help="leave out the per-variable table")
     ap.add_argument("--order-out", metavar="FILE",
                     help="write the second trace's candidate order, one variable per line "
-                         "(for sift-cudd-rules.patch's SIFT_CUDD_ORDER)")
+                         "(for sylvan_bench --candidates)")
     args = ap.parse_args()
 
     names = args.names.split(",")
@@ -570,10 +574,13 @@ def main():
     out.append("## Candidate order")
     out.append("")
     out.append(f"The sequence of sifted variables (a variable whose excursion made no "
-               f"swap is invisible in a trace). {a.name} sorts by population at the start "
-               f"of the sift, ties by identity; {b.name} (cuddSifting) by the keys of each "
-               f"level at the start, with ddUniqueCompare's tie-break compiled out and an "
-               f"unstable quicksort, so ties fall as the sort leaves them.")
+               f"swap is invisible in a trace). Both sort by node count at the start of "
+               f"the sift with CUDD's unstable quicksort (util_qsort; ddUniqueCompare's "
+               f"tie-break is compiled out), so ties fall as the sort leaves them. CUDD's "
+               f"count includes each variable's projection function, which Sylvan's "
+               f"forest holds only where an output uses it, so the two orders can differ "
+               f"on equal and nearly equal counts; sylvan_bench --candidates gives "
+               f"Sylvan CUDD's order.")
     out.append("")
     out.append(f"* {same_pos} of {min(len(oa_), len(ob_))} places agree"
                + (f"; the first difference is at place {first_diff + 1}." if first_diff is not None else "; the orders are identical."))
@@ -698,7 +705,7 @@ def main():
                f"made different, so its legs differ for that reason as well as for their "
                f"own: past the first divergence, this table says where the swaps went, "
                f"not which rule sent them there. An exact attribution needs runs that "
-               f"switch one rule at a time (README.md, sift-cudd-rules.patch).")
+               f"differ in one rule only.")
     out.append("")
     if by_reason:
         out.append(f"| search leg | {a.name} stopped at | {b.name} stopped at | swaps |")

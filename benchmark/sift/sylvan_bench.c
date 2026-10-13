@@ -104,6 +104,11 @@ static double   opt_growth    = 1.2;
 static double   opt_timelimit = 0.0;   /* seconds, 0 = unlimited             */
 static int      opt_fulllegs  = 0;     /* walk every leg to the end          */
 static int      opt_grouppairs = 0;    /* sift (2k, 2k+1) as one block       */
+static int      opt_siftempty = 0;     /* sift variables with no nodes too   */
+static uint64_t opt_growthoffset = 0;  /* added to the sizes growth compares */
+static const char *opt_candidates = NULL; /* a candidate order to follow     */
+static uint32_t *given_order;          /* --candidates, as read              */
+static size_t   given_count;
 static int      opt_auto      = 0;     /* sift through sylvan_gc's auto sift */
 static int      opt_autobuild = 0;     /* auto sift between gates of the build */
 static int      opt_stats     = 0;     /* counters of the build and the sift */
@@ -739,8 +744,12 @@ run_CALL(lace_worker *lace)
         if (op_phase_CALL(lace, &ops_before_s, &ops_before_sum) != 0) return 1;
     }
 
-    /* Out of the way, so the sift sees the output cone and nothing else. */
+    /* Out of the way, so the sift sees the output cone and nothing else:
+       the variable set, and the projection functions, which the forest then
+       holds only where an output uses one. That is also what CUDD scores,
+       which leaves out the projection functions nothing else references. */
     varset = bdd_set_empty();
+    for (int i = 0; i < n_var; i++) var[i] = bdd_false;
 
     sylvan_sift_result result;
     memset(&result, 0, sizeof(result));
@@ -840,7 +849,8 @@ run_CALL(lace_worker *lace)
            ",\"ops_before_sum\":%s,\"ops_after_sum\":%s"
            ",\"backend\":\"%s\",\"full_legs\":%d,\"time_limit\":%.3f"
            ",\"auto\":%d,\"sifts\":%llu,\"batched\":%d"
-           ",\"group_pairs\":%d,\"split_pairs\":%u",
+           ",\"group_pairs\":%d,\"split_pairs\":%u,\"sift_empty\":%d"
+           ",\"candidates_given\":%llu,\"growth_offset\":%llu",
            opt_mode, opt_case ? opt_case : "",
            opt_workers, opt_sift,
            opt_threshold, opt_maxswaps, opt_maxvars, opt_growth,
@@ -859,7 +869,9 @@ run_CALL(lace_worker *lace)
            json_double(ops_after_buf, sizeof(ops_after_buf), ops_after_sum),
            SIFT_BENCH_BACKEND, opt_fulllegs, opt_timelimit,
            opt_auto, (unsigned long long)sifts, opt_batched,
-           opt_grouppairs, (unsigned)split_pairs);
+           opt_grouppairs, (unsigned)split_pairs, opt_siftempty,
+           (unsigned long long)given_count,
+           (unsigned long long)opt_growthoffset);
     if (opt_verify > 0) {
         printf(", \"satsum\":[");
         for (int r = 0; r < n_root && r < 8; r++) {
@@ -900,6 +912,14 @@ usage(FILE *f)
         "  sift:   --threshold N (0)  --growth G (1.2)  --max-swaps N (0)\n"
         "          --max-vars N (0)  --time-limit S (0)  --full-legs  --auto\n"
         "          --group-pairs (sift each pair (2k, 2k+1) as one block)\n"
+        "          --sift-empty (sift variables with no nodes too, as CUDD\n"
+        "                    does; for comparing traces with cudd_bench)\n"
+        "          --candidates FILE (sift the identities FILE lists, one per\n"
+        "                    line, first and in that order; for comparing\n"
+        "                    traces: compare-traces.py --order-out writes it)\n"
+        "          --growth-offset N (added to both sizes the growth bound\n"
+        "                    compares; 4 counts CUDD's constants, for\n"
+        "                    comparing traces)\n"
         "          --no-sift  --no-batch (per-node index surgery in swaps)\n"
         "          --recommend-factor F (growth the --auto recommendation\n"
         "                    asks for; library default 2.0, 0 disables)\n"
@@ -944,6 +964,9 @@ main(int argc, char **argv)
         else if (!strcmp(a, "--time-limit") && v){ opt_timelimit = atof(v); i++; }
         else if (!strcmp(a, "--full-legs"))      { opt_fulllegs = 1; }
         else if (!strcmp(a, "--group-pairs"))    { opt_grouppairs = 1; }
+        else if (!strcmp(a, "--sift-empty"))     { opt_siftempty = 1; }
+        else if (!strcmp(a, "--candidates") && v){ opt_candidates = v; i++; }
+        else if (!strcmp(a, "--growth-offset") && v) { opt_growthoffset = strtoull(v, NULL, 10); i++; }
         else if (!strcmp(a, "--auto"))           { opt_auto = 1; }
         else if (!strcmp(a, "--auto-build"))     { opt_autobuild = 1; }
         else if (!strcmp(a, "--stats"))          { opt_stats = 1; }
@@ -958,6 +981,27 @@ main(int argc, char **argv)
         else if (!strcmp(a, "--trace") && v)     { opt_trace = v; i++; }
         else if (!strcmp(a, "--probs") && v)     { opt_probs = v; i++; }
         else { fprintf(stderr, "unknown option %s\n", a); usage(stderr); return 2; }
+    }
+    sylvan_sift_set_sift_empty(opt_siftempty);
+    sylvan_sift_set_growth_offset(opt_growthoffset);
+    if (opt_candidates != NULL) {
+        /* CUDD's candidate order, which the populations alone do not give
+           (see sylvan_sift_set_order). */
+        FILE *f = fopen(opt_candidates, "r");
+        if (f == NULL) { perror(opt_candidates); return 1; }
+        size_t room = 0;
+        unsigned identity;
+        while (fscanf(f, "%u", &identity) == 1) {
+            if (given_count == room) {
+                room = room ? 2 * room : 256;
+                uint32_t *more = (uint32_t*)realloc(given_order, room * sizeof(uint32_t));
+                if (more == NULL) { fprintf(stderr, "--candidates: out of memory\n"); return 1; }
+                given_order = more;
+            }
+            given_order[given_count++] = (uint32_t)identity;
+        }
+        fclose(f);
+        sylvan_sift_set_order(given_order, given_count);
     }
     if (strcmp(opt_mode, "blif") != 0 && strcmp(opt_mode, "bryant") != 0 &&
         strcmp(opt_mode, "queens") != 0) {

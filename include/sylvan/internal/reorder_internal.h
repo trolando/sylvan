@@ -292,6 +292,41 @@ int sylvan_test_varswap_sequence(const uint32_t *ranks, size_t count,
 void sylvan_sift_set_refusal_window(uint64_t first, uint64_t count);
 
 /**
+ * Nonzero has every sift move the variables with no nodes too, as CUDD's
+ * sifting does, so that its schedule is CUDD's swap for swap. The default, 0,
+ * leaves them where they are. Moving one changes no node, but CUDD leaves it
+ * at the top of the order, one level above everything it crossed, and that
+ * changes the middle of the order and so where later excursions go. It exists
+ * to compare the driver with CUDD (benchmark/sift has the harness), and may
+ * only be called with no sift running.
+ */
+void sylvan_sift_set_sift_empty(int on);
+
+/**
+ * Have every sift take the blocks named by their first identity in
+ * <identities>, in that order, before all others, which follow in the order
+ * the driver gives them. It exists to give the driver CUDD's candidate order
+ * when the populations cannot give it: CUDD counts in every variable's nodes
+ * the projection function its manager always holds, which a forest here has
+ * only where something uses it, so CUDD's sort can place differently the
+ * variables whose counts are equal or one apart (benchmark/sift has the
+ * harness). The array is read at every sift and must stay valid until this is
+ * called with NULL; NULL, the default, switches it off. May only be called
+ * with no sift running.
+ */
+void sylvan_sift_set_order(const uint32_t *identities, size_t count);
+
+/**
+ * Add <nodes> to both sizes the growth bound compares, the size after a move
+ * and the smallest of the leg. CUDD's sizes count its four constant nodes,
+ * which a forest here does not have, so with 4 a leg stops where CUDD's does
+ * also when the size lands just past the bound. It exists to compare the
+ * driver with CUDD (benchmark/sift has the harness); 0, the default, compares
+ * the forest's own sizes. May only be called with no sift running.
+ */
+void sylvan_sift_set_growth_offset(uint64_t nodes);
+
+/**
  * Which part of a sift made a swap, as sylvan_sift_set_trace reports it.
  */
 typedef enum sylvan_sift_leg {

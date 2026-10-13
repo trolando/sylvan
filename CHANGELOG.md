@@ -30,7 +30,12 @@ All notable changes to Sylvan will be documented in this file.
   `sylvan_sift_report` says what it did; see `sylvan/reorder.h`. A variable's
   excursion stops as soon as a variable interaction bound proves that no
   position further in that direction can beat the best already seen, as in
-  CUDD; set `full_legs` to walk every leg to the end of the order. Sifting is
+  CUDD; set `full_legs` to walk every leg to the end of the order. Where
+  sifting leaves a choice open -- the order of equally populous variables, the
+  first direction from the exact middle, the growth test, which of several
+  equally small positions to return to -- it is made as in CUDD's sifting, so
+  that the two give the same order, except that a variable with no nodes is
+  not moved. Sifting is
   refused, changing nothing, while the ZDD or ListDD subsystem is initialised,
   while garbage collection is disabled (a sift begins by collecting, which
   would drop handles a caller disabled collection to keep; the new

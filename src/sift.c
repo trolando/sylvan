@@ -35,6 +35,15 @@
  * the table refuses. The variable is left at the best position visited, and
  * only an excursion in which neither leg stopped early has visited them all.
  *
+ * CUDD'S CHOICES, WHERE THERE IS ONE TO MAKE. Several steps above leave a
+ * choice open: which variable goes first among equal counts, which end is
+ * nearer when the variable is in the exact middle, how growth is compared,
+ * and which of several positions with the smallest forest to return to. Each
+ * is made the way CUDD's sifting (cuddSifting) makes it, so that the two give
+ * the same schedule swap for swap; they are marked where they are made. The
+ * one deliberate difference is that a variable with no nodes is not sifted
+ * (see sylvan_sift_set_sift_empty).
+ *
  * WHAT MAKES IT CHEAP. Sifting scores a position by the size of the forest,
  * and the obvious implementation recomputes that size after every swap, which
  * is a scan of the entire node table per swap. Here every swap reports its own
@@ -70,6 +79,8 @@
 #include <sylvan/internal.h>
 
 #include <assert.h>
+#include <float.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -166,23 +177,128 @@ struct sift_candidate {
     uint64_t population;
 };
 
-/** Most populous first; ties by identity, so a run is reproducible. */
+/**
+ * Positive when <a> goes after <b>, negative when before, 0 when the two are
+ * equal to the sort: most populous first, and nothing else. That is CUDD's
+ * comparison (ddUniqueCompare), which has a tie-break on identity but leaves
+ * it compiled out.
+ */
 static int
-sift_compare(const void *left, const void *right)
+sift_compare(const struct sift_candidate *a, const struct sift_candidate *b)
 {
-    const struct sift_candidate *a = (const struct sift_candidate*)left;
-    const struct sift_candidate *b = (const struct sift_candidate*)right;
-    if (a->population != b->population) {
-        return a->population < b->population ? 1 : -1;
+    if (a->population == b->population) return 0;
+    return a->population < b->population ? 1 : -1;
+}
+
+static void
+sift_exchange(struct sift_candidate *order, uint32_t i, uint32_t j)
+{
+    const struct sift_candidate held = order[i];
+    order[i] = order[j];
+    order[j] = held;
+}
+
+/* Below this many candidates a part is left to the final insertion sort;
+   from this many on the pivot is a median of three. */
+#define SIFT_SORT_INSERT 4u
+#define SIFT_SORT_MEDIAN 6u
+
+/** The quicksort half of sift_sort, on order[base .. max-1]. */
+static void
+sift_quicksort(struct sift_candidate *order, uint32_t base, uint32_t max)
+{
+    uint32_t count = max - base;
+    do {
+        /* The pivot, at mid: the median of the first, middle and last
+           candidates, preferring the middle and then the first on ties. */
+        uint32_t mid = base + count / 2u;
+        if (count >= SIFT_SORT_MEDIAN) {
+            uint32_t m = sift_compare(&order[base], &order[mid]) > 0 ? base : mid;
+            if (sift_compare(&order[m], &order[max - 1u]) > 0) {
+                m = m == base ? mid : base;
+                if (sift_compare(&order[m], &order[max - 1u]) < 0) m = max - 1u;
+            }
+            if (m != mid) sift_exchange(order, mid, m);
+        }
+
+        /* Partition around the pivot, which moves along as it is exchanged. */
+        uint32_t i = base;
+        uint32_t j = max - 1u;
+        for (;;) {
+            while (i < mid && sift_compare(&order[i], &order[mid]) <= 0) i++;
+            while (j > mid && sift_compare(&order[mid], &order[j]) <= 0) j--;
+            uint32_t other;
+            uint32_t next = i + 1u;
+            if (j > mid) {
+                if (i == mid) {
+                    mid = other = j;
+                } else {
+                    other = j;
+                    j--;
+                }
+            } else if (i == mid) {
+                break;
+            } else {
+                other = mid;
+                next = mid = i;
+                j--;
+            }
+            sift_exchange(order, i, other);
+            i = next;
+        }
+
+        /* The smaller part by recursion, the larger by going round again. */
+        const uint32_t below = mid - base;
+        const uint32_t above = max - (mid + 1u);
+        if (below <= above) {
+            if (below >= SIFT_SORT_INSERT) sift_quicksort(order, base, mid);
+            base = mid + 1u;
+            count = above;
+        } else {
+            if (above >= SIFT_SORT_INSERT) sift_quicksort(order, mid + 1u, max);
+            max = mid;
+            count = below;
+        }
+    } while (count >= SIFT_SORT_INSERT);
+}
+
+/**
+ * Sort the <count> candidates into the order they are sifted in, the order
+ * CUDD's sort (util_qsort) leaves them in: the 4.2BSD quicksort CUDD ships so
+ * that a reordering is the same on every platform. Which variables of equal
+ * population come first is part of the schedule, and that sort is not
+ * stable, so its steps are followed exactly: quicksort down to parts of fewer
+ * than four, the smallest of the first four moved to the front, and an
+ * insertion sort over the whole.
+ */
+static void
+sift_sort(struct sift_candidate *order, uint32_t count)
+{
+    if (count <= 1u) return;
+    uint32_t head = count;
+    if (count >= SIFT_SORT_INSERT) {
+        sift_quicksort(order, 0, count);
+        head = SIFT_SORT_INSERT;
     }
-    if (a->identity != b->identity) return a->identity < b->identity ? -1 : 1;
-    return 0;
+    uint32_t least = 0;
+    for (uint32_t k = 1; k < head; k++) {
+        if (sift_compare(&order[least], &order[k]) > 0) least = k;
+    }
+    if (least != 0) sift_exchange(order, 0, least);
+    for (uint32_t k = 1; k < count; k++) {
+        uint32_t at = k;
+        while (at > 0 && sift_compare(&order[at - 1u], &order[k]) > 0) at--;
+        if (at == k) continue;
+        const struct sift_candidate moving = order[k];
+        memmove(&order[at + 1u], &order[at], (size_t)(k - at) * sizeof(*order));
+        order[at] = moving;
+    }
 }
 
 /** Everything one call to the driver carries around. */
 struct sift_run {
     uint32_t max_swaps;
-    double   growth;
+    double   growth;      /* the growth factor as the caller wrote it */
     double   deadline;    /* absolute; 0.0 means no time limit */
     uint32_t ranks;       /* registered ranks, fixed for the session */
     uint64_t size;        /* internal nodes right now */
@@ -218,6 +334,48 @@ sylvan_sift_set_refusal_window(uint64_t first, uint64_t count)
 {
     sift_refuse_first = first;
     sift_refuse_count = count;
+}
+
+/* Whether variables with no nodes are sifted too; see
+   sylvan_sift_set_sift_empty. Only written with no sift running. */
+static int sift_empty;
+
+void
+sylvan_sift_set_sift_empty(int on)
+{
+    sift_empty = on != 0;
+}
+
+/* A candidate order to follow instead of the sort's; see
+   sylvan_sift_set_order. Only written with no sift running. */
+static const uint32_t *sift_order_given;
+static size_t sift_order_count;
+
+void
+sylvan_sift_set_order(const uint32_t *identities, size_t count)
+{
+    sift_order_given = count != 0 ? identities : NULL;
+    sift_order_count = identities != NULL ? count : 0;
+}
+
+/**
+ * Move the blocks sylvan_sift_set_order names to the front of <order>, in the
+ * order named, and leave the others after them in the order they were in.
+ */
+static void
+sift_follow_order(struct sift_candidate *order, uint32_t count)
+{
+    uint32_t placed = 0;
+    for (size_t k = 0; k < sift_order_count && placed < count; k++) {
+        for (uint32_t i = placed; i < count; i++) {
+            if (order[i].identity != sift_order_given[k]) continue;
+            const struct sift_candidate moving = order[i];
+            memmove(&order[placed + 1u], &order[placed],
+                    (size_t)(i - placed) * sizeof(*order));
+            order[placed++] = moving;
+            break;
+        }
+    }
 }
 
 /* The diagnostic swap trace; see sylvan_sift_set_trace. Only written with no
@@ -414,6 +572,44 @@ sift_move(lace_worker *lace, struct sift_run *run, uint32_t top,
     return 0;
 }
 
+/** A position of the sifted block and the size of the forest there. */
+struct sift_best {
+    uint32_t top;
+    uint64_t size;
+};
+
+/** Take the block's position <top> as <best> if the forest is no larger. */
+static inline void
+sift_note_best(const struct sift_run *run, struct sift_best *best, uint32_t top)
+{
+    if (best != NULL && run->size <= best->size) {
+        best->top = top;
+        best->size = run->size;
+    }
+}
+
+/* Nodes added to both sizes the growth test compares; see
+   sylvan_sift_set_growth_offset. Only written with no sift running. */
+static uint64_t sift_growth_offset;
+
+void
+sylvan_sift_set_growth_offset(uint64_t nodes)
+{
+    sift_growth_offset = nodes;
+}
+
+/**
+ * Whether the forest has grown past the growth bound over <limit>, the
+ * smallest size of the leg. This is CUDD's test (ddSiftingUp, ddSiftingDown):
+ * in double, against the factor as the caller wrote it.
+ */
+static inline int
+sift_grown(const struct sift_run *run, uint64_t limit)
+{
+    return (double)(run->size + sift_growth_offset) >
+           (double)(limit + sift_growth_offset) * run->growth;
+}
+
 /** Whether <identity> interacts with any of the <size> variables of <block>. */
 static int
 sift_interacts(uint32_t identity, const uint32_t *block, uint32_t size)
@@ -453,13 +649,12 @@ sift_interacts(uint32_t identity, const uint32_t *block, uint32_t size)
  * a forest that is already large, and measuring its growth against the
  * variable's global best would abandon it before it had moved at all.
  *
- * <best_top> and <best_size> track the best position over the whole
- * excursion, across both legs, and are what the caller returns the block to.
+ * <best>, when not NULL, is updated to the last position of the leg where the
+ * forest was no larger than its size; see sift_block.
  */
 static uint32_t
 sift_leg(lace_worker *lace, struct sift_run *run, uint32_t top, int down,
-         const uint32_t *block, uint32_t size,
-         uint32_t *best_top, uint64_t *best_size)
+         const uint32_t *block, uint32_t size, struct sift_best *best)
 {
     uint64_t limit = run->size;
     run->leg = down ? SYLVAN_SIFT_LEG_DOWN : SYLVAN_SIFT_LEG_UP;
@@ -494,10 +689,10 @@ sift_leg(lace_worker *lace, struct sift_run *run, uint32_t top, int down,
             if (!sift_move(lace, run, top, size, next, &refused)) break;
             top += next;
 
-            if (run->size < *best_size) { *best_size = run->size; *best_top = top; }
+            sift_note_best(run, best, top);
             if (run->size < limit) limit = run->size;
             if (refused) break;
-            if ((double)run->size > run->growth * (double)limit) break;
+            if (sift_grown(run, limit)) break;
         }
     } else {
         /* bound: a lower bound on the size reachable above. The part below the
@@ -533,10 +728,10 @@ sift_leg(lace_worker *lace, struct sift_run *run, uint32_t top, int down,
                 }
             }
 
-            if (run->size < *best_size) { *best_size = run->size; *best_top = top; }
+            sift_note_best(run, best, top);
             if (run->size < limit) limit = run->size;
             if (refused) break;
-            if ((double)run->size > run->growth * (double)limit) break;
+            if (sift_grown(run, limit)) break;
         }
     }
 
@@ -546,6 +741,16 @@ sift_leg(lace_worker *lace, struct sift_run *run, uint32_t top, int down,
 /**
  * One block's whole excursion: to the nearer end, to the far end, back to
  * the best position seen.
+ *
+ * Both of the choices this leaves open are CUDD's (ddSiftingAux). When the
+ * block is exactly in the middle, it goes up first. The position it returns
+ * to is the one ddSiftingBackward picks: the smallest size the second leg
+ * reached, or the size before the excursion if that is smaller, and of the
+ * positions of the second leg with that size the last one, which is the one
+ * the return reaches with the fewest swaps. When no position of the second
+ * leg has it, the block stays where the second leg started. The second leg
+ * crosses the positions of the first on its way, unless a bound stops it
+ * first, so it sees what the first leg saw where it matters.
  *
  * The return leg ignores the swap and time budgets. It is not search -- it is
  * undoing search -- and stopping halfway through it would leave the block at
@@ -565,22 +770,21 @@ sift_block(lace_worker *lace, struct sift_run *run, const uint32_t *block,
     if (top + size > run->ranks) return;
     if (size == 2 && sylvan_rank_of(block[1]) != top + 1u) return;
 
-    uint32_t best_top = top;
-    uint64_t best_size = run->size;
+    const uint64_t initial = run->size;
 
-    /* Distance to the top is <top>, to the bottom <ranks-size-top>. */
-    const int down_first = top >= run->ranks - size - top;
+    /* Distance to the top is <top>, to the bottom <ranks-size-top>; up first
+       when they are equal, as CUDD does. */
+    const int down_first = top > run->ranks - size - top;
 
-    top = sift_leg(lace, run, top, down_first, block, size,
-                   &best_top, &best_size);
+    top = sift_leg(lace, run, top, down_first, block, size, NULL);
     if (run->stuck) return;
-    top = sift_leg(lace, run, top, !down_first, block, size,
-                   &best_top, &best_size);
+    struct sift_best best = { top, initial };
+    top = sift_leg(lace, run, top, !down_first, block, size, &best);
 
     run->leg = SYLVAN_SIFT_LEG_RETURN;
-    while (top != best_top && !run->stuck) {
+    while (top != best.top && !run->stuck) {
         int refused = 0;
-        if (top < best_top) {
+        if (top < best.top) {
             const uint32_t next = sift_block_below(run, top + size);
             if (!sift_move(lace, run, top, size, next, &refused)) break;
             top += next;
@@ -786,7 +990,16 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
 
     struct sift_run run;
     run.max_swaps = config->max_swaps;
-    run.growth = (double)config->max_growth;
+    {
+        /* CUDD's growth factor is a double, the configuration's a float, and
+           1.2f is not 1.2. A float carries FLT_DIG decimal digits through
+           unchanged, so printing it with that many gives back what the caller
+           wrote, and that is the factor sift_grown compares with. */
+        char text[32];
+        snprintf(text, sizeof(text), "%.*g", FLT_DIG,
+                 (double)config->max_growth);
+        run.growth = strtod(text, NULL);
+    }
     run.deadline = config->time_limit > 0.0
         ? sift_now() + config->time_limit : 0.0;
     run.ranks = sylvan_ranks_registered();
@@ -842,6 +1055,10 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
                 }
             }
 
+            /* Every block, in identity order, as CUDD lists its variables
+               before sorting them: the order the sort leaves equal
+               populations in depends on all of them, so the ones not to be
+               sifted are passed over afterwards rather than left out. */
             const uint32_t width = run.grouped ? 2u : 1u;
             for (uint32_t first = 0; first < run.ranks; first += width) {
                 const uint32_t size = first + width <= run.ranks ? width : 1u;
@@ -853,20 +1070,22 @@ sift_go_CALL(lace_worker *lace, const sylvan_sift_config *config,
                 for (uint32_t i = 0; i < size; i++) {
                     population += run.pop[first + i];
                 }
-                /* A block with no nodes cannot change the size of anything
-                   by moving, whatever the threshold says. */
-                if (population == 0) continue;
-                if (population < config->nodes_threshold) continue;
                 order[candidates].identity = first;
                 order[candidates].population = population;
                 candidates++;
             }
-            qsort(order, candidates, sizeof(struct sift_candidate),
-                  sift_compare);
+            sift_sort(order, candidates);
+            sift_follow_order(order, candidates);
         }
     }
 
     for (uint32_t i = 0; i < candidates && !run.stuck; i++) {
+        /* A block with no nodes cannot change the size of anything by
+           moving, whatever the threshold says, so unlike CUDD the driver
+           does not move it. On two-level circuits, where many inputs feed no
+           output, moving them is most of the swaps CUDD makes. */
+        if (order[i].population == 0 && !sift_empty) continue;
+        if (order[i].population < config->nodes_threshold) continue;
         if (!sift_may_swap(&run, 1)) break;
         const uint32_t first = order[i].identity;
         const uint32_t size = run.grouped && first + 1u < run.ranks ? 2u : 1u;

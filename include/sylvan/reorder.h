@@ -109,10 +109,13 @@ typedef struct sylvan_sift_config {
      * in that direction can beat the best already seen: a variable can only
      * exchange nodes with the variables some function depends on it together
      * with, so the population of those still ahead bounds what the rest of
-     * the leg could save. The bound is conservative -- both settings find the
-     * same positions and the same final size -- and on C880-file it prunes
-     * about a third of the swaps, so the full walk is there to measure the
-     * bound and to check it, not for quality.
+     * the leg could save. The bound only skips positions that cannot beat the
+     * smallest size of the leg, but a full walk also reaches positions that
+     * equal it, and the return goes to the last of the equally small
+     * positions, so the final order, and through later moves the final size,
+     * can differ a little: on C880-file 7064 nodes in 3469 swaps with the
+     * bound, 7063 in 5279 without. The bound is CUDD's, and the full walk is
+     * there to measure it, not for quality.
      */
     int full_legs;
 

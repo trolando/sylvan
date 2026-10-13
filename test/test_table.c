@@ -1937,7 +1937,12 @@ test_reorder_contract(void)
     fprintf(stderr, "test_table: reorder caps 0x%x, %u workers\n",
             (unsigned int)caps, test_workers);
     test_assert((caps & ~(uint32_t)(NODES_CAP_REMOVE | NODES_CAP_RELEASE |
-                                    NODES_CAP_BATCH)) == 0);
+                                    NODES_CAP_BATCH |
+                                    NODES_CAP_PARALLEL_RELEASE)) == 0);
+    /* A release that scales is still a release. */
+    if ((caps & NODES_CAP_PARALLEL_RELEASE) != 0) {
+        test_assert((caps & NODES_CAP_RELEASE) != 0);
+    }
 
     const uint64_t key = UINT64_C(0x4000000000000005);
     int created = 0;

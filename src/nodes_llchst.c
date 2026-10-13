@@ -1961,7 +1961,8 @@ uint32_t
 nodes_reorder_caps(const nodes_table* dbs)
 {
     (void)dbs;
-    return NODES_CAP_REMOVE | NODES_CAP_RELEASE | NODES_CAP_BATCH;
+    return NODES_CAP_REMOVE | NODES_CAP_RELEASE | NODES_CAP_BATCH |
+           NODES_CAP_PARALLEL_RELEASE;
 }
 
 /**

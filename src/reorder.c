@@ -1115,22 +1115,61 @@ reorder_validate_counts(void)
     return status;
 }
 
+/** Granularity of the parallel release; a release is a few stores. */
+#define REORDER_RELEASE_BLOCK 256
+
+/** Release session.dead[first .. first+count-1], on all workers. */
+TASK(void, reorder_release_block, size_t, first, size_t, count)
+
+void
+reorder_release_block_CALL(lace_worker *lace, size_t first, size_t count)
+{
+    if (count > REORDER_RELEASE_BLOCK) {
+        reorder_release_block_SPAWN(lace, first, count / 2);
+        reorder_release_block_CALL(lace, first + count / 2, count - count / 2);
+        reorder_release_block_SYNC(lace);
+        return;
+    }
+
+    const size_t end = first + count;
+    for (; first < end; first++) {
+        if (nodes_release(nodes, session.dead[first]) != SYLVAN_OK) {
+            reorder_fatal("a retired node could not be released");
+        }
+    }
+}
+
 /**
  * Give every retired slot back to the allocator.
  *
- * This never runs inside a parallel phase. A worker may still be holding a
- * chain link that names a retired node, and reusing that index before every
- * removal of the phase has completed would hand the walker a different node
- * under the same index.
+ * This only runs between the phases that use the index, never inside one. A
+ * worker may still be holding a chain link that names a retired node, and
+ * reusing that index before every removal of the phase has completed would
+ * hand the walker a different node under the same index. Releasing in
+ * parallel does not reopen that window: nothing allocates here, and the first
+ * allocation after it is the next swap's.
+ *
+ * The releases run on every worker where the table releases without a lock
+ * (NODES_CAP_PARALLEL_RELEASE), because they are a pass over every node the
+ * swap retired, which one worker would otherwise make alone; on a table with
+ * a lock they would only queue up, so there one worker makes them. The
+ * retired bits are the session's own plain words, so they are cleared first,
+ * by this worker.
  */
 static void
-reorder_release_dead(void)
+reorder_release_dead(lace_worker *lace)
 {
     for (size_t i = 0; i < session.dead_count; i++) {
-        const uint64_t index = session.dead[i];
-        bitmap_clear(session.retired, index);
-        if (nodes_release(nodes, index) != SYLVAN_OK) {
-            reorder_fatal("a retired node could not be released");
+        bitmap_clear(session.retired, session.dead[i]);
+    }
+    if (lace != NULL && lace_worker_count() > 1 &&
+        (nodes_reorder_caps(nodes) & NODES_CAP_PARALLEL_RELEASE) != 0) {
+        reorder_release_block_CALL(lace, 0, session.dead_count);
+    } else {
+        for (size_t i = 0; i < session.dead_count; i++) {
+            if (nodes_release(nodes, session.dead[i]) != SYLVAN_OK) {
+                reorder_fatal("a retired node could not be released");
+            }
         }
     }
     session.dead_count = 0;
@@ -1139,14 +1178,13 @@ reorder_release_dead(void)
 int
 sylvan_reorder_end_CALL(lace_worker *lace)
 {
-    (void)lace;
     if (!session.active) return SYLVAN_ERR_INVALID;
     REORDER_TIMING_START(timing_end);
 
     int status = SYLVAN_OK;
     if (reorder_validate) status = reorder_validate_counts();
 
-    reorder_release_dead();
+    reorder_release_dead(lace);
 
     const uint64_t promotions = session.overflow_promotions;
     reorder_free_state();
@@ -1438,8 +1476,8 @@ sylvan_reorder_interact_build(void)
  * the new children (parallel); unhash and rewrite the records (parallel);
  * re-index them (parallel); retire what died, in rounds whose node set is
  * gathered serially and then unhashed -- in parallel where the index takes
- * batches -- and counted down in parallel; release the slots (serial).
- * Splitting the rewrite from the re-indexing costs one barrier more than
+ * batches -- and counted down in parallel; release the slots (in parallel
+ * where the table releases without a lock). Splitting the rewrite from the re-indexing costs one barrier more than
  * fusing them would, and it buys the absence of a data race: nodes_reinsert
  * may compare records along a chain -- the trie's descent does, and so does a
  * debug build's check for an equal node -- and in a fused phase it could read
@@ -2533,7 +2571,7 @@ sylvan_varswap_CALL(lace_worker *lace, uint32_t rank,
     reorder_run_retirement(lace, &died, &deep);
     REORDER_TIMING_STOP(retire, timing_retire);
     REORDER_TIMING_START(timing_release);
-    reorder_release_dead();
+    reorder_release_dead(lace);
     REORDER_TIMING_STOP(release, timing_release);
 
     if (sylvan_ranks_swap_adjacent(rank) != SYLVAN_OK) {

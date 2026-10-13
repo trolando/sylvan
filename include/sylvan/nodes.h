@@ -357,6 +357,7 @@ uint32_t nodes_reorder_caps(const nodes_table* dbs);
 #define NODES_CAP_REMOVE     (1u << 0)  /* nodes_remove and nodes_reinsert */
 #define NODES_CAP_RELEASE    (1u << 1)  /* nodes_release */
 #define NODES_CAP_BATCH      (1u << 3)  /* nodes_remove/reinsert_batch */
+#define NODES_CAP_PARALLEL_RELEASE (1u << 4) /* nodes_release scales: see there */
 
 /**
  * Unhash one node. Its 16-byte record and its index stay intact and valid;
@@ -480,6 +481,12 @@ TASK(int, nodes_reinsert_batch, nodes_table*, dbs, const uint64_t*, indices,
  * list backend appends at the tail of a family and never writes the link of
  * the node it inserts, precisely because a fresh slot has always had a zero
  * one.
+ *
+ * Every backend allows calls from several workers of a session at once, on
+ * different nodes. One that reports NODES_CAP_PARALLEL_RELEASE also takes no
+ * lock to release a node, so that such calls run side by side; the session
+ * then releases a swap's retired slots from all its workers, and otherwise
+ * from one, because calls that serialise on a lock only add contention.
  *
  * Returns SYLVAN_ERR_INVALID if the node is still in the index.
  */

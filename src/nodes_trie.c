@@ -1399,7 +1399,12 @@ nodes_release(nodes_table* dbs, uint64_t index)
 
     /* There is no per-node mark in this backend, so check the real thing:
        walk the node's own probe sequence and require that it is not there.
-       The lock keeps that answer stable against a concurrent removal. */
+       The lock keeps that answer stable against a concurrent removal. It also
+       makes releases from several workers queue up behind each other, which
+       is why this backend does not report NODES_CAP_PARALLEL_RELEASE and the
+       session releases on one worker. A batched release, which checks a whole
+       set of nodes against the index between the phases of a batch the way
+       nodes_remove_batch removes one, would need no lock and lift that. */
     const struct reorder_key key = reorder_key_of(dbs, index);
     uint64_t owner = 0;
     reorder_lock(dbs);

@@ -918,6 +918,22 @@ nodes_release(nodes_table* dbs, uint64_t index)
 }
 
 /**
+ * nodes_release takes no lock here, so the batch is that call on every
+ * worker; see region_release_each.
+ */
+int
+nodes_release_batch_CALL(lace_worker* lace, nodes_table* dbs,
+                         const uint64_t* indices, size_t count)
+{
+    if (count == 0) return SYLVAN_OK;
+    if ((nodes_reorder_caps(dbs) & NODES_CAP_PARALLEL_RELEASE) == 0) {
+        return SYLVAN_ERR_INVALID;
+    }
+    return region_release_each_CALL(lace, dbs, indices, count) == 0
+        ? SYLVAN_OK : SYLVAN_ERR_INVALID;
+}
+
+/**
  * Preflight <count> further allocations: the checks of this backend, then
  * region_reserve (nodes_region.h) for the slots.
  */

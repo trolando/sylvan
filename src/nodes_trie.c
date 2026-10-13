@@ -667,10 +667,11 @@ void nodes_set_custom(nodes_table* dbs, nodes_hash_cb hash_cb, nodes_equals_cb e
  * from every worker gets one worker's throughput. nodes_remove_batch and
  * nodes_reinsert_batch take the whole set at once and run the phases of the
  * work in parallel with barriers between them; see the block above
- * nodes_remove_batch for the design and its correctness argument. The
- * single-node entry points keep the lock, so a caller that cannot batch -- a
- * sift with batching switched off, the table's unit tests -- gets them exactly
- * as above.
+ * nodes_remove_batch for the design and its correctness argument.
+ * nodes_release_batch does the same for releases, which lock only to check
+ * that the node is out of the index. The single-node entry points keep the
+ * lock, so a caller that cannot batch -- a sift with batching switched off,
+ * the table's unit tests -- gets them exactly as above.
  *
  * WHY NOT LEAF PROMOTION. The obvious removal -- pull a leaf out of the
  * subtree below the removed node and give it the removed node's branch pair
@@ -723,7 +724,8 @@ uint32_t
 nodes_reorder_caps(const nodes_table* dbs)
 {
     (void)dbs;
-    return NODES_CAP_REMOVE | NODES_CAP_RELEASE | NODES_CAP_BATCH;
+    return NODES_CAP_REMOVE | NODES_CAP_RELEASE | NODES_CAP_BATCH |
+           NODES_CAP_PARALLEL_RELEASE;
 }
 
 static void
@@ -1142,8 +1144,12 @@ enum trie_batch_phase {
     TRIE_BATCH_UNLINK = 1,
     TRIE_BATCH_COLLECT = 2,
     TRIE_BATCH_REBUILD = 3,
-    TRIE_BATCH_REINSERT = 4
+    TRIE_BATCH_REINSERT = 4,
+    TRIE_BATCH_ABSENT = 5,
+    TRIE_BATCH_RELEASE = 6
 };
+
+static void trie_release_slot(nodes_table* dbs, uint64_t index);
 
 /**
  * Take both branches of <node>'s pair out of the index and append what they
@@ -1233,6 +1239,25 @@ trie_batch_victims_CALL(lace_worker* lace, nodes_table* dbs, int phase,
             atomic_store_explicit(slot, 0, memory_order_relaxed);
             break;
         }
+
+        case TRIE_BATCH_ABSENT: {
+            if (index < 2 || index >= dbs->table_size) {
+                atomic_store_explicit(
+                    dbs->batch + TRIE_BATCH_ERROR, 1, memory_order_relaxed);
+                break;
+            }
+            const struct reorder_key key = reorder_key_of(dbs, index);
+            uint64_t owner = 0;
+            if (reorder_find_slot(dbs, index, &key, &owner) != NULL) {
+                atomic_store_explicit(
+                    dbs->batch + TRIE_BATCH_ERROR, 1, memory_order_relaxed);
+            }
+            break;
+        }
+
+        case TRIE_BATCH_RELEASE:
+            trie_release_slot(dbs, index);
+            break;
 
         case TRIE_BATCH_COLLECT:
         default:
@@ -1392,28 +1417,9 @@ nodes_reinsert_batch_CALL(lace_worker* lace, nodes_table* dbs,
  * callbacks, and the next nodes_cleanup_custom would destroy its payload a
  * second time.
  */
-int
-nodes_release(nodes_table* dbs, uint64_t index)
+static void
+trie_release_slot(nodes_table* dbs, uint64_t index)
 {
-    if (index < 2 || index >= dbs->table_size) return SYLVAN_ERR_INVALID;
-
-    /* There is no per-node mark in this backend, so check the real thing:
-       walk the node's own probe sequence and require that it is not there.
-       The lock keeps that answer stable against a concurrent removal. It also
-       makes releases from several workers queue up behind each other, which
-       is why this backend does not report NODES_CAP_PARALLEL_RELEASE and the
-       session releases on one worker. A batched release, which checks a whole
-       set of nodes against the index between the phases of a batch the way
-       nodes_remove_batch removes one, would need no lock and lift that. */
-    const struct reorder_key key = reorder_key_of(dbs, index);
-    uint64_t owner = 0;
-    reorder_lock(dbs);
-    const int indexed = reorder_find_slot(dbs, index, &key, &owner) != NULL;
-    reorder_unlock(dbs);
-    if (indexed) {
-        return SYLVAN_ERR_INVALID;
-    }
-
     /* The words this backend keeps for a slot outside the record are the
        family root first[index] and the branch pair next[index*2+0..1], and
        release does not reset them: it relies on them being empty already. They
@@ -1438,6 +1444,71 @@ nodes_release(nodes_table* dbs, uint64_t index)
     }
     atomic_fetch_and_explicit(
         dbs->bitmap2 + index / 64u, ~mask, memory_order_release);
+}
+
+int
+nodes_release(nodes_table* dbs, uint64_t index)
+{
+    if (index < 2 || index >= dbs->table_size) return SYLVAN_ERR_INVALID;
+
+    /* There is no per-node mark in this backend, so check the real thing:
+       walk the node's own probe sequence and require that it is not there.
+       The lock keeps that answer stable against a concurrent removal, whose
+       rebuild may publish into any slot of the table. It also makes releases
+       from several workers queue up behind each other; nodes_release_batch
+       is how this backend releases on all of them. */
+    const struct reorder_key key = reorder_key_of(dbs, index);
+    uint64_t owner = 0;
+    reorder_lock(dbs);
+    const int indexed = reorder_find_slot(dbs, index, &key, &owner) != NULL;
+    reorder_unlock(dbs);
+    if (indexed) {
+        return SYLVAN_ERR_INVALID;
+    }
+
+    trie_release_slot(dbs, index);
+    return SYLVAN_OK;
+}
+
+/**
+ * Release a set in two phases, with the lock taken once for the whole batch
+ * rather than once per node:
+ *
+ *   1. ABSENT   read-only. Walk each node's own probe sequence and require
+ *               that it is not there, as nodes_release does.
+ *   2. RELEASE  clear each node's bits, as nodes_release does.
+ *
+ * The lock in nodes_release is there for the check only: a concurrent removal
+ * rebuilds a region by descents that may publish into any slot of the table,
+ * so a node's probe sequence is not stable while one runs, and no lock on a
+ * smaller domain -- a family, a subtrie -- would cover those writes (see the
+ * block above nodes_remove_batch). A batch is collective, so no removal runs
+ * while it does and the sequences it walks hold still. Nothing it writes is on
+ * any of them either: the release phase touches only bitmap2 and bitmapc,
+ * which no descent reads, and it starts after the barrier that ends the check.
+ * A bitmap word is shared by 64 neighbouring slots, which the
+ * read-modify-writes of trie_release_slot already allow for.
+ *
+ * Splitting the two is what makes the refusal clean: if any node is out of
+ * range or still in the index, nothing has been released.
+ */
+int
+nodes_release_batch_CALL(lace_worker* lace, nodes_table* dbs,
+                         const uint64_t* indices, size_t count)
+{
+    if (count == 0) return SYLVAN_OK;
+
+    reorder_lock(dbs);
+    atomic_store_explicit(
+        dbs->batch + TRIE_BATCH_ERROR, 0, memory_order_relaxed);
+    trie_batch_victims_CALL(lace, dbs, TRIE_BATCH_ABSENT, indices, 0, count);
+    if (atomic_load_explicit(
+            dbs->batch + TRIE_BATCH_ERROR, memory_order_relaxed) != 0) {
+        reorder_unlock(dbs);
+        return SYLVAN_ERR_INVALID;
+    }
+    trie_batch_victims_CALL(lace, dbs, TRIE_BATCH_RELEASE, indices, 0, count);
+    reorder_unlock(dbs);
     return SYLVAN_OK;
 }
 

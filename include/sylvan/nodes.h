@@ -357,7 +357,7 @@ uint32_t nodes_reorder_caps(const nodes_table* dbs);
 #define NODES_CAP_REMOVE     (1u << 0)  /* nodes_remove and nodes_reinsert */
 #define NODES_CAP_RELEASE    (1u << 1)  /* nodes_release */
 #define NODES_CAP_BATCH      (1u << 3)  /* nodes_remove/reinsert_batch */
-#define NODES_CAP_PARALLEL_RELEASE (1u << 4) /* nodes_release scales: see there */
+#define NODES_CAP_PARALLEL_RELEASE (1u << 4) /* nodes_release_batch: see there */
 
 /**
  * Unhash one node. Its 16-byte record and its index stay intact and valid;
@@ -483,14 +483,39 @@ TASK(int, nodes_reinsert_batch, nodes_table*, dbs, const uint64_t*, indices,
  * one.
  *
  * Every backend allows calls from several workers of a session at once, on
- * different nodes. One that reports NODES_CAP_PARALLEL_RELEASE also takes no
- * lock to release a node, so that such calls run side by side; the session
- * then releases a swap's retired slots from all its workers, and otherwise
- * from one, because calls that serialise on a lock only add contention.
+ * different nodes, but a backend may serialise them on a lock; the trie does.
  *
  * Returns SYLVAN_ERR_INVALID if the node is still in the index.
  */
 int nodes_release(nodes_table* dbs, uint64_t index);
+
+/**
+ * nodes_release over a whole set of nodes at once, on all workers.
+ *
+ * Collective in the same way as nodes_remove_batch: one worker calls it from
+ * inside a Lace frame, no other reorder primitive runs meanwhile, and
+ * <indices> holds distinct node indices and stays owned by the caller. The
+ * requirements of nodes_release hold for every node of the set.
+ *
+ * A backend reports NODES_CAP_PARALLEL_RELEASE when it implements this, and
+ * the session then releases a swap's retired slots through it; otherwise it
+ * returns SYLVAN_ERR_INVALID and the session releases them one at a time on
+ * one worker. For a backend whose nodes_release takes no lock the batch is
+ * just that call on every worker. For the trie it is the difference between
+ * one worker and all of them: its nodes_release locks to keep the check that
+ * the node is out of the index stable against a concurrent removal, and a
+ * collective call has no concurrent removal to guard against.
+ *
+ * Returns SYLVAN_ERR_INVALID if any node is out of range or still in the
+ * index. Like the refusal of nodes_reinsert_batch it need not be clean --
+ * the trie's is, the others release the rest of the set -- and the session
+ * treats it as fatal.
+ */
+static inline int nodes_release_batch(nodes_table* dbs,
+                                      const uint64_t* indices, size_t count);
+
+TASK(int, nodes_release_batch, nodes_table*, dbs, const uint64_t*, indices,
+     size_t, count)
 
 /**
  * Preflight <count> further node allocations.

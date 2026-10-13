@@ -520,4 +520,34 @@ region_reserve(const nodes_table* dbs, uint64_t count)
         ? SYLVAN_OK : SYLVAN_ERR_OOM;
 }
 
+/** Granularity of region_release_each; a release is a few stores. */
+#define REGION_RELEASE_BLOCK 256
+
+/**
+ * nodes_release_batch for a backend whose nodes_release takes no lock: that
+ * call on every node, spread over the workers. Returns how many it refused.
+ * The trie, whose nodes_release locks, has a batch of its own.
+ */
+TASK(size_t, region_release_each, nodes_table*, dbs, const uint64_t*, indices,
+     size_t, count)
+
+size_t
+region_release_each_CALL(lace_worker* lace, nodes_table* dbs,
+                         const uint64_t* indices, size_t count)
+{
+    if (count > REGION_RELEASE_BLOCK) {
+        const size_t split = count / 2;
+        region_release_each_SPAWN(lace, dbs, indices, split);
+        const size_t refused = region_release_each_CALL(
+            lace, dbs, indices + split, count - split);
+        return refused + region_release_each_SYNC(lace);
+    }
+
+    size_t refused = 0;
+    for (size_t at = 0; at < count; at++) {
+        if (nodes_release(dbs, indices[at]) != SYLVAN_OK) refused++;
+    }
+    return refused;
+}
+
 #endif

@@ -1503,6 +1503,114 @@ test_reorder_batch(void)
     return 0;
 }
 
+/**
+ * A batch release of nodes removed earlier: afterwards none of them is found,
+ * the nodes around them are, and the next insertions get exactly their slots
+ * back. A release batch that names a node still in the index is refused.
+ *
+ * The keys fit in the first region, which the inserting worker still owns
+ * when the slots come free, and a worker hands out the lowest free slot of
+ * its region first; the released slots lie below every slot not yet used, so
+ * they are the ones the insertions must get.
+ */
+#define TEST_RELEASE_KEYS 128
+#define TEST_RELEASE_STRIDE 4
+
+TASK(int, batch_release_task, struct batch_case*, work)
+
+int
+batch_release_task_CALL(lace_worker *lace, struct batch_case *work)
+{
+    return nodes_release_batch_CALL(
+        lace, work->table, work->indices, work->count);
+}
+
+static int
+cmp_uint64(const void *a, const void *b)
+{
+    const uint64_t x = *(const uint64_t *)a;
+    const uint64_t y = *(const uint64_t *)b;
+    return x < y ? -1 : (x > y ? 1 : 0);
+}
+
+static int
+test_reorder_release_batch(void)
+{
+    nodes_table *table = nodes_create(TEST_TABLE_SIZE, TEST_TABLE_SIZE);
+    if ((nodes_reorder_caps(table) & NODES_CAP_PARALLEL_RELEASE) == 0) {
+        nodes_free(table);
+        return 0;
+    }
+
+    uint64_t keys[TEST_RELEASE_KEYS];
+    uint64_t indices[TEST_RELEASE_KEYS];
+    uint64_t victims[TEST_RELEASE_KEYS / TEST_RELEASE_STRIDE];
+    uint64_t fresh[TEST_RELEASE_KEYS / TEST_RELEASE_STRIDE];
+    const size_t victim_count = TEST_RELEASE_KEYS / TEST_RELEASE_STRIDE;
+
+    for (unsigned int i = 0; i < TEST_RELEASE_KEYS; i++) {
+        keys[i] = UINT64_C(0x4000000000000000) | (i + 2u);
+        int created = 0;
+        indices[i] = nodes_lookup(table, keys[i], 0, &created);
+        test_assert(indices[i] > 1 && indices[i] < 512 && created == 1);
+    }
+    for (size_t k = 0; k < victim_count; k++) {
+        victims[k] = indices[k * TEST_RELEASE_STRIDE];
+    }
+
+    struct batch_case work = { table, victims, victim_count };
+    test_assert(batch_remove_task_NEWFRAME(&work) == SYLVAN_OK);
+    const size_t before = nodes_count_nodes(table);
+
+    /* A node still in the index, or one out of range, is refused. */
+    uint64_t kept = indices[1];
+    struct batch_case still = { table, &kept, 1 };
+    test_assert(batch_release_task_NEWFRAME(&still) == SYLVAN_ERR_INVALID);
+    uint64_t wild = TEST_TABLE_SIZE + 1u;
+    struct batch_case range = { table, &wild, 1 };
+    test_assert(batch_release_task_NEWFRAME(&range) == SYLVAN_ERR_INVALID);
+    test_assert(nodes_count_nodes(table) == before);
+#if SYLVAN_NODES_TABLE_TRIE
+    /* The trie checks the whole set before it releases any of it. */
+    uint64_t mixed[TEST_RELEASE_KEYS / TEST_RELEASE_STRIDE];
+    memcpy(mixed, victims, sizeof(mixed));
+    mixed[victim_count / 2] = indices[1];
+    struct batch_case spoiled = { table, mixed, victim_count };
+    test_assert(batch_release_task_NEWFRAME(&spoiled) == SYLVAN_ERR_INVALID);
+    test_assert(nodes_count_nodes(table) == before);
+#endif
+
+    test_assert(batch_release_task_NEWFRAME(&work) == SYLVAN_OK);
+    test_assert(nodes_count_nodes(table) == before - victim_count);
+
+    /* Simulated barrier, then new keys: they get the released slots. */
+    for (size_t k = 0; k < victim_count; k++) {
+        int created = 0;
+        fresh[k] = nodes_lookup(
+            table, UINT64_C(0x4000000000100000) | k, 7, &created);
+        test_assert(created == 1);
+    }
+    qsort(fresh, victim_count, sizeof(uint64_t), cmp_uint64);
+    uint64_t sorted[TEST_RELEASE_KEYS / TEST_RELEASE_STRIDE];
+    memcpy(sorted, victims, sizeof(sorted));
+    qsort(sorted, victim_count, sizeof(uint64_t), cmp_uint64);
+    test_assert(memcmp(fresh, sorted, sizeof(sorted)) == 0);
+
+    /* The old keys are gone and every other node is where it was. */
+    for (unsigned int i = 0; i < TEST_RELEASE_KEYS; i++) {
+        int created = 0;
+        const uint64_t found = nodes_lookup(table, keys[i], 0, &created);
+        if (i % TEST_RELEASE_STRIDE == 0) {
+            test_assert(created == 1 && found != indices[i]);
+        } else {
+            test_assert(created == 0 && found == indices[i]);
+        }
+    }
+
+    nodes_free(table);
+    return 0;
+}
+
 #ifdef NDEBUG
 /**
  * A refused removal changes nothing.
@@ -1961,6 +2069,10 @@ test_reorder_contract(void)
         test_assert(
             nodes_reinsert_batch(table, &index, 1) == SYLVAN_ERR_INVALID);
     }
+    if ((caps & NODES_CAP_PARALLEL_RELEASE) == 0) {
+        test_assert(
+            nodes_release_batch(table, &index, 1) == SYLVAN_ERR_INVALID);
+    }
     if (caps == 0) {
         test_assert(nodes_reserve(table, 1) == SYLVAN_ERR_INVALID);
         test_assert(
@@ -2123,6 +2235,7 @@ run_table_tests_CALL(lace_worker *lace)
     if (test_reorder_release_custom()) return 1;
     if (test_reorder_race()) return 1;
     if (test_reorder_batch()) return 1;
+    if (test_reorder_release_batch()) return 1;
 #if (defined(__unix__) || defined(__APPLE__)) && TEST_REINSERT_COLLISION_CHECKED
     if (test_reinsert_collision_aborts(test_self)) return 1;
 #endif

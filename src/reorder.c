@@ -1115,30 +1115,6 @@ reorder_validate_counts(void)
     return status;
 }
 
-/** Granularity of the parallel release; a release is a few stores. */
-#define REORDER_RELEASE_BLOCK 256
-
-/** Release session.dead[first .. first+count-1], on all workers. */
-TASK(void, reorder_release_block, size_t, first, size_t, count)
-
-void
-reorder_release_block_CALL(lace_worker *lace, size_t first, size_t count)
-{
-    if (count > REORDER_RELEASE_BLOCK) {
-        reorder_release_block_SPAWN(lace, first, count / 2);
-        reorder_release_block_CALL(lace, first + count / 2, count - count / 2);
-        reorder_release_block_SYNC(lace);
-        return;
-    }
-
-    const size_t end = first + count;
-    for (; first < end; first++) {
-        if (nodes_release(nodes, session.dead[first]) != SYLVAN_OK) {
-            reorder_fatal("a retired node could not be released");
-        }
-    }
-}
-
 /**
  * Give every retired slot back to the allocator.
  *
@@ -1149,12 +1125,11 @@ reorder_release_block_CALL(lace_worker *lace, size_t first, size_t count)
  * parallel does not reopen that window: nothing allocates here, and the first
  * allocation after it is the next swap's.
  *
- * The releases run on every worker where the table releases without a lock
- * (NODES_CAP_PARALLEL_RELEASE), because they are a pass over every node the
- * swap retired, which one worker would otherwise make alone; on a table with
- * a lock they would only queue up, so there one worker makes them. The
- * retired bits are the session's own plain words, so they are cleared first,
- * by this worker.
+ * The releases are a pass over every node the swap retired, so where the
+ * table can spread them over the workers (NODES_CAP_PARALLEL_RELEASE) they go
+ * to it as one batch, and otherwise one worker makes them. The retired bits
+ * are the session's own plain words, so they are cleared first, by this
+ * worker.
  */
 static void
 reorder_release_dead(lace_worker *lace)
@@ -1162,9 +1137,12 @@ reorder_release_dead(lace_worker *lace)
     for (size_t i = 0; i < session.dead_count; i++) {
         bitmap_clear(session.retired, session.dead[i]);
     }
-    if (lace != NULL && lace_worker_count() > 1 &&
+    if (lace != NULL &&
         (nodes_reorder_caps(nodes) & NODES_CAP_PARALLEL_RELEASE) != 0) {
-        reorder_release_block_CALL(lace, 0, session.dead_count);
+        if (nodes_release_batch_CALL(
+                lace, nodes, session.dead, session.dead_count) != SYLVAN_OK) {
+            reorder_fatal("a retired node could not be released");
+        }
     } else {
         for (size_t i = 0; i < session.dead_count; i++) {
             if (nodes_release(nodes, session.dead[i]) != SYLVAN_OK) {

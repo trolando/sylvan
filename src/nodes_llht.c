@@ -764,7 +764,7 @@ int nodes_prepare_reorder(nodes_table* dbs, const uint32_t* routes, size_t count
 
 /**
  * This backend reports no reorder capability at all (see above), so it
- * implements neither batch and refuses both, like every primitive here.
+ * implements none of the batches and refuses them, like every primitive here.
  */
 int
 nodes_remove_batch_CALL(lace_worker* lace, nodes_table* dbs,
@@ -777,6 +777,14 @@ nodes_remove_batch_CALL(lace_worker* lace, nodes_table* dbs,
 int
 nodes_reinsert_batch_CALL(lace_worker* lace, nodes_table* dbs,
                           const uint64_t* indices, size_t count)
+{
+    (void)lace; (void)dbs; (void)indices; (void)count;
+    return SYLVAN_ERR_INVALID;
+}
+
+int
+nodes_release_batch_CALL(lace_worker* lace, nodes_table* dbs,
+                         const uint64_t* indices, size_t count)
 {
     (void)lace; (void)dbs; (void)indices; (void)count;
     return SYLVAN_ERR_INVALID;

@@ -259,7 +259,14 @@ VOID_TASK_0(zdd_refs_mark)
 
 VOID_TASK_0(zdd_refs_init_task)
 {
-    zdd_refs_internal_t s = (zdd_refs_internal_t)malloc(sizeof(struct zdd_refs_internal));
+    /* The cursors pcur/rcur/scur in this struct are stored to by every
+     * push, pop, pushptr, popptr, spawn and sync -- on the order of 10^9
+     * times per run for a workload that makes many small BDD operations.
+     * The struct is 72 bytes, so a plain malloc packs several workers'
+     * cursors into one cache line and every worker's push invalidates its
+     * neighbours'.  Give each worker a line of its own. */
+    zdd_refs_internal_t s = (zdd_refs_internal_t)sylvan_alloc_padded(sizeof(struct zdd_refs_internal));
+    if (s == NULL) { fprintf(stderr, "sylvan: out of memory in zdd_refs_init_key\n"); exit(1); }
     s->pcur = s->pbegin = (ZDD**)malloc(sizeof(ZDD*) * 1024);
     s->pend = s->pbegin + 1024;
     s->rcur = s->rbegin = (ZDD*)malloc(sizeof(ZDD) * 1024);
@@ -274,7 +281,7 @@ VOID_TASK_0(zdd_refs_free)
     free(zdd_refs_key->pbegin);
     free(zdd_refs_key->rbegin);
     free(zdd_refs_key->sbegin);
-    free(zdd_refs_key);
+    sylvan_free_padded(zdd_refs_key);
 }
 
 VOID_TASK_0(zdd_refs_init)

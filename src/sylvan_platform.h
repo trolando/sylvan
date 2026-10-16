@@ -188,6 +188,33 @@ void sylvan_free_aligned(void* ptr, size_t size);
 
 void sylvan_clear_aligned(void* ptr, size_t size);
 
+/**
+ * Granularity at which two writers stop interfering with each other.
+ *
+ * This is deliberately at least 128 and not simply SYLVAN_CACHE_LINE_SIZE.
+ * A 64-byte-line x86 fetches lines in 128-byte aligned pairs (the
+ * adjacent-line / spatial prefetcher), and 128 is the line size on Apple
+ * silicon and on several ARM server parts, so 128 is the smallest stride
+ * that isolates two writers on every machine Sylvan targets.
+ */
+#if SYLVAN_CACHE_LINE_SIZE > 128
+#define SYLVAN_SHARING_PAD SYLVAN_CACHE_LINE_SIZE
+#else
+#define SYLVAN_SHARING_PAD 128
+#endif
+
+/**
+ * Allocate <size> bytes that no other allocation can share a cache line
+ * with: the result is SYLVAN_SHARING_PAD-aligned and <size> is rounded up
+ * to a multiple of SYLVAN_SHARING_PAD, so the tail of the last line cannot
+ * be handed out to anybody else.  The memory is zeroed.  Use this for small
+ * per-worker structures whose fields are written on a hot path; use
+ * sylvan_alloc_aligned for the big tables.  Free with sylvan_free_padded.
+ */
+void* sylvan_alloc_padded(size_t size);
+
+void sylvan_free_padded(void* ptr);
+
 #ifdef __cplusplus
 } /* namespace */
 #endif

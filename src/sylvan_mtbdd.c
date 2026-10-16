@@ -266,7 +266,14 @@ void
 mtbdd_refs_init_key(void)
 {
     assert(lace_is_worker()); // only use inside Lace workers
-    mtbdd_refs_internal_t s = (mtbdd_refs_internal_t)malloc(sizeof(struct mtbdd_refs_internal));
+    /* The cursors pcur/rcur/scur in this struct are stored to by every
+     * push, pop, pushptr, popptr, spawn and sync -- on the order of 10^9
+     * times per run for a workload that makes many small BDD operations.
+     * The struct is 72 bytes, so a plain malloc packs several workers'
+     * cursors into one cache line and every worker's push invalidates its
+     * neighbours'.  Give each worker a line of its own. */
+    mtbdd_refs_internal_t s = (mtbdd_refs_internal_t)sylvan_alloc_padded(sizeof(struct mtbdd_refs_internal));
+    if (s == NULL) { fprintf(stderr, "sylvan: out of memory in mtbdd_refs_init_key\n"); exit(1); }
     s->pcur = s->pbegin = (const MTBDD**)malloc(sizeof(MTBDD*) * 1024);
     s->pend = s->pbegin + 1024;
     s->rcur = s->rbegin = (MTBDD*)malloc(sizeof(MTBDD) * 1024);
@@ -281,7 +288,7 @@ VOID_TASK_0(mtbdd_refs_free)
     free(mtbdd_refs_key->pbegin);
     free(mtbdd_refs_key->rbegin);
     free(mtbdd_refs_key->sbegin);
-    free(mtbdd_refs_key);
+    sylvan_free_padded(mtbdd_refs_key);
 }
 
 VOID_TASK_0(mtbdd_refs_init_task)

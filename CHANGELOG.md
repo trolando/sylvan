@@ -1,7 +1,7 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
-## [Unreleased]
+## [1.12.0] - 2026-11-07
 
 This release updates Lace to version 1.8.1, which backports the scheduling
 changes of Lace 2.5.0 and, on ARM, no longer runs a memory fence on every

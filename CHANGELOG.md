@@ -29,6 +29,7 @@ now use much less CPU.
 - Fixed `mtbdd_union_cube` dropping the existing MTBDD on the branch that the
   cube does not cover, when the cube's variable comes before the MTBDD's top
   variable or the MTBDD is a terminal.
+- The help of the lddmc example now gives its actual default strategy (sat).
 
 ## [1.11.0] - 2026-07-17
 

@@ -35,7 +35,7 @@ print_help()
 {
     printf("Usage: lddmc [OPTION...] <model> [<output-bdd>]\n\n");
     printf("  -s, --strategy=<bfs|par|sat|chaining>\n");
-    printf("                             Strategy for reachability (default=par)\n");
+    printf("                             Strategy for reachability (default=sat)\n");
     printf("  -w, --workers=<workers>    Number of workers (default=0: autodetect)\n");
     printf("      --count-nodes          Report #nodes for LDDs\n");
     printf("      --count-states         Report #states at each level\n");

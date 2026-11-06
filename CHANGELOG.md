@@ -20,6 +20,10 @@ now use much less CPU.
 - Worker stacks are larger by default (a 1 GB reservation per worker on 64-bit
   systems), so deep recursions are less likely to overflow. The Lace CMake
   option `LACE_DONT_OVERCOMMIT` keeps the old size.
+- The installed CMake package now requires Lace 1.8 (`find_dependency(lace
+  1.8.0)`), like the pkg-config file. Configuring Sylvan with an unsupported
+  Lace (older than 1.8.0, or 2.x) now stops with a clear message, also when a
+  parent project provides Lace.
 
 ### Fixed
 - Fixed `mtbdd_union_cube` dropping the existing MTBDD on the branch that the

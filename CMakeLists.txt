@@ -51,10 +51,14 @@ if((BUILD_SHARED_LIBS AND NOT WIN32) OR SYLVAN_ENABLE_PIC)
     set(_sylvan_needs_pic ON)
 endif()
 
+# Sylvan needs Lace 1.x, at least this version. Also used for the version check
+# below and for the installed CMake and pkg-config files.
+set(SYLVAN_LACE_MIN_VERSION 1.8.0)
+
 # First check if Lace is already a target (e.g. a parent project added it),
 # then try find_package, then fall back to FetchContent.
 if(NOT TARGET lace::lace AND NOT TARGET lace)
-    find_package(lace 1.8.0 QUIET)
+    find_package(lace ${SYLVAN_LACE_MIN_VERSION} QUIET)
     if(NOT TARGET lace::lace AND NOT TARGET lace)
         # Normal variables override Lace's options without modifying its cache.
         set(BUILD_SHARED_LIBS OFF)
@@ -87,6 +91,18 @@ if(NOT TARGET lace::lace)
         message(FATAL_ERROR "Lace was found, but it did not provide a lace::lace target")
     endif()
 endif()
+
+# Check the version of Lace. find_package sets lace_VERSION, and so does Lace
+# as a subproject (since 1.8.0); an older Lace as a subproject does not.
+if(NOT DEFINED lace_VERSION)
+    message(FATAL_ERROR "Could not determine the version of Lace (lace_VERSION is not set). "
+                        "Sylvan requires Lace 1.x (>= ${SYLVAN_LACE_MIN_VERSION}).")
+elseif(lace_VERSION VERSION_LESS SYLVAN_LACE_MIN_VERSION)
+    message(FATAL_ERROR "Sylvan requires Lace >= ${SYLVAN_LACE_MIN_VERSION}, found ${lace_VERSION}")
+elseif(lace_VERSION VERSION_GREATER_EQUAL 2.0.0)
+    message(FATAL_ERROR "Sylvan requires Lace 1.x (>= ${SYLVAN_LACE_MIN_VERSION}), found ${lace_VERSION}")
+endif()
+message(STATUS "Sylvan: using Lace ${lace_VERSION}")
 
 # Verify PIC compatibility when needed
 if(_sylvan_needs_pic)

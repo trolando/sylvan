@@ -54,7 +54,7 @@ endif()
 # First check if Lace is already a target (e.g. a parent project added it),
 # then try find_package, then fall back to FetchContent.
 if(NOT TARGET lace::lace AND NOT TARGET lace)
-    find_package(lace 1.7.0 QUIET)
+    find_package(lace 1.8.0 QUIET)
     if(NOT TARGET lace::lace AND NOT TARGET lace)
         # Normal variables override Lace's options without modifying its cache.
         set(BUILD_SHARED_LIBS OFF)
@@ -66,7 +66,8 @@ if(NOT TARGET lace::lace AND NOT TARGET lace)
         FetchContent_Declare(
             lace
             GIT_REPOSITORY https://github.com/trolando/lace.git
-            GIT_TAG        11d85dbe23e651ef4c8350478ffce545e56b6e7d # Lace 1.7.0 with PIE timing guard
+            GIT_TAG        v1.8.1
+            GIT_SHALLOW    TRUE
         )
         FetchContent_MakeAvailable(lace)
 

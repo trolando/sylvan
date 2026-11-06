@@ -1,6 +1,31 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [Unreleased]
+
+This release updates Lace to version 1.8.1, which backports the scheduling
+changes of Lace 2.5.0 and, on ARM, no longer runs a memory fence on every
+spawn. On the bddmc and lddmc benchmarks (Intel Xeon, 16 cores per socket),
+Sylvan is 3-4% faster with 1 worker. With 8 to 16 workers it is 10-13% faster
+with the saturation strategy and 2-4% faster with the par strategy, and with
+24 to 32 workers on two sockets about 18% and 8%. Workers that have no work
+now use much less CPU.
+
+### Changed
+- Updated Lace to version 1.8.1. An installed Lace must now be version 1.8.0
+  or newer. This also fixes building Lace with newer Clang versions.
+- On Linux, Lace now pins its workers to CPUs by default when they fill the
+  CPUs the program may use. Set `LACE_PIN=off` to turn this off, for example
+  when several Sylvan programs share a machine.
+- Worker stacks are larger by default (a 1 GB reservation per worker on 64-bit
+  systems), so deep recursions are less likely to overflow. The Lace CMake
+  option `LACE_DONT_OVERCOMMIT` keeps the old size.
+
+### Fixed
+- Fixed `mtbdd_union_cube` dropping the existing MTBDD on the branch that the
+  cube does not cover, when the cube's variable comes before the MTBDD's top
+  variable or the MTBDD is a terminal.
+
 ## [1.11.0] - 2026-07-17
 
 ### Added

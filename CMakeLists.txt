@@ -26,12 +26,14 @@ list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/")
 option(BUILD_SHARED_LIBS          "Build shared libraries (except on Windows)"       OFF)
 option(SYLVAN_NATIVE_OPT          "Enable -march=native for compiler optimizations" OFF)
 option(SYLVAN_ENABLE_PIC          "Build with -fPIC (for embedding in shared libs)" OFF)
-option(SYLVAN_BUILD_CPP           "Build Sylvan C++ bindings"                        ON)
+option(SYLVAN_BUILD_CPP           "Build Sylvan C++ bindings"   ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_TESTING              "Build Sylvan tests"          ${PROJECT_IS_TOP_LEVEL})
 option(SYLVAN_BUILD_EXAMPLES      "Build Sylvan examples"       ${PROJECT_IS_TOP_LEVEL})
 option(SYLVAN_BUILD_DOCS          "Build Sylvan documentation"                      OFF)
 
-# Enable C++ only for the optional bindings and their test/example
+# Enable C++ only for the optional bindings and their test/example. As a
+# subproject, Sylvan builds them only when the parent sets SYLVAN_BUILD_CPP,
+# so that a C project does not need a C++ compiler.
 if(SYLVAN_BUILD_CPP)
     enable_language(CXX)
 endif()

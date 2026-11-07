@@ -76,6 +76,7 @@ When using Sylvan as a subproject, you can set options in your `CMakeLists.txt` 
 set(SYLVAN_ENABLE_PIC   ON  CACHE BOOL "build with -fPIC"   FORCE)
 set(SYLVAN_USE_MMAP     ON  CACHE BOOL "Use virtual memory" FORCE)
 set(SYLVAN_ENABLE_STATS OFF CACHE BOOL "Enable statistics"  FORCE)
+set(SYLVAN_BUILD_CPP    ON  CACHE BOOL "C++ bindings"       FORCE) # off by default as a subproject
 
 # Bring Sylvan in (same build tree)
 include(FetchContent)

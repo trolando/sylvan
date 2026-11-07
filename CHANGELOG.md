@@ -1,6 +1,13 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- When Sylvan is a subproject (`add_subdirectory` or `FetchContent`), the C++
+  bindings are now off by default, so a C project can use Sylvan without
+  enabling C++. Set `SYLVAN_BUILD_CPP` to `ON` to build them.
+
 ## [1.12.0] - 2026-11-07
 
 This release updates Lace to version 1.8.1, which backports the scheduling

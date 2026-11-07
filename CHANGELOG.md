@@ -1,6 +1,15 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- Updated Lace to version 1.9.0. Lace now pins its workers on FreeBSD and
+  Windows too (it already did on Linux), pins each worker before the worker
+  sets up its memory, so that the memory is on the worker's NUMA node, and
+  starts its workers faster. Lace deprecates its option `LACE_USE_HWLOC`,
+  which Sylvan never set.
+
 ## [1.12.2] - 2026-11-07
 
 This release fixes a hang in garbage collection.

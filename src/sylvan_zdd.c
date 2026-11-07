@@ -416,7 +416,7 @@ zdd_makeleaf(uint16_t type, uint64_t value)
     int created;
     uint64_t index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
-        RUN(sylvan_gc);
+        RUN(sylvan_gc_collect);
 
         index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
@@ -461,7 +461,7 @@ _zdd_makenode(uint32_t var, ZDD low, ZDD high)
     if (index == 0) {
         zdd_refs_push(low);
         zdd_refs_push(high);
-        RUN(sylvan_gc);
+        RUN(sylvan_gc_collect);
         zdd_refs_pop(2);
 
         index = llmsset_lookup(nodes, n.a, n.b, &created);
@@ -490,7 +490,7 @@ zdd_makemapnode(uint32_t var, ZDD low, ZDD high)
     if (index == 0) {
         zdd_refs_push(low);
         zdd_refs_push(high);
-        RUN(sylvan_gc);
+        RUN(sylvan_gc_collect);
         zdd_refs_pop(2);
 
         index = llmsset_lookup(nodes, n.a, n.b, &created);
@@ -1938,8 +1938,8 @@ VOID_TASK_2(zdd_writer_add_visitor_post, ZDD, dd, sylvan_skiplist_t, sl)
 sylvan_skiplist_t
 zdd_writer_start(void)
 {
-    const size_t table_size = llmsset_get_size(nodes);
-    size_t sl_size = table_size > 0x7fffffff ? 0x7fffffff : table_size;
+    const size_t data_size = llmsset_get_data_size(nodes);
+    size_t sl_size = data_size > 0x7fffffff ? 0x7fffffff : data_size;
     return sylvan_skiplist_alloc(sl_size);
 }
 

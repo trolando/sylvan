@@ -50,12 +50,11 @@ static void unlock_pool(void)
     atomic_flag_clear_explicit(&scratch_lock, memory_order_release);
 }
 
-/* The sole definition of the node index range. When merging into master,
- * use llmsset_get_data_size(dbs): its hash table can shrink below live indices.
+/* The hash table can shrink below live indices; scratch covers the data range.
  */
 static size_t scratch_data_size(const llmsset_t dbs)
 {
-    return llmsset_get_size(dbs);
+    return llmsset_get_data_size(dbs);
 }
 
 void nodes_scratch_acquire(const llmsset_t dbs)

@@ -438,7 +438,7 @@ mtbdd_makeleaf(uint32_t type, uint64_t value)
     int created;
     uint64_t index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
-        RUN(sylvan_gc);
+        RUN(sylvan_gc_collect);
 
         index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
@@ -457,7 +457,7 @@ _mtbdd_makenode_gc(MTBDD low, MTBDD high)
 {
     mtbdd_refs_push(low);
     mtbdd_refs_push(high);
-    RUN(sylvan_gc);
+    RUN(sylvan_gc_collect);
     mtbdd_refs_pop(2);
 }
 
@@ -510,7 +510,7 @@ mtbdd_makemapnode(uint32_t var, MTBDD low, MTBDD high)
     if (index == 0) {
         mtbdd_refs_push(low);
         mtbdd_refs_push(high);
-        RUN(sylvan_gc);
+        RUN(sylvan_gc_collect);
         mtbdd_refs_pop(2);
 
         index = llmsset_lookup(nodes, n.a, n.b, &created);
@@ -2974,8 +2974,8 @@ TASK_2(int, mtbdd_test_isvalid_rec, MTBDD, dd, uint32_t, parent_var)
 
     // check if index is in array
     uint64_t index = dd & (~mtbdd_complement);
-    assert(index > 1 && index < llmsset_get_size(nodes));
-    if (index <= 1 || index >= llmsset_get_size(nodes)) return 0;
+    assert(index > 1 && index < llmsset_get_data_size(nodes));
+    if (index <= 1 || index >= llmsset_get_data_size(nodes)) return 0;
 
     // check if marked
     int marked = llmsset_is_marked(nodes, index);
@@ -3018,8 +3018,8 @@ TASK_IMPL_1(int, mtbdd_test_isvalid, MTBDD, dd)
 
     // check if index is in array
     uint64_t index = dd & (~mtbdd_complement);
-    assert(index > 1 && index < llmsset_get_size(nodes));
-    if (index <= 1 || index >= llmsset_get_size(nodes)) return 0;
+    assert(index > 1 && index < llmsset_get_data_size(nodes));
+    if (index <= 1 || index >= llmsset_get_data_size(nodes)) return 0;
 
     // check if marked
     int marked = llmsset_is_marked(nodes, index);
@@ -3280,8 +3280,8 @@ VOID_TASK_2(mtbdd_writer_add_visitor_post, MTBDD, dd, sylvan_skiplist_t, sl)
 sylvan_skiplist_t
 mtbdd_writer_start(void)
 {
-    const size_t table_size = llmsset_get_size(nodes);
-    size_t sl_size = table_size > 0x7fffffff ? 0x7fffffff : table_size;
+    const size_t data_size = llmsset_get_data_size(nodes);
+    size_t sl_size = data_size > 0x7fffffff ? 0x7fffffff : data_size;
     return sylvan_skiplist_alloc(sl_size);
 }
 

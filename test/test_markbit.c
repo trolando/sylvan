@@ -6,6 +6,7 @@
  */
 #include <stdio.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sylvan_int.h>
@@ -21,6 +22,128 @@ static size_t saved_count;
 static size_t bcount, leaves, lcount, zcount, callback_count;
 static char bsha[65], lsha[65];
 static int callback_failed, callback_calls;
+
+static MTBDD shrink_root, shrink_leaf, shrink_branch;
+static int shrink_pending, shrink_failed, shrink_calls;
+
+static char *print_shrink_leaf(int complement, uint64_t value, char *buf, size_t size)
+{
+    (void)complement;
+    (void)value;
+    shrink_calls++;
+    if (shrink_pending) {
+        shrink_pending = 0;
+        size_t before = llmsset_get_size(nodes);
+        sylvan_gc();
+        size_t after = llmsset_get_size(nodes);
+        if (after >= before || MTBDD_GETINDEX(shrink_leaf) < after ||
+            MTBDD_GETINDEX(shrink_leaf) >= llmsset_get_data_size(nodes)) shrink_failed = 1;
+
+        /* These new walks need the data range while the outer .dot walk is
+         * suspended with its root and leaf marked in a separate bitmap. */
+        if (mtbdd_nodecount(shrink_root) != 4 || mtbdd_leafcount(shrink_root) != 1 ||
+            !mtbdd_test_isvalid(shrink_root)) shrink_failed = 1;
+    }
+    snprintf(buf, size, "leaf");
+    return buf;
+}
+
+static int check_shrink_dot(int nc)
+{
+    FILE *out = fopen("test-markbit-shrink.dot", "w+");
+    test_assert(out != NULL);
+    if (nc) mtbdd_fprintdot_nc(out, shrink_root);
+    else mtbdd_fprintdot(out, shrink_root);
+    test_assert(fflush(out) == 0);
+    test_assert(fseek(out, 0, SEEK_SET) == 0);
+    char actual[2048], expected[2048];
+    size_t length = fread(actual, 1, sizeof(actual)-1, out);
+    test_assert(!ferror(out) && feof(out));
+    actual[length] = 0;
+    test_assert(fclose(out) == 0);
+    test_assert(remove("test-markbit-shrink.dot") == 0);
+
+    /* The shared leaf prints once. The branch is first visited after the
+     * callback returns, so the outer walk must resume correctly after GC. */
+    const char *edge = nc ? "" : " dir=both arrowtail=none";
+    int written = snprintf(expected, sizeof(expected),
+        "digraph \"DD\" {\n"
+        "graph [dpi = 300];\n"
+        "center = true;\n"
+        "edge [dir = forward];\n"
+        "root [style=invis];\n"
+        "root -> %" PRIu64 " [style=solid%s];\n"
+        "%" PRIu64 " [label=\"0\"];\n"
+        "%" PRIu64 " [shape=box, style=filled, label=\"leaf\"];\n"
+        "%" PRIu64 " [label=\"1\"];\n"
+        "0 [shape=box, style=filled, label=\"F\"];\n"
+        "%" PRIu64 " -> %" PRIu64 " [style=dashed];\n"
+        "%" PRIu64 " -> 0 [style=solid%s];\n"
+        "%" PRIu64 " -> %" PRIu64 " [style=dashed];\n"
+        "%" PRIu64 " -> %" PRIu64 " [style=solid%s];\n"
+        "}\n",
+        shrink_root, edge, shrink_root, shrink_leaf, shrink_branch,
+        shrink_branch, shrink_leaf, shrink_branch, edge,
+        shrink_root, shrink_leaf, shrink_root, shrink_branch, edge);
+    test_assert(written > 0 && (size_t)written < sizeof(expected));
+    test_assert(strcmp(actual, expected) == 0);
+    return 0;
+}
+
+TASK_0(int, run_shrink_test)
+{
+    mtbdd_protect(&shrink_root);
+    mtbdd_protect(&shrink_leaf);
+    mtbdd_protect(&shrink_branch);
+    uint32_t type = sylvan_mt_create_type();
+    sylvan_mt_set_to_str(type, print_shrink_leaf);
+
+    /* More distinct protected leaves than the initial table can hold force
+     * growth and guarantee a live index above the eventual minimum size,
+     * regardless of which Lace worker allocates them. */
+    size_t initial = llmsset_get_size(nodes);
+    size_t count = 3 * initial;
+    MTBDD *filler = calloc(count, sizeof(*filler));
+    test_assert(filler != NULL);
+    for (size_t i = 0; i < count; i++) {
+        mtbdd_protect(&filler[i]);
+        filler[i] = mtbdd_makeleaf(type, i);
+        if (MTBDD_GETINDEX(filler[i]) > MTBDD_GETINDEX(shrink_leaf)) shrink_leaf = filler[i];
+    }
+    test_assert(MTBDD_GETINDEX(shrink_leaf) >= initial);
+    shrink_branch = mtbdd_makenode(1, shrink_leaf, mtbdd_false);
+    shrink_root = mtbdd_makenode(0, shrink_leaf, shrink_branch);
+    for (size_t i = 0; i < count; i++) mtbdd_unprotect(&filler[i]);
+    free(filler);
+
+    char before[65], after[65];
+    mtbdd_getsha(shrink_root, before);
+    /* Discard pooled large bitmaps so the nested walk must allocate a new
+     * bitmap after the shrink; a stale large bitmap could hide a size bug. */
+    nodes_scratch_forget();
+    shrink_pending = 1;
+    test_assert(check_shrink_dot(0) == 0);
+    test_assert(shrink_calls == 1 && !shrink_pending && !shrink_failed);
+    test_assert(llmsset_get_size(nodes) == initial);
+    test_assert(llmsset_get_data_size(nodes) > initial);
+
+    /* Fresh traversals after the suspended walk has finished. */
+    nodes_scratch_forget();
+    test_assert(check_shrink_dot(1) == 0);
+    test_assert(check_shrink_dot(0) == 0);
+    test_assert(shrink_calls == 3 && !shrink_failed);
+    test_assert(mtbdd_nodecount(shrink_root) == 4);
+    test_assert(mtbdd_leafcount(shrink_root) == 1);
+    test_assert(mtbdd_test_isvalid(shrink_leaf));
+    mtbdd_getsha(shrink_root, after);
+    test_assert(strcmp(before, after) == 0);
+    test_assert(mtbdd_makenode(1, shrink_leaf, mtbdd_false) == shrink_branch);
+    test_assert(mtbdd_makenode(0, shrink_leaf, shrink_branch) == shrink_root);
+    mtbdd_unprotect(&shrink_root);
+    mtbdd_unprotect(&shrink_leaf);
+    mtbdd_unprotect(&shrink_branch);
+    return 0;
+}
 
 static int remember(uint64_t index, uint64_t mark)
 {
@@ -91,7 +214,7 @@ static char *print_leaf(int complement, uint64_t value, char *buf, size_t size)
     if (!callback_failed) {
         if (mtbdd_nodecount(callback_root) != callback_count) callback_failed = 1;
         size_t before = llmsset_get_size(nodes);
-        sylvan_gc();
+        sylvan_gc_collect();
         if (llmsset_get_size(nodes) <= before) callback_failed = 1;
         if (mtbdd_nodecount(callback_root) != callback_count) callback_failed = 1;
         callback_failed |= verify_lookups();
@@ -176,7 +299,7 @@ TASK_0(int, run_test)
     mtbdd_getsha(roots[0], bsha);
     lddmc_getsha(tuples, lsha);
 
-    size_t size = llmsset_get_size(nodes);
+    size_t size = llmsset_get_data_size(nodes);
     seen = calloc(size, 1);
     saved = malloc(size * sizeof(*saved));
     test_assert(seen != NULL && saved != NULL);
@@ -204,7 +327,7 @@ TASK_0(int, run_test)
     int failed = 0;
     for (int i = 0; i < 100; i++) {
         failed |= verify_lookups();
-        if (i % 10 == 0) CALL(sylvan_gc);
+        if (i % 10 == 0) CALL(sylvan_gc_collect);
     }
     failed |= SYNC(walk_many);
     test_assert(failed == 0);
@@ -229,7 +352,8 @@ int main(void)
     sylvan_init_ldd();
     sylvan_init_zdd();
     sylvan_gc_hook_main(sylvan_gc_aggressive_resize_CALL);
-    int result = RUN(run_test);
+    int result = RUN(run_shrink_test);
+    if (result == 0) result = RUN(run_test);
     sylvan_quit();
     lace_stop();
     return result;

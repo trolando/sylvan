@@ -21,10 +21,12 @@
 #include <errno.h>
 #include <string.h>
 
-/* Keep table_size's public type and layout unchanged. Access it through C11
- * atomics here, including for C++ callers, whose _Atomic maps to std::atomic.
- * Non-worker traversals can read the size while GC grows the table. A relaxed
- * load suffices: their protected nodes existed before the traversal started.
+/* Keep table_size and data_size's public types and layout unchanged. Access
+ * them through C11 atomics here, including for C++ callers, whose _Atomic
+ * maps to std::atomic.
+ * Non-worker traversals can read these sizes while GC grows or shrinks the
+ * table. Relaxed loads suffice: their protected nodes existed before the
+ * traversal started and remain within the data range after a shrink.
  */
 _Static_assert(sizeof(_Atomic(size_t)) == sizeof(size_t), "atomic size_t must preserve size");
 _Static_assert(_Alignof(_Atomic(size_t)) <= _Alignof(size_t), "atomic size_t must preserve alignment");
@@ -43,11 +45,26 @@ llmsset_get_size(const llmsset_t dbs)
     return table_size_relaxed(dbs);
 }
 
+static inline size_t
+data_size_relaxed(const llmsset_t dbs)
+{
+    return atomic_load_explicit((const _Atomic(size_t) *)&dbs->data_size, memory_order_relaxed);
+}
+
+size_t
+llmsset_get_data_size(const llmsset_t dbs)
+{
+    return data_size_relaxed(dbs);
+}
+
 void
 llmsset_set_size(llmsset_t dbs, size_t size)
 {
     /* check bounds (don't be rediculous) */
     if (size > 128 && size <= dbs->max_size) {
+        if (data_size_relaxed(dbs) < size) {
+            atomic_store_explicit((_Atomic(size_t) *)&dbs->data_size, size, memory_order_relaxed);
+        }
         atomic_store_explicit((_Atomic(size_t) *)&dbs->table_size, size, memory_order_relaxed);
 #if LLMSSET_MASK
         /* Warning: if size is not a power of two, you will get interesting behavior */
@@ -69,7 +86,7 @@ VOID_TASK_0(llmsset_reset_region)
 static uint64_t
 claim_next_region(const llmsset_t dbs, uint64_t start_region)
 {
-    const uint64_t regions = table_size_relaxed(dbs) / (64u * 8u);
+    const uint64_t regions = data_size_relaxed(dbs) / (64u * 8u);
     if (regions == 0) return UINT64_MAX;
 
     start_region %= regions;
@@ -128,7 +145,7 @@ claim_data_bucket(const llmsset_t dbs)
         }
         else {
             // First use after startup or GC. Spread workers over the region space.
-            const uint64_t regions = table_size_relaxed(dbs) / (64u * 8u);
+            const uint64_t regions = data_size_relaxed(dbs) / (64u * 8u);
             uint64_t start_region = 0;
 
             if (regions != 0) {
@@ -419,6 +436,66 @@ llmsset_create(size_t initial_size, size_t max_size)
     return dbs;
 }
 
+/**
+ * Whether no bucket of a data region (512 buckets) holds a marked node.
+ */
+static int
+region_is_empty(const llmsset_t dbs, size_t region)
+{
+    _Atomic(uint64_t)* ptr = dbs->bitmap2 + region * 8;
+    for (int i = 0; i < 8; i++) {
+        if (atomic_load_explicit(ptr + i, memory_order_relaxed) != 0) return 0;
+    }
+    return 1;
+}
+
+void
+llmsset_shrink(llmsset_t dbs, size_t size)
+{
+    if (size >= table_size_relaxed(dbs)) return;
+    const size_t data_size = data_size_relaxed(dbs);
+
+    /* one past the highest marked bucket (bit 63 is the first bucket of a word) */
+    size_t top = 0;
+    for (size_t w = data_size / 64; w-- > 0;) {
+        uint64_t v = atomic_load_explicit(dbs->bitmap2 + w, memory_order_relaxed);
+        if (v != 0) {
+            top = w * 64 + 64 - ctz_uint64(v);
+            break;
+        }
+    }
+
+#if SYLVAN_USE_MMAP
+    /* give back the memory of each run of empty regions, in aligned chunks of
+       64 KiB, which every page size divides */
+    const size_t region_bytes = 512 * 2 * sizeof(uint64_t);
+    const uintptr_t chunk = 65536;
+    const size_t regions = data_size / 512;
+    size_t r = 0;
+    while (r < regions) {
+        if (!region_is_empty(dbs, r)) {
+            r++;
+            continue;
+        }
+        size_t first = r;
+        while (r < regions && region_is_empty(dbs, r)) r++;
+        uintptr_t from = (uintptr_t)(dbs->data + first * region_bytes);
+        uintptr_t to = (uintptr_t)(dbs->data + r * region_bytes);
+        from = (from + chunk - 1) & ~(chunk - 1);
+        to &= ~(chunk - 1);
+        if (from < to) sylvan_clear_aligned((void*)from, (size_t)(to - from));
+    }
+#endif
+
+    /* the hash table shrinks to <size>; the data buckets in use only to the
+       region above the highest marked node */
+    size_t data = (top + 511) & ~(size_t)511;
+    if (data < size) data = size;
+    if (data > data_size) data = data_size;
+    llmsset_set_size(dbs, size);
+    atomic_store_explicit((_Atomic(size_t) *)&dbs->data_size, data, memory_order_relaxed);
+}
+
 void
 llmsset_free(llmsset_t dbs)
 {
@@ -505,7 +582,7 @@ TASK_3(int, llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
 
 TASK_IMPL_1(int, llmsset_rehash, llmsset_t, dbs)
 {
-    return CALL(llmsset_rehash_par, dbs, 0, table_size_relaxed(dbs));
+    return CALL(llmsset_rehash_par, dbs, 0, data_size_relaxed(dbs));
 }
 
 TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, count)
@@ -545,7 +622,7 @@ TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, 
 
 TASK_IMPL_1(size_t, llmsset_count_marked, llmsset_t, dbs)
 {
-    return CALL(llmsset_count_marked_par, dbs, 0, table_size_relaxed(dbs));
+    return CALL(llmsset_count_marked_par, dbs, 0, data_size_relaxed(dbs));
 }
 
 VOID_TASK_3(llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
@@ -575,7 +652,7 @@ VOID_TASK_3(llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
 VOID_TASK_IMPL_1(llmsset_destroy_unmarked, llmsset_t, dbs)
 {
     if (dbs->destroy_cb == NULL) return; // no custom function
-    CALL(llmsset_destroy_par, dbs, 0, table_size_relaxed(dbs));
+    CALL(llmsset_destroy_par, dbs, 0, data_size_relaxed(dbs));
 }
 
 /**

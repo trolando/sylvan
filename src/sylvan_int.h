@@ -54,7 +54,7 @@ SYLVAN_NORETURN void sylvan_table_full(const char *kind);
  * Acquire/release must bracket a synchronous walk on one thread, and the
  * walk must undo every bit it sets. Concurrent and nested walks get separate
  * bitmaps. Normal root protection is still required across GC safepoints;
- * scratch marks do not keep nodes alive. GC may rehash/grow the table while
+ * scratch marks do not keep nodes alive. GC may resize the table while
  * a callback is suspended: live indices remain stable, and the outer walk
  * only visits nodes that existed when it acquired its bitmap. New/nested
  * walks use the current data range. Free all idle bitmaps at package quit.

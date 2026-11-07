@@ -54,7 +54,6 @@ target_sources(sylvan
     FILE_SET HEADERS
     BASE_DIRS
       "${CMAKE_CURRENT_SOURCE_DIR}"
-      "${CMAKE_CURRENT_BINARY_DIR}"
     FILES
       sylvan.h
       sylvan_bdd.h
@@ -72,6 +71,15 @@ target_sources(sylvan
       sylvan_table.h
       sylvan_zdd.h
       sylvan_zdd_int.h
+  # The generated header has its own file set: the base directories of one
+  # file set may not contain each other, which fails when the build directory
+  # is inside the source directory.
+  PUBLIC
+    FILE_SET generated_headers
+    TYPE HEADERS
+    BASE_DIRS
+      "${CMAKE_CURRENT_BINARY_DIR}"
+    FILES
       "${CMAKE_CURRENT_BINARY_DIR}/sylvan_config.h"
 )
 
@@ -166,7 +174,8 @@ install(TARGETS sylvan
     ARCHIVE          DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY          DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME          DESTINATION ${CMAKE_INSTALL_BINDIR}
-    FILE_SET HEADERS DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILE_SET HEADERS           DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILE_SET generated_headers DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
 install(EXPORT sylvan-targets

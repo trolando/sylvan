@@ -15,6 +15,8 @@ All notable changes to Sylvan will be documented in this file.
 ### Fixed
 - Adding Sylvan as a subproject before the parent's `include(CTest)` no longer
   turns off the parent's tests (Sylvan cached `BUILD_TESTING` as `OFF`).
+- Configuring no longer fails when the build directory is inside Sylvan's
+  `src` directory: the generated `sylvan_config.h` now has its own file set.
 
 ## [1.12.0] - 2026-11-07
 

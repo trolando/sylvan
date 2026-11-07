@@ -72,12 +72,17 @@ if(NOT TARGET lace::lace AND NOT TARGET lace)
         if(_sylvan_needs_pic)
             set(LACE_ENABLE_PIC ON)
         endif()
+        # As a subproject, Lace uses -march=native only when asked (since
+        # 1.8.2); ask for it when Sylvan uses it.
+        if(SYLVAN_NATIVE_OPT)
+            set(LACE_NATIVE_OPT ON)
+        endif()
 
         include(FetchContent)
         FetchContent_Declare(
             lace
             GIT_REPOSITORY https://github.com/trolando/lace.git
-            GIT_TAG        v1.8.1
+            GIT_TAG        v1.8.2
             GIT_SHALLOW    TRUE
         )
         FetchContent_MakeAvailable(lace)
@@ -85,6 +90,9 @@ if(NOT TARGET lace::lace AND NOT TARGET lace)
         unset(BUILD_SHARED_LIBS)
         if(_sylvan_needs_pic)
             unset(LACE_ENABLE_PIC)
+        endif()
+        if(SYLVAN_NATIVE_OPT)
+            unset(LACE_NATIVE_OPT)
         endif()
     endif()
 endif()

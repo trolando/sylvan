@@ -3,7 +3,15 @@ All notable changes to Sylvan will be documented in this file.
 
 ## [Unreleased]
 
+This release makes Sylvan easier to use as a subproject, as mCRL2 does, and
+updates Lace to version 1.8.2, which makes the same changes on the Lace side.
+
 ### Changed
+- Updated Lace to version 1.8.2. As a subproject, Lace no longer builds with
+  `-march=native` by default; when Sylvan fetches Lace itself, Lace uses it
+  only if `SYLVAN_NATIVE_OPT` is `ON`. Lace 1.8.2 also uses `rdtsc` instead
+  of `rdtscp` on MSVC (some virtual CPUs lack `rdtscp`), builds with
+  ThreadSanitizer on Clang, and allows building in the source directory.
 - When Sylvan is a subproject (`add_subdirectory` or `FetchContent`), the C++
   bindings are now off by default, so a C project can use Sylvan without
   enabling C++. Set `SYLVAN_BUILD_CPP` to `ON` to build them.

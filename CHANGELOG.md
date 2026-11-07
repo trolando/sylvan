@@ -1,6 +1,19 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- `sylvan_gc()` now shrinks the nodes table to fit the live nodes: to the
+  smallest size, from the initial size up, with room for twice the live
+  nodes, and the operation cache in proportion. Nodes keep their place, so the
+  nodes array keeps the buckets up to the highest live node, but the memory of
+  its empty stretches goes back to the operating system. The main gc hook is
+  not called for these collections. The automatic collections, when the nodes
+  table is full, grow the tables as before.
+- Sylvan starts those automatic collections with the new
+  `sylvan_gc_collect()`, which never shrinks the tables.
+
 ## [1.12.3] - 2026-11-07
 
 This release updates Lace to version 1.9.0.

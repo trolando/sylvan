@@ -107,6 +107,8 @@ VOID_TASK_DECL_2(sylvan_table_usage, size_t*, size_t*);
  * 5) The main gc hook is called. The function of this hook is to perform resizing.
  *    The default implementation doubles the nodes table and operation cache sizes.
  *    See sylvan_gc_hook_main to set the hook.
+ *    A collection asked for with sylvan_gc() instead shrinks the tables to fit the
+ *    live nodes; see sylvan_gc().
  * 5) The nodes table (hash part) is cleared.
  * 6) All marked nodes are rehashed.
  * 7) All installed post_gc hooks are called.
@@ -120,13 +122,26 @@ VOID_TASK_DECL_2(sylvan_table_usage, size_t*, size_t*);
 
 /**
  * Trigger garbage collection manually.
- */
-
-/**
- * Trigger garbage collection manually.
+ *
+ * This also shrinks the nodes table to fit the live nodes: to the smallest size,
+ * from the initial size up, with room for twice the live nodes, and the operation
+ * cache in proportion. Nodes do not move, so the part of the nodes array in use
+ * shrinks only to just above the highest live node, but the memory of its empty
+ * stretches is given back to the operating system. The main gc hook is not called.
+ * When the program needs more nodes again, the automatic collections grow the
+ * tables as usual.
  */
 VOID_TASK_DECL_0(sylvan_gc);
 #define sylvan_gc() (RUN(sylvan_gc))
+
+/**
+ * Garbage collection when the nodes table is full: what Sylvan does itself when it
+ * cannot add a node. It resizes with the main gc hook (by default, it doubles the
+ * nodes table and the operation cache) and never shrinks them. Programs that want to
+ * collect garbage want sylvan_gc() instead.
+ */
+VOID_TASK_DECL_0(sylvan_gc_collect);
+#define sylvan_gc_collect() (RUN(sylvan_gc_collect))
 
 /**
  * Enable or disable garbage collection.

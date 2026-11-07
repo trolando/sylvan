@@ -128,7 +128,8 @@ Garbage collection is triggered when trying to insert a new node and no
 empty space can be found in the table within a reasonable upper bound.
 
 Garbage collection can be disabled with ``sylvan_gc_disable`` and enabled again with ``sylvan_gc_enable``.
-Call ``sylvan_gc`` to manually trigger garbage collection.
+Call ``sylvan_gc`` to manually trigger garbage collection; this also shrinks the tables
+to fit the live nodes (see Table resizing).
 
 To ensure that no decision diagram nodes are overwritten, you must ensure that
 Sylvan knows which decision diagrams you care about.
@@ -329,8 +330,15 @@ During garbage collection, it is possible to resize the nodes table and
 the cache. By default, Sylvan doubles the table sizes during every garbage
 collection until the maximum table size has been reached. There is also a
 less aggressive version that only resizes when at least half the table is
-full. This can be configured in ``src/sylvan_config.h``. It is not
-possible to decrease the size of the nodes table and the cache.
+full. This can be configured in ``src/sylvan_config.h``.
+
+A garbage collection asked for with ``sylvan_gc`` shrinks the tables
+instead: the nodes table to the smallest size, from the initial size up,
+with room for twice the live nodes, and the operation cache in proportion.
+Nodes keep their place, so only the hash table shrinks; the nodes array
+keeps the buckets up to the highest live node, but gives the memory of its
+empty stretches back to the operating system. The automatic garbage
+collections grow the tables again when the program needs more nodes.
 
 Dynamic reordering
 ~~~~~~~~~~~~~~~~~~

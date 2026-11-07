@@ -365,7 +365,7 @@ lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
     if (index == 0) {
         lddmc_refs_push(ifeq);
         lddmc_refs_push(ifneq);
-        RUN(sylvan_gc);
+        RUN(sylvan_gc_collect);
         lddmc_refs_pop(2);
 
         index = llmsset_lookup(nodes, n.a, n.b, &created);
@@ -392,7 +392,7 @@ lddmc_make_copynode(MDD ifeq, MDD ifneq)
     if (index == 0) {
         lddmc_refs_push(ifeq);
         lddmc_refs_push(ifneq);
-        RUN(sylvan_gc);
+        RUN(sylvan_gc_collect);
         lddmc_refs_pop(2);
 
         index = llmsset_lookup(nodes, n.a, n.b, &created);

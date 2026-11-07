@@ -32,7 +32,7 @@ VOID_TASK_0(llmsset_reset_region)
 static uint64_t
 claim_next_region(const llmsset_t dbs, uint64_t start_region)
 {
-    const uint64_t regions = dbs->table_size / (64u * 8u);
+    const uint64_t regions = dbs->data_size / (64u * 8u);
     if (regions == 0) return UINT64_MAX;
 
     start_region %= regions;
@@ -91,7 +91,7 @@ claim_data_bucket(const llmsset_t dbs)
         }
         else {
             // First use after startup or GC. Spread workers over the region space.
-            const uint64_t regions = dbs->table_size / (64u * 8u);
+            const uint64_t regions = dbs->data_size / (64u * 8u);
             uint64_t start_region = 0;
 
             if (regions != 0) {
@@ -385,6 +385,65 @@ llmsset_create(size_t initial_size, size_t max_size)
     return dbs;
 }
 
+/**
+ * Whether no bucket of a data region (512 buckets) holds a marked node.
+ */
+static int
+region_is_empty(const llmsset_t dbs, size_t region)
+{
+    _Atomic(uint64_t)* ptr = dbs->bitmap2 + region * 8;
+    for (int i = 0; i < 8; i++) {
+        if (atomic_load_explicit(ptr + i, memory_order_relaxed) != 0) return 0;
+    }
+    return 1;
+}
+
+void
+llmsset_shrink(llmsset_t dbs, size_t size)
+{
+    if (size >= dbs->table_size) return;
+
+    /* one past the highest marked bucket (bit 63 is the first bucket of a word) */
+    size_t top = 0;
+    for (size_t w = dbs->data_size / 64; w-- > 0;) {
+        uint64_t v = atomic_load_explicit(dbs->bitmap2 + w, memory_order_relaxed);
+        if (v != 0) {
+            top = w * 64 + 64 - ctz_uint64(v);
+            break;
+        }
+    }
+
+#if SYLVAN_USE_MMAP
+    /* give back the memory of each run of empty regions, in aligned chunks of
+       64 KiB, which every page size divides */
+    const size_t region_bytes = 512 * 2 * sizeof(uint64_t);
+    const uintptr_t chunk = 65536;
+    const size_t regions = dbs->data_size / 512;
+    size_t r = 0;
+    while (r < regions) {
+        if (!region_is_empty(dbs, r)) {
+            r++;
+            continue;
+        }
+        size_t first = r;
+        while (r < regions && region_is_empty(dbs, r)) r++;
+        uintptr_t from = (uintptr_t)(dbs->data + first * region_bytes);
+        uintptr_t to = (uintptr_t)(dbs->data + r * region_bytes);
+        from = (from + chunk - 1) & ~(chunk - 1);
+        to &= ~(chunk - 1);
+        if (from < to) sylvan_clear_aligned((void*)from, (size_t)(to - from));
+    }
+#endif
+
+    /* the hash table shrinks to <size>; the data buckets in use only to the
+       region above the highest marked node */
+    size_t data = (top + 511) & ~(size_t)511;
+    if (data < size) data = size;
+    if (data > dbs->data_size) data = dbs->data_size;
+    llmsset_set_size(dbs, size);
+    dbs->data_size = data;
+}
+
 void
 llmsset_free(llmsset_t dbs)
 {
@@ -471,7 +530,7 @@ TASK_3(int, llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
 
 TASK_IMPL_1(int, llmsset_rehash, llmsset_t, dbs)
 {
-    return CALL(llmsset_rehash_par, dbs, 0, dbs->table_size);
+    return CALL(llmsset_rehash_par, dbs, 0, dbs->data_size);
 }
 
 TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, count)
@@ -511,7 +570,7 @@ TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, 
 
 TASK_IMPL_1(size_t, llmsset_count_marked, llmsset_t, dbs)
 {
-    return CALL(llmsset_count_marked_par, dbs, 0, dbs->table_size);
+    return CALL(llmsset_count_marked_par, dbs, 0, dbs->data_size);
 }
 
 VOID_TASK_3(llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
@@ -541,7 +600,7 @@ VOID_TASK_3(llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
 VOID_TASK_IMPL_1(llmsset_destroy_unmarked, llmsset_t, dbs)
 {
     if (dbs->destroy_cb == NULL) return; // no custom function
-    CALL(llmsset_destroy_par, dbs, 0, dbs->table_size);
+    CALL(llmsset_destroy_par, dbs, 0, dbs->data_size);
 }
 
 /**

@@ -50,6 +50,18 @@ sylvan_gc_disable(void)
 static _Atomic(int) gc;
 
 /**
+ * Whether the running collection was asked for with sylvan_gc(), and shrinks
+ * the tables instead of calling the main hook. Set by the worker that starts
+ * the collection, before its frame.
+ */
+static int gc_shrink;
+
+/**
+ * The minimum and maximum sizes of the nodes table and the operation cache
+ */
+static size_t table_min = 0, table_max = 0, cache_min = 0, cache_max = 0;
+
+/**
  * Structures for the marking mechanisms
  */
 typedef struct gc_hook_entry
@@ -210,6 +222,27 @@ VOID_TASK_IMPL_0(sylvan_gc_normal_resize)
 }
 
 /**
+ * Shrink the nodes table to fit the marked nodes, for a collection asked for
+ * with sylvan_gc(): to the smallest size, from the initial size up, with room
+ * for twice the marked nodes. The operation cache shrinks in proportion, but
+ * not below its initial size. Nodes do not move (see llmsset_shrink).
+ */
+VOID_TASK_0(sylvan_gc_shrink)
+{
+    size_t size = llmsset_get_size(nodes);
+    size_t marked = llmsset_count_marked(nodes);
+    size_t target = table_min;
+    while (target < size && target < 2 * marked) target = next_size(target);
+    if (target >= size) return;
+    llmsset_shrink(nodes, target);
+
+    size_t cache_size = cache_getsize();
+    size_t cache_target = cache_size;
+    for (size_t s = size; s > target && cache_target / 2 >= cache_min; s /= 2) cache_target /= 2;
+    if (cache_target < cache_size) cache_setsize(cache_target);
+}
+
+/**
  * Actual implementation of garbage collection
  */
 VOID_TASK_0(sylvan_gc_go)
@@ -231,8 +264,9 @@ VOID_TASK_0(sylvan_gc_go)
 
     CALL(sylvan_clear_and_mark);
 
-    // call hooks for resizing and all that
-    WRAP(main_hook);
+    // resize: shrink to fit for sylvan_gc(), else the main hook (by default, grow)
+    if (gc_shrink) CALL(sylvan_gc_shrink);
+    else WRAP(main_hook);
 
     CALL(sylvan_rehash_all);
 
@@ -245,14 +279,17 @@ VOID_TASK_0(sylvan_gc_go)
 }
 
 /**
- * Perform garbage collection
+ * Perform garbage collection, or wait for the one another worker runs.
+ * Only the worker that starts the collection decides whether it shrinks.
  */
-VOID_TASK_IMPL_0(sylvan_gc)
+VOID_TASK_1(sylvan_gc_start, int, shrink)
 {
     if (gc_enabled) {
         int zero = 0;
         if (atomic_compare_exchange_strong(&gc, &zero, 1)) {
+            gc_shrink = shrink;
             NEWFRAME(sylvan_gc_go);
+            gc_shrink = 0;
             gc = 0;
         } else {
             /* Another worker is collecting garbage. Wait until it is done,
@@ -265,13 +302,21 @@ VOID_TASK_IMPL_0(sylvan_gc)
     }
 }
 
+VOID_TASK_IMPL_0(sylvan_gc)
+{
+    CALL(sylvan_gc_start, 1);
+}
+
+VOID_TASK_IMPL_0(sylvan_gc_collect)
+{
+    CALL(sylvan_gc_start, 0);
+}
+
 /**
  * The unique table
  */
 
 llmsset_t nodes;
-
-static size_t table_min = 0, table_max = 0, cache_min = 0, cache_max = 0;
 
 static int
 is_power_of_two(size_t size)

@@ -58,6 +58,7 @@ typedef struct llmsset
     uint64_t*          bitmapc;      // bitmap for "use custom functions"
     size_t             max_size;     // maximum size of the hash table (for resizing)
     size_t             table_size;   // size of the hash table (number of slots) --> power of 2!
+    size_t             data_size;    // nodes are in the data buckets below this; >= table_size
 #if LLMSSET_MASK
     size_t             mask;         // size-1
 #endif
@@ -109,6 +110,18 @@ llmsset_get_size(const llmsset_t dbs)
 }
 
 /**
+ * Retrieve the number of data buckets in use: new nodes go into the buckets
+ * below it, and every live node is below it. This is the size of the hash
+ * table, unless llmsset_shrink made the hash table smaller while live nodes
+ * remained in higher buckets (nodes never move).
+ */
+static inline size_t
+llmsset_get_data_size(const llmsset_t dbs)
+{
+    return dbs->data_size;
+}
+
+/**
  * Set the table size of the set.
  * Typically called during garbage collection, after clear and before rehash.
  * Returns 0 if dbs->table_size > dbs->max_size!
@@ -119,6 +132,7 @@ llmsset_set_size(llmsset_t dbs, size_t size)
     /* check bounds (don't be rediculous) */
     if (size > 128 && size <= dbs->max_size) {
         dbs->table_size = size;
+        if (dbs->data_size < size) dbs->data_size = size;
 #if LLMSSET_MASK
         /* Warning: if size is not a power of two, you will get interesting behavior */
         dbs->mask = dbs->table_size - 1;
@@ -127,6 +141,15 @@ llmsset_set_size(llmsset_t dbs, size_t size)
         dbs->threshold = (int16_t)(192 - 2 * clz_uint64((uint64_t)dbs->table_size));
     }
 }
+
+/**
+ * Shrink the hash table to <size> slots. Call during garbage collection, after
+ * marking and before rehashing, with room for the marked nodes. Nodes keep
+ * their place: the data buckets in use shrink only to just above the highest
+ * marked node, and the memory of data regions without marked nodes is given
+ * back to the operating system.
+ */
+void llmsset_shrink(llmsset_t dbs, size_t size);
 
 /**
  * Core function: find existing data or add new.

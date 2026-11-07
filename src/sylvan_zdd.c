@@ -408,7 +408,7 @@ zdd_makeleaf(uint16_t type, uint64_t value)
     int created;
     uint64_t index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
-        RUN(sylvan_gc);
+        RUN(sylvan_gc_collect);
 
         index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
@@ -454,7 +454,7 @@ _zdd_makenode(uint32_t var, ZDD low, ZDD high)
     if (index == 0) {
         zdd_refs_push(low);
         zdd_refs_push(high);
-        RUN(sylvan_gc);
+        RUN(sylvan_gc_collect);
         zdd_refs_pop(2);
 
         index = llmsset_lookup(nodes, n.a, n.b, &created);
@@ -484,7 +484,7 @@ zdd_makemapnode(uint32_t var, ZDD low, ZDD high)
     if (index == 0) {
         zdd_refs_push(low);
         zdd_refs_push(high);
-        RUN(sylvan_gc);
+        RUN(sylvan_gc_collect);
         zdd_refs_pop(2);
 
         index = llmsset_lookup(nodes, n.a, n.b, &created);

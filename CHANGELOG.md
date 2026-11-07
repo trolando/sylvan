@@ -9,6 +9,9 @@ All notable changes to Sylvan will be documented in this file.
   sets up its memory, so that the memory is on the worker's NUMA node, and
   starts its workers faster. Lace deprecates its option `LACE_USE_HWLOC`,
   which Sylvan never set.
+- Sylvan now asks for Lace 1.9.0 when it looks for an installed Lace, and
+  requires at least Lace 1.9.0. An installed Lace accepts only requests for
+  its own minor version, so a request for 1.8.0 would not find Lace 1.9.0.
 
 ## [1.12.2] - 2026-11-07
 

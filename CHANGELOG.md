@@ -1,7 +1,7 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
-## [Unreleased]
+## [1.12.1] - 2026-11-07
 
 This release makes Sylvan easier to use as a subproject, as mCRL2 does, and
 updates Lace to version 1.8.2, which makes the same changes on the Lace side.

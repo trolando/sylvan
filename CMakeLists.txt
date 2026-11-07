@@ -57,19 +57,24 @@ endif()
 # First check if Lace is already a target (e.g. a parent project added it),
 # then try find_package, then fall back to FetchContent.
 if(NOT TARGET lace::lace AND NOT TARGET lace)
-    find_package(lace 2.4.0 QUIET)
+    find_package(lace 2.6.0 QUIET)
     if(NOT TARGET lace::lace AND NOT TARGET lace)
         # Normal variables override Lace's options without modifying its cache.
         set(BUILD_SHARED_LIBS OFF)
         if(_sylvan_needs_pic)
             set(LACE_ENABLE_PIC ON)
         endif()
+        # As a subproject, Lace uses -march=native only when asked (since
+        # 2.6.0); ask for it when Sylvan uses it.
+        if(SYLVAN_NATIVE_OPT)
+            set(LACE_NATIVE_OPT ON)
+        endif()
 
         include(FetchContent)
         FetchContent_Declare(
             lace
             GIT_REPOSITORY https://github.com/trolando/lace.git
-            GIT_TAG        v2.4.0
+            GIT_TAG        v2.6.0
             GIT_SHALLOW    TRUE
         )
         FetchContent_MakeAvailable(lace)
@@ -77,6 +82,9 @@ if(NOT TARGET lace::lace AND NOT TARGET lace)
         unset(BUILD_SHARED_LIBS)
         if(_sylvan_needs_pic)
             unset(LACE_ENABLE_PIC)
+        endif()
+        if(SYLVAN_NATIVE_OPT)
+            unset(LACE_NATIVE_OPT)
         endif()
     endif()
 endif()
@@ -119,8 +127,8 @@ unset(_sylvan_needs_pic)
 # Check actual version of Lace
 if(NOT DEFINED lace_VERSION)
     message(FATAL_ERROR "Could not determine Lace version. Is Lace properly configured?")
-elseif(lace_VERSION VERSION_LESS "2.4.0")
-    message(FATAL_ERROR "Sylvan requires Lace >= 2.4.0, found ${lace_VERSION}")
+elseif(lace_VERSION VERSION_LESS "2.6.0")
+    message(FATAL_ERROR "Sylvan requires Lace >= 2.6.0, found ${lace_VERSION}")
 elseif(lace_VERSION VERSION_GREATER_EQUAL "3.0.0")
     message(FATAL_ERROR "Sylvan requires Lace < 3.0.0, found ${lace_VERSION}")
 endif()

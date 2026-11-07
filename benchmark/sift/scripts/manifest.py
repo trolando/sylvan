@@ -98,7 +98,7 @@ def lace_info(build_dir, cache):
         os.path.join(build_dir, "_deps", "lace-src")
     info = {"source": src if os.path.isdir(src) else None,
             "how": "FETCHCONTENT_SOURCE_DIR_LACE" if "FETCHCONTENT_SOURCE_DIR_LACE" in cache
-            and cache["FETCHCONTENT_SOURCE_DIR_LACE"][1] else "FetchContent (GIT_TAG v2.4.0)",
+            and cache["FETCHCONTENT_SOURCE_DIR_LACE"][1] else "FetchContent (GIT_TAG v2.6.0)",
             "version": None, "git": None}
     try:
         with open(os.path.join(src, "CMakeLists.txt"), encoding="utf-8") as f:

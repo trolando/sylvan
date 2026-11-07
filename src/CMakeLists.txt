@@ -409,9 +409,9 @@ endif()
 # ── pkg-config ───────────────────────────────────────────────────────────────
 
 if(SYLVAN_GMP)
-    set(PKGC_REQUIRES "lace >= 2.4.0 gmp")
+    set(PKGC_REQUIRES "lace >= 2.6.0 gmp")
 else()
-    set(PKGC_REQUIRES "lace >= 2.4.0")
+    set(PKGC_REQUIRES "lace >= 2.6.0")
 endif()
 
 # -lm is needed by consumers for static linking; Threads are already pulled

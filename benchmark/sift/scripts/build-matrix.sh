@@ -41,7 +41,7 @@
 #                    ('rel-*-stats'), variants (stats), headlines (h1, h2,
 #                    h3, h5) or the recommendation-floor sweep (s3), comma-
 #                    or space-separated; default all
-#   --lace-dir DIR   a Lace 2.4.0 source tree, to build without fetching it
+#   --lace-dir DIR   a Lace 2.6.0 source tree, to build without fetching it
 #   --src-rev REV    the commit an exported --src was made from (`git
 #                    get-tar-commit-id < export.tar` prints it)
 #   --cudd-rev REV   the same for --cudd-dir (the pinned CUDD 3.0.0 import is

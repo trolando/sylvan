@@ -114,9 +114,12 @@ sift_now(void)
         return (double)now.tv_sec + 1e-9 * (double)now.tv_nsec;
     }
 #endif
+#if defined(TIME_UTC)
     if (timespec_get(&now, TIME_UTC) == TIME_UTC) {
         return (double)now.tv_sec + 1e-9 * (double)now.tv_nsec;
     }
+#endif
+    (void)now; // unused without either clock
     return 0.0;
 }
 

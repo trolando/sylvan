@@ -780,9 +780,11 @@ gc_collect(lace_worker* lace, void *caller, int forced)
         return 1;
     }
 
-    /* wait for new frame to appear */
-    while (atomic_load_explicit(&lace_newframe.t, memory_order_relaxed) == 0) {}
-    lace_yield(lace);
+    /* Another worker is collecting garbage. Wait until it is done, and join
+       its new frame if that has not started yet. Lace announces a frame only
+       until all workers have joined it, so a worker that arrives after the
+       frame has run must not wait for it to appear. */
+    while (atomic_load_explicit(&gc, memory_order_acquire) != 0) lace_check_yield(lace);
     return 0;
 }
 

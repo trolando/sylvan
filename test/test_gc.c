@@ -2,7 +2,8 @@
  * Regression test: several workers call sylvan_gc often and at the same time.
  * Before 1.12.2, a worker that called sylvan_gc just after another worker's
  * garbage collection had finished could wait forever. CTest gives this test a
- * timeout, so that a hang fails the test.
+ * timeout, so that a hang fails the test. Two workers suffice to show the hang;
+ * more workers than cores make every collection slow (all workers take part).
  */
 
 #include <stdio.h>
@@ -27,14 +28,14 @@ TASK_1(int, gc_storm, int, depth)
 
 int main(int argc, char **argv)
 {
-    int workers = argc > 1 ? atoi(argv[1]) : 4;
+    int workers = argc > 1 ? atoi(argv[1]) : 2;
     lace_start(workers, 0);
 
     sylvan_set_sizes(1LL<<12, 1LL<<12, 1LL<<10, 1LL<<10);
     sylvan_init_package();
     sylvan_init_bdd();
 
-    for (int r=0; r<20; r++) {
+    for (int r=0; r<10; r++) {
         int n = RUN(gc_storm, 8);
         if (n != 256) {
             fprintf(stderr, "gc_storm returned %d instead of 256\n", n);

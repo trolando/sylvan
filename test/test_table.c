@@ -46,8 +46,10 @@
 /* Number of Lace workers this run was started with. */
 static unsigned int test_workers = TEST_DEFAULT_WORKERS;
 
-/* argv[0], so a death test can re-execute this binary. */
+#if defined(__unix__) || defined(__APPLE__)
+/* argv[0], so a death test can re-execute this binary (only where it runs). */
 static const char *test_self;
+#endif
 
 /* Nodes are handed out per 512-bucket region, one region per worker at a
    time, so a table used concurrently needs at least that much room per
@@ -2261,7 +2263,9 @@ run_table_tests_CALL(lace_worker *lace)
 int
 main(int argc, char **argv)
 {
+#if defined(__unix__) || defined(__APPLE__)
     test_self = argv[0];
+#endif
 
     /* Internal entry point: the exhaustion test re-executes this binary
        with stderr on a pipe, so that it can read the diagnostic. */

@@ -1,6 +1,18 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [1.12.2] - 2026-11-07
+
+This release fixes a hang in garbage collection.
+
+### Fixed
+- A worker that called `sylvan_gc` just after another worker's garbage
+  collection had finished could wait forever for a collection that had
+  already run. Programs that start garbage collection often from several
+  workers at once could hang. Every earlier version has this bug; it showed up
+  in testing for mCRL2. The new test `test_gc` checks that this no longer
+  hangs.
+
 ## [1.12.1] - 2026-11-07
 
 This release makes Sylvan easier to use as a subproject, as mCRL2 does, and

@@ -60,8 +60,9 @@ endif()
 
 # Sylvan needs Lace 1.x, at least this version. Also used for the version check
 # below and for the installed CMake and pkg-config files. An installed Lace
-# accepts only requests for its own minor version (SameMinorVersion), so this
-# names the minor version that Sylvan fetches.
+# accepts only requests for its own minor version (SameMinorVersion), because a
+# later minor version may remove features, so this names the minor version that
+# Sylvan fetches: update it with every Lace minor version (1.8, 1.9, 1.10, ...).
 set(SYLVAN_LACE_MIN_VERSION 1.9.0)
 
 # First check if Lace is already a target (e.g. a parent project added it),

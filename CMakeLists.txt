@@ -27,7 +27,7 @@ option(BUILD_SHARED_LIBS          "Build shared libraries (except on Windows)"  
 option(SYLVAN_NATIVE_OPT          "Enable -march=native for compiler optimizations" OFF)
 option(SYLVAN_ENABLE_PIC          "Build with -fPIC (for embedding in shared libs)" OFF)
 option(SYLVAN_BUILD_CPP           "Build Sylvan C++ bindings"   ${PROJECT_IS_TOP_LEVEL})
-option(BUILD_TESTING              "Build Sylvan tests"          ${PROJECT_IS_TOP_LEVEL})
+option(SYLVAN_BUILD_TESTS         "Build Sylvan tests"          ${PROJECT_IS_TOP_LEVEL})
 option(SYLVAN_BUILD_EXAMPLES      "Build Sylvan examples"       ${PROJECT_IS_TOP_LEVEL})
 option(SYLVAN_BUILD_DOCS          "Build Sylvan documentation"                      OFF)
 
@@ -38,7 +38,12 @@ if(SYLVAN_BUILD_CPP)
     enable_language(CXX)
 endif()
 
-include(CTest)
+# CTest and its BUILD_TESTING option belong to the top-level project. As a
+# subproject, Sylvan adds its tests only when the parent sets SYLVAN_BUILD_TESTS
+# and has testing enabled.
+if(sylvan_IS_TOP_LEVEL)
+    include(CTest)
+endif()
 
 if(WIN32 AND BUILD_SHARED_LIBS)
     message(STATUS "Sylvan does not currently support Windows DLLs; building a static library")
@@ -187,6 +192,7 @@ if(NOT sylvan_IS_TOP_LEVEL)
         BUILD_SHARED_LIBS
         SYLVAN_ENABLE_PIC
         SYLVAN_BUILD_CPP
+        SYLVAN_BUILD_TESTS
         SYLVAN_BUILD_EXAMPLES
         SYLVAN_BUILD_DOCS
     )
@@ -200,7 +206,7 @@ if(TARGET sylvan_sanitizers)
     target_link_libraries(sylvan PUBLIC "$<BUILD_INTERFACE:sylvan_sanitizers>")
 endif()
 
-if(BUILD_TESTING)
+if(SYLVAN_BUILD_TESTS AND BUILD_TESTING)
     add_subdirectory(test)
 endif()
 

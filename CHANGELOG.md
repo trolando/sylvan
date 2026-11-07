@@ -7,6 +7,14 @@ All notable changes to Sylvan will be documented in this file.
 - When Sylvan is a subproject (`add_subdirectory` or `FetchContent`), the C++
   bindings are now off by default, so a C project can use Sylvan without
   enabling C++. Set `SYLVAN_BUILD_CPP` to `ON` to build them.
+- The tests are now controlled by `SYLVAN_BUILD_TESTS` (on by default only
+  when Sylvan is the top-level project) instead of `BUILD_TESTING`. As a
+  subproject, Sylvan no longer includes CTest and no longer adds its tests when
+  the parent enables testing; set `SYLVAN_BUILD_TESTS` to `ON` to add them.
+
+### Fixed
+- Adding Sylvan as a subproject before the parent's `include(CTest)` no longer
+  turns off the parent's tests (Sylvan cached `BUILD_TESTING` as `OFF`).
 
 ## [1.12.0] - 2026-11-07
 

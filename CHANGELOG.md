@@ -1,7 +1,9 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
-## [Unreleased]
+## [1.12.3] - 2026-11-07
+
+This release updates Lace to version 1.9.0.
 
 ### Changed
 - Updated Lace to version 1.9.0. Lace now pins its workers on FreeBSD and
@@ -21,9 +23,8 @@ This release fixes a hang in garbage collection.
 - A worker that called `sylvan_gc` just after another worker's garbage
   collection had finished could wait forever for a collection that had
   already run. Programs that start garbage collection often from several
-  workers at once could hang. Every earlier version has this bug; it showed up
-  in testing for mCRL2. The new test `test_gc` checks that this no longer
-  hangs.
+  workers at once could hang. Every earlier version has this bug. The new test
+  `test_gc` checks that this no longer hangs.
 
 ## [1.12.1] - 2026-11-07
 

@@ -84,7 +84,7 @@ target_sources(sylvan
 )
 
 # ── Optional C++ bindings ────────────────────────────────────────────────────
- 
+
 if(SYLVAN_BUILD_CPP)
     target_sources(sylvan
       PRIVATE sylvan_obj.cpp
@@ -93,7 +93,7 @@ if(SYLVAN_BUILD_CPP)
 endif()
 
 # ── Optional GMP support ────────────────────────────────────────────────────
- 
+
 option(SYLVAN_GMP "Include custom MTBDD type GMP" OFF)
 if(SYLVAN_GMP)
     find_package(GMP REQUIRED)
@@ -105,20 +105,20 @@ if(SYLVAN_GMP)
 endif()
 
 # ── Compile features ────────────────────────────────────────────────────────
- 
+
 target_compile_features(sylvan PUBLIC c_std_11)
 if(SYLVAN_BUILD_CPP)
     target_compile_features(sylvan PUBLIC cxx_std_11)
 endif()
 
 # ── Target properties ───────────────────────────────────────────────────────
- 
+
 # PIC: required for shared libraries, optional for static (e.g. embedding
 # Sylvan in a downstream shared library).
 if((BUILD_SHARED_LIBS AND NOT WIN32) OR SYLVAN_ENABLE_PIC)
     set_target_properties(sylvan PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endif()
- 
+
 # Shared library versioning (ignored for static builds)
 if(BUILD_SHARED_LIBS AND NOT WIN32)
     set_target_properties(sylvan PROPERTIES
@@ -128,7 +128,7 @@ if(BUILD_SHARED_LIBS AND NOT WIN32)
 endif()
 
 # ── Compiler flags ──────────────────────────────────────────────────────────
- 
+
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(sylvan PRIVATE
         -pipe
@@ -145,7 +145,7 @@ elseif(MSVC)
 endif()
 
 # ── Link dependencies ───────────────────────────────────────────────────────
- 
+
 find_package(Threads REQUIRED)
 target_link_libraries(sylvan PUBLIC Threads::Threads)
 target_link_libraries(sylvan PUBLIC lace::lace)
@@ -166,9 +166,9 @@ if(NOT sylvan_IS_TOP_LEVEL)
 endif()
 
 # ── Installation ─────────────────────────────────────────────────────────────
- 
+
 include(GNUInstallDirs)
- 
+
 install(TARGETS sylvan
     EXPORT sylvan-targets
     ARCHIVE          DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -185,34 +185,34 @@ install(EXPORT sylvan-targets
 )
 
 # ── CMake package config ─────────────────────────────────────────────────────
- 
+
 include(CMakePackageConfigHelpers)
- 
+
 if(SYLVAN_GMP)
     set(SYLVAN_CONFIG_FIND_GMP "find_dependency(GMP REQUIRED)")
 else()
     set(SYLVAN_CONFIG_FIND_GMP "")
 endif()
- 
+
 configure_package_config_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/sylvan-config.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
 )
- 
+
 write_basic_package_version_file(
     ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config-version.cmake
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMinorVersion
 )
- 
+
 install(
     FILES
         ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config.cmake
         ${CMAKE_CURRENT_BINARY_DIR}/cmake/sylvan-config-version.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
 )
- 
+
 if(SYLVAN_GMP)
     install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/FindGMP.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sylvan
@@ -220,13 +220,13 @@ if(SYLVAN_GMP)
 endif()
 
 # ── pkg-config ───────────────────────────────────────────────────────────────
- 
+
 if(SYLVAN_GMP)
     set(PKGC_REQUIRES "lace >= ${SYLVAN_LACE_MIN_VERSION} gmp")
 else()
     set(PKGC_REQUIRES "lace >= ${SYLVAN_LACE_MIN_VERSION}")
 endif()
- 
+
 # -lm is needed by consumers for static linking; Threads are already pulled
 # in transitively via the lace.pc Requires line.
 set(PKGC_LIBS_PRIVATE "")

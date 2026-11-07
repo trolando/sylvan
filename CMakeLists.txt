@@ -143,7 +143,7 @@ if(PROJECT_IS_TOP_LEVEL)
     option(SYLVAN_SANITIZE_THREAD  "Enable ThreadSanitizer"            OFF)
     option(SYLVAN_SANITIZE_UB      "Enable UndefinedBehaviorSanitizer" OFF)
     option(SYLVAN_SANITIZE_MEMORY  "Enable MemorySanitizer"            OFF)
- 
+
     if(SYLVAN_SANITIZE_THREAD AND SYLVAN_SANITIZE_ADDRESS)
         message(FATAL_ERROR "AddressSanitizer and ThreadSanitizer cannot be combined")
     endif()
@@ -153,7 +153,7 @@ if(PROJECT_IS_TOP_LEVEL)
     if(SYLVAN_SANITIZE_MEMORY AND SYLVAN_SANITIZE_THREAD)
         message(FATAL_ERROR "MemorySanitizer and ThreadSanitizer cannot be combined")
     endif()
- 
+
     set(_san "")
     if(SYLVAN_SANITIZE_ADDRESS)
         list(APPEND _san "address")
@@ -167,7 +167,7 @@ if(PROJECT_IS_TOP_LEVEL)
     if(SYLVAN_SANITIZE_MEMORY)
         list(APPEND _san "memory")
     endif()
- 
+
     if(_san)
         if(NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
             message(FATAL_ERROR "Sanitizers are not supported with compiler '${CMAKE_C_COMPILER_ID}'")

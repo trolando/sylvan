@@ -38,11 +38,10 @@ Sylvan has the following dependencies:
 - **Sphinx** if you want to build the documentation.
 
 Sylvan depends on the `work-stealing framework
-Lace <http://fmt.ewi.utwente.nl/tools/lace>`__ for its implementation.
-Lace is embedded in the Sylvan distribution.
-Lace requires one additional library:
-
-- **hwloc** (``libhwloc-dev``) for pinning worker threads to processors.
+Lace <https://github.com/trolando/lace>`__ for its implementation.
+CMake uses the Lace that a parent project provides or that is installed, and
+otherwise fetches it. Lace needs no other libraries: it pins its worker
+threads to processors itself on Linux, FreeBSD and Windows.
 
 
 Building

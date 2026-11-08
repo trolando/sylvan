@@ -1,6 +1,15 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- The value of an LDD node was read and written as a `uint32_t` at byte
+  offset 6 of the node, which is misaligned: undefined behaviour, reported by
+  UndefinedBehaviorSanitizer (`-fsanitize=undefined`) in every program that
+  uses LDDs. Sylvan now uses `memcpy`, which compilers turn into the same
+  single load or store, so the generated code is as before.
+
 ## [1.12.4] - 2026-11-08
 
 This release updates Lace to version 1.10.0, which fixes a bug that could

@@ -146,6 +146,11 @@ All notable changes to Sylvan will be documented in this file.
   lookup on another worker could fail to find a node that was there and intern
   a duplicate of it. The mark now lives in a dense scratch bitmap beside the
   node table.
+- A worker that started garbage collection just after another worker's
+  collection had finished could wait forever for a collection that had
+  already run, so programs that start garbage collection often from several
+  workers at once could hang. The new test `test_gc` checks that this no
+  longer hangs.
 - Updated Lace to version 2.7.0, which fixes a bug that could corrupt memory
   during garbage collection. A worker that went idle during a collection
   could reset the scratch memory of the task that it had interrupted, while

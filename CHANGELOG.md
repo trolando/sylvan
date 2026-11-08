@@ -23,6 +23,25 @@ All notable changes to Sylvan will be documented in this file.
   table is full, grow the tables as before. After dropping about a million
   nodes, `sylvan_gc()` took a program from 62 MB to 3 MB resident.
 
+## [1.12.4] - 2026-11-08
+
+This release updates Lace to version 1.10.0, which fixes a bug that could
+corrupt memory during garbage collection.
+
+### Fixed
+- Updated Lace to version 1.10.0, which fixes a bug that could corrupt memory
+  during garbage collection. A worker that went idle during a collection
+  could reset the scratch memory of the task that it had interrupted, while
+  that task still used it. Sylvan uses scratch memory in its enumeration
+  functions, such as `sylvan_enum_par` and `lddmc_sat_all_par`. Lace then
+  printed a "leaked scratch" warning, followed by crashes or wrong results.
+  Lace 1.7.0 to 1.9.0 have this bug, so Sylvan 1.11.0 to 1.12.3 have it too.
+
+### Changed
+- Sylvan now asks for Lace 1.10.0 when it looks for an installed Lace, and
+  requires at least Lace 1.10.0. Lace 1.10.0 removes the option
+  `LACE_USE_HWLOC`, which Sylvan never set.
+
 ## [1.12.3] - 2026-11-07
 
 This release updates Lace to version 1.9.0.

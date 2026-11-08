@@ -1,7 +1,11 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
-## [Unreleased]
+## [1.12.5] - 2026-11-08
+
+This release fixes a bug in which the tables of protected variables could
+lose entries, so that garbage collection deleted decision diagrams that were
+still protected.
 
 ### Fixed
 - The tables of protected variables and of external references (behind

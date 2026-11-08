@@ -141,6 +141,11 @@ typedef enum {
     OPCOUNTER(ZDD_BOOLEAN_CHECK),
     ZDD_EVAL_ASSIGNMENT,
 
+    /* Append operations to preserve public counter values. */
+    OPCOUNTER(BDD_REACH),
+    OPCOUNTER(LDD_REACH),
+    OPCOUNTER(LDD_EXTEND_REL),
+
     SYLVAN_COUNTER_COUNTER
 } Sylvan_Counters;
 

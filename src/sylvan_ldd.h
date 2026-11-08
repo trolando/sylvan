@@ -132,6 +132,35 @@ TASK_DECL_4(MDD, lddmc_relprod_union, MDD, MDD, MDD, MDD);
 #define lddmc_relprod_union(a, b, meta, un) RUN(lddmc_relprod_union, a, b, meta, un)
 
 /**
+ * Compute the states reachable from set with the relation rel, that is, the
+ * least fixpoint of S = set \union relprod(S, rel, meta), in one recursive
+ * operation instead of a loop of relprod calls. This is the REACH operation of
+ * S. Brand, T. Bäck and A. Laarman, A Decision Diagram Operation for
+ * Reachability, FM 2023.
+ *
+ * <meta> is as for lddmc_relprod: 0 (not in rel), 1 (read), 2 (write),
+ * 3 (only-read), 4 (only-write), 5 (action label), -1 (end; rest not in rel).
+ * Copy nodes are supported. Action labels may occur at any level, including
+ * between a read and its write, and are existentially quantified.
+ *
+ * Unlike saturation, rel is a single relation. To use several relations,
+ * extend them to the same variables with lddmc_extend_rel and take their union.
+ */
+TASK_DECL_3(MDD, lddmc_reach, MDD, MDD, MDD);
+#define lddmc_reach(set, rel, meta) RUN(lddmc_reach, set, rel, meta)
+
+/**
+ * Extend the relation <rel> with <meta> (as for lddmc_relprod) to a relation on
+ * <nvars> variables that reads and writes every variable, that is, with meta
+ * 1,2 repeated <nvars> times. The variables that rel does not change get copy
+ * nodes. Action labels at any level (also between a read and its write) are
+ * existentially quantified. Relations extended to the same number of
+ * variables can be combined with lddmc_union, for lddmc_reach.
+ */
+TASK_DECL_3(MDD, lddmc_extend_rel, MDD, MDD, uint32_t);
+#define lddmc_extend_rel(rel, meta, nvars) RUN(lddmc_extend_rel, rel, meta, nvars)
+
+/**
  * Calculate all predecessors to a in uni according to rel[proj]
  * <proj> follows the same semantics as relprod
  * i.e. 0 (not in rel), 1 (read+write), 2 (read), 3 (write), -1 (end; rest=0)

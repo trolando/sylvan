@@ -197,6 +197,26 @@ TASK_DECL_2(BDD, sylvan_closure, BDD, BDDVAR);
 #define sylvan_closure(a) RUN(sylvan_closure,a,0);
 
 /**
+ * Compute the states reachable from the set A with the relation B, that is,
+ * the least fixpoint of S = A \or relnext(S, B, vars), in one recursive
+ * operation instead of a loop of relnext calls. This is the REACH operation
+ * of S. Brand, T. Bäck and A. Laarman, A Decision Diagram Operation for
+ * Reachability, FM 2023.
+ *
+ * The variables are as for sylvan_relnext:
+ * Assumes s,t are interleaved with s even and t odd (s+1).
+ * Parameter vars is the cube of all s and/or t variables.
+ * Other variables in A are kept (B does not change them)
+ * Other variables in B are "ignored" (existential quantification)
+ * Alternatively, vars=false means all variables are in vars
+ *
+ * Unlike saturation, B is a single relation. To use several relations, extend
+ * them to the same vars and take their union.
+ */
+TASK_DECL_3(BDD, sylvan_reach, BDD, BDD, BDDSET);
+#define sylvan_reach(a,b,vars) RUN(sylvan_reach,a,b,vars)
+
+/**
  * Compute f@c (f constrain c), such that f and f@c are the same when c is true
  * The BDD c is also called the "care function"
  * Special cases:

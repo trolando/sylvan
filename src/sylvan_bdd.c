@@ -1788,6 +1788,183 @@ TASK_IMPL_2(BDD, sylvan_closure, BDD, a, BDDVAR, prev_level)
     return result;
 }
 
+/**
+ * Compute the states reachable from a with relation b, in one recursive
+ * operation (REACH, by S. Brand, T. Bäck and A. Laarman, FM 2023).
+ *
+ * For a relation variable s (with t=s+1), split a into a0 and a1 and b into
+ * b00, b01, b10 and b11. Then until a0 and a1 no longer change: compute
+ * reach(a0, b00) and reach(a1, b11) in parallel, then the transitions that
+ * change s, relnext(a0, b01) and relnext(a1, b10), also in parallel.
+ */
+TASK_IMPL_3(BDD, sylvan_reach, BDD, a, BDD, b, BDDSET, vars)
+{
+    /* Terminals */
+    if (a == sylvan_false) return sylvan_false;
+    if (b == sylvan_false) return a;
+    if (a == sylvan_true) return sylvan_true;
+    if (b == sylvan_true && vars == sylvan_false) return sylvan_true;
+    if (sylvan_set_isempty(vars)) return a;
+
+    /* Perhaps execute garbage collection */
+    sylvan_gc_test();
+
+    /* Count operation */
+    sylvan_stats_count(BDD_REACH);
+
+    /* Determine top level */
+    bddnode_t na = MTBDD_GETNODE(a);
+    bddnode_t nb = sylvan_isconst(b) ? 0 : MTBDD_GETNODE(b);
+
+    BDDVAR va = bddnode_getvariable(na);
+    BDDVAR vb = nb ? bddnode_getvariable(nb) : 0xffffffff;
+    BDDVAR level = va < vb ? va : vb;
+
+    /* Skip vars */
+    int is_s_or_t = 0;
+    bddnode_t nv = 0;
+    if (vars == sylvan_false) {
+        is_s_or_t = 1;
+    } else {
+        nv = MTBDD_GETNODE(vars);
+        for (;;) {
+            /* check if level is s/t */
+            BDDVAR vv = bddnode_getvariable(nv);
+            if (level == vv || (level^1) == vv) {
+                is_s_or_t = 1;
+                break;
+            }
+            /* check if level < s/t */
+            if (level < vv) break;
+            vars = node_high(vars, nv); // get next in vars
+            if (sylvan_set_isempty(vars)) return a;
+            nv = MTBDD_GETNODE(vars);
+        }
+    }
+
+    /* Consult cache */
+    BDD result;
+    if (cache_get3(CACHE_BDD_REACH, a, b, vars, &result)) {
+        sylvan_stats_count(BDD_REACH_CACHED);
+        return result;
+    }
+
+    if (is_s_or_t) {
+        /* Get s and t */
+        BDDVAR s = level & ~UINT32_C(1);
+        BDDVAR t = s+1;
+
+        BDD a0, a1, b0, b1;
+        if (va == s) {
+            a0 = node_low(a, na);
+            a1 = node_high(a, na);
+        } else {
+            a0 = a1 = a;
+        }
+        if (nb && vb == s) {
+            b0 = node_low(b, nb);
+            b1 = node_high(b, nb);
+        } else {
+            b0 = b1 = b;
+        }
+
+        BDD b00, b01, b10, b11;
+        if (!sylvan_isconst(b0)) {
+            bddnode_t nb0 = MTBDD_GETNODE(b0);
+            if (bddnode_getvariable(nb0) == t) {
+                b00 = node_low(b0, nb0);
+                b01 = node_high(b0, nb0);
+            } else {
+                b00 = b01 = b0;
+            }
+        } else {
+            b00 = b01 = b0;
+        }
+        if (!sylvan_isconst(b1)) {
+            bddnode_t nb1 = MTBDD_GETNODE(b1);
+            if (bddnode_getvariable(nb1) == t) {
+                b10 = node_low(b1, nb1);
+                b11 = node_high(b1, nb1);
+            } else {
+                b10 = b11 = b1;
+            }
+        } else {
+            b10 = b11 = b1;
+        }
+
+        BDD _vars = vars == sylvan_false ? sylvan_false : node_high(vars, nv);
+
+        BDD t0 = sylvan_false, t1 = sylvan_false;
+        bdd_refs_pushptr(&a0);
+        bdd_refs_pushptr(&a1);
+        bdd_refs_pushptr(&t0);
+        bdd_refs_pushptr(&t1);
+
+        for (;;) {
+            /* the transitions that keep s */
+            bdd_refs_spawn(SPAWN(sylvan_reach, a0, b00, _vars));
+            a1 = CALL(sylvan_reach, a1, b11, _vars);
+            a0 = bdd_refs_sync(SYNC(sylvan_reach));
+
+            if (b01 == sylvan_false && b10 == sylvan_false) break;
+
+            /* the transitions that change s */
+            bdd_refs_spawn(SPAWN(sylvan_relnext, a1, b10, _vars, 0));
+            t1 = CALL(sylvan_relnext, a0, b01, _vars, 0);
+            t0 = bdd_refs_sync(SYNC(sylvan_relnext));
+
+            bdd_refs_spawn(SPAWN(sylvan_ite, a0, sylvan_true, t0, 0));
+            t1 = CALL(sylvan_ite, a1, sylvan_true, t1, 0);
+            t0 = bdd_refs_sync(SYNC(sylvan_ite));
+
+            /* done if no new states */
+            if (t0 == a0 && t1 == a1) break;
+            a0 = t0;
+            a1 = t1;
+        }
+
+        result = sylvan_makenode(s, a0, a1);
+        bdd_refs_popptr(4);
+    } else {
+        /* Variable not in vars: keep the variable in a, quantify it in b */
+        BDD a0, a1, b0, b1;
+        if (va == level) {
+            a0 = node_low(a, na);
+            a1 = node_high(a, na);
+        } else {
+            a0 = a1 = a;
+        }
+        if (nb && vb == level) {
+            b0 = node_low(b, nb);
+            b1 = node_high(b, nb);
+        } else {
+            b0 = b1 = b;
+        }
+
+        BDD bq = b;
+        if (b0 != b1) {
+            bq = CALL(sylvan_ite, b0, sylvan_true, b1, 0);
+            bdd_refs_push(bq);
+        }
+
+        if (a0 == a1) {
+            result = CALL(sylvan_reach, a, bq, vars);
+        } else {
+            bdd_refs_spawn(SPAWN(sylvan_reach, a0, bq, vars));
+            BDD r1 = bdd_refs_push(CALL(sylvan_reach, a1, bq, vars));
+            BDD r0 = bdd_refs_sync(SYNC(sylvan_reach));
+            bdd_refs_pop(1);
+            result = sylvan_makenode(level, r0, r1);
+        }
+
+        if (b0 != b1) bdd_refs_pop(1);
+    }
+
+    if (cache_put3(CACHE_BDD_REACH, a, b, vars, result)) sylvan_stats_count(BDD_REACH_CACHEDPUT);
+
+    return result;
+}
+
 
 /**
  * Function composition

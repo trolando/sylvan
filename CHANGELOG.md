@@ -4,6 +4,17 @@ All notable changes to Sylvan will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `sylvan_reach` and `lddmc_reach`, which compute all states reachable from a
+  set with one transition relation in one recursive operation (REACH, from
+  S. Brand, T. Bäck and A. Laarman, FM 2023), instead of a loop of
+  `sylvan_relnext` or `lddmc_relprod` calls. They take the variables of
+  `sylvan_relnext` and the meta of `lddmc_relprod`, including copy nodes and
+  action labels at any level, including between a read and its write. Labels
+  are existentially quantified by both LDD operations. `lddmc_extend_rel`
+  extends an LDD relation to read and write every variable, so that several
+  relations can be merged with `lddmc_union`.
+  The `bddmc` and `lddmc` examples have a new strategy `reach`, which merges
+  the relations and then calls REACH once.
 - `sylvan_unique`, which computes parity quantification (an odd number of
   satisfying assignments, not necessarily exactly one).
 - `sylvan_intersection_witness`, which finds a nonempty subset of two BDDs'

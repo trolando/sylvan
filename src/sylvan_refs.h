@@ -28,14 +28,26 @@ extern "C" {
  * Implementation of external references
  * Based on a hash table for 40-bit non-null values, linear probing
  * Use tombstones for deleting, higher bits for reference count
+ *
+ * A resize waits until no operation is active. Each Lace worker counts its
+ * active operations in its own counter (refs_workers), on its own cache line,
+ * so that workers that protect and unprotect at the same time do not contend
+ * on one shared word. Other threads count theirs in the low bits of
+ * refs_control, whose high bits hold the state of a resize.
  */
 typedef struct
 {
+    /* read by every operation; written only by a resize, when no operation is active */
     _Atomic(uint64_t) *refs_table;        // table itself
     size_t refs_size;                     // number of buckets
+    _Atomic(uint32_t) *refs_workers;      // active operations per Lace worker, one counter per 128 bytes
+    size_t refs_nworkers;                 // number of per-worker counters
 
-    /* helpers during resize operation */
-    _Atomic(uint32_t) refs_control;       // control field
+    /* keeps refs_control off the cache line of the fields above */
+    char refs_pad[128];
+
+    /* control field and helpers during resize operation */
+    _Atomic(uint32_t) refs_control;       // resize state (high bits), active operations of other threads (low bits)
     _Atomic(uint64_t) *refs_resize_table; // previous table
     size_t refs_resize_size;              // size of previous table
     _Atomic(size_t) refs_resize_part;     // which part is next

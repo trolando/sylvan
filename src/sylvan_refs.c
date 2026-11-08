@@ -37,6 +37,93 @@ static const uint64_t refs_ts = 0x7fffffffffffffff; // tombstone
 
 #define fnvhash8(a) sylvan_fnvhash8(a, 14695981039346656037LLU)
 
+/**
+ * Counting active operations, so that a resize can wait until there are none.
+ * A Lace worker counts its operations in its own counter, REFS_WORKER_STRIDE
+ * bytes from the next, so that workers that protect and unprotect at the same
+ * time do not contend on one cache line (128 bytes also covers the pairs of
+ * 64-byte lines that some CPUs fetch together). Threads that are not Lace
+ * workers, and workers without a counter, count theirs in the low bits of
+ * refs_control. A resize sets a high bit of refs_control, then waits until
+ * every count is 0.
+ */
+#define REFS_WORKER_STRIDE 128
+
+/* Counters for at least this many workers, also for a table created before Lace starts */
+#define REFS_MIN_WORKERS 256
+
+static inline _Atomic(uint32_t)*
+refs_worker_counter(refs_table_t *tbl, size_t worker)
+{
+    return (_Atomic(uint32_t)*)((char*)tbl->refs_workers + worker * REFS_WORKER_STRIDE);
+}
+
+static void
+refs_create_workers(refs_table_t *tbl)
+{
+    size_t n = lace_workers();
+    if (n < REFS_MIN_WORKERS) n = REFS_MIN_WORKERS;
+    tbl->refs_workers = (_Atomic(uint32_t)*)sylvan_alloc_aligned(n * REFS_WORKER_STRIDE);
+    // without counters, every thread counts its operations in refs_control
+    tbl->refs_nworkers = tbl->refs_workers != NULL ? n : 0;
+}
+
+static void
+refs_free_workers(refs_table_t *tbl)
+{
+    if (tbl->refs_workers != NULL) sylvan_free_aligned(tbl->refs_workers, tbl->refs_nworkers * REFS_WORKER_STRIDE);
+    tbl->refs_workers = NULL;
+    tbl->refs_nworkers = 0;
+}
+
+/**
+ * Enter an operation: first wait for (and help) a resize in progress. Returns
+ * the counter that refs_leave_counter decrements. A worker's increment of its
+ * counter and its load of refs_control are sequentially consistent, as are a
+ * resize's update of refs_control and its loads of the counters, so either the
+ * worker sees the resize or the resize sees the worker.
+ */
+static inline _Atomic(uint32_t)*
+refs_enter_counter(refs_table_t *tbl, int (*help)(refs_table_t*))
+{
+    WorkerP *w = lace_get_worker();
+    if (w != NULL && (size_t)w->worker < tbl->refs_nworkers) {
+        _Atomic(uint32_t) *c = refs_worker_counter(tbl, w->worker);
+        for (;;) {
+            atomic_fetch_add_explicit(c, 1, memory_order_seq_cst);
+            if ((atomic_load_explicit(&tbl->refs_control, memory_order_seq_cst) & 0xf0000000) == 0) return c;
+            atomic_fetch_sub_explicit(c, 1, memory_order_release);
+            while (help(tbl)) continue;
+        }
+    }
+    for (;;) {
+        uint32_t v = atomic_load_explicit(&tbl->refs_control, memory_order_seq_cst);
+        if (v & 0xf0000000) {
+            while (help(tbl)) continue;
+        } else {
+            if (atomic_compare_exchange_weak(&tbl->refs_control, &v, v+1)) return &tbl->refs_control;
+        }
+    }
+}
+
+/* Leave an operation; c is what refs_enter_counter returned */
+static inline void
+refs_leave_counter(_Atomic(uint32_t) *c)
+{
+    atomic_fetch_sub_explicit(c, 1, memory_order_release);
+}
+
+/* For a resize that has set bit in refs_control: wait until no operation is active */
+static void
+refs_wait_inactive(refs_table_t *tbl, uint32_t bit)
+{
+    while (atomic_load_explicit(&tbl->refs_control, memory_order_seq_cst) != bit) continue;
+    for (size_t i = 0; i < tbl->refs_nworkers; i++) {
+        _Atomic(uint32_t) *c = refs_worker_counter(tbl, i);
+        while (atomic_load_explicit(c, memory_order_seq_cst) != 0) continue;
+    }
+}
+
 // Count number of unique entries (not number of references)
 size_t
 refs_count(refs_table_t *tbl)
@@ -113,7 +200,7 @@ refs_resize(refs_table_t *tbl)
         }
         if (atomic_compare_exchange_weak(&tbl->refs_control, &v, 0x80000000 | v)) {
             // wait until all users gone
-            while (tbl->refs_control != 0x80000000) continue;
+            refs_wait_inactive(tbl, 0x80000000);
             break;
         }
     }
@@ -152,28 +239,18 @@ refs_resize(refs_table_t *tbl)
     sylvan_free_aligned(tbl->refs_resize_table, tbl->refs_resize_size * sizeof(uint64_t));
 }
 
-/* Enter refs_modify */
-static inline void
+/* Enter refs_modify; returns the counter for refs_leave */
+static inline _Atomic(uint32_t)*
 refs_enter(refs_table_t *tbl)
 {
-    for (;;) {
-        uint32_t v = tbl->refs_control;
-        if (v & 0xf0000000) {
-            while (refs_resize_help(tbl)) continue;
-        } else {
-            if (atomic_compare_exchange_weak(&tbl->refs_control, &v, v+1)) return;
-        }
-    }
+    return refs_enter_counter(tbl, refs_resize_help);
 }
 
 /* Leave refs_modify */
 static inline void
-refs_leave(refs_table_t *tbl)
+refs_leave(_Atomic(uint32_t) *c)
 {
-    for (;;) {
-        uint32_t v = tbl->refs_control;
-        if (atomic_compare_exchange_weak(&tbl->refs_control, &v, v-1)) return;
-    }
+    refs_leave_counter(c);
 }
 
 static inline int
@@ -184,7 +261,7 @@ refs_modify(refs_table_t *tbl, const uint64_t a, const int dir)
     uint64_t v, new_v;
     int res, i;
 
-    refs_enter(tbl);
+    _Atomic(uint32_t) *counter = refs_enter(tbl);
 
 ref_retry:
     bucket = tbl->refs_table + (fnvhash8(a) & (tbl->refs_size - 1));
@@ -236,7 +313,7 @@ ref_restart:
         goto ref_exit;
     } else {
         // hash table full
-        refs_leave(tbl);
+        refs_leave(counter);
         refs_resize(tbl);
         return refs_modify(tbl, a, dir);
     }
@@ -245,7 +322,7 @@ ref_mod:
     if (!atomic_compare_exchange_weak(bucket, &v, new_v)) goto ref_restart;
 
 ref_exit:
-    refs_leave(tbl);
+    refs_leave(counter);
     return res;
 }
 
@@ -315,12 +392,14 @@ refs_create(refs_table_t *tbl, size_t _refs_size)
         fprintf(stderr, "refs: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
     }
+    refs_create_workers(tbl);
 }
 
 void
 refs_free(refs_table_t *tbl)
 {
     sylvan_free_aligned(tbl->refs_table, tbl->refs_size * sizeof(uint64_t));
+    refs_free_workers(tbl);
 }
 
 /**
@@ -397,7 +476,7 @@ protect_resize(refs_table_t *tbl)
         }
         if (atomic_compare_exchange_weak(&tbl->refs_control, &v, 0x80000000 | v)) {
             // wait until all users gone
-            while (tbl->refs_control != 0x80000000) continue;
+            refs_wait_inactive(tbl, 0x80000000);
             break;
         }
     }
@@ -436,26 +515,17 @@ protect_resize(refs_table_t *tbl)
     sylvan_free_aligned(tbl->refs_resize_table, tbl->refs_resize_size * sizeof(uint64_t));
 }
 
-static inline void
+/* Enter protect_up or protect_down; returns the counter for protect_leave */
+static inline _Atomic(uint32_t)*
 protect_enter(refs_table_t *tbl)
 {
-    for (;;) {
-        uint32_t v = tbl->refs_control;
-        if (v & 0xf0000000) {
-            while (protect_resize_help(tbl)) continue;
-        } else {
-            if (atomic_compare_exchange_weak(&tbl->refs_control, &v, v+1)) return;
-        }
-    }
+    return refs_enter_counter(tbl, protect_resize_help);
 }
 
 static inline void
-protect_leave(refs_table_t *tbl)
+protect_leave(_Atomic(uint32_t) *c)
 {
-    for (;;) {
-        uint32_t v = tbl->refs_control;
-        if (atomic_compare_exchange_weak(&tbl->refs_control, &v, v-1)) return;
-    }
+    refs_leave_counter(c);
 }
 
 void
@@ -466,7 +536,7 @@ protect_up(refs_table_t *tbl, uint64_t a)
     uint64_t v;
     int i;
 
-    protect_enter(tbl);
+    _Atomic(uint32_t) *counter = protect_enter(tbl);
 
 ref_retry:
     bucket = tbl->refs_table + (fnvhash8(a) & (tbl->refs_size - 1));
@@ -483,14 +553,14 @@ ref_restart:
             if (ts_bucket != NULL) {
                 v = refs_ts;
                 if (atomic_compare_exchange_weak(ts_bucket, &v, a)) {
-                    protect_leave(tbl);
+                    protect_leave(counter);
                     return;
                 } else {
                     goto ref_retry;
                 }
             } else {
                 if (atomic_compare_exchange_weak(bucket, &v, a)) {
-                    protect_leave(tbl);
+                    protect_leave(counter);
                     return;
                 } else {
                     goto ref_restart;
@@ -505,16 +575,16 @@ ref_restart:
     if (ts_bucket != NULL) {
         v = refs_ts;
         if (atomic_compare_exchange_weak(ts_bucket, &v, a)) {
-            protect_leave(tbl);
+            protect_leave(counter);
             return;
         } else {
             goto ref_retry;
         }
     } else {
         // hash table full
-        protect_leave(tbl);
+        protect_leave(counter);
         protect_resize(tbl);
-        protect_enter(tbl);
+        counter = protect_enter(tbl);
         goto ref_retry;
     }
 }
@@ -523,7 +593,7 @@ void
 protect_down(refs_table_t *tbl, uint64_t a)
 {
     _Atomic(uint64_t)* bucket;
-    protect_enter(tbl);
+    _Atomic(uint32_t) *counter = protect_enter(tbl);
 
     bucket = tbl->refs_table + (fnvhash8(a) & (tbl->refs_size - 1));
     int i = 128; // try 128 times linear probing
@@ -532,7 +602,7 @@ protect_down(refs_table_t *tbl, uint64_t a)
         uint64_t d = atomic_load_explicit(bucket, memory_order_relaxed);
         if (d == a) {
             atomic_store_explicit(bucket, refs_ts, memory_order_relaxed);
-            protect_leave(tbl);
+            protect_leave(counter);
             return;
         }
         if (++bucket == tbl->refs_table + tbl->refs_size) bucket = tbl->refs_table;
@@ -591,6 +661,7 @@ protect_create(refs_table_t *tbl, size_t _refs_size)
         fprintf(stderr, "refs: Unable to allocate memory: %s!\n", strerror(errno));
         exit(1);
     }
+    refs_create_workers(tbl);
 }
 
 void
@@ -598,4 +669,5 @@ protect_free(refs_table_t *tbl)
 {
     sylvan_free_aligned(tbl->refs_table, tbl->refs_size * sizeof(uint64_t));
     tbl->refs_table = 0;
+    refs_free_workers(tbl);
 }

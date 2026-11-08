@@ -22,6 +22,15 @@ All notable changes to Sylvan will be documented in this file.
   not called for these collections. The automatic collections, when the nodes
   table is full, grow the tables as before. After dropping about a million
   nodes, `sylvan_gc()` took a program from 62 MB to 3 MB resident.
+- `mtbdd_protect`, `lddmc_protect`, `zdd_protect`, their `unprotect`
+  functions, and `mtbdd_ref`, `lddmc_ref` and their `deref` functions no
+  longer make all workers contend on one shared counter. The tables count
+  active calls so that a resize can wait for them; each Lace worker now counts
+  its calls in a counter of its own, and other threads use the shared counter
+  as before. With 8 workers that each protect and unprotect a variable in a
+  loop, a pair costs 45 ns of CPU time instead of 3.5 µs; with 1 worker it
+  costs the same as before (29 ns). Programs that create and destroy C++
+  objects holding decision diagrams on many workers at once gain the most.
 
 ### Fixed
 - The value of an LDD node was read and written as a `uint32_t` at byte

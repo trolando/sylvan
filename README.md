@@ -83,7 +83,7 @@ include(FetchContent)
 FetchContent_Declare(
     sylvan
     GIT_REPOSITORY https://github.com/trolando/sylvan.git
-    GIT_TAG        v1.12.4
+    GIT_TAG        v1.12.5
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(sylvan)

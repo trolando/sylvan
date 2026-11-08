@@ -23,11 +23,6 @@
 #include <errno.h>  // for errno
 #include <string.h> // for strerror
 
-// TODO is this the clean way?
-#ifndef compiler_barrier
-#define compiler_barrier() atomic_signal_fence(memory_order_seq_cst)
-#endif
-
 /**
  * Implementation of external references
  * Based on a hash table for 40-bit non-null values, linear probing
@@ -77,14 +72,14 @@ refs_free_workers(refs_table_t *tbl)
 }
 
 /**
- * Enter an operation: first wait for (and help) a resize in progress. Returns
+ * Enter an operation: first wait for a resize in progress to finish. Returns
  * the counter that refs_leave_counter decrements. A worker's increment of its
  * counter and its load of refs_control are sequentially consistent, as are a
  * resize's update of refs_control and its loads of the counters, so either the
  * worker sees the resize or the resize sees the worker.
  */
 static inline _Atomic(uint32_t)*
-refs_enter_counter(refs_table_t *tbl, int (*help)(refs_table_t*))
+refs_enter_counter(refs_table_t *tbl, int (*busy)(refs_table_t*))
 {
     WorkerP *w = lace_get_worker();
     if (w != NULL && (size_t)w->worker < tbl->refs_nworkers) {
@@ -93,13 +88,13 @@ refs_enter_counter(refs_table_t *tbl, int (*help)(refs_table_t*))
             atomic_fetch_add_explicit(c, 1, memory_order_seq_cst);
             if ((atomic_load_explicit(&tbl->refs_control, memory_order_seq_cst) & 0xf0000000) == 0) return c;
             atomic_fetch_sub_explicit(c, 1, memory_order_release);
-            while (help(tbl)) continue;
+            while (busy(tbl)) continue;
         }
     }
     for (;;) {
         uint32_t v = atomic_load_explicit(&tbl->refs_control, memory_order_seq_cst);
         if (v & 0xf0000000) {
-            while (help(tbl)) continue;
+            while (busy(tbl)) continue;
         } else {
             if (atomic_compare_exchange_weak(&tbl->refs_control, &v, v+1)) return &tbl->refs_control;
         }
@@ -161,30 +156,17 @@ refs_rehash(refs_table_t *tbl, uint64_t v)
 }
 
 /**
- * Called internally to assist resize operations
- * Returns 1 for retry, 0 for done
+ * Returns 1 while a resize is in progress, 0 when there is none (anymore).
+ * Only the thread that resizes rehashes. Other threads used to help, claiming
+ * parts of the old table, but a helper that was delayed between its checks and
+ * its claim could claim a part of the next resize before that resize had its
+ * new table, and rehash that part into the full old table: those values were
+ * lost from the table.
  */
 static int
-refs_resize_help(refs_table_t *tbl)
+refs_resize_busy(refs_table_t *tbl)
 {
-    // TODO optimize??
-    if (0 == (tbl->refs_control & 0xf0000000)) return 0; // no resize in progress (anymore)
-    if (tbl->refs_control & 0x80000000) return 1; // still waiting for preparation
-
-    if (tbl->refs_resize_part >= tbl->refs_resize_size / 128) return 1; // all parts claimed
-    size_t part = atomic_fetch_add(&tbl->refs_resize_part, 1);
-    if (part >= tbl->refs_resize_size/128) return 1; // all parts claimed
-
-    // rehash all
-    int i;
-    _Atomic(uint64_t) *bucket = tbl->refs_resize_table + part * 128;
-    for (i=0; i<128; i++) {
-        refs_rehash(tbl, atomic_load_explicit(bucket, memory_order_relaxed));
-        bucket++;
-    }
-
-    atomic_fetch_add(&tbl->refs_resize_done, 1);
-    return 1;
+    return (atomic_load_explicit(&tbl->refs_control, memory_order_seq_cst) & 0xf0000000) != 0;
 }
 
 static void
@@ -193,9 +175,8 @@ refs_resize(refs_table_t *tbl)
     while (1) {
         uint32_t v = tbl->refs_control;
         if (v & 0xf0000000) {
-            // someone else started resize
-            // just rehash blocks until done
-            while (refs_resize_help(tbl)) continue;
+            // someone else started resize: wait until it is done
+            while (refs_resize_busy(tbl)) continue;
             return;
         }
         if (atomic_compare_exchange_weak(&tbl->refs_control, &v, 0x80000000 | v)) {
@@ -205,15 +186,13 @@ refs_resize(refs_table_t *tbl)
         }
     }
 
-    tbl->refs_resize_table = tbl->refs_table;
-    tbl->refs_resize_size = tbl->refs_size;
-    tbl->refs_resize_part = 0;
-    tbl->refs_resize_done = 0;
+    _Atomic(uint64_t)* old_table = tbl->refs_table;
+    const size_t old_size = tbl->refs_size;
 
     // calculate new size
-    size_t new_size = tbl->refs_size;
+    size_t new_size = old_size;
     size_t count = refs_count(tbl);
-    if (count*4 > tbl->refs_size) new_size *= 2;
+    if (count*4 > old_size) new_size *= 2;
 
     // allocate new table
     _Atomic(uint64_t)* new_table = (_Atomic(uint64_t)*)sylvan_alloc_aligned(new_size * sizeof(uint64_t));
@@ -222,28 +201,25 @@ refs_resize(refs_table_t *tbl)
         exit(1);
     }
 
-    // set new data and go
+    // set new data and rehash
     tbl->refs_table = new_table;
     tbl->refs_size = new_size;
-    compiler_barrier();
-    tbl->refs_control = 0x40000000;
-
-    // until all parts are done, rehash blocks
-    while (tbl->refs_resize_done != tbl->refs_resize_size/128) refs_resize_help(tbl);
+    for (size_t i = 0; i < old_size; i++) {
+        refs_rehash(tbl, atomic_load_explicit(old_table + i, memory_order_relaxed));
+    }
 
     // done!
-    compiler_barrier();
-    tbl->refs_control = 0;
+    atomic_store_explicit(&tbl->refs_control, 0, memory_order_seq_cst);
 
     // unmap old table
-    sylvan_free_aligned(tbl->refs_resize_table, tbl->refs_resize_size * sizeof(uint64_t));
+    sylvan_free_aligned(old_table, old_size * sizeof(uint64_t));
 }
 
 /* Enter refs_modify; returns the counter for refs_leave */
 static inline _Atomic(uint32_t)*
 refs_enter(refs_table_t *tbl)
 {
-    return refs_enter_counter(tbl, refs_resize_help);
+    return refs_enter_counter(tbl, refs_resize_busy);
 }
 
 /* Leave refs_modify */
@@ -442,25 +418,17 @@ protect_rehash(refs_table_t *tbl, uint64_t v)
 }
 
 /**
- * Called internally to assist resize operations
- * Returns 1 for retry, 0 for done
+ * Returns 1 while a resize is in progress, 0 when there is none (anymore).
+ * Only the thread that resizes rehashes. Other threads used to help, claiming
+ * parts of the old table, but a helper that was delayed between its checks and
+ * its claim could claim a part of the next resize before that resize had its
+ * new table, and rehash that part into the full old table: those values were
+ * lost from the table.
  */
 static int
-protect_resize_help(refs_table_t *tbl)
+protect_resize_busy(refs_table_t *tbl)
 {
-    if (0 == (tbl->refs_control & 0xf0000000)) return 0; // no resize in progress (anymore)
-    if (tbl->refs_control & 0x80000000) return 1; // still waiting for preparation
-    if (tbl->refs_resize_part >= tbl->refs_resize_size / 128) return 1; // all parts claimed
-    size_t part = atomic_fetch_add(&tbl->refs_resize_part, 1);
-    if (part >= tbl->refs_resize_size/128) return 1; // all parts claimed
-
-    // rehash all
-    int i;
-    _Atomic(uint64_t)* bucket = tbl->refs_resize_table + part * 128;
-    for (i=0; i<128; i++) protect_rehash(tbl, *bucket++);
-
-    atomic_fetch_add(&tbl->refs_resize_done, 1);
-    return 1;
+    return (atomic_load_explicit(&tbl->refs_control, memory_order_seq_cst) & 0xf0000000) != 0;
 }
 
 static void
@@ -469,9 +437,8 @@ protect_resize(refs_table_t *tbl)
     while (1) {
         uint32_t v = tbl->refs_control;
         if (v & 0xf0000000) {
-            // someone else started resize
-            // just rehash blocks until done
-            while (protect_resize_help(tbl)) continue;
+            // someone else started resize: wait until it is done
+            while (protect_resize_busy(tbl)) continue;
             return;
         }
         if (atomic_compare_exchange_weak(&tbl->refs_control, &v, 0x80000000 | v)) {
@@ -481,15 +448,13 @@ protect_resize(refs_table_t *tbl)
         }
     }
 
-    tbl->refs_resize_table = tbl->refs_table;
-    tbl->refs_resize_size = tbl->refs_size;
-    tbl->refs_resize_part = 0;
-    tbl->refs_resize_done = 0;
+    _Atomic(uint64_t)* old_table = tbl->refs_table;
+    const size_t old_size = tbl->refs_size;
 
     // calculate new size
-    size_t new_size = tbl->refs_size;
-    size_t count = refs_count(tbl);
-    if (count*4 > tbl->refs_size) new_size *= 2;
+    size_t new_size = old_size;
+    size_t count = protect_count(tbl);
+    if (count*4 > old_size) new_size *= 2;
 
     // allocate new table
     _Atomic(uint64_t)* new_table = (_Atomic(uint64_t)*)sylvan_alloc_aligned(new_size * sizeof(uint64_t));
@@ -498,28 +463,25 @@ protect_resize(refs_table_t *tbl)
         exit(1);
     }
 
-    // set new data and go
+    // set new data and rehash
     tbl->refs_table = new_table;
     tbl->refs_size = new_size;
-    compiler_barrier();
-    tbl->refs_control = 0x40000000;
-
-    // until all parts are done, rehash blocks
-    while (tbl->refs_resize_done < tbl->refs_resize_size/128) protect_resize_help(tbl);
+    for (size_t i = 0; i < old_size; i++) {
+        protect_rehash(tbl, atomic_load_explicit(old_table + i, memory_order_relaxed));
+    }
 
     // done!
-    compiler_barrier();
-    tbl->refs_control = 0;
+    atomic_store_explicit(&tbl->refs_control, 0, memory_order_seq_cst);
 
     // unmap old table
-    sylvan_free_aligned(tbl->refs_resize_table, tbl->refs_resize_size * sizeof(uint64_t));
+    sylvan_free_aligned(old_table, old_size * sizeof(uint64_t));
 }
 
 /* Enter protect_up or protect_down; returns the counter for protect_leave */
 static inline _Atomic(uint32_t)*
 protect_enter(refs_table_t *tbl)
 {
-    return refs_enter_counter(tbl, protect_resize_help);
+    return refs_enter_counter(tbl, protect_resize_busy);
 }
 
 static inline void

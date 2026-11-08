@@ -33,6 +33,16 @@ All notable changes to Sylvan will be documented in this file.
   objects holding decision diagrams on many workers at once gain the most.
 
 ### Fixed
+- The tables of protected variables and of external references (behind
+  `mtbdd_protect`, `lddmc_protect`, `zdd_protect`, `mtbdd_ref` and
+  `lddmc_ref`) could lose entries when they grew twice in quick succession:
+  a thread that helped with one resize, if it was delayed at the wrong
+  moment, could claim a part of the next resize before that resize had its
+  new table, and rehash that part into the old table. Garbage collection
+  could then delete decision diagrams that were still protected. Only the
+  thread that resizes a table now rehashes it; the others wait. Every earlier
+  version has this bug. The new test `test_refs` found it on CI, and loses
+  entries in most runs when a delay is added at that moment.
 - Unprotecting a variable that was not protected (`mtbdd_unprotect`,
   `lddmc_unprotect`, `zdd_unprotect`) left the protection table's count of
   active calls raised (in a build without assertions), so the next resize of

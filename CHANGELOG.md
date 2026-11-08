@@ -114,6 +114,10 @@ All notable changes to Sylvan will be documented in this file.
 - A nodes table that has run out of arena now says so on stderr, once per
   exhaustion episode and from every backend, instead of leaving only a
   failed allocation to show for it.
+- Sylvan fetches Lace 2.7.0, and asks for and requires at least Lace 2.7.0.
+  An installed Lace accepts only requests for its own minor version, so a
+  request for 2.6.0 would not find Lace 2.7.0. Lace 2.7.0 removes the option
+  `LACE_USE_HWLOC`, so the sift benchmark no longer has its `hwloc` variant.
 
 ### Fixed
 - The transitive closure was wrong for most relations: the closure of a
@@ -142,6 +146,13 @@ All notable changes to Sylvan will be documented in this file.
   lookup on another worker could fail to find a node that was there and intern
   a duplicate of it. The mark now lives in a dense scratch bitmap beside the
   node table.
+- Updated Lace to version 2.7.0, which fixes a bug that could corrupt memory
+  during garbage collection. A worker that went idle during a collection
+  could reset the scratch memory of the task that it had interrupted, while
+  that task still used it. Sylvan uses scratch memory in its enumeration
+  functions, such as `bdd_enumerate_minterms_parallel` and
+  `listdd_enumerate_parallel`. Lace then printed a "leaked scratch" warning,
+  followed by crashes or wrong results.
 
 ### Removed
 - **Breaking (C).** Removed the garbage collection marking hooks,

@@ -65,7 +65,7 @@ done
 The binaries are `build-$b/benchmark/sift/sylvan_bench` and
 `build-$b/benchmark/sift/cudd_bench`. `cudd_bench` does not depend on Sylvan,
 so every build's copy is the same program; use any one of them. Lace is
-fetched by CMake (v2.6.0); to build offline, add
+fetched by CMake (v2.7.0); to build offline, add
 `-DFETCHCONTENT_SOURCE_DIR_LACE=/path/to/lace`.
 
 ### Inputs

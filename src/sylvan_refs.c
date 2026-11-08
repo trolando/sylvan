@@ -608,7 +608,8 @@ protect_down(refs_table_t *tbl, uint64_t a)
         if (++bucket == tbl->refs_table + tbl->refs_size) bucket = tbl->refs_table;
     }
 
-    // not found after linear probing
+    // not found after linear probing: a was not protected
+    protect_leave(counter);
     assert(0);
 }
 

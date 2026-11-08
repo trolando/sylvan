@@ -33,6 +33,10 @@ All notable changes to Sylvan will be documented in this file.
   objects holding decision diagrams on many workers at once gain the most.
 
 ### Fixed
+- Unprotecting a variable that was not protected (`mtbdd_unprotect`,
+  `lddmc_unprotect`, `zdd_unprotect`) left the protection table's count of
+  active calls raised (in a build without assertions), so the next resize of
+  the table waited forever.
 - The value of an LDD node was read and written as a `uint32_t` at byte
   offset 6 of the node, which is misaligned: undefined behaviour, reported by
   UndefinedBehaviorSanitizer (`-fsanitize=undefined`) in every program that

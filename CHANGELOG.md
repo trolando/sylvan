@@ -114,6 +114,13 @@ All notable changes to Sylvan will be documented in this file.
 - A nodes table that has run out of arena now says so on stderr, once per
   exhaustion episode and from every backend, instead of leaving only a
   failed allocation to show for it.
+- `mtbdd_protect`, `listdd_protect`, `zdd_protect` and their `unprotect`
+  functions no longer make all workers contend on one shared counter. The
+  tables count active calls so that a resize can wait for them; each Lace
+  worker now counts its calls in a counter of its own, and other threads use
+  the shared counter as before. With 8 workers that each protect and
+  unprotect a variable in a loop, a pair costs about 45 ns of CPU time
+  instead of 3.5 µs (measured on Sylvan 1, which has the same tables).
 - Sylvan fetches Lace 2.7.0, and asks for and requires at least Lace 2.7.0.
   An installed Lace accepts only requests for its own minor version, so a
   request for 2.6.0 would not find Lace 2.7.0. Lace 2.7.0 removes the option
@@ -146,6 +153,9 @@ All notable changes to Sylvan will be documented in this file.
   lookup on another worker could fail to find a node that was there and intern
   a duplicate of it. The mark now lives in a dense scratch bitmap beside the
   node table.
+- Unprotecting a variable that was not protected left the protection
+  table's count of active calls raised (in a build without assertions), so
+  the next resize of the table waited forever.
 - A worker that started garbage collection just after another worker's
   collection had finished could wait forever for a collection that had
   already run, so programs that start garbage collection often from several

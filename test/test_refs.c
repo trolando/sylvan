@@ -5,7 +5,8 @@
  * 1. Many workers add and remove values at the same time, on a table that
  *    starts small, so that it resizes again and again while the other workers
  *    use it. Afterwards the table holds exactly the values that should be
- *    there.
+ *    there. Once with a counter per worker, and once with only some workers
+ *    having a counter, so that the others use the shared one at the same time.
  * 2. Workers protect BDDs at the same time; after garbage collection every
  *    protected BDD is still there.
  */
@@ -73,12 +74,14 @@ check_contents(uint64_t first, int refs)
     return 0;
 }
 
-/* One round on a fresh table that starts small */
+/* One round on a fresh table that starts small; workers with an id below nworkers have a counter */
 static int
-test_table_round(int refs)
+test_table_round(int refs, size_t nworkers)
 {
     if (refs) refs_create(&tbl, 128);
     else protect_create(&tbl, 128);
+    size_t allocated = tbl.refs_nworkers;
+    if (nworkers < allocated) tbl.refs_nworkers = nworkers;
 
     // add [1, N], while the table grows
     RUN(protect_range, 1, N, 1, refs);
@@ -95,6 +98,7 @@ test_table_round(int refs)
     RUN(protect_range, N+1, N, 0, refs);
     test_assert((refs ? refs_count(&tbl) : protect_count(&tbl)) == 0);
 
+    tbl.refs_nworkers = allocated;
     if (refs) refs_free(&tbl);
     else protect_free(&tbl);
     return 0;
@@ -105,8 +109,10 @@ test_tables(void)
 {
     for (int r=0; r<ROUNDS; r++) {
         for (int refs=0; refs<2; refs++) {
-            if (test_table_round(refs)) return 1;
-            if (test_table_round(refs)) return 1;
+            // every worker has a counter
+            if (test_table_round(refs, (size_t)-1)) return 1;
+            // only worker 0 has a counter, the others use the shared one
+            if (test_table_round(refs, 1)) return 1;
         }
     }
     return 0;

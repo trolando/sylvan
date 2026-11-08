@@ -31,9 +31,17 @@ target_link_libraries(test_gc PRIVATE sylvan::sylvan)
 target_compile_features(test_gc PRIVATE c_std_11)
 sylvan_test_warnings(test_gc)
 
+add_executable(test_refs)
+target_sources(test_refs PRIVATE test_refs.c)
+target_link_libraries(test_refs PRIVATE sylvan::sylvan)
+target_compile_features(test_refs PRIVATE c_std_11)
+sylvan_test_warnings(test_refs)
+
 add_test(NAME test_basic COMMAND test_basic)
 add_test(NAME test_gc COMMAND test_gc)
 set_tests_properties(test_gc PROPERTIES TIMEOUT 120)
+add_test(NAME test_refs COMMAND test_refs)
+set_tests_properties(test_refs PROPERTIES TIMEOUT 120)
 add_test(NAME test_zdd COMMAND test_zdd)
 add_test(NAME test_table COMMAND test_table)
 

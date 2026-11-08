@@ -145,6 +145,10 @@ struct
     {1, MTBDD_EVAL, "MTBDD eval"},
     {1, BDD_COFACTOR, "BDD cofactor"},
 
+    {2, BDD_REACH, "BDD reach"},
+    {2, LDD_REACH, "LDD reach"},
+    {2, LDD_EXTEND_REL, "LDD extend_rel"},
+
     {0, 0, "Garbage collection"},
     {1, SYLVAN_GC_COUNT, "GC executions"},
     {3, SYLVAN_GC, "Total time spent"},

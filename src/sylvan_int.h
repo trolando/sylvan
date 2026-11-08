@@ -91,6 +91,7 @@ static const uint64_t CACHE_BDD_SUPPORT             = (15LL<<40);
 static const uint64_t CACHE_BDD_PATHCOUNT           = (16LL<<40);
 static const uint64_t CACHE_BDD_DISJOINT            = (17LL<<40);
 static const uint64_t CACHE_BDD_SATCOUNT_U64        = (18LL<<40);
+static const uint64_t CACHE_BDD_REACH               = (19LL<<40);
 static const uint64_t CACHE_BDD_UNIQUE              = (60LL<<40);
 static const uint64_t CACHE_BDD_INTERSECTION_WITNESS = (61LL<<40);
 static const uint64_t CACHE_BDD_PICK_REPRESENTATIVES = (62LL<<40);
@@ -109,6 +110,11 @@ static const uint64_t CACHE_MDD_SATCOUNT            = (28LL<<40);
 static const uint64_t CACHE_MDD_SATCOUNTL1          = (29LL<<40);
 static const uint64_t CACHE_MDD_SATCOUNTL2          = (30LL<<40);
 static const uint64_t CACHE_MDD_SATCOUNT_U64        = (31LL<<40);
+static const uint64_t CACHE_MDD_REACH               = (32LL<<40);
+static const uint64_t CACHE_MDD_REACH_KEEP          = (33LL<<40);
+static const uint64_t CACHE_MDD_REACH_CHANGE        = (34LL<<40);
+static const uint64_t CACHE_MDD_REACH_LABELS        = (35LL<<40);
+static const uint64_t CACHE_MDD_EXTEND_REL          = (36LL<<40);
 
 // MTBDD operations
 static const uint64_t CACHE_MTBDD_APPLY             = (40LL<<40);

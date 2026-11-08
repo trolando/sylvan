@@ -1303,6 +1303,432 @@ TASK_IMPL_4(MDD, lddmc_relprod_union, MDD, set, MDD, rel, MDD, meta, MDD, un)
     return result;
 }
 
+/**
+ * Helpers for lddmc_reach.
+ *
+ * On a read level (meta 1, then a write level), the relation is a list of
+ * reads, each with a list of writes. A copy node on the read level reads any
+ * value; a copy node on the write level writes the value that was read.
+ * lddmc_reach splits such a relation into the transitions that keep the value
+ * (reach_keep) and the transitions that change it (reach_change).
+ */
+
+/**
+ * The transitions of rel (on a read level) that keep the value, as a list of
+ * values i, each with the relation below the write level for i -> i. A copy
+ * node first holds the relation for i -> i for every i.
+ */
+TASK_1(MDD, lddmc_reach_keep, MDD, rel)
+{
+    MDD result = lddmc_false;
+    size_t pending = 0;
+    /* Store the path on the heap-backed reference stack, then rebuild it
+     * backwards. Native stack depth is independent of the number of siblings.
+     * References also keep every input alive across unions and collections.
+     * Use a separate cache output: a concurrent update can modify it on a miss. */
+    while (rel != lddmc_false) {
+        MDD cached;
+        if (cache_get3(CACHE_MDD_REACH_KEEP, rel, 0, 0, &cached)) { result = cached; break; }
+        lddmc_refs_push(rel);
+        pending++;
+        rel = lddmc_getright(rel);
+    }
+    lddmc_refs_pushptr(&result);
+    while (pending != 0) {
+        sylvan_gc_test();
+        rel = lddmc_refs_key->rcur[-1];
+        mddnode_t n = LDD_GETNODE(rel);
+        MDD writes = mddnode_getdown(n);
+        MDD copy = lddmc_false;
+        if (lddmc_iscopy(writes)) {
+            copy = lddmc_getdown(writes);
+            writes = lddmc_getright(writes);
+        }
+        if (mddnode_getcopy(n)) {
+            // read any i: write i (copy) keeps every i, write j keeps j
+            result = CALL(lddmc_union, writes, result);
+            if (copy != lddmc_false) result = lddmc_make_copynode(copy, result);
+        } else {
+            // read i: write i (copy or explicit) keeps i
+            uint32_t i = mddnode_getvalue(n);
+            MDD down = CALL(lddmc_union, copy, lddmc_follow(writes, i));
+            result = lddmc_makenode(i, down, result);
+        }
+        cache_put3(CACHE_MDD_REACH_KEEP, rel, 0, 0, result);
+        lddmc_refs_pop(1);
+        pending--;
+    }
+    lddmc_refs_popptr(1);
+    return result;
+}
+
+/**
+ * Remove a value from a list of (non-copy) nodes, without recursion over siblings.
+ */
+static MDD
+lddmc_reach_without(MDD list, uint32_t value)
+{
+    MDD match = list;
+    while (match != lddmc_false && lddmc_getvalue(match) < value) match = lddmc_getright(match);
+    if (match == lddmc_false || lddmc_getvalue(match) != value) return list;
+
+    size_t pending = 0;
+    while (list != match) {
+        lddmc_refs_push(list);
+        pending++;
+        list = lddmc_getright(list);
+    }
+    MDD result = lddmc_getright(match);
+    lddmc_refs_pushptr(&result);
+    while (pending != 0) {
+        mddnode_t n = LDD_GETNODE(lddmc_refs_key->rcur[-1]);
+        result = lddmc_makenode(mddnode_getvalue(n), mddnode_getdown(n), result);
+        lddmc_refs_pop(1);
+        pending--;
+    }
+    lddmc_refs_popptr(1);
+    return result;
+}
+
+/**
+ * The transitions of rel (on a read level) that change the value, in the same
+ * format as rel. After a read of any value (copy node), the explicit writes
+ * also include writing the value that was read.
+ */
+TASK_1(MDD, lddmc_reach_change, MDD, rel)
+{
+    MDD result = lddmc_false;
+    size_t pending = 0;
+    while (rel != lddmc_false) {
+        MDD cached;
+        if (cache_get3(CACHE_MDD_REACH_CHANGE, rel, 0, 0, &cached)) { result = cached; break; }
+        lddmc_refs_push(rel);
+        pending++;
+        rel = lddmc_getright(rel);
+    }
+    lddmc_refs_pushptr(&result);
+    while (pending != 0) {
+        sylvan_gc_test();
+        rel = lddmc_refs_key->rcur[-1];
+        mddnode_t n = LDD_GETNODE(rel);
+        MDD writes = mddnode_getdown(n);
+        if (lddmc_iscopy(writes)) writes = lddmc_getright(writes);
+        if (mddnode_getcopy(n)) {
+            if (writes != lddmc_false) result = lddmc_make_copynode(writes, result);
+        } else {
+            uint32_t i = mddnode_getvalue(n);
+            writes = lddmc_reach_without(writes, i);
+            result = lddmc_makenode(i, writes, result);
+        }
+        cache_put3(CACHE_MDD_REACH_CHANGE, rel, 0, 0, result);
+        lddmc_refs_pop(1);
+        pending--;
+    }
+    lddmc_refs_popptr(1);
+    return result;
+}
+
+/**
+ * The union of the relations below a list of action labels.
+ */
+TASK_1(MDD, lddmc_reach_labels, MDD, rel)
+{
+    MDD result = lddmc_false;
+    size_t pending = 0;
+    while (rel != lddmc_false) {
+        MDD cached;
+        if (cache_get3(CACHE_MDD_REACH_LABELS, rel, 0, 0, &cached)) { result = cached; break; }
+        lddmc_refs_push(rel);
+        pending++;
+        rel = lddmc_getright(rel);
+    }
+    lddmc_refs_pushptr(&result);
+    while (pending != 0) {
+        sylvan_gc_test();
+        rel = lddmc_refs_key->rcur[-1];
+        result = CALL(lddmc_union, lddmc_getdown(rel), result);
+        cache_put3(CACHE_MDD_REACH_LABELS, rel, 0, 0, result);
+        lddmc_refs_pop(1);
+        pending--;
+    }
+    lddmc_refs_popptr(1);
+    return result;
+}
+
+/**
+ * Quantify the consecutive action-label levels between a read and its write.
+ * Keep each read (including copy nodes) attached to its own union of writes.
+ * The third cache argument distinguishes this from quantifying a top level.
+ */
+TASK_2(MDD, lddmc_reach_read_labels, MDD, rel, MDD, meta)
+{
+    MDD result = lddmc_false;
+    size_t pending = 0;
+    while (rel != lddmc_false) {
+        MDD cached;
+        if (cache_get3(CACHE_MDD_REACH_LABELS, rel, meta, 1, &cached)) { result = cached; break; }
+        lddmc_refs_push(rel);
+        pending++;
+        rel = lddmc_getright(rel);
+    }
+    lddmc_refs_pushptr(&result);
+    while (pending != 0) {
+        rel = lddmc_refs_key->rcur[-1];
+        MDD down = lddmc_getdown(rel);
+        lddmc_refs_pushptr(&down);
+        for (MDD m = meta; lddmc_getvalue(m) == 5; m = lddmc_getdown(m)) {
+            down = CALL(lddmc_reach_labels, down);
+        }
+        result = lddmc_iscopy(rel) ? lddmc_make_copynode(down, result)
+                                 : lddmc_makenode(lddmc_getvalue(rel), down, result);
+        lddmc_refs_popptr(1);
+        cache_put3(CACHE_MDD_REACH_LABELS, rel, meta, 1, result);
+        lddmc_refs_pop(1);
+        pending--;
+    }
+    lddmc_refs_popptr(1);
+    return result;
+}
+
+/**
+ * For every value i of set, apply lddmc_reach to the states below i, with the
+ * relation copy (for every i) and the relation for i in the list keep.
+ */
+TASK_4(MDD, lddmc_reach_keep_apply, MDD, set, MDD, copy, MDD, keep, MDD, meta)
+{
+    if (set == lddmc_false) return lddmc_false;
+    if (copy == lddmc_false && keep == lddmc_false) return set;
+
+    mddnode_t n = LDD_GETNODE(set);
+    uint32_t i = mddnode_getvalue(n);
+    while (keep != lddmc_false && lddmc_getvalue(keep) < i) keep = lddmc_getright(keep);
+
+    MDD rel = copy;
+    if (keep != lddmc_false && lddmc_getvalue(keep) == i) {
+        rel = CALL(lddmc_union, copy, lddmc_getdown(keep));
+    }
+    lddmc_refs_push(rel);
+
+    lddmc_refs_spawn(SPAWN(lddmc_reach_keep_apply, mddnode_getright(n), copy, keep, meta));
+    MDD down = CALL(lddmc_reach, mddnode_getdown(n), rel, meta);
+    lddmc_refs_push(down);
+    MDD right = lddmc_refs_sync(SYNC(lddmc_reach_keep_apply));
+    lddmc_refs_pop(2);
+
+    return lddmc_makenode(i, down, right);
+}
+
+/**
+ * Compute the states reachable from set with rel (REACH, by S. Brand, T. Bäck
+ * and A. Laarman, FM 2023), for the LDD format of lddmc_relprod.
+ *
+ * On a read level, until set no longer changes: for every value i of set in
+ * parallel, apply lddmc_reach below i with the transitions that keep i; then
+ * add the successors of the transitions that change the value (relprod).
+ */
+TASK_IMPL_3(MDD, lddmc_reach, MDD, set, MDD, rel, MDD, meta)
+{
+    /* Terminals */
+    if (set == lddmc_false) return lddmc_false;
+    if (rel == lddmc_false) return set;
+    if (set == lddmc_true) return lddmc_true;
+    if (meta == lddmc_true) return set;
+
+    mddnode_t n_meta = LDD_GETNODE(meta);
+    uint32_t m_val = mddnode_getvalue(n_meta);
+
+    // if meta is -1, then no other variables are in the transition relation
+    if (m_val == (uint32_t)-1) return set;
+
+    // as in relprod: if meta is not 0 or 5, then rel must be an internal LDD node
+    if (m_val != 0 && m_val != 5) assert(rel != lddmc_true);
+
+    /* Test gc */
+    sylvan_gc_test();
+
+    sylvan_stats_count(LDD_REACH);
+
+    /* Access cache */
+    MDD result;
+    if (cache_get3(CACHE_MDD_REACH, set, rel, meta, &result)) {
+        sylvan_stats_count(LDD_REACH_CACHED);
+        return result;
+    }
+
+    mddnode_t n_set = LDD_GETNODE(set);
+
+    if (m_val == 1 && lddmc_getvalue(mddnode_getdown(n_meta)) == 5) {
+        // relprod permits action labels between a read and its write.
+        MDD write_meta = mddnode_getdown(n_meta);
+        MDD reads = CALL(lddmc_reach_read_labels, rel, write_meta);
+        lddmc_refs_push(reads);
+        while (lddmc_getvalue(write_meta) == 5) write_meta = lddmc_getdown(write_meta);
+        MDD pair_meta = lddmc_makenode(1, write_meta, lddmc_false);
+        lddmc_refs_push(pair_meta);
+        result = CALL(lddmc_reach, set, reads, pair_meta);
+        lddmc_refs_pop(2);
+    } else if (m_val == 0) {
+        // not in rel: keep the value
+        lddmc_refs_spawn(SPAWN(lddmc_reach, mddnode_getright(n_set), rel, meta));
+        MDD down = CALL(lddmc_reach, mddnode_getdown(n_set), rel, mddnode_getdown(n_meta));
+        lddmc_refs_push(down);
+        MDD right = lddmc_refs_sync(SYNC(lddmc_reach));
+        lddmc_refs_pop(1);
+        result = lddmc_makenode(mddnode_getvalue(n_set), down, right);
+    } else if (m_val == 5) {
+        // action label: take the relations of all labels together
+        MDD all = CALL(lddmc_reach_labels, rel);
+        lddmc_refs_push(all);
+        result = CALL(lddmc_reach, set, all, mddnode_getdown(n_meta));
+        lddmc_refs_pop(1);
+    } else if (m_val == 3) {
+        // only-read: every transition keeps the value
+        MDD copy = lddmc_false, keep = rel;
+        if (lddmc_iscopy(rel)) {
+            copy = lddmc_getdown(rel);
+            keep = lddmc_getright(rel);
+        }
+        result = CALL(lddmc_reach_keep_apply, set, copy, keep, mddnode_getdown(n_meta));
+    } else if (m_val == 1 || m_val == 4) {
+        MDD keep, change, below;
+        if (m_val == 1) {
+            // read, then write
+            below = lddmc_getdown(mddnode_getdown(n_meta));
+            keep = CALL(lddmc_reach_keep, rel);
+            lddmc_refs_push(keep);
+            change = CALL(lddmc_reach_change, rel);
+            lddmc_refs_push(change);
+        } else {
+            // only-write: writing j keeps the value of the states with value j
+            below = mddnode_getdown(n_meta);
+            keep = rel;
+            change = lddmc_iscopy(rel) ? lddmc_getright(rel) : rel;
+            lddmc_refs_push(keep);
+            lddmc_refs_push(change);
+        }
+
+        MDD copy = lddmc_false;
+        if (lddmc_iscopy(keep)) {
+            copy = lddmc_getdown(keep);
+            keep = lddmc_getright(keep);
+        }
+
+        result = set;
+        lddmc_refs_pushptr(&result);
+        for (;;) {
+            result = CALL(lddmc_reach_keep_apply, result, copy, keep, below);
+            if (change == lddmc_false) break;
+            MDD next = CALL(lddmc_relprod_union, result, change, meta, result);
+            if (next == result) break;
+            result = next;
+        }
+        lddmc_refs_popptr(1);
+        lddmc_refs_pop(2);
+    } else {
+        fprintf(stderr, "lddmc_reach: unexpected meta value %" PRIu32 "\n", m_val);
+        exit(1);
+    }
+
+    /* Write to cache */
+    if (cache_put3(CACHE_MDD_REACH, set, rel, meta, result)) sylvan_stats_count(LDD_REACH_CACHEDPUT);
+
+    return result;
+}
+
+/**
+ * Apply lddmc_extend_rel below every node of a list (mode 0), below every write
+ * of a list of reads (mode 1), or for an only-read list, also add the write of
+ * the same value (mode 2).
+ */
+TASK_4(MDD, lddmc_extend_rel_list, MDD, list, MDD, meta, uint32_t, nvars, int, mode)
+{
+    if (list == lddmc_false) return lddmc_false;
+
+    mddnode_t n = LDD_GETNODE(list);
+    lddmc_refs_spawn(SPAWN(lddmc_extend_rel_list, mddnode_getright(n), meta, nvars, mode));
+    MDD down;
+    if (mode == 1) down = CALL(lddmc_extend_rel_list, mddnode_getdown(n), meta, nvars, 0);
+    else down = CALL(lddmc_extend_rel, mddnode_getdown(n), meta, nvars);
+    lddmc_refs_push(down);
+    MDD right = lddmc_refs_sync(SYNC(lddmc_extend_rel_list));
+    lddmc_refs_push(right);
+
+    MDD result;
+    if (down == lddmc_false) {
+        result = right;
+    } else if (mddnode_getcopy(n)) {
+        if (mode == 2) down = lddmc_make_copynode(down, lddmc_false);
+        result = lddmc_make_copynode(down, right);
+    } else {
+        uint32_t value = mddnode_getvalue(n);
+        if (mode == 2) down = lddmc_makenode(value, down, lddmc_false);
+        result = lddmc_makenode(value, down, right);
+    }
+    lddmc_refs_pop(2);
+    return result;
+}
+
+TASK_IMPL_3(MDD, lddmc_extend_rel, MDD, rel, MDD, meta, uint32_t, nvars)
+{
+    if (rel == lddmc_false) return lddmc_false;
+
+    uint32_t m_val = meta == lddmc_true ? (uint32_t)-1 : lddmc_getvalue(meta);
+    if (nvars == 0 && m_val != 5) {
+        if (m_val != (uint32_t)-1) {
+            fprintf(stderr, "lddmc_extend_rel: the relation has more variables than nvars\n");
+            exit(1);
+        }
+        return lddmc_true;
+    }
+
+    sylvan_gc_test();
+
+    sylvan_stats_count(LDD_EXTEND_REL);
+
+    MDD result;
+    if (cache_get3(CACHE_MDD_EXTEND_REL, rel, meta, nvars, &result)) {
+        sylvan_stats_count(LDD_EXTEND_REL_CACHED);
+        return result;
+    }
+
+    if (m_val == (uint32_t)-1 || m_val == 0) {
+        // not in rel: copy (read any value, write the same value)
+        MDD next_meta = m_val == 0 ? lddmc_getdown(meta) : meta;
+        MDD next_rel = m_val == 0 ? rel : lddmc_true;
+        MDD down = CALL(lddmc_extend_rel, next_rel, next_meta, nvars-1);
+        down = lddmc_make_copynode(down, lddmc_false);
+        result = lddmc_make_copynode(down, lddmc_false);
+    } else if (m_val == 1) {
+        MDD write_meta = lddmc_getdown(meta);
+        MDD reads = rel;
+        if (lddmc_getvalue(write_meta) == 5) reads = CALL(lddmc_reach_read_labels, rel, write_meta);
+        lddmc_refs_push(reads);
+        while (lddmc_getvalue(write_meta) == 5) write_meta = lddmc_getdown(write_meta);
+        result = CALL(lddmc_extend_rel_list, reads, lddmc_getdown(write_meta), nvars-1, 1);
+        lddmc_refs_pop(1);
+    } else if (m_val == 3) {
+        // only-read: read the value, then write the same value
+        result = CALL(lddmc_extend_rel_list, rel, lddmc_getdown(meta), nvars-1, 2);
+    } else if (m_val == 4) {
+        // only-write: read any value, then write
+        MDD down = CALL(lddmc_extend_rel_list, rel, lddmc_getdown(meta), nvars-1, 0);
+        result = lddmc_make_copynode(down, lddmc_false);
+    } else if (m_val == 5) {
+        // action label: quantify
+        MDD all = CALL(lddmc_reach_labels, rel);
+        lddmc_refs_push(all);
+        result = CALL(lddmc_extend_rel, all, lddmc_getdown(meta), nvars);
+        lddmc_refs_pop(1);
+    } else {
+        fprintf(stderr, "lddmc_extend_rel: unexpected meta value %" PRIu32 "\n", m_val);
+        exit(1);
+    }
+
+    if (cache_put3(CACHE_MDD_EXTEND_REL, rel, meta, nvars, result)) sylvan_stats_count(LDD_EXTEND_REL_CACHEDPUT);
+
+    return result;
+}
+
 TASK_5(MDD, lddmc_relprev_help, uint32_t, val, MDD, set, MDD, rel, MDD, proj, MDD, uni)
 {
     return lddmc_makenode(val, CALL(lddmc_relprev, set, rel, proj, uni), lddmc_false);

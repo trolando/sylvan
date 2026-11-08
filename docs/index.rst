@@ -507,6 +507,7 @@ The transition relations may be partial transition relations that only manipulat
 - ``sylvan_relnext(set, relation, vars)``: apply the (partial) relation on the given variables to the set.
 - ``sylvan_relprev(relation, set, vars)``: apply the (partial) relation in reverse to the set; this computes predecessors but can also concatenate relations as follows: ``sylvan_relprev(rel1, rel2, rel1_vars)``.
 - ``sylvan_closure(relation)``: compute the transitive closure of the given set recursively (see Matsunaga et al, DAC 1993)
+- ``sylvan_reach(set, relation, vars)``: compute all states reachable from the set with the relation, that is, the least fixpoint of ``S = set \or relnext(S, relation, vars)``, in one recursive operation (REACH, see Brand, Bäck and Laarman, FM 2023). This takes one relation; to use several, take the union of relations on the same variables.
 
 See ``src/sylvan_bdd.h`` and ``src/mtbdd.h`` for other operations on BDDs and MTBDDs.
 
@@ -525,6 +526,11 @@ List decision diagrams
 ~~~~~~~~~~~~~~~~~~~~~~
 
 See ``src/sylvan_ldd.h`` for operations on list decision diagrams.
+
+For transition systems, ``lddmc_relprod(set, relation, meta)`` and ``lddmc_relprev`` apply a relation forward and backward, where ``meta`` says for each variable whether the relation reads it, writes it, or leaves it alone.
+``lddmc_reach(set, relation, meta)`` computes all states reachable from the set with the relation in one recursive operation, like ``sylvan_reach``.
+``lddmc_extend_rel(relation, meta, nvars)`` extends a relation to read and write all ``nvars`` variables, so that several relations can be merged with ``lddmc_union`` and passed to ``lddmc_reach`` as one.
+``lddmc_reach`` and ``lddmc_extend_rel`` accept the same meta format and copy nodes as ``lddmc_relprod``. Action labels (meta 5) are existentially quantified wherever they occur, including between a read (meta 1) and its write (meta 2).
 
 File I/O
 ~~~~~~~~

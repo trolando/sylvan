@@ -72,10 +72,13 @@ mddnode_getdown(const mddnode* n)
     return n->b & 0x000000ffffffffff;
 }
 
+/* The value is at byte offset 6, not aligned for a uint32_t, so read it with memcpy */
 static inline uint32_t SYLVAN_UNUSED
 mddnode_old_getvalue(const mddnode* n)
 {
-    return *(uint32_t*)((uint8_t*)n+6);
+    uint32_t value;
+    memcpy(&value, (const uint8_t*)n+6, sizeof(value));
+    return value;
 }
 
 static inline uint8_t SYLVAN_UNUSED

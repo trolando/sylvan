@@ -151,6 +151,10 @@ All notable changes to Sylvan will be documented in this file.
   already run, so programs that start garbage collection often from several
   workers at once could hang. The new test `test_gc` checks that this no
   longer hangs.
+- Reading a ListDD file in the old format read the value of each node as a
+  `uint32_t` at byte offset 6 of the node, which is misaligned: undefined
+  behaviour, reported by UndefinedBehaviorSanitizer. It now uses `memcpy`,
+  which compilers turn into the same single load.
 - Updated Lace to version 2.7.0, which fixes a bug that could corrupt memory
   during garbage collection. A worker that went idle during a collection
   could reset the scratch memory of the task that it had interrupted, while

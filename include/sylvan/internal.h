@@ -24,6 +24,7 @@
 #define SYLVAN_INTERNAL_H
 
 #include <sylvan/sylvan.h>
+#include <string.h> // for memcpy
 
 #ifdef __cplusplus
 namespace sylvan {

@@ -153,6 +153,14 @@ All notable changes to Sylvan will be documented in this file.
   lookup on another worker could fail to find a node that was there and intern
   a duplicate of it. The mark now lives in a dense scratch bitmap beside the
   node table.
+- The tables of protected variables (behind `mtbdd_protect`,
+  `listdd_protect` and `zdd_protect`) could lose entries when they grew twice
+  in quick succession: a thread that helped with one resize, if it was
+  delayed at the wrong moment, could claim a part of the next resize before
+  that resize had its new table, and rehash that part into the old table.
+  Garbage collection could then delete decision diagrams that were still
+  protected. Only the thread that resizes a table now rehashes it; the others
+  wait. The new test `test_refs` found it on CI.
 - Unprotecting a variable that was not protected left the protection
   table's count of active calls raised (in a build without assertions), so
   the next resize of the table waited forever.

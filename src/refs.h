@@ -47,12 +47,8 @@ typedef struct
     /* keeps refs_control off the cache line of the fields above */
     char refs_pad[128];
 
-    /* control field and helpers during resize operation */
-    _Atomic(uint32_t) refs_control;       // resize state (high bits), active operations of other threads (low bits)
-    _Atomic(uint64_t) *refs_resize_table; // previous table
-    size_t refs_resize_size;              // size of previous table
-    _Atomic(size_t) refs_resize_part;     // which part is next
-    _Atomic(size_t) refs_resize_done;     // how many parts are done
+    /* control field */
+    _Atomic(uint32_t) refs_control;       // resize in progress (high bits), active operations of other threads (low bits)
 } refs_table_t;
 
 // Count number of entries

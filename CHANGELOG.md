@@ -1,7 +1,10 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
-## [Unreleased]
+## [1.12.4] - 2026-11-08
+
+This release updates Lace to version 1.10.0, which fixes a bug that could
+corrupt memory during garbage collection.
 
 ### Fixed
 - Updated Lace to version 1.10.0, which fixes a bug that could corrupt memory

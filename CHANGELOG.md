@@ -1,6 +1,19 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- Updated Lace to version 1.11.0, which makes idle workers scale to many
+  cores. Each sleeping worker waits on its own futex word, so that waking
+  workers no longer contends on one kernel lock. Idle workers search only
+  while that pays off, and with pinned workers on Linux they steal mostly
+  within their own socket. On a 4-socket machine with 96 cores, Lace reports
+  mCRL2's symbolic reachability 5-28% faster with the same or less CPU time.
+- Sylvan now asks for Lace 1.11.0 when it looks for an installed Lace, and
+  requires at least Lace 1.11.0. An installed Lace accepts only requests for
+  its own minor version.
+
 ## [1.12.5] - 2026-11-08
 
 This release fixes a bug in which the tables of protected variables could

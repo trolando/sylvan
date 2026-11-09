@@ -1,7 +1,10 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
-## [Unreleased]
+## [1.12.6] - 2026-11-09
+
+This release updates Lace to version 1.11.0, whose idle workers scale to many
+cores.
 
 ### Changed
 - Updated Lace to version 1.11.0, which makes idle workers scale to many

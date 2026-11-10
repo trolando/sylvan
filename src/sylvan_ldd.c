@@ -207,7 +207,14 @@ void
 lddmc_refs_init_key(void)
 {
     assert(lace_is_worker()); // only use inside Lace workers
-    lddmc_refs_internal_t s = (lddmc_refs_internal_t)malloc(sizeof(struct lddmc_refs_internal));
+    /* The cursors pcur/rcur/scur in this struct are stored to by every
+     * push, pop, pushptr, popptr, spawn and sync -- on the order of 10^9
+     * times per run for a workload that makes many small BDD operations.
+     * The struct is 72 bytes, so a plain malloc packs several workers'
+     * cursors into one cache line and every worker's push invalidates its
+     * neighbours'.  Give each worker a line of its own. */
+    lddmc_refs_internal_t s = (lddmc_refs_internal_t)sylvan_alloc_padded(sizeof(struct lddmc_refs_internal));
+    if (s == NULL) { fprintf(stderr, "sylvan: out of memory in lddmc_refs_init_key\n"); exit(1); }
     s->pcur = s->pbegin = (const MDD**)malloc(sizeof(MDD*) * 1024);
     s->pend = s->pbegin + 1024;
     s->rcur = s->rbegin = (MDD*)malloc(sizeof(MDD) * 1024);
@@ -222,7 +229,7 @@ VOID_TASK_0(lddmc_refs_free)
     free(lddmc_refs_key->pbegin);
     free(lddmc_refs_key->rbegin);
     free(lddmc_refs_key->sbegin);
-    free(lddmc_refs_key);
+    sylvan_free_padded(lddmc_refs_key);
 }
 
 VOID_TASK_0(lddmc_refs_init_task)

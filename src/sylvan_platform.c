@@ -51,6 +51,44 @@ static_assert((SYLVAN_CACHE_LINE_SIZE& (SYLVAN_CACHE_LINE_SIZE - 1)) == 0,
     "SYLVAN_CACHE_LINE_SIZE must be power of two");
 
 void*
+sylvan_alloc_padded(size_t size)
+{
+    if (size == 0) return NULL;
+
+    // Round up, so that no later allocation lands in the tail of our last line.
+    size = (size + SYLVAN_SHARING_PAD - 1) & ~(size_t)(SYLVAN_SHARING_PAD - 1);
+
+    // Never mmap here: these allocations are one or two cache lines and a
+    // page each would be pure TLB pressure at high worker counts.
+#if defined(__MINGW32__)
+    void* res = __mingw_aligned_malloc(size, SYLVAN_SHARING_PAD);
+#elif defined(_MSC_VER) || defined(__MINGW64_VERSION_MAJOR)
+    void* res = _aligned_malloc(size, SYLVAN_SHARING_PAD);
+#else
+    void* res = NULL;
+    if (posix_memalign(&res, SYLVAN_SHARING_PAD, size) != 0) return NULL;
+#endif
+    if (res != NULL) memset(res, 0, size);
+    return res;
+}
+
+
+void
+sylvan_free_padded(void* ptr)
+{
+    if (ptr == NULL) return;
+
+#if defined(__MINGW32__)
+    __mingw_aligned_free(ptr);
+#elif defined(_MSC_VER) || defined(__MINGW64_VERSION_MAJOR)
+    _aligned_free(ptr);
+#else
+    free(ptr);
+#endif
+}
+
+
+void*
 sylvan_alloc_aligned(size_t size)
 {
     if (size == 0) return NULL;

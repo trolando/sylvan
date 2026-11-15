@@ -70,6 +70,28 @@ void sylvan_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cac
 void sylvan_set_limits(size_t memory_cap, int table_ratio, int initial_ratio);
 
 /**
+ * Handler for a node that could not be created after garbage collection failed
+ * to free enough nodes. This is an out-of-memory condition, not a recovery hook.
+ * It is also called if node creation still fails with garbage collection disabled.
+ *
+ * The handler runs on a Lace worker in the middle of an operation. It must not
+ * call Sylvan operations and must not return: it should exit or abort. If it
+ * returns anyway, Sylvan prints its usual message to stderr and calls exit(1).
+ *
+ * kind is "BDD" (including MTBDD), "MDD" (LDD), or "ZDD". filled and total are
+ * the occupied and total bucket counts used in the usual message.
+ */
+typedef void (*sylvan_table_full_cb)(const char *kind, size_t filled, size_t total);
+
+/**
+ * Set the global nodes-table-full handler. NULL restores the default handler,
+ * which prints the usual message to stderr and calls exit(1).
+ * The handler pointer is stored atomically and may be set from any thread.
+ * Install the handler before starting operations that may exhaust the table.
+ */
+void sylvan_set_table_full_handler(sylvan_table_full_cb handler);
+
+/**
  * Frees all Sylvan data (also calls the quit() functions of BDD/LDD parts)
  */
 void sylvan_quit(void);
@@ -133,7 +155,7 @@ VOID_TASK_DECL_0(sylvan_gc);
  *
  * This affects both automatic and manual garbage collection, i.e.,
  * calling sylvan_gc() while garbage collection is disabled does not have any effect.
- * If no new nodes can be added, Sylvan will write an error and abort.
+ * If no new nodes can be added, Sylvan calls the table-full handler.
  */
 void sylvan_gc_enable(void);
 void sylvan_gc_disable(void);

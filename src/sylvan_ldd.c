@@ -384,8 +384,7 @@ lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
 
         index = llmsset_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "MDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
-            exit(1);
+            sylvan_table_full("MDD");
         }
     }
 
@@ -411,8 +410,7 @@ lddmc_make_copynode(MDD ifeq, MDD ifneq)
 
         index = llmsset_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "MDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
-            exit(1);
+            sylvan_table_full("MDD");
         }
     }
 

@@ -70,6 +70,22 @@ set_tests_properties(test_table_maxsize PROPERTIES TIMEOUT 120)
 add_test(NAME test_table_limit COMMAND test_table oversized)
 set_tests_properties(test_table_limit PROPERTIES WILL_FAIL TRUE TIMEOUT 120)
 
+add_executable(test_table_full test_table_full.c)
+target_link_libraries(test_table_full PRIVATE sylvan::sylvan)
+target_compile_features(test_table_full PRIVATE c_std_11)
+sylvan_test_warnings(test_table_full)
+
+foreach(node IN ITEMS bdd bdd_leaf bdd_map ldd ldd_copy zdd zdd_leaf zdd_map)
+    foreach(mode IN ITEMS handler default reset return)
+        set(test_name test_table_full_${node}_${mode})
+        add_test(NAME ${test_name} COMMAND ${CMAKE_COMMAND}
+            "-DPROGRAM=$<TARGET_FILE:test_table_full>"
+            "-DNODE=${node}" "-DMODE=${mode}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/check_table_full.cmake")
+        set_tests_properties(${test_name} PROPERTIES TIMEOUT 30)
+    endforeach()
+endforeach()
+
 if(SYLVAN_BUILD_CPP)
     add_executable(test_cxx)
     target_sources(test_cxx PRIVATE test_cxx.cpp)

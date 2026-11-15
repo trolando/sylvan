@@ -420,8 +420,7 @@ zdd_makeleaf(uint16_t type, uint64_t value)
 
         index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
-            exit(1);
+            sylvan_table_full("ZDD");
         }
     }
 
@@ -467,8 +466,7 @@ _zdd_makenode(uint32_t var, ZDD low, ZDD high)
 
         index = llmsset_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
-            exit(1);
+            sylvan_table_full("ZDD");
         }
     }
 
@@ -497,8 +495,7 @@ zdd_makemapnode(uint32_t var, ZDD low, ZDD high)
 
         index = llmsset_lookup(nodes, n.a, n.b, &created);
         if (index == 0) {
-            fprintf(stderr, "BDD Unique table full, %zu of %zu buckets filled!\n", llmsset_count_marked(nodes), llmsset_get_size(nodes));
-            exit(1);
+            sylvan_table_full("ZDD");
         }
     }
 

@@ -47,6 +47,9 @@ extern "C" {
  */
 extern llmsset_t nodes;
 
+/* Report node creation failure after the GC retry; never returns. */
+SYLVAN_NORETURN void sylvan_table_full(const char *kind);
+
 /* Internal traversal scratch, separate from both node keys and GC marks.
  * Acquire/release must bracket a synchronous walk on one thread, and the
  * walk must undo every bit it sets. Concurrent and nested walks get separate

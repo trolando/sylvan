@@ -1,6 +1,14 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- `sylvan_set_table_full_handler` lets applications report nodes-table exhaustion
+  after garbage collection and exit with their own code. The callback receives
+  the diagram kind and bucket counts. Passing `NULL`, or returning from a handler,
+  uses the existing error message and `exit(1)`.
+
 ## [1.12.7] - 2026-11-15
 
 This release fixes the transitive closure, `sylvan_relprev`, duplicate nodes

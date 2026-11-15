@@ -16,6 +16,35 @@
  */
 
 #include <sylvan_int.h>
+#include <stdatomic.h>
+
+static SYLVAN_NORETURN void
+sylvan_default_table_full(const char *kind, size_t filled, size_t total)
+{
+    /* ZDD failures historically print "BDD"; preserve the default output. */
+    const char *label = strcmp(kind, "ZDD") == 0 ? "BDD" : kind;
+    fprintf(stderr, "%s Unique table full, %zu of %zu buckets filled!\n", label, filled, total);
+    exit(1);
+}
+
+static _Atomic(sylvan_table_full_cb) table_full_handler = sylvan_default_table_full;
+
+void
+sylvan_set_table_full_handler(sylvan_table_full_cb handler)
+{
+    atomic_store_explicit(&table_full_handler, handler ? handler : sylvan_default_table_full,
+                         memory_order_release);
+}
+
+SYLVAN_NORETURN void
+sylvan_table_full(const char *kind)
+{
+    size_t filled = llmsset_count_marked(nodes);
+    size_t total = llmsset_get_size(nodes);
+    sylvan_table_full_cb handler = atomic_load_explicit(&table_full_handler, memory_order_acquire);
+    handler(kind, filled, total);
+    sylvan_default_table_full(kind, filled, total);
+}
 
 /**
  * Implementation of garbage collection

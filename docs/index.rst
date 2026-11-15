@@ -129,6 +129,35 @@ empty space can be found in the table within a reasonable upper bound.
 Garbage collection can be disabled with ``sylvan_gc_disable`` and enabled again with ``sylvan_gc_enable``.
 Call ``sylvan_gc`` to manually trigger garbage collection.
 
+If a node still cannot be created after garbage collection has failed to free
+enough nodes, Sylvan prints a table-full message to standard error and calls
+``exit(1)``. This is an out-of-memory condition. An application can report it in
+its own way by installing a handler with ``sylvan_set_table_full_handler``:
+
+.. code:: c
+
+    static void table_full(const char *kind, size_t filled, size_t total)
+    {
+        fprintf(stderr, "Out of nodes for %s: %zu of %zu buckets used\n",
+                kind, filled, total);
+        exit(30);
+    }
+
+    /* Before starting decision diagram operations: */
+    sylvan_set_table_full_handler(table_full);
+
+The callback receives ``"BDD"`` (including MTBDD), ``"MDD"`` (LDD), or ``"ZDD"``
+and the occupied and total bucket counts. It runs on a Lace worker in the middle
+of an operation. It must not call Sylvan operations or return; it should exit or
+abort. If it returns anyway, Sylvan prints its usual message and calls
+``exit(1)``. The handler also applies when garbage collection is disabled.
+It cannot recover from a full table.
+
+The handler is global, and its pointer is stored atomically. It can be set from
+any thread; install it before starting operations that may exhaust the table.
+Passing ``NULL`` restores the default handler. The default output is unchanged,
+including the historical ``"BDD"`` label for ZDD failures.
+
 To ensure that no decision diagram nodes are overwritten, you must ensure that
 Sylvan knows which decision diagrams you care about.
 Each subpackage implements mechanisms to store references to decision diagrams that must be kept.
@@ -330,6 +359,9 @@ collection until the maximum table size has been reached. There is also a
 less aggressive version that only resizes when at least half the table is
 full. This can be configured in ``src/sylvan_config.h``. It is not
 possible to decrease the size of the nodes table and the cache.
+
+If node creation still fails after collection and resizing, the table-full
+handler described under `Garbage collection and referencing nodes`_ is called.
 
 Dynamic reordering
 ~~~~~~~~~~~~~~~~~~

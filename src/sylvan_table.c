@@ -464,7 +464,9 @@ region_is_empty(const llmsset_t dbs, size_t region)
 void
 llmsset_shrink(llmsset_t dbs, size_t size)
 {
-    if (size >= table_size_relaxed(dbs)) return;
+    /* Even at the current hash size, a later collection may have dropped
+       high nodes, or switched from retaining the arena to releasing it. */
+    if (size > table_size_relaxed(dbs)) return;
     const size_t data_size = data_size_relaxed(dbs);
 
     /* one past the highest marked bucket (bit 63 is the first bucket of a word) */

@@ -155,13 +155,54 @@ VOID_TASK_DECL_2(sylvan_table_usage, size_t*, size_t*);
  */
 
 /**
+ * Policies for table growth and for releasing unused node memory.
+ */
+typedef enum {
+    SYLVAN_GC_FEW_COLLECTIONS, /**< Always grow; keep the node arena on explicit GC. */
+    SYLVAN_GC_LOW_MEMORY       /**< Grow above half full; release unused arena stretches. */
+} sylvan_gc_policy_t;
+
+/**
+ * Select the garbage collection policy after sylvan_init_package().
+ *
+ * SYLVAN_GC_FEW_COLLECTIONS installs sylvan_gc_aggressive_resize: each automatic
+ * collection doubles the tables up to their maximum sizes. sylvan_gc() shrinks
+ * the hash table and operation cache, but keeps the node arena's data range and
+ * does not release its empty stretches to the operating system.
+ *
+ * SYLVAN_GC_LOW_MEMORY installs sylvan_gc_normal_resize: an automatic collection
+ * grows the tables only when more than half the nodes table is still in use.
+ * sylvan_gc() also reduces the data range and releases empty arena stretches.
+ *
+ * Each sylvan_init_package() resets the policy to SYLVAN_GC_FEW_COLLECTIONS
+ * (SYLVAN_GC_LOW_MEMORY if compiled with SYLVAN_AGGRESSIVE_RESIZE=0).
+ * The default preserves aggressive growth, but explicit collections now retain
+ * the arena. Select SYLVAN_GC_LOW_MEMORY to release unused arena memory.
+ *
+ * This replaces any main hook, just like sylvan_gc_hook_main(). Installing a
+ * main hook afterwards overrides growth only; the policy's shrink mode stays.
+ * Calling this again restores the policy's growth hook. No collection is run.
+ * Change the policy only between operations, with no concurrent Sylvan calls.
+ * Unrecognized policy values are ignored.
+ */
+void sylvan_gc_set_policy(sylvan_gc_policy_t policy);
+
+/**
+ * Return the last selected policy, even if a custom main hook overrides growth.
+ */
+sylvan_gc_policy_t sylvan_gc_get_policy(void);
+
+/**
  * Trigger garbage collection manually.
  *
  * This also shrinks the nodes table to fit the live nodes: to the smallest size,
  * from the initial size up, with room for twice the live nodes, and the operation
- * cache in proportion. Nodes do not move, so the part of the nodes array in use
- * shrinks only to just above the highest live node, but the memory of its empty
- * stretches is given back to the operating system. The main gc hook is not called.
+ * cache in proportion. Nodes do not move. With SYLVAN_GC_LOW_MEMORY, the part of
+ * the node arena in use shrinks only to just above the highest live node, and
+ * the memory of its empty stretches is given back to the operating system in
+ * 64 KiB chunks when virtual memory allocation is enabled. With
+ * SYLVAN_GC_FEW_COLLECTIONS, the arena's data range and pages are retained.
+ * The main gc hook is not called.
  * When the program needs more nodes again, the automatic collections grow the
  * tables as usual.
  */
@@ -230,6 +271,9 @@ void sylvan_gc_hook_postgc(gc_hook_cb callback);
 /**
  * Replace the hook called between node marking and rehashing.
  * Typically, the hook resizes the hash table and operation cache according to some heuristic.
+ * This does not change the policy's shrink mode or sylvan_gc_get_policy().
+ * A later sylvan_gc_set_policy() replaces this hook with the policy's growth hook.
+ * Explicit sylvan_gc() collections do not call the main hook.
  */
 void sylvan_gc_hook_main(gc_hook_cb callback);
 

@@ -99,8 +99,8 @@ size_t llmsset_get_size(const llmsset_t dbs);
 /**
  * Retrieve the number of data buckets in use: new nodes go into the buckets
  * below it, and every live node is below it. This is the size of the hash
- * table, unless llmsset_shrink made the hash table smaller while live nodes
- * remained in higher buckets (nodes never move).
+ * table, unless the hash table shrank while the data range was retained or
+ * live nodes remained in higher buckets (nodes never move).
  */
 size_t llmsset_get_data_size(const llmsset_t dbs);
 
@@ -134,7 +134,8 @@ llmsset_index_to_ptr(const llmsset_t dbs, size_t index)
 /**
  * Set the table size of the set.
  * Typically called during garbage collection, after clear and before rehash.
- * Also grows the data range when needed; use llmsset_shrink to reduce it.
+ * Also grows the data range when needed. A smaller size retains the data range
+ * and its pages; use llmsset_shrink to reduce it and release empty stretches.
  * Ignores sizes <= 128 or above the maximum size.
  */
 void llmsset_set_size(llmsset_t dbs, size_t size);
@@ -144,7 +145,8 @@ void llmsset_set_size(llmsset_t dbs, size_t size);
  * marking and before rehashing, with room for the marked nodes. Nodes keep
  * their place: the data buckets in use shrink only to just above the highest
  * marked node, and the memory of data regions without marked nodes is given
- * back to the operating system.
+ * back to the operating system when virtual memory allocation is enabled.
+ * Also releases unused data when <size> equals the current hash table size.
  */
 void llmsset_shrink(llmsset_t dbs, size_t size);
 

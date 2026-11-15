@@ -12,6 +12,12 @@ All notable changes to Sylvan will be documented in this file.
 - `sylvan_eval` and `mtbdd_eval`, which follow an assignment to a leaf without
   allocating nodes, and `sylvan_cofactor`, which rejects non-cubes before
   restricting a BDD. `sylvan_restrict` remains unchanged.
+- `sylvan_gc_set_policy()` and `sylvan_gc_get_policy()`, with
+  `SYLVAN_GC_FEW_COLLECTIONS` for aggressive growth and retaining the node
+  arena on explicit collections, and `SYLVAN_GC_LOW_MEMORY` for growth only
+  above half occupancy and releasing empty arena stretches. Selecting a
+  policy installs its growth hook. A custom main hook installed afterwards
+  overrides growth while keeping the policy's shrink mode.
 - `SYLVAN_HUGEPAGES`, a CMake option defaulting to OFF until measured on
   master. When enabled with `SYLVAN_USE_MMAP` on Linux, it requests transparent
   huge pages for mappings of at least 2 MiB through `MADV_HUGEPAGE` when
@@ -44,25 +50,34 @@ All notable changes to Sylvan will be documented in this file.
   `llmsset_get_data_size()`.
 
 ### Changed
+- The default GC policy is `SYLVAN_GC_FEW_COLLECTIONS`, with aggressive
+  growth. Explicit `sylvan_gc()` collections shrink the hash table and
+  operation cache and retain the arena's data range and pages. Select
+  `SYLVAN_GC_LOW_MEMORY` to release unused arena memory; it is also the
+  default when compiled with `SYLVAN_AGGRESSIVE_RESIZE=0`. Low-memory
+  collections can release arena memory even if the hash table is already at
+  its minimum, including after switching policies.
 - Aligned clears on Linux first try `MADV_DONTNEED` when available, retaining
   the mapping and its advice on success. If unavailable or unsuccessful,
   clears try remapping and request huge pages again for ranges of at least
   2 MiB when the option is enabled and the advice is available, before falling
   back to `memset` if remapping also fails. Master's operation cache clears by
   freeing and reallocating, so new allocations get fresh advice under the
-  conditions above. Shrinking still reclaims empty data stretches at 64 KiB
-  boundaries, which can split huge pages. Other platforms keep their existing
-  behavior.
+  conditions above. Low-memory shrinking reclaims empty data stretches at
+  64 KiB boundaries, which can split huge pages. Other platforms keep their
+  existing behavior.
 - Text files are stored and checked out with LF line endings on every
   platform. Serialized `.bdd` and `.ldd` models remain binary.
 - `sylvan_gc()` now shrinks the nodes table to fit the live nodes: to the
   smallest size, from the initial size up, with room for twice the live
-  nodes, and the operation cache in proportion. Nodes keep their place, so the
-  nodes array keeps the buckets up to the highest live node, but the memory of
-  its empty stretches goes back to the operating system. The main gc hook is
+  nodes, and the operation cache in proportion. Nodes keep their place. With
+  the low-memory policy, the nodes array keeps the buckets up to the highest
+  live node, but the memory of its empty stretches goes back to the operating
+  system; the few-collections policy retains the arena. The main gc hook is
   not called for these collections. The automatic collections, when the nodes
-  table is full, grow the tables as before. After dropping about a million
-  nodes, `sylvan_gc()` took a program from 62 MB to 3 MB resident.
+  table is full, grow according to the selected hook. After dropping about a
+  million nodes, shrinking with arena release took a program from 62 MB to
+  3 MB resident.
 - `mtbdd_protect`, `lddmc_protect`, `zdd_protect`, their `unprotect`
   functions, and `mtbdd_ref`, `lddmc_ref` and their `deref` functions no
   longer make all workers contend on one shared counter. The tables count

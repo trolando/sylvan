@@ -43,7 +43,7 @@ target_link_libraries(test_gc_roots PRIVATE sylvan::sylvan)
 target_compile_features(test_gc_roots PRIVATE c_std_11)
 sylvan_test_warnings(test_gc_roots)
 
-foreach(test IN ITEMS test_relprod test_markbit test_gc_invalid test_platform)
+foreach(test IN ITEMS test_relprod test_markbit test_gc_invalid test_platform test_gc_policy)
     add_executable(${test} ${test}.c)
     target_link_libraries(${test} PRIVATE sylvan::sylvan)
     target_compile_features(${test} PRIVATE c_std_11)
@@ -51,6 +51,9 @@ foreach(test IN ITEMS test_relprod test_markbit test_gc_invalid test_platform)
     add_test(NAME ${test} COMMAND ${test})
     set_tests_properties(${test} PROPERTIES TIMEOUT 120)
 endforeach()
+
+add_test(NAME test_gc_policy_parallel COMMAND test_gc_policy 2)
+set_tests_properties(test_gc_policy_parallel PROPERTIES TIMEOUT 120)
 
 if(SYLVAN_USE_MMAP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # Compile a private allocator copy so failure injection adds no code or

@@ -154,6 +154,7 @@ static gc_hook_entry_t mark_list;
 static gc_hook_entry_t pregc_list;
 static gc_hook_entry_t postgc_list;
 static gc_hook_cb main_hook;
+static sylvan_gc_policy_t gc_policy;
 
 void
 sylvan_gc_hook_pregc(gc_hook_cb callback)
@@ -186,6 +187,28 @@ void
 sylvan_gc_hook_main(gc_hook_cb callback)
 {
     main_hook = callback;
+}
+
+void
+sylvan_gc_set_policy(sylvan_gc_policy_t policy)
+{
+    switch (policy) {
+    case SYLVAN_GC_FEW_COLLECTIONS:
+        sylvan_gc_hook_main(sylvan_gc_aggressive_resize_CALL);
+        break;
+    case SYLVAN_GC_LOW_MEMORY:
+        sylvan_gc_hook_main(sylvan_gc_normal_resize_CALL);
+        break;
+    default:
+        return;
+    }
+    gc_policy = policy;
+}
+
+sylvan_gc_policy_t
+sylvan_gc_get_policy(void)
+{
+    return gc_policy;
 }
 
 /**
@@ -305,7 +328,8 @@ VOID_TASK_IMPL_0(sylvan_gc_normal_resize)
  * Shrink the nodes table to fit the marked nodes, for a collection asked for
  * with sylvan_gc(): to the smallest size, from the initial size up, with room
  * for twice the marked nodes. The operation cache shrinks in proportion, but
- * not below its initial size. Nodes do not move (see llmsset_shrink).
+ * not below its initial size. Nodes do not move. The policy decides whether
+ * to reduce the data range and release its empty stretches as well.
  */
 VOID_TASK_0(sylvan_gc_shrink)
 {
@@ -313,8 +337,14 @@ VOID_TASK_0(sylvan_gc_shrink)
     size_t marked = llmsset_count_marked(nodes);
     size_t target = table_min;
     while (target < size && target < 2 * marked) target = next_size(target);
-    if (target >= size) return;
-    llmsset_shrink(nodes, target);
+    if (target > size) return;
+    if (gc_policy == SYLVAN_GC_LOW_MEMORY) {
+        llmsset_shrink(nodes, target);
+    } else if (target < size) {
+        /* Setting a smaller hash table size leaves the data range and its
+           pages intact, so future allocations can reuse them without faults. */
+        llmsset_set_size(nodes, target);
+    }
 
     size_t cache_size = cache_getsize();
     size_t cache_target = cache_size;
@@ -535,9 +565,9 @@ sylvan_init_package(void)
     gc_diag_count = 0;
 #endif
 #if SYLVAN_AGGRESSIVE_RESIZE
-    main_hook = sylvan_gc_aggressive_resize_CALL;
+    sylvan_gc_set_policy(SYLVAN_GC_FEW_COLLECTIONS);
 #else
-    main_hook = sylvan_gc_normal_resize_CALL;
+    sylvan_gc_set_policy(SYLVAN_GC_LOW_MEMORY);
 #endif
 
     sylvan_stats_init();

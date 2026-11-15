@@ -86,7 +86,8 @@ but does not prevent the kernel from using huge pages under ``always``.
 While the process runs, sample ``AnonHugePages`` and ``Rss`` in
 ``/proc/<pid>/smaps_rollup`` before and after collections. For shrinking,
 use a workload that drops a large diagram while keeping a smaller protected
-one, calls ``sylvan_gc()``, and pauses before and after that call for sampling.
+one, selects ``SYLVAN_GC_LOW_MEMORY``, calls ``sylvan_gc()``, and pauses
+before and after that call for sampling.
 Compare current RSS at those points, since peak RSS cannot show reclamation.
 Also time the collection and subsequent operations. On Linux, aligned clears
 first try ``MADV_DONTNEED`` when available; success retains the mapping and
@@ -96,8 +97,9 @@ available and the range is at least 2 MiB. Only if remapping also fails does
 it zero the range with ``memset``. Master's operation cache clears by freeing
 and reallocating its mappings, so each new allocation gets fresh advice under
 the conditions above. Huge pages may need to be allocated again when tables
-are touched. Reclaiming empty stretches at 64 KiB boundaries can split huge
-pages, so the huge-page share can decrease after a shrink.
+are touched. Low-memory collections reclaim empty arena stretches at 64 KiB
+boundaries, which can split huge pages, so the huge-page share can decrease
+after a shrink.
 ``SYLVAN_GC_DIAGNOSTICS`` below helps identify collections and their table
 sizes.
 
@@ -177,7 +179,8 @@ higher number doubling the size of the nodes table. Negative numbers double the 
 cache instead. In the example, we want the nodes table to be twice as big as the operation cache.
 The third parameter controls how often garbage collection doubles the table sizes before
 their maximum size is reached. The value 5 means that the initial tables are 32x as small as the maximum size.
-By default, every execution of garbage collection doubles the table sizes.
+By default, every automatic garbage collection doubles the table sizes;
+an explicit ``sylvan_gc()`` can shrink them (see Table resizing).
 
 After ``sylvan_init_package``, subpackages like ``mtbdd`` and ``ldd`` can be initialized with
 ``sylvan_init_mtbdd`` and ``sylvan_init_ldd``. This allocates auxiliary datastructures.
@@ -243,6 +246,45 @@ any thread; install it before starting operations that may exhaust the table.
 Replacing it does not wait for a call that is already running. Passing ``NULL``
 restores the default handler. The default output is unchanged,
 including the historical ``"BDD"`` label for ZDD failures.
+
+Choose the balance between memory use and collection frequency with
+``sylvan_gc_set_policy``, after ``sylvan_init_package``:
+
+* ``SYLVAN_GC_FEW_COLLECTIONS`` is the default. Automatic collections double
+  the tables up to their maximum sizes. An explicit ``sylvan_gc()`` shrinks
+  the hash table and the operation cache in proportion, but retains the node
+  arena's data range and pages. Reusing those pages avoids faulting them in
+  again after a collection.
+* ``SYLVAN_GC_LOW_MEMORY`` grows the tables only when more than half the
+  nodes table remains in use after collection. An explicit ``sylvan_gc()``
+  also reduces the arena's data range and gives its empty stretches back to
+  the operating system in 64 KiB chunks, when virtual memory allocation is
+  enabled (``SYLVAN_USE_MMAP``).
+
+For example, to select low memory use:
+
+.. code:: c
+
+    sylvan_init_package();
+    sylvan_gc_set_policy(SYLVAN_GC_LOW_MEMORY);
+
+You can change the policy between operations, with no concurrent Sylvan
+calls. Setting a policy does not run a collection. Each
+``sylvan_init_package()`` resets it to the default; builds with
+``SYLVAN_AGGRESSIVE_RESIZE=0`` instead default to low memory.
+The few-collections default uses aggressive growth and retains unused
+arena memory on explicit collections.
+Select low memory to release that memory.
+
+Setting a policy installs its growth hook, replacing any custom main hook.
+A later ``sylvan_gc_hook_main`` call overrides growth while retaining the
+policy's shrink mode. ``sylvan_gc_get_policy()`` returns the last selected
+policy even when a custom hook is installed. Setting the policy again
+restores its growth hook. Explicit ``sylvan_gc()`` collections bypass the
+main hook under both policies.
+To combine aggressive growth with arena release,
+select ``SYLVAN_GC_LOW_MEMORY``, then call
+``sylvan_gc_hook_main(sylvan_gc_aggressive_resize_CALL)``.
 
 To ensure that no decision diagram nodes are overwritten, you must ensure that
 Sylvan knows which decision diagrams you care about.
@@ -460,19 +502,27 @@ See ``src/sylvan_obj.hpp`` for the C++ interface.
 Table resizing
 ~~~~~~~~~~~~~~
 
-During garbage collection, it is possible to resize the nodes table and
-the cache. By default, Sylvan doubles the table sizes during every garbage
-collection until the maximum table size has been reached. There is also a
-less aggressive version that only resizes when at least half the table is
-full. This can be configured in ``src/sylvan_config.h``.
+Automatic garbage collections resize the nodes table and the operation
+cache through the main GC hook. ``SYLVAN_GC_FEW_COLLECTIONS`` selects
+``sylvan_gc_aggressive_resize``, which doubles each table until its maximum
+size is reached. ``SYLVAN_GC_LOW_MEMORY`` selects
+``sylvan_gc_normal_resize``, which doubles the nodes table only when more
+than half is still in use after marking, and grows the cache along with it.
+These hooks can also be installed directly with ``sylvan_gc_hook_main``.
 
 A garbage collection asked for with ``sylvan_gc`` shrinks the tables
 instead: the nodes table to the smallest size, from the initial size up,
 with room for twice the live nodes, and the operation cache in proportion.
-Nodes keep their place, so only the hash table shrinks; the nodes array
-keeps the buckets up to the highest live node, but gives the memory of its
-empty stretches back to the operating system. The automatic garbage
-collections grow the tables again when the program needs more nodes.
+Neither table shrinks below its initial size. Nodes keep their place, so
+live node indices may exceed the hash table size after shrinking. Use
+``llmsset_get_data_size()`` for node-index bounds, not ``llmsset_get_size()``.
+With low memory, the arena keeps the range through the highest live node
+(rounded to a 512-node region), or the hash table size if larger, and
+releases empty stretches. It can release more arena memory on later explicit
+collections even if the hash table is already at its minimum. With few
+collections, the arena's data range and pages stay as they were.
+``sylvan_gc_collect()``, the internal collection used when insertion fails,
+uses the main hook and never shrinks the tables under either policy.
 
 If node creation still fails after collection and resizing, the table-full
 handler described under `Garbage collection and referencing nodes`_ is called.

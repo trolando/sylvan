@@ -153,6 +153,14 @@ All notable changes to Sylvan will be documented in this file.
   lookup on another worker could fail to find a node that was there and intern
   a duplicate of it. The mark now lives in a dense scratch bitmap beside the
   node table.
+- Garbage collection marked the variables protected with `listdd_protect`
+  and `zdd_protect` with one task per variable, all spawned by the worker
+  that collected. With more protected variables than its task deque holds,
+  Lace aborted with a task stack overflow. Collection now splits these tables
+  by divide and conquer into ranges of 256 buckets, and marks the variables
+  of a range in one task, as it already marked the `mtbdd_protect` table in
+  batches. The new test `test_gc_roots` collects garbage with 40000 roots of
+  each kind and a deque of 8192 tasks.
 - The tables of protected variables (behind `mtbdd_protect`,
   `listdd_protect` and `zdd_protect`) could lose entries when they grew twice
   in quick succession: a thread that helped with one resize, if it was

@@ -181,19 +181,28 @@ zdd_protected_count(void)
  */
 TASK(void, zdd_gc_mark_protected)
 
+/* Mark the variables in buckets first, ..., first+count-1 of zdd_protected (see REFS_MARK_GRAIN) */
+TASK(void, zdd_gc_mark_protected_range, size_t, first, size_t, count)
+
+void zdd_gc_mark_protected_range_CALL(lace_worker* lace, size_t first, size_t count)
+{
+    if (count > REFS_MARK_GRAIN) {
+        zdd_gc_mark_protected_range_SPAWN(lace, first, count/2);
+        zdd_gc_mark_protected_range_CALL(lace, first+count/2, count-count/2);
+        zdd_gc_mark_protected_range_SYNC(lace);
+        return;
+    }
+    const size_t end = first + count;
+    uint64_t *it = protect_iter(&zdd_protected, first, end);
+    while (it != NULL) {
+        BDD *to_mark = (BDD*)protect_next(&zdd_protected, &it, end);
+        zdd_gc_mark_CALL(lace, *to_mark);
+    }
+}
+
 void zdd_gc_mark_protected_CALL(lace_worker* lace)
 {
-    // iterate through refs hash table, mark all found
-    size_t count=0;
-    uint64_t *it = protect_iter(&zdd_protected, 0, zdd_protected.refs_size);
-    while (it != NULL) {
-        BDD *to_mark = (BDD*)protect_next(&zdd_protected, &it, zdd_protected.refs_size);
-        zdd_gc_mark_SPAWN(lace, *to_mark);
-        count++;
-    }
-    while (count--) {
-        zdd_gc_mark_SYNC(lace);
-    }
+    zdd_gc_mark_protected_range_CALL(lace, 0, zdd_protected.refs_size);
 }
 
 /**

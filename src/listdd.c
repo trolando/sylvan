@@ -78,20 +78,29 @@ listdd_protected_count(void)
     return protect_count(&listdd_protected);
 }
 
+/* Mark the variables in buckets first, ..., first+count-1 of listdd_protected (see REFS_MARK_GRAIN) */
+TASK(void, listdd_gc_mark_protected_range, size_t, first, size_t, count)
+
+void listdd_gc_mark_protected_range_CALL(lace_worker* lace, size_t first, size_t count)
+{
+    if (count > REFS_MARK_GRAIN) {
+        listdd_gc_mark_protected_range_SPAWN(lace, first, count/2);
+        listdd_gc_mark_protected_range_CALL(lace, first+count/2, count-count/2);
+        listdd_gc_mark_protected_range_SYNC(lace);
+        return;
+    }
+    const size_t end = first + count;
+    uint64_t *it = protect_iter(&listdd_protected, first, end);
+    while (it != NULL) {
+        LISTDD *to_mark = (LISTDD*)protect_next(&listdd_protected, &it, end);
+        listdd_gc_mark_CALL(lace, *to_mark);
+    }
+}
+
 /* Called during garbage collection */
 void listdd_gc_mark_protected(lace_worker* lace)
 {
-    // iterate through refs hash table, mark all found
-    size_t count=0;
-    uint64_t *it = protect_iter(&listdd_protected, 0, listdd_protected.refs_size);
-    while (it != NULL) {
-        LISTDD *to_mark = (LISTDD*)protect_next(&listdd_protected, &it, listdd_protected.refs_size);
-        listdd_gc_mark_SPAWN(lace, *to_mark);
-        count++;
-    }
-    while (count--) {
-        listdd_gc_mark_SYNC(lace);
-    }
+    listdd_gc_mark_protected_range_CALL(lace, 0, listdd_protected.refs_size);
 }
 
 /* Infrastructure for internal markings */

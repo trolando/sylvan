@@ -220,7 +220,7 @@ TASK(void, zdd_refs_mark_p_par, ZDD**, begin, size_t, count)
 
 void zdd_refs_mark_p_par_CALL(lace_worker* lace, ZDD** begin, size_t count)
 {
-    if (count < 32) {
+    if (count < REFS_STACK_MARK_GRAIN) {
         while (count) {
             zdd_gc_mark(**(begin++));
             count--;
@@ -236,7 +236,7 @@ TASK(void, zdd_refs_mark_r_par, ZDD*, begin, size_t, count)
 
 void zdd_refs_mark_r_par_CALL(lace_worker* lace, ZDD* begin, size_t count)
 {
-    if (count < 32) {
+    if (count < REFS_STACK_MARK_GRAIN) {
         while (count) {
             zdd_gc_mark(*begin++);
             count--;

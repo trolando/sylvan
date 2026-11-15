@@ -320,7 +320,7 @@ TASK(void, mtbdd_gc_mark_many, const MTBDD*, roots, size_t, count)
 
 void mtbdd_gc_mark_many_CALL(lace_worker* lace, const MTBDD* roots, size_t count)
 {
-    if (count < 32) {
+    if (count < REFS_STACK_MARK_GRAIN) {
         while (count) {
             mtbdd_gc_mark_CALL(lace, *roots++);
             count--;

@@ -116,7 +116,7 @@ TASK(void, listdd_refs_mark_p_par, const LISTDD**, begin, size_t, count)
 
 void listdd_refs_mark_p_par_CALL(lace_worker* lace, const LISTDD** begin, size_t count)
 {
-    if (count < 32) {
+    if (count < REFS_STACK_MARK_GRAIN) {
         while (count) {
             listdd_gc_mark_CALL(lace, **(begin++));
             count--;
@@ -132,7 +132,7 @@ TASK(void, listdd_refs_mark_r_par, LISTDD*, begin, size_t, count)
 
 void listdd_refs_mark_r_par_CALL(lace_worker* lace, LISTDD* begin, size_t count)
 {
-    if (count < 32) {
+    if (count < REFS_STACK_MARK_GRAIN) {
         while (count) {
             listdd_gc_mark_CALL(lace, *begin++);
             count--;

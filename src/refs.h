@@ -60,6 +60,14 @@ typedef struct
  */
 #define REFS_MARK_GRAIN 256
 
+/**
+ * The per-worker stacks of temporary references, and the batches of MTBDD
+ * roots that the root visitors yield, are marked the same way: a task splits
+ * its part in halves until fewer than REFS_STACK_MARK_GRAIN entries are left,
+ * and marks those one after the other.
+ */
+#define REFS_STACK_MARK_GRAIN 64
+
 // Count number of entries
 size_t protect_count(refs_table_t *tbl);
 

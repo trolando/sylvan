@@ -74,9 +74,20 @@ void sylvan_set_limits(size_t memory_cap, int table_ratio, int initial_ratio);
  * to free enough nodes. This is an out-of-memory condition, not a recovery hook.
  * It is also called if node creation still fails with garbage collection disabled.
  *
- * The handler runs on a Lace worker in the middle of an operation. It must not
- * call Sylvan operations and must not return: it should exit or abort. If it
- * returns anyway, Sylvan prints its usual message to stderr and calls exit(1).
+ * The handler runs on a Lace worker in the middle of an operation, while other
+ * workers may be waiting for that operation. It must not call Sylvan operations
+ * and must not return: it should exit or abort. If it returns anyway, Sylvan
+ * prints its usual message to stderr and calls exit(1).
+ *
+ * exit() runs atexit handlers and static destructors on this worker. Neither the
+ * handler nor those may stop Lace (lace_stop waits for every worker), quit
+ * Sylvan, or wait for other workers, or the program can hang. If the
+ * application's cleanup cannot avoid that, write the report, flush it, and call
+ * _Exit() instead.
+ *
+ * Several workers can find the table full at the same time, so the handler can
+ * be called concurrently. A handler that must report only once has to arrange
+ * that itself (for example with an atomic flag).
  *
  * kind is "BDD" (including MTBDD), "MDD" (LDD), or "ZDD". filled and total are
  * the occupied and total bucket counts used in the usual message.
@@ -88,6 +99,7 @@ typedef void (*sylvan_table_full_cb)(const char *kind, size_t filled, size_t tot
  * which prints the usual message to stderr and calls exit(1).
  * The handler pointer is stored atomically and may be set from any thread.
  * Install the handler before starting operations that may exhaust the table.
+ * Replacing the handler does not wait for a call that is already running.
  */
 void sylvan_set_table_full_handler(sylvan_table_full_cb handler);
 

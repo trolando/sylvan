@@ -153,9 +153,19 @@ abort. If it returns anyway, Sylvan prints its usual message and calls
 ``exit(1)``. The handler also applies when garbage collection is disabled.
 It cannot recover from a full table.
 
+Other workers may be waiting for the operation that ran out of nodes, so neither
+the handler nor anything ``exit()`` runs (``atexit`` handlers, static
+destructors) may stop Lace (``lace_stop`` waits for every worker), quit Sylvan,
+or wait for other workers; the program could hang. If the application's cleanup
+cannot avoid that, write and flush the report and call ``_Exit()`` instead.
+Several workers can find the table full at the same time, so the handler can be
+called concurrently: a handler that must report once should guard its report,
+for example with an atomic flag.
+
 The handler is global, and its pointer is stored atomically. It can be set from
 any thread; install it before starting operations that may exhaust the table.
-Passing ``NULL`` restores the default handler. The default output is unchanged,
+Replacing it does not wait for a call that is already running. Passing ``NULL``
+restores the default handler. The default output is unchanged,
 including the historical ``"BDD"`` label for ZDD failures.
 
 To ensure that no decision diagram nodes are overwritten, you must ensure that

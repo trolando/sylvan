@@ -70,8 +70,12 @@ cache_next_opid(void)
 }
 
 // status: 0x80000000 - bitlock
-//         0x7fff0000 - hash (part of the 64-bit hash not used to position)
+//         0x40000000 - part of a two-bucket entry
+//         0x3fff0000 - hash (part of the 64-bit hash not used to position)
 //         0x0000ffff - tag (every put increases tag field)
+
+#define CACHE_STATUS_PAIR UINT32_C(0x40000000)
+#define CACHE_STATUS_HASH_MASK UINT32_C(0x3fff0000)
 
 static inline uint64_t rotl64(uint64_t x, unsigned k) {
     return (x << k) | (x >> (64 - k));
@@ -113,7 +117,7 @@ cache_get6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t 
 #endif
     const uint64_t s = atomic_load_explicit(s_bucket, memory_order_relaxed);
     // abort if locked or second part of 2-part entry or if different hash
-    uint64_t x = ((hash>>32) & 0x7fff0000) | 0x04000000;
+    uint64_t x = ((hash>>32) & CACHE_STATUS_HASH_MASK) | CACHE_STATUS_PAIR;
     x = x | (x<<32);
     if ((s & 0xffff0000ffff0000) != x) return 0;
     atomic_thread_fence(memory_order_acquire); // prevent LoadLoad reordering
@@ -143,7 +147,7 @@ cache_put6(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t 
     // abort if locked
     if (s & UINT64_C(0x8000000080000000)) return 0;
     // create new
-    uint64_t new_s = ((hash>>32) & 0x7fff0000) | 0x04000000;
+    uint64_t new_s = ((hash>>32) & CACHE_STATUS_HASH_MASK) | CACHE_STATUS_PAIR;
     new_s |= (new_s<<32);
     new_s |= (((s>>32)+1)&0xffff)<<32;
     new_s |= (s+1)&0xffff;
@@ -176,9 +180,9 @@ cache_get(uint64_t a, uint64_t b, uint64_t c, uint64_t *res)
 #endif
     const uint32_t s = atomic_load_explicit(s_bucket, memory_order_relaxed);
     // abort if locked or if part of a 2-part cache entry
-    if (s & 0xc0000000) return 0;
+    if (s & (UINT32_C(0x80000000) | CACHE_STATUS_PAIR)) return 0;
     // abort if different hash
-    if ((s ^ (hash>>32)) & 0x3fff0000) return 0;
+    if ((s ^ (hash>>32)) & CACHE_STATUS_HASH_MASK) return 0;
     atomic_thread_fence(memory_order_acquire); // prevent LoadLoad reordering
     // abort if key different
     if (bucket->a != a || bucket->b != b || bucket->c != c) return 0;
@@ -203,7 +207,7 @@ cache_put(uint64_t a, uint64_t b, uint64_t c, uint64_t res)
     // abort if locked
     if (s & 0x80000000) return 0;
     // abort if hash identical -> no: in iscasmc this occasionally causes timeouts?!
-    const uint32_t hash_mask = (hash>>32) & 0x3fff0000;
+    const uint32_t hash_mask = (hash>>32) & CACHE_STATUS_HASH_MASK;
     // if ((s & 0x7fff0000) == hash_mask) return 0;
     // use cas to claim bucket
     const uint32_t new_s = ((s+1) & 0x0000ffff) | hash_mask;

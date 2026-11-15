@@ -144,7 +144,8 @@ TASK_DECL_4(BDD, sylvan_relnext, BDD, BDD, BDDSET, BDDVAR);
 #define sylvan_relnext(a,b,vars) RUN(sylvan_relnext,a,b,vars,0)
 
 /**
- * Computes the transitive closure by traversing the BDD recursively.
+ * Computes the transitive closure (paths of one or more steps) recursively.
+ * The result is reflexive only where the relation has a cycle.
  * See Y. Matsunaga, P. C. McGeer, R. K. Brayton
  *     On Computing the Transitive Closure of a State Transition Relation
  *     30th ACM Design Automation Conference, 1993.

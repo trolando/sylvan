@@ -262,7 +262,7 @@ public:
     BDD GetBDD() const;
 
     /**
-     * @brief Writes .dot file of this Bdd. Not thread-safe!
+     * @brief Writes .dot file of this Bdd.
      */
     void PrintDot(FILE *out) const;
 
@@ -325,7 +325,7 @@ public:
     static Bdd VariablesCube(const std::vector<uint32_t> variables);
 
     /**
-     * @brief Gets the number of nodes in this Bdd. Not thread-safe!
+     * @brief Gets the number of nodes in this Bdd.
      */
     size_t NodeCount() const;
 
@@ -774,7 +774,7 @@ public:
     double SatCount(const size_t nvars) const;
 
     /**
-     * @brief Gets the number of nodes in this Bdd. Not thread-safe!
+     * @brief Gets the number of nodes in this Bdd.
      */
     size_t NodeCount() const;
 

@@ -115,6 +115,7 @@ VOID_TASK_IMPL_1(zdd_gc_mark_rec, ZDD, zdd)
 {
     if (zdd == zdd_true) return;
     if (zdd == zdd_false) return;
+    if (zdd == zdd_invalid) return;
 
     // Mark, and if returns 0, we are done
     if (llmsset_mark(nodes, ZDD_GETINDEX(zdd)) != 0) {
@@ -1078,36 +1079,36 @@ static void
 zdd_unmark_rec(ZDD zdd)
 {
     zddnode_t n = ZDD_GETNODE(zdd);
-    if (!zddnode_getmark(n)) return;
-    zddnode_setmark(n, 0);
+    if (!nodes_scratch_ismarked(nodes, ZDD_GETINDEX(zdd))) return;
+    nodes_scratch_unmark(nodes, ZDD_GETINDEX(zdd));
     zdd_unmark_rec(zddnode_getlow(n));
     zdd_unmark_rec(zddnode_gethigh(n));
 }
 
 /**
  * Mark and count all nodes (internal & leaves) in the given ZDD.
- * Not thread-safe.
  */
 static size_t
 zdd_nodecount_mark(ZDD zdd)
 {
-    // Note: the True/False leaf can be marked/unmarked, as buckets 0--1 are unused
+    // The scratch bitmap includes the reserved terminal indices 0 and 1.
     zddnode_t n = ZDD_GETNODE(zdd);
-    if (zddnode_getmark(n)) return 0;
-    zddnode_setmark(n, 1);
+    if (nodes_scratch_ismarked(nodes, ZDD_GETINDEX(zdd))) return 0;
+    nodes_scratch_mark(nodes, ZDD_GETINDEX(zdd));
     return 1 + zdd_nodecount_mark(zddnode_getlow(n)) + zdd_nodecount_mark(zddnode_gethigh(n));
 }
 
 /**
  * Count the number of nodes (internal nodes plus leaves) in ZDDs.
- * Not thread-safe.
  */
 size_t
 zdd_nodecount(const ZDD *zdds, size_t count)
 {
+    nodes_scratch_acquire(nodes);
     size_t result = 0, i;
     for (i=0; i<count; i++) result += zdd_nodecount_mark(zdds[i]);
     for (i=0; i<count; i++) zdd_unmark_rec(zdds[i]);
+    nodes_scratch_release(nodes);
     return result;
 }
 
@@ -1853,8 +1854,8 @@ static void
 zdd_fprintdot_rec(FILE *out, ZDD zdd)
 {
     zddnode_t n = ZDD_GETNODE(zdd); // also works for zdd_false
-    if (zddnode_getmark(n)) return;
-    zddnode_setmark(n, 1);
+    if (nodes_scratch_ismarked(nodes, ZDD_GETINDEX(zdd))) return;
+    nodes_scratch_mark(nodes, ZDD_GETINDEX(zdd));
 
     if (ZDD_GETINDEX(zdd) == 0) {  // zdd == zdd_true || zdd == zdd_false
         fprintf(out, "0 [shape=box, style=filled, label=\"F\"];\n");
@@ -1878,6 +1879,7 @@ zdd_fprintdot_rec(FILE *out, ZDD zdd)
 void
 zdd_fprintdot(FILE *out, ZDD zdd)
 {
+    nodes_scratch_acquire(nodes);
     fprintf(out, "digraph \"DD\" {\n");
     fprintf(out, "graph [dpi = 300];\n");
     fprintf(out, "center = true;\n");
@@ -1890,6 +1892,7 @@ zdd_fprintdot(FILE *out, ZDD zdd)
     zdd_unmark_rec(zdd);
 
     fprintf(out, "}\n");
+    nodes_scratch_release(nodes);
 }
 
 /**
@@ -1938,7 +1941,8 @@ VOID_TASK_2(zdd_writer_add_visitor_post, ZDD, dd, sylvan_skiplist_t, sl)
 sylvan_skiplist_t
 zdd_writer_start(void)
 {
-    size_t sl_size = nodes->table_size > 0x7fffffff ? 0x7fffffff : nodes->table_size;
+    const size_t table_size = llmsset_get_size(nodes);
+    size_t sl_size = table_size > 0x7fffffff ? 0x7fffffff : table_size;
     return sylvan_skiplist_alloc(sl_size);
 }
 

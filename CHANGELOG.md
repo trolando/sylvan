@@ -4,6 +4,42 @@ All notable changes to Sylvan will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- `sylvan_closure` combined recursively computed transitive closures with
+  formulas that required reflexive closures. It could omit reachable pairs,
+  including every pair in a relation that flips one bit; this has been so
+  since 2015. It now includes paths of one or more steps. The new `test_relprod` checks the flip relation
+  and compares closure and relational products with an explicit-state oracle.
+- `sylvan_relprev` called `sylvan_relnext` when both operands depended on a
+  variable outside the specified pairs, composing in the wrong direction.
+  It now recurses into `sylvan_relprev`. `test_relprod` checks the shared
+  outside-variable case as well as partial relations and relation composition.
+- Node and leaf counters, `.dot` writers and structural hashes marked visited
+  nodes in the word hashed by the unique table. A concurrent node insertion
+  could miss an existing node and create a duplicate, breaking canonical
+  handles. Traversals now use lazily allocated side bitmaps, with a separate
+  bitmap for each concurrent or nested traversal. The new `test_markbit`
+  checks node lookup while a walk is marked, repeated and concurrent MTBDD,
+  ZDD and LDD traversals, and GC and table growth inside a leaf printer.
+- GC treated a protected `mtbdd_invalid` or `zdd_invalid` as a node index and
+  could crash, for example after `mtbdd_fraction(1, 0)`. It now ignores these
+  sentinels. The new `test_gc_invalid` and `test_gc_invalid_zdd` collect with
+  protected invalid results and check that live nodes survive too. LDD has
+  no invalid sentinel.
+- Six-key cache entries used the wrong status bit to identify their two
+  buckets. A three-key lookup could mistake half of such an entry for its
+  own result. The pair flag now agrees with the reader's mask;
+  `test_table_cache` checks colliding keys and replacement of a paired entry.
+- Table rehashing inserted reserved node indices 0 and 1, which could make
+  lookups return a terminal or the failure sentinel instead of a real node.
+  Rehashing now skips both indices; `test_table` checks the rebuilt table.
+- The table size setters allowed up to 2^42 buckets although handles only
+  hold 40-bit indices, so sufficiently large tables could produce truncated
+  handles. Both size setters now stop at 2^40 buckets. `test_table_limit`
+  checks that the explicit setter accepts 2^40 and rejects 2^41 without
+  allocating the table.
+- Removed an unreachable `madvise` block from the node table allocator. Its
+  preprocessor condition tested a function name as a macro, so the block
+  never ran; this does not enable `MADV_RANDOM` or change allocation behavior.
 - Garbage collection marked the variables protected with `mtbdd_protect`,
   `lddmc_protect` and `zdd_protect`, and the values referenced with
   `mtbdd_ref` and `lddmc_ref`, with one task per root, all spawned by the

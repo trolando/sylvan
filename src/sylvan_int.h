@@ -47,6 +47,23 @@ extern "C" {
  */
 extern llmsset_t nodes;
 
+/* Internal traversal scratch, separate from both node keys and GC marks.
+ * Acquire/release must bracket a synchronous walk on one thread, and the
+ * walk must undo every bit it sets. Concurrent and nested walks get separate
+ * bitmaps. Normal root protection is still required across GC safepoints;
+ * scratch marks do not keep nodes alive. GC may rehash/grow the table while
+ * a callback is suspended: live indices remain stable, and the outer walk
+ * only visits nodes that existed when it acquired its bitmap. New/nested
+ * walks use the current data range. Free all idle bitmaps at package quit.
+ */
+void nodes_scratch_acquire(const llmsset_t dbs);
+void nodes_scratch_release(const llmsset_t dbs);
+int nodes_scratch_ismarked(const llmsset_t dbs, uint64_t index);
+void nodes_scratch_mark(const llmsset_t dbs, uint64_t index);
+void nodes_scratch_unmark(const llmsset_t dbs, uint64_t index);
+void nodes_scratch_forget(void);
+
+
 /**
  * Macros for all operation identifiers for the operation cache
  */

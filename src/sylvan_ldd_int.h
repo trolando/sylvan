@@ -27,8 +27,8 @@
 /**
  * LDD node structure
  *
- * RmRR RRRR RRRR VVVV | VVVV DcDD DDDD DDDD (little endian - in memory)
- * VVVV RRRR RRRR RRRm | DDDD DDDD DDDc VVVV (big endian)
+ * R0RR RRRR RRRR VVVV | VVVV DcDD DDDD DDDD (little endian - in memory)
+ * VVVV RRRR RRRR RRR0 | DDDD DDDD DDDc VVVV (big endian)
  */
 typedef struct mddnode {
     uint64_t a, b;
@@ -55,12 +55,6 @@ mddnode_getvalue(mddnode_t n)
 }
 
 static inline uint8_t SYLVAN_UNUSED
-mddnode_getmark(mddnode_t n)
-{
-    return n->a & 1;
-}
-
-static inline uint8_t SYLVAN_UNUSED
 mddnode_getcopy(mddnode_t n)
 {
     return n->b & 0x10000 ? 1 : 0;
@@ -82,12 +76,6 @@ static inline void SYLVAN_UNUSED
 mddnode_setvalue(mddnode_t n, uint32_t value)
 {
     memcpy((uint8_t*)n+6, &value, sizeof(value));
-}
-
-static inline void SYLVAN_UNUSED
-mddnode_setmark(mddnode_t n, uint8_t mark)
-{
-    n->a = (n->a & 0xfffffffffffffffe) | (mark ? 1 : 0);
 }
 
 static inline void SYLVAN_UNUSED

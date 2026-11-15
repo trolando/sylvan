@@ -1908,8 +1908,8 @@ lddmc_nodecount_levels_mark(MDD mdd, size_t *variables)
 {
     if (mdd <= lddmc_true) return;
     mddnode_t n = LDD_GETNODE(mdd);
-    if (!mddnode_getmark(n)) {
-        mddnode_setmark(n, 1);
+    if (!nodes_scratch_ismarked(nodes, mdd)) {
+        nodes_scratch_mark(nodes, mdd);
         (*variables) += 1;
         lddmc_nodecount_levels_mark(mddnode_getright(n), variables);
         lddmc_nodecount_levels_mark(mddnode_getdown(n), variables+1);
@@ -1921,8 +1921,8 @@ lddmc_nodecount_levels_unmark(MDD mdd)
 {
     if (mdd <= lddmc_true) return;
     mddnode_t n = LDD_GETNODE(mdd);
-    if (mddnode_getmark(n)) {
-        mddnode_setmark(n, 0);
+    if (nodes_scratch_ismarked(nodes, mdd)) {
+        nodes_scratch_unmark(nodes, mdd);
         lddmc_nodecount_levels_unmark(mddnode_getright(n));
         lddmc_nodecount_levels_unmark(mddnode_getdown(n));
     }
@@ -1931,8 +1931,10 @@ lddmc_nodecount_levels_unmark(MDD mdd)
 void
 lddmc_nodecount_levels(MDD mdd, size_t *variables)
 {
+    nodes_scratch_acquire(nodes);
     lddmc_nodecount_levels_mark(mdd, variables);
     lddmc_nodecount_levels_unmark(mdd);
+    nodes_scratch_release(nodes);
 }
 
 /**
@@ -1944,8 +1946,8 @@ lddmc_nodecount_mark(MDD mdd)
 {
     if (mdd <= lddmc_true) return 0;
     mddnode_t n = LDD_GETNODE(mdd);
-    if (mddnode_getmark(n)) return 0;
-    mddnode_setmark(n, 1);
+    if (nodes_scratch_ismarked(nodes, mdd)) return 0;
+    nodes_scratch_mark(nodes, mdd);
     return 1 + lddmc_nodecount_mark(mddnode_getdown(n)) + lddmc_nodecount_mark(mddnode_getright(n));
 }
 
@@ -1954,8 +1956,8 @@ lddmc_nodecount_unmark(MDD mdd)
 {
     if (mdd <= lddmc_true) return;
     mddnode_t n = LDD_GETNODE(mdd);
-    if (mddnode_getmark(n)) {
-        mddnode_setmark(n, 0);
+    if (nodes_scratch_ismarked(nodes, mdd)) {
+        nodes_scratch_unmark(nodes, mdd);
         lddmc_nodecount_unmark(mddnode_getright(n));
         lddmc_nodecount_unmark(mddnode_getdown(n));
     }
@@ -1964,8 +1966,10 @@ lddmc_nodecount_unmark(MDD mdd)
 size_t
 lddmc_nodecount(MDD mdd)
 {
+    nodes_scratch_acquire(nodes);
     size_t result = lddmc_nodecount_mark(mdd);
     lddmc_nodecount_unmark(mdd);
+    nodes_scratch_release(nodes);
     return result;
 }
 
@@ -2297,18 +2301,18 @@ VOID_TASK_IMPL_4(lddmc_visit_par, MDD, mdd, lddmc_visit_callbacks_t*, cbs, size_
  */
 
 static inline int
-lddmc_mark(mddnode_t node)
+lddmc_mark(MDD mdd)
 {
-    if (mddnode_getmark(node)) return 0;
-    mddnode_setmark(node, 1);
+    if (nodes_scratch_ismarked(nodes, mdd)) return 0;
+    nodes_scratch_mark(nodes, mdd);
     return 1;
 }
 
 static inline int
-lddmc_unmark(mddnode_t node)
+lddmc_unmark(MDD mdd)
 {
-    if (mddnode_getmark(node)) {
-        mddnode_setmark(node, 0);
+    if (nodes_scratch_ismarked(nodes, mdd)) {
+        nodes_scratch_unmark(nodes, mdd);
         return 1;
     } else {
         return 0;
@@ -2316,13 +2320,14 @@ lddmc_unmark(mddnode_t node)
 }
 
 static void
-lddmc_unmark_rec(mddnode_t node)
+lddmc_unmark_rec(MDD mdd)
 {
-    if (lddmc_unmark(node)) {
+    if (lddmc_unmark(mdd)) {
+        mddnode_t node = LDD_GETNODE(mdd);
         MDD node_right = mddnode_getright(node);
-        if (node_right > lddmc_true) lddmc_unmark_rec(LDD_GETNODE(node_right));
+        if (node_right > lddmc_true) lddmc_unmark_rec(node_right);
         MDD node_down = mddnode_getdown(node);
-        if (node_down > lddmc_true) lddmc_unmark_rec(LDD_GETNODE(node_down));
+        if (node_down > lddmc_true) lddmc_unmark_rec(node_down);
     }
 }
 
@@ -2337,8 +2342,8 @@ lddmc_fprintdot_rec(FILE* out, MDD mdd)
 
     // check mark
     mddnode_t n = LDD_GETNODE(mdd);
-    if (mddnode_getmark(n)) return;
-    mddnode_setmark(n, 1);
+    if (nodes_scratch_ismarked(nodes, mdd)) return;
+    nodes_scratch_mark(nodes, mdd);
 
     // print the node
     uint32_t val = mddnode_getvalue(n);
@@ -2383,8 +2388,8 @@ lddmc_fprintdot_unmark(MDD mdd)
 {
     if (mdd <= lddmc_true) return;
     mddnode_t n = LDD_GETNODE(mdd);
-    if (mddnode_getmark(n)) {
-        mddnode_setmark(n, 0);
+    if (nodes_scratch_ismarked(nodes, mdd)) {
+        nodes_scratch_unmark(nodes, mdd);
         for (;;) {
             lddmc_fprintdot_unmark(mddnode_getdown(n));
             mdd = mddnode_getright(n);
@@ -2416,10 +2421,12 @@ lddmc_fprintdot(FILE *out, MDD mdd)
         return;
     }
 
+    nodes_scratch_acquire(nodes);
     lddmc_fprintdot_rec(out, mdd);
     lddmc_fprintdot_unmark(mdd);
 
     fprintf(out, "}\n");
+    nodes_scratch_release(nodes);
 }
 
 void
@@ -2666,7 +2673,7 @@ lddmc_sha2_rec(MDD mdd, SHA256_CTX *ctx)
     }
 
     mddnode_t node = LDD_GETNODE(mdd);
-    if (lddmc_mark(node)) {
+    if (lddmc_mark(mdd)) {
         uint32_t val = mddnode_getvalue(node);
         SHA256_Update(ctx, (void*)&val, sizeof(uint32_t));
         lddmc_sha2_rec(mddnode_getdown(node), ctx);
@@ -2691,11 +2698,13 @@ lddmc_fprintsha(FILE *out, MDD mdd)
 void
 lddmc_getsha(MDD mdd, char *target)
 {
+    nodes_scratch_acquire(nodes);
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
     lddmc_sha2_rec(mdd, &ctx);
-    if (mdd > lddmc_true) lddmc_unmark_rec(LDD_GETNODE(mdd));
+    if (mdd > lddmc_true) lddmc_unmark_rec(mdd);
     SHA256_End(&ctx, target);
+    nodes_scratch_release(nodes);
 }
 
 #ifndef NDEBUG

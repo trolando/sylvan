@@ -44,6 +44,7 @@ target_sources(sylvan
     sylvan_ldd.c
     sylvan_mt.c
     sylvan_mtbdd.c
+    sylvan_nodes_scratch.c
     sylvan_platform.c
     sylvan_refs.c
     sylvan_sl.c

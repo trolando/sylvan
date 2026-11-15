@@ -23,7 +23,7 @@
  * 127        1 complement      complement bit of the high edge
  * 126        1 custom leaf     this is a custom leaf node
  * 125        1 map             is a MAP node, for compose etc
- * 124        1 mark            used for node marking
+ * 124        1 unused          formerly a traversal mark
  * 123..104  20 unused          unused space
  * 103..64   40 true index      index of the true edge
  *  63..40   24 variable        variable of this node
@@ -36,7 +36,7 @@
  * 127        1 unused          set to 0
  * 126        1 custom leaf     set to 1
  * 125        1 unused          set to 0
- * 124        1 mark            used for node marking
+ * 124        1 unused          formerly a traversal mark
  * 123..80   46 unused          set to 0
  *  79..64   16 type            the type of the leaf
  *  63..0    64 value           the value of the leaf
@@ -175,24 +175,7 @@ zddnode_getvariable(zddnode_t n)
     return (uint32_t)(n->b >> 40);
 }
 
-/**
- * Get whether the node is currently marked
- */
-static inline int SYLVAN_UNUSED
-zddnode_getmark(zddnode_t n)
-{
-    return n->a & 0x1000000000000000 ? 1 : 0;
-}
-
-/**
- * Set or reset the mark on the node
- */
-static inline void SYLVAN_UNUSED
-zddnode_setmark(zddnode_t n, int mark)
-{
-    if (mark) n->a |= 0x1000000000000000;
-    else n->a &= 0xefffffffffffffff;
-}
+/* Traversal marks are stored in nodes_scratch, outside the hashed record. */
 
 /**
  * Initialize a zddnode_t struct as a leaf node

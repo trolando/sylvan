@@ -33,10 +33,17 @@ typedef struct mtbddnode {
 
 static_assert(sizeof(struct mtbddnode) == 16, "mtbddnode should be a 16 byte struct");
 
+/* Traversal marks live in nodes_scratch, never in the hashed record. */
+static inline uint64_t
+MTBDD_GETINDEX(MTBDD dd)
+{
+    return dd & UINT64_C(0x000000ffffffffff);
+}
+
 static inline mtbddnode_t
 MTBDD_GETNODE(MTBDD dd)
 {
-    return (mtbddnode_t)llmsset_index_to_ptr(nodes, dd&0x000000ffffffffff);
+    return (mtbddnode_t)llmsset_index_to_ptr(nodes, MTBDD_GETINDEX(dd));
 }
 
 /**
@@ -76,8 +83,8 @@ MTBDD_EQUALM(MTBDD a, MTBDD b)
     return ((a^b)&(~mtbdd_complement)) ? 0 : 1;
 }
 
-// Leaf: a = L=1, M, type; b = value
-// Node: a = L=0, C, M, high; b = variable, low
+// Leaf: a = L=1, type; b = value
+// Node: a = L=0, C, high; b = variable, low
 // Only complement edge on "high"
 
 static inline int SYLVAN_UNUSED
@@ -120,19 +127,6 @@ static inline uint32_t SYLVAN_UNUSED
 mtbddnode_getvariable(mtbddnode_t n)
 {
     return (uint32_t)(n->b >> 40);
-}
-
-static inline int SYLVAN_UNUSED
-mtbddnode_getmark(mtbddnode_t n)
-{
-    return n->a & 0x2000000000000000 ? 1 : 0;
-}
-
-static inline void SYLVAN_UNUSED
-mtbddnode_setmark(mtbddnode_t n, int mark)
-{
-    if (mark) n->a |= 0x2000000000000000;
-    else n->a &= 0xdfffffffffffffff;
 }
 
 static inline void SYLVAN_UNUSED
@@ -192,8 +186,6 @@ mtbddnode_followhigh(MTBDD mtbdd, mtbddnode_t node)
 #define bddnode_getlow mtbddnode_getlow
 #define bddnode_gethigh mtbddnode_gethigh
 #define bddnode_getvariable mtbddnode_getvariable
-#define bddnode_getmark mtbddnode_getmark
-#define bddnode_setmark mtbddnode_setmark
 #define bddnode_makenode mtbddnode_makenode
 #define bddnode_makemapnode mtbddnode_makemapnode
 #define bddnode_ismapnode mtbddnode_ismapnode

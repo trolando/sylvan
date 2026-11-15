@@ -258,7 +258,6 @@ TASK_DECL_1(double, zdd_pathcount, ZDD);
 
 /**
  * Count the number of nodes (internal nodes plus leaves) in ZDDs.
- * Not thread-safe.
  */
 size_t zdd_nodecount(const ZDD *dds, size_t count);
 

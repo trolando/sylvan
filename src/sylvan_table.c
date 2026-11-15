@@ -21,6 +21,35 @@
 #include <errno.h>
 #include <string.h>
 
+/* Keep table_size's public type and layout unchanged. Access it through C11
+ * atomics here, including for C++ callers, whose _Atomic maps to std::atomic.
+ * Non-worker traversals can read the size while GC grows the table. A relaxed
+ * load suffices: their protected nodes existed before the traversal started.
+ */
+_Static_assert(sizeof(_Atomic(size_t)) == sizeof(size_t), "atomic size_t must preserve size");
+_Static_assert(_Alignof(_Atomic(size_t)) <= _Alignof(size_t), "atomic size_t must preserve alignment");
+
+size_t
+llmsset_get_size(const llmsset_t dbs)
+{
+    return atomic_load_explicit((const _Atomic(size_t) *)&dbs->table_size, memory_order_relaxed);
+}
+
+void
+llmsset_set_size(llmsset_t dbs, size_t size)
+{
+    /* check bounds (don't be rediculous) */
+    if (size > 128 && size <= dbs->max_size) {
+        atomic_store_explicit((_Atomic(size_t) *)&dbs->table_size, size, memory_order_relaxed);
+#if LLMSSET_MASK
+        /* Warning: if size is not a power of two, you will get interesting behavior */
+        dbs->mask = size - 1;
+#endif
+        /* Set threshold: number of cache lines to probe before giving up on node insertion */
+        dbs->threshold = (int16_t)(192 - 2 * clz_uint64((uint64_t)size));
+    }
+}
+
 SYLVAN_TLS uint64_t my_region = UINT64_MAX;
 
 VOID_TASK_0(llmsset_reset_region)
@@ -32,7 +61,7 @@ VOID_TASK_0(llmsset_reset_region)
 static uint64_t
 claim_next_region(const llmsset_t dbs, uint64_t start_region)
 {
-    const uint64_t regions = dbs->table_size / (64u * 8u);
+    const uint64_t regions = llmsset_get_size(dbs) / (64u * 8u);
     if (regions == 0) return UINT64_MAX;
 
     start_region %= regions;
@@ -91,7 +120,7 @@ claim_data_bucket(const llmsset_t dbs)
         }
         else {
             // First use after startup or GC. Spread workers over the region space.
-            const uint64_t regions = dbs->table_size / (64u * 8u);
+            const uint64_t regions = llmsset_get_size(dbs) / (64u * 8u);
             uint64_t start_region = 0;
 
             if (regions != 0) {
@@ -165,7 +194,7 @@ llmsset_lookup2(const llmsset_t dbs, uint64_t a, uint64_t b, int* created, const
 #if LLMSSET_MASK
     last = idx = hash_rehash & dbs->mask;
 #else
-    last = idx = hash_rehash % dbs->table_size;
+    last = idx = hash_rehash % llmsset_get_size(dbs);
 #endif
 
     for (;;) {
@@ -230,7 +259,7 @@ llmsset_lookup2(const llmsset_t dbs, uint64_t a, uint64_t b, int* created, const
 #if LLMSSET_MASK
             last = idx = hash_rehash & dbs->mask;
 #else
-            last = idx = hash_rehash % dbs->table_size;
+            last = idx = hash_rehash % llmsset_get_size(dbs);
 #endif
         }
     }
@@ -267,7 +296,7 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 #if LLMSSET_MASK
     last = idx = hash_rehash & dbs->mask;
 #else
-    last = idx = hash_rehash % dbs->table_size;
+    last = idx = hash_rehash % llmsset_get_size(dbs);
 #endif
 
     for (;;) {
@@ -298,7 +327,7 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 #if LLMSSET_MASK
             last = idx = hash_rehash & dbs->mask;
 #else
-            last = idx = hash_rehash % dbs->table_size;
+            last = idx = hash_rehash % llmsset_get_size(dbs);
 #endif
         }
     }
@@ -361,9 +390,6 @@ llmsset_create(size_t initial_size, size_t max_size)
         exit(1);
     }
 
-#if defined(madvise) && defined(MADV_RANDOM)
-    madvise(dbs->table, dbs->max_size * 8, MADV_RANDOM);
-#endif
 
     // forbid first two positions (index 0 and 1)
     dbs->bitmap2[0] = UINT64_C(0xc000000000000000);
@@ -456,7 +482,7 @@ TASK_3(int, llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
         _Atomic(uint64_t)* ptr = dbs->bitmap2 + (first / 64);
         uint64_t mask = UINT64_C(0x8000000000000000) >> (first & 63);
         for (size_t k=0; k<count; k++) {
-            if (atomic_load_explicit(ptr, memory_order_relaxed) & mask) {
+            if (first+k > 1 && (atomic_load_explicit(ptr, memory_order_relaxed) & mask)) {
                 if (llmsset_rehash_bucket(dbs, first+k) == 0) bad++;
             }
             mask >>= 1;
@@ -471,7 +497,7 @@ TASK_3(int, llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
 
 TASK_IMPL_1(int, llmsset_rehash, llmsset_t, dbs)
 {
-    return CALL(llmsset_rehash_par, dbs, 0, dbs->table_size);
+    return CALL(llmsset_rehash_par, dbs, 0, llmsset_get_size(dbs));
 }
 
 TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, count)
@@ -511,7 +537,7 @@ TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, 
 
 TASK_IMPL_1(size_t, llmsset_count_marked, llmsset_t, dbs)
 {
-    return CALL(llmsset_count_marked_par, dbs, 0, dbs->table_size);
+    return CALL(llmsset_count_marked_par, dbs, 0, llmsset_get_size(dbs));
 }
 
 VOID_TASK_3(llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
@@ -541,7 +567,7 @@ VOID_TASK_3(llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
 VOID_TASK_IMPL_1(llmsset_destroy_unmarked, llmsset_t, dbs)
 {
     if (dbs->destroy_cb == NULL) return; // no custom function
-    CALL(llmsset_destroy_par, dbs, 0, dbs->table_size);
+    CALL(llmsset_destroy_par, dbs, 0, llmsset_get_size(dbs));
 }
 
 /**

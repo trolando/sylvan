@@ -26,7 +26,7 @@ extern "C" {
 
 /**
  * Lockless hash table (set) to store 16-byte keys.
- * Each unique key is associated with a 42-bit number.
+ * Each unique key is associated with a 40-bit number.
  *
  * The set has support for stop-the-world garbage collection.
  * Methods llmsset_clear, llmsset_mark and llmsset_rehash implement garbage collection.
@@ -70,7 +70,7 @@ typedef struct llmsset
 } *llmsset_t;
 
 /**
- * Retrieve a pointer to the data associated with the 42-bit value.
+ * Retrieve a pointer to the data associated with the 40-bit value.
  */
 static inline void*
 llmsset_index_to_ptr(const llmsset_t dbs, size_t index)
@@ -102,35 +102,18 @@ llmsset_get_max_size(const llmsset_t dbs)
 /**
  * Retrieve the current size of the lockless MS set.
  */
-static inline size_t
-llmsset_get_size(const llmsset_t dbs)
-{
-    return dbs->table_size;
-}
+size_t llmsset_get_size(const llmsset_t dbs);
 
 /**
  * Set the table size of the set.
  * Typically called during garbage collection, after clear and before rehash.
  * Returns 0 if dbs->table_size > dbs->max_size!
  */
-static inline void
-llmsset_set_size(llmsset_t dbs, size_t size)
-{
-    /* check bounds (don't be rediculous) */
-    if (size > 128 && size <= dbs->max_size) {
-        dbs->table_size = size;
-#if LLMSSET_MASK
-        /* Warning: if size is not a power of two, you will get interesting behavior */
-        dbs->mask = dbs->table_size - 1;
-#endif
-        /* Set threshold: number of cache lines to probe before giving up on node insertion */
-        dbs->threshold = (int16_t)(192 - 2 * clz_uint64((uint64_t)dbs->table_size));
-    }
-}
+void llmsset_set_size(llmsset_t dbs, size_t size);
 
 /**
  * Core function: find existing data or add new.
- * Returns the unique 42-bit value associated with the data, or 0 when table is full.
+ * Returns the unique 40-bit value associated with the data, or 0 when table is full.
  * Also, this value will never equal 0 or 1.
  * Note: garbage collection during lookup strictly forbidden
  */

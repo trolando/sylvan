@@ -37,6 +37,15 @@ typedef struct
     _Atomic(uint32_t) refs_control;       // resize in progress (high bits), active operations (low bits)
 } refs_table_t;
 
+/**
+ * Garbage collection marks the values in these tables by divide and conquer
+ * over the buckets: a task splits its range of buckets in halves down to
+ * REFS_MARK_GRAIN buckets, and then marks the values in its range one after
+ * the other. One task per value would fill the task deque of the worker that
+ * collects (Lace aborts when it overflows), and only that worker would push.
+ */
+#define REFS_MARK_GRAIN 256
+
 // Count number of unique entries (not number of references)
 size_t refs_count(refs_table_t *tbl);
 

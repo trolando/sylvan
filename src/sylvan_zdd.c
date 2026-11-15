@@ -162,19 +162,26 @@ zdd_count_protected(void)
 /**
  * Mark all external references (during garbage collection)
  */
+/* Mark the variables in buckets first, ..., first+count-1 of zdd_protected (see REFS_MARK_GRAIN) */
+VOID_TASK_2(zdd_gc_mark_protected_range, size_t, first, size_t, count)
+{
+    if (count > REFS_MARK_GRAIN) {
+        SPAWN(zdd_gc_mark_protected_range, first, count/2);
+        CALL(zdd_gc_mark_protected_range, first+count/2, count-count/2);
+        SYNC(zdd_gc_mark_protected_range);
+        return;
+    }
+    const size_t end = first + count;
+    uint64_t *it = protect_iter(&zdd_protected, first, end);
+    while (it != NULL) {
+        BDD *to_mark = (BDD*)protect_next(&zdd_protected, &it, end);
+        CALL(zdd_gc_mark_rec, *to_mark);
+    }
+}
+
 VOID_TASK_0(zdd_gc_mark_protected)
 {
-    // iterate through refs hash table, mark all found
-    size_t count=0;
-    uint64_t *it = protect_iter(&zdd_protected, 0, zdd_protected.refs_size);
-    while (it != NULL) {
-        BDD *to_mark = (BDD*)protect_next(&zdd_protected, &it, zdd_protected.refs_size);
-        SPAWN(zdd_gc_mark_rec, *to_mark);
-        count++;
-    }
-    while (count--) {
-        SYNC(zdd_gc_mark_rec);
-    }
+    CALL(zdd_gc_mark_protected_range, 0, zdd_protected.refs_size);
 }
 
 /**

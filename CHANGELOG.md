@@ -1,6 +1,19 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- Garbage collection marked the variables protected with `mtbdd_protect`,
+  `lddmc_protect` and `zdd_protect`, and the values referenced with
+  `mtbdd_ref` and `lddmc_ref`, with one task per root, all spawned by the
+  worker that collected. With more roots than its task deque holds (1M tasks
+  by default), Lace aborted with "Task stack overflow"; with fewer, that one
+  worker still pushed every task. Collection now splits each table by divide
+  and conquer into ranges of 256 buckets, and marks the roots of a range in
+  one task. The new test `test_gc_roots` collects garbage with 40000 roots of
+  each kind and a deque of 8192 tasks.
+
 ## [1.12.6] - 2026-11-09
 
 This release updates Lace to version 1.11.0, whose idle workers scale to many

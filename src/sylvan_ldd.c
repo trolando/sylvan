@@ -96,33 +96,47 @@ lddmc_count_protected(void)
 }
 
 /* Called during garbage collection */
+/* Mark the values in buckets first, ..., first+count-1 of lddmc_refs (see REFS_MARK_GRAIN) */
+VOID_TASK_2(lddmc_gc_mark_external_refs_range, size_t, first, size_t, count)
+{
+    if (count > REFS_MARK_GRAIN) {
+        SPAWN(lddmc_gc_mark_external_refs_range, first, count/2);
+        CALL(lddmc_gc_mark_external_refs_range, first+count/2, count-count/2);
+        SYNC(lddmc_gc_mark_external_refs_range);
+        return;
+    }
+    const size_t end = first + count;
+    uint64_t *it = refs_iter(&lddmc_refs, first, end);
+    while (it != NULL) {
+        CALL(lddmc_gc_mark_rec, refs_next(&lddmc_refs, &it, end));
+    }
+}
+
 VOID_TASK_0(lddmc_gc_mark_external_refs)
 {
-    // iterate through refs hash table, mark all found
-    size_t count=0;
-    uint64_t *it = refs_iter(&lddmc_refs, 0, lddmc_refs.refs_size);
-    while (it != NULL) {
-        SPAWN(lddmc_gc_mark_rec, refs_next(&lddmc_refs, &it, lddmc_refs.refs_size));
-        count++;
+    CALL(lddmc_gc_mark_external_refs_range, 0, lddmc_refs.refs_size);
+}
+
+/* Mark the variables in buckets first, ..., first+count-1 of lddmc_protected (see REFS_MARK_GRAIN) */
+VOID_TASK_2(lddmc_gc_mark_protected_range, size_t, first, size_t, count)
+{
+    if (count > REFS_MARK_GRAIN) {
+        SPAWN(lddmc_gc_mark_protected_range, first, count/2);
+        CALL(lddmc_gc_mark_protected_range, first+count/2, count-count/2);
+        SYNC(lddmc_gc_mark_protected_range);
+        return;
     }
-    while (count--) {
-        SYNC(lddmc_gc_mark_rec);
+    const size_t end = first + count;
+    uint64_t *it = protect_iter(&lddmc_protected, first, end);
+    while (it != NULL) {
+        MDD *to_mark = (MDD*)protect_next(&lddmc_protected, &it, end);
+        CALL(lddmc_gc_mark_rec, *to_mark);
     }
 }
 
 VOID_TASK_0(lddmc_gc_mark_protected)
 {
-    // iterate through refs hash table, mark all found
-    size_t count=0;
-    uint64_t *it = protect_iter(&lddmc_protected, 0, lddmc_protected.refs_size);
-    while (it != NULL) {
-        MDD *to_mark = (MDD*)protect_next(&lddmc_protected, &it, lddmc_protected.refs_size);
-        SPAWN(lddmc_gc_mark_rec, *to_mark);
-        count++;
-    }
-    while (count--) {
-        SYNC(lddmc_gc_mark_rec);
-    }
+    CALL(lddmc_gc_mark_protected_range, 0, lddmc_protected.refs_size);
 }
 
 /* Infrastructure for internal markings */

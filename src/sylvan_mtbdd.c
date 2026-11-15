@@ -155,33 +155,47 @@ mtbdd_count_protected(void)
 }
 
 /* Called during garbage collection */
+/* Mark the values in buckets first, ..., first+count-1 of mtbdd_refs (see REFS_MARK_GRAIN) */
+VOID_TASK_2(mtbdd_gc_mark_external_refs_range, size_t, first, size_t, count)
+{
+    if (count > REFS_MARK_GRAIN) {
+        SPAWN(mtbdd_gc_mark_external_refs_range, first, count/2);
+        CALL(mtbdd_gc_mark_external_refs_range, first+count/2, count-count/2);
+        SYNC(mtbdd_gc_mark_external_refs_range);
+        return;
+    }
+    const size_t end = first + count;
+    uint64_t *it = refs_iter(&mtbdd_refs, first, end);
+    while (it != NULL) {
+        CALL(mtbdd_gc_mark_rec, refs_next(&mtbdd_refs, &it, end));
+    }
+}
+
 VOID_TASK_0(mtbdd_gc_mark_external_refs)
 {
-    // iterate through refs hash table, mark all found
-    size_t count=0;
-    uint64_t *it = refs_iter(&mtbdd_refs, 0, mtbdd_refs.refs_size);
-    while (it != NULL) {
-        SPAWN(mtbdd_gc_mark_rec, refs_next(&mtbdd_refs, &it, mtbdd_refs.refs_size));
-        count++;
+    CALL(mtbdd_gc_mark_external_refs_range, 0, mtbdd_refs.refs_size);
+}
+
+/* Mark the variables in buckets first, ..., first+count-1 of mtbdd_protected (see REFS_MARK_GRAIN) */
+VOID_TASK_2(mtbdd_gc_mark_protected_range, size_t, first, size_t, count)
+{
+    if (count > REFS_MARK_GRAIN) {
+        SPAWN(mtbdd_gc_mark_protected_range, first, count/2);
+        CALL(mtbdd_gc_mark_protected_range, first+count/2, count-count/2);
+        SYNC(mtbdd_gc_mark_protected_range);
+        return;
     }
-    while (count--) {
-        SYNC(mtbdd_gc_mark_rec);
+    const size_t end = first + count;
+    uint64_t *it = protect_iter(&mtbdd_protected, first, end);
+    while (it != NULL) {
+        BDD *to_mark = (BDD*)protect_next(&mtbdd_protected, &it, end);
+        CALL(mtbdd_gc_mark_rec, *to_mark);
     }
 }
 
 VOID_TASK_0(mtbdd_gc_mark_protected)
 {
-    // iterate through refs hash table, mark all found
-    size_t count=0;
-    uint64_t *it = protect_iter(&mtbdd_protected, 0, mtbdd_protected.refs_size);
-    while (it != NULL) {
-        BDD *to_mark = (BDD*)protect_next(&mtbdd_protected, &it, mtbdd_protected.refs_size);
-        SPAWN(mtbdd_gc_mark_rec, *to_mark);
-        count++;
-    }
-    while (count--) {
-        SYNC(mtbdd_gc_mark_rec);
-    }
+    CALL(mtbdd_gc_mark_protected_range, 0, mtbdd_protected.refs_size);
 }
 
 /* Infrastructure for internal markings */

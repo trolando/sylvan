@@ -216,7 +216,7 @@ SYLVAN_TLS mtbdd_refs_internal_t mtbdd_refs_key;
 
 VOID_TASK_2(mtbdd_refs_mark_p_par, const MTBDD**, begin, size_t, count)
 {
-    if (count < 32) {
+    if (count < REFS_STACK_MARK_GRAIN) {
         while (count) {
             mtbdd_gc_mark_rec(**(begin++));
             count--;
@@ -230,7 +230,7 @@ VOID_TASK_2(mtbdd_refs_mark_p_par, const MTBDD**, begin, size_t, count)
 
 VOID_TASK_2(mtbdd_refs_mark_r_par, MTBDD*, begin, size_t, count)
 {
-    if (count < 32) {
+    if (count < REFS_STACK_MARK_GRAIN) {
         while (count) {
             mtbdd_gc_mark_rec(*begin++);
             count--;
@@ -244,7 +244,7 @@ VOID_TASK_2(mtbdd_refs_mark_r_par, MTBDD*, begin, size_t, count)
 
 VOID_TASK_2(mtbdd_refs_mark_s_par, mtbdd_refs_task_t, begin, size_t, count)
 {
-    if (count < 32) {
+    if (count < REFS_STACK_MARK_GRAIN) {
         while (count > 0) {
             Task *t = begin->t;
             if (!TASK_IS_STOLEN(t)) return;

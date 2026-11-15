@@ -157,7 +157,7 @@ SYLVAN_TLS lddmc_refs_internal_t lddmc_refs_key;
 
 VOID_TASK_2(lddmc_refs_mark_p_par, const MDD**, begin, size_t, count)
 {
-    if (count < 32) {
+    if (count < REFS_STACK_MARK_GRAIN) {
         while (count) {
             CALL(lddmc_gc_mark_rec, **(begin++));
             count--;
@@ -171,7 +171,7 @@ VOID_TASK_2(lddmc_refs_mark_p_par, const MDD**, begin, size_t, count)
 
 VOID_TASK_2(lddmc_refs_mark_r_par, MDD*, begin, size_t, count)
 {
-    if (count < 32) {
+    if (count < REFS_STACK_MARK_GRAIN) {
         while (count) {
             CALL(lddmc_gc_mark_rec, *begin++);
             count--;
@@ -185,7 +185,7 @@ VOID_TASK_2(lddmc_refs_mark_r_par, MDD*, begin, size_t, count)
 
 VOID_TASK_2(lddmc_refs_mark_s_par, lddmc_refs_task_t, begin, size_t, count)
 {
-    if (count < 32) {
+    if (count < REFS_STACK_MARK_GRAIN) {
         while (count) {
             Task *t = begin->t;
             if (!TASK_IS_STOLEN(t)) return;

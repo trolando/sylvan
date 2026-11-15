@@ -204,7 +204,7 @@ SYLVAN_TLS zdd_refs_internal_t zdd_refs_key;
 
 VOID_TASK_2(zdd_refs_mark_p_par, ZDD**, begin, size_t, count)
 {
-    if (count < 32) {
+    if (count < REFS_STACK_MARK_GRAIN) {
         while (count) {
             zdd_gc_mark_rec(**(begin++));
             count--;
@@ -218,7 +218,7 @@ VOID_TASK_2(zdd_refs_mark_p_par, ZDD**, begin, size_t, count)
 
 VOID_TASK_2(zdd_refs_mark_r_par, ZDD*, begin, size_t, count)
 {
-    if (count < 32) {
+    if (count < REFS_STACK_MARK_GRAIN) {
         while (count) {
             zdd_gc_mark_rec(*begin++);
             count--;
@@ -232,7 +232,7 @@ VOID_TASK_2(zdd_refs_mark_r_par, ZDD*, begin, size_t, count)
 
 VOID_TASK_2(zdd_refs_mark_s_par, zdd_refs_task_t, begin, size_t, count)
 {
-    if (count < 32) {
+    if (count < REFS_STACK_MARK_GRAIN) {
         while (count) {
             Task *t = begin->t;
             if (!TASK_IS_STOLEN(t)) return;

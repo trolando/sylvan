@@ -12,7 +12,9 @@ All notable changes to Sylvan will be documented in this file.
   worker still pushed every task. Collection now splits each table by divide
   and conquer into ranges of 256 buckets, and marks the roots of a range in
   one task. The new test `test_gc_roots` collects garbage with 40000 roots of
-  each kind and a deque of 8192 tasks.
+  each kind and a deque of 8192 tasks. The per-worker stacks of temporary
+  references, already marked by divide and conquer, now stop splitting at 64
+  entries instead of 32.
 
 ## [1.12.6] - 2026-11-09
 

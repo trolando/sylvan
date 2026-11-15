@@ -46,6 +46,13 @@ typedef struct
  */
 #define REFS_MARK_GRAIN 256
 
+/**
+ * The per-worker stacks of temporary references are marked the same way: a
+ * task splits its part of a stack in halves until fewer than
+ * REFS_STACK_MARK_GRAIN entries are left, and marks those one after the other.
+ */
+#define REFS_STACK_MARK_GRAIN 64
+
 // Count number of unique entries (not number of references)
 size_t refs_count(refs_table_t *tbl);
 

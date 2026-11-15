@@ -1,7 +1,12 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
-## [Unreleased]
+## [1.12.7] - 2026-11-15
+
+This release fixes the transitive closure, `sylvan_relprev`, duplicate nodes
+while counting or printing decision diagrams on another worker, a crash in
+garbage collection, and an abort when collecting with very many protected
+variables.
 
 ### Fixed
 - `sylvan_closure` combined recursively computed transitive closures with

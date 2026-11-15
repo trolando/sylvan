@@ -85,7 +85,7 @@ if(NOT TARGET lace::lace AND NOT TARGET lace)
         FetchContent_Declare(
             lace
             GIT_REPOSITORY https://github.com/trolando/lace.git
-            GIT_TAG        v1.11.0
+            GIT_TAG        v1.11.1
             GIT_SHALLOW    TRUE
         )
         FetchContent_MakeAvailable(lace)

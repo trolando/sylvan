@@ -3,6 +3,15 @@ All notable changes to Sylvan will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Updated Lace to version 1.11.1. With Lace 1.11.0, workers that fell asleep
+  during a garbage collection were not woken when it finished, so every
+  collection waited for their sleep to time out: programs that collect often
+  with many workers ran much slower (Sylvan's test_gc at 8 workers took 4.1 s
+  instead of 1.5 s on a 16-core Linux machine). On Windows, every collection
+  waited about 11 ms for a napping worker, also with earlier Lace versions.
+  Lace 1.11.1 wakes them.
+
 ### Added
 - `sylvan_set_table_full_handler` lets applications report nodes-table exhaustion
   after garbage collection and exit with their own code. The callback receives

@@ -121,7 +121,10 @@ All notable changes to Sylvan will be documented in this file.
   the shared counter as before. With 8 workers that each protect and
   unprotect a variable in a loop, a pair costs about 45 ns of CPU time
   instead of 3.5 µs (measured on Sylvan 1, which has the same tables).
-- Sylvan fetches Lace 2.7.0, and asks for and requires at least Lace 2.7.0.
+- Sylvan fetches Lace 2.7.1, and asks for and requires at least Lace 2.7.0.
+  Lace 2.7.1 wakes the workers that fell asleep during a garbage collection
+  when it finishes, so frequent collections with many workers no longer wait
+  for sleep timeouts.
   An installed Lace accepts only requests for its own minor version, so a
   request for 2.6.0 would not find Lace 2.7.0. Lace 2.7.0 removes the option
   `LACE_USE_HWLOC`, so the sift benchmark no longer has its `hwloc` variant.

@@ -100,3 +100,69 @@ jobs:
         examples/nqueens -w 2 9 | tee /dev/fd/2 | grep -q "352 solutions"
         examples/bddmc ../models/schedule_world.2.bdd -w 2 | tee /dev/fd/2 | grep -q "1570340"
         examples/lddmc ../models/blocks.2.ldd -w 2 | tee /dev/fd/2 | grep -q "7057 states"
+
+  diagnostics-build:
+    name: 'Linux GCC Release handle checks and GC diagnostics'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build build-essential
+
+    - name: Configure
+      env:
+        CC: gcc
+        CXX: g++
+      run: |
+        cmake -G Ninja -S . -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DLACE_NATIVE_OPT=OFF \
+          -DSYLVAN_BUILD_TESTS=ON \
+          -DSYLVAN_BUILD_EXAMPLES=OFF \
+          -DSYLVAN_CHECK_HANDLES=ON \
+          -DSYLVAN_GC_DIAGNOSTICS=ON
+
+    - name: Build
+      run: cmake --build build --parallel 2
+
+    - name: Test
+      run: ctest --test-dir build --output-on-failure --timeout 120
+
+  # Use the current Ubuntu compiler; older versioned compilers above need
+  # ubuntu-24.04. GCC ships its sanitizer runtimes with the compiler.
+  sanitizer-build:
+    name: 'Linux GCC ASan+UBSan'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build build-essential libgmp-dev
+
+    - name: Configure
+      env:
+        CC: gcc
+        CXX: g++
+      run: |
+        cmake -G Ninja -S . -B build \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DLACE_NATIVE_OPT=OFF \
+          -DSYLVAN_GMP=ON \
+          -DSYLVAN_BUILD_TESTS=ON \
+          -DSYLVAN_BUILD_EXAMPLES=ON \
+          -DSYLVAN_SANITIZE_ADDRESS=ON \
+          -DSYLVAN_SANITIZE_UB=ON
+
+    - name: Build
+      run: cmake --build build
+
+    - name: Test
+      working-directory: build
+      env:
+        UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      run: ctest --output-on-failure --timeout 1200

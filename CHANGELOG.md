@@ -4,6 +4,19 @@ All notable changes to Sylvan will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `SYLVAN_INSTALL`, a CMake option to generate Sylvan's installation rules.
+  It defaults to on for a top-level build and off as a subproject.
+- `SYLVAN_CHECK_HANDLES`, an opt-in bounds check in the node dereference
+  helpers, including in Release builds. It aborts with the offending index
+  when a handle is outside the nodes data range, which can exceed the hash
+  table size after shrinking. `test_check_handles` checks both rejection and
+  valid handles above the hash table size.
+- `SYLVAN_GC_DIAGNOSTICS`, an opt-in trace to stderr with one line per
+  collection: occupancy, live and freed buckets, time, and table and cache
+  sizes before and after growing or shrinking. Both diagnostic options have
+  no runtime cost when disabled.
+- A Linux CI job that builds and runs the tests in Debug with AddressSanitizer
+  and UndefinedBehaviorSanitizer, using the current Ubuntu GCC.
 - `sylvan_gc_collect()`, the garbage collection Sylvan starts itself when the
   nodes table is full. It resizes with the main gc hook, as before, and never
   shrinks the tables. Programs that want to collect garbage call `sylvan_gc()`.
@@ -14,6 +27,8 @@ All notable changes to Sylvan will be documented in this file.
   `llmsset_get_data_size()`.
 
 ### Changed
+- Text files are stored and checked out with LF line endings on every
+  platform. Serialized `.bdd` and `.ldd` models remain binary.
 - `sylvan_gc()` now shrinks the nodes table to fit the live nodes: to the
   smallest size, from the initial size up, with room for twice the live
   nodes, and the operation cache in proportion. Nodes keep their place, so the

@@ -57,6 +57,18 @@ llmsset_get_data_size(const llmsset_t dbs)
     return data_size_relaxed(dbs);
 }
 
+#if SYLVAN_CHECK_HANDLES
+void
+sylvan_handle_check_failed(size_t index, size_t size, const char *file, int line)
+{
+    fprintf(stderr,
+            "[sylvan] %s:%d: decision diagram handle index %zu "
+            "is outside the nodes data range (size %zu)\n",
+            file, line, index, size);
+    abort();
+}
+#endif
+
 void
 llmsset_set_size(llmsset_t dbs, size_t size)
 {

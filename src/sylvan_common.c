@@ -47,6 +47,57 @@ sylvan_table_full(const char *kind)
 }
 
 /**
+ * Optional garbage collection diagnostics. Enable with the CMake option or
+ * -DSYLVAN_GC_DIAGNOSTICS=1. No counting, clocks or output when disabled.
+ */
+#ifndef SYLVAN_GC_DIAGNOSTICS
+#define SYLVAN_GC_DIAGNOSTICS 0
+#endif
+
+#if SYLVAN_GC_DIAGNOSTICS
+#include <inttypes.h>
+#if defined(_WIN32)
+/* Exclude GDI: wingdi.h defines NEWFRAME, which conflicts with Lace. */
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOGDI
+#define NOGDI
+#endif
+#include <windows.h>
+#else
+#include <time.h>
+#endif
+
+/* Collections are serialized by gc, including these diagnostic updates. */
+static uint64_t gc_diag_count;
+
+static double
+gc_diag_now(void)
+{
+#if defined(_WIN32)
+    LARGE_INTEGER ticks, frequency;
+    if (!QueryPerformanceFrequency(&frequency) || !QueryPerformanceCounter(&ticks)) return 0.0;
+    return (double)ticks.QuadPart / (double)frequency.QuadPart;
+#else
+    struct timespec ts;
+#if defined(CLOCK_MONOTONIC)
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0.0;
+#else
+    if (timespec_get(&ts, TIME_UTC) != TIME_UTC) return 0.0;
+#endif
+    return (double)ts.tv_sec + 1e-9 * (double)ts.tv_nsec;
+#endif
+}
+
+static const char*
+gc_diag_resize(size_t before, size_t after)
+{
+    return after > before ? "grew" : after < before ? "shrank" : "unchanged";
+}
+#endif
+
+/**
  * Implementation of garbage collection
  */
 
@@ -291,13 +342,46 @@ VOID_TASK_0(sylvan_gc_go)
      */
     CALL(sylvan_clear_cache);
 
+#if SYLVAN_GC_DIAGNOSTICS
+    const double diag_start = gc_diag_now();
+    const size_t diag_used = CALL(llmsset_count_marked, nodes);
+    const size_t diag_table_before = llmsset_get_size(nodes);
+    const size_t diag_data_before = llmsset_get_data_size(nodes);
+    const size_t diag_cache_before = cache_getsize();
+#endif
+
     CALL(sylvan_clear_and_mark);
+
+#if SYLVAN_GC_DIAGNOSTICS
+    const size_t diag_live = CALL(llmsset_count_marked, nodes);
+#endif
 
     // resize: shrink to fit for sylvan_gc(), else the main hook (by default, grow)
     if (gc_shrink) CALL(sylvan_gc_shrink);
     else WRAP(main_hook);
 
     CALL(sylvan_rehash_all);
+
+#if SYLVAN_GC_DIAGNOSTICS
+    {
+        const size_t diag_table_after = llmsset_get_size(nodes);
+        const size_t diag_cache_after = cache_getsize();
+        fprintf(stderr,
+                "[sylvan-gc] #%" PRIu64 " trigger=%s seconds=%.6f "
+                "used=%zu live=%zu freed=%zu (%.1f%% live) "
+                "table=%zu->%zu/%zu (%s) data=%zu->%zu "
+                "cache=%zu->%zu/%zu (%s)\n",
+                ++gc_diag_count, gc_shrink ? "sylvan_gc" : "sylvan_gc_collect",
+                gc_diag_now() - diag_start, diag_used, diag_live, diag_used - diag_live,
+                100.0 * (double)diag_live / (double)diag_table_before,
+                diag_table_before, diag_table_after, llmsset_get_max_size(nodes),
+                gc_diag_resize(diag_table_before, diag_table_after),
+                diag_data_before, llmsset_get_data_size(nodes),
+                diag_cache_before, diag_cache_after, cache_getmaxsize(),
+                gc_diag_resize(diag_cache_before, diag_cache_after));
+        fflush(stderr);
+    }
+#endif
 
     // call post gc hooks
     for (gc_hook_entry_t e = postgc_list; e != NULL; e = e->next) {
@@ -447,6 +531,9 @@ sylvan_init_package(void)
 
     /* Initialize garbage collection */
     gc = 0;
+#if SYLVAN_GC_DIAGNOSTICS
+    gc_diag_count = 0;
+#endif
 #if SYLVAN_AGGRESSIVE_RESIZE
     main_hook = sylvan_gc_aggressive_resize_CALL;
 #else

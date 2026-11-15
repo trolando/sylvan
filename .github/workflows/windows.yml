@@ -49,6 +49,18 @@ jobs:
           -DSYLVAN_GMP=ON
         cmake --build build
 
+    # Compile the GC diagnostics with MinGW too (windows.h next to Lace's
+    # NEWFRAME); only the library, since printing a line per collection makes
+    # test_gc too slow to run here.
+    - name: '🚧 Build with GC diagnostics'
+      if: matrix.sys == 'mingw64'
+      run: |
+        cmake -G Ninja -S . -B build-diag \
+          -DCMAKE_BUILD_TYPE=${{matrix.build_type}} \
+          -DSYLVAN_GC_DIAGNOSTICS=ON \
+          -DSYLVAN_GMP=ON
+        cmake --build build-diag --target sylvan
+
     - name: '🧪 Test'
       working-directory: build
       run: |

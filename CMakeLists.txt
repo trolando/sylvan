@@ -30,6 +30,7 @@ option(SYLVAN_BUILD_CPP           "Build Sylvan C++ bindings"   ${PROJECT_IS_TOP
 option(SYLVAN_BUILD_TESTS         "Build Sylvan tests"          ${PROJECT_IS_TOP_LEVEL})
 option(SYLVAN_BUILD_EXAMPLES      "Build Sylvan examples"       ${PROJECT_IS_TOP_LEVEL})
 option(SYLVAN_BUILD_DOCS          "Build Sylvan documentation"                      OFF)
+option(SYLVAN_INSTALL             "Generate Sylvan installation rules" ${PROJECT_IS_TOP_LEVEL})
 
 # Enable C++ only for the optional bindings and their test/example. As a
 # subproject, Sylvan builds them only when the parent sets SYLVAN_BUILD_CPP,
@@ -206,6 +207,7 @@ if(NOT sylvan_IS_TOP_LEVEL)
         SYLVAN_BUILD_TESTS
         SYLVAN_BUILD_EXAMPLES
         SYLVAN_BUILD_DOCS
+        SYLVAN_INSTALL
     )
 endif()
 

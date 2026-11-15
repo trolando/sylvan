@@ -53,6 +53,16 @@ If the `GMP` library (e.g. `libgmp-dev`) is found, Sylvan will build with suppor
 
 Simply build the project with **CMake**. 
 
+`SYLVAN_INSTALL` controls whether CMake generates Sylvan's installation rules.
+It defaults to `ON` for a top-level build and `OFF` when Sylvan is a subproject.
+Set it explicitly before adding Sylvan to override that default.
+
+For debugging, `SYLVAN_CHECK_HANDLES=ON` checks node indices against the data
+range and aborts on an out-of-range handle, including in Release builds.
+`SYLVAN_GC_DIAGNOSTICS=ON` writes one line to stderr per garbage collection,
+with occupancy and table/cache sizes before and after resizing. Both options
+default to `OFF` and add no runtime cost when disabled.
+
 The _/examples_ folder contains a number of example programs that use Sylvan. 
 | Example program     | Description                                                    |
 |---------------------|----------------------------------------------------------------| 

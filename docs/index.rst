@@ -60,6 +60,44 @@ It is recommended to use ``ccmake`` to configure the build settings of Sylvan. T
 enabling gathering of statistics and selecting whether you want a ``Debug`` or a ``Release`` build.
 The resulting artifact is a static library residing at ``build/src/libsylvan.a``.
 
+``SYLVAN_INSTALL`` controls whether CMake generates Sylvan's installation rules.
+It defaults to ``ON`` for a top-level build and ``OFF`` as a subproject. Set it
+before adding Sylvan to a parent project to override the default.
+
+Diagnostic builds
+-----------------
+
+The following CMake options are off by default and add no runtime cost when
+disabled. They are intended for debugging Sylvan.
+
+``SYLVAN_CHECK_HANDLES``
+    Check every node dereference through the MTBDD, ZDD and LDD helpers, or
+    ``llmsset_index_to_ptr``, and abort with the offending index if it is
+    outside ``llmsset_get_data_size()``. This is the data range, which can be
+    larger than the hash table after ``sylvan_gc()`` shrinks it: live nodes
+    keep their indices. The check also works in Release builds. It only
+    checks bounds; it does not detect an unused bucket within the data range.
+
+``SYLVAN_GC_DIAGNOSTICS``
+    Write one line to stderr per collection, identifying ``sylvan_gc()`` or
+    ``sylvan_gc_collect()`` and reporting occupied buckets before marking,
+    live and freed buckets, the time spent counting, marking, resizing and
+    rehashing, and table, data range and cache sizes before and after resizing.
+    Table and cache sizes include their maximum and whether they grew, shrank
+    or stayed unchanged. Occupancy includes the two reserved terminal buckets;
+    the live percentage uses the hash table size before resizing.
+
+For example:
+
+.. code:: bash
+
+    cmake .. -DSYLVAN_CHECK_HANDLES=ON -DSYLVAN_GC_DIAGNOSTICS=ON
+
+Both switches can also be enabled as compile definitions with value ``1``.
+When setting ``SYLVAN_CHECK_HANDLES`` that way, compile the library and code
+using its internal headers with the same definition. The CMake option
+propagates it through the ``sylvan::sylvan`` target.
+
 Using Sylvan
 ------------
 

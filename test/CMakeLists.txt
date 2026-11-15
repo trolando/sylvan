@@ -70,6 +70,25 @@ set_tests_properties(test_table_maxsize PROPERTIES TIMEOUT 120)
 add_test(NAME test_table_limit COMMAND test_table oversized)
 set_tests_properties(test_table_limit PROPERTIES WILL_FAIL TRUE TIMEOUT 120)
 
+if(SYLVAN_CHECK_HANDLES)
+    add_executable(test_check_handles test_check_handles.c)
+    target_link_libraries(test_check_handles PRIVATE sylvan::sylvan)
+    target_compile_features(test_check_handles PRIVATE c_std_11)
+    sylvan_test_warnings(test_check_handles)
+
+    add_test(NAME test_check_handles COMMAND test_check_handles)
+    foreach(helper IN ITEMS mtbdd zdd ldd table)
+        add_test(NAME test_check_handles_${helper}
+            COMMAND ${CMAKE_COMMAND}
+                -DTEST_PROGRAM=$<TARGET_FILE:test_check_handles>
+                -DHELPER=${helper}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_handle_abort.cmake
+        )
+        set_tests_properties(test_check_handles_${helper} PROPERTIES TIMEOUT 120)
+    endforeach()
+    set_tests_properties(test_check_handles PROPERTIES TIMEOUT 120)
+endif()
+
 add_executable(test_table_full test_table_full.c)
 target_link_libraries(test_table_full PRIVATE sylvan::sylvan)
 target_compile_features(test_table_full PRIVATE c_std_11)

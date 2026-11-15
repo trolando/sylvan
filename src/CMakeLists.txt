@@ -12,6 +12,8 @@ if(SYLVAN_USE_MMAP AND NOT WIN32)
 endif()
 
 option(SYLVAN_STATS "Let Sylvan collect statistics at runtime" OFF)
+option(SYLVAN_CHECK_HANDLES "Let Sylvan check decision diagram handle bounds" OFF)
+option(SYLVAN_GC_DIAGNOSTICS "Let Sylvan trace garbage collections to stderr" OFF)
 
 include(DetectCacheLineSize)
 detect_cache_line_size(SYLVAN_CACHE_LINE_SIZE DEFAULT 64)
@@ -147,6 +149,15 @@ endif()
 
 # ── Link dependencies ───────────────────────────────────────────────────────
 
+# The check is in an inline helper in sylvan_table.h: consumers must agree
+# with the library on whether it is enabled, also in Release builds.
+if(SYLVAN_CHECK_HANDLES)
+    target_compile_definitions(sylvan PUBLIC SYLVAN_CHECK_HANDLES=1)
+endif()
+if(SYLVAN_GC_DIAGNOSTICS)
+    target_compile_definitions(sylvan PRIVATE SYLVAN_GC_DIAGNOSTICS=1)
+endif()
+
 find_package(Threads REQUIRED)
 target_link_libraries(sylvan PUBLIC Threads::Threads)
 target_link_libraries(sylvan PUBLIC lace::lace)
@@ -163,10 +174,16 @@ if(NOT sylvan_IS_TOP_LEVEL)
         SYLVAN_NATIVE_OPT
         SYLVAN_USE_MMAP
         SYLVAN_STATS
+        SYLVAN_CHECK_HANDLES
+        SYLVAN_GC_DIAGNOSTICS
     )
 endif()
 
 # ── Installation ─────────────────────────────────────────────────────────────
+
+if(NOT SYLVAN_INSTALL)
+    return()
+endif()
 
 include(GNUInstallDirs)
 
@@ -221,6 +238,11 @@ if(SYLVAN_GMP)
 endif()
 
 # ── pkg-config ───────────────────────────────────────────────────────────────
+
+set(PKGC_CFLAGS "")
+if(SYLVAN_CHECK_HANDLES)
+    set(PKGC_CFLAGS " -DSYLVAN_CHECK_HANDLES=1")
+endif()
 
 if(SYLVAN_GMP)
     set(PKGC_REQUIRES "lace >= ${SYLVAN_LACE_MIN_VERSION} gmp")

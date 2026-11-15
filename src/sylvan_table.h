@@ -71,15 +71,6 @@ typedef struct llmsset
 } *llmsset_t;
 
 /**
- * Retrieve a pointer to the data associated with the 40-bit value.
- */
-static inline void*
-llmsset_index_to_ptr(const llmsset_t dbs, size_t index)
-{
-    return dbs->data + index * 16;
-}
-
-/**
  * Create the set.
  * This will allocate a set of <max_size> buckets in virtual memory.
  * The actual space used is <initial_size> buckets.
@@ -112,6 +103,33 @@ size_t llmsset_get_size(const llmsset_t dbs);
  * remained in higher buckets (nodes never move).
  */
 size_t llmsset_get_data_size(const llmsset_t dbs);
+
+/**
+ * Optional handle bounds checking, also enabled in Release builds.
+ * Check the data range, not the hash table size: shrinking does not move nodes.
+ * MTBDD_GETNODE, ZDD_GETNODE and LDD_GETNODE all use this pointer helper.
+ * With the option off, its code is unchanged and no bounds are loaded.
+ */
+#ifndef SYLVAN_CHECK_HANDLES
+#define SYLVAN_CHECK_HANDLES 0
+#endif
+
+#if SYLVAN_CHECK_HANDLES
+SYLVAN_NORETURN void sylvan_handle_check_failed(size_t index, size_t size, const char *file, int line);
+#endif
+
+/**
+ * Retrieve a pointer to the data associated with the 40-bit value.
+ */
+static inline void*
+llmsset_index_to_ptr(const llmsset_t dbs, size_t index)
+{
+#if SYLVAN_CHECK_HANDLES
+    const size_t size = llmsset_get_data_size(dbs);
+    if (index >= size) sylvan_handle_check_failed(index, size, __FILE__, __LINE__);
+#endif
+    return dbs->data + index * 16;
+}
 
 /**
  * Set the table size of the set.

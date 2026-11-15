@@ -146,6 +146,18 @@ static const uint64_t CACHE_ZDD_PROJECT             = (91LL<<40);
 static const uint64_t CACHE_ZDD_ISOP                = (92LL<<40);
 static const uint64_t CACHE_ZDD_COVER_TO_BDD        = (93LL<<40);
 static const uint64_t CACHE_ZDD_SATCOUNT_U64        = (94LL<<40);
+static const uint64_t CACHE_ZDD_XOR                 = (95LL<<40);
+static const uint64_t CACHE_ZDD_EQUIV               = (96LL<<40);
+static const uint64_t CACHE_ZDD_NAND                = (97LL<<40);
+static const uint64_t CACHE_ZDD_NOR                 = (98LL<<40);
+static const uint64_t CACHE_ZDD_IMP                 = (99LL<<40);
+static const uint64_t CACHE_ZDD_DISJOINT            = (100LL<<40);
+static const uint64_t CACHE_ZDD_SUBSET              = (101LL<<40);
+static const uint64_t CACHE_ZDD_FORALL              = (102LL<<40);
+static const uint64_t CACHE_ZDD_UNIQUE              = (103LL<<40);
+static const uint64_t CACHE_ZDD_MINIMAL_SETS        = (104LL<<40);
+static const uint64_t CACHE_ZDD_WITHOUT_SUPERSETS   = (105LL<<40);
+static const uint64_t CACHE_ZDD_BOOLEAN_CHECK       = (106LL<<40);
 
 /* Helpers shared by exact counts and evaluation. */
 int sylvan_count_is_valid_set(BDDSET variables);

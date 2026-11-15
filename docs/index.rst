@@ -428,6 +428,39 @@ also be referenced for garbage collection. The following functions are related t
 - ``mtbdd_map_count(set)``: compute the number of pairs in the map.
 - ``mtbdd_map_contains(map, var)``: compute whether the map contains the variable.
 
+Boolean ZDDs represent families of sets: ``zdd_false`` is the empty family,
+while ``zdd_true`` is the family containing only the empty set. A skipped
+variable is absent (false), even when it belongs to the domain. Domains and
+quantified-variable sets are ZDD power sets, built with ``zdd_set_from_array``;
+they are not BDD variable cubes. A domain itself represents the full family.
+The following Boolean operations return a ZDD result, or ``zdd_invalid`` for
+invalid arguments or non-Boolean input, except for the two integer predicates
+``zdd_disjoint`` and ``zdd_subset`` described below:
+
+- ``zdd_xor(a, b)``: symmetric difference of the two families.
+- ``zdd_equiv(a, b, dom)``: complement of their symmetric difference within ``dom``.
+- ``zdd_nand(a, b, dom)``: complement of their intersection within ``dom``.
+- ``zdd_nor(a, b, dom)``: complement of their union within ``dom``.
+- ``zdd_imp(a, b, dom)``: implication, the complement of ``a`` minus ``b`` within ``dom``.
+- ``zdd_disjoint(a, b)``: return an ``int``: 1 if the families have no common member, 0 otherwise, and -1 for invalid or non-Boolean operands.
+- ``zdd_subset(a, b)``: return an ``int``: 1 if every member of ``a`` belongs to ``b``, 0 otherwise, and -1 for invalid or non-Boolean operands. This compares families, not the contents of individual sets.
+- ``zdd_forall(dd, vars)``: universal quantification over ``vars``.
+- ``zdd_unique(dd, vars)``: parity quantification over ``vars``. A remaining assignment satisfies the result when an odd number of its extensions satisfies ``dd``; this does not mean exactly one extension.
+- ``zdd_eval_assignment(dd, domain, values, count)``: evaluate a full assignment, returning ``zdd_true`` for membership and ``zdd_false`` otherwise. The array must contain exactly one 0 or 1 per domain variable, in domain order. ``NULL`` is allowed only for an empty domain. The existing single-variable ``zdd_eval`` is unchanged.
+- ``zdd_minimal_sets(bdd, domain)``: return the inclusion-minimal satisfying sets of a monotone Boolean BDD, for example minimal cut sets. Non-monotone inputs are rejected with ``zdd_invalid``. False yields the empty family, True yields ``{empty set}``, and unused domain variables are absent from every resulting set.
+
+Every explicit domain must contain the complete support of its operands;
+otherwise these operations return ``zdd_invalid``, even if the result would
+be constant. The two predicates take no domain argument. They return integer
+values, so compare their results with 1, 0 or -1.
+
+Like ``zdd_exists``, ``zdd_forall`` and ``zdd_unique`` retain quantified
+variables in the result's domain, making them free where the quantified
+condition holds. They take no separate domain argument. A variable absent
+from the input is initially false: quantifying it universally gives the
+empty family, while parity quantification makes it free. Thus ``vars`` may
+also extend the implicit domain. An empty ``vars`` leaves the family unchanged.
+
 Sylvan implements a number of counting operations:
 
 - ``mtbdd_satcount(bdd, number_of_vars)``: compute the number of minterms (assignments that lead to True) for a function with <number_of_vars> variables; we don't need to know the exact variables that may be in the BDD, just how many there are.

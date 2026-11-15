@@ -1565,6 +1565,322 @@ TASK_IMPL_2(ZDD, zdd_diff, ZDD, a, ZDD, b)
 }
 
 /**
+ * Validation for the new Boolean operations. zdd_false is an internal sentinel
+ * for an unrestricted support; public domains must represent a power set.
+ */
+static int
+zdd_boolean_node(ZDD dd)
+{
+    const uint64_t index = ZDD_GETINDEX(dd);
+    if ((dd & ~(zdd_complement | UINT64_C(0x000000ffffffffff))) != 0 ||
+        index < 2 || index >= llmsset_get_data_size(nodes)) return 0;
+    const zddnode_t node = ZDD_GETNODE(dd);
+    return !zddnode_isleaf(node) && !zddnode_ismapnode(node) &&
+        !mtbddnode_ismapnode(MTBDD_GETNODE(dd));
+}
+
+static int
+zdd_valid_domain(ZDD dom)
+{
+    uint32_t previous = 0;
+    int first = 1;
+    while (dom != zdd_true) {
+        if (!zdd_boolean_node(dom)) return 0;
+        const uint32_t var = zdd_getvar(dom);
+        if ((!first && var <= previous) || zdd_getlow(dom) != zdd_gethigh(dom)) return 0;
+        first = 0;
+        previous = var;
+        dom = zdd_gethigh(dom);
+    }
+    return 1;
+}
+
+TASK_2(int, zdd_boolean_check, ZDD, dd, ZDD, dom)
+{
+    if (dd == zdd_false || dd == zdd_true) return 1;
+    if (!zdd_boolean_node(dd)) return 0;
+
+    sylvan_gc_test();
+    sylvan_stats_count(ZDD_BOOLEAN_CHECK);
+    uint64_t result;
+    if (cache_get3(CACHE_ZDD_BOOLEAN_CHECK, dd, dom, 0, &result)) {
+        sylvan_stats_count(ZDD_BOOLEAN_CHECK_CACHED);
+        return (int)result;
+    }
+
+    const ZDD cache_dom = dom;
+    const uint32_t var = zdd_getvar(dd);
+    if (dom != zdd_false) {
+        while (dom != zdd_true && zdd_getvar(dom) < var) dom = zdd_gethigh(dom);
+        if (dom == zdd_true || zdd_getvar(dom) != var) return 0;
+        dom = zdd_gethigh(dom);
+    }
+    const ZDD low = zdd_getlow(dd), high = zdd_gethigh(dd);
+    if ((low != zdd_false && low != zdd_true &&
+         (!zdd_boolean_node(low) || zdd_getvar(low) <= var)) ||
+        (high != zdd_false && high != zdd_true &&
+         (!zdd_boolean_node(high) || zdd_getvar(high) <= var))) return 0;
+
+    SPAWN(zdd_boolean_check, high, dom);
+    int low_ok = CALL(zdd_boolean_check, low, dom);
+    int high_ok = SYNC(zdd_boolean_check);
+    result = low_ok && high_ok;
+    if (cache_put3(CACHE_ZDD_BOOLEAN_CHECK, dd, cache_dom, 0, result)) {
+        sylvan_stats_count(ZDD_BOOLEAN_CHECK_CACHEDPUT);
+    }
+    return (int)result;
+}
+
+enum zdd_boolean_op {
+    ZDD_OP_XOR, ZDD_OP_EQUIV, ZDD_OP_NAND, ZDD_OP_NOR, ZDD_OP_IMP,
+    ZDD_OP_DISJOINT, ZDD_OP_SUBSET
+};
+
+TASK_4(ZDD, zdd_boolean_binary, ZDD, a, ZDD, b, ZDD, dom, int, op)
+{
+    const uint64_t cache_ids[] = {
+        CACHE_ZDD_XOR, CACHE_ZDD_EQUIV, CACHE_ZDD_NAND, CACHE_ZDD_NOR,
+        CACHE_ZDD_IMP, CACHE_ZDD_DISJOINT, CACHE_ZDD_SUBSET
+    };
+    const Sylvan_Counters counters[] = {
+        ZDD_XOR, ZDD_EQUIV, ZDD_NAND, ZDD_NOR, ZDD_IMP, ZDD_DISJOINT, ZDD_SUBSET
+    };
+    const int has_domain = op >= ZDD_OP_EQUIV && op <= ZDD_OP_IMP;
+    if ((has_domain && !zdd_valid_domain(dom)) ||
+        !CALL(zdd_boolean_check, a, dom) || !CALL(zdd_boolean_check, b, dom)) return zdd_invalid;
+
+    // Only implication and subset are asymmetric.
+    if (op != ZDD_OP_IMP && op != ZDD_OP_SUBSET && a > b) {
+        ZDD tmp = a; a = b; b = tmp;
+    }
+    sylvan_gc_test();
+    const uint64_t cache_id = cache_ids[op];
+    const Sylvan_Counters counter = counters[op];
+    sylvan_stats_count(counter);
+    ZDD result;
+    if (cache_get3(cache_id, a, b, dom, &result)) {
+        sylvan_stats_count(counter + 2);
+        return result;
+    }
+
+    if (op == ZDD_OP_XOR || op == ZDD_OP_EQUIV) {
+        zdd_refs_spawn(SPAWN(zdd_diff, b, a));
+        ZDD left = zdd_refs_push(CALL(zdd_diff, a, b));
+        ZDD right = zdd_refs_push(zdd_refs_sync(SYNC(zdd_diff)));
+        result = CALL(zdd_or, left, right);
+        zdd_refs_pop(2);
+    } else if (op == ZDD_OP_NAND || op == ZDD_OP_DISJOINT) {
+        result = CALL(zdd_and, a, b);
+    } else if (op == ZDD_OP_NOR) {
+        result = CALL(zdd_or, a, b);
+    } else {
+        result = CALL(zdd_diff, a, b);
+    }
+
+    if (has_domain) {
+        zdd_refs_push(result);
+        result = CALL(zdd_not, result, dom);
+        zdd_refs_pop(1);
+    } else if (op == ZDD_OP_DISJOINT || op == ZDD_OP_SUBSET) {
+        result = result == zdd_false ? zdd_true : zdd_false;
+    }
+    if (cache_put3(cache_id, a, b, dom, result)) sylvan_stats_count(counter + 1);
+    return result;
+}
+
+TASK_IMPL_2(ZDD, zdd_xor, ZDD, a, ZDD, b)
+{
+    return CALL(zdd_boolean_binary, a, b, zdd_false, ZDD_OP_XOR);
+}
+
+TASK_IMPL_3(ZDD, zdd_equiv, ZDD, a, ZDD, b, ZDD, dom)
+{
+    return CALL(zdd_boolean_binary, a, b, dom, ZDD_OP_EQUIV);
+}
+
+TASK_IMPL_3(ZDD, zdd_nand, ZDD, a, ZDD, b, ZDD, dom)
+{
+    return CALL(zdd_boolean_binary, a, b, dom, ZDD_OP_NAND);
+}
+
+TASK_IMPL_3(ZDD, zdd_nor, ZDD, a, ZDD, b, ZDD, dom)
+{
+    return CALL(zdd_boolean_binary, a, b, dom, ZDD_OP_NOR);
+}
+
+TASK_IMPL_3(ZDD, zdd_imp, ZDD, a, ZDD, b, ZDD, dom)
+{
+    return CALL(zdd_boolean_binary, a, b, dom, ZDD_OP_IMP);
+}
+
+TASK_IMPL_2(int, zdd_disjoint, ZDD, a, ZDD, b)
+{
+    const ZDD result = CALL(zdd_boolean_binary, a, b, zdd_false, ZDD_OP_DISJOINT);
+    return result == zdd_invalid ? -1 : result == zdd_true;
+}
+
+TASK_IMPL_2(int, zdd_subset, ZDD, a, ZDD, b)
+{
+    const ZDD result = CALL(zdd_boolean_binary, a, b, zdd_false, ZDD_OP_SUBSET);
+    return result == zdd_invalid ? -1 : result == zdd_true;
+}
+
+TASK_IMPL_4(ZDD, zdd_eval_assignment, ZDD, dd, ZDD, dom, const uint8_t*, values, size_t, count)
+{
+    if (!zdd_valid_domain(dom) || count != zdd_set_count(dom) ||
+        (count != 0 && values == NULL)) return zdd_invalid;
+    for (size_t i=0; i<count; i++) if (values[i] > 1) return zdd_invalid;
+    if (!CALL(zdd_boolean_check, dd, dom)) return zdd_invalid;
+    sylvan_stats_count(ZDD_EVAL_ASSIGNMENT);
+
+    // Do not cache by array address: callers may reuse it for another assignment.
+    for (size_t i=0; i<count; i++, dom=zdd_gethigh(dom)) {
+        if (dd != zdd_false && dd != zdd_true && zdd_getvar(dd) == zdd_getvar(dom)) {
+            dd = values[i] ? zdd_gethigh(dd) : zdd_getlow(dd);
+        } else if (values[i]) {
+            dd = zdd_false;
+        }
+    }
+    return dd;
+}
+
+TASK_3(ZDD, zdd_quantify, ZDD, dd, ZDD, vars, int, unique)
+{
+    if (dd == zdd_false || vars == zdd_true) return dd;
+    if (dd == zdd_true) return unique ? vars : zdd_false;
+
+    sylvan_gc_test();
+    const uint64_t cache_id = unique ? CACHE_ZDD_UNIQUE : CACHE_ZDD_FORALL;
+    const Sylvan_Counters counter = unique ? ZDD_UNIQUE : ZDD_FORALL;
+    sylvan_stats_count(counter);
+    ZDD result;
+    if (cache_get3(cache_id, dd, vars, 0, &result)) {
+        sylvan_stats_count(counter + 2);
+        return result;
+    }
+
+    const uint32_t dd_var = zdd_getvar(dd), vars_var = zdd_getvar(vars);
+    const ZDD vars_next = zdd_gethigh(vars);
+    if (vars_var < dd_var) {
+        if (!unique) result = zdd_false;
+        else {
+            result = CALL(zdd_quantify, dd, vars_next, unique);
+            result = zdd_makenode(vars_var, result, result);
+        }
+    } else {
+        const ZDD next = vars_var == dd_var ? vars_next : vars;
+        zdd_refs_spawn(SPAWN(zdd_quantify, zdd_gethigh(dd), next, unique));
+        ZDD low = zdd_refs_push(CALL(zdd_quantify, zdd_getlow(dd), next, unique));
+        ZDD high = zdd_refs_push(zdd_refs_sync(SYNC(zdd_quantify)));
+        if (vars_var == dd_var) {
+            result = unique ? CALL(zdd_xor, low, high) : CALL(zdd_and, low, high);
+            result = zdd_makenode(vars_var, result, result);
+        } else {
+            result = zdd_makenode(dd_var, low, high);
+        }
+        zdd_refs_pop(2);
+    }
+    if (cache_put3(cache_id, dd, vars, 0, result)) sylvan_stats_count(counter + 1);
+    return result;
+}
+
+TASK_IMPL_2(ZDD, zdd_forall, ZDD, dd, ZDD, vars)
+{
+    if (!zdd_valid_domain(vars) || !CALL(zdd_boolean_check, dd, zdd_false)) return zdd_invalid;
+    return CALL(zdd_quantify, dd, vars, 0);
+}
+
+TASK_IMPL_2(ZDD, zdd_unique, ZDD, dd, ZDD, vars)
+{
+    if (!zdd_valid_domain(vars) || !CALL(zdd_boolean_check, dd, zdd_false)) return zdd_invalid;
+    return CALL(zdd_quantify, dd, vars, 1);
+}
+
+/**
+ * Remove every member of <family> that contains a member of <subsets>.
+ */
+TASK_2(ZDD, zdd_without_supersets, ZDD, family, ZDD, subsets)
+{
+    if (family == zdd_false || subsets == zdd_true) return zdd_false;
+    if (subsets == zdd_false) return family;
+
+    sylvan_gc_test();
+    sylvan_stats_count(ZDD_WITHOUT_SUPERSETS);
+    const ZDD cache_subsets = subsets;
+    ZDD result;
+    if (cache_get3(CACHE_ZDD_WITHOUT_SUPERSETS, family, subsets, 0, &result)) {
+        sylvan_stats_count(ZDD_WITHOUT_SUPERSETS_CACHED);
+        return result;
+    }
+
+    const uint32_t family_var = family == zdd_true ? UINT32_MAX : zdd_getvar(family);
+    const uint32_t subsets_var = zdd_getvar(subsets);
+    if (subsets_var < family_var) {
+        result = CALL(zdd_without_supersets, family, zdd_getlow(subsets));
+    } else {
+        ZDD high_subsets = subsets;
+        if (subsets_var == family_var) {
+            high_subsets = CALL(zdd_or, zdd_getlow(subsets), zdd_gethigh(subsets));
+            subsets = zdd_getlow(subsets);
+        }
+        zdd_refs_push(high_subsets);
+        zdd_refs_spawn(SPAWN(zdd_without_supersets, zdd_gethigh(family), high_subsets));
+        ZDD low = zdd_refs_push(CALL(zdd_without_supersets, zdd_getlow(family), subsets));
+        ZDD high = zdd_refs_sync(SYNC(zdd_without_supersets));
+        result = zdd_makenode(family_var, low, high);
+        zdd_refs_pop(2);
+    }
+    if (cache_put3(CACHE_ZDD_WITHOUT_SUPERSETS, family, cache_subsets, 0, result)) {
+        sylvan_stats_count(ZDD_WITHOUT_SUPERSETS_CACHEDPUT);
+    }
+    return result;
+}
+
+TASK_2(ZDD, zdd_minimal_sets_rec, BDD, dd, ZDD, dom)
+{
+    if (dd == sylvan_false) return zdd_false;
+    if (dd == sylvan_true) return zdd_true;
+    // BDD and ZDD nodes share the index/leaf layout, but use different map flags.
+    if (!zdd_boolean_node(dd) || mtbddnode_ismapnode(MTBDD_GETNODE(dd))) return zdd_invalid;
+
+    sylvan_gc_test();
+    sylvan_stats_count(ZDD_MINIMAL_SETS);
+    const ZDD cache_dom = dom;
+    ZDD result;
+    if (cache_get3(CACHE_ZDD_MINIMAL_SETS, dd, dom, 0, &result)) {
+        sylvan_stats_count(ZDD_MINIMAL_SETS_CACHED);
+        return result;
+    }
+
+    const uint32_t var = mtbdd_getvar(dd);
+    while (dom != zdd_true && zdd_getvar(dom) < var) dom = zdd_gethigh(dom);
+    if (dom == zdd_true || zdd_getvar(dom) != var) return zdd_invalid;
+    dom = zdd_gethigh(dom);
+    const BDD low_dd = mtbdd_getlow(dd), high_dd = mtbdd_gethigh(dd);
+    zdd_refs_spawn(SPAWN(zdd_minimal_sets_rec, high_dd, dom));
+    ZDD low = zdd_refs_push(CALL(zdd_minimal_sets_rec, low_dd, dom));
+    ZDD high = zdd_refs_push(zdd_refs_sync(SYNC(zdd_minimal_sets_rec)));
+    if (low == zdd_invalid || high == zdd_invalid || !sylvan_subset(low_dd, high_dd)) {
+        zdd_refs_pop(2);
+        return zdd_invalid;
+    }
+    ZDD filtered = CALL(zdd_without_supersets, high, low);
+    result = zdd_makenode(var, low, filtered);
+    zdd_refs_pop(2);
+
+    if (cache_put3(CACHE_ZDD_MINIMAL_SETS, dd, cache_dom, 0, result)) {
+        sylvan_stats_count(ZDD_MINIMAL_SETS_CACHEDPUT);
+    }
+    return result;
+}
+
+TASK_IMPL_2(ZDD, zdd_minimal_sets, BDD, dd, ZDD, dom)
+{
+    if (!zdd_valid_domain(dom)) return zdd_invalid;
+    return CALL(zdd_minimal_sets_rec, dd, dom);
+}
+
+/**
  * Compute existential quantification, but stay in same domain
  */
 TASK_IMPL_2(ZDD, zdd_exists, ZDD, dd, ZDD, vars)

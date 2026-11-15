@@ -23,8 +23,8 @@
  * Also, no complement edges. They do not work here.
  * Thus, computing "not" is not a trivial constant operation.
  * 
- * To represent "domain" and "set of variables" we use the same cubes
- * as for BDDs, i.e., var1 \and var2 \and var3... 
+ * A domain or set of variables is a ZDD representing all subsets of those
+ * variables, as returned by zdd_set_from_array (not a BDD variable cube).
  * 
  * All operations with multiple input ZDDs interpret the ZDDs in the same domain.
  * For some operations, this domain must be supplied.
@@ -116,6 +116,20 @@ ZDD zdd_gethigh(ZDD dd);
 ZDD zdd_eval(ZDD dd, uint32_t var, int value);
 
 /**
+ * Evaluate a Boolean ZDD on a full assignment over <domain>.
+ * <domain> is a ZDD variable set containing the complete support of <dd>.
+ * <values> contains exactly <count> entries, each 0 or 1, in domain order;
+ * <count> must equal the domain size. NULL is allowed only when count is 0.
+ * Variables skipped by <dd> must be assigned 0 for membership in the family.
+ * Returns zdd_true for a member, zdd_false otherwise, or zdd_invalid for
+ * invalid arguments, a non-Boolean diagram, or support outside the domain.
+ * The array is read during the call and must not be modified concurrently.
+ * This does not change the single-variable zdd_eval operation.
+ */
+TASK_DECL_4(ZDD, zdd_eval_assignment, ZDD, ZDD, const uint8_t*, size_t)
+#define zdd_eval_assignment(dd, domain, values, count) RUN(zdd_eval_assignment, dd, domain, values, count)
+
+/**
  * Obtain a ZDD representing a positive literal of variable <var>.
  */
 ZDD zdd_ithvar(uint32_t var);
@@ -130,6 +144,17 @@ ZDD zdd_nithvar(uint32_t var);
  */
 TASK_DECL_2(ZDD, zdd_from_mtbdd, MTBDD, MTBDD);
 #define zdd_from_mtbdd(dd, domain) RUN(zdd_from_mtbdd, dd, domain)
+
+/**
+ * Return the inclusion-minimal satisfying sets of the monotone Boolean BDD
+ * <dd> as a ZDD family. <domain> is a ZDD variable set containing the complete
+ * BDD support. Domain variables absent from <dd> are absent from every set.
+ * False yields the empty family; True yields the family containing only the
+ * empty set (zdd_true). Returns zdd_invalid for invalid arguments, non-Boolean
+ * or non-monotone input, or BDD support outside the domain.
+ */
+TASK_DECL_2(ZDD, zdd_minimal_sets, BDD, ZDD)
+#define zdd_minimal_sets(dd, domain) RUN(zdd_minimal_sets, dd, domain)
 
 /**
  * Convert a ZDD to an MTBDD.
@@ -308,38 +333,59 @@ TASK_DECL_2(ZDD, zdd_diff, ZDD, ZDD);
 #define zdd_diff(a, b) RUN(zdd_diff, a, b)
 
 /**
- * Compute logical XOR of <a> and <b>.
+ * Return the symmetric difference of Boolean families <a> and <b> (XOR).
+ * No domain is needed: a set belongs to the result iff it belongs to exactly
+ * one operand. Returns zdd_invalid for invalid or non-Boolean operands.
  */
-// TASK_DECL_2(ZDD, zdd_xor, ZDD, ZDD);
-// #define zdd_xor(a, b) RUN(zdd_xor, a, b)
+TASK_DECL_2(ZDD, zdd_xor, ZDD, ZDD)
+#define zdd_xor(a, b) RUN(zdd_xor, a, b)
 
 /**
- * Compute logical EQUIV of <a> and <b>.
- * Also called bi-implication. (a <-> b)
- * This operation requires the variable domain <dom>.
+ * Boolean equivalence (a <-> b): the complement of XOR within <dom>.
+ * <dom> must be a ZDD variable set containing both complete supports.
+ * Returns zdd_invalid for invalid arguments, non-Boolean operands, or
+ * support outside <dom>. The same requirements apply to nand, nor and imp.
  */
-// TASK_DECL_3(ZDD, zdd_equiv, ZDD, ZDD, ZDD);
-// #define zdd_equiv(a, b, dom) RUN(zdd_equiv, a, b, dom)
+TASK_DECL_3(ZDD, zdd_equiv, ZDD, ZDD, ZDD)
+#define zdd_equiv(a, b, dom) RUN(zdd_equiv, a, b, dom)
 
 /**
- * Compute logical IMP of <a> and <b>. (a -> b)
- * This operation requires the variable domain <dom>.
+ * Return the complement of the intersection of <a> and <b> within <dom>.
+ * See zdd_equiv for domain requirements and zdd_invalid errors.
  */
-// TASK_DECL_3(ZDD, zdd_imp, ZDD, ZDD, ZDD);
-// #define zdd_imp(a, b, dom) RUN(zdd_imp, a, b, dom)
+TASK_DECL_3(ZDD, zdd_nand, ZDD, ZDD, ZDD)
+#define zdd_nand(a, b, dom) RUN(zdd_nand, a, b, dom)
 
 /**
- * Compute logical INVIMP of <a> and <b>. (b <- a)
- * This operation requires the variable domain <dom>.
+ * Return the complement of the union of <a> and <b> within <dom>.
+ * See zdd_equiv for domain requirements and zdd_invalid errors.
  */
-// TASK_DECL_3(ZDD, zdd_invimp, ZDD, ZDD, ZDD);
-// #define zdd_invimp(a, b, dom) RUN(zdd_invimp, a, b, dom)
+TASK_DECL_3(ZDD, zdd_nor, ZDD, ZDD, ZDD)
+#define zdd_nor(a, b, dom) RUN(zdd_nor, a, b, dom)
 
-// add binary operators
-// zdd_diff (no domain) == a and not b
-// zdd_less (no domain) == not a and b
-// zdd_nand (domain)    == not (a and b)
-// zdd_nor  (domain)    == not a and not b
+/**
+ * Implication (a -> b): the complement of (a minus b) within <dom>.
+ * See zdd_equiv for domain requirements and zdd_invalid errors.
+ */
+TASK_DECL_3(ZDD, zdd_imp, ZDD, ZDD, ZDD)
+#define zdd_imp(a, b, dom) RUN(zdd_imp, a, b, dom)
+
+/**
+ * Return 1 iff Boolean families <a> and <b> have no common member,
+ * 0 otherwise. Returns -1 for invalid or non-Boolean inputs.
+ * No domain is needed.
+ */
+TASK_DECL_2(int, zdd_disjoint, ZDD, ZDD)
+#define zdd_disjoint(a, b) RUN(zdd_disjoint, a, b)
+
+/**
+ * Return 1 iff every member of Boolean family <a> also belongs to <b>,
+ * 0 otherwise. This tests family inclusion, not inclusion between
+ * individual member sets. Returns -1 for invalid or non-Boolean inputs.
+ * No domain is needed.
+ */
+TASK_DECL_2(int, zdd_subset, ZDD, ZDD)
+#define zdd_subset(a, b) RUN(zdd_subset, a, b)
 
 /**
  * Compute \exists <vars>: <dd>.
@@ -356,10 +402,28 @@ TASK_DECL_2(ZDD, zdd_project, ZDD, ZDD);
 #define zdd_project(dd, domain) RUN(zdd_project, dd, domain)
 
 /**
- * Compute \forall <vars>: <dd>.
+ * Universal quantification over the ZDD variable set <vars>.
+ * For each assignment to the other variables, include all assignments to
+ * <vars> iff every extension is in <dd>. Quantified variables remain in the
+ * domain, as in zdd_exists. A variable absent from <dd> is forced to 0 before
+ * quantification, so quantifying it universally yields the empty family.
+ * Returns zdd_invalid for invalid arguments, malformed <vars> or non-Boolean
+ * <dd>. There is no separate domain argument; <vars> may extend the domain.
  */
-// TASK_DECL_2(ZDD, zdd_forall, ZDD, ZDD);
-// #define zdd_forall(dd, vars) RUN(zdd_forall, dd, vars)
+TASK_DECL_2(ZDD, zdd_forall, ZDD, ZDD)
+#define zdd_forall(dd, vars) RUN(zdd_forall, dd, vars)
+
+/**
+ * Parity quantification over the ZDD variable set <vars>.
+ * Include all assignments to <vars> iff an odd number of extensions is in
+ * <dd>. For one variable this is dd[x=0] XOR dd[x=1]; for several it means
+ * odd parity, not exactly one extension. Quantified variables remain in the
+ * domain. Variables absent from <dd> are forced to 0 before quantification;
+ * quantifying such a variable makes it free in the result.
+ * Domain conventions and zdd_invalid errors are the same as for zdd_forall.
+ */
+TASK_DECL_2(ZDD, zdd_unique, ZDD, ZDD)
+#define zdd_unique(dd, vars) RUN(zdd_unique, dd, vars)
 
 /**
  * Compute \exists <vars>: <a> and <b>.

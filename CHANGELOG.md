@@ -13,6 +13,17 @@ All notable changes to Sylvan will be documented in this file.
   variables, preferring false in increasing variable order.
 - `sylvan_cardinality`, which constructs inclusive lower and upper bounds on
   the number of true variables in a set, including exact-k constraints.
+- Boolean ZDD operations `zdd_xor`, `zdd_equiv`, `zdd_nand`, `zdd_nor`,
+  `zdd_imp`, `zdd_disjoint` and `zdd_subset`, plus universal (`zdd_forall`)
+  and parity (`zdd_unique`) quantification. They use master's ZDD domains
+  and return `zdd_invalid` for invalid arguments, except for the predicates
+  `zdd_disjoint` and `zdd_subset`, which return `int`: 1 for true, 0 for false
+  and -1 for invalid operands. Boolean validation rejects both ZDD and MTBDD
+  map nodes, including maps embedded in diagrams.
+- `zdd_eval_assignment` for full Boolean ZDD assignments. The existing
+  single-variable `zdd_eval` is unchanged.
+- `zdd_minimal_sets`, which converts a monotone Boolean BDD to the ZDD family
+  of its inclusion-minimal satisfying sets and rejects non-monotone input.
 - Exact `uint64_t` model counts: `sylvan_satcount_u64`, `mtbdd_satcount_u64`,
   `lddmc_satcount_u64` and `zdd_satcount_u64`. They report overflow and leave
   the output unchanged on failure. The corresponding `_gmp` operations in

@@ -5,12 +5,18 @@ on: [push, pull_request]
 jobs:
   gcc-build:
     name: 'Linux GCC-${{matrix.version}} ${{matrix.build_type}}'
-    runs-on: ubuntu-latest
+    # GCC 9 is packaged only up to Ubuntu 24.04; the newer version runs on the current image
+    runs-on: ${{matrix.os}}
     strategy:
       fail-fast: false
       matrix:
         build_type: [Release, Debug]
         version: [9, 12]
+        include:
+          - version: 9
+            os: ubuntu-24.04
+          - version: 12
+            os: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
     - name: Install dependencies
@@ -56,12 +62,18 @@ jobs:
 
   clang-build:
     name: 'Linux CLang-${{matrix.version}} ${{matrix.build_type}}'
-    runs-on: ubuntu-latest
+    # Clang 15 is packaged only up to Ubuntu 24.04; the newer version runs on the current image
+    runs-on: ${{matrix.os}}
     strategy:
       fail-fast: false
       matrix:
         build_type: [Release, Debug]
         version: [15, 19]
+        include:
+          - version: 15
+            os: ubuntu-24.04
+          - version: 19
+            os: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
     - name: Install dependencies

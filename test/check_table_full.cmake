@@ -6,6 +6,9 @@ execute_process(
     TIMEOUT 20
 )
 
+# Builds with SYLVAN_GC_DIAGNOSTICS print a "[sylvan-gc] ..." line per collection
+string(REGEX REPLACE "\\[sylvan-gc\\][^\n]*\n" "" error "${error}")
+
 set(expected_result 1)
 if(MODE STREQUAL "handler")
     set(expected_result 30)

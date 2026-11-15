@@ -64,6 +64,43 @@ The resulting artifact is a static library residing at ``build/src/libsylvan.a``
 It defaults to ``ON`` for a top-level build and ``OFF`` as a subproject. Set it
 before adding Sylvan to a parent project to override the default.
 
+``SYLVAN_HUGEPAGES`` defaults to ``OFF`` until its effect is measured on
+master. When it and ``SYLVAN_USE_MMAP`` are enabled on Linux, Sylvan requests
+transparent huge pages for mappings of at least 2 MiB through
+``madvise(MADV_HUGEPAGE)``, if available. This includes the node data, hash
+table and operation cache. Traversal side bitmap allocations instead request
+base pages through ``MADV_NOHUGEPAGE`` when available, regardless of the
+option, to limit sparse memory use. Both requests are best effort and may
+fail. With the option ``OFF``, the kernel may still use huge pages under its
+``always`` policy, including for side bitmaps if their opt-out is unavailable
+or fails. Other platforms are unchanged.
+
+To measure the advice, compare Release builds with
+``-DSYLVAN_HUGEPAGES=ON`` and ``-DSYLVAN_HUGEPAGES=OFF``, keeping worker
+count, table limits and input fixed. For example, run
+``./build-release/examples/nqueens -w 4 12`` repeatedly in each build and
+compare its computation time and elapsed time. On Linux, use the ``madvise``
+transparent huge page policy for this comparison: ``OFF`` omits the request,
+but does not prevent the kernel from using huge pages under ``always``.
+
+While the process runs, sample ``AnonHugePages`` and ``Rss`` in
+``/proc/<pid>/smaps_rollup`` before and after collections. For shrinking,
+use a workload that drops a large diagram while keeping a smaller protected
+one, calls ``sylvan_gc()``, and pauses before and after that call for sampling.
+Compare current RSS at those points, since peak RSS cannot show reclamation.
+Also time the collection and subsequent operations. On Linux, aligned clears
+first try ``MADV_DONTNEED`` when available; success retains the mapping and
+its advice. If it is unavailable or fails, Sylvan tries remapping the cleared
+range and requests huge pages again if the option is enabled, the advice is
+available and the range is at least 2 MiB. Only if remapping also fails does
+it zero the range with ``memset``. Master's operation cache clears by freeing
+and reallocating its mappings, so each new allocation gets fresh advice under
+the conditions above. Huge pages may need to be allocated again when tables
+are touched. Reclaiming empty stretches at 64 KiB boundaries can split huge
+pages, so the huge-page share can decrease after a shrink.
+``SYLVAN_GC_DIAGNOSTICS`` below helps identify collections and their table
+sizes.
+
 Diagnostic builds
 -----------------
 

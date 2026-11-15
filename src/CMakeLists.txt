@@ -11,6 +11,8 @@ if(SYLVAN_USE_MMAP AND NOT WIN32)
     endif()
 endif()
 
+option(SYLVAN_HUGEPAGES "Let Sylvan ask for transparent huge pages for its large tables" OFF)
+
 option(SYLVAN_STATS "Let Sylvan collect statistics at runtime" OFF)
 option(SYLVAN_CHECK_HANDLES "Let Sylvan check decision diagram handle bounds" OFF)
 option(SYLVAN_GC_DIAGNOSTICS "Let Sylvan trace garbage collections to stderr" OFF)
@@ -158,6 +160,9 @@ if(SYLVAN_GC_DIAGNOSTICS)
     target_compile_definitions(sylvan PRIVATE SYLVAN_GC_DIAGNOSTICS=1)
 endif()
 
+# Only the platform allocator reads this; leave it off until measured on master.
+target_compile_definitions(sylvan PRIVATE SYLVAN_HUGEPAGES=$<BOOL:${SYLVAN_HUGEPAGES}>)
+
 find_package(Threads REQUIRED)
 target_link_libraries(sylvan PUBLIC Threads::Threads)
 target_link_libraries(sylvan PUBLIC lace::lace)
@@ -173,6 +178,7 @@ if(NOT sylvan_IS_TOP_LEVEL)
         SYLVAN_ENABLE_PIC
         SYLVAN_NATIVE_OPT
         SYLVAN_USE_MMAP
+        SYLVAN_HUGEPAGES
         SYLVAN_STATS
         SYLVAN_CHECK_HANDLES
         SYLVAN_GC_DIAGNOSTICS

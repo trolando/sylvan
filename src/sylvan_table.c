@@ -478,8 +478,10 @@ llmsset_shrink(llmsset_t dbs, size_t size)
     }
 
 #if SYLVAN_USE_MMAP
-    /* give back the memory of each run of empty regions, in aligned chunks of
-       64 KiB, which every page size divides */
+    /* Give back each run of empty regions in 64 KiB-aligned chunks, rounding
+       inward so live nodes are untouched. These boundaries accommodate the
+       supported base page sizes, but can split huge pages. Reclaim the empty
+       memory anyway; on Linux the mapping keeps its huge page advice. */
     const size_t region_bytes = 512 * 2 * sizeof(uint64_t);
     const uintptr_t chunk = 65536;
     const size_t regions = data_size / 512;

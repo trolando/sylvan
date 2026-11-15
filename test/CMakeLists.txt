@@ -43,7 +43,7 @@ target_link_libraries(test_gc_roots PRIVATE sylvan::sylvan)
 target_compile_features(test_gc_roots PRIVATE c_std_11)
 sylvan_test_warnings(test_gc_roots)
 
-foreach(test IN ITEMS test_relprod test_markbit test_gc_invalid)
+foreach(test IN ITEMS test_relprod test_markbit test_gc_invalid test_platform)
     add_executable(${test} ${test}.c)
     target_link_libraries(${test} PRIVATE sylvan::sylvan)
     target_compile_features(${test} PRIVATE c_std_11)
@@ -51,6 +51,22 @@ foreach(test IN ITEMS test_relprod test_markbit test_gc_invalid)
     add_test(NAME ${test} COMMAND ${test})
     set_tests_properties(${test} PROPERTIES TIMEOUT 120)
 endforeach()
+
+if(SYLVAN_USE_MMAP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Compile a private allocator copy so failure injection adds no code or
+    # public API to the library, even when building the tests.
+    add_executable(test_platform_fallback test_platform.c ../src/sylvan_platform.c)
+    target_include_directories(test_platform_fallback PRIVATE
+        ${PROJECT_SOURCE_DIR}/src ${PROJECT_BINARY_DIR}/src)
+    target_compile_definitions(test_platform_fallback PRIVATE
+        SYLVAN_TEST_MADV_DONTNEED_FAIL=1
+        SYLVAN_HUGEPAGES=$<BOOL:${SYLVAN_HUGEPAGES}>)
+    target_compile_features(test_platform_fallback PRIVATE c_std_11)
+    sylvan_test_warnings(test_platform_fallback)
+    add_test(NAME test_platform_fallback COMMAND test_platform_fallback)
+    set_tests_properties(test_platform_fallback PROPERTIES TIMEOUT 120)
+endif()
+
 add_test(NAME test_gc_invalid_zdd COMMAND test_gc_invalid zdd)
 set_tests_properties(test_gc_invalid_zdd PROPERTIES TIMEOUT 120)
 

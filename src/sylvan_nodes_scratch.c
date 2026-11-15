@@ -73,9 +73,9 @@ void nodes_scratch_acquire(const llmsset_t dbs)
     if (s->size < size) {
         sylvan_free_aligned(s->bits, s->bytes);
         s->bytes = ((size + 63) / 64) * sizeof(uint64_t);
-        /* The platform allocator is zero-filled and uses sparse virtual
-         * memory when enabled; it does not request huge pages in 1.x. */
-        s->bits = sylvan_alloc_aligned(s->bytes);
+        /* Keep base-page commit granularity: a huge page could commit 2 MiB
+         * for a single touched bit in this mostly sparse bitmap. */
+        s->bits = sylvan_alloc_sparse(s->bytes);
         if (s->bits == NULL) goto fail;
         s->size = size;
     }

@@ -26,7 +26,7 @@
 #include <sylvan_platform.h>
 
 #if SYLVAN_USE_MMAP && !defined(_WIN32)
-    #include <sys/mman.h> // for mmap
+    #include <sys/mman.h> // for mmap, madvise
 #elif defined(_WIN32)
     #include <malloc.h>
 #endif
@@ -47,6 +47,12 @@
     #include <unistd.h>
 #endif
 
+/* Leave huge-page requests off until measured on master. Enable them with
+   -DSYLVAN_HUGEPAGES=ON in CMake. */
+#ifndef SYLVAN_HUGEPAGES
+#define SYLVAN_HUGEPAGES 0
+#endif
+
 static_assert((SYLVAN_CACHE_LINE_SIZE& (SYLVAN_CACHE_LINE_SIZE - 1)) == 0,
     "SYLVAN_CACHE_LINE_SIZE must be power of two");
 
@@ -61,7 +67,15 @@ sylvan_alloc_aligned(size_t size)
     return VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 #else 
     void* p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    return (p == MAP_FAILED) ? NULL : p;
+    if (p == MAP_FAILED) return NULL;
+#if defined(__linux__) && defined(MADV_HUGEPAGE) && SYLVAN_HUGEPAGES
+    /* The large node, hash and cache tables are accessed at random. Ask for
+       huge pages on mappings of at least 2 MiB to reduce page walks. The
+       kernel is free to decline, including when transparent_hugepage is
+       "never"; allocation still succeeds if the advice fails. */
+    if (size >= ((size_t)2 << 20)) (void)madvise(p, size, MADV_HUGEPAGE);
+#endif
+    return p;
 #endif
 
 #elif defined(__MINGW32__)
@@ -80,6 +94,25 @@ sylvan_alloc_aligned(size_t size)
     if (posix_memalign(&res, SYLVAN_CACHE_LINE_SIZE, size) != 0) return NULL;
     memset(res, 0, size);
     return res;
+#endif
+}
+
+
+void*
+sylvan_alloc_sparse(size_t size)
+{
+#if SYLVAN_USE_MMAP && defined(__linux__) && !defined(_WIN32)
+    if (size == 0) return NULL;
+    void* p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED) return NULL;
+#if defined(MADV_NOHUGEPAGE)
+    /* Request base pages even when transparent_hugepage is "always" to
+       limit sparse bitmap commits. This best-effort advice may fail. */
+    (void)madvise(p, size, MADV_NOHUGEPAGE);
+#endif
+    return p;
+#else
+    return sylvan_alloc_aligned(size);
 #endif
 }
 
@@ -123,8 +156,26 @@ sylvan_clear_aligned(void* ptr, size_t size)
         abort();
     }
 #elif SYLVAN_USE_MMAP
+#if defined(__linux__) && defined(MADV_DONTNEED)
+    /* Linux refills discarded private anonymous pages with zeroes on their
+       next touch. Keep the mapping and its huge page advice across clears;
+       MAP_FIXED would replace both. Other systems may keep the contents
+       after MADV_DONTNEED, so they still use the remap below. */
+#ifndef SYLVAN_TEST_MADV_DONTNEED_FAIL
+    if (madvise(ptr, size, MADV_DONTNEED) == 0) return;
+#endif
+#endif
+    /* A failed discard must still try remapping before touching the entire
+       reserved range with memset. The fallback test forces this path. */
     void* res = mmap(ptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-    if (res != MAP_FAILED) return;
+    if (res != MAP_FAILED) {
+#if defined(__linux__) && defined(MADV_HUGEPAGE) && SYLVAN_HUGEPAGES
+        /* Remapping removes the old advice. Request it again for ranges
+           meeting the same size threshold as a new allocation. */
+        if (size >= ((size_t)2 << 20)) (void)madvise(res, size, MADV_HUGEPAGE);
+#endif
+        return;
+    }
 #endif
 
     memset(ptr, 0, size);

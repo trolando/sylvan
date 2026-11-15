@@ -184,6 +184,10 @@ namespace sylvan {
 
 void* sylvan_alloc_aligned(size_t size);
 
+// As sylvan_alloc_aligned, but opts out of huge pages on Linux for sparsely
+// touched memory. Free it with sylvan_free_aligned.
+void* sylvan_alloc_sparse(size_t size);
+
 void sylvan_free_aligned(void* ptr, size_t size);
 
 void sylvan_clear_aligned(void* ptr, size_t size);

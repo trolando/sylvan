@@ -4,6 +4,15 @@ All notable changes to Sylvan will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `SYLVAN_HUGEPAGES`, a CMake option defaulting to OFF until measured on
+  master. When enabled with `SYLVAN_USE_MMAP` on Linux, it requests transparent
+  huge pages for mappings of at least 2 MiB through `MADV_HUGEPAGE` when
+  available, including the node data, hash table and operation cache.
+  Traversal side bitmap allocations request `MADV_NOHUGEPAGE` regardless of
+  the option to limit sparse memory use. Both requests are best effort: the
+  advice may be unavailable or fail. With the option OFF, the kernel may still
+  use huge pages under THP `always`, including for side bitmaps if their
+  opt-out is unavailable or fails.
 - `SYLVAN_INSTALL`, a CMake option to generate Sylvan's installation rules.
   It defaults to on for a top-level build and off as a subproject.
 - `SYLVAN_CHECK_HANDLES`, an opt-in bounds check in the node dereference
@@ -27,6 +36,15 @@ All notable changes to Sylvan will be documented in this file.
   `llmsset_get_data_size()`.
 
 ### Changed
+- Aligned clears on Linux first try `MADV_DONTNEED` when available, retaining
+  the mapping and its advice on success. If unavailable or unsuccessful,
+  clears try remapping and request huge pages again for ranges of at least
+  2 MiB when the option is enabled and the advice is available, before falling
+  back to `memset` if remapping also fails. Master's operation cache clears by
+  freeing and reallocating, so new allocations get fresh advice under the
+  conditions above. Shrinking still reclaims empty data stretches at 64 KiB
+  boundaries, which can split huge pages. Other platforms keep their existing
+  behavior.
 - Text files are stored and checked out with LF line endings on every
   platform. Serialized `.bdd` and `.ldd` models remain binary.
 - `sylvan_gc()` now shrinks the nodes table to fit the live nodes: to the

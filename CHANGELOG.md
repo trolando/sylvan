@@ -1,7 +1,11 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
-## [Unreleased]
+## [1.12.8] - 2026-11-15
+
+This release updates Lace to version 1.11.1, which makes frequent garbage
+collections with many workers fast again, and adds a handler for a full nodes
+table.
 
 ### Fixed
 - Updated Lace to version 1.11.1. With Lace 1.11.0, workers that fell asleep

@@ -29,10 +29,18 @@
 _Static_assert(sizeof(_Atomic(size_t)) == sizeof(size_t), "atomic size_t must preserve size");
 _Static_assert(_Alignof(_Atomic(size_t)) <= _Alignof(size_t), "atomic size_t must preserve alignment");
 
+/* For the hot paths in this file: a static inline function inlines also in a
+ * shared library built with -fPIC, where an exported one may not. */
+static inline size_t
+table_size_relaxed(const llmsset_t dbs)
+{
+    return atomic_load_explicit((const _Atomic(size_t) *)&dbs->table_size, memory_order_relaxed);
+}
+
 size_t
 llmsset_get_size(const llmsset_t dbs)
 {
-    return atomic_load_explicit((const _Atomic(size_t) *)&dbs->table_size, memory_order_relaxed);
+    return table_size_relaxed(dbs);
 }
 
 void
@@ -61,7 +69,7 @@ VOID_TASK_0(llmsset_reset_region)
 static uint64_t
 claim_next_region(const llmsset_t dbs, uint64_t start_region)
 {
-    const uint64_t regions = llmsset_get_size(dbs) / (64u * 8u);
+    const uint64_t regions = table_size_relaxed(dbs) / (64u * 8u);
     if (regions == 0) return UINT64_MAX;
 
     start_region %= regions;
@@ -120,7 +128,7 @@ claim_data_bucket(const llmsset_t dbs)
         }
         else {
             // First use after startup or GC. Spread workers over the region space.
-            const uint64_t regions = llmsset_get_size(dbs) / (64u * 8u);
+            const uint64_t regions = table_size_relaxed(dbs) / (64u * 8u);
             uint64_t start_region = 0;
 
             if (regions != 0) {
@@ -194,7 +202,7 @@ llmsset_lookup2(const llmsset_t dbs, uint64_t a, uint64_t b, int* created, const
 #if LLMSSET_MASK
     last = idx = hash_rehash & dbs->mask;
 #else
-    last = idx = hash_rehash % llmsset_get_size(dbs);
+    last = idx = hash_rehash % table_size_relaxed(dbs);
 #endif
 
     for (;;) {
@@ -259,7 +267,7 @@ llmsset_lookup2(const llmsset_t dbs, uint64_t a, uint64_t b, int* created, const
 #if LLMSSET_MASK
             last = idx = hash_rehash & dbs->mask;
 #else
-            last = idx = hash_rehash % llmsset_get_size(dbs);
+            last = idx = hash_rehash % table_size_relaxed(dbs);
 #endif
         }
     }
@@ -296,7 +304,7 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 #if LLMSSET_MASK
     last = idx = hash_rehash & dbs->mask;
 #else
-    last = idx = hash_rehash % llmsset_get_size(dbs);
+    last = idx = hash_rehash % table_size_relaxed(dbs);
 #endif
 
     for (;;) {
@@ -327,7 +335,7 @@ llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx)
 #if LLMSSET_MASK
             last = idx = hash_rehash & dbs->mask;
 #else
-            last = idx = hash_rehash % llmsset_get_size(dbs);
+            last = idx = hash_rehash % table_size_relaxed(dbs);
 #endif
         }
     }
@@ -497,7 +505,7 @@ TASK_3(int, llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
 
 TASK_IMPL_1(int, llmsset_rehash, llmsset_t, dbs)
 {
-    return CALL(llmsset_rehash_par, dbs, 0, llmsset_get_size(dbs));
+    return CALL(llmsset_rehash_par, dbs, 0, table_size_relaxed(dbs));
 }
 
 TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, count)
@@ -537,7 +545,7 @@ TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, 
 
 TASK_IMPL_1(size_t, llmsset_count_marked, llmsset_t, dbs)
 {
-    return CALL(llmsset_count_marked_par, dbs, 0, llmsset_get_size(dbs));
+    return CALL(llmsset_count_marked_par, dbs, 0, table_size_relaxed(dbs));
 }
 
 VOID_TASK_3(llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
@@ -567,7 +575,7 @@ VOID_TASK_3(llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
 VOID_TASK_IMPL_1(llmsset_destroy_unmarked, llmsset_t, dbs)
 {
     if (dbs->destroy_cb == NULL) return; // no custom function
-    CALL(llmsset_destroy_par, dbs, 0, llmsset_get_size(dbs));
+    CALL(llmsset_destroy_par, dbs, 0, table_size_relaxed(dbs));
 }
 
 /**

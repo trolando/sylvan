@@ -537,6 +537,34 @@ TASK_IMPL_3(BDD, sylvan_constrain, BDD, f, BDD, c, BDDVAR, prev_level)
     return mark ? sylvan_not(result) : result;
 }
 
+TASK_IMPL_2(BDD, sylvan_cofactor, BDD, f, BDD, cube)
+{
+    if (f == sylvan_invalid || cube == sylvan_invalid) return sylvan_invalid;
+    BDD remaining = cube;
+    while (!mtbdd_isleaf(remaining)) {
+        BDD low = sylvan_low(remaining), high = sylvan_high(remaining);
+        if (low == sylvan_false && high != sylvan_false) remaining = high;
+        else if (high == sylvan_false && low != sylvan_false) remaining = low;
+        else return sylvan_invalid;
+    }
+    if (remaining != sylvan_true) return sylvan_invalid;
+
+    sylvan_stats_count(BDD_COFACTOR);
+    bdd_refs_push(f);
+    bdd_refs_push(cube);
+    BDD result = CALL(sylvan_restrict, f, cube, 0);
+    bdd_refs_pop(2);
+    return result;
+}
+
+TASK_IMPL_4(BDD, sylvan_eval, BDD, f, BDDSET, variables, const uint8_t*, values, size_t, count)
+{
+    BDD result = mtbdd_eval_internal(f, variables, values, count);
+    if (result != sylvan_false && result != sylvan_true) return sylvan_invalid;
+    sylvan_stats_count(BDD_EVAL);
+    return result;
+}
+
 /**
  * Compute restrict f@c, which uses a heuristic to try and minimize a BDD f with respect to a care function c
  */
@@ -1721,6 +1749,65 @@ TASK_IMPL_2(double, sylvan_pathcount, BDD, bdd, BDDVAR, prev_level)
     }
 
     return res1;
+}
+
+/* Validate once at the entry point, before following the set during counting. */
+int
+sylvan_count_is_valid_set(BDDSET variables)
+{
+    if (variables == sylvan_invalid) return 0;
+    while (!mtbdd_isleaf(variables)) {
+        if (sylvan_low(variables) != sylvan_false) return 0;
+        BDDSET next = sylvan_set_next(variables);
+        if (next == sylvan_invalid) return 0;
+        if (!mtbdd_isleaf(next) && sylvan_var(next) <= sylvan_var(variables)) return 0;
+        variables = next;
+    }
+    return variables == sylvan_true;
+}
+
+TASK_3(int, sylvan_satcount_u64_rec, BDD, bdd, BDDSET, variables, uint64_t*, result)
+{
+    if (bdd == sylvan_invalid) return 0;
+    if (bdd == sylvan_false) { *result = 0; return 1; }
+    if (bdd == sylvan_true) return sylvan_count_shift_u64(1, sylvan_set_count(variables), result);
+    if (mtbdd_isleaf(bdd)) return 0;
+
+    sylvan_gc_test();
+    sylvan_stats_count(BDD_SATCOUNT_U64);
+
+    size_t skipped = 0;
+    BDDVAR var = sylvan_var(bdd);
+    while (!sylvan_set_isempty(variables) && sylvan_set_first(variables) < var) {
+        skipped++;
+        variables = sylvan_set_next(variables);
+    }
+    if (sylvan_set_isempty(variables) || sylvan_set_first(variables) != var) return 0;
+
+    uint64_t sum;
+    if (cache_get3(CACHE_BDD_SATCOUNT_U64, bdd, variables, 0, &sum)) {
+        sylvan_stats_count(BDD_SATCOUNT_U64_CACHED);
+        return sylvan_count_shift_u64(sum, skipped, result);
+    }
+
+    BDDSET next = sylvan_set_next(variables);
+    uint64_t low, high;
+    SPAWN(sylvan_satcount_u64_rec, sylvan_high(bdd), next, &high);
+    int low_ok = CALL(sylvan_satcount_u64_rec, sylvan_low(bdd), next, &low);
+    int high_ok = SYNC(sylvan_satcount_u64_rec);
+    if (!low_ok || !high_ok || UINT64_MAX - low < high) return 0;
+
+    sum = low + high;
+    if (cache_put3(CACHE_BDD_SATCOUNT_U64, bdd, variables, 0, sum)) {
+        sylvan_stats_count(BDD_SATCOUNT_U64_CACHEDPUT);
+    }
+    return sylvan_count_shift_u64(sum, skipped, result);
+}
+
+TASK_IMPL_3(int, sylvan_satcount_u64, BDD, bdd, BDDSET, variables, uint64_t*, result)
+{
+    if (result == NULL || bdd == sylvan_invalid || !sylvan_count_is_valid_set(variables)) return 0;
+    return CALL(sylvan_satcount_u64_rec, bdd, variables, result);
 }
 
 /**

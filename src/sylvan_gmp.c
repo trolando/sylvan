@@ -18,10 +18,249 @@
 #include <sylvan_int.h>
 #include <sylvan_gmp.h>
 
+#include <limits.h>
 #include <math.h>
 #include <string.h>
 
 static uint32_t gmp_type;
+
+/* Each call owns its memo table and GMP values. No pointers to GMP storage are
+ * placed in the global operation cache. The recursive walk is sequential and
+ * has no GC safepoints, so cached node handles remain live for the whole call. */
+struct gmp_count_entry {
+    MTBDD dd;
+    BDDSET variables;
+    mpz_t count;
+    struct gmp_count_entry *next;
+};
+
+struct gmp_count_cache {
+    size_t bucket_count;
+    size_t entry_count;
+    struct gmp_count_entry **buckets;
+};
+
+static size_t
+gmp_count_hash(MTBDD dd, BDDSET variables, size_t bucket_count)
+{
+    uint64_t hash = dd ^ (variables + UINT64_C(0x9e3779b97f4a7c15) + (dd << 6) + (dd >> 2));
+    hash ^= hash >> 33;
+    hash *= UINT64_C(0xff51afd7ed558ccd);
+    hash ^= hash >> 33;
+    return (size_t)(hash & (bucket_count - 1));
+}
+
+static int
+gmp_count_cache_init(struct gmp_count_cache *cache)
+{
+    cache->bucket_count = 1024;
+    cache->entry_count = 0;
+    cache->buckets = calloc(cache->bucket_count, sizeof(*cache->buckets));
+    return cache->buckets != NULL;
+}
+
+static void
+gmp_count_cache_clear(struct gmp_count_cache *cache)
+{
+    for (size_t i = 0; i < cache->bucket_count; i++) {
+        struct gmp_count_entry *entry = cache->buckets[i];
+        while (entry != NULL) {
+            struct gmp_count_entry *next = entry->next;
+            mpz_clear(entry->count);
+            free(entry);
+            entry = next;
+        }
+    }
+    free(cache->buckets);
+}
+
+static int
+gmp_count_cache_get(struct gmp_count_cache *cache, mpz_t result, MTBDD dd, BDDSET variables)
+{
+    const size_t bucket = gmp_count_hash(dd, variables, cache->bucket_count);
+    for (struct gmp_count_entry *entry = cache->buckets[bucket];
+         entry != NULL; entry = entry->next) {
+        if (entry->dd == dd && entry->variables == variables) {
+            mpz_set(result, entry->count);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void
+gmp_count_cache_grow(struct gmp_count_cache *cache)
+{
+    if (cache->bucket_count > SIZE_MAX / 2 ||
+        cache->entry_count < 2 * cache->bucket_count) return;
+
+    const size_t bucket_count = 2 * cache->bucket_count;
+    struct gmp_count_entry **buckets = calloc(bucket_count, sizeof(*buckets));
+    if (buckets == NULL) return;
+
+    for (size_t i = 0; i < cache->bucket_count; i++) {
+        struct gmp_count_entry *entry = cache->buckets[i];
+        while (entry != NULL) {
+            struct gmp_count_entry *next = entry->next;
+            const size_t bucket = gmp_count_hash(entry->dd, entry->variables, bucket_count);
+            entry->next = buckets[bucket];
+            buckets[bucket] = entry;
+            entry = next;
+        }
+    }
+    free(cache->buckets);
+    cache->buckets = buckets;
+    cache->bucket_count = bucket_count;
+}
+
+static int
+gmp_count_cache_put(struct gmp_count_cache *cache, MTBDD dd, BDDSET variables, const mpz_t count)
+{
+    gmp_count_cache_grow(cache);
+    const size_t bucket = gmp_count_hash(dd, variables, cache->bucket_count);
+    struct gmp_count_entry *entry = malloc(sizeof(*entry));
+    if (entry == NULL) return 0;
+
+    entry->dd = dd;
+    entry->variables = variables;
+    mpz_init_set(entry->count, count);
+    entry->next = cache->buckets[bucket];
+    cache->buckets[bucket] = entry;
+    cache->entry_count++;
+    return 1;
+}
+
+enum gmp_count_family { GMP_COUNT_BDD, GMP_COUNT_MTBDD, GMP_COUNT_LDD, GMP_COUNT_ZDD };
+
+static int
+gmp_count_shift(mpz_t result, uint64_t shift)
+{
+    /* mp_bitcnt_t is unsigned long, which can be narrower than size_t. */
+    if (shift > ULONG_MAX) return 0;
+    mpz_mul_2exp(result, result, (mp_bitcnt_t)shift);
+    return 1;
+}
+
+static int
+satcount_gmp_rec(struct gmp_count_cache *cache, uint64_t dd, uint64_t variables,
+                enum gmp_count_family family, mpz_t result)
+{
+    uint64_t low_dd, high_dd, next = 0;
+    size_t skipped = 0;
+    Sylvan_Counters counter;
+
+    switch (family) {
+    case GMP_COUNT_BDD:
+        counter = BDD_SATCOUNT_GMP;
+        if (mtbdd_isleaf(dd)) {
+            if (dd != sylvan_false && dd != sylvan_true) return 0;
+            mpz_set_ui(result, dd == sylvan_true);
+            if (dd == sylvan_true) return gmp_count_shift(result, sylvan_set_count(variables));
+            return 1;
+        }
+        while (!sylvan_set_isempty(variables) && sylvan_set_first(variables) < sylvan_var(dd)) {
+            skipped++;
+            variables = sylvan_set_next(variables);
+        }
+        if (sylvan_set_isempty(variables) || sylvan_set_first(variables) != sylvan_var(dd)) return 0;
+        next = sylvan_set_next(variables);
+        low_dd = sylvan_low(dd);
+        high_dd = sylvan_high(dd);
+        break;
+    case GMP_COUNT_MTBDD:
+        counter = MTBDD_SATCOUNT_GMP;
+        if (mtbdd_isleaf(dd)) {
+            mpz_set_ui(result, mtbdd_count_leaf_is_nonzero(dd));
+            if (mpz_sgn(result)) return gmp_count_shift(result, variables);
+            return 1;
+        }
+        if (variables == 0) return 0;
+        next = variables - 1;
+        low_dd = mtbdd_getlow(dd);
+        high_dd = mtbdd_gethigh(dd);
+        break;
+    case GMP_COUNT_LDD:
+        counter = LDD_SATCOUNT_GMP;
+        if (dd == lddmc_false || dd == lddmc_true) {
+            mpz_set_ui(result, dd == lddmc_true);
+            return 1;
+        }
+        low_dd = lddmc_getright(dd);
+        high_dd = lddmc_getdown(dd);
+        break;
+    case GMP_COUNT_ZDD:
+        counter = ZDD_SATCOUNT_GMP;
+        if (dd == zdd_false || zdd_isleaf(dd)) {
+            mpz_set_ui(result, dd != zdd_false);
+            return 1;
+        }
+        low_dd = zdd_getlow(dd);
+        high_dd = zdd_gethigh(dd);
+        break;
+    default:
+        return 0;
+    }
+
+    sylvan_stats_count(counter);
+    if (gmp_count_cache_get(cache, result, dd, variables)) {
+        sylvan_stats_count(counter + 2); /* CACHED */
+        return gmp_count_shift(result, skipped);
+    }
+
+    mpz_t low, high;
+    mpz_init(low);
+    mpz_init(high);
+    int ok = satcount_gmp_rec(cache, low_dd, next, family, low);
+    if (ok) ok = satcount_gmp_rec(cache, high_dd, next, family, high);
+    if (ok) {
+        mpz_add(result, low, high);
+        ok = gmp_count_cache_put(cache, dd, variables, result);
+        if (ok) {
+            sylvan_stats_count(counter + 1); /* CACHEDPUT */
+            ok = gmp_count_shift(result, skipped);
+        }
+    }
+    mpz_clear(low);
+    mpz_clear(high);
+    return ok;
+}
+
+static int
+satcount_gmp(uint64_t dd, uint64_t variables, enum gmp_count_family family, mpz_t destination)
+{
+    if (destination == NULL || dd == UINT64_MAX) return 0;
+    if (family == GMP_COUNT_BDD && !sylvan_count_is_valid_set(variables)) return 0;
+
+    struct gmp_count_cache cache;
+    if (!gmp_count_cache_init(&cache)) return 0;
+    mpz_t result;
+    mpz_init(result);
+    int ok = satcount_gmp_rec(&cache, dd, variables, family, result);
+    if (ok) mpz_set(destination, result);
+    mpz_clear(result);
+    gmp_count_cache_clear(&cache);
+    return ok;
+}
+
+TASK_IMPL_3(int, sylvan_satcount_gmp, BDD, dd, BDDSET, variables, mpz_ptr, result)
+{
+    return satcount_gmp(dd, variables, GMP_COUNT_BDD, result);
+}
+
+TASK_IMPL_3(int, mtbdd_satcount_gmp, MTBDD, dd, size_t, nvars, mpz_ptr, result)
+{
+    return satcount_gmp(dd, nvars, GMP_COUNT_MTBDD, result);
+}
+
+TASK_IMPL_2(int, lddmc_satcount_gmp, MDD, dd, mpz_ptr, result)
+{
+    return satcount_gmp(dd, 0, GMP_COUNT_LDD, result);
+}
+
+TASK_IMPL_2(int, zdd_satcount_gmp, ZDD, dd, mpz_ptr, result)
+{
+    return satcount_gmp(dd, 0, GMP_COUNT_ZDD, result);
+}
 
 /**
  * helper function for hash

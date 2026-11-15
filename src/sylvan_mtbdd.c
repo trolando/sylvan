@@ -53,6 +53,44 @@ mtbdd_gethigh(MTBDD mtbdd)
     return node_gethigh(mtbdd, MTBDD_GETNODE(mtbdd));
 }
 
+/* Shared sequential walk; no nodes or temporary diagrams are allocated. */
+MTBDD
+mtbdd_eval_internal(MTBDD dd, BDDSET variables, const uint8_t *values, size_t count)
+{
+    if (dd == mtbdd_invalid || variables == mtbdd_invalid || (count && values == NULL)) return mtbdd_invalid;
+
+    /* Validate the assignment, including entries not encountered on the path. */
+    BDDSET set = variables;
+    for (size_t i=0; i<count; i++) {
+        if (mtbdd_isleaf(set) || values[i] > 1 || mtbdd_getlow(set) != mtbdd_false) return mtbdd_invalid;
+        BDDSET next = mtbdd_set_next(set);
+        if (!mtbdd_isleaf(next) && mtbdd_set_first(next) <= mtbdd_set_first(set)) return mtbdd_invalid;
+        set = next;
+    }
+    if (!mtbdd_set_isempty(set)) return mtbdd_invalid;
+
+    size_t index = 0;
+    while (!mtbdd_isleaf(dd)) {
+        uint32_t var = mtbdd_getvar(dd);
+        while (!mtbdd_set_isempty(variables) && mtbdd_set_first(variables) < var) {
+            variables = mtbdd_set_next(variables);
+            index++;
+        }
+        if (mtbdd_set_isempty(variables) || mtbdd_set_first(variables) != var) return mtbdd_invalid;
+        dd = values[index] ? mtbdd_gethigh(dd) : mtbdd_getlow(dd);
+        variables = mtbdd_set_next(variables);
+        index++;
+    }
+    return dd;
+}
+
+TASK_IMPL_4(MTBDD, mtbdd_eval, MTBDD, dd, BDDSET, variables, const uint8_t*, values, size_t, count)
+{
+    MTBDD result = mtbdd_eval_internal(dd, variables, values, count);
+    if (result != mtbdd_invalid) sylvan_stats_count(MTBDD_EVAL);
+    return result;
+}
+
 // for leaves
 uint32_t
 mtbdd_gettype(MTBDD leaf)
@@ -2539,6 +2577,49 @@ TASK_IMPL_1(MTBDD, mtbdd_maximum, MTBDD, a)
     }
 
     return result;
+}
+
+/* Match the leaf semantics of mtbdd_satcount, including custom leaves. */
+int
+mtbdd_count_leaf_is_nonzero(MTBDD dd)
+{
+    if (dd == mtbdd_false) return 0;
+    if (dd == mtbdd_true) return 1;
+    switch (mtbdd_gettype(dd)) {
+    case 0: return mtbdd_getint64(dd) != 0;
+    case 1: return mtbdd_getdouble(dd) != 0.0;
+    case 2: return mtbdd_getvalue(dd) != 1;
+    default: return 1;
+    }
+}
+
+TASK_IMPL_3(int, mtbdd_satcount_u64, MTBDD, dd, size_t, nvars, uint64_t*, result)
+{
+    if (result == NULL || dd == mtbdd_invalid) return 0;
+    if (mtbdd_isleaf(dd)) return sylvan_count_shift_u64(mtbdd_count_leaf_is_nonzero(dd), nvars, result);
+    if (nvars == 0) return 0;
+
+    sylvan_gc_test();
+    sylvan_stats_count(MTBDD_SATCOUNT_U64);
+    uint64_t sum;
+    if (cache_get3(CACHE_MTBDD_SATCOUNT_U64, dd, nvars, 0, &sum)) {
+        sylvan_stats_count(MTBDD_SATCOUNT_U64_CACHED);
+        *result = sum;
+        return 1;
+    }
+
+    uint64_t low, high;
+    SPAWN(mtbdd_satcount_u64, mtbdd_gethigh(dd), nvars-1, &high);
+    int low_ok = CALL(mtbdd_satcount_u64, mtbdd_getlow(dd), nvars-1, &low);
+    int high_ok = SYNC(mtbdd_satcount_u64);
+    if (!low_ok || !high_ok || UINT64_MAX - low < high) return 0;
+
+    sum = low + high;
+    if (cache_put3(CACHE_MTBDD_SATCOUNT_U64, dd, nvars, 0, sum)) {
+        sylvan_stats_count(MTBDD_SATCOUNT_U64_CACHEDPUT);
+    }
+    *result = sum;
+    return 1;
 }
 
 /**

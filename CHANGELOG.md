@@ -4,6 +4,14 @@ All notable changes to Sylvan will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Exact `uint64_t` model counts: `sylvan_satcount_u64`, `mtbdd_satcount_u64`,
+  `lddmc_satcount_u64` and `zdd_satcount_u64`. They report overflow and leave
+  the output unchanged on failure. The corresponding `_gmp` operations in
+  `sylvan_gmp.h` support arbitrary precision when built with `SYLVAN_GMP`.
+  Existing count functions and their semantics are unchanged.
+- `sylvan_eval` and `mtbdd_eval`, which follow an assignment to a leaf without
+  allocating nodes, and `sylvan_cofactor`, which rejects non-cubes before
+  restricting a BDD. `sylvan_restrict` remains unchanged.
 - `SYLVAN_HUGEPAGES`, a CMake option defaulting to OFF until measured on
   master. When enabled with `SYLVAN_USE_MMAP` on Linux, it requests transparent
   huge pages for mappings of at least 2 MiB through `MADV_HUGEPAGE` when

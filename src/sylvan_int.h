@@ -90,6 +90,7 @@ static const uint64_t CACHE_BDD_ISBDD               = (14LL<<40);
 static const uint64_t CACHE_BDD_SUPPORT             = (15LL<<40);
 static const uint64_t CACHE_BDD_PATHCOUNT           = (16LL<<40);
 static const uint64_t CACHE_BDD_DISJOINT            = (17LL<<40);
+static const uint64_t CACHE_BDD_SATCOUNT_U64        = (18LL<<40);
 
 // MDD operations
 static const uint64_t CACHE_MDD_RELPROD             = (20LL<<40);
@@ -103,6 +104,7 @@ static const uint64_t CACHE_MDD_RELPREV             = (27LL<<40);
 static const uint64_t CACHE_MDD_SATCOUNT            = (28LL<<40);
 static const uint64_t CACHE_MDD_SATCOUNTL1          = (29LL<<40);
 static const uint64_t CACHE_MDD_SATCOUNTL2          = (30LL<<40);
+static const uint64_t CACHE_MDD_SATCOUNT_U64        = (31LL<<40);
 
 // MTBDD operations
 static const uint64_t CACHE_MTBDD_APPLY             = (40LL<<40);
@@ -122,6 +124,7 @@ static const uint64_t CACHE_MTBDD_LESS              = (53LL<<40);
 static const uint64_t CACHE_MTBDD_GEQ               = (54LL<<40);
 static const uint64_t CACHE_MTBDD_GREATER           = (55LL<<40);
 static const uint64_t CACHE_MTBDD_EVAL_COMPOSE      = (56LL<<40);
+static const uint64_t CACHE_MTBDD_SATCOUNT_U64      = (57LL<<40);
 
 // ZDD operations
 static const uint64_t CACHE_ZDD_FROM_MTBDD          = (80LL<<40);
@@ -138,6 +141,24 @@ static const uint64_t CACHE_ZDD_EXISTS              = (90LL<<40);
 static const uint64_t CACHE_ZDD_PROJECT             = (91LL<<40);
 static const uint64_t CACHE_ZDD_ISOP                = (92LL<<40);
 static const uint64_t CACHE_ZDD_COVER_TO_BDD        = (93LL<<40);
+static const uint64_t CACHE_ZDD_SATCOUNT_U64        = (94LL<<40);
+
+/* Helpers shared by exact counts and evaluation. */
+int sylvan_count_is_valid_set(BDDSET variables);
+int mtbdd_count_leaf_is_nonzero(MTBDD dd);
+MTBDD mtbdd_eval_internal(MTBDD dd, BDDSET variables, const uint8_t *values, size_t count);
+
+static inline int
+sylvan_count_shift_u64(uint64_t value, size_t shift, uint64_t *result)
+{
+    if (value == 0) {
+        *result = 0;
+        return 1;
+    }
+    if (shift >= 64 || value > (UINT64_MAX >> shift)) return 0;
+    *result = value << shift;
+    return 1;
+}
 
 #ifdef __cplusplus
 }

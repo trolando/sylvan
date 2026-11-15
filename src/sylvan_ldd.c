@@ -1975,6 +1975,35 @@ lddmc_nodecount(MDD mdd)
  * CALCULATE NUMBER OF VAR ASSIGNMENTS THAT YIELD TRUE
  */
 
+TASK_IMPL_2(int, lddmc_satcount_u64, MDD, mdd, uint64_t*, result)
+{
+    if (result == NULL || mdd == UINT64_MAX) return 0;
+    if (mdd == lddmc_false || mdd == lddmc_true) { *result = mdd == lddmc_true; return 1; }
+
+    sylvan_gc_test();
+    sylvan_stats_count(LDD_SATCOUNT_U64);
+    uint64_t sum;
+    if (cache_get3(CACHE_MDD_SATCOUNT_U64, mdd, 0, 0, &sum)) {
+        sylvan_stats_count(LDD_SATCOUNT_U64_CACHED);
+        *result = sum;
+        return 1;
+    }
+
+    MDD right_dd = lddmc_getright(mdd), down_dd = lddmc_getdown(mdd);
+    uint64_t right, down;
+    SPAWN(lddmc_satcount_u64, down_dd, &down);
+    int right_ok = CALL(lddmc_satcount_u64, right_dd, &right);
+    int down_ok = SYNC(lddmc_satcount_u64);
+    if (!right_ok || !down_ok || UINT64_MAX - right < down) return 0;
+
+    sum = right + down;
+    if (cache_put3(CACHE_MDD_SATCOUNT_U64, mdd, 0, 0, sum)) {
+        sylvan_stats_count(LDD_SATCOUNT_U64_CACHEDPUT);
+    }
+    *result = sum;
+    return 1;
+}
+
 TASK_IMPL_1(lddmc_satcount_double_t, lddmc_satcount_cached, MDD, mdd)
 {
     if (mdd == lddmc_false) return 0.0;

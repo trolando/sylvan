@@ -116,6 +116,18 @@ struct
     {2, ZDD_ISOP, "zdd isop"},
     {2, ZDD_COVER_TO_BDD, "zdd cover_to_bdd"},
 
+    {2, BDD_SATCOUNT_U64, "BDD satcount u64"},
+    {2, BDD_SATCOUNT_GMP, "BDD satcount gmp"},
+    {2, MTBDD_SATCOUNT_U64, "MTBDD satcount u64"},
+    {2, MTBDD_SATCOUNT_GMP, "MTBDD satcount gmp"},
+    {2, LDD_SATCOUNT_U64, "LDD satcount u64"},
+    {2, LDD_SATCOUNT_GMP, "LDD satcount gmp"},
+    {2, ZDD_SATCOUNT_U64, "ZDD satcount u64"},
+    {2, ZDD_SATCOUNT_GMP, "ZDD satcount gmp"},
+    {1, BDD_EVAL, "BDD eval"},
+    {1, MTBDD_EVAL, "MTBDD eval"},
+    {1, BDD_COFACTOR, "BDD cofactor"},
+
     {0, 0, "Garbage collection"},
     {1, SYLVAN_GC_COUNT, "GC executions"},
     {3, SYLVAN_GC, "Total time spent"},

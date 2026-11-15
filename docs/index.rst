@@ -385,9 +385,28 @@ also be referenced for garbage collection. The following functions are related t
 Sylvan implements a number of counting operations:
 
 - ``mtbdd_satcount(bdd, number_of_vars)``: compute the number of minterms (assignments that lead to True) for a function with <number_of_vars> variables; we don't need to know the exact variables that may be in the BDD, just how many there are.
+- ``sylvan_satcount_u64(bdd, variables, &result)``: count satisfying assignments exactly over a variable set containing the BDD's support.
+- ``mtbdd_satcount_u64(dd, number_of_vars, &result)``: count exactly with the same variable-count argument and leaf semantics as ``mtbdd_satcount``. False and built-in numeric zero leaves do not count; other leaves count.
+- ``lddmc_satcount_u64(dd, &result)``: count the tuples in an LDD exactly, with the same semantics as ``lddmc_satcount``.
+- ``zdd_satcount_u64(dd, &result)``: count paths to non-False ZDD leaves exactly, with the same semantics as ``zdd_satcount``; skipped variables do not multiply the count.
 - ``sylvan_pathcount(bdd)``: compute the number of distinct paths to True.
 - ``mtbdd_nodecount(bdd)``: compute the number of nodes (and leaves) in the BDD.
 - ``mtbdd_nodecount_more(array, length)``: compute the number of nodes (and leaves) in the array of BDDs.
+
+The four ``_u64`` operations write a ``uint64_t`` result and return 1 on success.
+They return 0 on overflow or invalid arguments and leave the result unchanged.
+In particular, ``UINT64_MAX`` is a valid result. Existing floating-point count
+operations are unchanged.
+
+With ``SYLVAN_GMP=ON``, include ``sylvan_gmp.h`` for
+``sylvan_satcount_gmp``, ``mtbdd_satcount_gmp``, ``lddmc_satcount_gmp`` and
+``zdd_satcount_gmp``. These take the same arguments as their ``_u64`` counterparts,
+with an initialized ``mpz_t`` as the final argument. They support results larger
+than 64 bits and return 1 on success, or 0 on invalid arguments or memo-table
+allocation failure, leaving the result unchanged on failure. Each call uses a
+private memo table and traverses sequentially. Initialize and clear the result
+with ``mpz_init`` and ``mpz_clear``; ``gmp_init`` is not needed for counting.
+GMP's own allocation failures follow its allocation policy.
 
 Sylvan implements various advanced operations:
 
@@ -397,6 +416,8 @@ Sylvan implements various advanced operations:
 - ``sylvan_union_cube(set, vars, values)``: compute ``sylvan_or(set, sylvan_cube(vars, values))`` in one step.
 - ``sylvan_constrain(bdd_f, bdd_c)``: compute the generic cofactor of F constrained by C, i.e, set F to False for all assignments not in C.
 - ``sylvan_restrict(bdd_f, bdd_c)``: compute Coudert and Madre's restrict algorithm, which tries to minimize bdd_f according to a care set C using sibling substitution; the invariant is ``restrict(f, c) \and c == f \and c``; the result of this algorithm is often but not always smaller than the original.
+- ``sylvan_cofactor(f, cube)``: check that ``cube`` is a conjunction of positive or negative literals, then restrict ``f`` by it. Returns ``sylvan_invalid`` for a non-cube, including False. True is the empty cube. ``sylvan_restrict`` retains its existing behavior for general care sets.
+- ``sylvan_eval(f, variables, values, count)`` and ``mtbdd_eval(dd, variables, values, count)``: follow a complete assignment to a leaf without allocating nodes. The array contains exactly ``count`` values, each 0 or 1, in variable-set order, and ``count`` must equal the set's size. The set must contain the diagram's support; extra variables are ignored. The BDD operation returns True or False; the MTBDD operation returns the reached leaf, including False. Invalid arguments or an encountered unassigned variable yield ``sylvan_invalid`` / ``mtbdd_invalid``. These are sequential traversals of one path; they do not perform the callback-based transformation offered by ``mtbdd_eval_compose``.
 - ``sylvan_pick_cube(bdd)`` or ``sylvan_sat_one_bdd(bdd)``: extract a single path to True from the BDD (returns the BDD of this path)
 - ``sylvan_pick_single_cube(bdd, vars)`` or ``sylvan_sat_single(bdd, vars)`` extracts a single minterm from the BDD (returns the BDD of this assignment)
 - ``sylvan_sat_one(bdd, vars, array)``: extract a single minterm from the BDD given the set of variables and write the values of the variables in order to the given array, with 0 when it is negative, 1 when it is positive, and 2 when it is dontcare.

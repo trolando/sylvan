@@ -372,6 +372,17 @@ MTBDD mtbdd_cube(MTBDD variables, uint8_t *cube, MTBDD terminal);
 TASK_DECL_4(BDD, mtbdd_union_cube, MTBDD, MTBDD, uint8_t*, MTBDD);
 
 /**
+ * Calculate the exact count with the same semantics as mtbdd_satcount.
+ * <nvars> must be at least the number of variables in the support; this is an
+ * unchecked precondition, as for mtbdd_satcount.
+ * False and built-in numeric zero leaves do not count; other leaves count.
+ * Returns 1 on success, or 0 on overflow, a NULL <result>, mtbdd_invalid,
+ * or an exhausted <nvars> at a non-leaf. On failure, <result> is unchanged.
+ */
+TASK_DECL_3(int, mtbdd_satcount_u64, MTBDD, size_t, uint64_t*)
+#define mtbdd_satcount_u64(dd, nvars, result) RUN(mtbdd_satcount_u64, dd, nvars, result)
+
+/**
  * Count the number of satisfying assignments (minterms) leading to a non-false leaf
  */
 TASK_DECL_2(double, mtbdd_satcount, MTBDD, size_t);
@@ -654,6 +665,17 @@ TASK_DECL_1(MTBDD, mtbdd_support, MTBDD);
  */
 TASK_DECL_2(MTBDD, mtbdd_compose, MTBDD, MTBDDMAP);
 #define mtbdd_compose(dd, map) RUN(mtbdd_compose, dd, map)
+
+/**
+ * Evaluate <dd> under a complete assignment, without allocating nodes.
+ * <values> contains <count> entries, each 0 or 1, in the order of <variables>.
+ * <count> must equal mtbdd_set_count(variables); the set must contain the support
+ * of <dd>. Additional variables are ignored. Returns the reached leaf (including
+ * mtbdd_false), or mtbdd_invalid for invalid arguments or an encountered
+ * unassigned variable. The traversal is sequential and follows one path.
+ */
+TASK_DECL_4(MTBDD, mtbdd_eval, MTBDD, BDDSET, const uint8_t*, size_t)
+#define mtbdd_eval(dd, variables, values, count) RUN(mtbdd_eval, dd, variables, values, count)
 
 /**
  * Compute minimal leaf in the MTBDD (for Integer, Double, Rational MTBDDs)

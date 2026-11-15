@@ -179,6 +179,25 @@ TASK_DECL_3(BDD, sylvan_restrict, BDD, BDD, BDDVAR);
 #define sylvan_restrict(f,c) (RUN(sylvan_restrict, f, c, 0))
 
 /**
+ * Restrict <f> by a cube of positive or negative literals.
+ * Returns sylvan_invalid if <cube> is not a cube. The empty cube is sylvan_true;
+ * sylvan_false is not a cube. Unlike sylvan_restrict, rejects general care sets.
+ */
+TASK_DECL_2(BDD, sylvan_cofactor, BDD, BDD)
+#define sylvan_cofactor(f, cube) RUN(sylvan_cofactor, f, cube)
+
+/**
+ * Evaluate <f> under a complete assignment, without allocating nodes.
+ * <values> contains <count> entries, each 0 or 1, in the order of <variables>.
+ * <count> must equal sylvan_set_count(variables); the set must contain the support
+ * of <f>. Additional variables are ignored. Returns sylvan_false or sylvan_true,
+ * or sylvan_invalid for invalid arguments or an encountered unassigned variable.
+ * The traversal is sequential and follows only the selected path.
+ */
+TASK_DECL_4(BDD, sylvan_eval, BDD, BDDSET, const uint8_t*, size_t)
+#define sylvan_eval(f, variables, values, count) RUN(sylvan_eval, f, variables, values, count)
+
+/**
  * Function composition.
  * For each node with variable <key> which has a <key,value> pair in <map>,
  * replace the node by the result of sylvan_ite(<value>, <low>, <high>).
@@ -193,6 +212,18 @@ TASK_DECL_3(BDD, sylvan_compose, BDD, BDDMAP, BDDVAR);
 
 TASK_DECL_3(double, sylvan_satcount, BDD, BDDSET, BDDVAR);
 #define sylvan_satcount(bdd, variables) RUN(sylvan_satcount, bdd, variables, 0)
+
+/**
+ * Calculate the exact number of satisfying assignments over <variables>.
+ * <variables> must be a positive cube: increasing variables, false low edges,
+ * and a final true leaf (sylvan_true is the empty set). It must contain the
+ * support of <bdd>. The set is validated once, in O(set size).
+ * Returns 1 on success, or 0 on overflow, a NULL <result>, sylvan_invalid,
+ * a non-Boolean leaf in <bdd>, an invalid set, or a missing support variable.
+ * On failure, <result> is unchanged.
+ */
+TASK_DECL_3(int, sylvan_satcount_u64, BDD, BDDSET, uint64_t*)
+#define sylvan_satcount_u64(bdd, variables, result) RUN(sylvan_satcount_u64, bdd, variables, result)
 
 /**
  * Create a BDD cube representing the conjunction of variables in their positive or negative

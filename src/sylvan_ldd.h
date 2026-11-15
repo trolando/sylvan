@@ -161,6 +161,15 @@ void lddmc_fprintsha(FILE *out, MDD mdd);
 void lddmc_getsha(MDD mdd, char *target); // at least 65 bytes...
 
 /**
+ * Count the tuples represented by <mdd> exactly.
+ * Returns 1 on success, or 0 on overflow or invalid arguments.
+ * On failure, <result> is unchanged. <result> must not be NULL.
+ * As with lddmc_satcount, copy nodes count as one value.
+ */
+TASK_DECL_2(int, lddmc_satcount_u64, MDD, uint64_t*)
+#define lddmc_satcount_u64(mdd, result) RUN(lddmc_satcount_u64, mdd, result)
+
+/**
  * Calculate number of satisfying variable assignments.
  * The set of variables must be >= the support of the MDD.
  * (i.e. all variables in the MDD must be in variables)

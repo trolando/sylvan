@@ -1022,6 +1022,35 @@ TASK_IMPL_1(ZDD, zdd_support, ZDD, dd)
 /**
  * Count the number of distinct paths leading to a non-False leaf.
  */
+TASK_IMPL_2(int, zdd_satcount_u64, ZDD, dd, uint64_t*, result)
+{
+    if (result == NULL || dd == zdd_invalid) return 0;
+    if (dd == zdd_false || zdd_isleaf(dd)) { *result = dd != zdd_false; return 1; }
+
+    sylvan_gc_test();
+    sylvan_stats_count(ZDD_SATCOUNT_U64);
+    uint64_t sum;
+    if (cache_get3(CACHE_ZDD_SATCOUNT_U64, dd, 0, 0, &sum)) {
+        sylvan_stats_count(ZDD_SATCOUNT_U64_CACHED);
+        *result = sum;
+        return 1;
+    }
+
+    ZDD low_dd = zdd_getlow(dd), high_dd = zdd_gethigh(dd);
+    uint64_t low, high;
+    SPAWN(zdd_satcount_u64, high_dd, &high);
+    int low_ok = CALL(zdd_satcount_u64, low_dd, &low);
+    int high_ok = SYNC(zdd_satcount_u64);
+    if (!low_ok || !high_ok || UINT64_MAX - low < high) return 0;
+
+    sum = low + high;
+    if (cache_put3(CACHE_ZDD_SATCOUNT_U64, dd, 0, 0, sum)) {
+        sylvan_stats_count(ZDD_SATCOUNT_U64_CACHEDPUT);
+    }
+    *result = sum;
+    return 1;
+}
+
 TASK_IMPL_1(double, zdd_pathcount, ZDD, dd)
 {
     if (dd == zdd_false) return 0.0;

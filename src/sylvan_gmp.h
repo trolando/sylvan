@@ -36,6 +36,36 @@ extern "C" {
 void gmp_init(void);
 
 /**
+ * Exact model counts using GMP integers. Available only with SYLVAN_GMP.
+ * The caller must initialize <result> with mpz_init and clear it with mpz_clear.
+ * These operations do not require gmp_init (which initializes rational leaves).
+ * Return 1 on success, or 0 for a NULL <result>, an invalid-handle sentinel,
+ * memo-table allocation failure, or the failures listed below. On failure,
+ * <result> is unchanged. GMP allocation failures follow GMP's policy.
+ * Each call uses a private memo table and a sequential traversal.
+ *
+ * sylvan_satcount_gmp counts satisfying assignments over <variables>, a positive
+ * cube with increasing variables, false low edges, and a final true leaf.
+ * sylvan_true is the empty set. The set is validated once, in O(set size).
+ * An invalid set, a missing support variable, or a non-Boolean leaf returns 0.
+ * mtbdd_satcount_gmp uses the nonzero-leaf semantics of mtbdd_satcount. <nvars>
+ * must be at least the number of variables in the support; this is an unchecked
+ * precondition. An exhausted <nvars> at a non-leaf returns 0.
+ * Both BDD and MTBDD counts return 0 if a required power-of-two shift exceeds
+ * ULONG_MAX bits (the maximum mp_bitcnt_t value, 32 bits wide on Windows).
+ * lddmc_satcount_gmp counts tuples, including copy nodes as one value.
+ * zdd_satcount_gmp counts paths to non-False leaves.
+ */
+TASK_DECL_3(int, sylvan_satcount_gmp, BDD, BDDSET, mpz_ptr)
+#define sylvan_satcount_gmp(dd, variables, result) RUN(sylvan_satcount_gmp, dd, variables, result)
+TASK_DECL_3(int, mtbdd_satcount_gmp, MTBDD, size_t, mpz_ptr)
+#define mtbdd_satcount_gmp(dd, nvars, result) RUN(mtbdd_satcount_gmp, dd, nvars, result)
+TASK_DECL_2(int, lddmc_satcount_gmp, MDD, mpz_ptr)
+#define lddmc_satcount_gmp(dd, result) RUN(lddmc_satcount_gmp, dd, result)
+TASK_DECL_2(int, zdd_satcount_gmp, ZDD, mpz_ptr)
+#define zdd_satcount_gmp(dd, result) RUN(zdd_satcount_gmp, dd, result)
+
+/**
  * Create MPQ leaf
  */
 MTBDD mtbdd_gmp(mpq_t val);

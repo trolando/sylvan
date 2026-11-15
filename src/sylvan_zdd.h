@@ -251,6 +251,15 @@ TASK_DECL_1(ZDD, zdd_support, ZDD);
 #define zdd_satcount zdd_pathcount
 
 /**
+ * Count the satisfying assignments leading to a non-False leaf exactly.
+ * Skipped variables do not increase the count, as with zdd_satcount.
+ * Returns 1 on success, or 0 on overflow or invalid arguments.
+ * On failure, <result> is unchanged. <result> must not be NULL.
+ */
+TASK_DECL_2(int, zdd_satcount_u64, ZDD, uint64_t*)
+#define zdd_satcount_u64(dd, result) RUN(zdd_satcount_u64, dd, result)
+
+/**
  * Count the number of distinct paths leading to a non-False leaf.
  */
 TASK_DECL_1(double, zdd_pathcount, ZDD);

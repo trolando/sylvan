@@ -388,6 +388,10 @@ The following basic BDD operations are implemented:
 - ``sylvan_less(a, b)``: compute '<b> and not <a>'.
 - ``sylvan_exists(bdd, vars)``: existential quantification of <bdd> with respect to variables <vars>.
 - ``sylvan_forall(bdd, vars)``: universal quantification of <bdd> with respect to variables <vars>.
+- ``sylvan_unique(bdd, vars)``: parity quantification, true where an odd number of assignments to <vars> satisfy <bdd>. This is not an exactly-one test. An empty set leaves <bdd> unchanged; quantifying a variable absent from <bdd> gives false.
+- ``sylvan_intersection_witness(a, b)``: return a nonempty subset of the intersection, or false if it is empty. The search prefers low branches; the result need not be the complete intersection or a single cube.
+- ``sylvan_pick_representatives(bdd, vars)``: choose one satisfying assignment to <vars> for each extendible assignment to the remaining variables. Selection prefers false in increasing variable order, including for selected variables absent from <bdd>. An empty set leaves <bdd> unchanged.
+- ``sylvan_cardinality(vars, minimum, maximum)``: construct the constraint that between <minimum> and <maximum> variables in <vars> are true, inclusive. Variables outside the set remain free. Requires ``minimum <= maximum <= sylvan_set_count(vars)``; invalid sets or bounds return ``sylvan_invalid``. The empty set with bounds [0, 0] gives true.
 - ``sylvan_project(bdd, vars)``: the dual of ``sylvan_exists``, projects the <bdd> to the variable domain <vars>.
 
 A set of variables (like <vars> above) is a BDD representing the conjunction of the variables.

@@ -4,6 +4,15 @@ All notable changes to Sylvan will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `sylvan_unique`, which computes parity quantification (an odd number of
+  satisfying assignments, not necessarily exactly one).
+- `sylvan_intersection_witness`, which finds a nonempty subset of two BDDs'
+  intersection, preferring low branches, or returns false if they are disjoint.
+- `sylvan_pick_representatives`, which deterministically selects one satisfying
+  assignment to a variable set for each extendible assignment to the remaining
+  variables, preferring false in increasing variable order.
+- `sylvan_cardinality`, which constructs inclusive lower and upper bounds on
+  the number of true variables in a set, including exact-k constraints.
 - Exact `uint64_t` model counts: `sylvan_satcount_u64`, `mtbdd_satcount_u64`,
   `lddmc_satcount_u64` and `zdd_satcount_u64`. They report overflow and leave
   the output unchanged on failure. The corresponding `_gmp` operations in

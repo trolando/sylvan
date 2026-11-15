@@ -82,6 +82,17 @@ TASK_DECL_3(char, sylvan_disjoint, BDD, BDD, BDDVAR);
 #define sylvan_disjoint(a,b) (RUN(sylvan_disjoint,a,b,0))
 #define sylvan_subset(a,b) (RUN(sylvan_disjoint,a,sylvan_not(b),0))
 
+/**
+ * Return a non-false BDD contained in the intersection of <a> and <b>, or
+ * sylvan_false if they are disjoint. The result need not be the complete
+ * intersection or a single cube. The search prefers low branches and stops
+ * searching other branches once a witness is found.
+ * Both inputs must be Boolean BDDs. Returns sylvan_invalid for a
+ * sylvan_invalid argument. Protect inputs and results as for sylvan_and.
+ */
+TASK_DECL_2(BDD, sylvan_intersection_witness, BDD, BDD)
+#define sylvan_intersection_witness(a, b) RUN(sylvan_intersection_witness, a, b)
+
 /* Create a BDD representing just <var> or the negation of <var> */
 static inline BDD
 sylvan_nithvar(uint32_t var)
@@ -95,6 +106,34 @@ sylvan_nithvar(uint32_t var)
 TASK_DECL_3(BDD, sylvan_exists, BDD, BDD, BDDVAR);
 #define sylvan_exists(a, vars) (RUN(sylvan_exists, a, vars, 0))
 #define sylvan_forall(a, vars) (sylvan_not(RUN(sylvan_exists, sylvan_not(a), vars, 0)))
+
+/**
+ * Unique (parity) quantification: XOR all cofactors of <a> over <variables>.
+ * The result is true exactly where an odd number of extensions over the set
+ * satisfy <a>, not necessarily exactly one. An empty set returns <a>; a
+ * quantified variable absent from <a> makes the result false.
+ * <a> must be a Boolean BDD. <variables> must be a positive cube with
+ * increasing variables, false low edges and a final true leaf (the empty
+ * set). Variables outside the set remain free. Returns sylvan_invalid for a
+ * sylvan_invalid argument. Protect inputs and results as for sylvan_exists.
+ */
+TASK_DECL_2(BDD, sylvan_unique, BDD, BDDSET)
+#define sylvan_unique(a, variables) RUN(sylvan_unique, a, variables)
+
+/**
+ * Select one satisfying assignment of <variables> for every assignment to
+ * the remaining variables that can be extended to satisfy <a>. The result
+ * is a subset of <a> with the same existential abstraction over the set.
+ * Selection prefers false at the first differing selected variable, in
+ * increasing variable order. Selected variables absent from <a> are assigned
+ * false. An empty set returns <a>; a false input returns false.
+ * <a> must be a Boolean BDD. <variables> must be a positive cube with
+ * increasing variables, false low edges and a final true leaf (the empty
+ * set). Returns sylvan_invalid for a sylvan_invalid argument. Protect inputs
+ * and results as for sylvan_exists.
+ */
+TASK_DECL_2(BDD, sylvan_pick_representatives, BDD, BDDSET)
+#define sylvan_pick_representatives(a, variables) RUN(sylvan_pick_representatives, a, variables)
 
 /**
  * Projection. (Same as existential quantification, but <vars> contains variables to keep.
@@ -224,6 +263,19 @@ TASK_DECL_3(double, sylvan_satcount, BDD, BDDSET, BDDVAR);
  */
 TASK_DECL_3(int, sylvan_satcount_u64, BDD, BDDSET, uint64_t*)
 #define sylvan_satcount_u64(bdd, variables, result) RUN(sylvan_satcount_u64, bdd, variables, result)
+
+/**
+ * Construct the BDD that is true exactly when between <minimum> and
+ * <maximum> variables in <variables> are true, inclusive. Variables outside
+ * the set remain free. This covers exact-k, at-most-k and at-least-k tests.
+ * <variables> must be a positive cube with increasing variables, false low
+ * edges and a final true leaf (the empty set). The set is validated once.
+ * Requires minimum <= maximum <= sylvan_set_count(variables); returns
+ * sylvan_invalid for an invalid set or bounds. The empty set with bounds
+ * [0, 0] returns sylvan_true. Protect the set and result as for sylvan_exists.
+ */
+TASK_DECL_3(BDD, sylvan_cardinality, BDDSET, size_t, size_t)
+#define sylvan_cardinality(variables, minimum, maximum) RUN(sylvan_cardinality, variables, minimum, maximum)
 
 /**
  * Create a BDD cube representing the conjunction of variables in their positive or negative

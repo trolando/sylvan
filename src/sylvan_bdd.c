@@ -231,6 +231,57 @@ TASK_IMPL_3(char, sylvan_disjoint, BDD, a, BDD, b, BDDVAR, prev_level)
     return (char)result;
 }
 
+TASK_IMPL_2(BDD, sylvan_intersection_witness, BDD, a, BDD, b)
+{
+    if (a == sylvan_invalid || b == sylvan_invalid) return sylvan_invalid;
+    if (a == sylvan_false || b == sylvan_false || a == sylvan_not(b)) return sylvan_false;
+    if (a == sylvan_true) return b;
+    if (b == sylvan_true || a == b) return a;
+
+    sylvan_gc_test();
+    sylvan_stats_count(BDD_INTERSECTION_WITNESS);
+
+    if (BDD_STRIPMARK(a) > BDD_STRIPMARK(b)) {
+        BDD t = a;
+        a = b;
+        b = t;
+    }
+
+    BDD result;
+    if (cache_get3(CACHE_BDD_INTERSECTION_WITNESS, a, b, 0, &result)) {
+        sylvan_stats_count(BDD_INTERSECTION_WITNESS_CACHED);
+        return result;
+    }
+
+    bddnode_t na = MTBDD_GETNODE(a);
+    bddnode_t nb = MTBDD_GETNODE(b);
+    BDDVAR va = bddnode_getvariable(na);
+    BDDVAR vb = bddnode_getvariable(nb);
+    BDDVAR level = va < vb ? va : vb;
+    BDD aLow = va == level ? node_low(a, na) : a;
+    BDD aHigh = va == level ? node_high(a, na) : a;
+    BDD bLow = vb == level ? node_low(b, nb) : b;
+    BDD bHigh = vb == level ? node_high(b, nb) : b;
+
+    /* Search sequentially so the high branch is only visited if needed. */
+    BDD witness = CALL(sylvan_intersection_witness, aLow, bLow);
+    if (witness != sylvan_false) {
+        bdd_refs_push(witness);
+        result = sylvan_makenode(level, witness, sylvan_false);
+        bdd_refs_pop(1);
+    } else {
+        witness = CALL(sylvan_intersection_witness, aHigh, bHigh);
+        bdd_refs_push(witness);
+        result = sylvan_makenode(level, sylvan_false, witness);
+        bdd_refs_pop(1);
+    }
+
+    if (cache_put3(CACHE_BDD_INTERSECTION_WITNESS, a, b, 0, result)) {
+        sylvan_stats_count(BDD_INTERSECTION_WITNESS_CACHEDPUT);
+    }
+    return result;
+}
+
 TASK_IMPL_3(BDD, sylvan_xor, BDD, a, BDD, b, BDDVAR, prev_level)
 {
     /* Terminal cases */
@@ -734,6 +785,91 @@ TASK_IMPL_3(BDD, sylvan_exists, BDD, a, BDD, variables, BDDVAR, prev_level)
     return result;
 }
 
+
+/**
+ * Calculate the parity abstraction of <a> over <variables>.
+ */
+TASK_IMPL_2(BDD, sylvan_unique, BDD, a, BDDSET, variables)
+{
+    if (a == sylvan_invalid || variables == sylvan_invalid) return sylvan_invalid;
+    if (sylvan_set_isempty(variables)) return a;
+    if (sylvan_isconst(a)) return sylvan_false;
+
+    bddnode_t na = MTBDD_GETNODE(a);
+    BDDVAR level = bddnode_getvariable(na);
+    BDDVAR variable = sylvan_set_first(variables);
+
+    /* An absent quantified variable contributes two equal cofactors. */
+    if (variable < level) return sylvan_false;
+
+    sylvan_gc_test();
+    sylvan_stats_count(BDD_UNIQUE);
+
+    BDD result;
+    if (cache_get3(CACHE_BDD_UNIQUE, a, variables, 0, &result)) {
+        sylvan_stats_count(BDD_UNIQUE_CACHED);
+        return result;
+    }
+
+    BDDSET next = variable == level ? sylvan_set_next(variables) : variables;
+    bdd_refs_spawn(SPAWN(sylvan_unique, node_high(a, na), next));
+    BDD low = bdd_refs_push(CALL(sylvan_unique, node_low(a, na), next));
+    BDD high = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_unique)));
+    if (variable == level) result = CALL(sylvan_xor, low, high, 0);
+    else result = sylvan_makenode(level, low, high);
+    bdd_refs_pop(2);
+
+    if (cache_put3(CACHE_BDD_UNIQUE, a, variables, 0, result)) {
+        sylvan_stats_count(BDD_UNIQUE_CACHEDPUT);
+    }
+    return result;
+}
+
+TASK_IMPL_2(BDD, sylvan_pick_representatives, BDD, a, BDDSET, variables)
+{
+    if (a == sylvan_invalid || variables == sylvan_invalid) return sylvan_invalid;
+    if (a == sylvan_false || sylvan_set_isempty(variables)) return a;
+
+    sylvan_gc_test();
+    sylvan_stats_count(BDD_PICK_REPRESENTATIVES);
+
+    BDD result;
+    if (cache_get3(CACHE_BDD_PICK_REPRESENTATIVES, a, variables, 0, &result)) {
+        sylvan_stats_count(BDD_PICK_REPRESENTATIVES_CACHED);
+        return result;
+    }
+
+    BDDVAR selected = sylvan_set_first(variables);
+    BDDVAR level = a == sylvan_true ? UINT32_MAX : sylvan_var(a);
+    if (a == sylvan_true || selected < level) {
+        /* Assign absent selected variables false. */
+        BDD next = bdd_refs_push(CALL(sylvan_pick_representatives, a, sylvan_set_next(variables)));
+        result = sylvan_makenode(selected, next, sylvan_false);
+        bdd_refs_pop(1);
+    } else if (level < selected) {
+        bdd_refs_spawn(SPAWN(sylvan_pick_representatives, sylvan_high(a), variables));
+        BDD low = bdd_refs_push(CALL(sylvan_pick_representatives, sylvan_low(a), variables));
+        BDD high = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_pick_representatives)));
+        result = sylvan_makenode(level, low, high);
+        bdd_refs_pop(2);
+    } else {
+        BDDSET next = sylvan_set_next(variables);
+        BDD aLow = sylvan_low(a), aHigh = sylvan_high(a);
+        bdd_refs_spawn(SPAWN(sylvan_pick_representatives, aLow, next));
+        BDD low_exists = bdd_refs_push(CALL(sylvan_exists, aLow, next, 0));
+        BDD low = bdd_refs_push(bdd_refs_sync(SYNC(sylvan_pick_representatives)));
+        /* Use the high branch only for free assignments not covered by low. */
+        BDD uncovered = bdd_refs_push(CALL(sylvan_and, aHigh, sylvan_not(low_exists), 0));
+        BDD high = bdd_refs_push(CALL(sylvan_pick_representatives, uncovered, next));
+        result = sylvan_makenode(level, low, high);
+        bdd_refs_pop(4);
+    }
+
+    if (cache_put3(CACHE_BDD_PICK_REPRESENTATIVES, a, variables, 0, result)) {
+        sylvan_stats_count(BDD_PICK_REPRESENTATIVES_CACHEDPUT);
+    }
+    return result;
+}
 
 /**
  * Calculate projection of <a> unto <v>
@@ -1863,6 +1999,50 @@ TASK_IMPL_3(double, sylvan_satcount, BDD, bdd, BDDSET, variables, BDDVAR, prev_l
     }
 
     return (double)((long double)result * powl(2.0L, (long double)skipped));
+}
+
+TASK_4(BDD, sylvan_cardinality_rec, BDDSET, variables, size_t, minimum, size_t, maximum, size_t, remaining)
+{
+    if (minimum > maximum || minimum > remaining) return sylvan_false;
+    if (maximum > remaining) maximum = remaining;
+    if (minimum == 0 && maximum == remaining) return sylvan_true;
+
+    sylvan_gc_test();
+    sylvan_stats_count(BDD_CARDINALITY);
+
+    /* remaining is the size of variables; both bounds belong in the key. */
+    BDD result;
+    if (cache_get3(CACHE_BDD_CARDINALITY, variables, minimum, maximum, &result)) {
+        sylvan_stats_count(BDD_CARDINALITY_CACHED);
+        return result;
+    }
+
+    BDDSET next = sylvan_set_next(variables);
+    BDD low, high;
+    if (maximum == 0) {
+        low = bdd_refs_push(CALL(sylvan_cardinality_rec, next, minimum, maximum, remaining-1));
+        high = sylvan_false;
+    } else {
+        bdd_refs_spawn(SPAWN(sylvan_cardinality_rec, next, minimum == 0 ? 0 : minimum-1, maximum-1, remaining-1));
+        low = bdd_refs_push(CALL(sylvan_cardinality_rec, next, minimum, maximum, remaining-1));
+        high = bdd_refs_sync(SYNC(sylvan_cardinality_rec));
+    }
+    bdd_refs_push(high);
+    result = sylvan_makenode(sylvan_set_first(variables), low, high);
+    bdd_refs_pop(2);
+
+    if (cache_put3(CACHE_BDD_CARDINALITY, variables, minimum, maximum, result)) {
+        sylvan_stats_count(BDD_CARDINALITY_CACHEDPUT);
+    }
+    return result;
+}
+
+TASK_IMPL_3(BDD, sylvan_cardinality, BDDSET, variables, size_t, minimum, size_t, maximum)
+{
+    if (!sylvan_count_is_valid_set(variables)) return sylvan_invalid;
+    size_t count = sylvan_set_count(variables);
+    if (minimum > maximum || maximum > count) return sylvan_invalid;
+    return CALL(sylvan_cardinality_rec, variables, minimum, maximum, count);
 }
 
 int

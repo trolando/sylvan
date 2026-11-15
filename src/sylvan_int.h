@@ -91,6 +91,10 @@ static const uint64_t CACHE_BDD_SUPPORT             = (15LL<<40);
 static const uint64_t CACHE_BDD_PATHCOUNT           = (16LL<<40);
 static const uint64_t CACHE_BDD_DISJOINT            = (17LL<<40);
 static const uint64_t CACHE_BDD_SATCOUNT_U64        = (18LL<<40);
+static const uint64_t CACHE_BDD_UNIQUE              = (60LL<<40);
+static const uint64_t CACHE_BDD_INTERSECTION_WITNESS = (61LL<<40);
+static const uint64_t CACHE_BDD_PICK_REPRESENTATIVES = (62LL<<40);
+static const uint64_t CACHE_BDD_CARDINALITY         = (63LL<<40);
 
 // MDD operations
 static const uint64_t CACHE_MDD_RELPROD             = (20LL<<40);

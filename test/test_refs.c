@@ -144,6 +144,16 @@ VOID_TASK_2(protect_slots, int, first, int, count)
     }
 }
 
+/* Rebuild the minterm of every slot and count those that changed; Sylvan makes nodes only on Lace workers */
+TASK_0(int, count_changed_slots)
+{
+    int changed = 0;
+    for (int i=0; i<SLOTS; i++) {
+        if (slots[i] != minterm(i)) changed++;
+    }
+    return changed;
+}
+
 static int
 test_gc_survival(void)
 {
@@ -154,8 +164,8 @@ test_gc_survival(void)
         sylvan_gc();
         for (int i=0; i<SLOTS; i++) {
             test_assert(mtbdd_test_isvalid(slots[i]));
-            test_assert(slots[i] == minterm(i));
         }
+        test_assert(RUN(count_changed_slots) == 0);
     }
     for (int i=0; i<SLOTS; i++) sylvan_unprotect(&slots[i]);
     test_assert(mtbdd_count_protected() == before);

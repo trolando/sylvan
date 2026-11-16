@@ -70,6 +70,13 @@ All notable changes to Sylvan will be documented in this file.
   `llmsset_get_data_size()`.
 
 ### Changed
+- Garbage collection skips the empty parts of the nodes table. The passes that
+  rehash the live nodes and destroy dead custom leaves now go through the
+  bitmaps 64 buckets at a time instead of one bucket at a time, so empty
+  parts of the data range cost one load per 64 buckets. With 2 live nodes and 2 workers (M1 Pro), a collection of a table of
+  2^22 buckets takes 0.20 ms instead of 3.2 ms. After `sylvan_gc()` with the
+  few-collections policy, which keeps the data range at its peak, a
+  collection over 2^20 buckets takes 83 µs instead of 0.83 ms.
 - The default GC policy is `SYLVAN_GC_FEW_COLLECTIONS`, with aggressive
   growth. Explicit `sylvan_gc()` collections shrink the hash table and
   operation cache and retain the arena's data range and pages. Select

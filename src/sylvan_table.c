@@ -572,24 +572,54 @@ llmsset_mark(const llmsset_t dbs, uint64_t index)
     }
 }
 
+/**
+ * The bits of bitmap word <w> that belong to buckets in [first, end). Bit 63
+ * of a word is its first bucket. The passes over the data range below go
+ * through the bitmaps a word at a time, so that empty parts of the range cost
+ * one load per 64 buckets: after an explicit sylvan_gc() with the few
+ * collections policy, the data range stays at its peak while few nodes live.
+ */
+static inline uint64_t
+range_mask(size_t w, size_t first, size_t end)
+{
+    const size_t base = w * 64;
+    uint64_t mask = UINT64_MAX;
+    if (base < first) mask &= UINT64_MAX >> (first - base);
+    if (end < base + 64) mask &= ~(UINT64_MAX >> (end - base));
+    return mask;
+}
+
+/**
+ * Where the passes below split a range of <count> buckets in two: about half,
+ * on a bitmap word boundary. The passes start at bucket 0, so no two tasks
+ * share a bitmap word, also when the data range is not a power of two (after
+ * llmsset_shrink, a multiple of 512). destroy_par clears bits of bitmapc,
+ * which is not atomic. Only called with count > 512, so the split is not 0.
+ */
+static inline size_t
+word_split(size_t count)
+{
+    return (count / 2) & ~(size_t)63;
+}
+
 TASK_3(int, llmsset_rehash_par, llmsset_t, dbs, size_t, first, size_t, count)
 {
     if (count > 512) {
-        SPAWN(llmsset_rehash_par, dbs, first, count/2);
-        int bad = CALL(llmsset_rehash_par, dbs, first + count/2, count - count/2);
+        const size_t split = word_split(count);
+        SPAWN(llmsset_rehash_par, dbs, first, split);
+        int bad = CALL(llmsset_rehash_par, dbs, first + split, count - split);
         return bad + SYNC(llmsset_rehash_par);
     } else {
         int bad = 0;
-        _Atomic(uint64_t)* ptr = dbs->bitmap2 + (first / 64);
-        uint64_t mask = UINT64_C(0x8000000000000000) >> (first & 63);
-        for (size_t k=0; k<count; k++) {
-            if (first+k > 1 && (atomic_load_explicit(ptr, memory_order_relaxed) & mask)) {
-                if (llmsset_rehash_bucket(dbs, first+k) == 0) bad++;
-            }
-            mask >>= 1;
-            if (mask == 0) {
-                ptr++;
-                mask = UINT64_C(0x8000000000000000);
+        const size_t end = first + count;
+        for (size_t w = first / 64; w * 64 < end; w++) {
+            uint64_t v = atomic_load_explicit(dbs->bitmap2 + w, memory_order_relaxed);
+            v &= range_mask(w, first, end);
+            while (v != 0) {
+                const unsigned int j = clz_uint64(v);
+                v &= ~(UINT64_C(0x8000000000000000) >> j);
+                const size_t k = w * 64 + j;
+                if (k > 1 && llmsset_rehash_bucket(dbs, k) == 0) bad++;
             }
         }
         return bad;
@@ -604,7 +634,7 @@ TASK_IMPL_1(int, llmsset_rehash, llmsset_t, dbs)
 TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, count)
 {
     if (count > 512) {
-        size_t split = count/2;
+        const size_t split = word_split(count);
         SPAWN(llmsset_count_marked_par, dbs, first, split);
         size_t right = CALL(llmsset_count_marked_par, dbs, first + split, count - split);
         size_t left = SYNC(llmsset_count_marked_par);
@@ -622,14 +652,10 @@ TASK_3(size_t, llmsset_count_marked_par, llmsset_t, dbs, size_t, first, size_t, 
             result += popcnt_uint64(atomic_load_explicit(ptr+6, memory_order_relaxed));
             result += popcnt_uint64(atomic_load_explicit(ptr+7, memory_order_relaxed));
         } else {
-            uint64_t mask = UINT64_C(0x8000000000000000) >> (first & 63);
-            for (size_t k=0; k<count; k++) {
-                if (atomic_load_explicit(ptr, memory_order_relaxed) & mask) result += 1;
-                mask >>= 1;
-                if (mask == 0) {
-                    ptr++;
-                    mask = UINT64_C(0x8000000000000000);
-                }
+            const size_t end = first + count;
+            for (size_t w = first / 64; w * 64 < end; w++) {
+                uint64_t v = atomic_load_explicit(dbs->bitmap2 + w, memory_order_relaxed);
+                result += popcnt_uint64(v & range_mask(w, first, end));
             }
         }
         return result;
@@ -644,22 +670,23 @@ TASK_IMPL_1(size_t, llmsset_count_marked, llmsset_t, dbs)
 VOID_TASK_3(llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
 {
     if (count > 1024) {
-        size_t split = count/2;
+        const size_t split = word_split(count);
         SPAWN(llmsset_destroy_par, dbs, first, split);
         CALL(llmsset_destroy_par, dbs, first + split, count - split);
         SYNC(llmsset_destroy_par);
     } else {
-        for (size_t k=first; k<first+count; k++) {
-            _Atomic(uint64_t)* ptr2 = dbs->bitmap2 + (k/64);
-            uint64_t *ptrc = dbs->bitmapc + (k/64);
-            uint64_t mask = UINT64_C(0x8000000000000000) >> (k&63);
-
-            // if not marked but is custom
-            uint64_t marked = atomic_load_explicit(ptr2, memory_order_relaxed);
-            if ((marked & mask) == 0 && (*ptrc & mask)) {
-                uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*k;
+        const size_t end = first + count;
+        for (size_t w = first / 64; w * 64 < end; w++) {
+            // custom leaves that are not marked
+            uint64_t v = dbs->bitmapc[w] & ~atomic_load_explicit(dbs->bitmap2 + w, memory_order_relaxed);
+            v &= range_mask(w, first, end);
+            while (v != 0) {
+                const unsigned int j = clz_uint64(v);
+                const uint64_t mask = UINT64_C(0x8000000000000000) >> j;
+                v &= ~mask;
+                const uint64_t *d_ptr = ((uint64_t*)dbs->data) + 2*(w * 64 + j);
                 dbs->destroy_cb(d_ptr[0], d_ptr[1]);
-                *ptrc &= ~mask;
+                dbs->bitmapc[w] &= ~mask;
             }
         }
     }

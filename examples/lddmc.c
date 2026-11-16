@@ -14,7 +14,7 @@
 static int report_levels = 0; // report states at start of every level
 static int report_table = 0; // report table size at end of every level
 static int report_nodes = 0; // report number of nodes of LDDs
-static int strategy = 2; // 0 = BFS, 1 = PAR, 2 = SAT, 3 = CHAINING
+static int strategy = 2; // 0 = BFS, 1 = PAR, 2 = SAT, 3 = CHAINING, 4 = REACH
 static int check_deadlocks = 0; // set to 1 to check for deadlocks on-the-fly
 static int print_transition_matrix = 0; // print transition relation matrix
 static int workers = 0; // autodetect
@@ -24,8 +24,8 @@ static const char* out_filename = NULL; // filename of output
 static void
 print_usage()
 {
-    printf("Usage: lddmc [-h] [-s <bfs|par|sat|chaining>] [-w <workers>]\n");
-    printf("            [--strategy=<bfs|par|sat|chaining>] [--workers=<workers>]\n");
+    printf("Usage: lddmc [-h] [-s <bfs|par|sat|chaining|reach>] [-w <workers>]\n");
+    printf("            [--strategy=<bfs|par|sat|chaining|reach>] [--workers=<workers>]\n");
     printf("            [--count-nodes] [--count-states] [--count-table] [--deadlocks]\n");
     printf("            [--print-matrix] [--help] [--usage] <model> [<output-bdd>]\n");
 }
@@ -34,7 +34,7 @@ static void
 print_help()
 {
     printf("Usage: lddmc [OPTION...] <model> [<output-bdd>]\n\n");
-    printf("  -s, --strategy=<bfs|par|sat|chaining>\n");
+    printf("  -s, --strategy=<bfs|par|sat|chaining|reach>\n");
     printf("                             Strategy for reachability (default=sat)\n");
     printf("  -w, --workers=<workers>    Number of workers (default=0: autodetect)\n");
     printf("      --count-nodes          Report #nodes for LDDs\n");
@@ -74,6 +74,7 @@ parse_args(int argc, const char **argv)
                 else if (strcmp(options.optarg, "par")==0) strategy = 1;
                 else if (strcmp(options.optarg, "sat")==0) strategy = 2;
                 else if (strcmp(options.optarg, "chaining")==0) strategy = 3;
+                else if (strcmp(options.optarg, "reach")==0) strategy = 4;
                 else {
                     print_usage();
                     exit(0);
@@ -648,6 +649,37 @@ VOID_TASK_1(sat, set_t, set)
 }
 
 /**
+ * For the REACH strategy: all transition relations merged into one relation
+ * that reads and writes every variable
+ */
+static MDD merged_rel = 0;  // lddmc_false (MSVC needs a constant initializer)
+static MDD merged_meta = 0; // lddmc_false
+
+/**
+ * Compute the union of the extended relations next[first] ... next[first+count-1]
+ */
+TASK_2(MDD, merge_relations, int, first, int, count)
+{
+    if (count == 0) return lddmc_false;
+    if (count == 1) return CALL(lddmc_extend_rel, next[first]->dd, next[first]->meta, (uint32_t)vector_size);
+
+    lddmc_refs_spawn(SPAWN(merge_relations, first, count/2));
+    MDD right = lddmc_refs_push(CALL(merge_relations, first+count/2, count-count/2));
+    MDD left = lddmc_refs_push(lddmc_refs_sync(SYNC(merge_relations)));
+    MDD result = CALL(lddmc_union, left, right);
+    lddmc_refs_pop(2);
+    return result;
+}
+
+/**
+ * Wrapper for the REACH strategy (one lddmc_reach call with the merged relation)
+ */
+VOID_TASK_1(reach, set_t, set)
+{
+    set->dd = CALL(lddmc_reach, set->dd, merged_rel, merged_meta);
+}
+
+/**
  * Implementation of the Chaining strategy (does not support deadlock detection)
  */
 VOID_TASK_1(chaining, set_t, set)
@@ -778,9 +810,31 @@ TASK_0(int, run)
         }
     }
 
+    if (strategy == 4 && next_count != 0) {
+        // for REACH, merge the transition relations into one relation
+        double t1 = wctime();
+        uint32_t *meta = (uint32_t*)malloc((size_t)(2*vector_size) * sizeof(uint32_t));
+        for (int i=0; i<vector_size; i++) {
+            meta[2*i] = 1;
+            meta[2*i+1] = 2;
+        }
+        lddmc_protect(&merged_meta);
+        lddmc_protect(&merged_rel);
+        merged_meta = lddmc_cube(meta, (size_t)(2*vector_size));
+        free(meta);
+        merged_rel = RUN(merge_relations, 0, next_count);
+        double t2 = wctime();
+        INFO("Merge Time: %f\n", t2-t1);
+        if (report_nodes) {
+            INFO("Merged transition relation: %zu MDD nodes\n", lddmc_nodecount(merged_rel));
+        }
+    }
+
     set_t states = set_clone(initial);
 
-    if (strategy == 0) {
+    if (next_count == 0) {
+        INFO("No transition groups; the initial states are the final states.\n");
+    } else if (strategy == 0) {
         double t1 = wctime();
         RUN(bfs, states);
         double t2 = wctime();
@@ -800,6 +854,11 @@ TASK_0(int, run)
         RUN(chaining, states);
         double t2 = wctime();
         INFO("CHAINING Time: %f\n", t2-t1);
+    } else if (strategy == 4) {
+        double t1 = wctime();
+        RUN(reach, states);
+        double t2 = wctime();
+        INFO("REACH Time: %f\n", t2-t1);
     } else {
         Abort("Invalid strategy set?!\n");
     }

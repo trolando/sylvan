@@ -20,6 +20,7 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <math.h>
+#include <stdatomic.h>
 #include <string.h>
 
 #include <sylvan_refs.h>
@@ -1631,18 +1632,29 @@ TASK_IMPL_2(MTBDD, mtbdd_strict_threshold_double, MTBDD, dd, double, d)
     return mtbdd_uapply(dd, mtbdd_op_strict_threshold_double_CALL, *(size_t*)&d);
 }
 
+/* The stop flag is shared with stolen tasks. An aborted comparison must stay
+ * distinct from a completed false result: otherwise its parents could cache a
+ * false answer for a pair that actually compares true. Propagate mtbdd_invalid
+ * after syncing both children, and cache only completed comparisons. */
+
 /**
  * Compare two Double MTBDDs, returns Boolean True if they are equal within some value epsilon
  */
-TASK_4(MTBDD, mtbdd_equal_norm_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, shortcircuit)
+TASK_4(MTBDD, mtbdd_equal_norm_d2, MTBDD, a, MTBDD, b, size_t, svalue, atomic_int*, shortcircuit)
 {
     /* Check short circuit */
-    if (*shortcircuit) return mtbdd_false;
+    if (atomic_load_explicit(shortcircuit, memory_order_relaxed)) return mtbdd_invalid;
 
     /* Check terminal case */
     if (a == b) return mtbdd_true;
     if (a == mtbdd_false) return mtbdd_false;
     if (b == mtbdd_false) return mtbdd_false;
+
+    if (b < a) {
+        MTBDD t = a;
+        a = b;
+        b = t;
+    }
 
     mtbddnode_t na = MTBDD_GETNODE(a);
     mtbddnode_t nb = MTBDD_GETNODE(b);
@@ -1656,12 +1668,6 @@ TASK_4(MTBDD, mtbdd_equal_norm_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, sho
         va -= vb;
         if (va < 0) va = -va;
         return (va < *(double*)&svalue) ? mtbdd_true : mtbdd_false;
-    }
-
-    if (b < a) {
-        MTBDD t = a;
-        a = b;
-        b = t;
     }
 
     /* Maybe perform garbage collection */
@@ -1691,9 +1697,11 @@ TASK_4(MTBDD, mtbdd_equal_norm_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, sho
 
     SPAWN(mtbdd_equal_norm_d2, ahigh, bhigh, svalue, shortcircuit);
     result = CALL(mtbdd_equal_norm_d2, alow, blow, svalue, shortcircuit);
-    if (result == mtbdd_false) *shortcircuit = 1;
-    if (result != SYNC(mtbdd_equal_norm_d2)) result = mtbdd_false;
-    if (result == mtbdd_false) *shortcircuit = 1;
+    if (result == mtbdd_false) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
+    MTBDD high = SYNC(mtbdd_equal_norm_d2);
+    if (result == mtbdd_invalid || high == mtbdd_invalid) return mtbdd_invalid;
+    result = result == mtbdd_true && high == mtbdd_true ? mtbdd_true : mtbdd_false;
+    if (result == mtbdd_false) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
 
     /* Store in cache */
     if (cache_put3(CACHE_MTBDD_EQUAL_NORM, a, b, svalue, result)) {
@@ -1705,20 +1713,20 @@ TASK_4(MTBDD, mtbdd_equal_norm_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, sho
 
 TASK_IMPL_3(MTBDD, mtbdd_equal_norm_d, MTBDD, a, MTBDD, b, double, d)
 {
-    /* the implementation checks shortcircuit in every task and if the two
-       MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
-    int shortcircuit = 0;
-    return CALL(mtbdd_equal_norm_d2, a, b, *(size_t*)&d, &shortcircuit);
+    /* Aborted tasks return mtbdd_invalid; only this public task maps it to false. */
+    atomic_int shortcircuit = 0;
+    MTBDD result = CALL(mtbdd_equal_norm_d2, a, b, *(size_t*)&d, &shortcircuit);
+    return result == mtbdd_true ? mtbdd_true : mtbdd_false;
 }
 
 /**
  * Compare two Double MTBDDs, returns Boolean True if they are equal within some value epsilon
  * This version computes the relative difference vs the value in a.
  */
-TASK_4(MTBDD, mtbdd_equal_norm_rel_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*, shortcircuit)
+TASK_4(MTBDD, mtbdd_equal_norm_rel_d2, MTBDD, a, MTBDD, b, size_t, svalue, atomic_int*, shortcircuit)
 {
     /* Check short circuit */
-    if (*shortcircuit) return mtbdd_false;
+    if (atomic_load_explicit(shortcircuit, memory_order_relaxed)) return mtbdd_invalid;
 
     /* Check terminal case */
     if (a == b) return mtbdd_true;
@@ -1767,9 +1775,11 @@ TASK_4(MTBDD, mtbdd_equal_norm_rel_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*,
 
     SPAWN(mtbdd_equal_norm_rel_d2, ahigh, bhigh, svalue, shortcircuit);
     result = CALL(mtbdd_equal_norm_rel_d2, alow, blow, svalue, shortcircuit);
-    if (result == mtbdd_false) *shortcircuit = 1;
-    if (result != SYNC(mtbdd_equal_norm_rel_d2)) result = mtbdd_false;
-    if (result == mtbdd_false) *shortcircuit = 1;
+    if (result == mtbdd_false) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
+    MTBDD high = SYNC(mtbdd_equal_norm_rel_d2);
+    if (result == mtbdd_invalid || high == mtbdd_invalid) return mtbdd_invalid;
+    result = result == mtbdd_true && high == mtbdd_true ? mtbdd_true : mtbdd_false;
+    if (result == mtbdd_false) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
 
     /* Store in cache */
     if (cache_put3(CACHE_MTBDD_EQUAL_NORM_REL, a, b, svalue, result)) {
@@ -1781,20 +1791,20 @@ TASK_4(MTBDD, mtbdd_equal_norm_rel_d2, MTBDD, a, MTBDD, b, size_t, svalue, int*,
 
 TASK_IMPL_3(MTBDD, mtbdd_equal_norm_rel_d, MTBDD, a, MTBDD, b, double, d)
 {
-    /* the implementation checks shortcircuit in every task and if the two
-       MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
-    int shortcircuit = 0;
-    return CALL(mtbdd_equal_norm_rel_d2, a, b, *(size_t*)&d, &shortcircuit);
+    /* Aborted tasks return mtbdd_invalid; only this public task maps it to false. */
+    atomic_int shortcircuit = 0;
+    MTBDD result = CALL(mtbdd_equal_norm_rel_d2, a, b, *(size_t*)&d, &shortcircuit);
+    return result == mtbdd_true ? mtbdd_true : mtbdd_false;
 }
 
 /**
  * For two MTBDDs a, b, return mtbdd_true if all common assignments a(s) <= b(s), mtbdd_false otherwise.
  * For domains not in a / b, assume True.
  */
-TASK_3(MTBDD, mtbdd_leq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+TASK_3(MTBDD, mtbdd_leq_rec, MTBDD, a, MTBDD, b, atomic_int*, shortcircuit)
 {
     /* Check short circuit */
-    if (*shortcircuit) return mtbdd_false;
+    if (atomic_load_explicit(shortcircuit, memory_order_relaxed)) return mtbdd_invalid;
 
     /* Check terminal case */
     if (a == b) return mtbdd_true;
@@ -1862,10 +1872,13 @@ TASK_3(MTBDD, mtbdd_leq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
         SPAWN(mtbdd_leq_rec, ahigh, bhigh, shortcircuit);
         result = CALL(mtbdd_leq_rec, alow, blow, shortcircuit);
-        if (result != SYNC(mtbdd_leq_rec)) result = mtbdd_false;
+        if (result == mtbdd_false) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
+        MTBDD high = SYNC(mtbdd_leq_rec);
+        if (result == mtbdd_invalid || high == mtbdd_invalid) return mtbdd_invalid;
+        result = result == mtbdd_true && high == mtbdd_true ? mtbdd_true : mtbdd_false;
     }
 
-    if (result == mtbdd_false) *shortcircuit = 1;
+    if (result == mtbdd_false) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
 
     /* Store in cache */
     if (cache_put3(CACHE_MTBDD_LEQ, a, b, 0, result)) {
@@ -1877,27 +1890,27 @@ TASK_3(MTBDD, mtbdd_leq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
 TASK_IMPL_2(MTBDD, mtbdd_leq, MTBDD, a, MTBDD, b)
 {
-    /* the implementation checks shortcircuit in every task and if the two
-       MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
-    int shortcircuit = 0;
-    return CALL(mtbdd_leq_rec, a, b, &shortcircuit);
+    /* Aborted tasks return mtbdd_invalid; only this public task maps it to false. */
+    atomic_int shortcircuit = 0;
+    MTBDD result = CALL(mtbdd_leq_rec, a, b, &shortcircuit);
+    return result == mtbdd_true ? mtbdd_true : mtbdd_false;
 }
 
 /**
  * For two MTBDDs a, b, return mtbdd_true if all common assignments a(s) < b(s), mtbdd_false otherwise.
  * For domains not in a / b, assume True.
  */
-TASK_3(MTBDD, mtbdd_less_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+TASK_3(MTBDD, mtbdd_less_rec, MTBDD, a, MTBDD, b, atomic_int*, shortcircuit)
 {
     /* Check short circuit */
-    if (*shortcircuit) return mtbdd_false;
+    if (atomic_load_explicit(shortcircuit, memory_order_relaxed)) return mtbdd_invalid;
 
-    /* Check terminal case */
-    if (a == b) return mtbdd_false;
-
-    /* For partial functions, just return true */
+    /* For partial functions, including two undefined operands, return true. */
     if (a == mtbdd_false) return mtbdd_true;
     if (b == mtbdd_false) return mtbdd_true;
+
+    /* Equal nonempty domains cannot satisfy a strict comparison. */
+    if (a == b) return mtbdd_false;
 
     /* Maybe perform garbage collection */
     sylvan_gc_test();
@@ -1958,10 +1971,13 @@ TASK_3(MTBDD, mtbdd_less_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
         SPAWN(mtbdd_less_rec, ahigh, bhigh, shortcircuit);
         result = CALL(mtbdd_less_rec, alow, blow, shortcircuit);
-        if (result != SYNC(mtbdd_less_rec)) result = mtbdd_false;
+        if (result == mtbdd_false) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
+        MTBDD high = SYNC(mtbdd_less_rec);
+        if (result == mtbdd_invalid || high == mtbdd_invalid) return mtbdd_invalid;
+        result = result == mtbdd_true && high == mtbdd_true ? mtbdd_true : mtbdd_false;
     }
 
-    if (result == mtbdd_false) *shortcircuit = 1;
+    if (result == mtbdd_false) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
 
     /* Store in cache */
     if (cache_put3(CACHE_MTBDD_LESS, a, b, 0, result)) {
@@ -1973,20 +1989,20 @@ TASK_3(MTBDD, mtbdd_less_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
 TASK_IMPL_2(MTBDD, mtbdd_less, MTBDD, a, MTBDD, b)
 {
-    /* the implementation checks shortcircuit in every task and if the two
-       MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
-    int shortcircuit = 0;
-    return CALL(mtbdd_less_rec, a, b, &shortcircuit);
+    /* Aborted tasks return mtbdd_invalid; only this public task maps it to false. */
+    atomic_int shortcircuit = 0;
+    MTBDD result = CALL(mtbdd_less_rec, a, b, &shortcircuit);
+    return result == mtbdd_true ? mtbdd_true : mtbdd_false;
 }
 
 /**
  * For two MTBDDs a, b, return mtbdd_true if all common assignments a(s) >= b(s), mtbdd_false otherwise.
  * For domains not in a / b, assume True.
  */
-TASK_3(MTBDD, mtbdd_geq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+TASK_3(MTBDD, mtbdd_geq_rec, MTBDD, a, MTBDD, b, atomic_int*, shortcircuit)
 {
     /* Check short circuit */
-    if (*shortcircuit) return mtbdd_false;
+    if (atomic_load_explicit(shortcircuit, memory_order_relaxed)) return mtbdd_invalid;
 
     /* Check terminal case */
     if (a == b) return mtbdd_true;
@@ -2054,10 +2070,13 @@ TASK_3(MTBDD, mtbdd_geq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
         SPAWN(mtbdd_geq_rec, ahigh, bhigh, shortcircuit);
         result = CALL(mtbdd_geq_rec, alow, blow, shortcircuit);
-        if (result != SYNC(mtbdd_geq_rec)) result = mtbdd_false;
+        if (result == mtbdd_false) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
+        MTBDD high = SYNC(mtbdd_geq_rec);
+        if (result == mtbdd_invalid || high == mtbdd_invalid) return mtbdd_invalid;
+        result = result == mtbdd_true && high == mtbdd_true ? mtbdd_true : mtbdd_false;
     }
 
-    if (result == mtbdd_false) *shortcircuit = 1;
+    if (result == mtbdd_false) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
 
     /* Store in cache */
     if (cache_put3(CACHE_MTBDD_GEQ, a, b, 0, result)) {
@@ -2069,27 +2088,27 @@ TASK_3(MTBDD, mtbdd_geq_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
 TASK_IMPL_2(MTBDD, mtbdd_geq, MTBDD, a, MTBDD, b)
 {
-    /* the implementation checks shortcircuit in every task and if the two
-       MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
-    int shortcircuit = 0;
-    return CALL(mtbdd_geq_rec, a, b, &shortcircuit);
+    /* Aborted tasks return mtbdd_invalid; only this public task maps it to false. */
+    atomic_int shortcircuit = 0;
+    MTBDD result = CALL(mtbdd_geq_rec, a, b, &shortcircuit);
+    return result == mtbdd_true ? mtbdd_true : mtbdd_false;
 }
 
 /**
  * For two MTBDDs a, b, return mtbdd_true if all common assignments a(s) > b(s), mtbdd_false otherwise.
  * For domains not in a / b, assume True.
  */
-TASK_3(MTBDD, mtbdd_greater_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
+TASK_3(MTBDD, mtbdd_greater_rec, MTBDD, a, MTBDD, b, atomic_int*, shortcircuit)
 {
     /* Check short circuit */
-    if (*shortcircuit) return mtbdd_false;
+    if (atomic_load_explicit(shortcircuit, memory_order_relaxed)) return mtbdd_invalid;
 
-    /* Check terminal case */
-    if (a == b) return mtbdd_false;
-
-    /* For partial functions, just return true */
+    /* For partial functions, including two undefined operands, return true. */
     if (a == mtbdd_false) return mtbdd_true;
     if (b == mtbdd_false) return mtbdd_true;
+
+    /* Equal nonempty domains cannot satisfy a strict comparison. */
+    if (a == b) return mtbdd_false;
 
     /* Maybe perform garbage collection */
     sylvan_gc_test();
@@ -2150,10 +2169,13 @@ TASK_3(MTBDD, mtbdd_greater_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
         SPAWN(mtbdd_greater_rec, ahigh, bhigh, shortcircuit);
         result = CALL(mtbdd_greater_rec, alow, blow, shortcircuit);
-        if (result != SYNC(mtbdd_greater_rec)) result = mtbdd_false;
+        if (result == mtbdd_false) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
+        MTBDD high = SYNC(mtbdd_greater_rec);
+        if (result == mtbdd_invalid || high == mtbdd_invalid) return mtbdd_invalid;
+        result = result == mtbdd_true && high == mtbdd_true ? mtbdd_true : mtbdd_false;
     }
 
-    if (result == mtbdd_false) *shortcircuit = 1;
+    if (result == mtbdd_false) atomic_store_explicit(shortcircuit, 1, memory_order_relaxed);
 
     /* Store in cache */
     if (cache_put3(CACHE_MTBDD_GREATER, a, b, 0, result)) {
@@ -2165,10 +2187,10 @@ TASK_3(MTBDD, mtbdd_greater_rec, MTBDD, a, MTBDD, b, int*, shortcircuit)
 
 TASK_IMPL_2(MTBDD, mtbdd_greater, MTBDD, a, MTBDD, b)
 {
-    /* the implementation checks shortcircuit in every task and if the two
-       MTBDDs are not equal module epsilon, then the computation tree quickly aborts */
-    int shortcircuit = 0;
-    return CALL(mtbdd_greater_rec, a, b, &shortcircuit);
+    /* Aborted tasks return mtbdd_invalid; only this public task maps it to false. */
+    atomic_int shortcircuit = 0;
+    MTBDD result = CALL(mtbdd_greater_rec, a, b, &shortcircuit);
+    return result == mtbdd_true ? mtbdd_true : mtbdd_false;
 }
 
 /**

@@ -1,6 +1,21 @@
 # Change Log
 All notable changes to Sylvan will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- MTBDD comparisons could cache false answers from subtasks aborted by another
+  worker's early stop, making later comparisons return incorrect results. All
+  six comparisons now distinguish aborted tasks from completed results and use
+  an atomic stop flag. The new `test_mtbdd_compare` checks comparisons against
+  an assignment oracle and queries subdiagrams after parallel early stops.
+- `mtbdd_less` and `mtbdd_greater` returned false where both operands were
+  undefined. They now ignore those assignments, as documented for partial
+  domains, including when both operands are entirely undefined.
+- `mtbdd_equal_norm_d` swapped operands after reading their node metadata,
+  which could compare the wrong cofactors when their top variables differed.
+  It now orders operands before reading their nodes.
+
 ## [1.12.8] - 2026-11-15
 
 This release updates Lace to version 1.11.1, which makes frequent garbage

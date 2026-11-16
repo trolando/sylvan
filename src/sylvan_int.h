@@ -101,6 +101,7 @@ static const uint64_t CACHE_BDD_UNIQUE              = (60LL<<40);
 static const uint64_t CACHE_BDD_INTERSECTION_WITNESS = (61LL<<40);
 static const uint64_t CACHE_BDD_PICK_REPRESENTATIVES = (62LL<<40);
 static const uint64_t CACHE_BDD_CARDINALITY         = (63LL<<40);
+static const uint64_t CACHE_BDD_PROBABILITY         = (64LL<<40);
 
 // MDD operations
 static const uint64_t CACHE_MDD_RELPROD             = (20LL<<40);

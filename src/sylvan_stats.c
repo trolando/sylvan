@@ -69,6 +69,7 @@ struct
     {2, BDD_CONSTRAIN, "BDD constrain"},
     {2, BDD_SUPPORT, "BDD support"},
     {2, BDD_SATCOUNT, "BDD satcount"},
+    {2, BDD_PROBABILITY, "BDD probability"},
     {2, BDD_PATHCOUNT, "BDD pathcount"},
     {2, BDD_ISBDD, "BDD isbdd"},
     {2, BDD_DISJOINT, "BDD disjoint"},

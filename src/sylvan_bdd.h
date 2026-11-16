@@ -285,6 +285,29 @@ TASK_DECL_3(int, sylvan_satcount_u64, BDD, BDDSET, uint64_t*)
 #define sylvan_satcount_u64(bdd, variables, result) RUN(sylvan_satcount_u64, bdd, variables, result)
 
 /**
+ * Compute the probability that <bdd> is true under independent Boolean
+ * variables, using double arithmetic (subject to floating-point rounding).
+ * <probabilities>[i] is the probability that the i-th variable in <variables>
+ * is true. The set must be a positive cube with increasing variables, false
+ * low edges and a final true leaf (sylvan_true is the empty set). <count> must
+ * equal its size. The set must contain the complete support of <bdd>; missing
+ * probabilities are errors, including on paths with probability zero.
+ * Additional variables do not affect the result, but all supplied probabilities
+ * must be finite and in [0, 1]. False and true have probabilities 0 and 1.
+ *
+ * Returns 1 on success, or 0 for a NULL <result>, a NULL <probabilities> with
+ * nonzero <count>, an invalid set/count/probability (including NaN),
+ * sylvan_invalid, a map node, a non-Boolean leaf or a missing support variable.
+ * On failure, <result> is unchanged. Non-sentinel handles must refer to live
+ * MTBDDs; stale handles are not supported. The inputs are retained internally
+ * during the call; callers must also protect them while a spawned call is
+ * pending. Keep the array alive and unchanged until the call completes. Later
+ * calls may change its contents; cached results are isolated per call.
+ */
+TASK_DECL_5(int, sylvan_probability, BDD, BDDSET, const double*, size_t, double*)
+#define sylvan_probability(bdd, variables, probabilities, count, result) RUN(sylvan_probability, bdd, variables, probabilities, count, result)
+
+/**
  * Construct the BDD that is true exactly when between <minimum> and
  * <maximum> variables in <variables> are true, inclusive. Variables outside
  * the set remain free. This covers exact-k, at-most-k and at-least-k tests.

@@ -477,6 +477,22 @@ They return 0 on overflow or invalid arguments and leave the result unchanged.
 In particular, ``UINT64_MAX`` is a valid result. Existing floating-point count
 operations are unchanged.
 
+``sylvan_probability(bdd, variables, probabilities, count, &result)`` computes
+the probability that a BDD is true when its variables are independent. The
+array holds probabilities of true in increasing variable-set order; ``count``
+must equal the set size. The set is a positive cube containing the complete
+support. Extra variables are ignored, but every probability must be finite and
+in [0, 1]. Missing support variables are errors, even on zero-probability paths.
+The operation uses double arithmetic, so results are subject to rounding.
+It returns 1 on success, or 0 for invalid arguments, leaving the output unchanged.
+Invalid arguments include NaN, non-Boolean leaves, map nodes, ``sylvan_invalid``
+and a NULL output. A NULL probability array is allowed only when ``count`` is
+zero; with an empty set, False and True yield 0 and 1. Handles must otherwise
+refer to live MTBDDs. Keep the array alive and unchanged during a call. It may
+be changed between calls: each call has a distinct cache identity. The inputs
+are retained internally during execution; protect them while a spawned call
+is pending as for other Lace operations.
+
 With ``SYLVAN_GMP=ON``, include ``sylvan_gmp.h`` for
 ``sylvan_satcount_gmp``, ``mtbdd_satcount_gmp``, ``lddmc_satcount_gmp`` and
 ``zdd_satcount_gmp``. These take the same arguments as their ``_u64`` counterparts,

@@ -19,6 +19,7 @@
 
 #include <inttypes.h>
 #include <math.h>
+#include <stdatomic.h>
 #include <string.h>
 
 #include <avl.h>
@@ -2044,11 +2045,11 @@ TASK_IMPL_2(double, sylvan_pathcount, BDD, bdd, BDDVAR, prev_level)
 
     /* Consult cache */
     int cachenow = granularity < 2 || prev_level == 0 ? 1 : prev_level / (BDDVAR)granularity != level / (BDDVAR)granularity;
+    union { double d; uint64_t s; } hack;
     if (cachenow) {
-        double result;
-        if (cache_get3(CACHE_BDD_PATHCOUNT, bdd, 0, 0, (uint64_t*)&result)) {
+        if (cache_get3(CACHE_BDD_PATHCOUNT, bdd, 0, 0, &hack.s)) {
             sylvan_stats_count(BDD_PATHCOUNT_CACHED);
-            return result;
+            return hack.d;
         }
     }
 
@@ -2058,7 +2059,8 @@ TASK_IMPL_2(double, sylvan_pathcount, BDD, bdd, BDDVAR, prev_level)
     res1 += SYNC(sylvan_pathcount);
 
     if (cachenow) {
-        if (cache_put3(CACHE_BDD_PATHCOUNT, bdd, 0, 0, *(uint64_t*)&res1)) sylvan_stats_count(BDD_PATHCOUNT_CACHEDPUT);
+        hack.d = res1;
+        if (cache_put3(CACHE_BDD_PATHCOUNT, bdd, 0, 0, hack.s)) sylvan_stats_count(BDD_PATHCOUNT_CACHEDPUT);
     }
 
     return res1;
@@ -2121,6 +2123,103 @@ TASK_IMPL_3(int, sylvan_satcount_u64, BDD, bdd, BDDSET, variables, uint64_t*, re
 {
     if (result == NULL || bdd == sylvan_invalid || !sylvan_count_is_valid_set(variables)) return 0;
     return CALL(sylvan_satcount_u64_rec, bdd, variables, result);
+}
+
+/* Never reuse an identity, even across package restarts. The set suffix fixes
+ * the array offset within one call; (bdd, variables, call_id) therefore covers
+ * every semantic parameter. Array addresses or content hashes would permit
+ * stale hits after mutation or hash collisions. Concurrent calls get distinct
+ * ids. On exhaustion, saturate and disable caching (id 0), rather than wrap. */
+static _Atomic(uint64_t) probability_call_id;
+
+static uint64_t
+sylvan_probability_next_id(void)
+{
+    uint64_t id = atomic_load_explicit(&probability_call_id, memory_order_relaxed);
+    while (id != UINT64_MAX) {
+        if (atomic_compare_exchange_weak_explicit(&probability_call_id, &id, id+1,
+                memory_order_relaxed, memory_order_relaxed)) return id+1;
+    }
+    return 0;
+}
+
+/* Bounds are against the data arena, which can exceed the shrunken hash table.
+ * As with other operations, non-sentinel handles must refer to live diagrams. */
+static int
+sylvan_probability_node(BDD bdd)
+{
+    uint64_t index = MTBDD_GETINDEX(bdd);
+    if ((bdd & ~(sylvan_complement | UINT64_C(0x000000ffffffffff))) != 0 ||
+        index < 2 || index >= llmsset_get_data_size(nodes)) return 0;
+    bddnode_t node = MTBDD_GETNODE(bdd);
+    return !mtbddnode_isleaf(node) && !bddnode_ismapnode(node);
+}
+
+TASK_4(double, sylvan_probability_rec, BDD, bdd, BDDSET, variables, const double*, probabilities, uint64_t, call_id)
+{
+    if (bdd == sylvan_false) return 0.0;
+    if (bdd == sylvan_true) return 1.0;
+    if (!sylvan_probability_node(bdd)) return NAN;
+
+    /* The public entry point retains both entire inputs until all tasks join. */
+    sylvan_gc_test();
+    sylvan_stats_count(BDD_PROBABILITY);
+
+    BDDVAR var = sylvan_var(bdd);
+    while (!sylvan_set_isempty(variables) && sylvan_set_first(variables) < var) {
+        variables = sylvan_set_next(variables);
+        probabilities++;
+    }
+    if (sylvan_set_isempty(variables) || sylvan_set_first(variables) != var) return NAN;
+
+    union { double value; uint64_t bits; } cached;
+    if (call_id && cache_get3(CACHE_BDD_PROBABILITY, bdd, variables, call_id, &cached.bits)) {
+        sylvan_stats_count(BDD_PROBABILITY_CACHED);
+        return cached.value;
+    }
+
+    double probability = *probabilities;
+    BDDSET next = sylvan_set_next(variables);
+    SPAWN(sylvan_probability_rec, sylvan_high(bdd), next, probabilities+1, call_id);
+    double low = CALL(sylvan_probability_rec, sylvan_low(bdd), next, probabilities+1, call_id);
+    double high = SYNC(sylvan_probability_rec);
+    /* Visit both branches even at p=0 or p=1, to reject missing probabilities
+     * and non-Boolean leaves on zero-weight paths too. The weighted sum avoids
+     * cancellation in low + p*(high-low), particularly when p=1. */
+    if (isnan(low) || isnan(high)) return NAN;
+    cached.value = (1.0-probability)*low + probability*high;
+    if (call_id && cache_put3(CACHE_BDD_PROBABILITY, bdd, variables, call_id, cached.bits)) {
+        sylvan_stats_count(BDD_PROBABILITY_CACHEDPUT);
+    }
+    return cached.value;
+}
+
+TASK_IMPL_5(int, sylvan_probability, BDD, bdd, BDDSET, variables, const double*, probabilities, size_t, count, double*, result)
+{
+    if (result == NULL || (count && probabilities == NULL)) return 0;
+    if (!sylvan_isconst(bdd) && !sylvan_probability_node(bdd)) return 0;
+
+    /* Validate the positive cube and every probability, including unused ones,
+     * before any safepoint or access to a probability in the recursion. */
+    BDDSET set = variables;
+    BDDVAR previous = 0;
+    for (size_t i=0; i<count; i++) {
+        if (!sylvan_probability_node(set) || sylvan_low(set) != sylvan_false) return 0;
+        BDDVAR var = sylvan_var(set);
+        if (i && var <= previous) return 0;
+        previous = var;
+        if (!isfinite(probabilities[i]) || probabilities[i] < 0.0 || probabilities[i] > 1.0) return 0;
+        set = sylvan_set_next(set);
+    }
+    if (!sylvan_set_isempty(set)) return 0;
+
+    bdd_refs_push(bdd);
+    bdd_refs_push(variables);
+    double computed = CALL(sylvan_probability_rec, bdd, variables, probabilities, sylvan_probability_next_id());
+    bdd_refs_pop(2);
+    if (isnan(computed)) return 0;
+    *result = computed;
+    return 1;
 }
 
 /**

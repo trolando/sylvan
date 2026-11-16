@@ -4,6 +4,11 @@ All notable changes to Sylvan will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `sylvan_probability` for the probability that a BDD is true under independent
+  variables, using double arithmetic and probabilities packed in variable-set
+  order. It rejects missing support variables and invalid probabilities,
+  leaving the output unchanged on failure. Per-call cache identities keep
+  concurrent calls and later changes to the same array independent.
 - Pointwise MTBDD comparisons `mtbdd_compare_leq`, `mtbdd_compare_lt`,
   `mtbdd_compare_geq`, `mtbdd_compare_gt`, `mtbdd_compare_equal_abs_double`
   and `mtbdd_compare_equal_rel_double`, with matching `mtbdd_any_*` scalar

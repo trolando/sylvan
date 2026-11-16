@@ -108,6 +108,32 @@ add_test(NAME test_reach_wide COMMAND test_reach_wide 1)
 add_test(NAME test_reach_wide_parallel COMMAND test_reach_wide 4)
 set_tests_properties(test_reach_wide test_reach_wide_parallel PROPERTIES TIMEOUT 120)
 
+if(SYLVAN_BUILD_EXAMPLES)
+    add_executable(test_empty_models test_empty_models.c)
+    target_link_libraries(test_empty_models PRIVATE sylvan::sylvan)
+    target_compile_features(test_empty_models PRIVATE c_std_11)
+    sylvan_test_warnings(test_empty_models)
+    add_test(NAME test_empty_models COMMAND test_empty_models)
+    set_tests_properties(test_empty_models PROPERTIES FIXTURES_SETUP empty_models TIMEOUT 30)
+    foreach(strategy IN ITEMS bfs par sat chaining reach)
+        foreach(kind IN ITEMS bdd ldd)
+            add_test(NAME test_${kind}_empty_${strategy}
+                COMMAND ${CMAKE_COMMAND}
+                    -DPROGRAM=$<TARGET_FILE:${kind}mc> -DSTRATEGY=${strategy}
+                    -DMODEL=${CMAKE_CURRENT_BINARY_DIR}/empty-groups.${kind}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/check_empty_model.cmake)
+            set_tests_properties(test_${kind}_empty_${strategy} PROPERTIES
+                FIXTURES_REQUIRED empty_models TIMEOUT 30)
+        endforeach()
+        add_test(NAME test_bdd_empty_merge_${strategy}
+            COMMAND ${CMAKE_COMMAND}
+                -DPROGRAM=$<TARGET_FILE:bddmc> -DSTRATEGY=${strategy} -DMERGE=ON
+                -DMODEL=${CMAKE_CURRENT_BINARY_DIR}/empty-groups.bdd
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_empty_model.cmake)
+        set_tests_properties(test_bdd_empty_merge_${strategy} PROPERTIES
+            FIXTURES_REQUIRED empty_models TIMEOUT 30)
+    endforeach()
+endif()
 add_test(NAME test_zdd COMMAND test_zdd)
 add_test(NAME test_table COMMAND test_table)
 add_test(NAME test_table_ownership COMMAND test_table ownership)

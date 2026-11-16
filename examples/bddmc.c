@@ -15,9 +15,9 @@
 static int report_levels = 0; // report states at end of every level
 static int report_table = 0; // report table size at end of every level
 static int report_nodes = 0; // report number of nodes of BDDs
-static int strategy = 2; // 0 = BFS, 1 = PAR, 2 = SAT, 3 = CHAINING
+static int strategy = 2; // 0 = BFS, 1 = PAR, 2 = SAT, 3 = CHAINING, 4 = REACH
 static int check_deadlocks = 0; // set to 1 to check for deadlocks on-the-fly (only bfs/par)
-static int merge_relations = 0; // merge relations to 1 relation
+static int merge_relations = 0; // merge relations to 1 relation (always for REACH)
 static int print_transition_matrix = 0; // print transition relation matrix
 static int workers = 0; // autodetect
 static const char* model_filename = NULL; // filename of model
@@ -25,8 +25,8 @@ static const char* model_filename = NULL; // filename of model
 static void
 print_usage()
 {
-    printf("Usage: bddmc [-h] [-s <bfs|par|sat|chaining>] [-w <workers>]\n");
-    printf("        [--strategy=<bfs|par|sat|chaining>] [--workers=<workers>]\n");
+    printf("Usage: bddmc [-h] [-s <bfs|par|sat|chaining|reach>] [-w <workers>]\n");
+    printf("        [--strategy=<bfs|par|sat|chaining|reach>] [--workers=<workers>]\n");
     printf("        [--count-nodes] [--count-states] [--count-table] [--deadlocks]\n");
     printf("        [--merge-relations] [--print-matrix] [--help] [--usage] <model>\n");
 }
@@ -35,7 +35,7 @@ static void
 print_help()
 {
     printf("Usage: bddmc [OPTION...] <model>\n\n");
-    printf("  -s, --strategy=<bfs|par|sat|chaining>\n");
+    printf("  -s, --strategy=<bfs|par|sat|chaining|reach>\n");
     printf("                             Strategy for reachability (default=sat)\n");
     printf("  -w, --workers=<workers>    Number of workers (default=0: autodetect)\n");
     printf("      --count-nodes          Report #nodes for BDDs\n");
@@ -43,6 +43,7 @@ print_help()
     printf("      --count-table          Report table usage at each level\n");
     printf("      --deadlocks            Check for deadlocks\n");
     printf("      --merge-relations      Merge transition relations into one transition relation\n");
+    printf("                             (always done for reach)\n");
     printf("      --print-matrix         Print transition matrix\n");
     printf("  -h, --help                 Give this help list\n");
     printf("      --usage                Give a short usage message\n");
@@ -77,6 +78,7 @@ parse_args(int argc, const char **argv)
                 else if (strcmp(options.optarg, "par")==0) strategy = 1;
                 else if (strcmp(options.optarg, "sat")==0) strategy = 2;
                 else if (strcmp(options.optarg, "chaining")==0) strategy = 3;
+                else if (strcmp(options.optarg, "reach")==0) strategy = 4;
                 else {
                     print_usage();
                     exit(0);
@@ -403,6 +405,15 @@ TASK_2(BDD, go_sat, BDD, set, int, idx)
 VOID_TASK_1(sat, set_t, set)
 {
     set->bdd = CALL(go_sat, set->bdd, 0);
+}
+
+/**
+ * Wrapper for the REACH strategy (one sylvan_reach call with the merged relation)
+ */
+VOID_TASK_1(reach, set_t, set)
+{
+    if (next_count != 1) Abort("Strategy reach requires one (merged) transition relation\n");
+    set->bdd = sylvan_reach(set->bdd, next[0]->bdd, next[0]->variables);
 }
 
 /**
@@ -853,7 +864,9 @@ VOID_TASK_0(run)
     }
 
     /* merge all relations to one big transition relation if requested */
-    if (merge_relations) {
+    if (strategy == 4) merge_relations = 1;
+    if (merge_relations && next_count != 0) {
+        double t1 = wctime();
         BDD newvars = sylvan_set_empty();
         bdd_refs_pushptr(&newvars);
         for (int i=totalbits-1; i>=0; i--) {
@@ -877,6 +890,9 @@ VOID_TASK_0(run)
             next[i]->variables = sylvan_true;
         }
         next_count = 1;
+
+        double t2 = wctime();
+        INFO("Merge Time: %f\n", t2-t1);
     }
 
     if (report_nodes) {
@@ -889,7 +905,9 @@ VOID_TASK_0(run)
 
     print_memory_usage();
 
-    if (strategy == 0) {
+    if (next_count == 0) {
+        INFO("No transition groups; the initial states are the final states.\n");
+    } else if (strategy == 0) {
         double t1 = wctime();
         RUN(bfs, states);
         double t2 = wctime();
@@ -909,6 +927,11 @@ VOID_TASK_0(run)
         RUN(chaining, states);
         double t2 = wctime();
         INFO("CHAINING Time: %f\n", t2-t1);
+    } else if (strategy == 4) {
+        double t1 = wctime();
+        RUN(reach, states);
+        double t2 = wctime();
+        INFO("REACH Time: %f\n", t2-t1);
     } else {
         Abort("Invalid strategy set?!\n");
     }

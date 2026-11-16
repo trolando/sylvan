@@ -379,13 +379,8 @@ lddmc_makenode(uint32_t value, MDD ifeq, MDD ifneq)
     if (index == 0) {
         lddmc_refs_push(ifeq);
         lddmc_refs_push(ifneq);
-        RUN(sylvan_gc_collect);
+        index = sylvan_table_lookup_gc(n.a, n.b, &created, 0, "MDD");
         lddmc_refs_pop(2);
-
-        index = llmsset_lookup(nodes, n.a, n.b, &created);
-        if (index == 0) {
-            sylvan_table_full("MDD");
-        }
     }
 
     if (created) sylvan_stats_count(LDD_NODES_CREATED);
@@ -405,13 +400,8 @@ lddmc_make_copynode(MDD ifeq, MDD ifneq)
     if (index == 0) {
         lddmc_refs_push(ifeq);
         lddmc_refs_push(ifneq);
-        RUN(sylvan_gc_collect);
+        index = sylvan_table_lookup_gc(n.a, n.b, &created, 0, "MDD");
         lddmc_refs_pop(2);
-
-        index = llmsset_lookup(nodes, n.a, n.b, &created);
-        if (index == 0) {
-            sylvan_table_full("MDD");
-        }
     }
 
     if (created) sylvan_stats_count(LDD_NODES_CREATED);

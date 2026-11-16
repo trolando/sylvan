@@ -477,12 +477,7 @@ mtbdd_makeleaf(uint32_t type, uint64_t value)
     int created;
     uint64_t index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
-        RUN(sylvan_gc_collect);
-
-        index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
-        if (index == 0) {
-            sylvan_table_full("BDD");
-        }
+        index = sylvan_table_lookup_gc(n.a, n.b, &created, custom, "BDD");
     }
 
     if (created) sylvan_stats_count(BDD_NODES_CREATED);
@@ -491,6 +486,7 @@ mtbdd_makeleaf(uint32_t type, uint64_t value)
     return (MTBDD)index;
 }
 
+/* Keep these legacy slow-path symbols for binary compatibility. */
 void SYLVAN_NOINLINE
 _mtbdd_makenode_gc(MTBDD low, MTBDD high)
 {
@@ -522,9 +518,10 @@ _mtbdd_makenode(uint32_t var, MTBDD low, MTBDD high)
     int created;
     uint64_t index = llmsset_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
-        _mtbdd_makenode_gc(low, high);
-        index = llmsset_lookup(nodes, n.a, n.b, &created);
-        if (index == 0) _mtbdd_makenode_exit();
+        mtbdd_refs_push(low);
+        mtbdd_refs_push(high);
+        index = sylvan_table_lookup_gc(n.a, n.b, &created, 0, "BDD");
+        mtbdd_refs_pop(2);
     }
 
     if (created) sylvan_stats_count(BDD_NODES_CREATED);
@@ -549,13 +546,8 @@ mtbdd_makemapnode(uint32_t var, MTBDD low, MTBDD high)
     if (index == 0) {
         mtbdd_refs_push(low);
         mtbdd_refs_push(high);
-        RUN(sylvan_gc_collect);
+        index = sylvan_table_lookup_gc(n.a, n.b, &created, 0, "BDD");
         mtbdd_refs_pop(2);
-
-        index = llmsset_lookup(nodes, n.a, n.b, &created);
-        if (index == 0) {
-            sylvan_table_full("BDD");
-        }
     }
 
     if (created) sylvan_stats_count(BDD_NODES_CREATED);

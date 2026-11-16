@@ -39,7 +39,12 @@ sylvan_set_table_full_handler(sylvan_table_full_cb handler)
 SYLVAN_NORETURN void
 sylvan_table_full(const char *kind)
 {
-    size_t filled = llmsset_count_marked(nodes);
+    /* Do not yield between the failed lookup and the report. The parallel
+     * count can join a GC at SYNC, freeing buckets (or even shrinking the
+     * table) and invalidating the decision to report exhaustion. GC needs
+     * every worker to join its frame, so a serial count keeps this decision
+     * valid through the handler call. Other workers can still add nodes. */
+    size_t filled = llmsset_count_marked_no_yield(nodes);
     size_t total = llmsset_get_size(nodes);
     sylvan_table_full_cb handler = atomic_load_explicit(&table_full_handler, memory_order_acquire);
     handler(kind, filled, total);
@@ -135,6 +140,10 @@ static _Atomic(int) gc;
  * the collection, before its frame.
  */
 static int gc_shrink;
+
+/* Minimum node-table size requested by allocation recovery. Like gc_shrink,
+ * only the worker that owns gc writes this, before starting the new frame. */
+static size_t gc_grow_to;
 
 /**
  * The minimum and maximum sizes of the nodes table and the operation cache
@@ -390,6 +399,11 @@ VOID_TASK_0(sylvan_gc_go)
     if (gc_shrink) CALL(sylvan_gc_shrink);
     else WRAP(main_hook);
 
+    /* Run even a custom main hook, but enforce allocation recovery's minimum
+     * afterwards. This also makes progress when the low-memory hook sees at
+     * most half the buckets live. Cache sizing remains up to the main hook. */
+    if (llmsset_get_size(nodes) < gc_grow_to) llmsset_set_size(nodes, gc_grow_to);
+
     CALL(sylvan_rehash_all);
 
 #if SYLVAN_GC_DIAGNOSTICS
@@ -424,16 +438,20 @@ VOID_TASK_0(sylvan_gc_go)
 /**
  * Perform garbage collection, or wait for the one another worker runs.
  * Only the worker that starts the collection decides whether it shrinks.
+ * A growth request that joins another collection must still meet its minimum.
  */
-VOID_TASK_1(sylvan_gc_start, int, shrink)
+VOID_TASK_2(sylvan_gc_start, int, shrink, size_t, grow_to)
 {
-    if (gc_enabled) {
+    while (gc_enabled) {
         int zero = 0;
         if (atomic_compare_exchange_strong(&gc, &zero, 1)) {
             gc_shrink = shrink;
+            gc_grow_to = grow_to;
             NEWFRAME(sylvan_gc_go);
             gc_shrink = 0;
+            gc_grow_to = 0;
             gc = 0;
+            return;
         } else {
             /* Another worker is collecting garbage. Wait until it is done,
              * and join its new frame if that has not started yet. Lace
@@ -441,18 +459,44 @@ VOID_TASK_1(sylvan_gc_start, int, shrink)
              * a worker that arrives after the frame has run must not wait
              * for it to appear. */
             while (atomic_load_explicit(&gc, memory_order_acquire) != 0) YIELD_NEWFRAME();
+            if (llmsset_get_size(nodes) >= grow_to) return;
         }
     }
 }
 
 VOID_TASK_IMPL_0(sylvan_gc)
 {
-    CALL(sylvan_gc_start, 1);
+    CALL(sylvan_gc_start, 1, 0);
 }
 
 VOID_TASK_IMPL_0(sylvan_gc_collect)
 {
-    CALL(sylvan_gc_start, 0);
+    CALL(sylvan_gc_start, 0, 0);
+}
+
+uint64_t SYLVAN_NOINLINE
+sylvan_table_lookup_gc(uint64_t a, uint64_t b, int *created, int custom, const char *kind)
+{
+    size_t grow_to = 0;
+    for (;;) {
+        RUN(sylvan_gc_start, 0, grow_to);
+        uint64_t index = custom ? llmsset_lookupc(nodes, a, b, created) : llmsset_lookup(nodes, a, b, created);
+        if (index != 0) return index;
+
+        /* A retry can fail even just after GC grew the table: all free buckets
+         * may be in 512-bucket regions owned exclusively by other workers.
+         * Sharing those regions would race bucket selection and the non-atomic
+         * custom-leaf bitmap. Instead, collect again with a strictly larger
+         * minimum size, regardless of the policy or custom main hook. Bounded
+         * growth ends at the maximum; with GC disabled, retain the old failure
+         * behavior rather than looping without any way to make room. */
+        size_t size = llmsset_get_size(nodes);
+        size_t max = llmsset_get_max_size(nodes);
+        if (!gc_enabled || size == max) sylvan_table_full(kind);
+        if (size < grow_to) size = grow_to;
+        grow_to = next_size(size);
+        if (grow_to > max) grow_to = max;
+    }
 }
 
 /**

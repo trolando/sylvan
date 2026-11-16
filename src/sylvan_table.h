@@ -210,6 +210,11 @@ int llmsset_rehash_bucket(const llmsset_t dbs, uint64_t d_idx);
 TASK_DECL_1(size_t, llmsset_count_marked, llmsset_t);
 #define llmsset_count_marked(dbs) RUN(llmsset_count_marked, dbs)
 
+/* Serial count with no Lace safepoint, for a terminal allocation failure.
+ * Like the parallel count, includes the whole data range and reserved buckets.
+ * Concurrent allocations may increase the count while it is being read. */
+size_t llmsset_count_marked_no_yield(const llmsset_t dbs);
+
 /**
  * During garbage collection, this method calls the destroy callback
  * for all 'custom' data that is not kept.

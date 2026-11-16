@@ -67,7 +67,8 @@ All notable changes to Sylvan will be documented in this file.
   arena on explicit collections, and `SYLVAN_GC_LOW_MEMORY` for growth only
   above half occupancy and releasing empty arena stretches. Selecting a
   policy installs its growth hook. A custom main hook installed afterwards
-  overrides growth while keeping the policy's shrink mode.
+  overrides the growth heuristic while keeping the policy's shrink mode.
+  Allocation recovery still enforces node-table growth after the custom hook.
 - `SYLVAN_HUGEPAGES`, a CMake option defaulting to OFF until measured on
   master. When enabled with `SYLVAN_USE_MMAP` on Linux, it requests transparent
   huge pages for mappings of at least 2 MiB through `MADV_HUGEPAGE` when
@@ -91,8 +92,10 @@ All notable changes to Sylvan will be documented in this file.
 - A Linux CI job that builds and runs the tests in Debug with AddressSanitizer
   and UndefinedBehaviorSanitizer, using the current Ubuntu GCC.
 - `sylvan_gc_collect()`, the garbage collection Sylvan starts itself when the
-  nodes table is full. It resizes with the main gc hook, as before, and never
-  shrinks the tables. Programs that want to collect garbage call `sylvan_gc()`.
+  nodes table is full. It resizes with the main gc hook, as before; the
+  built-in hooks never shrink the tables (a custom hook may), and a call that
+  joins another worker's `sylvan_gc()` takes part in that shrinking
+  collection. Programs that want to collect garbage call `sylvan_gc()`.
 - For code that works with the nodes table directly (`sylvan_table.h`):
   `llmsset_shrink()`, and `llmsset_get_data_size()`, the range of node
   indices in use. After a shrink, live nodes can have indices at or above
@@ -157,6 +160,13 @@ All notable changes to Sylvan will be documented in this file.
 - `mtbdd_equal_norm_d` swapped operands after reading their node metadata,
   which could compare the wrong cofactors when their top variables differed.
   It now orders operands before reading their nodes.
+- Node creation could report a full table just after garbage collection grew
+  it, when the remaining free buckets were in regions owned by other workers.
+  Sylvan now collects again, forcing growth up to the configured maximum before
+  reporting exhaustion. This applies to BDD/MTBDD, LDD and ZDD nodes, maps and
+  custom leaves, with either GC policy. Custom main hooks still run, but cannot
+  prevent this recovery growth. Earlier releases have the same region ownership
+  behavior. The new `test_gc_retry` reproduces the failure with four workers.
 
 ## [1.12.8] - 2026-11-15
 

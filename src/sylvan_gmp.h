@@ -105,12 +105,14 @@ TASK_DECL_2(MTBDD, gmp_op_max, MTBDD*, MTBDD*);
 TASK_DECL_3(MTBDD, gmp_abstract_op_max, MTBDD, MTBDD, int);
 
 /**
- * Operation "negate" for one mpq MTBDD
+ * Operation "negate" for one mpq MTBDD. Also usable as a leaf mapper:
+ * mtbdd_map(dd, gmp_op_neg_CALL, 0). Undefined leaves remain undefined.
  */
 TASK_DECL_2(MTBDD, gmp_op_neg, MTBDD, size_t);
 
 /**
- * Operation "abs" for one mpq MTBDD
+ * Operation "abs" for one mpq MTBDD. Also usable as a leaf mapper:
+ * mtbdd_map(dd, gmp_op_abs_CALL, 0). Undefined leaves remain undefined.
  */
 TASK_DECL_2(MTBDD, gmp_op_abs, MTBDD, size_t);
 

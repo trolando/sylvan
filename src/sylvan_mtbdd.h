@@ -437,6 +437,66 @@ TASK_DECL_3(MTBDD, mtbdd_uapply, MTBDD, mtbdd_uapply_op, size_t);
 #define mtbdd_uapply(dd, op, param) RUN(mtbdd_uapply, dd, op, param)
 
 /**
+ * Leaf mapper for mtbdd_map and mtbdd_map_reduce. Called only on leaves,
+ * including mtbdd_false (undefined), mtbdd_true and custom leaves such as GMP.
+ * Return a leaf, or mtbdd_invalid on failure. Define with TASK_2 and pass
+ * name_CALL, just as for mtbdd_uapply. The callback must protect intermediate
+ * diagrams across calls that can collect garbage.
+ *
+ * Results are always cached, as with mtbdd_uapply; there is no uncached mode.
+ * The callback must be pure: its leaf argument and <param> must fully determine
+ * the result, independently of mutable state or the number/order of calls.
+ * Cache hits may skip callback execution, so do not rely on callback side effects.
+ * A pointer passed through <param> must refer to immutable semantic state until
+ * the cache is cleared. Callbacks may run concurrently on several workers.
+ */
+typedef mtbdd_uapply_op mtbdd_map_op;
+
+/**
+ * Map every leaf of <dd> with <op>(leaf, param), preserving decision variables.
+ * Unlike mtbdd_uapply, <op> cannot intercept internal subdiagrams. The mapper
+ * may change leaf types and decide how undefined, Boolean and NaN leaves map.
+ * Returns mtbdd_invalid for an invalid sentinel, NULL callback, callback failure
+ * or a callback result that is not a leaf. The caller must protect <dd>.
+ */
+TASK_DECL_3(MTBDD, mtbdd_map, MTBDD, mtbdd_map_op, size_t)
+#define mtbdd_map(dd, op, param) RUN(mtbdd_map, dd, op, param)
+
+/**
+ * Reducer for mtbdd_map_reduce, defined with TASK_4 and passed as name_CALL.
+ * With skipped == 0, combine <a> and <b> in low-before-high order. With
+ * skipped > 0, a == b and the result must reduce 2^skipped copies of <a>.
+ * The operands can be diagrams over variables not being reduced. Return an
+ * MTBDD or mtbdd_invalid on failure, without introducing decision variables
+ * absent from the operands. The operation must be associative, but need not
+ * be commutative. The same purity and protection rules as mtbdd_map_op apply.
+ */
+typedef MTBDD (*mtbdd_map_reduce_op)(WorkerP *, Task *, MTBDD, MTBDD, size_t, size_t);
+
+/**
+ * Map the leaves of <dd> with <map>(leaf, param), then reduce <variables> with
+ * <reduce>(low, high, skipped, param), in a single traversal. <variables> is a
+ * positive cube (mtbdd_true for the empty set). Variables outside this set
+ * remain in the result. Each reduction variable skipped on a path contributes
+ * two identical copies; k skipped variables cause a call with skipped == k.
+ * This applies also before the first node and after reaching a constant leaf.
+ * An empty variable set is equivalent to mtbdd_map.
+ *
+ * <identity> must be a leaf and a two-sided identity of <reduce>; calls with
+ * identity operands may be omitted. Grouping is deterministic, low before
+ * high, although callbacks can run concurrently. Both callbacks and <param>
+ * must determine the result; results are always cached using all arguments.
+ * Both callbacks must obey the purity contract of mtbdd_map_op.
+ * The caller must protect <dd>, <variables>, and <identity>, including until
+ * synchronization for spawned calls. Returns mtbdd_invalid for invalid
+ * sentinels, a malformed variable set, NULL callbacks, a non-leaf identity,
+ * callback failure or a non-leaf mapper result.
+ */
+TASK_DECL_6(MTBDD, mtbdd_map_reduce, MTBDD, BDDSET, mtbdd_map_op, mtbdd_map_reduce_op, MTBDD, size_t)
+#define mtbdd_map_reduce(dd, variables, map, reduce, identity, param) \
+    RUN(mtbdd_map_reduce, dd, variables, map, reduce, identity, param)
+
+/**
  * Callback function types for abstraction.
  * MTBDD mtbdd_abstract_op(MTBDD a, MTBDD b, int k).
  * The function is either called with k==0 (apply to two arguments) or k>0 (k skipped BDD variables)
@@ -651,6 +711,91 @@ TASK_DECL_2(MTBDD, mtbdd_geq, MTBDD, MTBDD);
  */
 TASK_DECL_2(MTBDD, mtbdd_greater, MTBDD, MTBDD);
 #define mtbdd_greater(a, b) RUN(mtbdd_greater, a, b)
+
+/**
+ * Pointwise numeric comparisons: return the BDD of common assignments where
+ * a <= b, a < b, a >= b, or a > b, respectively. mtbdd_false denotes undefined:
+ * assignments where either operand is undefined are false in the result.
+ * At each common assignment the leaves must have the same built-in type:
+ * int64, double or fraction. Different assignments may have different types.
+ * Boolean true, custom types (including GMP), and mismatched leaf types return
+ * mtbdd_invalid. Double NaN makes every relation false. A skipped variable
+ * denotes the same value for both choices; no explicit variable set is needed.
+ * The caller must protect both operands, as for other MTBDD operations.
+ */
+TASK_DECL_2(MTBDD, mtbdd_compare_leq, MTBDD, MTBDD)
+#define mtbdd_compare_leq(a, b) RUN(mtbdd_compare_leq, a, b)
+TASK_DECL_2(MTBDD, mtbdd_compare_lt, MTBDD, MTBDD)
+#define mtbdd_compare_lt(a, b) RUN(mtbdd_compare_lt, a, b)
+TASK_DECL_2(MTBDD, mtbdd_compare_geq, MTBDD, MTBDD)
+#define mtbdd_compare_geq(a, b) RUN(mtbdd_compare_geq, a, b)
+TASK_DECL_2(MTBDD, mtbdd_compare_gt, MTBDD, MTBDD)
+#define mtbdd_compare_gt(a, b) RUN(mtbdd_compare_gt, a, b)
+
+/**
+ * Existential versions of the pointwise comparisons above. Return mtbdd_true
+ * if the relation holds at any common assignment, mtbdd_false if none (also
+ * for an empty common domain), or mtbdd_invalid for unsupported leaves.
+ * These return a scalar Boolean terminal, never a nonterminal BDD.
+ */
+TASK_DECL_2(MTBDD, mtbdd_any_leq, MTBDD, MTBDD)
+#define mtbdd_any_leq(a, b) RUN(mtbdd_any_leq, a, b)
+TASK_DECL_2(MTBDD, mtbdd_any_lt, MTBDD, MTBDD)
+#define mtbdd_any_lt(a, b) RUN(mtbdd_any_lt, a, b)
+TASK_DECL_2(MTBDD, mtbdd_any_geq, MTBDD, MTBDD)
+#define mtbdd_any_geq(a, b) RUN(mtbdd_any_geq, a, b)
+TASK_DECL_2(MTBDD, mtbdd_any_gt, MTBDD, MTBDD)
+#define mtbdd_any_gt(a, b) RUN(mtbdd_any_gt, a, b)
+
+/**
+ * Universal versions of the pointwise ordering comparisons above. Return
+ * mtbdd_true if the relation holds at every common assignment, mtbdd_false
+ * otherwise, or mtbdd_invalid for unsupported or mismatched leaves on the
+ * common domain. Assignments where either operand is undefined are ignored,
+ * including when both are undefined; an empty common domain returns mtbdd_true.
+ * Identical operands are still validated, and NaN makes every relation false.
+ * These return a scalar Boolean terminal, never a nonterminal BDD.
+ */
+TASK_DECL_2(MTBDD, mtbdd_all_leq, MTBDD, MTBDD)
+#define mtbdd_all_leq(a, b) RUN(mtbdd_all_leq, a, b)
+TASK_DECL_2(MTBDD, mtbdd_all_lt, MTBDD, MTBDD)
+#define mtbdd_all_lt(a, b) RUN(mtbdd_all_lt, a, b)
+TASK_DECL_2(MTBDD, mtbdd_all_geq, MTBDD, MTBDD)
+#define mtbdd_all_geq(a, b) RUN(mtbdd_all_geq, a, b)
+TASK_DECL_2(MTBDD, mtbdd_all_gt, MTBDD, MTBDD)
+#define mtbdd_all_gt(a, b) RUN(mtbdd_all_gt, a, b)
+
+/**
+ * Pointwise and existential tolerance comparisons for double leaves only.
+ * Absolute equality tests fabs(a-b) < tolerance, with no equality shortcut.
+ * Relative equality accepts equal values (including zero and equal infinities);
+ * otherwise it tests fabs((a-b)/a) < tolerance, rejecting a == 0.
+ * NaN operands make both relations false. Tolerances are used as given, so
+ * non-positive or NaN tolerances fail the strict test. Undefined assignments,
+ * skipped variables, invalid inputs and result forms follow the families above.
+ */
+TASK_DECL_3(MTBDD, mtbdd_compare_equal_abs_double, MTBDD, MTBDD, double)
+#define mtbdd_compare_equal_abs_double(a, b, tolerance) RUN(mtbdd_compare_equal_abs_double, a, b, tolerance)
+TASK_DECL_3(MTBDD, mtbdd_compare_equal_rel_double, MTBDD, MTBDD, double)
+#define mtbdd_compare_equal_rel_double(a, b, tolerance) RUN(mtbdd_compare_equal_rel_double, a, b, tolerance)
+TASK_DECL_3(MTBDD, mtbdd_any_equal_abs_double, MTBDD, MTBDD, double)
+#define mtbdd_any_equal_abs_double(a, b, tolerance) RUN(mtbdd_any_equal_abs_double, a, b, tolerance)
+TASK_DECL_3(MTBDD, mtbdd_any_equal_rel_double, MTBDD, MTBDD, double)
+#define mtbdd_any_equal_rel_double(a, b, tolerance) RUN(mtbdd_any_equal_rel_double, a, b, tolerance)
+
+/**
+ * Universal double tolerance comparisons over the common domain. Return
+ * mtbdd_true if every common assignment passes, including an empty common
+ * domain, or mtbdd_false otherwise. Identical subdiagrams are accepted without
+ * inspecting their leaves, even for a non-positive tolerance, as in
+ * mtbdd_equal_norm_d/rel_d. Other leaves use the tolerance rules above and
+ * return mtbdd_invalid for unsupported types.
+ * Unlike the existing norm comparisons, undefined assignments are ignored.
+ */
+TASK_DECL_3(MTBDD, mtbdd_all_equal_abs_double, MTBDD, MTBDD, double)
+#define mtbdd_all_equal_abs_double(a, b, tolerance) RUN(mtbdd_all_equal_abs_double, a, b, tolerance)
+TASK_DECL_3(MTBDD, mtbdd_all_equal_rel_double, MTBDD, MTBDD, double)
+#define mtbdd_all_equal_rel_double(a, b, tolerance) RUN(mtbdd_all_equal_rel_double, a, b, tolerance)
 
 /**
  * Calculate the support of a MTBDD, i.e. the cube of all variables that appear in the MTBDD nodes.

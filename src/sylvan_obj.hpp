@@ -663,6 +663,22 @@ public:
     Mtbdd UApply(mtbdd_uapply_op op, size_t param) const;
 
     /**
+     * @brief Maps every leaf; see mtbdd_map for callback and purity requirements.
+     * @throws std::invalid_argument if mtbdd_map returns mtbdd_invalid,
+     * including invalid arguments, callback failure or a non-leaf result.
+     */
+    Mtbdd Map(mtbdd_map_op op, size_t param) const;
+
+    /**
+     * @brief Maps leaves and reduces variables, repeating values for skipped variables.
+     * See mtbdd_map_reduce for callback, identity and purity requirements.
+     * @throws std::invalid_argument if mtbdd_map_reduce returns mtbdd_invalid,
+     * including invalid arguments, callback failure or a non-leaf mapper result.
+     */
+    Mtbdd MapReduce(const BddSet &variables, mtbdd_map_op map,
+                    mtbdd_map_reduce_op reduce, const Mtbdd &identity, size_t param) const;
+
+    /**
      * @brief Computers the abstraction on variables <variables> using operator <op>.
      * See also: AbstractPlus, AbstractTimes, AbstractMin, AbstractMax
      */
@@ -693,6 +709,37 @@ public:
      * @brief Computes max(f, g)
      */
     Mtbdd Max(const Mtbdd &other) const;
+
+    /**
+     * Scalar comparisons over common assignments; see sylvan_mtbdd.h.
+     * All* predicates are true on an empty common domain; Any* are false.
+     * Every method in this group throws std::invalid_argument if its C
+     * operation returns mtbdd_invalid (invalid or unsupported operands).
+     */
+    bool AllLeq(const Mtbdd &other) const;
+    bool AllLt(const Mtbdd &other) const;
+    bool AllGeq(const Mtbdd &other) const;
+    bool AllGt(const Mtbdd &other) const;
+    bool AllEqualAbs(const Mtbdd &other, double tolerance) const;
+    bool AllEqualRel(const Mtbdd &other, double tolerance) const;
+    bool AnyLeq(const Mtbdd &other) const;
+    bool AnyLt(const Mtbdd &other) const;
+    bool AnyGeq(const Mtbdd &other) const;
+    bool AnyGt(const Mtbdd &other) const;
+    bool AnyEqualAbs(const Mtbdd &other, double tolerance) const;
+    bool AnyEqualRel(const Mtbdd &other, double tolerance) const;
+
+    /**
+     * BDDs of common assignments satisfying the comparison.
+     * Every method in this group throws std::invalid_argument if its C
+     * operation returns mtbdd_invalid (invalid or unsupported operands).
+     */
+    Bdd CompareLeq(const Mtbdd &other) const;
+    Bdd CompareLt(const Mtbdd &other) const;
+    Bdd CompareGeq(const Mtbdd &other) const;
+    Bdd CompareGt(const Mtbdd &other) const;
+    Bdd CompareEqualAbs(const Mtbdd &other, double tolerance) const;
+    Bdd CompareEqualRel(const Mtbdd &other, double tolerance) const;
 
     /**
      * @brief Computes abstraction by summation (existential quantification)

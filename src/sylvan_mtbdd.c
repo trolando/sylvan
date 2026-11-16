@@ -978,6 +978,132 @@ TASK_IMPL_3(MTBDD, mtbdd_uapply, MTBDD, dd, mtbdd_uapply_op, op, size_t, param)
     return result;
 }
 
+/* Fixed-arity form of Lace 1 SPAWN, without GNU variadic comma elision. */
+#define MTBDD_SPAWN_3(f, a, b, c) (WRAP(f##_SPAWN, a, b, c), __lace_dq_head++)
+
+/**
+ * Map leaves only; callbacks cannot intercept internal subdiagrams.
+ */
+TASK_IMPL_3(MTBDD, mtbdd_map, MTBDD, dd, mtbdd_map_op, op, size_t, param)
+{
+    if (dd == mtbdd_invalid || op == NULL) return mtbdd_invalid;
+
+    sylvan_gc_test();
+    sylvan_stats_count(MTBDD_MAP);
+
+    MTBDD result;
+    if (cache_get3(CACHE_MTBDD_MAP, dd, (size_t)op, param, &result)) {
+        sylvan_stats_count(MTBDD_MAP_CACHED);
+        return result;
+    }
+
+    if (mtbdd_isleaf(dd)) {
+        result = WRAP(op, dd, param);
+        if (result == mtbdd_invalid || !mtbdd_isleaf(result)) return mtbdd_invalid;
+    } else {
+        mtbddnode_t ndd = MTBDD_GETNODE(dd);
+        uint32_t var = mtbddnode_getvariable(ndd);
+        mtbdd_refs_spawn(MTBDD_SPAWN_3(mtbdd_map, node_gethigh(dd, ndd), op, param));
+        MTBDD low = mtbdd_refs_push(CALL(mtbdd_map, node_getlow(dd, ndd), op, param));
+        MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(SYNC(mtbdd_map)));
+        result = low == mtbdd_invalid || high == mtbdd_invalid ? mtbdd_invalid : mtbdd_makenode(var, low, high);
+        mtbdd_refs_pop(2);
+        if (result == mtbdd_invalid) return result;
+    }
+
+    if (cache_put3(CACHE_MTBDD_MAP, dd, (size_t)op, param, result)) {
+        sylvan_stats_count(MTBDD_MAP_CACHEDPUT);
+    }
+    return result;
+}
+
+struct mtbdd_map_reduce_config {
+    mtbdd_map_op map;
+    mtbdd_map_reduce_op reduce;
+    MTBDD identity;
+    size_t param;
+};
+
+TASK_4(MTBDD, mtbdd_map_reduce_combine, MTBDD, a, MTBDD, b, size_t, skipped,
+       const struct mtbdd_map_reduce_config*, operation)
+{
+    if (a == operation->identity) return skipped == 0 ? b : a;
+    if (skipped == 0 && b == operation->identity) return a;
+    return WRAP(operation->reduce, a, b, skipped, operation->param);
+}
+
+TASK_3(MTBDD, mtbdd_map_reduce_rec, MTBDD, dd, BDDSET, variables,
+       const struct mtbdd_map_reduce_config*, operation)
+{
+    sylvan_gc_test();
+    sylvan_stats_count(MTBDD_MAP_REDUCE);
+
+    MTBDD result;
+    uint64_t unused;
+    if (cache_get6(dd | CACHE_MTBDD_MAP_REDUCE, variables, (size_t)operation->map,
+                   (size_t)operation->reduce, operation->identity, operation->param, &result, &unused)) {
+        sylvan_stats_count(MTBDD_MAP_REDUCE_CACHED);
+        return result;
+    }
+
+    BDDSET remaining = variables;
+    size_t skipped = 0;
+    if (mtbdd_isleaf(dd)) {
+        while (!mtbdd_set_isempty(remaining)) {
+            skipped++;
+            remaining = mtbdd_set_next(remaining);
+        }
+        result = WRAP(operation->map, dd, operation->param);
+        if (result == mtbdd_invalid || !mtbdd_isleaf(result)) return mtbdd_invalid;
+    } else {
+        mtbddnode_t ndd = MTBDD_GETNODE(dd);
+        uint32_t var = mtbddnode_getvariable(ndd);
+        while (!mtbdd_set_isempty(remaining) && mtbdd_set_first(remaining) < var) {
+            skipped++;
+            remaining = mtbdd_set_next(remaining);
+        }
+        int reduce = !mtbdd_set_isempty(remaining) && mtbdd_set_first(remaining) == var;
+        BDDSET next = reduce ? mtbdd_set_next(remaining) : remaining;
+        mtbdd_refs_spawn(MTBDD_SPAWN_3(mtbdd_map_reduce_rec, node_gethigh(dd, ndd), next, operation));
+        MTBDD low = mtbdd_refs_push(CALL(mtbdd_map_reduce_rec, node_getlow(dd, ndd), next, operation));
+        MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(SYNC(mtbdd_map_reduce_rec)));
+        if (low == mtbdd_invalid || high == mtbdd_invalid) {
+            mtbdd_refs_pop(2);
+            return mtbdd_invalid;
+        }
+        if (reduce) result = CALL(mtbdd_map_reduce_combine, low, high, 0, operation);
+        else result = mtbdd_makenode(var, low, high);
+        mtbdd_refs_pop(2);
+        if (result == mtbdd_invalid) return result;
+    }
+
+    if (skipped != 0) {
+        mtbdd_refs_push(result);
+        result = CALL(mtbdd_map_reduce_combine, result, result, skipped, operation);
+        mtbdd_refs_pop(1);
+        if (result == mtbdd_invalid) return result;
+    }
+
+    if (cache_put6(dd | CACHE_MTBDD_MAP_REDUCE, variables, (size_t)operation->map,
+                   (size_t)operation->reduce, operation->identity, operation->param, result, 0)) {
+        sylvan_stats_count(MTBDD_MAP_REDUCE_CACHEDPUT);
+    }
+    return result;
+}
+
+TASK_IMPL_6(MTBDD, mtbdd_map_reduce, MTBDD, dd, BDDSET, variables,
+            mtbdd_map_op, map, mtbdd_map_reduce_op, reduce, MTBDD, identity, size_t, param)
+{
+    if (dd == mtbdd_invalid || identity == mtbdd_invalid || map == NULL || reduce == NULL ||
+        !mtbdd_isleaf(identity) || !sylvan_count_is_valid_set(variables)) return mtbdd_invalid;
+
+    const struct mtbdd_map_reduce_config operation = {map, reduce, identity, param};
+    mtbdd_refs_push(identity);
+    MTBDD result = CALL(mtbdd_map_reduce_rec, dd, variables, &operation);
+    mtbdd_refs_pop(1);
+    return result;
+}
+
 TASK_2(MTBDD, mtbdd_uop_times_uint, MTBDD, a, size_t, k)
 {
     if (a == mtbdd_false) return mtbdd_false;
@@ -2229,6 +2355,309 @@ TASK_IMPL_2(MTBDD, mtbdd_greater, MTBDD, a, MTBDD, b)
     atomic_int shortcircuit = 0;
     MTBDD result = CALL(mtbdd_greater_rec, a, b, &shortcircuit);
     return result == mtbdd_true ? mtbdd_true : mtbdd_false;
+}
+
+enum mtbdd_compare_relation {
+    MTBDD_COMPARE_REL_LEQ,
+    MTBDD_COMPARE_REL_LT,
+    MTBDD_COMPARE_REL_GEQ,
+    MTBDD_COMPARE_REL_GT,
+    MTBDD_COMPARE_REL_EQUAL_ABS,
+    MTBDD_COMPARE_REL_EQUAL_REL
+};
+
+static int
+mtbdd_compare_leaf_relation(MTBDD a, MTBDD b, uint64_t parameter,
+                            enum mtbdd_compare_relation relation, int *result)
+{
+    if (a == mtbdd_false || b == mtbdd_false || a == mtbdd_true || b == mtbdd_true) {
+        return -1;
+    }
+
+    mtbddnode_t na = MTBDD_GETNODE(a);
+    mtbddnode_t nb = MTBDD_GETNODE(b);
+    uint32_t type_a = mtbddnode_gettype(na);
+    uint32_t type_b = mtbddnode_gettype(nb);
+    if (type_a != type_b) return -1;
+
+    if (type_a == 1 && (isnan(mtbdd_getdouble(a)) || isnan(mtbdd_getdouble(b)))) {
+        *result = 0;
+        return 0;
+    }
+
+    if (relation == MTBDD_COMPARE_REL_EQUAL_ABS || relation == MTBDD_COMPARE_REL_EQUAL_REL) {
+        if (type_a != 1) return -1;
+
+        double value_a = mtbdd_getdouble(a);
+        double value_b = mtbdd_getdouble(b);
+        double tolerance;
+        memcpy(&tolerance, &parameter, sizeof(tolerance));
+        if (relation == MTBDD_COMPARE_REL_EQUAL_ABS) {
+            *result = fabs(value_a - value_b) < tolerance;
+        } else if (value_a == value_b) {
+            *result = 1;
+        } else if (value_a == 0.0) {
+            *result = 0;
+        } else {
+            *result = fabs((value_a - value_b) / value_a) < tolerance;
+        }
+        return 0;
+    }
+
+    int comparison;
+    if (type_a == 0) {
+        int64_t value_a = mtbdd_getint64(a);
+        int64_t value_b = mtbdd_getint64(b);
+        comparison = value_a < value_b ? -1 : value_a > value_b;
+    } else if (type_a == 1) {
+        double value_a = mtbdd_getdouble(a);
+        double value_b = mtbdd_getdouble(b);
+        comparison = value_a < value_b ? -1 : value_a > value_b;
+    } else if (type_a == 2) {
+        int64_t numerator_a = mtbdd_getnumer(a);
+        int64_t numerator_b = mtbdd_getnumer(b);
+        uint64_t denominator_a = mtbdd_getdenom(a);
+        uint64_t denominator_b = mtbdd_getdenom(b);
+        uint32_t divisor = gcd((uint32_t)denominator_a, (uint32_t)denominator_b);
+        numerator_a *= (int64_t)(denominator_b / divisor);
+        numerator_b *= (int64_t)(denominator_a / divisor);
+        comparison = numerator_a < numerator_b ? -1 : numerator_a > numerator_b;
+    } else {
+        return -1;
+    }
+
+    switch (relation) {
+    case MTBDD_COMPARE_REL_LEQ: *result = comparison <= 0; break;
+    case MTBDD_COMPARE_REL_LT:  *result = comparison < 0; break;
+    case MTBDD_COMPARE_REL_GEQ: *result = comparison >= 0; break;
+    case MTBDD_COMPARE_REL_GT:  *result = comparison > 0; break;
+    default: return -1;
+    }
+    return 0;
+}
+
+enum mtbdd_compare_mode {
+    MTBDD_COMPARE_POINTWISE,
+    MTBDD_COMPARE_ANY,
+    MTBDD_COMPARE_ALL
+};
+
+struct mtbdd_compare_config {
+    uint64_t parameter;
+    uint64_t cache_id;
+    size_t counter;
+    enum mtbdd_compare_relation relation;
+    enum mtbdd_compare_mode mode;
+};
+
+TASK_3(MTBDD, mtbdd_compare_rec, MTBDD, a, MTBDD, b, const struct mtbdd_compare_config*, config)
+{
+    if (a == mtbdd_invalid || b == mtbdd_invalid) return mtbdd_invalid;
+    if (a == mtbdd_false || b == mtbdd_false) {
+        return config->mode == MTBDD_COMPARE_ALL ? mtbdd_true : mtbdd_false;
+    }
+    /* Only universal tolerance comparisons accept identical subdiagrams.
+     * Ordering comparisons must validate leaves and evaluate strict relations. */
+    if (config->mode == MTBDD_COMPARE_ALL && a == b &&
+        (config->relation == MTBDD_COMPARE_REL_EQUAL_ABS ||
+         config->relation == MTBDD_COMPARE_REL_EQUAL_REL)) return mtbdd_true;
+
+    int leaf_a = mtbdd_isleaf(a), leaf_b = mtbdd_isleaf(b);
+    if (leaf_a && leaf_b) {
+        int comparison;
+        if (mtbdd_compare_leaf_relation(a, b, config->parameter, config->relation, &comparison)) {
+            return mtbdd_invalid;
+        }
+        return comparison ? mtbdd_true : mtbdd_false;
+    }
+
+    sylvan_gc_test();
+    sylvan_stats_count(config->counter);
+
+    MTBDD result;
+    if (cache_get3(config->cache_id, a, b, config->parameter, &result)) {
+        sylvan_stats_count(config->counter + 2);
+        return result;
+    }
+
+    mtbddnode_t na = leaf_a ? NULL : MTBDD_GETNODE(a);
+    mtbddnode_t nb = leaf_b ? NULL : MTBDD_GETNODE(b);
+    uint32_t va = leaf_a ? UINT32_MAX : mtbddnode_getvariable(na);
+    uint32_t vb = leaf_b ? UINT32_MAX : mtbddnode_getvariable(nb);
+    uint32_t var = va < vb ? va : vb;
+    MTBDD alow = va == var ? node_getlow(a, na) : a;
+    MTBDD ahigh = va == var ? node_gethigh(a, na) : a;
+    MTBDD blow = vb == var ? node_getlow(b, nb) : b;
+    MTBDD bhigh = vb == var ? node_gethigh(b, nb) : b;
+
+    mtbdd_refs_spawn(MTBDD_SPAWN_3(mtbdd_compare_rec, ahigh, bhigh, config));
+    MTBDD low = mtbdd_refs_push(CALL(mtbdd_compare_rec, alow, blow, config));
+    MTBDD high = mtbdd_refs_push(mtbdd_refs_sync(SYNC(mtbdd_compare_rec)));
+    if (low == mtbdd_invalid || high == mtbdd_invalid) {
+        mtbdd_refs_pop(2);
+        return mtbdd_invalid;
+    }
+
+    /* Cache only this subproblem's result, never another branch's shortcut. */
+    if (config->mode == MTBDD_COMPARE_ANY) {
+        result = low == mtbdd_true || high == mtbdd_true ? mtbdd_true : mtbdd_false;
+    } else if (config->mode == MTBDD_COMPARE_ALL) {
+        result = low == mtbdd_true && high == mtbdd_true ? mtbdd_true : mtbdd_false;
+    } else {
+        result = mtbdd_makenode(var, low, high);
+    }
+    mtbdd_refs_pop(2);
+
+    if (cache_put3(config->cache_id, a, b, config->parameter, result)) {
+        sylvan_stats_count(config->counter + 1);
+    }
+    return result;
+}
+
+TASK_IMPL_2(MTBDD, mtbdd_compare_leq, MTBDD, a, MTBDD, b)
+{
+    uint64_t parameter = 0;
+    const struct mtbdd_compare_config config = {parameter, CACHE_MTBDD_COMPARE_LEQ,
+        MTBDD_COMPARE_LEQ, MTBDD_COMPARE_REL_LEQ, MTBDD_COMPARE_POINTWISE};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_2(MTBDD, mtbdd_compare_lt, MTBDD, a, MTBDD, b)
+{
+    uint64_t parameter = 0;
+    const struct mtbdd_compare_config config = {parameter, CACHE_MTBDD_COMPARE_LT,
+        MTBDD_COMPARE_LT, MTBDD_COMPARE_REL_LT, MTBDD_COMPARE_POINTWISE};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_2(MTBDD, mtbdd_compare_geq, MTBDD, a, MTBDD, b)
+{
+    uint64_t parameter = 0;
+    const struct mtbdd_compare_config config = {parameter, CACHE_MTBDD_COMPARE_GEQ,
+        MTBDD_COMPARE_GEQ, MTBDD_COMPARE_REL_GEQ, MTBDD_COMPARE_POINTWISE};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_2(MTBDD, mtbdd_compare_gt, MTBDD, a, MTBDD, b)
+{
+    uint64_t parameter = 0;
+    const struct mtbdd_compare_config config = {parameter, CACHE_MTBDD_COMPARE_GT,
+        MTBDD_COMPARE_GT, MTBDD_COMPARE_REL_GT, MTBDD_COMPARE_POINTWISE};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_3(MTBDD, mtbdd_compare_equal_abs_double, MTBDD, a, MTBDD, b, double, tolerance)
+{
+    uint64_t parameter = 0;
+    memcpy(&parameter, &tolerance, sizeof(tolerance));
+    const struct mtbdd_compare_config config = {parameter, CACHE_MTBDD_COMPARE_EQUAL_ABS,
+        MTBDD_COMPARE_EQUAL_ABS, MTBDD_COMPARE_REL_EQUAL_ABS, MTBDD_COMPARE_POINTWISE};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_3(MTBDD, mtbdd_compare_equal_rel_double, MTBDD, a, MTBDD, b, double, tolerance)
+{
+    uint64_t parameter = 0;
+    memcpy(&parameter, &tolerance, sizeof(tolerance));
+    const struct mtbdd_compare_config config = {parameter, CACHE_MTBDD_COMPARE_EQUAL_REL,
+        MTBDD_COMPARE_EQUAL_REL, MTBDD_COMPARE_REL_EQUAL_REL, MTBDD_COMPARE_POINTWISE};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_2(MTBDD, mtbdd_any_leq, MTBDD, a, MTBDD, b)
+{
+    uint64_t parameter = 0;
+    const struct mtbdd_compare_config config = {parameter, CACHE_MTBDD_ANY_LEQ,
+        MTBDD_ANY_LEQ, MTBDD_COMPARE_REL_LEQ, MTBDD_COMPARE_ANY};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_2(MTBDD, mtbdd_any_lt, MTBDD, a, MTBDD, b)
+{
+    uint64_t parameter = 0;
+    const struct mtbdd_compare_config config = {parameter, CACHE_MTBDD_ANY_LT,
+        MTBDD_ANY_LT, MTBDD_COMPARE_REL_LT, MTBDD_COMPARE_ANY};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_2(MTBDD, mtbdd_any_geq, MTBDD, a, MTBDD, b)
+{
+    uint64_t parameter = 0;
+    const struct mtbdd_compare_config config = {parameter, CACHE_MTBDD_ANY_GEQ,
+        MTBDD_ANY_GEQ, MTBDD_COMPARE_REL_GEQ, MTBDD_COMPARE_ANY};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_2(MTBDD, mtbdd_any_gt, MTBDD, a, MTBDD, b)
+{
+    uint64_t parameter = 0;
+    const struct mtbdd_compare_config config = {parameter, CACHE_MTBDD_ANY_GT,
+        MTBDD_ANY_GT, MTBDD_COMPARE_REL_GT, MTBDD_COMPARE_ANY};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_3(MTBDD, mtbdd_any_equal_abs_double, MTBDD, a, MTBDD, b, double, tolerance)
+{
+    uint64_t parameter = 0;
+    memcpy(&parameter, &tolerance, sizeof(tolerance));
+    const struct mtbdd_compare_config config = {parameter, CACHE_MTBDD_ANY_EQUAL_ABS,
+        MTBDD_ANY_EQUAL_ABS, MTBDD_COMPARE_REL_EQUAL_ABS, MTBDD_COMPARE_ANY};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_3(MTBDD, mtbdd_any_equal_rel_double, MTBDD, a, MTBDD, b, double, tolerance)
+{
+    uint64_t parameter = 0;
+    memcpy(&parameter, &tolerance, sizeof(tolerance));
+    const struct mtbdd_compare_config config = {parameter, CACHE_MTBDD_ANY_EQUAL_REL,
+        MTBDD_ANY_EQUAL_REL, MTBDD_COMPARE_REL_EQUAL_REL, MTBDD_COMPARE_ANY};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_2(MTBDD, mtbdd_all_leq, MTBDD, a, MTBDD, b)
+{
+    const struct mtbdd_compare_config config = {0, CACHE_MTBDD_ALL_LEQ,
+        MTBDD_ALL_LEQ, MTBDD_COMPARE_REL_LEQ, MTBDD_COMPARE_ALL};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_2(MTBDD, mtbdd_all_lt, MTBDD, a, MTBDD, b)
+{
+    const struct mtbdd_compare_config config = {0, CACHE_MTBDD_ALL_LT,
+        MTBDD_ALL_LT, MTBDD_COMPARE_REL_LT, MTBDD_COMPARE_ALL};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_2(MTBDD, mtbdd_all_geq, MTBDD, a, MTBDD, b)
+{
+    const struct mtbdd_compare_config config = {0, CACHE_MTBDD_ALL_GEQ,
+        MTBDD_ALL_GEQ, MTBDD_COMPARE_REL_GEQ, MTBDD_COMPARE_ALL};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_2(MTBDD, mtbdd_all_gt, MTBDD, a, MTBDD, b)
+{
+    const struct mtbdd_compare_config config = {0, CACHE_MTBDD_ALL_GT,
+        MTBDD_ALL_GT, MTBDD_COMPARE_REL_GT, MTBDD_COMPARE_ALL};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_3(MTBDD, mtbdd_all_equal_abs_double, MTBDD, a, MTBDD, b, double, tolerance)
+{
+    uint64_t parameter = 0;
+    memcpy(&parameter, &tolerance, sizeof(tolerance));
+    const struct mtbdd_compare_config config = {parameter, CACHE_MTBDD_ALL_EQUAL_ABS,
+        MTBDD_ALL_EQUAL_ABS, MTBDD_COMPARE_REL_EQUAL_ABS, MTBDD_COMPARE_ALL};
+    return CALL(mtbdd_compare_rec, a, b, &config);
+}
+
+TASK_IMPL_3(MTBDD, mtbdd_all_equal_rel_double, MTBDD, a, MTBDD, b, double, tolerance)
+{
+    uint64_t parameter = 0;
+    memcpy(&parameter, &tolerance, sizeof(tolerance));
+    const struct mtbdd_compare_config config = {parameter, CACHE_MTBDD_ALL_EQUAL_REL,
+        MTBDD_ALL_EQUAL_REL, MTBDD_COMPARE_REL_EQUAL_REL, MTBDD_COMPARE_ALL};
+    return CALL(mtbdd_compare_rec, a, b, &config);
 }
 
 /**

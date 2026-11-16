@@ -16,6 +16,7 @@
  */
 
 #include <sylvan_obj.hpp>
+#include <stdexcept>
 
 using namespace sylvan;
 
@@ -665,6 +666,27 @@ Mtbdd::UApply(mtbdd_uapply_op op, size_t param) const
     return mtbdd_uapply(mtbdd, op, param);
 }
 
+static MTBDD
+checked_mtbdd_result(MTBDD result, const char *operation)
+{
+    if (result == mtbdd_invalid) throw std::invalid_argument(operation);
+    return result;
+}
+
+Mtbdd
+Mtbdd::Map(mtbdd_map_op op, size_t param) const
+{
+    return checked_mtbdd_result(mtbdd_map(mtbdd, op, param), "Mtbdd::Map: invalid arguments or result");
+}
+
+Mtbdd
+Mtbdd::MapReduce(const BddSet &variables, mtbdd_map_op map,
+                 mtbdd_map_reduce_op reduce, const Mtbdd &identity, size_t param) const
+{
+    return checked_mtbdd_result(mtbdd_map_reduce(mtbdd, variables.set.bdd, map, reduce, identity.mtbdd, param),
+        "Mtbdd::MapReduce: invalid arguments or result");
+}
+
 Mtbdd
 Mtbdd::Abstract(const BddSet &variables, mtbdd_abstract_op op) const
 {
@@ -699,6 +721,130 @@ Mtbdd
 Mtbdd::Max(const Mtbdd &other) const
 {
     return mtbdd_max(mtbdd, other.mtbdd);
+}
+
+bool
+Mtbdd::AllLeq(const Mtbdd &other) const
+{
+    return checked_mtbdd_result(mtbdd_all_leq(mtbdd, other.mtbdd),
+        "Mtbdd::AllLeq: invalid arguments or result") == mtbdd_true;
+}
+
+bool
+Mtbdd::AllLt(const Mtbdd &other) const
+{
+    return checked_mtbdd_result(mtbdd_all_lt(mtbdd, other.mtbdd),
+        "Mtbdd::AllLt: invalid arguments or result") == mtbdd_true;
+}
+
+bool
+Mtbdd::AllGeq(const Mtbdd &other) const
+{
+    return checked_mtbdd_result(mtbdd_all_geq(mtbdd, other.mtbdd),
+        "Mtbdd::AllGeq: invalid arguments or result") == mtbdd_true;
+}
+
+bool
+Mtbdd::AllGt(const Mtbdd &other) const
+{
+    return checked_mtbdd_result(mtbdd_all_gt(mtbdd, other.mtbdd),
+        "Mtbdd::AllGt: invalid arguments or result") == mtbdd_true;
+}
+
+bool
+Mtbdd::AllEqualAbs(const Mtbdd &other, double tolerance) const
+{
+    return checked_mtbdd_result(mtbdd_all_equal_abs_double(mtbdd, other.mtbdd, tolerance),
+        "Mtbdd::AllEqualAbs: invalid arguments or result") == mtbdd_true;
+}
+
+bool
+Mtbdd::AllEqualRel(const Mtbdd &other, double tolerance) const
+{
+    return checked_mtbdd_result(mtbdd_all_equal_rel_double(mtbdd, other.mtbdd, tolerance),
+        "Mtbdd::AllEqualRel: invalid arguments or result") == mtbdd_true;
+}
+
+bool
+Mtbdd::AnyLeq(const Mtbdd &other) const
+{
+    return checked_mtbdd_result(mtbdd_any_leq(mtbdd, other.mtbdd),
+        "Mtbdd::AnyLeq: invalid arguments or result") == mtbdd_true;
+}
+
+bool
+Mtbdd::AnyLt(const Mtbdd &other) const
+{
+    return checked_mtbdd_result(mtbdd_any_lt(mtbdd, other.mtbdd),
+        "Mtbdd::AnyLt: invalid arguments or result") == mtbdd_true;
+}
+
+bool
+Mtbdd::AnyGeq(const Mtbdd &other) const
+{
+    return checked_mtbdd_result(mtbdd_any_geq(mtbdd, other.mtbdd),
+        "Mtbdd::AnyGeq: invalid arguments or result") == mtbdd_true;
+}
+
+bool
+Mtbdd::AnyGt(const Mtbdd &other) const
+{
+    return checked_mtbdd_result(mtbdd_any_gt(mtbdd, other.mtbdd),
+        "Mtbdd::AnyGt: invalid arguments or result") == mtbdd_true;
+}
+
+bool
+Mtbdd::AnyEqualAbs(const Mtbdd &other, double tolerance) const
+{
+    return checked_mtbdd_result(mtbdd_any_equal_abs_double(mtbdd, other.mtbdd, tolerance),
+        "Mtbdd::AnyEqualAbs: invalid arguments or result") == mtbdd_true;
+}
+
+bool
+Mtbdd::AnyEqualRel(const Mtbdd &other, double tolerance) const
+{
+    return checked_mtbdd_result(mtbdd_any_equal_rel_double(mtbdd, other.mtbdd, tolerance),
+        "Mtbdd::AnyEqualRel: invalid arguments or result") == mtbdd_true;
+}
+
+Bdd
+Mtbdd::CompareLeq(const Mtbdd &other) const
+{
+    return checked_mtbdd_result(mtbdd_compare_leq(mtbdd, other.mtbdd),
+        "Mtbdd::CompareLeq: invalid arguments or result");
+}
+
+Bdd
+Mtbdd::CompareLt(const Mtbdd &other) const
+{
+    return checked_mtbdd_result(mtbdd_compare_lt(mtbdd, other.mtbdd), "Mtbdd::CompareLt: invalid arguments or result");
+}
+
+Bdd
+Mtbdd::CompareGeq(const Mtbdd &other) const
+{
+    return checked_mtbdd_result(mtbdd_compare_geq(mtbdd, other.mtbdd),
+        "Mtbdd::CompareGeq: invalid arguments or result");
+}
+
+Bdd
+Mtbdd::CompareGt(const Mtbdd &other) const
+{
+    return checked_mtbdd_result(mtbdd_compare_gt(mtbdd, other.mtbdd), "Mtbdd::CompareGt: invalid arguments or result");
+}
+
+Bdd
+Mtbdd::CompareEqualAbs(const Mtbdd &other, double tolerance) const
+{
+    return checked_mtbdd_result(mtbdd_compare_equal_abs_double(mtbdd, other.mtbdd, tolerance),
+        "Mtbdd::CompareEqualAbs: invalid arguments or result");
+}
+
+Bdd
+Mtbdd::CompareEqualRel(const Mtbdd &other, double tolerance) const
+{
+    return checked_mtbdd_result(mtbdd_compare_equal_rel_double(mtbdd, other.mtbdd, tolerance),
+        "Mtbdd::CompareEqualRel: invalid arguments or result");
 }
 
 Mtbdd

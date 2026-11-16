@@ -50,6 +50,11 @@ extern llmsset_t nodes;
 /* Report node creation failure after the GC retry; never returns. */
 SYLVAN_NORETURN void sylvan_table_full(const char *kind);
 
+/* Recover a failed nodes-table lookup, collecting and growing as needed.
+ * Call only after lookup returns 0, with all child nodes protected until this
+ * returns. custom selects llmsset_lookupc, including its leaf callbacks. */
+uint64_t sylvan_table_lookup_gc(uint64_t a, uint64_t b, int *created, int custom, const char *kind);
+
 /* Internal traversal scratch, separate from both node keys and GC marks.
  * Acquire/release must bracket a synchronous walk on one thread, and the
  * walk must undo every bit it sets. Concurrent and nested walks get separate

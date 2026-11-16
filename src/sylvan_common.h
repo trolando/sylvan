@@ -70,8 +70,8 @@ void sylvan_set_sizes(size_t min_tablesize, size_t max_tablesize, size_t min_cac
 void sylvan_set_limits(size_t memory_cap, int table_ratio, int initial_ratio);
 
 /**
- * Handler for a node that could not be created after garbage collection failed
- * to free enough nodes. This is an out-of-memory condition, not a recovery hook.
+ * Handler for a node that could not be created after garbage collection at the
+ * maximum nodes-table size. This is an out-of-memory condition, not a recovery hook.
  * It is also called if node creation still fails with garbage collection disabled.
  *
  * The handler runs on a Lace worker in the middle of an operation, while other
@@ -141,6 +141,8 @@ VOID_TASK_DECL_2(sylvan_table_usage, size_t*, size_t*);
  * 5) The main gc hook is called. The function of this hook is to perform resizing.
  *    The default implementation doubles the nodes table and operation cache sizes.
  *    See sylvan_gc_hook_main to set the hook.
+ *    If allocation still fails after collection, further collections enforce
+ *    growth of the nodes table up to its maximum, even with a custom main hook.
  *    A collection asked for with sylvan_gc() instead shrinks the tables to fit the
  *    live nodes; see sylvan_gc().
  * 5) The nodes table (hash part) is cleared.
@@ -171,8 +173,10 @@ typedef enum {
  * does not release its empty stretches to the operating system.
  *
  * SYLVAN_GC_LOW_MEMORY installs sylvan_gc_normal_resize: an automatic collection
- * grows the tables only when more than half the nodes table is still in use.
+ * normally grows the tables only when more than half the nodes table is still in use.
  * sylvan_gc() also reduces the data range and releases empty arena stretches.
+ * With either policy, allocation that still fails after collection forces
+ * further node-table growth and retries, up to the configured maximum size.
  *
  * Each sylvan_init_package() resets the policy to SYLVAN_GC_FEW_COLLECTIONS
  * (SYLVAN_GC_LOW_MEMORY if compiled with SYLVAN_AGGRESSIVE_RESIZE=0).
@@ -180,7 +184,8 @@ typedef enum {
  * the arena. Select SYLVAN_GC_LOW_MEMORY to release unused arena memory.
  *
  * This replaces any main hook, just like sylvan_gc_hook_main(). Installing a
- * main hook afterwards overrides growth only; the policy's shrink mode stays.
+ * main hook afterwards overrides the growth heuristic; the policy's shrink mode
+ * stays. Allocation recovery can still force node-table growth after that hook.
  * Calling this again restores the policy's growth hook. No collection is run.
  * Change the policy only between operations, with no concurrent Sylvan calls.
  * Unrecognized policy values are ignored.
@@ -212,8 +217,17 @@ VOID_TASK_DECL_0(sylvan_gc);
 /**
  * Garbage collection when the nodes table is full: what Sylvan does itself when it
  * cannot add a node. It resizes with the main gc hook (by default, it doubles the
- * nodes table and the operation cache) and never shrinks them. Programs that want to
- * collect garbage want sylvan_gc() instead.
+ * nodes table and the operation cache). The built-in main hooks never shrink
+ * the tables; a custom hook may shrink them. This call can also join another
+ * worker's explicit sylvan_gc(), which shrinks instead of calling the main hook.
+ * Programs that want to collect garbage want sylvan_gc() instead.
+ * Node constructors retry after this collection. If allocation still fails,
+ * they collect again with an increasing minimum nodes-table size, up to the
+ * configured maximum. The main hook still runs; only the nodes-table minimum
+ * is enforced afterwards. If recovery joins a collection that leaves the table
+ * below its requested minimum, it collects again to enforce that minimum before
+ * retrying. Cache sizing is not constrained by recovery. With GC
+ * disabled, no growth is attempted and a failed retry calls the full handler.
  */
 VOID_TASK_DECL_0(sylvan_gc_collect);
 #define sylvan_gc_collect() (RUN(sylvan_gc_collect))
@@ -274,6 +288,12 @@ void sylvan_gc_hook_postgc(gc_hook_cb callback);
  * This does not change the policy's shrink mode or sylvan_gc_get_policy().
  * A later sylvan_gc_set_policy() replaces this hook with the policy's growth hook.
  * Explicit sylvan_gc() collections do not call the main hook.
+ * If a node allocation fails again after an automatic collection, recovery
+ * runs further collections with increasing minimum nodes-table sizes. This
+ * hook still runs, but the minimum is enforced after it and before rehashing,
+ * even if the hook did not grow the table. The hook alone controls cache sizing.
+ * This guarantees progress to the configured nodes-table maximum before the
+ * table-full handler is called (unless GC is disabled).
  */
 void sylvan_gc_hook_main(gc_hook_cb callback);
 

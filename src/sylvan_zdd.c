@@ -416,12 +416,7 @@ zdd_makeleaf(uint16_t type, uint64_t value)
     int created;
     uint64_t index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
-        RUN(sylvan_gc_collect);
-
-        index = custom ? llmsset_lookupc(nodes, n.a, n.b, &created) : llmsset_lookup(nodes, n.a, n.b, &created);
-        if (index == 0) {
-            sylvan_table_full("ZDD");
-        }
+        index = sylvan_table_lookup_gc(n.a, n.b, &created, custom, "ZDD");
     }
 
     // TODO: rename this to "leaf nodes created" - we may want to treat leaf nodes as distinct from BDD/ZDD internals
@@ -461,13 +456,8 @@ _zdd_makenode(uint32_t var, ZDD low, ZDD high)
     if (index == 0) {
         zdd_refs_push(low);
         zdd_refs_push(high);
-        RUN(sylvan_gc_collect);
+        index = sylvan_table_lookup_gc(n.a, n.b, &created, 0, "ZDD");
         zdd_refs_pop(2);
-
-        index = llmsset_lookup(nodes, n.a, n.b, &created);
-        if (index == 0) {
-            sylvan_table_full("ZDD");
-        }
     }
 
     if (created) sylvan_stats_count(ZDD_NODES_CREATED);
@@ -490,13 +480,8 @@ zdd_makemapnode(uint32_t var, ZDD low, ZDD high)
     if (index == 0) {
         zdd_refs_push(low);
         zdd_refs_push(high);
-        RUN(sylvan_gc_collect);
+        index = sylvan_table_lookup_gc(n.a, n.b, &created, 0, "ZDD");
         zdd_refs_pop(2);
-
-        index = llmsset_lookup(nodes, n.a, n.b, &created);
-        if (index == 0) {
-            sylvan_table_full("ZDD");
-        }
     }
 
     if (created) sylvan_stats_count(BDD_NODES_CREATED);

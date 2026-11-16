@@ -43,7 +43,7 @@ target_link_libraries(test_gc_roots PRIVATE sylvan::sylvan)
 target_compile_features(test_gc_roots PRIVATE c_std_11)
 sylvan_test_warnings(test_gc_roots)
 
-foreach(test IN ITEMS test_relprod test_markbit test_gc_invalid test_platform test_gc_policy)
+foreach(test IN ITEMS test_relprod test_markbit test_gc_invalid test_platform test_gc_policy test_gc_retry)
     add_executable(${test} ${test}.c)
     target_link_libraries(${test} PRIVATE sylvan::sylvan)
     target_compile_features(${test} PRIVATE c_std_11)
@@ -54,6 +54,19 @@ endforeach()
 
 add_test(NAME test_gc_policy_parallel COMMAND test_gc_policy 2)
 set_tests_properties(test_gc_policy_parallel PROPERTIES TIMEOUT 120)
+
+add_test(NAME test_gc_retry_max COMMAND test_gc_retry max)
+add_test(NAME test_gc_retry_disabled COMMAND test_gc_retry disabled)
+set_tests_properties(test_gc_retry_max test_gc_retry_disabled PROPERTIES TIMEOUT 120)
+
+add_executable(test_gc_concurrent test_gc_concurrent.c)
+target_link_libraries(test_gc_concurrent PRIVATE sylvan::sylvan)
+target_compile_features(test_gc_concurrent PRIVATE c_std_11)
+sylvan_test_warnings(test_gc_concurrent)
+foreach(mode IN ITEMS recover growth shrink)
+    add_test(NAME test_gc_concurrent_${mode} COMMAND test_gc_concurrent ${mode})
+    set_tests_properties(test_gc_concurrent_${mode} PROPERTIES TIMEOUT 120)
+endforeach()
 
 if(SYLVAN_USE_MMAP AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # Compile a private allocator copy so failure injection adds no code or

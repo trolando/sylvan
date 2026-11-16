@@ -667,6 +667,18 @@ TASK_IMPL_1(size_t, llmsset_count_marked, llmsset_t, dbs)
     return CALL(llmsset_count_marked_par, dbs, 0, data_size_relaxed(dbs));
 }
 
+size_t
+llmsset_count_marked_no_yield(const llmsset_t dbs)
+{
+    const size_t end = data_size_relaxed(dbs);
+    size_t result = 0;
+    for (size_t w = 0; w * 64 < end; w++) {
+        uint64_t v = atomic_load_explicit(dbs->bitmap2 + w, memory_order_relaxed);
+        result += popcnt_uint64(v & range_mask(w, 0, end));
+    }
+    return result;
+}
+
 VOID_TASK_3(llmsset_destroy_par, llmsset_t, dbs, size_t, first, size_t, count)
 {
     if (count > 1024) {

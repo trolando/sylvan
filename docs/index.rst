@@ -516,6 +516,90 @@ Custom leaves
 
 See ``src/sylvan_mt.h`` and the example in ``src/sylvan_gmp.h`` and ``src/sylvan_gmp.c`` for custom leaves in MTBDDs.
 
+MTBDD comparisons and leaf transformations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``mtbdd_compare_leq(a, b)``, ``mtbdd_compare_lt(a, b)``,
+``mtbdd_compare_geq(a, b)`` and ``mtbdd_compare_gt(a, b)`` return BDDs of
+assignments where the corresponding leaf relation holds. At each common
+assignment, the two leaves must have the same built-in numeric type (int64,
+double or fraction). Different assignments may use different types. Undefined
+leaves (``mtbdd_false``) make that assignment false in the result. Double NaN
+also makes the relation false. Boolean true, mismatched numeric types and
+custom types such as GMP are unsupported and return ``mtbdd_invalid``.
+Skipped variables have the same value for either choice.
+
+``mtbdd_any_leq``, ``mtbdd_any_lt``, ``mtbdd_any_geq`` and ``mtbdd_any_gt``
+use the same arguments and leaf relations, but return a scalar terminal:
+``mtbdd_true`` if any common assignment satisfies the relation, or
+``mtbdd_false`` otherwise, including when the common domain is empty.
+Unsupported inputs return ``mtbdd_invalid``.
+
+``mtbdd_all_leq``, ``mtbdd_all_lt``, ``mtbdd_all_geq`` and ``mtbdd_all_gt``
+return ``mtbdd_true`` if every common assignment satisfies the relation, or
+``mtbdd_false`` otherwise. They ignore assignments where either or both operands
+are undefined, so an empty common domain returns ``mtbdd_true``. They validate
+even identical operands: unsupported or mismatched leaves on the common domain
+return ``mtbdd_invalid``, and NaN fails every ordering relation. Each cached
+result describes only its own subproblem, independently of other branches.
+The existing ``mtbdd_leq``, ``mtbdd_less``, ``mtbdd_geq`` and ``mtbdd_greater``
+are unchanged.
+
+For double leaves, ``mtbdd_compare_equal_abs_double(a, b, tolerance)`` tests
+``fabs(a-b) < tolerance`` pointwise. ``mtbdd_compare_equal_rel_double`` accepts
+equal values, including zero and equal infinities; otherwise it tests
+``fabs((a-b)/a) < tolerance``, rejecting a zero first operand. NaN operands fail
+both tests. ``mtbdd_any_equal_abs_double`` and ``mtbdd_any_equal_rel_double``
+provide the corresponding existential predicates. Tolerances are used as given;
+the absolute test has no shortcut for equal operands at zero tolerance.
+
+``mtbdd_all_equal_abs_double`` and ``mtbdd_all_equal_rel_double`` provide
+universal tolerance predicates over the common domain. They ignore undefined
+assignments and accept identical subdiagrams without inspecting their leaves,
+including at zero tolerance. The existing ``mtbdd_equal_norm_d`` and
+``mtbdd_equal_norm_rel_d`` retain their original behavior on partial domains.
+
+``mtbdd_map(dd, op, param)`` applies a Lace 1 task callback to every leaf,
+including undefined, Boolean, NaN and custom leaves. The callback has the same
+signature as a unary apply callback, but is called only on leaves and must
+return a leaf. It can change the leaf type. Define the callback with ``TASK_2``
+and pass ``callback_CALL``. With GMP enabled, the existing ``gmp_op_neg_CALL``
+and ``gmp_op_abs_CALL`` can be used directly to map GMP rational leaves and
+undefined leaves. ``gmp_neg`` and ``gmp_abs`` remain unchanged.
+
+``mtbdd_map_reduce(dd, variables, map, reduce, identity, param)`` maps leaves
+and reduces a positive cube of variables in one traversal. The mapper is the
+same as for ``mtbdd_map``. The reducer is a ``TASK_4`` returning an MTBDD with
+arguments ``(MTBDD a, MTBDD b, size_t skipped, size_t param)``. It must be
+associative, with the supplied leaf as a two-sided identity, and must not
+introduce variables absent from its operands. Identity operands may be omitted.
+With ``skipped == 0``, combine low and high in that order; with ``skipped > 0``,
+both operands are equal and the result must reduce ``2^skipped`` copies of that
+operand. This counts both choices for variables absent along a path, including
+variables before the first node and after a constant leaf. Variables outside
+the cube remain in the result. An empty cube is equivalent to ``mtbdd_map``.
+Grouping is deterministic even though callbacks may execute concurrently.
+
+Mapping callbacks return ``mtbdd_invalid`` on failure; the operations propagate
+it. Invalid sentinel arguments, missing callbacks, a non-leaf mapper result,
+a non-leaf identity or a malformed variable set also return ``mtbdd_invalid``.
+Results are always cached, as with ``mtbdd_uapply``, using the callback pointers,
+parameter, input diagram, variable set and identity as applicable. There is no
+uncached mode. Callbacks must be pure: their arguments must fully determine
+results, independently of mutable state or the number/order of calls. Cache
+hits may skip callbacks, so callers must not rely on their side effects.
+If ``param`` holds a pointer, the pointed-to semantic state
+must stay immutable until the cache is cleared and remain alive through
+synchronization. Protect inputs and intermediate diagrams across calls that
+can collect garbage, using the usual reference stacks inside callbacks.
+
+The C++ ``Mtbdd`` methods ``CompareLeq/Lt/Geq/Gt``, ``AnyLeq/Lt/Geq/Gt``,
+``AllLeq/Lt/Geq/Gt``, ``CompareEqualAbs/Rel``, ``AnyEqualAbs/Rel``,
+``AllEqualAbs/Rel``, ``Map`` and ``MapReduce`` wrap these operations.
+All these new methods throw ``std::invalid_argument`` when the C operation
+returns ``mtbdd_invalid``, including unsupported comparisons and mapping errors.
+Existing methods, including ``UApply``, are unchanged.
+
 Custom decision diagram operations
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

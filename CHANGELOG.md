@@ -4,6 +4,25 @@ All notable changes to Sylvan will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Pointwise MTBDD comparisons `mtbdd_compare_leq`, `mtbdd_compare_lt`,
+  `mtbdd_compare_geq`, `mtbdd_compare_gt`, `mtbdd_compare_equal_abs_double`
+  and `mtbdd_compare_equal_rel_double`, with matching `mtbdd_any_*` scalar
+  predicates. They compare leaves over the common domain. New universal
+  `mtbdd_all_leq`, `mtbdd_all_lt`, `mtbdd_all_geq` and `mtbdd_all_gt` validate
+  numeric leaf types and return true on an empty common domain, including
+  paths where both operands are undefined. Their cached results are independent
+  of other branches. The new
+  `mtbdd_all_equal_abs_double` and `mtbdd_all_equal_rel_double` ignore undefined
+  assignments; existing norm and ordering comparisons remain unchanged.
+- `mtbdd_map` for mapping leaves with a Lace task callback, and
+  `mtbdd_map_reduce` for mapping and reducing a variable set in one traversal.
+  Skipped reduction variables repeat values for both choices. Callback pointers
+  and all semantic parameters participate in caching, which is always enabled;
+  callbacks must be pure. GMP leaf mapping works
+  with the existing negation and absolute-value callbacks.
+- C++ `Mtbdd` comparison methods, `Map` and `MapReduce`, preserving existing
+  methods including `UApply`. All new methods throw `std::invalid_argument`
+  when the wrapped C operation returns `mtbdd_invalid`.
 - `sylvan_reach` and `lddmc_reach`, which compute all states reachable from a
   set with one transition relation in one recursive operation (REACH, from
   S. Brand, T. Bäck and A. Laarman, FM 2023), instead of a loop of

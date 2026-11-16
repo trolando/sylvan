@@ -25,6 +25,49 @@ extern "C" {
 #endif /* __cplusplus */
 
 /**
+ * Opaque pull iterator shared by BDDs, MTBDDs, ZDDs and LDDs.
+ * Initialize the corresponding Sylvan subpackage before creation and destroy
+ * all iterators before sylvan_quit(). One iterator must not be used by two
+ * threads at once, including calls to destroy; separate iterators are independent.
+ *
+ * An iterator protects its diagram and variable set until destruction. Calling
+ * create/destroy follows the same threading rules as mtbdd_protect and
+ * mtbdd_unprotect (or the corresponding ZDD/LDD protection APIs). Calling
+ * sylvan_gc() between next calls is safe, including when it shrinks the tables:
+ * live node indices remain stable. No next operation creates nodes, performs
+ * garbage collection or allocates traversal storage. Creation allocates ordinary
+ * heap storage, but creates no diagram nodes. Keep inputs protected as usual
+ * until creation completes, including while a spawned create task is pending.
+ * Non-sentinel handles must refer to live diagrams of the indicated family;
+ * stale handles and arbitrary node records are not supported.
+ *
+ * All create/next functions return 1 on success and 0 on error. Create leaves
+ * its output unchanged on invalid arguments or iterator-storage allocation
+ * failure; failed creation leaves nothing protected. Protection-table growth
+ * follows the existing protection API's fatal allocation-failure policy. Next sets
+ * has_item to 1 for an item, or 0 at exhaustion (also on repeated calls after
+ * exhaustion). Values and leaf outputs are unchanged at exhaustion. Invalid
+ * next arguments leave both iterator state and all outputs unchanged: NULL
+ * iterator/has_item, wrong iterator family, wrong count, NULL values with a
+ * nonzero count, or a NULL leaf output for MTBDDs. Arrays must have room for
+ * count entries. NULL values is allowed for a zero-width item.
+ */
+typedef struct sylvan_iterator sylvan_iterator;
+
+/** BDD/MTBDD cubes use 0, 1, 2 (don't-care); minterms use only 0 and 1. */
+typedef enum {
+    SYLVAN_ITERATOR_CUBES = 0,
+    SYLVAN_ITERATOR_MINTERMS = 1
+} sylvan_iterator_mode;
+
+/**
+ * Unprotect any iterator's roots, then free its storage, following the same
+ * threading rules as the corresponding unprotect API. The iterator must not
+ * be used after this call returns. Passing NULL is allowed.
+ */
+void sylvan_iterator_destroy(sylvan_iterator *iterator);
+
+/**
  * Initialize the Sylvan parallel decision diagrams package.
  *
  * First, Sylvan must know how big the nodes table and cache may be.

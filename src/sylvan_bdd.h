@@ -355,6 +355,29 @@ BDD sylvan_sat_single(BDD bdd, BDDSET vars);
 #define sylvan_pick_single_cube sylvan_sat_single
 
 /**
+ * Create an iterator over satisfying assignments of <dd>, taking low edges
+ * first, in increasing order of <variables>. The variable set must be a positive
+ * cube (false low edges, increasing variables, final true) containing the whole
+ * support; sylvan_true is the empty set. Extra variables are don't-cares in
+ * SYLVAN_ITERATOR_CUBES mode and expand to both values in MINTERMS mode.
+ * False emits no items. True emits one all-don't-care cube, or all 2^n minterms;
+ * with an empty set, true emits one empty assignment.
+ * Returns 0 for NULL <result>, an invalid mode/set/handle, map nodes,
+ * non-Boolean leaves, missing support, or iterator-storage allocation failure. See
+ * sylvan_iterator for lifetime, GC safety and return/output conventions.
+ */
+TASK_DECL_4(int, sylvan_iterator_create, BDD, BDDSET, sylvan_iterator_mode, sylvan_iterator**)
+#define sylvan_iterator_create(dd, variables, mode, result) RUN(sylvan_iterator_create, dd, variables, mode, result)
+
+/**
+ * Write the next BDD assignment to <values>; <count> must equal the variable
+ * set size. See sylvan_iterator for return values, errors and exhaustion.
+ * Release this iterator with sylvan_iterator_destroy().
+ */
+TASK_DECL_4(int, sylvan_iterator_next, sylvan_iterator*, uint8_t*, size_t, int*)
+#define sylvan_iterator_next(iterator, values, count, has_item) RUN(sylvan_iterator_next, iterator, values, count, has_item)
+
+/**
  * Enumerate all satisfying variable assignments from the given <bdd> using variables <vars>.
  * Calls <cb> with four parameters: a user-supplied context, the array of BDD variables in <vars>,
  * the cube (array of values 0 and 1 for each variables in <vars>) and the length of the two arrays.

@@ -45,6 +45,7 @@ target_sources(sylvan
     sylvan_cache.c
     sylvan_common.c
     sylvan_hash.c
+    sylvan_iterator.c
     sylvan_ldd.c
     sylvan_mt.c
     sylvan_mtbdd.c

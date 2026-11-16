@@ -527,6 +527,104 @@ The transition relations may be partial transition relations that only manipulat
 
 See ``src/sylvan_bdd.h`` and ``src/mtbdd.h`` for other operations on BDDs and MTBDDs.
 
+Pull iterators
+~~~~~~~~~~~~~~
+
+Pull iterators produce one item per call and retain their diagram and variable
+set until destruction. They supplement the existing callback and ``*_enum_*``
+enumerators, which remain unchanged. All create/next functions return 1 on
+success and 0 on invalid arguments; creation also returns 0 on iterator-storage
+allocation failure. Failed creation leaves the output pointer unchanged and
+nothing protected. Protection-table growth follows the existing protection
+API's fatal allocation-failure policy.
+
+- ``sylvan_iterator_create(dd, variables, mode, &iterator)``,
+  ``sylvan_iterator_next(iterator, values, count, &has_item)`` and
+  ``sylvan_iterator_destroy(iterator)`` enumerate satisfying BDD assignments.
+- ``mtbdd_iterator_create(dd, variables, &options, &iterator)``,
+  ``mtbdd_iterator_next(iterator, values, count, &leaf, &has_item)`` and
+  ``mtbdd_iterator_destroy(iterator)`` enumerate assignments with their MTBDD
+  leaf. Undefined (``mtbdd_false``) is always skipped; numeric zero is included.
+- ``zdd_iterator_create(dd, domain, &iterator)``,
+  ``zdd_iterator_next(iterator, values, count, &has_item)`` and
+  ``zdd_iterator_destroy(iterator)`` enumerate members of a Boolean ZDD family.
+- ``lddmc_iterator_create(dd, &iterator)``,
+  ``lddmc_iterator_next(iterator, values, count, &has_item)`` and
+  ``lddmc_iterator_destroy(iterator)`` enumerate concrete LDD tuples in
+  lexicographic order. Copy nodes anywhere in the diagram and inconsistent
+  tuple widths are rejected at creation.
+
+The shared opaque type is ``sylvan_iterator``; ``sylvan_iterator_destroy`` can
+also destroy any of the other families. Every destroy function accepts NULL.
+Creation validates and allocates storage before protecting its roots;
+destruction unprotects the roots before freeing storage. These operations
+follow the same threading rules as ``mtbdd_protect``/``mtbdd_unprotect``
+(or the corresponding ZDD/LDD protection APIs). The iterator must not be used
+after the destroy call returns.
+Initialize the corresponding subpackage before creation and destroy every
+iterator before ``sylvan_quit()``. One iterator must not be used by two threads
+at once, including destruction. Separate iterators are independent. Input
+handles must refer to live diagrams of the stated family; stale handles and
+arbitrary node records are unsupported. Keep inputs protected until creation
+completes, including while a spawned create task is pending.
+
+BDD and MTBDD variable sets are positive BDD cubes with increasing variables,
+false low edges and a final true leaf. ZDD domains use master's power-set
+representation: increasing variables, equal low/high children and a final
+``zdd_true``. Every set/domain must include the complete support. Missing
+support, map nodes, invalid handles and malformed sets/domains are rejected;
+BDD and ZDD iterators also reject non-Boolean leaves.
+
+Assignments use ``uint8_t`` entries in increasing variable order, with low
+edges visited first. For BDDs and MTBDDs, ``SYLVAN_ITERATOR_CUBES`` emits paths
+with values 0, 1 or 2 (don't-care); ``SYLVAN_ITERATOR_MINTERMS`` expands skipped
+variables into both 0 and 1. Extra variables in the supplied set behave the
+same way. ZDD iteration uses only 0 and 1: skipped and extra variables are
+absent (0). LDD tuples use ``uint32_t`` entries in tuple order.
+
+``mtbdd_iterator_options`` contains ``mode``, ``accept_leaf`` and ``context``.
+The optional predicate ``int accept_leaf(MTBDD leaf, void *context)`` accepts
+nonzero results and prunes zero results before expanding terminal don't-cares.
+It is never called for ``mtbdd_false``; no invocation count is promised for
+other leaves. The predicate must give stable results. It may inspect the leaf
+with read-only accessors, but must not create nodes, run Lace tasks, mutate
+Sylvan state or throw through C. The options are copied; the caller owns the
+context and keeps it valid until destruction.
+A NULL predicate accepts every defined leaf, including true and numeric zero.
+A NULL options pointer or an invalid mode is an error.
+
+False diagrams emit nothing. BDD true and accepted MTBDD constants emit one
+all-don't-care cube or every minterm over the supplied variables. ZDD true
+emits one all-zero item, representing the empty member; a full power set emits
+all its members. With an empty variable set/domain, true emits one empty item.
+LDD false has width zero and emits nothing; LDD true has width zero and emits
+one empty tuple.
+
+For ``next``, ``count`` must equal the set/domain size or LDD tuple width.
+Success sets ``has_item`` to 1 when an item is written, or 0 at exhaustion,
+including repeated calls after exhaustion. Exhaustion leaves the values and
+leaf outputs unchanged. NULL iterator/has_item, a wrong iterator family or
+count, NULL values with a nonzero count, and a NULL MTBDD leaf output are
+errors: the iterator and all outputs remain unchanged. NULL values is allowed
+at width zero. Arrays must have room for ``count`` entries.
+
+Creation uses ordinary heap storage and creates no diagram nodes. ``next``
+creates no nodes and allocates no traversal storage. It is safe to call
+``sylvan_gc()`` between calls, including collections that shrink the tables:
+the iterator protects the roots and live node indices stay stable. An emitted
+MTBDD leaf remains protected until the iterator is destroyed. For example:
+
+.. code:: c
+
+    sylvan_iterator *iterator;
+    if (sylvan_iterator_create(dd, variables, SYLVAN_ITERATOR_CUBES, &iterator)) {
+        int has_item;
+        while (sylvan_iterator_next(iterator, values, count, &has_item) && has_item) {
+            /* Consume values; sylvan_gc() is safe here. */
+        }
+        sylvan_iterator_destroy(iterator);
+    }
+
 Custom leaves
 ~~~~~~~~~~~~~
 

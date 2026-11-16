@@ -504,6 +504,31 @@ ZDDMAP zdd_map_remove(ZDDMAP map, uint32_t key);
 ZDDMAP zdd_map_removeall(ZDDMAP map, ZDD variables);
 
 /**
+ * Create a low-first iterator over the members of the Boolean ZDD family <dd>.
+ * <domain> is a ZDD power set: increasing variables, equal low/high children,
+ * final zdd_true (the empty domain). It must contain the entire support.
+ * Each item has one 0/1 entry per domain variable in increasing order. Skipped
+ * variables, including extra domain variables, are absent (0), not don't-cares.
+ * zdd_false emits nothing. zdd_true emits one all-zero item (the empty member),
+ * including one empty item with an empty domain. The full power set emits all
+ * 2^n members. Returns 0 for NULL <result>, invalid domain/handle, map nodes,
+ * non-Boolean leaves, missing support, or iterator-storage allocation failure. See
+ * sylvan_iterator for lifetime, GC safety and return/output conventions.
+ */
+TASK_DECL_3(int, zdd_iterator_create, ZDD, ZDD, sylvan_iterator**)
+#define zdd_iterator_create(dd, domain, result) RUN(zdd_iterator_create, dd, domain, result)
+
+/**
+ * Write the next family member; <count> must equal the domain size.
+ * See sylvan_iterator for return values, errors and exhaustion.
+ */
+TASK_DECL_4(int, zdd_iterator_next, sylvan_iterator*, uint8_t*, size_t, int*)
+#define zdd_iterator_next(iterator, values, count, has_item) RUN(zdd_iterator_next, iterator, values, count, has_item)
+
+/** Release a ZDD iterator; equivalent to sylvan_iterator_destroy, including NULL. */
+void zdd_iterator_destroy(sylvan_iterator *iterator);
+
+/**
  * Enumerate all minterms (non-False assignments)
  *
  * Given a ZDD <dd> and a variable domain <dom>, zdd_enum_first and zdd_enum_next enumerate

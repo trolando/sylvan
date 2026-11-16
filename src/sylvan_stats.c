@@ -170,6 +170,9 @@ struct
     {2, LDD_REACH, "LDD reach"},
     {2, LDD_EXTEND_REL, "LDD extend_rel"},
 
+    {1, SYLVAN_ITERATOR_CREATED, "Sylvan iterators created"},
+    {1, SYLVAN_ITERATOR_ITEMS, "Sylvan iterator items"},
+
     {0, 0, "Garbage collection"},
     {1, SYLVAN_GC_COUNT, "GC executions"},
     {3, SYLVAN_GC, "Total time spent"},

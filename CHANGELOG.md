@@ -4,6 +4,12 @@ All notable changes to Sylvan will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Pull iterators with `create`, `next` and `destroy` functions under the
+  `sylvan_`, `mtbdd_`, `zdd_` and `lddmc_` prefixes. BDDs and MTBDDs support
+  cubes and minterms; MTBDDs also support leaf filters. ZDDs enumerate Boolean
+  family members and LDDs enumerate concrete tuples, rejecting copy nodes.
+  Iterators retain their roots across calls, including explicit shrinking
+  collections, and `next` creates no nodes. Existing enumerators are unchanged.
 - `sylvan_probability` for the probability that a BDD is true under independent
   variables, using double arithmetic and probabilities packed in variable-set
   order. It rejects missing support variables and invalid probabilities,

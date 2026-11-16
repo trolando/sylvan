@@ -217,6 +217,29 @@ TASK_DECL_1(long double, lddmc_satcount, MDD);
 #define lddmc_satcount(mdd) RUN(lddmc_satcount, mdd)
 
 /**
+ * Create an iterator over complete concrete tuples in lexicographic order.
+ * Every tuple in <dd> must have the same width, determined at creation.
+ * Relation copy nodes are rejected anywhere in the diagram: they do not
+ * denote concrete tuple values. lddmc_false has width zero and emits nothing;
+ * lddmc_true has width zero and emits one empty tuple. Returns 0 for NULL
+ * <result>, an invalid handle (including UINT64_MAX), copy nodes, inconsistent
+ * tuple widths, or iterator-storage allocation failure. See sylvan_iterator
+ * for lifetime, GC safety and return/output conventions.
+ */
+TASK_DECL_2(int, lddmc_iterator_create, MDD, sylvan_iterator**)
+#define lddmc_iterator_create(dd, result) RUN(lddmc_iterator_create, dd, result)
+
+/**
+ * Write the next tuple; <count> must equal the width determined at creation.
+ * See sylvan_iterator for return values, errors and exhaustion.
+ */
+TASK_DECL_4(int, lddmc_iterator_next, sylvan_iterator*, uint32_t*, size_t, int*)
+#define lddmc_iterator_next(iterator, values, count, has_item) RUN(lddmc_iterator_next, iterator, values, count, has_item)
+
+/** Release an LDD iterator; equivalent to sylvan_iterator_destroy, including NULL. */
+void lddmc_iterator_destroy(sylvan_iterator *iterator);
+
+/**
  * A callback for enumerating functions like sat_all_par, collect and match
  * Example:
  * TASK_3(void*, my_function, uint32_t*, values, size_t, count, void*, context) ...

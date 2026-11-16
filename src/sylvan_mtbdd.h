@@ -835,6 +835,53 @@ TASK_DECL_1(MTBDD, mtbdd_maximum, MTBDD);
 #define mtbdd_maximum(dd) RUN(mtbdd_maximum, dd)
 
 /**
+ * Pure leaf predicate: return nonzero to accept <leaf>, zero to prune its
+ * complete terminal subspace before expanding skipped variables. Never called
+ * for mtbdd_false (undefined). The predicate may be called more than once for
+ * the same leaf; no invocation count is promised. It may inspect the leaf with
+ * read-only accessors, but must not create nodes, run Lace tasks, mutate Sylvan
+ * state, or throw through C. Its result must remain stable throughout iteration.
+ */
+typedef int (*mtbdd_iterator_leaf_filter_cb)(MTBDD leaf, void *context);
+
+/**
+ * Options copied at creation. NULL accept_leaf accepts every defined leaf,
+ * including numeric zero and mtbdd_true. The caller owns context and must keep
+ * it valid until destruction. mode selects cubes or minterms.
+ */
+typedef struct mtbdd_iterator_options {
+    sylvan_iterator_mode mode;
+    mtbdd_iterator_leaf_filter_cb accept_leaf;
+    void *context;
+} mtbdd_iterator_options;
+
+/**
+ * Create a low-first iterator over assignments leading to accepted leaves.
+ * <variables> must be a positive BDD cube (false low edges, increasing
+ * variables, final true) containing the entire support, including paths whose
+ * leaves the filter rejects. mtbdd_true denotes the empty variable set.
+ * Extra/skipped variables are 2 in CUBES mode and expand to 0 and 1 in MINTERMS
+ * mode. Undefined (mtbdd_false) emits nothing. An accepted constant emits one
+ * all-don't-care cube or all 2^n minterms; at width zero it emits one empty item.
+ * Returns 0 for NULL <result> or <options>, invalid mode/set/handle, map nodes,
+ * missing support, or iterator-storage allocation failure. See sylvan_iterator
+ * for lifetime, GC safety and return/output conventions.
+ */
+TASK_DECL_4(int, mtbdd_iterator_create, MTBDD, BDDSET, const mtbdd_iterator_options*, sylvan_iterator**)
+#define mtbdd_iterator_create(dd, variables, options, result) RUN(mtbdd_iterator_create, dd, variables, options, result)
+
+/**
+ * Write the next assignment and its accepted <leaf>; <count> must equal the
+ * variable set size. The returned leaf remains protected by the iterator
+ * until destruction. See sylvan_iterator for errors and exhaustion.
+ */
+TASK_DECL_5(int, mtbdd_iterator_next, sylvan_iterator*, uint8_t*, size_t, MTBDD*, int*)
+#define mtbdd_iterator_next(iterator, values, count, leaf, has_item) RUN(mtbdd_iterator_next, iterator, values, count, leaf, has_item)
+
+/** Release an MTBDD iterator; equivalent to sylvan_iterator_destroy, including NULL. */
+void mtbdd_iterator_destroy(sylvan_iterator *iterator);
+
+/**
  * Given a MTBDD <dd> and a cube of variables <variables> expected in <dd>,
  * mtbdd_enum_first and mtbdd_enum_next enumerates the unique paths in <dd> that lead to a non-False leaf.
  * 

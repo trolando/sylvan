@@ -4,6 +4,12 @@ All notable changes to Sylvan will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Callback-based framed byte streams in `sylvan_serialize.h`, independent of
+  decision diagrams and package initialization. `sylvan_framed_*` readers and
+  writers support bounded-memory payload reads, skips and incremental writes,
+  with `FILE*` adapters, short-transfer retries and explicit error codes.
+  The little-endian version-1 format is documented; existing serialization
+  functions and file formats are unchanged.
 - Programmatic statistics with `sylvan_statistics_snapshot`, using a versioned,
   sized diagnostics struct, and `sylvan_statistics_read`, using fixed-size
   named records and an explicit capacity. `sylvan_statistics_read_counter`

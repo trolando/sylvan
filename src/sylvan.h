@@ -35,9 +35,41 @@
  */
 
 #include <lace.h>
+#include <sylvan_serialize.h>
 
 #ifdef __cplusplus
 namespace sylvan {
+
+/* The standalone stream API is declared globally; keep the usual Sylvan
+ * namespace aliases available regardless of header inclusion order. */
+using ::sylvan_stream_status;
+using ::SYLVAN_STREAM_OK;
+using ::SYLVAN_STREAM_ERR_INVALID;
+using ::SYLVAN_STREAM_ERR_OOM;
+using ::SYLVAN_STREAM_ERR_IO;
+using ::SYLVAN_STREAM_ERR_TRUNCATED;
+using ::SYLVAN_STREAM_ERR_FORMAT;
+using ::SYLVAN_STREAM_ERR_CALLBACK;
+using ::sylvan_framed_writer;
+using ::sylvan_framed_reader;
+using ::sylvan_stream_write_cb;
+using ::sylvan_stream_read_cb;
+using ::sylvan_frame;
+using ::sylvan_framed_writer_create;
+using ::sylvan_framed_writer_begin;
+using ::sylvan_framed_writer_append;
+using ::sylvan_framed_writer_remaining;
+using ::sylvan_framed_writer_write;
+using ::sylvan_framed_writer_finish;
+using ::sylvan_framed_writer_destroy;
+using ::sylvan_framed_reader_create;
+using ::sylvan_framed_reader_next;
+using ::sylvan_framed_reader_read;
+using ::sylvan_framed_reader_skip;
+using ::sylvan_framed_reader_remaining;
+using ::sylvan_framed_reader_destroy;
+using ::sylvan_stream_write_file;
+using ::sylvan_stream_read_file;
 #endif
 
 /**

@@ -52,6 +52,7 @@ target_sources(sylvan
     sylvan_nodes_scratch.c
     sylvan_platform.c
     sylvan_refs.c
+    sylvan_serialize.c
     sylvan_sl.c
     sylvan_stats.c
     sylvan_table.c
@@ -73,6 +74,7 @@ target_sources(sylvan
       sylvan_mtbdd.h
       sylvan_mtbdd_int.h
       sylvan_platform.h
+      sylvan_serialize.h
       sylvan_stats.h
       sylvan_table.h
       sylvan_zdd.h

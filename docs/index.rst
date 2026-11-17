@@ -680,6 +680,115 @@ MTBDD leaf remains protected until the iterator is destroyed. For example:
         sylvan_iterator_destroy(iterator);
     }
 
+Framed byte streams
+~~~~~~~~~~~~~~~~~~~
+
+The ``sylvan_framed_*`` functions in ``sylvan_serialize.h`` provide a byte
+container independent of decision diagrams. They require no Sylvan or Lace
+initialization, and do not change existing serialization functions or formats.
+They are available through ``sylvan.h`` (in namespace ``sylvan`` for C++),
+or through the standalone header for byte-stream-only applications.
+The standalone declarations are always in the global scope; ``sylvan.h``
+adds C++ namespace aliases. Both headers can be included in either order.
+
+- ``sylvan_framed_writer_create(&writer, write, context)`` allocates a writer
+  and immediately emits the stream header.
+- ``sylvan_framed_writer_begin(writer, type, payload_size)`` emits a frame
+  header; ``sylvan_framed_writer_append(writer, data, size)`` supplies its
+  payload incrementally. Exactly the declared number of bytes must be appended
+  before another frame or the end marker. Empty frames complete immediately.
+  ``sylvan_framed_writer_remaining(writer)`` reports bytes still required.
+- ``sylvan_framed_writer_write(writer, type, payload, size)`` writes a complete
+  frame from one buffer by composing begin and append.
+- ``sylvan_framed_writer_finish(writer)`` emits the required end marker.
+  ``sylvan_framed_writer_destroy(writer)`` frees the writer without I/O;
+  destroying an unfinished writer leaves a truncated stream.
+- ``sylvan_framed_reader_create(&reader, read, context)`` allocates a reader
+  and validates the stream header.
+- ``sylvan_framed_reader_next(reader, &frame, &has_frame)`` reads a frame
+  header into ``sylvan_frame`` after the previous payload has been consumed.
+  It sets ``has_frame`` to 1 for a frame, or 0 at the end marker. Repeated calls
+  after that marker succeed without I/O. Errors leave both outputs unchanged;
+  the end marker leaves ``frame`` unchanged.
+- ``sylvan_framed_reader_read(reader, data, size)`` reads part or all of the
+  payload. ``sylvan_framed_reader_skip(reader)`` consumes the remainder using
+  a 4096-byte scratch buffer. ``sylvan_framed_reader_remaining(reader)`` reports
+  unread bytes. ``sylvan_framed_reader_destroy(reader)`` frees the reader
+  without consuming further input.
+- ``sylvan_stream_write_file`` and ``sylvan_stream_read_file`` adapt a borrowed
+  ``FILE*`` opened in binary mode, including ``tmpfile()``. No stream function
+  flushes or closes the file; the caller must also check ``fflush``/``fclose``.
+
+Callbacks have signature ``int (void *context, [const] void *data, size_t size,
+size_t *transferred)``. They return ``SYLVAN_STREAM_OK`` (0) and set the byte
+count, or return a negative error code, which is propagated. The framed layer
+retries successful short transfers. Zero bytes read means physical EOF; zero
+bytes written is an I/O error. A positive callback result or a count exceeding
+``size`` is ``SYLVAN_STREAM_ERR_CALLBACK``. Callbacks are blocking and must not
+reenter the same context. Buffers are borrowed only during a call.
+
+The other return codes are ``SYLVAN_STREAM_ERR_INVALID`` (arguments/state),
+``SYLVAN_STREAM_ERR_OOM`` (context allocation), ``SYLVAN_STREAM_ERR_IO``,
+``SYLVAN_STREAM_ERR_TRUNCATED`` and ``SYLVAN_STREAM_ERR_FORMAT``. Invalid
+arguments cause no I/O and allow a corrected call. After an I/O, format or
+callback error, destroy the context: its position and partially transferred
+buffers are unspecified, and further I/O calls return ``ERR_INVALID``.
+Creation leaves the result pointer unchanged on failure. NULL buffers are
+allowed only for zero bytes; destroy and remaining accept NULL. One context
+must not be used by multiple threads at once.
+
+All integers in the wire format are unsigned and little-endian; there is no
+padding, alignment or checksum:
+
+.. list-table:: Stream header (16 bytes)
+   :header-rows: 1
+
+   * - Offset
+     - Size
+     - Meaning
+   * - 0
+     - 8
+     - Magic bytes ``53 59 4c 56 41 4e 32 00`` (``SYLVAN2`` and NUL)
+   * - 8
+     - 2
+     - Major version: 1
+   * - 10
+     - 2
+     - Minor version: writers emit 0; readers ignore this field
+   * - 12
+     - 4
+     - Stream flags: must be zero
+
+.. list-table:: Frame header (16 bytes), immediately followed by its payload
+   :header-rows: 1
+
+   * - Offset
+     - Size
+     - Meaning
+   * - 0
+     - 4
+     - Frame type: any nonzero application-defined value
+   * - 4
+     - 4
+     - Frame flags: must be zero
+   * - 8
+     - 8
+     - Payload length in bytes, from zero through ``UINT64_MAX``
+
+Sixteen zero bytes form the end marker (type 0, flags 0, length 0), with no
+payload. Physical EOF before this marker is truncation, even between frames.
+Readers leave any bytes after the marker unread, so streams can be concatenated.
+Unsupported magic/major versions, nonzero flags and type 0 with nonzero length
+are format errors. Payload corruption and changes to otherwise valid types or
+lengths require an application-level integrity check to detect.
+
+Declared lengths never cause allocations. Readers and writers compare each
+chunk size with the remaining uint64 byte count before transferring it, so even
+frames larger than ``SIZE_MAX`` can be processed incrementally. The caller must
+supply valid buffers and may impose its own frame-size limit. Skipping costs
+time proportional to the bytes skipped; applications can instead reject an
+unwanted length and destroy the reader.
+
 Custom leaves
 ~~~~~~~~~~~~~
 

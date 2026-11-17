@@ -132,6 +132,18 @@ All notable changes to Sylvan will be documented in this file.
   `llmsset_get_data_size()`.
 
 ### Changed
+- Updated Lace to version 1.12.1. Idle workers no longer pace their search
+  rounds, which makes bursty workloads 6-7% faster in Lace's benchmarks, and
+  several lost-wake windows in the sleep protocol are closed. A garbage
+  collection no longer counts as work of the task it interrupts in Lace's
+  search balance. When several threads call Sylvan at once, a worker inside
+  a garbage collection no longer starts another thread's operation, which
+  could then run in the middle of the collection. Applications can choose an idle mode (energy, balanced or
+  performance) with `lace_set_idle_mode` before `lace_start` or with the
+  environment variable `LACE_IDLE`; balanced is the default.
+- Sylvan now asks for Lace 1.12.0 when it looks for an installed Lace, and
+  requires at least Lace 1.12.0. An installed Lace accepts only requests for
+  its own minor version.
 - Garbage collection skips the empty parts of the nodes table. The passes that
   rehash the live nodes and destroy dead custom leaves now go through the
   bitmaps 64 buckets at a time instead of one bucket at a time, so empty

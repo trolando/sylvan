@@ -22,18 +22,10 @@
 #include <string.h> // memset
 #include <inttypes.h>
 
-#if SYLVAN_STATS
-
-#ifdef __ELF__
-__thread sylvan_stats_t sylvan_stats;
-#else
-pthread_key_t sylvan_stats_key;
-#endif
-
 /**
  * Instructions for sylvan_stats_report
  */
-struct
+static const struct
 {
     int type; /* 0 for print line, 1 for simple counter, 2 for operation with CACHED and CACHEDPUT */
               /* 3 for timer, 4 for report table data */
@@ -44,6 +36,8 @@ struct
     {0, 0, "Tables"},
     {1, BDD_NODES_CREATED, "MTBDD nodes created"},
     {1, BDD_NODES_REUSED, "MTBDD nodes reused"},
+    {1, ZDD_NODES_CREATED, "ZDD nodes created"},
+    {1, ZDD_NODES_REUSED, "ZDD nodes reused"},
     {1, LDD_NODES_CREATED, "LDD nodes created"},
     {1, LDD_NODES_REUSED, "LDD nodes reused"},
     {1, LLMSSET_LOOKUP, "Lookup iterations"},
@@ -173,12 +167,23 @@ struct
     {1, SYLVAN_ITERATOR_CREATED, "Sylvan iterators created"},
     {1, SYLVAN_ITERATOR_ITEMS, "Sylvan iterator items"},
 
+    {1, MTBDD_LEVEL_STATISTICS, "MTBDD level statistics"},
+    {1, ZDD_LEVEL_STATISTICS, "ZDD level statistics"},
+
     {0, 0, "Garbage collection"},
     {1, SYLVAN_GC_COUNT, "GC executions"},
     {3, SYLVAN_GC, "Total time spent"},
 
     {-1, -1, NULL},
 };
+
+#if SYLVAN_STATS
+
+#ifdef __ELF__
+__thread sylvan_stats_t sylvan_stats;
+#else
+pthread_key_t sylvan_stats_key;
+#endif
 
 VOID_TASK_0(sylvan_stats_reset_perthread)
 {
@@ -358,3 +363,416 @@ sylvan_stats_report(FILE* target)
 }
 
 #endif
+
+/* Legacy snapshots retain their historical timer representation on Mach.
+ * Convert only the new API's private totals, without changing that behavior. */
+static uint64_t
+sylvan_statistics_time_ns(uint64_t ticks)
+{
+#ifdef __MACH__
+    mach_timebase_info_data_t timebase;
+    mach_timebase_info(&timebase);
+    return (ticks / timebase.denom) * timebase.numer +
+        ((ticks % timebase.denom) * timebase.numer) / timebase.denom;
+#else
+    return ticks;
+#endif
+}
+
+/* cache_getused reads the legacy cache status words non-atomically. Hold
+ * every worker in this task until sampling ends: a NEWFRAME steal loop, or
+ * an early return from TOGETHER, could accept external RUN submissions. */
+VOID_TASK_1(sylvan_statistics_tables, sylvan_statistics*, target)
+{
+    if (lace_get_worker()->worker == 0) {
+        target->nodes_used = (uint64_t)llmsset_count_marked_no_yield(nodes);
+        target->nodes_capacity = (uint64_t)llmsset_get_size(nodes);
+        target->nodes_max_capacity = (uint64_t)llmsset_get_max_size(nodes);
+        target->cache_used = (uint64_t)cache_getused();
+        target->cache_capacity = (uint64_t)cache_getsize();
+        target->cache_max_capacity = (uint64_t)cache_getmaxsize();
+    }
+    lace_barrier();
+}
+
+TASK_IMPL_1(int, sylvan_statistics_snapshot, sylvan_statistics*, target)
+{
+    if (target == NULL || target->version != SYLVAN_STATISTICS_VERSION ||
+        target->size < SYLVAN_STATISTICS_V1_SIZE) return 0;
+
+    sylvan_stats_t totals;
+    CALL(sylvan_stats_snapshot, &totals);
+    sylvan_statistics result = SYLVAN_STATISTICS_INIT;
+    result.size = target->size;
+    TOGETHER(sylvan_statistics_tables, &result);
+    result.gc_count = totals.counters[SYLVAN_GC_COUNT];
+    result.gc_time_ns = sylvan_statistics_time_ns(totals.timers[SYLVAN_GC]);
+    result.worker_count = lace_workers();
+    result.statistics_enabled = SYLVAN_STATS ? 1u : 0u;
+    size_t writable = target->size < sizeof(result) ? target->size : sizeof(result);
+    memcpy(target, &result, writable);
+    return 1;
+}
+
+static void
+sylvan_statistics_entry(sylvan_statistic *entry, size_t index, const sylvan_stats_t *totals)
+{
+    const int type = sylvan_report_info[index].type;
+    const int id = sylvan_report_info[index].id;
+    entry->name = sylvan_report_info[index].key;
+    entry->reserved = 0;
+    entry->value = type == 3 ? sylvan_statistics_time_ns(totals->timers[id]) : totals->counters[id];
+    entry->cache_hits = type == 2 ? totals->counters[id+2] : 0;
+    entry->cache_puts = type == 2 ? totals->counters[id+1] : 0;
+    entry->kind = type == 1 ? SYLVAN_STATISTIC_COUNTER :
+        type == 2 ? SYLVAN_STATISTIC_OPERATION : SYLVAN_STATISTIC_TIMER;
+}
+
+TASK_IMPL_3(int, sylvan_statistics_read, sylvan_statistic*, entries, size_t, capacity, size_t*, count)
+{
+    if (count == NULL || (entries == NULL && capacity != 0)) return 0;
+    size_t required = 0;
+    for (size_t i=0; sylvan_report_info[i].id != -1; i++) {
+        const int type = sylvan_report_info[i].type;
+        if (type >= 1 && type <= 3) required++;
+    }
+    *count = required;
+    if (entries == NULL) return 1;
+    if (capacity < required) return 0;
+
+    sylvan_stats_t totals;
+    CALL(sylvan_stats_snapshot, &totals);
+    size_t output = 0;
+    for (size_t i=0; sylvan_report_info[i].id != -1; i++) {
+        const int type = sylvan_report_info[i].type;
+        if (type >= 1 && type <= 3) sylvan_statistics_entry(entries + output++, i, &totals);
+    }
+    return 1;
+}
+
+TASK_IMPL_2(int, sylvan_statistics_read_counter, size_t, id, uint64_t*, value)
+{
+    if (id >= SYLVAN_COUNTER_COUNTER || value == NULL) return 0;
+    sylvan_stats_t totals;
+    CALL(sylvan_stats_snapshot, &totals);
+    *value = totals.counters[id];
+    return 1;
+}
+
+TASK_IMPL_2(int, sylvan_statistics_read_name, const char*, name, sylvan_statistic*, entry)
+{
+    if (name == NULL || entry == NULL) return 0;
+    for (size_t i=0; sylvan_report_info[i].id != -1; i++) {
+        const int type = sylvan_report_info[i].type;
+        if (type >= 1 && type <= 3 && strcmp(name, sylvan_report_info[i].key) == 0) {
+            sylvan_stats_t totals;
+            CALL(sylvan_stats_snapshot, &totals);
+            sylvan_statistics_entry(entry, i, &totals);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+struct sylvan_index_set {
+    uint64_t *slots;
+    size_t capacity;
+    size_t count;
+};
+
+struct sylvan_level_table {
+    uint32_t *levels;
+    uint64_t *counts;
+    size_t capacity;
+    size_t count;
+};
+
+struct sylvan_handle_stack {
+    uint64_t *handles;
+    size_t capacity;
+    size_t count;
+};
+
+static uint64_t
+sylvan_statistics_hash(uint64_t value)
+{
+    value ^= value >> 30;
+    value *= UINT64_C(0xbf58476d1ce4e5b9);
+    value ^= value >> 27;
+    value *= UINT64_C(0x94d049bb133111eb);
+    return value ^ (value >> 31);
+}
+
+static int
+sylvan_index_set_grow(struct sylvan_index_set *set)
+{
+    const size_t old_capacity = set->capacity;
+    const size_t new_capacity = old_capacity == 0 ? 16 : old_capacity * 2;
+    if (new_capacity < old_capacity ||
+        new_capacity > SIZE_MAX / sizeof(*set->slots)) {
+        return 0;
+    }
+    uint64_t *slots = calloc(new_capacity, sizeof(*slots));
+    if (slots == NULL) return 0;
+    for (size_t i = 0; i < old_capacity; i++) {
+        const uint64_t stored = set->slots[i];
+        if (stored == 0) continue;
+        size_t position =
+            (size_t)sylvan_statistics_hash(stored - 1) &
+            (new_capacity - 1);
+        while (slots[position] != 0) {
+            position = (position + 1) & (new_capacity - 1);
+        }
+        slots[position] = stored;
+    }
+    free(set->slots);
+    set->slots = slots;
+    set->capacity = new_capacity;
+    return 1;
+}
+
+static int
+sylvan_index_set_insert(
+    struct sylvan_index_set *set, uint64_t index, int *inserted)
+{
+    if (index == UINT64_MAX) return 0;
+    if (set->capacity == 0 ||
+        set->count + 1 > set->capacity / 2) {
+        int status = sylvan_index_set_grow(set);
+        if (!status) return status;
+    }
+    const uint64_t stored = index + 1;
+    size_t position =
+        (size_t)sylvan_statistics_hash(index) & (set->capacity - 1);
+    while (set->slots[position] != 0) {
+        if (set->slots[position] == stored) {
+            *inserted = 0;
+            return 1;
+        }
+        position = (position + 1) & (set->capacity - 1);
+    }
+    set->slots[position] = stored;
+    set->count++;
+    *inserted = 1;
+    return 1;
+}
+
+static int
+sylvan_level_table_grow(struct sylvan_level_table *table)
+{
+    const size_t old_capacity = table->capacity;
+    const size_t new_capacity = old_capacity == 0 ? 16 : old_capacity * 2;
+    if (new_capacity < old_capacity ||
+        new_capacity > SIZE_MAX / sizeof(*table->levels) ||
+        new_capacity > SIZE_MAX / sizeof(*table->counts)) {
+        return 0;
+    }
+    uint32_t *levels = calloc(new_capacity, sizeof(*levels));
+    uint64_t *counts = calloc(new_capacity, sizeof(*counts));
+    if (levels == NULL || counts == NULL) {
+        free(counts);
+        free(levels);
+        return 0;
+    }
+    for (size_t i = 0; i < old_capacity; i++) {
+        const uint32_t stored = table->levels[i];
+        if (stored == 0) continue;
+        const uint32_t level = stored - 1;
+        size_t position =
+            (size_t)sylvan_statistics_hash(level) & (new_capacity - 1);
+        while (levels[position] != 0) {
+            position = (position + 1) & (new_capacity - 1);
+        }
+        levels[position] = stored;
+        counts[position] = table->counts[i];
+    }
+    free(table->levels);
+    free(table->counts);
+    table->levels = levels;
+    table->counts = counts;
+    table->capacity = new_capacity;
+    return 1;
+}
+
+static int
+sylvan_level_table_increment(
+    struct sylvan_level_table *table, uint32_t level)
+{
+    if (level == UINT32_MAX) return 0;
+    if (table->capacity == 0 ||
+        table->count + 1 > table->capacity / 2) {
+        int status = sylvan_level_table_grow(table);
+        if (!status) return status;
+    }
+    const uint32_t stored = level + 1;
+    size_t position =
+        (size_t)sylvan_statistics_hash(level) & (table->capacity - 1);
+    while (table->levels[position] != 0) {
+        if (table->levels[position] == stored) {
+            if (table->counts[position] == UINT64_MAX) {
+                return 0;
+            }
+            table->counts[position]++;
+            return 1;
+        }
+        position = (position + 1) & (table->capacity - 1);
+    }
+    table->levels[position] = stored;
+    table->counts[position] = 1;
+    table->count++;
+    return 1;
+}
+
+static int
+sylvan_handle_stack_push(
+    struct sylvan_handle_stack *stack, uint64_t handle)
+{
+    if (stack->count == stack->capacity) {
+        const size_t old_capacity = stack->capacity;
+        const size_t new_capacity =
+            old_capacity == 0 ? 64 : old_capacity * 2;
+        if (new_capacity < old_capacity ||
+            new_capacity > SIZE_MAX / sizeof(*stack->handles)) {
+            return 0;
+        }
+        uint64_t *handles = realloc(
+            stack->handles, new_capacity * sizeof(*handles));
+        if (handles == NULL) return 0;
+        stack->handles = handles;
+        stack->capacity = new_capacity;
+    }
+    stack->handles[stack->count++] = handle;
+    return 1;
+}
+
+static int
+sylvan_level_statistic_compare(const void *left, const void *right)
+{
+    const sylvan_level_statistic *a = left;
+    const sylvan_level_statistic *b = right;
+    return a->level < b->level ? -1 : a->level != b->level;
+}
+
+/* Check the node arena rather than the hash size, which can shrink below
+ * live node indices. Family and liveness remain the caller's preconditions. */
+static int
+sylvan_statistics_valid_handle(uint64_t handle, int zdd)
+{
+    if (zdd && (handle == zdd_false || handle == zdd_true)) return 1;
+    const uint64_t index = MTBDD_GETINDEX(handle);
+    return (handle & ~(mtbdd_complement | UINT64_C(0x000000ffffffffff))) == 0 &&
+        (index == 0 || (index >= 2 && index < llmsset_get_data_size(nodes)));
+}
+
+struct sylvan_level_output {
+    sylvan_level_statistic *entries;
+    size_t capacity;
+    size_t *count;
+    uint64_t *leaf_count;
+};
+
+TASK_4(int, sylvan_level_statistics_collect, const uint64_t*, roots, size_t, root_count,
+       struct sylvan_level_output*, output, int, zdd)
+{
+    sylvan_level_statistic *entries = output->entries;
+    const size_t capacity = output->capacity;
+    size_t *count = output->count;
+    uint64_t *leaf_count = output->leaf_count;
+    if (count == NULL || leaf_count == NULL ||
+        (root_count != 0 && roots == NULL) || (entries == NULL && capacity != 0)) return 0;
+    for (size_t i=0; i<root_count; i++) {
+        if (!sylvan_statistics_valid_handle(roots[i], zdd)) return 0;
+    }
+    if (!(zdd ? zdd_refs_reserve(root_count) : mtbdd_refs_reserve(root_count))) return 0;
+    for (size_t i=0; i<root_count; i++) {
+        if (zdd) zdd_refs_push(roots[i]); else mtbdd_refs_push(roots[i]);
+    }
+    sylvan_stats_count(zdd ? ZDD_LEVEL_STATISTICS : MTBDD_LEVEL_STATISTICS);
+    sylvan_gc_test();
+
+    int success = 1;
+    struct sylvan_index_set visited = {0};
+    struct sylvan_level_table levels = {0};
+    struct sylvan_handle_stack stack = {0};
+    uint64_t leaves = 0;
+    for (size_t i=0; i<root_count && success; i++) {
+        success = sylvan_handle_stack_push(&stack, roots[i]);
+    }
+
+    size_t yielded_at = 0;
+    while (stack.count != 0 && success) {
+        /* All descendants remain alive through the protected roots; the
+         * private visited set and stack contain indices, never node pointers. */
+        if (++yielded_at == 1024) {
+            sylvan_gc_test();
+            yielded_at = 0;
+        }
+        const uint64_t handle = stack.handles[--stack.count];
+        if (!sylvan_statistics_valid_handle(handle, zdd)) { success = 0; break; }
+        const uint64_t index = MTBDD_GETINDEX(handle);
+        int inserted;
+        success = sylvan_index_set_insert(&visited, index, &inserted);
+        if (!success || !inserted) continue;
+        if ((zdd && zdd_isleaf(handle)) || (!zdd && mtbdd_isleaf(handle))) {
+            if (leaves == UINT64_MAX) success = 0; else leaves++;
+            continue;
+        }
+        if (mtbddnode_ismapnode(MTBDD_GETNODE(handle)) ||
+            zddnode_ismapnode(ZDD_GETNODE(handle))) { success = 0; break; }
+
+        uint32_t level;
+        uint64_t low, high;
+        if (zdd) {
+            zddnode_t node = ZDD_GETNODE(handle);
+            level = zddnode_getvariable(node);
+            low = zddnode_getlow(node);
+            high = zddnode_gethigh(node);
+        } else {
+            mtbddnode_t node = MTBDD_GETNODE(handle);
+            level = mtbddnode_getvariable(node);
+            low = mtbddnode_getlow(node);
+            high = mtbddnode_gethigh(node);
+        }
+        success = sylvan_level_table_increment(&levels, level);
+        if (success) success = sylvan_handle_stack_push(&stack, low);
+        if (success) success = sylvan_handle_stack_push(&stack, high);
+    }
+
+    if (success) {
+        *count = levels.count;
+        *leaf_count = leaves;
+        if (entries != NULL && capacity < levels.count) {
+            success = 0;
+        } else if (entries != NULL) {
+            size_t output = 0;
+            for (size_t i=0; i<levels.capacity; i++) {
+                if (levels.levels[i] == 0) continue;
+                entries[output].level = levels.levels[i] - 1;
+                entries[output].reserved = 0;
+                entries[output].node_count = levels.counts[i];
+                output++;
+            }
+            qsort(entries, levels.count, sizeof(*entries), sylvan_level_statistic_compare);
+        }
+    }
+    free(stack.handles);
+    free(levels.counts);
+    free(levels.levels);
+    free(visited.slots);
+    if (zdd) zdd_refs_pop(root_count); else mtbdd_refs_pop(root_count);
+    return success;
+}
+
+TASK_IMPL_6(int, mtbdd_level_statistics, const MTBDD*, roots, size_t, root_count,
+            sylvan_level_statistic*, entries, size_t, capacity, size_t*, count, uint64_t*, leaf_count)
+{
+    struct sylvan_level_output output = {entries, capacity, count, leaf_count};
+    return CALL(sylvan_level_statistics_collect, roots, root_count, &output, 0);
+}
+
+TASK_IMPL_6(int, zdd_level_statistics, const ZDD*, roots, size_t, root_count,
+            sylvan_level_statistic*, entries, size_t, capacity, size_t*, count, uint64_t*, leaf_count)
+{
+    struct sylvan_level_output output = {entries, capacity, count, leaf_count};
+    return CALL(sylvan_level_statistics_collect, roots, root_count, &output, 1);
+}

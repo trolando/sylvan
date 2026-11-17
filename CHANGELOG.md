@@ -4,6 +4,18 @@ All notable changes to Sylvan will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Programmatic statistics with `sylvan_statistics_snapshot`, using a versioned,
+  sized diagnostics struct, and `sylvan_statistics_read`, using fixed-size
+  named records and an explicit capacity. `sylvan_statistics_read_counter`
+  reads raw counter ids; `sylvan_statistics_read_name` reads named counters,
+  operations and timers. Names and table diagnostics remain available when
+  statistics are disabled. New code can avoid depending on the growing
+  `sylvan_stats_t`; the legacy snapshot function keeps its existing behavior.
+- `mtbdd_level_statistics` and `zdd_level_statistics` for sparse per-variable
+  counts of unique physical nodes across one or several roots, with separate
+  leaf counts. Shared and complemented nodes count once. Private visited sets
+  and protected roots support concurrent profiles and shrinking collections
+  without touching traversal marks or the operation cache.
 - Pull iterators with `create`, `next` and `destroy` functions under the
   `sylvan_`, `mtbdd_`, `zdd_` and `lddmc_` prefixes. BDDs and MTBDDs support
   cubes and minterms; MTBDDs also support leaf filters. ZDDs enumerate Boolean

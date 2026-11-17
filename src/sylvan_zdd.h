@@ -302,6 +302,21 @@ zdd_nodecount_one(const ZDD dd)
 }
 
 /**
+ * ZDD counterpart of mtbdd_level_statistics, with the same capacity, output,
+ * failure and root-lifetime rules. Counts unique physical decision nodes at
+ * each occupied variable level and unique terminals separately in *leaf_count.
+ * Shared nodes and complemented handles count once. With complement edges,
+ * False and True share one physical terminal; without them they count as two.
+ * Numeric/custom leaves are included. Empty roots have zero levels and leaves.
+ * Uses its own visited set and no operation cache or node traversal marks.
+ * Requires initialized ZDD functionality and live ZDD roots; map nodes are
+ * rejected. The roots are protected internally across GC safepoints.
+ */
+TASK_DECL_6(int, zdd_level_statistics, const ZDD*, size_t, sylvan_level_statistic*, size_t, size_t*, uint64_t*)
+#define zdd_level_statistics(roots, root_count, entries, capacity, count, leaf_count) \
+    RUN(zdd_level_statistics, roots, root_count, entries, capacity, count, leaf_count)
+
+/**
  * Compute IF <f> THEN <g> ELSE <h>.
  * Assuming f, g, h are all Boolean and on the same domain <dom>.
  */

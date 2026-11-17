@@ -405,6 +405,34 @@ mtbdd_nodecount(const MTBDD dd) {
 }
 
 /**
+ * Count unique physical decision nodes per variable level across <root_count>
+ * BDD/MTBDD roots. Shared nodes and complemented handles count only once.
+ * Terminals are excluded from the sorted sparse entries and counted once per
+ * physical terminal in *leaf_count, including numeric/custom leaves and the
+ * shared Boolean terminal: False and True together contribute one leaf.
+ * Empty roots produce zero levels and leaves. No node traversal marks or
+ * operation-cache entries are used; working memory depends on root count,
+ * reachable nodes and occupied levels. The operation allocates no diagram nodes.
+ *
+ * Returns 1 on success. With entries == NULL and capacity == 0, only count and
+ * leaf_count are written. Otherwise capacity is the number of writable entries.
+ * On insufficient capacity returns 0, sets *count to the required number of
+ * levels and *leaf_count, and leaves entries untouched. Other failures (NULL
+ * count/leaf_count, NULL roots with nonzero root_count, NULL entries with
+ * nonzero capacity, invalid handle, map node, or allocation failure) return 0
+ * without modifying any output. Arrays and outputs must not overlap.
+ *
+ * Requires initialized MTBDD functionality and live roots of the right family;
+ * stale handles and handles from another family cannot be diagnosed reliably.
+ * Roots must remain unchanged throughout the call. They are protected on the
+ * reference stack during traversal, including at GC safepoints. Retain normal
+ * caller references to keep them alive before and after the call.
+ */
+TASK_DECL_6(int, mtbdd_level_statistics, const MTBDD*, size_t, sylvan_level_statistic*, size_t, size_t*, uint64_t*)
+#define mtbdd_level_statistics(roots, root_count, entries, capacity, count, leaf_count) \
+    RUN(mtbdd_level_statistics, roots, root_count, entries, capacity, count, leaf_count)
+
+/**
  * Callback function types for binary ("dyadic") and unary ("monadic") operations.
  * The callback function returns either the MTBDD that is the result of applying op to the MTBDDs,
  * or mtbdd_invalid if op cannot be applied.

@@ -359,6 +359,28 @@ mtbdd_refs_ptrs_up(mtbdd_refs_internal_t refs)
     refs->pend = refs->pbegin + (size * 2);
 }
 
+int
+mtbdd_refs_reserve(size_t count)
+{
+    mtbdd_refs_internal_t refs = mtbdd_refs_key;
+    const size_t used = (size_t)(refs->rcur - refs->rbegin);
+    size_t capacity = (size_t)(refs->rend - refs->rbegin);
+    const size_t maximum = (size_t)PTRDIFF_MAX / sizeof(MTBDD);
+    /* refs_pop takes a long; refs_push grows when it fills the last slot. */
+    if (count > (size_t)LONG_MAX || count >= maximum - used) return 0;
+    const size_t required = used + count + 1;
+    if (required <= capacity) return 1;
+    while (capacity < required) {
+        capacity = capacity > maximum / 2 ? maximum : capacity * 2;
+    }
+    MTBDD *begin = realloc(refs->rbegin, capacity * sizeof(*begin));
+    if (begin == NULL) return 0;
+    refs->rbegin = begin;
+    refs->rcur = begin + used;
+    refs->rend = begin + capacity;
+    return 1;
+}
+
 MTBDD SYLVAN_NOINLINE
 mtbdd_refs_refs_up(mtbdd_refs_internal_t refs, MTBDD res)
 {

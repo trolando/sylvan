@@ -188,6 +188,38 @@ After ``sylvan_init_package``, subpackages like ``mtbdd`` and ``ldd`` can be ini
 If you enabled statistics generation (via CMake), then you can use ``sylvan_stats_report`` to report
 the obtained statistics to a given ``FILE*``.
 
+Programmatic statistics are available after package initialization:
+
+- ``sylvan_statistics_snapshot(&snapshot)`` reads table and cache occupancy,
+  capacities, worker count, GC count and GC time. Initialize the versioned,
+  sized ``sylvan_statistics`` with ``SYLVAN_STATISTICS_INIT``. Only the caller's
+  supplied capacity is writable; unknown trailing fields are left untouched.
+- ``sylvan_statistics_read(entries, capacity, &count)`` reads fixed-size named
+  ``sylvan_statistic`` records. Pass ``NULL, 0`` to query the required record
+  count. An insufficient capacity returns 0, reports the required count, and
+  leaves the entries untouched. Operations include call counts, cache hits and
+  cache puts; timers use nanoseconds. Names match the report labels.
+- ``sylvan_statistics_read_counter(id, &value)`` reads a ``Sylvan_Counters`` id,
+  including ``_CACHED`` and ``_CACHEDPUT`` counters.
+- ``sylvan_statistics_read_name(name, &entry)`` reads one named record, such as
+  ``"BDD and"`` or ``"GC executions"``. Unknown names, including a different
+  spelling or case, return 0 without modifying the entry.
+
+These operations return 1 on success and 0 on failure. Counters are summed
+across all Lace workers. With ``SYLVAN_STATS=OFF``, names remain available and
+counter/timer values are zero; occupancy, capacity and worker counts still work.
+Counter aggregation and occupancy sampling pause the workers in separate
+phases, so the fields need not describe a single instant under concurrent
+activity.
+
+New code should prefer these APIs to ``sylvan_stats_snapshot``. The legacy
+function and ``sylvan_stats_t`` remain available with their existing behavior,
+but require headers matching the library's counter layout. Adding counters
+changes that struct's size and timer offsets. The old function receives no
+buffer size, so it cannot safely accommodate a caller built with an older,
+smaller definition. The new snapshot's version-1 prefix and named-record
+layouts do not grow when counters are added.
+
 The Lace framework
 ~~~~~~~~~~~~~~~~~~
 
@@ -471,6 +503,29 @@ Sylvan implements a number of counting operations:
 - ``sylvan_pathcount(bdd)``: compute the number of distinct paths to True.
 - ``mtbdd_nodecount(bdd)``: compute the number of nodes (and leaves) in the BDD.
 - ``mtbdd_nodecount_more(array, length)``: compute the number of nodes (and leaves) in the array of BDDs.
+- ``mtbdd_level_statistics(roots, root_count, entries, capacity, &count, &leaf_count)``:
+  count unique physical decision nodes per occupied variable level across one
+  or several BDD/MTBDD roots. Entries are ``sylvan_level_statistic`` records
+  sorted by variable number; terminals are counted separately in ``leaf_count``.
+- ``zdd_level_statistics(roots, root_count, entries, capacity, &count, &leaf_count)``:
+  the same profile for ZDD roots, including multi-terminal ZDDs.
+
+Level statistics use a private visited set. Shared nodes and complemented
+handles count once, and sparse variable numbers do not require a dense array.
+False and True share one counted physical terminal when complement edges are
+used; numeric and custom leaves each count once per physical node. An empty
+root array has zero levels and zero leaves. This terminal convention differs
+from ``mtbdd_nodecount_more``, which excludes Boolean terminals.
+
+Pass ``NULL, 0`` for entries and capacity to query the required level count.
+Insufficient capacity returns 0 and reports both the required count and the
+leaf count, leaving entries unchanged. Other failures leave all outputs
+unchanged; success returns 1. These operations work with statistics disabled,
+allocate no diagram nodes, and retain the roots internally across GC
+safepoints. Callers must supply live roots of the appropriate family, keep the
+root array unchanged during a call, and retain references between calls.
+Map nodes are rejected. The traversal uses neither node marks nor the operation
+cache, so simultaneous profiles and collections between calls are supported.
 
 The four ``_u64`` operations write a ``uint64_t`` result and return 1 on success.
 They return 0 on overflow or invalid arguments and leave the result unchanged.

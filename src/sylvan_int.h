@@ -55,6 +55,12 @@ SYLVAN_NORETURN void sylvan_table_full(const char *kind);
  * returns. custom selects llmsset_lookupc, including its leaf callbacks. */
 uint64_t sylvan_table_lookup_gc(uint64_t a, uint64_t b, int *created, int custom, const char *kind);
 
+/* Reserve room for additional value references on the current worker, plus
+ * the spare slot required by refs_push. Return 0 on overflow/allocation
+ * failure without changing the stack; existing references remain intact. */
+int mtbdd_refs_reserve(size_t count);
+int zdd_refs_reserve(size_t count);
+
 /* Internal traversal scratch, separate from both node keys and GC marks.
  * Acquire/release must bracket a synchronous walk on one thread, and the
  * walk must undo every bit it sets. Concurrent and nested walks get separate

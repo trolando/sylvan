@@ -19,6 +19,7 @@
 
 #include <assert.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -297,6 +298,28 @@ zdd_refs_ptrs_up(zdd_refs_internal_t refs)
     refs->pbegin = (ZDD**)realloc(refs->pbegin, sizeof(ZDD*) * size*2);
     refs->pcur = refs->pbegin + size;
     refs->pend = refs->pbegin + (size * 2);
+}
+
+int
+zdd_refs_reserve(size_t count)
+{
+    zdd_refs_internal_t refs = zdd_refs_key;
+    const size_t used = (size_t)(refs->rcur - refs->rbegin);
+    size_t capacity = (size_t)(refs->rend - refs->rbegin);
+    const size_t maximum = (size_t)PTRDIFF_MAX / sizeof(ZDD);
+    /* refs_pop takes a long; refs_push grows when it fills the last slot. */
+    if (count > (size_t)LONG_MAX || count >= maximum - used) return 0;
+    const size_t required = used + count + 1;
+    if (required <= capacity) return 1;
+    while (capacity < required) {
+        capacity = capacity > maximum / 2 ? maximum : capacity * 2;
+    }
+    ZDD *begin = realloc(refs->rbegin, capacity * sizeof(*begin));
+    if (begin == NULL) return 0;
+    refs->rbegin = begin;
+    refs->rcur = begin + used;
+    refs->rend = begin + capacity;
+    return 1;
 }
 
 ZDD SYLVAN_NOINLINE
